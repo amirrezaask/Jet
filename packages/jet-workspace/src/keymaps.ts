@@ -1,11 +1,19 @@
-import { anyOverlayOpen, type KeymapContext } from "./context-keys.js"
+import type { JetCommandFn } from "./commands.js"
 
-const noOverlay = (ctx: KeymapContext) => !anyOverlayOpen(ctx)
+export type { JetCommandFn } from "./commands.js"
 
 export type JetKeyBinding = {
   key: string
-  command: string
-  when?: (ctx: KeymapContext) => boolean
+  run: JetCommandFn
+  when?: (ctx: import("./context-keys.js").KeymapContext) => boolean
+}
+
+export function bind(
+  key: string,
+  run: JetCommandFn,
+  when?: (ctx: import("./context-keys.js").KeymapContext) => boolean,
+): JetKeyBinding {
+  return { key, run, when }
 }
 
 export class KeymapService {
@@ -24,25 +32,5 @@ export class KeymapService {
   }
 }
 
-export const defaultKeybindings: JetKeyBinding[] = [
-  {
-    key: "Mod-p",
-    command: "workspace.quickOpen",
-    when: ctx => ctx.workspaceOpen && noOverlay(ctx),
-  },
-  {
-    key: "Mod-Shift-p",
-    command: "ui.showCommandPalette",
-    when: noOverlay,
-  },
-  { key: "Mod-s", command: "workspace.saveFile", when: ctx => ctx.editorFocus && noOverlay(ctx) },
-  { key: "Mod-n", command: "workspace.newFile", when: ctx => ctx.workspaceOpen && noOverlay(ctx) },
-  { key: "Mod-o", command: "workspace.openFile", when: noOverlay },
-  { key: "Mod-w", command: "layout.closeTab", when: ctx => ctx.workspaceOpen && noOverlay(ctx) },
-  { key: "Mod-f", command: "editor.find", when: ctx => ctx.editorFocus && noOverlay(ctx) },
-  { key: "Mod-h", command: "editor.replace", when: ctx => ctx.editorFocus && noOverlay(ctx) },
-  { key: "Mod-g", command: "editor.gotoLine", when: ctx => ctx.editorFocus && noOverlay(ctx) },
-  { key: "Mod-Shift-f", command: "search.show", when: ctx => ctx.workspaceOpen && noOverlay(ctx) },
-  { key: "Mod-Shift-g", command: "git.showChanges", when: ctx => ctx.workspaceOpen && noOverlay(ctx) },
-  { key: "Mod-Shift-e", command: "explorer.show", when: ctx => ctx.workspaceOpen && noOverlay(ctx) },
-]
+export { createDefaultKeybindings, VSCODE_COMMAND_IDS } from "./default-keybindings.js"
+export { withVscodeStubs, noopCommand, type JetCommands } from "./jet-commands.js"

@@ -44,6 +44,7 @@ export function EditorTabHost({
   resolveLspClient,
   lspRevision,
   executeCommand,
+  runKeyBinding,
   keymapBindings,
   userExtensions,
   keymapContext,
@@ -58,6 +59,7 @@ export function EditorTabHost({
   resolveLspClient?: (fileUri: string) => Promise<LSPClient | null>
   lspRevision?: number
   executeCommand: (name: string) => Promise<void>
+  runKeyBinding: (binding: JetKeyBinding) => void
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
   keymapContext?: KeymapContext
@@ -68,6 +70,8 @@ export function EditorTabHost({
   const ref = useRef<HTMLDivElement>(null)
   const executeCommandRef = useRef(executeCommand)
   executeCommandRef.current = executeCommand
+  const runKeyBindingRef = useRef(runKeyBinding)
+  runKeyBindingRef.current = runKeyBinding
   const keymapContextRef = useRef(keymapContext)
   keymapContextRef.current = keymapContext
   const onEditorFocusChangeRef = useRef(onEditorFocusChange)
@@ -79,6 +83,7 @@ export function EditorTabHost({
   const fileLanguageIdRef = useRef("plaintext")
 
   const runCommand = useRef((name: string) => executeCommandRef.current(name)).current
+  const runBinding = useRef((binding: JetKeyBinding) => runKeyBindingRef.current(binding)).current
 
   useEffect(() => {
     const parent = ref.current
@@ -116,7 +121,7 @@ export function EditorTabHost({
         view.destroy()
         return
       }
-      applyUserKeymaps(view, keymapBindings, runCommand, keymapContextRef.current)
+      applyUserKeymaps(view, keymapBindings, runBinding, keymapContextRef.current)
       applyUserExtensions(view, userExtensions)
       viewByTab.set(tabId.id, view)
       const nav = consumePendingEditorNavigation(tabId)
@@ -156,8 +161,8 @@ export function EditorTabHost({
 
   useEffect(() => {
     const view = viewByTab.get(tabId.id)
-    if (view) applyUserKeymaps(view, keymapBindings, runCommand, keymapContext)
-  }, [tabId.id, keymapBindings, runCommand, keymapContext])
+    if (view) applyUserKeymaps(view, keymapBindings, runBinding, keymapContext)
+  }, [tabId.id, keymapBindings, runBinding, keymapContext])
 
   useEffect(() => {
     const view = viewByTab.get(tabId.id)

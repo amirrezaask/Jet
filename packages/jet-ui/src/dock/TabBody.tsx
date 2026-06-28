@@ -26,6 +26,7 @@ export function TabBody({
   resolveLspClient,
   lspRevision,
   executeCommand,
+  runKeyBinding,
   onOpenFile,
   onOpenFileAt,
   onBranchChange,
@@ -45,6 +46,7 @@ export function TabBody({
   resolveLspClient?: (fileUri: string) => Promise<LSPClient | null>
   lspRevision?: number
   executeCommand: (name: string) => Promise<void>
+  runKeyBinding: (binding: JetKeyBinding) => void
   onOpenFile: (uri: string, path: string) => void
   onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
   onBranchChange?: (branch: string | null) => void
@@ -79,6 +81,7 @@ export function TabBody({
           resolveLspClient={resolveLspClient}
           lspRevision={lspRevision}
           executeCommand={executeCommand}
+          runKeyBinding={runKeyBinding}
           keymapBindings={keymapBindings}
           userExtensions={userExtensions}
           keymapContext={keymapContext}

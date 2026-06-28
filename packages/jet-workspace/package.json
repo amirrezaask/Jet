@@ -11,13 +11,15 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc --emitDeclarationOnly --outDir dist"
+    "build": "tsc --emitDeclarationOnly --outDir dist",
+    "test": "tsx --test src/context-keys.test.ts"
   },
   "dependencies": {
     "@jet/shared": "workspace:*",
     "@jet/panels": "workspace:*"
   },
   "devDependencies": {
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }
 }

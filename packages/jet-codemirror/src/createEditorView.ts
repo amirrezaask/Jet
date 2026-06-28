@@ -13,7 +13,7 @@ import type { WorkspaceFile } from "@jet/workspace"
 import type { WorkspaceService } from "@jet/workspace"
 import type { JetKeyBinding } from "@jet/workspace"
 import type { KeymapContext } from "@jet/workspace"
-import { matchesWhen } from "@jet/workspace"
+import { jetKeyToCodeMirrorKey, matchesWhen } from "@jet/workspace"
 import { jetThemeExtension } from "./theme.js"
 import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { motionCursor } from "./motion-cursor.js"
@@ -115,22 +115,25 @@ export function applyUserExtensions(view: EditorView, extensions: Extension[]): 
 export function applyUserKeymaps(
   view: EditorView,
   bindings: JetKeyBinding[],
-  executeCommand: (name: string) => Promise<void>,
+  runBinding: (binding: JetKeyBinding) => void,
   keymapContext?: KeymapContext,
 ): void {
   const active = keymapContext ? bindings.filter(b => matchesWhen(b, keymapContext)) : bindings
+  const cmBindings = active.flatMap(binding => {
+    const cmKey = jetKeyToCodeMirrorKey(binding.key)
+    if (!cmKey) return []
+    return [
+      {
+        key: cmKey,
+        run: () => {
+          runBinding(binding)
+          return true
+        },
+      },
+    ]
+  })
   view.dispatch({
-    effects: userKeymapCompartment.reconfigure(
-      keymap.of(
-        active.map(binding => ({
-          key: binding.key,
-          run: () => {
-            executeCommand(binding.command).catch(console.error)
-            return true
-          },
-        })),
-      ),
-    ),
+    effects: userKeymapCompartment.reconfigure(keymap.of(cmBindings)),
   })
 }
 

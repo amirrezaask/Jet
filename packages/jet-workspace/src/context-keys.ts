@@ -13,6 +13,13 @@ export type KeymapContext = {
   searchFocus: boolean
 }
 
+const MODIFIERS = new Set(["Mod", "Cmd", "Ctrl", "Alt", "Shift"])
+
+export type ParsedKeyPart = {
+  modifiers: Set<string>
+  key: string
+}
+
 export function anyOverlayOpen(ctx: KeymapContext): boolean {
   return ctx.paletteOpen || ctx.quickOpenOpen || ctx.openFileOpen || ctx.gotoLineOpen
 }
@@ -21,16 +28,153 @@ export function matchesWhen(binding: JetKeyBinding, ctx: KeymapContext): boolean
   return binding.when?.(ctx) ?? true
 }
 
-export function keyEventMatchesBinding(e: KeyboardEvent, key: string): boolean {
-  const parts = key.split("-")
-  const keyPart = parts[parts.length - 1]!
-  const needsMod = parts.includes("Mod")
-  const needsShift = parts.includes("Shift")
-  const needsAlt = parts.includes("Alt")
-  const mod = e.metaKey || e.ctrlKey
-  if (needsMod !== mod) return false
+export function parseKeyPart(part: string): ParsedKeyPart {
+  const segments = part.split("-").filter(Boolean)
+  const modifiers = new Set<string>()
+  let key = ""
+  for (const segment of segments) {
+    if (MODIFIERS.has(segment)) modifiers.add(segment)
+    else key = segment
+  }
+  return { modifiers, key }
+}
+
+export function parseBindingKey(key: string): string[] {
+  return key.trim().split(/\s+/).filter(Boolean)
+}
+
+export function isChordBinding(key: string): boolean {
+  return parseBindingKey(key).length > 1
+}
+
+function normalizeBindingKey(key: string): string {
+  if (key === "Backquote") return "`"
+  return key.length === 1 ? key.toLowerCase() : key
+}
+
+function eventKeyMatches(expected: string, e: KeyboardEvent): boolean {
+  const want = normalizeBindingKey(expected)
+  const fromKey = normalizeBindingKey(e.key)
+  if (fromKey === want) return true
+  if (want === "`" && (e.code === "Backquote" || e.key === "`")) return true
+  return false
+}
+
+export function keyEventMatchesBindingPart(e: KeyboardEvent, part: string): boolean {
+  const { modifiers, key } = parseKeyPart(part)
+  const needsShift = modifiers.has("Shift")
+  const needsAlt = modifiers.has("Alt")
+  const needsCmd = modifiers.has("Cmd") || modifiers.has("Mod")
+  const needsCtrl = modifiers.has("Ctrl")
+
   if (needsShift !== e.shiftKey) return false
   if (needsAlt !== e.altKey) return false
-  if (keyPart.length === 1) return e.key.toLowerCase() === keyPart.toLowerCase()
-  return e.key === keyPart
+
+  const hasMeta = e.metaKey
+  const hasCtrl = e.ctrlKey
+
+  if (needsCmd && needsCtrl) {
+    if (!hasMeta || !hasCtrl) return false
+  } else if (needsCmd) {
+    if (!hasMeta) return false
+  } else if (needsCtrl) {
+    if (!hasCtrl || hasMeta) return false
+  } else {
+    if (hasMeta || hasCtrl) return false
+  }
+
+  return eventKeyMatches(key, e)
+}
+
+export function keyEventMatchesBinding(e: KeyboardEvent, key: string): boolean {
+  const parts = parseBindingKey(key)
+  if (parts.length !== 1) return false
+  return keyEventMatchesBindingPart(e, parts[0]!)
+}
+
+export function keyEventMatchesChordSecond(e: KeyboardEvent, key: string, prefix: string): boolean {
+  const parts = parseBindingKey(key)
+  if (parts.length < 2 || parts[0] !== prefix) return false
+  return keyEventMatchesBindingPart(e, parts[1]!)
+}
+
+export function jetKeyToCodeMirrorKey(key: string): string | null {
+  if (isChordBinding(key)) return null
+  const part = parseBindingKey(key)[0]
+  if (!part) return null
+  const { modifiers, key: keyName } = parseKeyPart(part)
+  const cmMods: string[] = []
+  if (modifiers.has("Cmd") || modifiers.has("Mod")) cmMods.push("Mod")
+  if (modifiers.has("Ctrl")) cmMods.push("Ctrl")
+  if (modifiers.has("Alt")) cmMods.push("Alt")
+  if (modifiers.has("Shift")) cmMods.push("Shift")
+  const normalized = normalizeBindingKey(keyName)
+  if (cmMods.length === 0) return normalized
+  return `${cmMods.join("-")}-${normalized}`
+}
+
+export type ChordState = {
+  prefix: string | null
+  expiresAt: number
+}
+
+export const CHORD_TIMEOUT_MS = 1000
+
+export function createChordState(): ChordState {
+  return { prefix: null, expiresAt: 0 }
+}
+
+export function chordIsActive(state: ChordState, now = Date.now()): boolean {
+  return state.prefix != null && now < state.expiresAt
+}
+
+export function startChord(state: ChordState, prefix: string, now = Date.now()): void {
+  state.prefix = prefix
+  state.expiresAt = now + CHORD_TIMEOUT_MS
+}
+
+export function clearChord(state: ChordState): void {
+  state.prefix = null
+  state.expiresAt = 0
+}
+
+export function resolveKeydownBinding(
+  e: KeyboardEvent,
+  bindings: JetKeyBinding[],
+  ctx: KeymapContext,
+  chordState: ChordState,
+  now = Date.now(),
+): JetKeyBinding | "chord-started" | null {
+  if (!chordIsActive(chordState, now)) clearChord(chordState)
+
+  const active = bindings.filter(b => matchesWhen(b, ctx))
+
+  if (chordIsActive(chordState, now) && chordState.prefix) {
+    const prefix = chordState.prefix
+    for (const binding of active) {
+      if (!isChordBinding(binding.key)) continue
+      if (!keyEventMatchesChordSecond(e, binding.key, prefix)) continue
+      clearChord(chordState)
+      return binding
+    }
+    clearChord(chordState)
+    return null
+  }
+
+  for (const binding of active) {
+    if (!isChordBinding(binding.key)) continue
+    const prefix = parseBindingKey(binding.key)[0]
+    if (!prefix) continue
+    if (!keyEventMatchesBindingPart(e, prefix)) continue
+    startChord(chordState, prefix, now)
+    return "chord-started"
+  }
+
+  for (const binding of active) {
+    if (isChordBinding(binding.key)) continue
+    if (!keyEventMatchesBinding(e, binding.key)) continue
+    return binding
+  }
+
+  return null
 }

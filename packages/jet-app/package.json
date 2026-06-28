@@ -12,7 +12,6 @@
     "@codemirror/view": "^6.37.0",
     "@jet/browser": "workspace:*",
     "@jet/codemirror": "workspace:*",
-    "@jet/extension-host": "workspace:*",
     "@jet/lsp": "workspace:*",
     "@jet/panels": "workspace:*",
     "@jet/shared": "workspace:*",

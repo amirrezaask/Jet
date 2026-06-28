@@ -7,11 +7,15 @@
     "dev:web": "turbo run dev --filter=jet-web",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
+    "test": "pnpm --filter @jet/workspace test",
     "test:web": "playwright test",
+    "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
+    "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
     "postinstall": "pnpm rebuild electron"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
+    "tsx": "^4.19.4",
     "turbo": "^2.5.4",
     "typescript": "^5.8.3"
   },

@@ -24,6 +24,7 @@ export type PanelDockProps = {
   resolveLspClient?: (fileUri: string) => Promise<import("@jet/codemirror").LSPClient | null>
   lspRevision?: number
   executeCommand: (name: string) => Promise<void>
+  runKeyBinding: (binding: JetKeyBinding) => void
   onOpenFile: (uri: string, path: string) => void
   onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
   onBranchChange?: (branch: string | null) => void
@@ -220,6 +221,7 @@ export function PanelDock(props: PanelDockProps) {
                     resolveLspClient={props.resolveLspClient}
                     lspRevision={props.lspRevision}
                     executeCommand={props.executeCommand}
+                    runKeyBinding={props.runKeyBinding}
                     onOpenFile={props.onOpenFile}
                     onOpenFileAt={props.onOpenFileAt}
                     onBranchChange={props.onBranchChange}

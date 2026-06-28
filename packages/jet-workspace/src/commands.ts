@@ -14,6 +14,8 @@ export type JetCommandContext = {
 
 export type JetCommand = (ctx: JetCommandContext, args?: unknown) => unknown | Promise<unknown>
 
+export type JetCommandFn = (ctx: JetCommandContext) => void | Promise<void>
+
 export type CommandInfo = {
   id: string
   title: string
@@ -33,6 +35,10 @@ export class CommandRegistry {
         this.infos.delete(id)
       },
     }
+  }
+
+  has(id: string): boolean {
+    return this.commands.has(id)
   }
 
   async execute(id: string, ctx: JetCommandContext, args?: unknown): Promise<unknown> {
