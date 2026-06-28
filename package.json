@@ -1,0 +1,19 @@
+{
+  "name": "jet",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --filter=jet-desktop",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "postinstall": "pnpm rebuild electron"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron"]
+  }
+}

@@ -1,0 +1,101 @@
+import { Compartment, EditorState, type Extension } from "@codemirror/state"
+import { EditorView, keymap, lineNumbers } from "@codemirror/view"
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+} from "@codemirror/commands"
+import { LSPClient, languageServerExtensions, type Transport } from "@codemirror/lsp-client"
+import { simpleWebSocketTransport } from "./lsp-transport.js"
+import type { WorkspaceFile } from "@jet/workspace"
+import type { WorkspaceService } from "@jet/workspace"
+import type { JetKeyBinding } from "@jet/workspace"
+import { jetThemeExtension } from "./theme.js"
+import { defaultJetTheme, type JetTheme } from "./theme-types.js"
+import { motionCursor } from "./motion-cursor.js"
+import { loadLanguage } from "./languages.js"
+
+export const userKeymapCompartment = new Compartment()
+export const languageCompartment = new Compartment()
+export const lspCompartment = new Compartment()
+
+export type CreateJetEditorViewOptions = {
+  parent: HTMLElement
+  workspace: WorkspaceService
+  file: WorkspaceFile
+  initialText: string
+  theme?: JetTheme
+  lspTransportUrl?: string | null
+  executeCommand: (name: string) => Promise<void>
+  onViewCreated?: (view: EditorView) => void
+}
+
+export async function createJetEditorView(opts: CreateJetEditorViewOptions): Promise<EditorView> {
+  const theme = opts.theme ?? defaultJetTheme
+  const lang = await loadLanguage(opts.file.languageId)
+
+  const extensions: Extension[] = [
+    lineNumbers(),
+    history(),
+    keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+    jetThemeExtension(theme),
+    motionCursor(),
+    languageCompartment.of(lang),
+    userKeymapCompartment.of([]),
+    EditorView.updateListener.of(update => {
+      if (update.docChanged) {
+        opts.workspace.markDirty(opts.file.uri, true)
+      }
+    }),
+  ]
+
+  const view = new EditorView({
+    parent: opts.parent,
+    state: EditorState.create({ doc: opts.initialText, extensions }),
+  })
+
+  if (opts.lspTransportUrl) {
+    attachLsp(view, opts.file.uri, opts.lspTransportUrl).catch(console.error)
+  }
+
+  opts.onViewCreated?.(view)
+  return view
+}
+
+async function attachLsp(view: EditorView, uri: string, transportUrl: string): Promise<void> {
+  const transport = await simpleWebSocketTransport(transportUrl)
+  const client = new LSPClient({ extensions: languageServerExtensions() }).connect(transport)
+  view.dispatch({
+    effects: lspCompartment.reconfigure(client.plugin(uri)),
+  })
+}
+
+export function applyUserKeymaps(
+  view: EditorView,
+  bindings: JetKeyBinding[],
+  executeCommand: (name: string) => Promise<void>,
+): void {
+  view.dispatch({
+    effects: userKeymapCompartment.reconfigure(
+      keymap.of(
+        bindings.map(binding => ({
+          key: binding.key,
+          run: () => {
+            executeCommand(binding.command).catch(console.error)
+            return true
+          },
+        })),
+      ),
+    ),
+  })
+}
+
+export function isLargeFile(text: string): boolean {
+  if (text.length > 4 * 1024 * 1024) return true
+  let lines = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10 && ++lines > 200_000) return true
+  }
+  return false
+}

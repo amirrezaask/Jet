@@ -1,0 +1,11 @@
+node_modules
+dist
+.turbo
+*.log
+.DS_Store
+apps/jet-desktop/dist-electron
+.4coder
+.vscode
+.4coder_fleury
+.raddebugger
+

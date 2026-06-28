@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: var(--jet-bg);
+  --color-foreground: var(--jet-text);
+  --color-card: var(--jet-panel-raised);
+  --color-muted: var(--jet-panel);
+  --color-muted-foreground: var(--jet-text-muted);
+  --color-border: var(--jet-border);
+  --color-primary: var(--jet-accent);
+  --color-ring: var(--jet-focus-border);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--jet-bg);
+  color: var(--jet-text);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+}

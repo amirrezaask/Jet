@@ -1,0 +1,33 @@
+{
+  "name": "@jet/app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.37.0",
+    "@jet/codemirror": "workspace:*",
+    "@jet/extension-host": "workspace:*",
+    "@jet/lsp": "workspace:*",
+    "@jet/panels": "workspace:*",
+    "@jet/shared": "workspace:*",
+    "@jet/ui": "workspace:*",
+    "@jet/workspace": "workspace:*",
+    "motion": "^12.16.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.8",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.5.2",
+    "tailwindcss": "^4.1.8",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}
