@@ -1,9 +1,16 @@
 import { useEffect, useRef } from "react"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
-import { createJetEditorView, applyUserKeymaps, applyUserExtensions, isLargeFile } from "@jet/codemirror"
+import {
+  createJetEditorView,
+  applyUserKeymaps,
+  applyUserExtensions,
+  isLargeFile,
+  jumpToLine,
+  consumePendingEditorNavigation,
+} from "@jet/codemirror"
 import type { JetTheme } from "@jet/codemirror"
-import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@jet/workspace"
+import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
 import type { TabId } from "@jet/shared"
 import { fileUriToPath, isUntitledUri } from "@jet/shared"
 
@@ -11,6 +18,20 @@ const viewByTab = new Map<number, EditorView>()
 
 export function getEditorView(tabId: TabId): EditorView | undefined {
   return viewByTab.get(tabId.id)
+}
+
+export function getAllEditorViews(
+  registry: TabRegistry,
+): { tabId: TabId; uri: string; view: EditorView }[] {
+  const result: { tabId: TabId; uri: string; view: EditorView }[] = []
+  for (const tabId of registry.allTabs()) {
+    const kind = registry.get(tabId)
+    const view = viewByTab.get(tabId.id)
+    if (kind?.kind === "editor" && view) {
+      result.push({ tabId, uri: kind.fileUri, view })
+    }
+  }
+  return result
 }
 
 export function EditorTabHost({
@@ -86,6 +107,8 @@ export function EditorTabHost({
       applyUserKeymaps(view, keymapBindings, runCommand, keymapContextRef.current)
       applyUserExtensions(view, userExtensions)
       viewByTab.set(tabId.id, view)
+      const nav = consumePendingEditorNavigation(tabId)
+      if (nav) jumpToLine(view, nav.line, nav.column)
       onFocus = () => onEditorFocusChangeRef.current?.(true)
       onBlur = () => onEditorFocusChangeRef.current?.(false)
       view.dom.addEventListener("focus", onFocus)
@@ -119,6 +142,18 @@ export function EditorTabHost({
     const view = viewByTab.get(tabId.id)
     view?.focus()
   }, [tabId.id, autoFocus])
+
+  useEffect(() => {
+    const sub = workspace.onFileReload.event(({ uri, content }) => {
+      if (uri !== fileUri) return
+      const view = viewByTab.get(tabId.id)
+      if (!view) return
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: content },
+      })
+    })
+    return () => sub.dispose()
+  }, [workspace, fileUri, tabId.id])
 
   return <div ref={ref} className="h-full w-full overflow-hidden" />
 }

@@ -67,6 +67,7 @@ export class WorkspaceService {
   readonly onDidOpenFile = new Emitter<WorkspaceFile>()
   readonly onDidChangeDirty = new Emitter<{ uri: string; isDirty: boolean }>()
   readonly onDidOpenWorkspace = new Emitter<WorkspaceRoot>()
+  readonly onFileReload = new Emitter<{ uri: string; content: string }>()
 
   constructor(private fs: FileSystemProvider) {}
 
@@ -105,6 +106,30 @@ export class WorkspaceService {
   async writeFile(uri: string, content: string): Promise<void> {
     await this.fs.writeFile(uri, content)
     this.markDirty(uri, false)
+  }
+
+  async reloadFileFromDisk(uri: string): Promise<string | null> {
+    const file = this.files.get(uri)
+    if (!file || file.isDirty) return null
+    try {
+      const content = await this.fs.readFile(uri)
+      this.onFileReload.fire({ uri, content })
+      return content
+    } catch {
+      return null
+    }
+  }
+
+  handleExternalFileChange(uri: string): void {
+    const file = this.files.get(uri)
+    if (!file) return
+    if (file.isDirty) {
+      if (window.confirm(`"${file.name}" changed on disk. Reload and discard local changes?`)) {
+        void this.reloadFileFromDisk(uri)
+      }
+      return
+    }
+    void this.reloadFileFromDisk(uri)
   }
 
   async readDir(uri: string) {

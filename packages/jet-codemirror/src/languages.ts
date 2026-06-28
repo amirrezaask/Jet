@@ -39,10 +39,10 @@ export async function loadLanguage(languageId: string): Promise<Extension> {
       lang = mod.html()
       break
     }
-    default: {
-      const mod = await import("@codemirror/lang-javascript")
-      lang = mod.javascript()
-    }
+    case "plaintext":
+      return []
+    default:
+      return []
   }
   cache.set(languageId, lang)
   return lang

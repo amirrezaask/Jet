@@ -42,6 +42,28 @@ export function jetThemeExtension(theme: JetTheme) {
       },
       ".cm-activeLineGutter": { backgroundColor: theme.colors.hover },
       ".cm-activeLine": { backgroundColor: theme.colors.hover },
+      ".cm-matchingBracket, .cm-nonmatchingBracket": {
+        backgroundColor: theme.colors.accent + "44",
+        outline: `1px solid ${theme.colors.accent}`,
+      },
+      ".cm-panel.cm-search": {
+        backgroundColor: theme.colors.panelRaised,
+        color: theme.colors.text,
+        border: `1px solid ${theme.colors.border}`,
+      },
+      ".cm-panel.cm-search input": {
+        backgroundColor: theme.colors.panel,
+        color: theme.colors.text,
+        border: `1px solid ${theme.colors.border}`,
+      },
+      ".cm-panel.cm-search button": {
+        backgroundColor: theme.colors.panel,
+        color: theme.colors.text,
+        border: `1px solid ${theme.colors.border}`,
+      },
+      ".cm-indent-marker": {
+        borderLeft: `1px solid ${theme.colors.border}`,
+      },
       ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
         backgroundColor: theme.colors.selection + "66",
       },

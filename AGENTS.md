@@ -141,7 +141,8 @@ Use via `browser_cdp` → `Runtime.evaluate` with `awaitPromise: true` for async
 8. Git tab — status visible (fixture is a git repo)
 9. Close dirty tab — confirm dialog (may need user handoff in MCP; note if blocked)
 10. Re-open workspace — default layout (explorer left, main right); no session file
-11. **Known fail:** tab drag to split/move — not working yet; do not treat as regression if broken
+11. Command palette — `executeCommand("ui.showCommandPalette")` → centered modal (not trapped in panel)
+12. New file / open file — editor tab lands in **right** main panel, not stacked below sidebar
 
 For feature-specific work, add targeted MCP checks (e.g. `executeCommand("editor.find")` → search panel in snapshot; `executeCommand("ui.selectTheme.four_coder")` → theme message / CSS change).
 
@@ -182,6 +183,8 @@ JET_DEV_ROOTS="/path/a:/path/b" pnpm dev:web
 
 6. **Stray output** — old builds may land in `packages/jet-app/dist-electron/`; canonical output is `apps/jet-desktop/dist-electron/`. Both are gitignored where applicable.
 
+7. **Tailwind v4 position utilities missing** — Vite root is `packages/jet-app`; classes like `absolute` / `fixed` / `inset-0` used only in sibling packages (`jet-ui`, …) were not generated until `@source` was added in `jet-ui/src/styles/globals.css`. Symptom: panels stack vertically (editor at bottom), palette full-width. After CSS changes, reload window if HMR does not pick up `@source`.
+
 ---
 
 ## Architecture Details
@@ -203,16 +206,16 @@ Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
 ### Panel docking (`@jet/panels`)
 
 - `PanelTree` — row/column splits, tab groups, 5-way drop (edges + center)
-- `defaultLayout()` — initial row split; seeds Explorer + Git tabs (placement convenience only)
+- `workspaceLayout()` / `defaultLayout()` — row split: sidebar left (~22%), main editor right (~78%)
 - Serializable via `toJSON()` / `fromJSON()`; `sanitizeKnownTabs()` strips orphan tab ids when needed
 - UI: `PanelDock`, `TabRow`, `DropOverlay` in `@jet/ui`
+- `resolveEditorPanel()` in `App.tsx` — new/open editor tabs route to main editor panel (not sidebar)
 
-**Panel model:** all leaf panels are equal — no "explorer panel" vs "editor panel". Tab kind differs (`explorer`, `editor`, `git`, …). `handleOpenFile` and view commands target **`focusedPanel`** (last clicked panel).
+**Panel model:** all leaf panels are equal — no "explorer panel" vs "editor panel". Tab kind differs (`explorer`, `editor`, `git`, …). View commands can target `focusedPanel`; editor open/new file targets main editor panel.
 
 **Known gaps:**
-- **Tab drag/drop broken** — pointer-based drag overlay mounts but drop does not move/split tabs reliably (browser + manual test). Fix in `TabRow.tsx`, `PanelDock.tsx`, `DropOverlay.tsx`; verify `tabMoved` → `PanelTree.moveTab()`.
-- Tab reorder within a tab bar — same-panel `insertIndex` UI wired; cross-panel still broken
-- Split resize works (pointer capture + 12px hit slop); may feel laggy during Framer layout animation
+- **Tab drag/drop** — same-panel reorder works; cross-panel move / edge-split mostly works but needs polish (drop hit targets, registry sync). OK for now; not P0 blocker.
+- Split resize works (pointer capture + 12px hit slop); may feel laggy during layout animation
 
 ### Workspace (`@jet/workspace`)
 
@@ -243,6 +246,9 @@ Registered in `packages/jet-app/src/App.tsx`:
 | `workspace.saveFile` | Mod-s |
 | `workspace.newFile` | Mod-n |
 | `editor.find` | Mod-f |
+| `editor.replace` | Mod-h |
+| `editor.gotoLine` | Mod-g |
+| `workspace.quickOpen` | Mod-Shift-o |
 | `layout.closeTab` | Mod-w |
 | `git.showChanges` | Mod-Shift-g |
 | `explorer.show` | Mod-Shift-e |
@@ -263,7 +269,9 @@ Registered in `packages/jet-app/src/App.tsx`:
 - Main: spawns `typescript-language-server --stdio`, bridges stdio ↔ WebSocket
 - Renderer: `@codemirror/lsp-client` via custom `simpleWebSocketTransport` in `jet-codemirror`
 - `LanguageServerManager.ensureServerForFile()` — TS/JS only for now
-- Requires `typescript-language-server` on **PATH**
+- Requires `typescript-language-server` on **PATH** (TS/JS)
+- Requires `rust-analyzer` on **PATH** for Rust (optional)
+- Project search requires `rg` (ripgrep) on **PATH**
 - `findProjectRoot()` uses `pathToFileUri` from `@jet/shared`
 
 ### UI tabs
@@ -273,16 +281,18 @@ Registered in `packages/jet-app/src/App.tsx`:
 | Explorer | `@headless-tree/react` file tree |
 | Git | `@pierre/diffs` patch view + git status list (lazy-loaded) |
 | Editor | CodeMirror host + in-buffer find |
-| Search | Shell tab; project search planned |
-| Problems | Stub tab; LSP diagnostics planned |
-| Terminal | Stub UI + `terminal.show` command (node-pty planned for Electron) |
+| Search | Project ripgrep search + in-buffer find |
+| Problems | LSP/CM lint diagnostics list + jump |
+| Terminal | xterm + node-pty (Electron); browser stub |
 
 ### Theming
 
 - `defaultJetTheme` + CSS vars via `applyJetThemeCss()`
 - Tailwind v4 + custom RAD-ish tokens in `jet-ui/src/styles/globals.css`
-- Bundled themes in `jet-ui/src/theme/bundled.ts` (default, 4coder, Catppuccin Mocha)
+- **`@source` in globals.css** — must scan all workspace packages so position/layout utilities emit for `jet-ui` components
+- Bundled themes in `jet-ui/src/theme/bundled.ts` (default, 4coder, Catppuccin Mocha, One Dark, Gruvbox Dark, Nord)
 - Theme picker via `ui.selectTheme.*` commands; persisted in `localStorage`
+- Command palette — `createPortal` to `document.body`; inline styles for centering (layout-critical)
 
 ---
 
@@ -308,20 +318,33 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 1. `pnpm dev` / `pnpm dev:web` → window loads
 2. **Open Folder** / query URL / `__jetAgent.openWorkspace()` → FS + optional `.jet/editorrc.ts`
-3. Explorer tree — root expands; click file → editor tab in **focused panel**
-4. Edit + **Mod-s** save (click editor tab first if needed)
-5. **Mod-p** command palette
-6. Git tab (if repo)
-7. Panel split **resize** — drag gutter between panels
-8. Reload workspace — default layout (no session persistence)
-
-**Not working:** tab drag/drop to move tabs or create splits (overlay may appear; drop has no effect).
+3. Default layout — Explorer/Git **left**, editor **right** (row split)
+4. Explorer tree — root expands; click file → editor tab in main panel
+5. Edit + **Mod-s** save (click editor tab first if needed)
+6. **Mod-p** command palette — centered screen modal
+7. Git tab (if repo)
+8. Panel split **resize** — drag gutter between panels
+9. Tab reorder within panel; tab drag cross-panel/split — partial, usable
+10. Reload workspace — default layout (no session persistence)
 
 ---
 
 ## Prioritized Next Work
 
-### P0 — Stability & correctness (done)
+Design references (read-only): `.4coder/`, `.4coder_fleury/`, `.raddebugger/`, `Nameless_Editor/`. Jet aspires to **RAD/Nameless shell polish** + **4coder/Fleury editor identity** on CodeMirror 6 + Electron — not a port.
+
+Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific) inside each phase.
+
+| Tier | Scope |
+|------|--------|
+| **Shell** | Panels, chrome, palette, themes, status bar, layout |
+| **Editor** | Buffer UX — find, goto, multi-cursor, guides |
+| **Workspace** | Project tools — search, git, terminal, quick-open |
+| **4coder-specific** | Dual cursor+mark, virtual whitespace, code index, C layer |
+
+### P0 — Stability & correctness
+
+**Done**
 
 - [x] Pass real viewport from `PanelDock` into `splitResized` handler
 - [x] Wire extension host extensions into `createJetEditorView`
@@ -333,83 +356,118 @@ Registered in `packages/jet-app/src/App.tsx`:
 - [x] Explorer tree expands root on workspace open
 - [x] Editor input stability — `executeCommand` ref, autofocus, no remount on layout change
 - [x] Session tree sanitize — orphan tab ids stripped on load/save
-- [x] Symmetric panels — no `explorerPanelRef`/`editorPanelRef`; routing via `focusedPanel`
+- [x] **Shell:** default row layout — sidebar left, main editor right (`workspaceLayout`)
+- [x] **Shell:** editor open/new file routes to main panel (`resolveEditorPanel`)
+- [x] **Shell:** command palette centered (`createPortal` + fixed overlay)
+- [x] **Shell:** Tailwind `@source` — position utilities for panel dock / palette
 
-### P0 — Still broken (fix next)
+**Remaining (Shell tier)**
 
-- [ ] **Tab drag/drop** — move tab to another panel / split at edge. Pointer drag attempted in `PanelDock`/`TabRow`/`DropOverlay`; drop zones show but `tabMoved` does not apply layout change. Debug: window `pointerup` vs overlay `onPointerUp` ordering, `handlePanelEvent` + `TabRegistry` panel mapping after `moveTab`, registry `panelForTab` sync.
+- [ ] **Shell:** tab drag/drop polish — cross-panel move + edge-split hit targets, `TabRegistry` sync after `moveTab` (partial OK for now)
+- [ ] **Shell:** confirm dirty-tab close dialog in browser MCP (may need user handoff)
 
-### P1 — Core editor features
+### P1 — Core editor & shell features
 
-- [ ] ~~Session persistence~~ — removed; layout resets on each workspace open
+**Done**
+
 - [x] Terminal tab stub + `terminal.show` command
 - [x] Untitled / new file flow (`workspace.newFile`, save-promote; Mod-n when workspace open)
 - [x] Tab dirty indicator + confirm on close with unsaved changes
 - [x] `when` clauses in KeymapService — `editorFocus`, `paletteOpen`, `workspaceOpen`, tab-kind focus keys
+- [x] **Editor:** in-buffer find (`editor.find` / Mod-f)
+- [x] **Editor:** find/replace (`editor.replace` / Mod-h, CM search panel)
+- [x] **Editor:** goto-line (`editor.gotoLine` / Mod-g, modal)
+
+**Remaining**
+
+- [ ] **Shell:** session layout persist (deferred — reset-on-open by design)
 
 ### P2 — UX & polish
+
+**Done**
 
 - [x] Tab bar reorder within panel (`insertIndex` + same-panel drag)
 - [x] `panelClose` handler in `App.tsx` + panel close button
 - [x] `__jetAgent.waitForEditor()` — poll until `.cm-editor` mounted
 - [x] Bundled themes + theme picker commands (`ui.selectTheme.*`)
-- [x] Search tab shell + in-buffer find (`editor.find` / Mod-f); problems tab stub
+- [x] Search tab shell + problems tab stub
 - [x] Status bar (LSP status, line/col, encoding)
 - [x] Welcome view when no folder open
-- [x] GitTab lazy import; PaletteOverlay lazy (motion/react)
+- [x] GitTab lazy import; PaletteOverlay
 - [x] Tab row overflow menu
 - [x] Playwright smoke tests wired to `pnpm dev:web` + `__jetAgent`
-- [ ] Reduce main bundle / lazy-load Shiki langs further (CM langs already lazy)
+- [x] **Shell:** theme picker + 3 bundled themes
+- [x] **Shell:** welcome view, status bar (L/C, LSP, message)
+- [x] Reduce main bundle — lazy Search/Problems tabs; Vite `manualChunks` for git-diff/shiki
+- [x] **Shell:** status bar — workspace path + git branch
+- [x] **Shell:** more bundled themes (One Dark, Gruvbox Dark, Nord — 6 total)
+- [x] **Editor:** bracket matching + search panel theming (Fleury indent guides: partial)
+- [x] **Workspace:** project search tab (ripgrep) + result navigation
 
-### P3 — Platform & distribution
+**Remaining**
 
-- [ ] electron-builder config + signed builds (macOS / Windows / Linux)
-- [ ] LSP crash recovery (`lsp.onCrashed` currently no-op in preload)
-- [ ] Additional language servers (rust-analyzer, etc.)
-- [ ] Watch mode / file change reload from disk
+- [ ] **Editor:** full Fleury-style indent guide columns (optional `@replit/codemirror-indentation-markers`)
+
+### P3 — Platform, workspace & distribution
+
+**Shell tier**
+
+- [ ] **Shell:** session layout persist (deferred)
+
+**Workspace tier**
+
+- [x] Quick-open files (`workspace.quickOpen` / Mod-Shift-o)
+- [x] Full git panel (stage, commit, branch checkout)
+- [x] Terminal PTY (Electron `node-pty` + xterm; browser stub)
+- [x] Problems panel — diagnostics list + jump to source (CM lint aggregation)
+- [x] Watch mode / file change reload from disk (Electron `fs.watch`; dirty-tab confirm)
+
+**Platform**
+
+- [x] electron-builder config + pack scripts (`pack:mac` / `pack:win` / `pack:linux`; unsigned)
+- [x] LSP crash recovery (`lsp.onCrashed` + auto-retry on editor focus)
+- [x] Additional language servers (rust-analyzer descriptor registry)
+- [ ] Code signing / notarization (needs `CSC_*` certs — not automated)
 - [ ] README for humans (optional unless requested)
 
----
+### P4 — Reference editor identity (long-term)
 
-## Reference parity targets
+**Editor tier**
 
-Design references (read-only sibling dirs): `.4coder/`, `.4coder_fleury/`, `.raddebugger/`, `Nameless_Editor/`.
+- [ ] Multi-cursor
 
-Jet aspires to **RAD/Nameless shell polish** + **4coder/Fleury editor identity**, implemented on CodeMirror 6 + Electron — not a port of any reference.
+**4coder-specific tier**
 
-### Parity tiers
-
-| Tier | Scope | Examples |
-|------|-------|----------|
-| **Shell** | Panels, chrome, config | Status bar, theme picker, welcome view, palette, session layout (deferred) |
-| **Editor** | Buffer UX | Find/replace, goto-line, multi-cursor, brace guides, semantic nav |
-| **Workspace** | Project tools | Quick-open, project search, location list, full git, terminal PTY |
-| **4coder-specific** | Long-term | Dual cursor+mark mode, virtual whitespace, C custom layer, code index |
-
-### Feature matrix (selected)
-
-| Feature | 4coder | Fleury | Nameless | Jet | Target |
-|---------|--------|--------|----------|-----|--------|
-| Tab drag/drop + reorder | ✓ | ✓ | ✓ | broken / partial reorder | P0 drag; reorder done |
-| In-buffer find | ✓ | ✓ | ✓ | ✓ Mod-f | — |
-| Project search + location list | ✓ | ✓ | ✓ | shell only | P3 |
-| Status bar (path, L/C, git, LSP) | partial | ✓ | ✓ | L/C + LSP + message | path/git branch P3 |
-| Theme picker + bundled themes | ✓ | ✓ | ✓ | ✓ 3 themes | more themes P3 |
-| Quick-open files | ✓ | ✓ | ✓ | ✗ | P3 |
-| Terminal PTY | CLI | — | ✓ | stub | P3 |
-| Full git panel | — | — | ✓ | status+diff | P3 |
-| Brace guides / Fleury chrome | — | ✓ | ✓ | ✗ | P4 |
-| Session layout persist | — | — | ✓ | removed | revisit P3 |
-| LSP (TS/JS) | ✗ | partial | ✓ | ✓ Electron | more servers P3 |
-| Multi-cursor, macros, kill ring | ✓ | — | ✓ | ✗ | P4 |
-| Extension / custom layer | C hooks | C++ | Rust setup | `.jet/editorrc.ts` | expand API |
+- [ ] Expand `.jet/editorrc.ts` API toward Nameless-level extensibility
 
 ### Out of scope (documented gaps)
 
-- P0 cross-panel tab drag/drop (still broken)
-- Project ripgrep search, real problems/diagnostics panel
-- 4coder dual-cursor mode, programmable virtual whitespace, semantic index
 - Nameless-level command registry (~50+ commands), vim mode, tree-sitter tag index
+- Full parity port of any single reference editor
+
+---
+
+## Reference parity snapshot
+
+Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases above).
+
+| Feature | 4coder | Fleury | Nameless | Jet today |
+|---------|--------|--------|----------|-----------|
+| Tab drag/drop + reorder | ✓ | ✓ | ✓ | partial / reorder ✓ |
+| Default panel layout | ✓ | ✓ | ✓ | row: sidebar + main ✓ |
+| In-buffer find | ✓ | ✓ | ✓ | ✓ Mod-f |
+| Command palette | ✓ | ✓ | ✓ | ✓ centered |
+| Project search + location list | ✓ | ✓ | ✓ | ✓ ripgrep + jump |
+| Status bar (path, L/C, git, LSP) | partial | ✓ | ✓ | path + branch + L/C + LSP ✓ |
+| Theme picker + bundled themes | ✓ | ✓ | ✓ | ✓ 6 themes |
+| Quick-open files | ✓ | ✓ | ✓ | ✓ Mod-Shift-o |
+| Terminal PTY | CLI | — | ✓ | ✓ Electron / stub web |
+| Full git panel | — | — | ✓ | stage/commit/branch ✓ |
+| Brace guides / Fleury chrome | — | ✓ | ✓ | bracket match ✓; indent guides partial |
+| Session layout persist | — | — | ✓ | deferred |
+| LSP (TS/JS) | ✗ | partial | ✓ | ✓ Electron + rust-analyzer |
+| Multi-cursor, macros, kill ring | ✓ | — | ✓ | ✗ |
+| Extension / custom layer | C hooks | C++ | Rust setup | `.jet/editorrc.ts` |
 
 ---
 

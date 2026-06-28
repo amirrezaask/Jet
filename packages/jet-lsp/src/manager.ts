@@ -14,15 +14,25 @@ export type LspConnection = {
   rootUri: string
   languageIds: string[]
   transportUrl: string
+  descriptorId: string
 }
 
-const TS_DESCRIPTOR: LanguageServerDescriptor = {
-  id: "typescript-language-server",
-  languageIds: ["typescript", "javascript"],
-  command: "typescript-language-server",
-  args: ["--stdio"],
-  rootMarkers: ["package.json", "tsconfig.json"],
-}
+const DESCRIPTORS: LanguageServerDescriptor[] = [
+  {
+    id: "typescript-language-server",
+    languageIds: ["typescript", "javascript"],
+    command: "typescript-language-server",
+    args: ["--stdio"],
+    rootMarkers: ["package.json", "tsconfig.json"],
+  },
+  {
+    id: "rust-analyzer",
+    languageIds: ["rust"],
+    command: "rust-analyzer",
+    args: [],
+    rootMarkers: ["Cargo.toml"],
+  },
+]
 
 export class LanguageServerManager {
   private connections = new Map<string, LspConnection>()
@@ -30,10 +40,25 @@ export class LanguageServerManager {
 
   constructor(
     private lspApi: {
-      start(rootUri: string, languageId: string): Promise<{ transportUrl: string; id: string }>
+      start(
+        rootUri: string,
+        languageId: string,
+        command?: string,
+        args?: string[],
+      ): Promise<{ transportUrl: string; id: string }>
       stop(id: string): Promise<void>
+      onCrashed?(cb: (id: string) => void): () => void
     },
-  ) {}
+  ) {
+    lspApi.onCrashed?.(id => {
+      for (const [key, conn] of this.connections) {
+        if (conn.id === id) {
+          this.connections.delete(key)
+          break
+        }
+      }
+    })
+  }
 
   async ensureServerForFile(file: WorkspaceFile, workspaceRoot: string): Promise<LspConnection | null> {
     const descriptor = this.descriptorForLanguage(file.languageId)
@@ -48,15 +73,25 @@ export class LanguageServerManager {
     const projectRoot = await findProjectRoot(rootPath, descriptor.rootMarkers)
     if (!projectRoot) return null
 
-    const conn = await this.lspApi.start(pathToFileUri(projectRoot), file.languageId)
-    const connection: LspConnection = {
-      id: conn.id,
-      rootUri,
-      languageIds: descriptor.languageIds,
-      transportUrl: conn.transportUrl,
+    try {
+      const conn = await this.lspApi.start(
+        pathToFileUri(projectRoot),
+        file.languageId,
+        descriptor.command,
+        descriptor.args,
+      )
+      const connection: LspConnection = {
+        id: conn.id,
+        rootUri,
+        languageIds: descriptor.languageIds,
+        transportUrl: conn.transportUrl,
+        descriptorId: descriptor.id,
+      }
+      this.connections.set(key, connection)
+      return connection
+    } catch {
+      return null
     }
-    this.connections.set(key, connection)
-    return connection
   }
 
   getConnection(languageId: string, rootUri: string): LspConnection | null {
@@ -65,9 +100,17 @@ export class LanguageServerManager {
     return this.connections.get(`${descriptor.id}:${rootUri}`) ?? null
   }
 
+  clearConnection(id: string): void {
+    for (const [key, conn] of this.connections) {
+      if (conn.id === id) {
+        this.connections.delete(key)
+        return
+      }
+    }
+  }
+
   private descriptorForLanguage(languageId: string): LanguageServerDescriptor | null {
-    if (TS_DESCRIPTOR.languageIds.includes(languageId)) return TS_DESCRIPTOR
-    return null
+    return DESCRIPTORS.find(d => d.languageIds.includes(languageId)) ?? null
   }
 }
 
@@ -91,4 +134,8 @@ async function findProjectRoot(startPath: string, markers: string[]): Promise<st
     current = parent
   }
   return startPath
+}
+
+export function getLanguageServerDescriptors(): LanguageServerDescriptor[] {
+  return DESCRIPTORS
 }

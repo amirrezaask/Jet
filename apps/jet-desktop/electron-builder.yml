@@ -1,0 +1,23 @@
+appId: com.jet.editor
+productName: Jet
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+win:
+  target:
+    - nsis
+    - zip
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development

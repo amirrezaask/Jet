@@ -13,5 +13,13 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("@pierre/diffs") || id.includes("shiki")) return "git-diff"
+          if (id.includes("@xterm")) return "xterm"
+        },
+      },
+    },
   },
 })

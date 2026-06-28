@@ -8,6 +8,9 @@ export {
   extensionCompartment,
   lspCompartment,
 } from "./createEditorView.js"
+export { openReplaceSearchPanel, jumpToLine } from "./editor-actions.js"
+export { setPendingEditorNavigation, consumePendingEditorNavigation } from "./editor-navigation.js"
+export { collectProblemsFromViews } from "./diagnostics.js"
 export { motionCursor } from "./motion-cursor.js"
 export { jetThemeExtension } from "./theme.js"
 export { defaultJetTheme, applyJetThemeCss, type JetTheme, type JetColors } from "./theme-types.js"

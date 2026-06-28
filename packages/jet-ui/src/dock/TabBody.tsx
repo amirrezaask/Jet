@@ -1,15 +1,21 @@
-import { lazy, Suspense } from "react"
+import { lazy, Suspense, type ReactNode } from "react"
 import type { TabId } from "@jet/shared"
+import type { JetProblem } from "@jet/shared"
+import { pathToFileUri } from "@jet/shared"
 import type { Extension } from "@codemirror/state"
 import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
 import type { JetTheme } from "@jet/codemirror"
 import { EditorTabHost } from "../tabs/EditorTabHost.js"
 import { ExplorerTab } from "../tabs/ExplorerTab.js"
-import { TerminalTab } from "../tabs/TerminalTab.js"
-import { SearchTab } from "../tabs/SearchTab.js"
-import { ProblemsTab } from "../tabs/ProblemsTab.js"
 
 const GitTab = lazy(() => import("../tabs/GitTab.js").then(m => ({ default: m.GitTab })))
+const SearchTab = lazy(() => import("../tabs/SearchTab.js").then(m => ({ default: m.SearchTab })))
+const ProblemsTab = lazy(() =>
+  import("../tabs/ProblemsTab.js").then(m => ({ default: m.ProblemsTab })),
+)
+const TerminalTab = lazy(() =>
+  import("../tabs/TerminalTab.js").then(m => ({ default: m.TerminalTab })),
+)
 
 export function TabBody({
   tabId,
@@ -19,6 +25,10 @@ export function TabBody({
   lspTransportUrl,
   executeCommand,
   onOpenFile,
+  onOpenFileAt,
+  onBranchChange,
+  problems,
+  onOpenProblem,
   keymapBindings,
   userExtensions,
   keymapContext,
@@ -33,6 +43,10 @@ export function TabBody({
   lspTransportUrl?: string | null
   executeCommand: (name: string) => Promise<void>
   onOpenFile: (uri: string, path: string) => void
+  onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
+  onBranchChange?: (branch: string | null) => void
+  problems: JetProblem[]
+  onOpenProblem: (problem: JetProblem) => void
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
   keymapContext?: KeymapContext
@@ -42,6 +56,14 @@ export function TabBody({
 }) {
   const kind = registry.get(tabId)
   if (!kind) return null
+
+  const suspense = (label: string, node: ReactNode) => (
+    <Suspense
+      fallback={<div className="p-3 text-xs text-[var(--jet-text-muted)]">Loading {label}…</div>}
+    >
+      {node}
+    </Suspense>
+  )
 
   switch (kind.kind) {
     case "editor":
@@ -64,21 +86,27 @@ export function TabBody({
     case "explorer":
       return <ExplorerTab workspace={workspace} onOpenFile={onOpenFile} />
     case "git":
-      return (
-        <Suspense
-          fallback={
-            <div className="p-3 text-xs text-[var(--jet-text-muted)]">Loading git view…</div>
-          }
-        >
-          <GitTab workspace={workspace} />
-        </Suspense>
-      )
+      return suspense("git view", <GitTab workspace={workspace} onBranchChange={onBranchChange} />)
     case "terminal":
-      return <TerminalTab />
+      return suspense("terminal", <TerminalTab workspace={workspace} />)
     case "search":
-      return <SearchTab onFindInEditor={() => executeCommand("editor.find")} />
+      return suspense(
+        "search",
+        <SearchTab
+          workspace={workspace}
+          onFindInEditor={() => executeCommand("editor.find")}
+          onOpenResult={(path, line, column) => {
+            if (!workspace.root) return
+            const fullPath = `${workspace.root.path}/${path.replace(/^\/+/, "")}`
+            onOpenFileAt(pathToFileUri(fullPath), fullPath, line, column)
+          }}
+        />,
+      )
     case "problems":
-      return <ProblemsTab />
+      return suspense(
+        "problems",
+        <ProblemsTab problems={problems} onOpenProblem={onOpenProblem} />,
+      )
     default:
       return null
   }

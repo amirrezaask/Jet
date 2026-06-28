@@ -1,4 +1,5 @@
 import type { JetElectronAPI } from "@jet/workspace"
+import type { ProjectSearchResult } from "@jet/shared"
 import { pathToFileUri } from "@jet/shared"
 
 async function postJson<T>(baseUrl: string, path: string, body: unknown): Promise<T> {
@@ -18,7 +19,8 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
   return {
     fs: {
       readFile: uri => postJson<string>(baseUrl, "/fs/readFile", { uri }),
-      writeFile: (uri, content) => postJson(baseUrl, "/fs/writeFile", { uri, content }).then(() => undefined),
+      writeFile: (uri, content) =>
+        postJson(baseUrl, "/fs/writeFile", { uri, content }).then(() => undefined),
       readDir: uri => postJson(baseUrl, "/fs/readDir", { uri }),
       stat: uri => postJson(baseUrl, "/fs/stat", { uri }),
       showOpenFolderDialog: async () => null,
@@ -29,6 +31,24 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
       status: rootUri => postJson(baseUrl, "/git/status", { rootUri }),
       diff: (rootUri, opts) =>
         postJson<{ diff: string }>(baseUrl, "/git/diff", { rootUri, ...opts }).then(r => r.diff),
+      branch: rootUri => postJson<string | null>(baseUrl, "/git/branch", { rootUri }),
+      stage: (rootUri, paths) =>
+        postJson(baseUrl, "/git/stage", { rootUri, paths }).then(() => undefined),
+      unstage: (rootUri, paths) =>
+        postJson(baseUrl, "/git/unstage", { rootUri, paths }).then(() => undefined),
+      commit: (rootUri, message) =>
+        postJson(baseUrl, "/git/commit", { rootUri, message }).then(() => undefined),
+      branches: rootUri => postJson<string[]>(baseUrl, "/git/branches", { rootUri }),
+      checkout: (rootUri, branch) =>
+        postJson(baseUrl, "/git/checkout", { rootUri, branch }).then(() => undefined),
+    },
+    search: {
+      project: (rootUri, query, opts) =>
+        postJson<{ results: ProjectSearchResult[] }>(baseUrl, "/search/project", {
+          rootUri,
+          query,
+          ...opts,
+        }).then(r => r.results),
     },
     lsp: {
       start: async () => {

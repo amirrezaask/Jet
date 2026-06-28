@@ -65,3 +65,39 @@ export async function gitDiff(
   if (opts?.path) args.push("--", opts.path)
   return runGit(uriToPath(rootUri), args)
 }
+
+export async function gitBranch(rootUri: string): Promise<string | null> {
+  try {
+    const out = await runGit(uriToPath(rootUri), ["rev-parse", "--abbrev-ref", "HEAD"])
+    const branch = out.trim()
+    return branch || null
+  } catch {
+    return null
+  }
+}
+
+export async function gitStage(rootUri: string, paths: string[]): Promise<void> {
+  if (paths.length === 0) return
+  await runGit(uriToPath(rootUri), ["add", "--", ...paths])
+}
+
+export async function gitUnstage(rootUri: string, paths: string[]): Promise<void> {
+  if (paths.length === 0) return
+  await runGit(uriToPath(rootUri), ["restore", "--staged", "--", ...paths])
+}
+
+export async function gitCommit(rootUri: string, message: string): Promise<void> {
+  await runGit(uriToPath(rootUri), ["commit", "-m", message])
+}
+
+export async function gitBranches(rootUri: string): Promise<string[]> {
+  const out = await runGit(uriToPath(rootUri), ["branch", "--format=%(refname:short)"])
+  return out
+    .split("\n")
+    .map(s => s.trim())
+    .filter(Boolean)
+}
+
+export async function gitCheckout(rootUri: string, branch: string): Promise<void> {
+  await runGit(uriToPath(rootUri), ["checkout", branch])
+}

@@ -6,13 +6,19 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pack:mac": "vite build && electron-builder --mac --config electron-builder.yml",
+    "pack:win": "vite build && electron-builder --win --config electron-builder.yml",
+    "pack:linux": "vite build && electron-builder --linux --config electron-builder.yml"
   },
   "dependencies": {
     "@jet/app": "workspace:*",
     "@jet/node-host": "workspace:*",
     "@jet/shared": "workspace:*",
-    "@jet/workspace": "workspace:*"
+    "@jet/workspace": "workspace:*",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "node-pty": "^1.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.8",
@@ -20,6 +26,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.5.2",
     "electron": "^36.4.0",
+    "electron-builder": "^25.1.8",
     "tailwindcss": "^4.1.8",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",

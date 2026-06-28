@@ -17,7 +17,7 @@ export default defineConfig({
           build: {
             outDir: electronOutDir,
             rollupOptions: {
-              external: ["electron", "ws"],
+              external: ["electron", "ws", "node-pty"],
             },
           },
         },

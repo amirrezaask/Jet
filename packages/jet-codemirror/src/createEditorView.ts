@@ -1,11 +1,12 @@
 import { Compartment, EditorState, type Extension } from "@codemirror/state"
-import { EditorView, keymap, lineNumbers } from "@codemirror/view"
+import { EditorView, keymap, lineNumbers, drawSelection } from "@codemirror/view"
 import {
   defaultKeymap,
   history,
   historyKeymap,
   indentWithTab,
 } from "@codemirror/commands"
+import { bracketMatching, indentOnInput } from "@codemirror/language"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { LSPClient, languageServerExtensions, type Transport } from "@codemirror/lsp-client"
 import { simpleWebSocketTransport } from "./lsp-transport.js"
@@ -43,7 +44,10 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
 
   const extensions: Extension[] = [
     lineNumbers(),
+    drawSelection(),
     history(),
+    indentOnInput(),
+    bracketMatching(),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),

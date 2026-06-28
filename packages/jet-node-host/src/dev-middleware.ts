@@ -3,6 +3,7 @@ import path from "node:path"
 import { assertAllowedUri, normalizeRoots } from "./sandbox.js"
 import * as nodeFs from "./fs.js"
 import * as nodeGit from "./git.js"
+import * as nodeSearch from "./search.js"
 import { pathToUri, uriToPath } from "./paths.js"
 
 export type JetDevHostOptions = {
@@ -111,6 +112,64 @@ export async function handleJetDevRequest(
         diff: await nodeGit.gitDiff(rootUri, {
           path: body.path ? String(body.path) : undefined,
           staged: Boolean(body.staged),
+        }),
+      })
+      return true
+    }
+
+    if (pathname === "/__jet/git/branch" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      sendJson(res, 200, await nodeGit.gitBranch(rootUri))
+      return true
+    }
+
+    if (pathname === "/__jet/git/stage" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      await nodeGit.gitStage(rootUri, (body.paths as string[]) ?? [])
+      sendJson(res, 200, { ok: true })
+      return true
+    }
+
+    if (pathname === "/__jet/git/unstage" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      await nodeGit.gitUnstage(rootUri, (body.paths as string[]) ?? [])
+      sendJson(res, 200, { ok: true })
+      return true
+    }
+
+    if (pathname === "/__jet/git/commit" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      await nodeGit.gitCommit(rootUri, String(body.message ?? ""))
+      sendJson(res, 200, { ok: true })
+      return true
+    }
+
+    if (pathname === "/__jet/git/branches" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      sendJson(res, 200, await nodeGit.gitBranches(rootUri))
+      return true
+    }
+
+    if (pathname === "/__jet/git/checkout" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      await nodeGit.gitCheckout(rootUri, String(body.branch ?? ""))
+      sendJson(res, 200, { ok: true })
+      return true
+    }
+
+    if (pathname === "/__jet/search/project" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      sendJson(res, 200, {
+        results: await nodeSearch.projectSearch(rootUri, String(body.query ?? ""), {
+          caseSensitive: Boolean(body.caseSensitive),
+          regex: Boolean(body.regex),
         }),
       })
       return true

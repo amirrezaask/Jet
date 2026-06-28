@@ -70,3 +70,5 @@ export function makeUntitledUri(n: number): string {
 
 export * from "./git.js"
 export * from "./panels.js"
+export * from "./search.js"
+export * from "./diagnostics.js"

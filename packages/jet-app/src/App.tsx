@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import { PanelTree, type PanelEvent } from "@jet/panels"
 import type { EditorView } from "@codemirror/view"
 import type { PanelId, TabId, PanelNode } from "@jet/shared"
-import { pathToFileUri, isUntitledUri, basename } from "@jet/shared"
+import { pathToFileUri, isUntitledUri, basename, fileUriToPath } from "@jet/shared"
 import {
   WorkspaceService,
   CommandRegistry,
@@ -17,9 +17,10 @@ import { LanguageServerManager } from "@jet/lsp"
 import { createJetAPI, loadEditorRc } from "@jet/extension-host"
 import { createAgentBridge, openWorkspaceFromQuery } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
-import { applyJetThemeCss, defaultJetTheme, openSearchPanel, type JetTheme } from "@jet/codemirror"
-import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes } from "@jet/ui"
-import { getEditorView } from "@jet/ui"
+import { applyJetThemeCss, defaultJetTheme, openSearchPanel, openReplaceSearchPanel, jumpToLine, collectProblemsFromViews, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
+import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoLineModal, QuickOpenOverlay, getEditorView, getAllEditorViews } from "@jet/ui"
+import { indexWorkspaceFiles } from "@jet/workspace"
+import type { JetProblem } from "@jet/shared"
 
 const THEME_STORAGE_KEY = "jet-theme-id"
 
@@ -56,6 +57,12 @@ export function JetApp() {
   const [bootstrapping, setBootstrapping] = useState(hasWorkspaceQuery)
   const [activeTheme, setActiveTheme] = useState<JetTheme>(() => loadStoredTheme())
   const [cursorPos, setCursorPos] = useState<{ line: number; column: number } | null>(null)
+  const [gotoLineOpen, setGotoLineOpen] = useState(false)
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false)
+  const [gitBranch, setGitBranch] = useState<string | null>(null)
+  const [fileIndex, setFileIndex] = useState<string[]>([])
+  const [problems, setProblems] = useState<JetProblem[]>([])
+  const [lspCrashed, setLspCrashed] = useState(false)
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string) => Promise<void>>(async () => {})
@@ -91,10 +98,11 @@ export function JetApp() {
 
   const lspStatus = useMemo((): "connected" | "off" | "unavailable" => {
     if (isWebMode) return "unavailable"
+    if (lspCrashed) return "off"
     if (lspUrl) return "connected"
     if (workspace.root) return "off"
     return "off"
-  }, [lspUrl, workspace.root])
+  }, [lspUrl, workspace.root, lspCrashed])
 
   const lspManager = useMemo(
     () => (!isWebMode && window.jet ? new LanguageServerManager(window.jet.lsp) : null),
@@ -122,7 +130,7 @@ export function JetApp() {
   }, [])
 
   const handleOpenFile = useCallback(
-    (uri: string, path: string) => {
+    (uri: string, path: string, line?: number, column?: number) => {
       const tree = cloneTree()
       const panel = resolveEditorPanel(
         tree,
@@ -132,11 +140,25 @@ export function JetApp() {
       )
       if (!panel) return
       editorPanelRef.current = panel
-      workspace.openEditorTab(tree, panel, uri, path)
+      const tabId = workspace.openEditorTab(tree, panel, uri, path)
+      if (line != null) setPendingEditorNavigation(tabId, line, column ?? 1)
       setFocusedPanel(panel)
       commitTree(tree)
+      if (line != null) {
+        requestAnimationFrame(() => {
+          const view = getEditorView(tabId)
+          if (view) jumpToLine(view, line, column ?? 1)
+        })
+      }
     },
     [workspace, focusedPanel, cloneTree, commitTree],
+  )
+
+  const handleOpenFileAt = useCallback(
+    (uri: string, path: string, line: number, column: number) => {
+      handleOpenFile(uri, path, line, column)
+    },
+    [handleOpenFile],
   )
 
   const openWorkspaceFolder = useCallback(
@@ -173,6 +195,28 @@ export function JetApp() {
       moveEditorTabsToMain(tree, workspace.tabRegistry, sidebarPanel, editorPanel)
 
       setMessage(`Opened ${folderPath}`)
+
+      if (window.jet?.git) {
+        const repo = await window.jet.git.isRepo(workspace.root!.uri)
+        if (repo) {
+          setGitBranch(await window.jet.git.branch(workspace.root!.uri))
+        } else {
+          setGitBranch(null)
+        }
+      }
+
+      try {
+        const files = await indexWorkspaceFiles(jetPlatformFS(), workspace.root!.uri)
+        setFileIndex(files)
+      } catch {
+        setFileIndex([])
+      }
+
+      if (window.jet?.fs.onFileChanged) {
+        window.jet.fs.onFileChanged(uri => workspace.handleExternalFileChange(uri))
+      }
+      await window.jet?.fs.watchWorkspace?.(workspace.root!.uri)
+
       const jet = createJetAPI({
         workspace,
         commands,
@@ -464,6 +508,24 @@ export function JetApp() {
       { id: "editor.find", title: "Find in Editor", category: "Editor" },
     )
     commands.register(
+      "editor.replace",
+      ctx => {
+        const view = ctx.getActiveEditorView() as EditorView | null
+        if (view) openReplaceSearchPanel(view)
+      },
+      { id: "editor.replace", title: "Replace in Editor", category: "Editor" },
+    )
+    commands.register(
+      "editor.gotoLine",
+      () => setGotoLineOpen(true),
+      { id: "editor.gotoLine", title: "Go to Line…", category: "Editor" },
+    )
+    commands.register(
+      "workspace.quickOpen",
+      () => setQuickOpenOpen(true),
+      { id: "workspace.quickOpen", title: "Quick Open File", category: "Workspace" },
+    )
+    commands.register(
       "search.show",
       () => showSingletonViewTab("search", "Search", searchTabRef),
       { id: "search.show", title: "Show Search", category: "View" },
@@ -533,6 +595,40 @@ export function JetApp() {
       .catch(err => console.warn("Failed to open workspace from query:", err))
       .finally(() => setBootstrapping(false))
   }, [layoutReady])
+
+  useEffect(() => {
+    if (!window.jet?.lsp?.onCrashed || isWebMode) return
+    return window.jet.lsp.onCrashed(() => {
+      setLspCrashed(true)
+      setLspUrl(null)
+      setMessage("LSP crashed — will retry on next editor focus")
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!editorFocused || !lspCrashed || !lspManager || !workspace.root) return
+    const retry = async () => {
+      try {
+        const probeUri = pathToFileUri(`${workspace.root!.path}/package.json`)
+        const file = workspace.createWorkspaceFile(probeUri, `${workspace.root!.path}/package.json`)
+        const conn = await lspManager.ensureServerForFile(file, workspace.root!.uri)
+        setLspUrl(conn?.transportUrl ?? null)
+        setLspCrashed(false)
+        setMessage("LSP reconnected")
+      } catch {
+        /* retry later */
+      }
+    }
+    void retry()
+  }, [editorFocused, lspCrashed, lspManager, workspace.root])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const views = getAllEditorViews(workspace.tabRegistry)
+      setProblems(collectProblemsFromViews(views.map(v => ({ uri: v.uri, view: v.view }))))
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [workspace.tabRegistry, panelTree, keymapRevision])
 
   useEffect(() => {
     if (activeTabKindName !== "editor" || !focusedPanel) {
@@ -614,6 +710,10 @@ export function JetApp() {
             lspTransportUrl={lspUrl}
             executeCommand={executeCommand}
             onOpenFile={handleOpenFile}
+            onOpenFileAt={handleOpenFileAt}
+            onBranchChange={setGitBranch}
+            problems={problems}
+            onOpenProblem={p => handleOpenFileAt(p.uri, fileUriToPath(p.uri), p.line, p.column)}
             keymapBindings={keymaps.allBindings()}
             userExtensions={userExtensions}
             keymapRevision={keymapRevision}
@@ -636,8 +736,35 @@ export function JetApp() {
       <StatusBar
         message={message}
         lspStatus={lspStatus}
+        workspaceName={workspace.root?.name}
+        workspacePath={workspace.root?.path}
+        gitBranch={gitBranch}
         line={activeTabKindName === "editor" ? cursorPos?.line : undefined}
         column={activeTabKindName === "editor" ? cursorPos?.column : undefined}
+      />
+
+      <GotoLineModal
+        open={gotoLineOpen}
+        onOpenChange={setGotoLineOpen}
+        onSubmit={(line, column) => {
+          const view = (() => {
+            const leaf = focusedPanel && panelTree.getLeaf(focusedPanel)
+            const tabId = leaf?.group.tabs[leaf.group.active]
+            return tabId ? getEditorView(tabId) : null
+          })()
+          if (view) jumpToLine(view, line, column)
+        }}
+      />
+
+      <QuickOpenOverlay
+        open={quickOpenOpen}
+        onOpenChange={setQuickOpenOpen}
+        files={fileIndex}
+        onSelect={rel => {
+          if (!workspace.root) return
+          const fullPath = `${workspace.root.path}/${rel.replace(/^\/+/, "")}`
+          handleOpenFile(pathToFileUri(fullPath), fullPath)
+        }}
       />
 
       <CommandPalette

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import type { Extension } from "@codemirror/state"
 import { PanelTree, resolveDropAtPoint, type PanelEvent } from "@jet/panels"
 import type { PanelId, TabId } from "@jet/shared"
+import type { JetProblem } from "@jet/shared"
 import type { TabRegistry, WorkspaceService } from "@jet/workspace"
 import type { KeymapContext, JetKeyBinding } from "@jet/workspace"
 import type { JetTheme } from "@jet/codemirror"
@@ -23,6 +24,10 @@ export type PanelDockProps = {
   lspTransportUrl?: string | null
   executeCommand: (name: string) => Promise<void>
   onOpenFile: (uri: string, path: string) => void
+  onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
+  onBranchChange?: (branch: string | null) => void
+  problems: JetProblem[]
+  onOpenProblem: (problem: import("@jet/shared").JetProblem) => void
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
   keymapRevision: number
@@ -214,6 +219,10 @@ export function PanelDock(props: PanelDockProps) {
                     lspTransportUrl={props.lspTransportUrl}
                     executeCommand={props.executeCommand}
                     onOpenFile={props.onOpenFile}
+                    onOpenFileAt={props.onOpenFileAt}
+                    onBranchChange={props.onBranchChange}
+                    problems={props.problems}
+                    onOpenProblem={props.onOpenProblem}
                     keymapBindings={props.keymapBindings}
                     userExtensions={props.userExtensions}
                     keymapContext={props.keymapContext}

@@ -1,1 +1,6 @@
-export { LanguageServerManager, type LspConnection, type LanguageServerDescriptor } from "./manager.js"
+export {
+  LanguageServerManager,
+  getLanguageServerDescriptors,
+  type LanguageServerDescriptor,
+  type LspConnection,
+} from "./manager.js"
