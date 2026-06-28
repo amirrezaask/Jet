@@ -32,5 +32,5 @@ export class KeymapService {
   }
 }
 
-export { createDefaultKeybindings, VSCODE_COMMAND_IDS } from "./default-keybindings.js"
-export { withVscodeStubs, noopCommand, type JetCommands } from "./jet-commands.js"
+export { createDefaultKeybindings } from "./default-keybindings.js"
+export { type JetCommands } from "./jet-commands.js"

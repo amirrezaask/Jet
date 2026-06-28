@@ -30,19 +30,29 @@ async function main() {
   let failed = false
 
   for (const row of map) {
-    const keyNeedle = JSON.stringify(row.key)
     const fn = JET_COMMAND_KEY[row.jet] ?? row.jet.split(".").pop()
-    const fnNeedle = `cmd.${fn}`
-    if (!src.includes(keyNeedle) || !src.includes(fnNeedle)) {
+    const pattern = new RegExp(
+      `^\\s*bind\\(${JSON.stringify(row.key)}, cmd\\.${fn}\\b`,
+      "m",
+    )
+    if (!pattern.test(src)) {
       console.error(
-        `MISSING ${row.vscode} (${row.key}) → ${fnNeedle} in default-keybindings.ts — run pnpm extract:vscode-keybindings`,
+        `MISSING active bind(${row.key}, cmd.${fn}) for ${row.vscode} — run pnpm extract:vscode-keybindings`,
       )
       failed = true
     }
   }
 
-  const bindingCount = (src.match(/\bbind\(/g) ?? []).length
-  console.log(`default-keybindings.ts: ${bindingCount} bind() calls, ${map.length} implemented mappings checked`)
+  if (!/^\s*bind\("Cmd-n", cmd\.newFile\b/m.test(src)) {
+    console.error("MISSING active bind(Cmd-n, cmd.newFile) — run pnpm extract:vscode-keybindings")
+    failed = true
+  }
+
+  const activeCount = (src.match(/^\s*bind\(/gm) ?? []).length
+  const todoCount = (src.match(/^\s*\/\/ TODO: bind\(/gm) ?? []).length
+  console.log(
+    `default-keybindings.ts: ${activeCount} active bind(), ${todoCount} TODO comments, ${map.length} implemented mappings checked`,
+  )
 
   if (failed) process.exit(1)
 }

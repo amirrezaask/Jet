@@ -3,7 +3,6 @@ import type { PanelTree } from "@jet/panels"
 import type { PanelId, TabId } from "@jet/shared"
 import { basename, isUntitledUri, pathToFileUri } from "@jet/shared"
 import type { JetCommandContext, JetCommands, JetCommandFn, WorkspaceService } from "@jet/workspace"
-import { withVscodeStubs, VSCODE_COMMAND_IDS } from "@jet/workspace"
 import { openReplaceSearchPanel, openSearchPanel } from "@jet/codemirror"
 import { getEditorView } from "@jet/ui"
 import { resolveEditorPanel, resolveTargetPanel } from "./panel-routing.js"
@@ -175,7 +174,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
   }
 
-  return withVscodeStubs(named, VSCODE_COMMAND_IDS)
+  return named as JetCommands
 }
 
 /** Palette / agent command ids mapped to app command functions. */
