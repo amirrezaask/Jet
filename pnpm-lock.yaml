@@ -20,6 +20,9 @@ importers:
       '@jet/app':
         specifier: workspace:*
         version: link:../../packages/jet-app
+      '@jet/node-host':
+        specifier: workspace:*
+        version: link:../../packages/jet-node-host
       '@jet/shared':
         specifier: workspace:*
         version: link:../../packages/jet-shared
@@ -61,6 +64,34 @@ importers:
         specifier: ^8.18.2
         version: 8.21.0
 
+  apps/jet-web:
+    dependencies:
+      '@jet/app':
+        specifier: workspace:*
+        version: link:../../packages/jet-app
+      '@jet/node-host':
+        specifier: workspace:*
+        version: link:../../packages/jet-node-host
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.1.8
+        version: 4.3.1(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0))
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      '@vitejs/plugin-react':
+        specifier: ^4.5.2
+        version: 4.7.0(vite@6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0))
+      tailwindcss:
+        specifier: ^4.1.8
+        version: 4.3.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vite:
+        specifier: ^6.3.5
+        version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)
+
   packages/jet-app:
     dependencies:
       '@codemirror/state':
@@ -69,6 +100,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.37.0
         version: 6.43.4
+      '@jet/browser':
+        specifier: workspace:*
+        version: link:../jet-browser
       '@jet/codemirror':
         specifier: workspace:*
         version: link:../jet-codemirror
@@ -121,6 +155,22 @@ importers:
       vite:
         specifier: ^6.3.5
         version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)
+
+  packages/jet-browser:
+    dependencies:
+      '@jet/panels':
+        specifier: workspace:*
+        version: link:../jet-panels
+      '@jet/shared':
+        specifier: workspace:*
+        version: link:../jet-shared
+      '@jet/workspace':
+        specifier: workspace:*
+        version: link:../jet-workspace
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
 
   packages/jet-codemirror:
     dependencies:
@@ -215,6 +265,18 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
+  packages/jet-node-host:
+    devDependencies:
+      '@jet/shared':
+        specifier: workspace:*
+        version: link:../jet-shared
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   packages/jet-panels:
     dependencies:
       '@jet/shared':
@@ -233,6 +295,9 @@ importers:
 
   packages/jet-ui:
     dependencies:
+      '@codemirror/state':
+        specifier: ^6.5.2
+        version: 6.7.0
       '@codemirror/view':
         specifier: ^6.37.0
         version: 6.43.4

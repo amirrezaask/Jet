@@ -1,10 +1,10 @@
-import type { DropAction, Edge, PanelId, TabId } from "@jet/shared"
+import type { DropAction, Edge, PanelId, Rect, TabId } from "@jet/shared"
 
 export type PanelEvent =
   | { type: "tabSelect"; panelId: PanelId; tabId: TabId }
   | { type: "tabClose"; tabId: TabId }
   | { type: "tabMoved"; tabId: TabId; targetPanelId: PanelId; action: DropAction; insertIndex?: number }
-  | { type: "splitResized"; path: number[]; splitterIndex: number; deltaPx: number }
+  | { type: "splitResized"; path: number[]; splitterIndex: number; deltaPx: number; viewport: Rect }
   | { type: "panelClose"; panelId: PanelId }
 
 export type TabDragState = {

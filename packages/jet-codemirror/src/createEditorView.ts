@@ -19,6 +19,7 @@ import { loadLanguage } from "./languages.js"
 export const userKeymapCompartment = new Compartment()
 export const languageCompartment = new Compartment()
 export const lspCompartment = new Compartment()
+export const extensionCompartment = new Compartment()
 
 export type CreateJetEditorViewOptions = {
   parent: HTMLElement
@@ -28,6 +29,7 @@ export type CreateJetEditorViewOptions = {
   theme?: JetTheme
   lspTransportUrl?: string | null
   executeCommand: (name: string) => Promise<void>
+  userExtensions?: Extension[]
   onViewCreated?: (view: EditorView) => void
 }
 
@@ -43,6 +45,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     motionCursor(),
     languageCompartment.of(lang),
     userKeymapCompartment.of([]),
+    extensionCompartment.of(opts.userExtensions ?? []),
     EditorView.updateListener.of(update => {
       if (update.docChanged) {
         opts.workspace.markDirty(opts.file.uri, true)
@@ -68,6 +71,12 @@ async function attachLsp(view: EditorView, uri: string, transportUrl: string): P
   const client = new LSPClient({ extensions: languageServerExtensions() }).connect(transport)
   view.dispatch({
     effects: lspCompartment.reconfigure(client.plugin(uri)),
+  })
+}
+
+export function applyUserExtensions(view: EditorView, extensions: Extension[]): void {
+  view.dispatch({
+    effects: extensionCompartment.reconfigure(extensions),
   })
 }
 

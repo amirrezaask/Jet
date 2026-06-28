@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
+import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
-import { createJetEditorView, applyUserKeymaps, isLargeFile } from "@jet/codemirror"
+import { createJetEditorView, applyUserKeymaps, applyUserExtensions, isLargeFile } from "@jet/codemirror"
 import type { JetTheme } from "@jet/codemirror"
 import type { JetKeyBinding, WorkspaceService } from "@jet/workspace"
 import type { TabId } from "@jet/shared"
@@ -20,6 +21,7 @@ export function EditorTabHost({
   lspTransportUrl,
   executeCommand,
   keymapBindings,
+  userExtensions,
 }: {
   tabId: TabId
   fileUri: string
@@ -28,6 +30,7 @@ export function EditorTabHost({
   lspTransportUrl?: string | null
   executeCommand: (name: string) => Promise<void>
   keymapBindings: JetKeyBinding[]
+  userExtensions: Extension[]
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -52,8 +55,10 @@ export function EditorTabHost({
         theme,
         lspTransportUrl: lspUrl,
         executeCommand,
+        userExtensions,
       })
       applyUserKeymaps(view, keymapBindings, executeCommand)
+      applyUserExtensions(view, userExtensions)
       viewByTab.set(tabId.id, view)
     })()
 
@@ -62,7 +67,17 @@ export function EditorTabHost({
       view?.destroy()
       viewByTab.delete(tabId.id)
     }
-  }, [fileUri, tabId.id, workspace, theme, lspTransportUrl, executeCommand, keymapBindings])
+  }, [fileUri, tabId.id, workspace, theme, lspTransportUrl, executeCommand])
+
+  useEffect(() => {
+    const view = viewByTab.get(tabId.id)
+    if (view) applyUserKeymaps(view, keymapBindings, executeCommand)
+  }, [tabId.id, keymapBindings, executeCommand])
+
+  useEffect(() => {
+    const view = viewByTab.get(tabId.id)
+    if (view) applyUserExtensions(view, userExtensions)
+  }, [tabId.id, userExtensions])
 
   return <div ref={ref} className="h-full w-full overflow-hidden" />
 }

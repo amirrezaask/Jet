@@ -11,30 +11,16 @@ import {
 } from "@jet/workspace"
 import { LanguageServerManager } from "@jet/lsp"
 import { createJetAPI, loadEditorRc } from "@jet/extension-host"
+import { createAgentBridge, openWorkspaceFromQuery } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
 import { applyJetThemeCss, defaultJetTheme } from "@jet/codemirror"
 import { PanelDock, CommandPalette, jetMotion } from "@jet/ui"
 import { getEditorView } from "@jet/ui"
 import { motion, AnimatePresence } from "motion/react"
 
-function createBrowserFS(): import("@jet/workspace").FileSystemProvider {
-  return {
-    async readFile() {
-      throw new Error("FS not available")
-    },
-    async writeFile() {
-      throw new Error("FS not available")
-    },
-    async readDir() {
-      return []
-    },
-    async stat(uri) {
-      return { uri, isDirectory: false, size: 0 }
-    },
-  }
-}
+const isWebMode = Boolean(import.meta.env.VITE_JET_WEB)
 
-function electronFS(): import("@jet/workspace").FileSystemProvider {
+function jetPlatformFS(): import("@jet/workspace").FileSystemProvider {
   const fs = window.jet!.fs
   return {
     readFile: uri => fs.readFile(uri),
@@ -50,22 +36,21 @@ export function JetApp() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [lspUrl, setLspUrl] = useState<string | null>(null)
+  const [userExtensions, setUserExtensions] = useState<Extension[]>([])
+  const [keymapRevision, setKeymapRevision] = useState(0)
+  const [layoutReady, setLayoutReady] = useState(false)
   const initialized = useRef(false)
-  const extensionExtensions = useRef<Extension[]>([])
   const explorerTabRef = useRef<TabId | null>(null)
   const gitTabRef = useRef<TabId | null>(null)
   const editorPanelRef = useRef<PanelId | null>(null)
   const explorerPanelRef = useRef<PanelId | null>(null)
 
-  const workspace = useMemo(
-    () => new WorkspaceService(window.jet ? electronFS() : createBrowserFS()),
-    [],
-  )
+  const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
   const commands = useMemo(() => new CommandRegistry(), [])
   const keymaps = useMemo(() => new KeymapService(), [])
 
   const lspManager = useMemo(
-    () => (window.jet ? new LanguageServerManager(window.jet.lsp) : null),
+    () => (!isWebMode && window.jet ? new LanguageServerManager(window.jet.lsp) : null),
     [],
   )
 
@@ -112,7 +97,59 @@ export function JetApp() {
       )
     }
     commitTree(tree)
+    setLayoutReady(true)
   }, [panelTree, workspace, commitTree])
+
+  const handleOpenFile = useCallback(
+    (uri: string, path: string) => {
+      const tree = cloneTree()
+      const panel = focusedPanel ?? editorPanelRef.current
+      if (!panel) return
+      workspace.openEditorTab(tree, panel, uri, path)
+      commitTree(tree)
+    },
+    [workspace, focusedPanel, cloneTree, commitTree],
+  )
+
+  const openWorkspaceFolder = useCallback(
+    async (folderPath: string) => {
+      await workspace.openWorkspace(folderPath)
+      setMessage(`Opened ${folderPath}`)
+      const jet = createJetAPI({
+        workspace,
+        commands,
+        getActiveView: () => {
+          const leaf = focusedPanel && panelTree.getLeaf(focusedPanel)
+          const tab = leaf?.group.tabs[leaf.group.active]
+          return tab ? (getEditorView(tab) ?? null) : null
+        },
+        showMessage: setMessage,
+        registerKeymaps: bindings => {
+          keymaps.registerExtension(bindings)
+          setKeymapRevision(r => r + 1)
+        },
+        registerExtensions: ext => {
+          setUserExtensions(prev => [...prev, ...ext])
+        },
+        openFile: async uri => {
+          const path = uri.replace(/^file:\/\//, "")
+          handleOpenFile(uri, decodeURIComponent(path))
+        },
+      })
+      await loadEditorRc(`${folderPath}/.jet/editorrc.ts`, jet)
+      if (lspManager && workspace.root) {
+        try {
+          const probeUri = pathToFileUri(`${folderPath}/package.json`)
+          const file = workspace.createWorkspaceFile(probeUri, `${folderPath}/package.json`)
+          const conn = await lspManager.ensureServerForFile(file, workspace.root.uri)
+          setLspUrl(conn?.transportUrl ?? null)
+        } catch {
+          /* no lsp */
+        }
+      }
+    },
+    [workspace, commands, focusedPanel, panelTree, keymaps, lspManager, handleOpenFile],
+  )
 
   const executeCommand = useCallback(
     async (name: string) => {
@@ -133,17 +170,6 @@ export function JetApp() {
     [commands, workspace, focusedPanel, panelTree],
   )
 
-  const handleOpenFile = useCallback(
-    (uri: string, path: string) => {
-      const tree = cloneTree()
-      const panel = focusedPanel ?? editorPanelRef.current
-      if (!panel) return
-      workspace.openEditorTab(tree, panel, uri, path)
-      commitTree(tree)
-    },
-    [workspace, focusedPanel, cloneTree, commitTree],
-  )
-
   const handlePanelEvent = useCallback(
     (event: PanelEvent) => {
       const tree = cloneTree()
@@ -160,12 +186,7 @@ export function JetApp() {
           tree.moveTab(event.tabId, event.targetPanelId, event.action, event.insertIndex)
           break
         case "splitResized":
-          tree.resizeSplit(event.path, event.splitterIndex, event.deltaPx, {
-            x: 0,
-            y: 0,
-            width: 1200,
-            height: 800,
-          })
+          tree.resizeSplit(event.path, event.splitterIndex, event.deltaPx, event.viewport)
           break
       }
       commitTree(tree)
@@ -183,38 +204,13 @@ export function JetApp() {
       "workspace.openFolder",
       async () => {
         const folderPath = await window.jet?.fs.showOpenFolderDialog()
-        if (!folderPath) return
-        await workspace.openWorkspace(folderPath)
-        setMessage(`Opened ${folderPath}`)
-        const jet = createJetAPI({
-          workspace,
-          commands,
-          getActiveView: () => {
-            const leaf = focusedPanel && panelTree.getLeaf(focusedPanel)
-            const tab = leaf?.group.tabs[leaf.group.active]
-            return tab ? (getEditorView(tab) ?? null) : null
-          },
-          showMessage: setMessage,
-          registerKeymaps: bindings => keymaps.registerExtension(bindings),
-          registerExtensions: ext => {
-            extensionExtensions.current.push(...ext)
-          },
-          openFile: async uri => {
-            const path = uri.replace(/^file:\/\//, "")
-            handleOpenFile(uri, decodeURIComponent(path))
-          },
-        })
-        await loadEditorRc(`${folderPath}/.jet/editorrc.ts`, jet)
-        if (lspManager && workspace.root) {
-          try {
-            const probeUri = pathToFileUri(`${folderPath}/package.json`)
-            const file = workspace.createWorkspaceFile(probeUri, `${folderPath}/package.json`)
-            const conn = await lspManager.ensureServerForFile(file, workspace.root.uri)
-            setLspUrl(conn?.transportUrl ?? null)
-          } catch {
-            /* no lsp */
+        if (!folderPath) {
+          if (isWebMode) {
+            setMessage("Browser mode: use ?workspace=… URL or window.__jetAgent.openWorkspace()")
           }
+          return
         }
+        await openWorkspaceFolder(folderPath)
       },
       { id: "workspace.openFolder", title: "Open Folder", category: "Workspace" },
     )
@@ -266,7 +262,46 @@ export function JetApp() {
       },
       { id: "layout.closeTab", title: "Close Tab", category: "Layout" },
     )
-  }, [commands, workspace, focusedPanel, panelTree, cloneTree, commitTree, lspManager, keymaps, handleOpenFile, handlePanelEvent])
+  }, [commands, workspace, focusedPanel, panelTree, cloneTree, commitTree, openWorkspaceFolder, handlePanelEvent])
+
+  useEffect(() => {
+    if (!isWebMode) return
+    window.__jetAgent = createAgentBridge(() => ({
+      workspace,
+      commands,
+      panelTree,
+      focusedPanel,
+      paletteOpen,
+      message,
+      layoutReady,
+      executeCommand,
+      openWorkspace: openWorkspaceFolder,
+      openFile: handleOpenFile,
+    }))
+    return () => {
+      delete window.__jetAgent
+    }
+  }, [
+    workspace,
+    commands,
+    panelTree,
+    focusedPanel,
+    paletteOpen,
+    message,
+    layoutReady,
+    executeCommand,
+    openWorkspaceFolder,
+    handleOpenFile,
+  ])
+
+  useEffect(() => {
+    if (!isWebMode || !layoutReady) return
+    void openWorkspaceFromQuery(
+      window.location.search,
+      openWorkspaceFolder,
+      handleOpenFile,
+    ).catch(err => console.warn("Failed to open workspace from query:", err))
+  }, [layoutReady, openWorkspaceFolder, handleOpenFile])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -284,7 +319,10 @@ export function JetApp() {
       <header className="flex h-8 shrink-0 items-center border-b border-[var(--jet-border)] bg-[var(--jet-panel)] px-3 text-xs">
         <span className="font-semibold text-[var(--jet-accent)]">Jet</span>
         <span className="ml-3 text-[var(--jet-text-muted)]">
-          {workspace.root?.name ?? "No folder open — use Open Folder"}
+          {workspace.root?.name ??
+            (isWebMode
+              ? "No folder open — use ?workspace=fixtures/sample-workspace"
+              : "No folder open — use Open Folder")}
         </span>
         <div className="ml-auto flex gap-2">
           <button
@@ -317,6 +355,8 @@ export function JetApp() {
           executeCommand={executeCommand}
           onOpenFile={handleOpenFile}
           keymapBindings={keymaps.allBindings()}
+          userExtensions={userExtensions}
+          keymapRevision={keymapRevision}
         />
       </main>
 

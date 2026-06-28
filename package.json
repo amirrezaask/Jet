@@ -4,6 +4,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --filter=jet-desktop",
+    "dev:web": "turbo run dev --filter=jet-web",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "postinstall": "pnpm rebuild electron"
@@ -12,8 +13,5 @@
     "turbo": "^2.5.4",
     "typescript": "^5.8.3"
   },
-  "packageManager": "pnpm@9.15.0",
-  "pnpm": {
-    "onlyBuiltDependencies": ["electron"]
-  }
+  "packageManager": "pnpm@9.15.0"
 }

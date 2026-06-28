@@ -1,4 +1,5 @@
 import type { TabId } from "@jet/shared"
+import type { Extension } from "@codemirror/state"
 import type { JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
 import type { JetTheme } from "@jet/codemirror"
 import { EditorTabHost } from "../tabs/EditorTabHost.js"
@@ -15,6 +16,7 @@ export function TabBody({
   executeCommand,
   onOpenFile,
   keymapBindings,
+  userExtensions,
 }: {
   tabId: TabId
   registry: TabRegistry
@@ -24,6 +26,7 @@ export function TabBody({
   executeCommand: (name: string) => Promise<void>
   onOpenFile: (uri: string, path: string) => void
   keymapBindings: JetKeyBinding[]
+  userExtensions: Extension[]
 }) {
   const kind = registry.get(tabId)
   if (!kind) return null
@@ -39,6 +42,7 @@ export function TabBody({
           lspTransportUrl={lspTransportUrl}
           executeCommand={executeCommand}
           keymapBindings={keymapBindings}
+          userExtensions={userExtensions}
         />
       )
     case "explorer":

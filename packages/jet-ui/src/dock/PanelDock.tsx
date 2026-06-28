@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import type { Extension } from "@codemirror/state"
 import { motion } from "motion/react"
 import { PanelTree, dropSitesForPanel, type PanelEvent } from "@jet/panels"
 import type { PanelId, TabId } from "@jet/shared"
@@ -22,6 +23,8 @@ export type PanelDockProps = {
   executeCommand: (name: string) => Promise<void>
   onOpenFile: (uri: string, path: string) => void
   keymapBindings: JetKeyBinding[]
+  userExtensions: Extension[]
+  keymapRevision: number
 }
 
 export function PanelDock(props: PanelDockProps) {
@@ -91,6 +94,7 @@ export function PanelDock(props: PanelDockProps) {
                     executeCommand={props.executeCommand}
                     onOpenFile={props.onOpenFile}
                     keymapBindings={props.keymapBindings}
+                    userExtensions={props.userExtensions}
                   />
                 )}
               </div>
@@ -111,14 +115,18 @@ export function PanelDock(props: PanelDockProps) {
             }}
             onMouseDown={e => {
               e.preventDefault()
-              const start = hit.axis === "horizontal" ? e.clientX : e.clientY
+              let lastPos = hit.axis === "horizontal" ? e.clientX : e.clientY
               const onMove = (ev: MouseEvent) => {
-                const delta = (hit.axis === "horizontal" ? ev.clientX : ev.clientY) - start
+                const pos = hit.axis === "horizontal" ? ev.clientX : ev.clientY
+                const delta = pos - lastPos
+                lastPos = pos
+                if (delta === 0) return
                 props.onEvent({
                   type: "splitResized",
                   path: hit.path,
                   splitterIndex: hit.index,
                   deltaPx: delta,
+                  viewport,
                 })
               }
               const onUp = () => {

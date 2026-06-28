@@ -34,9 +34,15 @@ Do **not** copy large chunks wholesale; match Jet’s architecture.
 
 ```
 jet/
-├── apps/jet-desktop/       Electron shell (main, preload, vite config)
+├── apps/
+│   ├── jet-desktop/        Electron shell (main, preload, vite config)
+│   └── jet-web/            Browser dev server for agent testing
+├── fixtures/
+│   └── sample-workspace/   Fixture project for browser smoke tests
 ├── packages/
 │   ├── jet-shared/         URIs, Emitter, git types, panel primitives
+│   ├── jet-node-host/      Shared Node FS/git + dev middleware
+│   ├── jet-browser/        Browser window.jet client + __jetAgent bridge
 │   ├── jet-panels/         PanelTree — splits, tabs, resize, serde
 │   ├── jet-workspace/      WorkspaceService, TabRegistry, commands, keymaps
 │   ├── jet-codemirror/     createJetEditorView, theme, languages, LSP transport
@@ -56,7 +62,7 @@ jet/
 jet-shared  ←  jet-panels, jet-workspace
 jet-workspace + jet-panels + jet-codemirror  ←  jet-ui
 jet-ui + jet-workspace + jet-lsp + jet-extension-host  ←  jet-app
-jet-app  ←  jet-desktop
+jet-app  ←  jet-desktop, jet-web
 ```
 
 Keep imports acyclic. Lower layers must not import React or Electron.
@@ -68,6 +74,7 @@ Keep imports acyclic. Lower layers must not import React or Electron.
 ```bash
 pnpm install          # runs postinstall: pnpm rebuild electron
 pnpm dev              # turbo → jet-desktop vite + electron
+pnpm dev:web          # browser dev server on :5174 (agent-testable)
 pnpm typecheck        # all packages
 pnpm build            # production build (renderer + electron main/preload)
 ```
@@ -77,6 +84,54 @@ Run typecheck from repo root before finishing a task:
 ```bash
 pnpm -r typecheck
 ```
+
+---
+
+## Agent browser testing (no Electron required)
+
+Use **`pnpm dev:web`** to run Jet in a normal browser with real FS/git backed by a Vite dev middleware (sandboxed to allowed roots).
+
+### Quick start URL
+
+```
+http://localhost:5174/?workspace=fixtures/sample-workspace&file=src/index.ts
+```
+
+### Programmatic control (`window.__jetAgent`)
+
+After page load:
+
+```javascript
+await window.__jetAgent.waitForReady()
+await window.__jetAgent.openWorkspace("fixtures/sample-workspace")
+await window.__jetAgent.openFile("src/index.ts")
+await window.__jetAgent.executeCommand("ui.showCommandPalette")
+window.__jetAgent.getState()
+```
+
+### Agent smoke checklist
+
+1. `pnpm dev:web` — server on port **5174**
+2. Navigate to quick-start URL (or use Cursor browser MCP)
+3. `browser_snapshot` — explorer + editor visible
+4. CDP / console: `__jetAgent.getState()` shows workspace path and tabs
+5. Edit file + save (Mod-s) — persists under `fixtures/sample-workspace/`
+6. Git tab shows repo status (fixture is a git repo)
+
+### Browser mode limitations
+
+- No native folder dialog — use URL query params or `__jetAgent.openWorkspace()`
+- No LSP (TypeScript completions) — Electron only
+- FS access sandboxed to `JET_DEV_ROOTS` (default: `fixtures/` + repo root)
+- Dev-only — not a production web deployment
+
+### Allowed roots env
+
+```bash
+JET_DEV_ROOTS="/path/a:/path/b" pnpm dev:web
+```
+
+(Path separator is OS-native; on macOS/Linux use `:` between entries.)
 
 ### Dev gotchas (Electron + Vite)
 

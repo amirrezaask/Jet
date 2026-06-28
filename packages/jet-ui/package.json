@@ -16,6 +16,7 @@
   "dependencies": {
     "@headless-tree/core": "^1.6.3",
     "@headless-tree/react": "^1.6.3",
+    "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.37.0",
     "@jet/codemirror": "workspace:*",
     "@jet/panels": "workspace:*",

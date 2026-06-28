@@ -1,6 +1,5 @@
 import type { WorkspaceFile } from "@jet/workspace"
-import { Emitter } from "@jet/shared"
-import { fileUriToPath } from "@jet/shared"
+import { Emitter, pathToFileUri, fileUriToPath } from "@jet/shared"
 
 export type LanguageServerDescriptor = {
   id: string
@@ -49,7 +48,7 @@ export class LanguageServerManager {
     const projectRoot = await findProjectRoot(rootPath, descriptor.rootMarkers)
     if (!projectRoot) return null
 
-    const conn = await this.lspApi.start(rootUri, file.languageId)
+    const conn = await this.lspApi.start(pathToFileUri(projectRoot), file.languageId)
     const connection: LspConnection = {
       id: conn.id,
       rootUri,
@@ -80,8 +79,8 @@ async function findProjectRoot(startPath: string, markers: string[]): Promise<st
   for (let i = 0; i < 20; i++) {
     for (const marker of markers) {
       try {
-        const uri = `file://${current}/${marker}`.replace(/file:\/\/\//, "file:///")
-        await fs.stat(uri.startsWith("file:") ? uri : `file://${current}/${marker}`)
+        const uri = pathToFileUri(`${current}/${marker}`)
+        await fs.stat(uri)
         return current
       } catch {
         /* continue */

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@jet/app": "workspace:*",
+    "@jet/node-host": "workspace:*",
     "@jet/shared": "workspace:*",
     "@jet/workspace": "workspace:*"
   },
