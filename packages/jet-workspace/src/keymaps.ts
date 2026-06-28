@@ -37,7 +37,7 @@ export const defaultKeybindings: JetKeyBinding[] = [
   },
   { key: "Mod-s", command: "workspace.saveFile", when: ctx => ctx.editorFocus && noOverlay(ctx) },
   { key: "Mod-n", command: "workspace.newFile", when: ctx => ctx.workspaceOpen && noOverlay(ctx) },
-  { key: "Mod-o", command: "workspace.openFolder", when: noOverlay },
+  { key: "Mod-o", command: "workspace.openFile", when: noOverlay },
   { key: "Mod-w", command: "layout.closeTab", when: ctx => ctx.workspaceOpen && noOverlay(ctx) },
   { key: "Mod-f", command: "editor.find", when: ctx => ctx.editorFocus && noOverlay(ctx) },
   { key: "Mod-h", command: "editor.replace", when: ctx => ctx.editorFocus && noOverlay(ctx) },

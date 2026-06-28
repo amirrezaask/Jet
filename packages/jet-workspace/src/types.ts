@@ -73,6 +73,7 @@ export type JetElectronSearch = {
     query: string,
     opts?: { caseSensitive?: boolean; regex?: boolean },
   ): Promise<ProjectSearchResult[]>
+  listFiles(rootUri: string): Promise<string[]>
 }
 
 export type JetElectronTerminal = {

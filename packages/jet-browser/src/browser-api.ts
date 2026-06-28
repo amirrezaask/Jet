@@ -49,6 +49,8 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
           query,
           ...opts,
         }).then(r => r.results),
+      listFiles: rootUri =>
+        postJson<{ files: string[] }>(baseUrl, "/search/listFiles", { rootUri }).then(r => r.files),
     },
     lsp: {
       start: (rootUri, languageId, command, args) =>

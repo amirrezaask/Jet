@@ -49,6 +49,7 @@ const api: JetElectronAPI = {
   search: {
     project: (rootUri, query, opts) =>
       ipcRenderer.invoke("search:project", rootUri, query, opts),
+    listFiles: rootUri => ipcRenderer.invoke("search:listFiles", rootUri),
   },
   lsp: {
     start: (rootUri, languageId, command, args) =>

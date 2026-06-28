@@ -6,7 +6,15 @@ export async function indexWorkspaceFiles(
   fs: FileSystemProvider,
   rootUri: string,
   maxFiles = 5000,
+  listFiles?: (rootUri: string) => Promise<string[]>,
 ): Promise<string[]> {
+  if (listFiles) {
+    try {
+      return await listFiles(rootUri)
+    } catch {
+      /* fall back to directory walk */
+    }
+  }
   const results: string[] = []
   const rootPath = rootUri.replace(/^file:\/\//, "")
 

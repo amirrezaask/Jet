@@ -19,7 +19,7 @@ import { createJetAPI, loadEditorRc } from "@jet/extension-host"
 import { createAgentBridge, openWorkspaceFromQuery } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
 import { applyJetThemeCss, defaultJetTheme, openSearchPanel, openReplaceSearchPanel, jumpToLine, collectProblemsFromViews, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
-import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoLineModal, QuickOpenOverlay, getEditorView, getAllEditorViews } from "@jet/ui"
+import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoLineModal, QuickOpenOverlay, OpenFileOverlay, getEditorView, getAllEditorViews } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
 
@@ -60,6 +60,7 @@ export function JetApp() {
   const [cursorPos, setCursorPos] = useState<{ line: number; column: number } | null>(null)
   const [gotoLineOpen, setGotoLineOpen] = useState(false)
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
+  const [openFileOpen, setOpenFileOpen] = useState(false)
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [fileIndex, setFileIndex] = useState<string[]>([])
   const [problems, setProblems] = useState<JetProblem[]>([])
@@ -89,6 +90,7 @@ export function JetApp() {
       editorFocus: editorFocused,
       paletteOpen,
       quickOpenOpen,
+      openFileOpen,
       gotoLineOpen,
       workspaceOpen: workspace.root != null,
       explorerFocus: activeTabKindName === "explorer",
@@ -96,7 +98,7 @@ export function JetApp() {
       terminalFocus: activeTabKindName === "terminal",
       searchFocus: activeTabKindName === "search",
     }),
-    [editorFocused, paletteOpen, quickOpenOpen, gotoLineOpen, workspace.root, activeTabKindName],
+    [editorFocused, paletteOpen, quickOpenOpen, openFileOpen, gotoLineOpen, workspace.root, activeTabKindName],
   )
 
   const lspManager = useMemo(
@@ -237,7 +239,12 @@ export function JetApp() {
       }
 
       try {
-        const files = await indexWorkspaceFiles(jetPlatformFS(), workspace.root!.uri)
+        const files = await indexWorkspaceFiles(
+          jetPlatformFS(),
+          workspace.root!.uri,
+          50_000,
+          window.jet?.search?.listFiles,
+        )
         setFileIndex(files)
       } catch {
         setFileIndex([])
@@ -387,6 +394,17 @@ export function JetApp() {
       title: "Show Command Palette",
       category: "UI",
     })
+    commands.register(
+      "workspace.openFile",
+      () => {
+        if (!workspace.root) {
+          void executeCommand("workspace.openFolder")
+          return
+        }
+        setOpenFileOpen(true)
+      },
+      { id: "workspace.openFile", title: "Open File", category: "Workspace" },
+    )
     commands.register(
       "workspace.openFolder",
       async () => {
@@ -819,6 +837,13 @@ export function JetApp() {
           const fullPath = `${workspace.root.path}/${rel.replace(/^\/+/, "")}`
           handleOpenFile(pathToFileUri(fullPath), fullPath)
         }}
+      />
+
+      <OpenFileOverlay
+        open={openFileOpen}
+        onOpenChange={setOpenFileOpen}
+        workspace={workspace}
+        onOpenFile={handleOpenFile}
       />
 
       <CommandPalette

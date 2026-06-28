@@ -175,6 +175,13 @@ export async function handleJetDevRequest(
       return true
     }
 
+    if (pathname === "/__jet/search/listFiles" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      sendJson(res, 200, { files: await nodeSearch.listProjectFiles(rootUri) })
+      return true
+    }
+
     if (pathname === "/__jet/lsp/start" && req.method === "POST") {
       const rootUri = String(body.rootUri ?? "")
       await guardUri(rootUri, opts.allowedRoots)

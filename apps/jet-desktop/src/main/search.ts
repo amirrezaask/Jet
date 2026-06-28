@@ -1,7 +1,8 @@
 import type { IpcMain } from "electron"
-import { projectSearch } from "@jet/node-host"
+import { listProjectFiles, projectSearch } from "@jet/node-host"
 
 export function registerSearchHandlers(ipcMain: IpcMain) {
+  ipcMain.handle("search:listFiles", async (_e, rootUri: string) => listProjectFiles(rootUri))
   ipcMain.handle(
     "search:project",
     async (

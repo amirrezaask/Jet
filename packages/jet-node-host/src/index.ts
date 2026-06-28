@@ -10,7 +10,7 @@ export {
   gitBranches,
   gitCheckout,
 } from "./git.js"
-export { projectSearch } from "./search.js"
+export { projectSearch, listProjectFiles } from "./search.js"
 export { assertAllowedPath, assertAllowedUri, normalizeRoots } from "./sandbox.js"
 export {
   handleJetDevRequest,

@@ -2,6 +2,52 @@ import { spawn } from "node:child_process"
 import type { ProjectSearchResult } from "@jet/shared"
 import { uriToPath } from "./paths.js"
 
+const IGNORE_GLOBS = [
+  "!.git/**",
+  "!node_modules/**",
+  "!dist/**",
+  "!dist-electron/**",
+  "!.turbo/**",
+]
+
+function spawnRg(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("rg", args, { cwd, stdio: ["ignore", "pipe", "pipe"] })
+    let stdout = ""
+    let stderr = ""
+    proc.stdout.on("data", d => (stdout += d))
+    proc.stderr.on("data", d => (stderr += d))
+    proc.on("close", code => resolve({ stdout, stderr, code }))
+    proc.on("error", err => {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        reject(new Error("ripgrep (rg) is not installed or not on PATH"))
+      } else {
+        reject(err)
+      }
+    })
+  })
+}
+
+export async function listProjectFiles(rootUri: string, maxFiles = 50_000): Promise<string[]> {
+  const cwd = uriToPath(rootUri)
+  const args = ["--files"]
+  for (const glob of IGNORE_GLOBS) args.push("--glob", glob)
+  args.push(".")
+
+  const { stdout, stderr, code } = await spawnRg(args, cwd)
+  if (code !== 0 && code !== 1) {
+    throw new Error(stderr.trim() || `rg exit ${code}`)
+  }
+
+  const files = stdout
+    .split("\n")
+    .filter(Boolean)
+    .map(path => path.replace(/^\.\//, ""))
+    .slice(0, maxFiles)
+    .sort()
+  return files
+}
+
 export async function projectSearch(
   rootUri: string,
   query: string,

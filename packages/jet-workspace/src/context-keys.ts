@@ -4,6 +4,7 @@ export type KeymapContext = {
   editorFocus: boolean
   paletteOpen: boolean
   quickOpenOpen: boolean
+  openFileOpen: boolean
   gotoLineOpen: boolean
   workspaceOpen: boolean
   explorerFocus: boolean
@@ -13,7 +14,7 @@ export type KeymapContext = {
 }
 
 export function anyOverlayOpen(ctx: KeymapContext): boolean {
-  return ctx.paletteOpen || ctx.quickOpenOpen || ctx.gotoLineOpen
+  return ctx.paletteOpen || ctx.quickOpenOpen || ctx.openFileOpen || ctx.gotoLineOpen
 }
 
 export function matchesWhen(binding: JetKeyBinding, ctx: KeymapContext): boolean {

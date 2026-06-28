@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useEffect } from "react"
 import {
   asyncDataLoaderFeature,
   hotkeysCoreFeature,
@@ -88,11 +88,8 @@ export function ExplorerTab({
     indent: 16,
     onPrimaryAction: item => {
       const node = item.getItemData()
-      if (!node) return
-      if (node.isDirectory) {
-        if (item.isExpanded()) item.collapse()
-        else item.expand()
-      } else onOpenFile(node.uri, node.uri.replace(/^file:\/\//, ""))
+      if (!node || node.isDirectory) return
+      onOpenFile(node.uri, node.uri.replace(/^file:\/\//, ""))
     },
   })
 
