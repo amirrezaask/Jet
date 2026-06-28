@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { createPortal } from "react-dom"
+import { JetOverlay } from "./JetOverlay.js"
 
 export function GotoLineModal({
   open,
@@ -16,8 +16,6 @@ export function GotoLineModal({
     if (open) inputRef.current?.focus()
   }, [open])
 
-  if (!open || typeof document === "undefined") return null
-
   const handleSubmit = () => {
     const raw = inputRef.current?.value.trim() ?? ""
     if (!raw) return
@@ -31,27 +29,9 @@ export function GotoLineModal({
     if (inputRef.current) inputRef.current.value = ""
   }
 
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Go to line"
-      onClick={() => onOpenChange(false)}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 200,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "1rem",
-        background: "rgba(0,0,0,0.5)",
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        className="w-full max-w-sm overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl"
-      >
+  return (
+    <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel="Go to line" maxWidth="24rem">
+      <div className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl">
         <div className="border-b border-[var(--jet-border)] px-3 py-2 text-sm font-medium">
           Go to Line
         </div>
@@ -66,13 +46,11 @@ export function GotoLineModal({
                 e.preventDefault()
                 handleSubmit()
               }
-              if (e.key === "Escape") onOpenChange(false)
             }}
           />
           <p className="mt-2 text-xs text-[var(--jet-text-muted)]">Example: 42 or 42:10</p>
         </div>
       </div>
-    </div>,
-    document.body,
+    </JetOverlay>
   )
 }

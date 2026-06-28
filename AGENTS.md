@@ -8,13 +8,15 @@ Guide for AI agents and contributors working in this repo.
 
 **Core split:**
 
-| Layer | Owns |
-|-------|------|
-| **CodeMirror 6** | Text buffer, syntax, LSP client, keymaps inside editor |
-| **Jet Workspace** | Files, tabs, dirty state, commands, keymap registry |
-| **Jet Panels** | Infinite split tree, tab groups, drag/drop docking |
-| **Jet UI / App** | React shell, themes, explorer, git, palette |
-| **Electron main** | FS, git CLI, LSP process spawn + WebSocket bridge |
+
+| Layer             | Owns                                                   |
+| ----------------- | ------------------------------------------------------ |
+| **CodeMirror 6**  | Text buffer, syntax, LSP client, keymaps inside editor |
+| **Jet Workspace** | Files, tabs, dirty state, commands, keymap registry    |
+| **Jet Panels**    | Infinite split tree, tab groups, drag/drop docking     |
+| **Jet UI / App**  | React shell, themes, explorer, git, palette            |
+| **Electron main** | FS, git CLI, LSP process spawn + WebSocket bridge      |
+
 
 React holds **orchestration state** (panel tree, focus, palette). Editor document text lives in **CodeMirror**, not React state.
 
@@ -29,6 +31,8 @@ Sibling / parent dirs are **design references**, not dependencies:
 Do **not** copy large chunks wholesale; match Jet’s architecture.
 
 ---
+
+
 
 ## Monorepo Layout
 
@@ -56,6 +60,8 @@ jet/
 └── tsconfig.base.json
 ```
 
+
+
 ### Package dependency direction
 
 ```
@@ -68,6 +74,8 @@ jet-app  ←  jet-desktop, jet-web
 Keep imports acyclic. Lower layers must not import React or Electron.
 
 ---
+
+
 
 ## Commands
 
@@ -90,11 +98,13 @@ Then validate with **browser MCP** on `pnpm dev:web` (see Agent browser testing)
 
 ---
 
+
+
 ## Agent browser testing (no Electron required)
 
 **Required for all agents:** after UI/shell/behavior changes, validate in the app using the **Cursor browser MCP** (`cursor-ide-browser`). Do not mark a task done on typecheck alone.
 
-Use **`pnpm dev:web`** to run Jet in a normal browser with real FS/git backed by a Vite dev middleware (sandboxed to allowed roots).
+Use `pnpm dev:web` to run Jet in a normal browser with real FS/git backed by a Vite dev middleware (sandboxed to allowed roots).
 
 ### Browser MCP workflow (required)
 
@@ -113,6 +123,8 @@ Prefer MCP browser tools over asking the user to test manually. Use `browser_cdp
 ```
 http://localhost:5174/?workspace=fixtures/sample-workspace&file=src/index.ts
 ```
+
+
 
 ### Programmatic control (`window.__jetAgent`)
 
@@ -153,6 +165,8 @@ For feature-specific work, add targeted MCP checks (e.g. `executeCommand("editor
 - FS access sandboxed to `JET_DEV_ROOTS` (default: `fixtures/` + repo root)
 - Dev-only — not a production web deployment
 
+
+
 ### Allowed roots env
 
 ```bash
@@ -163,42 +177,37 @@ JET_DEV_ROOTS="/path/a:/path/b" pnpm dev:web
 
 ### Dev gotchas (Electron + Vite)
 
-1. **Electron binary missing** — `path.txt` absent under `node_modules/.../electron/`  
-   Fix: `pnpm rebuild electron` or `node node_modules/.pnpm/electron@*/node_modules/electron/install.js`
-
-2. **Vite `root` is `packages/jet-app`** but electron lives in `apps/jet-desktop`.  
-   Electron build **must** use explicit `outDir`:
-
-   ```ts
-   path.resolve(__dirname, "dist-electron")  // in apps/jet-desktop/vite.config.ts
-   ```
-
+1. **Electron binary missing** — `path.txt` absent under `node_modules/.../electron/`
+  Fix: `pnpm rebuild electron` or `node node_modules/.pnpm/electron@*/node_modules/electron/install.js`
+2. **Vite** `root` **is** `packages/jet-app` but electron lives in `apps/jet-desktop`.
+  Electron build **must** use explicit `outDir`:
    `package.json` `"main": "dist-electron/main.js"` is relative to `apps/jet-desktop`.
-
-3. **Do not bundle `ws`** in main process — mark external in rollup or you get `bufferutil` resolve errors.
-
+3. **Do not bundle** `ws` in main process — mark external in rollup or you get `bufferutil` resolve errors.
 4. **Dev URL** — main process loads `process.env.VITE_DEV_SERVER_URL`, not hardcoded `:5173`.
-
 5. **Stale dev processes** — if port conflict: `pkill -f "jet-web.*vite"` or `pkill -f Electron` then `pnpm dev` / `pnpm dev:web`.
-
 6. **Stray output** — old builds may land in `packages/jet-app/dist-electron/`; canonical output is `apps/jet-desktop/dist-electron/`. Both are gitignored where applicable.
-
 7. **Tailwind v4 position utilities missing** — Vite root is `packages/jet-app`; classes like `absolute` / `fixed` / `inset-0` used only in sibling packages (`jet-ui`, …) were not generated until `@source` was added in `jet-ui/src/styles/globals.css`. Symptom: panels stack vertically (editor at bottom), palette full-width. After CSS changes, reload window if HMR does not pick up `@source`.
 
 ---
 
+
+
 ## Architecture Details
+
+
 
 ### Electron IPC (`window.jet`)
 
 Exposed via preload → `@jet/workspace` types (`JetElectronAPI`).
 
-| Channel | Purpose |
-|---------|---------|
-| `fs:readFile`, `fs:writeFile`, `fs:readDir`, `fs:stat` | File URIs (`file://...`) |
-| `fs:showOpenFolderDialog` | Native folder picker |
-| `git:isRepo`, `git:status`, `git:diff` | Git CLI wrappers |
-| `lsp:start`, `lsp:stop` | Spawn language server, WS bridge |
+
+| Channel                                                | Purpose                          |
+| ------------------------------------------------------ | -------------------------------- |
+| `fs:readFile`, `fs:writeFile`, `fs:readDir`, `fs:stat` | File URIs (`file://...`)         |
+| `fs:showOpenFolderDialog`                              | Native folder picker             |
+| `git:isRepo`, `git:status`, `git:diff`                 | Git CLI wrappers                 |
+| `lsp:start`, `lsp:stop`                                | Spawn language server, WS bridge |
+
 
 Main entry: `apps/jet-desktop/src/main/main.ts`  
 Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
@@ -206,7 +215,7 @@ Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
 ### Panel docking (`@jet/panels`)
 
 - `PanelTree` — row/column splits, tab groups, 5-way drop (edges + center)
-- `workspaceLayout()` / `defaultLayout()` — row split: sidebar left (~22%), main editor right (~78%)
+- `workspaceLayout()` / `defaultLayout()` — row split: sidebar left (~~22%), main editor right (~~78%)
 - Serializable via `toJSON()` / `fromJSON()`; `sanitizeKnownTabs()` strips orphan tab ids when needed
 - UI: `PanelDock`, `TabRow`, `DropOverlay` in `@jet/ui`
 - `resolveEditorPanel()` in `App.tsx` — new/open editor tabs route to main editor panel (not sidebar)
@@ -214,14 +223,19 @@ Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
 **Panel model:** all leaf panels are equal — no "explorer panel" vs "editor panel". Tab kind differs (`explorer`, `editor`, `git`, …). View commands can target `focusedPanel`; editor open/new file targets main editor panel.
 
 **Known gaps:**
+
 - **Tab drag/drop** — same-panel reorder works; cross-panel move / edge-split mostly works but needs polish (drop hit targets, registry sync). OK for now; not P0 blocker.
 - Split resize works (pointer capture + 12px hit slop); may feel laggy during layout animation
+
+
 
 ### Workspace (`@jet/workspace`)
 
 - `WorkspaceService` — root folder, file cache, dirty tracking, open editor tabs
 - `TabRegistry` — maps `TabId` → tab kind + label + dirty flag
 - Tab kinds: `editor`, `explorer`, `git`, `terminal` (stub), `search` (shell), `problems` (stub)
+
+
 
 ### Editor surface (`@jet/codemirror` + `EditorTabHost`)
 
@@ -234,27 +248,31 @@ Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
 - `isLargeFile()` — skips LSP for huge files
 - Languages loaded lazily via Shiki/lang packages in `languages.ts`
 
+
+
 ### Commands & palette
 
 Registered in `packages/jet-app/src/App.tsx`:
 
-| Command | Default key |
-|---------|-------------|
-| `ui.showCommandPalette` | Mod-p |
-| `ui.selectTheme` | — (palette: Theme: …) |
-| `workspace.openFolder` | Mod-o |
-| `workspace.saveFile` | Mod-s |
-| `workspace.newFile` | Mod-n |
-| `editor.find` | Mod-f |
-| `editor.replace` | Mod-h |
-| `editor.gotoLine` | Mod-g |
-| `workspace.quickOpen` | Mod-Shift-o |
-| `layout.closeTab` | Mod-w |
-| `git.showChanges` | Mod-Shift-g |
-| `explorer.show` | Mod-Shift-e |
-| `search.show` | Mod-Shift-f |
-| `problems.show` | — |
-| `terminal.show` | — |
+
+| Command                 | Default key           |
+| ----------------------- | --------------------- |
+| `ui.showCommandPalette` | Mod-p                 |
+| `ui.selectTheme`        | — (palette: Theme: …) |
+| `workspace.openFolder`  | Mod-o                 |
+| `workspace.saveFile`    | Mod-s                 |
+| `workspace.newFile`     | Mod-n                 |
+| `editor.find`           | Mod-f                 |
+| `editor.replace`        | Mod-h                 |
+| `editor.gotoLine`       | Mod-g                 |
+| `workspace.quickOpen`   | Mod-Shift-o           |
+| `layout.closeTab`       | Mod-w                 |
+| `git.showChanges`       | Mod-Shift-g           |
+| `explorer.show`         | Mod-Shift-e           |
+| `search.show`           | Mod-Shift-f           |
+| `problems.show`         | —                     |
+| `terminal.show`         | —                     |
+
 
 `CommandRegistry.execute()` receives `getActiveEditorView: () => unknown` — cast to `EditorView` in handlers that need `view.state.doc`.
 
@@ -263,6 +281,8 @@ Registered in `packages/jet-app/src/App.tsx`:
 - `createJetAPI()` — commands, keymaps, editor extensions, workspace, ui
 - `loadEditorRc(path, jet)` — dynamic import of `.jet/editorrc.ts` on folder open
 - `registerExtensions()` — CodeMirror extensions applied via `extensionCompartment` in `EditorTabHost`
+
+
 
 ### LSP
 
@@ -274,27 +294,35 @@ Registered in `packages/jet-app/src/App.tsx`:
 - Project search requires `rg` (ripgrep) on **PATH**
 - `findProjectRoot()` uses `pathToFileUri` from `@jet/shared`
 
+
+
 ### UI tabs
 
-| Tab | Status |
-|-----|--------|
-| Explorer | `@headless-tree/react` file tree |
-| Git | `@pierre/diffs` patch view + git status list (lazy-loaded) |
-| Editor | CodeMirror host + in-buffer find |
-| Search | Project ripgrep search + in-buffer find |
-| Problems | LSP/CM lint diagnostics list + jump |
-| Terminal | xterm + node-pty (Electron); browser stub |
+
+| Tab      | Status                                                     |
+| -------- | ---------------------------------------------------------- |
+| Explorer | `@headless-tree/react` file tree                           |
+| Git      | `@pierre/diffs` patch view + git status list (lazy-loaded) |
+| Editor   | CodeMirror host + in-buffer find                           |
+| Search   | Project ripgrep search + in-buffer find                    |
+| Problems | LSP/CM lint diagnostics list + jump                        |
+| Terminal | xterm + node-pty (Electron); browser stub                  |
+
+
+
 
 ### Theming
 
 - `defaultJetTheme` + CSS vars via `applyJetThemeCss()`
 - Tailwind v4 + custom RAD-ish tokens in `jet-ui/src/styles/globals.css`
-- **`@source` in globals.css** — must scan all workspace packages so position/layout utilities emit for `jet-ui` components
+- `@source` **in globals.css** — must scan all workspace packages so position/layout utilities emit for `jet-ui` components
 - Bundled themes in `jet-ui/src/theme/bundled.ts` (default, 4coder, Catppuccin Mocha, One Dark, Gruvbox Dark, Nord)
 - Theme picker via `ui.selectTheme.*` commands; persisted in `localStorage`
 - Command palette — `createPortal` to `document.body`; inline styles for centering (layout-critical)
 
 ---
+
+
 
 ## Coding Conventions
 
@@ -306,6 +334,8 @@ Registered in `packages/jet-app/src/App.tsx`:
 6. **Do not edit** the planning doc at `.cursor/plans/jet_editor_plan_*.plan.md`
 7. **Commits** — only when user asks
 
+
+
 ### TypeScript
 
 - Each package has `"typecheck": "tsc --noEmit"`
@@ -313,6 +343,8 @@ Registered in `packages/jet-app/src/App.tsx`:
 - `@jet/app` depends on `@jet/shared` explicitly when importing shared types
 
 ---
+
+
 
 ## What Works Today (smoke test)
 
@@ -329,18 +361,24 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 ---
 
+
+
 ## Prioritized Next Work
 
 Design references (read-only): `.4coder/`, `.4coder_fleury/`, `.raddebugger/`, `Nameless_Editor/`. Jet aspires to **RAD/Nameless shell polish** + **4coder/Fleury editor identity** on CodeMirror 6 + Electron — not a port.
 
 Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific) inside each phase.
 
-| Tier | Scope |
-|------|--------|
-| **Shell** | Panels, chrome, palette, themes, status bar, layout |
-| **Editor** | Buffer UX — find, goto, multi-cursor, guides |
-| **Workspace** | Project tools — search, git, terminal, quick-open |
+
+| Tier                | Scope                                                     |
+| ------------------- | --------------------------------------------------------- |
+| **Shell**           | Panels, chrome, palette, themes, status bar, layout       |
+| **Editor**          | Buffer UX — find, goto, multi-cursor, guides              |
+| **Workspace**       | Project tools — search, git, terminal, quick-open         |
 | **4coder-specific** | Dual cursor+mark, virtual whitespace, code index, C layer |
+
+
+
 
 ### P0 — Stability & correctness
 
@@ -366,6 +404,8 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [ ] **Shell:** tab drag/drop polish — cross-panel move + edge-split hit targets, `TabRegistry` sync after `moveTab` (partial OK for now)
 - [ ] **Shell:** confirm dirty-tab close dialog in browser MCP (may need user handoff)
 
+
+
 ### P1 — Core editor & shell features
 
 **Done**
@@ -378,9 +418,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] **Editor:** find/replace (`editor.replace` / Mod-h, CM search panel)
 - [x] **Editor:** goto-line (`editor.gotoLine` / Mod-g, modal)
 
-**Remaining**
 
-- [ ] **Shell:** session layout persist (deferred — reset-on-open by design)
 
 ### P2 — UX & polish
 
@@ -408,11 +446,9 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 - [ ] **Editor:** full Fleury-style indent guide columns (optional `@replit/codemirror-indentation-markers`)
 
+
+
 ### P3 — Platform, workspace & distribution
-
-**Shell tier**
-
-- [ ] **Shell:** session layout persist (deferred)
 
 **Workspace tier**
 
@@ -427,8 +463,8 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] electron-builder config + pack scripts (`pack:mac` / `pack:win` / `pack:linux`; unsigned)
 - [x] LSP crash recovery (`lsp.onCrashed` + auto-retry on editor focus)
 - [x] Additional language servers (rust-analyzer descriptor registry)
-- [ ] Code signing / notarization (needs `CSC_*` certs — not automated)
-- [ ] README for humans (optional unless requested)
+
+
 
 ### P4 — Reference editor identity (long-term)
 
@@ -440,6 +476,8 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 - [ ] Expand `.jet/editorrc.ts` API toward Nameless-level extensibility
 
+
+
 ### Out of scope (documented gaps)
 
 - Nameless-level command registry (~50+ commands), vim mode, tree-sitter tag index
@@ -447,44 +485,54 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 ---
 
+
+
 ## Reference parity snapshot
 
 Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases above).
 
-| Feature | 4coder | Fleury | Nameless | Jet today |
-|---------|--------|--------|----------|-----------|
-| Tab drag/drop + reorder | ✓ | ✓ | ✓ | partial / reorder ✓ |
-| Default panel layout | ✓ | ✓ | ✓ | row: sidebar + main ✓ |
-| In-buffer find | ✓ | ✓ | ✓ | ✓ Mod-f |
-| Command palette | ✓ | ✓ | ✓ | ✓ centered |
-| Project search + location list | ✓ | ✓ | ✓ | ✓ ripgrep + jump |
-| Status bar (path, L/C, git, LSP) | partial | ✓ | ✓ | path + branch + L/C + LSP ✓ |
-| Theme picker + bundled themes | ✓ | ✓ | ✓ | ✓ 6 themes |
-| Quick-open files | ✓ | ✓ | ✓ | ✓ Mod-Shift-o |
-| Terminal PTY | CLI | — | ✓ | ✓ Electron / stub web |
-| Full git panel | — | — | ✓ | stage/commit/branch ✓ |
-| Brace guides / Fleury chrome | — | ✓ | ✓ | bracket match ✓; indent guides partial |
-| Session layout persist | — | — | ✓ | deferred |
-| LSP (TS/JS) | ✗ | partial | ✓ | ✓ Electron + rust-analyzer |
-| Multi-cursor, macros, kill ring | ✓ | — | ✓ | ✗ |
-| Extension / custom layer | C hooks | C++ | Rust setup | `.jet/editorrc.ts` |
+
+| Feature                          | 4coder  | Fleury  | Nameless   | Jet today                              |
+| -------------------------------- | ------- | ------- | ---------- | -------------------------------------- |
+| Tab drag/drop + reorder          | ✓       | ✓       | ✓          | partial / reorder ✓                    |
+| Default panel layout             | ✓       | ✓       | ✓          | row: sidebar + main ✓                  |
+| In-buffer find                   | ✓       | ✓       | ✓          | ✓ Mod-f                                |
+| Command palette                  | ✓       | ✓       | ✓          | ✓ centered                             |
+| Project search + location list   | ✓       | ✓       | ✓          | ✓ ripgrep + jump                       |
+| Status bar (path, L/C, git, LSP) | partial | ✓       | ✓          | path + branch + L/C + LSP ✓            |
+| Theme picker + bundled themes    | ✓       | ✓       | ✓          | ✓ 6 themes                             |
+| Quick-open files                 | ✓       | ✓       | ✓          | ✓ Mod-Shift-o                          |
+| Terminal PTY                     | CLI     | —       | ✓          | ✓ Electron / stub web                  |
+| Full git panel                   | —       | —       | ✓          | stage/commit/branch ✓                  |
+| Brace guides / Fleury chrome     | —       | ✓       | ✓          | bracket match ✓; indent guides partial |
+| Session layout persist           | —       | —       | ✓          | deferred                               |
+| LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Electron + rust-analyzer             |
+| Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | ✗                                      |
+| Extension / custom layer         | C hooks | C++     | Rust setup | `.jet/editorrc.ts`                     |
+
 
 ---
+
+
 
 ## Key Files (start here)
 
-| File | Why |
-|------|-----|
-| `packages/jet-app/src/App.tsx` | Shell wiring: commands, layout, LSP, extension host |
-| `packages/jet-ui/src/dock/PanelDock.tsx` | Docking UI + viewport measure |
-| `packages/jet-panels/src/tree.ts` | Split/tab model |
-| `packages/jet-ui/src/tabs/EditorTabHost.tsx` | CM mount lifecycle |
-| `packages/jet-codemirror/src/createEditorView.ts` | Editor extensions + LSP attach |
-| `apps/jet-desktop/vite.config.ts` | Critical electron/vite paths |
-| `apps/jet-desktop/src/main/main.ts` | Electron bootstrap |
-| `packages/jet-extension-host/src/index.ts` | Extension API surface |
+
+| File                                              | Why                                                 |
+| ------------------------------------------------- | --------------------------------------------------- |
+| `packages/jet-app/src/App.tsx`                    | Shell wiring: commands, layout, LSP, extension host |
+| `packages/jet-ui/src/dock/PanelDock.tsx`          | Docking UI + viewport measure                       |
+| `packages/jet-panels/src/tree.ts`                 | Split/tab model                                     |
+| `packages/jet-ui/src/tabs/EditorTabHost.tsx`      | CM mount lifecycle                                  |
+| `packages/jet-codemirror/src/createEditorView.ts` | Editor extensions + LSP attach                      |
+| `apps/jet-desktop/vite.config.ts`                 | Critical electron/vite paths                        |
+| `apps/jet-desktop/src/main/main.ts`               | Electron bootstrap                                  |
+| `packages/jet-extension-host/src/index.ts`        | Extension API surface                               |
+
 
 ---
+
+
 
 ## Adding a Feature (checklist)
 
@@ -497,6 +545,8 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 ---
 
+
+
 ## Agent Anti-patterns
 
 - Shipping UI/UX changes without **browser MCP** validation on `pnpm dev:web`
@@ -506,3 +556,4 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 - Setting vite electron outDir relative to `jet-app` root (breaks `package.json` main)
 - Adding Tauri — project chose **Electron**
 - Large shadcn default styling — keep RAD/custom theme direction
+

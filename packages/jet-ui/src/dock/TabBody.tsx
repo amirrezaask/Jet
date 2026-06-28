@@ -3,6 +3,7 @@ import type { TabId } from "@jet/shared"
 import type { JetProblem } from "@jet/shared"
 import { pathToFileUri } from "@jet/shared"
 import type { Extension } from "@codemirror/state"
+import type { LSPClient } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
 import type { JetTheme } from "@jet/codemirror"
 import { EditorTabHost } from "../tabs/EditorTabHost.js"
@@ -22,7 +23,8 @@ export function TabBody({
   registry,
   workspace,
   theme,
-  lspTransportUrl,
+  resolveLspClient,
+  lspRevision,
   executeCommand,
   onOpenFile,
   onOpenFileAt,
@@ -40,7 +42,8 @@ export function TabBody({
   registry: TabRegistry
   workspace: WorkspaceService
   theme: JetTheme
-  lspTransportUrl?: string | null
+  resolveLspClient?: (fileUri: string) => Promise<LSPClient | null>
+  lspRevision?: number
   executeCommand: (name: string) => Promise<void>
   onOpenFile: (uri: string, path: string) => void
   onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
@@ -73,7 +76,8 @@ export function TabBody({
           fileUri={kind.fileUri}
           workspace={workspace}
           theme={theme}
-          lspTransportUrl={lspTransportUrl}
+          resolveLspClient={resolveLspClient}
+          lspRevision={lspRevision}
           executeCommand={executeCommand}
           keymapBindings={keymapBindings}
           userExtensions={userExtensions}

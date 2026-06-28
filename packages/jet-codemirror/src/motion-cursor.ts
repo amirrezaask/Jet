@@ -69,7 +69,7 @@ class MotionCursorPlugin {
             transform: `translate3d(${target.x}px, ${target.y}px, 0)`,
             height: `${target.h}px`,
           },
-          { type: "spring", stiffness: 650, damping: 45, mass: 0.7 },
+          { type: "spring", stiffness: 950, damping: 32, mass: 0.7 },
         )
         this.stopAnimation = () => controls.stop()
       },

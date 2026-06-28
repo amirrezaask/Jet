@@ -8,8 +8,7 @@ import {
 } from "@codemirror/commands"
 import { bracketMatching, indentOnInput } from "@codemirror/language"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
-import { LSPClient, languageServerExtensions, type Transport } from "@codemirror/lsp-client"
-import { simpleWebSocketTransport } from "./lsp-transport.js"
+import { LSPClient } from "@codemirror/lsp-client"
 import type { WorkspaceFile } from "@jet/workspace"
 import type { WorkspaceService } from "@jet/workspace"
 import type { JetKeyBinding } from "@jet/workspace"
@@ -31,7 +30,7 @@ export type CreateJetEditorViewOptions = {
   file: WorkspaceFile
   initialText: string
   theme?: JetTheme
-  lspTransportUrl?: string | null
+  lspClient?: LSPClient | null
   executeCommand: (name: string) => Promise<void>
   userExtensions?: Extension[]
   onViewCreated?: (view: EditorView) => void
@@ -73,8 +72,8 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     state: EditorState.create({ doc: opts.initialText, extensions }),
   })
 
-  if (opts.lspTransportUrl) {
-    attachLsp(view, opts.file.uri, opts.lspTransportUrl).catch(console.error)
+  if (opts.lspClient) {
+    attachLsp(view, opts.file.uri, opts.file.languageId, opts.lspClient).catch(console.error)
   }
 
   opts.onViewCreated?.(view)
@@ -86,12 +85,25 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   return view
 }
 
-async function attachLsp(view: EditorView, uri: string, transportUrl: string): Promise<void> {
-  const transport = await simpleWebSocketTransport(transportUrl)
-  const client = new LSPClient({ extensions: languageServerExtensions() }).connect(transport)
+async function attachLsp(
+  view: EditorView,
+  uri: string,
+  languageId: string,
+  client: LSPClient,
+): Promise<void> {
+  await client.initializing
   view.dispatch({
-    effects: lspCompartment.reconfigure(client.plugin(uri)),
+    effects: lspCompartment.reconfigure(client.plugin(uri, languageId)),
   })
+}
+
+export async function reconfigureLsp(
+  view: EditorView,
+  uri: string,
+  languageId: string,
+  client: LSPClient,
+): Promise<void> {
+  await attachLsp(view, uri, languageId, client)
 }
 
 export function applyUserExtensions(view: EditorView, extensions: Extension[]): void {

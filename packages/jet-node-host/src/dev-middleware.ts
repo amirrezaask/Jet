@@ -175,6 +175,27 @@ export async function handleJetDevRequest(
       return true
     }
 
+    if (pathname === "/__jet/lsp/start" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      const { startLspSession } = await import("./lsp-bridge.js")
+      const result = await startLspSession({
+        rootUri,
+        command: body.command ? String(body.command) : undefined,
+        args: Array.isArray(body.args) ? (body.args as string[]) : undefined,
+      })
+      sendJson(res, 200, result)
+      return true
+    }
+
+    if (pathname === "/__jet/lsp/stop" && req.method === "POST") {
+      const id = String(body.id ?? "")
+      const { stopLspSession } = await import("./lsp-bridge.js")
+      await stopLspSession(id)
+      sendJson(res, 200, { ok: true })
+      return true
+    }
+
     sendJson(res, 404, { error: "Not found" })
     return true
   } catch (err) {

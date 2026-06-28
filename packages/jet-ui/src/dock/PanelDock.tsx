@@ -21,7 +21,8 @@ export type PanelDockProps = {
   focusedPanelId: PanelId | null
   onFocusPanel: (id: PanelId) => void
   onEvent: (event: PanelEvent) => void
-  lspTransportUrl?: string | null
+  resolveLspClient?: (fileUri: string) => Promise<import("@jet/codemirror").LSPClient | null>
+  lspRevision?: number
   executeCommand: (name: string) => Promise<void>
   onOpenFile: (uri: string, path: string) => void
   onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
@@ -216,7 +217,8 @@ export function PanelDock(props: PanelDockProps) {
                     registry={props.registry}
                     workspace={props.workspace}
                     theme={props.theme}
-                    lspTransportUrl={props.lspTransportUrl}
+                    resolveLspClient={props.resolveLspClient}
+                    lspRevision={props.lspRevision}
                     executeCommand={props.executeCommand}
                     onOpenFile={props.onOpenFile}
                     onOpenFileAt={props.onOpenFileAt}

@@ -2,6 +2,7 @@ export {
   createJetEditorView,
   applyUserKeymaps,
   applyUserExtensions,
+  reconfigureLsp,
   isLargeFile,
   openSearchPanel,
   userKeymapCompartment,
@@ -15,3 +16,5 @@ export { motionCursor } from "./motion-cursor.js"
 export { jetThemeExtension } from "./theme.js"
 export { defaultJetTheme, applyJetThemeCss, type JetTheme, type JetColors } from "./theme-types.js"
 export { loadLanguage } from "./languages.js"
+export { simpleWebSocketTransport } from "./lsp-transport.js"
+export type { LSPClient } from "@codemirror/lsp-client"

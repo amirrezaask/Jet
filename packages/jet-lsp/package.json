@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@jet/shared": "workspace:*",
-    "@jet/workspace": "workspace:*"
+    "@jet/workspace": "workspace:*",
+    "@jet/codemirror": "workspace:*",
+    "@codemirror/lsp-client": "^6.2.5"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

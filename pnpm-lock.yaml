@@ -269,6 +269,12 @@ importers:
 
   packages/jet-lsp:
     dependencies:
+      '@codemirror/lsp-client':
+        specifier: ^6.2.5
+        version: 6.2.5
+      '@jet/codemirror':
+        specifier: workspace:*
+        version: link:../jet-codemirror
       '@jet/shared':
         specifier: workspace:*
         version: link:../jet-shared
@@ -281,6 +287,10 @@ importers:
         version: 5.9.3
 
   packages/jet-node-host:
+    dependencies:
+      ws:
+        specifier: ^8.18.2
+        version: 8.21.0
     devDependencies:
       '@jet/shared':
         specifier: workspace:*
@@ -288,6 +298,9 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

@@ -51,10 +51,14 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
         }).then(r => r.results),
     },
     lsp: {
-      start: async () => {
-        throw new Error("LSP is not available in browser dev mode")
-      },
-      stop: async () => {},
+      start: (rootUri, languageId, command, args) =>
+        postJson<{ transportUrl: string; id: string }>(baseUrl, "/lsp/start", {
+          rootUri,
+          languageId,
+          command,
+          args,
+        }),
+      stop: id => postJson(baseUrl, "/lsp/stop", { id }).then(() => undefined),
       onCrashed: () => () => {},
     },
   }

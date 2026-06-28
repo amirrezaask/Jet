@@ -16,6 +16,10 @@ ipcRenderer.on("terminal:data", (_e, id: string, data: string) => {
   terminalDataListeners.get(id)?.forEach(cb => cb(data))
 })
 
+ipcRenderer.on("jet:close-tab", () => {
+  window.dispatchEvent(new CustomEvent("jet-close-tab"))
+})
+
 const api: JetElectronAPI = {
   fs: {
     readFile: uri => ipcRenderer.invoke("fs:readFile", uri),

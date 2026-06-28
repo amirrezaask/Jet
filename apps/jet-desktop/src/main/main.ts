@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron"
 import path from "node:path"
 import { registerFsHandlers } from "./fs.js"
 import { registerFsWatchHandlers, stopAllWatchers } from "./fs-watch.js"
@@ -13,6 +13,47 @@ let mainWindow: BrowserWindow | null = null
 
 function getWindow() {
   return mainWindow
+}
+
+function installAppMenu() {
+  const closeTab = (): void => {
+    getWindow()?.webContents.send("jet:close-tab")
+  }
+
+  const fileSubmenu: Electron.MenuItemConstructorOptions[] = [
+    { label: "Close Tab", accelerator: "CmdOrCtrl+W", click: closeTab },
+    { type: "separator" },
+    process.platform === "darwin"
+      ? { label: "Close Window", accelerator: "CmdOrCtrl+Shift+W", role: "close" as const }
+      : { role: "close" as const },
+  ]
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(process.platform === "darwin"
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" as const },
+              { type: "separator" as const },
+              { role: "services" as const },
+              { type: "separator" as const },
+              { role: "hide" as const },
+              { role: "hideOthers" as const },
+              { role: "unhide" as const },
+              { type: "separator" as const },
+              { role: "quit" as const },
+            ],
+          },
+        ]
+      : []),
+    { label: "File", submenu: fileSubmenu },
+    { role: "editMenu" as const },
+    { role: "viewMenu" as const },
+    ...(process.platform === "darwin" ? [{ role: "windowMenu" as const }] : []),
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
 function createWindow() {
@@ -43,6 +84,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  installAppMenu()
   registerFsHandlers(ipcMain, dialog)
   registerFsWatchHandlers(ipcMain, getWindow)
   registerGitHandlers(ipcMain)

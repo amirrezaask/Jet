@@ -17,3 +17,11 @@ export {
   resolveWorkspacePath,
   type JetDevHostOptions,
 } from "./dev-middleware.js"
+export {
+  startLspSession,
+  stopLspSession,
+  stopAllLspSessions,
+  setLspCrashHandler,
+  type LspSession,
+  type StartLspSessionOptions,
+} from "./lsp-bridge.js"

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
+import type { LSPClient } from "@jet/codemirror"
 import {
   createJetEditorView,
   applyUserKeymaps,
@@ -8,6 +9,7 @@ import {
   isLargeFile,
   jumpToLine,
   consumePendingEditorNavigation,
+  reconfigureLsp,
 } from "@jet/codemirror"
 import type { JetTheme } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
@@ -39,7 +41,8 @@ export function EditorTabHost({
   fileUri,
   workspace,
   theme,
-  lspTransportUrl,
+  resolveLspClient,
+  lspRevision,
   executeCommand,
   keymapBindings,
   userExtensions,
@@ -52,7 +55,8 @@ export function EditorTabHost({
   fileUri: string
   workspace: WorkspaceService
   theme: JetTheme
-  lspTransportUrl?: string | null
+  resolveLspClient?: (fileUri: string) => Promise<LSPClient | null>
+  lspRevision?: number
   executeCommand: (name: string) => Promise<void>
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
@@ -70,6 +74,9 @@ export function EditorTabHost({
   onEditorFocusChangeRef.current = onEditorFocusChange
   const onEditorSelectionChangeRef = useRef(onEditorSelectionChange)
   onEditorSelectionChangeRef.current = onEditorSelectionChange
+  const resolveLspClientRef = useRef(resolveLspClient)
+  resolveLspClientRef.current = resolveLspClient
+  const fileLanguageIdRef = useRef("plaintext")
 
   const runCommand = useRef((name: string) => executeCommandRef.current(name)).current
 
@@ -86,16 +93,21 @@ export function EditorTabHost({
       const path = untitled ? "" : fileUriToPath(fileUri)
       let file = workspace.fileForUri(fileUri)
       if (!file) file = workspace.createWorkspaceFile(fileUri, path)
+      fileLanguageIdRef.current = file.languageId
       const text = untitled ? "" : await workspace.readFile(fileUri)
       if (cancelled) return
-      const lspUrl = untitled || isLargeFile(text) ? null : lspTransportUrl
+      let lspClient: LSPClient | null = null
+      if (!untitled && !isLargeFile(text) && resolveLspClientRef.current) {
+        lspClient = await resolveLspClientRef.current(fileUri)
+      }
+      if (cancelled) return
       view = await createJetEditorView({
         parent,
         workspace,
         file,
         initialText: text,
         theme,
-        lspTransportUrl: lspUrl,
+        lspClient,
         executeCommand: runCommand,
         userExtensions,
         onSelectionChange: (line, column) => onEditorSelectionChangeRef.current?.(line, column),
@@ -125,7 +137,22 @@ export function EditorTabHost({
       view?.destroy()
       viewByTab.delete(tabId.id)
     }
-  }, [fileUri, tabId.id, workspace, theme, lspTransportUrl, runCommand])
+  }, [fileUri, tabId.id, workspace, theme, runCommand])
+
+  useEffect(() => {
+    if (lspRevision == null || !resolveLspClient) return
+    const view = viewByTab.get(tabId.id)
+    if (!view) return
+    let cancelled = false
+    ;(async () => {
+      const client = await resolveLspClient(fileUri)
+      if (cancelled || !client) return
+      await reconfigureLsp(view, fileUri, fileLanguageIdRef.current, client)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [lspRevision, resolveLspClient, fileUri, tabId.id])
 
   useEffect(() => {
     const view = viewByTab.get(tabId.id)

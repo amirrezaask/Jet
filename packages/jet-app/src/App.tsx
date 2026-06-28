@@ -9,11 +9,12 @@ import {
   KeymapService,
   keyEventMatchesBinding,
   matchesWhen,
+  anyOverlayOpen,
   defaultKeybindings,
   type TabRegistry,
   type TabKind,
 } from "@jet/workspace"
-import { LanguageServerManager } from "@jet/lsp"
+import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import { createJetAPI, loadEditorRc } from "@jet/extension-host"
 import { createAgentBridge, openWorkspaceFromQuery } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
@@ -49,7 +50,7 @@ export function JetApp() {
   const [focusedPanel, setFocusedPanel] = useState<PanelId | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [lspUrl, setLspUrl] = useState<string | null>(null)
+  const [lspRevision, setLspRevision] = useState(0)
   const [userExtensions, setUserExtensions] = useState<Extension[]>([])
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [editorFocused, setEditorFocused] = useState(false)
@@ -87,27 +88,56 @@ export function JetApp() {
     () => ({
       editorFocus: editorFocused,
       paletteOpen,
+      quickOpenOpen,
+      gotoLineOpen,
       workspaceOpen: workspace.root != null,
       explorerFocus: activeTabKindName === "explorer",
       gitFocus: activeTabKindName === "git",
       terminalFocus: activeTabKindName === "terminal",
       searchFocus: activeTabKindName === "search",
     }),
-    [editorFocused, paletteOpen, workspace.root, activeTabKindName],
+    [editorFocused, paletteOpen, quickOpenOpen, gotoLineOpen, workspace.root, activeTabKindName],
+  )
+
+  const lspManager = useMemo(
+    () => (window.jet ? new LanguageServerManager(window.jet.lsp) : null),
+    [],
+  )
+
+  const lspClientPool = useMemo(() => new LspClientPool(), [])
+
+  const bumpLspRevision = useCallback(() => setLspRevision(r => r + 1), [])
+
+  const resolveLspClient = useCallback(
+    async (fileUri: string) => {
+      if (!lspManager || !workspace.root) return null
+      const path = isUntitledUri(fileUri) ? "" : fileUriToPath(fileUri)
+      const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
+      const conn = await lspManager.ensureServerForFile(file, workspace.root.uri)
+      if (!conn) return null
+      return lspClientPool.getOrCreateClient(conn)
+    },
+    [lspManager, workspace, lspClientPool],
+  )
+
+  const ensureLspForFile = useCallback(
+    async (fileUri: string) => {
+      if (!lspManager || !workspace.root || isUntitledUri(fileUri)) return
+      const path = fileUriToPath(fileUri)
+      const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
+      const conn = await lspManager.ensureServerForFile(file, workspace.root.uri)
+      if (conn) bumpLspRevision()
+    },
+    [lspManager, workspace, bumpLspRevision],
   )
 
   const lspStatus = useMemo((): "connected" | "off" | "unavailable" => {
-    if (isWebMode) return "unavailable"
+    if (!window.jet?.lsp) return "unavailable"
     if (lspCrashed) return "off"
-    if (lspUrl) return "connected"
+    if (lspManager?.hasAnyConnection()) return "connected"
     if (workspace.root) return "off"
     return "off"
-  }, [lspUrl, workspace.root, lspCrashed])
-
-  const lspManager = useMemo(
-    () => (!isWebMode && window.jet ? new LanguageServerManager(window.jet.lsp) : null),
-    [],
-  )
+  }, [lspManager, workspace.root, lspCrashed, lspRevision])
 
   const cloneTree = useCallback(
     () => PanelTree.fromJSON(panelTree.toJSON()),
@@ -150,8 +180,9 @@ export function JetApp() {
           if (view) jumpToLine(view, line, column ?? 1)
         })
       }
+      void ensureLspForFile(uri)
     },
-    [workspace, focusedPanel, cloneTree, commitTree],
+    [workspace, focusedPanel, cloneTree, commitTree, ensureLspForFile],
   )
 
   const handleOpenFileAt = useCallback(
@@ -242,15 +273,13 @@ export function JetApp() {
       if (lspManager && workspace.root) {
         try {
           const probeUri = pathToFileUri(`${folderPath}/package.json`)
-          const file = workspace.createWorkspaceFile(probeUri, `${folderPath}/package.json`)
-          const conn = await lspManager.ensureServerForFile(file, workspace.root.uri)
-          setLspUrl(conn?.transportUrl ?? null)
+          await ensureLspForFile(probeUri)
         } catch {
           /* no lsp */
         }
       }
     },
-    [workspace, commands, focusedPanel, keymaps, lspManager, handleOpenFile],
+    [workspace, commands, focusedPanel, keymaps, lspManager, handleOpenFile, ensureLspForFile],
   )
 
   openWorkspaceRef.current = openWorkspaceFolder
@@ -597,22 +626,24 @@ export function JetApp() {
   }, [layoutReady])
 
   useEffect(() => {
-    if (!window.jet?.lsp?.onCrashed || isWebMode) return
-    return window.jet.lsp.onCrashed(() => {
+    if (!window.jet?.lsp?.onCrashed) return
+    return window.jet.lsp.onCrashed(id => {
+      lspClientPool.releaseConnection(id)
       setLspCrashed(true)
-      setLspUrl(null)
+      bumpLspRevision()
       setMessage("LSP crashed — will retry on next editor focus")
     })
-  }, [])
+  }, [lspClientPool, bumpLspRevision])
 
   useEffect(() => {
     if (!editorFocused || !lspCrashed || !lspManager || !workspace.root) return
     const retry = async () => {
       try {
-        const probeUri = pathToFileUri(`${workspace.root!.path}/package.json`)
-        const file = workspace.createWorkspaceFile(probeUri, `${workspace.root!.path}/package.json`)
-        const conn = await lspManager.ensureServerForFile(file, workspace.root!.uri)
-        setLspUrl(conn?.transportUrl ?? null)
+        const leaf = focusedPanel && panelTree.getLeaf(focusedPanel)
+        const tabId = leaf?.group.tabs[leaf.group.active]
+        const kind = tabId ? workspace.tabRegistry.get(tabId) : null
+        if (kind?.kind !== "editor") return
+        await ensureLspForFile(kind.fileUri)
         setLspCrashed(false)
         setMessage("LSP reconnected")
       } catch {
@@ -620,7 +651,7 @@ export function JetApp() {
       }
     }
     void retry()
-  }, [editorFocused, lspCrashed, lspManager, workspace.root])
+  }, [editorFocused, lspCrashed, lspManager, workspace.root, focusedPanel, panelTree, workspace.tabRegistry, ensureLspForFile])
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -651,8 +682,27 @@ export function JetApp() {
   }, [activeTabKindName, focusedPanel, panelTree, keymapRevision])
 
   useEffect(() => {
+    let lastCloseTabAt = 0
+    const closeActiveTab = () => {
+      if (!workspace.root || anyOverlayOpen(keymapContext)) return
+      const now = Date.now()
+      if (now - lastCloseTabAt < 100) return
+      lastCloseTabAt = now
+      void executeCommand("layout.closeTab")
+    }
+
+    const onCloseTabEvent = () => closeActiveTab()
+    window.addEventListener("jet-close-tab", onCloseTabEvent)
+
     const onKey = (e: KeyboardEvent) => {
-      if (paletteOpen) return
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+        if (!workspace.root || anyOverlayOpen(keymapContext)) return
+        e.preventDefault()
+        e.stopPropagation()
+        closeActiveTab()
+        return
+      }
+      if (anyOverlayOpen(keymapContext)) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       for (const binding of keymaps.allBindings()) {
         if (editorFocused) continue
@@ -663,9 +713,12 @@ export function JetApp() {
         return
       }
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [keymaps, keymapContext, editorFocused, paletteOpen, executeCommand])
+    window.addEventListener("keydown", onKey, true)
+    return () => {
+      window.removeEventListener("jet-close-tab", onCloseTabEvent)
+      window.removeEventListener("keydown", onKey, true)
+    }
+  }, [keymaps, keymapContext, editorFocused, executeCommand, workspace.root])
 
   const showWorkspace = workspace.root != null
 
@@ -690,7 +743,7 @@ export function JetApp() {
           <button
             type="button"
             className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
-            onClick={() => setPaletteOpen(true)}
+            onClick={() => setQuickOpenOpen(true)}
           >
             ⌘P
           </button>
@@ -707,7 +760,8 @@ export function JetApp() {
             focusedPanelId={focusedPanel}
             onFocusPanel={setFocusedPanel}
             onEvent={handlePanelEvent}
-            lspTransportUrl={lspUrl}
+            resolveLspClient={resolveLspClient}
+            lspRevision={lspRevision}
             executeCommand={executeCommand}
             onOpenFile={handleOpenFile}
             onOpenFileAt={handleOpenFileAt}

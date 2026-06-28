@@ -3,11 +3,17 @@ import type { JetKeyBinding } from "./keymaps.js"
 export type KeymapContext = {
   editorFocus: boolean
   paletteOpen: boolean
+  quickOpenOpen: boolean
+  gotoLineOpen: boolean
   workspaceOpen: boolean
   explorerFocus: boolean
   gitFocus: boolean
   terminalFocus: boolean
   searchFocus: boolean
+}
+
+export function anyOverlayOpen(ctx: KeymapContext): boolean {
+  return ctx.paletteOpen || ctx.quickOpenOpen || ctx.gotoLineOpen
 }
 
 export function matchesWhen(binding: JetKeyBinding, ctx: KeymapContext): boolean {

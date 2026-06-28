@@ -12,6 +12,7 @@ export type LanguageServerDescriptor = {
 export type LspConnection = {
   id: string
   rootUri: string
+  projectRootUri: string
   languageIds: string[]
   transportUrl: string
   descriptorId: string
@@ -83,6 +84,7 @@ export class LanguageServerManager {
       const connection: LspConnection = {
         id: conn.id,
         rootUri,
+        projectRootUri: pathToFileUri(projectRoot),
         languageIds: descriptor.languageIds,
         transportUrl: conn.transportUrl,
         descriptorId: descriptor.id,
@@ -98,6 +100,10 @@ export class LanguageServerManager {
     const descriptor = this.descriptorForLanguage(languageId)
     if (!descriptor) return null
     return this.connections.get(`${descriptor.id}:${rootUri}`) ?? null
+  }
+
+  hasAnyConnection(): boolean {
+    return this.connections.size > 0
   }
 
   clearConnection(id: string): void {
