@@ -17,6 +17,7 @@ export type JetAgentAPI = {
   executeCommand(commandId: string): Promise<void>
   getState(): JetAgentState
   waitForReady(): Promise<void>
+  waitForEditor(timeoutMs?: number): Promise<void>
 }
 
 export type AgentBridgeContext = {
@@ -50,6 +51,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
     },
     async executeCommand(commandId: string) {
       await ctx().executeCommand(commandId)
+      await new Promise<void>(resolve => queueMicrotask(resolve))
     },
     getState() {
       const current = ctx()
@@ -68,6 +70,15 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
         await new Promise(r => setTimeout(r, 50))
       }
       throw new Error("Jet layout did not become ready in time")
+    },
+    async waitForEditor(timeoutMs = 5000) {
+      const deadline = Date.now() + timeoutMs
+      while (Date.now() < deadline) {
+        const editor = document.querySelector(".cm-editor")
+        if (editor) return
+        await new Promise(r => setTimeout(r, 50))
+      }
+      throw new Error("Editor did not mount in time")
     },
   }
 }

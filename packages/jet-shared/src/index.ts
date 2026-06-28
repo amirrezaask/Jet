@@ -58,5 +58,15 @@ export function languageIdFromPath(path: string): string {
   return map[ext] ?? "plaintext"
 }
 
+export const UNTITLED_SCHEME = "untitled:"
+
+export function isUntitledUri(uri: string): boolean {
+  return uri.startsWith(UNTITLED_SCHEME)
+}
+
+export function makeUntitledUri(n: number): string {
+  return `${UNTITLED_SCHEME}untitled-${n}`
+}
+
 export * from "./git.js"
 export * from "./panels.js"

@@ -8,6 +8,8 @@ const api: JetElectronAPI = {
     readDir: uri => ipcRenderer.invoke("fs:readDir", uri),
     stat: uri => ipcRenderer.invoke("fs:stat", uri),
     showOpenFolderDialog: () => ipcRenderer.invoke("fs:showOpenFolderDialog"),
+    showSaveFileDialog: (defaultPath?: string) =>
+      ipcRenderer.invoke("fs:showSaveFileDialog", defaultPath),
   },
   git: {
     isRepo: rootUri => ipcRenderer.invoke("git:isRepo", rootUri),

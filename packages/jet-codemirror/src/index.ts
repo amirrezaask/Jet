@@ -1,4 +1,13 @@
-export { createJetEditorView, applyUserKeymaps, applyUserExtensions, isLargeFile, userKeymapCompartment, extensionCompartment, lspCompartment } from "./createEditorView.js"
+export {
+  createJetEditorView,
+  applyUserKeymaps,
+  applyUserExtensions,
+  isLargeFile,
+  openSearchPanel,
+  userKeymapCompartment,
+  extensionCompartment,
+  lspCompartment,
+} from "./createEditorView.js"
 export { motionCursor } from "./motion-cursor.js"
 export { jetThemeExtension } from "./theme.js"
 export { defaultJetTheme, applyJetThemeCss, type JetTheme, type JetColors } from "./theme-types.js"

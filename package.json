@@ -7,9 +7,11 @@
     "dev:web": "turbo run dev --filter=jet-web",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
+    "test:web": "playwright test",
     "postinstall": "pnpm rebuild electron"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "turbo": "^2.5.4",
     "typescript": "^5.8.3"
   },

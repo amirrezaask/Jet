@@ -1,4 +1,4 @@
-import { basename, Emitter, languageIdFromPath, pathToFileUri } from "@jet/shared"
+import { basename, Emitter, languageIdFromPath, pathToFileUri, makeUntitledUri } from "@jet/shared"
 import type { PanelId, TabId } from "@jet/shared"
 import type { PanelTree } from "@jet/panels"
 import type { TabKind, TabMeta, WorkspaceFile, WorkspaceRoot } from "./types.js"
@@ -39,6 +39,13 @@ export class TabRegistry {
     this.onDidChange.fire()
   }
 
+  clear(): void {
+    this.kinds.clear()
+    this.metas.clear()
+    this.panelByTab.clear()
+    this.onDidChange.fire()
+  }
+
   panelForTab(tabId: TabId): PanelId | undefined {
     return this.panelByTab.get(tabId.id)
   }
@@ -55,6 +62,7 @@ export class TabRegistry {
 export class WorkspaceService {
   root: WorkspaceRoot | null = null
   private files = new Map<string, WorkspaceFile>()
+  private untitledCounter = 1
   readonly tabRegistry = new TabRegistry()
   readonly onDidOpenFile = new Emitter<WorkspaceFile>()
   readonly onDidChangeDirty = new Emitter<{ uri: string; isDirty: boolean }>()
@@ -115,7 +123,28 @@ export class WorkspaceService {
     return file
   }
 
+  findEditorTab(uri: string): TabId | undefined {
+    for (const tabId of this.tabRegistry.allTabs()) {
+      const kind = this.tabRegistry.get(tabId)
+      if (kind?.kind === "editor" && kind.fileUri === uri) return tabId
+    }
+    return undefined
+  }
+
   openEditorTab(tree: PanelTree, panelId: PanelId, uri: string, path: string): TabId {
+    const existing = this.findEditorTab(uri)
+    if (existing) {
+      const existingPanel = this.tabRegistry.panelForTab(existing) ?? tree.findPanelForTab(existing)
+      if (existingPanel) {
+        tree.setActiveTab(existingPanel, existing)
+        this.tabRegistry.setPanel(existing, existingPanel)
+      } else {
+        tree.insertTab(panelId, existing)
+        this.tabRegistry.setPanel(existing, panelId)
+      }
+      return existing
+    }
+
     let file = this.files.get(uri)
     if (!file) file = this.createWorkspaceFile(uri, path)
     const tabId = tree.allocTabId()
@@ -130,10 +159,48 @@ export class WorkspaceService {
     return tabId
   }
 
+  openUntitledTab(tree: PanelTree, panelId: PanelId): TabId {
+    const n = this.untitledCounter++
+    const uri = makeUntitledUri(n)
+    const label = `Untitled-${n}`
+    const file: WorkspaceFile = {
+      uri,
+      path: "",
+      name: label,
+      languageId: "plaintext",
+      isDirty: false,
+    }
+    this.registerFile(file)
+    const tabId = tree.allocTabId()
+    tree.insertTab(panelId, tabId)
+    this.tabRegistry.set(
+      tabId,
+      { kind: "editor", fileUri: uri },
+      { label, dirty: false, closeable: true },
+      panelId,
+    )
+    this.onDidOpenFile.fire(file)
+    return tabId
+  }
+
+  promoteUntitledTab(tabId: TabId, fileUri: string, path: string): void {
+    const kind = this.tabRegistry.get(tabId)
+    if (kind?.kind !== "editor") return
+    this.files.delete(kind.fileUri)
+    const file = this.createWorkspaceFile(fileUri, path)
+    const panel = this.tabRegistry.panelForTab(tabId)
+    this.tabRegistry.set(
+      tabId,
+      { kind: "editor", fileUri },
+      { label: file.name, dirty: false, closeable: true },
+      panel,
+    )
+  }
+
   ensureSingletonTab(
     tree: PanelTree,
     panelId: PanelId,
-    kind: Extract<TabKind, { kind: "explorer" | "git" | "terminal" }>,
+    kind: Extract<TabKind, { kind: "explorer" | "git" | "terminal" | "search" | "problems" }>,
     label: string,
     existingTabId: TabId | null,
   ): TabId {

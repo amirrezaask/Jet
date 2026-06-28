@@ -49,6 +49,7 @@ export interface FileSystemProvider {
 
 export type JetElectronFS = FileSystemProvider & {
   showOpenFolderDialog(): Promise<string | null>
+  showSaveFileDialog(defaultPath?: string): Promise<string | null>
 }
 
 export type JetElectronGit = {

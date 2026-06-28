@@ -1,7 +1,9 @@
+import type { KeymapContext } from "./context-keys.js"
+
 export type JetKeyBinding = {
   key: string
   command: string
-  when?: string
+  when?: (ctx: KeymapContext) => boolean
 }
 
 export class KeymapService {
@@ -21,10 +23,13 @@ export class KeymapService {
 }
 
 export const defaultKeybindings: JetKeyBinding[] = [
-  { key: "Mod-p", command: "ui.showCommandPalette" },
-  { key: "Mod-s", command: "workspace.saveFile" },
-  { key: "Mod-o", command: "workspace.openFolder" },
-  { key: "Mod-w", command: "layout.closeTab" },
-  { key: "Mod-Shift-g", command: "git.showChanges" },
-  { key: "Mod-Shift-e", command: "explorer.show" },
+  { key: "Mod-p", command: "ui.showCommandPalette", when: ctx => !ctx.paletteOpen },
+  { key: "Mod-s", command: "workspace.saveFile", when: ctx => ctx.editorFocus && !ctx.paletteOpen },
+  { key: "Mod-n", command: "workspace.newFile", when: ctx => ctx.workspaceOpen && !ctx.paletteOpen },
+  { key: "Mod-o", command: "workspace.openFolder", when: ctx => !ctx.paletteOpen },
+  { key: "Mod-w", command: "layout.closeTab", when: ctx => ctx.editorFocus && !ctx.paletteOpen },
+  { key: "Mod-f", command: "editor.find", when: ctx => ctx.editorFocus && !ctx.paletteOpen },
+  { key: "Mod-Shift-f", command: "search.show", when: ctx => ctx.workspaceOpen && !ctx.paletteOpen },
+  { key: "Mod-Shift-g", command: "git.showChanges", when: ctx => ctx.workspaceOpen && !ctx.paletteOpen },
+  { key: "Mod-Shift-e", command: "explorer.show", when: ctx => ctx.workspaceOpen && !ctx.paletteOpen },
 ]

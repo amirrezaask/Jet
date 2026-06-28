@@ -6,11 +6,14 @@ import {
   historyKeymap,
   indentWithTab,
 } from "@codemirror/commands"
+import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { LSPClient, languageServerExtensions, type Transport } from "@codemirror/lsp-client"
 import { simpleWebSocketTransport } from "./lsp-transport.js"
 import type { WorkspaceFile } from "@jet/workspace"
 import type { WorkspaceService } from "@jet/workspace"
 import type { JetKeyBinding } from "@jet/workspace"
+import type { KeymapContext } from "@jet/workspace"
+import { matchesWhen } from "@jet/workspace"
 import { jetThemeExtension } from "./theme.js"
 import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { motionCursor } from "./motion-cursor.js"
@@ -31,6 +34,7 @@ export type CreateJetEditorViewOptions = {
   executeCommand: (name: string) => Promise<void>
   userExtensions?: Extension[]
   onViewCreated?: (view: EditorView) => void
+  onSelectionChange?: (line: number, column: number) => void
 }
 
 export async function createJetEditorView(opts: CreateJetEditorViewOptions): Promise<EditorView> {
@@ -40,7 +44,9 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   const extensions: Extension[] = [
     lineNumbers(),
     history(),
-    keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+    search({ top: true }),
+    highlightSelectionMatches(),
+    keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
     jetThemeExtension(theme),
     motionCursor(),
     languageCompartment.of(lang),
@@ -49,6 +55,11 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     EditorView.updateListener.of(update => {
       if (update.docChanged) {
         opts.workspace.markDirty(opts.file.uri, true)
+      }
+      if (update.selectionSet && opts.onSelectionChange) {
+        const pos = update.state.selection.main.head
+        const line = update.state.doc.lineAt(pos)
+        opts.onSelectionChange(line.number, pos - line.from + 1)
       }
     }),
   ]
@@ -63,6 +74,11 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   }
 
   opts.onViewCreated?.(view)
+  if (opts.onSelectionChange) {
+    const pos = view.state.selection.main.head
+    const line = view.state.doc.lineAt(pos)
+    opts.onSelectionChange(line.number, pos - line.from + 1)
+  }
   return view
 }
 
@@ -84,11 +100,13 @@ export function applyUserKeymaps(
   view: EditorView,
   bindings: JetKeyBinding[],
   executeCommand: (name: string) => Promise<void>,
+  keymapContext?: KeymapContext,
 ): void {
+  const active = keymapContext ? bindings.filter(b => matchesWhen(b, keymapContext)) : bindings
   view.dispatch({
     effects: userKeymapCompartment.reconfigure(
       keymap.of(
-        bindings.map(binding => ({
+        active.map(binding => ({
           key: binding.key,
           run: () => {
             executeCommand(binding.command).catch(console.error)
@@ -99,6 +117,8 @@ export function applyUserKeymaps(
     ),
   })
 }
+
+export { openSearchPanel } from "@codemirror/search"
 
 export function isLargeFile(text: string): boolean {
   if (text.length > 4 * 1024 * 1024) return true

@@ -35,6 +35,7 @@ export function ExplorerTab({
 
   const tree = useTree<TreeNode>({
     rootItemId: rootUri ?? "empty",
+    initialState: rootUri ? { expandedItems: [rootUri] } : undefined,
     getItemName: item => item.getItemData()?.name ?? "?",
     isItemFolder: item => item.getItemData()?.isDirectory ?? false,
     dataLoader: {
@@ -95,6 +96,11 @@ export function ExplorerTab({
     },
   })
 
+  useEffect(() => {
+    if (!rootUri) return
+    void tree.getItemInstance(rootUri).expand()
+  }, [rootUri, tree])
+
   if (!rootUri) {
     return (
       <div className="flex h-full items-center justify-center text-[var(--jet-text-muted)]">
@@ -104,7 +110,11 @@ export function ExplorerTab({
   }
 
   return (
-    <div {...tree.getContainerProps()} className="h-full overflow-auto p-1 outline-none">
+    <div
+      {...tree.getContainerProps()}
+      className="h-full overflow-auto p-1 outline-none"
+      aria-label="Explorer"
+    >
       {tree.getItems().map(item => {
         const node = item.getItemData()
         if (!node) return null

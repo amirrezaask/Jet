@@ -19,4 +19,11 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog) {
     } as OpenDialogOptions)
     return result.canceled ? null : result.filePaths[0] ?? null
   })
+
+  ipcMain.handle("fs:showSaveFileDialog", async (_e, defaultPath?: string) => {
+    const result = await dialog.showSaveDialog({
+      defaultPath,
+    })
+    return result.canceled ? null : result.filePath ?? null
+  })
 }

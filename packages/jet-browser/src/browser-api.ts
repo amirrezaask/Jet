@@ -22,6 +22,7 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
       readDir: uri => postJson(baseUrl, "/fs/readDir", { uri }),
       stat: uri => postJson(baseUrl, "/fs/stat", { uri }),
       showOpenFolderDialog: async () => null,
+      showSaveFileDialog: async () => null,
     },
     git: {
       isRepo: rootUri => postJson<boolean>(baseUrl, "/git/isRepo", { rootUri }),

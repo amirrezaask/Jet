@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/*
+ * Tailwind v4 only auto-scans the Vite root (packages/jet-app), so utility
+ * classes used in sibling workspace packages (jet-ui, jet-panels, …) are never
+ * generated. Without this, classes like `absolute`/`relative`/`inset-0` are
+ * dropped and absolutely-positioned panels collapse into static block flow.
+ */
+@source "../../../*/src/**/*.{ts,tsx}";
+@source "../../../../apps/*/src/**/*.{ts,tsx}";
+
 @theme {
   --color-background: var(--jet-bg);
   --color-foreground: var(--jet-text);

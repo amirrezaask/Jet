@@ -21,7 +21,9 @@ export async function readFile(uri: string): Promise<string> {
 }
 
 export async function writeFile(uri: string, content: string): Promise<void> {
-  await fs.writeFile(uriToPath(uri), content, "utf8")
+  const p = uriToPath(uri)
+  await fs.mkdir(path.dirname(p), { recursive: true })
+  await fs.writeFile(p, content, "utf8")
 }
 
 export async function readDir(uri: string): Promise<NodeHostDirEntry[]> {

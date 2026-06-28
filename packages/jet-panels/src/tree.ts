@@ -171,6 +171,26 @@ export class PanelTree {
     return found
   }
 
+  /** Drop tab ids missing from registry; remove empty leaves. */
+  sanitizeKnownTabs(isKnown: (tab: TabId) => boolean): void {
+    this.visitLeaves(node => {
+      node.group.tabs = node.group.tabs.filter(isKnown)
+      if (node.group.tabs.length === 0) {
+        node.group.active = 0
+      } else if (node.group.active >= node.group.tabs.length) {
+        node.group.active = node.group.tabs.length - 1
+      }
+    })
+    for (;;) {
+      const empty: PanelId[] = []
+      this.visitLeaves(node => {
+        if (node.group.tabs.length === 0) empty.push(node.panelId)
+      })
+      if (empty.length === 0) break
+      for (const panel of empty) this.closePanel(panel)
+    }
+  }
+
   getLeaf(panel: PanelId): { panelId: PanelId; group: TabGroup } | null {
     let leaf: { panelId: PanelId; group: TabGroup } | null = null
     this.visitLeaves(node => {
@@ -195,11 +215,20 @@ export class PanelTree {
   }
 
   static defaultLayout(): PanelTree {
+    return PanelTree.workspaceLayout().tree
+  }
+
+  /** Row split: narrow sidebar (left) + main editor area (right). */
+  static workspaceLayout(): { tree: PanelTree; sidebarPanel: PanelId; editorPanel: PanelId } {
     const tree = new PanelTree()
-    const editorPanel =
-      tree.root.kind === "leaf" ? tree.root.panelId : tree.allocPanelId()
-    tree.attachAtViewportEdge("left")
-    return tree
+    const sidebarPanel = tree.attachAtViewportEdge("left")
+    const root = tree.root
+    if (root.kind !== "row") {
+      return { tree, sidebarPanel, editorPanel: sidebarPanel }
+    }
+    const main = root.split.children[1]
+    const editorPanel = main?.kind === "leaf" ? main.panelId : sidebarPanel
+    return { tree, sidebarPanel, editorPanel }
   }
 
   private createDefaultLeaf(): PanelNode {
