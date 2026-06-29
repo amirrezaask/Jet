@@ -99,20 +99,14 @@ export function EditorTabHost({
       let file = workspace.fileForUri(fileUri)
       if (!file) file = workspace.createWorkspaceFile(fileUri, path)
       fileLanguageIdRef.current = file.languageId
-      const text = untitled ? "" : await workspace.readFile(fileUri)
-      if (cancelled) return
-      let lspClient: LSPClient | null = null
-      if (!untitled && !isLargeFile(text) && resolveLspClientRef.current) {
-        lspClient = await resolveLspClientRef.current(fileUri)
-      }
-      if (cancelled) return
+
       view = await createJetEditorView({
         parent,
         workspace,
         file,
-        initialText: text,
+        initialText: untitled ? "" : "",
         theme,
-        lspClient,
+        lspClient: null,
         executeCommand: runCommand,
         userExtensions,
         onSelectionChange: (line, column) => onEditorSelectionChangeRef.current?.(line, column),
@@ -131,6 +125,27 @@ export function EditorTabHost({
       view.dom.addEventListener("focus", onFocus)
       view.dom.addEventListener("blur", onBlur)
       if (autoFocus) view.focus()
+
+      if (!untitled) {
+        const text = await workspace.readFile(fileUri)
+        if (cancelled) return
+        const mounted = viewByTab.get(tabId.id)
+        if (!mounted) return
+        if (text.length > 0) {
+          mounted.dispatch({
+            changes: { from: 0, to: mounted.state.doc.length, insert: text },
+          })
+        }
+        if (!isLargeFile(text) && resolveLspClientRef.current) {
+          void (async () => {
+            const client = await resolveLspClientRef.current!(fileUri)
+            if (cancelled || !client) return
+            const live = viewByTab.get(tabId.id)
+            if (!live) return
+            await reconfigureLsp(live, fileUri, fileLanguageIdRef.current, client)
+          })()
+        }
+      }
     })()
 
     return () => {

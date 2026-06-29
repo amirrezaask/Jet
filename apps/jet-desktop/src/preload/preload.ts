@@ -20,6 +20,16 @@ ipcRenderer.on("jet:close-tab", () => {
   window.dispatchEvent(new CustomEvent("jet-close-tab"))
 })
 
+const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
+ipcRenderer.on("workspace:fileIndex", (_e, payload: { rootUri: string; files: string[] }) => {
+  for (const cb of fileIndexListeners) cb(payload.rootUri, payload.files)
+})
+
+const gitBranchListeners = new Set<(rootUri: string, branch: string | null) => void>()
+ipcRenderer.on("workspace:gitBranch", (_e, payload: { rootUri: string; branch: string | null }) => {
+  for (const cb of gitBranchListeners) cb(payload.rootUri, payload.branch)
+})
+
 const api: JetElectronAPI = {
   fs: {
     readFile: uri => ipcRenderer.invoke("fs:readFile", uri),
@@ -29,10 +39,20 @@ const api: JetElectronAPI = {
     showOpenFolderDialog: () => ipcRenderer.invoke("fs:showOpenFolderDialog"),
     showSaveFileDialog: (defaultPath?: string) =>
       ipcRenderer.invoke("fs:showSaveFileDialog", defaultPath),
-    watchWorkspace: rootUri => ipcRenderer.invoke("fs:watchWorkspace", rootUri),
     onFileChanged: callback => {
       fileChangeListeners.add(callback)
       return () => fileChangeListeners.delete(callback)
+    },
+  },
+  workspace: {
+    activate: rootUri => ipcRenderer.invoke("workspace:activate", rootUri),
+    onFileIndex: callback => {
+      fileIndexListeners.add(callback)
+      return () => fileIndexListeners.delete(callback)
+    },
+    onGitBranch: callback => {
+      gitBranchListeners.add(callback)
+      return () => gitBranchListeners.delete(callback)
     },
   },
   git: {
@@ -77,6 +97,14 @@ const api: JetElectronAPI = {
       }
     },
     dispose: id => ipcRenderer.invoke("terminal:dispose", id),
+  },
+  getLaunchConfig: () => ipcRenderer.invoke("jet:getLaunchConfig"),
+  getHomeDir: () => ipcRenderer.invoke("jet:getHomeDir"),
+  onLaunch: cb => {
+    const handler = (_e: Electron.IpcRendererEvent, config: import("@jet/workspace").LaunchConfig) =>
+      cb(config)
+    ipcRenderer.on("jet:launch", handler)
+    return () => ipcRenderer.removeListener("jet:launch", handler)
   },
 }
 

@@ -36,12 +36,16 @@ const baseCtx: KeymapContext = {
   paletteOpen: false,
   quickOpenOpen: false,
   openFileOpen: false,
+  cdOpen: false,
   gotoLineOpen: false,
+  outlineOpen: false,
   workspaceOpen: true,
   explorerFocus: false,
   gitFocus: false,
   terminalFocus: false,
   searchFocus: false,
+  problemsFocus: false,
+  listFocus: false,
 }
 
 describe("keyEventMatchesBindingPart", () => {

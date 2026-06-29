@@ -18,6 +18,12 @@ export {
   type JetDevHostOptions,
 } from "./dev-middleware.js"
 export {
+  findWorkspaceRoot,
+  resolveLaunchTarget,
+  WORKSPACE_MARKERS,
+  type LaunchConfig,
+} from "./resolve-launch.js"
+export {
   startLspSession,
   stopLspSession,
   stopAllLspSessions,

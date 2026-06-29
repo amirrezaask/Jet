@@ -16,10 +16,10 @@ import {
   type JetKeyBinding,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
-import { createAgentBridge, openWorkspaceFromQuery } from "@jet/browser"
+import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
 import { applyJetThemeCss, defaultJetTheme, jumpToLine, collectProblemsFromViews, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
-import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, getEditorView, getAllEditorViews, type OutlineEntry } from "@jet/ui"
+import { PanelDock, CommandPalette, StatusBar, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, CdOverlay, getEditorView, getAllEditorViews, type OutlineEntry } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
@@ -32,11 +32,11 @@ import { confirmCloseEditorTab } from "./tab-close.js"
 import {
   activeTabKind,
   getAllLeafPanels,
-  moveEditorTabsToMain,
   resolveEditorPanel,
   resolveTargetPanel,
 } from "./panel-routing.js"
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
+import { bootstrapFromLaunch } from "./launch-bootstrap.js"
 
 const THEME_STORAGE_KEY = "jet-theme-id"
 
@@ -44,10 +44,19 @@ const isWebMode = Boolean(import.meta.env.VITE_JET_WEB)
 const hasWorkspaceQuery =
   isWebMode && new URLSearchParams(window.location.search).has("workspace")
 
+function initialEditorLayout() {
+  return PanelTree.editorOnlyLayout()
+}
+
 function loadStoredTheme(): JetTheme {
   const id = localStorage.getItem(THEME_STORAGE_KEY)
   if (id && bundledThemes[id]) return bundledThemes[id]!
   return defaultJetTheme
+}
+
+function normalizeAbsPath(p: string): string {
+  const trimmed = p.replace(/[/\\]+$/, "")
+  return trimmed || p
 }
 
 function jetPlatformFS(): import("@jet/workspace").FileSystemProvider {
@@ -61,8 +70,9 @@ function jetPlatformFS(): import("@jet/workspace").FileSystemProvider {
 }
 
 export function JetApp() {
-  const [panelTree, setPanelTree] = useState(() => PanelTree.defaultLayout())
-  const [focusedPanel, setFocusedPanel] = useState<PanelId | null>(null)
+  const initialLayout = useMemo(() => initialEditorLayout(), [])
+  const [panelTree, setPanelTree] = useState(() => initialLayout.tree)
+  const [focusedPanel, setFocusedPanel] = useState<PanelId | null>(() => initialLayout.editorPanel)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [lspRevision, setLspRevision] = useState(0)
@@ -78,6 +88,7 @@ export function JetApp() {
   const [outlineSymbols, setOutlineSymbols] = useState<OutlineEntry[]>([])
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
   const [openFileOpen, setOpenFileOpen] = useState(false)
+  const [cdOpen, setCdOpen] = useState(false)
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [fileIndex, setFileIndex] = useState<string[]>([])
   const [problems, setProblems] = useState<JetProblem[]>([])
@@ -85,14 +96,15 @@ export function JetApp() {
   const [lspCrashed, setLspCrashed] = useState(false)
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
-  const openWorkspaceRef = useRef<(folderPath: string) => Promise<void>>(async () => {})
+  const openWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
   const handleOpenFileRef = useRef<(uri: string, path: string) => void>(() => {})
   const explorerTabRef = useRef<TabId | null>(null)
   const gitTabRef = useRef<TabId | null>(null)
-  const editorPanelRef = useRef<PanelId | null>(null)
+  const editorPanelRef = useRef<PanelId | null>(initialLayout.editorPanel)
   const terminalTabRef = useRef<TabId | null>(null)
   const searchTabRef = useRef<TabId | null>(null)
   const problemsTabRef = useRef<TabId | null>(null)
+  const workspaceInitGen = useRef(0)
 
   const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
   const commands = useMemo(() => new CommandRegistry(), [])
@@ -109,6 +121,7 @@ export function JetApp() {
       paletteOpen,
       quickOpenOpen,
       openFileOpen,
+      cdOpen,
       gotoLineOpen,
       outlineOpen,
       workspaceOpen: workspace.root != null,
@@ -123,7 +136,7 @@ export function JetApp() {
         activeTabKindName === "search" ||
         activeTabKindName === "problems",
     }),
-    [editorFocused, paletteOpen, quickOpenOpen, openFileOpen, gotoLineOpen, outlineOpen, workspace.root, activeTabKindName],
+    [editorFocused, paletteOpen, quickOpenOpen, openFileOpen, cdOpen, gotoLineOpen, outlineOpen, workspace.root, activeTabKindName],
   )
 
   const lspManager = useMemo(
@@ -185,6 +198,27 @@ export function JetApp() {
     setLayoutReady(true)
   }, [])
 
+  useEffect(() => {
+    if (!window.jet?.fs.onFileChanged) return
+    return window.jet.fs.onFileChanged(uri => workspace.handleExternalFileChange(uri))
+  }, [workspace])
+
+  useEffect(() => {
+    if (!window.jet?.workspace) return
+    const unsubIndex = window.jet.workspace.onFileIndex((rootUri, files) => {
+      if (workspace.root?.uri !== rootUri) return
+      setFileIndex(files)
+    })
+    const unsubBranch = window.jet.workspace.onGitBranch((rootUri, branch) => {
+      if (workspace.root?.uri !== rootUri) return
+      setGitBranch(branch)
+    })
+    return () => {
+      unsubIndex()
+      unsubBranch()
+    }
+  }, [workspace])
+
   const handleOpenFile = useCallback(
     (uri: string, path: string, line?: number, column?: number) => {
       const tree = cloneTree()
@@ -219,8 +253,10 @@ export function JetApp() {
   )
 
   const openWorkspaceFolder = useCallback(
-    async (folderPath: string) => {
-      await workspace.openWorkspace(folderPath)
+    (folderPath: string) => {
+      const gen = ++workspaceInitGen.current
+
+      void workspace.openWorkspace(folderPath)
 
       workspace.tabRegistry.clear()
       explorerTabRef.current = null
@@ -229,83 +265,79 @@ export function JetApp() {
       searchTabRef.current = null
       problemsTabRef.current = null
 
-      const session = loadWorkspaceSession(folderPath)
-      if (session) {
-        const restored = restoreWorkspaceSession(session, workspace)
-        editorPanelRef.current = restored.editorPanel
-        explorerTabRef.current =
-          restored.singletons.explorer != null ? { id: restored.singletons.explorer } : null
-        gitTabRef.current = restored.singletons.git != null ? { id: restored.singletons.git } : null
-        terminalTabRef.current =
-          restored.singletons.terminal != null ? { id: restored.singletons.terminal } : null
-        searchTabRef.current =
-          restored.singletons.search != null ? { id: restored.singletons.search } : null
-        problemsTabRef.current =
-          restored.singletons.problems != null ? { id: restored.singletons.problems } : null
-        setPanelTree(restored.tree)
-        setFocusedPanel(restored.focusedPanel ?? restored.editorPanel)
-        setMessage(`Opened ${folderPath}`)
+      // Instant shell — editor-only layout; session restore runs after first paint.
+      const { tree, editorPanel } = PanelTree.editorOnlyLayout()
+      editorPanelRef.current = editorPanel
+      setPanelTree(tree)
+      setFocusedPanel(editorPanel)
+      setMessage(`Opened ${folderPath}`)
+      setFileIndex([])
+      setGitBranch(null)
+
+      const finishOpen = () => {
+        if (workspaceInitGen.current !== gen) return
+
+        const session = loadWorkspaceSession(folderPath)
+        if (session) {
+          const restored = restoreWorkspaceSession(session, workspace)
+          editorPanelRef.current = restored.editorPanel
+          explorerTabRef.current =
+            restored.singletons.explorer != null ? { id: restored.singletons.explorer } : null
+          gitTabRef.current = restored.singletons.git != null ? { id: restored.singletons.git } : null
+          terminalTabRef.current =
+            restored.singletons.terminal != null ? { id: restored.singletons.terminal } : null
+          searchTabRef.current =
+            restored.singletons.search != null ? { id: restored.singletons.search } : null
+          problemsTabRef.current =
+            restored.singletons.problems != null ? { id: restored.singletons.problems } : null
+          setPanelTree(restored.tree)
+          setFocusedPanel(restored.focusedPanel ?? restored.editorPanel)
+        }
+
+        const rootUri = workspace.root?.uri
+        if (!rootUri) return
+
+        if (window.jet?.workspace) {
+          void window.jet.workspace.activate(rootUri)
+          return
+        }
+
+        void (async () => {
+          if (workspaceInitGen.current !== gen) return
+          if (window.jet?.git) {
+            try {
+              const repo = await window.jet.git.isRepo(rootUri)
+              if (workspaceInitGen.current !== gen) return
+              setGitBranch(repo ? await window.jet.git.branch(rootUri) : null)
+            } catch {
+              if (workspaceInitGen.current !== gen) return
+              setGitBranch(null)
+            }
+          }
+          if (workspaceInitGen.current !== gen) return
+          try {
+            const files = await indexWorkspaceFiles(
+              jetPlatformFS(),
+              rootUri,
+              50_000,
+              window.jet?.search?.listFiles,
+            )
+            if (workspaceInitGen.current !== gen) return
+            setFileIndex(files)
+          } catch {
+            if (workspaceInitGen.current !== gen) return
+            setFileIndex([])
+          }
+        })()
+      }
+
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(finishOpen)
       } else {
-        const { tree, sidebarPanel, editorPanel } = PanelTree.workspaceLayout()
-        editorPanelRef.current = editorPanel
-        if (sidebarPanel) {
-          explorerTabRef.current = workspace.ensureSingletonTab(
-            tree,
-            sidebarPanel,
-            { kind: "explorer" },
-            "Explorer",
-            null,
-          )
-          gitTabRef.current = workspace.ensureSingletonTab(
-            tree,
-            sidebarPanel,
-            { kind: "git" },
-            "Git",
-            null,
-          )
-        }
-        setPanelTree(tree)
-        setFocusedPanel(editorPanel)
-        moveEditorTabsToMain(tree, workspace.tabRegistry, sidebarPanel, editorPanel)
-        setMessage(`Opened ${folderPath}`)
-      }
-
-      if (window.jet?.git) {
-        const repo = await window.jet.git.isRepo(workspace.root!.uri)
-        if (repo) {
-          setGitBranch(await window.jet.git.branch(workspace.root!.uri))
-        } else {
-          setGitBranch(null)
-        }
-      }
-
-      try {
-        const files = await indexWorkspaceFiles(
-          jetPlatformFS(),
-          workspace.root!.uri,
-          50_000,
-          window.jet?.search?.listFiles,
-        )
-        setFileIndex(files)
-      } catch {
-        setFileIndex([])
-      }
-
-      if (window.jet?.fs.onFileChanged) {
-        window.jet.fs.onFileChanged(uri => workspace.handleExternalFileChange(uri))
-      }
-      await window.jet?.fs.watchWorkspace?.(workspace.root!.uri)
-
-      if (lspManager && workspace.root) {
-        try {
-          const probeUri = pathToFileUri(`${folderPath}/package.json`)
-          await ensureLspForFile(probeUri)
-        } catch {
-          /* no lsp */
-        }
+        requestAnimationFrame(finishOpen)
       }
     },
-    [workspace, lspManager, handleOpenFile, ensureLspForFile],
+    [workspace],
   )
 
   openWorkspaceRef.current = openWorkspaceFolder
@@ -441,6 +473,7 @@ export function JetApp() {
         setPaletteOpen,
         setQuickOpenOpen,
         setOpenFileOpen,
+        setCdOpen,
         setGotoLineOpen,
         setMessage,
         setFocusedPanel,
@@ -586,7 +619,9 @@ export function JetApp() {
       showMessage: setMessage,
     }
 
-    void loadWorkspaceInit(jetDir, ctx)
+    const runInit = () => void loadWorkspaceInit(jetDir, ctx)
+    if (typeof requestIdleCallback === "function") requestIdleCallback(runInit)
+    else setTimeout(runInit, 0)
   }, [workspace.root, appCommands, getCommandContext, commands, keymaps, handleOpenFile])
 
   useEffect(() => {
@@ -600,7 +635,7 @@ export function JetApp() {
       message,
       layoutReady,
       executeCommand,
-      openWorkspace: openWorkspaceFolder,
+      openWorkspace: folderPath => Promise.resolve(openWorkspaceFolder(folderPath)),
       openFile: handleOpenFile,
     }))
     return () => {
@@ -620,16 +655,53 @@ export function JetApp() {
   ])
 
   useEffect(() => {
-    if (!isWebMode || !layoutReady || queryBootstrapDone.current) return
-    queryBootstrapDone.current = true
-    void openWorkspaceFromQuery(
-      window.location.search,
-      path => openWorkspaceRef.current(path),
-      (uri, path) => handleOpenFileRef.current(uri, path),
-    )
-      .catch(err => console.warn("Failed to open workspace from query:", err))
-      .finally(() => setBootstrapping(false))
+    if (!layoutReady || queryBootstrapDone.current) return
+
+    const openFile = (uri: string, path: string) => handleOpenFileRef.current(uri, path)
+    const finishBootstrap = (cfg: import("@jet/workspace").LaunchConfig | null) => {
+      if (!cfg || queryBootstrapDone.current) return
+      queryBootstrapDone.current = true
+      setBootstrapping(true)
+      bootstrapFromLaunch(path => openWorkspaceRef.current(path), openFile, cfg)
+      queueMicrotask(() => setBootstrapping(false))
+    }
+
+    if (isWebMode && hasWorkspaceQuery) {
+      queryBootstrapDone.current = true
+      setBootstrapping(true)
+      void openWorkspaceFromQuery(
+        window.location.search,
+        path => Promise.resolve(openWorkspaceRef.current(path)),
+        openFile,
+      )
+        .catch(err => console.warn("Failed to open workspace from query:", err))
+        .finally(() => setBootstrapping(false))
+      return
+    }
+
+    if (!isWebMode && window.jet?.getLaunchConfig) {
+      void window.jet.getLaunchConfig().then(finishBootstrap)
+    }
   }, [layoutReady])
+
+  useEffect(() => {
+    if (!window.jet?.onLaunch) return
+    return window.jet.onLaunch(config => {
+      const openFile = (uri: string, path: string) => handleOpenFileRef.current(uri, path)
+      if (!queryBootstrapDone.current) {
+        queryBootstrapDone.current = true
+        setBootstrapping(true)
+        bootstrapFromLaunch(path => openWorkspaceRef.current(path), openFile, config)
+        queueMicrotask(() => setBootstrapping(false))
+        return
+      }
+      bootstrapFromLaunch(
+        path => openWorkspaceRef.current(path),
+        openFile,
+        config,
+      )
+    })
+  }, [])
 
   useEffect(() => {
     if (!window.jet?.lsp?.onCrashed) return
@@ -745,19 +817,39 @@ export function JetApp() {
     }
   }, [keymaps, keymapContext, editorFocused, runKeyBinding, workspace.root])
 
-  const showWorkspace = workspace.root != null
+  const handleCdSelectFolder = useCallback(
+    (folderPath: string) => {
+      const next = normalizeAbsPath(folderPath)
+      const current = workspace.root?.path ? normalizeAbsPath(workspace.root.path) : null
+      if (current === next) return
+      openWorkspaceFolder(folderPath)
+    },
+    [workspace.root?.path, openWorkspaceFolder],
+  )
+
+  const resolveCdHomeDir = useCallback(async () => {
+    if (window.jet?.getHomeDir) return window.jet.getHomeDir()
+    const { path } = await resolveDevWorkspacePath(".")
+    return path
+  }, [])
 
   return (
     <div className="flex h-full flex-col bg-[var(--jet-bg)] text-[var(--jet-text)]">
       <header className="flex h-8 shrink-0 items-center border-b border-[var(--jet-border)] bg-[var(--jet-panel)] px-3 text-xs">
         <span className="font-semibold text-[var(--jet-accent)]">Jet</span>
         <span className="ml-3 text-[var(--jet-text-muted)]">
-          {workspace.root?.name ??
-            (isWebMode
-              ? "No folder open — use ?workspace=fixtures/sample-workspace"
-              : "No folder open — use Open Folder")}
+          {bootstrapping
+            ? "Opening workspace…"
+            : (workspace.root?.name ?? (isWebMode ? "No folder open" : "No folder open"))}
         </span>
         <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
+            onClick={() => void executeCommand("workspace.cd")}
+          >
+            cd
+          </button>
           <button
             type="button"
             className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
@@ -776,41 +868,33 @@ export function JetApp() {
       </header>
 
       <main className="min-h-0 flex-1">
-        {showWorkspace ? (
-          <PanelDock
-            tree={panelTree}
-            registry={workspace.tabRegistry}
-            workspace={workspace}
-            theme={activeTheme}
-            focusedPanelId={focusedPanel}
-            onFocusPanel={setFocusedPanel}
-            onEvent={handlePanelEvent}
-            resolveLspClient={resolveLspClient}
-            lspRevision={lspRevision}
-            executeCommand={executeCommand}
-            runKeyBinding={runKeyBinding}
-            onOpenFile={handleOpenFile}
-            onOpenFileAt={handleOpenFileAt}
-            onBranchChange={setGitBranch}
-            problems={problems}
-            onOpenProblem={p => handleOpenFileAt(p.uri, fileUriToPath(p.uri), p.line, p.column)}
-            keymapBindings={keymaps.allBindings()}
-            userExtensions={userExtensions}
-            keymapRevision={keymapRevision}
-            keymapContext={keymapContext}
-            onEditorFocusChange={focused => {
-              setEditorFocused(focused)
-              if (!focused) setCursorPos(null)
-            }}
-            onEditorSelectionChange={(line, column) => setCursorPos({ line, column })}
-          />
-        ) : (
-          <WelcomeView
-            isWebMode={isWebMode}
-            bootstrapping={bootstrapping}
-            onOpenFolder={() => void executeCommand("workspace.openFolder")}
-          />
-        )}
+        <PanelDock
+          tree={panelTree}
+          registry={workspace.tabRegistry}
+          workspace={workspace}
+          theme={activeTheme}
+          focusedPanelId={focusedPanel}
+          onFocusPanel={setFocusedPanel}
+          onEvent={handlePanelEvent}
+          resolveLspClient={resolveLspClient}
+          lspRevision={lspRevision}
+          executeCommand={executeCommand}
+          runKeyBinding={runKeyBinding}
+          onOpenFile={handleOpenFile}
+          onOpenFileAt={handleOpenFileAt}
+          onBranchChange={setGitBranch}
+          problems={problems}
+          onOpenProblem={p => handleOpenFileAt(p.uri, fileUriToPath(p.uri), p.line, p.column)}
+          keymapBindings={keymaps.allBindings()}
+          userExtensions={userExtensions}
+          keymapRevision={keymapRevision}
+          keymapContext={keymapContext}
+          onEditorFocusChange={focused => {
+            setEditorFocused(focused)
+            if (!focused) setCursorPos(null)
+          }}
+          onEditorSelectionChange={(line, column) => setCursorPos({ line, column })}
+        />
       </main>
 
       <StatusBar
@@ -852,6 +936,14 @@ export function JetApp() {
         onOpenChange={setOpenFileOpen}
         workspace={workspace}
         onOpenFile={handleOpenFile}
+      />
+
+      <CdOverlay
+        open={cdOpen}
+        onOpenChange={setCdOpen}
+        initialPath={workspace.root?.path ?? null}
+        onSelectFolder={handleCdSelectFolder}
+        resolveHomeDir={resolveCdHomeDir}
       />
 
       <OutlineOverlay

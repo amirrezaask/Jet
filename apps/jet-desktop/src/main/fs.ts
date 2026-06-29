@@ -1,17 +1,21 @@
 import type { IpcMain, OpenDialogOptions } from "electron"
 import type { Dialog } from "electron"
-import { readFile, writeFile, readDir, stat } from "@jet/node-host"
+import { getFsWorker } from "./background-pool.js"
 
 export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog) {
-  ipcMain.handle("fs:readFile", async (_e, uri: string) => readFile(uri))
+  ipcMain.handle("fs:readFile", async (_e, uri: string) =>
+    getFsWorker().dispatch<string>("readFile", { uri }),
+  )
 
   ipcMain.handle("fs:writeFile", async (_e, uri: string, content: string) => {
-    await writeFile(uri, content)
+    await getFsWorker().dispatch<void>("writeFile", { uri, content })
   })
 
-  ipcMain.handle("fs:readDir", async (_e, uri: string) => readDir(uri))
+  ipcMain.handle("fs:readDir", async (_e, uri: string) =>
+    getFsWorker().dispatch("readDir", { uri }),
+  )
 
-  ipcMain.handle("fs:stat", async (_e, uri: string) => stat(uri))
+  ipcMain.handle("fs:stat", async (_e, uri: string) => getFsWorker().dispatch("stat", { uri }))
 
   ipcMain.handle("fs:showOpenFolderDialog", async () => {
     const result = await dialog.showOpenDialog({

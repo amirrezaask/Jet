@@ -43,12 +43,13 @@ export type BuildAppCommandsDeps = {
   setPaletteOpen: (open: boolean) => void
   setQuickOpenOpen: (open: boolean) => void
   setOpenFileOpen: (open: boolean) => void
+  setCdOpen: (open: boolean) => void
   setGotoLineOpen: (open: boolean) => void
   setMessage: (msg: string) => void
   setFocusedPanel: (panel: PanelId) => void
   cloneTree: () => PanelTree
   commitTree: (tree: PanelTree) => void
-  openWorkspaceFolder: (path: string) => Promise<void>
+  openWorkspaceFolder: (path: string) => void
   handlePanelEvent: (event: { type: "tabClose"; tabId: TabId }) => void
   showSingletonViewTab: (
     kind: "search" | "problems",
@@ -78,7 +79,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       }
       return
     }
-    await deps.openWorkspaceFolder(folderPath)
+    deps.openWorkspaceFolder(folderPath)
   }
 
   function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
@@ -114,6 +115,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.setOpenFileOpen(true)
     },
     openFolder,
+    cd: () => deps.setCdOpen(true),
     save: async ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
@@ -414,6 +416,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "workspace.saveFile", fn: "save", title: "Save File", category: "Workspace" },
   { id: "workspace.openFile", fn: "openFile", title: "Open File", category: "Workspace" },
   { id: "workspace.openFolder", fn: "openFolder", title: "Open Folder", category: "Workspace" },
+  { id: "workspace.cd", fn: "cd", title: "Change Directory", category: "Workspace" },
   { id: "workspace.newFile", fn: "newFile", title: "New File", category: "Workspace" },
   { id: "layout.closeTab", fn: "closeTab", title: "Close Tab", category: "Layout" },
   { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor" },

@@ -16,25 +16,33 @@ export {
 export function registerLspHandlers(ipcMain: IpcMain, getWindow: () => BrowserWindow | null) {
   ipcMain.handle(
     "lsp:start",
-    async (
+  async (
       _e,
       rootUri: string,
       _languageId: string,
       command?: string,
       args?: string[],
-    ) => {
-      const result = await startLspSession({
-        rootUri,
-        command,
-        args,
-        onSpawnError: id => getWindow()?.webContents.send("lsp:crashed", id),
-      })
-      return result
-    },
+    ) =>
+      new Promise((resolve, reject) => {
+        setImmediate(() => {
+          void startLspSession({
+            rootUri,
+            command,
+            args,
+            onSpawnError: id => getWindow()?.webContents.send("lsp:crashed", id),
+          })
+            .then(resolve)
+            .catch(reject)
+        })
+      }),
   )
 
   ipcMain.handle("lsp:stop", async (_e, id: string) => {
-    await stopLspSession(id)
+    await new Promise<void>((resolve, reject) => {
+      setImmediate(() => {
+        void stopLspSession(id).then(resolve).catch(reject)
+      })
+    })
   })
 
   ipcMain.on("lsp:registerCrashListener", () => {

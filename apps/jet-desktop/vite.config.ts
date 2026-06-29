@@ -5,6 +5,28 @@ import electron from "vite-plugin-electron/simple"
 import path from "node:path"
 
 const electronOutDir = path.resolve(__dirname, "dist-electron")
+const repoRoot = path.resolve(__dirname, "../..")
+
+function forwardDevArgs(): string[] {
+  const fromEnv = process.env.JET_LAUNCH_ARGS
+  if (fromEnv) {
+    try {
+      const parsed = JSON.parse(fromEnv) as unknown
+      if (Array.isArray(parsed)) {
+        return parsed.filter((a): a is string => typeof a === "string" && !a.startsWith("-"))
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  const dash = process.argv.indexOf("--")
+  const raw = dash >= 0 ? process.argv.slice(dash + 1) : process.argv.slice(2)
+  return raw.filter(a => !a.startsWith("-"))
+}
+
+function resolveLaunchArgs(extra: string[]): string[] {
+  return extra.map(arg => path.resolve(repoRoot, arg))
+}
 
 export default defineConfig({
   plugins: [
@@ -13,11 +35,27 @@ export default defineConfig({
     electron({
       main: {
         entry: path.resolve(__dirname, "src/main/main.ts"),
+        onstart({ startup }) {
+          const extra = forwardDevArgs()
+          const argv = [".", "--no-sandbox"]
+          if (extra.length > 0) argv.push("--", ...resolveLaunchArgs(extra))
+          startup(argv)
+        },
         vite: {
           build: {
             outDir: electronOutDir,
             rollupOptions: {
               external: ["electron", "ws", "node-pty"],
+              input: {
+                main: path.resolve(__dirname, "src/main/main.ts"),
+                "workers/fs-io": path.resolve(__dirname, "src/main/workers/fs-io.ts"),
+                "workers/git-ops": path.resolve(__dirname, "src/main/workers/git-ops.ts"),
+                "workers/search-ops": path.resolve(__dirname, "src/main/workers/search-ops.ts"),
+                "workers/fs-watch": path.resolve(__dirname, "src/main/workers/fs-watch.ts"),
+              },
+              output: {
+                entryFileNames: chunk => (chunk.name === "main" ? "main.js" : `${chunk.name}.js`),
+              },
             },
           },
         },

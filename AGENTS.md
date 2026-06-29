@@ -145,7 +145,7 @@ Use via `browser_cdp` → `Runtime.evaluate` with `awaitPromise: true` for async
 
 1. `pnpm dev:web` — server on port **5174**
 2. `browser_navigate` → quick-start URL
-3. `browser_snapshot` — explorer + editor visible (explorer has `aria-label="Explorer"`)
+3. `browser_snapshot` — editor visible (`.cm-editor`); explorer **not** shown by default (use `explorer.show` / Mod-Shift-e)
 4. `browser_cdp` / `Runtime.evaluate`: `await __jetAgent.waitForReady()` then `waitForEditor()` after openFile
 5. `__jetAgent.getState()` — workspace path set, one editor tab per opened file
 6. `browser_click` editor → `browser_type` — chars appear without extra focus click
@@ -196,6 +196,16 @@ JET_DEV_ROOTS="/path/a:/path/b" pnpm dev:web
 
 
 
+### Desktop CLI startup
+
+Electron main resolves launch target from `process.argv` + `process.cwd()` via `@jet/node-host` `resolveLaunchTarget`:
+
+- No args → open `cwd` as workspace
+- Directory arg → open that directory
+- File arg → open file; workspace = nearest project root (`.git`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `.jet`)
+
+Forwarded to renderer via `jet:getLaunchConfig` IPC; macOS `open-file` and second-instance reuse `jet:launch`.
+
 ### Electron IPC (`window.jet`)
 
 Exposed via preload → `@jet/workspace` types (`JetElectronAPI`).
@@ -215,7 +225,8 @@ Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
 ### Panel docking (`@jet/panels`)
 
 - `PanelTree` — row/column splits, tab groups, 5-way drop (edges + center)
-- `workspaceLayout()` / `defaultLayout()` — row split: sidebar left (~~22%), main editor right (~~78%)
+- `editorOnlyLayout()` / `defaultLayout()` — single full-width editor panel (no sidebar split by default)
+- `workspaceLayout()` — row split: sidebar left (~22%) + main editor right (~78%); used when splitting for explorer/git on demand
 - Serializable via `toJSON()` / `fromJSON()`; `sanitizeKnownTabs()` strips orphan tab ids when needed
 - UI: `PanelDock`, `TabRow`, `DropOverlay` in `@jet/ui`
 - `resolveEditorPanel()` in `App.tsx` — new/open editor tabs route to main editor panel (not sidebar)
@@ -259,7 +270,9 @@ Registered in `packages/jet-app/src/App.tsx`:
 | ----------------------- | --------------------- |
 | `ui.showCommandPalette` | Mod-p                 |
 | `ui.selectTheme`        | — (palette: Theme: …) |
-| `workspace.openFolder`  | Mod-o                 |
+| `workspace.openFolder`  | Cmd-k Cmd-o (native dialog) |
+| `workspace.cd`          | — (palette: Change Directory) |
+| `workspace.openFile`    | Mod-o                 |
 | `workspace.saveFile`    | Mod-s                 |
 | `workspace.newFile`     | Mod-n                 |
 | `editor.find`           | Mod-f                 |
@@ -348,10 +361,10 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 ## What Works Today (smoke test)
 
-1. `pnpm dev` / `pnpm dev:web` → window loads
-2. **Open Folder** / query URL / `__jetAgent.openWorkspace()` → FS + optional `.jet/editorrc.ts`
-3. Default layout — Explorer/Git **left**, editor **right** (row split)
-4. Explorer tree — root expands; click file → editor tab in main panel
+1. `pnpm dev` / `pnpm dev:web` → blank editor shell (single panel, no WelcomeView)
+2. **Open Folder** / `workspace.cd` / query URL / `__jetAgent.openWorkspace()` / desktop CLI (`jet .`, `jet path/to/file`) → FS + optional `.jet/editorrc.ts`
+3. Default layout on first open — **editor only** (no explorer/git until `explorer.show` / `git.showChanges`)
+4. Explorer tree — on demand via Mod-Shift-e; click file → editor tab
 5. Edit + **Mod-s** save (click editor tab first if needed)
 6. **Mod-p** command palette — centered screen modal
 7. Git tab (if repo)

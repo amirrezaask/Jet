@@ -95,12 +95,27 @@ export type JetElectronLSP = {
   onCrashed(cb: (id: string) => void): () => void
 }
 
+export type LaunchConfig = {
+  workspacePath: string
+  filePath?: string
+}
+
+export type JetElectronWorkspace = {
+  activate(rootUri: string): Promise<{ ok: boolean }>
+  onFileIndex(callback: (rootUri: string, files: string[]) => void): () => void
+  onGitBranch(callback: (rootUri: string, branch: string | null) => void): () => void
+}
+
 export type JetElectronAPI = {
   fs: JetElectronFS
   git: JetElectronGit
   search: JetElectronSearch
   lsp: JetElectronLSP
   terminal?: JetElectronTerminal
+  workspace?: JetElectronWorkspace
+  getLaunchConfig?(): Promise<LaunchConfig | null>
+  getHomeDir?(): Promise<string>
+  onLaunch?(cb: (config: LaunchConfig) => void): () => void
 }
 
 declare global {

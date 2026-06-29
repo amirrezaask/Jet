@@ -1,8 +1,10 @@
 import type { IpcMain } from "electron"
-import { listProjectFiles, projectSearch } from "@jet/node-host"
+import { getSearchWorker } from "./background-pool.js"
 
 export function registerSearchHandlers(ipcMain: IpcMain) {
-  ipcMain.handle("search:listFiles", async (_e, rootUri: string) => listProjectFiles(rootUri))
+  ipcMain.handle("search:listFiles", async (_e, rootUri: string) =>
+    getSearchWorker().dispatch<string[]>("listFiles", { rootUri }),
+  )
   ipcMain.handle(
     "search:project",
     async (
@@ -10,6 +12,6 @@ export function registerSearchHandlers(ipcMain: IpcMain) {
       rootUri: string,
       query: string,
       opts?: { caseSensitive?: boolean; regex?: boolean },
-    ) => projectSearch(rootUri, query, opts),
+    ) => getSearchWorker().dispatch("project", { rootUri, query, ...opts }),
   )
 }

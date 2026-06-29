@@ -5,6 +5,7 @@ export type KeymapContext = {
   paletteOpen: boolean
   quickOpenOpen: boolean
   openFileOpen: boolean
+  cdOpen: boolean
   gotoLineOpen: boolean
   outlineOpen: boolean
   workspaceOpen: boolean
@@ -28,6 +29,7 @@ export function anyOverlayOpen(ctx: KeymapContext): boolean {
     ctx.paletteOpen ||
     ctx.quickOpenOpen ||
     ctx.openFileOpen ||
+    ctx.cdOpen ||
     ctx.gotoLineOpen ||
     ctx.outlineOpen
   )

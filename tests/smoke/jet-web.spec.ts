@@ -13,7 +13,6 @@ test("jet web smoke: workspace, editor, agent API", async ({ page }) => {
   expect(state.workspace).toContain("sample-workspace")
   expect(state.tabs.some(t => t.kind === "editor")).toBe(true)
 
-  await expect(page.locator('[aria-label="Explorer"]')).toBeVisible()
   await expect(page.locator(".cm-editor")).toBeVisible()
 })
 

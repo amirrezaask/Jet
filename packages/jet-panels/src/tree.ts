@@ -215,7 +215,15 @@ export class PanelTree {
   }
 
   static defaultLayout(): PanelTree {
-    return PanelTree.workspaceLayout().tree
+    return PanelTree.editorOnlyLayout().tree
+  }
+
+  /** Single full-width editor panel — no sidebar split. */
+  static editorOnlyLayout(): { tree: PanelTree; editorPanel: PanelId } {
+    const tree = new PanelTree()
+    const root = tree.root
+    const editorPanel = root.kind === "leaf" ? root.panelId : tree.allocPanelId()
+    return { tree, editorPanel }
   }
 
   /** Row split: narrow sidebar (left) + main editor area (right). */

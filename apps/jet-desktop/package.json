@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/electron-dev.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "pack:mac": "vite build && electron-builder --mac --config electron-builder.yml",
