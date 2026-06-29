@@ -259,6 +259,9 @@ importers:
 
   packages/jet-lsp:
     dependencies:
+      '@codemirror/autocomplete':
+        specifier: ^6.20.0
+        version: 6.20.3
       '@codemirror/lsp-client':
         specifier: ^6.2.5
         version: 6.2.5
@@ -307,6 +310,9 @@ importers:
         specifier: workspace:*
         version: link:../jet-shared
     devDependencies:
+      tsx:
+        specifier: ^4.19.4
+        version: 4.22.4
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

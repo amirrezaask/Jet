@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { Extension } from "@codemirror/state"
+import type { EditorView } from "@codemirror/view"
 import { PanelTree, resolveDropAtPoint, type PanelEvent } from "@jet/panels"
 import type { PanelId, TabId } from "@jet/shared"
 import type { JetProblem } from "@jet/shared"
@@ -24,7 +25,7 @@ export type PanelDockProps = {
   resolveLspClient?: (fileUri: string) => Promise<import("@jet/codemirror").LSPClient | null>
   lspRevision?: number
   executeCommand: (name: string) => Promise<void>
-  runKeyBinding: (binding: JetKeyBinding) => void
+  runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
   onOpenFile: (uri: string, path: string) => void
   onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
   onBranchChange?: (branch: string | null) => void

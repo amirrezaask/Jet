@@ -3,6 +3,7 @@ import type { TabId } from "@jet/shared"
 import type { JetProblem } from "@jet/shared"
 import { pathToFileUri } from "@jet/shared"
 import type { Extension } from "@codemirror/state"
+import type { EditorView } from "@codemirror/view"
 import type { LSPClient } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
 import type { JetTheme } from "@jet/codemirror"
@@ -47,7 +48,7 @@ function TabBodyInner({
   resolveLspClient?: (fileUri: string) => Promise<LSPClient | null>
   lspRevision?: number
   executeCommand: (name: string) => Promise<void>
-  runKeyBinding: (binding: JetKeyBinding) => void
+  runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
   onOpenFile: (uri: string, path: string) => void
   onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
   onBranchChange?: (branch: string | null) => void

@@ -14,7 +14,7 @@ import type { WorkspaceFile } from "@jet/workspace"
 import type { WorkspaceService } from "@jet/workspace"
 import type { JetKeyBinding } from "@jet/workspace"
 import type { KeymapContext } from "@jet/workspace"
-import { jetKeyToCodeMirrorKey, matchesWhen } from "@jet/workspace"
+import { jetKeyToCodeMirrorKey, matchesWhen, isEditorKeyBinding } from "@jet/workspace"
 import { jetThemeExtension } from "./theme.js"
 import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { motionCursor } from "./motion-cursor.js"
@@ -182,19 +182,23 @@ export function applyUserExtensions(view: EditorView, extensions: Extension[]): 
 export function applyUserKeymaps(
   view: EditorView,
   bindings: JetKeyBinding[],
-  runBinding: (binding: JetKeyBinding) => void,
+  runBinding: (binding: JetKeyBinding, view: EditorView) => void,
   keymapContext?: KeymapContext,
 ): void {
   perfMeasure("jet:apply-user-keymaps", () => {
-    const active = keymapContext ? bindings.filter(b => matchesWhen(b, keymapContext)) : bindings
+    const active = bindings.filter(b => {
+      if (keymapContext && !matchesWhen(b, keymapContext)) return false
+      if (!keymapContext || !b.when) return false
+      return isEditorKeyBinding(b, keymapContext)
+    })
     const cmBindings = active.flatMap(binding => {
       const cmKey = jetKeyToCodeMirrorKey(binding.key)
       if (!cmKey) return []
       return [
         {
           key: cmKey,
-          run: () => {
-            runBinding(binding)
+          run: (cmView: EditorView) => {
+            runBinding(binding, cmView)
             return true
           },
         },

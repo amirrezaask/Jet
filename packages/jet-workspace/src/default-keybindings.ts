@@ -12,7 +12,7 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   return [
   // --- App shell ---
   bind("Cmd-n", cmd.newFile, workspaceOpen),
-  bind("Cmd-p", cmd.quickOpen, workspaceOpen),
+  bind("Cmd-p", cmd.quickOpen, noOverlay),
   bind("Cmd-Shift-p", cmd.palette, noOverlay),
   bind("Cmd-s", cmd.save, workspaceOpen),
   bind("Cmd-o", cmd.openFile, noOverlay),
@@ -73,6 +73,8 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   bind("F12", cmd.goToDefinition, editorFocus),
   bind("Shift-F12", cmd.goToReferences, editorFocus),
   bind("Ctrl-Space", cmd.triggerSuggest, editorFocus),
+  bind("Alt-`", cmd.triggerSuggest, editorFocus),
+  bind("Alt-i", cmd.triggerSuggest, editorFocus),
   bind("Cmd-Shift-Space", cmd.triggerParameterHints, editorFocus),
   bind("Cmd-.", cmd.quickFix, editorFocus),
   bind("Cmd-F12", cmd.goToImplementation, editorFocus),

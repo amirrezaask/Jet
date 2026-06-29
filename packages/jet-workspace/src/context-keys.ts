@@ -39,6 +39,12 @@ export function matchesWhen(binding: JetKeyBinding, ctx: KeymapContext): boolean
   return binding.when?.(ctx) ?? true
 }
 
+/** True when binding only fires with editor focus (route via CM keymap, not window). */
+export function isEditorKeyBinding(binding: JetKeyBinding, ctx: KeymapContext): boolean {
+  if (!binding.when) return false
+  return binding.when({ ...ctx, editorFocus: true }) && !binding.when({ ...ctx, editorFocus: false })
+}
+
 export function parseKeyPart(part: string): ParsedKeyPart {
   const segments = part.split("-").filter(Boolean)
   const modifiers = new Set<string>()

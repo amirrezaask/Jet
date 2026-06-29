@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react"
 import { PanelTree, type PanelEvent } from "@jet/panels"
 import type { PanelId, TabId } from "@jet/shared"
 import { pathToFileUri, isUntitledUri, fileUriToPath } from "@jet/shared"
@@ -12,12 +19,14 @@ import {
   createChordState,
   anyOverlayOpen,
   createDefaultKeybindings,
+  isEditorKeyBinding,
   type JetCommandContext,
   type JetKeyBinding,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
+import type { EditorView } from "@codemirror/view"
 import { applyJetThemeCss, defaultJetTheme, jumpToLine, collectProblemsFromViews, problemsFingerprint, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
 import { PanelDock, CommandPalette, StatusBar, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, CdOverlay, getEditorView, getAllEditorViews, setEditorCursor, type OutlineEntry } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
@@ -111,6 +120,11 @@ export function JetApp() {
   const keymaps = useMemo(() => new KeymapService(), [])
 
   const keymapBindings = useMemo(() => keymaps.allBindings(), [keymaps, keymapRevision])
+
+  useEffect(() => {
+    const sub = keymaps.onDidChange.event(() => setKeymapRevision(r => r + 1))
+    return () => sub.dispose()
+  }, [keymaps])
 
   const paletteCommands = useMemo(() => commands.list(), [commands, sessionRev, keymapRevision])
 
@@ -350,11 +364,7 @@ export function JetApp() {
         })()
       }
 
-      if (typeof requestIdleCallback === "function") {
-        requestIdleCallback(finishOpen)
-      } else {
-        requestAnimationFrame(finishOpen)
-      }
+      setTimeout(finishOpen, 0)
     },
     [workspace],
   )
@@ -435,6 +445,8 @@ export function JetApp() {
     [cloneTree, commitTree, focusedPanel, workspace],
   )
 
+  const keymapTargetViewRef = useRef<EditorView | null>(null)
+
   const getCommandContext = useCallback((): JetCommandContext => {
     return {
       workspace,
@@ -444,6 +456,7 @@ export function JetApp() {
         setCommandPaletteOpen: setPaletteOpen,
       },
       getActiveEditorView: () => {
+        if (keymapTargetViewRef.current) return keymapTargetViewRef.current
         const leaf = focusedPanel && panelTree.getLeaf(focusedPanel)
         const tab = leaf?.group.tabs[leaf.group.active]
         return tab ? (getEditorView(tab) ?? null) : null
@@ -530,8 +543,13 @@ export function JetApp() {
   )
 
   const runKeyBinding = useCallback(
-    (binding: JetKeyBinding) => {
-      void binding.run(getCommandContext())
+    (binding: JetKeyBinding, view?: EditorView) => {
+      keymapTargetViewRef.current = view ?? null
+      try {
+        void binding.run(getCommandContext())
+      } finally {
+        keymapTargetViewRef.current = null
+      }
     },
     [getCommandContext],
   )
@@ -611,6 +629,13 @@ export function JetApp() {
   }, [workspace, panelTree, focusedPanel, sessionRev])
 
   const loadedInitFor = useRef<string | null>(null)
+  const workspaceInitCtxRef = useRef({
+    appCommands,
+    getCommandContext,
+    commands,
+    handleOpenFile,
+  })
+  workspaceInitCtxRef.current = { appCommands, getCommandContext, commands, handleOpenFile }
 
   useEffect(() => {
     if (!workspace.root) {
@@ -629,19 +654,22 @@ export function JetApp() {
 
     const ctx: JetInitContext = {
       workspace,
-      commands,
-      appCommands,
-      getCommandContext,
+      get commands() {
+        return workspaceInitCtxRef.current.commands
+      },
+      get appCommands() {
+        return workspaceInitCtxRef.current.appCommands
+      },
+      getCommandContext: () => workspaceInitCtxRef.current.getCommandContext(),
       addKeybindings(bindings) {
         keymaps.registerExtension(bindings)
-        setKeymapRevision(r => r + 1)
       },
       addEditorExtensions(ext) {
         setUserExtensions(prev => [...prev, ...ext])
       },
       openFile: async uri => {
         const path = uri.replace(/^file:\/\//, "")
-        handleOpenFile(uri, decodeURIComponent(path))
+        workspaceInitCtxRef.current.handleOpenFile(uri, decodeURIComponent(path))
       },
       showMessage: setMessage,
     }
@@ -649,7 +677,7 @@ export function JetApp() {
     const runInit = () => void loadWorkspaceInit(jetDir, ctx)
     if (typeof requestIdleCallback === "function") requestIdleCallback(runInit)
     else setTimeout(runInit, 0)
-  }, [workspace.root, appCommands, getCommandContext, commands, keymaps, handleOpenFile])
+  }, [workspace.root, keymaps, workspace])
 
   useEffect(() => {
     if (!isWebMode) return
@@ -831,7 +859,16 @@ export function JetApp() {
         return
       }
 
-      if (editorFocused) return
+      if (result && !isEditorKeyBinding(result, keymapContext)) {
+        e.preventDefault()
+        e.stopPropagation()
+        runKeyBinding(result)
+        return
+      }
+
+      if (result && isEditorKeyBinding(result, keymapContext)) {
+        return
+      }
 
       if (result) {
         e.preventDefault()
@@ -843,7 +880,7 @@ export function JetApp() {
       window.removeEventListener("jet-close-tab", onCloseTabEvent)
       window.removeEventListener("keydown", onKey, true)
     }
-  }, [keymapBindings, keymapContext, editorFocused, runKeyBinding, workspace.root])
+  }, [keymapBindings, keymapContext, runKeyBinding, workspace.root])
 
   const handleCdSelectFolder = useCallback(
     (folderPath: string) => {

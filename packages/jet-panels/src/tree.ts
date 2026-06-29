@@ -181,12 +181,14 @@ export class PanelTree {
         node.group.active = node.group.tabs.length - 1
       }
     })
-    for (;;) {
+    for (let guard = 0; guard < 64; guard++) {
+      let leafCount = 0
       const empty: PanelId[] = []
       this.visitLeaves(node => {
+        leafCount++
         if (node.group.tabs.length === 0) empty.push(node.panelId)
       })
-      if (empty.length === 0) break
+      if (empty.length === 0 || leafCount <= 1) break
       for (const panel of empty) this.closePanel(panel)
     }
   }

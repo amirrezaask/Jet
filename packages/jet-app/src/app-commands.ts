@@ -35,6 +35,7 @@ import {
   runGoToImplementation,
   runTriggerSuggest,
   runShowHover,
+  lspPluginForView,
   type OutlineSymbol,
 } from "@jet/codemirror"
 import { scheduleCodeActions, applyCodeAction } from "@jet/lsp"
@@ -427,8 +428,15 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     triggerSuggest: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
-      if (!view) return
-      if (!runTriggerSuggest(view)) ctx.ui.showMessage("Suggest not available")
+      if (!view) {
+        ctx.ui.showMessage("No active editor")
+        return
+      }
+      if (!lspPluginForView(view)) {
+        ctx.ui.showMessage("LSP not connected for this file")
+        return
+      }
+      if (!runTriggerSuggest(view)) ctx.ui.showMessage("Suggest not available at cursor")
     },
     showHover: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null

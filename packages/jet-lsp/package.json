@@ -16,6 +16,7 @@
     "@jet/shared": "workspace:*",
     "@jet/workspace": "workspace:*",
     "@jet/codemirror": "workspace:*",
+    "@codemirror/autocomplete": "^6.20.0",
     "@codemirror/lsp-client": "^6.2.5",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.37.0"

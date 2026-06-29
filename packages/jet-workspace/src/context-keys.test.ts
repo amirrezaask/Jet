@@ -8,10 +8,12 @@ import {
   jetKeyToCodeMirrorKey,
   resolveKeydownBinding,
   createChordState,
+  isEditorKeyBinding,
 } from "./context-keys.js"
 import type { KeymapContext } from "./context-keys.js"
 import { bind } from "./keymaps.js"
 import type { JetKeyBinding } from "./keymaps.js"
+import { createDefaultKeybindings } from "./default-keybindings.js"
 
 function keyEvent(init: {
   key: string
@@ -139,5 +141,35 @@ describe("resolveKeydownBinding", () => {
 describe("parseBindingKey", () => {
   it("splits chord parts", () => {
     assert.deepEqual(parseBindingKey("Cmd-k Cmd-o"), ["Cmd-k", "Cmd-o"])
+  })
+})
+
+describe("isEditorKeyBinding", () => {
+  const noop = () => {}
+  const cmds = {
+    quickOpen: noop,
+    palette: noop,
+    find: noop,
+  }
+
+  it("treats Cmd-p as shell binding", () => {
+    const bindings = createDefaultKeybindings(cmds as never)
+    const quickOpen = bindings.find(b => b.key === "Cmd-p")
+    assert.ok(quickOpen)
+    assert.equal(isEditorKeyBinding(quickOpen!, baseCtx), false)
+  })
+
+  it("treats Cmd-Shift-p as shell binding", () => {
+    const bindings = createDefaultKeybindings(cmds as never)
+    const palette = bindings.find(b => b.key === "Cmd-Shift-p")
+    assert.ok(palette)
+    assert.equal(isEditorKeyBinding(palette!, baseCtx), false)
+  })
+
+  it("treats Cmd-f as editor binding", () => {
+    const bindings = createDefaultKeybindings(cmds as never)
+    const find = bindings.find(b => b.key === "Cmd-f")
+    assert.ok(find)
+    assert.equal(isEditorKeyBinding(find!, baseCtx), true)
   })
 })

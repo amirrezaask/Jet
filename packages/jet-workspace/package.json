@@ -12,7 +12,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc --emitDeclarationOnly --outDir dist",
-    "test": "tsx --test src/context-keys.test.ts"
+    "test": "tsx --test src/context-keys.test.ts src/keymaps.test.ts"
   },
   "dependencies": {
     "@jet/shared": "workspace:*",

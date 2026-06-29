@@ -67,7 +67,7 @@ function EditorTabHostInner({
   resolveLspClient?: (fileUri: string) => Promise<LSPClient | null>
   lspRevision?: number
   executeCommand: (name: string) => Promise<void>
-  runKeyBinding: (binding: JetKeyBinding) => void
+  runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
   keymapRevision: number
@@ -95,7 +95,9 @@ function EditorTabHostInner({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
   const runCommand = useRef((name: string) => executeCommandRef.current(name)).current
-  const runBinding = useRef((binding: JetKeyBinding) => runKeyBindingRef.current(binding)).current
+  const runBinding = useRef((binding: JetKeyBinding, view: EditorView) =>
+    runKeyBindingRef.current(binding, view),
+  ).current
 
   useEffect(() => {
     return registerEditorContextMenuHandler((x, y) => {

@@ -1,4 +1,5 @@
 import type { JetCommandFn } from "./commands.js"
+import { Emitter } from "@jet/shared"
 
 export type { JetCommandFn } from "./commands.js"
 
@@ -18,13 +19,16 @@ export function bind(
 
 export class KeymapService {
   private layers: JetKeyBinding[][] = [[], [], []]
+  readonly onDidChange = new Emitter<void>()
 
   registerUser(bindings: JetKeyBinding[]): void {
     this.layers[1] = bindings
+    this.onDidChange.fire()
   }
 
   registerExtension(bindings: JetKeyBinding[]): void {
     this.layers[2] = bindings
+    this.onDidChange.fire()
   }
 
   allBindings(): JetKeyBinding[] {
