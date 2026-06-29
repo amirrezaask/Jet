@@ -12,6 +12,7 @@ export {
 } from "./createEditorView.js"
 export { openReplaceSearchPanel, jumpToLine } from "./editor-actions.js"
 export { setPendingEditorNavigation, consumePendingEditorNavigation } from "./editor-navigation.js"
+export { setPendingInitialContent, consumePendingInitialContent } from "./pending-content.js"
 export { collectProblemsFromViews, problemsFingerprint } from "./diagnostics.js"
 export { motionCursor } from "./motion-cursor.js"
 export { jetThemeExtension } from "./theme.js"

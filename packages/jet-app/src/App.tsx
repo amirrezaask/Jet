@@ -22,12 +22,13 @@ import {
   isEditorKeyBinding,
   type JetCommandContext,
   type JetKeyBinding,
+  type LaunchConfig,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
-import { applyJetThemeCss, defaultJetTheme, jumpToLine, collectProblemsFromViews, problemsFingerprint, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
+import { applyJetThemeCss, defaultJetTheme, jumpToLine, collectProblemsFromViews, problemsFingerprint, setPendingEditorNavigation, setPendingInitialContent, type JetTheme } from "@jet/codemirror"
 import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, CdOverlay, getEditorView, getAllEditorViews, setEditorCursor, formatKeyBinding, type OutlineEntry } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
@@ -48,6 +49,7 @@ import {
 } from "./panel-routing.js"
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
+import { useFileDrop } from "./use-file-drop.js"
 
 const THEME_STORAGE_KEY = "jet-theme-id"
 
@@ -105,6 +107,7 @@ export function JetApp() {
   const [sessionRev, setSessionRev] = useState(0)
   const [tabMetaRev, setTabMetaRev] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
+  const [fileDragOver, setFileDragOver] = useState(false)
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
@@ -394,6 +397,45 @@ export function JetApp() {
 
   openWorkspaceRef.current = openWorkspaceFolder
   handleOpenFileRef.current = handleOpenFile
+
+  const bootstrapFromLaunchForDrop = useCallback((config: LaunchConfig) => {
+    bootstrapFromLaunch(
+      path => openWorkspaceRef.current(path),
+      (uri, path) => handleOpenFileRef.current(uri, path),
+      config,
+    )
+  }, [])
+
+  const openUntitledFromDrop = useCallback(
+    (name: string, content: string) => {
+      const tree = cloneTree()
+      const panel = resolveEditorPanel(
+        tree,
+        workspace.tabRegistry,
+        editorPanelRef.current,
+        focusedPanel,
+      )
+      if (!panel) return
+      editorPanelRef.current = panel
+      const tabId = workspace.openUntitledTab(tree, panel, { label: name })
+      setPendingInitialContent(tabId, content)
+      setFocusedPanel(panel)
+      commitTree(tree)
+    },
+    [workspace, focusedPanel, cloneTree, commitTree],
+  )
+
+  useFileDrop({
+    fs: jetPlatformFS(),
+    workspaceRootPath: workspace.root?.path ?? workspaceRootPathRef.current,
+    normalizePath: normalizeAbsPath,
+    openWorkspace: path => openWorkspaceRef.current(path),
+    openFile: (uri, path) => handleOpenFileRef.current(uri, path),
+    bootstrapFromLaunch: bootstrapFromLaunchForDrop,
+    openUntitledFromDrop,
+    setMessage,
+    onDragOverChange: setFileDragOver,
+  })
 
   const handlePanelEvent = useCallback(
     (event: PanelEvent) => {
@@ -989,7 +1031,10 @@ export function JetApp() {
   }, [])
 
   return (
-    <div className="flex h-full flex-col bg-[var(--jet-bg)] text-[var(--jet-text)]">
+    <div
+      className="flex h-full flex-col bg-[var(--jet-bg)] text-[var(--jet-text)]"
+      data-drag-over={fileDragOver || undefined}
+    >
       <main className="min-h-0 flex-1">
         {workspace.root || bootstrapping ? (
           <PanelDock

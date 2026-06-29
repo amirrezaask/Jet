@@ -9,6 +9,7 @@ import {
   isLargeFile,
   jumpToLine,
   consumePendingEditorNavigation,
+  consumePendingInitialContent,
   reconfigureLsp,
   detachLsp,
   lspPluginForView,
@@ -134,6 +135,13 @@ function EditorTabHostInner({
         if (cancelled) return
         initialText = text
         largeFile = isLargeFile(text)
+      } else {
+        const pending = consumePendingInitialContent(tabId)
+        if (pending != null) {
+          initialText = pending
+          largeFile = isLargeFile(pending)
+          workspace.markDirty(fileUri, true)
+        }
       }
 
       view = await createJetEditorView({

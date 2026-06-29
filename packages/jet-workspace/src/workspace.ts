@@ -226,15 +226,20 @@ export class WorkspaceService {
     return tabId
   }
 
-  openUntitledTab(tree: PanelTree, panelId: PanelId): TabId {
+  openUntitledTab(
+    tree: PanelTree,
+    panelId: PanelId,
+    opts?: { label?: string; languageId?: string },
+  ): TabId {
     const n = this.untitledCounter++
     const uri = makeUntitledUri(n)
-    const label = `Untitled-${n}`
+    const label = opts?.label ?? `Untitled-${n}`
+    const languageId = opts?.languageId ?? (opts?.label ? languageIdFromPath(opts.label) : "plaintext")
     const file: WorkspaceFile = {
       uri,
       path: "",
       name: label,
-      languageId: "plaintext",
+      languageId,
       isDirty: false,
     }
     this.registerFile(file)

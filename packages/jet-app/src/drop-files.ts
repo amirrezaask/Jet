@@ -1,0 +1,130 @@
+import { basename, pathToFileUri } from "@jet/shared"
+import type { FileSystemProvider, LaunchConfig } from "@jet/workspace"
+
+const WORKSPACE_MARKERS = [
+  ".git",
+  "package.json",
+  "tsconfig.json",
+  "Cargo.toml",
+  "go.mod",
+  ".jet",
+] as const
+
+function dirname(absPath: string): string {
+  const normalized = absPath.replace(/\\/g, "/")
+  const idx = normalized.lastIndexOf("/")
+  if (idx <= 0) return normalized.startsWith("/") ? "/" : "."
+  return normalized.slice(0, idx) || "/"
+}
+
+async function markerExists(
+  dir: string,
+  marker: string,
+  fs: FileSystemProvider,
+): Promise<boolean> {
+  const uri = pathToFileUri(`${dir.replace(/\\/g, "/")}/${marker}`)
+  try {
+    const info = await fs.stat(uri)
+    if (marker === ".git") return info.isDirectory
+    return !info.isDirectory
+  } catch {
+    return false
+  }
+}
+
+export async function findWorkspaceRoot(startDir: string, fs: FileSystemProvider): Promise<string> {
+  let current = startDir.replace(/\\/g, "/")
+  for (let i = 0; i < 20; i++) {
+    for (const marker of WORKSPACE_MARKERS) {
+      if (await markerExists(current, marker, fs)) return current
+    }
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+  return startDir.replace(/\\/g, "/")
+}
+
+export async function resolveDroppedPath(
+  absPath: string,
+  fs: FileSystemProvider,
+): Promise<LaunchConfig> {
+  const uri = pathToFileUri(absPath)
+  const stat = await fs.stat(uri)
+  if (stat.isDirectory) {
+    return { workspacePath: absPath }
+  }
+  const parentDir = dirname(absPath)
+  const workspacePath = await findWorkspaceRoot(parentDir, fs)
+  return { workspacePath, filePath: absPath }
+}
+
+export function pathsFromDataTransfer(dt: DataTransfer): string[] {
+  const paths: string[] = []
+  for (const file of dt.files) {
+    const p = (file as File & { path?: string }).path
+    if (p) paths.push(p)
+  }
+  return paths
+}
+
+export type ProcessDroppedPathsContext = {
+  fs: FileSystemProvider
+  normalizePath: (p: string) => string
+  currentWorkspacePath: string | null
+  openWorkspace: (path: string) => void
+  openFile: (uri: string, path: string) => void
+  bootstrapFromLaunch: (config: LaunchConfig) => void
+  setMessage: (msg: string) => void
+}
+
+export async function processDroppedPaths(
+  paths: string[],
+  ctx: ProcessDroppedPathsContext,
+): Promise<void> {
+  if (paths.length === 0) return
+
+  const normalized = [...new Set(paths.map(p => ctx.normalizePath(p)))]
+  const resolved: LaunchConfig[] = []
+
+  for (const p of normalized) {
+    try {
+      resolved.push(await resolveDroppedPath(p, ctx.fs))
+    } catch {
+      ctx.setMessage(`Could not open: ${basename(p)}`)
+    }
+  }
+  if (resolved.length === 0) return
+
+  let workspacePath = resolved[0]!.workspacePath
+  const filesToOpen: string[] = []
+
+  for (const cfg of resolved) {
+    if (cfg.filePath) filesToOpen.push(cfg.filePath)
+    if (!cfg.filePath) workspacePath = cfg.workspacePath
+  }
+
+  const current = ctx.currentWorkspacePath ? ctx.normalizePath(ctx.currentWorkspacePath) : null
+  const next = ctx.normalizePath(workspacePath)
+
+  if (filesToOpen.length === 0) {
+    if (current === next) return
+    ctx.openWorkspace(next)
+    return
+  }
+
+  if (current === next) {
+    for (const fp of filesToOpen) {
+      ctx.openFile(pathToFileUri(fp), fp)
+    }
+    return
+  }
+
+  ctx.bootstrapFromLaunch({ workspacePath: next, filePath: filesToOpen[0] })
+  for (let i = 1; i < filesToOpen.length; i++) {
+    const fp = filesToOpen[i]!
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => ctx.openFile(pathToFileUri(fp), fp))
+    })
+  }
+}

@@ -35,7 +35,9 @@ export function WelcomeView({ isWebMode, bootstrapping, onOpenFolder }: WelcomeV
       ) : (
         <>
           <PanelDiagram />
-          <p className="max-w-md text-sm text-[var(--jet-text-muted)]">Open a folder to edit.</p>
+          <p className="max-w-md text-sm text-[var(--jet-text-muted)]">
+            Open a folder to edit{isWebMode ? "." : ", or drag files here."}
+          </p>
           <button
             type="button"
             className="rounded border border-[var(--jet-accent)] bg-[var(--jet-panel)] px-4 py-2 text-sm text-[var(--jet-text)] hover:bg-[var(--jet-hover)]"
