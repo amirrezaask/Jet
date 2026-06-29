@@ -137,24 +137,23 @@ export function PanelDock(props: PanelDockProps) {
           )
           if (hit) {
             const samePanel = hit.panelId.id === pending.sourcePanel.id
-            if (samePanel && hit.action.kind === "moveToPane") {
-              const tabRowEl = tabRowRefs.current.get(pending.sourcePanel.id)
-              const insertIndex = tabRowEl
-                ? computeTabInsertIndex(tabRowEl, ev.clientX)
-                : undefined
+            const isReorder = samePanel && hit.action.kind === "moveToPane"
+            const isCrossPanel = !samePanel
+            const isSamePanelSplit = samePanel && hit.action.kind === "split"
+            if (isReorder || isCrossPanel || isSamePanelSplit) {
+              let insertIndex: number | undefined
+              if (hit.action.kind === "moveToPane") {
+                const tabRowEl = tabRowRefs.current.get(hit.panelId.id)
+                insertIndex = tabRowEl
+                  ? computeTabInsertIndex(tabRowEl, ev.clientX)
+                  : undefined
+              }
               props.onEvent({
                 type: "tabMoved",
                 tabId: pending.tabId,
                 targetPanelId: hit.panelId,
                 action: hit.action,
                 insertIndex,
-              })
-            } else if (!samePanel) {
-              props.onEvent({
-                type: "tabMoved",
-                tabId: pending.tabId,
-                targetPanelId: hit.panelId,
-                action: hit.action,
               })
             }
           }

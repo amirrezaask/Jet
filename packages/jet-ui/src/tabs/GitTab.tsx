@@ -126,7 +126,11 @@ export function GitTab({
         </button>
       </div>
       <div className="flex min-h-0 flex-1">
-        <div className="w-56 shrink-0 overflow-auto border-r border-[var(--jet-border)]">
+        <div
+          className="w-56 shrink-0 overflow-auto border-r border-[var(--jet-border)]"
+          aria-label="Git"
+          data-jet-list-panel="git"
+        >
           <div className="border-b border-[var(--jet-border)] px-2 py-1 text-[10px] uppercase text-[var(--jet-text-muted)]">
             Changes
           </div>

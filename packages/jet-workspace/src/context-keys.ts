@@ -6,11 +6,14 @@ export type KeymapContext = {
   quickOpenOpen: boolean
   openFileOpen: boolean
   gotoLineOpen: boolean
+  outlineOpen: boolean
   workspaceOpen: boolean
   explorerFocus: boolean
   gitFocus: boolean
   terminalFocus: boolean
   searchFocus: boolean
+  problemsFocus: boolean
+  listFocus: boolean
 }
 
 const MODIFIERS = new Set(["Mod", "Cmd", "Ctrl", "Alt", "Shift"])
@@ -21,7 +24,13 @@ export type ParsedKeyPart = {
 }
 
 export function anyOverlayOpen(ctx: KeymapContext): boolean {
-  return ctx.paletteOpen || ctx.quickOpenOpen || ctx.openFileOpen || ctx.gotoLineOpen
+  return (
+    ctx.paletteOpen ||
+    ctx.quickOpenOpen ||
+    ctx.openFileOpen ||
+    ctx.gotoLineOpen ||
+    ctx.outlineOpen
+  )
 }
 
 export function matchesWhen(binding: JetKeyBinding, ctx: KeymapContext): boolean {

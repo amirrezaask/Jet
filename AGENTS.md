@@ -152,7 +152,7 @@ Use via `browser_cdp` → `Runtime.evaluate` with `awaitPromise: true` for async
 7. Edit + save (Mod-s via `browser_press_key` or `executeCommand("workspace.saveFile")`) — persists under `fixtures/sample-workspace/`
 8. Git tab — status visible (fixture is a git repo)
 9. Close dirty tab — confirm dialog (may need user handoff in MCP; note if blocked)
-10. Re-open workspace — default layout (explorer left, main right); no session file
+10. Re-open workspace — layout restored from `localStorage` session (or default if none)
 11. Command palette — `executeCommand("ui.showCommandPalette")` → centered modal (not trapped in panel)
 12. New file / open file — editor tab lands in **right** main panel, not stacked below sidebar
 
@@ -357,7 +357,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 7. Git tab (if repo)
 8. Panel split **resize** — drag gutter between panels
 9. Tab reorder within panel; tab drag cross-panel/split — partial, usable
-10. Reload workspace — default layout (no session persistence)
+10. Reload workspace — session layout restored from `localStorage` (or default on first open)
 
 ---
 
@@ -393,7 +393,9 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] Query-param bootstrap runs once; `openEditorTab` dedupes by URI
 - [x] Explorer tree expands root on workspace open
 - [x] Editor input stability — `executeCommand` ref, autofocus, no remount on layout change
-- [x] Session tree sanitize — orphan tab ids stripped on load/save
+- [x] Session tree sanitize — `sanitizeKnownTabs()` wired on session restore
+- [x] **Shell:** tab drag/drop polish — same-panel edge-split, cross-panel insert index, `TabRegistry.setPanel` on drag
+- [x] **Shell:** dirty-tab close confirm — `tabClose`, `closeAllTabs`, `panelClose` (product); MCP `window.confirm` may need user handoff
 - [x] **Shell:** default row layout — sidebar left, main editor right (`workspaceLayout`)
 - [x] **Shell:** editor open/new file routes to main panel (`resolveEditorPanel`)
 - [x] **Shell:** command palette centered (`createPortal` + fixed overlay)
@@ -401,8 +403,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **Remaining (Shell tier)**
 
-- [ ] **Shell:** tab drag/drop polish — cross-panel move + edge-split hit targets, `TabRegistry` sync after `moveTab` (partial OK for now)
-- [ ] **Shell:** confirm dirty-tab close dialog in browser MCP (may need user handoff)
+- [ ] **Shell:** tab drag/drop automated browser test (manual OK; smoke covers session only)
 
 
 
@@ -439,12 +440,31 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] Reduce main bundle — lazy Search/Problems tabs; Vite `manualChunks` for git-diff/shiki
 - [x] **Shell:** status bar — workspace path + git branch
 - [x] **Shell:** more bundled themes (One Dark, Gruvbox Dark, Nord — 6 total)
-- [x] **Editor:** bracket matching + search panel theming (Fleury indent guides: partial)
+- [x] **Editor:** bracket matching + search panel theming
+- [x] **Editor:** Fleury-style indent guide columns (`@replit/codemirror-indentation-markers`)
 - [x] **Workspace:** project search tab (ripgrep) + result navigation
+- [x] **Workspace:** session layout persist — `localStorage` per workspace path (`session-storage.ts`)
 
 **Remaining**
 
-- [ ] **Editor:** full Fleury-style indent guide columns (optional `@replit/codemirror-indentation-markers`)
+- (none in P2 tier)
+
+
+
+### P1½ — VS Code keybinding parity (in progress)
+
+**Done**
+
+- [x] Tier 1 editor commands — comment, line ops, indent, undo/redo, smart select, multi-cursor CM commands
+- [x] Tier 2 layout — tab cycle, close all, focus sidebar/editor, split, zoom, overlays
+- [x] Tier 3 LSP — format, rename, references, parameter hints, document outline (Electron; browser shows message)
+- [x] Tier 4 list nav — PageUp/Down/Home/End scroll on explorer/git/search/problems
+- [x] Git chord placeholders — message stubs (not bound to `undo`)
+
+**Remaining**
+
+- [ ] Git chord implementations (stage/revert selected ranges from editor selection)
+- [ ] List panel item focus (arrow-key selection), not just scroll
 
 
 
@@ -470,7 +490,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **Editor tier**
 
-- [ ] Multi-cursor
+- [x] Multi-cursor — partial: `addCursorAbove/Below`, `selectNextOccurrence`, Alt+click, `rectangularSelection` (Shift+Alt+drag column)
 
 **4coder-specific tier**
 
@@ -494,7 +514,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 | Feature                          | 4coder  | Fleury  | Nameless   | Jet today                              |
 | -------------------------------- | ------- | ------- | ---------- | -------------------------------------- |
-| Tab drag/drop + reorder          | ✓       | ✓       | ✓          | partial / reorder ✓                    |
+| Tab drag/drop + reorder          | ✓       | ✓       | ✓          | reorder + cross-panel + edge-split ✓   |
 | Default panel layout             | ✓       | ✓       | ✓          | row: sidebar + main ✓                  |
 | In-buffer find                   | ✓       | ✓       | ✓          | ✓ Mod-f                                |
 | Command palette                  | ✓       | ✓       | ✓          | ✓ centered                             |
@@ -504,10 +524,10 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | Quick-open files                 | ✓       | ✓       | ✓          | ✓ Mod-Shift-o                          |
 | Terminal PTY                     | CLI     | —       | ✓          | ✓ Electron / stub web                  |
 | Full git panel                   | —       | —       | ✓          | stage/commit/branch ✓                  |
-| Brace guides / Fleury chrome     | —       | ✓       | ✓          | bracket match ✓; indent guides partial |
-| Session layout persist           | —       | —       | ✓          | deferred                               |
+| Brace guides / Fleury chrome     | —       | ✓       | ✓          | bracket match + indent markers ✓       |
+| Session layout persist           | —       | —       | ✓          | `localStorage` per workspace ✓         |
 | LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Electron + rust-analyzer             |
-| Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | ✗                                      |
+| Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | partial (no macros/kill ring)          |
 | Extension / custom layer         | C hooks | C++     | Rust setup | `.jet/editorrc.ts`                     |
 
 

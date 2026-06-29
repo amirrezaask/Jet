@@ -18,3 +18,11 @@ export { defaultJetTheme, applyJetThemeCss, type JetTheme, type JetColors } from
 export { loadLanguage } from "./languages.js"
 export { simpleWebSocketTransport } from "./lsp-transport.js"
 export type { LSPClient } from "@codemirror/lsp-client"
+export {
+  runFormatDocument,
+  runRenameSymbol,
+  runFindReferences,
+  runParameterHints,
+  fetchDocumentOutline,
+  type OutlineSymbol,
+} from "./lsp-editor-commands.js"

@@ -1,11 +1,40 @@
 import type { EditorView } from "@codemirror/view"
+import {
+  toggleComment,
+  copyLineUp,
+  copyLineDown,
+  moveLineUp,
+  moveLineDown,
+  addCursorAbove,
+  addCursorBelow,
+  cursorMatchingBracket,
+  selectLine,
+  indentMore,
+  indentLess,
+  undo,
+  redo,
+  undoSelection,
+  selectParentSyntax,
+  simplifySelection,
+} from "@codemirror/commands"
+import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search"
 import type { PanelTree } from "@jet/panels"
 import type { PanelId, TabId } from "@jet/shared"
 import { basename, isUntitledUri, pathToFileUri } from "@jet/shared"
 import type { JetCommandContext, JetCommands, JetCommandFn, WorkspaceService } from "@jet/workspace"
 import { openReplaceSearchPanel, openSearchPanel } from "@jet/codemirror"
+import {
+  fetchDocumentOutline,
+  runFindReferences,
+  runFormatDocument,
+  runParameterHints,
+  runRenameSymbol,
+  type OutlineSymbol,
+} from "@jet/codemirror"
+import type { OutlineEntry } from "@jet/ui"
 import { getEditorView } from "@jet/ui"
-import { resolveEditorPanel, resolveTargetPanel } from "./panel-routing.js"
+import { getAllLeafPanels, resolveEditorPanel, resolveTargetPanel } from "./panel-routing.js"
+import { confirmCloseEditorTab } from "./tab-close.js"
 
 export type BuildAppCommandsDeps = {
   workspace: WorkspaceService
@@ -33,6 +62,11 @@ export type BuildAppCommandsDeps = {
   terminalTabRef: { current: TabId | null }
   editorPanelRef: { current: PanelId | null }
   isWebMode: boolean
+  setZoomLevel: (delta: number) => void
+  handlePanelNavigation: (action: string) => void
+  activeTabKindName: string | undefined
+  setOutlineOpen: (open: boolean) => void
+  setOutlineSymbols: (symbols: OutlineEntry[]) => void
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -45,6 +79,28 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       return
     }
     await deps.openWorkspaceFolder(folderPath)
+  }
+
+  function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
+    const view = ctx.getActiveEditorView() as EditorView | null
+    if (view) fn(view)
+  }
+
+  function flattenOutline(symbols: OutlineSymbol[], depth = 0): OutlineEntry[] {
+    const out: OutlineEntry[] = []
+    for (const sym of symbols) {
+      out.push({ name: sym.name, line: sym.line, depth })
+      out.push(...flattenOutline(sym.children, depth + 1))
+    }
+    return out
+  }
+
+  function lspUnavailable(ctx: JetCommandContext): boolean {
+    if (!window.jet?.lsp) {
+      ctx.ui.showMessage("LSP not available in browser mode")
+      return true
+    }
+    return false
   }
 
   const named: JetCommands = {
@@ -172,6 +228,180 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.setFocusedPanel(tabPanel)
       deps.commitTree(tree)
     },
+
+    // --- Tier 1: Editor commands wrapping CM built-ins ---
+    toggleComment: ctx => runCmCmd(ctx, toggleComment),
+    copyLineUp: ctx => runCmCmd(ctx, copyLineUp),
+    copyLineDown: ctx => runCmCmd(ctx, copyLineDown),
+    moveLineUp: ctx => runCmCmd(ctx, moveLineUp),
+    moveLineDown: ctx => runCmCmd(ctx, moveLineDown),
+    addCursorAbove: ctx => runCmCmd(ctx, addCursorAbove),
+    addCursorBelow: ctx => runCmCmd(ctx, addCursorBelow),
+    jumpToBracket: ctx => runCmCmd(ctx, cursorMatchingBracket),
+    expandLineSelection: ctx => runCmCmd(ctx, selectLine),
+    indentMore: ctx => runCmCmd(ctx, indentMore),
+    indentLess: ctx => runCmCmd(ctx, indentLess),
+    selectNextOccurrence: ctx => runCmCmd(ctx, selectNextOccurrence),
+    selectAllOccurrences: ctx => runCmCmd(ctx, selectSelectionMatches),
+    undo: ctx => runCmCmd(ctx, undo),
+    redo: ctx => runCmCmd(ctx, redo),
+    cursorUndo: ctx => runCmCmd(ctx, undoSelection),
+    smartSelectExpand: ctx => runCmCmd(ctx, selectParentSyntax),
+    smartSelectShrink: ctx => runCmCmd(ctx, simplifySelection),
+
+    // --- Tier 2: Window / layout ---
+    nextEditor: () => {
+      const tree = deps.cloneTree()
+      const leaf = deps.focusedPanel && tree.getLeaf(deps.focusedPanel)
+      if (!leaf || leaf.group.tabs.length < 2) { deps.commitTree(tree); return }
+      const next = (leaf.group.active + 1) % leaf.group.tabs.length
+      leaf.group.active = next
+      const tabId = leaf.group.tabs[next]
+      deps.setFocusedPanel(leaf.panelId)
+      deps.commitTree(tree)
+      const kind = deps.workspace.tabRegistry.get(tabId)
+      if (kind?.kind === "editor") requestAnimationFrame(() => getEditorView(tabId)?.focus())
+    },
+    prevEditor: () => {
+      const tree = deps.cloneTree()
+      const leaf = deps.focusedPanel && tree.getLeaf(deps.focusedPanel)
+      if (!leaf || leaf.group.tabs.length < 2) { deps.commitTree(tree); return }
+      const prev = (leaf.group.active - 1 + leaf.group.tabs.length) % leaf.group.tabs.length
+      leaf.group.active = prev
+      const tabId = leaf.group.tabs[prev]
+      deps.setFocusedPanel(leaf.panelId)
+      deps.commitTree(tree)
+      const kind = deps.workspace.tabRegistry.get(tabId)
+      if (kind?.kind === "editor") requestAnimationFrame(() => getEditorView(tabId)?.focus())
+    },
+    closeAllTabs: () => {
+      const tree = deps.cloneTree()
+      const leaf = deps.focusedPanel && tree.getLeaf(deps.focusedPanel)
+      if (!leaf) { deps.commitTree(tree); return }
+      for (const tabId of [...leaf.group.tabs]) {
+        if (!confirmCloseEditorTab(deps.workspace, tabId)) continue
+        deps.workspace.tabRegistry.delete(tabId)
+        tree.removeTab(tabId)
+      }
+      deps.commitTree(tree)
+    },
+    focusSidebar: () => {
+      const allPanels = getAllLeafPanels(deps.panelTree)
+      for (const panel of allPanels) {
+        const leaf = deps.panelTree.getLeaf(panel)
+        if (!leaf) continue
+        const hasSidebarTab = leaf.group.tabs.some(t => {
+          const k = deps.workspace.tabRegistry.get(t)
+          return k?.kind === "explorer" || k?.kind === "git" || k?.kind === "search" || k?.kind === "problems"
+        })
+        if (hasSidebarTab) { deps.setFocusedPanel(panel); return }
+      }
+      if (allPanels[0]) deps.setFocusedPanel(allPanels[0])
+    },
+    focusEditorGroup: () => {
+      if (deps.editorPanelRef.current) {
+        deps.setFocusedPanel(deps.editorPanelRef.current)
+        const leaf = deps.panelTree.getLeaf(deps.editorPanelRef.current)
+        const tabId = leaf?.group.tabs[leaf?.group.active ?? 0]
+        if (tabId) requestAnimationFrame(() => getEditorView(tabId)?.focus())
+      }
+    },
+    lastEditorGroup: () => {
+      const panels = getAllLeafPanels(deps.panelTree)
+      let lastEditor: PanelId | null = null
+      for (const panel of panels) {
+        const leaf = deps.panelTree.getLeaf(panel)
+        if (leaf?.group.tabs.some(t => deps.workspace.tabRegistry.get(t)?.kind === "editor")) {
+          lastEditor = panel
+        }
+      }
+      if (lastEditor) deps.setFocusedPanel(lastEditor)
+    },
+    splitEditorRight: () => {
+      const tree = deps.cloneTree()
+      const target = deps.focusedPanel ?? deps.editorPanelRef.current
+      if (!target) { deps.commitTree(tree); return }
+      const newPanel = tree.splitAtEdge(target, "right")
+      const leaf = tree.getLeaf(target)
+      if (leaf && leaf.group.tabs.length > 0) {
+        const activeTab = leaf.group.tabs[leaf.group.active]
+        tree.removeTab(activeTab)
+        tree.insertTab(newPanel, activeTab)
+        deps.workspace.tabRegistry.setPanel(activeTab, newPanel)
+      }
+      deps.editorPanelRef.current = target
+      deps.setFocusedPanel(newPanel)
+      deps.commitTree(tree)
+    },
+    toggleEditorLayout: () => {
+      const tree = deps.cloneTree()
+      const root = (tree as unknown as { root: { kind: string } }).root
+      root.kind = root.kind === "row" ? "column" : "row"
+      deps.commitTree(tree)
+    },
+    zoomIn: () => deps.setZoomLevel(1),
+    zoomOut: () => deps.setZoomLevel(-1),
+    toggleDevTools: () => { /* Electron handles Cmd-Alt-i natively */ },
+    toggleFullScreen: () => {
+      if (document.fullscreenElement) document.exitFullscreen()
+      else document.body.requestFullscreen()
+    },
+    quit: () => { /* Electron / OS handles Cmd-q natively */ },
+    closeQuickOpen: () => {
+      deps.setPaletteOpen(false)
+      deps.setQuickOpenOpen(false)
+      deps.setOpenFileOpen(false)
+      deps.setGotoLineOpen(false)
+      deps.setOutlineOpen(false)
+    },
+
+    // --- Tier 3: LSP entry points ---
+    quickOutline: async ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      try {
+        const symbols = await fetchDocumentOutline(view)
+        deps.setOutlineSymbols(flattenOutline(symbols))
+        deps.setOutlineOpen(true)
+      } catch {
+        ctx.ui.showMessage("Quick outline failed")
+      }
+    },
+    formatDocument: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runFormatDocument(view)) ctx.ui.showMessage("Format not available for this file")
+    },
+    rename: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runRenameSymbol(view)) ctx.ui.showMessage("Rename not available for this symbol")
+    },
+    goToReferences: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runFindReferences(view)) ctx.ui.showMessage("Find references not available")
+    },
+    triggerParameterHints: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runParameterHints(view)) ctx.ui.showMessage("Parameter hints not available")
+    },
+
+    gitRevertSelected: ctx => ctx.ui.showMessage("Git: revert selected ranges not yet implemented"),
+    gitStageSelected: ctx => ctx.ui.showMessage("Git: stage selected ranges not yet implemented"),
+    gitUnstageSelected: ctx => ctx.ui.showMessage("Git: unstage selected ranges not yet implemented"),
+
+    // --- Tier 4: List navigation (infrastructure) ---
+    listFocusPageUp: () => deps.handlePanelNavigation("focusPageUp"),
+    listFocusPageDown: () => deps.handlePanelNavigation("focusPageDown"),
+    listFocusFirst: () => deps.handlePanelNavigation("focusFirst"),
+    listFocusLast: () => deps.handlePanelNavigation("focusLast"),
   }
 
   return named as JetCommands
@@ -194,4 +424,51 @@ export const APP_COMMAND_REGISTRY = [
   { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View" },
   { id: "terminal.show", fn: "terminal", title: "Show Terminal", category: "View" },
   { id: "problems.show", fn: "problems", title: "Show Problems", category: "View" },
+
+  // --- Tier 1: Editor ---
+  { id: "editor.toggleComment", fn: "toggleComment", title: "Toggle Comment", category: "Editor" },
+  { id: "editor.copyLineUp", fn: "copyLineUp", title: "Copy Line Up", category: "Editor" },
+  { id: "editor.copyLineDown", fn: "copyLineDown", title: "Copy Line Down", category: "Editor" },
+  { id: "editor.moveLineUp", fn: "moveLineUp", title: "Move Line Up", category: "Editor" },
+  { id: "editor.moveLineDown", fn: "moveLineDown", title: "Move Line Down", category: "Editor" },
+  { id: "editor.addCursorAbove", fn: "addCursorAbove", title: "Add Cursor Above", category: "Editor" },
+  { id: "editor.addCursorBelow", fn: "addCursorBelow", title: "Add Cursor Below", category: "Editor" },
+  { id: "editor.jumpToBracket", fn: "jumpToBracket", title: "Jump to Bracket", category: "Editor" },
+  { id: "editor.expandLineSelection", fn: "expandLineSelection", title: "Expand Line Selection", category: "Editor" },
+  { id: "editor.indent", fn: "indentMore", title: "Indent", category: "Editor" },
+  { id: "editor.outdent", fn: "indentLess", title: "Outdent", category: "Editor" },
+  { id: "editor.selectNextOccurrence", fn: "selectNextOccurrence", title: "Select Next Occurrence", category: "Editor" },
+  { id: "editor.selectAllOccurrences", fn: "selectAllOccurrences", title: "Select All Occurrences", category: "Editor" },
+  { id: "editor.undo", fn: "undo", title: "Undo", category: "Editor" },
+  { id: "editor.redo", fn: "redo", title: "Redo", category: "Editor" },
+  { id: "editor.cursorUndo", fn: "cursorUndo", title: "Cursor Undo", category: "Editor" },
+  { id: "editor.smartSelectExpand", fn: "smartSelectExpand", title: "Expand Selection", category: "Editor" },
+  { id: "editor.smartSelectShrink", fn: "smartSelectShrink", title: "Shrink Selection", category: "Editor" },
+
+  // --- Tier 2: Window / Layout ---
+  { id: "editor.nextEditor", fn: "nextEditor", title: "Next Editor Tab", category: "Editor" },
+  { id: "editor.previousEditor", fn: "prevEditor", title: "Previous Editor Tab", category: "Editor" },
+  { id: "layout.closeAllTabs", fn: "closeAllTabs", title: "Close All Tabs", category: "Layout" },
+  { id: "workbench.action.focusSideBar", fn: "focusSidebar", title: "Focus Sidebar", category: "View" },
+  { id: "workbench.action.focusFirstEditorGroup", fn: "focusEditorGroup", title: "Focus First Editor Group", category: "View" },
+  { id: "workbench.action.lastEditorInGroup", fn: "lastEditorGroup", title: "Last Editor in Group", category: "View" },
+  { id: "view.splitEditor", fn: "splitEditorRight", title: "Split Editor Right", category: "View" },
+  { id: "workbench.action.toggleEditorGroupLayout", fn: "toggleEditorLayout", title: "Toggle Editor Group Layout", category: "View" },
+  { id: "workbench.action.zoomIn", fn: "zoomIn", title: "Zoom In", category: "View" },
+  { id: "workbench.action.zoomOut", fn: "zoomOut", title: "Zoom Out", category: "View" },
+  { id: "workbench.action.toggleFullScreen", fn: "toggleFullScreen", title: "Toggle Full Screen", category: "View" },
+  { id: "workbench.action.closeQuickOpen", fn: "closeQuickOpen", title: "Close Quick Open", category: "View" },
+
+  // --- Tier 3: Entry points (LSP) ---
+  { id: "editor.action.quickOutline", fn: "quickOutline", title: "Quick Outline", category: "Editor" },
+  { id: "editor.action.formatDocument", fn: "formatDocument", title: "Format Document", category: "Editor" },
+  { id: "editor.action.rename", fn: "rename", title: "Rename Symbol", category: "Editor" },
+  { id: "editor.action.goToReferences", fn: "goToReferences", title: "Go to References", category: "Editor" },
+  { id: "editor.action.triggerParameterHints", fn: "triggerParameterHints", title: "Trigger Parameter Hints", category: "Editor" },
+
+  // --- Tier 4: List navigation ---
+  { id: "list.focusPageUp", fn: "listFocusPageUp", title: "List Page Up", category: "List" },
+  { id: "list.focusPageDown", fn: "listFocusPageDown", title: "List Page Down", category: "List" },
+  { id: "list.focusFirst", fn: "listFocusFirst", title: "List First", category: "List" },
+  { id: "list.focusLast", fn: "listFocusLast", title: "List Last", category: "List" },
 ] as const

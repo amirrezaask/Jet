@@ -1,6 +1,7 @@
 export { PanelDock } from "./dock/index.js"
 export { CommandPalette } from "./components/CommandPalette.js"
 export { GotoLineModal } from "./components/GotoLineModal.js"
+export { OutlineOverlay, type OutlineEntry } from "./components/OutlineOverlay.js"
 export { QuickOpenOverlay } from "./components/QuickOpenOverlay.js"
 export { OpenFileOverlay } from "./components/OpenFileOverlay.js"
 export { PaletteOverlay } from "./components/PaletteOverlay.js"

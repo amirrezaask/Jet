@@ -7,6 +7,7 @@ import {
   indentWithTab,
 } from "@codemirror/commands"
 import { bracketMatching, indentOnInput } from "@codemirror/language"
+import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { LSPClient } from "@codemirror/lsp-client"
 import type { WorkspaceFile } from "@jet/workspace"
@@ -17,6 +18,7 @@ import { jetKeyToCodeMirrorKey, matchesWhen } from "@jet/workspace"
 import { jetThemeExtension } from "./theme.js"
 import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { motionCursor } from "./motion-cursor.js"
+import { multiCursorExtensions } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
 
 export const userKeymapCompartment = new Compartment()
@@ -47,6 +49,8 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     history(),
     indentOnInput(),
     bracketMatching(),
+    indentationMarkers({ highlightActiveBlock: true, markerType: "fullScope" }),
+    ...multiCursorExtensions(),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),

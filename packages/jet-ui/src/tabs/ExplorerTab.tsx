@@ -111,6 +111,7 @@ export function ExplorerTab({
       {...tree.getContainerProps()}
       className="h-full overflow-auto p-1 outline-none"
       aria-label="Explorer"
+      data-jet-list-panel="explorer"
     >
       {tree.getItems().map(item => {
         const node = item.getItemData()

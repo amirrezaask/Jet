@@ -19,10 +19,16 @@ import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import { createAgentBridge, openWorkspaceFromQuery } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
 import { applyJetThemeCss, defaultJetTheme, jumpToLine, collectProblemsFromViews, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
-import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoLineModal, QuickOpenOverlay, OpenFileOverlay, getEditorView, getAllEditorViews } from "@jet/ui"
+import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, getEditorView, getAllEditorViews, type OutlineEntry } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
+import {
+  loadWorkspaceSession,
+  restoreWorkspaceSession,
+  saveWorkspaceSession,
+} from "./session-storage.js"
+import { confirmCloseEditorTab } from "./tab-close.js"
 import {
   activeTabKind,
   getAllLeafPanels,
@@ -68,11 +74,14 @@ export function JetApp() {
   const [activeTheme, setActiveTheme] = useState<JetTheme>(() => loadStoredTheme())
   const [cursorPos, setCursorPos] = useState<{ line: number; column: number } | null>(null)
   const [gotoLineOpen, setGotoLineOpen] = useState(false)
+  const [outlineOpen, setOutlineOpen] = useState(false)
+  const [outlineSymbols, setOutlineSymbols] = useState<OutlineEntry[]>([])
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
   const [openFileOpen, setOpenFileOpen] = useState(false)
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [fileIndex, setFileIndex] = useState<string[]>([])
   const [problems, setProblems] = useState<JetProblem[]>([])
+  const [sessionRev, setSessionRev] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
@@ -101,13 +110,20 @@ export function JetApp() {
       quickOpenOpen,
       openFileOpen,
       gotoLineOpen,
+      outlineOpen,
       workspaceOpen: workspace.root != null,
       explorerFocus: activeTabKindName === "explorer",
       gitFocus: activeTabKindName === "git",
       terminalFocus: activeTabKindName === "terminal",
       searchFocus: activeTabKindName === "search",
+      problemsFocus: activeTabKindName === "problems",
+      listFocus:
+        activeTabKindName === "explorer" ||
+        activeTabKindName === "git" ||
+        activeTabKindName === "search" ||
+        activeTabKindName === "problems",
     }),
-    [editorFocused, paletteOpen, quickOpenOpen, openFileOpen, gotoLineOpen, workspace.root, activeTabKindName],
+    [editorFocused, paletteOpen, quickOpenOpen, openFileOpen, gotoLineOpen, outlineOpen, workspace.root, activeTabKindName],
   )
 
   const lspManager = useMemo(
@@ -213,29 +229,46 @@ export function JetApp() {
       searchTabRef.current = null
       problemsTabRef.current = null
 
-      const { tree, sidebarPanel, editorPanel } = PanelTree.workspaceLayout()
-      editorPanelRef.current = editorPanel
-      if (sidebarPanel) {
-        explorerTabRef.current = workspace.ensureSingletonTab(
-          tree,
-          sidebarPanel,
-          { kind: "explorer" },
-          "Explorer",
-          null,
-        )
-        gitTabRef.current = workspace.ensureSingletonTab(
-          tree,
-          sidebarPanel,
-          { kind: "git" },
-          "Git",
-          null,
-        )
+      const session = loadWorkspaceSession(folderPath)
+      if (session) {
+        const restored = restoreWorkspaceSession(session, workspace)
+        editorPanelRef.current = restored.editorPanel
+        explorerTabRef.current =
+          restored.singletons.explorer != null ? { id: restored.singletons.explorer } : null
+        gitTabRef.current = restored.singletons.git != null ? { id: restored.singletons.git } : null
+        terminalTabRef.current =
+          restored.singletons.terminal != null ? { id: restored.singletons.terminal } : null
+        searchTabRef.current =
+          restored.singletons.search != null ? { id: restored.singletons.search } : null
+        problemsTabRef.current =
+          restored.singletons.problems != null ? { id: restored.singletons.problems } : null
+        setPanelTree(restored.tree)
+        setFocusedPanel(restored.focusedPanel ?? restored.editorPanel)
+        setMessage(`Opened ${folderPath}`)
+      } else {
+        const { tree, sidebarPanel, editorPanel } = PanelTree.workspaceLayout()
+        editorPanelRef.current = editorPanel
+        if (sidebarPanel) {
+          explorerTabRef.current = workspace.ensureSingletonTab(
+            tree,
+            sidebarPanel,
+            { kind: "explorer" },
+            "Explorer",
+            null,
+          )
+          gitTabRef.current = workspace.ensureSingletonTab(
+            tree,
+            sidebarPanel,
+            { kind: "git" },
+            "Git",
+            null,
+          )
+        }
+        setPanelTree(tree)
+        setFocusedPanel(editorPanel)
+        moveEditorTabsToMain(tree, workspace.tabRegistry, sidebarPanel, editorPanel)
+        setMessage(`Opened ${folderPath}`)
       }
-      setPanelTree(tree)
-      setFocusedPanel(editorPanel)
-      moveEditorTabsToMain(tree, workspace.tabRegistry, sidebarPanel, editorPanel)
-
-      setMessage(`Opened ${folderPath}`)
 
       if (window.jet?.git) {
         const repo = await window.jet.git.isRepo(workspace.root!.uri)
@@ -291,14 +324,7 @@ export function JetApp() {
           }
           return
         case "tabClose": {
-          const kind = workspace.tabRegistry.get(event.tabId)
-          if (kind?.kind === "editor") {
-            const file = workspace.fileForUri(kind.fileUri)
-            if (file?.isDirty) {
-              const label = workspace.tabRegistry.meta(event.tabId).label
-              if (!window.confirm(`"${label}" has unsaved changes. Close anyway?`)) return
-            }
-          }
+          if (!confirmCloseEditorTab(workspace, event.tabId)) return
           workspace.tabRegistry.delete(event.tabId)
           tree.removeTab(event.tabId)
           break
@@ -316,6 +342,9 @@ export function JetApp() {
         case "panelClose": {
           const leaf = tree.getLeaf(event.panelId)
           if (leaf) {
+            for (const tab of [...leaf.group.tabs]) {
+              if (!confirmCloseEditorTab(workspace, tab)) return
+            }
             for (const tab of [...leaf.group.tabs]) {
               workspace.tabRegistry.delete(tab)
             }
@@ -371,6 +400,38 @@ export function JetApp() {
     }
   }, [workspace, focusedPanel, panelTree])
 
+  const handlePanelNavigation = useCallback(
+    (action: string) => {
+      const kind = activeTabKindName
+      if (!kind || !["explorer", "git", "search", "problems"].includes(kind)) return
+      const el = document.querySelector(`[data-jet-list-panel="${kind}"]`)
+      if (!(el instanceof HTMLElement)) return
+      const page = Math.max(80, Math.floor(el.clientHeight * 0.85))
+      switch (action) {
+        case "focusPageUp":
+          el.scrollBy({ top: -page })
+          break
+        case "focusPageDown":
+          el.scrollBy({ top: page })
+          break
+        case "focusFirst":
+          el.scrollTop = 0
+          break
+        case "focusLast":
+          el.scrollTop = el.scrollHeight
+          break
+      }
+    },
+    [activeTabKindName],
+  )
+
+  const handleZoom = useCallback((delta: number) => {
+    const root = document.documentElement
+    const cur = parseFloat(root.style.fontSize) || 14
+    const next = Math.max(9, Math.min(28, cur + delta * 2))
+    root.style.fontSize = `${next}px`
+  }, [])
+
   const appCommands = useMemo(
     () =>
       buildAppCommands({
@@ -395,6 +456,11 @@ export function JetApp() {
         terminalTabRef,
         editorPanelRef,
         isWebMode,
+        setZoomLevel: handleZoom,
+        handlePanelNavigation,
+        activeTabKindName,
+        setOutlineOpen,
+        setOutlineSymbols,
       }),
     [
       workspace,
@@ -405,6 +471,9 @@ export function JetApp() {
       openWorkspaceFolder,
       handlePanelEvent,
       showSingletonViewTab,
+      handleZoom,
+      handlePanelNavigation,
+      activeTabKindName,
     ],
   )
 
@@ -455,6 +524,31 @@ export function JetApp() {
       { id: "ui.selectTheme", title: "Select Theme", category: "UI" },
     )
   }, [commands, appCommands])
+
+  useEffect(() => {
+    return workspace.tabRegistry.onDidChange.event(() => setSessionRev(r => r + 1)).dispose
+  }, [workspace])
+
+  useEffect(() => {
+    if (!workspace.root) return
+    const id = window.setTimeout(() => {
+      saveWorkspaceSession(
+        workspace.root!.path,
+        panelTree,
+        workspace,
+        editorPanelRef.current,
+        focusedPanel,
+        {
+          explorer: explorerTabRef.current?.id,
+          git: gitTabRef.current?.id,
+          terminal: terminalTabRef.current?.id,
+          search: searchTabRef.current?.id,
+          problems: problemsTabRef.current?.id,
+        },
+      )
+    }, 400)
+    return () => window.clearTimeout(id)
+  }, [workspace, panelTree, focusedPanel, sessionRev])
 
   const loadedInitFor = useRef<string | null>(null)
 
@@ -758,6 +852,20 @@ export function JetApp() {
         onOpenChange={setOpenFileOpen}
         workspace={workspace}
         onOpenFile={handleOpenFile}
+      />
+
+      <OutlineOverlay
+        open={outlineOpen}
+        symbols={outlineSymbols}
+        onOpenChange={setOutlineOpen}
+        onSelect={line => {
+          const view = (() => {
+            const leaf = focusedPanel && panelTree.getLeaf(focusedPanel)
+            const tabId = leaf?.group.tabs[leaf.group.active]
+            return tabId ? getEditorView(tabId) : null
+          })()
+          if (view) jumpToLine(view, line, 1)
+        }}
       />
 
       <CommandPalette
