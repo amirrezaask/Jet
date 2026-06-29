@@ -262,6 +262,12 @@ importers:
       '@codemirror/lsp-client':
         specifier: ^6.2.5
         version: 6.2.5
+      '@codemirror/state':
+        specifier: ^6.5.2
+        version: 6.7.0
+      '@codemirror/view':
+        specifier: ^6.37.0
+        version: 6.43.4
       '@jet/codemirror':
         specifier: workspace:*
         version: link:../jet-codemirror
@@ -328,6 +334,9 @@ importers:
       '@jet/codemirror':
         specifier: workspace:*
         version: link:../jet-codemirror
+      '@jet/lsp':
+        specifier: workspace:*
+        version: link:../jet-lsp
       '@jet/panels':
         specifier: workspace:*
         version: link:../jet-panels

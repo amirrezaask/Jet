@@ -3,6 +3,7 @@ export {
   applyUserKeymaps,
   applyUserExtensions,
   reconfigureLsp,
+  detachLsp,
   isLargeFile,
   openSearchPanel,
   userKeymapCompartment,
@@ -23,6 +24,14 @@ export {
   runRenameSymbol,
   runFindReferences,
   runParameterHints,
+  runGoToDefinition,
+  runGoToDeclaration,
+  runGoToTypeDefinition,
+  runGoToImplementation,
+  runTriggerSuggest,
+  runShowHover,
+  lspPluginForView,
   fetchDocumentOutline,
   type OutlineSymbol,
 } from "./lsp-editor-commands.js"
+export { braceScopeExtension } from "./brace-scope.js"

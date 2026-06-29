@@ -1,10 +1,15 @@
 import type { EditorView } from "@codemirror/view"
+import { startCompletion } from "@codemirror/autocomplete"
 import {
   LSPPlugin,
   formatDocument,
   renameSymbol,
   findReferences,
   showSignatureHelp,
+  jumpToDefinition,
+  jumpToDeclaration,
+  jumpToTypeDefinition,
+  jumpToImplementation,
 } from "@codemirror/lsp-client"
 type LspDocumentSymbol = {
   name: string
@@ -38,6 +43,53 @@ export function runParameterHints(view: EditorView): boolean {
   const plugin = lspPluginForView(view)
   if (!plugin) return false
   return showSignatureHelp(view)
+}
+
+export function runGoToDefinition(view: EditorView): boolean {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return false
+  return jumpToDefinition(view)
+}
+
+export function runGoToDeclaration(view: EditorView): boolean {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return false
+  return jumpToDeclaration(view)
+}
+
+export function runGoToTypeDefinition(view: EditorView): boolean {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return false
+  return jumpToTypeDefinition(view)
+}
+
+export function runGoToImplementation(view: EditorView): boolean {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return false
+  return jumpToImplementation(view)
+}
+
+export function runTriggerSuggest(view: EditorView): boolean {
+  return startCompletion(view)
+}
+
+export function runShowHover(view: EditorView): boolean {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return false
+  const pos = view.state.selection.main.head
+  const dom = view.domAtPos(pos)
+  const node = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement
+  if (!node) return false
+  const rect = view.coordsAtPos(pos)
+  if (!rect) return false
+  node.dispatchEvent(
+    new MouseEvent("mousemove", {
+      bubbles: true,
+      clientX: rect.left + 1,
+      clientY: rect.top + 1,
+    }),
+  )
+  return true
 }
 
 export type OutlineSymbol = {

@@ -252,6 +252,21 @@ export function JetApp() {
     [handleOpenFile],
   )
 
+  useEffect(() => {
+    lspClientPool.setWorkspaceDeps({
+      openFile: (uri, path, line, column) => {
+        handleOpenFile(uri, path, line, column)
+      },
+      readFile: uri => workspace.readFile(uri),
+      getLanguageId: uri => {
+        const file = workspace.fileForUri(uri)
+        if (file) return file.languageId
+        const path = isUntitledUri(uri) ? "" : fileUriToPath(uri)
+        return workspace.createWorkspaceFile(uri, path).languageId
+      },
+    })
+  }, [lspClientPool, handleOpenFile, workspace])
+
   const openWorkspaceFolder = useCallback(
     (folderPath: string) => {
       const gen = ++workspaceInitGen.current

@@ -70,7 +70,12 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   bind("Cmd-Shift-o", cmd.quickOutline, editorFocus),
   bind("Shift-Alt-f", cmd.formatDocument, editorFocus),
   bind("F2", cmd.rename, editorFocus),
+  bind("F12", cmd.goToDefinition, editorFocus),
   bind("Shift-F12", cmd.goToReferences, editorFocus),
+  bind("Ctrl-Space", cmd.triggerSuggest, editorFocus),
+  bind("Cmd-Shift-Space", cmd.triggerParameterHints, editorFocus),
+  bind("Cmd-.", cmd.quickFix, editorFocus),
+  bind("Cmd-F12", cmd.goToImplementation, editorFocus),
 
   // --- Tier 4: List navigation (non-conflicting keys only) ---
   bind("PageUp", cmd.listFocusPageUp, listFocus),

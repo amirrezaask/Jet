@@ -16,7 +16,9 @@
     "@jet/shared": "workspace:*",
     "@jet/workspace": "workspace:*",
     "@jet/codemirror": "workspace:*",
-    "@codemirror/lsp-client": "^6.2.5"
+    "@codemirror/lsp-client": "^6.2.5",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.37.0"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

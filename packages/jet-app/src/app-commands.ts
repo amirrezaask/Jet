@@ -29,10 +29,17 @@ import {
   runFormatDocument,
   runParameterHints,
   runRenameSymbol,
+  runGoToDefinition,
+  runGoToDeclaration,
+  runGoToTypeDefinition,
+  runGoToImplementation,
+  runTriggerSuggest,
+  runShowHover,
   type OutlineSymbol,
 } from "@jet/codemirror"
+import { scheduleCodeActions, applyCodeAction } from "@jet/lsp"
 import type { OutlineEntry } from "@jet/ui"
-import { getEditorView } from "@jet/ui"
+import { getEditorView, showEditorContextMenuAt } from "@jet/ui"
 import { getAllLeafPanels, resolveEditorPanel, resolveTargetPanel } from "./panel-routing.js"
 import { confirmCloseEditorTab } from "./tab-close.js"
 
@@ -394,6 +401,63 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (lspUnavailable(ctx)) return
       if (!runParameterHints(view)) ctx.ui.showMessage("Parameter hints not available")
     },
+    goToDefinition: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runGoToDefinition(view)) ctx.ui.showMessage("Go to definition not available")
+    },
+    goToDeclaration: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runGoToDeclaration(view)) ctx.ui.showMessage("Go to declaration not available")
+    },
+    goToTypeDefinition: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runGoToTypeDefinition(view)) ctx.ui.showMessage("Go to type definition not available")
+    },
+    goToImplementation: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runGoToImplementation(view)) ctx.ui.showMessage("Go to implementation not available")
+    },
+    triggerSuggest: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (!runTriggerSuggest(view)) ctx.ui.showMessage("Suggest not available")
+    },
+    showHover: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      if (!runShowHover(view)) ctx.ui.showMessage("Hover not available")
+    },
+    quickFix: async ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      if (lspUnavailable(ctx)) return
+      const actions = await scheduleCodeActions(view, true)
+      if (!actions.length) {
+        ctx.ui.showMessage("No quick fixes available")
+        return
+      }
+      if (actions.length === 1) {
+        await applyCodeAction(view, actions[0]!)
+        return
+      }
+      ctx.ui.showMessage(`Quick fixes: ${actions.map(a => a.title).join(", ")}`)
+    },
+    showContextMenu: ctx => {
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!view) return
+      const pos = view.state.selection.main.head
+      const coords = view.coordsAtPos(pos)
+      if (coords) showEditorContextMenuAt(coords.left, coords.bottom)
+    },
 
     gitRevertSelected: ctx => ctx.ui.showMessage("Git: revert selected ranges not yet implemented"),
     gitStageSelected: ctx => ctx.ui.showMessage("Git: stage selected ranges not yet implemented"),
@@ -468,6 +532,14 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.action.rename", fn: "rename", title: "Rename Symbol", category: "Editor" },
   { id: "editor.action.goToReferences", fn: "goToReferences", title: "Go to References", category: "Editor" },
   { id: "editor.action.triggerParameterHints", fn: "triggerParameterHints", title: "Trigger Parameter Hints", category: "Editor" },
+  { id: "editor.action.revealDefinition", fn: "goToDefinition", title: "Go to Definition", category: "Editor" },
+  { id: "editor.action.revealDeclaration", fn: "goToDeclaration", title: "Go to Declaration", category: "Editor" },
+  { id: "editor.action.goToTypeDefinition", fn: "goToTypeDefinition", title: "Go to Type Definition", category: "Editor" },
+  { id: "editor.action.goToImplementation", fn: "goToImplementation", title: "Go to Implementation", category: "Editor" },
+  { id: "editor.action.triggerSuggest", fn: "triggerSuggest", title: "Trigger Suggest", category: "Editor" },
+  { id: "editor.action.showHover", fn: "showHover", title: "Show Hover", category: "Editor" },
+  { id: "editor.action.quickFix", fn: "quickFix", title: "Quick Fix", category: "Editor" },
+  { id: "editor.action.showContextMenu", fn: "showContextMenu", title: "Show Context Menu", category: "Editor" },
 
   // --- Tier 4: List navigation ---
   { id: "list.focusPageUp", fn: "listFocusPageUp", title: "List Page Up", category: "List" },

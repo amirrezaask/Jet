@@ -43,8 +43,9 @@ export function jetThemeExtension(theme: JetTheme) {
       ".cm-activeLineGutter": { backgroundColor: theme.colors.hover },
       ".cm-activeLine": { backgroundColor: theme.colors.hover },
       ".cm-matchingBracket, .cm-nonmatchingBracket": {
-        backgroundColor: theme.colors.accent + "44",
+        backgroundColor: "transparent",
         outline: `1px solid ${theme.colors.accent}`,
+        borderRadius: "2px",
       },
       ".cm-panel.cm-search": {
         backgroundColor: theme.colors.panelRaised,
@@ -63,6 +64,34 @@ export function jetThemeExtension(theme: JetTheme) {
       },
       ".cm-indent-marker": {
         borderLeft: `1px solid ${theme.colors.border}`,
+      },
+      ".cm-close-brace-virtual": {
+        color: theme.colors.textMuted,
+        pointerEvents: "none",
+        userSelect: "none",
+      },
+      ".cm-brace-guide-line": {
+        borderLeft: `1px solid ${theme.colors.border}`,
+        marginLeft: "2px",
+      },
+      ".cm-tooltip": {
+        backgroundColor: theme.colors.panelRaised,
+        color: theme.colors.text,
+        border: `1px solid ${theme.colors.border}`,
+      },
+      ".cm-tooltip-autocomplete": {
+        "& > ul": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+        "& > ul > li[aria-selected]": {
+          backgroundColor: theme.colors.hover,
+          color: theme.colors.text,
+        },
+      },
+      ".cm-completionLabel": {
+        color: theme.colors.text,
+      },
+      ".cm-completionDetail": {
+        color: theme.colors.textMuted,
+        fontStyle: "italic",
       },
       ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
         backgroundColor: theme.colors.selection + "66",

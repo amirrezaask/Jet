@@ -9,7 +9,7 @@ import {
 import { bracketMatching, indentOnInput } from "@codemirror/language"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
-import { LSPClient } from "@codemirror/lsp-client"
+import { LSPClient, jumpToDefinition } from "@codemirror/lsp-client"
 import type { WorkspaceFile } from "@jet/workspace"
 import type { WorkspaceService } from "@jet/workspace"
 import type { JetKeyBinding } from "@jet/workspace"
@@ -20,6 +20,7 @@ import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { motionCursor } from "./motion-cursor.js"
 import { multiCursorExtensions } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
+import { braceScopeExtension } from "./brace-scope.js"
 
 export const userKeymapCompartment = new Compartment()
 export const languageCompartment = new Compartment()
@@ -39,9 +40,17 @@ export type CreateJetEditorViewOptions = {
   onSelectionChange?: (line: number, column: number) => void
 }
 
+const goToDefinitionOnClick = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (!(event.metaKey || event.ctrlKey) || event.button !== 0) return false
+    jumpToDefinition(view)
+    event.preventDefault()
+    return true
+  },
+})
+
 export async function createJetEditorView(opts: CreateJetEditorViewOptions): Promise<EditorView> {
   const theme = opts.theme ?? defaultJetTheme
-  const lang = await loadLanguage(opts.file.languageId)
 
   const extensions: Extension[] = [
     lineNumbers(),
@@ -49,15 +58,27 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     history(),
     indentOnInput(),
     bracketMatching(),
-    indentationMarkers({ highlightActiveBlock: true, markerType: "fullScope" }),
+    indentationMarkers({
+      highlightActiveBlock: true,
+      markerType: "fullScope",
+      colors: {
+        light: theme.colors.border,
+        dark: theme.colors.border,
+        activeLight: theme.colors.accent + "44",
+        activeDark: theme.colors.accent + "44",
+      },
+    }),
+    braceScopeExtension(),
+    goToDefinitionOnClick,
     ...multiCursorExtensions(),
     search({ top: true }),
     highlightSelectionMatches(),
     keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
     jetThemeExtension(theme),
     motionCursor(),
-    languageCompartment.of(lang),
+    languageCompartment.of(await loadLanguage(opts.file.languageId)),
     userKeymapCompartment.of([]),
+    lspCompartment.of([]),
     extensionCompartment.of(opts.userExtensions ?? []),
     EditorView.updateListener.of(update => {
       if (update.docChanged) {
@@ -98,6 +119,12 @@ async function attachLsp(
   await client.initializing
   view.dispatch({
     effects: lspCompartment.reconfigure(client.plugin(uri, languageId)),
+  })
+}
+
+export function detachLsp(view: EditorView): void {
+  view.dispatch({
+    effects: lspCompartment.reconfigure([]),
   })
 }
 

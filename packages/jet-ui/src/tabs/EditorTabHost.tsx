@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import type { LSPClient } from "@jet/codemirror"
@@ -10,13 +10,20 @@ import {
   jumpToLine,
   consumePendingEditorNavigation,
   reconfigureLsp,
+  detachLsp,
+  lspPluginForView,
 } from "@jet/codemirror"
 import type { JetTheme } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
 import type { TabId } from "@jet/shared"
 import { fileUriToPath, isUntitledUri } from "@jet/shared"
+import {
+  EditorContextMenu,
+  registerEditorContextMenuHandler,
+} from "../components/EditorContextMenu.js"
 
 const viewByTab = new Map<number, EditorView>()
+let focusedTabId: number | null = null
 
 export function getEditorView(tabId: TabId): EditorView | undefined {
   return viewByTab.get(tabId.id)
@@ -81,9 +88,17 @@ export function EditorTabHost({
   const resolveLspClientRef = useRef(resolveLspClient)
   resolveLspClientRef.current = resolveLspClient
   const fileLanguageIdRef = useRef("plaintext")
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
   const runCommand = useRef((name: string) => executeCommandRef.current(name)).current
   const runBinding = useRef((binding: JetKeyBinding) => runKeyBindingRef.current(binding)).current
+
+  useEffect(() => {
+    return registerEditorContextMenuHandler((x, y) => {
+      if (focusedTabId !== tabId.id) return
+      setContextMenu({ x, y })
+    })
+  }, [tabId.id])
 
   useEffect(() => {
     const parent = ref.current
@@ -92,6 +107,7 @@ export function EditorTabHost({
     let view: EditorView | null = null
     let onFocus: (() => void) | null = null
     let onBlur: (() => void) | null = null
+    let onContextMenu: ((e: MouseEvent) => void) | null = null
 
     ;(async () => {
       const untitled = isUntitledUri(fileUri)
@@ -120,10 +136,19 @@ export function EditorTabHost({
       viewByTab.set(tabId.id, view)
       const nav = consumePendingEditorNavigation(tabId)
       if (nav) jumpToLine(view, nav.line, nav.column)
-      onFocus = () => onEditorFocusChangeRef.current?.(true)
+      onFocus = () => {
+        focusedTabId = tabId.id
+        onEditorFocusChangeRef.current?.(true)
+      }
       onBlur = () => onEditorFocusChangeRef.current?.(false)
+      onContextMenu = (e: MouseEvent) => {
+        e.preventDefault()
+        focusedTabId = tabId.id
+        setContextMenu({ x: e.clientX, y: e.clientY })
+      }
       view.dom.addEventListener("focus", onFocus)
       view.dom.addEventListener("blur", onBlur)
+      view.dom.addEventListener("contextmenu", onContextMenu)
       if (autoFocus) view.focus()
 
       if (!untitled) {
@@ -150,12 +175,15 @@ export function EditorTabHost({
 
     return () => {
       cancelled = true
-      if (view && onFocus && onBlur) {
+      if (view && onFocus && onBlur && onContextMenu) {
         view.dom.removeEventListener("focus", onFocus)
         view.dom.removeEventListener("blur", onBlur)
+        view.dom.removeEventListener("contextmenu", onContextMenu)
       }
+      if (view) detachLsp(view)
       view?.destroy()
       viewByTab.delete(tabId.id)
+      if (focusedTabId === tabId.id) focusedTabId = null
     }
   }, [fileUri, tabId.id, workspace, theme, runCommand])
 
@@ -202,5 +230,20 @@ export function EditorTabHost({
     return () => sub.dispose()
   }, [workspace, fileUri, tabId.id])
 
-  return <div ref={ref} className="h-full w-full overflow-hidden" />
+  const activeView = viewByTab.get(tabId.id) ?? null
+
+  return (
+    <>
+      <div ref={ref} className="h-full w-full overflow-hidden" />
+      <EditorContextMenu
+        open={contextMenu != null}
+        position={contextMenu}
+        view={activeView}
+        lspAvailable={Boolean(typeof window !== "undefined" && window.jet?.lsp)}
+        hasLspPlugin={activeView != null && lspPluginForView(activeView) != null}
+        onClose={() => setContextMenu(null)}
+        executeCommand={runCommand}
+      />
+    </>
+  )
 }
