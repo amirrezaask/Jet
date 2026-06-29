@@ -255,7 +255,7 @@ Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
 - `executeCommand` passed via ref — layout/tab events must not remount editor
 - Autofocus on active editor tab in focused panel; `tabSelect` on editor tabs calls `view.focus()`
 - `applyUserKeymaps()` — Compartment-based bridge from `KeymapService` → CM keymap
-- `motionCursor` — animated cursor with reduced-motion respect
+- `motionCursor` — Fleury bracket cursor + exp-smooth animation; reduced-motion snap
 - `isLargeFile()` — skips LSP for huge files
 - Languages loaded lazily via Shiki/lang packages in `languages.ts`
 

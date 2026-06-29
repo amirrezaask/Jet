@@ -22,7 +22,7 @@ import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { motionCursor } from "./motion-cursor.js"
 import { multiCursorExtensions } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
-import { braceScopeExtension } from "./brace-scope.js"
+import { eolOverlayExtension } from "./eol-overlays.js"
 import { perfMeasure } from "./perf-instrumentation.js"
 import { jetReloadAnnotation } from "./reload-annotation.js"
 
@@ -85,7 +85,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
           activeDark: theme.colors.accent + "44",
         },
       }),
-      braceScopeExtension(),
+      eolOverlayExtension(),
     )
   } else {
     extensions.push(

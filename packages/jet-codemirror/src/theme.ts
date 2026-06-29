@@ -63,8 +63,8 @@ export function jetThemeExtension(theme: JetTheme) {
         ".cm-activeLineGutter": { backgroundColor: activeLineBg },
         ".cm-activeLine": { backgroundColor: activeLineBg },
         ".cm-matchingBracket, .cm-nonmatchingBracket": {
-          backgroundColor: "transparent",
-          outline: `1px solid ${theme.colors.accent}`,
+          backgroundColor: theme.colors.accent + "59",
+          outline: "none",
           borderRadius: "2px",
         },
         ".cm-panel.cm-search": {
@@ -86,12 +86,26 @@ export function jetThemeExtension(theme: JetTheme) {
         ".cm-indent-marker": {
           borderLeft: `1px solid ${theme.colors.border}`,
         },
-        ".cm-close-brace-virtual": {
-          color: theme.colors.textMuted,
-          fontSize: "0.85em",
+        ".cm-eol-overlay-wrap": {
           pointerEvents: "none",
           userSelect: "none",
           marginLeft: "0.5ch",
+          fontSize: "0.85em",
+        },
+        ".cm-eol-overlay": {
+          marginLeft: "0.5ch",
+        },
+        ".cm-eol-overlay-type, .cm-eol-overlay-close-brace": {
+          color: theme.colors.textMuted,
+        },
+        ".cm-eol-overlay-diagnostic-error": {
+          color: theme.colors.error,
+        },
+        ".cm-eol-overlay-diagnostic-warning": {
+          color: theme.colors.warning,
+        },
+        ".cm-eol-overlay-diagnostic-info": {
+          color: theme.colors.textMuted,
         },
         ".cm-brace-guide-line": {
           borderLeft: `1px solid ${theme.colors.border}`,

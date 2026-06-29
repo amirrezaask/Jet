@@ -11,6 +11,16 @@ import {
   jumpToTypeDefinition,
   jumpToImplementation,
 } from "@codemirror/lsp-client"
+import { hoverContentsToPlain, type HoverContents } from "./hover-signature.js"
+
+type HoverParams = {
+  position: { line: number; character: number }
+  textDocument: { uri: string }
+}
+
+type HoverResult = {
+  contents: HoverContents
+} | null
 type LspDocumentSymbol = {
   name: string
   range?: { start: { line: number } }
@@ -90,6 +100,19 @@ export function runShowHover(view: EditorView): boolean {
     }),
   )
   return true
+}
+
+export async function fetchHoverPlaintext(view: EditorView, pos: number): Promise<string | null> {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return null
+  plugin.client.sync()
+  const result = await plugin.client.request<HoverParams, HoverResult>("textDocument/hover", {
+    position: plugin.toPosition(pos),
+    textDocument: { uri: plugin.uri },
+  })
+  if (!result?.contents) return null
+  const text = hoverContentsToPlain(result.contents).trim()
+  return text.length > 0 ? text : null
 }
 
 export type OutlineSymbol = {

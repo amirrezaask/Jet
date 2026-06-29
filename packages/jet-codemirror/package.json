@@ -11,7 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc --emitDeclarationOnly --outDir dist"
+    "build": "tsc --emitDeclarationOnly --outDir dist",
+    "test": "tsx --test src/hover-signature.test.ts"
   },
   "dependencies": {
     "@jet/shared": "workspace:*",
@@ -31,10 +32,10 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.37.0",
     "@lezer/highlight": "^1.2.1",
-    "@replit/codemirror-indentation-markers": "^6.5.3",
-    "motion": "^12.16.0"
+    "@replit/codemirror-indentation-markers": "^6.5.3"
   },
   "devDependencies": {
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }
 }

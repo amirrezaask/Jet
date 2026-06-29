@@ -37,5 +37,5 @@ export {
   fetchDocumentOutline,
   type OutlineSymbol,
 } from "./lsp-editor-commands.js"
-export { braceScopeExtension } from "./brace-scope.js"
+export { eolOverlayExtension, braceScopeExtension } from "./eol-overlays.js"
 export { jetReloadAnnotation } from "./reload-annotation.js"
