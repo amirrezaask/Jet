@@ -9,7 +9,9 @@ import {
 /** LSP client extensions — merges server completions with language-pack sources. */
 export function jetLanguageServerExtensions() {
   return [
-    EditorState.languageData.of(() => [{ autocomplete: serverCompletionSource }]),
+    // LSPClient only keeps extensions that are arrays or have `.extension`;
+    // bare FacetProvider values are dropped, so wrap languageData.
+    [EditorState.languageData.of(() => [{ autocomplete: serverCompletionSource }])],
     hoverTooltips(),
     signatureHelp({ keymap: false }),
     serverDiagnostics(),

@@ -17,25 +17,25 @@ let crashCallback: ((id: string) => void) | null = null
 
 /** Decode LSP stdio Content-Length framing into raw JSON strings. */
 export class LspFramingDecoder {
-  private buffer = ""
+  private buffer: Buffer = Buffer.alloc(0)
 
-  feed(chunk: string): string[] {
-    this.buffer += chunk
+  feed(chunk: Buffer): string[] {
+    this.buffer = Buffer.concat([this.buffer, chunk])
     const messages: string[] = []
     for (;;) {
       const headerEnd = this.buffer.indexOf("\r\n\r\n")
       if (headerEnd < 0) break
-      const header = this.buffer.slice(0, headerEnd)
+      const header = this.buffer.subarray(0, headerEnd).toString("latin1")
       const match = /Content-Length:\s*(\d+)/i.exec(header)
       if (!match) {
-        this.buffer = this.buffer.slice(headerEnd + 4)
+        this.buffer = this.buffer.subarray(headerEnd + 4)
         continue
       }
       const length = Number.parseInt(match[1]!, 10)
       const bodyStart = headerEnd + 4
       if (this.buffer.length < bodyStart + length) break
-      messages.push(this.buffer.slice(bodyStart, bodyStart + length))
-      this.buffer = this.buffer.slice(bodyStart + length)
+      messages.push(this.buffer.subarray(bodyStart, bodyStart + length).toString("utf8"))
+      this.buffer = this.buffer.subarray(bodyStart + length)
     }
     return messages
   }
@@ -52,7 +52,7 @@ function bridgeStdioToWs(proc: ChildProcess, ws: WebSocket) {
 
   proc.stdout?.on("data", chunk => {
     if (ws.readyState !== ws.OPEN) return
-    for (const msg of decoder.feed(chunk.toString())) {
+    for (const msg of decoder.feed(chunk)) {
       ws.send(msg)
     }
   })
