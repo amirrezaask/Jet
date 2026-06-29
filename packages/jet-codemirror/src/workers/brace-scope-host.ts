@@ -4,45 +4,59 @@ type ResultHandler = (result: BraceScopeScanResult) => void
 
 let worker: Worker | null = null
 let nextRequestId = 0
-let latestRequestId = 0
-let pendingHandler: ResultHandler | null = null
+const latestRequestIdByOwner = new Map<number, number>()
+const pendingByOwner = new Map<number, ResultHandler>()
+const ownerByRequestId = new Map<number, number>()
 
 function ensureWorker(): Worker {
   if (!worker) {
     worker = new Worker(new URL("./brace-scope.worker.ts", import.meta.url), { type: "module" })
     worker.onmessage = (event: MessageEvent<BraceScopeScanResult>) => {
       const result = event.data
-      if (result.requestId < latestRequestId) return
-      pendingHandler?.(result)
-      pendingHandler = null
+      const ownerId = ownerByRequestId.get(result.requestId)
+      if (ownerId == null) return
+      ownerByRequestId.delete(result.requestId)
+      const latest = latestRequestIdByOwner.get(ownerId) ?? 0
+      if (result.requestId < latest) return
+      pendingByOwner.get(ownerId)?.(result)
+      pendingByOwner.delete(ownerId)
     }
   }
   return worker
 }
 
 export class BraceScopeHost {
-  private cancelled = false
+  private cancelledOwners = new Set<number>()
 
-  schedule(job: Omit<BraceScopeScanJob, "requestId">, onResult: ResultHandler): void {
-    this.cancelled = false
+  schedule(
+    ownerId: number,
+    job: Omit<BraceScopeScanJob, "requestId" | "ownerId">,
+    onResult: ResultHandler,
+  ): void {
+    this.cancelledOwners.delete(ownerId)
     const requestId = ++nextRequestId
-    latestRequestId = requestId
-    pendingHandler = result => {
-      if (this.cancelled || result.requestId < latestRequestId) return
+    latestRequestIdByOwner.set(ownerId, requestId)
+    pendingByOwner.set(ownerId, result => {
+      if (this.cancelledOwners.has(ownerId) || result.requestId < (latestRequestIdByOwner.get(ownerId) ?? 0)) {
+        return
+      }
       onResult(result)
-    }
-    ensureWorker().postMessage({ ...job, requestId })
+    })
+    ownerByRequestId.set(requestId, ownerId)
+    ensureWorker().postMessage({ ...job, requestId, ownerId })
   }
 
-  cancel(): void {
-    this.cancelled = true
-    pendingHandler = null
+  cancel(ownerId: number): void {
+    this.cancelledOwners.add(ownerId)
+    pendingByOwner.delete(ownerId)
   }
 
   static terminate(): void {
     worker?.terminate()
     worker = null
-    pendingHandler = null
+    pendingByOwner.clear()
+    latestRequestIdByOwner.clear()
+    ownerByRequestId.clear()
   }
 }
 

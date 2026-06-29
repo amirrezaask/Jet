@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { memo, useEffect, useRef, useState } from "react"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import type { LSPClient } from "@jet/codemirror"
@@ -43,7 +43,7 @@ export function getAllEditorViews(
   return result
 }
 
-export function EditorTabHost({
+function EditorTabHostInner({
   tabId,
   fileUri,
   workspace,
@@ -54,6 +54,7 @@ export function EditorTabHost({
   runKeyBinding,
   keymapBindings,
   userExtensions,
+  keymapRevision,
   keymapContext,
   onEditorFocusChange,
   onEditorSelectionChange,
@@ -69,6 +70,7 @@ export function EditorTabHost({
   runKeyBinding: (binding: JetKeyBinding) => void
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
+  keymapRevision: number
   keymapContext?: KeymapContext
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
@@ -79,6 +81,8 @@ export function EditorTabHost({
   executeCommandRef.current = executeCommand
   const runKeyBindingRef = useRef(runKeyBinding)
   runKeyBindingRef.current = runKeyBinding
+  const keymapBindingsRef = useRef(keymapBindings)
+  keymapBindingsRef.current = keymapBindings
   const keymapContextRef = useRef(keymapContext)
   keymapContextRef.current = keymapContext
   const onEditorFocusChangeRef = useRef(onEditorFocusChange)
@@ -116,11 +120,21 @@ export function EditorTabHost({
       if (!file) file = workspace.createWorkspaceFile(fileUri, path)
       fileLanguageIdRef.current = file.languageId
 
+      let initialText = ""
+      let largeFile = false
+      if (!untitled) {
+        const text = await workspace.readFile(fileUri)
+        if (cancelled) return
+        initialText = text
+        largeFile = isLargeFile(text)
+      }
+
       view = await createJetEditorView({
         parent,
         workspace,
         file,
-        initialText: untitled ? "" : "",
+        initialText,
+        largeFile,
         theme,
         lspClient: null,
         executeCommand: runCommand,
@@ -131,7 +145,7 @@ export function EditorTabHost({
         view.destroy()
         return
       }
-      applyUserKeymaps(view, keymapBindings, runBinding, keymapContextRef.current)
+      applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
       applyUserExtensions(view, userExtensions)
       viewByTab.set(tabId.id, view)
       const nav = consumePendingEditorNavigation(tabId)
@@ -151,25 +165,14 @@ export function EditorTabHost({
       view.dom.addEventListener("contextmenu", onContextMenu)
       if (autoFocus) view.focus()
 
-      if (!untitled) {
-        const text = await workspace.readFile(fileUri)
-        if (cancelled) return
-        const mounted = viewByTab.get(tabId.id)
-        if (!mounted) return
-        if (text.length > 0) {
-          mounted.dispatch({
-            changes: { from: 0, to: mounted.state.doc.length, insert: text },
-          })
-        }
-        if (!isLargeFile(text) && resolveLspClientRef.current) {
-          void (async () => {
-            const client = await resolveLspClientRef.current!(fileUri)
-            if (cancelled || !client) return
-            const live = viewByTab.get(tabId.id)
-            if (!live) return
-            await reconfigureLsp(live, fileUri, fileLanguageIdRef.current, client)
-          })()
-        }
+      if (!largeFile && !untitled && resolveLspClientRef.current) {
+        void (async () => {
+          const client = await resolveLspClientRef.current!(fileUri)
+          if (cancelled || !client) return
+          const live = viewByTab.get(tabId.id)
+          if (!live) return
+          await reconfigureLsp(live, fileUri, fileLanguageIdRef.current, client)
+        })()
       }
     })()
 
@@ -185,7 +188,7 @@ export function EditorTabHost({
       viewByTab.delete(tabId.id)
       if (focusedTabId === tabId.id) focusedTabId = null
     }
-  }, [fileUri, tabId.id, workspace, theme, runCommand])
+  }, [fileUri, tabId.id, workspace, theme, runCommand, userExtensions, autoFocus])
 
   useEffect(() => {
     if (lspRevision == null || !resolveLspClient) return
@@ -204,8 +207,13 @@ export function EditorTabHost({
 
   useEffect(() => {
     const view = viewByTab.get(tabId.id)
-    if (view) applyUserKeymaps(view, keymapBindings, runBinding, keymapContext)
-  }, [tabId.id, keymapBindings, runBinding, keymapContext])
+    if (view) applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
+  }, [tabId.id, keymapRevision, runBinding])
+
+  useEffect(() => {
+    const view = viewByTab.get(tabId.id)
+    if (view) applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContext)
+  }, [tabId.id, keymapContext, runBinding])
 
   useEffect(() => {
     const view = viewByTab.get(tabId.id)
@@ -247,3 +255,5 @@ export function EditorTabHost({
     </>
   )
 }
+
+export const EditorTabHost = memo(EditorTabHostInner)

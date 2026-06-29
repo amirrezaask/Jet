@@ -32,3 +32,10 @@ function severityFromLint(severity: Diagnostic["severity"]): JetProblem["severit
   if (severity === "warning") return "warning"
   return "info"
 }
+
+export function problemsFingerprint(problems: JetProblem[]): string {
+  if (!problems.length) return ""
+  return problems
+    .map(p => `${p.uri}\0${p.line}\0${p.column}\0${p.severity}\0${p.message}\0${p.source ?? ""}`)
+    .join("\n")
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { Extension } from "@codemirror/state"
 import { PanelTree, resolveDropAtPoint, type PanelEvent } from "@jet/panels"
 import type { PanelId, TabId } from "@jet/shared"
@@ -34,6 +34,7 @@ export type PanelDockProps = {
   userExtensions: Extension[]
   keymapRevision: number
   keymapContext?: KeymapContext
+  tabMetaRev: number
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
 }
@@ -45,9 +46,10 @@ type PendingDrag = {
   startY: number
 }
 
-export function PanelDock(props: PanelDockProps) {
+export function PanelDockInner(props: PanelDockProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ x: 0, y: 0, width: 800, height: 600 })
+  const measureRafRef = useRef<number | null>(null)
   const [dragTab, setDragTab] = useState<{ tabId: TabId; sourcePanel: PanelId } | null>(null)
   const [dragPointer, setDragPointer] = useState<{ x: number; y: number } | null>(null)
   const [dragVector, setDragVector] = useState<{ dx: number; dy: number } | null>(null)
@@ -62,13 +64,24 @@ export function PanelDock(props: PanelDockProps) {
     setViewport({ x: 0, y: 0, width: r.width, height: r.height })
   }, [])
 
+  const scheduleMeasure = useCallback(() => {
+    if (measureRafRef.current != null) return
+    measureRafRef.current = requestAnimationFrame(() => {
+      measureRafRef.current = null
+      measure()
+    })
+  }, [measure])
+
   useEffect(() => {
     measure()
-    const ro = new ResizeObserver(() => measure())
+    const ro = new ResizeObserver(() => scheduleMeasure())
     const el = viewportRef.current
     if (el) ro.observe(el)
-    return () => ro.disconnect()
-  }, [measure])
+    return () => {
+      ro.disconnect()
+      if (measureRafRef.current != null) cancelAnimationFrame(measureRafRef.current)
+    }
+  }, [measure, scheduleMeasure])
 
   const clearDrag = useCallback(() => {
     pendingDragRef.current = null
@@ -171,7 +184,7 @@ export function PanelDock(props: PanelDockProps) {
   const splitters = props.tree.splitterHits(viewport)
 
   return (
-    <div ref={viewportRef} className="relative h-full w-full overflow-hidden" onMouseUp={measure}>
+    <div ref={viewportRef} className="relative h-full w-full overflow-hidden" onMouseUp={scheduleMeasure}>
       <div className="absolute inset-0">
         {[...rects.entries()].map(([panelNum, rect]) => {
           const panelId = { id: panelNum }
@@ -198,6 +211,7 @@ export function PanelDock(props: PanelDockProps) {
                 group={leaf.group}
                 registry={props.registry}
                 focused={props.focusedPanelId?.id === panelNum}
+                tabMetaRev={props.tabMetaRev}
                 onSelect={tabId =>
                   props.onEvent({ type: "tabSelect", panelId, tabId })
                 }
@@ -228,6 +242,7 @@ export function PanelDock(props: PanelDockProps) {
                     onOpenProblem={props.onOpenProblem}
                     keymapBindings={props.keymapBindings}
                     userExtensions={props.userExtensions}
+                    keymapRevision={props.keymapRevision}
                     keymapContext={props.keymapContext}
                     onEditorFocusChange={props.onEditorFocusChange}
                     onEditorSelectionChange={props.onEditorSelectionChange}
@@ -266,25 +281,49 @@ export function PanelDock(props: PanelDockProps) {
                 e.preventDefault()
                 e.currentTarget.setPointerCapture(e.pointerId)
                 let lastPos = horizontal ? e.clientX : e.clientY
+                let pendingDelta = 0
+                let resizeRaf: number | null = null
                 const onMove = (ev: PointerEvent) => {
                   const pos = horizontal ? ev.clientX : ev.clientY
                   const delta = pos - lastPos
                   lastPos = pos
                   if (delta === 0) return
-                  props.onEvent({
-                    type: "splitResized",
-                    path: hit.path,
-                    splitterIndex: hit.index,
-                    deltaPx: delta,
-                    viewport,
+                  pendingDelta += delta
+                  if (resizeRaf != null) return
+                  resizeRaf = requestAnimationFrame(() => {
+                    resizeRaf = null
+                    const batch = pendingDelta
+                    pendingDelta = 0
+                    if (batch === 0) return
+                    props.onEvent({
+                      type: "splitResized",
+                      path: hit.path,
+                      splitterIndex: hit.index,
+                      deltaPx: batch,
+                      viewport,
+                    })
                   })
                 }
                 const onUp = () => {
+                  if (resizeRaf != null) {
+                    cancelAnimationFrame(resizeRaf)
+                    resizeRaf = null
+                  }
+                  if (pendingDelta !== 0) {
+                    props.onEvent({
+                      type: "splitResized",
+                      path: hit.path,
+                      splitterIndex: hit.index,
+                      deltaPx: pendingDelta,
+                      viewport,
+                    })
+                    pendingDelta = 0
+                  }
                   e.currentTarget.releasePointerCapture(e.pointerId)
                   e.currentTarget.removeEventListener("pointermove", onMove)
                   e.currentTarget.removeEventListener("pointerup", onUp)
                   e.currentTarget.removeEventListener("pointercancel", onUp)
-                  measure()
+                  scheduleMeasure()
                 }
                 e.currentTarget.addEventListener("pointermove", onMove)
                 e.currentTarget.addEventListener("pointerup", onUp)
@@ -316,3 +355,5 @@ export function PanelDock(props: PanelDockProps) {
     </div>
   )
 }
+
+export const PanelDock = memo(PanelDockInner)

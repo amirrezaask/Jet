@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from "react"
+import { lazy, memo, Suspense, type ReactNode } from "react"
 import type { TabId } from "@jet/shared"
 import type { JetProblem } from "@jet/shared"
 import { pathToFileUri } from "@jet/shared"
@@ -18,7 +18,7 @@ const TerminalTab = lazy(() =>
   import("../tabs/TerminalTab.js").then(m => ({ default: m.TerminalTab })),
 )
 
-export function TabBody({
+function TabBodyInner({
   tabId,
   registry,
   workspace,
@@ -34,6 +34,7 @@ export function TabBody({
   onOpenProblem,
   keymapBindings,
   userExtensions,
+  keymapRevision,
   keymapContext,
   onEditorFocusChange,
   onEditorSelectionChange,
@@ -54,6 +55,7 @@ export function TabBody({
   onOpenProblem: (problem: JetProblem) => void
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
+  keymapRevision: number
   keymapContext?: KeymapContext
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
@@ -84,6 +86,7 @@ export function TabBody({
           runKeyBinding={runKeyBinding}
           keymapBindings={keymapBindings}
           userExtensions={userExtensions}
+          keymapRevision={keymapRevision}
           keymapContext={keymapContext}
           onEditorFocusChange={onEditorFocusChange}
           onEditorSelectionChange={onEditorSelectionChange}
@@ -118,3 +121,5 @@ export function TabBody({
       return null
   }
 }
+
+export const TabBody = memo(TabBodyInner)

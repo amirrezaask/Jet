@@ -1,11 +1,13 @@
+import { useSyncExternalStore } from "react"
+import { getEditorCursor, subscribeEditorCursor } from "./editor-cursor-store.js"
+
 export type StatusBarProps = {
   message: string | null
   lspStatus: "connected" | "off" | "unavailable"
   workspaceName?: string | null
   workspacePath?: string | null
   gitBranch?: string | null
-  line?: number
-  column?: number
+  showCursor?: boolean
   encoding?: string
 }
 
@@ -15,10 +17,10 @@ export function StatusBar({
   workspaceName,
   workspacePath,
   gitBranch,
-  line,
-  column,
+  showCursor = false,
   encoding = "UTF-8",
 }: StatusBarProps) {
+  const cursor = useSyncExternalStore(subscribeEditorCursor, getEditorCursor, getEditorCursor)
   const lspLabel =
     lspStatus === "connected" ? "LSP: connected" : lspStatus === "off" ? "LSP: off" : "LSP: n/a"
 
@@ -34,9 +36,9 @@ export function StatusBar({
         <span className="hidden shrink-0 truncate sm:inline max-w-[12rem]">{message}</span>
       )}
       <span className="shrink-0">{lspLabel}</span>
-      {line != null && column != null && (
+      {showCursor && cursor != null && (
         <span className="shrink-0 tabular-nums">
-          Ln {line}, Col {column}
+          Ln {cursor.line}, Col {cursor.column}
         </span>
       )}
       <span className="shrink-0">{encoding}</span>

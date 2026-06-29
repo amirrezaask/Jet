@@ -18,8 +18,8 @@ import {
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
-import { applyJetThemeCss, defaultJetTheme, jumpToLine, collectProblemsFromViews, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
-import { PanelDock, CommandPalette, StatusBar, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, CdOverlay, getEditorView, getAllEditorViews, type OutlineEntry } from "@jet/ui"
+import { applyJetThemeCss, defaultJetTheme, jumpToLine, collectProblemsFromViews, problemsFingerprint, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
+import { PanelDock, CommandPalette, StatusBar, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, CdOverlay, getEditorView, getAllEditorViews, setEditorCursor, type OutlineEntry } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
@@ -82,7 +82,6 @@ export function JetApp() {
   const [layoutReady, setLayoutReady] = useState(false)
   const [bootstrapping, setBootstrapping] = useState(hasWorkspaceQuery)
   const [activeTheme, setActiveTheme] = useState<JetTheme>(() => loadStoredTheme())
-  const [cursorPos, setCursorPos] = useState<{ line: number; column: number } | null>(null)
   const [gotoLineOpen, setGotoLineOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [outlineSymbols, setOutlineSymbols] = useState<OutlineEntry[]>([])
@@ -93,6 +92,7 @@ export function JetApp() {
   const [fileIndex, setFileIndex] = useState<string[]>([])
   const [problems, setProblems] = useState<JetProblem[]>([])
   const [sessionRev, setSessionRev] = useState(0)
+  const [tabMetaRev, setTabMetaRev] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
@@ -109,6 +109,10 @@ export function JetApp() {
   const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
   const commands = useMemo(() => new CommandRegistry(), [])
   const keymaps = useMemo(() => new KeymapService(), [])
+
+  const keymapBindings = useMemo(() => keymaps.allBindings(), [keymaps, keymapRevision])
+
+  const paletteCommands = useMemo(() => commands.list(), [commands, sessionRev, keymapRevision])
 
   const activeTabKindName = useMemo(
     () => (focusedPanel ? activeTabKind(panelTree, focusedPanel, workspace.tabRegistry) : undefined),
@@ -578,6 +582,14 @@ export function JetApp() {
   }, [workspace])
 
   useEffect(() => {
+    return workspace.onDidChangeDirty.event(() => setTabMetaRev(r => r + 1)).dispose
+  }, [workspace])
+
+  useEffect(() => {
+    if (activeTabKindName !== "editor") setEditorCursor(null)
+  }, [activeTabKindName])
+
+  useEffect(() => {
     if (!workspace.root) return
     const id = window.setTimeout(() => {
       saveWorkspaceSession(
@@ -746,33 +758,34 @@ export function JetApp() {
     void retry()
   }, [editorFocused, lspCrashed, lspManager, workspace.root, focusedPanel, panelTree, workspace.tabRegistry, ensureLspForFile])
 
+  const problemsFpRef = useRef("")
+
   useEffect(() => {
     const id = window.setInterval(() => {
       const views = getAllEditorViews(workspace.tabRegistry)
-      setProblems(collectProblemsFromViews(views.map(v => ({ uri: v.uri, view: v.view }))))
+      const next = collectProblemsFromViews(views.map(v => ({ uri: v.uri, view: v.view })))
+      const fp = problemsFingerprint(next)
+      if (fp !== problemsFpRef.current) {
+        problemsFpRef.current = fp
+        setProblems(next)
+      }
     }, 1000)
     return () => window.clearInterval(id)
-  }, [workspace.tabRegistry, panelTree, keymapRevision])
+  }, [workspace.tabRegistry, panelTree])
 
-  useEffect(() => {
-    if (activeTabKindName !== "editor" || !focusedPanel) {
-      setCursorPos(null)
-      return
-    }
-    const syncCursor = () => {
-      const leaf = panelTree.getLeaf(focusedPanel)
-      const tabId = leaf?.group.tabs[leaf.group.active]
-      if (!tabId) return
-      const view = getEditorView(tabId)
-      if (!view) return
-      const pos = view.state.selection.main.head
-      const line = view.state.doc.lineAt(pos)
-      setCursorPos({ line: line.number, column: pos - line.from + 1 })
-    }
-    syncCursor()
-    const id = window.setInterval(syncCursor, 300)
-    return () => window.clearInterval(id)
-  }, [activeTabKindName, focusedPanel, panelTree, keymapRevision])
+  const handleEditorFocusChange = useCallback((focused: boolean) => {
+    setEditorFocused(focused)
+    if (!focused) setEditorCursor(null)
+  }, [])
+
+  const handleEditorSelectionChange = useCallback((line: number, column: number) => {
+    setEditorCursor({ line, column })
+  }, [])
+
+  const handleOpenProblem = useCallback(
+    (p: JetProblem) => handleOpenFileAt(p.uri, fileUriToPath(p.uri), p.line, p.column),
+    [handleOpenFileAt],
+  )
 
   useEffect(() => {
     let lastCloseTabAt = 0
@@ -802,7 +815,7 @@ export function JetApp() {
 
       const result = resolveKeydownBinding(
         e,
-        keymaps.allBindings(),
+        keymapBindings,
         keymapContext,
         chordState,
       )
@@ -830,7 +843,7 @@ export function JetApp() {
       window.removeEventListener("jet-close-tab", onCloseTabEvent)
       window.removeEventListener("keydown", onKey, true)
     }
-  }, [keymaps, keymapContext, editorFocused, runKeyBinding, workspace.root])
+  }, [keymapBindings, keymapContext, editorFocused, runKeyBinding, workspace.root])
 
   const handleCdSelectFolder = useCallback(
     (folderPath: string) => {
@@ -899,16 +912,14 @@ export function JetApp() {
           onOpenFileAt={handleOpenFileAt}
           onBranchChange={setGitBranch}
           problems={problems}
-          onOpenProblem={p => handleOpenFileAt(p.uri, fileUriToPath(p.uri), p.line, p.column)}
-          keymapBindings={keymaps.allBindings()}
+          onOpenProblem={handleOpenProblem}
+          keymapBindings={keymapBindings}
           userExtensions={userExtensions}
           keymapRevision={keymapRevision}
           keymapContext={keymapContext}
-          onEditorFocusChange={focused => {
-            setEditorFocused(focused)
-            if (!focused) setCursorPos(null)
-          }}
-          onEditorSelectionChange={(line, column) => setCursorPos({ line, column })}
+          tabMetaRev={tabMetaRev}
+          onEditorFocusChange={handleEditorFocusChange}
+          onEditorSelectionChange={handleEditorSelectionChange}
         />
       </main>
 
@@ -918,8 +929,7 @@ export function JetApp() {
         workspaceName={workspace.root?.name}
         workspacePath={workspace.root?.path}
         gitBranch={gitBranch}
-        line={activeTabKindName === "editor" ? cursorPos?.line : undefined}
-        column={activeTabKindName === "editor" ? cursorPos?.column : undefined}
+        showCursor={activeTabKindName === "editor"}
       />
 
       <GotoLineModal
@@ -978,7 +988,7 @@ export function JetApp() {
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
-        commands={commands.list()}
+        commands={paletteCommands}
         onRun={id => executeCommand(id)}
       />
     </div>

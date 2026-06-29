@@ -21,6 +21,7 @@ import { motionCursor } from "./motion-cursor.js"
 import { multiCursorExtensions } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
 import { braceScopeExtension } from "./brace-scope.js"
+import { perfMeasure } from "./perf-instrumentation.js"
 
 export const userKeymapCompartment = new Compartment()
 export const languageCompartment = new Compartment()
@@ -38,6 +39,7 @@ export type CreateJetEditorViewOptions = {
   userExtensions?: Extension[]
   onViewCreated?: (view: EditorView) => void
   onSelectionChange?: (line: number, column: number) => void
+  largeFile?: boolean
 }
 
 const goToDefinitionOnClick = EditorView.domEventHandlers({
@@ -51,6 +53,7 @@ const goToDefinitionOnClick = EditorView.domEventHandlers({
 
 export async function createJetEditorView(opts: CreateJetEditorViewOptions): Promise<EditorView> {
   const theme = opts.theme ?? defaultJetTheme
+  const largeFile = opts.largeFile ?? false
 
   const extensions: Extension[] = [
     lineNumbers(),
@@ -58,24 +61,57 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     history(),
     indentOnInput(),
     bracketMatching(),
-    indentationMarkers({
-      highlightActiveBlock: true,
-      markerType: "fullScope",
-      colors: {
-        light: theme.colors.border,
-        dark: theme.colors.border,
-        activeLight: theme.colors.accent + "44",
-        activeDark: theme.colors.accent + "44",
-      },
-    }),
-    braceScopeExtension(),
+  ]
+
+  if (!largeFile) {
+    extensions.push(
+      indentationMarkers({
+        highlightActiveBlock: true,
+        markerType: "fullScope",
+        colors: {
+          light: theme.colors.border,
+          dark: theme.colors.border,
+          activeLight: theme.colors.accent + "44",
+          activeDark: theme.colors.accent + "44",
+        },
+      }),
+      braceScopeExtension(),
+    )
+  } else {
+    extensions.push(
+      indentationMarkers({
+        highlightActiveBlock: true,
+        markerType: "codeOnly",
+        colors: {
+          light: theme.colors.border,
+          dark: theme.colors.border,
+          activeLight: theme.colors.accent + "44",
+          activeDark: theme.colors.accent + "44",
+        },
+      }),
+    )
+  }
+
+  extensions.push(
     goToDefinitionOnClick,
     ...multiCursorExtensions(),
     search({ top: true }),
-    highlightSelectionMatches(),
+  )
+
+  if (!largeFile) {
+    extensions.push(highlightSelectionMatches())
+  }
+
+  extensions.push(
     keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
     jetThemeExtension(theme),
-    motionCursor(),
+  )
+
+  if (!largeFile) {
+    extensions.push(motionCursor())
+  }
+
+  extensions.push(
     languageCompartment.of(await loadLanguage(opts.file.languageId)),
     userKeymapCompartment.of([]),
     lspCompartment.of([]),
@@ -90,7 +126,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
         opts.onSelectionChange(line.number, pos - line.from + 1)
       }
     }),
-  ]
+  )
 
   const view = new EditorView({
     parent: opts.parent,
@@ -149,22 +185,24 @@ export function applyUserKeymaps(
   runBinding: (binding: JetKeyBinding) => void,
   keymapContext?: KeymapContext,
 ): void {
-  const active = keymapContext ? bindings.filter(b => matchesWhen(b, keymapContext)) : bindings
-  const cmBindings = active.flatMap(binding => {
-    const cmKey = jetKeyToCodeMirrorKey(binding.key)
-    if (!cmKey) return []
-    return [
-      {
-        key: cmKey,
-        run: () => {
-          runBinding(binding)
-          return true
+  perfMeasure("jet:apply-user-keymaps", () => {
+    const active = keymapContext ? bindings.filter(b => matchesWhen(b, keymapContext)) : bindings
+    const cmBindings = active.flatMap(binding => {
+      const cmKey = jetKeyToCodeMirrorKey(binding.key)
+      if (!cmKey) return []
+      return [
+        {
+          key: cmKey,
+          run: () => {
+            runBinding(binding)
+            return true
+          },
         },
-      },
-    ]
-  })
-  view.dispatch({
-    effects: userKeymapCompartment.reconfigure(keymap.of(cmBindings)),
+      ]
+    })
+    view.dispatch({
+      effects: userKeymapCompartment.reconfigure(keymap.of(cmBindings)),
+    })
   })
 }
 

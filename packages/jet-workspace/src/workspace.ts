@@ -28,6 +28,14 @@ export class TabRegistry {
 
   updateMeta(tabId: TabId, patch: Partial<TabMeta>): void {
     const current = this.meta(tabId)
+    let changed = false
+    for (const key of Object.keys(patch) as (keyof TabMeta)[]) {
+      if (current[key] !== patch[key]) {
+        changed = true
+        break
+      }
+    }
+    if (!changed) return
     this.metas.set(tabId.id, { ...current, ...patch })
     this.onDidChange.fire()
   }
@@ -87,7 +95,7 @@ export class WorkspaceService {
 
   markDirty(uri: string, isDirty: boolean): void {
     const file = this.files.get(uri)
-    if (!file) return
+    if (!file || file.isDirty === isDirty) return
     file.isDirty = isDirty
     this.onDidChangeDirty.fire({ uri, isDirty })
     const tabs = this.tabRegistry.allTabs()

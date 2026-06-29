@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { ChevronDown, X } from "lucide-react"
 import type { PanelId, TabGroup, TabId } from "@jet/shared"
 import type { TabRegistry } from "@jet/workspace"
 import { cn } from "../lib/utils.js"
 
-export function TabRow({
+function TabRowInner({
   panelId,
   group,
   registry,
   focused,
+  tabMetaRev,
   onSelect,
   onClose,
   onClosePanel,
@@ -20,6 +21,7 @@ export function TabRow({
   group: TabGroup
   registry: TabRegistry
   focused: boolean
+  tabMetaRev: number
   onSelect: (tabId: TabId) => void
   onClose: (tabId: TabId) => void
   onClosePanel?: () => void
@@ -44,7 +46,7 @@ export function TabRow({
     const ro = new ResizeObserver(() => measureOverflow())
     ro.observe(el)
     return () => ro.disconnect()
-  }, [group.tabs.length, measureOverflow])
+  }, [group.tabs.length, tabMetaRev, measureOverflow])
 
   const setRefs = useCallback(
     (el: HTMLDivElement | null) => {
@@ -155,6 +157,8 @@ export function TabRow({
     </div>
   )
 }
+
+export const TabRow = memo(TabRowInner)
 
 export function computeTabInsertIndex(tabRowEl: HTMLElement, clientX: number): number {
   const tabs = tabRowEl.querySelectorAll<HTMLElement>("[data-tab-id]")

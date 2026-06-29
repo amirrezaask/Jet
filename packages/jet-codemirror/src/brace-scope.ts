@@ -1,8 +1,9 @@
 import { EditorView, Decoration, ViewPlugin, WidgetType } from "@codemirror/view"
 import { StateEffect, StateField, Range, type Extension } from "@codemirror/state"
 import type { BraceScopeEntry } from "./brace-scope-scan.js"
-import { buildLineStartOffsets, snapshotViewportLines } from "./brace-scope-scan.js"
+import { snapshotViewportLines } from "./brace-scope-scan.js"
 import { getBraceScopeHost } from "./workers/brace-scope-host.js"
+import { perfMeasure } from "./perf-instrumentation.js"
 
 class CloseBraceVirtualWidget extends WidgetType {
   constructor(readonly label: string) {
@@ -65,11 +66,13 @@ function buildDecorations(view: EditorView, scopes: BraceScopeEntry[]) {
 }
 
 type ScanEntry = {
+  ownerId: number
   stamp: number
   debounce: ReturnType<typeof setTimeout> | null
 }
 
 const viewState = new WeakMap<EditorView, ScanEntry>()
+let nextOwnerId = 1
 
 function runScan(view: EditorView, entry: ScanEntry): void {
   const stamp = ++entry.stamp
@@ -81,26 +84,26 @@ function runScan(view: EditorView, entry: ScanEntry): void {
     lineSnapshots.push({ from: line.from, to: line.to, text: line.text, number: n })
   }
   const snap = snapshotViewportLines(lineSnapshots, vp.from, vp.to)
-  const allTexts: string[] = []
-  for (let i = 1; i <= state.doc.lines; i++) allTexts.push(state.doc.line(i).text)
-  const lineStartOffsets = buildLineStartOffsets(allTexts)
 
-  getBraceScopeHost().schedule(
-    {
-      changeStamp: stamp,
-      viewportFrom: snap.textFrom,
-      viewportTo: snap.textTo,
-      cursorPos: state.selection.main.head,
-      lines: allTexts,
-      lineStartOffsets,
-    },
-    result => {
-      if (result.changeStamp !== stamp) return
-      view.dispatch({
-        effects: setBraceScopeDeco.of(buildDecorations(view, result.scopes)),
-      })
-    },
-  )
+  perfMeasure("jet:brace-scope-prep", () => {
+    const fullText = state.doc.toString()
+    getBraceScopeHost().schedule(
+      entry.ownerId,
+      {
+        changeStamp: stamp,
+        viewportFrom: snap.textFrom,
+        viewportTo: snap.textTo,
+        cursorPos: state.selection.main.head,
+        fullText,
+      },
+      result => {
+        if (result.changeStamp !== stamp) return
+        view.dispatch({
+          effects: setBraceScopeDeco.of(buildDecorations(view, result.scopes)),
+        })
+      },
+    )
+  })
 }
 
 function scheduleScan(view: EditorView, entry: ScanEntry): void {
@@ -115,17 +118,17 @@ export function braceScopeExtension(): Extension {
   return [
     braceScopeField,
     ViewPlugin.define(view => {
-      const entry: ScanEntry = { stamp: 0, debounce: null }
+      const entry: ScanEntry = { ownerId: nextOwnerId++, stamp: 0, debounce: null }
       viewState.set(view, entry)
       scheduleScan(view, entry)
       return {
         update(u) {
-          if (u.docChanged || u.viewportChanged || u.selectionSet) scheduleScan(view, entry)
+          if (u.docChanged || u.viewportChanged) scheduleScan(view, entry)
         },
         destroy() {
           if (entry.debounce != null) clearTimeout(entry.debounce)
           viewState.delete(view)
-          getBraceScopeHost().cancel()
+          getBraceScopeHost().cancel(entry.ownerId)
         },
       }
     }),

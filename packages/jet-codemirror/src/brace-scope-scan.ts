@@ -13,12 +13,12 @@ export type BraceScopeEntry = {
 
 export type BraceScopeScanJob = {
   requestId: number
+  ownerId: number
   changeStamp: number
   viewportFrom: number
   viewportTo: number
   cursorPos: number
-  lines: string[]
-  lineStartOffsets: number[]
+  fullText: string
 }
 
 export type BraceScopeScanResult = {
@@ -168,12 +168,12 @@ function findScopesInViewport(
 }
 
 export function scanBraceScopes(job: BraceScopeScanJob): BraceScopeScanResult {
-  const fullText = job.lines.join("\n")
-  const lineStartOffsets = job.lineStartOffsets
+  const lines = job.fullText.length === 0 ? [""] : job.fullText.split("\n")
+  const lineStartOffsets = buildLineStartOffsets(lines)
   const scopes = findScopesInViewport(
-    fullText,
+    job.fullText,
     lineStartOffsets,
-    job.lines,
+    lines,
     job.viewportFrom,
     job.viewportTo,
   )
