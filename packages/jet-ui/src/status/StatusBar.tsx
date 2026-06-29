@@ -9,6 +9,29 @@ export type StatusBarProps = {
   gitBranch?: string | null
   showCursor?: boolean
   encoding?: string
+  hasWorkspace?: boolean
+}
+
+function lspDotClass(status: StatusBarProps["lspStatus"]): string {
+  switch (status) {
+    case "connected":
+      return "text-[var(--jet-success)]"
+    case "off":
+      return "text-[var(--jet-warning)]"
+    default:
+      return "text-[var(--jet-text-muted)]"
+  }
+}
+
+function lspShortLabel(status: StatusBarProps["lspStatus"]): string {
+  switch (status) {
+    case "connected":
+      return "connected"
+    case "off":
+      return "off"
+    default:
+      return "n/a"
+  }
 }
 
 export function StatusBar({
@@ -19,29 +42,39 @@ export function StatusBar({
   gitBranch,
   showCursor = false,
   encoding = "UTF-8",
+  hasWorkspace = false,
 }: StatusBarProps) {
   const cursor = useSyncExternalStore(subscribeEditorCursor, getEditorCursor, getEditorCursor)
-  const lspLabel =
-    lspStatus === "connected" ? "LSP: connected" : lspStatus === "off" ? "LSP: off" : "LSP: n/a"
 
-  const leftLabel = workspaceName ?? workspacePath ?? message ?? "Ready"
+  const workspaceLabel = hasWorkspace
+    ? (workspaceName ?? workspacePath ?? "Workspace")
+    : "No folder open"
 
   return (
     <footer className="flex h-6 shrink-0 items-center gap-3 border-t border-[var(--jet-border)] bg-[var(--jet-panel)] px-2 text-[10px] text-[var(--jet-text-muted)]">
       <span className="min-w-0 flex-1 truncate" title={workspacePath ?? undefined}>
-        {leftLabel}
+        {workspaceLabel}
       </span>
-      {gitBranch && <span className="shrink-0 font-mono text-[var(--jet-accent)]">{gitBranch}</span>}
-      {message && workspaceName && (
-        <span className="hidden shrink-0 truncate sm:inline max-w-[12rem]">{message}</span>
+      {gitBranch && (
+        <span className="jet-mono-data shrink-0 text-[var(--jet-accent)]">{gitBranch}</span>
       )}
-      <span className="shrink-0">{lspLabel}</span>
+      {message && (
+        <span className="min-w-0 max-w-[14rem] shrink truncate text-[var(--jet-text)]">
+          {message}
+        </span>
+      )}
+      <span className="jet-mono-data flex shrink-0 items-center gap-1">
+        <span className={lspDotClass(lspStatus)} aria-hidden>
+          ●
+        </span>
+        <span>LSP {lspShortLabel(lspStatus)}</span>
+      </span>
       {showCursor && cursor != null && (
-        <span className="shrink-0 tabular-nums">
+        <span className="jet-mono-data shrink-0">
           Ln {cursor.line}, Col {cursor.column}
         </span>
       )}
-      <span className="shrink-0">{encoding}</span>
+      <span className="jet-mono-data shrink-0">{encoding}</span>
     </footer>
   )
 }

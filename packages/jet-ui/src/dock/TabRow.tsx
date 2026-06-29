@@ -1,8 +1,27 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
-import { ChevronDown, X } from "lucide-react"
+import { ChevronDown, Folder, GitBranch, Search, AlertCircle, Terminal, X } from "lucide-react"
 import type { PanelId, TabGroup, TabId } from "@jet/shared"
-import type { TabRegistry } from "@jet/workspace"
+import type { TabKind, TabRegistry } from "@jet/workspace"
 import { cn } from "../lib/utils.js"
+
+function tabKindIcon(kind: TabKind | undefined) {
+  if (!kind) return null
+  const cls = "size-3 shrink-0 opacity-70"
+  switch (kind.kind) {
+    case "explorer":
+      return <Folder className={cls} />
+    case "git":
+      return <GitBranch className={cls} />
+    case "search":
+      return <Search className={cls} />
+    case "problems":
+      return <AlertCircle className={cls} />
+    case "terminal":
+      return <Terminal className={cls} />
+    default:
+      return null
+  }
+}
 
 function TabRowInner({
   panelId,
@@ -67,6 +86,7 @@ function TabRowInner({
       <div ref={setRefs} className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto px-1">
         {group.tabs.map((tabId, i) => {
           const meta = registry.meta(tabId)
+          const kind = registry.get(tabId)
           const active = i === group.active
           const dragging = draggingTabId === tabId.id
           return (
@@ -83,14 +103,18 @@ function TabRowInner({
               onPointerDown={e => onTabPointerDown(tabId, panelId, e)}
               onClick={() => onSelect(tabId)}
             >
-              <span className="truncate">
-                {meta.dirty ? "● " : ""}
-                {meta.label}
-              </span>
+              {tabKindIcon(kind)}
+              {meta.dirty && (
+                <span
+                  className="size-1.5 shrink-0 rounded-full bg-[var(--jet-accent)]"
+                  aria-label="Unsaved changes"
+                />
+              )}
+              <span className="truncate">{meta.label}</span>
               {meta.closeable && (
                 <button
                   type="button"
-                  className="opacity-0 group-hover:opacity-100"
+                  className="opacity-40 hover:opacity-100"
                   onPointerDown={e => e.stopPropagation()}
                   onClick={e => {
                     e.stopPropagation()
@@ -134,7 +158,9 @@ function TabRowInner({
                         setOverflowOpen(false)
                       }}
                     >
-                      {meta.dirty ? "● " : ""}
+                      {meta.dirty && (
+                        <span className="mr-1 inline-block size-1.5 rounded-full bg-[var(--jet-accent)]" />
+                      )}
                       {meta.label}
                     </button>
                   )

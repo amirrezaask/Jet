@@ -10,6 +10,7 @@ import type { JetTheme } from "@jet/codemirror"
 import { TabRow, computeTabInsertIndex } from "./TabRow.js"
 import { DropOverlay } from "./DropOverlay.js"
 import { TabBody } from "./TabBody.js"
+import { PanelEmptyState } from "./PanelEmptyState.js"
 
 const DRAG_THRESHOLD = 5
 const SPLITTER_HIT_SLOP = 12
@@ -38,6 +39,7 @@ export type PanelDockProps = {
   tabMetaRev: number
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
+  onGitError?: (message: string) => void
 }
 
 type PendingDrag = {
@@ -226,7 +228,7 @@ export function PanelDockInner(props: PanelDockProps) {
                 }}
               />
               <div className="min-h-0 flex-1">
-                {activeTabId && (
+                {activeTabId ? (
                   <TabBody
                     tabId={activeTabId}
                     registry={props.registry}
@@ -247,8 +249,11 @@ export function PanelDockInner(props: PanelDockProps) {
                     keymapContext={props.keymapContext}
                     onEditorFocusChange={props.onEditorFocusChange}
                     onEditorSelectionChange={props.onEditorSelectionChange}
+                    onGitError={props.onGitError}
                     autoFocus={autoFocusEditor}
                   />
+                ) : (
+                  <PanelEmptyState />
                 )}
               </div>
             </div>

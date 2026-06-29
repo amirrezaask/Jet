@@ -1,3 +1,10 @@
+export type JetSemanticColors = {
+  error: string
+  warning: string
+  success: string
+  backdrop: string
+}
+
 export type JetColors = {
   bg: string
   panel: string
@@ -9,6 +16,10 @@ export type JetColors = {
   selection: string
   border: string
   focusBorder: string
+  error: string
+  warning: string
+  success: string
+  backdrop: string
 }
 
 export type JetHighlightColors = {
@@ -50,6 +61,10 @@ export const defaultJetTheme: JetTheme = {
     selection: "#a87840",
     border: "#35302c",
     focusBorder: "#c4923acc",
+    error: "#e06050",
+    warning: "#e0a040",
+    success: "#70c070",
+    backdrop: "rgba(0,0,0,0.55)",
   },
   highlights: {
     keyword: "#82b8f0",
@@ -83,6 +98,10 @@ export function applyJetThemeCss(theme: JetTheme): void {
   root.style.setProperty("--jet-selection", c.selection)
   root.style.setProperty("--jet-border", c.border)
   root.style.setProperty("--jet-focus-border", c.focusBorder)
+  root.style.setProperty("--jet-error", c.error)
+  root.style.setProperty("--jet-warning", c.warning)
+  root.style.setProperty("--jet-success", c.success)
+  root.style.setProperty("--jet-backdrop", c.backdrop)
   root.style.setProperty("--jet-cursor-color", c.accent)
   root.style.setProperty("--jet-row-height", "22px")
   root.style.setProperty("--background", c.bg)

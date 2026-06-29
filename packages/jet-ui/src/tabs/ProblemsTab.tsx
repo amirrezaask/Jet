@@ -39,8 +39,8 @@ export function ProblemsTab({
             <span
               className={cn(
                 "shrink-0 font-semibold uppercase",
-                p.severity === "error" && "text-red-400",
-                p.severity === "warning" && "text-yellow-400",
+                p.severity === "error" && "text-[var(--jet-error)]",
+                p.severity === "warning" && "text-[var(--jet-warning)]",
                 p.severity === "info" && "text-[var(--jet-accent)]",
               )}
             >

@@ -28,7 +28,7 @@ import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } fr
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import { applyJetThemeCss, defaultJetTheme, jumpToLine, collectProblemsFromViews, problemsFingerprint, setPendingEditorNavigation, type JetTheme } from "@jet/codemirror"
-import { PanelDock, CommandPalette, StatusBar, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, CdOverlay, getEditorView, getAllEditorViews, setEditorCursor, type OutlineEntry } from "@jet/ui"
+import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoLineModal, OutlineOverlay, QuickOpenOverlay, OpenFileOverlay, CdOverlay, getEditorView, getAllEditorViews, setEditorCursor, formatKeyBinding, type OutlineEntry } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
@@ -126,7 +126,21 @@ export function JetApp() {
     return () => sub.dispose()
   }, [keymaps])
 
-  const paletteCommands = useMemo(() => commands.list(), [commands, sessionRev, keymapRevision])
+  const keybindingByFn = useMemo(() => {
+    const map = new Map<JetKeyBinding["run"], string>()
+    for (const binding of keymapBindings) {
+      if (!map.has(binding.run)) map.set(binding.run, binding.key)
+    }
+    return map
+  }, [keymapBindings])
+
+  const fnByCommandId = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const entry of APP_COMMAND_REGISTRY) {
+      map.set(entry.id, entry.fn)
+    }
+    return map
+  }, [])
 
   const activeTabKindName = useMemo(
     () => (focusedPanel ? activeTabKind(panelTree, focusedPanel, workspace.tabRegistry) : undefined),
@@ -314,15 +328,11 @@ export function JetApp() {
         if (session) {
           const restored = restoreWorkspaceSession(session, workspace)
           editorPanelRef.current = restored.editorPanel
-          explorerTabRef.current =
-            restored.singletons.explorer != null ? { id: restored.singletons.explorer } : null
-          gitTabRef.current = restored.singletons.git != null ? { id: restored.singletons.git } : null
-          terminalTabRef.current =
-            restored.singletons.terminal != null ? { id: restored.singletons.terminal } : null
-          searchTabRef.current =
-            restored.singletons.search != null ? { id: restored.singletons.search } : null
-          problemsTabRef.current =
-            restored.singletons.problems != null ? { id: restored.singletons.problems } : null
+          explorerTabRef.current = null
+          gitTabRef.current = null
+          terminalTabRef.current = null
+          searchTabRef.current = null
+          problemsTabRef.current = null
           setPanelTree(restored.tree)
           setFocusedPanel(restored.focusedPanel ?? restored.editorPanel)
         }
@@ -541,6 +551,18 @@ export function JetApp() {
       activeTabKindName,
     ],
   )
+
+  const paletteCommands = useMemo(() => {
+    return commands.list().map(cmd => {
+      const fnName = fnByCommandId.get(cmd.id)
+      const run = fnName ? appCommands[fnName as keyof typeof appCommands] : undefined
+      const key = run ? keybindingByFn.get(run) : undefined
+      return {
+        ...cmd,
+        keybinding: key ? formatKeyBinding(key) : undefined,
+      }
+    })
+  }, [commands, sessionRev, appCommands, keybindingByFn, fnByCommandId])
 
   const runKeyBinding = useCallback(
     (binding: JetKeyBinding, view?: EditorView) => {
@@ -901,19 +923,19 @@ export function JetApp() {
   return (
     <div className="flex h-full flex-col bg-[var(--jet-bg)] text-[var(--jet-text)]">
       <header className="flex h-8 shrink-0 items-center border-b border-[var(--jet-border)] bg-[var(--jet-panel)] px-3 text-xs">
-        <span className="font-semibold text-[var(--jet-accent)]">Jet</span>
+        <span className="jet-wordmark text-[var(--jet-accent)]">JET</span>
         <span className="ml-3 text-[var(--jet-text-muted)]">
           {bootstrapping
             ? "Opening workspace…"
-            : (workspace.root?.name ?? (isWebMode ? "No folder open" : "No folder open"))}
+            : (workspace.root?.name ?? "No folder open")}
         </span>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
             className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
             onClick={() => void executeCommand("workspace.cd")}
           >
-            cd
+            Change folder
           </button>
           <button
             type="button"
@@ -927,13 +949,21 @@ export function JetApp() {
             className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
             onClick={() => setQuickOpenOpen(true)}
           >
-            ⌘P
+            Go to file <span className="jet-mono-data ml-1 text-[var(--jet-text-muted)]">⌘P</span>
+          </button>
+          <button
+            type="button"
+            className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
+            onClick={() => setPaletteOpen(true)}
+          >
+            Commands <span className="jet-mono-data ml-1 text-[var(--jet-text-muted)]">⌘⇧P</span>
           </button>
         </div>
       </header>
 
       <main className="min-h-0 flex-1">
-        <PanelDock
+        {workspace.root || bootstrapping ? (
+          <PanelDock
           tree={panelTree}
           registry={workspace.tabRegistry}
           workspace={workspace}
@@ -956,8 +986,16 @@ export function JetApp() {
           keymapContext={keymapContext}
           tabMetaRev={tabMetaRev}
           onEditorFocusChange={handleEditorFocusChange}
-          onEditorSelectionChange={handleEditorSelectionChange}
-        />
+            onEditorSelectionChange={handleEditorSelectionChange}
+            onGitError={msg => setMessage(msg)}
+          />
+        ) : (
+          <WelcomeView
+            isWebMode={isWebMode}
+            bootstrapping={bootstrapping}
+            onOpenFolder={() => void executeCommand("workspace.openFolder")}
+          />
+        )}
       </main>
 
       <StatusBar
@@ -967,6 +1005,7 @@ export function JetApp() {
         workspacePath={workspace.root?.path}
         gitBranch={gitBranch}
         showCursor={activeTabKindName === "editor"}
+        hasWorkspace={Boolean(workspace.root)}
       />
 
       <GotoLineModal

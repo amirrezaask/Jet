@@ -15,7 +15,7 @@ export { setPendingEditorNavigation, consumePendingEditorNavigation } from "./ed
 export { collectProblemsFromViews, problemsFingerprint } from "./diagnostics.js"
 export { motionCursor } from "./motion-cursor.js"
 export { jetThemeExtension } from "./theme.js"
-export { defaultJetTheme, applyJetThemeCss, type JetTheme, type JetColors } from "./theme-types.js"
+export { defaultJetTheme, applyJetThemeCss, type JetTheme, type JetColors, type JetHighlightColors } from "./theme-types.js"
 export { loadLanguage } from "./languages.js"
 export { simpleWebSocketTransport } from "./lsp-transport.js"
 export type { LSPClient } from "@codemirror/lsp-client"

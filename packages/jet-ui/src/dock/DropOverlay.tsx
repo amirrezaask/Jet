@@ -32,7 +32,7 @@ export function DropOverlay({
               key={`${panelNum}-${i}`}
               className={
                 active
-                  ? "absolute border-2 border-[var(--jet-accent)] bg-[var(--jet-accent)]/25"
+                  ? "absolute flex items-center justify-center border-2 border-[var(--jet-accent)] bg-[var(--jet-accent)]/25 text-[10px] text-[var(--jet-text-muted)]"
                   : "absolute border-2 border-transparent"
               }
               style={{
@@ -41,7 +41,9 @@ export function DropOverlay({
                 width: site.rect.width,
                 height: site.rect.height,
               }}
-            />
+            >
+              {active && site.action.kind === "moveToPane" ? "Drop here" : null}
+            </div>
           )
         })
       })}

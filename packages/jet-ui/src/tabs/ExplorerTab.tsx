@@ -100,8 +100,9 @@ export function ExplorerTab({
 
   if (!rootUri) {
     return (
-      <div className="flex h-full items-center justify-center text-[var(--jet-text-muted)]">
-        Open a folder to browse files
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[var(--jet-text-muted)]">
+        <p>Open a folder to browse files</p>
+        <p className="text-xs">Use <strong>Open Folder</strong> in the header.</p>
       </div>
     )
   }

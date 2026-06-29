@@ -7,9 +7,11 @@ import { cn } from "../lib/utils.js"
 export function GitTab({
   workspace,
   onBranchChange,
+  onGitError,
 }: {
   workspace: WorkspaceService
   onBranchChange?: (branch: string | null) => void
+  onGitError?: (message: string) => void
 }) {
   const [entries, setEntries] = useState<GitStatusEntry[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -62,6 +64,8 @@ export function GitTab({
       await fn()
       await refresh()
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      onGitError?.(`Git: ${msg}`)
       console.error(err)
     } finally {
       setBusy(false)
@@ -83,8 +87,9 @@ export function GitTab({
 
   if (!isRepo) {
     return (
-      <div className="flex h-full items-center justify-center text-[var(--jet-text-muted)]">
-        Not a git repository
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[var(--jet-text-muted)]">
+        <p>Not a git repository</p>
+        <p className="text-xs">Open a folder that contains a <code>.git</code> directory.</p>
       </div>
     )
   }
@@ -159,7 +164,7 @@ export function GitTab({
                 onClick={() => void stage(e.path)}
                 className="shrink-0 px-1 text-[10px] text-[var(--jet-text-muted)] hover:text-[var(--jet-accent)]"
               >
-                +
+                Stage
               </button>
               <button
                 type="button"
@@ -168,7 +173,7 @@ export function GitTab({
                 onClick={() => void unstage(e.path)}
                 className="shrink-0 px-1 text-[10px] text-[var(--jet-text-muted)] hover:text-[var(--jet-accent)]"
               >
-                −
+                Unstage
               </button>
             </div>
           ))}
@@ -176,7 +181,7 @@ export function GitTab({
             <p className="p-2 text-xs text-[var(--jet-text-muted)]">Working tree clean</p>
           )}
         </div>
-        <div className="min-w-0 flex-1 overflow-auto">
+        <div className="min-w-0 flex-1 overflow-auto bg-[var(--jet-bg)] text-[var(--jet-text)]">
           {patch ? (
             <PatchDiff patch={patch} options={{ diffStyle: "unified" }} />
           ) : (

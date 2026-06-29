@@ -83,7 +83,7 @@ export function SearchTab({
         data-jet-list-panel="search"
       >
         {loading && <p className="text-[var(--jet-text-muted)]">Searching…</p>}
-        {error && <p className="text-red-400">{error}</p>}
+        {error && <p className="text-[var(--jet-error)]">{error}</p>}
         {!loading && !error && results.length === 0 && query.trim() && (
           <p className="text-[var(--jet-text-muted)]">No results.</p>
         )}

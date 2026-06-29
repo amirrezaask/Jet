@@ -8,7 +8,7 @@ export function CommandPalette({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  commands: { id: string; title: string; category?: string }[]
+  commands: { id: string; title: string; category?: string; keybinding?: string }[]
   onRun: (id: string) => void
 }) {
   return (
@@ -16,18 +16,25 @@ export function CommandPalette({
       open={open}
       onOpenChange={onOpenChange}
       ariaLabel="Command palette"
-      placeholder="Type a command..."
+      placeholder="Search commands…"
       maxWidth="32rem"
       maxListHeight="18rem"
       items={commands.map(cmd => ({
-        value: `${cmd.title} ${cmd.id}`,
+        value: `${cmd.title} ${cmd.category ?? ""}`,
         label: (
-          <>
-            <span>{cmd.title}</span>
-            {cmd.category && (
-              <span className="ml-2 text-[var(--jet-text-muted)]">{cmd.category}</span>
+          <span className="flex w-full items-center justify-between gap-3">
+            <span className="min-w-0 truncate">
+              <span>{cmd.title}</span>
+              {cmd.category && (
+                <span className="ml-2 text-[var(--jet-text-muted)]">{cmd.category}</span>
+              )}
+            </span>
+            {cmd.keybinding && (
+              <span className="jet-mono-data shrink-0 text-[var(--jet-text-muted)]">
+                {cmd.keybinding}
+              </span>
             )}
-          </>
+          </span>
         ),
         onSelect: () => onRun(cmd.id),
       }))}

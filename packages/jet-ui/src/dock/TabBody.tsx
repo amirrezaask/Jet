@@ -39,6 +39,7 @@ function TabBodyInner({
   keymapContext,
   onEditorFocusChange,
   onEditorSelectionChange,
+  onGitError,
   autoFocus = false,
 }: {
   tabId: TabId
@@ -60,6 +61,7 @@ function TabBodyInner({
   keymapContext?: KeymapContext
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
+  onGitError?: (message: string) => void
   autoFocus?: boolean
 }) {
   const kind = registry.get(tabId)
@@ -97,9 +99,12 @@ function TabBodyInner({
     case "explorer":
       return <ExplorerTab workspace={workspace} onOpenFile={onOpenFile} />
     case "git":
-      return suspense("git view", <GitTab workspace={workspace} onBranchChange={onBranchChange} />)
+      return suspense(
+        "git view",
+        <GitTab workspace={workspace} onBranchChange={onBranchChange} onGitError={onGitError} />,
+      )
     case "terminal":
-      return suspense("terminal", <TerminalTab workspace={workspace} />)
+      return suspense("terminal", <TerminalTab workspace={workspace} theme={theme} />)
     case "search":
       return suspense(
         "search",

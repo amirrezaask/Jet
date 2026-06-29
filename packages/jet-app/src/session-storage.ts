@@ -5,6 +5,10 @@ import type { TabKind, TabMeta, WorkspaceService } from "@jet/workspace"
 
 const SESSION_PREFIX = "jet-session:"
 
+function isEditorKind(kind: TabKind): boolean {
+  return kind.kind === "editor"
+}
+
 export type SerializedTab = {
   tabId: number
   kind: TabKind
@@ -36,21 +40,27 @@ export function saveWorkspaceSession(
   workspace: WorkspaceService,
   editorPanelId: PanelId | null,
   focusedPanelId: PanelId | null,
-  singletons: WorkspaceSession["singletons"],
+  _singletons: WorkspaceSession["singletons"],
 ): void {
-  const tabs: SerializedTab[] = workspace.tabRegistry.allTabs().map(tabId => ({
-    tabId: tabId.id,
-    kind: workspace.tabRegistry.get(tabId)!,
-    meta: workspace.tabRegistry.meta(tabId),
-    panelId: workspace.tabRegistry.panelForTab(tabId)?.id,
-  }))
+  const tabs: SerializedTab[] = workspace.tabRegistry
+    .allTabs()
+    .filter(tabId => {
+      const kind = workspace.tabRegistry.get(tabId)
+      return kind != null && isEditorKind(kind)
+    })
+    .map(tabId => ({
+      tabId: tabId.id,
+      kind: workspace.tabRegistry.get(tabId)!,
+      meta: workspace.tabRegistry.meta(tabId),
+      panelId: workspace.tabRegistry.panelForTab(tabId)?.id,
+    }))
 
   const session: WorkspaceSession = {
     tree: tree.toJSON(),
     tabs,
     editorPanelId: editorPanelId?.id,
     focusedPanelId: focusedPanelId?.id,
-    singletons,
+    singletons: {},
   }
 
   try {
@@ -80,11 +90,12 @@ export function restoreWorkspaceSession(
   singletons: WorkspaceSession["singletons"]
 } {
   const tree = PanelTree.fromJSON(session.tree)
-  const knownTabIds = new Set(session.tabs.map(t => t.tabId))
+  const editorEntries = session.tabs.filter(entry => isEditorKind(entry.kind))
+  const knownTabIds = new Set(editorEntries.map(t => t.tabId))
   tree.sanitizeKnownTabs(tabId => knownTabIds.has(tabId.id))
 
   workspace.tabRegistry.clear()
-  for (const entry of session.tabs) {
+  for (const entry of editorEntries) {
     if (!tree.findPanelForTab({ id: entry.tabId })) continue
     const tabId: TabId = { id: entry.tabId }
     const panelId: PanelId | undefined =
@@ -104,6 +115,6 @@ export function restoreWorkspaceSession(
     tree,
     editorPanel: session.editorPanelId != null ? { id: session.editorPanelId } : null,
     focusedPanel: session.focusedPanelId != null ? { id: session.focusedPanelId } : null,
-    singletons: session.singletons,
+    singletons: {},
   }
 }

@@ -2,10 +2,17 @@ import { useEffect, useRef } from "react"
 import { Terminal } from "lucide-react"
 import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
+import type { JetTheme } from "@jet/codemirror"
 import type { WorkspaceService } from "@jet/workspace"
 import "@xterm/xterm/css/xterm.css"
 
-export function TerminalTab({ workspace }: { workspace: WorkspaceService }) {
+export function TerminalTab({
+  workspace,
+  theme,
+}: {
+  workspace: WorkspaceService
+  theme: JetTheme
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
 
@@ -13,11 +20,13 @@ export function TerminalTab({ workspace }: { workspace: WorkspaceService }) {
     const terminalApi = window.jet?.terminal
     if (!terminalApi || !workspace.root || !containerRef.current) return
 
+    const c = theme.colors
     const term = new XTerm({
       theme: {
-        background: "#101010",
-        foreground: "#cdd6f4",
-        cursor: "#cba6f7",
+        background: c.bg,
+        foreground: c.text,
+        cursor: c.accent,
+        selectionBackground: c.selection,
       },
       fontSize: 13,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -50,7 +59,7 @@ export function TerminalTab({ workspace }: { workspace: WorkspaceService }) {
       term.dispose()
       termRef.current = null
     }
-  }, [workspace.root])
+  }, [workspace.root, theme])
 
   if (!window.jet?.terminal) {
     return (
@@ -68,5 +77,11 @@ export function TerminalTab({ workspace }: { workspace: WorkspaceService }) {
     )
   }
 
-  return <div ref={containerRef} className="h-full w-full bg-[#101010] p-1" />
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full p-1"
+      style={{ background: theme.colors.bg }}
+    />
+  )
 }

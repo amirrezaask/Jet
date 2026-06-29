@@ -34,3 +34,13 @@ body,
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 13px;
 }
+
+.jet-mono-data {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.jet-wordmark {
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}

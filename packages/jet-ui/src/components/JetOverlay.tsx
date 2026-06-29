@@ -43,7 +43,7 @@ export function JetOverlay({
         alignItems: "center",
         justifyContent: "center",
         padding: "1rem",
-        background: "rgba(0,0,0,0.5)",
+        background: "var(--jet-backdrop)",
       }}
     >
       <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth }}>
