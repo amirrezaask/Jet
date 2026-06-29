@@ -40,7 +40,7 @@ export function GotoLineModal({
             ref={inputRef}
             type="text"
             placeholder="Line or line:column"
-            className="w-full rounded border border-[var(--jet-border)] bg-transparent px-2 py-1.5 text-sm outline-none focus:border-[var(--jet-accent)]"
+            className="jet-input w-full rounded border border-[var(--jet-border)] bg-transparent px-2 py-1.5 text-sm focus:border-[var(--jet-accent)]"
             onKeyDown={e => {
               if (e.key === "Enter") {
                 e.preventDefault()

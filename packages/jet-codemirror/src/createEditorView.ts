@@ -1,4 +1,4 @@
-import { Compartment, EditorState, type Extension } from "@codemirror/state"
+import { Compartment, EditorState, Text, type Extension } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers, drawSelection } from "@codemirror/view"
 import {
   defaultKeymap,
@@ -31,6 +31,7 @@ export const languageCompartment = new Compartment()
 export const completionCompartment = new Compartment()
 export const lspCompartment = new Compartment()
 export const extensionCompartment = new Compartment()
+export const themeCompartment = new Compartment()
 
 export type CreateJetEditorViewOptions = {
   parent: HTMLElement
@@ -43,6 +44,8 @@ export type CreateJetEditorViewOptions = {
   userExtensions?: Extension[]
   onViewCreated?: (view: EditorView) => void
   onSelectionChange?: (line: number, column: number) => void
+  onDocChange?: (doc: Text, meta: { isReload: boolean }) => void
+  onViewUpdate?: (view: EditorView) => void
   largeFile?: boolean
 }
 
@@ -117,7 +120,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
       ...historyKeymap,
       indentWithTab,
     ]),
-    jetThemeExtension(theme),
+    themeCompartment.of(jetThemeExtension(theme)),
   )
 
   if (!largeFile) {
@@ -139,15 +142,14 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     EditorView.updateListener.of(update => {
       if (update.docChanged) {
         const isReload = update.transactions.some(tr => tr.annotation(jetReloadAnnotation))
-        if (!isReload) {
-          opts.workspace.syncDirtyFromDoc(opts.file.uri, update.state.doc.toString())
-        }
+        opts.onDocChange?.(update.state.doc, { isReload })
       }
       if (update.selectionSet && opts.onSelectionChange) {
         const pos = update.state.selection.main.head
         const line = update.state.doc.lineAt(pos)
         opts.onSelectionChange(line.number, pos - line.from + 1)
       }
+      opts.onViewUpdate?.(update.view)
     }),
   )
 
@@ -160,8 +162,6 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     attachLsp(view, opts.file.uri, opts.file.languageId, opts.lspClient).catch(console.error)
   }
 
-  opts.workspace.setSavedBaseline(opts.file.uri, opts.initialText)
-
   opts.onViewCreated?.(view)
   if (opts.onSelectionChange) {
     const pos = view.state.selection.main.head
@@ -169,6 +169,12 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     opts.onSelectionChange(line.number, pos - line.from + 1)
   }
   return view
+}
+
+export function applyTheme(view: EditorView, theme: JetTheme): void {
+  view.dispatch({
+    effects: themeCompartment.reconfigure(jetThemeExtension(theme)),
+  })
 }
 
 async function attachLsp(

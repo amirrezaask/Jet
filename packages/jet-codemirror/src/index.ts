@@ -2,6 +2,7 @@ export {
   createJetEditorView,
   applyUserKeymaps,
   applyUserExtensions,
+  applyTheme,
   reconfigureLsp,
   detachLsp,
   isLargeFile,
@@ -9,6 +10,7 @@ export {
   userKeymapCompartment,
   extensionCompartment,
   lspCompartment,
+  themeCompartment,
 } from "./createEditorView.js"
 export { openReplaceSearchPanel, jumpToLine } from "./editor-actions.js"
 export { setPendingEditorNavigation, consumePendingEditorNavigation } from "./editor-navigation.js"

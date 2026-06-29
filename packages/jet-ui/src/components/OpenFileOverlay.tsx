@@ -162,7 +162,7 @@ export function OpenFileOverlay({
               goUp()
             }
           }}
-          className="w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-sm outline-none"
+          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-sm"
           autoFocus
         />
         <CommandPrimitive.List className="overflow-auto p-1" style={{ maxHeight: "20rem" }}>

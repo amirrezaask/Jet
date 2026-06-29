@@ -19,6 +19,7 @@ export function TerminalTab({
   useEffect(() => {
     const terminalApi = window.jet?.terminal
     if (!terminalApi || !workspace.root || !containerRef.current) return
+    let cancelled = false
 
     const c = theme.colors
     const term = new XTerm({
@@ -39,21 +40,29 @@ export function TerminalTab({
 
     let termId: string | null = null
     let unsub: (() => void) | null = null
+    let resizeObserver: ResizeObserver | null = null
+    let dataDispose: { dispose: () => void } | null = null
 
     void terminalApi.create(workspace.root.uri).then(({ id }) => {
+      if (cancelled) {
+        void terminalApi.dispose(id)
+        return
+      }
       termId = id
       unsub = terminalApi.onData(id, data => term.write(data))
-      term.onData(data => void terminalApi.write(id, data))
-      const ro = new ResizeObserver(() => {
+      dataDispose = term.onData(data => void terminalApi.write(id, data))
+      resizeObserver = new ResizeObserver(() => {
         fit.fit()
         void terminalApi.resize(id, term.cols, term.rows)
       })
-      ro.observe(containerRef.current!)
+      resizeObserver.observe(containerRef.current!)
       termRef.current = term
-      return () => ro.disconnect()
     })
 
     return () => {
+      cancelled = true
+      resizeObserver?.disconnect()
+      dataDispose?.dispose()
       unsub?.()
       if (termId) void terminalApi.dispose(termId)
       term.dispose()

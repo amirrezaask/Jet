@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { ProjectSearchResult } from "@jet/shared"
 import type { WorkspaceService } from "@jet/workspace"
 import { cn } from "../lib/utils.js"
@@ -18,12 +18,17 @@ export function SearchTab({
   const [results, setResults] = useState<ProjectSearchResult[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const searchGen = useRef(0)
 
   const runSearch = useCallback(async () => {
     if (!workspace.root || !window.jet?.search || !query.trim()) {
+      searchGen.current += 1
       setResults([])
+      setError(null)
+      setLoading(false)
       return
     }
+    const gen = ++searchGen.current
     setLoading(true)
     setError(null)
     try {
@@ -31,12 +36,14 @@ export function SearchTab({
         caseSensitive,
         regex,
       })
+      if (gen !== searchGen.current) return
       setResults(hits)
     } catch (err) {
+      if (gen !== searchGen.current) return
       setError(err instanceof Error ? err.message : String(err))
       setResults([])
     } finally {
-      setLoading(false)
+      if (gen === searchGen.current) setLoading(false)
     }
   }, [workspace, query, caseSensitive, regex])
 
@@ -55,7 +62,7 @@ export function SearchTab({
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Search project…"
-          className="min-w-[12rem] flex-1 rounded border border-[var(--jet-border)] bg-transparent px-2 py-1 text-sm outline-none"
+          className="jet-input min-w-[12rem] flex-1 rounded-sm border border-[var(--jet-border)] bg-transparent px-2 py-1 text-sm"
         />
         <label className="flex items-center gap-1 text-xs">
           <input
@@ -81,6 +88,7 @@ export function SearchTab({
         className="min-h-0 flex-1 overflow-auto p-2 text-sm"
         aria-label="Search"
         data-jet-list-panel="search"
+        tabIndex={-1}
       >
         {loading && <p className="text-[var(--jet-text-muted)]">Searching…</p>}
         {error && <p className="text-[var(--jet-error)]">{error}</p>}
@@ -96,8 +104,9 @@ export function SearchTab({
                 type="button"
                 onClick={() => onOpenResult(hit.path, hit.line, hit.column)}
                 className={cn(
-                  "flex w-full gap-2 rounded px-2 py-1 text-left text-xs hover:bg-[var(--jet-hover)]",
+                  "jet-list-item flex w-full gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-[var(--jet-hover)]",
                 )}
+                data-jet-list-item
               >
                 <span className="shrink-0 tabular-nums text-[var(--jet-text-muted)]">
                   {hit.line}:{hit.column}

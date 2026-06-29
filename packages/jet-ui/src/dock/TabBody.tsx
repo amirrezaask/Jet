@@ -40,6 +40,7 @@ function TabBodyInner({
   onEditorFocusChange,
   onEditorSelectionChange,
   onLspAttachFailed,
+  onProblemsChange,
   onGitError,
   autoFocus = false,
 }: {
@@ -63,6 +64,7 @@ function TabBodyInner({
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
   onLspAttachFailed?: (fileUri: string) => void
+  onProblemsChange?: () => void
   onGitError?: (message: string) => void
   autoFocus?: boolean
 }) {
@@ -96,6 +98,7 @@ function TabBodyInner({
           onEditorFocusChange={onEditorFocusChange}
           onEditorSelectionChange={onEditorSelectionChange}
           onLspAttachFailed={onLspAttachFailed}
+          onProblemsChange={onProblemsChange}
           autoFocus={autoFocus}
         />
       )

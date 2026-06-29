@@ -13,7 +13,14 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   // --- App shell ---
   bind("Cmd-n", cmd.newFile, workspaceOpen),
   bind("Cmd-p", cmd.quickOpen, noOverlay),
+  bind("Cmd-Shift-o", cmd.quickOpen, noOverlay),
   bind("Cmd-Shift-p", cmd.palette, noOverlay),
+  bind("Cmd-k Cmd-f", cmd.quickOpen, workspaceOpen),
+  bind("Cmd-k Cmd-s", cmd.search, workspaceOpen),
+  bind("Cmd-k Cmd-g", cmd.git, workspaceOpen),
+  bind("Cmd-k Cmd-t", cmd.terminal, workspaceOpen),
+  bind("Cmd-k Cmd-w", cmd.focusSidebar, workspaceOpen),
+  bind("Cmd-k Shift-/", cmd.palette, noOverlay),
   bind("Cmd-s", cmd.save, workspaceOpen),
   bind("Cmd-o", cmd.openFile, noOverlay),
   bind("Cmd-k Cmd-o", cmd.openFolder, noOverlay),
@@ -80,6 +87,9 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   bind("Cmd-F12", cmd.goToImplementation, editorFocus),
 
   // --- Tier 4: List navigation (non-conflicting keys only) ---
+  bind("ArrowDown", cmd.listFocusNext, listFocus),
+  bind("ArrowUp", cmd.listFocusPrev, listFocus),
+  bind("Enter", cmd.listFocusActivate, listFocus),
   bind("PageUp", cmd.listFocusPageUp, listFocus),
   bind("PageDown", cmd.listFocusPageDown, listFocus),
   bind("Home", cmd.listFocusFirst, listFocus),

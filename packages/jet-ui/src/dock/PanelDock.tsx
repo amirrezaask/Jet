@@ -40,6 +40,7 @@ export type PanelDockProps = {
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
   onLspAttachFailed?: (fileUri: string) => void
+  onProblemsChange?: () => void
   onGitError?: (message: string) => void
 }
 
@@ -251,6 +252,7 @@ export function PanelDockInner(props: PanelDockProps) {
                     onEditorFocusChange={props.onEditorFocusChange}
                     onEditorSelectionChange={props.onEditorSelectionChange}
                     onLspAttachFailed={props.onLspAttachFailed}
+                    onProblemsChange={props.onProblemsChange}
                     onGitError={props.onGitError}
                     autoFocus={autoFocusEditor}
                   />

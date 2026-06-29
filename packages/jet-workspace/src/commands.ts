@@ -20,6 +20,9 @@ export type CommandInfo = {
   id: string
   title: string
   category?: string
+  aliases?: string[]
+  keywords?: string[]
+  when?: (ctx: JetCommandContext) => boolean
 }
 
 export class CommandRegistry {
@@ -47,7 +50,9 @@ export class CommandRegistry {
     return cmd(ctx, args)
   }
 
-  list(): CommandInfo[] {
-    return [...this.infos.values()]
+  list(ctx?: JetCommandContext): CommandInfo[] {
+    const infos = [...this.infos.values()]
+    if (!ctx) return infos
+    return infos.filter(info => info.when?.(ctx) ?? true)
   }
 }

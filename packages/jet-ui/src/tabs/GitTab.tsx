@@ -103,7 +103,7 @@ export function GitTab({
           value={branch ?? ""}
           onChange={e => void checkout(e.target.value)}
           disabled={busy}
-          className="rounded border border-[var(--jet-border)] bg-transparent px-2 py-0.5 text-xs"
+          className="jet-input rounded border border-[var(--jet-border)] bg-transparent px-2 py-0.5 text-xs"
         >
           {branches.map(b => (
             <option key={b} value={b}>
@@ -116,7 +116,7 @@ export function GitTab({
           value={commitMessage}
           onChange={e => setCommitMessage(e.target.value)}
           placeholder="Commit message"
-          className="min-w-[8rem] flex-1 rounded border border-[var(--jet-border)] bg-transparent px-2 py-0.5 text-xs"
+          className="jet-input min-w-[8rem] flex-1 rounded border border-[var(--jet-border)] bg-transparent px-2 py-0.5 text-xs"
         />
         <button
           type="button"
@@ -135,6 +135,7 @@ export function GitTab({
           className="w-56 shrink-0 overflow-auto border-r border-[var(--jet-border)]"
           aria-label="Git"
           data-jet-list-panel="git"
+          tabIndex={-1}
         >
           <div className="border-b border-[var(--jet-border)] px-2 py-1 text-[10px] uppercase text-[var(--jet-text-muted)]">
             Changes
@@ -150,7 +151,8 @@ export function GitTab({
               <button
                 type="button"
                 onClick={() => setSelected(e.path)}
-                className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-xs"
+                className="jet-list-item flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-xs"
+                data-jet-list-item
               >
                 <span className="w-4 shrink-0 font-mono text-[var(--jet-accent)]">
                   {statusChar(e.status)}

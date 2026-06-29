@@ -83,7 +83,12 @@ function TabRowInner({
         focused && "bg-[var(--jet-panel-raised)]",
       )}
     >
-      <div ref={setRefs} className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto px-1">
+      <div
+        ref={setRefs}
+        className="flex min-w-0 flex-1 items-end gap-px overflow-x-auto px-1"
+        role="tablist"
+        aria-label="Panel tabs"
+      >
         {group.tabs.map((tabId, i) => {
           const meta = registry.meta(tabId)
           const kind = registry.get(tabId)
@@ -93,8 +98,12 @@ function TabRowInner({
             <div
               key={tabId.id}
               data-tab-id={tabId.id}
+              role="tab"
+              aria-selected={active}
+              aria-controls={`jet-panel-tab-${panelId.id}-${tabId.id}`}
+              tabIndex={active ? 0 : -1}
               className={cn(
-                "group flex max-w-[160px] shrink-0 cursor-pointer items-center gap-1 rounded-t px-2 py-1 text-xs touch-none select-none",
+                "group flex max-w-[160px] shrink-0 items-center gap-1 rounded-t border-t border-transparent px-2 py-1 text-left text-xs touch-none select-none focus-visible:z-10 focus-visible:border-[var(--jet-focus-border)] focus-visible:outline-none",
                 active
                   ? "bg-[var(--jet-bg)] text-[var(--jet-text)]"
                   : "text-[var(--jet-text-muted)] hover:bg-[var(--jet-hover)]",
@@ -102,6 +111,12 @@ function TabRowInner({
               )}
               onPointerDown={e => onTabPointerDown(tabId, panelId, e)}
               onClick={() => onSelect(tabId)}
+              onKeyDown={e => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  onSelect(tabId)
+                }
+              }}
             >
               {tabKindIcon(kind)}
               {meta.dirty && (
@@ -114,12 +129,13 @@ function TabRowInner({
               {meta.closeable && (
                 <button
                   type="button"
-                  className="opacity-40 hover:opacity-100"
+                  className="rounded-sm opacity-40 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
                   onPointerDown={e => e.stopPropagation()}
                   onClick={e => {
                     e.stopPropagation()
                     onClose(tabId)
                   }}
+                  aria-label={`Close ${meta.label}`}
                 >
                   <X className="size-3" />
                 </button>
@@ -132,7 +148,7 @@ function TabRowInner({
         <div className="relative shrink-0 border-l border-[var(--jet-border)]">
           <button
             type="button"
-            className="flex h-7 items-center px-1.5 text-[var(--jet-text-muted)] hover:bg-[var(--jet-hover)]"
+            className="flex h-7 items-center px-1.5 text-[var(--jet-text-muted)] hover:bg-[var(--jet-hover)] focus-visible:outline-none"
             onClick={() => setOverflowOpen(v => !v)}
             aria-label="Overflow tabs"
           >
@@ -150,7 +166,7 @@ function TabRowInner({
                       key={tabId.id}
                       type="button"
                       className={cn(
-                        "block w-full truncate px-3 py-1 text-left text-xs hover:bg-[var(--jet-hover)]",
+                        "block w-full truncate px-3 py-1 text-left text-xs hover:bg-[var(--jet-hover)] focus-visible:outline-none",
                         active && "text-[var(--jet-accent)]",
                       )}
                       onClick={() => {
@@ -173,7 +189,7 @@ function TabRowInner({
       {onClosePanel && (
         <button
           type="button"
-          className="shrink-0 border-l border-[var(--jet-border)] px-1.5 text-[var(--jet-text-muted)] hover:bg-[var(--jet-hover)]"
+          className="shrink-0 border-l border-[var(--jet-border)] px-1.5 text-[var(--jet-text-muted)] hover:bg-[var(--jet-hover)] focus-visible:outline-none"
           onClick={onClosePanel}
           aria-label="Close panel"
         >

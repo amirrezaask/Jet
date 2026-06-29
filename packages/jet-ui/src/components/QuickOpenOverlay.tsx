@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useState } from "react"
 import { fuzzyMatchFiles } from "@jet/workspace"
 import { JetFuzzyPicker } from "./JetFuzzyPicker.js"
 
@@ -14,12 +14,13 @@ export function QuickOpenOverlay({
   onSelect: (path: string) => void
 }) {
   const [query, setQuery] = useState("")
+  const deferredQuery = useDeferredValue(query)
 
   useEffect(() => {
     if (!open) setQuery("")
   }, [open])
 
-  const filtered = useMemo(() => fuzzyMatchFiles(query, files, 100), [query, files])
+  const filtered = useMemo(() => fuzzyMatchFiles(deferredQuery, files, 100), [deferredQuery, files])
 
   const items = useMemo(
     () =>

@@ -51,8 +51,9 @@ export function StatusBar({
     : "No folder open"
 
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-3 border-t border-[var(--jet-border)] bg-[var(--jet-panel)] px-2 text-[calc(10rem/13)] text-[var(--jet-text-muted)]">
-      <span className="min-w-0 flex-1 truncate" title={workspacePath ?? undefined}>
+    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-[var(--jet-border)] bg-[var(--jet-panel)] px-2 text-[11.5px] uppercase tracking-[0.08em] text-[var(--jet-text-muted)]">
+      <span className="inline-block h-4 w-px shrink-0 bg-[var(--jet-accent)]" aria-hidden />
+      <span className="min-w-0 flex-1 truncate text-[var(--jet-text)]" title={workspacePath ?? undefined}>
         {workspaceLabel}
       </span>
       {gitBranch && (

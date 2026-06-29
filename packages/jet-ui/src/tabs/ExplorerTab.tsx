@@ -110,9 +110,10 @@ export function ExplorerTab({
   return (
     <div
       {...tree.getContainerProps()}
-      className="h-full overflow-auto p-1 outline-none"
+      className="h-full overflow-auto p-1"
       aria-label="Explorer"
       data-jet-list-panel="explorer"
+      tabIndex={-1}
     >
       {tree.getItems().map(item => {
         const node = item.getItemData()
@@ -123,10 +124,11 @@ export function ExplorerTab({
             {...item.getProps()}
             style={{ paddingLeft: item.getItemMeta().level * 16 }}
             className={cn(
-              "flex h-[var(--jet-row-height)] cursor-pointer items-center gap-1 rounded-sm px-1",
+              "jet-list-item flex h-[var(--jet-row-height)] cursor-pointer items-center gap-1 rounded-sm px-1",
               "hover:bg-[var(--jet-hover)]",
               item.isSelected() && "bg-[var(--jet-accent)]/15",
             )}
+            data-jet-list-item
           >
             {item.isFolder() ? (
               item.isExpanded() ? (

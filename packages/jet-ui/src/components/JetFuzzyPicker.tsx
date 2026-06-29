@@ -59,7 +59,7 @@ export function JetFuzzyPicker({
   return (
     <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel={ariaLabel} maxWidth={maxWidth}>
       <CommandPrimitive
-        className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl"
+        className="overflow-hidden rounded-sm border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl"
         shouldFilter={shouldFilter}
         value={selectedValue}
         onValueChange={setSelectedValue}
@@ -68,7 +68,7 @@ export function JetFuzzyPicker({
           placeholder={placeholder}
           value={query}
           onValueChange={setQuery}
-          className="w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-sm outline-none"
+          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-sm"
           autoFocus
         />
         <CommandPrimitive.List className="overflow-auto p-1" style={{ maxHeight: maxListHeight }}>

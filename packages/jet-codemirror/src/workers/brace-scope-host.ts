@@ -36,6 +36,7 @@ export class BraceScopeHost {
     this.cancelledOwners.delete(ownerId)
     const requestId = ++nextRequestId
     latestRequestIdByOwner.set(ownerId, requestId)
+    pendingByOwner.delete(ownerId)
     pendingByOwner.set(ownerId, result => {
       if (this.cancelledOwners.has(ownerId) || result.requestId < (latestRequestIdByOwner.get(ownerId) ?? 0)) {
         return
@@ -49,6 +50,10 @@ export class BraceScopeHost {
   cancel(ownerId: number): void {
     this.cancelledOwners.add(ownerId)
     pendingByOwner.delete(ownerId)
+    latestRequestIdByOwner.delete(ownerId)
+    for (const [requestId, requestOwnerId] of ownerByRequestId) {
+      if (requestOwnerId === ownerId) ownerByRequestId.delete(requestId)
+    }
   }
 
   static terminate(): void {

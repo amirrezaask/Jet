@@ -51,7 +51,7 @@ export function jetThemeExtension(theme: JetTheme) {
         },
         ".cm-content": {
           caretColor: "transparent",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
           fontSize: "1rem",
         },
         ".cm-gutters": {
@@ -106,7 +106,7 @@ export function jetThemeExtension(theme: JetTheme) {
         ".cm-tooltip-autocomplete": {
           fontSize: "1rem",
           "& > ul": {
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
             fontSize: "1rem",
           },
           "& > ul > li[aria-selected]": {
@@ -116,11 +116,11 @@ export function jetThemeExtension(theme: JetTheme) {
         },
         ".cm-tooltip.cm-completionInfo": {
           fontSize: "1rem",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
         },
         ".cm-lsp-hover-tooltip, .cm-lsp-documentation": {
           fontSize: "1rem",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
         },
         ".cm-lsp-signature-tooltip": {
           fontSize: "1rem",

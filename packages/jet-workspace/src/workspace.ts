@@ -76,6 +76,7 @@ export class WorkspaceService {
   readonly tabRegistry = new TabRegistry()
   readonly onDidOpenFile = new Emitter<WorkspaceFile>()
   readonly onDidChangeDirty = new Emitter<{ uri: string; isDirty: boolean }>()
+  readonly onDidChangeSavedBaseline = new Emitter<{ uri: string; content: string }>()
   readonly onDidOpenWorkspace = new Emitter<WorkspaceRoot>()
   readonly onFileReload = new Emitter<{ uri: string; content: string }>()
 
@@ -114,7 +115,12 @@ export class WorkspaceService {
 
   setSavedBaseline(uri: string, content: string): void {
     this.savedBaseline.set(uri, content)
+    this.onDidChangeSavedBaseline.fire({ uri, content })
     this.syncDirtyFromDoc(uri, content)
+  }
+
+  savedBaselineFor(uri: string): string | undefined {
+    return this.savedBaseline.get(uri)
   }
 
   syncDirtyFromDoc(uri: string, content: string): void {

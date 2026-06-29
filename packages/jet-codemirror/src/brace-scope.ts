@@ -1,7 +1,6 @@
 import { EditorView, Decoration, ViewPlugin, WidgetType } from "@codemirror/view"
 import { StateEffect, StateField, Range, type Extension } from "@codemirror/state"
 import type { BraceScopeEntry } from "./brace-scope-scan.js"
-import { snapshotViewportLines } from "./brace-scope-scan.js"
 import { getBraceScopeHost } from "./workers/brace-scope-host.js"
 import { perfMeasure } from "./perf-instrumentation.js"
 
@@ -74,28 +73,28 @@ type ScanEntry = {
 
 const viewState = new WeakMap<EditorView, ScanEntry>()
 let nextOwnerId = 1
+const BRACE_SCOPE_MARGIN = 8 * 1024
 
 function runScan(view: EditorView, entry: ScanEntry): void {
   const stamp = ++entry.stamp
   const { state } = view
   const vp = view.viewport
-  const lineSnapshots: { from: number; to: number; text: string; number: number }[] = []
-  for (let n = state.doc.lineAt(vp.from).number; n <= state.doc.lineAt(vp.to).number; n++) {
-    const line = state.doc.line(n)
-    lineSnapshots.push({ from: line.from, to: line.to, text: line.text, number: n })
-  }
-  const snap = snapshotViewportLines(lineSnapshots, vp.from, vp.to)
+  const sliceFrom = Math.max(0, vp.from - BRACE_SCOPE_MARGIN)
+  const sliceTo = Math.min(state.doc.length, vp.to + BRACE_SCOPE_MARGIN)
+  const lineOffset = state.doc.lineAt(sliceFrom).number - 1
+  const text = state.doc.sliceString(sliceFrom, sliceTo)
 
   perfMeasure("jet:brace-scope-prep", () => {
-    const fullText = state.doc.toString()
     getBraceScopeHost().schedule(
       entry.ownerId,
       {
         changeStamp: stamp,
-        viewportFrom: snap.textFrom,
-        viewportTo: snap.textTo,
-        cursorPos: state.selection.main.head,
-        fullText,
+        textOffset: sliceFrom,
+        lineNumberOffset: lineOffset,
+        viewportFrom: vp.from - sliceFrom,
+        viewportTo: vp.to - sliceFrom,
+        cursorPos: state.selection.main.head - sliceFrom,
+        text,
       },
       result => {
         if (result.changeStamp !== stamp) return

@@ -4,6 +4,8 @@ import {
   useMemo,
   useRef,
   useState,
+  startTransition,
+  useDeferredValue,
   type MutableRefObject,
 } from "react"
 import { PanelTree, type PanelEvent } from "@jet/panels"
@@ -20,6 +22,7 @@ import {
   anyOverlayOpen,
   createDefaultKeybindings,
   isEditorKeyBinding,
+  type KeymapContext,
   type JetCommandContext,
   type JetKeyBinding,
   type LaunchConfig,
@@ -52,6 +55,7 @@ import { bootstrapFromLaunch } from "./launch-bootstrap.js"
 import { useFileDrop } from "./use-file-drop.js"
 
 const THEME_STORAGE_KEY = "jet-theme-id"
+const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 
 const isWebMode = Boolean(import.meta.env.VITE_JET_WEB)
 const hasWorkspaceQuery =
@@ -70,6 +74,17 @@ function loadStoredTheme(): JetTheme {
 function normalizeAbsPath(p: string): string {
   const trimmed = p.replace(/[/\\]+$/, "")
   return trimmed || p
+}
+
+function loadRecentCommands(): string[] {
+  try {
+    const raw = localStorage.getItem(COMMAND_RECENTS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []
+  } catch {
+    return []
+  }
 }
 
 function jetPlatformFS(): import("@jet/workspace").FileSystemProvider {
@@ -108,6 +123,7 @@ export function JetApp() {
   const [tabMetaRev, setTabMetaRev] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
   const [fileDragOver, setFileDragOver] = useState(false)
+  const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
@@ -120,6 +136,12 @@ export function JetApp() {
   const problemsTabRef = useRef<TabId | null>(null)
   const workspaceInitGen = useRef(0)
   const workspaceRootPathRef = useRef<string | null>(null)
+  const appStateRef = useRef({
+    panelTree,
+    focusedPanel,
+    keymapContext: undefined as KeymapContext | undefined,
+    activeTabKindName: undefined as string | undefined,
+  })
 
   const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
   const commands = useMemo(() => new CommandRegistry(), [])
@@ -177,6 +199,13 @@ export function JetApp() {
     [editorFocused, paletteOpen, quickOpenOpen, openFileOpen, cdOpen, gotoLineOpen, outlineOpen, workspace.root, activeTabKindName],
   )
 
+  appStateRef.current = {
+    panelTree,
+    focusedPanel,
+    keymapContext,
+    activeTabKindName,
+  }
+
   const lspManager = useMemo(
     () => (window.jet ? new LanguageServerManager(window.jet.lsp) : null),
     [],
@@ -225,8 +254,8 @@ export function JetApp() {
   }, [lspManager, workspace.root, lspCrashed, lspRevision])
 
   const cloneTree = useCallback(
-    () => PanelTree.fromJSON(panelTree.toJSON()),
-    [panelTree],
+    () => PanelTree.fromJSON(appStateRef.current.panelTree.toJSON()),
+    [],
   )
 
   const commitTree = useCallback((tree: PanelTree) => {
@@ -497,7 +526,7 @@ export function JetApp() {
       tabRef: MutableRefObject<TabId | null>,
     ) => {
       const tree = cloneTree()
-      const target = resolveTargetPanel(tree, focusedPanel, workspace.tabRegistry)
+      const target = resolveTargetPanel(tree, appStateRef.current.focusedPanel, workspace.tabRegistry)
       if (!target) return
       tabRef.current = workspace.ensureSingletonTab(
         tree,
@@ -511,12 +540,14 @@ export function JetApp() {
       setFocusedPanel(tabPanel)
       commitTree(tree)
     },
-    [cloneTree, commitTree, focusedPanel, workspace],
+    [cloneTree, commitTree, workspace],
   )
 
   const keymapTargetViewRef = useRef<EditorView | null>(null)
 
   const getCommandContext = useCallback((): JetCommandContext => {
+    const currentTree = appStateRef.current.panelTree
+    const currentFocusedPanel = appStateRef.current.focusedPanel
     return {
       workspace,
       ui: {
@@ -526,19 +557,47 @@ export function JetApp() {
       },
       getActiveEditorView: () => {
         if (keymapTargetViewRef.current) return keymapTargetViewRef.current
-        const leaf = focusedPanel && panelTree.getLeaf(focusedPanel)
+        const leaf = currentFocusedPanel && currentTree.getLeaf(currentFocusedPanel)
         const tab = leaf?.group.tabs[leaf.group.active]
         return tab ? (getEditorView(tab) ?? null) : null
       },
     }
-  }, [workspace, focusedPanel, panelTree])
+  }, [workspace])
 
   const handlePanelNavigation = useCallback(
     (action: string) => {
-      const kind = activeTabKindName
+      const kind = appStateRef.current.activeTabKindName
       if (!kind || !["explorer", "git", "search", "problems"].includes(kind)) return
       const el = document.querySelector(`[data-jet-list-panel="${kind}"]`)
       if (!(el instanceof HTMLElement)) return
+      const items = [...el.querySelectorAll<HTMLElement>("[data-jet-list-item]")]
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const focusItem = (index: number) => {
+        const next = items[Math.max(0, Math.min(items.length - 1, index))]
+        next?.focus()
+      }
+      if (action === "focusNext") {
+        const index = active ? items.indexOf(active) : -1
+        focusItem(index + 1)
+        return
+      }
+      if (action === "focusPrev") {
+        const index = active ? items.indexOf(active) : items.length
+        focusItem(index - 1)
+        return
+      }
+      if (action === "activate") {
+        active?.click()
+        return
+      }
+      if (action === "focusFirstItem") {
+        focusItem(0)
+        return
+      }
+      if (action === "focusLastItem") {
+        focusItem(items.length - 1)
+        return
+      }
       const page = Math.max(80, Math.floor(el.clientHeight * 0.85))
       switch (action) {
         case "focusPageUp":
@@ -555,7 +614,7 @@ export function JetApp() {
           break
       }
     },
-    [activeTabKindName],
+    [],
   )
 
   const handleZoom = useCallback((delta: number) => {
@@ -566,9 +625,11 @@ export function JetApp() {
   }, [])
 
   const flushWorkspaceSession = useCallback(() => {
-    if (!workspace.root) return
+    const root = workspace.root
+    if (!root) return
+    const { panelTree, focusedPanel } = appStateRef.current
     saveWorkspaceSession(
-      workspace.root.path,
+      root.path,
       panelTree,
       workspace,
       editorPanelRef.current,
@@ -581,7 +642,7 @@ export function JetApp() {
         problems: problemsTabRef.current?.id,
       },
     )
-  }, [workspace, panelTree, focusedPanel])
+  }, [workspace])
 
   const handleLspAttachFailed = useCallback(
     (fileUri: string) => {
@@ -594,8 +655,8 @@ export function JetApp() {
     () =>
       buildAppCommands({
         workspace,
-        panelTree,
-        focusedPanel,
+        getPanelTree: () => appStateRef.current.panelTree,
+        getFocusedPanel: () => appStateRef.current.focusedPanel,
         setPaletteOpen,
         setQuickOpenOpen,
         setOpenFileOpen,
@@ -618,14 +679,11 @@ export function JetApp() {
         isWebMode,
         setZoomLevel: handleZoom,
         handlePanelNavigation,
-        activeTabKindName,
         setOutlineOpen,
         setOutlineSymbols,
       }),
     [
       workspace,
-      panelTree,
-      focusedPanel,
       cloneTree,
       commitTree,
       openWorkspaceFolder,
@@ -633,22 +691,30 @@ export function JetApp() {
       showSingletonViewTab,
       handleZoom,
       handlePanelNavigation,
-      activeTabKindName,
       flushWorkspaceSession,
     ],
   )
 
+  const deferredSessionRev = useDeferredValue(sessionRev)
   const paletteCommands = useMemo(() => {
-    return commands.list().map(cmd => {
+    return commands
+      .list(getCommandContext())
+      .map(cmd => {
       const fnName = fnByCommandId.get(cmd.id)
       const run = fnName ? appCommands[fnName as keyof typeof appCommands] : undefined
       const key = run ? keybindingByFn.get(run) : undefined
       return {
         ...cmd,
         keybinding: key ? formatKeyBinding(key) : undefined,
+        recent: recentCommands.includes(cmd.id),
       }
     })
-  }, [commands, sessionRev, appCommands, keybindingByFn, fnByCommandId])
+      .sort((a, b) => {
+        const recentDelta = Number(b.recent) - Number(a.recent)
+        if (recentDelta !== 0) return recentDelta
+        return a.title.localeCompare(b.title)
+      })
+  }, [commands, deferredSessionRev, appCommands, keybindingByFn, fnByCommandId, getCommandContext, recentCommands])
 
   const runKeyBinding = useCallback(
     (binding: JetKeyBinding, view?: EditorView) => {
@@ -670,37 +736,56 @@ export function JetApp() {
     async (name: string) => {
       if (!commands.has(name)) return
       await commands.execute(name, getCommandContext())
+      setRecentCommands(prev => {
+        const next = [name, ...prev.filter(id => id !== name)].slice(0, 12)
+        localStorage.setItem(COMMAND_RECENTS_STORAGE_KEY, JSON.stringify(next))
+        return next
+      })
     },
     [commands, getCommandContext],
   )
 
   useEffect(() => {
-    for (const entry of APP_COMMAND_REGISTRY) {
+    const disposables = APP_COMMAND_REGISTRY.map(entry => {
       const run = appCommands[entry.fn]
-      if (!run) continue
-      commands.register(entry.id, run, {
+      if (!run) return null
+      return commands.register(entry.id, run, {
         id: entry.id,
         title: entry.title,
         category: entry.category,
+        aliases: "aliases" in entry ? [...entry.aliases] : undefined,
+        keywords: "keywords" in entry ? [...entry.keywords] : undefined,
       })
-    }
+    }).filter(Boolean)
     for (const [id, theme] of Object.entries(bundledThemes)) {
-      commands.register(
-        `ui.selectTheme.${id}`,
-        () => {
-          setActiveTheme(theme)
-          applyJetThemeCss(theme)
-          localStorage.setItem(THEME_STORAGE_KEY, id)
-          setMessage(`Theme: ${theme.name}`)
-        },
-        { id: `ui.selectTheme.${id}`, title: `Theme: ${theme.name}`, category: "UI" },
+      disposables.push(
+        commands.register(
+          `ui.selectTheme.${id}`,
+          () => {
+            setActiveTheme(theme)
+            applyJetThemeCss(theme)
+            localStorage.setItem(THEME_STORAGE_KEY, id)
+            setMessage(`Theme: ${theme.name}`)
+          },
+          {
+            id: `ui.selectTheme.${id}`,
+            title: `Theme: ${theme.name}`,
+            category: "UI",
+            aliases: ["theme"],
+          },
+        ),
       )
     }
-    commands.register(
-      "ui.selectTheme",
-      () => setPaletteOpen(true),
-      { id: "ui.selectTheme", title: "Select Theme", category: "UI" },
+    disposables.push(
+      commands.register(
+        "ui.selectTheme",
+        () => setPaletteOpen(true),
+        { id: "ui.selectTheme", title: "Select Theme", category: "UI", aliases: ["theme"] },
+      ),
     )
+    return () => {
+      for (const disposable of disposables) disposable?.dispose()
+    }
   }, [commands, appCommands])
 
   useEffect(() => {
@@ -919,19 +1004,32 @@ export function JetApp() {
   }, [editorFocused, lspCrashed, lspManager, workspace.root, focusedPanel, panelTree, workspace.tabRegistry, ensureLspForFile])
 
   const problemsFpRef = useRef("")
+  const problemsRafRef = useRef<number | null>(null)
+  const refreshProblems = useCallback(() => {
+    const views = getAllEditorViews(workspace.tabRegistry)
+    const next = collectProblemsFromViews(views.map(v => ({ uri: v.uri, view: v.view })))
+    const fp = problemsFingerprint(next)
+    if (fp === problemsFpRef.current) return
+    problemsFpRef.current = fp
+    startTransition(() => setProblems(next))
+  }, [workspace.tabRegistry])
+  const scheduleProblemsRefresh = useCallback(() => {
+    if (problemsRafRef.current != null) return
+    problemsRafRef.current = window.requestAnimationFrame(() => {
+      problemsRafRef.current = null
+      refreshProblems()
+    })
+  }, [refreshProblems])
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      const views = getAllEditorViews(workspace.tabRegistry)
-      const next = collectProblemsFromViews(views.map(v => ({ uri: v.uri, view: v.view })))
-      const fp = problemsFingerprint(next)
-      if (fp !== problemsFpRef.current) {
-        problemsFpRef.current = fp
-        setProblems(next)
-      }
-    }, 1000)
-    return () => window.clearInterval(id)
-  }, [workspace.tabRegistry, panelTree])
+    scheduleProblemsRefresh()
+  }, [sessionRev, panelTree, scheduleProblemsRefresh])
+
+  useEffect(() => {
+    return () => {
+      if (problemsRafRef.current != null) window.cancelAnimationFrame(problemsRafRef.current)
+    }
+  }, [])
 
   const handleEditorFocusChange = useCallback((focused: boolean) => {
     setEditorFocused(focused)
@@ -1062,6 +1160,7 @@ export function JetApp() {
           onEditorFocusChange={handleEditorFocusChange}
             onEditorSelectionChange={handleEditorSelectionChange}
             onLspAttachFailed={handleLspAttachFailed}
+            onProblemsChange={scheduleProblemsRefresh}
             onGitError={msg => setMessage(msg)}
           />
         ) : (

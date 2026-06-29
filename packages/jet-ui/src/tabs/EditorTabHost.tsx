@@ -1,19 +1,20 @@
 import { memo, useEffect, useRef, useState } from "react"
-import type { Extension } from "@codemirror/state"
+import { Text, type Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import type { LSPClient } from "@jet/codemirror"
 import {
   createJetEditorView,
-  applyUserKeymaps,
+  applyTheme,
   applyUserExtensions,
-  isLargeFile,
-  jumpToLine,
+  applyUserKeymaps,
   consumePendingEditorNavigation,
   consumePendingInitialContent,
-  reconfigureLsp,
   detachLsp,
-  lspPluginForView,
+  isLargeFile,
   jetReloadAnnotation,
+  jumpToLine,
+  lspPluginForView,
+  reconfigureLsp,
 } from "@jet/codemirror"
 import type { JetTheme } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
@@ -24,8 +25,49 @@ import {
   registerEditorContextMenuHandler,
 } from "../components/EditorContextMenu.js"
 
+type EditorSession = {
+  fileUri: string
+  fileLanguageId: string
+  lastKnownText: string
+  largeFile: boolean
+  savedBaseline: Text
+  snapshotTimer: number | null
+  view: EditorView
+}
+
 const viewByTab = new Map<number, EditorView>()
+const sessionByTab = new Map<number, EditorSession>()
 let focusedTabId: number | null = null
+
+function textFromString(content: string): Text {
+  return Text.of(content.split("\n"))
+}
+
+function scheduleSessionSnapshot(session: EditorSession): void {
+  if (session.snapshotTimer != null) window.clearTimeout(session.snapshotTimer)
+  session.snapshotTimer = window.setTimeout(() => {
+    session.snapshotTimer = null
+    session.lastKnownText = session.view.state.doc.toString()
+  }, 120)
+}
+
+function clearSessionSnapshot(session: EditorSession): void {
+  if (session.snapshotTimer != null) {
+    window.clearTimeout(session.snapshotTimer)
+    session.snapshotTimer = null
+  }
+}
+
+function destroyEditorSession(tabId: TabId): void {
+  const session = sessionByTab.get(tabId.id)
+  if (!session) return
+  clearSessionSnapshot(session)
+  detachLsp(session.view)
+  session.view.destroy()
+  sessionByTab.delete(tabId.id)
+  viewByTab.delete(tabId.id)
+  if (focusedTabId === tabId.id) focusedTabId = null
+}
 
 export function getEditorView(tabId: TabId): EditorView | undefined {
   return viewByTab.get(tabId.id)
@@ -38,9 +80,7 @@ export function getAllEditorViews(
   for (const tabId of registry.allTabs()) {
     const kind = registry.get(tabId)
     const view = viewByTab.get(tabId.id)
-    if (kind?.kind === "editor" && view) {
-      result.push({ tabId, uri: kind.fileUri, view })
-    }
+    if (kind?.kind === "editor" && view) result.push({ tabId, uri: kind.fileUri, view })
   }
   return result
 }
@@ -61,6 +101,7 @@ function EditorTabHostInner({
   onEditorFocusChange,
   onEditorSelectionChange,
   onLspAttachFailed,
+  onProblemsChange,
   autoFocus = false,
 }: {
   tabId: TabId
@@ -78,6 +119,7 @@ function EditorTabHostInner({
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
   onLspAttachFailed?: (fileUri: string) => void
+  onProblemsChange?: () => void
   autoFocus?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -97,7 +139,8 @@ function EditorTabHostInner({
   resolveLspClientRef.current = resolveLspClient
   const onLspAttachFailedRef = useRef(onLspAttachFailed)
   onLspAttachFailedRef.current = onLspAttachFailed
-  const fileLanguageIdRef = useRef("plaintext")
+  const onProblemsChangeRef = useRef(onProblemsChange)
+  onProblemsChangeRef.current = onProblemsChange
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
   const runCommand = useRef((name: string) => executeCommandRef.current(name)).current
@@ -116,55 +159,18 @@ function EditorTabHostInner({
     const parent = ref.current
     if (!parent) return
     let cancelled = false
-    let view: EditorView | null = null
+    let session = sessionByTab.get(tabId.id) ?? null
     let onFocus: (() => void) | null = null
     let onBlur: (() => void) | null = null
     let onContextMenu: ((e: MouseEvent) => void) | null = null
 
-    ;(async () => {
-      const untitled = isUntitledUri(fileUri)
-      const path = untitled ? "" : fileUriToPath(fileUri)
-      let file = workspace.fileForUri(fileUri)
-      if (!file) file = workspace.createWorkspaceFile(fileUri, path)
-      fileLanguageIdRef.current = file.languageId
-
-      let initialText = ""
-      let largeFile = false
-      if (!untitled) {
-        const text = await workspace.readFile(fileUri)
-        if (cancelled) return
-        initialText = text
-        largeFile = isLargeFile(text)
-      } else {
-        const pending = consumePendingInitialContent(tabId)
-        if (pending != null) {
-          initialText = pending
-          largeFile = isLargeFile(pending)
-          workspace.markDirty(fileUri, true)
-        }
-      }
-
-      view = await createJetEditorView({
-        parent,
-        workspace,
-        file,
-        initialText,
-        largeFile,
-        theme,
-        lspClient: null,
-        executeCommand: runCommand,
-        userExtensions,
-        onSelectionChange: (line, column) => onEditorSelectionChangeRef.current?.(line, column),
-      })
-      if (cancelled) {
-        view.destroy()
-        return
-      }
-      applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
-      applyUserExtensions(view, userExtensions)
-      viewByTab.set(tabId.id, view)
+    const attachView = (live: EditorSession) => {
+      if (live.view.dom.parentElement !== parent) parent.appendChild(live.view.dom)
+      applyTheme(live.view, theme)
+      applyUserKeymaps(live.view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
+      applyUserExtensions(live.view, userExtensions)
       const nav = consumePendingEditorNavigation(tabId)
-      if (nav) jumpToLine(view, nav.line, nav.column)
+      if (nav) jumpToLine(live.view, nav.line, nav.column)
       onFocus = () => {
         focusedTabId = tabId.id
         onEditorFocusChangeRef.current?.(true)
@@ -175,58 +181,126 @@ function EditorTabHostInner({
         focusedTabId = tabId.id
         setContextMenu({ x: e.clientX, y: e.clientY })
       }
-      view.dom.addEventListener("focus", onFocus)
-      view.dom.addEventListener("blur", onBlur)
-      view.dom.addEventListener("contextmenu", onContextMenu)
-      if (autoFocus) view.focus()
+      live.view.dom.addEventListener("focus", onFocus)
+      live.view.dom.addEventListener("blur", onBlur)
+      live.view.dom.addEventListener("contextmenu", onContextMenu)
+      if (autoFocus) live.view.focus()
+      onProblemsChangeRef.current?.()
+    }
 
-      if (!largeFile && !untitled && resolveLspClientRef.current) {
-        void (async () => {
-          const client = await resolveLspClientRef.current!(fileUri)
-          if (cancelled) return
-          if (!client) {
-            onLspAttachFailedRef.current?.(fileUri)
-            return
-          }
-          const live = viewByTab.get(tabId.id)
-          if (!live) return
-          await reconfigureLsp(live, fileUri, fileLanguageIdRef.current, client)
-        })()
+    ;(async () => {
+      if (session && session.fileUri !== fileUri) {
+        destroyEditorSession(tabId)
+        session = null
       }
+
+      if (!session) {
+        const untitled = isUntitledUri(fileUri)
+        const path = untitled ? "" : fileUriToPath(fileUri)
+        let file = workspace.fileForUri(fileUri)
+        if (!file) file = workspace.createWorkspaceFile(fileUri, path)
+
+        let initialText = ""
+        let savedBaseline = workspace.savedBaselineFor(fileUri) ?? (untitled ? "" : "")
+        let largeFile = false
+
+        if (!untitled) {
+          const diskText = await workspace.readFile(fileUri)
+          if (cancelled) return
+          initialText = diskText
+          savedBaseline = workspace.savedBaselineFor(fileUri) ?? diskText
+          largeFile = isLargeFile(diskText)
+        } else {
+          const pending = consumePendingInitialContent(tabId)
+          if (pending != null) {
+            initialText = pending
+            largeFile = isLargeFile(pending)
+          }
+        }
+
+        const view = await createJetEditorView({
+          parent,
+          workspace,
+          file,
+          initialText,
+          largeFile,
+          theme,
+          lspClient: null,
+          executeCommand: runCommand,
+          userExtensions,
+          onSelectionChange: (line, column) => onEditorSelectionChangeRef.current?.(line, column),
+          onDocChange: (doc, meta) => {
+            const live = sessionByTab.get(tabId.id)
+            if (!live) return
+            workspace.markDirty(fileUri, !doc.eq(live.savedBaseline))
+            if (!meta.isReload) scheduleSessionSnapshot(live)
+            onProblemsChangeRef.current?.()
+          },
+          onViewUpdate: () => onProblemsChangeRef.current?.(),
+        })
+        if (cancelled) {
+          view.destroy()
+          return
+        }
+
+        session = {
+          fileUri,
+          fileLanguageId: file.languageId,
+          lastKnownText: initialText,
+          largeFile,
+          savedBaseline: textFromString(savedBaseline),
+          snapshotTimer: null,
+          view,
+        }
+        sessionByTab.set(tabId.id, session)
+        viewByTab.set(tabId.id, view)
+
+        workspace.setSavedBaseline(fileUri, savedBaseline)
+        if (untitled && initialText.length > 0) {
+          workspace.markDirty(fileUri, true)
+          scheduleSessionSnapshot(session)
+        }
+
+        if (!largeFile && !untitled && resolveLspClientRef.current) {
+          void (async () => {
+            const client = await resolveLspClientRef.current!(fileUri)
+            if (cancelled) return
+            if (!client) {
+              onLspAttachFailedRef.current?.(fileUri)
+              return
+            }
+            const live = sessionByTab.get(tabId.id)
+            if (!live) return
+            await reconfigureLsp(live.view, fileUri, live.fileLanguageId, client)
+            onProblemsChangeRef.current?.()
+          })()
+        }
+      }
+
+      if (!session || cancelled) return
+      attachView(session)
     })()
 
     return () => {
       cancelled = true
-      if (view && onFocus && onBlur && onContextMenu) {
-        view.dom.removeEventListener("focus", onFocus)
-        view.dom.removeEventListener("blur", onBlur)
-        view.dom.removeEventListener("contextmenu", onContextMenu)
+      if (session && onFocus && onBlur && onContextMenu) {
+        session.view.dom.removeEventListener("focus", onFocus)
+        session.view.dom.removeEventListener("blur", onBlur)
+        session.view.dom.removeEventListener("contextmenu", onContextMenu)
       }
-      if (view) detachLsp(view)
-      view?.destroy()
-      viewByTab.delete(tabId.id)
-      if (focusedTabId === tabId.id) focusedTabId = null
+      if (session?.view.dom.parentElement === parent) parent.removeChild(session.view.dom)
+      const kind = workspace.tabRegistry.get(tabId)
+      if (kind?.kind !== "editor" || kind.fileUri !== fileUri) {
+        destroyEditorSession(tabId)
+        onProblemsChangeRef.current?.()
+      }
     }
-  }, [fileUri, tabId.id, workspace, theme, runCommand, userExtensions, autoFocus])
+  }, [fileUri, tabId.id, workspace])
 
   useEffect(() => {
-    if (lspRevision == null || lspRevision === 0 || !resolveLspClient) return
     const view = viewByTab.get(tabId.id)
-    if (!view) return
-    let cancelled = false
-    ;(async () => {
-      const client = await resolveLspClient(fileUri)
-      if (cancelled) return
-      if (!client) {
-        onLspAttachFailedRef.current?.(fileUri)
-        return
-      }
-      await reconfigureLsp(view, fileUri, fileLanguageIdRef.current, client)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [lspRevision, resolveLspClient, fileUri, tabId.id])
+    if (view) applyTheme(view, theme)
+  }, [tabId.id, theme])
 
   useEffect(() => {
     const view = viewByTab.get(tabId.id)
@@ -250,14 +324,48 @@ function EditorTabHostInner({
   }, [tabId.id, autoFocus])
 
   useEffect(() => {
+    if (lspRevision == null || lspRevision === 0 || !resolveLspClient) return
+    const session = sessionByTab.get(tabId.id)
+    if (!session || session.largeFile || isUntitledUri(fileUri)) return
+    let cancelled = false
+    void (async () => {
+      const client = await resolveLspClient(fileUri)
+      if (cancelled) return
+      if (!client) {
+        onLspAttachFailedRef.current?.(fileUri)
+        return
+      }
+      await reconfigureLsp(session.view, fileUri, session.fileLanguageId, client)
+      onProblemsChangeRef.current?.()
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [lspRevision, resolveLspClient, fileUri, tabId.id])
+
+  useEffect(() => {
+    const sub = workspace.onDidChangeSavedBaseline.event(({ uri, content }) => {
+      if (uri !== fileUri) return
+      const session = sessionByTab.get(tabId.id)
+      if (!session) return
+      session.savedBaseline = textFromString(content)
+      session.lastKnownText = content
+      workspace.markDirty(uri, !session.view.state.doc.eq(session.savedBaseline))
+    })
+    return () => sub.dispose()
+  }, [workspace, fileUri, tabId.id])
+
+  useEffect(() => {
     const sub = workspace.onFileReload.event(({ uri, content }) => {
       if (uri !== fileUri) return
-      const view = viewByTab.get(tabId.id)
-      if (!view) return
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: content },
+      const session = sessionByTab.get(tabId.id)
+      if (!session) return
+      session.lastKnownText = content
+      session.view.dispatch({
+        changes: { from: 0, to: session.view.state.doc.length, insert: content },
         annotations: jetReloadAnnotation.of(true),
       })
+      onProblemsChangeRef.current?.()
     })
     return () => sub.dispose()
   }, [workspace, fileUri, tabId.id])

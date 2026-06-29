@@ -15,10 +15,12 @@ export type BraceScopeScanJob = {
   requestId: number
   ownerId: number
   changeStamp: number
+  textOffset: number
+  lineNumberOffset: number
   viewportFrom: number
   viewportTo: number
   cursorPos: number
-  fullText: string
+  text: string
 }
 
 export type BraceScopeScanResult = {
@@ -129,18 +131,20 @@ function offsetToLine(lineStartOffsets: number[], pos: number): number {
 }
 
 function findScopesInViewport(
-  fullText: string,
+  text: string,
   lineStartOffsets: number[],
   lines: string[],
   viewportFrom: number,
   viewportTo: number,
+  textOffset: number,
+  lineNumberOffset: number,
 ): BraceScopeEntry[] {
   const scopes: BraceScopeEntry[] = []
   const seen = new Set<number>()
 
-  for (let i = viewportFrom; i < Math.min(fullText.length, viewportTo); i++) {
-    if (charAt(fullText, i) !== "{") continue
-    const close = forwardMatchCloseBrace(fullText, i)
+  for (let i = viewportFrom; i < Math.min(text.length, viewportTo); i++) {
+    if (charAt(text, i) !== "{") continue
+    const close = forwardMatchCloseBrace(text, i)
     if (close == null) continue
     if (close < viewportFrom || i > viewportTo) continue
     if (seen.has(i)) continue
@@ -155,10 +159,10 @@ function findScopesInViewport(
 
     const closeLineText = lines[closeLine] ?? ""
     scopes.push({
-      openPos: i,
-      closePos: close,
-      openLine,
-      closeLine,
+      openPos: textOffset + i,
+      closePos: textOffset + close,
+      openLine: lineNumberOffset + openLine,
+      closeLine: lineNumberOffset + closeLine,
       label,
       guideColumn: braceGuideVisualColumn(closeLineText),
     })
@@ -168,14 +172,16 @@ function findScopesInViewport(
 }
 
 export function scanBraceScopes(job: BraceScopeScanJob): BraceScopeScanResult {
-  const lines = job.fullText.length === 0 ? [""] : job.fullText.split("\n")
+  const lines = job.text.length === 0 ? [""] : job.text.split("\n")
   const lineStartOffsets = buildLineStartOffsets(lines)
   const scopes = findScopesInViewport(
-    job.fullText,
+    job.text,
     lineStartOffsets,
     lines,
     job.viewportFrom,
     job.viewportTo,
+    job.textOffset,
+    job.lineNumberOffset,
   )
   return {
     requestId: job.requestId,

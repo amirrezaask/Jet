@@ -46,8 +46,8 @@ import { confirmCloseEditorTab } from "./tab-close.js"
 
 export type BuildAppCommandsDeps = {
   workspace: WorkspaceService
-  panelTree: PanelTree
-  focusedPanel: PanelId | null
+  getPanelTree: () => PanelTree
+  getFocusedPanel: () => PanelId | null
   setPaletteOpen: (open: boolean) => void
   setQuickOpenOpen: (open: boolean) => void
   setOpenFileOpen: (open: boolean) => void
@@ -74,12 +74,13 @@ export type BuildAppCommandsDeps = {
   isWebMode: boolean
   setZoomLevel: (delta: number) => void
   handlePanelNavigation: (action: string) => void
-  activeTabKindName: string | undefined
   setOutlineOpen: (open: boolean) => void
   setOutlineSymbols: (symbols: OutlineEntry[]) => void
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
+  const currentPanelTree = () => deps.getPanelTree()
+  const currentFocusedPanel = () => deps.getFocusedPanel()
   const openFolder: JetCommandFn = async () => {
     const folderPath = await window.jet?.fs.showOpenFolderDialog()
     if (!folderPath) {
@@ -128,7 +129,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     save: async ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
-      const leaf = deps.focusedPanel && deps.panelTree.getLeaf(deps.focusedPanel)
+      const focusedPanel = currentFocusedPanel()
+      const leaf = focusedPanel && currentPanelTree().getLeaf(focusedPanel)
       const tabId = leaf?.group.tabs[leaf.group.active]
       if (!tabId) return
       const kind = deps.workspace.tabRegistry.get(tabId)
@@ -162,7 +164,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         tree,
         deps.workspace.tabRegistry,
         deps.editorPanelRef.current,
-        deps.focusedPanel,
+        currentFocusedPanel(),
       )
       if (!panel) return
       deps.editorPanelRef.current = panel
@@ -172,7 +174,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       requestAnimationFrame(() => getEditorView(tabId)?.focus())
     },
     closeTab: () => {
-      const leaf = deps.focusedPanel && deps.panelTree.getLeaf(deps.focusedPanel)
+      const focusedPanel = currentFocusedPanel()
+      const leaf = focusedPanel && currentPanelTree().getLeaf(focusedPanel)
       const tabId = leaf?.group.tabs[leaf.group.active]
       if (tabId) deps.handlePanelEvent({ type: "tabClose", tabId })
     },
@@ -189,7 +192,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     problems: () => deps.showSingletonViewTab("problems", "Problems", deps.problemsTabRef),
     explorer: () => {
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, deps.focusedPanel, deps.workspace.tabRegistry)
+      const target = resolveTargetPanel(tree, currentFocusedPanel(), deps.workspace.tabRegistry)
       if (!target) return
       if (!deps.explorerTabRef.current) {
         deps.explorerTabRef.current = deps.workspace.ensureSingletonTab(
@@ -208,7 +211,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     git: () => {
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, deps.focusedPanel, deps.workspace.tabRegistry)
+      const target = resolveTargetPanel(tree, currentFocusedPanel(), deps.workspace.tabRegistry)
       if (!target) return
       if (!deps.gitTabRef.current) {
         deps.gitTabRef.current = deps.workspace.ensureSingletonTab(
@@ -226,7 +229,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     terminal: () => {
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, deps.focusedPanel, deps.workspace.tabRegistry)
+      const target = resolveTargetPanel(tree, currentFocusedPanel(), deps.workspace.tabRegistry)
       if (!target) return
       deps.terminalTabRef.current = deps.workspace.ensureSingletonTab(
         tree,
@@ -265,7 +268,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     // --- Tier 2: Window / layout ---
     nextEditor: () => {
       const tree = deps.cloneTree()
-      const leaf = deps.focusedPanel && tree.getLeaf(deps.focusedPanel)
+      const focusedPanel = currentFocusedPanel()
+      const leaf = focusedPanel && tree.getLeaf(focusedPanel)
       if (!leaf || leaf.group.tabs.length < 2) { deps.commitTree(tree); return }
       const next = (leaf.group.active + 1) % leaf.group.tabs.length
       leaf.group.active = next
@@ -277,7 +281,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     prevEditor: () => {
       const tree = deps.cloneTree()
-      const leaf = deps.focusedPanel && tree.getLeaf(deps.focusedPanel)
+      const focusedPanel = currentFocusedPanel()
+      const leaf = focusedPanel && tree.getLeaf(focusedPanel)
       if (!leaf || leaf.group.tabs.length < 2) { deps.commitTree(tree); return }
       const prev = (leaf.group.active - 1 + leaf.group.tabs.length) % leaf.group.tabs.length
       leaf.group.active = prev
@@ -289,7 +294,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     closeAllTabs: () => {
       const tree = deps.cloneTree()
-      const leaf = deps.focusedPanel && tree.getLeaf(deps.focusedPanel)
+      const focusedPanel = currentFocusedPanel()
+      const leaf = focusedPanel && tree.getLeaf(focusedPanel)
       if (!leaf) { deps.commitTree(tree); return }
       for (const tabId of [...leaf.group.tabs]) {
         if (!confirmCloseEditorTab(deps.workspace, tabId)) continue
@@ -299,9 +305,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.commitTree(tree)
     },
     focusSidebar: () => {
-      const allPanels = getAllLeafPanels(deps.panelTree)
+      const panelTree = currentPanelTree()
+      const allPanels = getAllLeafPanels(panelTree)
       for (const panel of allPanels) {
-        const leaf = deps.panelTree.getLeaf(panel)
+        const leaf = panelTree.getLeaf(panel)
         if (!leaf) continue
         const hasSidebarTab = leaf.group.tabs.some(t => {
           const k = deps.workspace.tabRegistry.get(t)
@@ -314,16 +321,17 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     focusEditorGroup: () => {
       if (deps.editorPanelRef.current) {
         deps.setFocusedPanel(deps.editorPanelRef.current)
-        const leaf = deps.panelTree.getLeaf(deps.editorPanelRef.current)
+        const leaf = currentPanelTree().getLeaf(deps.editorPanelRef.current)
         const tabId = leaf?.group.tabs[leaf?.group.active ?? 0]
         if (tabId) requestAnimationFrame(() => getEditorView(tabId)?.focus())
       }
     },
     lastEditorGroup: () => {
-      const panels = getAllLeafPanels(deps.panelTree)
+      const panelTree = currentPanelTree()
+      const panels = getAllLeafPanels(panelTree)
       let lastEditor: PanelId | null = null
       for (const panel of panels) {
-        const leaf = deps.panelTree.getLeaf(panel)
+        const leaf = panelTree.getLeaf(panel)
         if (leaf?.group.tabs.some(t => deps.workspace.tabRegistry.get(t)?.kind === "editor")) {
           lastEditor = panel
         }
@@ -332,7 +340,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     splitEditorRight: () => {
       const tree = deps.cloneTree()
-      const target = deps.focusedPanel ?? deps.editorPanelRef.current
+      const target = currentFocusedPanel() ?? deps.editorPanelRef.current
       if (!target) { deps.commitTree(tree); return }
       const newPanel = tree.splitAtEdge(target, "right")
       const leaf = tree.getLeaf(target)
@@ -477,10 +485,13 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     gitUnstageSelected: ctx => ctx.ui.showMessage("Git: unstage selected ranges not yet implemented"),
 
     // --- Tier 4: List navigation (infrastructure) ---
+    listFocusNext: () => deps.handlePanelNavigation("focusNext"),
+    listFocusPrev: () => deps.handlePanelNavigation("focusPrev"),
+    listFocusActivate: () => deps.handlePanelNavigation("activate"),
     listFocusPageUp: () => deps.handlePanelNavigation("focusPageUp"),
     listFocusPageDown: () => deps.handlePanelNavigation("focusPageDown"),
-    listFocusFirst: () => deps.handlePanelNavigation("focusFirst"),
-    listFocusLast: () => deps.handlePanelNavigation("focusLast"),
+    listFocusFirst: () => deps.handlePanelNavigation("focusFirstItem"),
+    listFocusLast: () => deps.handlePanelNavigation("focusLastItem"),
   }
 
   return named as JetCommands
@@ -488,22 +499,22 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
 
 /** Palette / agent command ids mapped to app command functions. */
 export const APP_COMMAND_REGISTRY = [
-  { id: "ui.showCommandPalette", fn: "palette", title: "Show Command Palette", category: "UI" },
-  { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace" },
-  { id: "workspace.saveFile", fn: "save", title: "Save File", category: "Workspace" },
-  { id: "workspace.openFile", fn: "openFile", title: "Open File", category: "Workspace" },
-  { id: "workspace.openFolder", fn: "openFolder", title: "Open Folder", category: "Workspace" },
-  { id: "workspace.cd", fn: "cd", title: "Change Directory", category: "Workspace" },
-  { id: "workspace.newFile", fn: "newFile", title: "New File", category: "Workspace" },
-  { id: "layout.closeTab", fn: "closeTab", title: "Close Tab", category: "Layout" },
-  { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor" },
-  { id: "editor.replace", fn: "replace", title: "Replace in Editor", category: "Editor" },
-  { id: "editor.gotoLine", fn: "gotoLine", title: "Go to Line…", category: "Editor" },
-  { id: "search.show", fn: "search", title: "Show Search", category: "View" },
-  { id: "git.showChanges", fn: "git", title: "Show Git Changes", category: "Git" },
-  { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View" },
-  { id: "terminal.show", fn: "terminal", title: "Show Terminal", category: "View" },
-  { id: "problems.show", fn: "problems", title: "Show Problems", category: "View" },
+  { id: "ui.showCommandPalette", fn: "palette", title: "Show Command Palette", category: "UI", aliases: ["commands", "palette", "help"] },
+  { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly"], keywords: ["cmd-k f"] },
+  { id: "workspace.saveFile", fn: "save", title: "Save File", category: "Workspace", aliases: ["write"] },
+  { id: "workspace.openFile", fn: "openFile", title: "Open File", category: "Workspace", aliases: ["browse file"] },
+  { id: "workspace.openFolder", fn: "openFolder", title: "Open Folder", category: "Workspace", aliases: ["open workspace"] },
+  { id: "workspace.cd", fn: "cd", title: "Change Directory", category: "Workspace", aliases: ["switch workspace"] },
+  { id: "workspace.newFile", fn: "newFile", title: "New File", category: "Workspace", aliases: ["untitled"] },
+  { id: "layout.closeTab", fn: "closeTab", title: "Close Tab", category: "Layout", aliases: ["close editor"] },
+  { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor", aliases: ["search in file"] },
+  { id: "editor.replace", fn: "replace", title: "Replace in Editor", category: "Editor", aliases: ["replace in file"] },
+  { id: "editor.gotoLine", fn: "gotoLine", title: "Go to Line…", category: "Editor", aliases: ["line"] },
+  { id: "search.show", fn: "search", title: "Show Search", category: "View", aliases: ["project search"], keywords: ["cmd-k s"] },
+  { id: "git.showChanges", fn: "git", title: "Show Git Changes", category: "Git", aliases: ["source control"], keywords: ["cmd-k g"] },
+  { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"], keywords: ["cmd-k w"] },
+  { id: "terminal.show", fn: "terminal", title: "Show Terminal", category: "View", aliases: ["shell"], keywords: ["cmd-k t"] },
+  { id: "problems.show", fn: "problems", title: "Show Problems", category: "View", aliases: ["diagnostics", "errors"] },
 
   // --- Tier 1: Editor ---
   { id: "editor.toggleComment", fn: "toggleComment", title: "Toggle Comment", category: "Editor" },
@@ -555,6 +566,9 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.action.showContextMenu", fn: "showContextMenu", title: "Show Context Menu", category: "Editor" },
 
   // --- Tier 4: List navigation ---
+  { id: "list.focusDown", fn: "listFocusNext", title: "List Focus Down", category: "List" },
+  { id: "list.focusUp", fn: "listFocusPrev", title: "List Focus Up", category: "List" },
+  { id: "list.open", fn: "listFocusActivate", title: "Open Focused List Item", category: "List" },
   { id: "list.focusPageUp", fn: "listFocusPageUp", title: "List Page Up", category: "List" },
   { id: "list.focusPageDown", fn: "listFocusPageDown", title: "List Page Down", category: "List" },
   { id: "list.focusFirst", fn: "listFocusFirst", title: "List First", category: "List" },

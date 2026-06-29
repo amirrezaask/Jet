@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 
 /*
@@ -35,18 +36,41 @@ body,
   margin: 0;
   background: var(--jet-bg);
   color: var(--jet-text);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+  letter-spacing: 0.01em;
   font-size: inherit;
 }
 
 .jet-mono-data {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: "Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace;
   font-variant-numeric: tabular-nums;
 }
 
 .jet-wordmark {
-  letter-spacing: 0.12em;
+  letter-spacing: 0.18em;
   font-weight: 600;
+}
+
+.jet-input {
+  outline: none;
+}
+
+.jet-input:focus-visible,
+.jet-list-item:focus-visible,
+[role="tab"]:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 1px solid var(--jet-focus-border);
+  outline-offset: -1px;
+}
+
+.jet-list-item {
+  border-left: 2px solid transparent;
+}
+
+.jet-list-item:focus-visible,
+.jet-list-item[data-selected="true"] {
+  border-left-color: var(--jet-accent);
 }
 
 [cmdk-root] [cmdk-item][aria-selected="true"],
@@ -54,4 +78,5 @@ body,
 [cmdk-item=""][aria-selected="true"],
 [cmdk-item=""][data-selected="true"] {
   background-color: var(--jet-hover) !important;
+  border-left: 2px solid var(--jet-accent);
 }
