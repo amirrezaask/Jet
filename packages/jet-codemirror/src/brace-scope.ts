@@ -54,12 +54,13 @@ function buildDecorations(view: EditorView, scopes: BraceScopeEntry[]) {
         deco.push(braceGuideMark.range(doc.line(ln + 1).from))
       }
     }
+    const line = doc.line(scope.closeLine + 1)
     deco.push(
       Decoration.widget({
         widget: new CloseBraceVirtualWidget(scope.label),
-        side: -1,
+        side: 1,
         marks: [closeBraceVirtualMark],
-      }).range(scope.closePos),
+      }).range(line.to),
     )
   }
   return Decoration.set(deco, true)

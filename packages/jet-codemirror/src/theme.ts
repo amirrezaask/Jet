@@ -88,8 +88,10 @@ export function jetThemeExtension(theme: JetTheme) {
         },
         ".cm-close-brace-virtual": {
           color: theme.colors.textMuted,
+          fontSize: "0.85em",
           pointerEvents: "none",
           userSelect: "none",
+          marginLeft: "0.5ch",
         },
         ".cm-brace-guide-line": {
           borderLeft: `1px solid ${theme.colors.border}`,
