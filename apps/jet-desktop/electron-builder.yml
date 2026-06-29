@@ -7,11 +7,15 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - package.json
+asar: true
+asarUnpack:
+  - "**/node-pty/**"
+npmRebuild: false
 mac:
   target:
-    - dmg
-    - zip
+    - dir
   category: public.app-category.developer-tools
+  identity: null
 win:
   target:
     - nsis

@@ -152,7 +152,7 @@ Use via `browser_cdp` → `Runtime.evaluate` with `awaitPromise: true` for async
 7. Edit + save (Mod-s via `browser_press_key` or `executeCommand("workspace.saveFile")`) — persists under `fixtures/sample-workspace/`
 8. Git tab — status visible (fixture is a git repo)
 9. Close dirty tab — confirm dialog (may need user handoff in MCP; note if blocked)
-10. Re-open workspace — layout restored from `localStorage` session (or default if none)
+10. Cold start with no workspace query — WelcomeView (no auto-reopen of last folder)
 11. Command palette — `executeCommand("ui.showCommandPalette")` → centered modal (not trapped in panel)
 12. New file / open file — editor tab lands in **right** main panel, not stacked below sidebar
 
@@ -370,7 +370,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 7. Git tab (if repo)
 8. Panel split **resize** — drag gutter between panels
 9. Tab reorder within panel; tab drag cross-panel/split — partial, usable
-10. Reload workspace — session layout restored from `localStorage` (or default on first open)
+10. Cold start — WelcomeView until user opens folder or CLI/query provides target (no session restore)
 
 ---
 
@@ -406,7 +406,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] Query-param bootstrap runs once; `openEditorTab` dedupes by URI
 - [x] Explorer tree expands root on workspace open
 - [x] Editor input stability — `executeCommand` ref, autofocus, no remount on layout change
-- [x] Session tree sanitize — `sanitizeKnownTabs()` wired on session restore
+- [x] Session tree sanitize — `sanitizeKnownTabs()` on `PanelTree.fromJSON` (legacy; session restore removed)
 - [x] **Shell:** tab drag/drop polish — same-panel edge-split, cross-panel insert index, `TabRegistry.setPanel` on drag
 - [x] **Shell:** dirty-tab close confirm — `tabClose`, `closeAllTabs`, `panelClose` (product); MCP `window.confirm` may need user handoff
 - [x] **Shell:** default row layout — sidebar left, main editor right (`workspaceLayout`)
@@ -416,7 +416,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **Remaining (Shell tier)**
 
-- [ ] **Shell:** tab drag/drop automated browser test (manual OK; smoke covers session only)
+- [ ] **Shell:** tab drag/drop automated browser test (manual OK)
 
 
 
@@ -456,7 +456,6 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] **Editor:** bracket matching + search panel theming
 - [x] **Editor:** Fleury-style indent guide columns (`@replit/codemirror-indentation-markers`)
 - [x] **Workspace:** project search tab (ripgrep) + result navigation
-- [x] **Workspace:** session layout persist — `localStorage` per workspace path (`session-storage.ts`)
 
 **Remaining**
 
@@ -538,7 +537,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | Terminal PTY                     | CLI     | —       | ✓          | ✓ Electron / stub web                  |
 | Full git panel                   | —       | —       | ✓          | stage/commit/branch ✓                  |
 | Brace guides / Fleury chrome     | —       | ✓       | ✓          | bracket match + indent markers ✓       |
-| Session layout persist           | —       | —       | ✓          | `localStorage` per workspace ✓         |
+| Session layout persist           | —       | —       | ✓          | removed (no localStorage restore)      |
 | LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Electron + rust-analyzer             |
 | Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | partial (no macros/kill ring)          |
 | Extension / custom layer         | C hooks | C++     | Rust setup | `.jet/editorrc.ts`                     |

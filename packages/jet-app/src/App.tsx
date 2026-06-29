@@ -36,13 +36,6 @@ import { PanelDock, CommandPalette, StatusBar, WelcomeView, bundledThemes, GotoL
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
-import {
-  loadWorkspaceSession,
-  loadLastWorkspace,
-  restoreWorkspaceSession,
-  saveLastWorkspace,
-  saveWorkspaceSession,
-} from "./session-storage.js"
 import { confirmCloseEditorTab } from "./tab-close.js"
 import {
   activeTabKind,
@@ -56,6 +49,25 @@ import { useFileDrop } from "./use-file-drop.js"
 
 const THEME_STORAGE_KEY = "jet-theme-id"
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
+const FONT_SIZE_STORAGE_KEY = "jet-font-size"
+const DEFAULT_FONT_SIZE = 13
+const FONT_SIZE_STEP = 2
+
+function loadStoredFontSize(): number {
+  try {
+    const raw = localStorage.getItem(FONT_SIZE_STORAGE_KEY)
+    if (!raw) return DEFAULT_FONT_SIZE
+    const n = parseFloat(raw)
+    if (!Number.isFinite(n) || n <= 0) return DEFAULT_FONT_SIZE
+    return n
+  } catch {
+    return DEFAULT_FONT_SIZE
+  }
+}
+
+function applyRootFontSize(px: number): void {
+  document.documentElement.style.fontSize = `${px}px`
+}
 
 const isWebMode = Boolean(import.meta.env.VITE_JET_WEB)
 const hasWorkspaceQuery =
@@ -124,6 +136,7 @@ export function JetApp() {
   const [lspCrashed, setLspCrashed] = useState(false)
   const [fileDragOver, setFileDragOver] = useState(false)
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
+  const fontSizeRef = useRef(loadStoredFontSize())
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
@@ -267,6 +280,10 @@ export function JetApp() {
   }, [activeTheme])
 
   useEffect(() => {
+    applyRootFontSize(fontSizeRef.current)
+  }, [])
+
+  useEffect(() => {
     if (initialized.current) return
     initialized.current = true
     setLayoutReady(true)
@@ -280,11 +297,15 @@ export function JetApp() {
   useEffect(() => {
     if (!window.jet?.workspace) return
     const unsubIndex = window.jet.workspace.onFileIndex((rootUri, files) => {
-      if (workspace.root?.uri !== rootUri) return
-      setFileIndex(files)
+      const current = workspace.root?.uri
+      if (!current) return
+      if (normalizeAbsPath(fileUriToPath(current)) !== normalizeAbsPath(fileUriToPath(rootUri))) return
+      if (files.length > 0) setFileIndex(files)
     })
     const unsubBranch = window.jet.workspace.onGitBranch((rootUri, branch) => {
-      if (workspace.root?.uri !== rootUri) return
+      const current = workspace.root?.uri
+      if (!current) return
+      if (normalizeAbsPath(fileUriToPath(current)) !== normalizeAbsPath(fileUriToPath(rootUri))) return
       setGitBranch(branch)
     })
     return () => {
@@ -346,7 +367,6 @@ export function JetApp() {
       const gen = ++workspaceInitGen.current
 
       void workspace.openWorkspace(folderPath)
-      saveLastWorkspace(folderPath)
       workspaceRootPathRef.current = folderPath
 
       workspace.tabRegistry.clear()
@@ -356,7 +376,7 @@ export function JetApp() {
       searchTabRef.current = null
       problemsTabRef.current = null
 
-      // Instant shell — editor-only layout; session restore runs after first paint.
+      // Instant shell — editor-only layout.
       const { tree, editorPanel } = PanelTree.editorOnlyLayout()
       editorPanelRef.current = editorPanel
       setPanelTree(tree)
@@ -368,31 +388,16 @@ export function JetApp() {
       const finishOpen = () => {
         if (workspaceInitGen.current !== gen) return
 
-        const session = loadWorkspaceSession(folderPath)
-        if (session) {
-          const restored = restoreWorkspaceSession(session, workspace)
-          editorPanelRef.current = restored.editorPanel
-          explorerTabRef.current = null
-          gitTabRef.current = null
-          terminalTabRef.current = null
-          searchTabRef.current = null
-          problemsTabRef.current = null
-          setPanelTree(restored.tree)
-          setFocusedPanel(restored.focusedPanel ?? restored.editorPanel)
-          bumpLspRevision()
-        }
-
         const rootUri = workspace.root?.uri
         if (!rootUri) return
 
         if (window.jet?.workspace) {
           void window.jet.workspace.activate(rootUri)
-          return
         }
 
         void (async () => {
           if (workspaceInitGen.current !== gen) return
-          if (window.jet?.git) {
+          if (!window.jet?.workspace && window.jet?.git) {
             try {
               const repo = await window.jet.git.isRepo(rootUri)
               if (workspaceInitGen.current !== gen) return
@@ -421,7 +426,7 @@ export function JetApp() {
 
       setTimeout(finishOpen, 0)
     },
-    [workspace, bumpLspRevision],
+    [workspace],
   )
 
   openWorkspaceRef.current = openWorkspaceFolder
@@ -618,31 +623,12 @@ export function JetApp() {
   )
 
   const handleZoom = useCallback((delta: number) => {
-    const root = document.documentElement
-    const cur = parseFloat(getComputedStyle(root).fontSize)
-    const next = Math.max(9, Math.min(28, cur + delta * 2))
-    root.style.fontSize = `${next}px`
+    const next = fontSizeRef.current + delta * FONT_SIZE_STEP
+    if (next <= 0) return
+    fontSizeRef.current = next
+    applyRootFontSize(next)
+    localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(next))
   }, [])
-
-  const flushWorkspaceSession = useCallback(() => {
-    const root = workspace.root
-    if (!root) return
-    const { panelTree, focusedPanel } = appStateRef.current
-    saveWorkspaceSession(
-      root.path,
-      panelTree,
-      workspace,
-      editorPanelRef.current,
-      focusedPanel,
-      {
-        explorer: explorerTabRef.current?.id,
-        git: gitTabRef.current?.id,
-        terminal: terminalTabRef.current?.id,
-        search: searchTabRef.current?.id,
-        problems: problemsTabRef.current?.id,
-      },
-    )
-  }, [workspace])
 
   const handleLspAttachFailed = useCallback(
     (fileUri: string) => {
@@ -675,7 +661,6 @@ export function JetApp() {
         gitTabRef,
         terminalTabRef,
         editorPanelRef,
-        flushWorkspaceSession,
         isWebMode,
         setZoomLevel: handleZoom,
         handlePanelNavigation,
@@ -691,7 +676,6 @@ export function JetApp() {
       showSingletonViewTab,
       handleZoom,
       handlePanelNavigation,
-      flushWorkspaceSession,
     ],
   )
 
@@ -800,27 +784,6 @@ export function JetApp() {
     if (activeTabKindName !== "editor") setEditorCursor(null)
   }, [activeTabKindName])
 
-  useEffect(() => {
-    if (!workspace.root) return
-    const id = window.setTimeout(() => {
-      saveWorkspaceSession(
-        workspace.root!.path,
-        panelTree,
-        workspace,
-        editorPanelRef.current,
-        focusedPanel,
-        {
-          explorer: explorerTabRef.current?.id,
-          git: gitTabRef.current?.id,
-          terminal: terminalTabRef.current?.id,
-          search: searchTabRef.current?.id,
-          problems: problemsTabRef.current?.id,
-        },
-      )
-    }, 400)
-    return () => window.clearTimeout(id)
-  }, [workspace, panelTree, focusedPanel, sessionRev])
-
   const loadedInitFor = useRef<string | null>(null)
   const workspaceInitCtxRef = useRef({
     appCommands,
@@ -914,16 +877,6 @@ export function JetApp() {
       queueMicrotask(() => setBootstrapping(false))
     }
 
-    const restoreLastWorkspace = () => {
-      if (queryBootstrapDone.current) return
-      const last = loadLastWorkspace()
-      if (!last) return
-      queryBootstrapDone.current = true
-      setBootstrapping(true)
-      openWorkspaceRef.current(last)
-      queueMicrotask(() => setBootstrapping(false))
-    }
-
     if (isWebMode && hasWorkspaceQuery) {
       queryBootstrapDone.current = true
       setBootstrapping(true)
@@ -940,7 +893,6 @@ export function JetApp() {
     if (!isWebMode && window.jet?.getLaunchConfig) {
       void window.jet.getLaunchConfig().then(cfg => {
         if (cfg) finishBootstrap(cfg)
-        else restoreLastWorkspace()
       })
     }
   }, [layoutReady])

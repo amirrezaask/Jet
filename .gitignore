@@ -4,6 +4,7 @@ dist
 *.log
 .DS_Store
 apps/jet-desktop/dist-electron
+apps/jet-desktop/release
 packages/jet-app/dist-electron
 .4coder
 .vscode

@@ -1,23 +1,24 @@
 {
-  "name": "jet",
-  "private": true,
-  "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev --filter=jet-desktop",
-    "dev:web": "turbo run dev --filter=jet-web",
-    "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
-    "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test",
-    "test:web": "playwright test",
-    "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
-    "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
-    "postinstall": "pnpm rebuild electron"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.52.0",
-    "tsx": "^4.19.4",
-    "turbo": "^2.5.4",
-    "typescript": "^5.8.3"
-  },
-  "packageManager": "pnpm@9.15.0"
+ "name": "jet",
+ "private": true,
+ "scripts": {
+  "build": "turbo run build",
+  "dev": "turbo run dev --filter=jet-desktop",
+  "dev:web": "turbo run dev --filter=jet-web",
+  "typecheck": "turbo run typecheck",
+  "lint": "turbo run lint",
+  "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test",
+  "test:web": "playwright test",
+  "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
+  "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
+  "release": "pnpm --filter jet-desktop release && cp -r ./apps/jet-desktop/release/mac-arm64/Jet.app ~/Applications/",
+  "postinstall": "pnpm rebuild electron"
+ },
+ "devDependencies": {
+  "@playwright/test": "^1.52.0",
+  "tsx": "^4.19.4",
+  "turbo": "^2.5.4",
+  "typescript": "^5.8.3"
+ },
+ "packageManager": "pnpm@9.15.0"
 }

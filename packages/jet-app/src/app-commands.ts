@@ -70,7 +70,6 @@ export type BuildAppCommandsDeps = {
   gitTabRef: { current: TabId | null }
   terminalTabRef: { current: TabId | null }
   editorPanelRef: { current: PanelId | null }
-  flushWorkspaceSession: () => void
   isWebMode: boolean
   setZoomLevel: (delta: number) => void
   handlePanelNavigation: (action: string) => void
@@ -150,12 +149,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         const uri = pathToFileUri(savePath)
         await deps.workspace.writeFile(uri, content)
         deps.workspace.promoteUntitledTab(tabId, uri, savePath)
-        deps.flushWorkspaceSession()
         deps.setMessage(`Saved ${basename(savePath)}`)
         return
       }
       await deps.workspace.writeFile(kind.fileUri, content)
-      deps.flushWorkspaceSession()
       deps.setMessage("Saved")
     },
     newFile: () => {

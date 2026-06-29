@@ -7,7 +7,7 @@ export function bootstrapFromLaunch(
   config: LaunchConfig | null,
 ): void {
   if (!config) return
-  // Paint shell before folder open + session restore (VS Code pattern).
+  // Paint shell before folder open (VS Code pattern).
   requestAnimationFrame(() => {
     openWorkspace(config.workspacePath)
     if (config.filePath) {
