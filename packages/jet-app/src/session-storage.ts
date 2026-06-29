@@ -4,6 +4,23 @@ import { fileUriToPath, isUntitledUri } from "@jet/shared"
 import type { TabKind, TabMeta, WorkspaceService } from "@jet/workspace"
 
 const SESSION_PREFIX = "jet-session:"
+const LAST_WORKSPACE_KEY = "jet-last-workspace"
+
+export function saveLastWorkspace(folderPath: string): void {
+  try {
+    localStorage.setItem(LAST_WORKSPACE_KEY, folderPath)
+  } catch {
+    /* quota */
+  }
+}
+
+export function loadLastWorkspace(): string | null {
+  try {
+    return localStorage.getItem(LAST_WORKSPACE_KEY)
+  } catch {
+    return null
+  }
+}
 
 function isEditorKind(kind: TabKind): boolean {
   return kind.kind === "editor"
@@ -100,14 +117,18 @@ export function restoreWorkspaceSession(
     const tabId: TabId = { id: entry.tabId }
     const panelId: PanelId | undefined =
       entry.panelId != null ? { id: entry.panelId } : tree.findPanelForTab(tabId) ?? undefined
-    workspace.tabRegistry.set(tabId, entry.kind, entry.meta, panelId)
+    workspace.tabRegistry.set(
+      tabId,
+      entry.kind,
+      { ...entry.meta, dirty: false },
+      panelId,
+    )
 
     if (entry.kind.kind === "editor" && !isUntitledUri(entry.kind.fileUri)) {
       const path = fileUriToPath(entry.kind.fileUri)
       if (!workspace.fileForUri(entry.kind.fileUri)) {
         workspace.createWorkspaceFile(entry.kind.fileUri, path)
       }
-      if (entry.meta.dirty) workspace.markDirty(entry.kind.fileUri, true)
     }
   }
 

@@ -3,6 +3,7 @@ import { Command as CommandPrimitive } from "cmdk"
 import { ChevronRight, File, Folder, FolderUp } from "lucide-react"
 import { pathToFileUri } from "@jet/shared"
 import type { WorkspaceEntry, WorkspaceService } from "@jet/workspace"
+import { JetCmdkItem } from "./JetCmdkItem.js"
 import { JetOverlay } from "./JetOverlay.js"
 
 function parentRelDir(rel: string): string {
@@ -32,6 +33,7 @@ export function OpenFileOverlay({
   const [query, setQuery] = useState("")
   const [entries, setEntries] = useState<WorkspaceEntry[]>([])
   const [loading, setLoading] = useState(false)
+  const [selectedValue, setSelectedValue] = useState("")
 
   useEffect(() => {
     if (!open) {
@@ -96,6 +98,27 @@ export function OpenFileOverlay({
     return entries.filter(e => e.name.toLowerCase().includes(q))
   }, [entries, query])
 
+  const selectableValues = useMemo(() => {
+    const values: string[] = []
+    if (currentRelDir) values.push("__parent__")
+    values.push(...filtered.map(e => e.uri))
+    return values
+  }, [currentRelDir, filtered])
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedValue("")
+      return
+    }
+    if (selectableValues.length === 0) {
+      setSelectedValue("")
+      return
+    }
+    if (!selectableValues.includes(selectedValue)) {
+      setSelectedValue(selectableValues[0]!)
+    }
+  }, [open, selectableValues, selectedValue])
+
   const pathLabel = root
     ? [root.name, ...currentRelDir.split("/").filter(Boolean)].join(" / ")
     : ""
@@ -123,6 +146,8 @@ export function OpenFileOverlay({
       <CommandPrimitive
         className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl"
         shouldFilter={false}
+        value={selectedValue}
+        onValueChange={setSelectedValue}
       >
         <div className="border-b border-[var(--jet-border)] px-3 py-1.5 text-xs text-[var(--jet-text-muted)]">
           {pathLabel}
@@ -149,21 +174,21 @@ export function OpenFileOverlay({
                 No matching files.
               </CommandPrimitive.Empty>
               {currentRelDir ? (
-                <CommandPrimitive.Item
+                <JetCmdkItem
                   value="__parent__"
                   onSelect={() => handleSelect("__parent__")}
-                  className="flex cursor-pointer items-center gap-2 rounded-sm px-3 py-2 text-sm aria-selected:bg-[var(--jet-hover)]"
+                  className="flex items-center gap-2"
                 >
                   <FolderUp className="size-3.5 shrink-0 text-[var(--jet-text-muted)]" />
                   <span>..</span>
-                </CommandPrimitive.Item>
+                </JetCmdkItem>
               ) : null}
               {filtered.map(entry => (
-                <CommandPrimitive.Item
+                <JetCmdkItem
                   key={entry.uri}
                   value={entry.uri}
                   onSelect={() => handleSelect(entry.uri)}
-                  className="flex cursor-pointer items-center gap-2 rounded-sm px-3 py-2 text-sm aria-selected:bg-[var(--jet-hover)]"
+                  className="flex items-center gap-2"
                 >
                   {entry.isDirectory ? (
                     <>
@@ -177,7 +202,7 @@ export function OpenFileOverlay({
                       <span className="truncate">{entry.name}</span>
                     </>
                   )}
-                </CommandPrimitive.Item>
+                </JetCmdkItem>
               ))}
             </>
           )}

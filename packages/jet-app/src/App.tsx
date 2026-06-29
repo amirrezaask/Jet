@@ -34,7 +34,9 @@ import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import {
   loadWorkspaceSession,
+  loadLastWorkspace,
   restoreWorkspaceSession,
+  saveLastWorkspace,
   saveWorkspaceSession,
 } from "./session-storage.js"
 import { confirmCloseEditorTab } from "./tab-close.js"
@@ -114,6 +116,7 @@ export function JetApp() {
   const searchTabRef = useRef<TabId | null>(null)
   const problemsTabRef = useRef<TabId | null>(null)
   const workspaceInitGen = useRef(0)
+  const workspaceRootPathRef = useRef<string | null>(null)
 
   const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
   const commands = useMemo(() => new CommandRegistry(), [])
@@ -198,9 +201,16 @@ export function JetApp() {
       const path = fileUriToPath(fileUri)
       const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
       const conn = await lspManager.ensureServerForFile(file, workspace.root.uri)
-      if (conn) bumpLspRevision()
+      if (!conn) {
+        const spawnErr = lspManager.consumeLastSpawnError()
+        if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
+          setMessage(
+            `Language server unavailable for ${file.name} — is ${file.languageId === "rust" ? "rust-analyzer" : "typescript-language-server"} on PATH?`,
+          )
+        }
+      }
     },
-    [lspManager, workspace, bumpLspRevision],
+    [lspManager, workspace],
   )
 
   const lspStatus = useMemo((): "connected" | "off" | "unavailable" => {
@@ -304,6 +314,8 @@ export function JetApp() {
       const gen = ++workspaceInitGen.current
 
       void workspace.openWorkspace(folderPath)
+      saveLastWorkspace(folderPath)
+      workspaceRootPathRef.current = folderPath
 
       workspace.tabRegistry.clear()
       explorerTabRef.current = null
@@ -335,6 +347,7 @@ export function JetApp() {
           problemsTabRef.current = null
           setPanelTree(restored.tree)
           setFocusedPanel(restored.focusedPanel ?? restored.editorPanel)
+          bumpLspRevision()
         }
 
         const rootUri = workspace.root?.uri
@@ -376,7 +389,7 @@ export function JetApp() {
 
       setTimeout(finishOpen, 0)
     },
-    [workspace],
+    [workspace, bumpLspRevision],
   )
 
   openWorkspaceRef.current = openWorkspaceFolder
@@ -396,6 +409,10 @@ export function JetApp() {
           return
         case "tabClose": {
           if (!confirmCloseEditorTab(workspace, event.tabId)) return
+          const kind = workspace.tabRegistry.get(event.tabId)
+          if (kind?.kind === "editor") {
+            workspace.clearDirtyState(kind.fileUri)
+          }
           workspace.tabRegistry.delete(event.tabId)
           tree.removeTab(event.tabId)
           break
@@ -501,10 +518,35 @@ export function JetApp() {
 
   const handleZoom = useCallback((delta: number) => {
     const root = document.documentElement
-    const cur = parseFloat(root.style.fontSize) || 14
+    const cur = parseFloat(getComputedStyle(root).fontSize)
     const next = Math.max(9, Math.min(28, cur + delta * 2))
     root.style.fontSize = `${next}px`
   }, [])
+
+  const flushWorkspaceSession = useCallback(() => {
+    if (!workspace.root) return
+    saveWorkspaceSession(
+      workspace.root.path,
+      panelTree,
+      workspace,
+      editorPanelRef.current,
+      focusedPanel,
+      {
+        explorer: explorerTabRef.current?.id,
+        git: gitTabRef.current?.id,
+        terminal: terminalTabRef.current?.id,
+        search: searchTabRef.current?.id,
+        problems: problemsTabRef.current?.id,
+      },
+    )
+  }, [workspace, panelTree, focusedPanel])
+
+  const handleLspAttachFailed = useCallback(
+    (fileUri: string) => {
+      void ensureLspForFile(fileUri)
+    },
+    [ensureLspForFile],
+  )
 
   const appCommands = useMemo(
     () =>
@@ -530,6 +572,7 @@ export function JetApp() {
         gitTabRef,
         terminalTabRef,
         editorPanelRef,
+        flushWorkspaceSession,
         isWebMode,
         setZoomLevel: handleZoom,
         handlePanelNavigation,
@@ -549,6 +592,7 @@ export function JetApp() {
       handleZoom,
       handlePanelNavigation,
       activeTabKindName,
+      flushWorkspaceSession,
     ],
   )
 
@@ -743,6 +787,16 @@ export function JetApp() {
       queueMicrotask(() => setBootstrapping(false))
     }
 
+    const restoreLastWorkspace = () => {
+      if (queryBootstrapDone.current) return
+      const last = loadLastWorkspace()
+      if (!last) return
+      queryBootstrapDone.current = true
+      setBootstrapping(true)
+      openWorkspaceRef.current(last)
+      queueMicrotask(() => setBootstrapping(false))
+    }
+
     if (isWebMode && hasWorkspaceQuery) {
       queryBootstrapDone.current = true
       setBootstrapping(true)
@@ -757,14 +811,28 @@ export function JetApp() {
     }
 
     if (!isWebMode && window.jet?.getLaunchConfig) {
-      void window.jet.getLaunchConfig().then(finishBootstrap)
+      void window.jet.getLaunchConfig().then(cfg => {
+        if (cfg) finishBootstrap(cfg)
+        else restoreLastWorkspace()
+      })
     }
   }, [layoutReady])
 
   useEffect(() => {
     if (!window.jet?.onLaunch) return
     return window.jet.onLaunch(config => {
+      if (!config) return
       const openFile = (uri: string, path: string) => handleOpenFileRef.current(uri, path)
+      const next = normalizeAbsPath(config.workspacePath)
+      const current = workspaceRootPathRef.current
+        ? normalizeAbsPath(workspaceRootPathRef.current)
+        : null
+      if (current === next) {
+        if (config.filePath) {
+          openFile(pathToFileUri(config.filePath), config.filePath)
+        }
+        return
+      }
       if (!queryBootstrapDone.current) {
         queryBootstrapDone.current = true
         setBootstrapping(true)
@@ -922,45 +990,6 @@ export function JetApp() {
 
   return (
     <div className="flex h-full flex-col bg-[var(--jet-bg)] text-[var(--jet-text)]">
-      <header className="flex h-8 shrink-0 items-center border-b border-[var(--jet-border)] bg-[var(--jet-panel)] px-3 text-xs">
-        <span className="jet-wordmark text-[var(--jet-accent)]">JET</span>
-        <span className="ml-3 text-[var(--jet-text-muted)]">
-          {bootstrapping
-            ? "Opening workspace…"
-            : (workspace.root?.name ?? "No folder open")}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
-            onClick={() => void executeCommand("workspace.cd")}
-          >
-            Change folder
-          </button>
-          <button
-            type="button"
-            className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
-            onClick={() => executeCommand("workspace.openFolder")}
-          >
-            Open Folder
-          </button>
-          <button
-            type="button"
-            className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
-            onClick={() => setQuickOpenOpen(true)}
-          >
-            Go to file <span className="jet-mono-data ml-1 text-[var(--jet-text-muted)]">⌘P</span>
-          </button>
-          <button
-            type="button"
-            className="rounded px-2 py-0.5 hover:bg-[var(--jet-hover)]"
-            onClick={() => setPaletteOpen(true)}
-          >
-            Commands <span className="jet-mono-data ml-1 text-[var(--jet-text-muted)]">⌘⇧P</span>
-          </button>
-        </div>
-      </header>
-
       <main className="min-h-0 flex-1">
         {workspace.root || bootstrapping ? (
           <PanelDock
@@ -987,6 +1016,7 @@ export function JetApp() {
           tabMetaRev={tabMetaRev}
           onEditorFocusChange={handleEditorFocusChange}
             onEditorSelectionChange={handleEditorSelectionChange}
+            onLspAttachFailed={handleLspAttachFailed}
             onGitError={msg => setMessage(msg)}
           />
         ) : (

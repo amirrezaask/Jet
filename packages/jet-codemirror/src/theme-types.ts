@@ -76,7 +76,7 @@ export const defaultJetTheme: JetTheme = {
     boolean: "#f0a858",
     comment: "#8a8680",
     operator: "#c8c4bc",
-    variable: "#d6d4d0",
+    variable: "#c8c4bc",
     attribute: "#e8c060",
     constant: "#e8eeb8",
     field: "#f0e4c8",

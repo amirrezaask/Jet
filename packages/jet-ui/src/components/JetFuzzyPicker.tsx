@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { Command as CommandPrimitive } from "cmdk"
+import { JetCmdkItem } from "./JetCmdkItem.js"
 import { JetOverlay } from "./JetOverlay.js"
 
 export type JetFuzzyPickerItem = {
@@ -34,18 +35,34 @@ export function JetFuzzyPicker({
   onQueryChange?: (query: string) => void
 }) {
   const [internalQuery, setInternalQuery] = useState("")
+  const [selectedValue, setSelectedValue] = useState("")
   const query = controlledQuery ?? internalQuery
   const setQuery = onQueryChange ?? setInternalQuery
 
   useEffect(() => {
-    if (!open) setQuery("")
+    if (!open) {
+      setQuery("")
+      setSelectedValue("")
+    }
   }, [open, setQuery])
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setSelectedValue("")
+      return
+    }
+    if (!items.some(item => item.value === selectedValue)) {
+      setSelectedValue(items[0]!.value)
+    }
+  }, [items, selectedValue])
 
   return (
     <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel={ariaLabel} maxWidth={maxWidth}>
       <CommandPrimitive
         className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl"
         shouldFilter={shouldFilter}
+        value={selectedValue}
+        onValueChange={setSelectedValue}
       >
         <CommandPrimitive.Input
           placeholder={placeholder}
@@ -59,17 +76,16 @@ export function JetFuzzyPicker({
             {emptyMessage}
           </CommandPrimitive.Empty>
           {items.map(item => (
-            <CommandPrimitive.Item
+            <JetCmdkItem
               key={item.value}
               value={item.value}
               onSelect={() => {
                 item.onSelect()
                 onOpenChange(false)
               }}
-              className="cursor-pointer rounded-sm px-3 py-2 text-sm aria-selected:bg-[var(--jet-hover)]"
             >
               {item.label}
-            </CommandPrimitive.Item>
+            </JetCmdkItem>
           ))}
         </CommandPrimitive.List>
       </CommandPrimitive>

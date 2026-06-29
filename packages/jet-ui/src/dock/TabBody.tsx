@@ -39,6 +39,7 @@ function TabBodyInner({
   keymapContext,
   onEditorFocusChange,
   onEditorSelectionChange,
+  onLspAttachFailed,
   onGitError,
   autoFocus = false,
 }: {
@@ -61,6 +62,7 @@ function TabBodyInner({
   keymapContext?: KeymapContext
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
+  onLspAttachFailed?: (fileUri: string) => void
   onGitError?: (message: string) => void
   autoFocus?: boolean
 }) {
@@ -93,6 +95,7 @@ function TabBodyInner({
           keymapContext={keymapContext}
           onEditorFocusChange={onEditorFocusChange}
           onEditorSelectionChange={onEditorSelectionChange}
+          onLspAttachFailed={onLspAttachFailed}
           autoFocus={autoFocus}
         />
       )

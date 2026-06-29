@@ -35,3 +35,4 @@ export {
   type OutlineSymbol,
 } from "./lsp-editor-commands.js"
 export { braceScopeExtension } from "./brace-scope.js"
+export { jetReloadAnnotation } from "./reload-annotation.js"

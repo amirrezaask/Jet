@@ -70,6 +70,7 @@ export type BuildAppCommandsDeps = {
   gitTabRef: { current: TabId | null }
   terminalTabRef: { current: TabId | null }
   editorPanelRef: { current: PanelId | null }
+  flushWorkspaceSession: () => void
   isWebMode: boolean
   setZoomLevel: (delta: number) => void
   handlePanelNavigation: (action: string) => void
@@ -147,10 +148,12 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         const uri = pathToFileUri(savePath)
         await deps.workspace.writeFile(uri, content)
         deps.workspace.promoteUntitledTab(tabId, uri, savePath)
+        deps.flushWorkspaceSession()
         deps.setMessage(`Saved ${basename(savePath)}`)
         return
       }
       await deps.workspace.writeFile(kind.fileUri, content)
+      deps.flushWorkspaceSession()
       deps.setMessage("Saved")
     },
     newFile: () => {
@@ -432,11 +435,13 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         ctx.ui.showMessage("No active editor")
         return
       }
-      if (!lspPluginForView(view)) {
-        ctx.ui.showMessage("LSP not connected for this file")
-        return
+      if (!runTriggerSuggest(view)) {
+        ctx.ui.showMessage(
+          lspPluginForView(view)
+            ? "Suggest not available at cursor"
+            : "No suggestions available — is the language server connected?",
+        )
       }
-      if (!runTriggerSuggest(view)) ctx.ui.showMessage("Suggest not available at cursor")
     },
     showHover: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null

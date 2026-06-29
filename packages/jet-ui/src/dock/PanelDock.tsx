@@ -39,6 +39,7 @@ export type PanelDockProps = {
   tabMetaRev: number
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
+  onLspAttachFailed?: (fileUri: string) => void
   onGitError?: (message: string) => void
 }
 
@@ -249,6 +250,7 @@ export function PanelDockInner(props: PanelDockProps) {
                     keymapContext={props.keymapContext}
                     onEditorFocusChange={props.onEditorFocusChange}
                     onEditorSelectionChange={props.onEditorSelectionChange}
+                    onLspAttachFailed={props.onLspAttachFailed}
                     onGitError={props.onGitError}
                     autoFocus={autoFocusEditor}
                   />

@@ -20,7 +20,7 @@ export function CommandPalette({
       maxWidth="32rem"
       maxListHeight="18rem"
       items={commands.map(cmd => ({
-        value: `${cmd.title} ${cmd.category ?? ""}`,
+        value: `${cmd.id} ${cmd.title}`,
         label: (
           <span className="flex w-full items-center justify-between gap-3">
             <span className="min-w-0 truncate">

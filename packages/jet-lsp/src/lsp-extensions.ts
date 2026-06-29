@@ -1,6 +1,4 @@
-import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
-import { Prec } from "@codemirror/state"
-import { keymap } from "@codemirror/view"
+import { EditorState } from "@codemirror/state"
 import {
   hoverTooltips,
   serverCompletionSource,
@@ -8,16 +6,10 @@ import {
   signatureHelp,
 } from "@codemirror/lsp-client"
 
-/** LSP client extensions — completion keymap at Prec.highest; Jet KeymapService mirrors Ctrl-Space. */
+/** LSP client extensions — merges server completions with language-pack sources. */
 export function jetLanguageServerExtensions() {
   return [
-    autocompletion({
-      override: [serverCompletionSource],
-      activateOnTyping: true,
-      defaultKeymap: true,
-      interactionDelay: 0,
-    }),
-    Prec.highest(keymap.of(completionKeymap)),
+    EditorState.languageData.of(() => [{ autocomplete: serverCompletionSource }]),
     hoverTooltips(),
     signatureHelp({ keymap: false }),
     serverDiagnostics(),

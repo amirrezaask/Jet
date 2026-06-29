@@ -44,3 +44,10 @@ body,
   letter-spacing: 0.12em;
   font-weight: 600;
 }
+
+[cmdk-root] [cmdk-item][aria-selected="true"],
+[cmdk-root] [cmdk-item][data-selected="true"],
+[cmdk-item=""][aria-selected="true"],
+[cmdk-item=""][data-selected="true"] {
+  background-color: var(--jet-hover) !important;
+}

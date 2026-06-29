@@ -6,10 +6,12 @@ import {
   historyKeymap,
   indentWithTab,
 } from "@codemirror/commands"
+import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { bracketMatching, indentOnInput } from "@codemirror/language"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { LSPClient, jumpToDefinition } from "@codemirror/lsp-client"
+import { lspLanguageIdFromJet } from "@jet/shared"
 import type { WorkspaceFile } from "@jet/workspace"
 import type { WorkspaceService } from "@jet/workspace"
 import type { JetKeyBinding } from "@jet/workspace"
@@ -22,9 +24,11 @@ import { multiCursorExtensions } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
 import { braceScopeExtension } from "./brace-scope.js"
 import { perfMeasure } from "./perf-instrumentation.js"
+import { jetReloadAnnotation } from "./reload-annotation.js"
 
 export const userKeymapCompartment = new Compartment()
 export const languageCompartment = new Compartment()
+export const completionCompartment = new Compartment()
 export const lspCompartment = new Compartment()
 export const extensionCompartment = new Compartment()
 
@@ -57,11 +61,14 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
 
   const extensions: Extension[] = [
     lineNumbers(),
-    drawSelection(),
     history(),
     indentOnInput(),
     bracketMatching(),
   ]
+
+  if (largeFile) {
+    extensions.push(drawSelection())
+  }
 
   if (!largeFile) {
     extensions.push(
@@ -103,7 +110,13 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   }
 
   extensions.push(
-    keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
+    keymap.of([
+      ...searchKeymap,
+      ...completionKeymap,
+      ...defaultKeymap,
+      ...historyKeymap,
+      indentWithTab,
+    ]),
     jetThemeExtension(theme),
   )
 
@@ -113,12 +126,22 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
 
   extensions.push(
     languageCompartment.of(await loadLanguage(opts.file.languageId)),
+    completionCompartment.of(
+      autocompletion({
+        activateOnTyping: true,
+        interactionDelay: 75,
+        defaultKeymap: false,
+      }),
+    ),
     userKeymapCompartment.of([]),
     lspCompartment.of([]),
     extensionCompartment.of(opts.userExtensions ?? []),
     EditorView.updateListener.of(update => {
       if (update.docChanged) {
-        opts.workspace.markDirty(opts.file.uri, true)
+        const isReload = update.transactions.some(tr => tr.annotation(jetReloadAnnotation))
+        if (!isReload) {
+          opts.workspace.syncDirtyFromDoc(opts.file.uri, update.state.doc.toString())
+        }
       }
       if (update.selectionSet && opts.onSelectionChange) {
         const pos = update.state.selection.main.head
@@ -137,6 +160,8 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     attachLsp(view, opts.file.uri, opts.file.languageId, opts.lspClient).catch(console.error)
   }
 
+  opts.workspace.setSavedBaseline(opts.file.uri, opts.initialText)
+
   opts.onViewCreated?.(view)
   if (opts.onSelectionChange) {
     const pos = view.state.selection.main.head
@@ -153,8 +178,9 @@ async function attachLsp(
   client: LSPClient,
 ): Promise<void> {
   await client.initializing
+  const lspLanguageId = lspLanguageIdFromJet(languageId)
   view.dispatch({
-    effects: lspCompartment.reconfigure(client.plugin(uri, languageId)),
+    effects: lspCompartment.reconfigure(client.plugin(uri, lspLanguageId)),
   })
 }
 

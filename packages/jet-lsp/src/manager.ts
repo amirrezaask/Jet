@@ -21,7 +21,7 @@ export type LspConnection = {
 const DESCRIPTORS: LanguageServerDescriptor[] = [
   {
     id: "typescript-language-server",
-    languageIds: ["typescript", "javascript"],
+    languageIds: ["typescript", "javascript", "tsx", "jsx", "mts", "cts"],
     command: "typescript-language-server",
     args: ["--stdio"],
     rootMarkers: ["package.json", "tsconfig.json"],
@@ -37,6 +37,7 @@ const DESCRIPTORS: LanguageServerDescriptor[] = [
 
 export class LanguageServerManager {
   private connections = new Map<string, LspConnection>()
+  private lastSpawnError: string | null = null
   readonly onDiagnostics = new Emitter<unknown>()
 
   constructor(
@@ -90,10 +91,23 @@ export class LanguageServerManager {
         descriptorId: descriptor.id,
       }
       this.connections.set(key, connection)
+      this.lastSpawnError = null
       return connection
-    } catch {
+    } catch (err) {
+      this.lastSpawnError =
+        err instanceof Error ? err.message : "Language server failed to start"
       return null
     }
+  }
+
+  isLanguageSupported(languageId: string): boolean {
+    return this.descriptorForLanguage(languageId) != null
+  }
+
+  consumeLastSpawnError(): string | null {
+    const err = this.lastSpawnError
+    this.lastSpawnError = null
+    return err
   }
 
   getConnection(languageId: string, rootUri: string): LspConnection | null {

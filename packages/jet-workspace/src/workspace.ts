@@ -70,6 +70,8 @@ export class TabRegistry {
 export class WorkspaceService {
   root: WorkspaceRoot | null = null
   private files = new Map<string, WorkspaceFile>()
+  private savedBaseline = new Map<string, string>()
+  private recentWrites = new Map<string, number>()
   private untitledCounter = 1
   readonly tabRegistry = new TabRegistry()
   readonly onDidOpenFile = new Emitter<WorkspaceFile>()
@@ -82,6 +84,9 @@ export class WorkspaceService {
   async openWorkspace(folderPath: string): Promise<void> {
     const uri = pathToFileUri(folderPath)
     this.root = { uri, path: folderPath, name: basename(folderPath) }
+    this.files.clear()
+    this.savedBaseline.clear()
+    this.recentWrites.clear()
     this.onDidOpenWorkspace.fire(this.root)
   }
 
@@ -107,20 +112,48 @@ export class WorkspaceService {
     }
   }
 
+  setSavedBaseline(uri: string, content: string): void {
+    this.savedBaseline.set(uri, content)
+    this.syncDirtyFromDoc(uri, content)
+  }
+
+  syncDirtyFromDoc(uri: string, content: string): void {
+    if (!this.savedBaseline.has(uri)) return
+    const baseline = this.savedBaseline.get(uri)!
+    this.markDirty(uri, content !== baseline)
+  }
+
+  private isRecentlyWritten(uri: string, ttlMs = 2500): boolean {
+    const wroteAt = this.recentWrites.get(uri)
+    if (wroteAt == null) return false
+    if (Date.now() - wroteAt > ttlMs) {
+      this.recentWrites.delete(uri)
+      return false
+    }
+    return true
+  }
+
+  clearDirtyState(uri: string): void {
+    this.markDirty(uri, false)
+  }
+
   async readFile(uri: string): Promise<string> {
     return this.fs.readFile(uri)
   }
 
   async writeFile(uri: string, content: string): Promise<void> {
     await this.fs.writeFile(uri, content)
-    this.markDirty(uri, false)
+    this.recentWrites.set(uri, Date.now())
+    this.setSavedBaseline(uri, content)
   }
 
-  async reloadFileFromDisk(uri: string): Promise<string | null> {
+  async reloadFileFromDisk(uri: string, opts?: { force?: boolean }): Promise<string | null> {
     const file = this.files.get(uri)
-    if (!file || file.isDirty) return null
+    if (!file) return null
+    if (file.isDirty && !opts?.force) return null
     try {
       const content = await this.fs.readFile(uri)
+      this.setSavedBaseline(uri, content)
       this.onFileReload.fire({ uri, content })
       return content
     } catch {
@@ -131,9 +164,10 @@ export class WorkspaceService {
   handleExternalFileChange(uri: string): void {
     const file = this.files.get(uri)
     if (!file) return
+    if (this.isRecentlyWritten(uri)) return
     if (file.isDirty) {
       if (window.confirm(`"${file.name}" changed on disk. Reload and discard local changes?`)) {
-        void this.reloadFileFromDisk(uri)
+        void this.reloadFileFromDisk(uri, { force: true })
       }
       return
     }

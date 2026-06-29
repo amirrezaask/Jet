@@ -12,6 +12,7 @@ import {
   reconfigureLsp,
   detachLsp,
   lspPluginForView,
+  jetReloadAnnotation,
 } from "@jet/codemirror"
 import type { JetTheme } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
@@ -58,6 +59,7 @@ function EditorTabHostInner({
   keymapContext,
   onEditorFocusChange,
   onEditorSelectionChange,
+  onLspAttachFailed,
   autoFocus = false,
 }: {
   tabId: TabId
@@ -74,6 +76,7 @@ function EditorTabHostInner({
   keymapContext?: KeymapContext
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
+  onLspAttachFailed?: (fileUri: string) => void
   autoFocus?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -91,6 +94,8 @@ function EditorTabHostInner({
   onEditorSelectionChangeRef.current = onEditorSelectionChange
   const resolveLspClientRef = useRef(resolveLspClient)
   resolveLspClientRef.current = resolveLspClient
+  const onLspAttachFailedRef = useRef(onLspAttachFailed)
+  onLspAttachFailedRef.current = onLspAttachFailed
   const fileLanguageIdRef = useRef("plaintext")
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
@@ -170,7 +175,11 @@ function EditorTabHostInner({
       if (!largeFile && !untitled && resolveLspClientRef.current) {
         void (async () => {
           const client = await resolveLspClientRef.current!(fileUri)
-          if (cancelled || !client) return
+          if (cancelled) return
+          if (!client) {
+            onLspAttachFailedRef.current?.(fileUri)
+            return
+          }
           const live = viewByTab.get(tabId.id)
           if (!live) return
           await reconfigureLsp(live, fileUri, fileLanguageIdRef.current, client)
@@ -193,13 +202,17 @@ function EditorTabHostInner({
   }, [fileUri, tabId.id, workspace, theme, runCommand, userExtensions, autoFocus])
 
   useEffect(() => {
-    if (lspRevision == null || !resolveLspClient) return
+    if (lspRevision == null || lspRevision === 0 || !resolveLspClient) return
     const view = viewByTab.get(tabId.id)
     if (!view) return
     let cancelled = false
     ;(async () => {
       const client = await resolveLspClient(fileUri)
-      if (cancelled || !client) return
+      if (cancelled) return
+      if (!client) {
+        onLspAttachFailedRef.current?.(fileUri)
+        return
+      }
       await reconfigureLsp(view, fileUri, fileLanguageIdRef.current, client)
     })()
     return () => {
@@ -235,6 +248,7 @@ function EditorTabHostInner({
       if (!view) return
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: content },
+        annotations: jetReloadAnnotation.of(true),
       })
     })
     return () => sub.dispose()

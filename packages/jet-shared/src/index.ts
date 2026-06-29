@@ -43,9 +43,11 @@ export function languageIdFromPath(path: string): string {
   const ext = extname(path).toLowerCase()
   const map: Record<string, string> = {
     ".ts": "typescript",
-    ".tsx": "typescript",
+    ".tsx": "tsx",
+    ".mts": "mts",
+    ".cts": "cts",
     ".js": "javascript",
-    ".jsx": "javascript",
+    ".jsx": "jsx",
     ".mjs": "javascript",
     ".cjs": "javascript",
     ".rs": "rust",
@@ -56,6 +58,20 @@ export function languageIdFromPath(path: string): string {
     ".htm": "html",
   }
   return map[ext] ?? "plaintext"
+}
+
+/** Map Jet language ids to LSP `textDocument/languageId` values. */
+export function lspLanguageIdFromJet(languageId: string): string {
+  switch (languageId) {
+    case "tsx":
+    case "mts":
+    case "cts":
+      return "typescript"
+    case "jsx":
+      return "javascript"
+    default:
+      return languageId
+  }
 }
 
 export const UNTITLED_SCHEME = "untitled:"
