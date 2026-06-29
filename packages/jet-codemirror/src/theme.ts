@@ -71,6 +71,7 @@ export function jetThemeExtension(theme: JetTheme) {
           backgroundColor: theme.colors.panelRaised,
           color: theme.colors.text,
           border: `1px solid ${theme.colors.border}`,
+          fontSize: "1rem",
         },
         ".cm-panel.cm-search input": {
           backgroundColor: theme.colors.panel,
@@ -98,13 +99,29 @@ export function jetThemeExtension(theme: JetTheme) {
           backgroundColor: theme.colors.panelRaised,
           color: theme.colors.text,
           border: `1px solid ${theme.colors.border}`,
+          fontSize: "1rem",
         },
         ".cm-tooltip-autocomplete": {
-          "& > ul": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+          fontSize: "1rem",
+          "& > ul": {
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontSize: "1rem",
+          },
           "& > ul > li[aria-selected]": {
             backgroundColor: theme.colors.hover,
             color: theme.colors.text,
           },
+        },
+        ".cm-tooltip.cm-completionInfo": {
+          fontSize: "1rem",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        },
+        ".cm-lsp-hover-tooltip, .cm-lsp-documentation": {
+          fontSize: "1rem",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        },
+        ".cm-lsp-signature-tooltip": {
+          fontSize: "1rem",
         },
         ".cm-completionLabel": {
           color: theme.colors.text,
