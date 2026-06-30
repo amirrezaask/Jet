@@ -5,21 +5,20 @@ import {
   type PanelNode,
   type PanelSplit,
   type PanelTreeSnapshot,
+  type PanelView,
   type Rect,
   type SplitterHit,
-  type TabGroup,
-  type TabId,
   panelId,
-  tabId,
 } from "@jet/shared"
 
 const MIN_PANEL = 48
 const SPLITTER = 4
 
+const emptyView = (): PanelView => ({ kind: "empty" })
+
 export class PanelTree {
   root: PanelNode
   private nextPanelId = 1
-  private nextTabId = 1
 
   constructor(root?: PanelNode) {
     this.root =
@@ -27,7 +26,7 @@ export class PanelTree {
       ({
         kind: "leaf",
         panelId: panelId(1),
-        group: { tabs: [], active: 0 },
+        view: emptyView(),
       } satisfies PanelNode)
     if (!root) this.nextPanelId = 2
   }
@@ -36,51 +35,29 @@ export class PanelTree {
     return panelId(this.nextPanelId++)
   }
 
-  allocTabId(): TabId {
-    return tabId(this.nextTabId++)
-  }
-
-  insertTab(panel: PanelId, tab: TabId, index?: number): void {
+  setView(panel: PanelId, view: PanelView): void {
     this.visitLeaves(node => {
       if (node.panelId.id !== panel.id) return
-      const idx = index ?? node.group.tabs.length
-      node.group.tabs.splice(idx, 0, tab)
-      node.group.active = idx
+      node.view = view
     })
   }
 
-  removeTab(tab: TabId): PanelId | null {
-    let removedFrom: PanelId | null = null
+  getView(panel: PanelId): PanelView | null {
+    const leaf = this.getLeaf(panel)
+    return leaf?.view ?? null
+  }
+
+  findPanelWithView(predicate: (view: PanelView) => boolean): PanelId | null {
+    let found: PanelId | null = null
     this.visitLeaves(node => {
-      const idx = node.group.tabs.findIndex(t => t.id === tab.id)
-      if (idx < 0) return
-      node.group.tabs.splice(idx, 1)
-      removedFrom = node.panelId
-      if (node.group.active >= node.group.tabs.length) {
-        node.group.active = Math.max(0, node.group.tabs.length - 1)
-      }
+      if (found) return
+      if (predicate(node.view)) found = node.panelId
     })
-    return removedFrom
+    return found
   }
 
-  setActiveTab(panel: PanelId, tab: TabId): void {
-    this.visitLeaves(node => {
-      if (node.panelId.id !== panel.id) return
-      const idx = node.group.tabs.findIndex(t => t.id === tab.id)
-      if (idx >= 0) node.group.active = idx
-    })
-  }
-
-  moveTab(tab: TabId, targetPanel: PanelId, action: DropAction, insertIndex?: number): void {
-    this.removeTab(tab)
-    if (action.kind === "split") {
-      const newPanel = this.splitAtEdge(targetPanel, action.edge)
-      this.insertTab(newPanel, tab, 0)
-      return
-    }
-    if (action.kind === "moveToPane") {
-      this.insertTab(targetPanel, tab, insertIndex)
-    }
+  findEditorPanelForFile(fileUri: string): PanelId | null {
+    return this.findPanelWithView(v => v.kind === "editor" && v.fileUri === fileUri)
   }
 
   splitAtEdge(panel: PanelId, edge: Edge): PanelId {
@@ -88,7 +65,7 @@ export class PanelTree {
     const newLeaf: PanelNode = {
       kind: "leaf",
       panelId: newPanelId,
-      group: { tabs: [], active: 0 },
+      view: emptyView(),
     }
 
     const replace = (node: PanelNode, path: number[]): PanelNode => {
@@ -151,7 +128,7 @@ export class PanelTree {
     const newLeaf: PanelNode = {
       kind: "leaf",
       panelId: newPanelId,
-      group: { tabs: [], active: 0 },
+      view: emptyView(),
     }
     const kind = edge === "left" || edge === "right" ? "row" : "column"
     const first = edge === "right" || edge === "bottom" ? this.root : newLeaf
@@ -163,38 +140,22 @@ export class PanelTree {
     return newPanelId
   }
 
-  findPanelForTab(tab: TabId): PanelId | null {
-    let found: PanelId | null = null
-    this.visitLeaves(node => {
-      if (node.group.tabs.some(t => t.id === tab.id)) found = node.panelId
-    })
-    return found
-  }
-
-  /** Drop tab ids missing from registry; remove empty leaves. */
-  sanitizeKnownTabs(isKnown: (tab: TabId) => boolean): void {
-    this.visitLeaves(node => {
-      node.group.tabs = node.group.tabs.filter(isKnown)
-      if (node.group.tabs.length === 0) {
-        node.group.active = 0
-      } else if (node.group.active >= node.group.tabs.length) {
-        node.group.active = node.group.tabs.length - 1
-      }
-    })
+  /** Remove empty leaves when more than one leaf exists. */
+  pruneEmptyLeaves(): void {
     for (let guard = 0; guard < 64; guard++) {
       let leafCount = 0
       const empty: PanelId[] = []
       this.visitLeaves(node => {
         leafCount++
-        if (node.group.tabs.length === 0) empty.push(node.panelId)
+        if (node.view.kind === "empty") empty.push(node.panelId)
       })
       if (empty.length === 0 || leafCount <= 1) break
       for (const panel of empty) this.closePanel(panel)
     }
   }
 
-  getLeaf(panel: PanelId): { panelId: PanelId; group: TabGroup } | null {
-    let leaf: { panelId: PanelId; group: TabGroup } | null = null
+  getLeaf(panel: PanelId): { panelId: PanelId; view: PanelView } | null {
+    let leaf: { panelId: PanelId; view: PanelView } | null = null
     this.visitLeaves(node => {
       if (node.panelId.id === panel.id) leaf = node
     })
@@ -205,14 +166,12 @@ export class PanelTree {
     return {
       root: structuredClone(this.root),
       nextPanelId: this.nextPanelId,
-      nextTabId: this.nextTabId,
     }
   }
 
   static fromJSON(snapshot: PanelTreeSnapshot): PanelTree {
     const tree = new PanelTree(snapshot.root)
     tree.nextPanelId = snapshot.nextPanelId
-    tree.nextTabId = snapshot.nextTabId
     return tree
   }
 
@@ -220,15 +179,16 @@ export class PanelTree {
     return PanelTree.editorOnlyLayout().tree
   }
 
-  /** Single full-width editor panel — no sidebar split. */
   static editorOnlyLayout(): { tree: PanelTree; editorPanel: PanelId } {
     const tree = new PanelTree()
     const root = tree.root
     const editorPanel = root.kind === "leaf" ? root.panelId : tree.allocPanelId()
+    if (root.kind === "leaf") {
+      root.view = { kind: "empty" }
+    }
     return { tree, editorPanel }
   }
 
-  /** Row split: narrow sidebar (left) + main editor area (right). */
   static workspaceLayout(): { tree: PanelTree; sidebarPanel: PanelId; editorPanel: PanelId } {
     const tree = new PanelTree()
     const sidebarPanel = tree.attachAtViewportEdge("left")
@@ -243,7 +203,7 @@ export class PanelTree {
 
   private createDefaultLeaf(): PanelNode {
     const id = this.allocPanelId()
-    return { kind: "leaf", panelId: id, group: { tabs: [], active: 0 } }
+    return { kind: "leaf", panelId: id, view: emptyView() }
   }
 
   private visitLeaves(fn: (node: Extract<PanelNode, { kind: "leaf" }>) => void): void {

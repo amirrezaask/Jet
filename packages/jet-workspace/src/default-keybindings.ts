@@ -10,31 +10,26 @@ const listFocus = (ctx: KeymapContext) => ctx.listFocus && noOverlay(ctx)
 
 export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   return [
-  // --- App shell ---
   bind("Cmd-n", cmd.newFile, workspaceOpen),
   bind("Cmd-p", cmd.quickOpen, noOverlay),
-  bind("Cmd-Shift-o", cmd.quickOpen, noOverlay),
   bind("Cmd-Shift-p", cmd.palette, noOverlay),
+  bind("Cmd-Shift-b", cmd.bufferList, workspaceOpen),
   bind("Cmd-k Cmd-f", cmd.quickOpen, workspaceOpen),
-  bind("Cmd-k Cmd-s", cmd.search, workspaceOpen),
-  bind("Cmd-k Cmd-g", cmd.git, workspaceOpen),
-  bind("Cmd-k Cmd-t", cmd.terminal, workspaceOpen),
+  bind("Cmd-k Cmd-s", cmd.locationListSearch, workspaceOpen),
   bind("Cmd-k Cmd-w", cmd.focusSidebar, workspaceOpen),
-  bind("Cmd-k Shift-/", cmd.palette, noOverlay),
   bind("Cmd-s", cmd.save, workspaceOpen),
   bind("Cmd-o", cmd.openFile, noOverlay),
   bind("Cmd-k Cmd-o", cmd.openFolder, noOverlay),
-  bind("Cmd-w", cmd.closeTab, workspaceOpen),
+  bind("Cmd-w", cmd.closeBuffer, workspaceOpen),
   bind("Cmd-f", cmd.find, editorFocus),
   bind("Cmd-Alt-f", cmd.replace, editorFocus),
   bind("Ctrl-g", cmd.gotoLine, editorFocus),
-  bind("Cmd-Shift-f", cmd.search, workspaceOpen),
-  bind("Ctrl-Shift-g", cmd.git, workspaceOpen),
+  bind("Cmd-Shift-f", cmd.locationListSearch, workspaceOpen),
   bind("Cmd-Shift-e", cmd.explorer, workspaceOpen),
-  bind("Ctrl-`", cmd.terminal, workspaceOpen),
-  bind("Cmd-Shift-m", cmd.problems, workspaceOpen),
+  bind("Cmd-Shift-m", cmd.locationListProblems, workspaceOpen),
+  bind("Alt-j", cmd.jumpBack, workspaceOpen),
+  bind("Alt-Shift-j", cmd.jumpForward, workspaceOpen),
 
-  // --- Tier 1: Editor commands ---
   bind("Cmd-/", cmd.toggleComment, editorFocus),
   bind("Shift-Alt-ArrowUp", cmd.copyLineUp, editorFocus),
   bind("Shift-Alt-ArrowDown", cmd.copyLineDown, editorFocus),
@@ -55,12 +50,8 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   bind("Shift-Alt-ArrowRight", cmd.smartSelectExpand, editorFocus),
   bind("Shift-Alt-ArrowLeft", cmd.smartSelectShrink, editorFocus),
 
-  // --- Tier 2: Window / Layout ---
-  bind("Cmd-Shift-]", cmd.nextEditor, workspaceOpen),
-  bind("Cmd-Shift-[", cmd.prevEditor, workspaceOpen),
-  bind("Cmd-Alt-ArrowRight", cmd.nextEditor, workspaceOpen),
-  bind("Cmd-Alt-ArrowLeft", cmd.prevEditor, workspaceOpen),
-  bind("Cmd-k w", cmd.closeAllTabs, workspaceOpen),
+  bind("Cmd-Shift-]", cmd.nextBuffer, workspaceOpen),
+  bind("Cmd-Shift-[", cmd.prevBuffer, workspaceOpen),
   bind("Cmd-0", cmd.focusSidebar, workspaceOpen),
   bind("Cmd-1", cmd.focusEditorGroup, workspaceOpen),
   bind("Cmd-9", cmd.lastEditorGroup, workspaceOpen),
@@ -68,11 +59,8 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   bind("Cmd-Alt-0", cmd.toggleEditorLayout, workspaceOpen),
   bind("Cmd-=", cmd.zoomIn, noOverlay),
   bind("Cmd--", cmd.zoomOut, noOverlay),
-  bind("Cmd-Shift-=", cmd.zoomIn, noOverlay),
-  bind("Cmd-Shift--", cmd.zoomOut, noOverlay),
   bind("Escape", cmd.closeQuickOpen, ctx => anyOverlayOpen(ctx)),
 
-  // --- Tier 3: Palette entry points ---
   bind("F1", cmd.palette, noOverlay),
   bind("Cmd-Shift-o", cmd.quickOutline, editorFocus),
   bind("Shift-Alt-f", cmd.formatDocument, editorFocus),
@@ -80,13 +68,10 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   bind("F12", cmd.goToDefinition, editorFocus),
   bind("Shift-F12", cmd.goToReferences, editorFocus),
   bind("Ctrl-Space", cmd.triggerSuggest, editorFocus),
-  bind("Alt-`", cmd.triggerSuggest, editorFocus),
-  bind("Alt-i", cmd.triggerSuggest, editorFocus),
   bind("Cmd-Shift-Space", cmd.triggerParameterHints, editorFocus),
   bind("Cmd-.", cmd.quickFix, editorFocus),
   bind("Cmd-F12", cmd.goToImplementation, editorFocus),
 
-  // --- Tier 4: List navigation (non-conflicting keys only) ---
   bind("ArrowDown", cmd.listFocusNext, listFocus),
   bind("ArrowUp", cmd.listFocusPrev, listFocus),
   bind("Enter", cmd.listFocusActivate, listFocus),
@@ -94,10 +79,5 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   bind("PageDown", cmd.listFocusPageDown, listFocus),
   bind("Home", cmd.listFocusFirst, listFocus),
   bind("End", cmd.listFocusLast, listFocus),
-
-  // --- Git chords (stubs) ---
-  bind("Cmd-k Cmd-r", cmd.gitRevertSelected, workspaceOpen),
-  bind("Cmd-k Cmd-Alt-s", cmd.gitStageSelected, workspaceOpen),
-  bind("Cmd-k Cmd-n", cmd.gitUnstageSelected, workspaceOpen),
   ]
 }

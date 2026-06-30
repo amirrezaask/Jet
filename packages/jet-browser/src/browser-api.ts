@@ -26,22 +26,6 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
       showOpenFolderDialog: async () => null,
       showSaveFileDialog: async () => null,
     },
-    git: {
-      isRepo: rootUri => postJson<boolean>(baseUrl, "/git/isRepo", { rootUri }),
-      status: rootUri => postJson(baseUrl, "/git/status", { rootUri }),
-      diff: (rootUri, opts) =>
-        postJson<{ diff: string }>(baseUrl, "/git/diff", { rootUri, ...opts }).then(r => r.diff),
-      branch: rootUri => postJson<string | null>(baseUrl, "/git/branch", { rootUri }),
-      stage: (rootUri, paths) =>
-        postJson(baseUrl, "/git/stage", { rootUri, paths }).then(() => undefined),
-      unstage: (rootUri, paths) =>
-        postJson(baseUrl, "/git/unstage", { rootUri, paths }).then(() => undefined),
-      commit: (rootUri, message) =>
-        postJson(baseUrl, "/git/commit", { rootUri, message }).then(() => undefined),
-      branches: rootUri => postJson<string[]>(baseUrl, "/git/branches", { rootUri }),
-      checkout: (rootUri, branch) =>
-        postJson(baseUrl, "/git/checkout", { rootUri, branch }).then(() => undefined),
-    },
     search: {
       project: (rootUri, query, opts) =>
         postJson<{ results: ProjectSearchResult[] }>(baseUrl, "/search/project", {

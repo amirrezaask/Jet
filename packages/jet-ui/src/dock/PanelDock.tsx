@@ -1,23 +1,18 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
-import { PanelTree, resolveDropAtPoint, type PanelEvent } from "@jet/panels"
-import type { PanelId, TabId } from "@jet/shared"
-import type { JetProblem } from "@jet/shared"
-import type { TabRegistry, WorkspaceService } from "@jet/workspace"
-import type { KeymapContext, JetKeyBinding } from "@jet/workspace"
+import { PanelTree, type PanelEvent } from "@jet/panels"
+import type { PanelId } from "@jet/shared"
 import type { JetTheme } from "@jet/codemirror"
-import { TabRow, computeTabInsertIndex } from "./TabRow.js"
-import { DropOverlay } from "./DropOverlay.js"
-import { TabBody } from "./TabBody.js"
-import { PanelEmptyState } from "./PanelEmptyState.js"
+import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@jet/workspace"
+import type { LocationItem } from "@jet/workspace"
+import { PanelHeader } from "./PanelHeader.js"
+import { PanelBody } from "./PanelBody.js"
 
-const DRAG_THRESHOLD = 5
 const SPLITTER_HIT_SLOP = 12
 
 export type PanelDockProps = {
   tree: PanelTree
-  registry: TabRegistry
   workspace: WorkspaceService
   theme: JetTheme
   focusedPanelId: PanelId | null
@@ -28,39 +23,22 @@ export type PanelDockProps = {
   executeCommand: (name: string) => Promise<void>
   runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
   onOpenFile: (uri: string, path: string) => void
-  onOpenFileAt: (uri: string, path: string, line: number, column: number) => void
-  onBranchChange?: (branch: string | null) => void
-  problems: JetProblem[]
-  onOpenProblem: (problem: import("@jet/shared").JetProblem) => void
+  onOpenLocationItem: (item: LocationItem) => void
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
   keymapRevision: number
   keymapContext?: KeymapContext
-  tabMetaRev: number
+  panelRev: number
   onEditorFocusChange?: (focused: boolean) => void
   onEditorSelectionChange?: (line: number, column: number) => void
   onLspAttachFailed?: (fileUri: string) => void
   onProblemsChange?: () => void
-  onGitError?: (message: string) => void
-}
-
-type PendingDrag = {
-  tabId: TabId
-  sourcePanel: PanelId
-  startX: number
-  startY: number
 }
 
 export function PanelDockInner(props: PanelDockProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ x: 0, y: 0, width: 800, height: 600 })
   const measureRafRef = useRef<number | null>(null)
-  const [dragTab, setDragTab] = useState<{ tabId: TabId; sourcePanel: PanelId } | null>(null)
-  const [dragPointer, setDragPointer] = useState<{ x: number; y: number } | null>(null)
-  const [dragVector, setDragVector] = useState<{ dx: number; dy: number } | null>(null)
-  const pendingDragRef = useRef<PendingDrag | null>(null)
-  const dragActiveRef = useRef(false)
-  const tabRowRefs = useRef(new Map<number, HTMLDivElement>())
 
   const measure = useCallback(() => {
     const el = viewportRef.current
@@ -86,282 +64,132 @@ export function PanelDockInner(props: PanelDockProps) {
       ro.disconnect()
       if (measureRafRef.current != null) cancelAnimationFrame(measureRafRef.current)
     }
-  }, [measure, scheduleMeasure])
-
-  const clearDrag = useCallback(() => {
-    pendingDragRef.current = null
-    dragActiveRef.current = false
-    setDragTab(null)
-    setDragPointer(null)
-    setDragVector(null)
-  }, [])
-
-  const localPointer = useCallback((clientX: number, clientY: number) => {
-    const el = viewportRef.current
-    if (!el) return null
-    const r = el.getBoundingClientRect()
-    return { x: clientX - r.left, y: clientY - r.top }
-  }, [])
-
-  const handleTabPointerDown = useCallback(
-    (tabId: TabId, sourcePanel: PanelId, e: ReactPointerEvent) => {
-      if (e.button !== 0) return
-      if ((e.target as HTMLElement).closest("button")) return
-      e.preventDefault()
-
-      const startX = e.clientX
-      const startY = e.clientY
-      pendingDragRef.current = { tabId, sourcePanel, startX, startY }
-      dragActiveRef.current = false
-
-      const onMove = (ev: PointerEvent) => {
-        const pending = pendingDragRef.current
-        if (!pending) return
-        const dx = ev.clientX - pending.startX
-        const dy = ev.clientY - pending.startY
-        if (!dragActiveRef.current && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
-        if (!dragActiveRef.current) {
-          dragActiveRef.current = true
-          setDragTab({ tabId: pending.tabId, sourcePanel: pending.sourcePanel })
-        }
-        const local = localPointer(ev.clientX, ev.clientY)
-        if (local) {
-          setDragPointer(local)
-          setDragVector({ dx, dy })
-        }
-      }
-
-      const onUp = (ev: PointerEvent) => {
-        window.removeEventListener("pointermove", onMove)
-        window.removeEventListener("pointerup", onUp)
-        if (!dragActiveRef.current) {
-          pendingDragRef.current = null
-          return
-        }
-        const pending = pendingDragRef.current
-        const el = viewportRef.current
-        if (pending && el) {
-          const r = el.getBoundingClientRect()
-          const localX = ev.clientX - r.left
-          const localY = ev.clientY - r.top
-          const currentViewport = { x: 0, y: 0, width: r.width, height: r.height }
-          const dx = ev.clientX - pending.startX
-          const dy = ev.clientY - pending.startY
-          const hit = resolveDropAtPoint(
-            localX,
-            localY,
-            props.tree.computeRects(currentViewport),
-            { dragDx: dx, dragDy: dy },
-          )
-          if (hit) {
-            const samePanel = hit.panelId.id === pending.sourcePanel.id
-            const isReorder = samePanel && hit.action.kind === "moveToPane"
-            const isCrossPanel = !samePanel
-            const isSamePanelSplit = samePanel && hit.action.kind === "split"
-            if (isReorder || isCrossPanel || isSamePanelSplit) {
-              let insertIndex: number | undefined
-              if (hit.action.kind === "moveToPane") {
-                const tabRowEl = tabRowRefs.current.get(hit.panelId.id)
-                insertIndex = tabRowEl
-                  ? computeTabInsertIndex(tabRowEl, ev.clientX)
-                  : undefined
-              }
-              props.onEvent({
-                type: "tabMoved",
-                tabId: pending.tabId,
-                targetPanelId: hit.panelId,
-                action: hit.action,
-                insertIndex,
-              })
-            }
-          }
-        }
-        clearDrag()
-      }
-
-      window.addEventListener("pointermove", onMove)
-      window.addEventListener("pointerup", onUp)
-    },
-    [clearDrag, localPointer, props.onEvent, props.tree],
-  )
+  }, [measure, scheduleMeasure, props.panelRev])
 
   const rects = props.tree.computeRects(viewport)
   const splitters = props.tree.splitterHits(viewport)
 
+  const leaves: { panelId: PanelId; rect: { x: number; y: number; width: number; height: number } }[] = []
+  for (const [panelNum, rect] of rects) {
+    leaves.push({ panelId: { id: panelNum }, rect })
+  }
+
   return (
-    <div ref={viewportRef} className="relative h-full w-full overflow-hidden" onMouseUp={scheduleMeasure}>
-      <div className="absolute inset-0">
-        {[...rects.entries()].map(([panelNum, rect]) => {
-          const panelId = { id: panelNum }
-          const leaf = props.tree.getLeaf(panelId)
-          if (!leaf) return null
-          const activeTabId = leaf.group.tabs[leaf.group.active]
-          const activeKind = activeTabId ? props.registry.get(activeTabId) : null
-          const autoFocusEditor =
-            props.focusedPanelId?.id === panelNum && activeKind?.kind === "editor"
-          return (
-            <div
-              key={panelNum}
-              className="absolute flex flex-col overflow-hidden border border-[var(--jet-border)] bg-[var(--jet-panel)]"
-              style={{
-                left: rect.x,
-                top: rect.y,
-                width: rect.width,
-                height: rect.height,
-              }}
-              onMouseDown={() => props.onFocusPanel(panelId)}
-            >
-              <TabRow
-                panelId={panelId}
-                group={leaf.group}
-                registry={props.registry}
-                focused={props.focusedPanelId?.id === panelNum}
-                tabMetaRev={props.tabMetaRev}
-                onSelect={tabId =>
-                  props.onEvent({ type: "tabSelect", panelId, tabId })
-                }
-                onClose={tabId => props.onEvent({ type: "tabClose", tabId })}
-                onClosePanel={() => props.onEvent({ type: "panelClose", panelId })}
-                onTabPointerDown={handleTabPointerDown}
-                draggingTabId={dragTab?.tabId.id ?? null}
-                tabRowRef={el => {
-                  if (el) tabRowRefs.current.set(panelNum, el)
-                  else tabRowRefs.current.delete(panelNum)
-                }}
-              />
-              <div className="min-h-0 flex-1">
-                {activeTabId ? (
-                  <TabBody
-                    tabId={activeTabId}
-                    registry={props.registry}
-                    workspace={props.workspace}
-                    theme={props.theme}
-                    resolveLspClient={props.resolveLspClient}
-                    lspRevision={props.lspRevision}
-                    executeCommand={props.executeCommand}
-                    runKeyBinding={props.runKeyBinding}
-                    onOpenFile={props.onOpenFile}
-                    onOpenFileAt={props.onOpenFileAt}
-                    onBranchChange={props.onBranchChange}
-                    problems={props.problems}
-                    onOpenProblem={props.onOpenProblem}
-                    keymapBindings={props.keymapBindings}
-                    userExtensions={props.userExtensions}
-                    keymapRevision={props.keymapRevision}
-                    keymapContext={props.keymapContext}
-                    onEditorFocusChange={props.onEditorFocusChange}
-                    onEditorSelectionChange={props.onEditorSelectionChange}
-                    onLspAttachFailed={props.onLspAttachFailed}
-                    onProblemsChange={props.onProblemsChange}
-                    onGitError={props.onGitError}
-                    autoFocus={autoFocusEditor}
-                  />
-                ) : (
-                  <PanelEmptyState />
-                )}
-              </div>
+    <div ref={viewportRef} className="relative h-full w-full overflow-hidden">
+      {leaves.map(({ panelId, rect }) => {
+        const panelNum = panelId.id
+        const view = props.tree.getView(panelId)
+        const autoFocusEditor =
+          props.focusedPanelId?.id === panelNum && view?.kind === "editor"
+        return (
+          <div
+            key={panelNum}
+            className="absolute flex flex-col overflow-hidden border border-[var(--jet-border)] bg-[var(--jet-panel)]"
+            style={{
+              left: rect.x,
+              top: rect.y,
+              width: rect.width,
+              height: rect.height,
+            }}
+            onMouseDown={() => props.onFocusPanel(panelId)}
+          >
+            <PanelHeader
+              panelId={panelId}
+              view={view}
+              workspace={props.workspace}
+              focused={props.focusedPanelId?.id === panelNum}
+              onClosePanel={id => props.onEvent({ type: "panelClose", panelId: id })}
+            />
+            <div className="min-h-0 flex-1">
+              {view && view.kind !== "empty" ? (
+                <PanelBody
+                  panelId={panelId}
+                  view={view}
+                  workspace={props.workspace}
+                  theme={props.theme}
+                  resolveLspClient={props.resolveLspClient}
+                  lspRevision={props.lspRevision}
+                  executeCommand={props.executeCommand}
+                  runKeyBinding={props.runKeyBinding}
+                  onOpenFile={props.onOpenFile}
+                  onOpenLocationItem={props.onOpenLocationItem}
+                  keymapBindings={props.keymapBindings}
+                  userExtensions={props.userExtensions}
+                  keymapRevision={props.keymapRevision}
+                  keymapContext={props.keymapContext}
+                  onEditorFocusChange={props.onEditorFocusChange}
+                  onEditorSelectionChange={props.onEditorSelectionChange}
+                  onLspAttachFailed={props.onLspAttachFailed}
+                  onProblemsChange={props.onProblemsChange}
+                  autoFocus={autoFocusEditor}
+                />
+              ) : (
+                <PanelBody
+                  panelId={panelId}
+                  view={{ kind: "empty" }}
+                  workspace={props.workspace}
+                  theme={props.theme}
+                  executeCommand={props.executeCommand}
+                  runKeyBinding={props.runKeyBinding}
+                  onOpenFile={props.onOpenFile}
+                  onOpenLocationItem={props.onOpenLocationItem}
+                  keymapBindings={props.keymapBindings}
+                  userExtensions={props.userExtensions}
+                  keymapRevision={props.keymapRevision}
+                  keymapContext={props.keymapContext}
+                />
+              )}
             </div>
-          )
-        })}
+          </div>
+        )
+      })}
 
-        {splitters.map((hit, i) => {
-          const horizontal = hit.axis === "horizontal"
-          const slopX = horizontal
-            ? hit.rect.x - (SPLITTER_HIT_SLOP - hit.rect.width) / 2
-            : hit.rect.x
-          const slopY = horizontal
-            ? hit.rect.y
-            : hit.rect.y - (SPLITTER_HIT_SLOP - hit.rect.height) / 2
-          const slopW = horizontal ? SPLITTER_HIT_SLOP : hit.rect.width
-          const slopH = horizontal ? hit.rect.height : SPLITTER_HIT_SLOP
+      {splitters.map((hit, i) => {
+        const horizontal = hit.axis === "horizontal"
+        const slopX = horizontal
+          ? hit.rect.x - (SPLITTER_HIT_SLOP - hit.rect.width) / 2
+          : hit.rect.x
+        const slopY = horizontal
+          ? hit.rect.y
+          : hit.rect.y - (SPLITTER_HIT_SLOP - hit.rect.height) / 2
+        const slopW = horizontal ? SPLITTER_HIT_SLOP : hit.rect.width
+        const slopH = horizontal ? hit.rect.height : SPLITTER_HIT_SLOP
 
-          return (
-            <div
-              key={i}
-              className="absolute z-20 flex items-center justify-center"
-              style={{
-                left: slopX,
-                top: slopY,
-                width: slopW,
-                height: slopH,
-                cursor: horizontal ? "col-resize" : "row-resize",
-                touchAction: "none",
-              }}
-              onPointerDown={e => {
-                e.preventDefault()
-                e.currentTarget.setPointerCapture(e.pointerId)
-                let lastPos = horizontal ? e.clientX : e.clientY
-                let pendingDelta = 0
-                let resizeRaf: number | null = null
-                const onMove = (ev: PointerEvent) => {
-                  const pos = horizontal ? ev.clientX : ev.clientY
-                  const delta = pos - lastPos
-                  lastPos = pos
-                  if (delta === 0) return
-                  pendingDelta += delta
-                  if (resizeRaf != null) return
-                  resizeRaf = requestAnimationFrame(() => {
-                    resizeRaf = null
-                    const batch = pendingDelta
-                    pendingDelta = 0
-                    if (batch === 0) return
-                    props.onEvent({
-                      type: "splitResized",
-                      path: hit.path,
-                      splitterIndex: hit.index,
-                      deltaPx: batch,
-                      viewport,
-                    })
-                  })
-                }
-                const onUp = () => {
-                  if (resizeRaf != null) {
-                    cancelAnimationFrame(resizeRaf)
-                    resizeRaf = null
-                  }
-                  if (pendingDelta !== 0) {
-                    props.onEvent({
-                      type: "splitResized",
-                      path: hit.path,
-                      splitterIndex: hit.index,
-                      deltaPx: pendingDelta,
-                      viewport,
-                    })
-                    pendingDelta = 0
-                  }
-                  e.currentTarget.releasePointerCapture(e.pointerId)
-                  e.currentTarget.removeEventListener("pointermove", onMove)
-                  e.currentTarget.removeEventListener("pointerup", onUp)
-                  e.currentTarget.removeEventListener("pointercancel", onUp)
-                  scheduleMeasure()
-                }
-                e.currentTarget.addEventListener("pointermove", onMove)
-                e.currentTarget.addEventListener("pointerup", onUp)
-                e.currentTarget.addEventListener("pointercancel", onUp)
-              }}
-            >
-              <div
-                className="bg-[var(--jet-border)] hover:bg-[var(--jet-accent)]"
-                style={{
-                  width: horizontal ? hit.rect.width : "100%",
-                  height: horizontal ? "100%" : hit.rect.height,
-                }}
-              />
-            </div>
-          )
-        })}
-
-        {dragTab && (
-          <DropOverlay
-            tree={props.tree}
-            viewport={viewport}
-            dragTab={dragTab}
-            pointer={dragPointer}
-            dragDx={dragVector?.dx}
-            dragDy={dragVector?.dy}
+        return (
+          <div
+            key={i}
+            className="absolute z-10 touch-none"
+            style={{
+              left: slopX,
+              top: slopY,
+              width: slopW,
+              height: slopH,
+              cursor: horizontal ? "col-resize" : "row-resize",
+            }}
+            onPointerDown={(e: ReactPointerEvent) => {
+              e.preventDefault()
+              e.currentTarget.setPointerCapture(e.pointerId)
+              const start = horizontal ? e.clientX : e.clientY
+              const onMove = (ev: PointerEvent) => {
+                const delta = (horizontal ? ev.clientX : ev.clientY) - start
+                props.onEvent({
+                  type: "splitResized",
+                  path: hit.path,
+                  splitterIndex: hit.index,
+                  deltaPx: delta,
+                  viewport,
+                })
+              }
+              const onUp = () => {
+                window.removeEventListener("pointermove", onMove)
+                window.removeEventListener("pointerup", onUp)
+              }
+              window.addEventListener("pointermove", onMove)
+              window.addEventListener("pointerup", onUp)
+            }}
           />
-        )}
-      </div>
+        )
+      })}
     </div>
   )
 }

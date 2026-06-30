@@ -4,10 +4,9 @@ import os from "node:os"
 import path from "node:path"
 import { resolveLaunchTarget, type LaunchConfig } from "@jet/node-host"
 import { registerFsHandlers } from "./fs.js"
-import { registerGitHandlers } from "./git.js"
 import { registerSearchHandlers } from "./search.js"
 import { registerLspHandlers, stopAllLsp, setLspCrashHandler } from "./lsp-bridge.js"
-import { registerTerminalHandlers, stopAllTerminals } from "./terminal.js"
+import { registerTaskHandlers } from "./tasks.js"
 import { registerWorkspaceHost, stopWorkspaceHost } from "./workspace-host.js"
 import { stopAllBackgroundWorkers, prewarmBackgroundWorkers } from "./background-pool.js"
 
@@ -176,10 +175,9 @@ app.whenReady().then(() => {
   installAppMenu()
   registerFsHandlers(ipcMain, dialog)
   registerWorkspaceHost(ipcMain, getWindow)
-  registerGitHandlers(ipcMain)
   registerSearchHandlers(ipcMain)
   registerLspHandlers(ipcMain, getWindow)
-  registerTerminalHandlers(ipcMain, getWindow)
+  registerTaskHandlers(ipcMain)
   setLspCrashHandler(id => {
     getWindow()?.webContents.send("lsp:crashed", id)
   })
@@ -214,7 +212,6 @@ app.on("window-all-closed", () => {
   stopAllLsp()
   stopWorkspaceHost()
   stopAllBackgroundWorkers()
-  stopAllTerminals()
   if (process.platform !== "darwin") app.quit()
 })
 

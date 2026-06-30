@@ -4,16 +4,15 @@ export type KeymapContext = {
   editorFocus: boolean
   paletteOpen: boolean
   quickOpenOpen: boolean
+  bufferListOpen: boolean
   openFileOpen: boolean
   cdOpen: boolean
   gotoLineOpen: boolean
   outlineOpen: boolean
   workspaceOpen: boolean
   explorerFocus: boolean
-  gitFocus: boolean
-  terminalFocus: boolean
-  searchFocus: boolean
-  problemsFocus: boolean
+  locationListFocus: boolean
+  outputFocus: boolean
   listFocus: boolean
 }
 
@@ -28,6 +27,7 @@ export function anyOverlayOpen(ctx: KeymapContext): boolean {
   return (
     ctx.paletteOpen ||
     ctx.quickOpenOpen ||
+    ctx.bufferListOpen ||
     ctx.openFileOpen ||
     ctx.cdOpen ||
     ctx.gotoLineOpen ||

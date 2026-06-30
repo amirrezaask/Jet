@@ -1,19 +1,4 @@
-import type { PanelId, TabId } from "@jet/shared"
-import type { ProjectSearchResult } from "@jet/shared"
-
-export type TabKind =
-  | { kind: "editor"; fileUri: string }
-  | { kind: "explorer" }
-  | { kind: "git" }
-  | { kind: "terminal"; terminalId: string }
-  | { kind: "search" }
-  | { kind: "problems" }
-
-export type TabMeta = {
-  label: string
-  dirty?: boolean
-  closeable: boolean
-}
+import type { PanelId, PanelView, ProjectSearchResult } from "@jet/shared"
 
 export type WorkspaceFile = {
   uri: string
@@ -55,18 +40,6 @@ export type JetElectronFS = FileSystemProvider & {
   onFileChanged?(callback: (uri: string) => void): () => void
 }
 
-export type JetElectronGit = {
-  isRepo(rootUri: string): Promise<boolean>
-  status(rootUri: string): Promise<import("@jet/shared").GitStatusEntry[]>
-  diff(rootUri: string, opts?: { path?: string; staged?: boolean }): Promise<string>
-  branch(rootUri: string): Promise<string | null>
-  stage(rootUri: string, paths: string[]): Promise<void>
-  unstage(rootUri: string, paths: string[]): Promise<void>
-  commit(rootUri: string, message: string): Promise<void>
-  branches(rootUri: string): Promise<string[]>
-  checkout(rootUri: string, branch: string): Promise<void>
-}
-
 export type JetElectronSearch = {
   project(
     rootUri: string,
@@ -76,12 +49,15 @@ export type JetElectronSearch = {
   listFiles(rootUri: string): Promise<string[]>
 }
 
-export type JetElectronTerminal = {
-  create(cwd: string): Promise<{ id: string }>
-  write(id: string, data: string): Promise<void>
-  resize(id: string, cols: number, rows: number): Promise<void>
-  onData(id: string, callback: (data: string) => void): () => void
-  dispose(id: string): Promise<void>
+export type JetTaskSpawnRequest = {
+  id: string
+  command: string
+  args: string[]
+  cwd: string
+}
+
+export type JetElectronTasks = {
+  spawn(req: JetTaskSpawnRequest): Promise<{ exitCode: number; output: string }>
 }
 
 export type JetElectronLSP = {
@@ -103,15 +79,13 @@ export type LaunchConfig = {
 export type JetElectronWorkspace = {
   activate(rootUri: string): Promise<{ ok: boolean }>
   onFileIndex(callback: (rootUri: string, files: string[]) => void): () => void
-  onGitBranch(callback: (rootUri: string, branch: string | null) => void): () => void
 }
 
 export type JetElectronAPI = {
   fs: JetElectronFS
-  git: JetElectronGit
   search: JetElectronSearch
   lsp: JetElectronLSP
-  terminal?: JetElectronTerminal
+  tasks?: JetElectronTasks
   workspace?: JetElectronWorkspace
   getLaunchConfig?(): Promise<LaunchConfig | null>
   getHomeDir?(): Promise<string>
@@ -123,3 +97,5 @@ declare global {
     jet?: JetElectronAPI
   }
 }
+
+export type PanelViewKind = PanelView["kind"]

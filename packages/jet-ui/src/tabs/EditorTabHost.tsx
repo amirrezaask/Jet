@@ -17,8 +17,8 @@ import {
   reconfigureLsp,
 } from "@jet/codemirror"
 import type { JetTheme } from "@jet/codemirror"
-import type { KeymapContext, JetKeyBinding, TabRegistry, WorkspaceService } from "@jet/workspace"
-import type { TabId } from "@jet/shared"
+import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@jet/workspace"
+import type { PanelId } from "@jet/shared"
 import { fileUriToPath, isUntitledUri } from "@jet/shared"
 import {
   EditorContextMenu,
@@ -35,9 +35,9 @@ type EditorSession = {
   view: EditorView
 }
 
-const viewByTab = new Map<number, EditorView>()
-const sessionByTab = new Map<number, EditorSession>()
-let focusedTabId: number | null = null
+const viewByPanel = new Map<number, EditorView>()
+const sessionByPanel = new Map<number, EditorSession>()
+let focusedPanelId: number | null = null
 
 function textFromString(content: string): Text {
   return Text.of(content.split("\n"))
@@ -58,35 +58,39 @@ function clearSessionSnapshot(session: EditorSession): void {
   }
 }
 
-function destroyEditorSession(tabId: TabId): void {
-  const session = sessionByTab.get(tabId.id)
+function destroyEditorSession(panelId: PanelId): void {
+  const session = sessionByPanel.get(panelId.id)
   if (!session) return
   clearSessionSnapshot(session)
   detachLsp(session.view)
   session.view.destroy()
-  sessionByTab.delete(tabId.id)
-  viewByTab.delete(tabId.id)
-  if (focusedTabId === tabId.id) focusedTabId = null
+  sessionByPanel.delete(panelId.id)
+  viewByPanel.delete(panelId.id)
+  if (focusedPanelId === panelId.id) focusedPanelId = null
 }
 
-export function getEditorView(tabId: TabId): EditorView | undefined {
-  return viewByTab.get(tabId.id)
+export function getEditorView(panelId: PanelId): EditorView | undefined {
+  return viewByPanel.get(panelId.id)
 }
 
 export function getAllEditorViews(
-  registry: TabRegistry,
-): { tabId: TabId; uri: string; view: EditorView }[] {
-  const result: { tabId: TabId; uri: string; view: EditorView }[] = []
-  for (const tabId of registry.allTabs()) {
-    const kind = registry.get(tabId)
-    const view = viewByTab.get(tabId.id)
-    if (kind?.kind === "editor" && view) result.push({ tabId, uri: kind.fileUri, view })
+  tree: import("@jet/panels").PanelTree,
+): { panelId: PanelId; uri: string; view: EditorView }[] {
+  const result: { panelId: PanelId; uri: string; view: EditorView }[] = []
+  const walk = (node: import("@jet/shared").PanelNode) => {
+    if (node.kind === "leaf" && node.view.kind === "editor") {
+      const view = viewByPanel.get(node.panelId.id)
+      if (view) result.push({ panelId: node.panelId, uri: node.view.fileUri, view })
+    } else if (node.kind !== "leaf") {
+      node.split.children.forEach(walk)
+    }
   }
+  walk(tree.root)
   return result
 }
 
 function EditorTabHostInner({
-  tabId,
+  panelId,
   fileUri,
   workspace,
   theme,
@@ -104,7 +108,7 @@ function EditorTabHostInner({
   onProblemsChange,
   autoFocus = false,
 }: {
-  tabId: TabId
+  panelId: PanelId
   fileUri: string
   workspace: WorkspaceService
   theme: JetTheme
@@ -150,16 +154,16 @@ function EditorTabHostInner({
 
   useEffect(() => {
     return registerEditorContextMenuHandler((x, y) => {
-      if (focusedTabId !== tabId.id) return
+      if (focusedPanelId !== panelId.id) return
       setContextMenu({ x, y })
     })
-  }, [tabId.id])
+  }, [panelId.id])
 
   useEffect(() => {
     const parent = ref.current
     if (!parent) return
     let cancelled = false
-    let session = sessionByTab.get(tabId.id) ?? null
+    let session = sessionByPanel.get(panelId.id) ?? null
     let onFocus: (() => void) | null = null
     let onBlur: (() => void) | null = null
     let onContextMenu: ((e: MouseEvent) => void) | null = null
@@ -169,16 +173,16 @@ function EditorTabHostInner({
       applyTheme(live.view, theme)
       applyUserKeymaps(live.view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
       applyUserExtensions(live.view, userExtensions)
-      const nav = consumePendingEditorNavigation(tabId)
+      const nav = consumePendingEditorNavigation(panelId)
       if (nav) jumpToLine(live.view, nav.line, nav.column)
       onFocus = () => {
-        focusedTabId = tabId.id
+        focusedPanelId = panelId.id
         onEditorFocusChangeRef.current?.(true)
       }
       onBlur = () => onEditorFocusChangeRef.current?.(false)
       onContextMenu = (e: MouseEvent) => {
         e.preventDefault()
-        focusedTabId = tabId.id
+        focusedPanelId = panelId.id
         setContextMenu({ x: e.clientX, y: e.clientY })
       }
       live.view.dom.addEventListener("focus", onFocus)
@@ -190,7 +194,7 @@ function EditorTabHostInner({
 
     ;(async () => {
       if (session && session.fileUri !== fileUri) {
-        destroyEditorSession(tabId)
+        destroyEditorSession(panelId)
         session = null
       }
 
@@ -211,7 +215,7 @@ function EditorTabHostInner({
           savedBaseline = workspace.savedBaselineFor(fileUri) ?? diskText
           largeFile = isLargeFile(diskText)
         } else {
-          const pending = consumePendingInitialContent(tabId)
+          const pending = consumePendingInitialContent(panelId)
           if (pending != null) {
             initialText = pending
             largeFile = isLargeFile(pending)
@@ -230,7 +234,7 @@ function EditorTabHostInner({
           userExtensions,
           onSelectionChange: (line, column) => onEditorSelectionChangeRef.current?.(line, column),
           onDocChange: (doc, meta) => {
-            const live = sessionByTab.get(tabId.id)
+            const live = sessionByPanel.get(panelId.id)
             if (!live) return
             workspace.markDirty(fileUri, !doc.eq(live.savedBaseline))
             if (!meta.isReload) scheduleSessionSnapshot(live)
@@ -252,8 +256,8 @@ function EditorTabHostInner({
           snapshotTimer: null,
           view,
         }
-        sessionByTab.set(tabId.id, session)
-        viewByTab.set(tabId.id, view)
+        sessionByPanel.set(panelId.id, session)
+        viewByPanel.set(panelId.id, view)
 
         workspace.setSavedBaseline(fileUri, savedBaseline)
         if (untitled && initialText.length > 0) {
@@ -269,7 +273,7 @@ function EditorTabHostInner({
               onLspAttachFailedRef.current?.(fileUri)
               return
             }
-            const live = sessionByTab.get(tabId.id)
+            const live = sessionByPanel.get(panelId.id)
             if (!live) return
             await reconfigureLsp(live.view, fileUri, live.fileLanguageId, client)
             onProblemsChangeRef.current?.()
@@ -289,43 +293,42 @@ function EditorTabHostInner({
         session.view.dom.removeEventListener("contextmenu", onContextMenu)
       }
       if (session?.view.dom.parentElement === parent) parent.removeChild(session.view.dom)
-      const kind = workspace.tabRegistry.get(tabId)
-      if (kind?.kind !== "editor" || kind.fileUri !== fileUri) {
-        destroyEditorSession(tabId)
+      if (session && session.fileUri !== fileUri) {
+        destroyEditorSession(panelId)
         onProblemsChangeRef.current?.()
       }
     }
-  }, [fileUri, tabId.id, workspace])
+  }, [fileUri, panelId.id, workspace])
 
   useEffect(() => {
-    const view = viewByTab.get(tabId.id)
+    const view = viewByPanel.get(panelId.id)
     if (view) applyTheme(view, theme)
-  }, [tabId.id, theme])
+  }, [panelId.id, theme])
 
   useEffect(() => {
-    const view = viewByTab.get(tabId.id)
+    const view = viewByPanel.get(panelId.id)
     if (view) applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
-  }, [tabId.id, keymapRevision, runBinding])
+  }, [panelId.id, keymapRevision, runBinding])
 
   useEffect(() => {
-    const view = viewByTab.get(tabId.id)
+    const view = viewByPanel.get(panelId.id)
     if (view) applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContext)
-  }, [tabId.id, keymapContext, runBinding])
+  }, [panelId.id, keymapContext, runBinding])
 
   useEffect(() => {
-    const view = viewByTab.get(tabId.id)
+    const view = viewByPanel.get(panelId.id)
     if (view) applyUserExtensions(view, userExtensions)
-  }, [tabId.id, userExtensions])
+  }, [panelId.id, userExtensions])
 
   useEffect(() => {
     if (!autoFocus) return
-    const view = viewByTab.get(tabId.id)
+    const view = viewByPanel.get(panelId.id)
     view?.focus()
-  }, [tabId.id, autoFocus])
+  }, [panelId.id, autoFocus])
 
   useEffect(() => {
     if (lspRevision == null || lspRevision === 0 || !resolveLspClient) return
-    const session = sessionByTab.get(tabId.id)
+    const session = sessionByPanel.get(panelId.id)
     if (!session || session.largeFile || isUntitledUri(fileUri)) return
     let cancelled = false
     void (async () => {
@@ -341,24 +344,24 @@ function EditorTabHostInner({
     return () => {
       cancelled = true
     }
-  }, [lspRevision, resolveLspClient, fileUri, tabId.id])
+  }, [lspRevision, resolveLspClient, fileUri, panelId.id])
 
   useEffect(() => {
     const sub = workspace.onDidChangeSavedBaseline.event(({ uri, content }) => {
       if (uri !== fileUri) return
-      const session = sessionByTab.get(tabId.id)
+      const session = sessionByPanel.get(panelId.id)
       if (!session) return
       session.savedBaseline = textFromString(content)
       session.lastKnownText = content
       workspace.markDirty(uri, !session.view.state.doc.eq(session.savedBaseline))
     })
     return () => sub.dispose()
-  }, [workspace, fileUri, tabId.id])
+  }, [workspace, fileUri, panelId.id])
 
   useEffect(() => {
     const sub = workspace.onFileReload.event(({ uri, content }) => {
       if (uri !== fileUri) return
-      const session = sessionByTab.get(tabId.id)
+      const session = sessionByPanel.get(panelId.id)
       if (!session) return
       session.lastKnownText = content
       session.view.dispatch({
@@ -368,9 +371,9 @@ function EditorTabHostInner({
       onProblemsChangeRef.current?.()
     })
     return () => sub.dispose()
-  }, [workspace, fileUri, tabId.id])
+  }, [workspace, fileUri, panelId.id])
 
-  const activeView = viewByTab.get(tabId.id) ?? null
+  const activeView = viewByPanel.get(panelId.id) ?? null
 
   return (
     <>

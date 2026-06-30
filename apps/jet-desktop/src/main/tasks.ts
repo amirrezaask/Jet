@@ -1,0 +1,23 @@
+import { spawn } from "node:child_process"
+import type { IpcMain } from "electron"
+import type { JetTaskSpawnRequest } from "@jet/workspace"
+
+export function registerTaskHandlers(ipcMain: IpcMain): void {
+  ipcMain.handle("tasks:spawn", async (_event, req: JetTaskSpawnRequest) => {
+    return new Promise<{ exitCode: number; output: string }>(resolve => {
+      let output = ""
+      const child = spawn(req.command, req.args, {
+        cwd: req.cwd,
+        shell: process.platform === "win32",
+        env: process.env,
+      })
+      const append = (chunk: Buffer) => {
+        output += chunk.toString()
+      }
+      child.stdout.on("data", append)
+      child.stderr.on("data", append)
+      child.on("close", code => resolve({ exitCode: code ?? 1, output }))
+      child.on("error", err => resolve({ exitCode: 1, output: `${output}\n${err.message}` }))
+    })
+  })
+}

@@ -23,6 +23,8 @@ import { motionCursor } from "./motion-cursor.js"
 import { multiCursorExtensions } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
 import { eolOverlayExtension } from "./eol-overlays.js"
+import { braceScopeExtension, braceScopeTheme } from "./brace-scope-extension.js"
+import { cursorTokenHighlightExtension, cursorTokenTheme } from "./token-highlight.js"
 import { perfMeasure } from "./perf-instrumentation.js"
 import { jetReloadAnnotation } from "./reload-annotation.js"
 
@@ -86,6 +88,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
         },
       }),
       eolOverlayExtension(),
+      braceScopeExtension(),
     )
   } else {
     extensions.push(

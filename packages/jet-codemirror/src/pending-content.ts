@@ -1,13 +1,13 @@
-import type { TabId } from "@jet/shared"
+import type { PanelId } from "@jet/shared"
 
 const pending = new Map<number, string>()
 
-export function setPendingInitialContent(tabId: TabId, text: string): void {
-  pending.set(tabId.id, text)
+export function setPendingInitialContent(panelId: PanelId, text: string): void {
+  pending.set(panelId.id, text)
 }
 
-export function consumePendingInitialContent(tabId: TabId): string | undefined {
-  const content = pending.get(tabId.id)
-  if (content != null) pending.delete(tabId.id)
+export function consumePendingInitialContent(panelId: PanelId): string | undefined {
+  const content = pending.get(panelId.id)
+  if (content != null) pending.delete(panelId.id)
   return content
 }

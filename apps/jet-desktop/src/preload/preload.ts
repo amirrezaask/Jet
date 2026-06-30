@@ -11,11 +11,6 @@ ipcRenderer.on("fs:changed", (_e, uri: string) => {
   for (const cb of fileChangeListeners) cb(uri)
 })
 
-const terminalDataListeners = new Map<string, Set<(data: string) => void>>()
-ipcRenderer.on("terminal:data", (_e, id: string, data: string) => {
-  terminalDataListeners.get(id)?.forEach(cb => cb(data))
-})
-
 ipcRenderer.on("jet:close-tab", () => {
   window.dispatchEvent(new CustomEvent("jet-close-tab"))
 })
@@ -23,11 +18,6 @@ ipcRenderer.on("jet:close-tab", () => {
 const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
 ipcRenderer.on("workspace:fileIndex", (_e, payload: { rootUri: string; files: string[] }) => {
   for (const cb of fileIndexListeners) cb(payload.rootUri, payload.files)
-})
-
-const gitBranchListeners = new Set<(rootUri: string, branch: string | null) => void>()
-ipcRenderer.on("workspace:gitBranch", (_e, payload: { rootUri: string; branch: string | null }) => {
-  for (const cb of gitBranchListeners) cb(payload.rootUri, payload.branch)
 })
 
 const api: JetElectronAPI = {
@@ -50,21 +40,6 @@ const api: JetElectronAPI = {
       fileIndexListeners.add(callback)
       return () => fileIndexListeners.delete(callback)
     },
-    onGitBranch: callback => {
-      gitBranchListeners.add(callback)
-      return () => gitBranchListeners.delete(callback)
-    },
-  },
-  git: {
-    isRepo: rootUri => ipcRenderer.invoke("git:isRepo", rootUri),
-    status: rootUri => ipcRenderer.invoke("git:status", rootUri),
-    diff: (rootUri, opts) => ipcRenderer.invoke("git:diff", rootUri, opts),
-    branch: rootUri => ipcRenderer.invoke("git:branch", rootUri),
-    stage: (rootUri, paths) => ipcRenderer.invoke("git:stage", rootUri, paths),
-    unstage: (rootUri, paths) => ipcRenderer.invoke("git:unstage", rootUri, paths),
-    commit: (rootUri, message) => ipcRenderer.invoke("git:commit", rootUri, message),
-    branches: rootUri => ipcRenderer.invoke("git:branches", rootUri),
-    checkout: (rootUri, branch) => ipcRenderer.invoke("git:checkout", rootUri, branch),
   },
   search: {
     project: (rootUri, query, opts) =>
@@ -80,23 +55,8 @@ const api: JetElectronAPI = {
       return () => lspCrashListeners.delete(cb)
     },
   },
-  terminal: {
-    create: cwdUri => ipcRenderer.invoke("terminal:create", cwdUri),
-    write: (id, data) => ipcRenderer.invoke("terminal:write", id, data),
-    resize: (id, cols, rows) => ipcRenderer.invoke("terminal:resize", id, cols, rows),
-    onData: (id, callback) => {
-      let set = terminalDataListeners.get(id)
-      if (!set) {
-        set = new Set()
-        terminalDataListeners.set(id, set)
-      }
-      set.add(callback)
-      return () => {
-        set!.delete(callback)
-        if (set!.size === 0) terminalDataListeners.delete(id)
-      }
-    },
-    dispose: id => ipcRenderer.invoke("terminal:dispose", id),
+  tasks: {
+    spawn: req => ipcRenderer.invoke("tasks:spawn", req),
   },
   getLaunchConfig: () => ipcRenderer.invoke("jet:getLaunchConfig"),
   getHomeDir: () => ipcRenderer.invoke("jet:getHomeDir"),

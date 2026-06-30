@@ -19,9 +19,10 @@ import {
 } from "@codemirror/commands"
 import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search"
 import type { PanelTree } from "@jet/panels"
-import type { PanelId, TabId } from "@jet/shared"
-import { basename, isUntitledUri, pathToFileUri } from "@jet/shared"
+import type { PanelId } from "@jet/shared"
+import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shared"
 import type { JetCommandContext, JetCommands, JetCommandFn, WorkspaceService } from "@jet/workspace"
+import { problemsToLocationItems } from "@jet/ui"
 import { openReplaceSearchPanel, openSearchPanel } from "@jet/codemirror"
 import {
   fetchDocumentOutline,
@@ -41,8 +42,13 @@ import {
 import { scheduleCodeActions, applyCodeAction } from "@jet/lsp"
 import type { OutlineEntry } from "@jet/ui"
 import { getEditorView, showEditorContextMenuAt } from "@jet/ui"
-import { getAllLeafPanels, resolveEditorPanel, resolveTargetPanel } from "./panel-routing.js"
-import { confirmCloseEditorTab } from "./tab-close.js"
+import {
+  getActiveEditorFileUri,
+  getAllLeafPanels,
+  resolveEditorPanel,
+  resolveTargetPanel,
+} from "./panel-routing.js"
+import { confirmCloseBuffer } from "./close-buffer.js"
 
 export type BuildAppCommandsDeps = {
   workspace: WorkspaceService
@@ -50,6 +56,7 @@ export type BuildAppCommandsDeps = {
   getFocusedPanel: () => PanelId | null
   setPaletteOpen: (open: boolean) => void
   setQuickOpenOpen: (open: boolean) => void
+  setBufferListOpen: (open: boolean) => void
   setOpenFileOpen: (open: boolean) => void
   setCdOpen: (open: boolean) => void
   setGotoLineOpen: (open: boolean) => void
@@ -58,28 +65,23 @@ export type BuildAppCommandsDeps = {
   cloneTree: () => PanelTree
   commitTree: (tree: PanelTree) => void
   openWorkspaceFolder: (path: string) => void
-  handlePanelEvent: (event: { type: "tabClose"; tabId: TabId }) => void
-  showSingletonViewTab: (
-    kind: "search" | "problems",
-    label: string,
-    tabRef: { current: TabId | null },
-  ) => void
-  searchTabRef: { current: TabId | null }
-  problemsTabRef: { current: TabId | null }
-  explorerTabRef: { current: TabId | null }
-  gitTabRef: { current: TabId | null }
-  terminalTabRef: { current: TabId | null }
+  handlePanelEvent: (event: { type: "panelClose"; panelId: PanelId }) => void
+  openFileInEditor: (uri: string, path: string, line?: number, column?: number, pushJump?: boolean) => void
+  openLocationItem: (item: import("@jet/workspace").LocationItem) => void
+  syncProblemsToLocationList: () => void
   editorPanelRef: { current: PanelId | null }
   isWebMode: boolean
   setZoomLevel: (delta: number) => void
   handlePanelNavigation: (action: string) => void
   setOutlineOpen: (open: boolean) => void
   setOutlineSymbols: (symbols: OutlineEntry[]) => void
+  pushJumpFromActiveEditor: (label?: string) => void
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   const currentPanelTree = () => deps.getPanelTree()
   const currentFocusedPanel = () => deps.getFocusedPanel()
+
   const openFolder: JetCommandFn = async () => {
     const folderPath = await window.jet?.fs.showOpenFolderDialog()
     if (!folderPath) {
@@ -113,9 +115,18 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     return false
   }
 
+  function activeEditorPanel(): PanelId | null {
+    return resolveEditorPanel(
+      currentPanelTree(),
+      deps.editorPanelRef.current,
+      currentFocusedPanel(),
+    )
+  }
+
   const named: JetCommands = {
     palette: () => deps.setPaletteOpen(true),
     quickOpen: () => deps.setQuickOpenOpen(true),
+    bufferList: () => deps.setBufferListOpen(true),
     openFile: ctx => {
       if (!deps.workspace.root) {
         void openFolder(ctx)
@@ -128,14 +139,11 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     save: async ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
-      const focusedPanel = currentFocusedPanel()
-      const leaf = focusedPanel && currentPanelTree().getLeaf(focusedPanel)
-      const tabId = leaf?.group.tabs[leaf.group.active]
-      if (!tabId) return
-      const kind = deps.workspace.tabRegistry.get(tabId)
-      if (kind?.kind !== "editor") return
+      const panel = currentFocusedPanel()
+      const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
+      if (!fileUri) return
       const content = view.state.doc.toString()
-      if (isUntitledUri(kind.fileUri)) {
+      if (isUntitledUri(fileUri)) {
         if (!deps.workspace.root) return
         let savePath: string | null = null
         if (deps.isWebMode) {
@@ -148,33 +156,45 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         }
         const uri = pathToFileUri(savePath)
         await deps.workspace.writeFile(uri, content)
-        deps.workspace.promoteUntitledTab(tabId, uri, savePath)
+        const tree = deps.cloneTree()
+        if (panel) {
+          deps.workspace.promoteUntitled(fileUri, uri, savePath)
+          deps.workspace.assignEditorPanel(tree, panel, uri, savePath)
+          deps.commitTree(tree)
+        }
         deps.setMessage(`Saved ${basename(savePath)}`)
         return
       }
-      await deps.workspace.writeFile(kind.fileUri, content)
+      await deps.workspace.writeFile(fileUri, content)
       deps.setMessage("Saved")
     },
     newFile: () => {
       const tree = deps.cloneTree()
-      const panel = resolveEditorPanel(
-        tree,
-        deps.workspace.tabRegistry,
-        deps.editorPanelRef.current,
-        currentFocusedPanel(),
-      )
+      const panel = activeEditorPanel()
       if (!panel) return
       deps.editorPanelRef.current = panel
-      const tabId = deps.workspace.openUntitledTab(tree, panel)
+      deps.workspace.openUntitledInPanel(tree, panel)
       deps.setFocusedPanel(panel)
       deps.commitTree(tree)
-      requestAnimationFrame(() => getEditorView(tabId)?.focus())
+      requestAnimationFrame(() => getEditorView(panel)?.focus())
     },
-    closeTab: () => {
-      const focusedPanel = currentFocusedPanel()
-      const leaf = focusedPanel && currentPanelTree().getLeaf(focusedPanel)
-      const tabId = leaf?.group.tabs[leaf.group.active]
-      if (tabId) deps.handlePanelEvent({ type: "tabClose", tabId })
+    closeBuffer: () => {
+      const panel = currentFocusedPanel()
+      const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
+      if (!fileUri || !panel) return
+      if (!confirmCloseBuffer(deps.workspace, fileUri)) return
+      deps.workspace.clearDirtyState(fileUri)
+      deps.workspace.closeBuffer(fileUri)
+      const tree = deps.cloneTree()
+      tree.setView(panel, { kind: "empty" })
+      deps.commitTree(tree)
+    },
+    closePanel: () => {
+      const panel = currentFocusedPanel()
+      if (!panel) return
+      const fileUri = getActiveEditorFileUri(currentPanelTree(), panel)
+      if (fileUri && !confirmCloseBuffer(deps.workspace, fileUri)) return
+      deps.handlePanelEvent({ type: "panelClose", panelId: panel })
     },
     find: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
@@ -185,64 +205,123 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (view) openReplaceSearchPanel(view)
     },
     gotoLine: () => deps.setGotoLineOpen(true),
-    search: () => deps.showSingletonViewTab("search", "Search", deps.searchTabRef),
-    problems: () => deps.showSingletonViewTab("problems", "Problems", deps.problemsTabRef),
+    locationList: () => {
+      const tree = deps.cloneTree()
+      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      if (!target) return
+      const panel = deps.workspace.ensurePanelView(tree, target, "locationlist")
+      deps.setFocusedPanel(panel)
+      deps.commitTree(tree)
+    },
+    locationListSearch: () => {
+      deps.syncProblemsToLocationList()
+      const tree = deps.cloneTree()
+      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      if (!target) return
+      const panel = deps.workspace.ensurePanelView(tree, target, "locationlist")
+      deps.workspace.locationList.setSource("search")
+      deps.setFocusedPanel(panel)
+      deps.commitTree(tree)
+    },
+    locationListProblems: () => {
+      deps.syncProblemsToLocationList()
+      const tree = deps.cloneTree()
+      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      if (!target) return
+      const panel = deps.workspace.ensurePanelView(tree, target, "locationlist")
+      deps.workspace.locationList.setSource("problems")
+      deps.setFocusedPanel(panel)
+      deps.commitTree(tree)
+    },
+    output: () => {
+      const tree = deps.cloneTree()
+      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      if (!target) return
+      const panel = deps.workspace.ensurePanelView(tree, target, "output")
+      deps.setFocusedPanel(panel)
+      deps.commitTree(tree)
+    },
     explorer: () => {
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel(), deps.workspace.tabRegistry)
+      const target = resolveTargetPanel(tree, currentFocusedPanel())
       if (!target) return
-      if (!deps.explorerTabRef.current) {
-        deps.explorerTabRef.current = deps.workspace.ensureSingletonTab(
-          tree,
-          target,
-          { kind: "explorer" },
-          "Explorer",
-          null,
-        )
-      }
-      const tabPanel =
-        deps.workspace.tabRegistry.panelForTab(deps.explorerTabRef.current) ?? target
-      tree.setActiveTab(tabPanel, deps.explorerTabRef.current)
-      deps.setFocusedPanel(tabPanel)
+      const panel = deps.workspace.ensurePanelView(tree, target, "explorer")
+      deps.setFocusedPanel(panel)
       deps.commitTree(tree)
     },
-    git: () => {
-      const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel(), deps.workspace.tabRegistry)
-      if (!target) return
-      if (!deps.gitTabRef.current) {
-        deps.gitTabRef.current = deps.workspace.ensureSingletonTab(
-          tree,
-          target,
-          { kind: "git" },
-          "Git",
-          null,
-        )
+    jumpBack: ctx => {
+      const panel = currentFocusedPanel()
+      const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!fileUri || !view) return
+      const pos = view.state.selection.main.head
+      const line = view.state.doc.lineAt(pos)
+      const current = {
+        fileUri,
+        line: line.number,
+        column: pos - line.from + 1,
+        panelId: panel ?? undefined,
       }
-      const tabPanel = deps.workspace.tabRegistry.panelForTab(deps.gitTabRef.current) ?? target
-      tree.setActiveTab(tabPanel, deps.gitTabRef.current)
-      deps.setFocusedPanel(tabPanel)
-      deps.commitTree(tree)
+      const entry = deps.workspace.jumpStack.popBack(current)
+      if (!entry) return
+      deps.openFileInEditor(entry.fileUri, fileUriToPath(entry.fileUri), entry.line, entry.column, false)
     },
-    terminal: () => {
+    jumpForward: ctx => {
+      const panel = currentFocusedPanel()
+      const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
+      const view = ctx.getActiveEditorView() as EditorView | null
+      if (!fileUri || !view) return
+      const pos = view.state.selection.main.head
+      const line = view.state.doc.lineAt(pos)
+      const current = {
+        fileUri,
+        line: line.number,
+        column: pos - line.from + 1,
+        panelId: panel ?? undefined,
+      }
+      const entry = deps.workspace.jumpStack.popForward(current)
+      if (!entry) return
+      deps.openFileInEditor(entry.fileUri, fileUriToPath(entry.fileUri), entry.line, entry.column, false)
+    },
+    runTask: async ctx => {
+      const tasks = deps.workspace.taskRunner.tasks
+      if (!tasks.length) {
+        ctx.ui.showMessage("No tasks — add .jet/tasks.json or register in editorrc")
+        return
+      }
+      const task = tasks[0]!
+      if (!deps.workspace.root) return
+      void deps.workspace.taskRunner.runTask(task, deps.workspace.root.path, deps.workspace.root.path)
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel(), deps.workspace.tabRegistry)
-      if (!target) return
-      deps.terminalTabRef.current = deps.workspace.ensureSingletonTab(
-        tree,
-        target,
-        { kind: "terminal", terminalId: "main" },
-        "Terminal",
-        deps.terminalTabRef.current,
-      )
-      const tabPanel =
-        deps.workspace.tabRegistry.panelForTab(deps.terminalTabRef.current) ?? target
-      tree.setActiveTab(tabPanel, deps.terminalTabRef.current)
-      deps.setFocusedPanel(tabPanel)
-      deps.commitTree(tree)
+      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      if (target) {
+        const panel = deps.workspace.ensurePanelView(tree, target, "output")
+        deps.setFocusedPanel(panel)
+        deps.commitTree(tree)
+      }
+      const run = deps.workspace.taskRunner.activeRun()
+      if (run?.errors.length) {
+        const other = deps.workspace.locationList.items.filter(i => i.source !== "task-errors")
+        deps.workspace.locationList.setItems([...other, ...run.errors], "task-errors")
+      }
+    },
+    runBuild: async ctx => {
+      const build = deps.workspace.taskRunner.tasks.find(t => t.group === "build") ?? deps.workspace.taskRunner.tasks[0]
+      if (!build) {
+        ctx.ui.showMessage("No build task configured")
+        return
+      }
+      if (!deps.workspace.root) return
+      void deps.workspace.taskRunner.runTask(build, deps.workspace.root.path, deps.workspace.root.path)
+      const tree = deps.cloneTree()
+      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      if (target) {
+        const panel = deps.workspace.ensurePanelView(tree, target, "output")
+        deps.setFocusedPanel(panel)
+        deps.commitTree(tree)
+      }
     },
 
-    // --- Tier 1: Editor commands wrapping CM built-ins ---
     toggleComment: ctx => runCmCmd(ctx, toggleComment),
     copyLineUp: ctx => runCmCmd(ctx, copyLineUp),
     copyLineDown: ctx => runCmCmd(ctx, copyLineDown),
@@ -262,92 +341,59 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     smartSelectExpand: ctx => runCmCmd(ctx, selectParentSyntax),
     smartSelectShrink: ctx => runCmCmd(ctx, simplifySelection),
 
-    // --- Tier 2: Window / layout ---
-    nextEditor: () => {
-      const tree = deps.cloneTree()
-      const focusedPanel = currentFocusedPanel()
-      const leaf = focusedPanel && tree.getLeaf(focusedPanel)
-      if (!leaf || leaf.group.tabs.length < 2) { deps.commitTree(tree); return }
-      const next = (leaf.group.active + 1) % leaf.group.tabs.length
-      leaf.group.active = next
-      const tabId = leaf.group.tabs[next]
-      deps.setFocusedPanel(leaf.panelId)
-      deps.commitTree(tree)
-      const kind = deps.workspace.tabRegistry.get(tabId)
-      if (kind?.kind === "editor") requestAnimationFrame(() => getEditorView(tabId)?.focus())
+    nextBuffer: () => {
+      const buffers = deps.workspace.openBuffers
+      if (buffers.length < 2) return
+      const panel = activeEditorPanel()
+      if (!panel) return
+      const current = getActiveEditorFileUri(currentPanelTree(), panel)
+      const idx = current ? buffers.indexOf(current) : -1
+      const next = buffers[(idx + 1) % buffers.length]!
+      deps.openFileInEditor(next, fileUriToPath(next), undefined, undefined, false)
     },
-    prevEditor: () => {
-      const tree = deps.cloneTree()
-      const focusedPanel = currentFocusedPanel()
-      const leaf = focusedPanel && tree.getLeaf(focusedPanel)
-      if (!leaf || leaf.group.tabs.length < 2) { deps.commitTree(tree); return }
-      const prev = (leaf.group.active - 1 + leaf.group.tabs.length) % leaf.group.tabs.length
-      leaf.group.active = prev
-      const tabId = leaf.group.tabs[prev]
-      deps.setFocusedPanel(leaf.panelId)
-      deps.commitTree(tree)
-      const kind = deps.workspace.tabRegistry.get(tabId)
-      if (kind?.kind === "editor") requestAnimationFrame(() => getEditorView(tabId)?.focus())
-    },
-    closeAllTabs: () => {
-      const tree = deps.cloneTree()
-      const focusedPanel = currentFocusedPanel()
-      const leaf = focusedPanel && tree.getLeaf(focusedPanel)
-      if (!leaf) { deps.commitTree(tree); return }
-      for (const tabId of [...leaf.group.tabs]) {
-        if (!confirmCloseEditorTab(deps.workspace, tabId)) continue
-        deps.workspace.tabRegistry.delete(tabId)
-        tree.removeTab(tabId)
-      }
-      deps.commitTree(tree)
+    prevBuffer: () => {
+      const buffers = deps.workspace.openBuffers
+      if (buffers.length < 2) return
+      const panel = activeEditorPanel()
+      if (!panel) return
+      const current = getActiveEditorFileUri(currentPanelTree(), panel)
+      const idx = current ? buffers.indexOf(current) : 0
+      const prev = buffers[(idx - 1 + buffers.length) % buffers.length]!
+      deps.openFileInEditor(prev, fileUriToPath(prev), undefined, undefined, false)
     },
     focusSidebar: () => {
       const panelTree = currentPanelTree()
-      const allPanels = getAllLeafPanels(panelTree)
-      for (const panel of allPanels) {
-        const leaf = panelTree.getLeaf(panel)
-        if (!leaf) continue
-        const hasSidebarTab = leaf.group.tabs.some(t => {
-          const k = deps.workspace.tabRegistry.get(t)
-          return k?.kind === "explorer" || k?.kind === "git" || k?.kind === "search" || k?.kind === "problems"
-        })
-        if (hasSidebarTab) { deps.setFocusedPanel(panel); return }
+      for (const panel of getAllLeafPanels(panelTree)) {
+        const view = panelTree.getView(panel)
+        if (view?.kind === "explorer" || view?.kind === "locationlist") {
+          deps.setFocusedPanel(panel)
+          return
+        }
       }
-      if (allPanels[0]) deps.setFocusedPanel(allPanels[0])
+      const panels = getAllLeafPanels(panelTree)
+      if (panels[0]) deps.setFocusedPanel(panels[0])
     },
     focusEditorGroup: () => {
-      if (deps.editorPanelRef.current) {
-        deps.setFocusedPanel(deps.editorPanelRef.current)
-        const leaf = currentPanelTree().getLeaf(deps.editorPanelRef.current)
-        const tabId = leaf?.group.tabs[leaf?.group.active ?? 0]
-        if (tabId) requestAnimationFrame(() => getEditorView(tabId)?.focus())
+      const panel = activeEditorPanel()
+      if (panel) {
+        deps.setFocusedPanel(panel)
+        requestAnimationFrame(() => getEditorView(panel)?.focus())
       }
     },
     lastEditorGroup: () => {
       const panelTree = currentPanelTree()
-      const panels = getAllLeafPanels(panelTree)
-      let lastEditor: PanelId | null = null
-      for (const panel of panels) {
-        const leaf = panelTree.getLeaf(panel)
-        if (leaf?.group.tabs.some(t => deps.workspace.tabRegistry.get(t)?.kind === "editor")) {
-          lastEditor = panel
-        }
-      }
-      if (lastEditor) deps.setFocusedPanel(lastEditor)
+      const panels = getAllLeafPanels(panelTree).filter(p => panelTree.getView(p)?.kind === "editor")
+      if (panels.length > 0) deps.setFocusedPanel(panels[panels.length - 1]!)
     },
     splitEditorRight: () => {
       const tree = deps.cloneTree()
       const target = currentFocusedPanel() ?? deps.editorPanelRef.current
-      if (!target) { deps.commitTree(tree); return }
+      if (!target) return
       const newPanel = tree.splitAtEdge(target, "right")
-      const leaf = tree.getLeaf(target)
-      if (leaf && leaf.group.tabs.length > 0) {
-        const activeTab = leaf.group.tabs[leaf.group.active]
-        tree.removeTab(activeTab)
-        tree.insertTab(newPanel, activeTab)
-        deps.workspace.tabRegistry.setPanel(activeTab, newPanel)
+      const view = tree.getView(target)
+      if (view?.kind === "editor") {
+        tree.setView(newPanel, { kind: "empty" })
       }
-      deps.editorPanelRef.current = target
       deps.setFocusedPanel(newPanel)
       deps.commitTree(tree)
     },
@@ -359,21 +405,21 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     zoomIn: () => deps.setZoomLevel(1),
     zoomOut: () => deps.setZoomLevel(-1),
-    toggleDevTools: () => { /* Electron handles Cmd-Alt-i natively */ },
+    toggleDevTools: () => {},
     toggleFullScreen: () => {
       if (document.fullscreenElement) document.exitFullscreen()
       else document.body.requestFullscreen()
     },
-    quit: () => { /* Electron / OS handles Cmd-q natively */ },
+    quit: () => {},
     closeQuickOpen: () => {
       deps.setPaletteOpen(false)
       deps.setQuickOpenOpen(false)
+      deps.setBufferListOpen(false)
       deps.setOpenFileOpen(false)
       deps.setGotoLineOpen(false)
       deps.setOutlineOpen(false)
     },
 
-    // --- Tier 3: LSP entry points ---
     quickOutline: async ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
@@ -402,6 +448,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
       if (lspUnavailable(ctx)) return
+      deps.pushJumpFromActiveEditor("references")
       if (!runFindReferences(view)) ctx.ui.showMessage("Find references not available")
     },
     triggerParameterHints: ctx => {
@@ -414,24 +461,28 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
       if (lspUnavailable(ctx)) return
+      deps.pushJumpFromActiveEditor("definition")
       if (!runGoToDefinition(view)) ctx.ui.showMessage("Go to definition not available")
     },
     goToDeclaration: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
       if (lspUnavailable(ctx)) return
+      deps.pushJumpFromActiveEditor("definition")
       if (!runGoToDeclaration(view)) ctx.ui.showMessage("Go to declaration not available")
     },
     goToTypeDefinition: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
       if (lspUnavailable(ctx)) return
+      deps.pushJumpFromActiveEditor("definition")
       if (!runGoToTypeDefinition(view)) ctx.ui.showMessage("Go to type definition not available")
     },
     goToImplementation: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
       if (lspUnavailable(ctx)) return
+      deps.pushJumpFromActiveEditor("definition")
       if (!runGoToImplementation(view)) ctx.ui.showMessage("Go to implementation not available")
     },
     triggerSuggest: ctx => {
@@ -477,11 +528,6 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (coords) showEditorContextMenuAt(coords.left, coords.bottom)
     },
 
-    gitRevertSelected: ctx => ctx.ui.showMessage("Git: revert selected ranges not yet implemented"),
-    gitStageSelected: ctx => ctx.ui.showMessage("Git: stage selected ranges not yet implemented"),
-    gitUnstageSelected: ctx => ctx.ui.showMessage("Git: unstage selected ranges not yet implemented"),
-
-    // --- Tier 4: List navigation (infrastructure) ---
     listFocusNext: () => deps.handlePanelNavigation("focusNext"),
     listFocusPrev: () => deps.handlePanelNavigation("focusPrev"),
     listFocusActivate: () => deps.handlePanelNavigation("activate"),
@@ -494,80 +540,40 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   return named as JetCommands
 }
 
-/** Palette / agent command ids mapped to app command functions. */
 export const APP_COMMAND_REGISTRY = [
   { id: "ui.showCommandPalette", fn: "palette", title: "Show Command Palette", category: "UI", aliases: ["commands", "palette", "help"] },
-  { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly"], keywords: ["cmd-k f"] },
+  { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly"] },
+  { id: "workspace.bufferList", fn: "bufferList", title: "Buffer List", category: "Workspace", aliases: ["open buffers", "switch buffer"] },
   { id: "workspace.saveFile", fn: "save", title: "Save File", category: "Workspace", aliases: ["write"] },
   { id: "workspace.openFile", fn: "openFile", title: "Open File", category: "Workspace", aliases: ["browse file"] },
   { id: "workspace.openFolder", fn: "openFolder", title: "Open Folder", category: "Workspace", aliases: ["open workspace"] },
   { id: "workspace.cd", fn: "cd", title: "Change Directory", category: "Workspace", aliases: ["switch workspace"] },
   { id: "workspace.newFile", fn: "newFile", title: "New File", category: "Workspace", aliases: ["untitled"] },
-  { id: "layout.closeTab", fn: "closeTab", title: "Close Tab", category: "Layout", aliases: ["close editor"] },
-  { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor", aliases: ["search in file"] },
-  { id: "editor.replace", fn: "replace", title: "Replace in Editor", category: "Editor", aliases: ["replace in file"] },
-  { id: "editor.gotoLine", fn: "gotoLine", title: "Go to Line…", category: "Editor", aliases: ["line"] },
-  { id: "search.show", fn: "search", title: "Show Search", category: "View", aliases: ["project search"], keywords: ["cmd-k s"] },
-  { id: "git.showChanges", fn: "git", title: "Show Git Changes", category: "Git", aliases: ["source control"], keywords: ["cmd-k g"] },
-  { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"], keywords: ["cmd-k w"] },
-  { id: "terminal.show", fn: "terminal", title: "Show Terminal", category: "View", aliases: ["shell"], keywords: ["cmd-k t"] },
-  { id: "problems.show", fn: "problems", title: "Show Problems", category: "View", aliases: ["diagnostics", "errors"] },
-
-  // --- Tier 1: Editor ---
+  { id: "workspace.closeBuffer", fn: "closeBuffer", title: "Close Buffer", category: "Workspace", aliases: ["close file"] },
+  { id: "layout.closePanel", fn: "closePanel", title: "Close Panel", category: "Layout" },
+  { id: "navigation.jumpBack", fn: "jumpBack", title: "Jump Back", category: "Navigation", aliases: ["back"] },
+  { id: "navigation.jumpForward", fn: "jumpForward", title: "Jump Forward", category: "Navigation", aliases: ["forward"] },
+  { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor" },
+  { id: "editor.replace", fn: "replace", title: "Replace in Editor", category: "Editor" },
+  { id: "editor.gotoLine", fn: "gotoLine", title: "Go to Line…", category: "Editor" },
+  { id: "locationlist.show", fn: "locationList", title: "Show Location List", category: "View" },
+  { id: "locationlist.showSearch", fn: "locationListSearch", title: "Location List: Search", category: "View" },
+  { id: "locationlist.showProblems", fn: "locationListProblems", title: "Location List: Problems", category: "View" },
+  { id: "output.show", fn: "output", title: "Show Output", category: "View" },
+  { id: "task.run", fn: "runTask", title: "Run Task", category: "Tasks" },
+  { id: "task.runBuild", fn: "runBuild", title: "Run Build Task", category: "Tasks" },
+  { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"] },
   { id: "editor.toggleComment", fn: "toggleComment", title: "Toggle Comment", category: "Editor" },
-  { id: "editor.copyLineUp", fn: "copyLineUp", title: "Copy Line Up", category: "Editor" },
-  { id: "editor.copyLineDown", fn: "copyLineDown", title: "Copy Line Down", category: "Editor" },
-  { id: "editor.moveLineUp", fn: "moveLineUp", title: "Move Line Up", category: "Editor" },
-  { id: "editor.moveLineDown", fn: "moveLineDown", title: "Move Line Down", category: "Editor" },
-  { id: "editor.addCursorAbove", fn: "addCursorAbove", title: "Add Cursor Above", category: "Editor" },
-  { id: "editor.addCursorBelow", fn: "addCursorBelow", title: "Add Cursor Below", category: "Editor" },
-  { id: "editor.jumpToBracket", fn: "jumpToBracket", title: "Jump to Bracket", category: "Editor" },
-  { id: "editor.expandLineSelection", fn: "expandLineSelection", title: "Expand Line Selection", category: "Editor" },
-  { id: "editor.indent", fn: "indentMore", title: "Indent", category: "Editor" },
-  { id: "editor.outdent", fn: "indentLess", title: "Outdent", category: "Editor" },
-  { id: "editor.selectNextOccurrence", fn: "selectNextOccurrence", title: "Select Next Occurrence", category: "Editor" },
-  { id: "editor.selectAllOccurrences", fn: "selectAllOccurrences", title: "Select All Occurrences", category: "Editor" },
-  { id: "editor.undo", fn: "undo", title: "Undo", category: "Editor" },
-  { id: "editor.redo", fn: "redo", title: "Redo", category: "Editor" },
-  { id: "editor.cursorUndo", fn: "cursorUndo", title: "Cursor Undo", category: "Editor" },
-  { id: "editor.smartSelectExpand", fn: "smartSelectExpand", title: "Expand Selection", category: "Editor" },
-  { id: "editor.smartSelectShrink", fn: "smartSelectShrink", title: "Shrink Selection", category: "Editor" },
-
-  // --- Tier 2: Window / Layout ---
-  { id: "editor.nextEditor", fn: "nextEditor", title: "Next Editor Tab", category: "Editor" },
-  { id: "editor.previousEditor", fn: "prevEditor", title: "Previous Editor Tab", category: "Editor" },
-  { id: "layout.closeAllTabs", fn: "closeAllTabs", title: "Close All Tabs", category: "Layout" },
-  { id: "workbench.action.focusSideBar", fn: "focusSidebar", title: "Focus Sidebar", category: "View" },
-  { id: "workbench.action.focusFirstEditorGroup", fn: "focusEditorGroup", title: "Focus First Editor Group", category: "View" },
-  { id: "workbench.action.lastEditorInGroup", fn: "lastEditorGroup", title: "Last Editor in Group", category: "View" },
+  { id: "editor.nextEditor", fn: "nextBuffer", title: "Next Buffer", category: "Editor" },
+  { id: "editor.previousEditor", fn: "prevBuffer", title: "Previous Buffer", category: "Editor" },
   { id: "view.splitEditor", fn: "splitEditorRight", title: "Split Editor Right", category: "View" },
-  { id: "workbench.action.toggleEditorGroupLayout", fn: "toggleEditorLayout", title: "Toggle Editor Group Layout", category: "View" },
-  { id: "workbench.action.zoomIn", fn: "zoomIn", title: "Zoom In", category: "View" },
-  { id: "workbench.action.zoomOut", fn: "zoomOut", title: "Zoom Out", category: "View" },
-  { id: "workbench.action.toggleFullScreen", fn: "toggleFullScreen", title: "Toggle Full Screen", category: "View" },
-  { id: "workbench.action.closeQuickOpen", fn: "closeQuickOpen", title: "Close Quick Open", category: "View" },
-
-  // --- Tier 3: Entry points (LSP) ---
+  { id: "workbench.action.focusSideBar", fn: "focusSidebar", title: "Focus Sidebar", category: "View" },
+  { id: "workbench.action.focusFirstEditorGroup", fn: "focusEditorGroup", title: "Focus Editor", category: "View" },
   { id: "editor.action.quickOutline", fn: "quickOutline", title: "Quick Outline", category: "Editor" },
   { id: "editor.action.formatDocument", fn: "formatDocument", title: "Format Document", category: "Editor" },
   { id: "editor.action.rename", fn: "rename", title: "Rename Symbol", category: "Editor" },
   { id: "editor.action.goToReferences", fn: "goToReferences", title: "Go to References", category: "Editor" },
-  { id: "editor.action.triggerParameterHints", fn: "triggerParameterHints", title: "Trigger Parameter Hints", category: "Editor" },
   { id: "editor.action.revealDefinition", fn: "goToDefinition", title: "Go to Definition", category: "Editor" },
-  { id: "editor.action.revealDeclaration", fn: "goToDeclaration", title: "Go to Declaration", category: "Editor" },
-  { id: "editor.action.goToTypeDefinition", fn: "goToTypeDefinition", title: "Go to Type Definition", category: "Editor" },
-  { id: "editor.action.goToImplementation", fn: "goToImplementation", title: "Go to Implementation", category: "Editor" },
-  { id: "editor.action.triggerSuggest", fn: "triggerSuggest", title: "Trigger Suggest", category: "Editor" },
-  { id: "editor.action.showHover", fn: "showHover", title: "Show Hover", category: "Editor" },
-  { id: "editor.action.quickFix", fn: "quickFix", title: "Quick Fix", category: "Editor" },
-  { id: "editor.action.showContextMenu", fn: "showContextMenu", title: "Show Context Menu", category: "Editor" },
-
-  // --- Tier 4: List navigation ---
   { id: "list.focusDown", fn: "listFocusNext", title: "List Focus Down", category: "List" },
-  { id: "list.focusUp", fn: "listFocusPrev", title: "List Focus Up", category: "List" },
   { id: "list.open", fn: "listFocusActivate", title: "Open Focused List Item", category: "List" },
-  { id: "list.focusPageUp", fn: "listFocusPageUp", title: "List Page Up", category: "List" },
-  { id: "list.focusPageDown", fn: "listFocusPageDown", title: "List Page Down", category: "List" },
-  { id: "list.focusFirst", fn: "listFocusFirst", title: "List First", category: "List" },
-  { id: "list.focusLast", fn: "listFocusLast", title: "List Last", category: "List" },
 ] as const

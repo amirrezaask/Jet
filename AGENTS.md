@@ -12,10 +12,10 @@ Guide for AI agents and contributors working in this repo.
 | Layer             | Owns                                                   |
 | ----------------- | ------------------------------------------------------ |
 | **CodeMirror 6**  | Text buffer, syntax, LSP client, keymaps inside editor |
-| **Jet Workspace** | Files, tabs, dirty state, commands, keymap registry    |
-| **Jet Panels**    | Infinite split tree, tab groups, drag/drop docking     |
-| **Jet UI / App**  | React shell, themes, explorer, git, palette            |
-| **Electron main** | FS, git CLI, LSP process spawn + WebSocket bridge      |
+| **Jet Workspace** | Files, open buffers, dirty state, commands, jump stack, tasks |
+| **Jet Panels**    | Split tree — one view per panel (no tab bar)                  |
+| **Jet UI / App**  | React shell, themes, explorer, location list, output        |
+| **Electron main** | FS, search, LSP bridge, task spawn                            |
 
 
 React holds **orchestration state** (panel tree, focus, palette). Editor document text lives in **CodeMirror**, not React state.
@@ -367,10 +367,12 @@ Registered in `packages/jet-app/src/App.tsx`:
 4. Explorer tree — on demand via Mod-Shift-e; click file → editor tab
 5. Edit + **Mod-s** save (click editor tab first if needed)
 6. **Mod-p** command palette — centered screen modal
-7. Git tab (if repo)
-8. Panel split **resize** — drag gutter between panels
-9. Tab reorder within panel; tab drag cross-panel/split — partial, usable
-10. Cold start — WelcomeView until user opens folder or CLI/query provides target (no session restore)
+7. Location list (`locationlist.show`) — search + problems unified panel
+8. Output panel + `task.run` (Electron; browser stub)
+9. Jump stack — `navigation.jumpBack` / `jumpForward` (Alt-j / Alt-Shift-j)
+10. Buffer list — `workspace.bufferList` (Cmd-Shift-b)
+11. Panel split resize — drag gutter between panels
+12. No tab bar — one file per editor panel; quick-open (Cmd-p) switches buffer
 
 ---
 
@@ -526,18 +528,13 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 | Feature                          | 4coder  | Fleury  | Nameless   | Jet today                              |
 | -------------------------------- | ------- | ------- | ---------- | -------------------------------------- |
-| Tab drag/drop + reorder          | ✓       | ✓       | ✓          | reorder + cross-panel + edge-split ✓   |
-| Default panel layout             | ✓       | ✓       | ✓          | row: sidebar + main ✓                  |
-| In-buffer find                   | ✓       | ✓       | ✓          | ✓ Mod-f                                |
-| Command palette                  | ✓       | ✓       | ✓          | ✓ centered                             |
-| Project search + location list   | ✓       | ✓       | ✓          | ✓ ripgrep + jump                       |
-| Status bar (path, L/C, git, LSP) | partial | ✓       | ✓          | path + branch + L/C + LSP ✓            |
-| Theme picker + bundled themes    | ✓       | ✓       | ✓          | ✓ 6 themes                             |
-| Quick-open files                 | ✓       | ✓       | ✓          | ✓ Mod-Shift-o                          |
-| Terminal PTY                     | CLI     | —       | ✓          | ✓ Electron / stub web                  |
-| Full git panel                   | —       | —       | ✓          | stage/commit/branch ✓                  |
-| Brace guides / Fleury chrome     | —       | ✓       | ✓          | bracket match + indent markers ✓       |
-| Session layout persist           | —       | —       | ✓          | removed (no localStorage restore)      |
+| Tab drag/drop + reorder          | ✓       | ✓       | ✓          | removed (no tab bar)                   |
+| Buffer list                      | —       | ✓       | ✓          | ✓ Cmd-Shift-b                          |
+| Jump stack                       | ✓       | —       | ✓          | ✓ Alt-j                                |
+| Location list panel              | partial | ✓       | ✓          | ✓ search/problems/refs feeds           |
+| Output / tasks                   | build   | ✓       | ✓          | ✓ minimal task runner                  |
+| Git / terminal                   | —       | ✓       | ✓          | removed                                |
+| Fleury chrome                    | —       | ✓       | ✓          | brace guides + token highlight         |
 | LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Electron + rust-analyzer             |
 | Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | partial (no macros/kill ring)          |
 | Extension / custom layer         | C hooks | C++     | Rust setup | `.jet/editorrc.ts`                     |

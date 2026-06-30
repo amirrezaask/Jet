@@ -8,7 +8,8 @@ export type JetAgentState = {
   message: string | null
   paletteOpen: boolean
   focusedPanel: number | null
-  tabs: { id: number; label: string; kind: string }[]
+  openBuffers: string[]
+  panels: { id: number; kind: string }[]
 }
 
 export type JetAgentAPI = {
@@ -60,7 +61,8 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
         message: current.message,
         paletteOpen: current.paletteOpen,
         focusedPanel: current.focusedPanel?.id ?? null,
-        tabs: collectTabs(current),
+        openBuffers: current.workspace.openBuffers,
+        panels: collectPanels(current),
       }
     },
     async waitForReady() {
@@ -83,18 +85,17 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
   }
 }
 
-function collectTabs(ctx: AgentBridgeContext): JetAgentState["tabs"] {
-  const tabs: JetAgentState["tabs"] = []
-  for (const tabId of ctx.workspace.tabRegistry.allTabs()) {
-    const kind = ctx.workspace.tabRegistry.get(tabId)
-    const meta = ctx.workspace.tabRegistry.meta(tabId)
-    tabs.push({
-      id: tabId.id,
-      label: meta.label,
-      kind: kind?.kind ?? "unknown",
-    })
+function collectPanels(ctx: AgentBridgeContext): JetAgentState["panels"] {
+  const panels: JetAgentState["panels"] = []
+  const walk = (node: import("@jet/shared").PanelNode) => {
+    if (node.kind === "leaf") {
+      panels.push({ id: node.panelId.id, kind: node.view.kind })
+    } else {
+      node.split.children.forEach(walk)
+    }
   }
-  return tabs
+  walk(ctx.panelTree.root)
+  return panels
 }
 
 declare global {
