@@ -235,6 +235,7 @@ function runScan(view: EditorView, entry: PluginEntry): void {
         viewportTo: vp.to - sliceFrom,
         cursorPos: state.selection.main.head - sliceFrom,
         text,
+        tabWidth: state.tabSize,
       },
       result => {
         if (result.changeStamp !== stamp) return

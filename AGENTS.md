@@ -109,7 +109,7 @@ Use `pnpm dev:web` to run Jet in a normal browser with real FS/git backed by a V
 ### Browser MCP workflow (required)
 
 1. **Start server** — `pnpm dev:web` (port **5174**). If port in use, reuse existing server or `pkill -f "jet-web.*vite"` then restart.
-2. **Navigate** — `browser_navigate` to quick-start URL (below) or `/` for welcome view.
+2. **Navigate** — `browser_navigate` to quick-start URL (below) or `/` for empty panel shell.
 3. **Lock** — `browser_lock` after navigate, before interactions.
 4. **Inspect** — `browser_snapshot` for a11y tree; `browser_take_screenshot` when visual check needed.
 5. **Interact** — `browser_click`, `browser_type`, `browser_press_key` for user flows.
@@ -152,7 +152,7 @@ Use via `browser_cdp` → `Runtime.evaluate` with `awaitPromise: true` for async
 7. Edit + save (Mod-s via `browser_press_key` or `executeCommand("workspace.saveFile")`) — persists under `fixtures/sample-workspace/`
 8. Git tab — status visible (fixture is a git repo)
 9. Close dirty tab — confirm dialog (may need user handoff in MCP; note if blocked)
-10. Cold start with no workspace query — WelcomeView (no auto-reopen of last folder)
+10. Cold start with no workspace query — empty panel (no auto-reopen of last folder)
 11. Command palette — `executeCommand("ui.showCommandPalette")` → centered modal (not trapped in panel)
 12. New file / open file — editor tab lands in **right** main panel, not stacked below sidebar
 

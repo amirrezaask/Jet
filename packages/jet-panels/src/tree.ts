@@ -57,7 +57,9 @@ export class PanelTree {
   }
 
   findEditorPanelForFile(fileUri: string): PanelId | null {
-    return this.findPanelWithView(v => v.kind === "editor" && v.fileUri === fileUri)
+    return this.findPanelWithView(
+      v => v.kind === "editor" && (v.buffers ?? [v.fileUri]).includes(fileUri),
+    )
   }
 
   splitAtEdge(panel: PanelId, edge: Edge): PanelId {
@@ -172,7 +174,17 @@ export class PanelTree {
   static fromJSON(snapshot: PanelTreeSnapshot): PanelTree {
     const tree = new PanelTree(snapshot.root)
     tree.nextPanelId = snapshot.nextPanelId
+    tree.normalizeEditorViews()
     return tree
+  }
+
+  /** Ensure editor leaves have buffers[] for legacy snapshots. */
+  normalizeEditorViews(): void {
+    this.visitLeaves(node => {
+      if (node.view.kind !== "editor") return
+      const buffers = node.view.buffers?.length ? node.view.buffers : [node.view.fileUri]
+      node.view = { kind: "editor", fileUri: node.view.fileUri, buffers }
+    })
   }
 
   static defaultLayout(): PanelTree {

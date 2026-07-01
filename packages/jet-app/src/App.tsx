@@ -28,6 +28,8 @@ import {
   type JetKeyBinding,
   type LaunchConfig,
   type LocationItem,
+  ProjectRegistry,
+  type JetProject,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
@@ -47,7 +49,6 @@ import {
   PanelDock,
   CommandPalette,
   StatusBar,
-  WelcomeView,
   bundledThemes,
   GotoLineModal,
   OutlineOverlay,
@@ -55,6 +56,7 @@ import {
   BufferListOverlay,
   OpenFileOverlay,
   CdOverlay,
+  ProjectSwitcherOverlay,
   getEditorView,
   getAllEditorViews,
   setEditorCursor,
@@ -67,7 +69,6 @@ import {
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
-import { confirmCloseBuffer } from "./close-buffer.js"
 import {
   panelViewKind,
   getAllLeafPanels,
@@ -75,6 +76,7 @@ import {
   getActiveEditorFileUri,
 } from "./panel-routing.js"
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
+import { loadGlobalJetrc } from "./load-global-jetrc.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
 import { useFileDrop } from "./use-file-drop.js"
 
@@ -151,7 +153,6 @@ export function JetApp() {
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [editorFocused, setEditorFocused] = useState(false)
   const [layoutReady, setLayoutReady] = useState(false)
-  const [bootstrapping, setBootstrapping] = useState(hasWorkspaceQuery)
   const [activeTheme, setActiveTheme] = useState<JetTheme>(() => loadStoredTheme())
   const [gotoLineOpen, setGotoLineOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
@@ -160,6 +161,8 @@ export function JetApp() {
   const [bufferListOpen, setBufferListOpen] = useState(false)
   const [openFileOpen, setOpenFileOpen] = useState(false)
   const [cdOpen, setCdOpen] = useState(false)
+  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
+  const [projects, setProjects] = useState<JetProject[]>([])
   const [fileIndex, setFileIndex] = useState<string[]>([])
   const [problems, setProblems] = useState<JetProblem[]>([])
   const [panelRev, setPanelRev] = useState(0)
@@ -175,6 +178,9 @@ export function JetApp() {
   const editorPanelRef = useRef<PanelId | null>(initialLayout.editorPanel)
   const workspaceInitGen = useRef(0)
   const workspaceRootPathRef = useRef<string | null>(null)
+  const homeDirRef = useRef("")
+  const workspaceInitCtxRef = useRef<JetInitContext | null>(null)
+  const projectRegistry = useMemo(() => new ProjectRegistry(), [])
   const appStateRef = useRef({
     panelTree,
     focusedPanel,
@@ -231,6 +237,7 @@ export function JetApp() {
       bufferListOpen,
       openFileOpen,
       cdOpen,
+      projectSwitcherOpen,
       gotoLineOpen,
       outlineOpen,
       workspaceOpen: workspace.root != null,
@@ -247,6 +254,7 @@ export function JetApp() {
       bufferListOpen,
       openFileOpen,
       cdOpen,
+      projectSwitcherOpen,
       gotoLineOpen,
       outlineOpen,
       workspace.root,
@@ -372,7 +380,9 @@ export function JetApp() {
     (uri: string, path: string, line?: number, column?: number, pushJump = true) => {
       if (pushJump) pushJumpFromActiveEditor("navigation")
       const tree = cloneTree()
-      const panel = resolveEditorPanel(tree, editorPanelRef.current, focusedPanel)
+      const existing = tree.findEditorPanelForFile(uri)
+      const panel =
+        existing ?? resolveEditorPanel(tree, editorPanelRef.current, focusedPanel)
       if (!panel) return
       editorPanelRef.current = panel
       workspace.assignEditorPanel(tree, panel, uri, path)
@@ -432,6 +442,17 @@ export function JetApp() {
     })
   }, [lspClientPool, handleOpenFile, workspace])
 
+  const refreshProjects = useCallback(async (): Promise<number> => {
+    let homeDir = homeDirRef.current
+    if (window.jet?.getHomeDir) {
+      homeDir = await window.jet.getHomeDir()
+      homeDirRef.current = homeDir
+    }
+    const list = await projectRegistry.refresh(jetPlatformFS(), homeDir)
+    setProjects(list)
+    return list.length
+  }, [projectRegistry])
+
   const openWorkspaceFolder = useCallback(
     (folderPath: string) => {
       const gen = ++workspaceInitGen.current
@@ -445,6 +466,14 @@ export function JetApp() {
       setFocusedPanel(editorPanel)
       setMessage(`Opened ${folderPath}`)
       setFileIndex([])
+
+      const jetDir = `${folderPath.replace(/[/\\]+$/, "")}/.jet`
+      const initCtx = workspaceInitCtxRef.current
+      if (initCtx) {
+        void loadWorkspaceInit(jetDir, initCtx).catch(err =>
+          console.warn("Workspace init failed:", err),
+        )
+      }
 
       const finishOpen = () => {
         if (workspaceInitGen.current !== gen) return
@@ -515,12 +544,6 @@ export function JetApp() {
       const tree = cloneTree()
       if (event.type === "splitResized") {
         tree.resizeSplit(event.path, event.splitterIndex, event.deltaPx, event.viewport)
-      } else if (event.type === "panelClose") {
-        const fileUri = getActiveEditorFileUri(tree, event.panelId)
-        if (fileUri && !confirmCloseBuffer(workspace, fileUri)) return
-        tree.closePanel(event.panelId)
-        const panels = getAllLeafPanels(tree)
-        setFocusedPanel(panels[0] ?? null)
       }
       commitTree(tree)
     },
@@ -604,6 +627,7 @@ export function JetApp() {
         setBufferListOpen,
         setOpenFileOpen,
         setCdOpen,
+        setProjectSwitcherOpen,
         setGotoLineOpen,
         setMessage,
         setFocusedPanel,
@@ -621,6 +645,8 @@ export function JetApp() {
         setOutlineOpen,
         setOutlineSymbols,
         pushJumpFromActiveEditor,
+        projectRegistry,
+        refreshProjects,
       }),
     [
       workspace,
@@ -634,6 +660,8 @@ export function JetApp() {
       handleZoom,
       handlePanelNavigation,
       pushJumpFromActiveEditor,
+      projectRegistry,
+      refreshProjects,
     ],
   )
 
@@ -694,6 +722,41 @@ export function JetApp() {
   useEffect(() => {
     keymaps.registerUser(createDefaultKeybindings(appCommands))
   }, [keymaps, appCommands])
+
+  useEffect(() => {
+    workspaceInitCtxRef.current = {
+      workspace,
+      commands,
+      appCommands,
+      getCommandContext,
+      addKeybindings: bindings => keymaps.registerExtension(bindings),
+      addEditorExtensions: ext => setUserExtensions(prev => [...prev, ext]),
+      openFile: async uri => handleOpenFile(uri, fileUriToPath(uri)),
+      showMessage: setMessage,
+    }
+  }, [workspace, commands, appCommands, getCommandContext, keymaps, handleOpenFile])
+
+  useEffect(() => {
+    if (!layoutReady) return
+    void (async () => {
+      const fetchScanRoots = async (): Promise<string[]> => {
+        if (window.jet?.loadGlobalJetrcScanRoots) {
+          if (window.jet.getHomeDir) homeDirRef.current = await window.jet.getHomeDir()
+          return window.jet.loadGlobalJetrcScanRoots()
+        }
+        const res = await fetch("/__jet/globalJetrc/scanRoots")
+        if (!res.ok) return []
+        const data = (await res.json()) as { scanRoots?: string[]; homeDir?: string }
+        if (data.homeDir) homeDirRef.current = data.homeDir
+        return data.scanRoots ?? []
+      }
+      await loadGlobalJetrc(projectRegistry, {
+        homeDir: homeDirRef.current,
+        fetchScanRoots,
+      })
+      await refreshProjects()
+    })()
+  }, [layoutReady, projectRegistry, refreshProjects])
 
   const executeCommand = useCallback(
     async (name: string) => {
@@ -781,21 +844,17 @@ export function JetApp() {
     const openFile = (uri: string, path: string) => handleOpenFileRef.current(uri, path)
     if (isWebMode && hasWorkspaceQuery) {
       queryBootstrapDone.current = true
-      setBootstrapping(true)
       void openWorkspaceFromQuery(
         window.location.search,
         path => Promise.resolve(openWorkspaceRef.current(path)),
         openFile,
       )
         .catch(err => console.warn("Failed to open workspace from query:", err))
-        .finally(() => setBootstrapping(false))
     } else if (!isWebMode && window.jet?.getLaunchConfig) {
       void window.jet.getLaunchConfig().then(cfg => {
         if (!cfg || queryBootstrapDone.current) return
         queryBootstrapDone.current = true
-        setBootstrapping(true)
         bootstrapFromLaunch(path => openWorkspaceRef.current(path), openFile, cfg)
-        queueMicrotask(() => setBootstrapping(false))
       })
     }
   }, [layoutReady])
@@ -917,39 +976,31 @@ export function JetApp() {
       data-drag-over={fileDragOver || undefined}
     >
       <main className="min-h-0 flex-1">
-        {workspace.root || bootstrapping ? (
-          <PanelDock
-            tree={panelTree}
-            workspace={workspace}
-            theme={activeTheme}
-            focusedPanelId={focusedPanel}
-            onFocusPanel={setFocusedPanel}
-            onEvent={handlePanelEvent}
-            resolveLspClient={resolveLspClient}
-            lspRevision={lspRevision}
-            executeCommand={executeCommand}
-            runKeyBinding={runKeyBinding}
-            onOpenFile={handleOpenFile}
-            onOpenLocationItem={openLocationItem}
-            keymapBindings={keymapBindings}
-            userExtensions={userExtensions}
-            keymapRevision={keymapRevision}
-            keymapContext={keymapContext}
-            panelRev={panelRev}
-            onEditorFocusChange={setEditorFocused}
-            onEditorSelectionChange={(line, column, rangeCount) =>
-              setEditorCursor({ line, column, rangeCount })
-            }
-            onLspAttachFailed={handleLspAttachFailed}
-            onProblemsChange={refreshProblems}
-          />
-        ) : (
-          <WelcomeView
-            isWebMode={isWebMode}
-            bootstrapping={bootstrapping}
-            onOpenFolder={() => void executeCommand("workspace.openFolder")}
-          />
-        )}
+        <PanelDock
+          tree={panelTree}
+          workspace={workspace}
+          theme={activeTheme}
+          focusedPanelId={focusedPanel}
+          onFocusPanel={setFocusedPanel}
+          onEvent={handlePanelEvent}
+          resolveLspClient={resolveLspClient}
+          lspRevision={lspRevision}
+          executeCommand={executeCommand}
+          runKeyBinding={runKeyBinding}
+          onOpenFile={handleOpenFile}
+          onOpenLocationItem={openLocationItem}
+          keymapBindings={keymapBindings}
+          userExtensions={userExtensions}
+          keymapRevision={keymapRevision}
+          keymapContext={keymapContext}
+          panelRev={panelRev}
+          onEditorFocusChange={setEditorFocused}
+          onEditorSelectionChange={(line, column, rangeCount) =>
+            setEditorCursor({ line, column, rangeCount })
+          }
+          onLspAttachFailed={handleLspAttachFailed}
+          onProblemsChange={refreshProblems}
+        />
       </main>
 
       {pendingChordPrefix && (
@@ -1010,6 +1061,13 @@ export function JetApp() {
         resolveHomeDir={async () =>
           window.jet?.getHomeDir ? window.jet.getHomeDir() : (await resolveDevWorkspacePath(".")).path
         }
+      />
+
+      <ProjectSwitcherOverlay
+        open={projectSwitcherOpen}
+        onOpenChange={setProjectSwitcherOpen}
+        projects={projects}
+        onSelect={path => openWorkspaceFolder(path)}
       />
 
       <OutlineOverlay

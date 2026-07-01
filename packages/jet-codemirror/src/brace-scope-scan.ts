@@ -22,6 +22,7 @@ export type BraceScopeScanJob = {
   viewportTo: number
   cursorPos: number
   text: string
+  tabWidth?: number
 }
 
 export type BraceScopeScanResult = {
@@ -139,6 +140,7 @@ function findScopesInViewport(
   viewportTo: number,
   textOffset: number,
   lineNumberOffset: number,
+  tabWidth = 4,
 ): BraceScopeEntry[] {
   const scopes: BraceScopeEntry[] = []
   const seen = new Set<number>()
@@ -165,7 +167,7 @@ function findScopesInViewport(
       openLine: lineNumberOffset + openLine,
       closeLine: lineNumberOffset + closeLine,
       label,
-      guideColumn: braceGuideVisualColumn(closeLineText),
+      guideColumn: braceGuideVisualColumn(closeLineText, tabWidth),
     })
   }
 
@@ -183,6 +185,7 @@ export function scanBraceScopes(job: BraceScopeScanJob): BraceScopeScanResult {
     job.viewportTo,
     job.textOffset,
     job.lineNumberOffset,
+    job.tabWidth ?? 4,
   )
   return {
     requestId: job.requestId,

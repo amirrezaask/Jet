@@ -7,7 +7,7 @@ import {
   indentWithTab,
 } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
-import { bracketMatching, indentOnInput } from "@codemirror/language"
+import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { LSPClient, jumpToDefinition } from "@codemirror/lsp-client"
@@ -27,6 +27,7 @@ import { braceScopeExtension, braceScopeTheme } from "./brace-scope-extension.js
 import { cursorTokenHighlightExtension, cursorTokenTheme } from "./token-highlight.js"
 import { perfMeasure } from "./perf-instrumentation.js"
 import { jetReloadAnnotation } from "./reload-annotation.js"
+import { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
 
 export const userKeymapCompartment = new Compartment()
 export const languageCompartment = new Compartment()
@@ -49,6 +50,7 @@ export type CreateJetEditorViewOptions = {
   onDocChange?: (doc: Text, meta: { isReload: boolean }) => void
   onViewUpdate?: (view: EditorView) => void
   largeFile?: boolean
+  indent?: DetectedIndent
 }
 
 const goToDefinitionOnClick = EditorView.domEventHandlers({
@@ -63,12 +65,15 @@ const goToDefinitionOnClick = EditorView.domEventHandlers({
 export async function createJetEditorView(opts: CreateJetEditorViewOptions): Promise<EditorView> {
   const theme = opts.theme ?? defaultJetTheme
   const largeFile = opts.largeFile ?? false
+  const indent = opts.indent ?? detectIndent(opts.initialText)
 
   const extensions: Extension[] = [
     lineNumbers(),
     history(),
     indentOnInput(),
     bracketMatching(),
+    EditorState.tabSize.of(indent.size),
+    indentUnit.of(indentUnitFor(indent)),
   ]
 
   if (largeFile) {

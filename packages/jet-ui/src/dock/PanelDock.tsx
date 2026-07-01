@@ -6,7 +6,6 @@ import type { PanelId } from "@jet/shared"
 import type { JetTheme } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@jet/workspace"
 import type { LocationItem } from "@jet/workspace"
-import { PanelHeader } from "./PanelHeader.js"
 import { PanelBody } from "./PanelBody.js"
 
 const SPLITTER_HIT_SLOP = 12
@@ -96,13 +95,6 @@ export function PanelDockInner(props: PanelDockProps) {
             }}
             onMouseDown={() => props.onFocusPanel(panelId)}
           >
-            <PanelHeader
-              panelId={panelId}
-              view={view}
-              workspace={props.workspace}
-              focused={focused}
-              onClosePanel={id => props.onEvent({ type: "panelClose", panelId: id })}
-            />
             <div className="min-h-0 flex-1">
               {view && view.kind !== "empty" ? (
                 <PanelBody

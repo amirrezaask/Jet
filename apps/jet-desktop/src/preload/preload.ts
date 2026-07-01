@@ -60,6 +60,7 @@ const api: JetElectronAPI = {
   },
   getLaunchConfig: () => ipcRenderer.invoke("jet:getLaunchConfig"),
   getHomeDir: () => ipcRenderer.invoke("jet:getHomeDir"),
+  loadGlobalJetrcScanRoots: () => ipcRenderer.invoke("jet:loadGlobalJetrcScanRoots"),
   onLaunch: cb => {
     const handler = (_e: Electron.IpcRendererEvent, config: import("@jet/workspace").LaunchConfig) =>
       cb(config)

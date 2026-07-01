@@ -15,7 +15,7 @@ export type DropAction =
 
 export type PanelView =
   | { kind: "empty" }
-  | { kind: "editor"; fileUri: string }
+  | { kind: "editor"; fileUri: string; buffers?: string[] }
   | { kind: "explorer" }
   | { kind: "locationlist" }
   | { kind: "output" }

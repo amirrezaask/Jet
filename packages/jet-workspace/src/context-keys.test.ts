@@ -40,6 +40,7 @@ const baseCtx: KeymapContext = {
   bufferListOpen: false,
   openFileOpen: false,
   cdOpen: false,
+  projectSwitcherOpen: false,
   gotoLineOpen: false,
   outlineOpen: false,
   workspaceOpen: true,

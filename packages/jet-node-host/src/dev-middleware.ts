@@ -1,10 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
+import os from "node:os"
 import path from "node:path"
 import { assertAllowedUri, normalizeRoots } from "./sandbox.js"
 import * as nodeFs from "./fs.js"
 import * as nodeGit from "./git.js"
 import * as nodeSearch from "./search.js"
 import { pathToUri, uriToPath } from "./paths.js"
+import { loadGlobalJetrcScanRoots } from "./global-jetrc.js"
 
 export type JetDevHostOptions = {
   allowedRoots: string[]
@@ -200,6 +202,13 @@ export async function handleJetDevRequest(
       const { stopLspSession } = await import("./lsp-bridge.js")
       await stopLspSession(id)
       sendJson(res, 200, { ok: true })
+      return true
+    }
+
+    if (pathname === "/__jet/globalJetrc/scanRoots" && req.method === "GET") {
+      const homeDir = os.homedir()
+      const scanRoots = await loadGlobalJetrcScanRoots(homeDir)
+      sendJson(res, 200, { scanRoots, homeDir })
       return true
     }
 

@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { resolveLaunchTarget, type LaunchConfig } from "@jet/node-host"
+import { resolveLaunchTarget, loadGlobalJetrcScanRoots, type LaunchConfig } from "@jet/node-host"
 import { registerFsHandlers } from "./fs.js"
 import { registerSearchHandlers } from "./search.js"
 import { registerLspHandlers, stopAllLsp, setLspCrashHandler } from "./lsp-bridge.js"
@@ -188,6 +188,7 @@ app.whenReady().then(() => {
     return config
   })
   ipcMain.handle("jet:getHomeDir", () => os.homedir())
+  ipcMain.handle("jet:loadGlobalJetrcScanRoots", () => loadGlobalJetrcScanRoots(os.homedir()))
 
   const userArgs = parseUserArgs(process.argv)
 

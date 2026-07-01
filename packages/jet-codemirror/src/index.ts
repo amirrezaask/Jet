@@ -12,6 +12,7 @@ export {
   lspCompartment,
   themeCompartment,
 } from "./createEditorView.js"
+export { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
 export { openReplaceSearchPanel, jumpToLine } from "./editor-actions.js"
 export { setPendingEditorNavigation, consumePendingEditorNavigation } from "./editor-navigation.js"
 export { setPendingInitialContent, consumePendingInitialContent } from "./pending-content.js"

@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from "react"
-import { formatKeyBinding } from "../lib/format-key.js"
 import { getEditorCursor, subscribeEditorCursor } from "./editor-cursor-store.js"
 
 export type StatusBarProps = {
@@ -13,15 +12,6 @@ export type StatusBarProps = {
   activeLanguageId?: string | null
   activeFileDirty?: boolean
 }
-
-const HINT_SEGMENTS = [
-  { key: "Cmd-Shift-p", desc: "commands" },
-  { key: "Cmd-p", desc: "quick open" },
-  { key: "Cmd-k Cmd-f", desc: "find file" },
-  { key: "Cmd-s", desc: "save" },
-  { key: "Cmd-Shift-f", desc: "search" },
-  { key: "Cmd-w", desc: "close" },
-]
 
 function lspDotClass(status: StatusBarProps["lspStatus"]): string {
   switch (status) {
@@ -80,15 +70,7 @@ export function StatusBar({
           {message}
         </span>
       ) : (
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-5 gap-y-1 overflow-hidden text-[length:var(--jet-fs-sm)] opacity-60">
-          {HINT_SEGMENTS.map(seg => (
-            <span key={seg.key} className="jet-mono-data whitespace-nowrap">
-              <span className="font-semibold text-[var(--jet-accent)]">{formatKeyBinding(seg.key)}</span>
-              {" "}
-              {seg.desc}
-            </span>
-          ))}
-        </div>
+        <span className="min-w-0 flex-1" aria-hidden />
       )}
 
       {activeFileName && (

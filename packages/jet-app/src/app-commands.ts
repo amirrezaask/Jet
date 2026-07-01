@@ -41,7 +41,7 @@ import {
 } from "@jet/codemirror"
 import { scheduleCodeActions, applyCodeAction } from "@jet/lsp"
 import type { OutlineEntry } from "@jet/ui"
-import { getEditorView, showEditorContextMenuAt } from "@jet/ui"
+import { getEditorView, showEditorContextMenuAt, destroyEditorBuffer } from "@jet/ui"
 import {
   getActiveEditorFileUri,
   getAllLeafPanels,
@@ -59,13 +59,14 @@ export type BuildAppCommandsDeps = {
   setBufferListOpen: (open: boolean) => void
   setOpenFileOpen: (open: boolean) => void
   setCdOpen: (open: boolean) => void
+  setProjectSwitcherOpen: (open: boolean) => void
   setGotoLineOpen: (open: boolean) => void
   setMessage: (msg: string) => void
   setFocusedPanel: (panel: PanelId) => void
   cloneTree: () => PanelTree
   commitTree: (tree: PanelTree) => void
   openWorkspaceFolder: (path: string) => void
-  handlePanelEvent: (event: { type: "panelClose"; panelId: PanelId }) => void
+  handlePanelEvent: (event: { type: "splitResized"; path: number[]; splitterIndex: number; deltaPx: number; viewport: import("@jet/shared").Rect }) => void
   openFileInEditor: (uri: string, path: string, line?: number, column?: number, pushJump?: boolean) => void
   openLocationItem: (item: import("@jet/workspace").LocationItem) => void
   syncProblemsToLocationList: () => void
@@ -76,6 +77,8 @@ export type BuildAppCommandsDeps = {
   setOutlineOpen: (open: boolean) => void
   setOutlineSymbols: (symbols: OutlineEntry[]) => void
   pushJumpFromActiveEditor: (label?: string) => void
+  projectRegistry: import("@jet/workspace").ProjectRegistry
+  refreshProjects: () => Promise<number>
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -136,6 +139,11 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     openFolder,
     cd: () => deps.setCdOpen(true),
+    switchProject: () => deps.setProjectSwitcherOpen(true),
+    refreshProjects: async ctx => {
+      const count = await deps.refreshProjects()
+      ctx.ui.showMessage(count === 0 ? "No git projects found" : `Found ${count} projects`)
+    },
     save: async ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
       if (!view) return
@@ -159,7 +167,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         const tree = deps.cloneTree()
         if (panel) {
           deps.workspace.promoteUntitled(fileUri, uri, savePath)
-          deps.workspace.assignEditorPanel(tree, panel, uri, savePath)
+          deps.workspace.assignEditorPanel(tree, panel, uri, savePath, { replaceUri: fileUri })
+          destroyEditorBuffer(panel, fileUri)
           deps.commitTree(tree)
         }
         deps.setMessage(`Saved ${basename(savePath)}`)
@@ -184,17 +193,12 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (!fileUri || !panel) return
       if (!confirmCloseBuffer(deps.workspace, fileUri)) return
       deps.workspace.clearDirtyState(fileUri)
+      destroyEditorBuffer(panel, fileUri)
       deps.workspace.closeBuffer(fileUri)
       const tree = deps.cloneTree()
-      tree.setView(panel, { kind: "empty" })
+      deps.workspace.popPanelBuffer(tree, panel, fileUri)
+      tree.pruneEmptyLeaves()
       deps.commitTree(tree)
-    },
-    closePanel: () => {
-      const panel = currentFocusedPanel()
-      if (!panel) return
-      const fileUri = getActiveEditorFileUri(currentPanelTree(), panel)
-      if (fileUri && !confirmCloseBuffer(deps.workspace, fileUri)) return
-      deps.handlePanelEvent({ type: "panelClose", panelId: panel })
     },
     find: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
@@ -548,9 +552,10 @@ export const APP_COMMAND_REGISTRY = [
   { id: "workspace.openFile", fn: "openFile", title: "Open File", category: "Workspace", aliases: ["browse file"] },
   { id: "workspace.openFolder", fn: "openFolder", title: "Open Folder", category: "Workspace", aliases: ["open workspace"] },
   { id: "workspace.cd", fn: "cd", title: "Change Directory", category: "Workspace", aliases: ["switch workspace"] },
+  { id: "workspace.switchProject", fn: "switchProject", title: "Switch Project", category: "Workspace", aliases: ["projects", "project"] },
+  { id: "workspace.refreshProjects", fn: "refreshProjects", title: "Refresh Projects", category: "Workspace" },
   { id: "workspace.newFile", fn: "newFile", title: "New File", category: "Workspace", aliases: ["untitled"] },
   { id: "workspace.closeBuffer", fn: "closeBuffer", title: "Close Buffer", category: "Workspace", aliases: ["close file"] },
-  { id: "layout.closePanel", fn: "closePanel", title: "Close Panel", category: "Layout" },
   { id: "navigation.jumpBack", fn: "jumpBack", title: "Jump Back", category: "Navigation", aliases: ["back"] },
   { id: "navigation.jumpForward", fn: "jumpForward", title: "Jump Forward", category: "Navigation", aliases: ["forward"] },
   { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor" },

@@ -38,6 +38,7 @@ class BraceScopePlugin {
         viewportTo: view.viewport.to,
         cursorPos: sel,
         text: view.state.doc.toString(),
+        tabWidth: view.state.tabSize,
       },
       result => {
         this.scopes = result.scopes

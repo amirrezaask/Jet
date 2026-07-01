@@ -89,6 +89,7 @@ export type JetElectronAPI = {
   workspace?: JetElectronWorkspace
   getLaunchConfig?(): Promise<LaunchConfig | null>
   getHomeDir?(): Promise<string>
+  loadGlobalJetrcScanRoots?(): Promise<string[]>
   onLaunch?(cb: (config: LaunchConfig) => void): () => void
 }
 

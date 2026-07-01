@@ -17,6 +17,7 @@ export {
   resolveWorkspacePath,
   type JetDevHostOptions,
 } from "./dev-middleware.js"
+export { loadGlobalJetrcScanRoots } from "./global-jetrc.js"
 export {
   findWorkspaceRoot,
   resolveLaunchTarget,

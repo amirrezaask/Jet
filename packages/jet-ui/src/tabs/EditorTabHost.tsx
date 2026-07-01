@@ -10,6 +10,7 @@ import {
   consumePendingEditorNavigation,
   consumePendingInitialContent,
   detachLsp,
+  detectIndent,
   isLargeFile,
   jetReloadAnnotation,
   jumpToLine,
@@ -36,11 +37,20 @@ type EditorSession = {
 }
 
 const viewByPanel = new Map<number, EditorView>()
-const sessionByPanel = new Map<number, EditorSession>()
+const sessionsByPanel = new Map<number, Map<string, EditorSession>>()
 let focusedPanelId: number | null = null
 
 function textFromString(content: string): Text {
   return Text.of(content.split("\n"))
+}
+
+function panelSessions(panelId: PanelId): Map<string, EditorSession> {
+  let sessions = sessionsByPanel.get(panelId.id)
+  if (!sessions) {
+    sessions = new Map()
+    sessionsByPanel.set(panelId.id, sessions)
+  }
+  return sessions
 }
 
 function scheduleSessionSnapshot(session: EditorSession): void {
@@ -58,15 +68,21 @@ function clearSessionSnapshot(session: EditorSession): void {
   }
 }
 
-function destroyEditorSession(panelId: PanelId): void {
-  const session = sessionByPanel.get(panelId.id)
+function detachSessionDom(session: EditorSession, parent: HTMLElement): void {
+  if (session.view.dom.parentElement === parent) parent.removeChild(session.view.dom)
+}
+
+export function destroyEditorBuffer(panelId: PanelId, fileUri: string): void {
+  const sessions = sessionsByPanel.get(panelId.id)
+  const session = sessions?.get(fileUri)
   if (!session) return
   clearSessionSnapshot(session)
   detachLsp(session.view)
   session.view.destroy()
-  sessionByPanel.delete(panelId.id)
-  viewByPanel.delete(panelId.id)
-  if (focusedPanelId === panelId.id) focusedPanelId = null
+  sessions!.delete(fileUri)
+  if (sessions!.size === 0) sessionsByPanel.delete(panelId.id)
+  if (viewByPanel.get(panelId.id) === session.view) viewByPanel.delete(panelId.id)
+  if (focusedPanelId === panelId.id && viewByPanel.get(panelId.id) == null) focusedPanelId = null
 }
 
 export function getEditorView(panelId: PanelId): EditorView | undefined {
@@ -79,8 +95,11 @@ export function getAllEditorViews(
   const result: { panelId: PanelId; uri: string; view: EditorView }[] = []
   const walk = (node: import("@jet/shared").PanelNode) => {
     if (node.kind === "leaf" && node.view.kind === "editor") {
-      const view = viewByPanel.get(node.panelId.id)
-      if (view) result.push({ panelId: node.panelId, uri: node.view.fileUri, view })
+      const sessions = sessionsByPanel.get(node.panelId.id)
+      if (!sessions) return
+      for (const [uri, session] of sessions) {
+        result.push({ panelId: node.panelId, uri, view: session.view })
+      }
     } else if (node.kind !== "leaf") {
       node.split.children.forEach(walk)
     }
@@ -163,13 +182,17 @@ function EditorTabHostInner({
     const parent = ref.current
     if (!parent) return
     let cancelled = false
-    let session = sessionByPanel.get(panelId.id) ?? null
+    let session = panelSessions(panelId).get(fileUri) ?? null
     let onFocus: (() => void) | null = null
     let onBlur: (() => void) | null = null
     let onContextMenu: ((e: MouseEvent) => void) | null = null
 
     const attachView = (live: EditorSession) => {
+      for (const other of panelSessions(panelId).values()) {
+        if (other !== live) detachSessionDom(other, parent)
+      }
       if (live.view.dom.parentElement !== parent) parent.appendChild(live.view.dom)
+      viewByPanel.set(panelId.id, live.view)
       applyTheme(live.view, theme)
       applyUserKeymaps(live.view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
       applyUserExtensions(live.view, userExtensions)
@@ -193,11 +216,6 @@ function EditorTabHostInner({
     }
 
     ;(async () => {
-      if (session && session.fileUri !== fileUri) {
-        destroyEditorSession(panelId)
-        session = null
-      }
-
       if (!session) {
         const untitled = isUntitledUri(fileUri)
         const path = untitled ? "" : fileUriToPath(fileUri)
@@ -222,12 +240,14 @@ function EditorTabHostInner({
           }
         }
 
+        const mount = document.createElement("div")
         const view = await createJetEditorView({
-          parent,
+          parent: mount,
           workspace,
           file,
           initialText,
           largeFile,
+          indent: detectIndent(initialText),
           theme,
           lspClient: null,
           executeCommand: runCommand,
@@ -235,7 +255,7 @@ function EditorTabHostInner({
           onSelectionChange: (line, column, rangeCount) =>
             onEditorSelectionChangeRef.current?.(line, column, rangeCount),
           onDocChange: (doc, meta) => {
-            const live = sessionByPanel.get(panelId.id)
+            const live = panelSessions(panelId).get(fileUri)
             if (!live) return
             workspace.markDirty(fileUri, !doc.eq(live.savedBaseline))
             if (!meta.isReload) scheduleSessionSnapshot(live)
@@ -257,8 +277,7 @@ function EditorTabHostInner({
           snapshotTimer: null,
           view,
         }
-        sessionByPanel.set(panelId.id, session)
-        viewByPanel.set(panelId.id, view)
+        panelSessions(panelId).set(fileUri, session)
 
         workspace.setSavedBaseline(fileUri, savedBaseline)
         if (untitled && initialText.length > 0) {
@@ -274,7 +293,7 @@ function EditorTabHostInner({
               onLspAttachFailedRef.current?.(fileUri)
               return
             }
-            const live = sessionByPanel.get(panelId.id)
+            const live = panelSessions(panelId).get(fileUri)
             if (!live) return
             await reconfigureLsp(live.view, fileUri, live.fileLanguageId, client)
             onProblemsChangeRef.current?.()
@@ -293,13 +312,9 @@ function EditorTabHostInner({
         session.view.dom.removeEventListener("blur", onBlur)
         session.view.dom.removeEventListener("contextmenu", onContextMenu)
       }
-      if (session?.view.dom.parentElement === parent) parent.removeChild(session.view.dom)
-      if (session && session.fileUri !== fileUri) {
-        destroyEditorSession(panelId)
-        onProblemsChangeRef.current?.()
-      }
+      if (session) detachSessionDom(session, parent)
     }
-  }, [fileUri, panelId.id, workspace])
+  }, [fileUri, panelId.id, workspace, theme, userExtensions, autoFocus, runCommand, runBinding])
 
   useEffect(() => {
     const view = viewByPanel.get(panelId.id)
@@ -325,11 +340,11 @@ function EditorTabHostInner({
     if (!autoFocus) return
     const view = viewByPanel.get(panelId.id)
     view?.focus()
-  }, [panelId.id, autoFocus])
+  }, [panelId.id, autoFocus, fileUri])
 
   useEffect(() => {
     if (lspRevision == null || lspRevision === 0 || !resolveLspClient) return
-    const session = sessionByPanel.get(panelId.id)
+    const session = panelSessions(panelId).get(fileUri)
     if (!session || session.largeFile || isUntitledUri(fileUri)) return
     let cancelled = false
     void (async () => {
@@ -350,7 +365,7 @@ function EditorTabHostInner({
   useEffect(() => {
     const sub = workspace.onDidChangeSavedBaseline.event(({ uri, content }) => {
       if (uri !== fileUri) return
-      const session = sessionByPanel.get(panelId.id)
+      const session = panelSessions(panelId).get(fileUri)
       if (!session) return
       session.savedBaseline = textFromString(content)
       session.lastKnownText = content
@@ -362,7 +377,7 @@ function EditorTabHostInner({
   useEffect(() => {
     const sub = workspace.onFileReload.event(({ uri, content }) => {
       if (uri !== fileUri) return
-      const session = sessionByPanel.get(panelId.id)
+      const session = panelSessions(panelId).get(fileUri)
       if (!session) return
       session.lastKnownText = content
       session.view.dispatch({

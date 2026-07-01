@@ -6,6 +6,7 @@ import type { FileSystemProvider } from "./types.js"
 import { JumpStack } from "./jump-stack.js"
 import { LocationListState } from "./location-list.js"
 import { TaskRunner } from "./task-runner.js"
+import { popPanelBufferView, pushPanelBufferView } from "./panel-buffers.js"
 
 export class WorkspaceService {
   root: WorkspaceRoot | null = null
@@ -148,12 +149,25 @@ export class WorkspaceService {
     return file
   }
 
-  assignEditorPanel(tree: PanelTree, panelId: PanelId, uri: string, path: string): void {
+  assignEditorPanel(
+    tree: PanelTree,
+    panelId: PanelId,
+    uri: string,
+    path: string,
+    opts?: { replaceUri?: string },
+  ): void {
     let file = this.files.get(uri)
     if (!file) file = this.createWorkspaceFile(uri, path)
-    tree.setView(panelId, { kind: "editor", fileUri: uri })
+    const current = tree.getView(panelId)
+    tree.setView(panelId, pushPanelBufferView(current, uri, opts?.replaceUri))
     this.touchBuffer(uri)
     this.onDidOpenFile.fire(file)
+  }
+
+  popPanelBuffer(tree: PanelTree, panelId: PanelId, uri: string): void {
+    const view = tree.getView(panelId)
+    if (!view || view.kind !== "editor") return
+    tree.setView(panelId, popPanelBufferView(view, uri))
   }
 
   openUntitledInPanel(
@@ -173,7 +187,7 @@ export class WorkspaceService {
       isDirty: false,
     }
     this.registerFile(file)
-    tree.setView(panelId, { kind: "editor", fileUri: uri })
+    tree.setView(panelId, pushPanelBufferView(tree.getView(panelId), uri))
     this.touchBuffer(uri)
     this.onDidOpenFile.fire(file)
     return uri
