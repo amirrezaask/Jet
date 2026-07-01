@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "jet-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "jet-web", "dev"],
+      "port": 5174
+    }
+  ]
+}

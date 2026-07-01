@@ -118,10 +118,13 @@ export function jetThemeExtension(theme: JetTheme) {
           fontSize: "1rem",
         },
         ".cm-tooltip-autocomplete": {
-          fontSize: "1rem",
+          fontSize: "0.85rem",
           "& > ul": {
             fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
-            fontSize: "1rem",
+            fontSize: "0.85rem",
+          },
+          "& > ul > li": {
+            padding: "2px 6px",
           },
           "& > ul > li[aria-selected]": {
             backgroundColor: theme.colors.hover,
@@ -129,15 +132,15 @@ export function jetThemeExtension(theme: JetTheme) {
           },
         },
         ".cm-tooltip.cm-completionInfo": {
-          fontSize: "1rem",
+          fontSize: "0.85rem",
           fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
         },
         ".cm-lsp-hover-tooltip, .cm-lsp-documentation": {
-          fontSize: "1rem",
+          fontSize: "0.85rem",
           fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
         },
         ".cm-lsp-signature-tooltip": {
-          fontSize: "1rem",
+          fontSize: "0.85rem",
         },
         ".cm-completionLabel": {
           color: theme.colors.text,
