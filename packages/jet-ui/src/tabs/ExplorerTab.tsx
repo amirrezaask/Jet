@@ -102,7 +102,7 @@ export function ExplorerTab({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[var(--jet-text-muted)]">
         <p>Open a folder to browse files</p>
-        <p className="text-xs">Use the command palette or <strong>Open Folder</strong>.</p>
+        <p className="text-[length:var(--jet-fs-xs)]">Use the command palette or <strong>Open Folder</strong>.</p>
       </div>
     )
   }

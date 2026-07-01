@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 
 /*
@@ -23,6 +23,28 @@
 
 * {
   box-sizing: border-box;
+}
+
+/*
+ * Single source of truth for the type scale. Everything is expressed in `rem`
+ * so it all scales together when the root font-size is changed by the
+ * font-size zoom (Cmd +/-). Never use hardcoded px font-sizes in components —
+ * they break zoom and drift off this scale. Baseline root = 13px.
+ *
+ *   --jet-fs-2xs  ~10px  micro labels (kbd hints, badges)
+ *   --jet-fs-xs   ~11px  secondary/muted labels, status bar
+ *   --jet-fs-sm   ~12px  dense list rows, panel headers
+ *   --jet-fs-base 13px   default body / list items / inputs
+ *   --jet-fs-lg   ~15px  section headings
+ *   --jet-fs-xl   ~24px  wordmark
+ */
+:root {
+  --jet-fs-2xs: 0.77rem;
+  --jet-fs-xs: 0.85rem;
+  --jet-fs-sm: 0.92rem;
+  --jet-fs-base: 1rem;
+  --jet-fs-lg: 1.15rem;
+  --jet-fs-xl: 1.85rem;
 }
 
 html {
@@ -77,6 +99,6 @@ summary:focus-visible {
 [cmdk-root] [cmdk-item][data-selected="true"],
 [cmdk-item=""][aria-selected="true"],
 [cmdk-item=""][data-selected="true"] {
-  background-color: var(--jet-hover) !important;
+  background-color: color-mix(in srgb, var(--jet-accent) 12%, transparent) !important;
   border-left: 2px solid var(--jet-accent);
 }

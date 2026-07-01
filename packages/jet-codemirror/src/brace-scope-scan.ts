@@ -1,6 +1,7 @@
 export const BRACE_SCOPE_SCAN_LIMIT = 16 * 1024
 const MAX_LABEL_WALKBACK = 8
 const MAX_LABEL_LEN = 60
+const MIN_LABEL_SCOPE_LINES = 6
 
 export type BraceScopeEntry = {
   openPos: number
@@ -152,7 +153,7 @@ function findScopesInViewport(
 
     const openLine = offsetToLine(lineStartOffsets, i)
     const closeLine = offsetToLine(lineStartOffsets, close)
-    if (openLine === closeLine) continue
+    if (closeLine - openLine < MIN_LABEL_SCOPE_LINES) continue
 
     const label = scopeOpenLabel(lines, openLine)
     if (!label) continue

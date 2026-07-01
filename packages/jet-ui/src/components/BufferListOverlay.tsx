@@ -43,11 +43,11 @@ export function BufferListOverlay({
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Switch buffer…"
-          className="w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-sm outline-none"
+          className="w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-[length:var(--jet-fs-base)] outline-none"
         />
         <ul className="max-h-80 overflow-auto py-1">
           {filtered.length === 0 ? (
-            <li className="px-3 py-2 text-xs text-[var(--jet-text-muted)]">No open buffers</li>
+            <li className="px-3 py-2 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">No open buffers</li>
           ) : (
             filtered.map(uri => {
               const file = workspace.fileForUri(uri)
@@ -55,7 +55,7 @@ export function BufferListOverlay({
                 <li key={uri}>
                   <button
                     type="button"
-                    className="flex w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--jet-border)]/40"
+                    className="flex w-full px-3 py-1.5 text-left text-[length:var(--jet-fs-base)] hover:bg-[var(--jet-border)]/40"
                     onClick={() => {
                       onSelect(uri)
                       onOpenChange(false)

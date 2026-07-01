@@ -48,7 +48,7 @@ function PanelBodyInner({
   keymapRevision: number
   keymapContext?: KeymapContext
   onEditorFocusChange?: (focused: boolean) => void
-  onEditorSelectionChange?: (line: number, column: number) => void
+  onEditorSelectionChange?: (line: number, column: number, rangeCount: number) => void
   onLspAttachFailed?: (fileUri: string) => void
   onProblemsChange?: () => void
   autoFocus?: boolean

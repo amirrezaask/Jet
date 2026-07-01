@@ -32,7 +32,7 @@ export function GotoLineModal({
   return (
     <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel="Go to line" maxWidth="24rem">
       <div className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl">
-        <div className="border-b border-[var(--jet-border)] px-3 py-2 text-sm font-medium">
+        <div className="border-b border-[var(--jet-border)] px-3 py-2 text-[length:var(--jet-fs-base)] font-medium">
           Go to Line
         </div>
         <div className="p-3">
@@ -40,7 +40,7 @@ export function GotoLineModal({
             ref={inputRef}
             type="text"
             placeholder="Line or line:column"
-            className="jet-input w-full rounded border border-[var(--jet-border)] bg-transparent px-2 py-1.5 text-sm focus:border-[var(--jet-accent)]"
+            className="jet-input w-full rounded border border-[var(--jet-border)] bg-transparent px-2 py-1.5 text-[length:var(--jet-fs-base)] focus:border-[var(--jet-accent)]"
             onKeyDown={e => {
               if (e.key === "Enter") {
                 e.preventDefault()
@@ -48,7 +48,7 @@ export function GotoLineModal({
               }
             }}
           />
-          <p className="mt-2 text-xs text-[var(--jet-text-muted)]">Example: 42 or 42:10</p>
+          <p className="mt-2 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">Example: 42 or 42:10</p>
         </div>
       </div>
     </JetOverlay>

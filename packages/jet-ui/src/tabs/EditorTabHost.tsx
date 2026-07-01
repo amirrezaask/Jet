@@ -121,7 +121,7 @@ function EditorTabHostInner({
   keymapRevision: number
   keymapContext?: KeymapContext
   onEditorFocusChange?: (focused: boolean) => void
-  onEditorSelectionChange?: (line: number, column: number) => void
+  onEditorSelectionChange?: (line: number, column: number, rangeCount: number) => void
   onLspAttachFailed?: (fileUri: string) => void
   onProblemsChange?: () => void
   autoFocus?: boolean
@@ -232,7 +232,8 @@ function EditorTabHostInner({
           lspClient: null,
           executeCommand: runCommand,
           userExtensions,
-          onSelectionChange: (line, column) => onEditorSelectionChangeRef.current?.(line, column),
+          onSelectionChange: (line, column, rangeCount) =>
+            onEditorSelectionChangeRef.current?.(line, column, rangeCount),
           onDocChange: (doc, meta) => {
             const live = sessionByPanel.get(panelId.id)
             if (!live) return

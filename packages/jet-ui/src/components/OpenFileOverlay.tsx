@@ -149,7 +149,7 @@ export function OpenFileOverlay({
         value={selectedValue}
         onValueChange={setSelectedValue}
       >
-        <div className="border-b border-[var(--jet-border)] px-3 py-1.5 text-xs text-[var(--jet-text-muted)]">
+        <div className="border-b border-[var(--jet-border)] px-3 py-1.5 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">
           {pathLabel}
         </div>
         <CommandPrimitive.Input
@@ -162,15 +162,15 @@ export function OpenFileOverlay({
               goUp()
             }
           }}
-          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-sm"
+          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-[length:var(--jet-fs-base)]"
           autoFocus
         />
         <CommandPrimitive.List className="overflow-auto p-1" style={{ maxHeight: "20rem" }}>
           {loading ? (
-            <div className="px-3 py-2 text-sm text-[var(--jet-text-muted)]">Loading…</div>
+            <div className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">Loading…</div>
           ) : (
             <>
-              <CommandPrimitive.Empty className="px-3 py-2 text-sm text-[var(--jet-text-muted)]">
+              <CommandPrimitive.Empty className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">
                 No matching files.
               </CommandPrimitive.Empty>
               {currentRelDir ? (

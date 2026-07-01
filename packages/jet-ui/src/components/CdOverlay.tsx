@@ -165,7 +165,7 @@ export function CdOverlay({
   return (
     <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel="Change directory" maxWidth="36rem">
       <div className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl">
-        <div className="border-b border-[var(--jet-border)] px-3 py-1.5 text-xs text-[var(--jet-text-muted)]">
+        <div className="border-b border-[var(--jet-border)] px-3 py-1.5 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">
           {currentPath ?? "…"}
         </div>
         <input
@@ -202,17 +202,17 @@ export function CdOverlay({
               else confirmCurrent()
             }
           }}
-          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-sm"
+          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-[length:var(--jet-fs-base)]"
           autoFocus
         />
         <div className="overflow-auto p-1" style={{ maxHeight: "20rem" }}>
           {error ? (
-            <div className="px-3 py-2 text-sm text-[var(--jet-text-muted)]">{error}</div>
+            <div className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">{error}</div>
           ) : null}
           {!currentPath || loading ? (
-            <div className="px-3 py-2 text-sm text-[var(--jet-text-muted)]">Loading…</div>
+            <div className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">Loading…</div>
           ) : rows.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-[var(--jet-text-muted)]">No matching directories.</div>
+            <div className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">No matching directories.</div>
           ) : (
             rows.map((row, index) => (
               <button
@@ -220,7 +220,7 @@ export function CdOverlay({
                 type="button"
                 onMouseEnter={() => setHighlight(index)}
                 onClick={() => row.action()}
-                className={`flex w-full cursor-pointer items-center gap-2 rounded-sm px-3 py-2 text-left text-sm ${
+                className={`flex w-full cursor-pointer items-center gap-2 rounded-sm px-3 py-2 text-left text-[length:var(--jet-fs-base)] ${
                   index === highlight ? "bg-[var(--jet-hover)]" : ""
                 }`}
               >
@@ -242,7 +242,7 @@ export function CdOverlay({
             type="button"
             disabled={!currentPath}
             onClick={confirmCurrent}
-            className="w-full cursor-pointer rounded-sm px-2 py-1.5 text-left text-xs text-[var(--jet-text-muted)] hover:bg-[var(--jet-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full cursor-pointer rounded-sm px-2 py-1.5 text-left text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)] hover:bg-[var(--jet-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Select folder (⌘↵)
           </button>

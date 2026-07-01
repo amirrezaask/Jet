@@ -45,7 +45,7 @@ export type CreateJetEditorViewOptions = {
   executeCommand: (name: string) => Promise<void>
   userExtensions?: Extension[]
   onViewCreated?: (view: EditorView) => void
-  onSelectionChange?: (line: number, column: number) => void
+  onSelectionChange?: (line: number, column: number, rangeCount: number) => void
   onDocChange?: (doc: Text, meta: { isReload: boolean }) => void
   onViewUpdate?: (view: EditorView) => void
   largeFile?: boolean
@@ -150,7 +150,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
       if (update.selectionSet && opts.onSelectionChange) {
         const pos = update.state.selection.main.head
         const line = update.state.doc.lineAt(pos)
-        opts.onSelectionChange(line.number, pos - line.from + 1)
+        opts.onSelectionChange(line.number, pos - line.from + 1, update.state.selection.ranges.length)
       }
       opts.onViewUpdate?.(update.view)
     }),
@@ -169,7 +169,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   if (opts.onSelectionChange) {
     const pos = view.state.selection.main.head
     const line = view.state.doc.lineAt(pos)
-    opts.onSelectionChange(line.number, pos - line.from + 1)
+    opts.onSelectionChange(line.number, pos - line.from + 1, view.state.selection.ranges.length)
   }
   return view
 }

@@ -21,7 +21,7 @@ export function jetThemeExtension(theme: JetTheme) {
     { tag: t.regexp, color: c.string },
     { tag: t.number, color: c.number },
     { tag: t.bool, color: c.boolean },
-    { tag: t.comment, color: c.comment },
+    { tag: t.comment, color: c.comment, fontStyle: "italic" },
     { tag: t.operator, color: c.operator },
     { tag: t.punctuation, color: c.operator },
     { tag: t.variableName, color: c.variable },

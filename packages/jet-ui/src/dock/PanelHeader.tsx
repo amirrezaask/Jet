@@ -36,21 +36,26 @@ export function PanelHeader({
   const title = panelTitle(view, workspace)
   const dirty =
     view?.kind === "editor" ? workspace.fileForUri(view.fileUri)?.isDirty : false
+  const isEditor = view?.kind === "editor"
 
   return (
     <div
       className="flex h-7 shrink-0 items-center gap-2 border-b border-[var(--jet-border)] bg-[var(--jet-panel-header)] px-2"
       data-panel-id={panelId.id}
     >
-      <span
-        className={`min-w-0 flex-1 truncate text-xs uppercase tracking-wide ${focused ? "text-[var(--jet-text)]" : "text-[var(--jet-text-muted)]"}`}
-      >
-        {title}
-        {dirty ? " •" : ""}
-      </span>
+      {isEditor ? (
+        <span className="min-w-0 flex-1" />
+      ) : (
+        <span
+          className={`min-w-0 flex-1 truncate text-[length:var(--jet-fs-xs)] uppercase tracking-wide ${focused ? "text-[var(--jet-text)]" : "text-[var(--jet-text-muted)]"}`}
+        >
+          {title}
+          {dirty ? " •" : ""}
+        </span>
+      )}
       <button
         type="button"
-        className="shrink-0 text-xs text-[var(--jet-text-muted)] hover:text-[var(--jet-text)]"
+        className="shrink-0 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)] hover:text-[var(--jet-text)]"
         title="Close panel"
         onClick={e => {
           e.stopPropagation()

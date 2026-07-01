@@ -68,11 +68,11 @@ export function JetFuzzyPicker({
           placeholder={placeholder}
           value={query}
           onValueChange={setQuery}
-          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-sm"
+          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-[length:var(--jet-fs-base)]"
           autoFocus
         />
         <CommandPrimitive.List className="overflow-auto p-1" style={{ maxHeight: maxListHeight }}>
-          <CommandPrimitive.Empty className="px-3 py-2 text-sm text-[var(--jet-text-muted)]">
+          <CommandPrimitive.Empty className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">
             {emptyMessage}
           </CommandPrimitive.Empty>
           {items.map(item => (

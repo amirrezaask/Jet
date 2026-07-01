@@ -207,8 +207,11 @@ const viewState = new WeakMap<EditorView, PluginEntry>()
 let nextOwnerId = 1
 
 function rebuildDecorations(view: EditorView, entry: PluginEntry): void {
-  view.dispatch({
-    effects: setEolDeco.of(buildEolDecorations(view, entry.scopes, entry.typeHint)),
+  queueMicrotask(() => {
+    if (!viewState.has(view)) return
+    view.dispatch({
+      effects: setEolDeco.of(buildEolDecorations(view, entry.scopes, entry.typeHint)),
+    })
   })
 }
 

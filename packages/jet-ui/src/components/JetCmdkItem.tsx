@@ -17,10 +17,14 @@ export function JetCmdkItem({
     <CommandPrimitive.Item
       value={value}
       onSelect={onSelect}
-      className={`cursor-pointer rounded-sm px-3 py-2 text-sm ${className}`}
-      style={selected ? { background: "var(--jet-hover)" } : undefined}
+      className={`flex cursor-pointer items-center gap-1 rounded-sm px-[14px] py-[3px] text-[length:var(--jet-fs-base)] ${
+        selected ? "text-[var(--jet-text)]" : "text-[var(--jet-text-muted)]"
+      } ${className}`}
     >
-      {children}
+      <span className="w-4 shrink-0 text-center font-bold text-[var(--jet-accent)]" aria-hidden>
+        {selected ? "›" : ""}
+      </span>
+      <span className="min-w-0 flex-1">{children}</span>
     </CommandPrimitive.Item>
   )
 }

@@ -21,6 +21,8 @@ import {
   anyOverlayOpen,
   createDefaultKeybindings,
   isEditorKeyBinding,
+  parseBindingKey,
+  CHORD_TIMEOUT_MS,
   type KeymapContext,
   type JetCommandContext,
   type JetKeyBinding,
@@ -58,7 +60,9 @@ import {
   setEditorCursor,
   formatKeyBinding,
   problemsToLocationItems,
+  WhichKeyPanel,
   type OutlineEntry,
+  type WhichKeyEntry,
 } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
@@ -107,7 +111,7 @@ function initialEditorLayout() {
 function loadStoredTheme(): JetTheme {
   const id = localStorage.getItem(THEME_STORAGE_KEY)
   if (id && bundledThemes[id]) return bundledThemes[id]!
-  return defaultJetTheme
+  return bundledThemes.minim ?? defaultJetTheme
 }
 
 function normalizeAbsPath(p: string): string {
@@ -162,6 +166,7 @@ export function JetApp() {
   const [lspCrashed, setLspCrashed] = useState(false)
   const [fileDragOver, setFileDragOver] = useState(false)
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
+  const [pendingChordPrefix, setPendingChordPrefix] = useState<string | null>(null)
   const fontSizeRef = useRef(loadStoredFontSize())
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
@@ -208,6 +213,15 @@ export function JetApp() {
     () => (focusedPanel ? panelViewKind(panelTree, focusedPanel) : undefined),
     [focusedPanel, panelTree],
   )
+
+  const activeEditorFile = useMemo(() => {
+    if (!focusedPanel) return null
+    const view = panelTree.getView(focusedPanel)
+    if (!view || view.kind !== "editor") return null
+    const file = workspace.fileForUri(view.fileUri)
+    if (!file) return null
+    return { name: file.name, languageId: file.languageId, isDirty: file.isDirty }
+  }, [focusedPanel, panelTree, workspace])
 
   const keymapContext = useMemo(
     () => ({
@@ -644,6 +658,27 @@ export function JetApp() {
       })
   }, [commands, deferredPanelRev, appCommands, keybindingByFn, fnByCommandId, getCommandContext, recentCommands])
 
+  const whichKeyEntries: WhichKeyEntry[] = useMemo(() => {
+    if (!pendingChordPrefix) return []
+    const fnToTitle = new Map<string, string>()
+    for (const entry of APP_COMMAND_REGISTRY) fnToTitle.set(entry.fn, entry.title)
+    const runToFn = new Map<JetKeyBinding["run"], string>()
+    for (const [fnName, run] of Object.entries(appCommands)) runToFn.set(run, fnName)
+    const seen = new Set<string>()
+    const entries: WhichKeyEntry[] = []
+    for (const binding of keymapBindings) {
+      const parts = parseBindingKey(binding.key)
+      if (parts.length < 2 || parts[0] !== pendingChordPrefix) continue
+      const second = parts[1]!
+      if (seen.has(second)) continue
+      seen.add(second)
+      const fnName = runToFn.get(binding.run)
+      const title = fnName ? fnToTitle.get(fnName) : undefined
+      entries.push({ key: formatKeyBinding(second), desc: title ?? fnName ?? second })
+    }
+    return entries
+  }, [keymapBindings, pendingChordPrefix, appCommands])
+
   const runKeyBinding = useCallback(
     (binding: JetKeyBinding, view?: EditorView) => {
       keymapTargetViewRef.current = view ?? null
@@ -819,6 +854,12 @@ export function JetApp() {
   useEffect(() => {
     let lastCloseAt = 0
     const chordState = createChordState()
+    let chordTimeout: number | null = null
+    const clearPendingChord = () => {
+      if (chordTimeout != null) window.clearTimeout(chordTimeout)
+      chordTimeout = null
+      setPendingChordPrefix(null)
+    }
     const closeBuffer = () => {
       if (!workspace.root || anyOverlayOpen(keymapContext)) return
       const now = Date.now()
@@ -836,11 +877,16 @@ export function JetApp() {
         closeBuffer()
         return
       }
+      const hadPendingChord = chordState.prefix != null
       const result = resolveKeydownBinding(e, keymapBindings, keymapContext, chordState)
       if (result === "chord-started") {
         e.preventDefault()
+        setPendingChordPrefix(chordState.prefix)
+        if (chordTimeout != null) window.clearTimeout(chordTimeout)
+        chordTimeout = window.setTimeout(clearPendingChord, CHORD_TIMEOUT_MS)
         return
       }
+      if (hadPendingChord && chordState.prefix == null) clearPendingChord()
       if (result && isChordBinding(result.key)) {
         e.preventDefault()
         runKeyBinding(result)
@@ -859,7 +905,10 @@ export function JetApp() {
       }
     }
     window.addEventListener("keydown", onKey, true)
-    return () => window.removeEventListener("keydown", onKey, true)
+    return () => {
+      window.removeEventListener("keydown", onKey, true)
+      if (chordTimeout != null) window.clearTimeout(chordTimeout)
+    }
   }, [keymapBindings, keymapContext, runKeyBinding, workspace.root, executeCommand])
 
   return (
@@ -888,7 +937,9 @@ export function JetApp() {
             keymapContext={keymapContext}
             panelRev={panelRev}
             onEditorFocusChange={setEditorFocused}
-            onEditorSelectionChange={(line, column) => setEditorCursor({ line, column })}
+            onEditorSelectionChange={(line, column, rangeCount) =>
+              setEditorCursor({ line, column, rangeCount })
+            }
             onLspAttachFailed={handleLspAttachFailed}
             onProblemsChange={refreshProblems}
           />
@@ -901,13 +952,19 @@ export function JetApp() {
         )}
       </main>
 
+      {pendingChordPrefix && (
+        <WhichKeyPanel prefix={formatKeyBinding(pendingChordPrefix)} entries={whichKeyEntries} />
+      )}
+
       <StatusBar
         message={message}
         lspStatus={lspStatus}
         workspaceName={workspace.root?.name}
         workspacePath={workspace.root?.path}
-        showCursor={activePanelKind === "editor"}
         hasWorkspace={Boolean(workspace.root)}
+        activeFileName={activeEditorFile?.name ?? null}
+        activeLanguageId={activeEditorFile?.languageId ?? null}
+        activeFileDirty={activeEditorFile?.isDirty ?? false}
       />
 
       <GotoLineModal

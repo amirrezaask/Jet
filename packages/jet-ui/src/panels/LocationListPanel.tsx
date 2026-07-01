@@ -88,7 +88,7 @@ export function LocationListPanel({
             key={s.id}
             type="button"
             className={cn(
-              "rounded px-2 py-0.5 text-xs uppercase tracking-wide",
+              "rounded px-2 py-0.5 text-[length:var(--jet-fs-xs)] uppercase tracking-wide",
               state.activeSource === s.id
                 ? "bg-[var(--jet-accent)] text-[var(--jet-bg)]"
                 : "text-[var(--jet-text-muted)] hover:text-[var(--jet-text)]",
@@ -106,9 +106,9 @@ export function LocationListPanel({
             value={state.searchQuery}
             onChange={e => state.setSearchState({ query: e.target.value })}
             placeholder="Search project…"
-            className="jet-input min-w-[12rem] flex-1 rounded-sm border border-[var(--jet-border)] bg-transparent px-2 py-1 text-sm"
+            className="jet-input min-w-[12rem] flex-1 rounded-sm border border-[var(--jet-border)] bg-transparent px-2 py-1 text-[length:var(--jet-fs-sm)]"
           />
-          <label className="flex items-center gap-1 text-xs">
+          <label className="flex items-center gap-1 text-[length:var(--jet-fs-xs)]">
             <input
               type="checkbox"
               checked={state.searchCaseSensitive}
@@ -116,7 +116,7 @@ export function LocationListPanel({
             />
             Case
           </label>
-          <label className="flex items-center gap-1 text-xs">
+          <label className="flex items-center gap-1 text-[length:var(--jet-fs-xs)]">
             <input
               type="checkbox"
               checked={state.searchRegex}
@@ -125,27 +125,27 @@ export function LocationListPanel({
             Regex
           </label>
           {state.searchLoading && (
-            <span className="text-xs text-[var(--jet-text-muted)]">Searching…</span>
+            <span className="text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">Searching…</span>
           )}
           {state.searchError && (
-            <span className="text-xs text-[var(--jet-error)]">{state.searchError}</span>
+            <span className="text-[length:var(--jet-fs-xs)] text-[var(--jet-error)]">{state.searchError}</span>
           )}
         </div>
       )}
       <ul className="min-h-0 flex-1 overflow-auto p-1">
         {visible.length === 0 ? (
-          <li className="p-2 text-xs text-[var(--jet-text-muted)]">No results</li>
+          <li className="p-2 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">No results</li>
         ) : (
           visible.map(item => (
             <li key={item.id}>
               <button
                 type="button"
                 data-jet-list-item
-                className="flex w-full flex-col rounded px-2 py-1 text-left text-sm hover:bg-[var(--jet-border)]/40 focus:bg-[var(--jet-border)]/60 focus:outline-none"
+                className="flex w-full flex-col rounded px-2 py-1 text-left text-[length:var(--jet-fs-sm)] hover:bg-[var(--jet-border)]/40 focus:bg-[var(--jet-border)]/60 focus:outline-none"
                 onClick={() => onOpenItem(item)}
               >
                 <span className="truncate font-medium">{item.label}</span>
-                <span className="jet-mono-data truncate text-xs text-[var(--jet-text-muted)]">
+                <span className="jet-mono-data truncate text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">
                   {item.path}:{item.line}:{item.column}
                   {item.detail ? ` · ${item.detail}` : ""}
                 </span>

@@ -170,7 +170,7 @@ export function EditorContextMenu({
             type="button"
             role="menuitem"
             disabled={item.disabled}
-            className="flex w-full items-center justify-between gap-4 px-3 py-1.5 text-left text-sm text-[var(--jet-text)] hover:bg-[var(--jet-hover)] disabled:opacity-40"
+            className="flex w-full items-center justify-between gap-4 px-3 py-1.5 text-left text-[length:var(--jet-fs-base)] text-[var(--jet-text)] hover:bg-[var(--jet-hover)] disabled:opacity-40"
             onClick={() => {
               if (item.disabled) return
               item.run()
@@ -179,7 +179,7 @@ export function EditorContextMenu({
           >
             <span>{item.label}</span>
             {item.shortcut ? (
-              <span className="text-xs text-[var(--jet-text-muted)]">{item.shortcut}</span>
+              <span className="text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">{item.shortcut}</span>
             ) : null}
           </button>
         ),

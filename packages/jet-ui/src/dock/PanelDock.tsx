@@ -30,9 +30,10 @@ export type PanelDockProps = {
   keymapContext?: KeymapContext
   panelRev: number
   onEditorFocusChange?: (focused: boolean) => void
-  onEditorSelectionChange?: (line: number, column: number) => void
+  onEditorSelectionChange?: (line: number, column: number, rangeCount: number) => void
   onLspAttachFailed?: (fileUri: string) => void
   onProblemsChange?: () => void
+  dimInactive?: boolean
 }
 
 export function PanelDockInner(props: PanelDockProps) {
@@ -79,17 +80,19 @@ export function PanelDockInner(props: PanelDockProps) {
       {leaves.map(({ panelId, rect }) => {
         const panelNum = panelId.id
         const view = props.tree.getView(panelId)
-        const autoFocusEditor =
-          props.focusedPanelId?.id === panelNum && view?.kind === "editor"
+        const focused = props.focusedPanelId?.id === panelNum
+        const autoFocusEditor = focused && view?.kind === "editor"
+        const dimmed = props.dimInactive !== false && view?.kind === "editor" && !focused
         return (
           <div
             key={panelNum}
-            className="absolute flex flex-col overflow-hidden border border-[var(--jet-border)] bg-[var(--jet-panel)]"
+            className="absolute flex flex-col overflow-hidden border border-[var(--jet-border)] bg-[var(--jet-panel)] transition-opacity duration-150"
             style={{
               left: rect.x,
               top: rect.y,
               width: rect.width,
               height: rect.height,
+              opacity: dimmed ? 0.55 : 1,
             }}
             onMouseDown={() => props.onFocusPanel(panelId)}
           >
@@ -97,7 +100,7 @@ export function PanelDockInner(props: PanelDockProps) {
               panelId={panelId}
               view={view}
               workspace={props.workspace}
-              focused={props.focusedPanelId?.id === panelNum}
+              focused={focused}
               onClosePanel={id => props.onEvent({ type: "panelClose", panelId: id })}
             />
             <div className="min-h-0 flex-1">
