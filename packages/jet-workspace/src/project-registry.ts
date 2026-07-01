@@ -1,5 +1,8 @@
 import { pathToFileUri, fileUriToPath, basename } from "@jet/shared"
 import type { FileSystemProvider } from "./types.js"
+import { expandHomePath, joinPath } from "./path-input.js"
+
+export { expandHomePath } from "./path-input.js"
 
 export type JetProject = {
   id: string
@@ -9,17 +12,6 @@ export type JetProject = {
 
 function normalizeAbsPath(p: string): string {
   return p.replace(/[/\\]+$/, "") || p
-}
-
-function joinPath(base: string, segment: string): string {
-  const sep = base.includes("\\") ? "\\" : "/"
-  return `${base.replace(/[/\\]+$/, "")}${sep}${segment.replace(/^[/\\]+/, "")}`
-}
-
-export function expandHomePath(input: string, homeDir: string): string {
-  if (input === "~") return homeDir
-  if (input.startsWith("~/")) return joinPath(homeDir, input.slice(2))
-  return input
 }
 
 async function isGitRepo(fs: FileSystemProvider, folderPath: string): Promise<boolean> {
