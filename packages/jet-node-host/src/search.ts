@@ -29,7 +29,7 @@ function spawnRg(args: string[], cwd: string): Promise<{ stdout: string; stderr:
 }
 
 export async function listProjectFiles(rootUri: string, maxFiles = 50_000): Promise<string[]> {
-  const cwd = uriToPath(rootUri)
+  const cwd = uriToPath(rootUri);
   const args = ["--files"]
   for (const glob of IGNORE_GLOBS) args.push("--glob", glob)
   args.push(".")

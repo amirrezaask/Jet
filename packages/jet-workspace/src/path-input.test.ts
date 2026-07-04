@@ -102,4 +102,8 @@ describe("resolvePathForOpen", () => {
   it("trims trailing slashes and expands home", () => {
     assert.equal(resolvePathForOpen("~/dev/", HOME), "/Users/test/dev")
   })
+
+  it("keeps root path as / instead of collapsing to empty string", () => {
+    assert.equal(resolvePathForOpen("/", HOME), "/")
+  })
 })

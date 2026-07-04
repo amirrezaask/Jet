@@ -83,5 +83,7 @@ export function deletePathSegmentBackward(
 }
 
 export function resolvePathForOpen(input: string, homeDir: string): string {
-  return expandHomePath(input.trim().replace(/[/\\]+$/, ""), homeDir)
+  const trimmed = input.trim()
+  const withoutTrailingSep = trimmed.replace(/[/\\]+$/, "") || trimmed
+  return expandHomePath(withoutTrailingSep, homeDir)
 }
