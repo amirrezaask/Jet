@@ -1,7 +1,7 @@
 import { tags as t } from "@lezer/highlight"
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language"
 import { EditorView } from "@codemirror/view"
-import type { JetTheme } from "./theme-types.js"
+import { defaultJetTheme, isDarkTheme, type JetTheme } from "./theme-types.js"
 
 export function jetThemeExtension(theme: JetTheme) {
   const c = theme.highlights
@@ -45,13 +45,13 @@ export function jetThemeExtension(theme: JetTheme) {
     EditorView.theme(
       {
         "&": {
-          backgroundColor: theme.colors.bg,
+          backgroundColor: theme.colors.panelRaised,
           color: theme.colors.text,
           height: "100%",
         },
         ".cm-content": {
           caretColor: "transparent",
-          fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+          fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
           fontSize: "1rem",
         },
         ".cm-gutters": {
@@ -63,7 +63,7 @@ export function jetThemeExtension(theme: JetTheme) {
         ".cm-activeLineGutter": { backgroundColor: activeLineBg },
         ".cm-activeLine": { backgroundColor: activeLineBg },
         ".cm-matchingBracket, .cm-nonmatchingBracket": {
-          backgroundColor: theme.colors.accent + "59",
+          backgroundColor: theme.colors.hover,
           outline: "none",
           borderRadius: "2px",
         },
@@ -120,7 +120,7 @@ export function jetThemeExtension(theme: JetTheme) {
         ".cm-tooltip-autocomplete": {
           fontSize: "0.85rem",
           "& > ul": {
-            fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+            fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
             fontSize: "0.85rem",
           },
           "& > ul > li": {
@@ -133,11 +133,11 @@ export function jetThemeExtension(theme: JetTheme) {
         },
         ".cm-tooltip.cm-completionInfo": {
           fontSize: "0.85rem",
-          fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+          fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
         },
         ".cm-lsp-hover-tooltip, .cm-lsp-documentation": {
           fontSize: "0.85rem",
-          fontFamily: '"Commit Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+          fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
         },
         ".cm-lsp-signature-tooltip": {
           fontSize: "0.85rem",
@@ -160,7 +160,7 @@ export function jetThemeExtension(theme: JetTheme) {
         },
         ".cm-cursor": { visibility: "hidden" },
       },
-      { dark: true },
+      { dark: isDarkTheme(theme) },
     ),
     syntaxHighlighting(highlightStyle),
   ]

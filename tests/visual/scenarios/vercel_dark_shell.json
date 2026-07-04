@@ -1,0 +1,12 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "a11y_snapshot": "test-results/agent-shots/vercel_dark_shell.a11y.yaml" },
+    { "assert_a11y_contains": ["LSP"] },
+    { "screenshot": "test-results/agent-shots/vercel_dark_shell.png" },
+    { "exit": 0 }
+  ]
+}

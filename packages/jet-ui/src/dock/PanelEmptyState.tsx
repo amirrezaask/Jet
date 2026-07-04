@@ -1,3 +1,3 @@
 export function PanelEmptyState() {
-  return <div className="h-full bg-[var(--jet-bg)]" aria-label="No file open" />
+  return <div className="h-full bg-background" aria-label="No file open" />
 }

@@ -7,7 +7,15 @@ import {
   parsePathCompletionContext,
   resolvePathForOpen,
 } from "@jet/workspace"
-import { JetOverlay } from "./JetOverlay.js"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog.js"
+import { Input } from "@/components/ui/input.js"
+import { Button } from "@/components/ui/button.js"
+import { ScrollArea } from "@/components/ui/scroll-area.js"
 
 type DirEntry = {
   uri: string
@@ -164,12 +172,12 @@ export function CdOverlay({
     })
   }, [homeDir, pathInput, onSelectFolder, onOpenChange])
 
-  if (!open) return null
-
   return (
-    <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel="Change directory" maxWidth="36rem">
-      <div className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl">
-        <input
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
+        <DialogTitle className="sr-only">Change directory</DialogTitle>
+        <DialogDescription className="sr-only">Path to folder</DialogDescription>
+        <Input
           ref={inputRef}
           placeholder="Path to folder…"
           value={pathInput}
@@ -222,45 +230,47 @@ export function CdOverlay({
               applyCompletion(entry.name)
             }
           }}
-          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-[length:var(--jet-fs-base)]"
+          className="rounded-none border-0 border-b"
           autoFocus
         />
-        <div className="overflow-auto p-1" style={{ maxHeight: "20rem" }}>
-          {error ? (
-            <div className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">{error}</div>
-          ) : null}
-          {!homeDir || loading ? (
-            <div className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">Loading…</div>
-          ) : completions.length === 0 ? (
-            <div className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">No matching directories.</div>
-          ) : (
-            completions.map((entry, index) => (
-              <button
-                key={entry.uri}
-                type="button"
-                onMouseEnter={() => setHighlight(index)}
-                onClick={() => applyCompletion(entry.name)}
-                className={`flex w-full cursor-pointer items-center gap-2 rounded-sm px-3 py-2 text-left text-[length:var(--jet-fs-base)] ${
-                  index === highlight ? "bg-[var(--jet-hover)]" : ""
-                }`}
-              >
-                <Folder className="size-3.5 shrink-0 text-[var(--jet-accent)]" />
-                <span className="flex-1 truncate">{entry.name}</span>
-              </button>
-            ))
-          )}
-        </div>
-        <div className="border-t border-[var(--jet-border)] px-3 py-2">
-          <button
+        <ScrollArea style={{ maxHeight: "20rem" }}>
+          <div className="p-1">
+            {error ? <div className="px-3 py-2 text-sm text-muted-foreground">{error}</div> : null}
+            {!homeDir || loading ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground">Loading…</div>
+            ) : completions.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground">No matching directories.</div>
+            ) : (
+              completions.map((entry, index) => (
+                <Button
+                  key={entry.uri}
+                  type="button"
+                  variant="ghost"
+                  onMouseEnter={() => setHighlight(index)}
+                  onClick={() => applyCompletion(entry.name)}
+                  className={`flex h-auto w-full justify-start gap-2 rounded-sm px-3 py-2 font-normal ${
+                    index === highlight ? "bg-accent" : ""
+                  }`}
+                >
+                  <Folder className="size-3.5 shrink-0 text-foreground" />
+                  <span className="flex-1 truncate">{entry.name}</span>
+                </Button>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+        <div className="border-t p-2">
+          <Button
             type="button"
+            variant="secondary"
             disabled={!pathInput.trim() || !homeDir}
             onClick={confirmCurrent}
-            className="w-full cursor-pointer rounded-sm px-2 py-1.5 text-left text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)] hover:bg-[var(--jet-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full"
           >
             Select folder (⌘↵)
-          </button>
+          </Button>
         </div>
-      </div>
-    </JetOverlay>
+      </DialogContent>
+    </Dialog>
   )
 }

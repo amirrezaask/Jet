@@ -90,6 +90,10 @@ Available command ids: see `packages/jet-app/src/app-commands.ts` — e.g. `ui.s
 | `scenarios/open_editor.json` | Editor with sample workspace |
 | `scenarios/command_palette.json` | Palette open + closed |
 | `scenarios/quick_open.json` | Quick open with filter typed |
+| `scenarios/vercel_dark_shell.json` | Dark Vercel shell + editor |
+| `scenarios/vercel_light_toggle.json` | Dark/light color scheme toggle |
+| `scenarios/goto_line_dialog.json` | Go to line shadcn dialog |
+| `scenarios/explorer_location_list.json` | Explorer + location list panels |
 
 ## Agent workflow
 

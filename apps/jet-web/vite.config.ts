@@ -21,6 +21,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@jet/ui/styles.css": path.resolve(appRoot, "../jet-ui/src/styles/globals.css"),
+      "@": path.resolve(appRoot, "../jet-ui/src"),
     },
   },
   build: {

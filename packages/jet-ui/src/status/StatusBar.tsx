@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react"
+import { Separator } from "@/components/ui/separator.js"
 import { getEditorCursor, subscribeEditorCursor } from "./editor-cursor-store.js"
 
 export type StatusBarProps = {
@@ -20,7 +21,7 @@ function lspDotClass(status: StatusBarProps["lspStatus"]): string {
     case "off":
       return "text-[var(--jet-warning)]"
     default:
-      return "text-[var(--jet-text-muted)]"
+      return "text-muted-foreground"
   }
 }
 
@@ -54,21 +55,21 @@ export function StatusBar({
   const lang = (activeLanguageId ?? "").toUpperCase()
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-[var(--jet-border)] bg-[var(--jet-panel)] px-2 text-[length:var(--jet-fs-xs)] normal-case tracking-[0.08em] text-[var(--jet-text-muted)]">
-      <span className="inline-block h-4 w-px shrink-0 bg-[var(--jet-accent)]" aria-hidden />
+    <footer className="flex h-6 shrink-0 items-center gap-2 border-t border-border bg-muted px-2 text-xs text-muted-foreground">
       <span
-        className="min-w-0 shrink truncate uppercase text-[var(--jet-text)]"
+        className="min-w-0 shrink truncate text-foreground"
         title={workspacePath ?? undefined}
       >
         {workspaceLabel}
       </span>
       {gitBranch && (
-        <span className="jet-mono-data shrink-0 uppercase text-[var(--jet-accent)]">{gitBranch}</span>
+        <>
+          <Separator orientation="vertical" className="h-3" />
+          <span className="jet-mono-data shrink-0 text-foreground">{gitBranch}</span>
+        </>
       )}
       {message ? (
-        <span className="min-w-0 max-w-[20rem] flex-1 shrink truncate text-[var(--jet-text)]">
-          {message}
-        </span>
+        <span className="min-w-0 max-w-[20rem] flex-1 shrink truncate text-foreground">{message}</span>
       ) : (
         <span className="min-w-0 flex-1" aria-hidden />
       )}
@@ -76,22 +77,22 @@ export function StatusBar({
       {activeFileName && (
         <span className="jet-mono-data flex min-w-0 shrink-0 items-center gap-2">
           {activeFileDirty && (
-            <span className="text-[var(--jet-accent)]" aria-hidden>
+            <span className="text-foreground" aria-hidden>
               ●
             </span>
           )}
-          <span className="truncate text-[var(--jet-text)]">{activeFileName}</span>
-          {lang && <span className="uppercase tracking-[0.09em] opacity-50">{lang}</span>}
+          <span className="truncate text-foreground">{activeFileName}</span>
+          {lang && <span className="opacity-50">{lang}</span>}
         </span>
       )}
       {cursor != null && (
-        <span className="jet-mono-data shrink-0 opacity-[.78]">
+        <span className="jet-mono-data shrink-0 opacity-80">
           Ln {cursor.line}, Col {cursor.column}
         </span>
       )}
       {activeFileName && <span className="jet-mono-data shrink-0 opacity-40">UTF-8 · LF</span>}
 
-      <span className="jet-mono-data flex shrink-0 items-center gap-1 uppercase">
+      <span className="jet-mono-data flex shrink-0 items-center gap-1">
         <span className={lspDotClass(lspStatus)} aria-hidden>
           ●
         </span>

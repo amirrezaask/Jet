@@ -1,5 +1,13 @@
 import { useEffect, useRef } from "react"
-import { JetOverlay } from "./JetOverlay.js"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog.js"
+import { Input } from "@/components/ui/input.js"
+import { Label } from "@/components/ui/label.js"
 
 export function GotoLineModal({
   open,
@@ -30,17 +38,20 @@ export function GotoLineModal({
   }
 
   return (
-    <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel="Go to line" maxWidth="24rem">
-      <div className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl">
-        <div className="border-b border-[var(--jet-border)] px-3 py-2 text-[length:var(--jet-fs-base)] font-medium">
-          Go to Line
-        </div>
-        <div className="p-3">
-          <input
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Go to Line</DialogTitle>
+          <DialogDescription>Enter a line number or line:column.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="goto-line-input" className="sr-only">
+            Line
+          </Label>
+          <Input
+            id="goto-line-input"
             ref={inputRef}
-            type="text"
             placeholder="Line or line:column"
-            className="jet-input w-full rounded border border-[var(--jet-border)] bg-transparent px-2 py-1.5 text-[length:var(--jet-fs-base)] focus:border-[var(--jet-accent)]"
             onKeyDown={e => {
               if (e.key === "Enter") {
                 e.preventDefault()
@@ -48,9 +59,9 @@ export function GotoLineModal({
               }
             }}
           />
-          <p className="mt-2 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">Example: 42 or 42:10</p>
+          <p className="text-xs text-muted-foreground">Example: 42 or 42:10</p>
         </div>
-      </div>
-    </JetOverlay>
+      </DialogContent>
+    </Dialog>
   )
 }

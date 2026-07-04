@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@jet/ui/styles.css": path.resolve(__dirname, "../jet-ui/src/styles/globals.css"),
+      "@": path.resolve(__dirname, "../jet-ui/src"),
     },
   },
   build: {

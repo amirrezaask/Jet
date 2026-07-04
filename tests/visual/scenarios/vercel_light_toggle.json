@@ -1,0 +1,15 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "screenshot": "test-results/agent-shots/vercel_dark_before.png" },
+    { "command": "ui.toggleColorScheme" },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "screenshot": "test-results/agent-shots/vercel_light_after.png" },
+    { "command": "ui.toggleColorScheme" },
+    { "wait": { "ms": 200 } },
+    { "exit": 0 }
+  ]
+}

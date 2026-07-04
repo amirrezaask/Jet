@@ -1,7 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Command as CommandPrimitive } from "cmdk"
-import { JetCmdkItem } from "./JetCmdkItem.js"
-import { JetOverlay } from "./JetOverlay.js"
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command.js"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog.js"
 
 export type JetFuzzyPickerItem = {
   value: string
@@ -57,38 +67,37 @@ export function JetFuzzyPicker({
   }, [items, selectedValue])
 
   return (
-    <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel={ariaLabel} maxWidth={maxWidth}>
-      <CommandPrimitive
-        className="overflow-hidden rounded-sm border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl"
-        shouldFilter={shouldFilter}
-        value={selectedValue}
-        onValueChange={setSelectedValue}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="overflow-hidden p-0"
+        style={{ maxWidth }}
+        showCloseButton={false}
       >
-        <CommandPrimitive.Input
-          placeholder={placeholder}
-          value={query}
-          onValueChange={setQuery}
-          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-[length:var(--jet-fs-base)]"
-          autoFocus
-        />
-        <CommandPrimitive.List className="overflow-auto p-1" style={{ maxHeight: maxListHeight }}>
-          <CommandPrimitive.Empty className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">
-            {emptyMessage}
-          </CommandPrimitive.Empty>
-          {items.map(item => (
-            <JetCmdkItem
-              key={item.value}
-              value={item.value}
-              onSelect={() => {
-                item.onSelect()
-                onOpenChange(false)
-              }}
-            >
-              {item.label}
-            </JetCmdkItem>
-          ))}
-        </CommandPrimitive.List>
-      </CommandPrimitive>
-    </JetOverlay>
+        <DialogTitle className="sr-only">{ariaLabel}</DialogTitle>
+        <DialogDescription className="sr-only">{placeholder}</DialogDescription>
+        <Command
+          shouldFilter={shouldFilter}
+          value={selectedValue}
+          onValueChange={setSelectedValue}
+        >
+          <CommandInput placeholder={placeholder} value={query} onValueChange={setQuery} />
+          <CommandList style={{ maxHeight: maxListHeight }}>
+            <CommandEmpty>{emptyMessage}</CommandEmpty>
+            {items.map(item => (
+              <CommandItem
+                key={item.value}
+                value={item.value}
+                onSelect={() => {
+                  item.onSelect()
+                  onOpenChange(false)
+                }}
+              >
+                {item.label}
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </DialogContent>
+    </Dialog>
   )
 }

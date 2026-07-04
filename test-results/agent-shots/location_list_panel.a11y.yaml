@@ -1,0 +1,15 @@
+- main:
+  - tablist:
+    - tab "Search" [selected]
+    - tab "Problems"
+    - tab "Refs"
+    - tab "Defs"
+    - tab "Tasks"
+  - searchbox "Search project…"
+  - checkbox "Case"
+  - text: Case
+  - checkbox "Regex"
+  - text: Regex
+  - list:
+    - listitem: No results
+- contentinfo: sample-workspace Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace LSP off

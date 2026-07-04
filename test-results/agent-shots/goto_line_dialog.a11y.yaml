@@ -1,0 +1,8 @@
+- main
+- dialog "Go to Line":
+  - heading "Go to Line" [level=2]
+  - paragraph: Enter a line number or line:column.
+  - text: Line
+  - textbox "Line":
+    - /placeholder: Line or line:column
+  - paragraph: "Example: 42 or 42:10"

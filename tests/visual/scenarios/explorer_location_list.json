@@ -1,0 +1,17 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "command": "explorer.show" },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "a11y_snapshot": "test-results/agent-shots/explorer_panel.a11y.yaml" },
+    { "assert_a11y_contains": ["Explorer"] },
+    { "command": "locationlist.show" },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "a11y_snapshot": "test-results/agent-shots/location_list_panel.a11y.yaml" },
+    { "assert_a11y_contains": ["Search"] },
+    { "exit": 0 }
+  ]
+}

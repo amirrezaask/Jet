@@ -47,47 +47,56 @@ export type JetTheme = {
   highlights: JetHighlightColors
 }
 
+export type ColorScheme = "dark" | "light"
+
+/** Vercel dark — canonical default (see vercel-theme/README.md). */
 export const defaultJetTheme: JetTheme = {
-  id: "default",
-  name: "Machined Instrument",
+  id: "vercel-dark",
+  name: "Vercel Dark",
   colors: {
-    bg: "#0B0D10",
-    panel: "#11151A",
-    panelRaised: "#151A20",
-    text: "#D6D8D2",
-    textMuted: "#8B929C",
-    accent: "#C99A45",
-    hover: "#1D242C",
-    selection: "#6F5A2F",
-    border: "#2A3138",
-    focusBorder: "#C99A45CC",
-    error: "#E06B5F",
-    warning: "#D1A247",
-    success: "#77BE88",
-    backdrop: "rgba(6,8,10,0.72)",
+    bg: "#000000",
+    panel: "#000000",
+    panelRaised: "#0a0a0a",
+    text: "#ededed",
+    textMuted: "#a1a1a1",
+    accent: "#ededed",
+    hover: "#1a1a1a",
+    selection: "#333333",
+    border: "#333333",
+    focusBorder: "#ededed",
+    error: "#f56464",
+    warning: "#f99902",
+    success: "#58c760",
+    backdrop: "rgba(0,0,0,0.6)",
   },
   highlights: {
-    keyword: "#8AA6C1",
-    controlKeyword: "#8AA6C1",
-    function: "#D8BA74",
-    type: "#C9B791",
-    string: "#87B77D",
-    number: "#D9A56A",
-    boolean: "#D9A56A",
-    comment: "#6D7681",
-    operator: "#C3C6C0",
-    variable: "#D6D8D2",
-    attribute: "#C9B791",
-    constant: "#E0D0A2",
-    field: "#E5E3DB",
-    module: "#B29D7A",
-    label: "#C99A45",
+    keyword: "#f05b8d",
+    controlKeyword: "#f05b8d",
+    function: "#b675f1",
+    type: "#62a6ff",
+    string: "#58c760",
+    number: "#62a6ff",
+    boolean: "#62a6ff",
+    comment: "#a1a1a1",
+    operator: "#ededed",
+    variable: "#ededed",
+    attribute: "#b675f1",
+    constant: "#62a6ff",
+    field: "#62a6ff",
+    module: "#62a6ff",
+    label: "#f05b8d",
   },
+}
+
+export function isDarkTheme(theme: JetTheme): boolean {
+  return theme.id.includes("light") ? false : true
 }
 
 export function applyJetThemeCss(theme: JetTheme): void {
   const root = document.documentElement
   const c = theme.colors
+  const onAccent = isDarkTheme(theme) ? "#000000" : "#fafafa"
+
   root.style.setProperty("--jet-bg", c.bg)
   root.style.setProperty("--jet-panel", c.panel)
   root.style.setProperty("--jet-panel-raised", c.panelRaised)
@@ -102,14 +111,30 @@ export function applyJetThemeCss(theme: JetTheme): void {
   root.style.setProperty("--jet-warning", c.warning)
   root.style.setProperty("--jet-success", c.success)
   root.style.setProperty("--jet-backdrop", c.backdrop)
-  root.style.setProperty("--jet-cursor-color", c.accent)
+  root.style.setProperty("--jet-cursor-color", c.text)
   root.style.setProperty("--jet-row-height", "22px")
+
   root.style.setProperty("--background", c.bg)
   root.style.setProperty("--foreground", c.text)
   root.style.setProperty("--card", c.panelRaised)
+  root.style.setProperty("--card-foreground", c.text)
+  root.style.setProperty("--popover", c.panelRaised)
+  root.style.setProperty("--popover-foreground", c.text)
+  root.style.setProperty("--primary", c.accent)
+  root.style.setProperty("--primary-foreground", onAccent)
+  root.style.setProperty("--secondary", c.hover)
+  root.style.setProperty("--secondary-foreground", c.text)
   root.style.setProperty("--muted", c.panel)
   root.style.setProperty("--muted-foreground", c.textMuted)
+  root.style.setProperty("--accent", c.hover)
+  root.style.setProperty("--accent-foreground", c.text)
+  root.style.setProperty("--destructive", c.error)
   root.style.setProperty("--border", c.border)
-  root.style.setProperty("--primary", c.accent)
+  root.style.setProperty("--input", c.border)
   root.style.setProperty("--ring", c.focusBorder)
+}
+
+export function applyColorScheme(scheme: ColorScheme, theme: JetTheme): void {
+  document.documentElement.classList.toggle("dark", scheme === "dark")
+  applyJetThemeCss(theme)
 }

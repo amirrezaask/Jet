@@ -4,6 +4,10 @@ import type { LocationItem, LocationListSource, WorkspaceService } from "@jet/wo
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "../lib/utils.js"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
+import { Input } from "@/components/ui/input.js"
+import { Checkbox } from "@/components/ui/checkbox.js"
+import { Label } from "@/components/ui/label.js"
 
 const ROW_HEIGHT_PX = 44
 
@@ -92,59 +96,61 @@ export function LocationListPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-jet-list-panel="locationlist">
-      <div className="flex shrink-0 gap-1 border-b border-[var(--jet-border)] p-1">
-        {sources.map(s => (
-          <button
-            key={s.id}
-            type="button"
-            className={cn(
-              "rounded px-2 py-0.5 text-[length:var(--jet-fs-xs)] uppercase tracking-wide",
-              state.activeSource === s.id
-                ? "bg-[var(--jet-accent)] text-[var(--jet-bg)]"
-                : "text-[var(--jet-text-muted)] hover:text-[var(--jet-text)]",
-            )}
-            onClick={() => state.setSource(s.id)}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        value={state.activeSource}
+        onValueChange={v => state.setSource(v as LocationListSource)}
+        className="shrink-0 border-b border-border p-1"
+      >
+        <TabsList className="h-7 w-full justify-start bg-transparent p-0">
+          {sources.map(s => (
+            <TabsTrigger key={s.id} value={s.id} className="h-6 px-2 text-xs">
+              {s.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
       {state.activeSource === "search" && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--jet-border)] p-2">
-          <input
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-2">
+          <Input
             type="search"
             value={state.searchQuery}
             onChange={e => state.setSearchState({ query: e.target.value })}
             placeholder="Search project…"
-            className="jet-input min-w-[12rem] flex-1 rounded-sm border border-[var(--jet-border)] bg-transparent px-2 py-1 text-[length:var(--jet-fs-sm)]"
+            className="min-w-[12rem] flex-1 h-8"
           />
-          <label className="flex items-center gap-1 text-[length:var(--jet-fs-xs)]">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-1">
+            <Checkbox
+              id="search-case"
               checked={state.searchCaseSensitive}
-              onChange={e => state.setSearchState({ caseSensitive: e.target.checked })}
+              onCheckedChange={checked =>
+                state.setSearchState({ caseSensitive: checked === true })
+              }
             />
-            Case
-          </label>
-          <label className="flex items-center gap-1 text-[length:var(--jet-fs-xs)]">
-            <input
-              type="checkbox"
+            <Label htmlFor="search-case" className="text-xs">
+              Case
+            </Label>
+          </div>
+          <div className="flex items-center gap-1">
+            <Checkbox
+              id="search-regex"
               checked={state.searchRegex}
-              onChange={e => state.setSearchState({ regex: e.target.checked })}
+              onCheckedChange={checked => state.setSearchState({ regex: checked === true })}
             />
-            Regex
-          </label>
+            <Label htmlFor="search-regex" className="text-xs">
+              Regex
+            </Label>
+          </div>
           {state.searchLoading && (
-            <span className="text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">Searching…</span>
+            <span className="text-xs text-muted-foreground">Searching…</span>
           )}
           {state.searchError && (
-            <span className="text-[length:var(--jet-fs-xs)] text-[var(--jet-error)]">{state.searchError}</span>
+            <span className="text-xs text-destructive">{state.searchError}</span>
           )}
         </div>
       )}
       <ul ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-1">
         {visible.length === 0 ? (
-          <li className="p-2 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">No results</li>
+          <li className="p-2 text-xs text-muted-foreground">No results</li>
         ) : (
           <li style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
             {rowVirtualizer.getVirtualItems().map(virtualRow => {
@@ -165,11 +171,11 @@ export function LocationListPanel({
                   <button
                     type="button"
                     data-jet-list-item
-                    className="flex w-full flex-col rounded px-2 py-1 text-left text-[length:var(--jet-fs-sm)] hover:bg-[var(--jet-border)]/40 focus:bg-[var(--jet-border)]/60 focus:outline-none"
+                    className="flex w-full flex-col rounded px-2 py-1 text-left text-sm hover:bg-accent focus:bg-accent focus:outline-none"
                     onClick={() => onOpenItem(item)}
                   >
                     <span className="truncate font-medium">{item.label}</span>
-                    <span className="jet-mono-data truncate text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">
+                    <span className="jet-mono-data truncate text-xs text-muted-foreground">
                       {item.path}:{item.line}:{item.column}
                       {item.detail ? ` · ${item.detail}` : ""}
                     </span>

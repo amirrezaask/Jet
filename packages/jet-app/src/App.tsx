@@ -36,20 +36,20 @@ import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } fr
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import {
-  applyJetThemeCss,
-  defaultJetTheme,
+  applyColorScheme,
   jumpToLine,
   collectProblemsFromViews,
   problemsFingerprint,
   setPendingEditorNavigation,
   setPendingInitialContent,
   type JetTheme,
+  type ColorScheme,
 } from "@jet/codemirror"
 import {
   PanelDock,
   CommandPalette,
   StatusBar,
-  bundledThemes,
+  themeForScheme,
   GotoLineModal,
   OutlineOverlay,
   QuickOpenOverlay,
@@ -80,7 +80,7 @@ import { loadGlobalJetrc } from "./load-global-jetrc.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
 import { useFileDrop } from "./use-file-drop.js"
 
-const THEME_STORAGE_KEY = "jet-theme-id"
+const COLOR_SCHEME_KEY = "jet-color-scheme"
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 const FONT_SIZE_STORAGE_KEY = "jet-font-size"
 const DEFAULT_FONT_SIZE = 13
@@ -110,10 +110,16 @@ function initialEditorLayout() {
   return PanelTree.editorOnlyLayout()
 }
 
-function loadStoredTheme(): JetTheme {
-  const id = localStorage.getItem(THEME_STORAGE_KEY)
-  if (id && bundledThemes[id]) return bundledThemes[id]!
-  return bundledThemes.minim ?? defaultJetTheme
+function loadStoredColorScheme(): ColorScheme {
+  try {
+    const raw = localStorage.getItem(COLOR_SCHEME_KEY)
+    if (raw === "light" || raw === "dark") return raw
+    const legacy = localStorage.getItem("jet-theme-id")
+    if (legacy?.includes("light")) return "light"
+  } catch {
+    /* ignore */
+  }
+  return "dark"
 }
 
 function normalizeAbsPath(p: string): string {
@@ -153,7 +159,8 @@ export function JetApp() {
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [editorFocused, setEditorFocused] = useState(false)
   const [layoutReady, setLayoutReady] = useState(false)
-  const [activeTheme, setActiveTheme] = useState<JetTheme>(() => loadStoredTheme())
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(() => loadStoredColorScheme())
+  const activeTheme = useMemo(() => themeForScheme(colorScheme), [colorScheme])
   const [gotoLineOpen, setGotoLineOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [outlineSymbols, setOutlineSymbols] = useState<OutlineEntry[]>([])
@@ -319,8 +326,8 @@ export function JetApp() {
   )
 
   useEffect(() => {
-    applyJetThemeCss(activeTheme)
-  }, [activeTheme])
+    applyColorScheme(colorScheme, activeTheme)
+  }, [colorScheme, activeTheme])
 
   useEffect(() => {
     applyRootFontSize(fontSizeRef.current)
@@ -782,27 +789,46 @@ export function JetApp() {
         aliases: "aliases" in entry ? [...entry.aliases] : undefined,
       })
     }).filter(Boolean)
-    for (const [id, theme] of Object.entries(bundledThemes)) {
-      disposables.push(
-        commands.register(
-          `ui.selectTheme.${id}`,
-          () => {
-            setActiveTheme(theme)
-            applyJetThemeCss(theme)
-            localStorage.setItem(THEME_STORAGE_KEY, id)
-            setMessage(`Theme: ${theme.name}`)
-          },
-          { id: `ui.selectTheme.${id}`, title: `Theme: ${theme.name}`, category: "UI", aliases: ["theme"] },
-        ),
-      )
-    }
     disposables.push(
-      commands.register("ui.selectTheme", () => setPaletteOpen(true), {
-        id: "ui.selectTheme",
-        title: "Select Theme",
-        category: "UI",
-        aliases: ["theme"],
-      }),
+      commands.register(
+        "ui.toggleColorScheme",
+        () => {
+          setColorScheme(prev => {
+            const next: ColorScheme = prev === "dark" ? "light" : "dark"
+            localStorage.setItem(COLOR_SCHEME_KEY, next)
+            setMessage(`Color scheme: ${next}`)
+            return next
+          })
+        },
+        {
+          id: "ui.toggleColorScheme",
+          title: "Toggle Color Scheme",
+          category: "UI",
+          aliases: ["theme", "dark mode", "light mode"],
+        },
+      ),
+    )
+    disposables.push(
+      commands.register(
+        "ui.setColorScheme.dark",
+        () => {
+          setColorScheme("dark")
+          localStorage.setItem(COLOR_SCHEME_KEY, "dark")
+          setMessage("Color scheme: dark")
+        },
+        { id: "ui.setColorScheme.dark", title: "Color Scheme: Dark", category: "UI" },
+      ),
+    )
+    disposables.push(
+      commands.register(
+        "ui.setColorScheme.light",
+        () => {
+          setColorScheme("light")
+          localStorage.setItem(COLOR_SCHEME_KEY, "light")
+          setMessage("Color scheme: light")
+        },
+        { id: "ui.setColorScheme.light", title: "Color Scheme: Light", category: "UI" },
+      ),
     )
     return () => {
       for (const d of disposables) d?.dispose()
@@ -972,7 +998,7 @@ export function JetApp() {
 
   return (
     <div
-      className="flex h-full flex-col bg-[var(--jet-bg)] text-[var(--jet-text)]"
+      className="flex h-full flex-col bg-background text-foreground"
       data-drag-over={fileDragOver || undefined}
     >
       <main className="min-h-0 flex-1">

@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Command as CommandPrimitive } from "cmdk"
 import { ChevronRight, File, Folder, FolderUp } from "lucide-react"
 import { pathToFileUri } from "@jet/shared"
 import type { WorkspaceEntry, WorkspaceService } from "@jet/workspace"
-import { JetCmdkItem } from "./JetCmdkItem.js"
-import { JetOverlay } from "./JetOverlay.js"
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command.js"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog.js"
 
 function parentRelDir(rel: string): string {
   const parts = rel.split("/").filter(Boolean)
@@ -137,77 +147,65 @@ export function OpenFileOverlay({
   if (!root) return null
 
   return (
-    <JetOverlay
-      open={open}
-      onOpenChange={onOpenChange}
-      ariaLabel="Open file"
-      maxWidth="36rem"
-    >
-      <CommandPrimitive
-        className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl"
-        shouldFilter={false}
-        value={selectedValue}
-        onValueChange={setSelectedValue}
-      >
-        <div className="border-b border-[var(--jet-border)] px-3 py-1.5 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">
-          {pathLabel}
-        </div>
-        <CommandPrimitive.Input
-          placeholder="Filter or browse folders…"
-          value={query}
-          onValueChange={setQuery}
-          onKeyDown={e => {
-            if (e.key === "Backspace" && query === "" && currentRelDir) {
-              e.preventDefault()
-              goUp()
-            }
-          }}
-          className="jet-input w-full border-b border-[var(--jet-border)] bg-transparent px-3 py-2 text-[length:var(--jet-fs-base)]"
-          autoFocus
-        />
-        <CommandPrimitive.List className="overflow-auto p-1" style={{ maxHeight: "20rem" }}>
-          {loading ? (
-            <div className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">Loading…</div>
-          ) : (
-            <>
-              <CommandPrimitive.Empty className="px-3 py-2 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">
-                No matching files.
-              </CommandPrimitive.Empty>
-              {currentRelDir ? (
-                <JetCmdkItem
-                  value="__parent__"
-                  onSelect={() => handleSelect("__parent__")}
-                  className="flex items-center gap-2"
-                >
-                  <FolderUp className="size-3.5 shrink-0 text-[var(--jet-text-muted)]" />
-                  <span>..</span>
-                </JetCmdkItem>
-              ) : null}
-              {filtered.map(entry => (
-                <JetCmdkItem
-                  key={entry.uri}
-                  value={entry.uri}
-                  onSelect={() => handleSelect(entry.uri)}
-                  className="flex items-center gap-2"
-                >
-                  {entry.isDirectory ? (
-                    <>
-                      <Folder className="size-3.5 shrink-0 text-[var(--jet-accent)]" />
-                      <span className="flex-1 truncate">{entry.name}</span>
-                      <ChevronRight className="size-3 shrink-0 text-[var(--jet-text-muted)]" />
-                    </>
-                  ) : (
-                    <>
-                      <File className="size-3.5 shrink-0 text-[var(--jet-text-muted)]" />
-                      <span className="truncate">{entry.name}</span>
-                    </>
-                  )}
-                </JetCmdkItem>
-              ))}
-            </>
-          )}
-        </CommandPrimitive.List>
-      </CommandPrimitive>
-    </JetOverlay>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
+        <DialogTitle className="sr-only">Open file</DialogTitle>
+        <DialogDescription className="sr-only">Browse and open a file</DialogDescription>
+        <Command shouldFilter={false} value={selectedValue} onValueChange={setSelectedValue}>
+          <div className="border-b px-3 py-1.5 text-xs text-muted-foreground">{pathLabel}</div>
+          <CommandInput
+            placeholder="Filter or browse folders…"
+            value={query}
+            onValueChange={setQuery}
+            onKeyDown={e => {
+              if (e.key === "Backspace" && query === "" && currentRelDir) {
+                e.preventDefault()
+                goUp()
+              }
+            }}
+          />
+          <CommandList style={{ maxHeight: "20rem" }}>
+            {loading ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground">Loading…</div>
+            ) : (
+              <>
+                <CommandEmpty>No matching files.</CommandEmpty>
+                {currentRelDir ? (
+                  <CommandItem
+                    value="__parent__"
+                    onSelect={() => handleSelect("__parent__")}
+                    className="flex items-center gap-2"
+                  >
+                    <FolderUp className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span>..</span>
+                  </CommandItem>
+                ) : null}
+                {filtered.map(entry => (
+                  <CommandItem
+                    key={entry.uri}
+                    value={entry.uri}
+                    onSelect={() => handleSelect(entry.uri)}
+                    className="flex items-center gap-2"
+                  >
+                    {entry.isDirectory ? (
+                      <>
+                        <Folder className="size-3.5 shrink-0 text-foreground" />
+                        <span className="flex-1 truncate">{entry.name}</span>
+                        <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+                      </>
+                    ) : (
+                      <>
+                        <File className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{entry.name}</span>
+                      </>
+                    )}
+                  </CommandItem>
+                ))}
+              </>
+            )}
+          </CommandList>
+        </Command>
+      </DialogContent>
+    </Dialog>
   )
 }

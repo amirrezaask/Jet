@@ -1,3 +1,45 @@
-- main:
-  - textbox
-- contentinfo: sample-workspace Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace index.ts TYPESCRIPT Ln 1, Col 1 UTF-8 · LF LSP off
+- main
+- dialog "Command palette":
+  - heading "Command palette" [level=2]
+  - paragraph: Search commands…
+  - combobox [expanded]
+  - listbox "Suggestions":
+    - option "Show Command Palette Recent UI commands · palette · help ⌘⇧P" [selected]
+    - option "Buffer List Workspace open buffers · switch buffer ⌘⇧B"
+    - option "Change Directory Workspace switch workspace"
+    - option "Close Buffer Workspace close file ⌘W"
+    - 'option "Color Scheme: Dark UI"'
+    - 'option "Color Scheme: Light UI"'
+    - option "Find in Editor Editor ⌘F"
+    - option "Focus Editor View ⌘1"
+    - option "Focus Sidebar View ⌘K ⌘W"
+    - option "Format Document Editor ⇧⌥F"
+    - option "Go to Definition Editor F12"
+    - option "Go to Line… Editor CtrlG"
+    - option "Go to References Editor ⇧F12"
+    - option "Jump Back Navigation back ⌥J"
+    - option "Jump Forward Navigation forward ⌥⇧J"
+    - option "List Focus Down List ↓"
+    - 'option "Location List: Problems View ⌘⇧M"'
+    - 'option "Location List: Search View ⌘K ⌘S"'
+    - option "New File Workspace untitled ⌘N"
+    - option "Next Buffer Editor ⌘⇧]"
+    - option "Open File Workspace browse file ⌘O"
+    - option "Open Focused List Item List Enter"
+    - option "Open Folder Workspace open workspace ⌘K ⌘O"
+    - option "Previous Buffer Editor ⌘⇧["
+    - option "Quick Open File Workspace files · open quickly ⌘P"
+    - option "Quick Outline Editor ⌘⇧O"
+    - option "Refresh Projects Workspace"
+    - option "Rename Symbol Editor F2"
+    - option "Replace in Editor Editor ⌘⌥F"
+    - option "Run Build Task Tasks"
+    - option "Run Task Tasks"
+    - option "Save File Workspace write ⌘S"
+    - option "Show Explorer View files tree · sidebar ⌘⇧E"
+    - option "Show Location List View"
+    - option "Show Output View"
+    - option "Split Editor Right View ⌘K →"
+    - option "Switch Project Workspace projects · project"
+    - option "Toggle Color Scheme UI theme · dark mode · light mode"
+    - option "Toggle Comment Editor ⌘/"

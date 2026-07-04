@@ -100,9 +100,9 @@ export function ExplorerTab({
 
   if (!rootUri) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[var(--jet-text-muted)]">
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-muted-foreground">
         <p>Open a folder to browse files</p>
-        <p className="text-[length:var(--jet-fs-xs)]">Use the command palette or <strong>Open Folder</strong>.</p>
+        <p className="text-xs">Use the command palette or <strong>Open Folder</strong>.</p>
       </div>
     )
   }
@@ -124,9 +124,9 @@ export function ExplorerTab({
             {...item.getProps()}
             style={{ paddingLeft: item.getItemMeta().level * 16 }}
             className={cn(
-              "jet-list-item flex h-[var(--jet-row-height)] cursor-pointer items-center gap-1 rounded-sm px-1",
-              "hover:bg-[var(--jet-hover)]",
-              item.isSelected() && "bg-[var(--jet-accent)]/15",
+              "flex h-[var(--jet-row-height)] cursor-pointer items-center gap-1 rounded-sm px-1",
+              "hover:bg-accent",
+              item.isSelected() && "bg-accent/50",
             )}
             data-jet-list-item
           >
@@ -140,9 +140,9 @@ export function ExplorerTab({
               <span className="size-3 shrink-0" />
             )}
             {node.isDirectory ? (
-              <Folder className="size-3.5 shrink-0 text-[var(--jet-accent)]" />
+              <Folder className="size-3.5 shrink-0 text-foreground" />
             ) : (
-              <File className="size-3.5 shrink-0 text-[var(--jet-text-muted)]" />
+              <File className="size-3.5 shrink-0 text-muted-foreground" />
             )}
             <span className="truncate">{node.name}</span>
           </div>

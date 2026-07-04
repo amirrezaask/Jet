@@ -184,7 +184,7 @@ Use via `browser_cdp` → `Runtime.evaluate` with `awaitPromise: true` for async
 11. Command palette — `executeCommand("ui.showCommandPalette")` → centered modal (not trapped in panel)
 12. New file / open file — editor tab lands in **right** main panel, not stacked below sidebar
 
-For feature-specific work, add targeted MCP checks (e.g. `executeCommand("editor.find")` → search panel in snapshot; `executeCommand("ui.selectTheme.four_coder")` → theme message / CSS change).
+For feature-specific work, add targeted MCP checks (e.g. `executeCommand("editor.find")` → search panel in snapshot; `executeCommand("ui.toggleColorScheme")` → light/dark shell + editor colors).
 
 ### Browser mode limitations
 
@@ -297,7 +297,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 | Command                 | Default key           |
 | ----------------------- | --------------------- |
 | `ui.showCommandPalette` | Mod-p                 |
-| `ui.selectTheme`        | — (palette: Theme: …) |
+| `ui.toggleColorScheme`  | — (palette: Toggle Color Scheme) |
 | `workspace.openFolder`  | Cmd-k Cmd-o (native dialog) |
 | `workspace.cd`          | — (palette: Change Directory) |
 | `workspace.openFile`    | Mod-o                 |
@@ -358,7 +358,8 @@ Registered in `packages/jet-app/src/App.tsx`:
 - Tailwind v4 + custom RAD-ish tokens in `jet-ui/src/styles/globals.css`
 - `@source` **in globals.css** — must scan all workspace packages so position/layout utilities emit for `jet-ui` components
 - Bundled themes in `jet-ui/src/theme/bundled.ts` (default, 4coder, Catppuccin Mocha, One Dark, Gruvbox Dark, Nord)
-- Theme picker via `ui.selectTheme.*` commands; persisted in `localStorage`
+- Dark/light Vercel theme via `ui.toggleColorScheme` / `ui.setColorScheme.dark|light`; persisted in `localStorage` (`jet-color-scheme`)
+- Shell UI: shadcn/ui primitives in `packages/jet-ui/src/components/ui/`
 - Command palette — `createPortal` to `document.body`; inline styles for centering (layout-critical)
 
 ---
@@ -478,7 +479,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] GitTab lazy import; PaletteOverlay
 - [x] Tab row overflow menu
 - [x] Playwright smoke tests wired to `pnpm dev:web` + `__jetAgent`
-- [x] **Shell:** theme picker + 3 bundled themes
+- [x] **Shell:** Vercel dark/light theme + `ui.toggleColorScheme`
 - [x] **Shell:** welcome view, status bar (L/C, LSP, message)
 - [x] Reduce main bundle — lazy Search/Problems tabs; Vite `manualChunks` for git-diff/shiki
 - [x] **Shell:** status bar — workspace path + git branch

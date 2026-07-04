@@ -1,5 +1,13 @@
 import { useEffect, useRef } from "react"
-import { JetOverlay } from "./JetOverlay.js"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog.js"
+import { ScrollArea } from "@/components/ui/scroll-area.js"
+import { Button } from "@/components/ui/button.js"
 
 export type OutlineEntry = {
   name: string
@@ -25,35 +33,37 @@ export function OutlineOverlay({
   }, [open, symbols])
 
   return (
-    <JetOverlay open={open} onOpenChange={onOpenChange} ariaLabel="Document outline" maxWidth="28rem">
-      <div className="overflow-hidden rounded-md border border-[var(--jet-border)] bg-[var(--jet-panel-raised)] shadow-2xl">
-        <div className="border-b border-[var(--jet-border)] px-3 py-2 text-[length:var(--jet-fs-base)] font-medium">
-          Document Outline
-        </div>
-        <div ref={listRef} className="max-h-80 overflow-auto p-1">
-          {symbols.length === 0 ? (
-            <p className="px-2 py-3 text-[length:var(--jet-fs-base)] text-[var(--jet-text-muted)]">No symbols found</p>
-          ) : (
-            symbols.map((sym, i) => (
-              <button
-                key={`${sym.line}-${sym.name}-${i}`}
-                type="button"
-                className="flex w-full rounded-sm px-2 py-1 text-left text-[length:var(--jet-fs-base)] hover:bg-[var(--jet-hover)]"
-                style={{ paddingLeft: 8 + sym.depth * 12 }}
-                onClick={() => {
-                  onSelect(sym.line)
-                  onOpenChange(false)
-                }}
-              >
-                <span className="truncate">{sym.name}</span>
-                <span className="ml-auto shrink-0 pl-2 text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">
-                  {sym.line}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    </JetOverlay>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Document Outline</DialogTitle>
+          <DialogDescription>Jump to a symbol in the current file.</DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-80">
+          <div ref={listRef} className="p-1">
+            {symbols.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-muted-foreground">No symbols found</p>
+            ) : (
+              symbols.map((sym, i) => (
+                <Button
+                  key={`${sym.line}-${sym.name}-${i}`}
+                  type="button"
+                  variant="ghost"
+                  className="flex h-auto w-full justify-start rounded-sm px-2 py-1 font-normal"
+                  style={{ paddingLeft: 8 + sym.depth * 12 }}
+                  onClick={() => {
+                    onSelect(sym.line)
+                    onOpenChange(false)
+                  }}
+                >
+                  <span className="truncate">{sym.name}</span>
+                  <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">{sym.line}</span>
+                </Button>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   )
 }

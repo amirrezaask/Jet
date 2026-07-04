@@ -1,0 +1,6 @@
+- main:
+  - tree "Explorer":
+    - treeitem "src" [level=1]
+    - treeitem "package.json" [level=1]
+    - treeitem "tsconfig.json" [level=1]
+- contentinfo: sample-workspace Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace LSP off

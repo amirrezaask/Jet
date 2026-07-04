@@ -37,8 +37,8 @@ export function ProjectSwitcherOverlay({
         value: project.path,
         label: (
           <span className="flex min-w-0 items-baseline gap-2">
-            <span className="shrink-0 font-mono text-[var(--jet-text)]">{project.name}</span>
-            <span className="min-w-0 truncate font-mono text-[length:var(--jet-fs-xs)] text-[var(--jet-text-muted)]">
+            <span className="shrink-0 font-mono text-foreground">{project.name}</span>
+            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
               {project.path}
             </span>
           </span>
