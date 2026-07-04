@@ -1,0 +1,15 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "command": "editor.find" },
+    { "wait": { "ms": 200, "animations_idle": true } },
+    { "dom_dump": "test-results/agent-shots/editor_find.html", "selector": ".cm-editor" },
+    { "assert_a11y_contains": ["textbox"] },
+    { "screenshot": "test-results/agent-shots/editor_find.png" },
+    { "key": "Escape" },
+    { "exit": 0 }
+  ]
+}

@@ -80,6 +80,17 @@ describe("keyEventMatchesBindingPart", () => {
       true,
     )
   })
+
+  it("matches Cmd-- (zoom out minus key)", () => {
+    assert.equal(
+      keyEventMatchesBindingPart(keyEvent({ key: "-", metaKey: true, code: "Minus" }), "Cmd--"),
+      true,
+    )
+    assert.equal(
+      keyEventMatchesBindingPart(keyEvent({ key: "Minus", metaKey: true, code: "Minus" }), "Cmd--"),
+      true,
+    )
+  })
 })
 
 describe("keyEventMatchesBinding", () => {

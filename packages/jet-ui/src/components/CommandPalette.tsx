@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { JetFuzzyPicker } from "./JetFuzzyPicker.js"
 import { Badge } from "@/components/ui/badge.js"
 import { CommandShortcut } from "@/components/ui/command.js"
@@ -20,29 +21,24 @@ export function CommandPalette({
   }[]
   onRun: (id: string) => void
 }) {
-  return (
-    <JetFuzzyPicker
-      open={open}
-      onOpenChange={onOpenChange}
-      ariaLabel="Command palette"
-      placeholder="Search commands…"
-      maxWidth="32rem"
-      maxListHeight="20rem"
-      items={commands.map(cmd => ({
+  const items = useMemo(
+    () =>
+      commands.map(cmd => ({
         value: `${cmd.id} ${cmd.title} ${(cmd.aliases ?? []).join(" ")}`,
         label: (
           <span className="flex w-full items-center justify-between gap-3">
             <span className="min-w-0">
               <span className="flex items-center gap-2">
-                <span className="truncate">{cmd.title}</span>
+                <span className="truncate font-medium">{cmd.title}</span>
                 {cmd.recent && (
-                  <Badge variant="outline" className="text-[length:var(--jet-fs-2xs)]">
+                  <Badge variant="outline" className="border-[var(--jet-phosphor)]/30 text-[length:var(--jet-fs-2xs)] text-[var(--jet-phosphor)]">
                     Recent
                   </Badge>
                 )}
               </span>
-              <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--jet-fs-2xs)] text-muted-foreground">
                 {cmd.category && <span>{cmd.category}</span>}
+                {cmd.category && cmd.aliases?.length ? <span aria-hidden>·</span> : null}
                 {cmd.aliases?.length ? <span>{cmd.aliases.join(" · ")}</span> : null}
               </span>
             </span>
@@ -50,7 +46,19 @@ export function CommandPalette({
           </span>
         ),
         onSelect: () => onRun(cmd.id),
-      }))}
+      })),
+    [commands, onRun],
+  )
+
+  return (
+    <JetFuzzyPicker
+      open={open}
+      onOpenChange={onOpenChange}
+      ariaLabel="Command palette"
+      placeholder="Search commands…"
+      maxWidth="34rem"
+      maxListHeight="22rem"
+      items={items}
     />
   )
 }

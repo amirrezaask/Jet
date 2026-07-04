@@ -55,44 +55,48 @@ export function StatusBar({
   const lang = (activeLanguageId ?? "").toUpperCase()
 
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-2 border-t border-border bg-muted px-2 text-xs text-muted-foreground">
-      <span
-        className="min-w-0 shrink truncate text-foreground"
-        title={workspacePath ?? undefined}
-      >
-        {workspaceLabel}
+    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-border bg-[var(--jet-surface-inset)] px-3 text-[length:var(--jet-fs-2xs)] text-muted-foreground">
+      <span className="jet-status-zone min-w-0 shrink" title={workspacePath ?? undefined}>
+        <span className={hasWorkspace ? "text-foreground" : undefined}>{workspaceLabel}</span>
+        {gitBranch && (
+          <>
+            <Separator orientation="vertical" className="h-3" />
+            <span className="jet-mono-data text-foreground">{gitBranch}</span>
+          </>
+        )}
       </span>
-      {gitBranch && (
-        <>
-          <Separator orientation="vertical" className="h-3" />
-          <span className="jet-mono-data shrink-0 text-foreground">{gitBranch}</span>
-        </>
-      )}
+
       {message ? (
-        <span className="min-w-0 max-w-[20rem] flex-1 shrink truncate text-foreground">{message}</span>
+        <span className="jet-status-zone min-w-0 max-w-[24rem] flex-1 shrink truncate text-foreground">
+          {message}
+        </span>
       ) : (
         <span className="min-w-0 flex-1" aria-hidden />
       )}
 
       {activeFileName && (
-        <span className="jet-mono-data flex min-w-0 shrink-0 items-center gap-2">
+        <span className="jet-status-zone jet-mono-data shrink-0">
           {activeFileDirty && (
-            <span className="text-foreground" aria-hidden>
+            <span className="text-[var(--jet-phosphor)]" aria-label="Unsaved changes">
               ●
             </span>
           )}
-          <span className="truncate text-foreground">{activeFileName}</span>
-          {lang && <span className="opacity-50">{lang}</span>}
+          <span className="max-w-[12rem] truncate text-foreground">{activeFileName}</span>
+          {lang && <span className="opacity-45">{lang}</span>}
         </span>
       )}
+
       {cursor != null && (
-        <span className="jet-mono-data shrink-0 opacity-80">
+        <span className="jet-status-zone jet-mono-data shrink-0 tabular-nums">
           Ln {cursor.line}, Col {cursor.column}
         </span>
       )}
-      {activeFileName && <span className="jet-mono-data shrink-0 opacity-40">UTF-8 · LF</span>}
 
-      <span className="jet-mono-data flex shrink-0 items-center gap-1">
+      {activeFileName && (
+        <span className="jet-status-zone jet-mono-data shrink-0 opacity-40">UTF-8 · LF</span>
+      )}
+
+      <span className="jet-status-zone jet-mono-data shrink-0">
         <span className={lspDotClass(lspStatus)} aria-hidden>
           ●
         </span>

@@ -17,6 +17,15 @@ type Step =
   | { open_file: string }
   | { assert_state: Partial<Record<string, unknown>> }
   | { assert_a11y_contains: string | string[]; selector?: string }
+  | { assert_a11y_not_contains: string | string[]; selector?: string }
+  | {
+      assert_layout: {
+        selector?: string
+        min_items?: number
+        min_unique_tops?: number
+        min_row_height?: number
+      }
+    }
   | { exit: number }
 
 type Scenario = {
@@ -197,6 +206,53 @@ async function runStep(
     }
     return {}
   }
+  if ("assert_layout" in step) {
+    const cfg = step.assert_layout
+    const sel = cfg.selector ?? "[data-jet-list-item]"
+    const minItems = cfg.min_items ?? 2
+    const minUniqueTops = cfg.min_unique_tops ?? minItems
+    const minRowHeight = cfg.min_row_height ?? 18
+    const layout = await page.evaluate(
+      ({ sel, minItems, minUniqueTops, minRowHeight }) => {
+        const items = [...document.querySelectorAll<HTMLElement>(sel)]
+        const rects = items.map(el => el.getBoundingClientRect())
+        const tops = rects.map(r => Math.round(r.top))
+        const uniqueTops = new Set(tops).size
+        const minH = rects.length ? Math.min(...rects.map(r => r.height)) : 0
+        const flexShrinks = items.slice(0, 5).map(el => getComputedStyle(el).flexShrink)
+        return { count: items.length, uniqueTops, minH, tops: tops.slice(0, 8), flexShrinks }
+      },
+      { sel, minItems, minUniqueTops, minRowHeight },
+    )
+    if (layout.count < minItems) {
+      throw new Error(`assert_layout failed: count=${layout.count} expected>=${minItems}`)
+    }
+    if (layout.uniqueTops < minUniqueTops) {
+      throw new Error(
+        `assert_layout failed: uniqueTops=${layout.uniqueTops} expected>=${minUniqueTops} tops=${JSON.stringify(layout.tops)}`,
+      )
+    }
+    if (layout.minH < minRowHeight) {
+      throw new Error(`assert_layout failed: minRowHeight=${layout.minH} expected>=${minRowHeight}`)
+    }
+    if (layout.flexShrinks.some(s => s !== "0")) {
+      throw new Error(`assert_layout failed: flexShrink must be 0, got ${JSON.stringify(layout.flexShrinks)}`)
+    }
+    return {}
+  }
+  if ("assert_a11y_not_contains" in step) {
+    const needles = Array.isArray(step.assert_a11y_not_contains)
+      ? step.assert_a11y_not_contains
+      : [step.assert_a11y_not_contains]
+    const snap = await captureAriaSnapshot(page, step.selector)
+    const haystack = snap.toLowerCase()
+    for (const n of needles) {
+      if (haystack.includes(n.toLowerCase())) {
+        throw new Error(`assert_a11y_not_contains failed: found="${n}"`)
+      }
+    }
+    return {}
+  }
   if ("assert_state" in step) {
     const state = await page.evaluate(() => window.__jetAgent!.getState())
     for (const [k, expected] of Object.entries(step.assert_state)) {
@@ -241,6 +297,12 @@ async function run(scenarioPath: string): Promise<ResultJson> {
   try {
     browser = await chromium.launch({ headless: true })
     const context = await browser.newContext({ viewport: { width, height } })
+    if (scenario.window?.font_size != null) {
+      const px = scenario.window.font_size
+      await context.addInitScript(size => {
+        localStorage.setItem("jet-font-size", String(size))
+      }, px)
+    }
     const page = await context.newPage()
     page.on("pageerror", err => {
       process.stderr.write(`[pageerror] ${err.message}\n`)
@@ -253,6 +315,11 @@ async function run(scenarioPath: string): Promise<ResultJson> {
         await window.__jetAgent!.waitForEditor().catch(() => {})
       }
     })
+
+    if (scenario.window?.font_size != null) {
+      const px = scenario.window.font_size
+      await page.evaluate(size => window.__jetAgent!.setFontSize(size), px)
+    }
 
     const openExtras = scenario.files?.slice(1) ?? []
     for (const f of openExtras) {
@@ -301,6 +368,7 @@ declare global {
       getState(): Record<string, unknown>
       waitForReady(): Promise<void>
       waitForEditor(timeoutMs?: number): Promise<void>
+      setFontSize(px: number): void
     }
   }
 }

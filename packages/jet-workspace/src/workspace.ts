@@ -219,7 +219,27 @@ export class WorkspaceService {
       tree.setView(existing, { kind: viewKind })
       return existing
     }
+
+    const sidebarPanel = tree.findPanelWithView(v => isSidebarView(v))
+    if (sidebarPanel) {
+      tree.setView(sidebarPanel, { kind: viewKind })
+      return sidebarPanel
+    }
+
+    const fallbackView = tree.getView(panelId)
+    if (fallbackView?.kind === "editor" || fallbackView?.kind === "empty") {
+      const newSidebar = tree.attachAtViewportEdge("left")
+      tree.setView(newSidebar, { kind: viewKind })
+      return newSidebar
+    }
+
     tree.setView(panelId, { kind: viewKind })
     return panelId
   }
+}
+
+const SIDEBAR_VIEW_KINDS = new Set<PanelView["kind"]>(["explorer", "locationlist", "output"])
+
+function isSidebarView(view: PanelView): boolean {
+  return SIDEBAR_VIEW_KINDS.has(view.kind)
 }

@@ -12,4 +12,5 @@
   - text: Regex
   - list:
     - listitem: No results
+  - textbox
 - contentinfo: sample-workspace Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace LSP off

@@ -85,7 +85,7 @@ export function PanelDockInner(props: PanelDockProps) {
         return (
           <div
             key={panelNum}
-            className="absolute flex flex-col overflow-hidden border border-border bg-background transition-opacity duration-150"
+            className="absolute flex flex-col overflow-hidden border border-border/80 bg-background transition-opacity duration-150"
             style={{
               left: rect.x,
               top: rect.y,

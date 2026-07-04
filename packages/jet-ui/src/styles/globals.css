@@ -82,33 +82,55 @@
   --jet-error: var(--destructive);
   --jet-warning: #9e5200;
   --jet-success: #397c3b;
-  --jet-backdrop: rgba(0, 0, 0, 0.4);
+  --jet-backdrop: rgba(0, 0, 0, 0.45);
+  --jet-row-height: 22px;
+  --jet-phosphor: #1a9e86;
+  --jet-phosphor-glow: rgba(26, 158, 134, 0.14);
+  --jet-surface-inset: #f0f0f0;
+}
+
+/* List / explorer rows — plain CSS so Electron builds never drop Tailwind arbitrary heights. */
+.jet-list-row {
+  box-sizing: border-box;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: var(--jet-row-height);
+  min-height: var(--jet-row-height);
+}
+
+.jet-explorer-tree {
+  display: flex;
+  flex-direction: column;
 }
 
 .dark {
-  --background: #000000;
-  --foreground: #ededed;
-  --card: #0a0a0a;
-  --card-foreground: #ededed;
-  --popover: #0a0a0a;
-  --popover-foreground: #ededed;
-  --primary: #ededed;
-  --primary-foreground: #000000;
-  --secondary: #1a1a1a;
-  --secondary-foreground: #ededed;
-  --muted: #000000;
-  --muted-foreground: #a1a1a1;
-  --accent: #1a1a1a;
-  --accent-foreground: #ededed;
+  --background: #09090b;
+  --foreground: #ececf0;
+  --card: #111116;
+  --card-foreground: #ececf0;
+  --popover: #14141a;
+  --popover-foreground: #ececf0;
+  --primary: #3ee8c6;
+  --primary-foreground: #09090b;
+  --secondary: #1a1a22;
+  --secondary-foreground: #ececf0;
+  --muted: #0e0e12;
+  --muted-foreground: #8b8b9a;
+  --accent: #1c1c26;
+  --accent-foreground: #ececf0;
   --destructive: #f56464;
-  --border: #333333;
-  --input: #333333;
-  --ring: #ededed;
+  --border: #2a2a34;
+  --input: #2a2a34;
+  --ring: #3ee8c6;
 
-  --jet-selection: #333333;
+  --jet-selection: #252532;
   --jet-warning: #f99902;
   --jet-success: #58c760;
-  --jet-backdrop: rgba(0, 0, 0, 0.6);
+  --jet-backdrop: rgba(4, 4, 8, 0.72);
+  --jet-phosphor: #3ee8c6;
+  --jet-phosphor-glow: rgba(62, 232, 198, 0.12);
+  --jet-surface-inset: #0c0c10;
 }
 
 * {
@@ -133,4 +155,119 @@ body,
 .jet-mono-data {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* Shell chrome */
+.jet-shell-main {
+  background: var(--background);
+}
+
+.jet-status-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.jet-kbd-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--jet-surface-inset);
+  font-family: var(--font-mono);
+  font-size: var(--jet-fs-2xs);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+/* Modal / palette — RAD bracket accent */
+.jet-palette [data-slot="dialog-content"] {
+  border-color: var(--border);
+  box-shadow:
+    0 0 0 1px rgba(62, 232, 198, 0.06),
+    0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.jet-palette [data-slot="command-input-wrapper"] {
+  border-color: var(--border);
+  background: var(--jet-surface-inset);
+}
+
+.jet-palette [data-slot="command-item"][data-selected="true"] {
+  background: var(--jet-phosphor-glow);
+  border-left: 2px solid var(--jet-phosphor);
+  padding-left: calc(0.5rem - 2px);
+}
+
+.jet-palette [data-slot="command-shortcut"] {
+  font-family: var(--font-mono);
+  font-size: var(--jet-fs-2xs);
+  letter-spacing: 0.02em;
+}
+
+/* List focus rail */
+.jet-list-item-selected {
+  background: var(--jet-phosphor-glow) !important;
+}
+
+.jet-list-item-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--jet-phosphor);
+}
+
+/* Welcome — instrument panel backdrop */
+.jet-welcome-backdrop {
+  background:
+    linear-gradient(180deg, var(--background) 0%, var(--muted) 100%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 23px,
+      color-mix(in srgb, var(--border) 35%, transparent) 23px,
+      color-mix(in srgb, var(--border) 35%, transparent) 24px
+    );
+}
+
+.jet-welcome-card {
+  position: relative;
+  border-color: var(--border);
+}
+
+.jet-welcome-card::before,
+.jet-welcome-card::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: var(--jet-phosphor);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.jet-welcome-card::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.jet-welcome-card::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid;
+  border-right: 2px solid;
+}
+
+.jet-empty-hint {
+  color: var(--muted-foreground);
+  font-size: var(--jet-fs-sm);
+  letter-spacing: 0.01em;
 }

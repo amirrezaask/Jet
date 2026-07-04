@@ -1,0 +1,18 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "open_file": "package.json" },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "command": "workspace.bufferList" },
+    { "wait": { "ms": 200, "animations_idle": true } },
+    { "a11y_snapshot": "test-results/agent-shots/buffer_list.a11y.yaml" },
+    { "assert_a11y_contains": ["Buffer", "index.ts", "package.json"] },
+    { "screenshot": "test-results/agent-shots/buffer_list.png" },
+    { "key": "Escape" },
+    { "wait": { "ms": 150 } },
+    { "assert_state": { "paletteOpen": false } },
+    { "exit": 0 }
+  ]
+}

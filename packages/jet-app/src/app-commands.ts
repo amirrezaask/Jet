@@ -572,6 +572,8 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.nextEditor", fn: "nextBuffer", title: "Next Buffer", category: "Editor" },
   { id: "editor.previousEditor", fn: "prevBuffer", title: "Previous Buffer", category: "Editor" },
   { id: "view.splitEditor", fn: "splitEditorRight", title: "Split Editor Right", category: "View" },
+  { id: "ui.zoomIn", fn: "zoomIn", title: "Zoom In", category: "UI", aliases: ["font larger"] },
+  { id: "ui.zoomOut", fn: "zoomOut", title: "Zoom Out", category: "UI", aliases: ["font smaller"] },
   { id: "workbench.action.focusSideBar", fn: "focusSidebar", title: "Focus Sidebar", category: "View" },
   { id: "workbench.action.focusFirstEditorGroup", fn: "focusEditorGroup", title: "Focus Editor", category: "View" },
   { id: "editor.action.quickOutline", fn: "quickOutline", title: "Quick Outline", category: "Editor" },

@@ -69,6 +69,8 @@ pnpm visual:all
 | `{ "dom_dump": "path.html", "selector": ".cm-editor" }` | Dump `outerHTML` of a subtree for CSS/structure debugging |
 | `{ "assert_state": { key: value } }` | Compare `__jetAgent.getState()` fields |
 | `{ "assert_a11y_contains": ["needle"], "selector": "body" }` | Fail if aria snapshot missing any needle (case-insensitive substring) |
+| `{ "assert_a11y_not_contains": ["needle"], "selector": "body" }` | Fail if aria snapshot contains any needle |
+| `{ "assert_layout": { "selector": "[data-jet-list-item]", "min_items": 3, "min_unique_tops": 3, "min_row_height": 18 } }` | Fail if list rows overlap (unique `getBoundingClientRect().top` values) or row height too small |
 | `{ "exit": 0 }` | End scenario with exit code |
 
 ### Which output do I use?
@@ -94,6 +96,26 @@ Available command ids: see `packages/jet-app/src/app-commands.ts` — e.g. `ui.s
 | `scenarios/vercel_light_toggle.json` | Dark/light color scheme toggle |
 | `scenarios/goto_line_dialog.json` | Go to line shadcn dialog |
 | `scenarios/explorer_location_list.json` | Explorer + location list panels |
+| `scenarios/explorer_jet_repo_layout.json` | Full repo explorer — row spacing layout check |
+| `scenarios/explorer_with_editor.json` | Explorer splits left; editor stays visible |
+| `scenarios/palette_no_preselect.json` | Palette opens with no pre-selection; filter + run command |
+| `scenarios/zoom.json` | Zoom in/out via command |
+| `scenarios/zoom_keybindings.json` | Zoom in/out via Cmd+= / Cmd+- |
+| `scenarios/buffer_list.json` | Buffer list overlay |
+| `scenarios/editor_find.json` | In-buffer find panel |
+
+Run all scenarios via Playwright: `pnpm test:visual`
+
+### Screenshot golden tests (explorer)
+
+Pixel-diff against committed baselines — catches overlap/layout regressions a11y checks miss:
+
+```sh
+pnpm test:visual:screenshots          # compare to tests/visual/golden/...
+pnpm test:visual:screenshots:update   # refresh baselines after intentional UI change
+```
+
+Golden files: `tests/visual/golden/explorer-screenshot.spec.ts/*.png`
 
 ## Agent workflow
 

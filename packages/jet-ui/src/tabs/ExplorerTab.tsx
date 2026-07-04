@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, type CSSProperties } from "react"
 import {
   asyncDataLoaderFeature,
   hotkeysCoreFeature,
@@ -10,6 +10,27 @@ import type { WorkspaceService } from "@jet/workspace"
 import { cn } from "../lib/utils.js"
 
 type TreeNode = { uri: string; name: string; isDirectory: boolean }
+
+const EXPLORER_ROW_PX = 22
+
+const explorerRowStyle = (level: number): CSSProperties => ({
+  paddingLeft: level * 16,
+  boxSizing: "border-box",
+  display: "flex",
+  alignItems: "center",
+  flexShrink: 0,
+  height: EXPLORER_ROW_PX,
+  minHeight: EXPLORER_ROW_PX,
+  position: "relative",
+})
+
+const explorerTreeStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  height: "100%",
+  minHeight: 0,
+  overflow: "auto",
+}
 
 const nodeCache = new Map<string, TreeNode>()
 
@@ -110,7 +131,8 @@ export function ExplorerTab({
   return (
     <div
       {...tree.getContainerProps()}
-      className="h-full overflow-auto p-1"
+      className="h-full min-h-0 p-1"
+      style={explorerTreeStyle}
       aria-label="Explorer"
       data-jet-list-panel="explorer"
       tabIndex={-1}
@@ -118,15 +140,16 @@ export function ExplorerTab({
       {tree.getItems().map(item => {
         const node = item.getItemData()
         if (!node) return null
+        const itemProps = item.getProps()
         return (
           <div
             key={item.getId()}
-            {...item.getProps()}
-            style={{ paddingLeft: item.getItemMeta().level * 16 }}
+            {...itemProps}
+            style={explorerRowStyle(item.getItemMeta().level)}
             className={cn(
-              "flex h-[var(--jet-row-height)] cursor-pointer items-center gap-1 rounded-sm px-1",
+              "cursor-pointer gap-1 rounded-sm px-1",
               "hover:bg-accent",
-              item.isSelected() && "bg-accent/50",
+              item.isSelected() && "jet-list-item-selected bg-accent/50",
             )}
             data-jet-list-item
           >

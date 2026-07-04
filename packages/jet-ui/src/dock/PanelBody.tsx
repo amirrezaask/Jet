@@ -79,7 +79,11 @@ function PanelBodyInner({
         />
       )
     case "explorer":
-      return <ExplorerTab workspace={workspace} onOpenFile={onOpenFile} />
+      return (
+        <div className="h-full min-h-0">
+          <ExplorerTab workspace={workspace} onOpenFile={onOpenFile} />
+        </div>
+      )
     case "locationlist":
       return <LocationListPanel workspace={workspace} onOpenItem={onOpenLocationItem} />
     case "output":

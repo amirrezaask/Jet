@@ -55,6 +55,7 @@ export function parseKeyPart(part: string): ParsedKeyPart {
     if (MODIFIERS.has(segment)) modifiers.add(segment)
     else key = segment
   }
+  if (!key && part.endsWith("-")) key = "-"
   return { modifiers, key }
 }
 
@@ -76,6 +77,7 @@ function eventKeyMatches(expected: string, e: KeyboardEvent): boolean {
   const fromKey = normalizeBindingKey(e.key)
   if (fromKey === want) return true
   if (want === "`" && (e.code === "Backquote" || e.key === "`")) return true
+  if (want === "-" && (e.key === "-" || e.key === "Minus" || e.code === "Minus")) return true
   return false
 }
 

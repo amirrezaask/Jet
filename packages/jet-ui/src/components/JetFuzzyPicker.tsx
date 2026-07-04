@@ -61,15 +61,21 @@ export function JetFuzzyPicker({
       setSelectedValue("")
       return
     }
+    if (query.trim() === "") {
+      setSelectedValue("")
+      return
+    }
     if (!items.some(item => item.value === selectedValue)) {
       setSelectedValue(items[0]!.value)
     }
-  }, [items, selectedValue])
+  }, [items, selectedValue, query])
+
+  if (!open) return null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent
-        className="overflow-hidden p-0"
+        className="jet-palette overflow-hidden p-0"
         style={{ maxWidth }}
         showCloseButton={false}
       >

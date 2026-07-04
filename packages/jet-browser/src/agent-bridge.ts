@@ -10,6 +10,7 @@ export type JetAgentState = {
   focusedPanel: number | null
   openBuffers: string[]
   panels: { id: number; kind: string }[]
+  fontSize: number
 }
 
 export type JetAgentAPI = {
@@ -19,6 +20,7 @@ export type JetAgentAPI = {
   getState(): JetAgentState
   waitForReady(): Promise<void>
   waitForEditor(timeoutMs?: number): Promise<void>
+  setFontSize(px: number): void
 }
 
 export type AgentBridgeContext = {
@@ -29,9 +31,11 @@ export type AgentBridgeContext = {
   paletteOpen: boolean
   message: string | null
   layoutReady: boolean
+  fontSize: number
   executeCommand: (name: string) => Promise<void>
   openWorkspace: (folderPath: string) => Promise<void>
   openFile: (uri: string, path: string) => void
+  setFontSize: (px: number) => void
 }
 
 export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
@@ -63,6 +67,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
         focusedPanel: current.focusedPanel?.id ?? null,
         openBuffers: current.workspace.openBuffers,
         panels: collectPanels(current),
+        fontSize: current.fontSize,
       }
     },
     async waitForReady() {
@@ -81,6 +86,9 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
         await new Promise(r => setTimeout(r, 50))
       }
       throw new Error("Editor did not mount in time")
+    },
+    setFontSize(px: number) {
+      ctx().setFontSize(px)
     },
   }
 }

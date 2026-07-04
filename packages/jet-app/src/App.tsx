@@ -623,6 +623,13 @@ export function JetApp() {
     localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(next))
   }, [])
 
+  const setFontSize = useCallback((px: number) => {
+    if (px <= 0) return
+    fontSizeRef.current = px
+    applyRootFontSize(px)
+    localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(px))
+  }, [])
+
   const appCommands = useMemo(
     () =>
       buildAppCommands({
@@ -674,6 +681,7 @@ export function JetApp() {
 
   const deferredPanelRev = useDeferredValue(panelRev)
   const paletteCommands = useMemo(() => {
+    if (!paletteOpen) return []
     return commands
       .list(getCommandContext())
       .map(cmd => {
@@ -691,7 +699,7 @@ export function JetApp() {
         if (recentDelta !== 0) return recentDelta
         return a.title.localeCompare(b.title)
       })
-  }, [commands, deferredPanelRev, appCommands, keybindingByFn, fnByCommandId, getCommandContext, recentCommands])
+  }, [paletteOpen, commands, deferredPanelRev, appCommands, keybindingByFn, fnByCommandId, getCommandContext, recentCommands])
 
   const whichKeyEntries: WhichKeyEntry[] = useMemo(() => {
     if (!pendingChordPrefix) return []
@@ -845,9 +853,11 @@ export function JetApp() {
       paletteOpen,
       message,
       layoutReady,
+      fontSize: fontSizeRef.current,
       executeCommand,
       openWorkspace: folderPath => Promise.resolve(openWorkspaceFolder(folderPath)),
       openFile: handleOpenFile,
+      setFontSize,
     }))
     return () => {
       delete window.__jetAgent
@@ -863,6 +873,7 @@ export function JetApp() {
     executeCommand,
     openWorkspaceFolder,
     handleOpenFile,
+    setFontSize,
   ])
 
   useEffect(() => {
@@ -1054,65 +1065,79 @@ export function JetApp() {
         }}
       />
 
-      <QuickOpenOverlay
-        open={quickOpenOpen}
-        onOpenChange={setQuickOpenOpen}
-        files={fileIndex}
-        onSelect={rel => {
-          if (!workspace.root) return
-          const fullPath = `${workspace.root.path}/${rel.replace(/^\/+/, "")}`
-          handleOpenFile(pathToFileUri(fullPath), fullPath)
-        }}
-      />
+      {quickOpenOpen && (
+        <QuickOpenOverlay
+          open
+          onOpenChange={setQuickOpenOpen}
+          files={fileIndex}
+          onSelect={rel => {
+            if (!workspace.root) return
+            const fullPath = `${workspace.root.path}/${rel.replace(/^\/+/, "")}`
+            handleOpenFile(pathToFileUri(fullPath), fullPath)
+          }}
+        />
+      )}
 
-      <BufferListOverlay
-        open={bufferListOpen}
-        onOpenChange={setBufferListOpen}
-        workspace={workspace}
-        onSelect={uri => handleOpenFile(uri, fileUriToPath(uri))}
-      />
+      {bufferListOpen && (
+        <BufferListOverlay
+          open
+          onOpenChange={setBufferListOpen}
+          workspace={workspace}
+          onSelect={uri => handleOpenFile(uri, fileUriToPath(uri))}
+        />
+      )}
 
-      <OpenFileOverlay
-        open={openFileOpen}
-        onOpenChange={setOpenFileOpen}
-        workspace={workspace}
-        onOpenFile={handleOpenFile}
-      />
+      {openFileOpen && (
+        <OpenFileOverlay
+          open
+          onOpenChange={setOpenFileOpen}
+          workspace={workspace}
+          onOpenFile={handleOpenFile}
+        />
+      )}
 
-      <CdOverlay
-        open={cdOpen}
-        onOpenChange={setCdOpen}
-        initialPath={workspace.root?.path ?? null}
-        onSelectFolder={path => openWorkspaceFolder(path)}
-        resolveHomeDir={async () =>
-          window.jet?.getHomeDir ? window.jet.getHomeDir() : (await resolveDevWorkspacePath(".")).path
-        }
-      />
+      {cdOpen && (
+        <CdOverlay
+          open
+          onOpenChange={setCdOpen}
+          initialPath={workspace.root?.path ?? null}
+          onSelectFolder={path => openWorkspaceFolder(path)}
+          resolveHomeDir={async () =>
+            window.jet?.getHomeDir ? window.jet.getHomeDir() : (await resolveDevWorkspacePath(".")).path
+          }
+        />
+      )}
 
-      <ProjectSwitcherOverlay
-        open={projectSwitcherOpen}
-        onOpenChange={setProjectSwitcherOpen}
-        projects={projects}
-        onSelect={path => openWorkspaceFolder(path)}
-      />
+      {projectSwitcherOpen && (
+        <ProjectSwitcherOverlay
+          open
+          onOpenChange={setProjectSwitcherOpen}
+          projects={projects}
+          onSelect={path => openWorkspaceFolder(path)}
+        />
+      )}
 
-      <OutlineOverlay
-        open={outlineOpen}
-        symbols={outlineSymbols}
-        onOpenChange={setOutlineOpen}
-        onSelect={line => {
-          const panel = focusedPanel
-          const view = panel ? getEditorView(panel) : null
-          if (view) jumpToLine(view, line, 1)
-        }}
-      />
+      {outlineOpen && (
+        <OutlineOverlay
+          open
+          symbols={outlineSymbols}
+          onOpenChange={setOutlineOpen}
+          onSelect={line => {
+            const panel = focusedPanel
+            const view = panel ? getEditorView(panel) : null
+            if (view) jumpToLine(view, line, 1)
+          }}
+        />
+      )}
 
-      <CommandPalette
-        open={paletteOpen}
-        onOpenChange={setPaletteOpen}
-        commands={paletteCommands}
-        onRun={id => executeCommand(id)}
-      />
+      {paletteOpen && (
+        <CommandPalette
+          open
+          onOpenChange={setPaletteOpen}
+          commands={paletteCommands}
+          onRun={id => executeCommand(id)}
+        />
+      )}
     </div>
   )
 }

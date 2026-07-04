@@ -1,7 +1,6 @@
 import { defineConfig } from "@playwright/test"
 
 export default defineConfig({
-  testDir: "./tests/smoke",
   timeout: 60_000,
   retries: 0,
   use: {
@@ -14,4 +13,14 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 120_000,
   },
+  projects: [
+    { name: "smoke", testDir: "./tests/smoke" },
+    { name: "visual", testDir: "./tests/visual", testMatch: "visual.spec.ts" },
+    {
+      name: "visual-screenshots",
+      testDir: "./tests/visual",
+      testMatch: "explorer-screenshot.spec.ts",
+      snapshotPathTemplate: "{testDir}/golden/{testFilePath}/{arg}{ext}",
+    },
+  ],
 })

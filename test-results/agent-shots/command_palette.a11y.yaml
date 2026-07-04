@@ -5,7 +5,7 @@
   - combobox [expanded]
   - listbox "Suggestions":
     - option "Show Command Palette Recent UI commands · palette · help ⌘⇧P"
-    - option "Buffer List Workspace open buffers · switch buffer ⌘⇧B" [selected]
+    - option "Buffer List Workspace open buffers · switch buffer ⌘⇧B"
     - option "Change Directory Workspace switch workspace"
     - option "Close Buffer Workspace close file ⌘W"
     - 'option "Color Scheme: Dark UI"'
@@ -43,3 +43,5 @@
     - option "Switch Project Workspace projects · project"
     - option "Toggle Color Scheme UI theme · dark mode · light mode"
     - option "Toggle Comment Editor ⌘/"
+    - option "Zoom In UI font larger ⌘="
+    - option "Zoom Out UI font smaller ⌘"
