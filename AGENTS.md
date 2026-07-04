@@ -100,9 +100,37 @@ Then validate with **browser MCP** on `pnpm dev:web` (see Agent browser testing)
 
 
 
-## Agent browser testing (no Electron required)
+## Agent visual verification (MANDATORY)
 
-**Required for all agents:** after UI/shell/behavior changes, validate in the app using the **Cursor browser MCP** (`cursor-ide-browser`). Do not mark a task done on typecheck alone.
+**Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, git/explorer views, error/status messages — MUST be visually verified before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient. A task closed on "types pass" without a screenshot review is a regression waiting to ship.
+
+### Preferred: scenario runner
+
+JSON-scripted, headless, agent-friendly. **Prefer a11y snapshots + `assert_a11y_contains` for verification. Screenshots are fallback for genuinely pixel-level checks.**
+
+1. Start dev server once: `pnpm dev:web` (port **5174**).
+2. Add or reuse a scenario under `tests/visual/scenarios/*.json` — schema in `tests/visual/README.md`.
+3. Run it: `pnpm visual tests/visual/scenarios/<name>.json` — stdout emits one JSON line with `screenshots`, `a11y_snapshots`, `dom_dumps` arrays.
+4. Read the `.a11y.yaml` outputs under `test-results/agent-shots/`. They are Playwright aria snapshots — diffable text, no pixel noise. Grep them or eyeball them.
+5. Fall back to PNGs only when the change is pixel-level: theme colors, layout dimensions, motion, icons, cursor animation. Do NOT open PNGs for structural checks the a11y snapshot already covers.
+6. New feature → new scenario. Assert structure with `assert_a11y_contains` and state with `assert_state`. Do not rely on the existing set to cover new code paths.
+7. Run `pnpm visual:all` before declaring a broad UI change complete. All scenarios must exit 0.
+
+Step vocabulary: `wait` / `wait_frames`, `key`, `text`, `command` (id from `packages/jet-app/src/app-commands.ts`), `open_workspace`, `open_file`, `a11y_snapshot`, `assert_a11y_contains`, `assert_state`, `screenshot`, `dom_dump`, `exit`. Full reference: `tests/visual/README.md`.
+
+**Verification output preference (strict):**
+
+1. `assert_a11y_contains` — structural/text assertions (palette open, N options listed, focused element).
+2. `assert_state` — bridge state (workspace path, tab kinds, palette open flag).
+3. `a11y_snapshot` — record aria tree so a reviewer can diff.
+4. `screenshot` — only when pixels are the point (theme change, layout regression, motion).
+5. `dom_dump` — CSS/computed-tree debugging (e.g. Tailwind purge regressions).
+
+**Rule:** if the runner cannot express the check (native folder dialog, LSP-only path), state that explicitly and fall back to the browser MCP flow below. Do NOT silently skip visual verification.
+
+### Fallback: browser MCP
+
+When a scenario cannot express the check, validate live via the **Cursor browser MCP** (`cursor-ide-browser`).
 
 Use `pnpm dev:web` to run Jet in a normal browser with real FS/git backed by a Vite dev middleware (sandboxed to allowed roots).
 

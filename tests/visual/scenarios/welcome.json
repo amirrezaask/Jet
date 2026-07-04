@@ -1,0 +1,8 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "steps": [
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "screenshot": "test-results/agent-shots/welcome.png" },
+    { "exit": 0 }
+  ]
+}

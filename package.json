@@ -9,6 +9,8 @@
   "lint": "turbo run lint",
   "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test",
   "test:web": "playwright test",
+  "visual": "tsx tests/visual/runner.ts --scenario",
+  "visual:all": "tsx tests/visual/run-all.ts",
   "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
   "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
   "release": "pnpm --filter jet-desktop release && cp -r ./apps/jet-desktop/release/mac-arm64/Jet.app ~/Applications/",

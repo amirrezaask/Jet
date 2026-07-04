@@ -1,0 +1,16 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "command": "workspace.quickOpen" },
+    { "wait": { "ms": 200, "animations_idle": true } },
+    { "screenshot": "test-results/agent-shots/quick_open.png" },
+    { "text": "util" },
+    { "wait": { "ms": 200 } },
+    { "screenshot": "test-results/agent-shots/quick_open_util.png" },
+    { "key": "Escape" },
+    { "exit": 0 }
+  ]
+}
