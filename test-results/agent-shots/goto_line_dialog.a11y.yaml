@@ -1,4 +1,7 @@
 - main
+- region "Notifications alt+T":
+  - list:
+    - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
 - dialog "Go to Line":
   - heading "Go to Line" [level=2]
   - paragraph: Enter a line number or line:column.

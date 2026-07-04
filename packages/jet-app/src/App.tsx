@@ -59,12 +59,22 @@ import {
   ProjectSwitcherOverlay,
   getEditorView,
   getAllEditorViews,
+  destroyEditorPanel,
   setEditorCursor,
   formatKeyBinding,
   problemsToLocationItems,
   WhichKeyPanel,
   type OutlineEntry,
   type WhichKeyEntry,
+  TooltipProvider,
+  ConfirmDialogHost,
+  Toaster,
+  showJetToast,
+  requestConfirm,
+  AppShell,
+  WorkspaceShell,
+  ExplorerPanel,
+  focusExplorerPanel,
 } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
@@ -153,11 +163,11 @@ export function JetApp() {
   const [panelTree, setPanelTree] = useState(() => initialLayout.tree)
   const [focusedPanel, setFocusedPanel] = useState<PanelId | null>(() => initialLayout.editorPanel)
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
   const [lspRevision, setLspRevision] = useState(0)
   const [userExtensions, setUserExtensions] = useState<Extension[]>([])
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [editorFocused, setEditorFocused] = useState(false)
+  const [explorerFocused, setExplorerFocused] = useState(false)
   const [layoutReady, setLayoutReady] = useState(false)
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => loadStoredColorScheme())
   const activeTheme = useMemo(() => themeForScheme(colorScheme), [colorScheme])
@@ -193,6 +203,7 @@ export function JetApp() {
     focusedPanel,
     keymapContext: undefined as KeymapContext | undefined,
     activePanelKind: undefined as string | undefined,
+    explorerFocused: false,
   })
 
   const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
@@ -248,11 +259,13 @@ export function JetApp() {
       gotoLineOpen,
       outlineOpen,
       workspaceOpen: workspace.root != null,
-      explorerFocus: activePanelKind === "explorer",
+      explorerFocus: explorerFocused || activePanelKind === "explorer",
       locationListFocus: activePanelKind === "locationlist",
       outputFocus: activePanelKind === "output",
       listFocus:
-        activePanelKind === "explorer" || activePanelKind === "locationlist",
+        explorerFocused ||
+        activePanelKind === "explorer" ||
+        activePanelKind === "locationlist",
     }),
     [
       editorFocused,
@@ -266,6 +279,7 @@ export function JetApp() {
       outlineOpen,
       workspace.root,
       activePanelKind,
+      explorerFocused,
     ],
   )
 
@@ -274,6 +288,7 @@ export function JetApp() {
     focusedPanel,
     keymapContext,
     activePanelKind,
+    explorerFocused,
   }
 
   const lspManager = useMemo(
@@ -316,7 +331,7 @@ export function JetApp() {
       if (!conn) {
         const spawnErr = lspManager.consumeLastSpawnError()
         if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
-          setMessage(
+          showJetToast(
             `Language server unavailable for ${file.name} — is ${file.languageId === "rust" ? "rust-analyzer" : "typescript-language-server"} on PATH?`,
           )
         }
@@ -340,8 +355,24 @@ export function JetApp() {
   }, [])
 
   useEffect(() => {
+    workspace.confirmDiscardReload = fileName =>
+      requestConfirm({
+        title: "File changed on disk",
+        description: `"${fileName}" changed on disk. Reload and discard local changes?`,
+        confirmLabel: "Reload",
+        cancelLabel: "Cancel",
+        destructive: true,
+      })
+    return () => {
+      workspace.confirmDiscardReload = null
+    }
+  }, [workspace])
+
+  useEffect(() => {
     if (!window.jet?.fs.onFileChanged) return
-    return window.jet.fs.onFileChanged(uri => workspace.handleExternalFileChange(uri))
+    return window.jet.fs.onFileChanged(uri => {
+      void workspace.handleExternalFileChange(uri)
+    })
   }, [workspace])
 
   useEffect(() => {
@@ -471,7 +502,7 @@ export function JetApp() {
       tree.setView(editorPanel, { kind: "empty" })
       setPanelTree(tree)
       setFocusedPanel(editorPanel)
-      setMessage(`Opened ${folderPath}`)
+      showJetToast(`Opened ${folderPath}`)
       setFileIndex([])
 
       const jetDir = `${folderPath.replace(/[/\\]+$/, "")}/.jet`
@@ -542,19 +573,41 @@ export function JetApp() {
     openFile: (uri, path) => handleOpenFileRef.current(uri, path),
     bootstrapFromLaunch: bootstrapFromLaunchForDrop,
     openUntitledFromDrop,
-    setMessage,
+    setMessage: showJetToast,
     onDragOverChange: setFileDragOver,
   })
 
   const handlePanelEvent = useCallback(
     (event: PanelEvent) => {
       const tree = cloneTree()
+      let changed = true
       if (event.type === "splitResized") {
         tree.resizeSplit(event.path, event.splitterIndex, event.deltaPx, event.viewport)
+      } else if (event.type === "splitRatiosChanged") {
+        changed = tree.setSplitRatios(event.path, event.ratios)
+      } else if (event.type === "panelClose") {
+        const view = tree.getView(event.panelId)
+        if (view?.kind === "explorer") {
+          focusExplorerPanel()
+          changed = false
+        } else {
+          if (view?.kind === "editor") {
+            destroyEditorPanel(event.panelId)
+          }
+          tree.closePanel(event.panelId)
+          const leaves = getAllLeafPanels(tree)
+          if (leaves.length > 0) {
+            const closingId = event.panelId.id
+            const next =
+              leaves.find(p => p.id !== closingId) ??
+              leaves[0]
+            if (next) setFocusedPanel(next)
+          }
+        }
       }
-      commitTree(tree)
+      if (changed) commitTree(tree)
     },
-    [cloneTree, commitTree, workspace],
+    [cloneTree, commitTree, setFocusedPanel],
   )
 
   const keymapTargetViewRef = useRef<EditorView | null>(null)
@@ -565,7 +618,7 @@ export function JetApp() {
     return {
       workspace,
       ui: {
-        showMessage: setMessage,
+        showMessage: showJetToast,
         showCommandPalette: () => setPaletteOpen(true),
         setCommandPaletteOpen: setPaletteOpen,
       },
@@ -578,7 +631,9 @@ export function JetApp() {
   }, [workspace])
 
   const handlePanelNavigation = useCallback((action: string) => {
-    const kind = appStateRef.current.activePanelKind
+    const kind = appStateRef.current.explorerFocused
+      ? "explorer"
+      : appStateRef.current.activePanelKind
     if (!kind || !["explorer", "locationlist"].includes(kind)) return
     const el = document.querySelector(`[data-jet-list-panel="${kind}"]`)
     if (!(el instanceof HTMLElement)) return
@@ -643,7 +698,7 @@ export function JetApp() {
         setCdOpen,
         setProjectSwitcherOpen,
         setGotoLineOpen,
-        setMessage,
+        setMessage: showJetToast,
         setFocusedPanel,
         cloneTree,
         commitTree,
@@ -661,6 +716,7 @@ export function JetApp() {
         pushJumpFromActiveEditor,
         projectRegistry,
         refreshProjects,
+        focusExplorer: focusExplorerPanel,
       }),
     [
       workspace,
@@ -747,7 +803,7 @@ export function JetApp() {
       addKeybindings: bindings => keymaps.registerExtension(bindings),
       addEditorExtensions: ext => setUserExtensions(prev => [...prev, ext]),
       openFile: async uri => handleOpenFile(uri, fileUriToPath(uri)),
-      showMessage: setMessage,
+      showMessage: showJetToast,
     }
   }, [workspace, commands, appCommands, getCommandContext, keymaps, handleOpenFile])
 
@@ -804,7 +860,7 @@ export function JetApp() {
           setColorScheme(prev => {
             const next: ColorScheme = prev === "dark" ? "light" : "dark"
             localStorage.setItem(COLOR_SCHEME_KEY, next)
-            setMessage(`Color scheme: ${next}`)
+            showJetToast(`Color scheme: ${next}`)
             return next
           })
         },
@@ -822,7 +878,7 @@ export function JetApp() {
         () => {
           setColorScheme("dark")
           localStorage.setItem(COLOR_SCHEME_KEY, "dark")
-          setMessage("Color scheme: dark")
+          showJetToast("Color scheme: dark")
         },
         { id: "ui.setColorScheme.dark", title: "Color Scheme: Dark", category: "UI" },
       ),
@@ -833,7 +889,7 @@ export function JetApp() {
         () => {
           setColorScheme("light")
           localStorage.setItem(COLOR_SCHEME_KEY, "light")
-          setMessage("Color scheme: light")
+          showJetToast("Color scheme: light")
         },
         { id: "ui.setColorScheme.light", title: "Color Scheme: Light", category: "UI" },
       ),
@@ -851,7 +907,7 @@ export function JetApp() {
       panelTree,
       focusedPanel,
       paletteOpen,
-      message,
+      message: null,
       layoutReady,
       fontSize: fontSizeRef.current,
       executeCommand,
@@ -868,7 +924,6 @@ export function JetApp() {
     panelTree,
     focusedPanel,
     paletteOpen,
-    message,
     layoutReady,
     executeCommand,
     openWorkspaceFolder,
@@ -902,7 +957,7 @@ export function JetApp() {
       lspClientPool.releaseConnection(id)
       setLspCrashed(true)
       bumpLspRevision()
-      setMessage("LSP crashed — will retry on next editor focus")
+      showJetToast("LSP crashed — will retry on next editor focus")
     })
   }, [lspClientPool, bumpLspRevision])
 
@@ -1008,11 +1063,64 @@ export function JetApp() {
   }, [keymapBindings, keymapContext, runKeyBinding, workspace.root, executeCommand])
 
   return (
-    <div
-      className="flex h-full flex-col bg-background text-foreground"
-      data-drag-over={fileDragOver || undefined}
+    <TooltipProvider>
+    <div className="h-full w-full" data-drag-over={fileDragOver || undefined}>
+    <AppShell
+      footer={
+        <>
+          {pendingChordPrefix && (
+            <WhichKeyPanel prefix={formatKeyBinding(pendingChordPrefix)} entries={whichKeyEntries} />
+          )}
+
+          <StatusBar
+            lspStatus={lspStatus}
+            workspaceName={workspace.root?.name}
+            workspacePath={workspace.root?.path}
+            hasWorkspace={Boolean(workspace.root)}
+            activeFileName={activeEditorFile?.name ?? null}
+            activeLanguageId={activeEditorFile?.languageId ?? null}
+            activeFileDirty={activeEditorFile?.isDirty ?? false}
+          />
+        </>
+      }
     >
-      <main className="min-h-0 flex-1">
+      {workspace.root ? (
+        <WorkspaceShell
+          explorer={
+            <ExplorerPanel
+              workspace={workspace}
+              onOpenFile={handleOpenFile}
+              onFocusChange={setExplorerFocused}
+            />
+          }
+        >
+          <PanelDock
+            tree={panelTree}
+            workspace={workspace}
+            theme={activeTheme}
+            focusedPanelId={focusedPanel}
+            onFocusPanel={setFocusedPanel}
+            onEvent={handlePanelEvent}
+            resolveLspClient={resolveLspClient}
+            lspRevision={lspRevision}
+            executeCommand={executeCommand}
+            runKeyBinding={runKeyBinding}
+            onOpenFile={handleOpenFile}
+            onOpenLocationItem={openLocationItem}
+            keymapBindings={keymapBindings}
+            userExtensions={userExtensions}
+            keymapRevision={keymapRevision}
+            keymapContext={keymapContext}
+            panelRev={panelRev}
+            onEditorFocusChange={setEditorFocused}
+            onEditorSelectionChange={(line, column, rangeCount) =>
+              setEditorCursor({ line, column, rangeCount })
+            }
+            onLspAttachFailed={handleLspAttachFailed}
+            onProblemsChange={refreshProblems}
+          />
+        </WorkspaceShell>
+      ) : (
         <PanelDock
           tree={panelTree}
           workspace={workspace}
@@ -1038,22 +1146,7 @@ export function JetApp() {
           onLspAttachFailed={handleLspAttachFailed}
           onProblemsChange={refreshProblems}
         />
-      </main>
-
-      {pendingChordPrefix && (
-        <WhichKeyPanel prefix={formatKeyBinding(pendingChordPrefix)} entries={whichKeyEntries} />
       )}
-
-      <StatusBar
-        message={message}
-        lspStatus={lspStatus}
-        workspaceName={workspace.root?.name}
-        workspacePath={workspace.root?.path}
-        hasWorkspace={Boolean(workspace.root)}
-        activeFileName={activeEditorFile?.name ?? null}
-        activeLanguageId={activeEditorFile?.languageId ?? null}
-        activeFileDirty={activeEditorFile?.isDirty ?? false}
-      />
 
       <GotoLineModal
         open={gotoLineOpen}
@@ -1138,6 +1231,10 @@ export function JetApp() {
           onRun={id => executeCommand(id)}
         />
       )}
+      <ConfirmDialogHost />
+      <Toaster position="bottom-right" />
+    </AppShell>
     </div>
+    </TooltipProvider>
   )
 }

@@ -1,16 +1,26 @@
 - main:
+  - text: Locations
+  - button "Panel actions"
+  - button "Close panel"
   - tablist:
     - tab "Search" [selected]
     - tab "Problems"
     - tab "Refs"
     - tab "Defs"
     - tab "Tasks"
-  - searchbox "Search project…"
-  - checkbox "Case"
-  - text: Case
-  - checkbox "Regex"
-  - text: Regex
+  - searchbox "Search project"
+  - toolbar:
+    - button "Case"
+    - button "Regex"
   - list:
     - listitem: No results
+  - button "Panel actions"
+  - button "Close panel"
   - textbox
-- contentinfo: sample-workspace Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace LSP off
+  - separator "Resize panel"
+- contentinfo:
+  - text: sample-workspace
+  - button "Language server off": LSP off
+- region "Notifications alt+T":
+  - list:
+    - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace

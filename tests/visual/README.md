@@ -71,6 +71,11 @@ pnpm visual:all
 | `{ "assert_a11y_contains": ["needle"], "selector": "body" }` | Fail if aria snapshot missing any needle (case-insensitive substring) |
 | `{ "assert_a11y_not_contains": ["needle"], "selector": "body" }` | Fail if aria snapshot contains any needle |
 | `{ "assert_layout": { "selector": "[data-jet-list-item]", "min_items": 3, "min_unique_tops": 3, "min_row_height": 18 } }` | Fail if list rows overlap (unique `getBoundingClientRect().top` values) or row height too small |
+| `{ "assert_no_overlap": { "selector": "[data-jet-list-item]", "min_items": 2, "tolerance_px": 0 } }` | Fail if any visible list rows share vertical + horizontal pixel overlap |
+| `{ "assert_no_clipping": { "selector": "[data-jet-list-item]", "container_selector": "[data-jet-list-panel='explorer']" } }` | Fail if row text overflows without ellipsis or extends past container bounds |
+| `{ "assert_row_spacing": { "selector": "[data-jet-list-item]", "min_items": 2, "max_gap_px": 2 } }` | Fail if consecutive rows have excessive vertical gap (catches virtualizer estimate drift) |
+| `{ "click_selector": "[data-jet-list-item][aria-label=\"packages\"]", "nth": 0 }` | Click element matching CSS selector (optional `nth` for disambiguation) |
+| `{ "wheel_scroll": { "selector": "[data-jet-list-panel=\"locationlist\"] ul", "delta_y": 800 } }` | Programmatic scroll on a container (for virtualized list regression) |
 | `{ "exit": 0 }` | End scenario with exit code |
 
 ### Which output do I use?
@@ -103,6 +108,10 @@ Available command ids: see `packages/jet-app/src/app-commands.ts` — e.g. `ui.s
 | `scenarios/zoom_keybindings.json` | Zoom in/out via Cmd+= / Cmd+- |
 | `scenarios/buffer_list.json` | Buffer list overlay |
 | `scenarios/editor_find.json` | In-buffer find panel |
+| `scenarios/explorer_deep_expand.json` | Explorer nested expand + overlap/layout checks |
+| `scenarios/explorer_narrow.json` | Explorer in narrow viewport + overlap check |
+| `scenarios/explorer_search_results.json` | Location list project search results + spacing |
+| `scenarios/search_scroll.json` | Virtualized search list after scroll + spacing |
 
 Run all scenarios via Playwright: `pnpm test:visual`
 

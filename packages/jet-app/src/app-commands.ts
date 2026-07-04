@@ -18,7 +18,7 @@ import {
   simplifySelection,
 } from "@codemirror/commands"
 import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search"
-import type { PanelTree } from "@jet/panels"
+import type { PanelTree, PanelEvent } from "@jet/panels"
 import type { PanelId } from "@jet/shared"
 import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shared"
 import type { JetCommandContext, JetCommands, JetCommandFn, WorkspaceService } from "@jet/workspace"
@@ -66,7 +66,7 @@ export type BuildAppCommandsDeps = {
   cloneTree: () => PanelTree
   commitTree: (tree: PanelTree) => void
   openWorkspaceFolder: (path: string) => void
-  handlePanelEvent: (event: { type: "splitResized"; path: number[]; splitterIndex: number; deltaPx: number; viewport: import("@jet/shared").Rect }) => void
+  handlePanelEvent: (event: PanelEvent) => void
   openFileInEditor: (uri: string, path: string, line?: number, column?: number, pushJump?: boolean) => void
   openLocationItem: (item: import("@jet/workspace").LocationItem) => void
   syncProblemsToLocationList: () => void
@@ -79,6 +79,7 @@ export type BuildAppCommandsDeps = {
   pushJumpFromActiveEditor: (label?: string) => void
   projectRegistry: import("@jet/workspace").ProjectRegistry
   refreshProjects: () => Promise<number>
+  focusExplorer?: () => void
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -187,11 +188,11 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.commitTree(tree)
       requestAnimationFrame(() => getEditorView(panel)?.focus())
     },
-    closeBuffer: () => {
+    closeBuffer: async () => {
       const panel = currentFocusedPanel()
       const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
       if (!fileUri || !panel) return
-      if (!confirmCloseBuffer(deps.workspace, fileUri)) return
+      if (!(await confirmCloseBuffer(deps.workspace, fileUri))) return
       deps.workspace.clearDirtyState(fileUri)
       destroyEditorBuffer(panel, fileUri)
       deps.workspace.closeBuffer(fileUri)
@@ -246,6 +247,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.commitTree(tree)
     },
     explorer: () => {
+      if (deps.focusExplorer) {
+        deps.focusExplorer()
+        return
+      }
       const tree = deps.cloneTree()
       const target = resolveTargetPanel(tree, currentFocusedPanel())
       if (!target) return
@@ -366,6 +371,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.openFileInEditor(prev, fileUriToPath(prev), undefined, undefined, false)
     },
     focusSidebar: () => {
+      if (deps.focusExplorer) {
+        deps.focusExplorer()
+        return
+      }
       const panelTree = currentPanelTree()
       for (const panel of getAllLeafPanels(panelTree)) {
         const view = panelTree.getView(panel)

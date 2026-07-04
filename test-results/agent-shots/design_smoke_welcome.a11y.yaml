@@ -1,0 +1,7 @@
+- text: Empty
+- button "Close panel"
+- text: No file open Open a file or create a new buffer to get started. ModP quick open ModN new file
+- region "Notifications alt+T"
+- contentinfo:
+  - text: No folder open
+  - button "Language server off": LSP off

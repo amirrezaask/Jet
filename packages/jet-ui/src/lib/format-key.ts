@@ -29,9 +29,11 @@ function formatKeyPart(part: string): string {
             ? "←"
             : key === "ArrowRight"
               ? "→"
-              : key === "`"
-                ? "`"
-                : key
+      : key === "`"
+        ? "`"
+        : key === "Enter"
+          ? "↵"
+          : key
   return [...mods, label].join("")
 }
 

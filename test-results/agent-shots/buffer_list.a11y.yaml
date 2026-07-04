@@ -1,7 +1,8 @@
 - main
+- region "Notifications alt+T":
+  - list:
+    - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
 - dialog "Buffer list":
-  - heading "Buffer list" [level=2]
-  - paragraph: Switch buffer…
   - combobox [expanded]
   - listbox "Suggestions":
     - option "package.json"

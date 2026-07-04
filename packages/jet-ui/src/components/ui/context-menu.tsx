@@ -3,6 +3,7 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { KeyBindingKbd } from "@/components/KeyBindingKbd"
 
 function ContextMenu({
   ...props
@@ -217,17 +218,20 @@ function ContextMenuSeparator({
 
 function ContextMenuShortcut({
   className,
+  children,
   ...props
 }: React.ComponentProps<"span">) {
+  if (typeof children === "string") {
+    return <KeyBindingKbd binding={children} className={cn("ml-auto", className)} />
+  }
   return (
     <span
       data-slot="context-menu-shortcut"
-      className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground",
-        className
-      )}
+      className={cn("ml-auto", className)}
       {...props}
-    />
+    >
+      {children}
+    </span>
   )
 }
 

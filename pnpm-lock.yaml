@@ -341,12 +341,6 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.2.8
         version: 5.2.8
-      '@headless-tree/core':
-        specifier: ^1.6.3
-        version: 1.7.0
-      '@headless-tree/react':
-        specifier: ^1.6.3
-        version: 1.7.0(@headless-tree/core@1.7.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@jet/codemirror':
         specifier: workspace:*
         version: link:../jet-codemirror
@@ -413,6 +407,9 @@ importers:
       motion:
         specifier: ^12.16.0
         version: 12.42.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      next-themes:
+        specifier: ^0.4.6
+        version: 0.4.6(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       radix-ui:
         specifier: ^1.6.1
         version: 1.6.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -422,6 +419,12 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.7(react@19.2.7)
+      react-resizable-panels:
+        specifier: ^4.12.1
+        version: 4.12.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       tailwind-merge:
         specifier: ^3.3.0
         version: 3.6.0
@@ -954,16 +957,6 @@ packages:
 
   '@gar/promisify@1.1.3':
     resolution: {integrity: sha512-k2Ty1JcVojjJFwrg/ThKi2ujJ7XNLYaFGNB/bWT9wGR+oSMJHMa5w+CUq6p/pVrKeNNgA7pCqEcjSnHVoqJQFw==}
-
-  '@headless-tree/core@1.7.0':
-    resolution: {integrity: sha512-LxcX7LNepwfOPrZcs4PNfDwCzbi326uCAX5jYBfw94jI+pZQA7ANaE/No3LW0XFgcBcQtK/G2bInbVEhLF1C/Q==}
-
-  '@headless-tree/react@1.7.0':
-    resolution: {integrity: sha512-hcnG4mpTP98KVWZYqKsXNOoiv7ZQqZVM2jWwzEWtF+VDSz+1O/juMI+/Q0G4lZM+ez07/tmBBWjvZub/mLAUXQ==}
-    peerDependencies:
-      '@headless-tree/core': '*'
-      react: '*'
-      react-dom: '*'
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -3352,6 +3345,12 @@ packages:
     resolution: {integrity: sha512-myRT3DiWPHqho5PrJaIRyaMv2kgYf0mUVgBNOYMuCH5Ki1yEiQaf/ZJuQ62nvpc44wL5WDbTX7yGJi1Neevw8w==}
     engines: {node: '>= 0.6'}
 
+  next-themes@0.4.6:
+    resolution: {integrity: sha512-pZvgD5L0IEvX5/9GWyHMf3m8BKiVQwsCMHfoFosXtXBMnaS0ZnIJ9ST4b4NqLVKDEm8QBxoNNGNaBv2JNF6XNA==}
+    peerDependencies:
+      react: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
+      react-dom: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
+
   node-abi@3.92.0:
     resolution: {integrity: sha512-KdHvFWZjEKDf0cakgFjebl371GPsISX2oZHcuyKqM7DtogIsHrqKeLTo8wBHxaXRAQlY2PsPlZmfo+9ZCxEREQ==}
     engines: {node: '>=10'}
@@ -3550,6 +3549,12 @@ packages:
       '@types/react':
         optional: true
 
+  react-resizable-panels@4.12.1:
+    resolution: {integrity: sha512-ElE/UpOvMLRWtAqbCgyizHXcbws8RPMyN3cBqmdY17Nxr5f01+DEwzOLqhgcy68GSnjtIUFgKWKl8aIgx5aypQ==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+
   react-style-singleton@2.2.3:
     resolution: {integrity: sha512-b6jSvxvVnyptAiLjbkWLE/lOnR4lfTtDAl+eUC7RZy+QQWc6wRzIV2CE6xBuMmDxc2qIihtDCZD5NPOFl7fRBQ==}
     engines: {node: '>=10'}
@@ -3699,6 +3704,12 @@ packages:
   socks@2.8.9:
     resolution: {integrity: sha512-LJhUYUvItdQ0LkJTmPeaEObWXAqFyfmP85x0tch/ez9cahmhlBBLbIqDFnvBnUJGagb0JbIQrkBs1wJ+yRYpEw==}
     engines: {node: '>= 10.0.0', npm: '>= 3.0.0'}
+
+  sonner@2.0.7:
+    resolution: {integrity: sha512-W6ZN4p58k8aDKA4XPcx2hpIQXBRAgyiWVkYhT7CvK6D3iAu7xjvVyhQHg2/iaKJZ1XVJ4r7XuwGL+WGEK37i9w==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0 || ^19.0.0-rc
+      react-dom: ^18.0.0 || ^19.0.0 || ^19.0.0-rc
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -4519,14 +4530,6 @@ snapshots:
   '@fontsource-variable/geist@5.2.9': {}
 
   '@gar/promisify@1.1.3': {}
-
-  '@headless-tree/core@1.7.0': {}
-
-  '@headless-tree/react@1.7.0(@headless-tree/core@1.7.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
-    dependencies:
-      '@headless-tree/core': 1.7.0
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
 
   '@isaacs/cliui@8.0.2':
     dependencies:
@@ -7098,6 +7101,11 @@ snapshots:
 
   negotiator@0.6.4: {}
 
+  next-themes@0.4.6(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+    dependencies:
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+
   node-abi@3.92.0:
     dependencies:
       semver: 7.8.5
@@ -7340,6 +7348,11 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.17
 
+  react-resizable-panels@4.12.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+    dependencies:
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+
   react-style-singleton@2.2.3(@types/react@19.2.17)(react@19.2.7):
     dependencies:
       get-nonce: 1.0.1
@@ -7524,6 +7537,11 @@ snapshots:
     dependencies:
       ip-address: 10.2.0
       smart-buffer: 4.2.0
+
+  sonner@2.0.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+    dependencies:
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
 
   source-map-js@1.2.1: {}
 

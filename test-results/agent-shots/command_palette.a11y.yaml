@@ -1,7 +1,8 @@
 - main
+- region "Notifications alt+T":
+  - list:
+    - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
 - dialog "Command palette":
-  - heading "Command palette" [level=2]
-  - paragraph: Search commands…
   - combobox [expanded]
   - listbox "Suggestions":
     - option "Show Command Palette Recent UI commands · palette · help ⌘⇧P"
@@ -25,7 +26,7 @@
     - option "New File Workspace untitled ⌘N"
     - option "Next Buffer Editor ⌘⇧]"
     - option "Open File Workspace browse file ⌘O"
-    - option "Open Focused List Item List Enter"
+    - option "Open Focused List Item List ↵"
     - option "Open Folder Workspace open workspace ⌘K ⌘O"
     - option "Previous Buffer Editor ⌘⇧["
     - option "Quick Open File Workspace files · open quickly ⌘P"

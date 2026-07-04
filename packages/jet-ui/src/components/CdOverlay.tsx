@@ -16,6 +16,8 @@ import {
 import { Input } from "@/components/ui/input.js"
 import { Button } from "@/components/ui/button.js"
 import { ScrollArea } from "@/components/ui/scroll-area.js"
+import { KeyBindingKbd } from "./KeyBindingKbd.js"
+import { formatKeyBinding } from "@/lib/format-key.js"
 
 type DirEntry = {
   uri: string
@@ -265,9 +267,10 @@ export function CdOverlay({
             variant="secondary"
             disabled={!pathInput.trim() || !homeDir}
             onClick={confirmCurrent}
-            className="w-full"
+            className="inline-flex w-full items-center justify-center gap-1.5"
           >
-            Select folder (⌘↵)
+            Select folder
+            <KeyBindingKbd binding={formatKeyBinding("Mod-Enter")} />
           </Button>
         </div>
       </DialogContent>

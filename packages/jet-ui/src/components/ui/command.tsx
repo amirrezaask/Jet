@@ -5,6 +5,7 @@ import { Command as CommandPrimitive } from "cmdk"
 import { SearchIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { KeyBindingKbd } from "@/components/KeyBindingKbd"
 import {
   Dialog,
   DialogContent,
@@ -31,7 +32,7 @@ function Command({
 
 function CommandDialog({
   title = "Command Palette",
-  description = "Search for a command to run...",
+  description = "Search for a command to run…",
   children,
   className,
   showCloseButton = true,
@@ -69,11 +70,11 @@ function CommandInput({
       data-slot="command-input-wrapper"
       className="flex h-9 items-center gap-2 border-b px-3"
     >
-      <SearchIcon className="size-4 shrink-0 opacity-50" />
+      <SearchIcon className="size-4 shrink-0 opacity-50" aria-hidden="true" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          "flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         {...props}
@@ -147,7 +148,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}
@@ -157,17 +158,20 @@ function CommandItem({
 
 function CommandShortcut({
   className,
+  children,
   ...props
 }: React.ComponentProps<"span">) {
+  if (typeof children === "string") {
+    return <KeyBindingKbd binding={children} className={cn("ml-auto", className)} />
+  }
   return (
     <span
       data-slot="command-shortcut"
-      className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground",
-        className
-      )}
+      className={cn("ml-auto", className)}
       {...props}
-    />
+    >
+      {children}
+    </span>
   )
 }
 

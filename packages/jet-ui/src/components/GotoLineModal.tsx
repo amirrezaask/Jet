@@ -44,7 +44,7 @@ export function GotoLineModal({
           <DialogTitle>Go to Line</DialogTitle>
           <DialogDescription>Enter a line number or line:column.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="goto-line-input" className="sr-only">
             Line
           </Label>

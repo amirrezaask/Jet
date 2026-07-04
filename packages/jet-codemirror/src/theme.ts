@@ -117,20 +117,6 @@ export function jetThemeExtension(theme: JetTheme) {
           border: `1px solid ${theme.colors.border}`,
           fontSize: "1rem",
         },
-        ".cm-tooltip-autocomplete": {
-          fontSize: "0.85rem",
-          "& > ul": {
-            fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
-            fontSize: "0.85rem",
-          },
-          "& > ul > li": {
-            padding: "2px 6px",
-          },
-          "& > ul > li[aria-selected]": {
-            backgroundColor: theme.colors.hover,
-            color: theme.colors.text,
-          },
-        },
         ".cm-tooltip.cm-completionInfo": {
           fontSize: "0.85rem",
           fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',

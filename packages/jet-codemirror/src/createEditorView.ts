@@ -6,7 +6,12 @@ import {
   historyKeymap,
   indentWithTab,
 } from "@codemirror/commands"
-import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
+import { autocompletion, completeAnyWord, completionKeymap } from "@codemirror/autocomplete"
+import {
+  completionContextMenuClass,
+  completionContextMenuPlugin,
+  completionContextMenuTheme,
+} from "./completion-context-menu.js"
 import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
@@ -136,14 +141,18 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   }
 
   extensions.push(
+    EditorState.languageData.of(() => [{ autocomplete: completeAnyWord }]),
     languageCompartment.of(await loadLanguage(opts.file.languageId)),
     completionCompartment.of(
       autocompletion({
         activateOnTyping: true,
         interactionDelay: 75,
         defaultKeymap: false,
+        tooltipClass: () => completionContextMenuClass,
       }),
     ),
+    completionContextMenuTheme(),
+    completionContextMenuPlugin(),
     userKeymapCompartment.of([]),
     lspCompartment.of([]),
     extensionCompartment.of(opts.userExtensions ?? []),

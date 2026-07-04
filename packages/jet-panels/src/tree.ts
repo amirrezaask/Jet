@@ -125,6 +125,18 @@ export class PanelTree {
     this.normalizeRatios(split.ratios)
   }
 
+  setSplitRatios(path: number[], ratios: number[]): boolean {
+    const node = this.getAtPath(this.root, path)
+    if (!node || node.kind === "leaf") return false
+    if (ratios.length !== node.split.children.length) return false
+    const next = [...ratios]
+    this.normalizeRatios(next)
+    const changed = next.some((ratio, index) => Math.abs(ratio - node.split.ratios[index]!) > 0.001)
+    if (!changed) return false
+    node.split.ratios = next
+    return true
+  }
+
   attachAtViewportEdge(edge: Edge): PanelId {
     const newPanelId = this.allocPanelId()
     const newLeaf: PanelNode = {

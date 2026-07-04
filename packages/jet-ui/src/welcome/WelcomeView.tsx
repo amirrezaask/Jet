@@ -1,5 +1,13 @@
 import { Button } from "@/components/ui/button.js"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card.js"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card.js"
+import { KeyBindingKbd } from "@/components/KeyBindingKbd.js"
+import { formatKeyBinding } from "@/lib/format-key.js"
 
 export type WelcomeViewProps = {
   isWebMode: boolean
@@ -8,33 +16,33 @@ export type WelcomeViewProps = {
 }
 
 const SHORTCUTS = [
-  { keys: "⌘P", label: "files" },
-  { keys: "⌘⇧F", label: "search" },
-  { keys: "⌘⇧E", label: "explorer" },
+  { keys: formatKeyBinding("Mod-p"), label: "files" },
+  { keys: formatKeyBinding("Mod-Shift-f"), label: "search" },
+  { keys: formatKeyBinding("Mod-Shift-e"), label: "explorer" },
 ] as const
 
 export function WelcomeView({ isWebMode, bootstrapping, onOpenFolder }: WelcomeViewProps) {
   return (
-    <div className="jet-welcome-backdrop flex h-full flex-col items-center justify-center gap-8 px-6 text-center">
-      <Card className="jet-welcome-card max-w-lg border bg-card/90 shadow-none backdrop-blur-sm">
+    <div className="flex h-full flex-col items-center justify-center gap-8 bg-background px-6 text-center">
+      <Card className="max-w-lg border bg-card shadow-sm">
         <CardHeader className="items-center gap-3 text-center">
-          <CardTitle className="jet-mono-data text-[length:var(--jet-fs-xl)] font-semibold tracking-tight text-foreground">
+          <CardTitle className="text-balance text-2xl font-semibold tracking-tight">
             Jet
           </CardTitle>
-          <CardDescription className="max-w-sm text-[length:var(--jet-fs-sm)]">
+          <CardDescription className="max-w-sm text-balance">
             Keyboard-first editor shell — open a folder and stay in flow
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent className="flex flex-col gap-5">
           {bootstrapping ? (
             <p className="text-sm text-muted-foreground">Opening workspace…</p>
           ) : (
             <>
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {SHORTCUTS.map(s => (
-                  <span key={s.keys} className="inline-flex items-center gap-1.5">
-                    <span className="jet-kbd-chip">{s.keys}</span>
-                    <span className="text-[length:var(--jet-fs-2xs)] text-muted-foreground">{s.label}</span>
+                  <span key={s.label} className="inline-flex items-center gap-1.5">
+                    <KeyBindingKbd binding={s.keys} />
+                    <span className="text-xs text-muted-foreground">{s.label}</span>
                   </span>
                 ))}
               </div>
@@ -42,13 +50,13 @@ export function WelcomeView({ isWebMode, bootstrapping, onOpenFolder }: WelcomeV
                 Open Folder
               </Button>
               {isWebMode && (
-                <details className="text-left text-[length:var(--jet-fs-2xs)] text-muted-foreground">
+                <details className="text-left text-xs text-muted-foreground">
                   <summary className="cursor-pointer hover:text-foreground">Browser dev setup</summary>
                   <p className="mt-2 leading-relaxed">
                     Add{" "}
                     <code className="jet-mono-data text-foreground">?workspace=fixtures/sample-workspace</code> to the
                     URL or call{" "}
-                    <code className="jet-mono-data text-foreground">window.__jetAgent.openWorkspace(...)</code>
+                    <code className="jet-mono-data text-foreground">window.__jetAgent.openWorkspace(…)</code>
                   </p>
                 </details>
               )}

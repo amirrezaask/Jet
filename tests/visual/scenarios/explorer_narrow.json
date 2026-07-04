@@ -1,0 +1,20 @@
+{
+  "window": { "width": 900, "height": 600 },
+  "workspace": ".",
+  "steps": [
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "command": "explorer.show" },
+    { "wait": { "ms": 600, "animations_idle": true } },
+    { "click_selector": "[data-jet-list-item][aria-label=\"packages\"]" },
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "click_selector": "[data-jet-list-item][aria-label=\"jet-ui\"]" },
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "click_selector": "[data-jet-list-item][aria-label=\"src\"]" },
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "click_selector": "[data-jet-list-item][aria-label=\"tabs\"]" },
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "screenshot": "test-results/agent-shots/explorer_narrow.png" },
+    { "assert_no_overlap": { "selector": "[data-jet-list-item]", "min_items": 10 } },
+    { "exit": 0 }
+  ]
+}

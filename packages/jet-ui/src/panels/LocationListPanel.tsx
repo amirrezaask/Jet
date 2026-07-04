@@ -3,13 +3,21 @@ import type { JetProblem } from "@jet/shared"
 import type { LocationItem, LocationListSource, WorkspaceService } from "@jet/workspace"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { cn } from "../lib/utils.js"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
 import { Input } from "@/components/ui/input.js"
-import { Checkbox } from "@/components/ui/checkbox.js"
-import { Label } from "@/components/ui/label.js"
+import { Spinner } from "@/components/ui/spinner.js"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert.js"
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@/components/ui/item.js"
+import { CircleAlertIcon } from "lucide-react"
 
-const ROW_HEIGHT_PX = 44
+/** Two-line row: py-1 + text-sm + text-xs ≈ 36px — must match virtualizer estimate. */
+const ROW_HEIGHT_PX = 36
 
 export function problemsToLocationItems(problems: JetProblem[]): LocationItem[] {
   return problems.map((p, i) => ({
@@ -110,41 +118,57 @@ export function LocationListPanel({
         </TabsList>
       </Tabs>
       {state.activeSource === "search" && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-2">
-          <Input
-            type="search"
-            value={state.searchQuery}
-            onChange={e => state.setSearchState({ query: e.target.value })}
-            placeholder="Search project…"
-            className="min-w-[12rem] flex-1 h-8"
-          />
-          <div className="flex items-center gap-1">
-            <Checkbox
-              id="search-case"
-              checked={state.searchCaseSensitive}
-              onCheckedChange={checked =>
-                state.setSearchState({ caseSensitive: checked === true })
-              }
+        <div className="flex shrink-0 flex-col gap-2 border-b border-border p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              id="location-search-input"
+              type="search"
+              value={state.searchQuery}
+              onChange={e => state.setSearchState({ query: e.target.value })}
+              placeholder="Search project…"
+              className="h-8 min-w-[12rem] flex-1"
+              spellCheck={false}
+              aria-label="Search project"
             />
-            <Label htmlFor="search-case" className="text-xs">
-              Case
-            </Label>
+            <ToggleGroup
+              type="multiple"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              value={[
+                ...(state.searchCaseSensitive ? ["case"] : []),
+                ...(state.searchRegex ? ["regex"] : []),
+              ]}
+              onValueChange={values => {
+                state.setSearchState({
+                  caseSensitive: values.includes("case"),
+                  regex: values.includes("regex"),
+                })
+              }}
+            >
+              <ToggleGroupItem value="case" className="h-7 px-2 text-xs">
+                Case
+              </ToggleGroupItem>
+              <ToggleGroupItem value="regex" className="h-7 px-2 text-xs">
+                Regex
+              </ToggleGroupItem>
+            </ToggleGroup>
+            {state.searchLoading && (
+              <span
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                aria-live="polite"
+              >
+                <Spinner />
+                Searching…
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-1">
-            <Checkbox
-              id="search-regex"
-              checked={state.searchRegex}
-              onCheckedChange={checked => state.setSearchState({ regex: checked === true })}
-            />
-            <Label htmlFor="search-regex" className="text-xs">
-              Regex
-            </Label>
-          </div>
-          {state.searchLoading && (
-            <span className="text-xs text-muted-foreground">Searching…</span>
-          )}
           {state.searchError && (
-            <span className="text-xs text-destructive">{state.searchError}</span>
+            <Alert variant="destructive" className="py-2">
+              <CircleAlertIcon />
+              <AlertTitle>Search failed</AlertTitle>
+              <AlertDescription>{state.searchError}</AlertDescription>
+            </Alert>
           )}
         </div>
       )}
@@ -159,27 +183,40 @@ export function LocationListPanel({
                 <div
                   key={item.id}
                   data-index={virtualRow.index}
-                  ref={rowVirtualizer.measureElement}
                   style={{
                     position: "absolute",
                     top: 0,
                     left: 0,
                     width: "100%",
+                    height: ROW_HEIGHT_PX,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <button
-                    type="button"
-                    data-jet-list-item
-                    className="flex w-full flex-col rounded px-2 py-1 text-left text-sm hover:bg-accent focus:bg-accent focus:outline-none"
-                    onClick={() => onOpenItem(item)}
+                  <Item
+                    asChild
+                    size="sm"
+                    className="h-full w-full gap-0 rounded-sm border-0 p-0 px-2 py-0 hover:bg-accent focus-visible:bg-accent"
                   >
-                    <span className="truncate font-medium">{item.label}</span>
-                    <span className="jet-mono-data truncate text-xs text-muted-foreground">
-                      {item.path}:{item.line}:{item.column}
-                      {item.detail ? ` · ${item.detail}` : ""}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      data-jet-list-item
+                      className="flex h-full w-full min-h-0 min-w-0 flex-col justify-center text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                      style={{
+                        height: ROW_HEIGHT_PX,
+                        minHeight: ROW_HEIGHT_PX,
+                        maxHeight: ROW_HEIGHT_PX,
+                      }}
+                      onClick={() => onOpenItem(item)}
+                    >
+                      <ItemContent className="gap-0">
+                        <ItemTitle className="text-sm">{item.label}</ItemTitle>
+                        <ItemDescription className="jet-mono-data line-clamp-1 text-xs">
+                          {item.path}:{item.line}:{item.column}
+                          {item.detail ? ` · ${item.detail}` : ""}
+                        </ItemDescription>
+                      </ItemContent>
+                    </button>
+                  </Item>
                 </div>
               )
             })}

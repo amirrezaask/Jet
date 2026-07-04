@@ -26,6 +26,31 @@ type Step =
         min_row_height?: number
       }
     }
+  | {
+      assert_no_overlap: {
+        selector?: string
+        min_items?: number
+        tolerance_px?: number
+      }
+    }
+  | {
+      assert_no_clipping: {
+        selector?: string
+        container_selector?: string
+      }
+    }
+  | {
+      assert_row_spacing: {
+        selector?: string
+        min_items?: number
+        max_gap_px?: number
+        tolerance_px?: number
+      }
+    }
+  | { click_selector: string; nth?: number }
+  | { right_click_selector: string; nth?: number }
+  | { hover_selector: string; nth?: number }
+  | { wheel_scroll: { selector?: string; delta_y?: number; delta_x?: number } }
   | { exit: number }
 
 type Scenario = {
@@ -238,6 +263,163 @@ async function runStep(
     if (layout.flexShrinks.some(s => s !== "0")) {
       throw new Error(`assert_layout failed: flexShrink must be 0, got ${JSON.stringify(layout.flexShrinks)}`)
     }
+    return {}
+  }
+  if ("assert_no_overlap" in step) {
+    const cfg = step.assert_no_overlap
+    const sel = cfg.selector ?? "[data-jet-list-item]"
+    const minItems = cfg.min_items ?? 2
+    const tol = cfg.tolerance_px ?? 0
+    const report = await page.evaluate(
+      ({ sel, tol }) => {
+        const items = [...document.querySelectorAll<HTMLElement>(sel)]
+        const rects = items.map((el, i) => {
+          const r = el.getBoundingClientRect()
+          return {
+            i,
+            top: r.top,
+            bottom: r.bottom,
+            left: r.left,
+            right: r.right,
+            text: (el.textContent ?? "").trim().slice(0, 40),
+          }
+        })
+        const overlaps: Array<{ a: number; b: number; aText: string; bText: string; overlapY: number }> = []
+        for (let i = 0; i < rects.length; i++) {
+          for (let j = i + 1; j < rects.length; j++) {
+            const a = rects[i]
+            const b = rects[j]
+            const yOverlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+            const xOverlap = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+            if (yOverlap > tol && xOverlap > tol) {
+              overlaps.push({ a: a.i, b: b.i, aText: a.text, bText: b.text, overlapY: yOverlap })
+            }
+          }
+        }
+        return { count: rects.length, overlaps: overlaps.slice(0, 5), totalOverlaps: overlaps.length }
+      },
+      { sel, tol },
+    )
+    if (report.count < minItems) {
+      throw new Error(`assert_no_overlap: found ${report.count} items, expected >= ${minItems}`)
+    }
+    if (report.totalOverlaps > 0) {
+      throw new Error(
+        `assert_no_overlap failed: ${report.totalOverlaps} overlapping pair(s). Examples: ${JSON.stringify(report.overlaps)}`,
+      )
+    }
+    return {}
+  }
+  if ("assert_no_clipping" in step) {
+    const cfg = step.assert_no_clipping
+    const sel = cfg.selector ?? "[data-jet-list-item]"
+    const containerSel = cfg.container_selector
+    const report = await page.evaluate(
+      ({ sel, containerSel }) => {
+        const items = [...document.querySelectorAll<HTMLElement>(sel)]
+        const container = containerSel ? document.querySelector<HTMLElement>(containerSel) : null
+        const containerRect = container?.getBoundingClientRect() ?? null
+        const clipped: Array<{ i: number; text: string; scrollW: number; clientW: number }> = []
+        items.forEach((el, i) => {
+          const scrollW = el.scrollWidth
+          const clientW = el.clientWidth
+          if (scrollW - clientW > 1 && getComputedStyle(el).textOverflow !== "ellipsis") {
+            const truncEl = el.querySelector<HTMLElement>(".truncate, [data-truncate]")
+            const trunc = truncEl && getComputedStyle(truncEl).textOverflow === "ellipsis"
+            if (!trunc) {
+              clipped.push({ i, text: (el.textContent ?? "").trim().slice(0, 40), scrollW, clientW })
+            }
+          }
+          if (containerRect) {
+            const r = el.getBoundingClientRect()
+            if (r.right > containerRect.right + 1 || r.bottom > containerRect.bottom + 1) {
+              clipped.push({ i, text: (el.textContent ?? "").trim().slice(0, 40), scrollW, clientW })
+            }
+          }
+        })
+        return { count: items.length, clipped: clipped.slice(0, 5), total: clipped.length }
+      },
+      { sel, containerSel: containerSel ?? null },
+    )
+    if (report.total > 0) {
+      throw new Error(
+        `assert_no_clipping failed: ${report.total} clipped element(s). Examples: ${JSON.stringify(report.clipped)}`,
+      )
+    }
+    return {}
+  }
+  if ("assert_row_spacing" in step) {
+    const cfg = step.assert_row_spacing
+    const sel = cfg.selector ?? "[data-jet-list-item]"
+    const minItems = cfg.min_items ?? 2
+    const maxGap = cfg.max_gap_px ?? 2
+    const tol = cfg.tolerance_px ?? 0.5
+    const report = await page.evaluate(
+      ({ sel, maxGap, tol }) => {
+        const items = [...document.querySelectorAll<HTMLElement>(sel)]
+        const rects = items
+          .map((el, i) => {
+            const r = el.getBoundingClientRect()
+            return {
+              i,
+              top: r.top,
+              bottom: r.bottom,
+              text: (el.textContent ?? "").trim().slice(0, 40),
+            }
+          })
+          .sort((a, b) => a.top - b.top || a.i - b.i)
+        const badGaps: Array<{ a: number; b: number; gap: number; aText: string; bText: string }> = []
+        for (let j = 1; j < rects.length; j++) {
+          const gap = rects[j].top - rects[j - 1].bottom
+          if (gap > maxGap + tol) {
+            badGaps.push({
+              a: rects[j - 1].i,
+              b: rects[j].i,
+              gap: Math.round(gap * 10) / 10,
+              aText: rects[j - 1].text,
+              bText: rects[j].text,
+            })
+          }
+        }
+        return { count: rects.length, badGaps: badGaps.slice(0, 5), totalBad: badGaps.length }
+      },
+      { sel, maxGap, tol },
+    )
+    if (report.count < minItems) {
+      throw new Error(`assert_row_spacing: found ${report.count} items, expected >= ${minItems}`)
+    }
+    if (report.totalBad > 0) {
+      throw new Error(
+        `assert_row_spacing failed: ${report.totalBad} gap(s) exceed ${maxGap}px. Examples: ${JSON.stringify(report.badGaps)}`,
+      )
+    }
+    return {}
+  }
+  if ("click_selector" in step) {
+    const nth = step.nth ?? 0
+    await page.locator(step.click_selector).nth(nth).click()
+    return {}
+  }
+  if ("right_click_selector" in step) {
+    const nth = step.nth ?? 0
+    await page.locator(step.right_click_selector).nth(nth).click({ button: "right" })
+    return {}
+  }
+  if ("hover_selector" in step) {
+    const nth = step.nth ?? 0
+    await page.locator(step.hover_selector).nth(nth).hover()
+    return {}
+  }
+  if ("wheel_scroll" in step) {
+    const { selector, delta_y = 0, delta_x = 0 } = step.wheel_scroll
+    await page.evaluate(
+      ({ selector, dy, dx }) => {
+        const el = selector ? document.querySelector<HTMLElement>(selector) : document.scrollingElement
+        if (!el) throw new Error(`wheel_scroll: no element matches ${selector}`)
+        ;(el as HTMLElement).scrollBy({ left: dx, top: dy, behavior: "instant" as ScrollBehavior })
+      },
+      { selector: selector ?? null, dy: delta_y, dx: delta_x },
+    )
     return {}
   }
   if ("assert_a11y_not_contains" in step) {

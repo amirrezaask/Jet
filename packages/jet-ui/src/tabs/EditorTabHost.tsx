@@ -21,6 +21,7 @@ import type { JetTheme } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
 import { fileUriToPath, isUntitledUri } from "@jet/shared"
+import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu.js"
 import {
   EditorContextMenu,
   registerEditorContextMenuHandler,
@@ -85,6 +86,14 @@ export function destroyEditorBuffer(panelId: PanelId, fileUri: string): void {
   if (focusedPanelId === panelId.id && viewByPanel.get(panelId.id) == null) focusedPanelId = null
 }
 
+export function destroyEditorPanel(panelId: PanelId): void {
+  const sessions = sessionsByPanel.get(panelId.id)
+  if (!sessions) return
+  for (const fileUri of [...sessions.keys()]) {
+    destroyEditorBuffer(panelId, fileUri)
+  }
+}
+
 export function getEditorView(panelId: PanelId): EditorView | undefined {
   return viewByPanel.get(panelId.id)
 }
@@ -145,7 +154,6 @@ function EditorTabHostInner({
   onProblemsChange?: () => void
   autoFocus?: boolean
 }) {
-  const ref = useRef<HTMLDivElement>(null)
   const executeCommandRef = useRef(executeCommand)
   executeCommandRef.current = executeCommand
   const runKeyBindingRef = useRef(runKeyBinding)
@@ -164,7 +172,8 @@ function EditorTabHostInner({
   onLspAttachFailedRef.current = onLspAttachFailed
   const onProblemsChangeRef = useRef(onProblemsChange)
   onProblemsChangeRef.current = onProblemsChange
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
 
   const runCommand = useRef((name: string) => executeCommandRef.current(name)).current
   const runBinding = useRef((binding: JetKeyBinding, view: EditorView) =>
@@ -174,18 +183,25 @@ function EditorTabHostInner({
   useEffect(() => {
     return registerEditorContextMenuHandler((x, y) => {
       if (focusedPanelId !== panelId.id) return
-      setContextMenu({ x, y })
+      hostRef.current?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          view: window,
+        }),
+      )
     })
   }, [panelId.id])
 
   useEffect(() => {
-    const parent = ref.current
+    const parent = hostRef.current
     if (!parent) return
     let cancelled = false
     let session = panelSessions(panelId).get(fileUri) ?? null
     let onFocus: (() => void) | null = null
     let onBlur: (() => void) | null = null
-    let onContextMenu: ((e: MouseEvent) => void) | null = null
 
     const attachView = (live: EditorSession) => {
       for (const other of panelSessions(panelId).values()) {
@@ -203,14 +219,8 @@ function EditorTabHostInner({
         onEditorFocusChangeRef.current?.(true)
       }
       onBlur = () => onEditorFocusChangeRef.current?.(false)
-      onContextMenu = (e: MouseEvent) => {
-        e.preventDefault()
-        focusedPanelId = panelId.id
-        setContextMenu({ x: e.clientX, y: e.clientY })
-      }
       live.view.dom.addEventListener("focus", onFocus)
       live.view.dom.addEventListener("blur", onBlur)
-      live.view.dom.addEventListener("contextmenu", onContextMenu)
       if (autoFocus) live.view.focus()
       onProblemsChangeRef.current?.()
     }
@@ -307,10 +317,9 @@ function EditorTabHostInner({
 
     return () => {
       cancelled = true
-      if (session && onFocus && onBlur && onContextMenu) {
+      if (session && onFocus && onBlur) {
         session.view.dom.removeEventListener("focus", onFocus)
         session.view.dom.removeEventListener("blur", onBlur)
-        session.view.dom.removeEventListener("contextmenu", onContextMenu)
       }
       if (session) detachSessionDom(session, parent)
     }
@@ -392,18 +401,23 @@ function EditorTabHostInner({
   const activeView = viewByPanel.get(panelId.id) ?? null
 
   return (
-    <>
-      <div ref={ref} className="h-full w-full overflow-hidden" />
+    <ContextMenu
+      onOpenChange={open => {
+        setContextMenuOpen(open)
+        if (open) focusedPanelId = panelId.id
+      }}
+    >
+      <ContextMenuTrigger asChild>
+        <div ref={hostRef} className="h-full w-full overflow-hidden" />
+      </ContextMenuTrigger>
       <EditorContextMenu
-        open={contextMenu != null}
-        position={contextMenu}
+        open={contextMenuOpen}
         view={activeView}
         lspAvailable={Boolean(typeof window !== "undefined" && window.jet?.lsp)}
         hasLspPlugin={activeView != null && lspPluginForView(activeView) != null}
-        onClose={() => setContextMenu(null)}
         executeCommand={runCommand}
       />
-    </>
+    </ContextMenu>
   )
 }
 

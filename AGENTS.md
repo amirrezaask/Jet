@@ -342,7 +342,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 | Tab      | Status                                                     |
 | -------- | ---------------------------------------------------------- |
-| Explorer | `@headless-tree/react` file tree                           |
+| Explorer | shadcn Sidebar + Collapsible file tree                 |
 | Git      | `@pierre/diffs` patch view + git status list (lazy-loaded) |
 | Editor   | CodeMirror host + in-buffer find                           |
 | Search   | Project ripgrep search + in-buffer find                    |

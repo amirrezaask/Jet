@@ -38,5 +38,7 @@ export {
   fetchDocumentOutline,
   type OutlineSymbol,
 } from "./lsp-editor-commands.js"
+export { completionContextMenuClass, completionContextMenuPlugin, completionContextMenuTheme } from "./completion-context-menu.js"
+export { CONTEXT_MENU_ITEM_SURFACE_CLASS, CONTEXT_MENU_SURFACE_CLASS } from "./menu-surface.js"
 export { eolOverlayExtension, braceScopeExtension } from "./eol-overlays.js"
 export { jetReloadAnnotation } from "./reload-annotation.js"

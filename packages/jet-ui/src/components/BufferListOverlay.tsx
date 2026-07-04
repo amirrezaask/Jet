@@ -1,6 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { WorkspaceService } from "@jet/workspace"
-import { JetFuzzyPicker } from "./JetFuzzyPicker.js"
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command.js"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog.js"
+import { COMMAND_NO_SELECTION, COMMAND_SHELL_CLASS } from "@/lib/command-shell.js"
 
 export function BufferListOverlay({
   open,
@@ -14,10 +28,14 @@ export function BufferListOverlay({
   onSelect: (uri: string) => void
 }) {
   const [query, setQuery] = useState("")
+  const [selectedValue, setSelectedValue] = useState(COMMAND_NO_SELECTION)
   const buffers = workspace.openBuffers
 
   useEffect(() => {
-    if (!open) setQuery("")
+    if (!open) {
+      setQuery("")
+      setSelectedValue(COMMAND_NO_SELECTION)
+    }
   }, [open])
 
   const q = query.trim().toLowerCase()
@@ -27,36 +45,64 @@ export function BufferListOverlay({
     return !q || name.toLowerCase().includes(q) || uri.toLowerCase().includes(q)
   })
 
+  useEffect(() => {
+    if (query.trim() === "") {
+      setSelectedValue(COMMAND_NO_SELECTION)
+      return
+    }
+    if (filtered.length > 0 && !filtered.includes(selectedValue)) {
+      setSelectedValue(filtered[0]!)
+    }
+  }, [filtered, query, selectedValue])
+
   const items = useMemo(
     () =>
       filtered.map(uri => {
         const file = workspace.fileForUri(uri)
-        return {
-          value: uri,
-          label: (
-            <span>
-              {file?.name ?? uri}
-              {file?.isDirty ? " •" : ""}
-            </span>
-          ),
-          onSelect: () => onSelect(uri),
-        }
+        return { uri, name: file?.name ?? uri, dirty: file?.isDirty ?? false }
       }),
-    [filtered, onSelect, workspace],
+    [filtered, workspace],
   )
 
   return (
-    <JetFuzzyPicker
-      open={open}
-      onOpenChange={onOpenChange}
-      ariaLabel="Buffer list"
-      placeholder="Switch buffer…"
-      emptyMessage="No open buffers"
-      maxWidth="32rem"
-      shouldFilter={false}
-      query={query}
-      onQueryChange={setQuery}
-      items={items}
-    />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogHeader className="sr-only">
+        <DialogTitle>Buffer list</DialogTitle>
+        <DialogDescription>Switch buffer…</DialogDescription>
+      </DialogHeader>
+      <DialogContent className="max-w-[32rem] overflow-hidden p-0" showCloseButton={false}>
+        <Command
+          className={COMMAND_SHELL_CLASS}
+          shouldFilter={false}
+          value={selectedValue}
+          onValueChange={value => {
+            if (query.trim() === "") {
+              setSelectedValue(COMMAND_NO_SELECTION)
+              return
+            }
+            setSelectedValue(value)
+          }}
+        >
+          <CommandInput placeholder="Switch buffer…" value={query} onValueChange={setQuery} />
+          <CommandList className="max-h-[18rem]">
+            <CommandEmpty>No open buffers</CommandEmpty>
+            <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
+            {items.map(({ uri, name, dirty }) => (
+              <CommandItem
+                key={uri}
+                value={uri}
+                onSelect={() => {
+                  onSelect(uri)
+                  onOpenChange(false)
+                }}
+              >
+                {name}
+                {dirty ? " •" : ""}
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </DialogContent>
+    </Dialog>
   )
 }

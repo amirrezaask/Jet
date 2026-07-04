@@ -34,14 +34,25 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
 }
 
+/* Vercel light — aligned with packages/jet-ui/src/theme/vercel.ts */
 :root {
+  color-scheme: light;
   --radius: 0.375rem;
   --background: #ffffff;
   --foreground: #171717;
@@ -58,6 +69,7 @@
   --accent: #f5f5f5;
   --accent-foreground: #171717;
   --destructive: #c62128;
+  --destructive-foreground: #fafafa;
   --border: #cccccc;
   --input: #cccccc;
   --ring: #171717;
@@ -68,25 +80,15 @@
   --jet-fs-base: 1rem;
   --jet-fs-lg: 1.15rem;
   --jet-fs-xl: 1.85rem;
-
-  --jet-bg: var(--background);
-  --jet-panel: var(--muted);
-  --jet-panel-raised: var(--card);
-  --jet-text: var(--foreground);
-  --jet-text-muted: var(--muted-foreground);
-  --jet-accent: var(--primary);
-  --jet-hover: var(--accent);
-  --jet-selection: #cccccc;
-  --jet-border: var(--border);
-  --jet-focus-border: var(--ring);
-  --jet-error: var(--destructive);
-  --jet-warning: #9e5200;
-  --jet-success: #397c3b;
-  --jet-backdrop: rgba(0, 0, 0, 0.45);
   --jet-row-height: 22px;
-  --jet-phosphor: #1a9e86;
-  --jet-phosphor-glow: rgba(26, 158, 134, 0.14);
-  --jet-surface-inset: #f0f0f0;
+  --sidebar: var(--muted);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 /* List / explorer rows — plain CSS so Electron builds never drop Tailwind arbitrary heights. */
@@ -104,33 +106,28 @@
   flex-direction: column;
 }
 
+/* Vercel dark — neutral primary, no phosphor accent */
 .dark {
-  --background: #09090b;
-  --foreground: #ececf0;
-  --card: #111116;
-  --card-foreground: #ececf0;
-  --popover: #14141a;
-  --popover-foreground: #ececf0;
-  --primary: #3ee8c6;
-  --primary-foreground: #09090b;
-  --secondary: #1a1a22;
-  --secondary-foreground: #ececf0;
-  --muted: #0e0e12;
-  --muted-foreground: #8b8b9a;
-  --accent: #1c1c26;
-  --accent-foreground: #ececf0;
+  color-scheme: dark;
+  --background: #000000;
+  --foreground: #ededed;
+  --card: #0a0a0a;
+  --card-foreground: #ededed;
+  --popover: #0a0a0a;
+  --popover-foreground: #ededed;
+  --primary: #ededed;
+  --primary-foreground: #000000;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #ededed;
+  --muted: #0a0a0a;
+  --muted-foreground: #a1a1a1;
+  --accent: #1a1a1a;
+  --accent-foreground: #ededed;
   --destructive: #f56464;
-  --border: #2a2a34;
-  --input: #2a2a34;
-  --ring: #3ee8c6;
-
-  --jet-selection: #252532;
-  --jet-warning: #f99902;
-  --jet-success: #58c760;
-  --jet-backdrop: rgba(4, 4, 8, 0.72);
-  --jet-phosphor: #3ee8c6;
-  --jet-phosphor-glow: rgba(62, 232, 198, 0.12);
-  --jet-surface-inset: #0c0c10;
+  --destructive-foreground: #fafafa;
+  --border: #333333;
+  --input: #333333;
+  --ring: #ededed;
 }
 
 * {
@@ -157,7 +154,6 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
-/* Shell chrome */
 .jet-shell-main {
   background: var(--background);
 }
@@ -175,99 +171,32 @@ body,
   padding: 0.1rem 0.4rem;
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) - 2px);
-  background: var(--jet-surface-inset);
+  background: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--jet-fs-2xs);
   color: var(--muted-foreground);
   white-space: nowrap;
 }
 
-/* Modal / palette — RAD bracket accent */
-.jet-palette [data-slot="dialog-content"] {
-  border-color: var(--border);
-  box-shadow:
-    0 0 0 1px rgba(62, 232, 198, 0.06),
-    0 16px 48px rgba(0, 0, 0, 0.45);
-}
-
-.jet-palette [data-slot="command-input-wrapper"] {
-  border-color: var(--border);
-  background: var(--jet-surface-inset);
-}
-
-.jet-palette [data-slot="command-item"][data-selected="true"] {
-  background: var(--jet-phosphor-glow);
-  border-left: 2px solid var(--jet-phosphor);
-  padding-left: calc(0.5rem - 2px);
-}
-
-.jet-palette [data-slot="command-shortcut"] {
-  font-family: var(--font-mono);
-  font-size: var(--jet-fs-2xs);
-  letter-spacing: 0.02em;
-}
-
-/* List focus rail */
-.jet-list-item-selected {
-  background: var(--jet-phosphor-glow) !important;
-}
-
-.jet-list-item-selected::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--jet-phosphor);
-}
-
-/* Welcome — instrument panel backdrop */
-.jet-welcome-backdrop {
-  background:
-    linear-gradient(180deg, var(--background) 0%, var(--muted) 100%),
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 23px,
-      color-mix(in srgb, var(--border) 35%, transparent) 23px,
-      color-mix(in srgb, var(--border) 35%, transparent) 24px
-    );
-}
-
-.jet-welcome-card {
-  position: relative;
-  border-color: var(--border);
-}
-
-.jet-welcome-card::before,
-.jet-welcome-card::after {
-  content: "";
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  border-color: var(--jet-phosphor);
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.jet-welcome-card::before {
-  top: -1px;
-  left: -1px;
-  border-top: 2px solid;
-  border-left: 2px solid;
-}
-
-.jet-welcome-card::after {
-  bottom: -1px;
-  right: -1px;
-  border-bottom: 2px solid;
-  border-right: 2px solid;
-}
-
 .jet-empty-hint {
   color: var(--muted-foreground);
   font-size: var(--jet-fs-sm);
   letter-spacing: 0.01em;
+}
+
+/* CodeMirror autocomplete — styled as shadcn context menu (see completion-context-menu.ts) */
+.cm-tooltip.cm-tooltip-autocomplete.jet-completion-context-menu > ul > li[aria-selected] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

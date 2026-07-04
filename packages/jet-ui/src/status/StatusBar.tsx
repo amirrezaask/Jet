@@ -1,9 +1,17 @@
 import { useSyncExternalStore } from "react"
 import { Separator } from "@/components/ui/separator.js"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js"
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover.js"
 import { getEditorCursor, subscribeEditorCursor } from "./editor-cursor-store.js"
 
 export type StatusBarProps = {
-  message: string | null
   lspStatus: "connected" | "off" | "unavailable"
   workspaceName?: string | null
   workspacePath?: string | null
@@ -17,11 +25,22 @@ export type StatusBarProps = {
 function lspDotClass(status: StatusBarProps["lspStatus"]): string {
   switch (status) {
     case "connected":
-      return "text-[var(--jet-success)]"
+      return "text-primary"
     case "off":
-      return "text-[var(--jet-warning)]"
-    default:
       return "text-muted-foreground"
+    default:
+      return "text-muted-foreground/60"
+  }
+}
+
+function lspLabel(status: StatusBarProps["lspStatus"]): string {
+  switch (status) {
+    case "connected":
+      return "Language server connected"
+    case "off":
+      return "Language server off"
+    default:
+      return "Language server unavailable"
   }
 }
 
@@ -36,8 +55,18 @@ function lspShortLabel(status: StatusBarProps["lspStatus"]): string {
   }
 }
 
+function lspDetail(status: StatusBarProps["lspStatus"]): string {
+  switch (status) {
+    case "connected":
+      return "Diagnostics, completions, and navigation are available for supported languages."
+    case "off":
+      return "No language server is attached. Open a TypeScript or Rust file to connect."
+    default:
+      return "Language server bridge is unavailable in this environment."
+  }
+}
+
 export function StatusBar({
-  message,
   lspStatus,
   workspaceName,
   workspacePath,
@@ -55,29 +84,40 @@ export function StatusBar({
   const lang = (activeLanguageId ?? "").toUpperCase()
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-border bg-[var(--jet-surface-inset)] px-3 text-[length:var(--jet-fs-2xs)] text-muted-foreground">
-      <span className="jet-status-zone min-w-0 shrink" title={workspacePath ?? undefined}>
-        <span className={hasWorkspace ? "text-foreground" : undefined}>{workspaceLabel}</span>
-        {gitBranch && (
-          <>
-            <Separator orientation="vertical" className="h-3" />
-            <span className="jet-mono-data text-foreground">{gitBranch}</span>
-          </>
-        )}
-      </span>
-
-      {message ? (
-        <span className="jet-status-zone min-w-0 max-w-[24rem] flex-1 shrink truncate text-foreground">
-          {message}
-        </span>
+    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-border bg-muted px-3 text-xs text-muted-foreground">
+      {workspacePath ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="jet-status-zone min-w-0 shrink cursor-default">
+              <span className={hasWorkspace ? "text-foreground" : undefined}>{workspaceLabel}</span>
+              {gitBranch && (
+                <>
+                  <Separator orientation="vertical" className="h-3" />
+                  <span className="jet-mono-data text-foreground">{gitBranch}</span>
+                </>
+              )}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">{workspacePath}</TooltipContent>
+        </Tooltip>
       ) : (
-        <span className="min-w-0 flex-1" aria-hidden />
+        <span className="jet-status-zone min-w-0 shrink">
+          <span className={hasWorkspace ? "text-foreground" : undefined}>{workspaceLabel}</span>
+          {gitBranch && (
+            <>
+              <Separator orientation="vertical" className="h-3" />
+              <span className="jet-mono-data text-foreground">{gitBranch}</span>
+            </>
+          )}
+        </span>
       )}
 
+      <span className="min-w-0 flex-1" aria-hidden />
+
       {activeFileName && (
-        <span className="jet-status-zone jet-mono-data shrink-0">
+        <span className="jet-status-zone jet-mono-data min-w-0 shrink">
           {activeFileDirty && (
-            <span className="text-[var(--jet-phosphor)]" aria-label="Unsaved changes">
+            <span className="text-primary" aria-label="Unsaved changes">
               ●
             </span>
           )}
@@ -96,12 +136,27 @@ export function StatusBar({
         <span className="jet-status-zone jet-mono-data shrink-0 opacity-40">UTF-8 · LF</span>
       )}
 
-      <span className="jet-status-zone jet-mono-data shrink-0">
-        <span className={lspDotClass(lspStatus)} aria-hidden>
-          ●
-        </span>
-        <span>LSP {lspShortLabel(lspStatus)}</span>
-      </span>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="jet-status-zone jet-mono-data shrink-0 cursor-default rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={lspLabel(lspStatus)}
+          >
+            <span className={lspDotClass(lspStatus)} aria-hidden>
+              ●
+            </span>
+            <span>LSP {lspShortLabel(lspStatus)}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent side="top" align="end" className="w-64 p-3">
+          <PopoverHeader>
+            <PopoverTitle>Language Server</PopoverTitle>
+            <PopoverDescription>{lspLabel(lspStatus)}</PopoverDescription>
+          </PopoverHeader>
+          <p className="mt-2 text-xs text-muted-foreground">{lspDetail(lspStatus)}</p>
+        </PopoverContent>
+      </Popover>
     </footer>
   )
 }

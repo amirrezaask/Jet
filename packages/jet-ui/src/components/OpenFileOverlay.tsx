@@ -190,13 +190,13 @@ export function OpenFileOverlay({
                     {entry.isDirectory ? (
                       <>
                         <Folder className="size-3.5 shrink-0 text-foreground" />
-                        <span className="flex-1 truncate">{entry.name}</span>
+                        <span className="min-w-0 flex-1 truncate">{entry.name}</span>
                         <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
                       </>
                     ) : (
                       <>
                         <File className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{entry.name}</span>
+                        <span className="min-w-0 truncate">{entry.name}</span>
                       </>
                     )}
                   </CommandItem>

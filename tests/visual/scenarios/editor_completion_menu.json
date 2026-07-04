@@ -1,0 +1,20 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "click_selector": ".cm-content" },
+    { "key": "End" },
+    { "text": " gre" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    {
+      "a11y_snapshot": "test-results/agent-shots/editor_completion_menu.a11y.yaml",
+      "selector": "[data-jet-completion-menu]"
+    },
+    { "assert_a11y_contains": ["greet"], "selector": "[data-jet-completion-menu]" },
+    { "screenshot": "test-results/agent-shots/editor_completion_menu.png" },
+    { "key": "Escape" },
+    { "exit": 0 }
+  ]
+}

@@ -1,3 +1,10 @@
 - main:
+  - button "Panel actions"
+  - button "Close panel"
   - textbox
-- contentinfo: sample-workspace Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace index.ts TYPESCRIPT Ln 1, Col 1 UTF-8 · LF LSP off
+- contentinfo:
+  - text: sample-workspace index.ts TYPESCRIPT Ln 1, Col 1 UTF-8 · LF
+  - button "Language server off": LSP off
+- region "Notifications alt+T":
+  - list:
+    - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace

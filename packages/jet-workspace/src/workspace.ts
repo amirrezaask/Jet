@@ -8,8 +8,11 @@ import { LocationListState } from "./location-list.js"
 import { TaskRunner } from "./task-runner.js"
 import { popPanelBufferView, pushPanelBufferView } from "./panel-buffers.js"
 
+export type ConfirmDiscardReloadFn = (fileName: string) => Promise<boolean>
+
 export class WorkspaceService {
   root: WorkspaceRoot | null = null
+  confirmDiscardReload: ConfirmDiscardReloadFn | null = null
   private files = new Map<string, WorkspaceFile>()
   private savedBaseline = new Map<string, string>()
   private recentWrites = new Map<string, number>()
@@ -120,14 +123,15 @@ export class WorkspaceService {
     }
   }
 
-  handleExternalFileChange(uri: string): void {
+  async handleExternalFileChange(uri: string): Promise<void> {
     const file = this.files.get(uri)
     if (!file) return
     if (this.isRecentlyWritten(uri)) return
     if (file.isDirty) {
-      if (window.confirm(`"${file.name}" changed on disk. Reload and discard local changes?`)) {
-        void this.reloadFileFromDisk(uri, { force: true })
-      }
+      const ok = this.confirmDiscardReload
+        ? await this.confirmDiscardReload(file.name)
+        : false
+      if (ok) void this.reloadFileFromDisk(uri, { force: true })
       return
     }
     void this.reloadFileFromDisk(uri)
