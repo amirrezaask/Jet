@@ -22,7 +22,7 @@ import type { WorkspaceService } from "@jet/workspace"
 import type { JetKeyBinding } from "@jet/workspace"
 import type { KeymapContext } from "@jet/workspace"
 import { jetKeyToCodeMirrorKey, matchesWhen, isEditorKeyBinding } from "@jet/workspace"
-import { jetThemeExtension } from "./theme.js"
+import { jetEditorTheme, jetSyntaxHighlightingForTheme } from "./theme.js"
 import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { motionCursor } from "./motion-cursor.js"
 import { multiCursorExtensions } from "./multi-cursor.js"
@@ -40,6 +40,7 @@ export const completionCompartment = new Compartment()
 export const lspCompartment = new Compartment()
 export const extensionCompartment = new Compartment()
 export const themeCompartment = new Compartment()
+export const highlightCompartment = new Compartment()
 
 export type CreateJetEditorViewOptions = {
   parent: HTMLElement
@@ -133,16 +134,19 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
       ...historyKeymap,
       indentWithTab,
     ]),
-    themeCompartment.of(jetThemeExtension(theme)),
+    themeCompartment.of(jetEditorTheme(theme)),
   )
 
   if (!largeFile) {
     extensions.push(motionCursor())
   }
 
+  const language = await loadLanguage(opts.file.languageId)
+
   extensions.push(
     EditorState.languageData.of(() => [{ autocomplete: completeAnyWord }]),
-    languageCompartment.of(await loadLanguage(opts.file.languageId)),
+    languageCompartment.of(language),
+    highlightCompartment.of(jetSyntaxHighlightingForTheme(theme)),
     completionCompartment.of(
       autocompletion({
         activateOnTyping: true,
@@ -190,7 +194,24 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
 
 export function applyTheme(view: EditorView, theme: JetTheme): void {
   view.dispatch({
-    effects: themeCompartment.reconfigure(jetThemeExtension(theme)),
+    effects: [
+      themeCompartment.reconfigure(jetEditorTheme(theme)),
+      highlightCompartment.reconfigure(jetSyntaxHighlightingForTheme(theme)),
+    ],
+  })
+}
+
+export async function reconfigureLanguage(
+  view: EditorView,
+  languageId: string,
+  theme: JetTheme,
+): Promise<void> {
+  const language = await loadLanguage(languageId)
+  view.dispatch({
+    effects: [
+      languageCompartment.reconfigure(language),
+      highlightCompartment.reconfigure(jetSyntaxHighlightingForTheme(theme)),
+    ],
   })
 }
 

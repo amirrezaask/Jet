@@ -1,0 +1,49 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 400, "animations_idle": true } },
+    {
+      "assert_element_width": {
+        "selector": "#jet-explorer",
+        "min_pct_of_viewport": 18,
+        "max_pct_of_viewport": 26
+      }
+    },
+    { "assert_a11y_contains": ["Explorer", "textbox"] },
+    {
+      "assert_element_width": {
+        "selector": "[data-jet-workspace-explorer]",
+        "min_px": 220
+      }
+    },
+    {
+      "drag_resize_handle": {
+        "selector": "[data-jet-workspace-split-handle]",
+        "delta_x": 140
+      }
+    },
+    { "wait": { "ms": 200, "animations_idle": true } },
+    {
+      "assert_element_width": {
+        "selector": "#jet-explorer",
+        "min_pct_of_viewport": 28
+      }
+    },
+    { "command": "explorer.show" },
+    { "wait": { "ms": 200 } },
+    { "assert_a11y_contains": ["Explorer", "textbox"] },
+    {
+      "assert_element_width": {
+        "selector": "#jet-explorer",
+        "min_pct_of_viewport": 28
+      }
+    },
+    { "key": "Meta+Shift+E" },
+    { "wait": { "ms": 200 } },
+    { "assert_a11y_contains": ["Explorer"] },
+    { "a11y_snapshot": "test-results/agent-shots/explorer_resize.a11y.yaml" },
+    { "exit": 0 }
+  ]
+}

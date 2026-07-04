@@ -132,6 +132,28 @@ export function applyJetThemeCss(theme: JetTheme): void {
   root.style.setProperty("--border", c.border)
   root.style.setProperty("--input", c.border)
   root.style.setProperty("--ring", c.focusBorder)
+  applyJetHighlightCssVars(theme)
+}
+
+export function applyJetHighlightCssVars(theme: JetTheme): void {
+  const h = theme.highlights
+  const root = document.documentElement
+  root.style.setProperty("--jet-hl-keyword", h.keyword)
+  root.style.setProperty("--jet-hl-control-keyword", h.controlKeyword)
+  root.style.setProperty("--jet-hl-function", h.function)
+  root.style.setProperty("--jet-hl-type", h.type)
+  root.style.setProperty("--jet-hl-string", h.string)
+  root.style.setProperty("--jet-hl-number", h.number)
+  root.style.setProperty("--jet-hl-boolean", h.boolean)
+  root.style.setProperty("--jet-hl-comment", h.comment)
+  root.style.setProperty("--jet-hl-operator", h.operator)
+  root.style.setProperty("--jet-hl-variable", h.variable)
+  root.style.setProperty("--jet-hl-attribute", h.attribute)
+  root.style.setProperty("--jet-hl-constant", h.constant)
+  root.style.setProperty("--jet-hl-field", h.field)
+  root.style.setProperty("--jet-hl-module", h.module)
+  root.style.setProperty("--jet-hl-label", h.label)
+  root.style.setProperty("--jet-hl-error", theme.colors.error)
 }
 
 export function applyColorScheme(scheme: ColorScheme, theme: JetTheme): void {

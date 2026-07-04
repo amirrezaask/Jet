@@ -173,8 +173,8 @@ function PanelSplitNode({
           {index > 0 ? <ResizableHandle withHandle /> : null}
           <ResizablePanel
             id={splitPanelId(path, index)}
-            defaultSize={ratios[index]! * 100}
-            minSize={8}
+            defaultSize={`${ratios[index]! * 100}`}
+            minSize="8"
             className="min-h-0 min-w-0"
           >
             <PanelTreeNode node={child} path={[...path, index]} props={props} />

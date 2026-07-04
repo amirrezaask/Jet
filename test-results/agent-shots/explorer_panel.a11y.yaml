@@ -1,21 +1,19 @@
-- main:
-  - text: Explorer
-  - button "Panel actions"
-  - button "Close panel"
-  - tree "Explorer":
-    - listitem:
-      - button "src"
-    - listitem:
-      - button "package.json"
-    - listitem:
-      - button "tsconfig.json"
-  - button "Panel actions"
-  - button "Close panel"
-  - textbox
-  - separator "Resize panel"
-- contentinfo:
-  - text: sample-workspace
-  - button "Language server off": LSP off
+- button "Toggle Sidebar"
+- text: Explorer
+- tree "Explorer":
+  - listitem:
+    - button "src"
+  - listitem:
+    - button "package.json"
+  - listitem:
+    - button "tsconfig.json"
+- separator
+- button "Panel actions"
+- button "Close panel"
+- textbox
 - region "Notifications alt+T":
   - list:
     - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
+- contentinfo:
+  - text: sample-workspace index.ts TYPESCRIPT Ln 1, Col 1 UTF-8 · LF
+  - button "Language server off": LSP off

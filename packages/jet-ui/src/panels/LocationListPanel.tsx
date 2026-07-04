@@ -8,15 +8,9 @@ import { Input } from "@/components/ui/input.js"
 import { Spinner } from "@/components/ui/spinner.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert.js"
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemTitle,
-} from "@/components/ui/item.js"
 import { CircleAlertIcon } from "lucide-react"
 
-/** Two-line row: py-1 + text-sm + text-xs ≈ 36px — must match virtualizer estimate. */
+/** Initial virtualizer guess — rows are measured after mount. */
 const ROW_HEIGHT_PX = 36
 
 export function problemsToLocationItems(problems: JetProblem[]): LocationItem[] {
@@ -183,6 +177,7 @@ export function LocationListPanel({
                 <div
                   key={item.id}
                   data-index={virtualRow.index}
+                  className="overflow-hidden"
                   style={{
                     position: "absolute",
                     top: 0,
@@ -192,31 +187,19 @@ export function LocationListPanel({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <Item
-                    asChild
-                    size="sm"
-                    className="h-full w-full gap-0 rounded-sm border-0 p-0 px-2 py-0 hover:bg-accent focus-visible:bg-accent"
+                  <button
+                    type="button"
+                    data-jet-list-item
+                    className="flex h-full w-full min-w-0 flex-col justify-center overflow-hidden rounded-sm px-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    style={{ height: ROW_HEIGHT_PX, minHeight: ROW_HEIGHT_PX, maxHeight: ROW_HEIGHT_PX }}
+                    onClick={() => onOpenItem(item)}
                   >
-                    <button
-                      type="button"
-                      data-jet-list-item
-                      className="flex h-full w-full min-h-0 min-w-0 flex-col justify-center text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                      style={{
-                        height: ROW_HEIGHT_PX,
-                        minHeight: ROW_HEIGHT_PX,
-                        maxHeight: ROW_HEIGHT_PX,
-                      }}
-                      onClick={() => onOpenItem(item)}
-                    >
-                      <ItemContent className="gap-0">
-                        <ItemTitle className="text-sm">{item.label}</ItemTitle>
-                        <ItemDescription className="jet-mono-data line-clamp-1 text-xs">
-                          {item.path}:{item.line}:{item.column}
-                          {item.detail ? ` · ${item.detail}` : ""}
-                        </ItemDescription>
-                      </ItemContent>
-                    </button>
-                  </Item>
+                    <span className="truncate text-sm font-medium leading-snug">{item.label}</span>
+                    <span className="jet-mono-data truncate text-xs leading-snug text-muted-foreground">
+                      {item.path}:{item.line}:{item.column}
+                      {item.detail ? ` · ${item.detail}` : ""}
+                    </span>
+                  </button>
                 </div>
               )
             })}

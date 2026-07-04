@@ -51,6 +51,30 @@ type Step =
   | { right_click_selector: string; nth?: number }
   | { hover_selector: string; nth?: number }
   | { wheel_scroll: { selector?: string; delta_y?: number; delta_x?: number } }
+  | {
+      assert_element_width: {
+        selector: string
+        min_px?: number
+        max_px?: number
+        min_pct_of_viewport?: number
+        max_pct_of_viewport?: number
+      }
+    }
+  | {
+      drag_resize_handle: {
+        selector?: string
+        delta_x?: number
+        delta_y?: number
+      }
+    }
+  | {
+      assert_syntax_highlighting: {
+        selector?: string
+        min_colored_spans?: number
+        min_unique_colors?: number
+        require_keyword_color?: boolean
+      }
+    }
   | { exit: number }
 
 type Scenario = {
@@ -420,6 +444,98 @@ async function runStep(
       },
       { selector: selector ?? null, dy: delta_y, dx: delta_x },
     )
+    return {}
+  }
+  if ("assert_element_width" in step) {
+    const cfg = step.assert_element_width
+    const report = await page.evaluate(
+      ({ sel }) => {
+        const el = document.querySelector<HTMLElement>(sel)
+        if (!el) return { found: false as const }
+        const width = el.getBoundingClientRect().width
+        return { found: true as const, width, viewport: window.innerWidth }
+      },
+      { sel: cfg.selector },
+    )
+    if (!report.found) {
+      throw new Error(`assert_element_width: no element matches ${cfg.selector}`)
+    }
+    const { width, viewport } = report
+    if (cfg.min_px != null && width < cfg.min_px) {
+      throw new Error(`assert_element_width failed: width=${width}px expected>=${cfg.min_px}px`)
+    }
+    if (cfg.max_px != null && width > cfg.max_px) {
+      throw new Error(`assert_element_width failed: width=${width}px expected<=${cfg.max_px}px`)
+    }
+    const pct = (width / viewport) * 100
+    if (cfg.min_pct_of_viewport != null && pct < cfg.min_pct_of_viewport) {
+      throw new Error(
+        `assert_element_width failed: width=${width}px (${pct.toFixed(1)}% vw) expected>=${cfg.min_pct_of_viewport}%`,
+      )
+    }
+    if (cfg.max_pct_of_viewport != null && pct > cfg.max_pct_of_viewport) {
+      throw new Error(
+        `assert_element_width failed: width=${width}px (${pct.toFixed(1)}% vw) expected<=${cfg.max_pct_of_viewport}%`,
+      )
+    }
+    return {}
+  }
+  if ("drag_resize_handle" in step) {
+    const sel = step.drag_resize_handle.selector ?? "[data-jet-workspace-split-handle]"
+    const deltaX = step.drag_resize_handle.delta_x ?? 0
+    const deltaY = step.drag_resize_handle.delta_y ?? 0
+    const handle = page.locator(sel).first()
+    const box = await handle.boundingBox()
+    if (!box) throw new Error(`drag_resize_handle: no bounding box for ${sel}`)
+    const startX = box.x + box.width / 2
+    const startY = box.y + box.height / 2
+    await page.mouse.move(startX, startY)
+    await page.mouse.down()
+    await page.mouse.move(startX + deltaX, startY + deltaY, { steps: 12 })
+    await page.mouse.up()
+    await waitAnimationsIdle(page)
+    return {}
+  }
+  if ("assert_syntax_highlighting" in step) {
+    const cfg = step.assert_syntax_highlighting
+    const sel = cfg.selector ?? ".cm-line span"
+    const minSpans = cfg.min_colored_spans ?? 5
+    const minColors = cfg.min_unique_colors ?? 3
+    const report = await page.evaluate(
+      ({ sel }) => {
+        const spans = [...document.querySelectorAll<HTMLElement>(sel)]
+        const colored = spans.filter(s => {
+          const c = getComputedStyle(s).color
+          return c && c !== "rgba(0, 0, 0, 0)"
+        })
+        const colors = [...new Set(colored.map(s => getComputedStyle(s).color))]
+        const keywords = colored.filter(s => /^(import|export|function|const|let|return|fn|pub|enum|struct)\b/.test(s.textContent ?? ""))
+        const keywordColors = [...new Set(keywords.map(s => getComputedStyle(s).color))]
+        return {
+          spanCount: spans.length,
+          coloredCount: colored.length,
+          uniqueColors: colors.length,
+          keywordCount: keywords.length,
+          keywordUniqueColors: keywordColors.length,
+          sampleColors: colors.slice(0, 6),
+        }
+      },
+      { sel },
+    )
+    if (report.spanCount < minSpans) {
+      throw new Error(`assert_syntax_highlighting: spanCount=${report.spanCount} expected>=${minSpans}`)
+    }
+    if (report.coloredCount < minSpans) {
+      throw new Error(`assert_syntax_highlighting: coloredCount=${report.coloredCount} expected>=${minSpans}`)
+    }
+    if (report.uniqueColors < minColors) {
+      throw new Error(
+        `assert_syntax_highlighting: uniqueColors=${report.uniqueColors} expected>=${minColors} sample=${JSON.stringify(report.sampleColors)}`,
+      )
+    }
+    if (cfg.require_keyword_color && report.keywordCount > 0 && report.keywordUniqueColors < 1) {
+      throw new Error("assert_syntax_highlighting: keyword tokens have no distinct color")
+    }
     return {}
   }
   if ("assert_a11y_not_contains" in step) {

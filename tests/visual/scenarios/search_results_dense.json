@@ -1,0 +1,21 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": ".",
+  "steps": [
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "command": "view.splitEditor" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "command": "locationlist.showSearch" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "click_selector": "input[type=\"search\"]" },
+    { "text": "result" },
+    { "wait": { "ms": 2000, "animations_idle": true } },
+    { "assert_a11y_contains": ["Search"] },
+    { "assert_no_overlap": { "selector": "[data-jet-list-item]", "min_items": 15 } },
+    { "assert_row_spacing": { "selector": "[data-jet-list-item]", "min_items": 15, "max_gap_px": 4 } },
+    { "assert_layout": { "selector": "[data-jet-list-item]", "min_items": 15, "min_unique_tops": 15, "min_row_height": 22 } },
+    { "a11y_snapshot": "test-results/agent-shots/search_results_dense.a11y.yaml" },
+    { "screenshot": "test-results/agent-shots/search_results_dense.png" },
+    { "exit": 0 }
+  ]
+}

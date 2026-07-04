@@ -1,15 +1,11 @@
 import { tags as t } from "@lezer/highlight"
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language"
 import { EditorView } from "@codemirror/view"
-import { defaultJetTheme, isDarkTheme, type JetTheme } from "./theme-types.js"
+import { isDarkTheme, type JetTheme } from "./theme-types.js"
 
-export function jetThemeExtension(theme: JetTheme) {
+function buildHighlightStyle(theme: JetTheme): HighlightStyle {
   const c = theme.highlights
-  const selectionBg = theme.colors.selection + "66"
-  const activeLineBg = theme.colors.hover + "66"
-  const selectionMatchBg = theme.colors.selection + "33"
-
-  const highlightStyle = HighlightStyle.define([
+  return HighlightStyle.define([
     { tag: t.keyword, color: c.keyword },
     { tag: [t.controlKeyword, t.modifier], color: c.controlKeyword },
     { tag: t.function(t.variableName), color: c.function },
@@ -40,114 +36,127 @@ export function jetThemeExtension(theme: JetTheme) {
     { tag: t.link, color: c.function },
     { tag: t.invalid, color: theme.colors.error },
   ])
+}
 
-  return [
-    EditorView.theme(
-      {
-        "&": {
-          backgroundColor: theme.colors.panelRaised,
-          color: theme.colors.text,
-          height: "100%",
-        },
-        ".cm-content": {
-          caretColor: "transparent",
-          fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
-          fontSize: "1rem",
-        },
-        ".cm-gutters": {
-          backgroundColor: theme.colors.panel,
-          color: theme.colors.textMuted,
-          border: "none",
-          fontSize: "1rem",
-        },
-        ".cm-activeLineGutter": { backgroundColor: activeLineBg },
-        ".cm-activeLine": { backgroundColor: activeLineBg },
-        ".cm-matchingBracket, .cm-nonmatchingBracket": {
-          backgroundColor: theme.colors.hover,
-          outline: "none",
-          borderRadius: "2px",
-        },
-        ".cm-panel.cm-search": {
-          backgroundColor: theme.colors.panelRaised,
-          color: theme.colors.text,
-          border: `1px solid ${theme.colors.border}`,
-          fontSize: "1rem",
-        },
-        ".cm-panel.cm-search input": {
-          backgroundColor: theme.colors.panel,
-          color: theme.colors.text,
-          border: `1px solid ${theme.colors.border}`,
-        },
-        ".cm-panel.cm-search button": {
-          backgroundColor: theme.colors.panel,
-          color: theme.colors.text,
-          border: `1px solid ${theme.colors.border}`,
-        },
-        ".cm-indent-marker": {
-          borderLeft: `1px solid ${theme.colors.border}`,
-        },
-        ".cm-eol-overlay-wrap": {
-          pointerEvents: "none",
-          userSelect: "none",
-          marginLeft: "0.5ch",
-          fontSize: "0.85em",
-        },
-        ".cm-eol-overlay": {
-          marginLeft: "0.5ch",
-        },
-        ".cm-eol-overlay-type, .cm-eol-overlay-close-brace": {
-          color: theme.colors.textMuted,
-        },
-        ".cm-eol-overlay-diagnostic-error": {
-          color: theme.colors.error,
-        },
-        ".cm-eol-overlay-diagnostic-warning": {
-          color: theme.colors.warning,
-        },
-        ".cm-eol-overlay-diagnostic-info": {
-          color: theme.colors.textMuted,
-        },
-        ".cm-brace-guide-line": {
-          borderLeft: `1px solid ${theme.colors.border}`,
-          marginLeft: "2px",
-        },
-        ".cm-tooltip": {
-          backgroundColor: theme.colors.panelRaised,
-          color: theme.colors.text,
-          border: `1px solid ${theme.colors.border}`,
-          fontSize: "1rem",
-        },
-        ".cm-tooltip.cm-completionInfo": {
-          fontSize: "0.85rem",
-          fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
-        },
-        ".cm-lsp-hover-tooltip, .cm-lsp-documentation": {
-          fontSize: "0.85rem",
-          fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
-        },
-        ".cm-lsp-signature-tooltip": {
-          fontSize: "0.85rem",
-        },
-        ".cm-completionLabel": {
-          color: theme.colors.text,
-        },
-        ".cm-completionDetail": {
-          color: theme.colors.textMuted,
-          fontStyle: "italic",
-        },
-        ".cm-selectionBackground, .cm-content ::selection": {
-          backgroundColor: selectionBg,
-        },
-        "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-          backgroundColor: selectionBg,
-        },
-        ".cm-selectionMatch": {
-          backgroundColor: selectionMatchBg,
-        },
-        ".cm-cursor": { visibility: "hidden" },
+/** Must be registered after the language parser extension. */
+export function jetSyntaxHighlightingForTheme(theme: JetTheme) {
+  return syntaxHighlighting(buildHighlightStyle(theme), { fallback: true })
+}
+
+export function jetEditorTheme(theme: JetTheme) {
+  const selectionBg = theme.colors.selection + "66"
+  const activeLineBg = theme.colors.hover + "66"
+  const selectionMatchBg = theme.colors.selection + "33"
+
+  return EditorView.theme(
+    {
+      "&": {
+        backgroundColor: theme.colors.panelRaised,
+        color: theme.colors.text,
+        height: "100%",
       },
-      { dark: isDarkTheme(theme) },
-    ),
-    syntaxHighlighting(highlightStyle),
-  ]
+      ".cm-content": {
+        caretColor: "transparent",
+        fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+        fontSize: "1rem",
+      },
+      ".cm-gutters": {
+        backgroundColor: theme.colors.panel,
+        color: theme.colors.textMuted,
+        border: "none",
+        fontSize: "1rem",
+      },
+      ".cm-activeLineGutter": { backgroundColor: activeLineBg },
+      ".cm-activeLine": { backgroundColor: activeLineBg },
+      ".cm-matchingBracket, .cm-nonmatchingBracket": {
+        backgroundColor: theme.colors.hover,
+        outline: "none",
+        borderRadius: "2px",
+      },
+      ".cm-panel.cm-search": {
+        backgroundColor: theme.colors.panelRaised,
+        color: theme.colors.text,
+        border: `1px solid ${theme.colors.border}`,
+        fontSize: "1rem",
+      },
+      ".cm-panel.cm-search input": {
+        backgroundColor: theme.colors.panel,
+        color: theme.colors.text,
+        border: `1px solid ${theme.colors.border}`,
+      },
+      ".cm-panel.cm-search button": {
+        backgroundColor: theme.colors.panel,
+        color: theme.colors.text,
+        border: `1px solid ${theme.colors.border}`,
+      },
+      ".cm-indent-marker": {
+        borderLeft: `1px solid ${theme.colors.border}`,
+      },
+      ".cm-eol-overlay-wrap": {
+        pointerEvents: "none",
+        userSelect: "none",
+        marginLeft: "0.5ch",
+        fontSize: "0.85em",
+      },
+      ".cm-eol-overlay": {
+        marginLeft: "0.5ch",
+      },
+      ".cm-eol-overlay-type, .cm-eol-overlay-close-brace": {
+        color: theme.colors.textMuted,
+      },
+      ".cm-eol-overlay-diagnostic-error": {
+        color: theme.colors.error,
+      },
+      ".cm-eol-overlay-diagnostic-warning": {
+        color: theme.colors.warning,
+      },
+      ".cm-eol-overlay-diagnostic-info": {
+        color: theme.colors.textMuted,
+      },
+      ".cm-brace-guide-line": {
+        borderLeft: `1px solid ${theme.colors.border}`,
+        marginLeft: "2px",
+      },
+      ".cm-tooltip": {
+        backgroundColor: theme.colors.panelRaised,
+        color: theme.colors.text,
+        border: `1px solid ${theme.colors.border}`,
+        fontSize: "1rem",
+      },
+      ".cm-tooltip.cm-completionInfo": {
+        fontSize: "0.85rem",
+        fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+      },
+      ".cm-lsp-hover-tooltip, .cm-lsp-documentation": {
+        fontSize: "0.85rem",
+        fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+      },
+      ".cm-lsp-signature-tooltip": {
+        fontSize: "0.85rem",
+      },
+      ".cm-completionLabel": {
+        color: theme.colors.text,
+      },
+      ".cm-completionDetail": {
+        color: theme.colors.textMuted,
+        fontStyle: "italic",
+      },
+      ".cm-selectionBackground, .cm-content ::selection": {
+        backgroundColor: selectionBg,
+      },
+      "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+        backgroundColor: selectionBg,
+      },
+      ".cm-selectionMatch": {
+        backgroundColor: selectionMatchBg,
+      },
+      ".cm-cursor": { visibility: "hidden" },
+    },
+    { dark: isDarkTheme(theme) },
+  )
+}
+
+/** @deprecated Prefer jetEditorTheme + jetSyntaxHighlightingForTheme with language registered first. */
+export function jetThemeExtension(theme: JetTheme) {
+  return [jetEditorTheme(theme), jetSyntaxHighlightingForTheme(theme)]
 }

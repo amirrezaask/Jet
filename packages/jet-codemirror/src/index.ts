@@ -3,6 +3,7 @@ export {
   applyUserKeymaps,
   applyUserExtensions,
   applyTheme,
+  reconfigureLanguage,
   reconfigureLsp,
   detachLsp,
   isLargeFile,
@@ -11,6 +12,8 @@ export {
   extensionCompartment,
   lspCompartment,
   themeCompartment,
+  highlightCompartment,
+  languageCompartment,
 } from "./createEditorView.js"
 export { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
 export { openReplaceSearchPanel, jumpToLine } from "./editor-actions.js"
@@ -18,7 +21,7 @@ export { setPendingEditorNavigation, consumePendingEditorNavigation } from "./ed
 export { setPendingInitialContent, consumePendingInitialContent } from "./pending-content.js"
 export { collectProblemsFromViews, problemsFingerprint } from "./diagnostics.js"
 export { motionCursor } from "./motion-cursor.js"
-export { jetThemeExtension } from "./theme.js"
+export { jetThemeExtension, jetEditorTheme, jetSyntaxHighlightingForTheme } from "./theme.js"
 export { defaultJetTheme, applyJetThemeCss, applyColorScheme, isDarkTheme, type JetTheme, type JetColors, type JetHighlightColors, type ColorScheme } from "./theme-types.js"
 export { loadLanguage } from "./languages.js"
 export { simpleWebSocketTransport } from "./lsp-transport.js"

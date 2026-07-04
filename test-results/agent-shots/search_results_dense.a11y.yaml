@@ -1,0 +1,89 @@
+- button "Toggle Sidebar"
+- text: Explorer
+- tree "Explorer":
+  - listitem:
+    - button "apps"
+  - listitem:
+    - button "fixtures"
+  - listitem:
+    - button "node_modules"
+  - listitem:
+    - button "packages"
+  - listitem:
+    - button "scripts"
+  - listitem:
+    - button "test-results"
+  - listitem:
+    - button "tests"
+  - listitem:
+    - button "AGENTS.md"
+  - listitem:
+    - button "package-lock.json"
+  - listitem:
+    - button "package.json"
+  - listitem:
+    - button "playwright.config.ts"
+  - listitem:
+    - button "pnpm-lock.yaml"
+  - listitem:
+    - button "pnpm-workspace.yaml"
+  - listitem:
+    - button "test_1m_lines.rs"
+  - listitem:
+    - button "tsconfig.base.json"
+  - listitem:
+    - button "turbo.json"
+- separator
+- text: Locations
+- button "Panel actions"
+- button "Close panel"
+- tablist:
+  - tab "Search" [selected]
+  - tab "Problems"
+  - tab "Refs"
+  - tab "Defs"
+  - tab "Tasks"
+- searchbox "Search project": result
+- toolbar:
+  - button "Case"
+  - button "Regex"
+- list:
+  - listitem:
+    - button "const results = [] ./scripts/extract-vscode-mac-keybindings.mjs:170:9"
+    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:180:7"'
+    - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:183:10"
+    - button "const results = [] ./scripts/extract-vscode-mac-keybindings.mjs:188:9"
+    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:197:7"'
+    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:210:7"'
+    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:223:7"'
+    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:234:7"'
+    - button "results.push(...extractAction2Bindings(content, filePath)) ./scripts/extract-vscode-mac-keybindings.mjs:238:3"
+    - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:239:10"
+    - button "const results = [] ./scripts/extract-vscode-mac-keybindings.mjs:265:9"
+    - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:270:12"
+    - 'button "results.push({ ./scripts/extract-vscode-mac-keybindings.mjs:284:9"'
+    - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:295:10"
+    - 'button "4. Read the `.a11y.yaml` outputs under `test-results/agent-shots/`. They are Playwright aria snapshots — diffable text, no pixel noise. Grep them or eyeball them. ./AGENTS.md:114:46"'
+    - button "- [x] **Workspace:** project search tab (ripgrep) + result navigation ./AGENTS.md:489:53"
+    - 'button "const result = await dialog.showOpenDialog({ ./apps/jet-desktop/src/main/fs.ts:21:11"'
+    - 'button "return result.canceled ? null : result.filePaths[0] ?? null ./apps/jet-desktop/src/main/fs.ts:24:12"'
+    - 'button "const result = await dialog.showSaveDialog({ ./apps/jet-desktop/src/main/fs.ts:28:11"'
+    - 'button "return result.canceled ? null : result.filePath ?? null ./apps/jet-desktop/src/main/fs.ts:31:12"'
+    - 'button "type WorkerReply = { id: number; ok: boolean; result?: unknown; error?: string } ./apps/jet-desktop/src/main/background-pool.ts:4:47"'
+    - button "if (msg.ok) p.resolve(msg.result) ./apps/jet-desktop/src/main/background-pool.ts:22:33"
+    - 'button "let result: unknown ./apps/jet-desktop/src/main/workers/fs-io.ts:8:9"'
+    - button "result = await readFile(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:11:9"
+    - button "result = undefined ./apps/jet-desktop/src/main/workers/fs-io.ts:15:9"
+    - button "result = await readDir(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:18:9"
+- separator
+- text: Empty
+- button "Close panel"
+- text: No file open Open a file or create a new buffer to get started. ModP quick open ModN new file
+- separator
+- text: Empty
+- button "Close panel"
+- text: No file open Open a file or create a new buffer to get started. ModP quick open ModN new file
+- region "Notifications alt+T"
+- contentinfo:
+  - text: jet
+  - button "Language server off": LSP off

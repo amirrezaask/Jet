@@ -1,4 +1,3 @@
-- main
 - region "Notifications alt+T":
   - list:
     - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace

@@ -1,26 +1,35 @@
-- main:
-  - text: Locations
-  - button "Panel actions"
-  - button "Close panel"
-  - tablist:
-    - tab "Search" [selected]
-    - tab "Problems"
-    - tab "Refs"
-    - tab "Defs"
-    - tab "Tasks"
-  - searchbox "Search project"
-  - toolbar:
-    - button "Case"
-    - button "Regex"
-  - list:
-    - listitem: No results
-  - button "Panel actions"
-  - button "Close panel"
-  - textbox
-  - separator "Resize panel"
-- contentinfo:
-  - text: sample-workspace
-  - button "Language server off": LSP off
+- button "Toggle Sidebar"
+- text: Explorer
+- tree "Explorer":
+  - listitem:
+    - button "src"
+  - listitem:
+    - button "package.json"
+  - listitem:
+    - button "tsconfig.json"
+- separator
+- text: Locations
+- button "Panel actions"
+- button "Close panel"
+- tablist:
+  - tab "Search" [selected]
+  - tab "Problems"
+  - tab "Refs"
+  - tab "Defs"
+  - tab "Tasks"
+- searchbox "Search project"
+- toolbar:
+  - button "Case"
+  - button "Regex"
+- list:
+  - listitem: No results
+- separator
+- button "Panel actions"
+- button "Close panel"
+- textbox
 - region "Notifications alt+T":
   - list:
     - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
+- contentinfo:
+  - text: sample-workspace
+  - button "Language server off": LSP off

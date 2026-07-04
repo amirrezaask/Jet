@@ -59,6 +59,7 @@ import {
   ProjectSwitcherOverlay,
   getEditorView,
   getAllEditorViews,
+  syncAllEditorThemes,
   destroyEditorPanel,
   setEditorCursor,
   formatKeyBinding,
@@ -342,6 +343,7 @@ export function JetApp() {
 
   useEffect(() => {
     applyColorScheme(colorScheme, activeTheme)
+    syncAllEditorThemes(activeTheme)
   }, [colorScheme, activeTheme])
 
   useEffect(() => {

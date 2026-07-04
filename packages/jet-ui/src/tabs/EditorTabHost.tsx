@@ -5,6 +5,7 @@ import type { LSPClient } from "@jet/codemirror"
 import {
   createJetEditorView,
   applyTheme,
+  reconfigureLanguage,
   applyUserExtensions,
   applyUserKeymaps,
   consumePendingEditorNavigation,
@@ -96,6 +97,16 @@ export function destroyEditorPanel(panelId: PanelId): void {
 
 export function getEditorView(panelId: PanelId): EditorView | undefined {
   return viewByPanel.get(panelId.id)
+}
+
+/** Re-apply editor chrome + syntax highlighting on every live buffer (including cached sessions). */
+export function syncAllEditorThemes(theme: JetTheme): void {
+  for (const sessions of sessionsByPanel.values()) {
+    for (const session of sessions.values()) {
+      applyTheme(session.view, theme)
+      void reconfigureLanguage(session.view, session.fileLanguageId, theme)
+    }
+  }
 }
 
 export function getAllEditorViews(
@@ -210,6 +221,7 @@ function EditorTabHostInner({
       if (live.view.dom.parentElement !== parent) parent.appendChild(live.view.dom)
       viewByPanel.set(panelId.id, live.view)
       applyTheme(live.view, theme)
+      void reconfigureLanguage(live.view, live.fileLanguageId, theme)
       applyUserKeymaps(live.view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
       applyUserExtensions(live.view, userExtensions)
       const nav = consumePendingEditorNavigation(panelId)
@@ -323,11 +335,13 @@ function EditorTabHostInner({
       }
       if (session) detachSessionDom(session, parent)
     }
-  }, [fileUri, panelId.id, workspace, theme, userExtensions, autoFocus, runCommand, runBinding])
+  }, [fileUri, panelId.id, workspace, userExtensions, autoFocus, runCommand, runBinding])
 
   useEffect(() => {
-    const view = viewByPanel.get(panelId.id)
-    if (view) applyTheme(view, theme)
+    for (const session of panelSessions(panelId).values()) {
+      applyTheme(session.view, theme)
+      void reconfigureLanguage(session.view, session.fileLanguageId, theme)
+    }
   }, [panelId.id, theme])
 
   useEffect(() => {

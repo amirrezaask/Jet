@@ -11,8 +11,8 @@
     { "wheel_scroll": { "selector": "[data-jet-list-panel=\"locationlist\"] ul", "delta_y": 800 } },
     { "wait": { "ms": 400, "animations_idle": true } },
     { "screenshot": "test-results/agent-shots/search_scroll.png" },
-    { "assert_no_overlap": { "selector": "[data-jet-list-item]", "min_items": 5 } },
-    { "assert_row_spacing": { "selector": "[data-jet-list-item]", "min_items": 5, "max_gap_px": 2 } },
+    { "assert_no_overlap": { "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]", "min_items": 5 } },
+    { "assert_row_spacing": { "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]", "min_items": 5, "max_gap_px": 2 } },
     { "exit": 0 }
   ]
 }
