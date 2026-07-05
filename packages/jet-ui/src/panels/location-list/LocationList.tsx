@@ -36,12 +36,15 @@ export function LocationList({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-1 flex-col text-foreground"
+      className="flex h-full min-h-0 flex-1 flex-col bg-background text-foreground"
       data-jet-list-panel={listId}
       data-jet-location-list
     >
       {header}
-      <ul ref={scrollRef} className="jet-location-list-scroll min-h-0 flex-1 overflow-auto">
+      <ul
+        ref={scrollRef}
+        className="m-0 min-h-0 flex-1 list-none overflow-auto bg-background p-1"
+      >
         {items.length === 0 ? (
           loading ? null : (
             <li className="p-1">
@@ -55,7 +58,7 @@ export function LocationList({
           )
         ) : (
           items.map(item => (
-            <li key={item.id} className="jet-location-list-item">
+            <li key={item.id} className="block h-[var(--jet-location-row-height)] shrink-0">
               <ListRow
                 data-jet-list-item
                 className="w-full min-w-0 px-2 py-0.5"
@@ -69,7 +72,7 @@ export function LocationList({
                 </span>
                 <span
                   data-slot="row-detail"
-                  className="jet-mono-data truncate text-xs text-muted-foreground group-hover:text-muted-foreground"
+                  className="truncate font-mono text-xs tabular-nums text-muted-foreground group-hover:text-muted-foreground"
                 >
                   {item.path}:{item.line}:{item.column}
                   {item.detail ? ` · ${item.detail}` : ""}

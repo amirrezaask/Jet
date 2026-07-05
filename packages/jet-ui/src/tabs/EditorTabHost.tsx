@@ -419,7 +419,11 @@ function EditorTabHostInner({
       }}
     >
       <ContextMenuTrigger asChild>
-        <div ref={hostRef} className="h-full w-full overflow-hidden" />
+        <div
+          ref={hostRef}
+          className="jet-editor-scroll-area h-full min-h-0 w-full min-w-0 overflow-hidden"
+          data-jet-editor-scroll-area=""
+        />
       </ContextMenuTrigger>
       <EditorContextMenu
         open={contextMenuOpen}

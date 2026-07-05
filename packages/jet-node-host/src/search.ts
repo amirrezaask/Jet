@@ -8,6 +8,7 @@ import {
   fffListFiles,
   fffTrackAccess,
   isFffScanReady,
+  isSearchScanReady,
 } from "./fff-service.js"
 
 const IGNORE_GLOBS = [
@@ -177,7 +178,7 @@ export async function trackFileAccess(
   }
 }
 
-export { ensureFffIndex, isFffScanReady }
+export { ensureFffIndex, isFffScanReady, isSearchScanReady }
 
 function parseRgJson(output: string): ProjectSearchResult[] {
   const results: ProjectSearchResult[] = []

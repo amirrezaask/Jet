@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from "react"
 import type { PanelId } from "@jet/shared"
+import { cn } from "@/lib/utils.js"
 import type { TabStore, TabTypeRegistry } from "./registry.js"
 
 function useTabRevision(store: TabStore, tabId: string): number {
@@ -58,7 +59,7 @@ function TabHostInner({
   registry: TabTypeRegistry
 }) {
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col">
+    <div className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
       {tabIds.map(tabId => {
         const isActive = tabId === activeTabId
         const type = store.typeOf(tabId)
@@ -67,8 +68,7 @@ function TabHostInner({
         return (
           <div
             key={tabId}
-            className="absolute inset-0 flex min-h-0 flex-col"
-            style={{ display: isActive ? "flex" : "none" }}
+            className={cn("absolute inset-0 min-h-0 min-w-0 flex-col", isActive ? "flex" : "hidden")}
             data-jet-tab-slot={tabId}
             data-jet-tab-active={isActive ? "" : undefined}
           >

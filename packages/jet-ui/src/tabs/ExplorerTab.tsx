@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { registerListPanel } from "@/lib/list-registry.js"
 import { EXPLORER_LIST_ID } from "@/explorer/focus.js"
 import { ChevronRight, File, Folder } from "lucide-react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type { WorkspaceEntry, WorkspaceService } from "@jet/workspace"
-import { SidebarContent, SidebarProvider } from "@/components/ui/sidebar.js"
+import { SidebarContent, SidebarMenuSubButton, SidebarProvider } from "@/components/ui/sidebar.js"
 import { cn } from "@/lib/utils.js"
 
 type FlatRow = {
@@ -17,8 +17,16 @@ type FlatRow = {
   loading: boolean
 }
 
-const ROW_HEIGHT = 28
 const OVERSCAN = 8
+
+function readRowHeightPx(): number {
+  const root = document.documentElement
+  const fontSize = parseFloat(getComputedStyle(root).fontSize)
+  const raw = getComputedStyle(root).getPropertyValue("--jet-row-height").trim()
+  if (raw.endsWith("rem")) return parseFloat(raw) * fontSize
+  const px = parseFloat(raw)
+  return Number.isFinite(px) ? px : fontSize * 1.692
+}
 
 function sortEntries(entries: WorkspaceEntry[]): WorkspaceEntry[] {
   return entries
@@ -162,12 +170,18 @@ export function ExplorerTree({
   }, [rev, rootUri, model])
 
   const contentRef = useRef<HTMLDivElement | null>(null)
+  const [rowHeight, setRowHeight] = useState(readRowHeightPx)
+
+  useLayoutEffect(() => {
+    setRowHeight(readRowHeightPx())
+  }, [])
+
   useEffect(() => registerListPanel(EXPLORER_LIST_ID, contentRef.current), [rootUri])
 
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => contentRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: OVERSCAN,
   })
 
@@ -210,6 +224,7 @@ export function ExplorerTree({
                 key={row.uri}
                 row={row}
                 offset={v.start}
+                rowHeight={rowHeight}
                 onClick={onRowClick}
               />
             )
@@ -223,49 +238,55 @@ export function ExplorerTree({
 function ExplorerRow({
   row,
   offset,
+  rowHeight,
   onClick,
 }: {
   row: FlatRow
   offset: number
+  rowHeight: number
   onClick: (row: FlatRow) => void
 }) {
   return (
-    <div
-      role="treeitem"
-      aria-level={row.depth}
-      aria-expanded={row.isDirectory ? row.expanded : undefined}
-      data-jet-list-item
-      data-uri={row.uri}
-      className={cn(
-        "absolute left-0 top-0 flex w-full cursor-pointer items-center gap-1 rounded-sm px-2 text-xs hover:bg-muted",
-      )}
+    <SidebarMenuSubButton
+      asChild
+      size="sm"
+      className="absolute left-0 top-0 h-[var(--jet-row-height)] w-full shrink-0 cursor-pointer gap-1 rounded-sm px-2"
       style={{
         transform: `translateY(${offset}px)`,
-        height: ROW_HEIGHT,
+        height: rowHeight,
         paddingLeft: 4 + row.depth * 12,
       }}
-      onClick={() => onClick(row)}
-      title={row.name}
     >
-      {row.isDirectory ? (
-        <>
-          <ChevronRight
-            className={cn(
-              "size-3 shrink-0 transition-transform",
-              row.expanded && "rotate-90",
-            )}
-          />
-          <Folder className="size-3.5 shrink-0" />
-        </>
-      ) : (
-        <>
-          <span className="size-3 shrink-0" />
-          <File className="size-3.5 shrink-0" />
-        </>
-      )}
-      <span className="truncate">{row.name}</span>
-      {row.loading ? <span className="ml-auto text-muted-foreground/60">…</span> : null}
-    </div>
+      <div
+        role="treeitem"
+        aria-level={row.depth}
+        aria-expanded={row.isDirectory ? row.expanded : undefined}
+        data-jet-list-item
+        data-uri={row.uri}
+        aria-label={row.name}
+        onClick={() => onClick(row)}
+        title={row.name}
+      >
+        {row.isDirectory ? (
+          <>
+            <ChevronRight
+              className={cn(
+                "size-3 shrink-0 transition-transform",
+                row.expanded && "rotate-90",
+              )}
+            />
+            <Folder className="size-3.5 shrink-0" />
+          </>
+        ) : (
+          <>
+            <span className="size-3 shrink-0" />
+            <File className="size-3.5 shrink-0" />
+          </>
+        )}
+        <span className="truncate">{row.name}</span>
+        {row.loading ? <span className="ml-auto text-muted-foreground/60">…</span> : null}
+      </div>
+    </SidebarMenuSubButton>
   )
 }
 

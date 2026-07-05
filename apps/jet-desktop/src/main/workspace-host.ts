@@ -1,7 +1,7 @@
 import { Worker } from "node:worker_threads"
 import path from "node:path"
 import type { BrowserWindow, IpcMain, WebContents } from "electron"
-import { ensureFffIndex, uriToPath } from "@jet/node-host"
+import { ensureFffIndex, isSearchScanReady, uriToPath } from "@jet/node-host"
 import { getGitWorker } from "./background-pool.js"
 
 let activateGen = 0
@@ -40,16 +40,20 @@ function runGitBranch(gen: number, rootUri: string, webContents: WebContents): v
 }
 
 function runFffWarmup(gen: number, rootUri: string, webContents: WebContents): void {
-  void ensureFffIndex(rootUri)
-    .then(finder => {
+  void (async () => {
+    if (await isSearchScanReady(rootUri)) {
       if (gen !== activateGen) return
-      if (finder) {
-        sendToRenderer(webContents, "workspace:searchReady", { rootUri })
-      }
-    })
-    .catch(() => {
-      if (gen !== activateGen) return
-    })
+      sendToRenderer(webContents, "workspace:searchReady", { rootUri })
+      return
+    }
+    await ensureFffIndex(rootUri)
+    if (gen !== activateGen) return
+    if (await isSearchScanReady(rootUri)) {
+      sendToRenderer(webContents, "workspace:searchReady", { rootUri })
+    }
+  })().catch(() => {
+    if (gen !== activateGen) return
+  })
 }
 
 function startWatchWorker(gen: number, rootUri: string, webContents: WebContents): void {

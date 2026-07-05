@@ -67,11 +67,22 @@ export function jetEditorTheme(theme: JetTheme) {
         backgroundColor: theme.colors.panelRaised,
         color: theme.colors.text,
         height: "100%",
+        width: "100%",
+        minWidth: 0,
+      },
+      ".cm-scroller": {
+        overflow: "auto",
+        minHeight: 0,
+        minWidth: 0,
       },
       ".cm-content": {
         caretColor: "transparent",
         fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
         fontSize: "1rem",
+        whiteSpace: "pre",
+      },
+      ".cm-line": {
+        whiteSpace: "pre",
       },
       ".cm-gutters": {
         backgroundColor: theme.colors.panel,

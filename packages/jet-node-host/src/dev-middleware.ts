@@ -205,7 +205,7 @@ export async function handleJetDevRequest(
     if (pathname === "/__jet/search/isScanReady" && req.method === "POST") {
       const rootUri = String(body.rootUri ?? "")
       await guardUri(rootUri, opts.allowedRoots)
-      sendJson(res, 200, { ready: nodeSearch.isFffScanReady(rootUri) })
+      sendJson(res, 200, { ready: await nodeSearch.isSearchScanReady(rootUri) })
       return true
     }
 

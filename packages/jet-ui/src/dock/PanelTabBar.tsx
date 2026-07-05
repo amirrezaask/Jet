@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type ReactNode } from "react"
 import { XIcon } from "lucide-react"
 import type { DropAction, PanelId, PanelView } from "@jet/shared"
+import { Button } from "@/components/ui/button.js"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
 import { TAB_DRAG_MIME, usePanelDrag, resolveTabDragSource } from "./PanelDragContext.js"
 import type { TabStore, TabTypeRegistry } from "../tabs/registry.js"
@@ -169,11 +170,13 @@ const PanelTabTrigger = memo(function PanelTabTrigger({
         {tab.dirty ? " •" : ""}
       </span>
       {tab.closable && (
-        <span
-          role="button"
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
           tabIndex={-1}
           aria-label="Close tab"
-          className="ml-0.5 rounded-sm p-0.5 text-muted-foreground/70 opacity-70 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+          className="ml-0.5 opacity-70 group-hover:opacity-100"
           onPointerDown={e => e.stopPropagation()}
           onClick={e => {
             e.stopPropagation()
@@ -181,7 +184,7 @@ const PanelTabTrigger = memo(function PanelTabTrigger({
           }}
         >
           <XIcon className="size-3" />
-        </span>
+        </Button>
       )}
     </TabsTrigger>
   )

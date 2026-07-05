@@ -10,4 +10,5 @@ packages/jet-app/dist-electron
 .vscode
 .4coder_fleury
 .raddebugger
+test-results
 

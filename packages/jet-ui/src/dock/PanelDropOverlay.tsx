@@ -152,7 +152,7 @@ export function PanelDropOverlay({
   return (
     <div
       ref={containerRef}
-      style={{ position: "absolute", inset: 0, zIndex: 40, pointerEvents: active ? undefined : "none" }}
+      className={cn("absolute inset-0 z-40", !active && "pointer-events-none")}
       // Always mounted so ResizeObserver keeps measuring; pointer-events only when drag active
       onDragEnter={active ? handleDragEnter : undefined}
       onDragOver={active ? handleDragOver : undefined}

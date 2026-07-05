@@ -111,21 +111,6 @@
   --sidebar-ring: var(--ring);
 }
 
-/* List / explorer rows — plain CSS so Electron builds never drop Tailwind arbitrary heights. */
-.jet-list-row {
-  box-sizing: border-box;
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  height: var(--jet-row-height);
-  min-height: var(--jet-row-height);
-}
-
-.jet-explorer-tree {
-  display: flex;
-  flex-direction: column;
-}
-
 /* macOS titlebar — plain CSS so dev/HMR never drops traffic-light inset width. */
 [data-jet-titlebar] {
   display: flex;
@@ -139,25 +124,6 @@
   width: var(--jet-traffic-light-inset);
   min-width: var(--jet-traffic-light-inset);
   flex: 0 0 var(--jet-traffic-light-inset);
-}
-
-/* Location list — shell + row height tokens (row styling via ListRow + Tailwind). */
-[data-jet-location-list] {
-  background: var(--background);
-  color: var(--foreground);
-}
-
-.jet-location-list-scroll {
-  list-style: none;
-  margin: 0;
-  padding: 0.25rem;
-  background: var(--background);
-}
-
-.jet-location-list-item {
-  display: block;
-  height: var(--jet-location-row-height);
-  flex-shrink: 0;
 }
 
 /* Vercel dark — neutral primary, no phosphor accent */
@@ -224,45 +190,40 @@ body,
   font-size: inherit;
 }
 
-.jet-mono-data {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.jet-shell-main {
-  background: var(--background);
-}
-
-.jet-status-zone {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.jet-kbd-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.1rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 2px);
-  background: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--jet-fs-2xs);
-  color: var(--muted-foreground);
-  white-space: nowrap;
-}
-
-.jet-empty-hint {
-  color: var(--muted-foreground);
-  font-size: var(--jet-fs-sm);
-  letter-spacing: 0.01em;
-}
-
 /* CodeMirror autocomplete — shell tokens (theme.ts adds per-JetTheme colors) */
 .cm-tooltip.cm-tooltip-autocomplete.jet-completion-tooltip > ul > li[aria-selected] {
   background-color: var(--accent);
   color: var(--accent-foreground);
+}
+
+/*
+ * Editor horizontal/vertical scroll — CodeMirror owns .cm-scroller (not shadcn
+ * ScrollArea: nested scroll containers break CM cursor/selection sync). Thumb
+ * styling matches scroll-area.tsx ScrollBar (bg-border, rounded-full, 10px).
+ */
+.jet-editor-scroll-area .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.jet-editor-scroll-area .cm-scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.jet-editor-scroll-area .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.jet-editor-scroll-area .cm-scroller::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+
+.jet-editor-scroll-area .cm-scroller::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

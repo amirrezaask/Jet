@@ -30,7 +30,7 @@ test("shell: output panel opens with usable width", async ({ page }) => {
 test("shell: status bar shows LSP and workspace tooltip on hover", async ({ page }) => {
   await expect(page.locator("footer")).toContainText("LSP")
 
-  await page.locator("footer .jet-status-zone").first().hover()
+  await page.locator('footer [data-jet-status-zone=""]').first().hover()
   await page.waitForTimeout(700)
 
   await expect(page.locator("body")).toContainText("sample-workspace")

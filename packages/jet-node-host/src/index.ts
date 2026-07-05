@@ -17,6 +17,7 @@ export {
   trackFileAccess,
   ensureFffIndex,
   isFffScanReady,
+  isSearchScanReady,
 } from "./search.js"
 export { probeFffAvailable, isFffAvailable, disposeFffIndex } from "./fff-service.js"
 export { assertAllowedPath, assertAllowedUri, normalizeRoots } from "./sandbox.js"

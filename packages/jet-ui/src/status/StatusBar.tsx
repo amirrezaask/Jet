@@ -89,25 +89,33 @@ export function StatusBar({
       {workspacePath ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="jet-status-zone min-w-0 shrink cursor-default">
+            <Button
+              variant="ghost"
+              size="xs"
+              data-jet-status-zone=""
+              className="min-w-0 shrink cursor-default px-0 font-normal"
+            >
               <span className={hasWorkspace ? "text-foreground" : undefined}>{workspaceLabel}</span>
               {gitBranch && (
                 <>
                   <Separator orientation="vertical" className="h-3" />
-                  <span className="jet-mono-data text-foreground">{gitBranch}</span>
+                  <span className="font-mono tabular-nums text-foreground">{gitBranch}</span>
                 </>
               )}
-            </span>
+            </Button>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={6}>{workspacePath}</TooltipContent>
         </Tooltip>
       ) : (
-        <span className="jet-status-zone min-w-0 shrink">
+        <span
+          data-jet-status-zone=""
+          className="inline-flex min-w-0 shrink items-center gap-1.5"
+        >
           <span className={hasWorkspace ? "text-foreground" : undefined}>{workspaceLabel}</span>
           {gitBranch && (
             <>
               <Separator orientation="vertical" className="h-3" />
-              <span className="jet-mono-data text-foreground">{gitBranch}</span>
+              <span className="font-mono tabular-nums text-foreground">{gitBranch}</span>
             </>
           )}
         </span>
@@ -116,7 +124,10 @@ export function StatusBar({
       <span className="min-w-0 flex-1" aria-hidden />
 
       {activeFileName && (
-        <span className="jet-status-zone jet-mono-data min-w-0 shrink">
+        <span
+          data-jet-status-zone=""
+          className="inline-flex min-w-0 shrink items-center gap-1.5 font-mono tabular-nums"
+        >
           {activeFileDirty && (
             <span className="text-primary" aria-label="Unsaved changes">
               ●
@@ -128,13 +139,21 @@ export function StatusBar({
       )}
 
       {cursor != null && (
-        <span className="jet-status-zone jet-mono-data shrink-0 tabular-nums">
+        <span
+          data-jet-status-zone=""
+          className="inline-flex shrink-0 items-center gap-1.5 font-mono tabular-nums"
+        >
           Ln {cursor.line}, Col {cursor.column}
         </span>
       )}
 
       {activeFileName && (
-        <span className="jet-status-zone jet-mono-data shrink-0 opacity-40">UTF-8 · LF</span>
+        <span
+          data-jet-status-zone=""
+          className="inline-flex shrink-0 items-center gap-1.5 font-mono tabular-nums opacity-40"
+        >
+          UTF-8 · LF
+        </span>
       )}
 
       <Popover>
@@ -142,7 +161,8 @@ export function StatusBar({
           <Button
             variant="ghost"
             size="xs"
-            className="jet-status-zone jet-mono-data shrink-0 cursor-default"
+            data-jet-status-zone=""
+            className="shrink-0 cursor-default font-mono tabular-nums"
             aria-label={lspLabel(lspStatus)}
           >
             <span className={lspDotClass(lspStatus)} aria-hidden>

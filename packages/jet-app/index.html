@@ -12,27 +12,9 @@
           var scheme = raw === "light" || raw === "dark"
             ? raw
             : legacy && /light/i.test(legacy) ? "light" : "dark"
-          var dark = scheme === "dark"
-          if (dark) document.documentElement.classList.add("dark")
-          var vars = dark
-            ? {
-                "--background": "#000000",
-                "--foreground": "#ededed",
-                "--muted-foreground": "#a1a1a1",
-              }
-            : {
-                "--background": "#ffffff",
-                "--foreground": "#171717",
-                "--muted-foreground": "#666666",
-              }
-          Object.keys(vars).forEach(function (k) {
-            document.documentElement.style.setProperty(k, vars[k])
-          })
+          if (scheme === "dark") document.documentElement.classList.add("dark")
         } catch (_) {
           document.documentElement.classList.add("dark")
-          document.documentElement.style.setProperty("--background", "#000000")
-          document.documentElement.style.setProperty("--foreground", "#ededed")
-          document.documentElement.style.setProperty("--muted-foreground", "#a1a1a1")
         }
       })()
     </script>

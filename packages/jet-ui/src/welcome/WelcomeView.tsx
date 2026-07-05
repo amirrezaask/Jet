@@ -54,9 +54,9 @@ export function WelcomeView({ isWebMode, bootstrapping, onOpenFolder }: WelcomeV
                   <summary className="cursor-pointer hover:text-foreground">Browser dev setup</summary>
                   <p className="mt-2 leading-relaxed">
                     Add{" "}
-                    <code className="jet-mono-data text-foreground">?workspace=fixtures/sample-workspace</code> to the
+                    <code className="font-mono tabular-nums text-foreground">?workspace=fixtures/sample-workspace</code> to the
                     URL or call{" "}
-                    <code className="jet-mono-data text-foreground">window.__jetAgent.openWorkspace(…)</code>
+                    <code className="font-mono tabular-nums text-foreground">window.__jetAgent.openWorkspace(…)</code>
                   </p>
                 </details>
               )}

@@ -3,6 +3,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import type { FileFinderApi, GrepMode } from "@ff-labs/fff-node"
 import type { ProjectSearchResult } from "@jet/shared"
+import { gitIsRepo } from "./git.js"
 import { uriToPath } from "./paths.js"
 
 type FileFinderModule = typeof import("@ff-labs/fff-node")
@@ -42,9 +43,19 @@ type FinderEntry = {
 }
 
 const finders = new Map<string, FinderEntry>()
+const gitRepoCache = new Map<string, boolean>()
 
 function rootKey(rootUri: string): string {
   return path.normalize(uriToPath(rootUri))
+}
+
+async function resolveGitRepo(rootUri: string): Promise<boolean> {
+  const key = rootKey(rootUri)
+  const cached = gitRepoCache.get(key)
+  if (cached !== undefined) return cached
+  const isRepo = await gitIsRepo(rootUri)
+  gitRepoCache.set(key, isRepo)
+  return isRepo
 }
 
 function frecencyDbDir(rootPath: string): string {
@@ -53,6 +64,8 @@ function frecencyDbDir(rootPath: string): string {
 }
 
 export async function ensureFffIndex(rootUri: string, timeoutMs = 30_000): Promise<FileFinderApi | null> {
+  if (!(await resolveGitRepo(rootUri))) return null
+
   const mod = await loadFffModule()
   if (!mod) return null
 
@@ -87,8 +100,15 @@ export async function ensureFffIndex(rootUri: string, timeoutMs = 30_000): Promi
 }
 
 export function isFffScanReady(rootUri: string): boolean {
-  const entry = finders.get(rootKey(rootUri))
+  const key = rootKey(rootUri)
+  if (gitRepoCache.get(key) === false) return true
+  const entry = finders.get(key)
   return entry?.scanReady ?? false
+}
+
+export async function isSearchScanReady(rootUri: string): Promise<boolean> {
+  if (!(await resolveGitRepo(rootUri))) return true
+  return isFffScanReady(rootUri)
 }
 
 export function disposeFffIndex(rootUri: string): void {

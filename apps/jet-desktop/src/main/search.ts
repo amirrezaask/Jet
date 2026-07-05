@@ -1,7 +1,7 @@
 import type { IpcMain } from "electron"
 import {
   fileSearch,
-  isFffScanReady,
+  isSearchScanReady,
   listProjectFiles,
   projectSearch,
   trackFileAccess,
@@ -33,5 +33,5 @@ export function registerSearchHandlers(ipcMain: IpcMain) {
       await trackFileAccess(rootUri, query, path)
     },
   )
-  ipcMain.handle("search:isScanReady", (_e, rootUri: string) => isFffScanReady(rootUri))
+  ipcMain.handle("search:isScanReady", (_e, rootUri: string) => isSearchScanReady(rootUri))
 }
