@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input.js"
 import { Spinner } from "@/components/ui/spinner.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert.js"
+import { ListRow } from "@/components/ListRow.js"
+import { registerListPanel } from "@/lib/list-registry.js"
 import { CircleAlertIcon } from "lucide-react"
 
 /** Initial virtualizer guess — rows are measured after mount. */
@@ -89,6 +91,7 @@ export function LocationListPanel({
 
   const visible = state.itemsForActiveSource()
   const scrollRef = useRef<HTMLUListElement>(null)
+  useEffect(() => registerListPanel("locationlist", scrollRef.current), [])
   const rowVirtualizer = useVirtualizer({
     count: visible.length,
     getScrollElement: () => scrollRef.current,
@@ -187,10 +190,9 @@ export function LocationListPanel({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <button
-                    type="button"
+                  <ListRow
                     data-jet-list-item
-                    className="flex h-full w-full min-w-0 flex-col justify-center overflow-hidden rounded-md px-2 text-left ring-sidebar-ring outline-hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:bg-sidebar-accent focus-visible:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground"
+                    className="h-full w-full min-w-0 overflow-hidden"
                     style={{ height: ROW_HEIGHT_PX, minHeight: ROW_HEIGHT_PX, maxHeight: ROW_HEIGHT_PX }}
                     onClick={() => onOpenItem(item)}
                   >
@@ -199,7 +201,7 @@ export function LocationListPanel({
                       {item.path}:{item.line}:{item.column}
                       {item.detail ? ` · ${item.detail}` : ""}
                     </span>
-                  </button>
+                  </ListRow>
                 </div>
               )
             })}

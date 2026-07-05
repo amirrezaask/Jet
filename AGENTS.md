@@ -644,9 +644,16 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 - File is 730 LOC of shadcn boilerplate; only `SidebarProvider` + `SidebarTrigger` + `SidebarMenu*` + `useSidebar` are imported by app code. `Sidebar`, `SidebarInset`, `SidebarRail`, `SidebarInput`, `SidebarHeader`, `SidebarFooter`, `SidebarSeparator` are dead exports.
 - **Deferred, not urgent:** Vite tree-shakes them from the ship bundle. Delete only if source dead-code hygiene matters.
 
-### Autocomplete popup = raw CM tooltip + `classList.add()` (High)
-- `packages/jet-codemirror/src/completion-context-menu.ts:16-23` — DOM-patches shadcn classes onto CodeMirror autocomplete tooltip after mount. Fragile: breaks if shadcn class names change; no keyboard-role parity with shadcn `Command`/`Popover`.
-- **Fix:** stop overriding CM tooltip; render completion list in a React portal as shadcn `Popover` + `Command`, positioned to the caret via `EditorView.requestMeasure`. Preserves keymap arrows + Enter via a `keydown` bridge.
+### Autocomplete popup MUST use shadcn `ContextMenu` (High — hard rule)
+- **Rule:** no custom components allowed. Autocomplete popup MUST be built from `@/components/ui/context-menu.tsx` (`ContextMenu` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuGroup` / `ContextMenuLabel`). Not a raw CM tooltip, not a custom portal, not a `Popover`+`Command` hybrid.
+- **Current state:** `packages/jet-codemirror/src/completion-context-menu.ts:11-25` still DOM-patches shadcn class strings (`CONTEXT_MENU_SURFACE_CLASS`, `CONTEXT_MENU_ITEM_SURFACE_CLASS`) onto CodeMirror's native `.cm-tooltip-autocomplete` after mount via `classList.add()` + `dataset.slot = "context-menu-content"`. Fake shadcn — no Radix root, no focus scope, no `ContextMenuPortal`, no keyboard-role parity, breaks if shadcn class strings drift.
+- **Also delete:** `packages/jet-codemirror/src/menu-surface.ts` (`CONTEXT_MENU_SURFACE_CLASS`, `CONTEXT_MENU_ITEM_SURFACE_CLASS`) and its re-export in `packages/jet-codemirror/src/index.ts:45`. Class-string sharing is the anti-pattern this rule bans.
+- **Fix plan:**
+  1. Replace CodeMirror's default `autocomplete` tooltip renderer. Register a completion source that emits Jet's own state; suppress the native tooltip via `tooltips: { position: "absolute" }` or by overriding `completionConfig({ tooltipClass })` and rendering an empty tooltip.
+  2. In `EditorTabHost.tsx`, mount a `<ContextMenu open={completionOpen}>` with `<ContextMenuContent>` portalled to `document.body`. Position via `EditorView.requestMeasure` → caret coords, forwarded as CSS vars.
+  3. Bridge keymap: `ArrowUp`/`ArrowDown`/`Enter`/`Escape`/`Tab` — intercept in a CM keymap prec `Prec.highest`, dispatch to a React state store (or ref), so shadcn `ContextMenuItem` selection follows. Enter → `applyCompletion(view, item)` from `@codemirror/autocomplete`.
+  4. Preserve `completionDetail` in a right-aligned span using existing `ContextMenuShortcut`.
+- **Acceptance:** grep for `.cm-tooltip-autocomplete` in `packages/jet-codemirror/src/` returns only the theme-side hide rule; no `classList.add`, no `dataset.slot` patching. Visual scenario asserts `role="menu"` present in a11y snapshot when completion open.
 
 ### Explorer virtualization for large repos (Medium)
 - `packages/jet-ui/src/tabs/ExplorerTab.tsx` — renders every visible file synchronously. `@tanstack/react-virtual` is already a dep (see `packages/jet-ui/package.json`).
@@ -661,4 +668,40 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 - **Not yet done:** Windows/Linux custom decoration (title bar drag region + min/max/close buttons via shadcn Button + custom SVG icons). Would use `titleBarStyle:'hidden'` on those platforms and `WindowControls` sub-component. Currently they fall back to Electron native menu + native window frame.
 - **Not yet done:** wire `checkbox`/`radio` states in menubar (e.g. "Toggle Color Scheme" should be a `CheckboxItem` showing current scheme). Currently a plain `Item`.
 - **Not yet done:** window title (center label) currently derives from workspace + file; if `activeEditorFile.isDirty`, uses `•` marker. Consider dedicated dirty-badge component.
+
+### Pass 2 (2026-07-05) — shadcn re-audit findings
+
+Global rule to apply everywhere below: **no custom components**. Every interactive widget must resolve to a primitive in `packages/jet-ui/src/components/ui/`. Raw `<button>` / `<input>` / class-string patching count as custom.
+
+#### `LocationListPanel` row = raw `<button>` (High)
+- `packages/jet-ui/src/panels/LocationListPanel.tsx:190-202` — virtualized row is a raw `<button type="button">` with hand-rolled `hover:bg-sidebar-accent` classes replicating `sidebarMenuButtonVariants`. Duplicates shadcn behavior without importing it.
+- **Fix:** render row through `SidebarMenuButton asChild size="sm"` from `ui/sidebar.tsx`, or wrap it in a shared `<ListRow>` primitive that composes `SidebarMenuButton`. Keep virtualization by rendering the button inside the absolute-positioned wrapper unchanged. Preserve `data-jet-list-item` on the rendered element.
+
+#### `StatusBar` LSP trigger = raw `<button>` (Medium)
+- `packages/jet-ui/src/status/StatusBar.tsx:141-150` — `PopoverTrigger asChild` wraps a raw `<button>` with bespoke focus ring classes. Should use shadcn `Button variant="ghost" size="sm"` (or a new `variant="statusZone"`) to inherit ring/focus tokens.
+- **Fix:** replace with `<Button variant="ghost" size="sm" className="jet-status-zone jet-mono-data …">` — retains status-zone typography via className, drops hand-rolled `focus-visible:ring-2 ring-ring` (Button already has it).
+
+#### `ExplorerTab` file row = raw `<button>` inside `SidebarMenuSubButton asChild` (Low)
+- `packages/jet-ui/src/tabs/ExplorerTab.tsx:72-81` — the file rendering inside `SidebarMenuSubButton asChild` uses a raw `<button type="button">`. This is technically fine (`asChild` requires exactly one child element), but the class `shrink-0` alone is not enough — `SidebarMenuSubButton` styles apply via `asChild`. Verify that `size="sm"` variant fires; if not, drop `asChild` and let `SidebarMenuSubButton` render its own element.
+- **Investigate:** whether `asChild` on sub-button still applies `sidebarMenuSubButtonVariants` classes to the child — if the child has to spell them out, we lost the shadcn variant contract.
+
+#### Explorer `focusExplorerPanel` DOM `querySelector` (still open, restated)
+- Same as prior backlog. `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18`. Fix by exposing a ref or a `useSidebar()`-published handle.
+
+#### `App.tsx` list-navigation DOM `querySelector` (Medium)
+- `packages/jet-app/src/App.tsx:640-642` — `document.querySelector('[data-jet-list-panel=…]')` + `querySelectorAll('[data-jet-list-item]')` for keyboard nav. Mirrors the explorer-panel anti-pattern.
+- **Fix:** publish a list-registry from `WorkspaceService` (or a new `ListRegistry` in `@jet/workspace`) mapping panel kind → ref to focused-item state. Keyboard command reads from the registry, not the DOM.
+
+#### `main.tsx` bootstraps dark class imperatively (Low)
+- `packages/jet-app/src/main.tsx:7` — `document.documentElement.classList.add("dark")` runs unconditionally, before the theme-scheme service reads `localStorage["jet-color-scheme"]`. Race: flash of dark on light-scheme startup.
+- **Fix:** move to a synchronous inline script in `packages/jet-app/index.html` (before React mounts) that reads `localStorage` and sets the class. Standard shadcn/Tailwind theme-flash-prevention.
+
+#### `motion-cursor.ts` `querySelector` on synthetic DOM (Info, no action)
+- `packages/jet-codemirror/src/motion-cursor.ts:262-265` — reads its own inserted bracket-cursor children by class. Not shadcn territory; internal DOM owned by the plugin. Leave as-is.
+
+#### Dead exports beyond `Sidebar` (Low — hygiene)
+- Full audit of `packages/jet-ui/src/components/ui/*.tsx` for unused named exports would tighten source but is tree-shaken at build. Only worth doing if we tighten `no-unused-exports` lint. Skip until then.
+
+#### Shared `<ListRow>` primitive (Medium — enables above fixes)
+- LocationList, Search results, Problems, Explorer files, Git changes all render a similar row: label + subtitle + optional shortcut/kbd. Right now each panel spells out its own classes. Extract one shared component in `packages/jet-ui/src/components/ListRow.tsx` that wraps `SidebarMenuButton asChild` with a `label`/`subtitle`/`trailing` slot. Feeds all above high/medium items with a single fix.
 

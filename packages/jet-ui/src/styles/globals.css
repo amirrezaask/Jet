@@ -217,10 +217,10 @@ body,
   letter-spacing: 0.01em;
 }
 
-/* CodeMirror autocomplete — styled as shadcn context menu (see completion-context-menu.ts) */
-.cm-tooltip.cm-tooltip-autocomplete.jet-completion-context-menu > ul > li[aria-selected] {
-  background-color: var(--accent);
-  color: var(--accent-foreground);
+/* CodeMirror autocomplete — hidden; rendered via shadcn ContextMenu in CompletionMenu */
+.cm-tooltip.cm-tooltip-autocomplete,
+.jet-completion-hidden-tooltip {
+  display: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

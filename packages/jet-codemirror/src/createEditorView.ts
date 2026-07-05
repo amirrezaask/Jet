@@ -6,7 +6,7 @@ import {
   historyKeymap,
   indentWithTab,
 } from "@codemirror/commands"
-import { autocompletion, completeAnyWord, completionKeymap } from "@codemirror/autocomplete"
+import { autocompletion, completeAnyWord, completionKeymap, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete"
 import {
   completionContextMenuClass,
   completionContextMenuPlugin,
@@ -40,6 +40,20 @@ export const lspCompartment = new Compartment()
 export const extensionCompartment = new Compartment()
 export const themeCompartment = new Compartment()
 export const highlightCompartment = new Compartment()
+export const indentMarkerCompartment = new Compartment()
+
+function indentMarkerExtension(theme: JetTheme, largeFile: boolean): Extension {
+  return indentationMarkers({
+    highlightActiveBlock: true,
+    markerType: largeFile ? "codeOnly" : "fullScope",
+    colors: {
+      light: theme.colors.border,
+      dark: theme.colors.border,
+      activeLight: theme.colors.accent + "44",
+      activeDark: theme.colors.accent + "44",
+    },
+  })
+}
 
 export type CreateJetEditorViewOptions = {
   parent: HTMLElement
@@ -67,6 +81,17 @@ const goToDefinitionOnClick = EditorView.domEventHandlers({
   },
 })
 
+function jetWordCompletionSource(
+  context: CompletionContext,
+): CompletionResult | null | Promise<CompletionResult | null> {
+  const result = completeAnyWord(context)
+  if (!result) return null
+  if (result instanceof Promise) {
+    return result.then(r => (r ? { ...r, filter: false } : null))
+  }
+  return { ...result, filter: false }
+}
+
 export async function createJetEditorView(opts: CreateJetEditorViewOptions): Promise<EditorView> {
   const theme = opts.theme ?? defaultJetTheme
   const largeFile = opts.largeFile ?? false
@@ -85,34 +110,10 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     extensions.push(drawSelection())
   }
 
+  extensions.push(indentMarkerCompartment.of(indentMarkerExtension(theme, largeFile)))
+
   if (!largeFile) {
-    extensions.push(
-      indentationMarkers({
-        highlightActiveBlock: true,
-        markerType: "fullScope",
-        colors: {
-          light: theme.colors.border,
-          dark: theme.colors.border,
-          activeLight: theme.colors.accent + "44",
-          activeDark: theme.colors.accent + "44",
-        },
-      }),
-      eolOverlayExtension(),
-      braceScopeExtension(),
-    )
-  } else {
-    extensions.push(
-      indentationMarkers({
-        highlightActiveBlock: true,
-        markerType: "codeOnly",
-        colors: {
-          light: theme.colors.border,
-          dark: theme.colors.border,
-          activeLight: theme.colors.accent + "44",
-          activeDark: theme.colors.accent + "44",
-        },
-      }),
-    )
+    extensions.push(eolOverlayExtension(), braceScopeExtension())
   }
 
   extensions.push(
@@ -143,14 +144,16 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   const language = await loadLanguage(opts.file.languageId)
 
   extensions.push(
-    EditorState.languageData.of(() => [{ autocomplete: completeAnyWord }]),
     languageCompartment.of(language),
     highlightCompartment.of(jetSyntaxHighlightingForTheme(theme)),
     completionCompartment.of(
       autocompletion({
         activateOnTyping: true,
-        interactionDelay: 75,
+        activateOnTypingDelay: 75,
         defaultKeymap: false,
+        selectOnOpen: true,
+        closeOnBlur: false,
+        override: [jetWordCompletionSource],
         tooltipClass: () => completionContextMenuClass,
       }),
     ),
@@ -192,10 +195,12 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
 }
 
 export function applyTheme(view: EditorView, theme: JetTheme): void {
+  const largeFile = view.state.doc.length > 4 * 1024 * 1024
   view.dispatch({
     effects: [
       themeCompartment.reconfigure(jetEditorTheme(theme)),
       highlightCompartment.reconfigure(jetSyntaxHighlightingForTheme(theme)),
+      indentMarkerCompartment.reconfigure(indentMarkerExtension(theme, largeFile)),
     ],
   })
 }

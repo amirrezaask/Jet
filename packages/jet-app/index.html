@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Jet</title>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("jet-color-scheme")
+          var legacy = raw ? null : localStorage.getItem("jet-theme-id")
+          var scheme = raw === "light" || raw === "dark"
+            ? raw
+            : legacy && /light/i.test(legacy) ? "light" : "dark"
+          if (scheme === "dark") document.documentElement.classList.add("dark")
+        } catch (_) {
+          document.documentElement.classList.add("dark")
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

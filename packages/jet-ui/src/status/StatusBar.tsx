@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react"
+import { Button } from "@/components/ui/button.js"
 import { Separator } from "@/components/ui/separator.js"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js"
 import {
@@ -138,16 +139,17 @@ export function StatusBar({
 
       <Popover>
         <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="jet-status-zone jet-mono-data shrink-0 cursor-default rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Button
+            variant="ghost"
+            size="xs"
+            className="jet-status-zone jet-mono-data shrink-0 cursor-default"
             aria-label={lspLabel(lspStatus)}
           >
             <span className={lspDotClass(lspStatus)} aria-hidden>
               ●
             </span>
             <span>LSP {lspShortLabel(lspStatus)}</span>
-          </button>
+          </Button>
         </PopoverTrigger>
         <PopoverContent side="top" align="end" sideOffset={6} className="w-64 p-3">
           <PopoverHeader>

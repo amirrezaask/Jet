@@ -1,20 +1,24 @@
-import { useCallback, useRef, type FocusEvent } from "react"
+import { useCallback, useEffect, useRef, type FocusEvent } from "react"
 import type { WorkspaceService } from "@jet/workspace"
 import { SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar.js"
 import { ExplorerTree } from "../tabs/ExplorerTab.js"
 
+type ExplorerFocusHandle = {
+  root: HTMLDivElement
+  list: HTMLElement | null
+  isCollapsed: () => boolean
+  expand: () => void
+}
+
+let focusHandle: ExplorerFocusHandle | null = null
+
 /** Focus the persistent explorer and expand it when collapsed to icon rail. */
 export function focusExplorerPanel(): void {
-  const root = document.querySelector("[data-jet-explorer-panel]")
-  if (!(root instanceof HTMLElement)) return
-
-  const collapsed = root.querySelector('[data-jet-explorer-shell][data-state="collapsed"]')
-  if (collapsed) {
-    root.querySelector<HTMLElement>('[data-sidebar="trigger"]')?.click()
-  }
-
-  root.focus()
-  root.querySelector<HTMLElement>('[data-jet-list-panel="explorer"]')?.focus()
+  const h = focusHandle
+  if (!h) return
+  if (h.isCollapsed()) h.expand()
+  h.root.focus()
+  h.list?.focus()
 }
 
 function ExplorerPanelHeader() {
@@ -48,6 +52,29 @@ function ExplorerTreeShell({ children }: { children: React.ReactNode }) {
   )
 }
 
+function ExplorerFocusRegistrar({
+  rootRef,
+  listRef,
+}: {
+  rootRef: React.RefObject<HTMLDivElement | null>
+  listRef: React.RefObject<HTMLElement | null>
+}) {
+  const { state, setOpen } = useSidebar()
+  useEffect(() => {
+    if (!rootRef.current) return
+    focusHandle = {
+      root: rootRef.current,
+      list: listRef.current,
+      isCollapsed: () => state === "collapsed",
+      expand: () => setOpen(true),
+    }
+    return () => {
+      focusHandle = null
+    }
+  }, [rootRef, listRef, state, setOpen])
+  return null
+}
+
 export function ExplorerPanel({
   workspace,
   onOpenFile,
@@ -58,6 +85,12 @@ export function ExplorerPanel({
   onFocusChange?: (focused: boolean) => void
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!panelRef.current) return
+    listRef.current = panelRef.current.querySelector<HTMLElement>('[data-jet-list-panel="explorer"]')
+  })
 
   const handleFocusIn = useCallback(() => {
     onFocusChange?.(true)
@@ -84,6 +117,7 @@ export function ExplorerPanel({
         onFocusCapture={handleFocusIn}
         onBlurCapture={handleFocusOut}
       >
+        <ExplorerFocusRegistrar rootRef={panelRef} listRef={listRef} />
         <ExplorerPanelHeader />
         <ExplorerTreeShell>
           <ExplorerTree workspace={workspace} onOpenFile={onOpenFile} />

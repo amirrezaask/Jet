@@ -67,6 +67,7 @@ import {
   type OutlineEntry,
   type WhichKeyEntry,
   TooltipProvider,
+  CompletionMenu,
   ConfirmDialogHost,
   Toaster,
   showJetToast,
@@ -75,6 +76,7 @@ import {
   WorkspaceShell,
   ExplorerPanel,
   focusExplorerPanel,
+  getListPanel,
   JetTitleBar,
   type JetTitleBarMenu,
 } from "@jet/ui"
@@ -636,9 +638,9 @@ export function JetApp() {
     const kind = appStateRef.current.explorerFocused
       ? "explorer"
       : appStateRef.current.activePanelKind
-    if (!kind || !["explorer", "locationlist"].includes(kind)) return
-    const el = document.querySelector(`[data-jet-list-panel="${kind}"]`)
-    if (!(el instanceof HTMLElement)) return
+    if (kind !== "explorer" && kind !== "locationlist") return
+    const el = getListPanel(kind)
+    if (!el) return
     const items = [...el.querySelectorAll<HTMLElement>("[data-jet-list-item]")]
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const focusItem = (index: number) => {
@@ -1309,6 +1311,7 @@ export function JetApp() {
           onRun={id => executeCommand(id)}
         />
       )}
+      <CompletionMenu />
       <ConfirmDialogHost />
       <Toaster position="bottom-right" />
     </AppShell>
