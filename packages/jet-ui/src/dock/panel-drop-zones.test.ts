@@ -1,38 +1,173 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { computeDropZone } from "./panel-drop-zones.js"
+import { computeDropSites, hitTestSites, siteToAction } from "./panel-drop-zones.js"
 
 const W = 1000
 const H = 800
+const FS = 13
 
-describe("computeDropZone — VS Code parity", () => {
-  it("center merge in inner 80%×80%", () => {
-    assert.equal(computeDropZone(500, 400, W, H), "center")
-    assert.equal(computeDropZone(150, 120, W, H), "center")
-    assert.equal(computeDropZone(850, 680, W, H), "center")
+describe("computeDropSites", () => {
+  it("returns 5 sites for normal panel", () => {
+    const sites = computeDropSites(W, H, FS)
+    assert.equal(sites.length, 5)
   })
 
-  it("left split in left third outside center deadband", () => {
-    assert.equal(computeDropZone(50, 400, W, H), "left")
+  it("returns [] for very small panel", () => {
+    assert.deepEqual(computeDropSites(60, 60, FS), [])
+    assert.deepEqual(computeDropSites(0, H, FS), [])
+    assert.deepEqual(computeDropSites(W, 0, FS), [])
   })
 
-  it("right split in right third outside center deadband", () => {
-    assert.equal(computeDropZone(950, 400, W, H), "right")
+  it("center site is centered on panel", () => {
+    const sites = computeDropSites(W, H, FS)
+    const c = sites.find(s => s.id === "center")!
+    const midX = c.rect.x + c.rect.w / 2
+    const midY = c.rect.y + c.rect.h / 2
+    assert.ok(Math.abs(midX - W / 2) < 1, `center x off: ${midX}`)
+    assert.ok(Math.abs(midY - H / 2) < 1, `center y off: ${midY}`)
   })
 
-  it("top split in middle column upper half", () => {
-    assert.equal(computeDropZone(500, 50, W, H), "top")
+  it("left site is to the left of center", () => {
+    const sites = computeDropSites(W, H, FS)
+    const c = sites.find(s => s.id === "center")!
+    const l = sites.find(s => s.id === "left")!
+    assert.ok(l.rect.x + l.rect.w < c.rect.x, "left not left of center")
   })
 
-  it("bottom split in middle column lower half", () => {
-    assert.equal(computeDropZone(500, 750, W, H), "bottom")
+  it("right site is to the right of center", () => {
+    const sites = computeDropSites(W, H, FS)
+    const c = sites.find(s => s.id === "center")!
+    const r = sites.find(s => s.id === "right")!
+    assert.ok(r.rect.x > c.rect.x + c.rect.w, "right not right of center")
   })
 
-  it("returns null for zero-size panel", () => {
-    assert.equal(computeDropZone(0, 0, 0, H), null)
+  it("top site is above center", () => {
+    const sites = computeDropSites(W, H, FS)
+    const c = sites.find(s => s.id === "center")!
+    const t = sites.find(s => s.id === "top")!
+    assert.ok(t.rect.y + t.rect.h < c.rect.y, "top not above center")
   })
 
-  it("entire area is center when splitting disabled", () => {
-    assert.equal(computeDropZone(50, 50, W, H, { enableSplitting: false }), "center")
+  it("bottom site is below center", () => {
+    const sites = computeDropSites(W, H, FS)
+    const c = sites.find(s => s.id === "center")!
+    const b = sites.find(s => s.id === "bottom")!
+    assert.ok(b.rect.y > c.rect.y + c.rect.h, "bottom not below center")
+  })
+
+  it("site dims are in [3*fs, min(w,h)/4]", () => {
+    const sites = computeDropSites(W, H, FS)
+    const minDim = Math.min(W, H)
+    for (const s of sites) {
+      assert.ok(s.rect.w >= 3 * FS, `site ${s.id} too small`)
+      assert.ok(s.rect.w <= minDim / 4 + 1, `site ${s.id} too large`)
+    }
+  })
+
+  it("center preview covers full panel", () => {
+    const sites = computeDropSites(W, H, FS)
+    const c = sites.find(s => s.id === "center")!
+    assert.equal(c.preview.x, 0)
+    assert.equal(c.preview.y, 0)
+    assert.equal(c.preview.w, W)
+    assert.equal(c.preview.h, H)
+  })
+
+  it("left preview covers left half", () => {
+    const sites = computeDropSites(W, H, FS)
+    const l = sites.find(s => s.id === "left")!
+    assert.equal(l.preview.x, 0)
+    assert.equal(l.preview.y, 0)
+    assert.equal(l.preview.w, W / 2)
+    assert.equal(l.preview.h, H)
+  })
+
+  it("right preview covers right half", () => {
+    const sites = computeDropSites(W, H, FS)
+    const r = sites.find(s => s.id === "right")!
+    assert.equal(r.preview.x, W / 2)
+    assert.equal(r.preview.w, W / 2)
+    assert.equal(r.preview.h, H)
+  })
+
+  it("top preview covers top half", () => {
+    const sites = computeDropSites(W, H, FS)
+    const t = sites.find(s => s.id === "top")!
+    assert.equal(t.preview.x, 0)
+    assert.equal(t.preview.y, 0)
+    assert.equal(t.preview.w, W)
+    assert.equal(t.preview.h, H / 2)
+  })
+
+  it("bottom preview covers bottom half", () => {
+    const sites = computeDropSites(W, H, FS)
+    const b = sites.find(s => s.id === "bottom")!
+    assert.equal(b.preview.y, H / 2)
+    assert.equal(b.preview.w, W)
+    assert.equal(b.preview.h, H / 2)
+  })
+})
+
+describe("hitTestSites", () => {
+  const sites = computeDropSites(W, H, FS)
+
+  it("pointer at panel center hits center site", () => {
+    const hit = hitTestSites(W / 2, H / 2, sites)
+    assert.equal(hit?.id, "center")
+  })
+
+  it("pointer inside left site rect hits left", () => {
+    const l = sites.find(s => s.id === "left")!
+    const hit = hitTestSites(l.rect.x + 2, l.rect.y + 2, sites)
+    assert.equal(hit?.id, "left")
+  })
+
+  it("pointer inside right site rect hits right", () => {
+    const r = sites.find(s => s.id === "right")!
+    const hit = hitTestSites(r.rect.x + 2, r.rect.y + 2, sites)
+    assert.equal(hit?.id, "right")
+  })
+
+  it("pointer inside top site rect hits top", () => {
+    const t = sites.find(s => s.id === "top")!
+    const hit = hitTestSites(t.rect.x + 2, t.rect.y + 2, sites)
+    assert.equal(hit?.id, "top")
+  })
+
+  it("pointer inside bottom site rect hits bottom", () => {
+    const b = sites.find(s => s.id === "bottom")!
+    const hit = hitTestSites(b.rect.x + 2, b.rect.y + 2, sites)
+    assert.equal(hit?.id, "bottom")
+  })
+
+  it("pointer at panel corner returns null (catch-all)", () => {
+    assert.equal(hitTestSites(5, 5, sites), null)
+    assert.equal(hitTestSites(W - 5, H - 5, sites), null)
+  })
+
+  it("returns null for empty sites array", () => {
+    assert.equal(hitTestSites(W / 2, H / 2, []), null)
+  })
+})
+
+describe("siteToAction", () => {
+  it("center → moveToPane", () => {
+    assert.deepEqual(siteToAction("center"), { kind: "moveToPane" })
+  })
+
+  it("left → split left", () => {
+    assert.deepEqual(siteToAction("left"), { kind: "split", edge: "left" })
+  })
+
+  it("right → split right", () => {
+    assert.deepEqual(siteToAction("right"), { kind: "split", edge: "right" })
+  })
+
+  it("top → split top", () => {
+    assert.deepEqual(siteToAction("top"), { kind: "split", edge: "top" })
+  })
+
+  it("bottom → split bottom", () => {
+    assert.deepEqual(siteToAction("bottom"), { kind: "split", edge: "bottom" })
   })
 })

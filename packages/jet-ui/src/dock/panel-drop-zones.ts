@@ -1,56 +1,90 @@
-import type { Edge } from "@jet/shared"
+import type { DropAction } from "@jet/shared"
 
-/** Split edge or center merge zone — matches VS Code editorDropTarget.positionOverlay. */
-export type DropZone = Exclude<Edge, never>
+export type DropSiteKind = "center" | "left" | "right" | "top" | "bottom"
 
-export type ComputeDropZoneOptions = {
-  /** VS Code openSideBySideDirection === 'right' (default). */
-  preferSplitVertically?: boolean
-  /** When false, entire area is center merge (no splits). */
-  enableSplitting?: boolean
+export type SiteRect = { x: number; y: number; w: number; h: number }
+
+export type DropSite = {
+  id: DropSiteKind
+  rect: SiteRect    // hit-test box, panel-relative px
+  preview: SiteRect // future-split highlight rect
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v))
 }
 
 /**
- * Map pointer position within a panel body to a drop zone.
- * Ported from VS Code editorDropTarget.ts positionOverlay().
+ * Compute 5 RadDebugger-style drop-site targets centered on the panel.
+ * Returns [] for very small panels (min dim < 6 * fontSize).
  */
-export function computeDropZone(
+export function computeDropSites(w: number, h: number, fontSize: number): DropSite[] {
+  if (w <= 0 || h <= 0 || fontSize <= 0) return []
+  const minDim = Math.min(w, h)
+  if (minDim < 6 * fontSize) return []
+
+  const size = clamp(Math.ceil(7 * fontSize), Math.ceil(3 * fontSize), minDim / 4)
+  const half = size / 2
+  const gap = Math.ceil(size * 0.25)
+  const cx = w / 2
+  const cy = h / 2
+
+  const siteRect = (ox: number, oy: number): SiteRect => ({
+    x: cx + ox - half,
+    y: cy + oy - half,
+    w: size,
+    h: size,
+  })
+
+  const step = size + gap
+
+  const sites: DropSite[] = [
+    {
+      id: "center",
+      rect: siteRect(0, 0),
+      preview: { x: 0, y: 0, w, h },
+    },
+    {
+      id: "left",
+      rect: siteRect(-step, 0),
+      preview: { x: 0, y: 0, w: w / 2, h },
+    },
+    {
+      id: "right",
+      rect: siteRect(step, 0),
+      preview: { x: w / 2, y: 0, w: w / 2, h },
+    },
+    {
+      id: "top",
+      rect: siteRect(0, -step),
+      preview: { x: 0, y: 0, w, h: h / 2 },
+    },
+    {
+      id: "bottom",
+      rect: siteRect(0, step),
+      preview: { x: 0, y: h / 2, w, h: h / 2 },
+    },
+  ]
+
+  return sites
+}
+
+/** Return whichever site the pointer is inside, or null (catch-all). */
+export function hitTestSites(
   mouseX: number,
   mouseY: number,
-  width: number,
-  height: number,
-  options: ComputeDropZoneOptions = {},
-): DropZone | null {
-  if (width <= 0 || height <= 0) return null
-
-  const { preferSplitVertically = true, enableSplitting = true } = options
-
-  const edgeWidthThresholdFactor = enableSplitting ? 0.1 : 0
-  const edgeHeightThresholdFactor = enableSplitting ? 0.1 : 0
-
-  const edgeWidthThreshold = width * edgeWidthThresholdFactor
-  const edgeHeightThreshold = height * edgeHeightThresholdFactor
-
-  const splitWidthThreshold = width / 3
-  const splitHeightThreshold = height / 3
-
-  const inCenter =
-    mouseX > edgeWidthThreshold &&
-    mouseX < width - edgeWidthThreshold &&
-    mouseY > edgeHeightThreshold &&
-    mouseY < height - edgeHeightThreshold
-
-  if (inCenter || !enableSplitting) {
-    return inCenter ? "center" : null
+  sites: DropSite[],
+): DropSite | null {
+  for (const site of sites) {
+    const { x, y, w, h } = site.rect
+    if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) {
+      return site
+    }
   }
+  return null
+}
 
-  if (preferSplitVertically) {
-    if (mouseX < splitWidthThreshold) return "left"
-    if (mouseX > splitWidthThreshold * 2) return "right"
-    return mouseY < height / 2 ? "top" : "bottom"
-  }
-
-  if (mouseY < splitHeightThreshold) return "top"
-  if (mouseY > splitHeightThreshold * 2) return "bottom"
-  return mouseX < width / 2 ? "left" : "right"
+export function siteToAction(kind: DropSiteKind): DropAction {
+  if (kind === "center") return { kind: "moveToPane" }
+  return { kind: "split", edge: kind }
 }
