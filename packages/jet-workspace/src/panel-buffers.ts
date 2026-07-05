@@ -1,5 +1,5 @@
 import type { PanelId, PanelView } from "@jet/shared"
-import type { PanelTree } from "@jet/panels"
+import type { JetPanelTree } from "./panel-tree.js"
 
 export type EditorPanelView = Extract<PanelView, { kind: "editor" }>
 
@@ -43,6 +43,6 @@ export function popPanelBufferView(current: EditorPanelView, uri: string): Panel
   return buildEditorView(buffers[0]!, buffers)
 }
 
-export function findPanelWithBuffer(tree: PanelTree, uri: string): PanelId | null {
+export function findPanelWithBuffer(tree: JetPanelTree, uri: string): PanelId | null {
   return tree.findPanelWithView(v => panelHasBuffer(v, uri))
 }

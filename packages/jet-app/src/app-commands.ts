@@ -18,7 +18,8 @@ import {
   simplifySelection,
 } from "@codemirror/commands"
 import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search"
-import type { PanelTree, PanelEvent } from "@jet/panels"
+import type { JetPanelTree } from "@jet/workspace"
+import type { PanelEvent } from "@jet/panels"
 import type { PanelId } from "@jet/shared"
 import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shared"
 import type { JetCommandContext, JetCommands, JetCommandFn, WorkspaceService } from "@jet/workspace"
@@ -52,7 +53,7 @@ import { confirmCloseBuffer } from "./close-buffer.js"
 
 export type BuildAppCommandsDeps = {
   workspace: WorkspaceService
-  getPanelTree: () => PanelTree
+  getPanelTree: () => JetPanelTree
   getFocusedPanel: () => PanelId | null
   setPaletteOpen: (open: boolean) => void
   setQuickOpenOpen: (open: boolean) => void
@@ -63,8 +64,8 @@ export type BuildAppCommandsDeps = {
   setGotoLineOpen: (open: boolean) => void
   setMessage: (msg: string) => void
   setFocusedPanel: (panel: PanelId) => void
-  cloneTree: () => PanelTree
-  commitTree: (tree: PanelTree) => void
+  cloneTree: () => JetPanelTree
+  commitTree: (tree: JetPanelTree) => void
   openWorkspaceFolder: (path: string) => void
   handlePanelEvent: (event: PanelEvent) => void
   openFileInEditor: (uri: string, path: string, line?: number, column?: number, pushJump?: boolean) => void

@@ -110,10 +110,10 @@ export function syncAllEditorThemes(theme: JetTheme): void {
 }
 
 export function getAllEditorViews(
-  tree: import("@jet/panels").PanelTree,
+  tree: import("@jet/workspace").JetPanelTree,
 ): { panelId: PanelId; uri: string; view: EditorView }[] {
   const result: { panelId: PanelId; uri: string; view: EditorView }[] = []
-  const walk = (node: import("@jet/shared").PanelNode) => {
+  const walk = (node: import("@jet/panels").PanelNode<import("@jet/shared").PanelView>) => {
     if (node.kind === "leaf" && node.view.kind === "editor") {
       const sessions = sessionsByPanel.get(node.panelId.id)
       if (!sessions) return

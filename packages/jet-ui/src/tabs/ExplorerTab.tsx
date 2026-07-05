@@ -18,6 +18,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarProvider,
 } from "@/components/ui/sidebar.js"
 
 function sortEntries(entries: WorkspaceEntry[]): WorkspaceEntry[] {
@@ -200,7 +201,6 @@ export function ExplorerTree({
   )
 }
 
-/** @deprecated Use {@link ExplorerPanel} in workspace shell; kept for legacy panel-tree views. */
 export function ExplorerTab({
   workspace,
   onOpenFile,
@@ -219,5 +219,9 @@ export function ExplorerTab({
     )
   }
 
-  return <ExplorerTree workspace={workspace} onOpenFile={onOpenFile} />
+  return (
+    <SidebarProvider className="!min-h-0 flex h-full w-full min-h-0 flex-col">
+      <ExplorerTree workspace={workspace} onOpenFile={onOpenFile} />
+    </SidebarProvider>
+  )
 }

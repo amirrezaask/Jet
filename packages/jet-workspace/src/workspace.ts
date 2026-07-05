@@ -1,6 +1,6 @@
 import { basename, Emitter, languageIdFromPath, pathToFileUri, makeUntitledUri } from "@jet/shared"
 import type { PanelId, PanelView } from "@jet/shared"
-import type { PanelTree } from "@jet/panels"
+import type { JetPanelTree } from "./panel-tree.js"
 import type { WorkspaceFile, WorkspaceRoot } from "./types.js"
 import type { FileSystemProvider } from "./types.js"
 import { JumpStack } from "./jump-stack.js"
@@ -154,7 +154,7 @@ export class WorkspaceService {
   }
 
   assignEditorPanel(
-    tree: PanelTree,
+    tree: JetPanelTree,
     panelId: PanelId,
     uri: string,
     path: string,
@@ -168,14 +168,14 @@ export class WorkspaceService {
     this.onDidOpenFile.fire(file)
   }
 
-  popPanelBuffer(tree: PanelTree, panelId: PanelId, uri: string): void {
+  popPanelBuffer(tree: JetPanelTree, panelId: PanelId, uri: string): void {
     const view = tree.getView(panelId)
     if (!view || view.kind !== "editor") return
     tree.setView(panelId, popPanelBufferView(view, uri))
   }
 
   openUntitledInPanel(
-    tree: PanelTree,
+    tree: JetPanelTree,
     panelId: PanelId,
     opts?: { label?: string; languageId?: string },
   ): string {
@@ -209,12 +209,12 @@ export class WorkspaceService {
     void promoted
   }
 
-  showPanelView(tree: PanelTree, panelId: PanelId, view: PanelView): void {
+  showPanelView(tree: JetPanelTree, panelId: PanelId, view: PanelView): void {
     tree.setView(panelId, view)
   }
 
   ensurePanelView(
-    tree: PanelTree,
+    tree: JetPanelTree,
     panelId: PanelId,
     viewKind: Exclude<PanelView["kind"], "editor" | "empty">,
   ): PanelId {

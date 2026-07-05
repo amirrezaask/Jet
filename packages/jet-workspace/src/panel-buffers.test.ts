@@ -1,16 +1,17 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { PanelTree } from "@jet/panels"
-import type { PanelNode } from "@jet/shared"
+import type { PanelNode } from "@jet/panels"
+import type { PanelView } from "@jet/shared"
+import { JetPanelTree } from "./panel-tree.js"
 import {
   buildEditorView,
   popPanelBufferView,
   pushPanelBufferView,
 } from "./panel-buffers.js"
 
-function countLeaves(tree: PanelTree): number {
+function countLeaves(tree: JetPanelTree): number {
   let count = 0
-  const walk = (node: PanelNode) => {
+  const walk = (node: PanelNode<PanelView>) => {
     if (node.kind === "leaf") count++
     else node.split.children.forEach(walk)
   }
@@ -48,15 +49,15 @@ describe("panel buffers", () => {
   })
 })
 
-describe("PanelTree editor buffers", () => {
+describe("JetPanelTree editor buffers", () => {
   it("findEditorPanelForFile matches hidden buffers", () => {
-    const { tree, editorPanel } = PanelTree.editorOnlyLayout()
+    const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
     tree.setView(editorPanel, buildEditorView("file://b", ["file://b", "file://a"]))
     assert.equal(tree.findEditorPanelForFile("file://a")?.id, editorPanel.id)
   })
 
   it("pruneEmptyLeaves collapses extra empty leaf", () => {
-    const { tree, editorPanel } = PanelTree.editorOnlyLayout()
+    const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
     const splitPanel = tree.splitAtEdge(editorPanel, "right")
     tree.setView(editorPanel, { kind: "empty" })
     tree.setView(splitPanel, buildEditorView("file://x", ["file://x"]))

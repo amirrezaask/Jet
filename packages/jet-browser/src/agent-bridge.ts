@@ -1,6 +1,7 @@
 import type { PanelId } from "@jet/shared"
-import type { CommandRegistry, WorkspaceService } from "@jet/workspace"
-import type { PanelTree } from "@jet/panels"
+import type { CommandRegistry, JetPanelTree, WorkspaceService } from "@jet/workspace"
+import type { PanelNode } from "@jet/panels"
+import type { PanelView } from "@jet/shared"
 import { resolveDevWorkspacePath, toWorkspaceFileUri } from "./browser-api.js"
 
 export type JetAgentState = {
@@ -27,7 +28,7 @@ export type JetAgentAPI = {
 export type AgentBridgeContext = {
   workspace: WorkspaceService
   commands: CommandRegistry
-  panelTree: PanelTree
+  panelTree: JetPanelTree
   focusedPanel: PanelId | null
   paletteOpen: boolean
   message: string | null
@@ -98,7 +99,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
 
 function collectPanels(ctx: AgentBridgeContext): JetAgentState["panels"] {
   const panels: JetAgentState["panels"] = []
-  const walk = (node: import("@jet/shared").PanelNode) => {
+  const walk = (node: PanelNode<PanelView>) => {
     if (node.kind === "leaf") {
       panels.push({ id: node.panelId.id, kind: node.view.kind })
     } else {

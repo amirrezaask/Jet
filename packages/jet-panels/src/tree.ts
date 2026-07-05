@@ -1,33 +1,49 @@
 import {
-  type DropAction,
   type Edge,
   type PanelId,
-  type PanelNode,
-  type PanelSplit,
-  type PanelTreeSnapshot,
-  type PanelView,
-  type Rect,
-  type SplitterHit,
   panelId,
 } from "@jet/shared"
 
-const MIN_PANEL = 48
 const SPLITTER = 4
 
-const emptyView = (): PanelView => ({ kind: "empty" })
+export type Rect = { x: number; y: number; width: number; height: number }
 
-export class PanelTree {
-  root: PanelNode
+export type PanelSplit<TView> = {
+  children: PanelNode<TView>[]
+  ratios: number[]
+}
+
+export type PanelNode<TView> =
+  | { kind: "leaf"; panelId: PanelId; view: TView }
+  | { kind: "row"; split: PanelSplit<TView> }
+  | { kind: "column"; split: PanelSplit<TView> }
+
+export type PanelTreeSnapshot<TView> = {
+  root: PanelNode<TView>
+  nextPanelId: number
+}
+
+export type PanelTreeOptions<TView> = {
+  /** Factory for the view placed in freshly created leaves (splits, initial root, close-fallback). */
+  emptyView: () => TView
+  /** Predicate identifying empty views for {@link PanelTree.pruneEmptyLeaves}. */
+  isEmpty: (view: TView) => boolean
+}
+
+export class PanelTree<TView> {
+  root: PanelNode<TView>
   private nextPanelId = 1
+  private readonly options: PanelTreeOptions<TView>
 
-  constructor(root?: PanelNode) {
+  constructor(options: PanelTreeOptions<TView>, root?: PanelNode<TView>) {
+    this.options = options
     this.root =
       root ??
       ({
         kind: "leaf",
         panelId: panelId(1),
-        view: emptyView(),
-      } satisfies PanelNode)
+        view: options.emptyView(),
+      } satisfies PanelNode<TView>)
     if (!root) this.nextPanelId = 2
   }
 
@@ -35,19 +51,19 @@ export class PanelTree {
     return panelId(this.nextPanelId++)
   }
 
-  setView(panel: PanelId, view: PanelView): void {
+  setView(panel: PanelId, view: TView): void {
     this.visitLeaves(node => {
       if (node.panelId.id !== panel.id) return
       node.view = view
     })
   }
 
-  getView(panel: PanelId): PanelView | null {
+  getView(panel: PanelId): TView | null {
     const leaf = this.getLeaf(panel)
     return leaf?.view ?? null
   }
 
-  findPanelWithView(predicate: (view: PanelView) => boolean): PanelId | null {
+  findPanelWithView(predicate: (view: TView) => boolean): PanelId | null {
     let found: PanelId | null = null
     this.visitLeaves(node => {
       if (found) return
@@ -56,21 +72,15 @@ export class PanelTree {
     return found
   }
 
-  findEditorPanelForFile(fileUri: string): PanelId | null {
-    return this.findPanelWithView(
-      v => v.kind === "editor" && (v.buffers ?? [v.fileUri]).includes(fileUri),
-    )
-  }
-
   splitAtEdge(panel: PanelId, edge: Edge): PanelId {
     const newPanelId = this.allocPanelId()
-    const newLeaf: PanelNode = {
+    const newLeaf: PanelNode<TView> = {
       kind: "leaf",
       panelId: newPanelId,
-      view: emptyView(),
+      view: this.options.emptyView(),
     }
 
-    const replace = (node: PanelNode, path: number[]): PanelNode => {
+    const replace = (node: PanelNode<TView>): PanelNode<TView> => {
       if (node.kind !== "leaf" || node.panelId.id !== panel.id) return node
 
       const horizontal = edge === "left" || edge === "right"
@@ -84,10 +94,10 @@ export class PanelTree {
           children: [first, second],
           ratios: [0.5, 0.5],
         },
-      } satisfies PanelNode
+      } satisfies PanelNode<TView>
     }
 
-    this.root = this.mapNode(this.root, [], replace)
+    this.root = this.mapNode(this.root, replace)
     return newPanelId
   }
 
@@ -99,30 +109,6 @@ export class PanelTree {
     const map = new Map<number, Rect>()
     this.layoutNode(this.root, viewport, map)
     return map
-  }
-
-  splitterHits(viewport: Rect): SplitterHit[] {
-    const hits: SplitterHit[] = []
-    this.collectSplitters(this.root, viewport, [], hits)
-    return hits
-  }
-
-  resizeSplit(path: number[], splitterIndex: number, deltaPx: number, viewport: Rect): void {
-    const node = this.getAtPath(this.root, path)
-    if (!node || node.kind === "leaf") return
-    const split = node.split
-    const axis = node.kind === "row" ? "horizontal" : "vertical"
-    const total = axis === "horizontal" ? viewport.width : viewport.height
-    const i = splitterIndex
-    if (i < 0 || i >= split.ratios.length - 1) return
-    const deltaRatio = deltaPx / total
-    const a = split.ratios[i]! + deltaRatio
-    const b = split.ratios[i + 1]! - deltaRatio
-    const minRatio = MIN_PANEL / total
-    if (a < minRatio || b < minRatio) return
-    split.ratios[i] = a
-    split.ratios[i + 1] = b
-    this.normalizeRatios(split.ratios)
   }
 
   setSplitRatios(path: number[], ratios: number[]): boolean {
@@ -139,10 +125,10 @@ export class PanelTree {
 
   attachAtViewportEdge(edge: Edge): PanelId {
     const newPanelId = this.allocPanelId()
-    const newLeaf: PanelNode = {
+    const newLeaf: PanelNode<TView> = {
       kind: "leaf",
       panelId: newPanelId,
-      view: emptyView(),
+      view: this.options.emptyView(),
     }
     const kind = edge === "left" || edge === "right" ? "row" : "column"
     const first = edge === "right" || edge === "bottom" ? this.root : newLeaf
@@ -161,107 +147,73 @@ export class PanelTree {
       const empty: PanelId[] = []
       this.visitLeaves(node => {
         leafCount++
-        if (node.view.kind === "empty") empty.push(node.panelId)
+        if (this.options.isEmpty(node.view)) empty.push(node.panelId)
       })
       if (empty.length === 0 || leafCount <= 1) break
       for (const panel of empty) this.closePanel(panel)
     }
   }
 
-  getLeaf(panel: PanelId): { panelId: PanelId; view: PanelView } | null {
-    let leaf: { panelId: PanelId; view: PanelView } | null = null
+  getLeaf(panel: PanelId): { panelId: PanelId; view: TView } | null {
+    let leaf: { panelId: PanelId; view: TView } | null = null
     this.visitLeaves(node => {
       if (node.panelId.id === panel.id) leaf = node
     })
     return leaf
   }
 
-  toJSON(): PanelTreeSnapshot {
-    return {
-      root: structuredClone(this.root),
-      nextPanelId: this.nextPanelId,
-    }
-  }
-
-  static fromJSON(snapshot: PanelTreeSnapshot): PanelTree {
-    const tree = new PanelTree(snapshot.root)
-    tree.nextPanelId = snapshot.nextPanelId
-    tree.normalizeEditorViews()
-    return tree
-  }
-
-  /** Ensure editor leaves have buffers[] for legacy snapshots. */
-  normalizeEditorViews(): void {
-    this.visitLeaves(node => {
-      if (node.view.kind !== "editor") return
-      const buffers = node.view.buffers?.length ? node.view.buffers : [node.view.fileUri]
-      node.view = { kind: "editor", fileUri: node.view.fileUri, buffers }
-    })
-  }
-
-  static defaultLayout(): PanelTree {
-    return PanelTree.editorOnlyLayout().tree
-  }
-
-  static editorOnlyLayout(): { tree: PanelTree; editorPanel: PanelId } {
-    const tree = new PanelTree()
-    const root = tree.root
-    const editorPanel = root.kind === "leaf" ? root.panelId : tree.allocPanelId()
-    if (root.kind === "leaf") {
-      root.view = { kind: "empty" }
-    }
-    return { tree, editorPanel }
-  }
-
-  static workspaceLayout(): { tree: PanelTree; sidebarPanel: PanelId; editorPanel: PanelId } {
-    const tree = new PanelTree()
-    const sidebarPanel = tree.attachAtViewportEdge("left")
-    const root = tree.root
-    if (root.kind !== "row") {
-      return { tree, sidebarPanel, editorPanel: sidebarPanel }
-    }
-    const main = root.split.children[1]
-    const editorPanel = main?.kind === "leaf" ? main.panelId : sidebarPanel
-    return { tree, sidebarPanel, editorPanel }
-  }
-
-  private createDefaultLeaf(): PanelNode {
-    const id = this.allocPanelId()
-    return { kind: "leaf", panelId: id, view: emptyView() }
-  }
-
-  private visitLeaves(fn: (node: Extract<PanelNode, { kind: "leaf" }>) => void): void {
-    const walk = (node: PanelNode) => {
+  visitLeaves(fn: (node: Extract<PanelNode<TView>, { kind: "leaf" }>) => void): void {
+    const walk = (node: PanelNode<TView>) => {
       if (node.kind === "leaf") fn(node)
       else node.split.children.forEach(walk)
     }
     walk(this.root)
   }
 
+  toJSON(): PanelTreeSnapshot<TView> {
+    return {
+      root: structuredClone(this.root),
+      nextPanelId: this.nextPanelId,
+    }
+  }
+
+  static fromJSON<TView>(
+    options: PanelTreeOptions<TView>,
+    snapshot: PanelTreeSnapshot<TView>,
+  ): PanelTree<TView> {
+    const tree = new PanelTree(options, snapshot.root)
+    tree.nextPanelId = snapshot.nextPanelId
+    return tree
+  }
+
+  private createDefaultLeaf(): PanelNode<TView> {
+    const id = this.allocPanelId()
+    return { kind: "leaf", panelId: id, view: this.options.emptyView() }
+  }
+
   private mapNode(
-    node: PanelNode,
-    path: number[],
-    replace: (node: PanelNode, path: number[]) => PanelNode,
-  ): PanelNode {
-    const replaced = replace(node, path)
+    node: PanelNode<TView>,
+    replace: (node: PanelNode<TView>) => PanelNode<TView>,
+  ): PanelNode<TView> {
+    const replaced = replace(node)
     if (replaced !== node) return replaced
     if (replaced.kind === "leaf") return replaced
     return {
       ...replaced,
       split: {
         ...replaced.split,
-        children: replaced.split.children.map((c, i) => this.mapNode(c, [...path, i], replace)),
+        children: replaced.split.children.map(c => this.mapNode(c, replace)),
       },
     }
   }
 
-  private removePanel(node: PanelNode, panel: PanelId): PanelNode | null {
+  private removePanel(node: PanelNode<TView>, panel: PanelId): PanelNode<TView> | null {
     if (node.kind === "leaf") {
       return node.panelId.id === panel.id ? null : node
     }
     const children = node.split.children
       .map(c => this.removePanel(c, panel))
-      .filter((c): c is PanelNode => c != null)
+      .filter((c): c is PanelNode<TView> => c != null)
     if (children.length === 0) return null
     if (children.length === 1) return children[0]!
     return {
@@ -279,7 +231,7 @@ export class PanelTree {
     for (let i = 0; i < ratios.length; i++) ratios[i]! /= sum
   }
 
-  private layoutNode(node: PanelNode, rect: Rect, map: Map<number, Rect>): void {
+  private layoutNode(node: PanelNode<TView>, rect: Rect, map: Map<number, Rect>): void {
     if (node.kind === "leaf") {
       map.set(node.panelId.id, rect)
       return
@@ -300,42 +252,8 @@ export class PanelTree {
     })
   }
 
-  private collectSplitters(
-    node: PanelNode,
-    rect: Rect,
-    path: number[],
-    hits: SplitterHit[],
-  ): void {
-    if (node.kind === "leaf") return
-    const horizontal = node.kind === "row"
-    const { children, ratios } = node.split
-    let offset = horizontal ? rect.x : rect.y
-    const total = horizontal ? rect.width : rect.height
-    const available = total - SPLITTER * (children.length - 1)
-
-    children.forEach((child, i) => {
-      const size = available * ratios[i]!
-      if (i < children.length - 1) {
-        const splitRect: Rect = horizontal
-          ? { x: offset + size, y: rect.y, width: SPLITTER, height: rect.height }
-          : { x: rect.x, y: offset + size, width: rect.width, height: SPLITTER }
-        hits.push({
-          path: [...path],
-          index: i,
-          axis: horizontal ? "horizontal" : "vertical",
-          rect: splitRect,
-        })
-      }
-      const childRect: Rect = horizontal
-        ? { x: offset, y: rect.y, width: size, height: rect.height }
-        : { x: rect.x, y: offset, width: rect.width, height: size }
-      this.collectSplitters(child, childRect, [...path, i], hits)
-      offset += size + SPLITTER
-    })
-  }
-
-  private getAtPath(node: PanelNode, path: number[]): PanelNode | null {
-    let current: PanelNode = node
+  private getAtPath(node: PanelNode<TView>, path: number[]): PanelNode<TView> | null {
+    let current: PanelNode<TView> = node
     for (const idx of path) {
       if (current.kind === "leaf") return null
       current = current.split.children[idx]!

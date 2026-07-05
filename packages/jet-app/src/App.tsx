@@ -7,8 +7,8 @@ import {
   startTransition,
   useDeferredValue,
 } from "react"
-import { PanelTree, type PanelEvent } from "@jet/panels"
-import type { PanelId } from "@jet/shared"
+import type { PanelEvent } from "@jet/panels"
+import type { PanelId, PanelView } from "@jet/shared"
 import { pathToFileUri, isUntitledUri, fileUriToPath } from "@jet/shared"
 import {
   WorkspaceService,
@@ -29,6 +29,7 @@ import {
   type LaunchConfig,
   type LocationItem,
   ProjectRegistry,
+  JetPanelTree,
   type JetProject,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
@@ -46,6 +47,8 @@ import {
 } from "@jet/codemirror"
 import {
   PanelDock,
+  PanelBody,
+  PanelHeader,
   CommandPalette,
   StatusBar,
   themeForScheme,
@@ -72,8 +75,6 @@ import {
   showJetToast,
   requestConfirm,
   AppShell,
-  WorkspaceShell,
-  ExplorerPanel,
   focusExplorerPanel,
   getListPanel,
   JetTitleBar,
@@ -121,7 +122,7 @@ const hasWorkspaceQuery =
   isWebMode && new URLSearchParams(window.location.search).has("workspace")
 
 function initialEditorLayout() {
-  return PanelTree.editorOnlyLayout()
+  return JetPanelTree.editorOnlyLayout()
 }
 
 function loadStoredColorScheme(): ColorScheme {
@@ -171,7 +172,6 @@ export function JetApp() {
   const [userExtensions, setUserExtensions] = useState<Extension[]>([])
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [editorFocused, setEditorFocused] = useState(false)
-  const [explorerFocused, setExplorerFocused] = useState(false)
   const [layoutReady, setLayoutReady] = useState(false)
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => loadStoredColorScheme())
   const activeTheme = useMemo(() => themeForScheme(colorScheme), [colorScheme])
@@ -207,7 +207,6 @@ export function JetApp() {
     focusedPanel,
     keymapContext: undefined as KeymapContext | undefined,
     activePanelKind: undefined as string | undefined,
-    explorerFocused: false,
   })
 
   const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
@@ -268,11 +267,10 @@ export function JetApp() {
       gotoLineOpen,
       outlineOpen,
       workspaceOpen: workspace.root != null,
-      explorerFocus: explorerFocused || activePanelKind === "explorer",
+      explorerFocus: activePanelKind === "explorer",
       locationListFocus: activePanelKind === "locationlist",
       outputFocus: activePanelKind === "output",
       listFocus:
-        explorerFocused ||
         activePanelKind === "explorer" ||
         activePanelKind === "locationlist",
     }),
@@ -288,7 +286,6 @@ export function JetApp() {
       outlineOpen,
       workspace.root,
       activePanelKind,
-      explorerFocused,
     ],
   )
 
@@ -297,7 +294,6 @@ export function JetApp() {
     focusedPanel,
     keymapContext,
     activePanelKind,
-    explorerFocused,
   }
 
   const lspManager = useMemo(
@@ -322,12 +318,12 @@ export function JetApp() {
   )
 
   const cloneTree = useCallback(
-    () => PanelTree.fromJSON(appStateRef.current.panelTree.toJSON()),
+    () => JetPanelTree.jetFromJSON(appStateRef.current.panelTree.toJSON()),
     [],
   )
 
-  const commitTree = useCallback((tree: PanelTree) => {
-    setPanelTree(PanelTree.fromJSON(tree.toJSON()))
+  const commitTree = useCallback((tree: JetPanelTree) => {
+    setPanelTree(JetPanelTree.jetFromJSON(tree.toJSON()))
     setPanelRev(r => r + 1)
   }, [])
 
@@ -528,9 +524,10 @@ export function JetApp() {
       void workspace.openWorkspace(folderPath)
       workspaceRootPathRef.current = folderPath
 
-      const { tree, editorPanel } = PanelTree.editorOnlyLayout()
-      editorPanelRef.current = editorPanel
+      const { tree, sidebarPanel, editorPanel } = JetPanelTree.workspaceLayout()
+      tree.setView(sidebarPanel, { kind: "explorer" })
       tree.setView(editorPanel, { kind: "empty" })
+      editorPanelRef.current = editorPanel
       setPanelTree(tree)
       setFocusedPanel(editorPanel)
       showJetToast(`Opened ${folderPath}`)
@@ -610,28 +607,32 @@ export function JetApp() {
     (event: PanelEvent) => {
       const tree = cloneTree()
       let changed = true
-      if (event.type === "splitResized") {
-        tree.resizeSplit(event.path, event.splitterIndex, event.deltaPx, event.viewport)
-      } else if (event.type === "splitRatiosChanged") {
+      if (event.type === "splitRatiosChanged") {
         changed = tree.setSplitRatios(event.path, event.ratios)
       } else if (event.type === "panelClose") {
         const view = tree.getView(event.panelId)
-        if (view?.kind === "explorer") {
-          focusExplorerPanel()
+        if (view?.kind === "editor") {
+          destroyEditorPanel(event.panelId)
+        }
+        tree.closePanel(event.panelId)
+        const leaves = getAllLeafPanels(tree)
+        if (leaves.length > 0) {
+          const closingId = event.panelId.id
+          const next =
+            leaves.find(p => p.id !== closingId) ??
+            leaves[0]
+          if (next) setFocusedPanel(next)
+        }
+      } else if (event.type === "panelDrop") {
+        const sourceView = tree.getView(event.source)
+        const moved = tree.applyDrop(event.source, event.target, event.action)
+        if (!moved) {
           changed = false
         } else {
-          if (view?.kind === "editor") {
-            destroyEditorPanel(event.panelId)
-          }
-          tree.closePanel(event.panelId)
+          if (sourceView?.kind === "editor") destroyEditorPanel(event.source)
           const leaves = getAllLeafPanels(tree)
-          if (leaves.length > 0) {
-            const closingId = event.panelId.id
-            const next =
-              leaves.find(p => p.id !== closingId) ??
-              leaves[0]
-            if (next) setFocusedPanel(next)
-          }
+          const next = leaves.find(p => p.id === event.target.id) ?? leaves[0]
+          if (next) setFocusedPanel(next)
         }
       }
       if (changed) commitTree(tree)
@@ -659,9 +660,7 @@ export function JetApp() {
   }, [workspace])
 
   const handlePanelNavigation = useCallback((action: string) => {
-    const kind = appStateRef.current.explorerFocused
-      ? "explorer"
-      : appStateRef.current.activePanelKind
+    const kind = appStateRef.current.activePanelKind
     if (kind !== "explorer" && kind !== "locationlist") return
     const el = getListPanel(kind)
     if (!el) return
@@ -1206,67 +1205,51 @@ export function JetApp() {
           bootstrapping={false}
           onOpenFolder={() => executeCommand("workspace.openFolder")}
         />
-      ) : workspace.root ? (
-        <WorkspaceShell
-          explorer={
-            <ExplorerPanel
-              workspace={workspace}
-              onOpenFile={handleOpenFile}
-              onFocusChange={setExplorerFocused}
-            />
-          }
-        >
-          <PanelDock
-            tree={panelTree}
-            workspace={workspace}
-            theme={activeTheme}
-            focusedPanelId={focusedPanel}
-            onFocusPanel={setFocusedPanel}
-            onEvent={handlePanelEvent}
-            resolveLspClient={resolveLspClient}
-            lspRevision={lspRevision}
-            executeCommand={executeCommand}
-            runKeyBinding={runKeyBinding}
-            onOpenFile={handleOpenFile}
-            onOpenLocationItem={openLocationItem}
-            keymapBindings={keymapBindings}
-            userExtensions={userExtensions}
-            keymapRevision={keymapRevision}
-            keymapContext={keymapContext}
-            panelRev={panelRev}
-            onEditorFocusChange={setEditorFocused}
-            onEditorSelectionChange={(line, column, rangeCount) =>
-              setEditorCursor({ line, column, rangeCount })
-            }
-            onLspAttachFailed={handleLspAttachFailed}
-            onProblemsChange={refreshProblems}
-          />
-        </WorkspaceShell>
       ) : (
-        <PanelDock
+        <PanelDock<PanelView>
           tree={panelTree}
-          workspace={workspace}
-          theme={activeTheme}
           focusedPanelId={focusedPanel}
           onFocusPanel={setFocusedPanel}
           onEvent={handlePanelEvent}
-          resolveLspClient={resolveLspClient}
-          lspRevision={lspRevision}
-          executeCommand={executeCommand}
-          runKeyBinding={runKeyBinding}
-          onOpenFile={handleOpenFile}
-          onOpenLocationItem={openLocationItem}
-          keymapBindings={keymapBindings}
-          userExtensions={userExtensions}
-          keymapRevision={keymapRevision}
-          keymapContext={keymapContext}
-          panelRev={panelRev}
-          onEditorFocusChange={setEditorFocused}
-          onEditorSelectionChange={(line, column, rangeCount) =>
-            setEditorCursor({ line, column, rangeCount })
-          }
-          onLspAttachFailed={handleLspAttachFailed}
-          onProblemsChange={refreshProblems}
+          renderHeader={(view, panelId, meta) => (
+            <PanelHeader
+              panelId={panelId}
+              view={view}
+              workspace={workspace}
+              focused={meta.focused}
+              onClose={meta.onClose}
+              onSplitEditor={
+                view.kind === "editor"
+                  ? () => void executeCommand("view.splitEditor")
+                  : undefined
+              }
+            />
+          )}
+          renderContent={(view, panelId, meta) => (
+            <PanelBody
+              panelId={panelId}
+              view={view}
+              workspace={workspace}
+              theme={activeTheme}
+              resolveLspClient={resolveLspClient}
+              lspRevision={lspRevision}
+              executeCommand={executeCommand}
+              runKeyBinding={runKeyBinding}
+              onOpenFile={handleOpenFile}
+              onOpenLocationItem={openLocationItem}
+              keymapBindings={keymapBindings}
+              userExtensions={userExtensions}
+              keymapRevision={keymapRevision}
+              keymapContext={keymapContext}
+              onEditorFocusChange={setEditorFocused}
+              onEditorSelectionChange={(line: number, column: number, rangeCount: number) =>
+                setEditorCursor({ line, column, rangeCount })
+              }
+              onLspAttachFailed={handleLspAttachFailed}
+              onProblemsChange={refreshProblems}
+              autoFocus={meta.focused && view.kind === "editor"}
+            />
+          )}
         />
       )}
 

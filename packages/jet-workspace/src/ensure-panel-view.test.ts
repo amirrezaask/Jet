@@ -1,11 +1,13 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { PanelTree } from "@jet/panels"
+import type { PanelNode } from "@jet/panels"
+import type { PanelView } from "@jet/shared"
+import { JetPanelTree } from "./panel-tree.js"
 import { WorkspaceService } from "./workspace.js"
 
-function countLeaves(tree: PanelTree): number {
+function countLeaves(tree: JetPanelTree): number {
   let count = 0
-  const walk = (node: PanelTree["root"]) => {
+  const walk = (node: PanelNode<PanelView>) => {
     if (node.kind === "leaf") count++
     else node.split.children.forEach(walk)
   }
@@ -15,7 +17,7 @@ function countLeaves(tree: PanelTree): number {
 
 describe("ensurePanelView", () => {
   it("splits sidebar left instead of replacing the editor panel", () => {
-    const { tree, editorPanel } = PanelTree.editorOnlyLayout()
+    const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
     tree.setView(editorPanel, { kind: "editor", fileUri: "file:///tmp/a.ts" })
     const workspace = new WorkspaceService({ readFile: async () => "", writeFile: async () => {}, readDir: async () => [], stat: async () => null })
 
@@ -28,7 +30,7 @@ describe("ensurePanelView", () => {
   })
 
   it("reuses an existing sidebar panel when switching view kind", () => {
-    const { tree, editorPanel } = PanelTree.editorOnlyLayout()
+    const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
     tree.setView(editorPanel, { kind: "editor", fileUri: "file:///tmp/a.ts" })
     const workspace = new WorkspaceService({ readFile: async () => "", writeFile: async () => {}, readDir: async () => [], stat: async () => null })
 

@@ -2,6 +2,7 @@ import { MoreHorizontalIcon, XIcon } from "lucide-react"
 import { basename } from "@jet/shared"
 import type { PanelId, PanelView } from "@jet/shared"
 import type { WorkspaceService } from "@jet/workspace"
+import { PANEL_DRAG_MIME, usePanelDrag } from "./PanelDragContext.js"
 import { Button } from "@/components/ui/button.js"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js"
 import {
@@ -35,14 +36,14 @@ export function PanelHeader({
   view,
   workspace,
   focused,
-  onClosePanel,
+  onClose,
   onSplitEditor,
 }: {
   panelId: PanelId
   view: PanelView | null
   workspace: WorkspaceService
   focused: boolean
-  onClosePanel: (panelId: PanelId) => void
+  onClose: () => void
   onSplitEditor?: () => void
 }) {
   const title = panelTitle(view, workspace)
@@ -53,10 +54,18 @@ export function PanelHeader({
   const showOverflow = isEditor || (view != null && view.kind !== "empty" && !isExplorer)
   const showClose = !isExplorer
 
+  const drag = usePanelDrag()
   return (
     <div
-      className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-2"
+      className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-2 cursor-grab active:cursor-grabbing"
       data-panel-id={panelId.id}
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.effectAllowed = "move"
+        e.dataTransfer.setData(PANEL_DRAG_MIME, String(panelId.id))
+        drag.start(panelId)
+      }}
+      onDragEnd={() => drag.end()}
     >
       {isEditor ? (
         <span className="min-w-0 flex-1" />
@@ -96,10 +105,7 @@ export function PanelHeader({
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => onClosePanel(panelId)}
-              >
+              <DropdownMenuItem variant="destructive" onClick={onClose}>
                 Close Panel
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -116,7 +122,7 @@ export function PanelHeader({
               aria-label="Close panel"
               onClick={e => {
                 e.stopPropagation()
-                onClosePanel(panelId)
+                onClose()
               }}
             >
               <XIcon />

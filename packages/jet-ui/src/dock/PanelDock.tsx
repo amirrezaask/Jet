@@ -1,143 +1,93 @@
-import { Fragment, memo, useMemo } from "react"
-import type { Extension } from "@codemirror/state"
-import type { EditorView } from "@codemirror/view"
-import { PanelTree, type PanelEvent } from "@jet/panels"
-import type { PanelId, PanelNode } from "@jet/shared"
-import type { JetTheme } from "@jet/codemirror"
-import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@jet/workspace"
-import type { LocationItem } from "@jet/workspace"
+import { Fragment, memo, useMemo, type ReactNode } from "react"
+import type { PanelEvent, PanelNode } from "@jet/panels"
+import type { PanelTree } from "@jet/panels"
+import type { PanelId } from "@jet/shared"
 import type { Layout } from "react-resizable-panels"
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable.js"
-import { PanelBody } from "./PanelBody.js"
-import { PanelHeader } from "./PanelHeader.js"
+import { PanelDragProvider } from "./PanelDragContext.js"
+import { PanelDropOverlay } from "./PanelDropOverlay.js"
 
-export type PanelDockProps = {
-  tree: PanelTree
-  workspace: WorkspaceService
-  theme: JetTheme
+export type PanelSlotMeta = {
+  focused: boolean
+  onClose: () => void
+}
+
+export type PanelDockProps<TView> = {
+  tree: PanelTree<TView>
   focusedPanelId: PanelId | null
   onFocusPanel: (id: PanelId) => void
   onEvent: (event: PanelEvent) => void
-  resolveLspClient?: (fileUri: string) => Promise<import("@jet/codemirror").LSPClient | null>
-  lspRevision?: number
-  executeCommand: (name: string) => Promise<void>
-  runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
-  onOpenFile: (uri: string, path: string) => void
-  onOpenLocationItem: (item: LocationItem) => void
-  keymapBindings: JetKeyBinding[]
-  userExtensions: Extension[]
-  keymapRevision: number
-  keymapContext?: KeymapContext
-  panelRev: number
-  onEditorFocusChange?: (focused: boolean) => void
-  onEditorSelectionChange?: (line: number, column: number, rangeCount: number) => void
-  onLspAttachFailed?: (fileUri: string) => void
-  onProblemsChange?: () => void
-  dimInactive?: boolean
+  /** Render the header for a panel. Receives the view + focus/close actions. */
+  renderHeader: (view: TView, panelId: PanelId, meta: PanelSlotMeta) => ReactNode
+  /** Render the body content for a panel. */
+  renderContent: (view: TView, panelId: PanelId, meta: PanelSlotMeta) => ReactNode
+  /** Stable structural key for the view — controls re-mount vs update. Default: view.kind + panelId. */
+  contentKey?: (view: TView, panelId: PanelId) => string
 }
 
-function splitPanelId(path: number[], index: number): string {
+function splitPanelDomId(path: number[], index: number): string {
   return path.length === 0 ? `jet-split-${index}` : `jet-split-${path.join(".")}-${index}`
 }
 
-function splitGroupId(path: number[]): string {
+function splitGroupDomId(path: number[]): string {
   return path.length === 0 ? "jet-root-split" : `jet-split-group-${path.join(".")}`
 }
 
-function PanelLeaf({
+function structureKey<TView>(node: PanelNode<TView>): string {
+  if (node.kind === "leaf") return `leaf-${node.panelId.id}`
+  return `${node.kind}:${node.split.children.map(structureKey).join("|")}`
+}
+
+function PanelLeaf<TView>({
   panelId,
   view,
-  props,
   focused,
-  dimmed,
-  autoFocusEditor,
+  onFocusPanel,
+  onEvent,
+  renderHeader,
+  renderContent,
 }: {
   panelId: PanelId
-  view: PanelNode & { kind: "leaf" }
-  props: PanelDockProps
+  view: TView
   focused: boolean
-  dimmed: boolean
-  autoFocusEditor: boolean
+  onFocusPanel: (id: PanelId) => void
+  onEvent: (event: PanelEvent) => void
+  renderHeader: PanelDockProps<TView>["renderHeader"]
+  renderContent: PanelDockProps<TView>["renderContent"]
 }) {
+  const onClose = () => onEvent({ type: "panelClose", panelId })
+  const meta: PanelSlotMeta = { focused, onClose }
   return (
     <div
-      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border border-border/80 bg-background transition-opacity duration-150"
-      style={{ opacity: dimmed ? 0.55 : 1 }}
-      onMouseDown={() => props.onFocusPanel(panelId)}
+      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border border-border/80 bg-background"
+      onMouseDown={() => onFocusPanel(panelId)}
     >
-      <PanelHeader
-        panelId={panelId}
-        view={view.view}
-        workspace={props.workspace}
-        focused={focused}
-        onClosePanel={id => props.onEvent({ type: "panelClose", panelId: id })}
-        onSplitEditor={
-          view.view.kind === "editor"
-            ? () => void props.executeCommand("view.splitEditor")
-            : undefined
-        }
-      />
-      <div className="min-h-0 flex-1">
-        {view.view.kind !== "empty" ? (
-          <PanelBody
-            panelId={panelId}
-            view={view.view}
-            workspace={props.workspace}
-            theme={props.theme}
-            resolveLspClient={props.resolveLspClient}
-            lspRevision={props.lspRevision}
-            executeCommand={props.executeCommand}
-            runKeyBinding={props.runKeyBinding}
-            onOpenFile={props.onOpenFile}
-            onOpenLocationItem={props.onOpenLocationItem}
-            keymapBindings={props.keymapBindings}
-            userExtensions={props.userExtensions}
-            keymapRevision={props.keymapRevision}
-            keymapContext={props.keymapContext}
-            onEditorFocusChange={props.onEditorFocusChange}
-            onEditorSelectionChange={props.onEditorSelectionChange}
-            onLspAttachFailed={props.onLspAttachFailed}
-            onProblemsChange={props.onProblemsChange}
-            autoFocus={autoFocusEditor}
-          />
-        ) : (
-          <PanelBody
-            panelId={panelId}
-            view={{ kind: "empty" }}
-            workspace={props.workspace}
-            theme={props.theme}
-            executeCommand={props.executeCommand}
-            runKeyBinding={props.runKeyBinding}
-            onOpenFile={props.onOpenFile}
-            onOpenLocationItem={props.onOpenLocationItem}
-            keymapBindings={props.keymapBindings}
-            userExtensions={props.userExtensions}
-            keymapRevision={props.keymapRevision}
-            keymapContext={props.keymapContext}
-          />
-        )}
+      {renderHeader(view, panelId, meta)}
+      <div className="relative min-h-0 flex-1">
+        {renderContent(view, panelId, meta)}
+        <PanelDropOverlay
+          panelId={panelId}
+          onDrop={(source, target, action) =>
+            onEvent({ type: "panelDrop", source, target, action })
+          }
+        />
       </div>
     </div>
   )
 }
 
-function splitStructureKey(node: PanelNode): string {
-  if (node.kind === "leaf") return `leaf-${node.panelId.id}`
-  return `${node.kind}:${node.split.children.map(splitStructureKey).join("|")}`
-}
-
-function PanelSplitNode({
+function PanelSplitNode<TView>({
   node,
   path,
   props,
 }: {
-  node: Extract<PanelNode, { kind: "row" | "column" }>
+  node: Extract<PanelNode<TView>, { kind: "row" | "column" }>
   path: number[]
-  props: PanelDockProps
+  props: PanelDockProps<TView>
 }) {
   const orientation = node.kind === "row" ? "horizontal" : "vertical"
   const { children, ratios } = node.split
@@ -145,21 +95,21 @@ function PanelSplitNode({
   const defaultLayout = useMemo(() => {
     const layout: Layout = {}
     children.forEach((_, index) => {
-      layout[splitPanelId(path, index)] = ratios[index]! * 100
+      layout[splitPanelDomId(path, index)] = ratios[index]! * 100
     })
     return layout
   }, [children.length, path.join("."), ratios.join(",")])
 
   return (
     <ResizablePanelGroup
-      key={splitStructureKey(node)}
-      id={splitGroupId(path)}
+      key={structureKey(node)}
+      id={splitGroupDomId(path)}
       orientation={orientation}
       defaultLayout={defaultLayout}
       className="h-full w-full"
       onLayoutChanged={layout => {
         const nextRatios = children.map(
-          (_, index) => (layout[splitPanelId(path, index)] ?? ratios[index]! * 100) / 100,
+          (_, index) => (layout[splitPanelDomId(path, index)] ?? ratios[index]! * 100) / 100,
         )
         const changed = nextRatios.some(
           (ratio, index) => Math.abs(ratio - ratios[index]!) > 0.005,
@@ -169,10 +119,10 @@ function PanelSplitNode({
       }}
     >
       {children.map((child, index) => (
-        <Fragment key={splitPanelId(path, index)}>
+        <Fragment key={splitPanelDomId(path, index)}>
           {index > 0 ? <ResizableHandle withHandle /> : null}
           <ResizablePanel
-            id={splitPanelId(path, index)}
+            id={splitPanelDomId(path, index)}
             defaultSize={`${ratios[index]! * 100}`}
             minSize="8"
             className="min-h-0 min-w-0"
@@ -185,43 +135,44 @@ function PanelSplitNode({
   )
 }
 
-function PanelTreeNode({
+function PanelTreeNode<TView>({
   node,
   path,
   props,
 }: {
-  node: PanelNode
+  node: PanelNode<TView>
   path: number[]
-  props: PanelDockProps
+  props: PanelDockProps<TView>
 }) {
   if (node.kind === "leaf") {
     const focused = props.focusedPanelId?.id === node.panelId.id
-    const autoFocusEditor = focused && node.view.kind === "editor"
-    const dimmed =
-      props.dimInactive !== false && node.view.kind === "editor" && !focused
     return (
       <div className="flex h-full min-h-0 w-full flex-1 flex-col">
         <PanelLeaf
           panelId={node.panelId}
-          view={node}
-          props={props}
+          view={node.view}
           focused={focused}
-          dimmed={dimmed}
-          autoFocusEditor={autoFocusEditor}
+          onFocusPanel={props.onFocusPanel}
+          onEvent={props.onEvent}
+          renderHeader={props.renderHeader}
+          renderContent={props.renderContent}
         />
       </div>
     )
   }
-
   return <PanelSplitNode node={node} path={path} props={props} />
 }
 
-export function PanelDockInner(props: PanelDockProps) {
+function PanelDockInner<TView>(props: PanelDockProps<TView>) {
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden" data-jet-panel-dock>
-      <PanelTreeNode node={props.tree.root} path={[]} props={props} />
-    </div>
+    <PanelDragProvider>
+      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden" data-jet-panel-dock>
+        <PanelTreeNode node={props.tree.root} path={[]} props={props} />
+      </div>
+    </PanelDragProvider>
   )
 }
 
-export const PanelDock = memo(PanelDockInner)
+export const PanelDock = memo(PanelDockInner) as <TView>(
+  props: PanelDockProps<TView>,
+) => ReactNode
