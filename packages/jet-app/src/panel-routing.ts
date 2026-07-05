@@ -148,3 +148,35 @@ export function getActiveListTabId(tree: JetPanelTree, panel: PanelId | null): s
   if (active.startsWith("jet:") || active.startsWith("list-")) return active
   return null
 }
+
+export function closePanelIfEmpty(tree: JetPanelTree, panelId: PanelId): void {
+  const view = tree.getView(panelId)
+  if (view?.kind !== "empty") return
+  if (getAllLeafPanels(tree).length <= 1) return
+  tree.closePanel(panelId)
+  tree.pruneEmptyLeaves()
+}
+
+function panelHasTabs(tree: JetPanelTree, panel: PanelId): boolean {
+  const view = tree.getView(panel)
+  return view?.kind === "tabs" && panelTabIds(view).length > 0
+}
+
+export function reconcileFocusedPanel(
+  tree: JetPanelTree,
+  focused: PanelId | null,
+  editorPanelRef: PanelId | null,
+): PanelId | null {
+  const leaves = getAllLeafPanels(tree)
+  if (leaves.length === 0) return null
+
+  if (focused && leaves.some(l => l.id === focused.id) && panelHasTabs(tree, focused)) {
+    return focused
+  }
+
+  return (
+    resolveEditorPanel(tree, editorPanelRef, focused) ??
+    leaves.find(p => panelHasTabs(tree, p)) ??
+    leaves[0]!
+  )
+}

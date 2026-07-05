@@ -120,6 +120,17 @@ test("tab-lifecycle: dirty close confirm closes buffer", async ({ page }) => {
   await expect(page.locator(".cm-editor")).not.toContainText("export function greet")
 })
 
+test("tab-lifecycle: closing auxiliary tab collapses empty panel", async ({ page }) => {
+  await agent(page).executeCommand("explorer.show")
+  await page.waitForTimeout(400)
+  await expect(page.locator("[data-jet-panel-leaf]")).toHaveCount(2)
+
+  await page.locator('[data-tab-id="jet:explorer"] [aria-label="Close tab"]').click()
+  await page.waitForTimeout(400)
+
+  await expect(page.locator("[data-jet-panel-leaf]")).toHaveCount(1)
+})
+
 test("tab-lifecycle: Mod-w closes buffer", async ({ page }) => {
   await agent(page).openFile("src/utils.ts")
   await page.waitForTimeout(400)

@@ -25,7 +25,7 @@ import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shar
 import type { JetCommandContext, JetCommands, JetCommandFn, ListItem, WorkspaceService } from "@jet/workspace"
 import { PROBLEMS_TAB_ID, EXPLORER_TAB_ID } from "@jet/workspace"
 import { problemsToListItems } from "@jet/ui"
-import { openJetSearch, openReplaceSearchPanel } from "@jet/codemirror"
+import { openJetSearch } from "@jet/codemirror"
 import {
   fetchDocumentOutline,
   runFindReferences,
@@ -50,6 +50,7 @@ import {
   resolveEditorPanel,
   resolveTargetPanel,
   panelHasExplorerTab,
+  closePanelIfEmpty,
 } from "./panel-routing.js"
 import {
   openExplorerTab,
@@ -209,16 +210,18 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.workspace.disposeTab(fileUri)
       const tree = deps.cloneTree()
       deps.workspace.popPanelBuffer(tree, panel, fileUri)
-      tree.pruneEmptyLeaves()
+      closePanelIfEmpty(tree, panel)
       deps.commitTree(tree)
     },
     find: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
-      if (view) openJetSearch(view, "find")
+      const panel = currentFocusedPanel()
+      if (view) openJetSearch(view, "find", panel?.id)
     },
     replace: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
-      if (view) openReplaceSearchPanel(view)
+      const panel = currentFocusedPanel()
+      if (view) openJetSearch(view, "replace", panel?.id)
     },
     gotoLine: () => deps.setGotoLineOpen(true),
     locationList: () => {

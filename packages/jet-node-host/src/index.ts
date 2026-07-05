@@ -26,6 +26,7 @@ export {
   type JetDevHostOptions,
 } from "./dev-middleware.js"
 export { loadGlobalJetrcScanRoots } from "./global-jetrc.js"
+export { applyLoginShellEnv, resolveLoginShellPath } from "./shell-env.js"
 export {
   findWorkspaceRoot,
   resolveLaunchTarget,

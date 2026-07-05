@@ -82,7 +82,7 @@
   --jet-fs-xl: 1.85rem;
   --jet-row-height: 22px;
   --jet-location-row-height: 40px;
-  --jet-traffic-light-inset: 80px;
+  --jet-traffic-light-inset: 100px;
   --jet-overlay-list-max: 22rem;
   --jet-hl-keyword: #b32c62;
   --jet-hl-control-keyword: #b32c62;
@@ -133,56 +133,81 @@
 }
 
 [data-jet-traffic-light-spacer] {
-  width: var(--jet-traffic-light-inset);
-  min-width: var(--jet-traffic-light-inset);
-  flex: 0 0 var(--jet-traffic-light-inset);
+  width: 100px;
+  min-width: 100px;
+  flex: 0 0 100px;
 }
 
-/* Location list rows — plain CSS so dev/Electron never drops row layout or text colors. */
-[data-jet-list-panel="locationlist"] [data-jet-list-item] {
+/* Location list — plain CSS with pixel sizes (no Tailwind / virtualizer dependency). */
+[data-jet-location-list] {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.jet-location-list-scroll {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: var(--background);
+}
+
+.jet-location-list-item {
+  display: block;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.jet-location-list-row {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
   width: 100%;
-  height: var(--jet-location-row-height);
-  min-height: var(--jet-location-row-height);
-  max-height: var(--jet-location-row-height);
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
   padding: 2px 8px;
-  overflow: visible;
-  flex-shrink: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--foreground);
   text-align: left;
-}
-
-[data-jet-list-panel="locationlist"] [data-jet-list-item]:hover,
-[data-jet-list-panel="locationlist"] [data-jet-list-item]:focus-visible {
-  color: var(--foreground);
-}
-
-[data-jet-list-panel="locationlist"] [data-slot="row-label"] {
-  display: block;
+  overflow: hidden;
+  cursor: pointer;
+  font: inherit;
   flex-shrink: 0;
+}
+
+.jet-location-list-row:hover,
+.jet-location-list-row:focus-visible {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  outline: none;
+}
+
+.jet-location-list-row-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--foreground);
-  font-size: var(--jet-fs-sm);
+  font-size: 0.92rem;
   font-weight: 500;
-  line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
 }
 
-[data-jet-list-panel="locationlist"] [data-slot="row-detail"] {
+.jet-location-list-row-detail {
   display: block;
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-  font-family: var(--font-mono);
-  font-size: var(--jet-fs-xs);
-  line-height: 1.25;
+  width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  line-height: 1.3;
 }
 
 /* Vercel dark — neutral primary, no phosphor accent */

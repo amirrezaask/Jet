@@ -17,6 +17,7 @@ export type JetSearchMode = "find" | "replace"
 
 export type JetSearchState = {
   view: EditorView
+  panelId?: number
   open: boolean
   mode: JetSearchMode
   /** Bumps when the CM SearchQuery changes so React re-reads view.state. */
@@ -75,17 +76,21 @@ function seedSearchQuery(state: EditorState, fallback?: SearchQuery): SearchQuer
   })
 }
 
-export function openJetSearch(view: EditorView, mode: JetSearchMode): void {
+export function openJetSearch(view: EditorView, mode: JetSearchMode, panelId?: number): void {
   const prev = readPriorQuery(view.state)
   const query = seedSearchQuery(view.state, prev)
   view.dispatch({ effects: setSearchQuery.of(query) })
   version += 1
-  emit({ view, open: true, mode, version })
+  emit({ view, panelId, open: true, mode, version })
 }
 
 export function closeJetSearch(view: EditorView): void {
   if (currentState?.view === view) emit(null)
   view.focus()
+}
+
+export function closeJetSearchForView(view: EditorView): void {
+  if (currentState?.view === view) emit(null)
 }
 
 export type JetSearchQueryPatch = {

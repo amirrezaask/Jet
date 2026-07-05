@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { resolveLaunchTarget, loadGlobalJetrcScanRoots, type LaunchConfig } from "@jet/node-host"
+import { resolveLaunchTarget, loadGlobalJetrcScanRoots, applyLoginShellEnv, type LaunchConfig } from "@jet/node-host"
 import { registerFsHandlers } from "./fs.js"
 import { registerSearchHandlers } from "./search.js"
 import { registerLspHandlers, stopAllLsp, setLspCrashHandler } from "./lsp-bridge.js"
@@ -122,6 +122,7 @@ function createWindow() {
     height: 900,
     backgroundColor: "#0a0a0c",
     titleBarStyle: isMac ? "hiddenInset" : "default",
+    ...(isMac ? { trafficLightPosition: { x: 14, y: 11 } } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -176,6 +177,7 @@ app.on("open-file", (e, filePath) => {
 })
 
 app.whenReady().then(() => {
+  applyLoginShellEnv()
   installAppMenu()
   registerFsHandlers(ipcMain, dialog)
   registerWorkspaceHost(ipcMain, getWindow)

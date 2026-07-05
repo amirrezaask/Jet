@@ -1,16 +1,12 @@
 import type { ListItem } from "@jet/workspace"
 import { useEffect, useRef } from "react"
-import { useVirtualizer } from "@tanstack/react-virtual"
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty.js"
-import { ListRow } from "@/components/ListRow.js"
 import { registerListPanel } from "@/lib/list-registry.js"
-
-const ROW_HEIGHT_PX = 40
 
 export type LocationListProps = {
   listId: string
@@ -32,28 +28,19 @@ export function LocationList({
   header,
 }: LocationListProps) {
   const scrollRef = useRef<HTMLUListElement>(null)
-  const rowVirtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT_PX,
-    overscan: 8,
-  })
 
   useEffect(() => {
     return registerListPanel(listId, scrollRef.current)
   }, [listId, items.length])
 
-  useEffect(() => {
-    rowVirtualizer.measure()
-  }, [items.length, rowVirtualizer])
-
   return (
     <div
       className="flex h-full min-h-0 flex-1 flex-col text-foreground"
       data-jet-list-panel={listId}
+      data-jet-location-list
     >
       {header}
-      <ul ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-1">
+      <ul ref={scrollRef} className="jet-location-list-scroll min-h-0 flex-1 overflow-auto">
         {items.length === 0 ? (
           loading ? null : (
             <li className="p-1">
@@ -66,37 +53,24 @@ export function LocationList({
             </li>
           )
         ) : (
-          <li style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
-            {rowVirtualizer.getVirtualItems().map(virtualRow => {
-              const item = items[virtualRow.index]!
-              return (
-                <div
-                  key={item.id}
-                  data-index={virtualRow.index}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: ROW_HEIGHT_PX,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  <ListRow
-                    data-jet-list-item
-                    className="w-full min-w-0"
-                    onClick={() => onOpenItem(item)}
-                  >
-                    <span data-slot="row-label">{item.label}</span>
-                    <span data-slot="row-detail" className="jet-mono-data">
-                      {item.path}:{item.line}:{item.column}
-                      {item.detail ? ` · ${item.detail}` : ""}
-                    </span>
-                  </ListRow>
-                </div>
-              )
-            })}
-          </li>
+          items.map(item => (
+            <li key={item.id} className="jet-location-list-item">
+              <button
+                type="button"
+                data-jet-list-item
+                className="jet-location-list-row"
+                onClick={() => onOpenItem(item)}
+              >
+                <span className="jet-location-list-row-label" data-slot="row-label">
+                  {item.label}
+                </span>
+                <span className="jet-location-list-row-detail jet-mono-data" data-slot="row-detail">
+                  {item.path}:{item.line}:{item.column}
+                  {item.detail ? ` · ${item.detail}` : ""}
+                </span>
+              </button>
+            </li>
+          ))
         )}
       </ul>
     </div>

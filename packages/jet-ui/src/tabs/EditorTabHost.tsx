@@ -17,6 +17,7 @@ import {
   jumpToLine,
   lspPluginForView,
   reconfigureLsp,
+  closeJetSearchForView,
 } from "@jet/codemirror"
 import type { JetTheme } from "@jet/codemirror"
 import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@jet/workspace"
@@ -80,6 +81,7 @@ export function destroyEditorBuffer(panelId: PanelId, fileUri: string): void {
   if (!session) return
   clearSessionSnapshot(session)
   detachLsp(session.view)
+  closeJetSearchForView(session.view)
   session.view.destroy()
   sessions!.delete(fileUri)
   if (sessions!.size === 0) sessionsByPanel.delete(panelId.id)

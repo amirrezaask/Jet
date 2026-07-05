@@ -12,7 +12,9 @@ test("editor-find: find panel opens and shows input", async ({ page }) => {
   await agent(page).executeCommand("editor.find")
   await page.waitForTimeout(300)
 
-  await expect(page.locator("body")).toContainText("Find")
+  const float = page.locator("[data-jet-panel-float]")
+  await expect(float).toBeVisible()
+  await expect(page.locator("#jet-find-input")).toBeVisible()
   await page.keyboard.type("export")
   await page.waitForTimeout(200)
 
@@ -40,7 +42,7 @@ test("editor-find: replace panel opens", async ({ page }) => {
   await agent(page).executeCommand("editor.replace")
   await page.waitForTimeout(400)
 
-  await expect(page.locator("body")).toContainText("Replace")
+  await expect(page.locator("#jet-replace-input")).toBeVisible()
   await page.keyboard.press("Escape")
   await page.waitForTimeout(200)
 })

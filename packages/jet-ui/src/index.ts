@@ -1,4 +1,9 @@
 export { PanelDock, type PanelDockProps, type PanelSlotMeta } from "./dock/PanelDock.js"
+export {
+  PanelFloatingPopover,
+  type PanelFloatingPopoverProps,
+  type PanelFloatCorner,
+} from "./dock/PanelFloatingPopover.js"
 export { PanelBody } from "./dock/PanelBody.js"
 export { PanelTabBar, tabIdsOf, type PanelTab } from "./dock/PanelTabBar.js"
 export { TabHost } from "./tabs/TabHost.js"
@@ -52,4 +57,4 @@ export { ConfirmDialogHost, requestConfirm } from "./components/ConfirmDialogHos
 export { showJetToast } from "./toast.js"
 export { registerListPanel, getListPanel } from "./lib/list-registry.js"
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
-export { FindReplaceDrawer } from "./components/FindReplaceDrawer.js"
+export { FindReplacePopover } from "./components/FindReplacePopover.js"

@@ -1,0 +1,11 @@
+- when panel's last tab is closed panel should be closed as well
+- find menu should have a simpler ui using a popover on the top right corner of the current panel.
+- focus should always be on a valid view/panel so if find or any panel is closed focus should be brought back to a valid panel
+- electron should get PATH variable from system's default shell on startup.
+- rewrite explorer
+- integrate terminal
+- Agent explorer
+- name ?
+- icon
+- better chrome font size to editor font size ratio
+- 

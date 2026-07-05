@@ -88,9 +88,10 @@ import {
   getListPanel,
   JetTitleBar,
   type JetTitleBarMenu,
-  FindReplaceDrawer,
   WelcomeView,
+  FindReplacePopover,
 } from "@jet/ui"
+import { getJetSearchState } from "@jet/codemirror"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
@@ -101,6 +102,8 @@ import {
   getActiveEditorFileUri,
   getActiveListTabId,
   activeTabKind,
+  closePanelIfEmpty,
+  reconcileFocusedPanel,
 } from "./panel-routing.js"
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
 import { loadGlobalJetrc } from "./load-global-jetrc.js"
@@ -417,10 +420,17 @@ export function JetApp() {
   )
 
   const commitTree = useCallback((tree: JetPanelTree) => {
-    // Caller already produced a fresh tree via cloneTree(); store it directly
-    // rather than cloning again. React sees a new reference either way.
+    const prevFocused = appStateRef.current.focusedPanel
+    const nextFocused = reconcileFocusedPanel(tree, prevFocused, editorPanelRef.current)
     setPanelTree(tree)
     setPanelRev(r => r + 1)
+    setFocusedPanel(nextFocused)
+    if (nextFocused && nextFocused.id !== prevFocused?.id) {
+      requestAnimationFrame(() => {
+        if (getJetSearchState()?.open) return
+        getEditorView(nextFocused)?.focus()
+      })
+    }
   }, [])
 
   const ensureLspForFile = useCallback(
@@ -726,14 +736,6 @@ export function JetApp() {
           }
         }
         tree.closePanel(event.panelId)
-        const leaves = getAllLeafPanels(tree)
-        if (leaves.length > 0) {
-          const closingId = event.panelId.id
-          const next =
-            leaves.find(p => p.id !== closingId) ??
-            leaves[0]
-          if (next) setFocusedPanel(next)
-        }
       } else if (event.type === "tabActivate") {
         const view = tree.getView(event.panelId)
         if (view?.kind !== "tabs" || view.activeTabId === event.tabId) {
@@ -754,6 +756,7 @@ export function JetApp() {
           workspace.disposeTab(event.tabId)
           tabStore.dispose(event.tabId)
           tree.setView(event.panelId, popPanelTab(view, event.tabId))
+          closePanelIfEmpty(tree, event.panelId)
         }
       } else if (event.type === "tabReorder") {
         const view = tree.getView(event.panelId)
@@ -1522,7 +1525,7 @@ export function JetApp() {
           onRun={id => executeCommand(id)}
         />
       )}
-      <FindReplaceDrawer />
+      {focusedPanel ? <FindReplacePopover panelId={focusedPanel} /> : null}
       <ConfirmDialogHost />
       <Toaster position="bottom-right" />
     </AppShell>

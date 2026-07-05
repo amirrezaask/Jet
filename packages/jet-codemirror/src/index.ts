@@ -20,6 +20,7 @@ export { openReplaceSearchPanel, jumpToLine } from "./editor-actions.js"
 export {
   openJetSearch,
   closeJetSearch,
+  closeJetSearchForView,
   subscribeSearch,
   patchJetSearchQuery,
   getJetSearchState,
