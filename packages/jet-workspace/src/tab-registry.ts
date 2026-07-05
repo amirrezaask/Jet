@@ -1,14 +1,10 @@
 import { Emitter } from "@jet/shared"
 
-export type TabKind =
-  | "editor"
-  | "explorer"
-  | "output"
-  | "search"
-  | "problems"
-  | "references"
-  | "definitions"
-  | "task-errors"
+/**
+ * Opaque tab type identifier. Framework treats it as a string; individual apps
+ * register their own type ids (e.g. "editor", "explorer", "jet:search").
+ */
+export type TabKind = string
 
 export const EXPLORER_TAB_ID = "jet:explorer"
 export const OUTPUT_TAB_ID = "jet:output"
@@ -20,16 +16,12 @@ export type TabDescriptor = {
   label: string
 }
 
-export function isListTabKind(kind: TabKind): boolean {
-  return (
-    kind === "search" ||
-    kind === "problems" ||
-    kind === "references" ||
-    kind === "definitions" ||
-    kind === "task-errors"
-  )
-}
-
+/**
+ * Lightweight per-tab bookkeeping used by workspace helpers that need to look
+ * up label/kind by tab id. The real render dispatch lives in `@jet/ui`'s
+ * `TabTypeRegistry`; this store is just a workspace-side companion so command
+ * handlers can ask "what kind of tab is this?" without importing UI.
+ */
 export class TabRegistry {
   private tabs = new Map<string, TabDescriptor>()
   readonly onDidChange = new Emitter<{ id: string }>()

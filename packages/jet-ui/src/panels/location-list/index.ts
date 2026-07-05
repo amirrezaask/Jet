@@ -1,4 +1,3 @@
-export { ListPanelBody } from "./ListPanelBody.js"
 export { LocationList } from "./LocationList.js"
 export { SearchLocationList } from "./SearchLocationList.js"
 export { ReferencesLocationList, DefinitionsLocationList } from "./ReferencesLocationList.js"

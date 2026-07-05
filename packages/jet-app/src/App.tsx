@@ -38,6 +38,7 @@ import {
   panelTabIds,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
+import type { LSPClient } from "@jet/codemirror"
 import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
@@ -51,6 +52,8 @@ import {
   type ColorScheme,
 } from "@jet/codemirror"
 import {
+  TabStore,
+  TabTypeRegistry,
   PanelDock,
   PanelBody,
   PanelTabBar,
@@ -83,7 +86,6 @@ import {
   AppShell,
   focusExplorerPanel,
   getListPanel,
-  getExplorerPanel,
   JetTitleBar,
   type JetTitleBarMenu,
   FindReplaceDrawer,
@@ -91,6 +93,7 @@ import {
 } from "@jet/ui"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
+import { registerBuiltinTabTypes } from "./tabs/index.js"
 import {
   panelViewKind,
   getAllLeafPanels,
@@ -221,6 +224,8 @@ export function JetApp() {
   const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
   const commands = useMemo(() => new CommandRegistry(), [])
   const keymaps = useMemo(() => new KeymapService(), [])
+  const tabTypeRegistry = useMemo(() => new TabTypeRegistry(), [])
+  const tabStore = useMemo(() => new TabStore(tabTypeRegistry), [tabTypeRegistry])
 
   const keymapBindings = useMemo(() => keymaps.allBindings(), [keymaps, keymapRevision])
 
@@ -229,10 +234,76 @@ export function JetApp() {
     return () => sub.dispose()
   }, [keymaps])
 
+  // Keep tabStore in sync with workspace.tabRegistry: mirror label + typeId so
+  // TabTypeRegistry.render() and PanelTabBar can look up title/dirty per tab id
+  // without knowing tab-kind semantics.
+  useEffect(() => {
+    const mirror = (id: string) => {
+      const desc = workspace.tabRegistry.get(id)
+      if (!desc) {
+        tabStore.dispose(id)
+        return
+      }
+      const kind = desc.kind
+      if (kind === "editor") {
+        tabStore.create<{ fileUri: string }>(kind, { fileUri: desc.id }, desc.id)
+      } else if (kind === "explorer" || kind === "output") {
+        tabStore.create<Record<string, never>>(kind, {}, desc.id)
+      } else {
+        tabStore.create<{ listId: string }>(kind, { listId: desc.id }, desc.id)
+      }
+    }
+    const sub = workspace.tabRegistry.onDidChange.event(evt => mirror(evt.id))
+    return () => sub.dispose()
+  }, [workspace, tabStore])
+
   useEffect(() => {
     const sub = workspace.onDidChangeDirty.event(() => setPanelRev(r => r + 1))
     return () => sub.dispose()
   }, [workspace])
+
+  const activeThemeRef = useRef(activeTheme)
+  activeThemeRef.current = activeTheme
+  const lspRevisionRef = useRef(lspRevision)
+  lspRevisionRef.current = lspRevision
+  const keymapBindingsRef = useRef<JetKeyBinding[]>([])
+  const userExtensionsRef = useRef<Extension[]>([])
+  const keymapRevisionRef = useRef(0)
+  const keymapContextRef = useRef<KeymapContext | undefined>(undefined)
+  const handleOpenFileForTabs = useRef<(uri: string, path: string) => void>(() => {})
+  const openListItemForTabs = useRef<(item: ListItem) => void>(() => {})
+  const setEditorFocusedRef = useRef<(f: boolean) => void>(() => {})
+  const setEditorSelectionRef = useRef<(l: number, c: number, r: number) => void>(() => {})
+  const handleLspAttachFailedRef = useRef<(uri: string) => void>(() => {})
+  const refreshProblemsRef = useRef<() => void>(() => {})
+  const executeCommandRef = useRef<(name: string) => Promise<void>>(() => Promise.resolve())
+  const runKeyBindingRef = useRef<(binding: JetKeyBinding, view?: EditorView) => void>(() => {})
+  const resolveLspClientRef = useRef<(fileUri: string) => Promise<LSPClient | null>>(() => Promise.resolve(null))
+
+  keymapBindingsRef.current = keymapBindings
+  userExtensionsRef.current = userExtensions
+  keymapRevisionRef.current = keymapRevision
+
+  useEffect(() => {
+    registerBuiltinTabTypes(tabTypeRegistry, {
+      workspace,
+      getTheme: () => activeThemeRef.current,
+      resolveLspClient: uri => resolveLspClientRef.current(uri),
+      getLspRevision: () => lspRevisionRef.current,
+      executeCommand: name => executeCommandRef.current(name),
+      runKeyBinding: (binding, view) => runKeyBindingRef.current(binding, view),
+      getKeymapBindings: () => keymapBindingsRef.current,
+      getUserExtensions: () => userExtensionsRef.current,
+      getKeymapRevision: () => keymapRevisionRef.current,
+      getKeymapContext: () => keymapContextRef.current,
+      onEditorFocusChange: f => setEditorFocusedRef.current(f),
+      onEditorSelectionChange: (l, c, r) => setEditorSelectionRef.current(l, c, r),
+      onLspAttachFailed: uri => handleLspAttachFailedRef.current(uri),
+      onProblemsChange: () => refreshProblemsRef.current(),
+      onOpenFile: (uri, path) => handleOpenFileForTabs.current(uri, path),
+      onOpenListItem: item => openListItemForTabs.current(item),
+    })
+  }, [tabTypeRegistry, workspace])
 
   const keybindingByFn = useMemo(() => {
     const map = new Map<JetKeyBinding["run"], string>()
@@ -587,6 +658,13 @@ export function JetApp() {
 
   openWorkspaceRef.current = openWorkspaceFolder
   handleOpenFileRef.current = handleOpenFile
+  handleOpenFileForTabs.current = handleOpenFile
+  openListItemForTabs.current = openListItem
+  setEditorFocusedRef.current = setEditorFocused
+  setEditorSelectionRef.current = (line, column, rangeCount) =>
+    setEditorCursor({ line, column, rangeCount })
+  resolveLspClientRef.current = resolveLspClient
+  keymapContextRef.current = keymapContext
 
   const bootstrapFromLaunchForDrop = useCallback((config: LaunchConfig) => {
     bootstrapFromLaunch(
@@ -637,6 +715,7 @@ export function JetApp() {
               destroyEditorBuffer(event.panelId, tabId)
             }
             workspace.disposeTab(tabId)
+            tabStore.dispose(tabId)
           }
         }
         tree.closePanel(event.panelId)
@@ -650,10 +729,10 @@ export function JetApp() {
         }
       } else if (event.type === "tabActivate") {
         const view = tree.getView(event.panelId)
-        if (view?.kind !== "tabs" || view.activeTabId === event.uri) {
+        if (view?.kind !== "tabs" || view.activeTabId === event.tabId) {
           changed = false
         } else {
-          tree.setView(event.panelId, activatePanelTab(view, event.uri))
+          tree.setView(event.panelId, activatePanelTab(view, event.tabId))
           setFocusedPanel(event.panelId)
         }
       } else if (event.type === "tabClose") {
@@ -661,28 +740,29 @@ export function JetApp() {
         if (view?.kind !== "tabs") {
           changed = false
         } else {
-          const kind = workspace.tabRegistry.kindFor(event.uri)
+          const kind = workspace.tabRegistry.kindFor(event.tabId)
           if (kind === "editor") {
-            destroyEditorBuffer(event.panelId, event.uri)
+            destroyEditorBuffer(event.panelId, event.tabId)
           }
-          workspace.disposeTab(event.uri)
-          tree.setView(event.panelId, popPanelTab(view, event.uri))
+          workspace.disposeTab(event.tabId)
+          tabStore.dispose(event.tabId)
+          tree.setView(event.panelId, popPanelTab(view, event.tabId))
         }
       } else if (event.type === "tabReorder") {
         const view = tree.getView(event.panelId)
         if (view?.kind !== "tabs") {
           changed = false
         } else {
-          tree.setView(event.panelId, reorderPanelTab(view, event.uri, event.toIndex))
+          tree.setView(event.panelId, reorderPanelTab(view, event.tabId, event.toIndex))
         }
       } else if (event.type === "tabDrop") {
-        const kind = workspace.tabRegistry.kindFor(event.sourceUri)
+        const kind = workspace.tabRegistry.kindFor(event.sourceTabId)
         if (kind === "editor") {
-          destroyEditorBuffer(event.source, event.sourceUri)
+          destroyEditorBuffer(event.source, event.sourceTabId)
         }
         const result = tree.applyTabDrop(
           event.source,
-          event.sourceUri,
+          event.sourceTabId,
           event.target,
           event.action,
         )
@@ -723,12 +803,11 @@ export function JetApp() {
     const tree = appStateRef.current.panelTree
     const tabKind = activeTabKind(tree, panel, workspace.tabRegistry)
     const listTabId = getActiveListTabId(tree, panel)
-    const el =
-      tabKind === "explorer"
-        ? getExplorerPanel()
-        : listTabId
-          ? getListPanel(listTabId)
-          : null
+    const el = listTabId
+      ? getListPanel(listTabId)
+      : tabKind === "explorer"
+        ? getListPanel("jet:explorer")
+        : null
     if (!el) return
     const items = [...el.querySelectorAll<HTMLElement>("[data-jet-list-item]")]
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -1108,6 +1187,11 @@ export function JetApp() {
     [ensureLspForFile],
   )
 
+  executeCommandRef.current = executeCommand
+  runKeyBindingRef.current = runKeyBinding
+  handleLspAttachFailedRef.current = handleLspAttachFailed
+  refreshProblemsRef.current = refreshProblems
+
   useEffect(() => {
     if (activeTabKindName !== "editor") setEditorCursor(null)
   }, [activeTabKindName])
@@ -1296,19 +1380,20 @@ export function JetApp() {
             <PanelTabBar
               panelId={panelId}
               view={view}
-              workspace={workspace}
+              store={tabStore}
+              registry={tabTypeRegistry}
               focused={meta.focused}
-              onActivateTab={uri =>
-                handlePanelEvent({ type: "tabActivate", panelId, uri })
+              onActivateTab={tabId =>
+                handlePanelEvent({ type: "tabActivate", panelId, tabId })
               }
-              onCloseTab={uri =>
-                handlePanelEvent({ type: "tabClose", panelId, uri })
+              onCloseTab={tabId =>
+                handlePanelEvent({ type: "tabClose", panelId, tabId })
               }
-              onReorderTab={(uri, toIndex) =>
-                handlePanelEvent({ type: "tabReorder", panelId, uri, toIndex })
+              onReorderTab={(tabId, toIndex) =>
+                handlePanelEvent({ type: "tabReorder", panelId, tabId, toIndex })
               }
-              onTabDrop={(source, sourceUri, target, action) =>
-                handlePanelEvent({ type: "tabDrop", source, sourceUri, target, action })
+              onTabDrop={(source, sourceTabId, target, action) =>
+                handlePanelEvent({ type: "tabDrop", source, sourceTabId, target, action })
               }
             />
           )}
@@ -1316,25 +1401,9 @@ export function JetApp() {
             <PanelBody
               panelId={panelId}
               view={view}
-              workspace={workspace}
-              theme={activeTheme}
-              resolveLspClient={resolveLspClient}
-              lspRevision={lspRevision}
-              executeCommand={executeCommand}
-              runKeyBinding={runKeyBinding}
-              onOpenFile={handleOpenFile}
-              onOpenListItem={openListItem}
-              keymapBindings={keymapBindings}
-              userExtensions={userExtensions}
-              keymapRevision={keymapRevision}
-              keymapContext={keymapContext}
-              onEditorFocusChange={setEditorFocused}
-              onEditorSelectionChange={(line: number, column: number, rangeCount: number) =>
-                setEditorCursor({ line, column, rangeCount })
-              }
-              onLspAttachFailed={handleLspAttachFailed}
-              onProblemsChange={refreshProblems}
-              autoFocus={meta.focused && activeTabKindName === "editor"}
+              store={tabStore}
+              registry={tabTypeRegistry}
+              focused={meta.focused}
             />
           )}
         />

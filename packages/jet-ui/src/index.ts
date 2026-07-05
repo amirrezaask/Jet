@@ -1,6 +1,14 @@
 export { PanelDock, type PanelDockProps, type PanelSlotMeta } from "./dock/PanelDock.js"
 export { PanelBody } from "./dock/PanelBody.js"
-export { PanelTabBar, panelTabsFor, type PanelTab } from "./dock/PanelTabBar.js"
+export { PanelTabBar, tabIdsOf, type PanelTab } from "./dock/PanelTabBar.js"
+export { TabHost } from "./tabs/TabHost.js"
+export {
+  TabStore,
+  TabTypeRegistry,
+  type TabInstance,
+  type TabType,
+  type TabRenderCtx,
+} from "./tabs/registry.js"
 export { AppShell } from "./shell/AppShell.js"
 export { JetTitleBar, type JetTitleBarAction, type JetTitleBarCheckboxAction, type JetTitleBarMenu } from "./shell/JetTitleBar.js"
 export { focusExplorerPanel } from "./explorer/focus.js"
@@ -10,7 +18,6 @@ export { OutlineOverlay, type OutlineEntry } from "./components/OutlineOverlay.j
 export { QuickOpenOverlay } from "./components/QuickOpenOverlay.js"
 export { BufferListOverlay } from "./components/BufferListOverlay.js"
 export {
-  ListPanelBody,
   LocationList,
   SearchLocationList,
   ReferencesLocationList,
@@ -31,6 +38,8 @@ export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js
 export { setEditorCursor, getEditorCursor } from "./status/editor-cursor-store.js"
 export { WelcomeView } from "./welcome/WelcomeView.js"
 export { EditorTabHost, getEditorView, getAllEditorViews, syncAllEditorThemes, destroyEditorBuffer, destroyEditorPanel } from "./tabs/EditorTabHost.js"
+export { ExplorerTab } from "./tabs/ExplorerTab.js"
+export { OutputPanel } from "./panels/OutputPanel.js"
 export { showEditorContextMenuAt } from "./components/EditorContextMenu.js"
 export { bundledThemes, vercelDark, vercelLight, themeForScheme, type ColorScheme } from "./theme/bundled.js"
 export { defaultJetTheme, applyJetThemeCss, applyColorScheme } from "@jet/codemirror"
@@ -41,6 +50,6 @@ export { TooltipProvider } from "./components/ui/tooltip.js"
 export { Toaster } from "./components/ui/sonner.js"
 export { ConfirmDialogHost, requestConfirm } from "./components/ConfirmDialogHost.js"
 export { showJetToast } from "./toast.js"
-export { registerListPanel, getListPanel, registerExplorerPanel, getExplorerPanel } from "./lib/list-registry.js"
+export { registerListPanel, getListPanel } from "./lib/list-registry.js"
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
 export { FindReplaceDrawer } from "./components/FindReplaceDrawer.js"

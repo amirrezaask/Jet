@@ -36,7 +36,7 @@ export function PanelDropOverlay({
   panelId: PanelId
   onTabDrop: (
     source: PanelId,
-    sourceUri: string,
+    sourceTabId: string,
     target: PanelId,
     action: DropAction,
   ) => void
@@ -88,7 +88,7 @@ export function PanelDropOverlay({
     e.preventDefault()
     setZone(null)
     drag.endTab()
-    onTabDrop(tabDrag.panelId, tabDrag.uri, panelId, action)
+    onTabDrop(tabDrag.panelId, tabDrag.tabId, panelId, action)
   }
 
   return (

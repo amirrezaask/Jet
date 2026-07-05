@@ -17,13 +17,21 @@ import {
 } from "./panel-tabs.js"
 import {
   EXPLORER_TAB_ID,
-  isListTabKind,
   OUTPUT_TAB_ID,
   PROBLEMS_TAB_ID,
   TabRegistry,
   type TabDescriptor,
   type TabKind,
 } from "./tab-registry.js"
+
+/** Tab kinds whose payload lives in the list store and should be disposed with the tab. */
+const LIST_TAB_KINDS = new Set<string>([
+  "search",
+  "problems",
+  "references",
+  "definitions",
+  "task-errors",
+])
 
 export type ConfirmDiscardReloadFn = (fileName: string) => Promise<boolean>
 
@@ -181,7 +189,7 @@ export class WorkspaceService {
   disposeTab(tabId: string): void {
     const kind = this.tabRegistry.kindFor(tabId)
     this.tabRegistry.dispose(tabId)
-    if (kind && isListTabKind(kind)) {
+    if (kind && LIST_TAB_KINDS.has(kind)) {
       this.listStore.dispose(tabId)
     }
   }

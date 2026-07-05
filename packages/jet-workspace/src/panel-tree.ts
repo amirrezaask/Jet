@@ -23,7 +23,7 @@ export class JetPanelTree extends PanelTree<PanelView> {
 
   applyTabDrop(
     source: PanelId,
-    sourceUri: string,
+    sourceTabId: string,
     target: PanelId,
     action: DropAction,
   ): { moved: boolean; createdPanel: PanelId | null } {
@@ -37,9 +37,9 @@ export class JetPanelTree extends PanelTree<PanelView> {
     let remainingSourceView: PanelView
     if (sourceView.kind === "tabs") {
       const tabIds = panelTabIds(sourceView)
-      if (!tabIds.includes(sourceUri)) return { moved: false, createdPanel: null }
-      movedView = buildTabsView(sourceUri, [sourceUri])
-      remainingSourceView = popPanelTab(sourceView, sourceUri)
+      if (!tabIds.includes(sourceTabId)) return { moved: false, createdPanel: null }
+      movedView = buildTabsView(sourceTabId, [sourceTabId])
+      remainingSourceView = popPanelTab(sourceView, sourceTabId)
     } else {
       movedView = sourceView
       remainingSourceView = { kind: "empty" }

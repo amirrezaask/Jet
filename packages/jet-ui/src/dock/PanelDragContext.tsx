@@ -3,15 +3,15 @@ import type { PanelId } from "@jet/shared"
 
 export const TAB_DRAG_MIME = "application/x-jet-tab"
 
-export type TabDragSource = { panelId: PanelId; uri: string }
+export type TabDragSource = { panelId: PanelId; tabId: string }
 
 export function parseTabDragPayload(raw: string): TabDragSource | null {
   const sep = raw.indexOf("|")
   if (sep < 0) return null
   const panelIdNum = Number(raw.slice(0, sep))
-  const uri = raw.slice(sep + 1)
-  if (!Number.isFinite(panelIdNum) || !uri) return null
-  return { panelId: { id: panelIdNum }, uri }
+  const tabId = raw.slice(sep + 1)
+  if (!Number.isFinite(panelIdNum) || !tabId) return null
+  return { panelId: { id: panelIdNum }, tabId }
 }
 
 export function resolveTabDragSource(
@@ -42,8 +42,6 @@ export function PanelDragProvider({ children }: { children: ReactNode }) {
     }),
     [tabSource],
   )
-  // Window-level dragover: preventDefault for tab MIME so drop stays enabled
-  // even in a frame where the overlay hasn't mounted yet.
   useEffect(() => {
     if (!tabSource) return
     const onDragOver = (e: DragEvent) => {
@@ -53,7 +51,6 @@ export function PanelDragProvider({ children }: { children: ReactNode }) {
     }
     const onDrop = (e: DragEvent) => {
       if (e.dataTransfer?.types.includes(TAB_DRAG_MIME)) {
-        // Prevent default browser behavior (navigation) if drop escapes app zones.
         e.preventDefault()
       }
     }

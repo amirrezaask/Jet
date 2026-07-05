@@ -26,8 +26,6 @@ export type PanelDockProps<TView> = {
   renderHeader: (view: TView, panelId: PanelId, meta: PanelSlotMeta) => ReactNode
   /** Render the body content for a panel. */
   renderContent: (view: TView, panelId: PanelId, meta: PanelSlotMeta) => ReactNode
-  /** Stable structural key for the view — controls re-mount vs update. Default: view.kind + panelId. */
-  contentKey?: (view: TView, panelId: PanelId) => string
 }
 
 function splitPanelDomId(path: number[], index: number): string {
@@ -115,8 +113,8 @@ function PanelLeaf<TView>({
         {renderContent(view, panelId, meta)}
         <PanelDropOverlay
           panelId={panelId}
-          onTabDrop={(source, sourceUri, target, action) =>
-            onEvent({ type: "tabDrop", source, sourceUri, target, action })
+          onTabDrop={(source, sourceTabId, target, action) =>
+            onEvent({ type: "tabDrop", source, sourceTabId, target, action })
           }
         />
       </div>

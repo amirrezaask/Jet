@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { registerExplorerPanel } from "@/lib/list-registry.js"
+import { registerListPanel } from "@/lib/list-registry.js"
+import { EXPLORER_LIST_ID } from "@/explorer/focus.js"
 import { ChevronRight, File, Folder } from "lucide-react"
 import type { WorkspaceEntry, WorkspaceService } from "@jet/workspace"
 import {
@@ -164,7 +165,7 @@ export function ExplorerTree({
   }, [rootUri, workspace])
 
   const contentRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => registerExplorerPanel(contentRef.current), [rootUri])
+  useEffect(() => registerListPanel(EXPLORER_LIST_ID, contentRef.current), [rootUri])
 
   if (!rootUri) return null
 

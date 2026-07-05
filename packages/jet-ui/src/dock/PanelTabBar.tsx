@@ -1,11 +1,9 @@
-import { useState, type DragEvent, type ReactNode } from "react"
+import { useEffect, useState, type DragEvent, type ReactNode } from "react"
 import { XIcon } from "lucide-react"
-import { basename } from "@jet/shared"
 import type { DropAction, PanelId, PanelView } from "@jet/shared"
-import type { WorkspaceService } from "@jet/workspace"
-import { panelTabIds } from "@jet/workspace"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
 import { TAB_DRAG_MIME, usePanelDrag, resolveTabDragSource } from "./PanelDragContext.js"
+import type { TabStore, TabTypeRegistry } from "../tabs/registry.js"
 import { cn } from "@/lib/utils.js"
 
 export type PanelTab = {
@@ -13,26 +11,25 @@ export type PanelTab = {
   label: string
   dirty?: boolean
   closable: boolean
+  icon?: ReactNode
 }
 
-export function panelTabsFor(view: PanelView, workspace: WorkspaceService): {
-  tabs: PanelTab[]
-  activeId: string
-} {
-  if (view.kind !== "tabs") {
-    return { tabs: [], activeId: "" }
-  }
-  const tabs = panelTabIds(view).map(id => {
-    const desc = workspace.tabRegistry.get(id)
-    const file = desc?.kind === "editor" ? workspace.fileForUri(id) : undefined
-    return {
-      id,
-      label: desc?.label ?? file?.name ?? basename(id) ?? id,
-      dirty: !!file?.isDirty,
-      closable: true,
-    }
-  })
-  return { tabs, activeId: view.activeTabId }
+export function tabIdsOf(view: PanelView): { tabIds: string[]; activeId: string } {
+  if (view.kind !== "tabs") return { tabIds: [], activeId: "" }
+  const tabIds = view.tabIds.length ? view.tabIds : [view.activeTabId]
+  return { tabIds, activeId: view.activeTabId }
+}
+
+function useStoreRevision(store: TabStore, tabIds: string[]): number {
+  const [rev, setRev] = useState(0)
+  useEffect(() => {
+    const ids = new Set(tabIds)
+    const sub = store.onDidChange.event(evt => {
+      if (ids.has(evt.id)) setRev(r => r + 1)
+    })
+    return () => sub.dispose()
+  }, [store, tabIds.join("|")])
+  return rev
 }
 
 function getTabDragOverLocation(e: DragEvent, tabEl: HTMLElement): "left" | "right" {
@@ -94,7 +91,8 @@ function computeTabDropTarget(
 export function PanelTabBar({
   panelId,
   view,
-  workspace,
+  store,
+  registry,
   focused,
   onActivateTab,
   onCloseTab,
@@ -103,7 +101,8 @@ export function PanelTabBar({
 }: {
   panelId: PanelId
   view: PanelView
-  workspace: WorkspaceService
+  store: TabStore
+  registry: TabTypeRegistry
   focused: boolean
   onActivateTab: (tabId: string) => void
   onCloseTab: (tabId: string) => void
@@ -116,7 +115,16 @@ export function PanelTabBar({
   ) => void
 }) {
   const drag = usePanelDrag()
-  const { tabs, activeId } = panelTabsFor(view, workspace)
+  const { tabIds, activeId } = tabIdsOf(view)
+  useStoreRevision(store, tabIds)
+  const tabs: PanelTab[] = tabIds.map(id => ({
+    id,
+    label: store.title(id, id),
+    dirty: store.dirty(id),
+    icon: store.icon(id),
+    closable: true,
+  }))
+  void registry
   const [dropTarget, setDropTarget] = useState<TabDropTarget>(null)
   const hasTabs = view.kind === "tabs"
 
@@ -126,7 +134,7 @@ export function PanelTabBar({
     e.dataTransfer.setData(TAB_DRAG_MIME, `${panelId.id}|${tabId}`)
     const el = e.currentTarget as HTMLElement
     e.dataTransfer.setDragImage(el, 10, 10)
-    drag.startTab({ panelId, uri: tabId })
+    drag.startTab({ panelId, tabId })
   }
 
   const onTabDragEnd = () => {
@@ -159,9 +167,9 @@ export function PanelTabBar({
     drag.endTab()
 
     if (src.panelId.id === panelId.id) {
-      onReorderTab(src.uri, insertIndex)
+      onReorderTab(src.tabId, insertIndex)
     } else {
-      onTabDrop(src.panelId, src.uri, panelId, { kind: "moveToPane", insertIndex })
+      onTabDrop(src.panelId, src.tabId, panelId, { kind: "moveToPane", insertIndex })
     }
   }
 
@@ -187,6 +195,7 @@ export function PanelTabBar({
         )}
         title={tab.id}
       >
+        {tab.icon}
         <span className="truncate">
           {tab.label}
           {tab.dirty ? " •" : ""}
