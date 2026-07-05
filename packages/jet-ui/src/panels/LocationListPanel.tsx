@@ -190,7 +190,7 @@ export function LocationListPanel({
                   <button
                     type="button"
                     data-jet-list-item
-                    className="flex h-full w-full min-w-0 flex-col justify-center overflow-hidden rounded-sm px-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    className="flex h-full w-full min-w-0 flex-col justify-center overflow-hidden rounded-md px-2 text-left ring-sidebar-ring outline-hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:bg-sidebar-accent focus-visible:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground"
                     style={{ height: ROW_HEIGHT_PX, minHeight: ROW_HEIGHT_PX, maxHeight: ROW_HEIGHT_PX }}
                     onClick={() => onOpenItem(item)}
                   >

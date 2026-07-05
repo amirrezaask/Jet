@@ -615,9 +615,17 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 - Adding Tauri — project chose **Electron**
 - Large shadcn default styling — keep RAD/custom theme direction
 
-## Open Backlog (2026-07-05)
+## Open Backlog (updated 2026-07-05)
 
 Deferred items from shadcn-integration audit session. Each is scoped as a stand-alone task; pick top-down.
+
+### Recently closed (2026-07-05)
+- [x] **StatusBar tooltip `sideOffset`** — added `sideOffset={6}` to workspace tooltip + LSP popover in `packages/jet-ui/src/status/StatusBar.tsx`.
+- [x] **LocationList row vs Explorer row hover/focus drift** — LocationList row now uses `sidebar-accent` tokens matching `sidebarMenuButtonVariants` (`packages/jet-ui/src/panels/LocationListPanel.tsx:193`).
+- [x] **Toast + confirm dialog unification** — `showJetToast(msg, { variant, description })` maps to `sonner`'s `error`/`warning`/`info`/`success`; `ConfirmDialogHost` accepts shared `JetVariant` string (destructive/warning) alongside legacy `destructive?: boolean`.
+- [x] **CdOverlay rewrite to shadcn `Command`** — completion list now uses `Command`/`CommandList`/`CommandItem` with `shouldFilter={false}`, manual value + a11y `aria-controls`/`aria-activedescendant` on `Input`. Alt-Backspace segment delete, Tab/Enter apply completion, Cmd-Enter confirms — preserved. `ScrollArea` dropped in favor of `CommandList` scroll region.
+- [x] **`EditorContextMenu.tsx` root/trigger** — verified `EditorTabHost.tsx:415` already wraps content in `<ContextMenu>` root + `<ContextMenuTrigger asChild>` around the host `<div>`. External `showEditorContextMenuAt(x, y)` dispatches synthetic `contextmenu` on trigger — Radix opens via native event so focus-trap + z-index are correct. No change needed; backlog note was stale.
+- [x] **`JetApp` unused imports** — removed unused `JetTheme` type import and stale `currentTree` local in `packages/jet-app/src/App.tsx`.
 
 ### Syntax highlighting for Rust (Electron only)
 - **Symptom:** User reports Rust files render with zero syntax colors when opening real repos (`loki/`) in the **Electron desktop app**. Fixture-based `.rs` files under `fixtures/sample-workspace` DO get highlighted correctly in `pnpm dev:web` (a11y-verified).
@@ -632,10 +640,6 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 - **Fix:** wrap in a Compartment; on theme change, reconfigure with fresh colors object. OR patch the plugin to read from CSS var `var(--jet-indent-marker)`.
 - Currently both light/dark values equal `theme.colors.border` for the ACTIVE theme, so single-view works; only broken across theme toggle without view rebuild.
 
-### CdOverlay uses raw Input/Button/ScrollArea (Task #13)
-- `packages/jet-ui/src/components/CdOverlay.tsx` — 289 LOC, ignores shadcn `Command`/`CommandInput`/`CommandList`/`CommandItem`. Has manual ArrowUp/Down/Enter/Tab keyboard nav.
-- **Fix:** rewrite in the QuickOpenOverlay pattern (see `packages/jet-ui/src/components/QuickOpenOverlay.tsx`). Preserve directory navigation (Backspace goes up, Enter descends folder or picks).
-
 ### Dead `Sidebar` wrapper in `ui/sidebar.tsx` (Task #7)
 - File is 730 LOC of shadcn boilerplate; only `SidebarProvider` + `SidebarTrigger` + `SidebarMenu*` + `useSidebar` are imported by app code. `Sidebar`, `SidebarInset`, `SidebarRail`, `SidebarInput`, `SidebarHeader`, `SidebarFooter`, `SidebarSeparator` are dead exports.
 - **Deferred, not urgent:** Vite tree-shakes them from the ship bundle. Delete only if source dead-code hygiene matters.
@@ -644,23 +648,6 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 - `packages/jet-codemirror/src/completion-context-menu.ts:16-23` — DOM-patches shadcn classes onto CodeMirror autocomplete tooltip after mount. Fragile: breaks if shadcn class names change; no keyboard-role parity with shadcn `Command`/`Popover`.
 - **Fix:** stop overriding CM tooltip; render completion list in a React portal as shadcn `Popover` + `Command`, positioned to the caret via `EditorView.requestMeasure`. Preserves keymap arrows + Enter via a `keydown` bridge.
 
-### `EditorContextMenu.tsx` renders `ContextMenuContent` without root/trigger (Medium)
-- `packages/jet-ui/src/components/EditorContextMenu.tsx:57` — mounts `ContextMenuContent` directly, driven by external event handler `registerEditorContextMenuHandler`. Non-standard for Radix; risks focus-trap + z-index bugs.
-- **Fix:** wrap in a controlled `ContextMenu` root with `open` state fed by the handler; put a hidden `ContextMenuTrigger` at editor root.
-
-### StatusBar tooltip `sideOffset` (Low)
-- `packages/jet-ui/src/status/StatusBar.tsx:89, 101` — tooltips lack `sideOffset`; can clip against status-bar footer.
-
-### LocationList row vs Explorer row hover/focus drift (Medium)
-- LocationList: custom `<button>` with `hover:bg-accent focus-visible:ring-2` (`packages/jet-ui/src/panels/LocationListPanel.tsx:193`).
-- Explorer: `SidebarMenuButton` from shadcn (`packages/jet-ui/src/tabs/ExplorerTab.tsx`), uses `sidebarMenuButtonVariants`.
-- Different hover backgrounds, focus rings, row heights.
-- **Fix:** promote a shared list-row primitive (or use `SidebarMenuButton` in LocationList since it's already in the explorer sibling).
-
-### Toast + confirm dialog unification (Low)
-- `packages/jet-ui/src/toast.ts` wraps `sonner`; `packages/jet-ui/src/components/ConfirmDialogHost.tsx` uses `AlertDialog`. Confirm inlines `bg-destructive` on the action button. No shared "destructive/warning/info" variant API across toast + confirm.
-- **Fix:** add `showJetToast(msg, { variant: "destructive" | "warning" | "info" })` mapping to `sonner`'s error/warning/info; make ConfirmDialogHost take the same variant string.
-
 ### Explorer virtualization for large repos (Medium)
 - `packages/jet-ui/src/tabs/ExplorerTab.tsx` — renders every visible file synchronously. `@tanstack/react-virtual` is already a dep (see `packages/jet-ui/package.json`).
 - **Fix:** virtualize `SidebarMenu` children. Preserve `data-jet-list-item` on rendered rows so visual scenarios still find them by selector.
@@ -668,9 +655,6 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 ### Explorer `focusExplorerPanel` uses DOM `querySelector` (Low)
 - `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18` — imperative DOM query on `[data-jet-explorer-panel]` + `[data-sidebar="trigger"]`. Brittle to selector rename.
 - **Fix:** expose a ref-based focus API via `useSidebar()` context or a ref forwarded from `ExplorerPanel`.
-
-### `JetApp` unused imports (Low)
-- `packages/jet-app/src/App.tsx:45` `JetTheme` unused, `l.620` `currentTree` unused. Not blocking but pollutes TS 6133 warnings.
 
 ### Custom decoration follow-ups (Task #4 tail)
 - macOS shipped with `hiddenInset` + `JetTitleBar` component. Verified via `?titlebar=1` browser query + `tests/visual/scenarios/titlebar.json`.

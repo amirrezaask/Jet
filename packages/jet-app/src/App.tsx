@@ -42,7 +42,6 @@ import {
   problemsFingerprint,
   setPendingEditorNavigation,
   setPendingInitialContent,
-  type JetTheme,
   type ColorScheme,
 } from "@jet/codemirror"
 import {
@@ -617,7 +616,6 @@ export function JetApp() {
   const keymapTargetViewRef = useRef<EditorView | null>(null)
 
   const getCommandContext = useCallback((): JetCommandContext => {
-    const currentTree = appStateRef.current.panelTree
     const currentFocusedPanel = appStateRef.current.focusedPanel
     return {
       workspace,

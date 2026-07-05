@@ -98,7 +98,7 @@ export function StatusBar({
               )}
             </span>
           </TooltipTrigger>
-          <TooltipContent side="top">{workspacePath}</TooltipContent>
+          <TooltipContent side="top" sideOffset={6}>{workspacePath}</TooltipContent>
         </Tooltip>
       ) : (
         <span className="jet-status-zone min-w-0 shrink">
@@ -149,7 +149,7 @@ export function StatusBar({
             <span>LSP {lspShortLabel(lspStatus)}</span>
           </button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="end" className="w-64 p-3">
+        <PopoverContent side="top" align="end" sideOffset={6} className="w-64 p-3">
           <PopoverHeader>
             <PopoverTitle>Language Server</PopoverTitle>
             <PopoverDescription>{lspLabel(lspStatus)}</PopoverDescription>

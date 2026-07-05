@@ -1,4 +1,12 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react"
 import { Folder } from "lucide-react"
 import { pathToFileUri } from "@jet/shared"
 import {
@@ -8,6 +16,12 @@ import {
   resolvePathForOpen,
 } from "@jet/workspace"
 import {
+  Command,
+  CommandEmpty,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command.js"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -15,9 +29,9 @@ import {
 } from "@/components/ui/dialog.js"
 import { Input } from "@/components/ui/input.js"
 import { Button } from "@/components/ui/button.js"
-import { ScrollArea } from "@/components/ui/scroll-area.js"
 import { KeyBindingKbd } from "./KeyBindingKbd.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
+import { COMMAND_NO_SELECTION } from "@/lib/command-shell.js"
 
 type DirEntry = {
   uri: string
@@ -26,7 +40,7 @@ type DirEntry = {
 
 const MAX_DIR_ENTRIES = 500
 
-function listNavModifiers(e: KeyboardEvent): boolean {
+function isListNavModified(e: KeyboardEvent): boolean {
   return e.shiftKey || e.metaKey || e.ctrlKey || e.altKey
 }
 
@@ -49,7 +63,7 @@ export function CdOverlay({
   const [entries, setEntries] = useState<DirEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [highlight, setHighlight] = useState(0)
+  const [selectedValue, setSelectedValue] = useState<string>(COMMAND_NO_SELECTION)
   const inputRef = useRef<HTMLInputElement>(null)
   const resolveHomeDirRef = useRef(resolveHomeDir)
   resolveHomeDirRef.current = resolveHomeDir
@@ -70,7 +84,7 @@ export function CdOverlay({
       setEntries([])
       setError(null)
       setLoading(false)
-      setHighlight(0)
+      setSelectedValue(COMMAND_NO_SELECTION)
       return
     }
 
@@ -117,7 +131,6 @@ export function CdOverlay({
             .sort((a, b) => a.name.localeCompare(b.name))
             .slice(0, MAX_DIR_ENTRIES),
         )
-        setHighlight(0)
       })
       .catch(() => {
         if (!cancelled) {
@@ -141,8 +154,13 @@ export function CdOverlay({
   }, [completionCtx, entries])
 
   useEffect(() => {
-    if (highlight >= completions.length) setHighlight(Math.max(0, completions.length - 1))
-  }, [highlight, completions.length])
+    if (completions.length === 0) {
+      setSelectedValue(COMMAND_NO_SELECTION)
+      return
+    }
+    const first = completions[0]!.uri
+    setSelectedValue(prev => (completions.some(e => e.uri === prev) ? prev : first))
+  }, [completions])
 
   const syncCursorFromInput = useCallback(() => {
     const el = inputRef.current
@@ -174,6 +192,24 @@ export function CdOverlay({
     })
   }, [homeDir, pathInput, onSelectFolder, onOpenChange])
 
+  const moveHighlight = useCallback(
+    (delta: 1 | -1) => {
+      if (completions.length === 0) return
+      const idx = Math.max(
+        0,
+        completions.findIndex(e => e.uri === selectedValue),
+      )
+      const next = (idx + delta + completions.length) % completions.length
+      setSelectedValue(completions[next]!.uri)
+    },
+    [completions, selectedValue],
+  )
+
+  const highlightedEntry = useMemo(
+    () => completions.find(e => e.uri === selectedValue) ?? null,
+    [completions, selectedValue],
+  )
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
@@ -186,7 +222,6 @@ export function CdOverlay({
           onChange={e => {
             setPathInput(e.target.value)
             setCursor(e.target.selectionStart ?? e.target.value.length)
-            setHighlight(0)
           }}
           onSelect={syncCursorFromInput}
           onKeyUp={syncCursorFromInput}
@@ -208,14 +243,14 @@ export function CdOverlay({
               return
             }
 
-            if (e.key === "ArrowDown" && !listNavModifiers(e)) {
+            if (e.key === "ArrowDown" && !isListNavModified(e)) {
               e.preventDefault()
-              setHighlight(i => Math.min(i + 1, Math.max(0, completions.length - 1)))
+              moveHighlight(1)
               return
             }
-            if (e.key === "ArrowUp" && !listNavModifiers(e)) {
+            if (e.key === "ArrowUp" && !isListNavModified(e)) {
               e.preventDefault()
-              setHighlight(i => Math.max(i - 1, 0))
+              moveHighlight(-1)
               return
             }
 
@@ -226,41 +261,52 @@ export function CdOverlay({
             }
 
             if (e.key === "Enter" || e.key === "Tab") {
-              const entry = completions[highlight]
-              if (!entry) return
+              if (!highlightedEntry) return
               e.preventDefault()
-              applyCompletion(entry.name)
+              applyCompletion(highlightedEntry.name)
             }
           }}
           className="rounded-none border-0 border-b"
           autoFocus
+          aria-controls="jet-cd-list"
+          aria-activedescendant={
+            highlightedEntry ? `jet-cd-item-${highlightedEntry.uri}` : undefined
+          }
         />
-        <ScrollArea style={{ maxHeight: "20rem" }}>
-          <div className="p-1">
-            {error ? <div className="px-3 py-2 text-sm text-muted-foreground">{error}</div> : null}
-            {!homeDir || loading ? (
+        <Command
+          shouldFilter={false}
+          value={selectedValue}
+          onValueChange={setSelectedValue}
+          className="border-0"
+        >
+          <CommandList
+            id="jet-cd-list"
+            className="max-h-[var(--jet-overlay-list-max,20rem)]"
+          >
+            {error ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground">{error}</div>
+            ) : !homeDir || loading ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">Loading…</div>
-            ) : completions.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-muted-foreground">No matching directories.</div>
             ) : (
-              completions.map((entry, index) => (
-                <Button
-                  key={entry.uri}
-                  type="button"
-                  variant="ghost"
-                  onMouseEnter={() => setHighlight(index)}
-                  onClick={() => applyCompletion(entry.name)}
-                  className={`flex h-auto w-full justify-start gap-2 rounded-sm px-3 py-2 font-normal ${
-                    index === highlight ? "bg-accent" : ""
-                  }`}
-                >
-                  <Folder className="size-3.5 shrink-0 text-foreground" />
-                  <span className="flex-1 truncate">{entry.name}</span>
-                </Button>
-              ))
+              <>
+                <CommandEmpty>No matching directories.</CommandEmpty>
+                <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
+                {completions.map(entry => (
+                  <CommandItem
+                    key={entry.uri}
+                    id={`jet-cd-item-${entry.uri}`}
+                    value={entry.uri}
+                    onSelect={() => applyCompletion(entry.name)}
+                    className="gap-2"
+                  >
+                    <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="flex-1 truncate">{entry.name}</span>
+                  </CommandItem>
+                ))}
+              </>
             )}
-          </div>
-        </ScrollArea>
+          </CommandList>
+        </Command>
         <div className="border-t p-2">
           <Button
             type="button"

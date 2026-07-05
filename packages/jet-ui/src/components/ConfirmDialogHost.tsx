@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog.js"
+import type { JetVariant } from "../toast.js"
 
 export type ConfirmOptions = {
   title: string
@@ -16,6 +17,19 @@ export type ConfirmOptions = {
   confirmLabel?: string
   cancelLabel?: string
   destructive?: boolean
+  variant?: JetVariant
+}
+
+function actionClassForVariant(variant: JetVariant | undefined, destructive: boolean | undefined): string | undefined {
+  const resolved = variant ?? (destructive ? "destructive" : "default")
+  switch (resolved) {
+    case "destructive":
+      return "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+    case "warning":
+      return "bg-amber-500 hover:bg-amber-500/90 text-white"
+    default:
+      return undefined
+  }
 }
 
 let pending: ConfirmOptions | null = null
@@ -68,7 +82,7 @@ export function ConfirmDialogHost() {
             {options?.cancelLabel ?? "Cancel"}
           </AlertDialogCancel>
           <AlertDialogAction
-            className={options?.destructive ? "bg-destructive hover:bg-destructive/90" : undefined}
+            className={actionClassForVariant(options?.variant, options?.destructive)}
             onClick={() => finish(true)}
           >
             {options?.confirmLabel ?? "Continue"}
