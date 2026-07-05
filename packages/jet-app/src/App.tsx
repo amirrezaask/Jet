@@ -76,6 +76,8 @@ import {
   WorkspaceShell,
   ExplorerPanel,
   focusExplorerPanel,
+  JetTitleBar,
+  type JetTitleBarMenu,
 } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
@@ -1064,10 +1066,86 @@ export function JetApp() {
     }
   }, [keymapBindings, keymapContext, runKeyBinding, workspace.root, executeCommand])
 
+  const titleBarMenus = useMemo<JetTitleBarMenu[]>(() => {
+    const shortcutFor = (fnName: string): string | undefined => {
+      const run = appCommands[fnName as keyof typeof appCommands]
+      const key = run ? keybindingByFn.get(run) : undefined
+      return key ? formatKeyBinding(key) : undefined
+    }
+    return [
+      {
+        id: "file",
+        label: "File",
+        items: [
+          { id: "newFile", label: "New File", shortcut: shortcutFor("newFile"), onSelect: () => void executeCommand("workspace.newFile") },
+          { id: "openFile", label: "Open File…", shortcut: shortcutFor("openFile"), onSelect: () => void executeCommand("workspace.openFile") },
+          { id: "openFolder", label: "Open Folder…", shortcut: shortcutFor("openFolder"), onSelect: () => void executeCommand("workspace.openFolder") },
+          { kind: "separator" as const },
+          { id: "save", label: "Save", shortcut: shortcutFor("save"), onSelect: () => void executeCommand("workspace.saveFile") },
+          { kind: "separator" as const },
+          { id: "closeBuffer", label: "Close Tab", shortcut: shortcutFor("closeBuffer"), onSelect: () => void executeCommand("workspace.closeBuffer") },
+        ],
+      },
+      {
+        id: "edit",
+        label: "Edit",
+        items: [
+          { id: "find", label: "Find…", shortcut: shortcutFor("find"), onSelect: () => void executeCommand("editor.find") },
+          { id: "replace", label: "Replace…", shortcut: shortcutFor("replace"), onSelect: () => void executeCommand("editor.replace") },
+          { id: "goto", label: "Go to Line…", shortcut: shortcutFor("gotoLine"), onSelect: () => void executeCommand("editor.gotoLine") },
+          { kind: "separator" as const },
+          { id: "toggleComment", label: "Toggle Comment", shortcut: shortcutFor("toggleComment"), onSelect: () => void executeCommand("editor.toggleComment") },
+        ],
+      },
+      {
+        id: "view",
+        label: "View",
+        items: [
+          { id: "palette", label: "Command Palette…", shortcut: shortcutFor("palette"), onSelect: () => void executeCommand("ui.showCommandPalette") },
+          { id: "quickOpen", label: "Quick Open…", shortcut: shortcutFor("quickOpen"), onSelect: () => void executeCommand("workspace.quickOpen") },
+          { id: "explorer", label: "Show Explorer", shortcut: shortcutFor("explorer"), onSelect: () => void executeCommand("explorer.show") },
+          { id: "locationList", label: "Show Location List", shortcut: shortcutFor("locationList"), onSelect: () => void executeCommand("locationlist.show") },
+          { id: "output", label: "Show Output", shortcut: shortcutFor("output"), onSelect: () => void executeCommand("output.show") },
+          { kind: "separator" as const },
+          { id: "theme", label: "Toggle Color Scheme", onSelect: () => void executeCommand("ui.toggleColorScheme") },
+          { id: "zoomIn", label: "Zoom In", shortcut: shortcutFor("zoomIn"), onSelect: () => void executeCommand("ui.zoomIn") },
+          { id: "zoomOut", label: "Zoom Out", shortcut: shortcutFor("zoomOut"), onSelect: () => void executeCommand("ui.zoomOut") },
+        ],
+      },
+      {
+        id: "go",
+        label: "Go",
+        items: [
+          { id: "buffers", label: "Buffer List…", shortcut: shortcutFor("bufferList"), onSelect: () => void executeCommand("workspace.bufferList") },
+          { id: "projects", label: "Switch Project…", shortcut: shortcutFor("switchProject"), onSelect: () => void executeCommand("workspace.switchProject") },
+          { id: "cd", label: "Change Directory…", shortcut: shortcutFor("cd"), onSelect: () => void executeCommand("workspace.cd") },
+          { kind: "separator" as const },
+          { id: "jumpBack", label: "Jump Back", shortcut: shortcutFor("jumpBack"), onSelect: () => void executeCommand("navigation.jumpBack") },
+          { id: "jumpForward", label: "Jump Forward", shortcut: shortcutFor("jumpForward"), onSelect: () => void executeCommand("navigation.jumpForward") },
+        ],
+      },
+    ]
+  }, [executeCommand, appCommands, keybindingByFn])
+
+  const isMac =
+    typeof navigator !== "undefined" && /Mac|iPad|iPhone|iPod/i.test(navigator.userAgent)
+  const forceTitleBar =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("titlebar") === "1"
+  const showTitleBar = forceTitleBar || (!isWebMode && isMac)
+
   return (
     <TooltipProvider>
     <div className="h-full w-full" data-drag-over={fileDragOver || undefined}>
     <AppShell
+      titleBar={
+        showTitleBar ? (
+          <JetTitleBar
+            menus={titleBarMenus}
+            center={workspace.root ? (activeEditorFile ? `${activeEditorFile.name}${activeEditorFile.isDirty ? " •" : ""} — ${workspace.root.name}` : workspace.root.name) : "Jet"}
+          />
+        ) : undefined
+      }
       footer={
         <>
           {pendingChordPrefix && (

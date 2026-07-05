@@ -164,7 +164,7 @@ export function OpenFileOverlay({
               }
             }}
           />
-          <CommandList style={{ maxHeight: "20rem" }}>
+          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
             {loading ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">Loading…</div>
             ) : (

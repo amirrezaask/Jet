@@ -82,6 +82,7 @@ type Scenario = {
   base_url?: string
   workspace?: string
   files?: string[]
+  query?: Record<string, string>
   steps: Step[]
 }
 
@@ -580,6 +581,7 @@ async function run(scenarioPath: string): Promise<ResultJson> {
   if (scenario.workspace) params.set("workspace", scenario.workspace)
   const firstFile = scenario.files?.[0]
   if (firstFile) params.set("file", firstFile)
+  if (scenario.query) for (const [k, v] of Object.entries(scenario.query)) params.set(k, v)
   const url = params.toString() ? `${baseUrl}/?${params}` : baseUrl
 
   const result: ResultJson = {

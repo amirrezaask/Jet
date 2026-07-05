@@ -1,11 +1,11 @@
 - button "Toggle Sidebar"
 - text: Explorer
 - tree "Explorer":
-  - listitem:
+  - treeitem "src" [level=1]:
     - button "src"
-  - listitem:
+  - treeitem "package.json" [level=1]:
     - button "package.json"
-  - listitem:
+  - treeitem "tsconfig.json" [level=1]:
     - button "tsconfig.json"
 - separator
 - button "Panel actions"

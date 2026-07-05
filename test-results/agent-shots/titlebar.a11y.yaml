@@ -1,0 +1,6 @@
+- menubar:
+  - menuitem "File"
+  - menuitem "Edit"
+  - menuitem "View"
+  - menuitem "Go"
+- text: index.ts — sample-workspace

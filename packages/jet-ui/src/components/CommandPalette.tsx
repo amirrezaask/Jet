@@ -84,7 +84,7 @@ export function CommandPalette({
             value={query}
             onValueChange={setQuery}
           />
-          <CommandList className="max-h-[22rem]">
+          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
             <CommandEmpty>No results.</CommandEmpty>
             <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
             {items.map(({ id, value, cmd }) => (

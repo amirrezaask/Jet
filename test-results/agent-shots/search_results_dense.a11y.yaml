@@ -1,37 +1,39 @@
 - button "Toggle Sidebar"
 - text: Explorer
 - tree "Explorer":
-  - listitem:
+  - treeitem "apps" [level=1]:
     - button "apps"
-  - listitem:
+  - treeitem "fixtures" [level=1]:
     - button "fixtures"
-  - listitem:
+  - treeitem "node_modules" [level=1]:
     - button "node_modules"
-  - listitem:
+  - treeitem "packages" [level=1]:
     - button "packages"
-  - listitem:
+  - treeitem "scripts" [level=1]:
     - button "scripts"
-  - listitem:
+  - treeitem "test-results" [level=1]:
     - button "test-results"
-  - listitem:
+  - treeitem "tests" [level=1]:
     - button "tests"
-  - listitem:
+  - treeitem "AGENTS.md" [level=1]:
     - button "AGENTS.md"
-  - listitem:
+  - treeitem "package-lock.json" [level=1]:
     - button "package-lock.json"
-  - listitem:
+  - treeitem "package.json" [level=1]:
     - button "package.json"
-  - listitem:
+  - treeitem "playwright.config.ts" [level=1]:
     - button "playwright.config.ts"
-  - listitem:
+  - treeitem "pnpm-lock.yaml" [level=1]:
     - button "pnpm-lock.yaml"
-  - listitem:
+  - treeitem "pnpm-workspace.yaml" [level=1]:
     - button "pnpm-workspace.yaml"
-  - listitem:
+  - treeitem "skills-lock.json" [level=1]:
+    - button "skills-lock.json"
+  - treeitem "test_1m_lines.rs" [level=1]:
     - button "test_1m_lines.rs"
-  - listitem:
+  - treeitem "tsconfig.base.json" [level=1]:
     - button "tsconfig.base.json"
-  - listitem:
+  - treeitem "turbo.json" [level=1]:
     - button "turbo.json"
 - separator
 - text: Locations
@@ -49,6 +51,20 @@
   - button "Regex"
 - list:
   - listitem:
+    - 'button "4. Read the `.a11y.yaml` outputs under `test-results/agent-shots/`. They are Playwright aria snapshots — diffable text, no pixel noise. Grep them or eyeball them. ./AGENTS.md:114:46"'
+    - button "- [x] **Workspace:** project search tab (ripgrep) + result navigation ./AGENTS.md:489:53"
+    - 'button "let result: unknown ./apps/jet-desktop/src/main/workers/fs-io.ts:8:9"'
+    - button "result = await readFile(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:11:9"
+    - button "result = undefined ./apps/jet-desktop/src/main/workers/fs-io.ts:15:9"
+    - button "result = await readDir(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:18:9"
+    - button "result = await stat(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:21:9"
+    - 'button "parentPort?.postMessage({ id: task.id, ok: true, result }) ./apps/jet-desktop/src/main/workers/fs-io.ts:26:54"'
+    - 'button "let result: unknown ./apps/jet-desktop/src/main/workers/search-ops.ts:9:9"'
+    - button "result = await listProjectFiles(rootUri) ./apps/jet-desktop/src/main/workers/search-ops.ts:12:9"
+    - 'button "result = await projectSearch(rootUri, String(task.payload.query ?? \"\"), { ./apps/jet-desktop/src/main/workers/search-ops.ts:15:9"'
+    - 'button "parentPort?.postMessage({ id: task.id, ok: true, result }) ./apps/jet-desktop/src/main/workers/search-ops.ts:23:54"'
+    - 'button "type WorkerReply = { id: number; ok: boolean; result?: unknown; error?: string } ./apps/jet-desktop/src/main/background-pool.ts:4:47"'
+    - button "if (msg.ok) p.resolve(msg.result) ./apps/jet-desktop/src/main/background-pool.ts:22:33"
     - button "const results = [] ./scripts/extract-vscode-mac-keybindings.mjs:170:9"
     - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:180:7"'
     - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:183:10"
@@ -61,20 +77,6 @@
     - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:239:10"
     - button "const results = [] ./scripts/extract-vscode-mac-keybindings.mjs:265:9"
     - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:270:12"
-    - 'button "results.push({ ./scripts/extract-vscode-mac-keybindings.mjs:284:9"'
-    - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:295:10"
-    - 'button "4. Read the `.a11y.yaml` outputs under `test-results/agent-shots/`. They are Playwright aria snapshots — diffable text, no pixel noise. Grep them or eyeball them. ./AGENTS.md:114:46"'
-    - button "- [x] **Workspace:** project search tab (ripgrep) + result navigation ./AGENTS.md:489:53"
-    - 'button "const result = await dialog.showOpenDialog({ ./apps/jet-desktop/src/main/fs.ts:21:11"'
-    - 'button "return result.canceled ? null : result.filePaths[0] ?? null ./apps/jet-desktop/src/main/fs.ts:24:12"'
-    - 'button "const result = await dialog.showSaveDialog({ ./apps/jet-desktop/src/main/fs.ts:28:11"'
-    - 'button "return result.canceled ? null : result.filePath ?? null ./apps/jet-desktop/src/main/fs.ts:31:12"'
-    - 'button "type WorkerReply = { id: number; ok: boolean; result?: unknown; error?: string } ./apps/jet-desktop/src/main/background-pool.ts:4:47"'
-    - button "if (msg.ok) p.resolve(msg.result) ./apps/jet-desktop/src/main/background-pool.ts:22:33"
-    - 'button "let result: unknown ./apps/jet-desktop/src/main/workers/fs-io.ts:8:9"'
-    - button "result = await readFile(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:11:9"
-    - button "result = undefined ./apps/jet-desktop/src/main/workers/fs-io.ts:15:9"
-    - button "result = await readDir(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:18:9"
 - separator
 - text: Empty
 - button "Close panel"

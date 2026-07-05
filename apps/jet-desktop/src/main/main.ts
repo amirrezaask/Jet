@@ -116,10 +116,12 @@ function installAppMenu() {
 }
 
 function createWindow() {
+  const isMac = process.platform === "darwin"
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     backgroundColor: "#0a0a0c",
+    titleBarStyle: isMac ? "hiddenInset" : "default",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

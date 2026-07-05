@@ -615,3 +615,66 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 - Adding Tauri — project chose **Electron**
 - Large shadcn default styling — keep RAD/custom theme direction
 
+## Open Backlog (2026-07-05)
+
+Deferred items from shadcn-integration audit session. Each is scoped as a stand-alone task; pick top-down.
+
+### Syntax highlighting for Rust (Electron only)
+- **Symptom:** User reports Rust files render with zero syntax colors when opening real repos (`loki/`) in the **Electron desktop app**. Fixture-based `.rs` files under `fixtures/sample-workspace` DO get highlighted correctly in `pnpm dev:web` (a11y-verified).
+- **Investigated:** `@lezer/rust` styleTags map `t.definitionKeyword`/`t.moduleKeyword`/`t.modifier`/`t.integer`/`t.lineComment`/`t.paren` etc. All inherit from parent tags (`keyword`, `number`, `comment`, `bracket`) — theme should still color via inheritance. `packages/jet-codemirror/src/theme.ts` covers `t.keyword`, `t.controlKeyword+t.modifier`, `t.number`, `t.comment`, `t.operator`, `t.punctuation`, `t.string`. `t.bracket` is NOT mapped — but that only affects `{}`, `()`, `[]`.
+- **Repro path:** Only reproduces in Electron dev with real user workspace. Browser scenario runner cannot reproduce.
+- **Hypothesis to test next:** (a) `import("@codemirror/lang-rust")` dynamic import fails silently under Electron production/hot-reload → `loadLanguage` never resolves, view boots with no language extension. (b) `@replit/codemirror-indentation-markers` or another plugin's CSS is overriding token colors. (c) Race between `attachView` calling `reconfigureLanguage` and initial `createJetEditorView` when session cache hits.
+- **Suggested attack:** open a Rust file in Electron, run `getComputedStyle` on `.cm-line span` in devtools to check whether spans get `.ͼNN` classes at all. If not → language load failed. If classes present but color=inherit → CSS override.
+- **Also add** explicit tag mappings even though inheritance should cover: `t.bracket`, `t.self`, `t.character`, `t.macroName`, `t.meta` in `packages/jet-codemirror/src/theme.ts` — defense in depth.
+
+### Indent-marker colors don't toggle theme (Task #14)
+- `packages/jet-codemirror/src/createEditorView.ts:88-113` — `indentationMarkers({colors:{light,dark,...}})` is baked in at view creation. `@replit/codemirror-indentation-markers` doesn't take reactive colors.
+- **Fix:** wrap in a Compartment; on theme change, reconfigure with fresh colors object. OR patch the plugin to read from CSS var `var(--jet-indent-marker)`.
+- Currently both light/dark values equal `theme.colors.border` for the ACTIVE theme, so single-view works; only broken across theme toggle without view rebuild.
+
+### CdOverlay uses raw Input/Button/ScrollArea (Task #13)
+- `packages/jet-ui/src/components/CdOverlay.tsx` — 289 LOC, ignores shadcn `Command`/`CommandInput`/`CommandList`/`CommandItem`. Has manual ArrowUp/Down/Enter/Tab keyboard nav.
+- **Fix:** rewrite in the QuickOpenOverlay pattern (see `packages/jet-ui/src/components/QuickOpenOverlay.tsx`). Preserve directory navigation (Backspace goes up, Enter descends folder or picks).
+
+### Dead `Sidebar` wrapper in `ui/sidebar.tsx` (Task #7)
+- File is 730 LOC of shadcn boilerplate; only `SidebarProvider` + `SidebarTrigger` + `SidebarMenu*` + `useSidebar` are imported by app code. `Sidebar`, `SidebarInset`, `SidebarRail`, `SidebarInput`, `SidebarHeader`, `SidebarFooter`, `SidebarSeparator` are dead exports.
+- **Deferred, not urgent:** Vite tree-shakes them from the ship bundle. Delete only if source dead-code hygiene matters.
+
+### Autocomplete popup = raw CM tooltip + `classList.add()` (High)
+- `packages/jet-codemirror/src/completion-context-menu.ts:16-23` — DOM-patches shadcn classes onto CodeMirror autocomplete tooltip after mount. Fragile: breaks if shadcn class names change; no keyboard-role parity with shadcn `Command`/`Popover`.
+- **Fix:** stop overriding CM tooltip; render completion list in a React portal as shadcn `Popover` + `Command`, positioned to the caret via `EditorView.requestMeasure`. Preserves keymap arrows + Enter via a `keydown` bridge.
+
+### `EditorContextMenu.tsx` renders `ContextMenuContent` without root/trigger (Medium)
+- `packages/jet-ui/src/components/EditorContextMenu.tsx:57` — mounts `ContextMenuContent` directly, driven by external event handler `registerEditorContextMenuHandler`. Non-standard for Radix; risks focus-trap + z-index bugs.
+- **Fix:** wrap in a controlled `ContextMenu` root with `open` state fed by the handler; put a hidden `ContextMenuTrigger` at editor root.
+
+### StatusBar tooltip `sideOffset` (Low)
+- `packages/jet-ui/src/status/StatusBar.tsx:89, 101` — tooltips lack `sideOffset`; can clip against status-bar footer.
+
+### LocationList row vs Explorer row hover/focus drift (Medium)
+- LocationList: custom `<button>` with `hover:bg-accent focus-visible:ring-2` (`packages/jet-ui/src/panels/LocationListPanel.tsx:193`).
+- Explorer: `SidebarMenuButton` from shadcn (`packages/jet-ui/src/tabs/ExplorerTab.tsx`), uses `sidebarMenuButtonVariants`.
+- Different hover backgrounds, focus rings, row heights.
+- **Fix:** promote a shared list-row primitive (or use `SidebarMenuButton` in LocationList since it's already in the explorer sibling).
+
+### Toast + confirm dialog unification (Low)
+- `packages/jet-ui/src/toast.ts` wraps `sonner`; `packages/jet-ui/src/components/ConfirmDialogHost.tsx` uses `AlertDialog`. Confirm inlines `bg-destructive` on the action button. No shared "destructive/warning/info" variant API across toast + confirm.
+- **Fix:** add `showJetToast(msg, { variant: "destructive" | "warning" | "info" })` mapping to `sonner`'s error/warning/info; make ConfirmDialogHost take the same variant string.
+
+### Explorer virtualization for large repos (Medium)
+- `packages/jet-ui/src/tabs/ExplorerTab.tsx` — renders every visible file synchronously. `@tanstack/react-virtual` is already a dep (see `packages/jet-ui/package.json`).
+- **Fix:** virtualize `SidebarMenu` children. Preserve `data-jet-list-item` on rendered rows so visual scenarios still find them by selector.
+
+### Explorer `focusExplorerPanel` uses DOM `querySelector` (Low)
+- `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18` — imperative DOM query on `[data-jet-explorer-panel]` + `[data-sidebar="trigger"]`. Brittle to selector rename.
+- **Fix:** expose a ref-based focus API via `useSidebar()` context or a ref forwarded from `ExplorerPanel`.
+
+### `JetApp` unused imports (Low)
+- `packages/jet-app/src/App.tsx:45` `JetTheme` unused, `l.620` `currentTree` unused. Not blocking but pollutes TS 6133 warnings.
+
+### Custom decoration follow-ups (Task #4 tail)
+- macOS shipped with `hiddenInset` + `JetTitleBar` component. Verified via `?titlebar=1` browser query + `tests/visual/scenarios/titlebar.json`.
+- **Not yet done:** Windows/Linux custom decoration (title bar drag region + min/max/close buttons via shadcn Button + custom SVG icons). Would use `titleBarStyle:'hidden'` on those platforms and `WindowControls` sub-component. Currently they fall back to Electron native menu + native window frame.
+- **Not yet done:** wire `checkbox`/`radio` states in menubar (e.g. "Toggle Color Scheme" should be a `CheckboxItem` showing current scheme). Currently a plain `Item`.
+- **Not yet done:** window title (center label) currently derives from workspace + file; if `activeEditorFile.isDirty`, uses `•` marker. Consider dedicated dirty-badge component.
+

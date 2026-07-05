@@ -74,7 +74,7 @@ export function QuickOpenOverlay({
             value={query}
             onValueChange={setQuery}
           />
-          <CommandList className="max-h-[20rem]">
+          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
             <CommandEmpty>No matching files.</CommandEmpty>
             <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
             {filtered.map(path => (

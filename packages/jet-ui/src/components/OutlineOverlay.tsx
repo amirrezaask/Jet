@@ -61,7 +61,7 @@ export function OutlineOverlay({
           onValueChange={setSelectedValue}
         >
           <CommandInput placeholder="Filter symbols…" />
-          <CommandList className="max-h-80">
+          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
             <CommandEmpty>No symbols found</CommandEmpty>
             <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
             {items.map(({ key, value, sym }) => (

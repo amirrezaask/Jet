@@ -84,7 +84,7 @@ export function BufferListOverlay({
           }}
         >
           <CommandInput placeholder="Switch buffer…" value={query} onValueChange={setQuery} />
-          <CommandList className="max-h-[18rem]">
+          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
             <CommandEmpty>No open buffers</CommandEmpty>
             <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
             {items.map(({ uri, name, dirty }) => (

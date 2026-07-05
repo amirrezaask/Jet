@@ -226,13 +226,15 @@ function EditorTabHostInner({
       applyUserExtensions(live.view, userExtensions)
       const nav = consumePendingEditorNavigation(panelId)
       if (nav) jumpToLine(live.view, nav.line, nav.column)
-      onFocus = () => {
+      const focusHandler = () => {
         focusedPanelId = panelId.id
         onEditorFocusChangeRef.current?.(true)
       }
-      onBlur = () => onEditorFocusChangeRef.current?.(false)
-      live.view.dom.addEventListener("focus", onFocus)
-      live.view.dom.addEventListener("blur", onBlur)
+      const blurHandler = () => onEditorFocusChangeRef.current?.(false)
+      onFocus = focusHandler
+      onBlur = blurHandler
+      live.view.dom.addEventListener("focus", focusHandler)
+      live.view.dom.addEventListener("blur", blurHandler)
       if (autoFocus) live.view.focus()
       onProblemsChangeRef.current?.()
     }
@@ -346,13 +348,8 @@ function EditorTabHostInner({
 
   useEffect(() => {
     const view = viewByPanel.get(panelId.id)
-    if (view) applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
-  }, [panelId.id, keymapRevision, runBinding])
-
-  useEffect(() => {
-    const view = viewByPanel.get(panelId.id)
     if (view) applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContext)
-  }, [panelId.id, keymapContext, runBinding])
+  }, [panelId.id, keymapRevision, keymapContext, runBinding])
 
   useEffect(() => {
     const view = viewByPanel.get(panelId.id)

@@ -1,0 +1,20 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 800, "animations_idle": true } },
+    { "dom_dump": "test-results/agent-shots/syntax_hl_light.html", "selector": ".cm-content" },
+    { "a11y_snapshot": "test-results/agent-shots/syntax_hl_light.yaml", "selector": ".cm-editor" },
+    { "screenshot": "test-results/agent-shots/syntax_hl_light.png" },
+    { "command": "ui.toggleColorScheme" },
+    { "wait": { "ms": 600, "animations_idle": true } },
+    { "dom_dump": "test-results/agent-shots/syntax_hl_dark.html", "selector": ".cm-content" },
+    { "screenshot": "test-results/agent-shots/syntax_hl_dark.png" },
+    { "open_file": "src/example.rs" },
+    { "wait": { "ms": 600, "animations_idle": true } },
+    { "dom_dump": "test-results/agent-shots/syntax_hl_rust_dark.html", "selector": ".cm-content" },
+    { "screenshot": "test-results/agent-shots/syntax_hl_rust_dark.png" },
+    { "exit": 0 }
+  ]
+}

@@ -3,6 +3,7 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { KeyBindingKbd } from "@/components/KeyBindingKbd"
 
 function DropdownMenu({
   ...props
@@ -176,17 +177,20 @@ function DropdownMenuSeparator({
 
 function DropdownMenuShortcut({
   className,
+  children,
   ...props
 }: React.ComponentProps<"span">) {
+  if (typeof children === "string") {
+    return <KeyBindingKbd binding={children} className={cn("ml-auto", className)} />
+  }
   return (
     <span
       data-slot="dropdown-menu-shortcut"
-      className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground",
-        className
-      )}
+      className={cn("ml-auto", className)}
       {...props}
-    />
+    >
+      {children}
+    </span>
   )
 }
 

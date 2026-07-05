@@ -34,12 +34,14 @@ function ExplorerTreeNode({
   onOpenFile,
   nested = false,
   defaultOpen = false,
+  level = 1,
 }: {
   entry: WorkspaceEntry
   workspace: WorkspaceService
   onOpenFile: (uri: string, path: string) => void
   nested?: boolean
   defaultOpen?: boolean
+  level?: number
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const [children, setChildren] = useState<WorkspaceEntry[] | null>(null)
@@ -65,7 +67,7 @@ function ExplorerTreeNode({
   if (!entry.isDirectory) {
     if (nested) {
       return (
-        <SidebarMenuSubItem>
+        <SidebarMenuSubItem role="treeitem" aria-level={level}>
           <SidebarMenuSubButton asChild size="sm">
             <button
               type="button"
@@ -82,7 +84,7 @@ function ExplorerTreeNode({
       )
     }
     return (
-      <SidebarMenuItem>
+      <SidebarMenuItem role="treeitem" aria-level={level}>
         <SidebarMenuButton
           className="shrink-0"
           data-jet-list-item
@@ -96,8 +98,8 @@ function ExplorerTreeNode({
     )
   }
 
-  const folderItem = (
-    <SidebarMenuItem>
+  return (
+    <SidebarMenuItem role="treeitem" aria-level={level} aria-expanded={open}>
       <Collapsible
         open={open}
         onOpenChange={setOpen}
@@ -111,7 +113,7 @@ function ExplorerTreeNode({
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <SidebarMenuSub>
+          <SidebarMenuSub role="group">
             {loading && children === null ? (
               <SidebarMenuSkeleton showIcon />
             ) : (
@@ -122,6 +124,7 @@ function ExplorerTreeNode({
                   workspace={workspace}
                   onOpenFile={onOpenFile}
                   nested
+                  level={level + 1}
                 />
               ))
             )}
@@ -130,8 +133,6 @@ function ExplorerTreeNode({
       </Collapsible>
     </SidebarMenuItem>
   )
-
-  return folderItem
 }
 
 export function ExplorerTree({

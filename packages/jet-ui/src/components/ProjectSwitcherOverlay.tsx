@@ -84,7 +84,7 @@ export function ProjectSwitcherOverlay({
           }}
         >
           <CommandInput placeholder="Filter projects…" value={query} onValueChange={setQuery} />
-          <CommandList className="max-h-[22rem]">
+          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
             {filtered.map(project => (
