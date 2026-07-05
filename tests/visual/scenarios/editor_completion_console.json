@@ -6,14 +6,15 @@
     { "wait": { "ms": 500, "animations_idle": true } },
     { "click_selector": ".cm-content" },
     { "key": "End" },
-    { "text": " gre" },
+    { "key": "Enter" },
+    { "text": "console.l" },
     { "wait": { "ms": 400, "animations_idle": true } },
     {
-      "a11y_snapshot": "test-results/agent-shots/editor_completion_menu.a11y.yaml",
+      "a11y_snapshot": "test-results/agent-shots/editor_completion_console.a11y.yaml",
       "selector": ".cm-tooltip-autocomplete"
     },
-    { "assert_a11y_contains": ["greet"], "selector": ".cm-tooltip-autocomplete" },
-    { "screenshot": "test-results/agent-shots/editor_completion_menu.png" },
+    { "assert_a11y_contains": ["log"], "selector": ".cm-tooltip-autocomplete" },
+    { "screenshot": "test-results/agent-shots/editor_completion_console.png" },
     { "key": "Escape" },
     { "exit": 0 }
   ]

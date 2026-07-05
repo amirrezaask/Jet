@@ -67,7 +67,6 @@ import {
   type OutlineEntry,
   type WhichKeyEntry,
   TooltipProvider,
-  CompletionMenu,
   ConfirmDialogHost,
   Toaster,
   showJetToast,
@@ -1311,7 +1310,6 @@ export function JetApp() {
           onRun={id => executeCommand(id)}
         />
       )}
-      <CompletionMenu />
       <ConfirmDialogHost />
       <Toaster position="bottom-right" />
     </AppShell>

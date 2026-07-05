@@ -41,18 +41,6 @@ export {
   fetchDocumentOutline,
   type OutlineSymbol,
 } from "./lsp-editor-commands.js"
-export {
-  completionContextMenuClass,
-  completionContextMenuPlugin,
-  completionContextMenuTheme,
-  subscribeCompletion,
-  getCompletionState,
-  completionMoveSelection,
-  completionAccept,
-  completionClose,
-  pickCompletionAt,
-  type JetCompletionItem,
-  type JetCompletionState,
-} from "./completion-context-menu.js"
+export { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
 export { eolOverlayExtension, braceScopeExtension } from "./eol-overlays.js"
 export { jetReloadAnnotation } from "./reload-annotation.js"

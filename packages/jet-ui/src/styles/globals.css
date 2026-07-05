@@ -217,10 +217,10 @@ body,
   letter-spacing: 0.01em;
 }
 
-/* CodeMirror autocomplete — hidden; rendered via shadcn ContextMenu in CompletionMenu */
-.cm-tooltip.cm-tooltip-autocomplete,
-.jet-completion-hidden-tooltip {
-  display: none !important;
+/* CodeMirror autocomplete — shell tokens (theme.ts adds per-JetTheme colors) */
+.cm-tooltip.cm-tooltip-autocomplete.jet-completion-tooltip > ul > li[aria-selected] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {

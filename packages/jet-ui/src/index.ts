@@ -30,4 +30,3 @@ export { ConfirmDialogHost, requestConfirm } from "./components/ConfirmDialogHos
 export { showJetToast } from "./toast.js"
 export { registerListPanel, getListPanel, type ListPanelKind } from "./lib/list-registry.js"
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
-export { CompletionMenu } from "./components/CompletionMenu.js"

@@ -6,12 +6,9 @@ import {
   historyKeymap,
   indentWithTab,
 } from "@codemirror/commands"
-import { autocompletion, completeAnyWord, completionKeymap, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete"
-import {
-  completionContextMenuClass,
-  completionContextMenuPlugin,
-  completionContextMenuTheme,
-} from "./completion-context-menu.js"
+import { autocompletion, completeAnyWord, completionKeymap } from "@codemirror/autocomplete"
+import { scopeCompletionSource } from "@codemirror/lang-javascript"
+import { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
 import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
@@ -32,6 +29,27 @@ import { braceScopeExtension } from "./brace-scope-extension.js"
 import { perfMeasure } from "./perf-instrumentation.js"
 import { jetReloadAnnotation } from "./reload-annotation.js"
 import { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
+
+const documentWordCompletion = EditorState.languageData.of(() => [
+  { autocomplete: completeAnyWord },
+])
+
+const jsScopeCompletion = EditorState.languageData.of(() => [
+  { autocomplete: scopeCompletionSource(globalThis) },
+])
+
+function isJavaScriptLike(languageId: string): boolean {
+  return (
+    languageId === "javascript" ||
+    languageId === "typescript" ||
+    languageId === "jsx" ||
+    languageId === "tsx" ||
+    languageId === "mjs" ||
+    languageId === "cjs" ||
+    languageId === "mts" ||
+    languageId === "cts"
+  )
+}
 
 export const userKeymapCompartment = new Compartment()
 export const languageCompartment = new Compartment()
@@ -81,17 +99,6 @@ const goToDefinitionOnClick = EditorView.domEventHandlers({
   },
 })
 
-function jetWordCompletionSource(
-  context: CompletionContext,
-): CompletionResult | null | Promise<CompletionResult | null> {
-  const result = completeAnyWord(context)
-  if (!result) return null
-  if (result instanceof Promise) {
-    return result.then(r => (r ? { ...r, filter: false } : null))
-  }
-  return { ...result, filter: false }
-}
-
 export async function createJetEditorView(opts: CreateJetEditorViewOptions): Promise<EditorView> {
   const theme = opts.theme ?? defaultJetTheme
   const largeFile = opts.largeFile ?? false
@@ -134,7 +141,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
       ...historyKeymap,
       indentWithTab,
     ]),
-    themeCompartment.of(jetEditorTheme(theme)),
+    themeCompartment.of([jetEditorTheme(theme), completionTooltipTheme(theme)]),
   )
 
   if (!largeFile) {
@@ -153,12 +160,11 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
         defaultKeymap: false,
         selectOnOpen: true,
         closeOnBlur: false,
-        override: [jetWordCompletionSource],
-        tooltipClass: () => completionContextMenuClass,
+        tooltipClass: () => completionTooltipClass,
       }),
     ),
-    completionContextMenuTheme(),
-    completionContextMenuPlugin(),
+    documentWordCompletion,
+    ...(isJavaScriptLike(opts.file.languageId) ? [jsScopeCompletion] : []),
     userKeymapCompartment.of([]),
     lspCompartment.of([]),
     extensionCompartment.of(opts.userExtensions ?? []),
@@ -198,7 +204,7 @@ export function applyTheme(view: EditorView, theme: JetTheme): void {
   const largeFile = view.state.doc.length > 4 * 1024 * 1024
   view.dispatch({
     effects: [
-      themeCompartment.reconfigure(jetEditorTheme(theme)),
+      themeCompartment.reconfigure([jetEditorTheme(theme), completionTooltipTheme(theme)]),
       highlightCompartment.reconfigure(jetSyntaxHighlightingForTheme(theme)),
       indentMarkerCompartment.reconfigure(indentMarkerExtension(theme, largeFile)),
     ],
