@@ -257,8 +257,13 @@ export function JetApp() {
     return () => sub.dispose()
   }, [workspace, tabStore])
 
+  // Dirty flips are per-keystroke. Do NOT put them in React state: PanelTabBar
+  // subscribes to tabStore directly; problems are refreshed via a RAF-guarded
+  // ref. Keeping dirty out of state prevents palette/appCommands invalidation.
   useEffect(() => {
-    const sub = workspace.onDidChangeDirty.event(() => setPanelRev(r => r + 1))
+    const sub = workspace.onDidChangeDirty.event(() => {
+      refreshProblemsRef.current()
+    })
     return () => sub.dispose()
   }, [workspace])
 
@@ -407,12 +412,14 @@ export function JetApp() {
   )
 
   const cloneTree = useCallback(
-    () => JetPanelTree.jetFromJSON(appStateRef.current.panelTree.toJSON()),
+    () => appStateRef.current.panelTree.clone(),
     [],
   )
 
   const commitTree = useCallback((tree: JetPanelTree) => {
-    setPanelTree(JetPanelTree.jetFromJSON(tree.toJSON()))
+    // Caller already produced a fresh tree via cloneTree(); store it directly
+    // rather than cloning again. React sees a new reference either way.
+    setPanelTree(tree)
     setPanelRev(r => r + 1)
   }, [])
 
@@ -908,26 +915,41 @@ export function JetApp() {
   )
 
   const deferredPanelRev = useDeferredValue(panelRev)
+
+  // Base list: id/title/keybinding for every command in the current context.
+  // Depends on layoutRev (deferredPanelRev) and keybinding map, NOT on
+  // recentCommands or paletteOpen — so opening the palette or bumping the
+  // recent list does not re-scan or re-sort every command.
+  const paletteBaseCommands = useMemo(() => {
+    void deferredPanelRev // context depends on active panel; recompute on layout change
+    const list = commands.list(getCommandContext()).map(cmd => {
+      const fnName = fnByCommandId.get(cmd.id)
+      const run = fnName ? appCommands[fnName as keyof typeof appCommands] : undefined
+      const key = run ? keybindingByFn.get(run) : undefined
+      return {
+        ...cmd,
+        keybinding: key ? formatKeyBinding(key) : undefined,
+        recent: false,
+      }
+    })
+    list.sort((a, b) => a.title.localeCompare(b.title))
+    return list
+  }, [commands, deferredPanelRev, appCommands, keybindingByFn, fnByCommandId, getCommandContext])
+
+  // Recent overlay: linear pass, no re-sort. When no recent, return base by
+  // identity so downstream memos/renders see stable reference.
   const paletteCommands = useMemo(() => {
     if (!paletteOpen) return []
-    return commands
-      .list(getCommandContext())
-      .map(cmd => {
-        const fnName = fnByCommandId.get(cmd.id)
-        const run = fnName ? appCommands[fnName as keyof typeof appCommands] : undefined
-        const key = run ? keybindingByFn.get(run) : undefined
-        return {
-          ...cmd,
-          keybinding: key ? formatKeyBinding(key) : undefined,
-          recent: recentCommands.includes(cmd.id),
-        }
-      })
-      .sort((a, b) => {
-        const recentDelta = Number(b.recent) - Number(a.recent)
-        if (recentDelta !== 0) return recentDelta
-        return a.title.localeCompare(b.title)
-      })
-  }, [paletteOpen, commands, deferredPanelRev, appCommands, keybindingByFn, fnByCommandId, getCommandContext, recentCommands])
+    if (recentCommands.length === 0) return paletteBaseCommands
+    const recentSet = new Set(recentCommands)
+    const recentBucket: typeof paletteBaseCommands = []
+    const restBucket: typeof paletteBaseCommands = []
+    for (const cmd of paletteBaseCommands) {
+      if (recentSet.has(cmd.id)) recentBucket.push({ ...cmd, recent: true })
+      else restBucket.push(cmd)
+    }
+    return recentBucket.concat(restBucket)
+  }, [paletteOpen, paletteBaseCommands, recentCommands])
 
   const whichKeyEntries: WhichKeyEntry[] = useMemo(() => {
     if (!pendingChordPrefix) return []
@@ -1160,21 +1182,27 @@ export function JetApp() {
   const problemsFpRef = useRef("")
   const problemsRafRef = useRef<number | null>(null)
   const refreshProblems = useCallback(() => {
-    const views = getAllEditorViews(panelTree)
+    const views = getAllEditorViews()
     const next = collectProblemsFromViews(views.map(v => ({ uri: v.uri, view: v.view })))
     const fp = problemsFingerprint(next)
     if (fp === problemsFpRef.current) return
     problemsFpRef.current = fp
     startTransition(() => setProblems(next))
-  }, [panelTree])
+  }, [])
 
-  useEffect(() => {
+  const scheduleRefreshProblems = useCallback(() => {
     if (problemsRafRef.current != null) return
     problemsRafRef.current = requestAnimationFrame(() => {
       problemsRafRef.current = null
       refreshProblems()
     })
-  }, [panelRev, refreshProblems])
+  }, [refreshProblems])
+
+  // Layout changes (panel splits/closes, tabs moved) can add/remove editor
+  // sessions. Re-scan on layoutRev, not on per-keystroke content signals.
+  useEffect(() => {
+    scheduleRefreshProblems()
+  }, [panelRev, scheduleRefreshProblems])
 
   useEffect(() => {
     syncProblemsToListTab()
@@ -1190,7 +1218,7 @@ export function JetApp() {
   executeCommandRef.current = executeCommand
   runKeyBindingRef.current = runKeyBinding
   handleLspAttachFailedRef.current = handleLspAttachFailed
-  refreshProblemsRef.current = refreshProblems
+  refreshProblemsRef.current = scheduleRefreshProblems
 
   useEffect(() => {
     if (activeTabKindName !== "editor") setEditorCursor(null)

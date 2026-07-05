@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent, type ReactNode } from "react"
+import { memo, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type ReactNode } from "react"
 import { XIcon } from "lucide-react"
 import type { DropAction, PanelId, PanelView } from "@jet/shared"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
@@ -20,16 +20,56 @@ export function tabIdsOf(view: PanelView): { tabIds: string[]; activeId: string 
   return { tabIds, activeId: view.activeTabId }
 }
 
-function useStoreRevision(store: TabStore, tabIds: string[]): number {
-  const [rev, setRev] = useState(0)
-  useEffect(() => {
-    const ids = new Set(tabIds)
-    const sub = store.onDidChange.event(evt => {
-      if (ids.has(evt.id)) setRev(r => r + 1)
-    })
-    return () => sub.dispose()
-  }, [store, tabIds.join("|")])
-  return rev
+function shallowSameTabs(a: PanelTab[], b: PanelTab[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!
+    const y = b[i]!
+    if (x.id !== y.id || x.label !== y.label || x.dirty !== y.dirty || x.icon !== y.icon) {
+      return false
+    }
+  }
+  return true
+}
+
+function useTabsSnapshot(store: TabStore, tabIds: string[]): PanelTab[] {
+  const cacheRef = useRef<PanelTab[]>([])
+  const tabIdsKey = tabIds.join("|")
+  const tabIdsRef = useRef(tabIds)
+  tabIdsRef.current = tabIds
+
+  const subscribe = useMemo(
+    () => (onChange: () => void) => {
+      const sub = store.onDidChange.event(evt => {
+        if (tabIdsRef.current.includes(evt.id)) onChange()
+      })
+      return () => sub.dispose()
+    },
+    [store],
+  )
+
+  const getSnapshot = () => {
+    const ids = tabIdsRef.current
+    const next: PanelTab[] = new Array(ids.length)
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i]!
+      next[i] = {
+        id,
+        label: store.title(id, id),
+        dirty: store.dirty(id),
+        icon: store.icon(id),
+        closable: true,
+      }
+    }
+    if (shallowSameTabs(cacheRef.current, next)) return cacheRef.current
+    cacheRef.current = next
+    return next
+  }
+
+  // tabIdsKey change forces a fresh snapshot even without a store event
+  void tabIdsKey
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 function getTabDragOverLocation(e: DragEvent, tabEl: HTMLElement): "left" | "right" {
@@ -88,6 +128,65 @@ function computeTabDropTarget(
   return null
 }
 
+const PanelTabTrigger = memo(function PanelTabTrigger({
+  tab,
+  index,
+  focused,
+  showLeft,
+  showRight,
+  onDragStart,
+  onDragEnd,
+  onClose,
+}: {
+  tab: PanelTab
+  index: number
+  focused: boolean
+  showLeft: boolean
+  showRight: boolean
+  onDragStart: (e: DragEvent<HTMLButtonElement>, tabId: string) => void
+  onDragEnd: () => void
+  onClose: (tabId: string) => void
+}) {
+  return (
+    <TabsTrigger
+      value={tab.id}
+      data-tab-index={index}
+      data-tab-id={tab.id}
+      draggable
+      onDragStart={e => onDragStart(e, tab.id)}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "group h-8 max-w-none flex-none cursor-grab gap-1 rounded-none px-2 text-xs active:cursor-grabbing",
+        showLeft && "border-l-2 border-l-primary",
+        showRight && "border-r-2 border-r-primary",
+        !focused && "data-[state=active]:bg-background/60",
+      )}
+      title={tab.id}
+    >
+      {tab.icon}
+      <span className="truncate">
+        {tab.label}
+        {tab.dirty ? " •" : ""}
+      </span>
+      {tab.closable && (
+        <span
+          role="button"
+          tabIndex={-1}
+          aria-label="Close tab"
+          className="ml-0.5 rounded-sm p-0.5 text-muted-foreground/70 opacity-70 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => {
+            e.stopPropagation()
+            onClose(tab.id)
+          }}
+        >
+          <XIcon className="size-3" />
+        </span>
+      )}
+    </TabsTrigger>
+  )
+})
+
 export function PanelTabBar({
   panelId,
   view,
@@ -116,14 +215,7 @@ export function PanelTabBar({
 }) {
   const drag = usePanelDrag()
   const { tabIds, activeId } = tabIdsOf(view)
-  useStoreRevision(store, tabIds)
-  const tabs: PanelTab[] = tabIds.map(id => ({
-    id,
-    label: store.title(id, id),
-    dirty: store.dirty(id),
-    icon: store.icon(id),
-    closable: true,
-  }))
+  const tabs = useTabsSnapshot(store, tabIds)
   void registry
   const [dropTarget, setDropTarget] = useState<TabDropTarget>(null)
   const hasTabs = view.kind === "tabs"
@@ -175,49 +267,19 @@ export function PanelTabBar({
 
   if (!hasTabs) return null
 
-  const triggers: ReactNode[] = tabs.map((tab, i) => {
-    const showLeft = dropTarget?.tabIndex === i && dropTarget.side === "left"
-    const showRight = dropTarget?.tabIndex === i && dropTarget.side === "right"
-    return (
-      <TabsTrigger
-        key={tab.id}
-        value={tab.id}
-        data-tab-index={i}
-        data-tab-id={tab.id}
-        draggable
-        onDragStart={e => onTabDragStart(e, tab.id)}
-        onDragEnd={onTabDragEnd}
-        className={cn(
-          "group h-8 max-w-none flex-none cursor-grab gap-1 rounded-none px-2 text-xs active:cursor-grabbing",
-          showLeft && "border-l-2 border-l-primary",
-          showRight && "border-r-2 border-r-primary",
-          !focused && "data-[state=active]:bg-background/60",
-        )}
-        title={tab.id}
-      >
-        {tab.icon}
-        <span className="truncate">
-          {tab.label}
-          {tab.dirty ? " •" : ""}
-        </span>
-        {tab.closable && (
-          <span
-            role="button"
-            tabIndex={-1}
-            aria-label="Close tab"
-            className="ml-0.5 rounded-sm p-0.5 text-muted-foreground/70 opacity-70 hover:bg-muted hover:text-foreground group-hover:opacity-100"
-            onPointerDown={e => e.stopPropagation()}
-            onClick={e => {
-              e.stopPropagation()
-              onCloseTab(tab.id)
-            }}
-          >
-            <XIcon className="size-3" />
-          </span>
-        )}
-      </TabsTrigger>
-    )
-  })
+  const triggers: ReactNode[] = tabs.map((tab, i) => (
+    <PanelTabTrigger
+      key={tab.id}
+      tab={tab}
+      index={i}
+      focused={focused}
+      showLeft={dropTarget?.tabIndex === i && dropTarget.side === "left"}
+      showRight={dropTarget?.tabIndex === i && dropTarget.side === "right"}
+      onDragStart={onTabDragStart}
+      onDragEnd={onTabDragEnd}
+      onClose={onCloseTab}
+    />
+  ))
 
   return (
     <Tabs

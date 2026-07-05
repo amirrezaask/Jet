@@ -8,7 +8,15 @@ import { jetDevHostPlugin } from "./vite-plugin-jet-dev-host.js"
 const appRoot = path.resolve(fileURLToPath(new URL("../../packages/jet-app", import.meta.url)))
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), jetDevHostPlugin()],
+  plugins: [
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", {}]],
+      },
+    }),
+    tailwindcss(),
+    jetDevHostPlugin(),
+  ],
   root: appRoot,
   envDir: appRoot,
   define: {

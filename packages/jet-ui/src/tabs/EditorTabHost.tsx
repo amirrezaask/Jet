@@ -109,22 +109,20 @@ export function syncAllEditorThemes(theme: JetTheme): void {
   }
 }
 
-export function getAllEditorViews(
-  tree: import("@jet/workspace").JetPanelTree,
-): { panelId: PanelId; uri: string; view: EditorView }[] {
-  const result: { panelId: PanelId; uri: string; view: EditorView }[] = []
-  const walk = (node: import("@jet/panels").PanelNode<import("@jet/shared").PanelView>) => {
-    if (node.kind === "leaf" && node.view.kind === "tabs") {
-      const sessions = sessionsByPanel.get(node.panelId.id)
-      if (!sessions) return
-      for (const [uri, session] of sessions) {
-        result.push({ panelId: node.panelId, uri, view: session.view })
-      }
-    } else if (node.kind !== "leaf") {
-      node.split.children.forEach(walk)
+export function forEachEditorView(
+  fn: (entry: { panelId: PanelId; uri: string; view: EditorView }) => void,
+): void {
+  for (const [panelIdNum, sessions] of sessionsByPanel) {
+    const panelId: PanelId = { id: panelIdNum }
+    for (const [uri, session] of sessions) {
+      fn({ panelId, uri, view: session.view })
     }
   }
-  walk(tree.root)
+}
+
+export function getAllEditorViews(): { panelId: PanelId; uri: string; view: EditorView }[] {
+  const result: { panelId: PanelId; uri: string; view: EditorView }[] = []
+  forEachEditorView(entry => result.push(entry))
   return result
 }
 

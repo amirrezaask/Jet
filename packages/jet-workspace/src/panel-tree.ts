@@ -89,6 +89,13 @@ export class JetPanelTree extends PanelTree<PanelView> {
     return tree
   }
 
+  clone(): JetPanelTree {
+    const snapshot = this.toJSON()
+    const tree = new JetPanelTree(snapshot.root)
+    ;(tree as unknown as { nextPanelId: number }).nextPanelId = snapshot.nextPanelId
+    return tree
+  }
+
   static editorOnlyLayout(): { tree: JetPanelTree; editorPanel: PanelId } {
     const tree = new JetPanelTree()
     const root = tree.root
