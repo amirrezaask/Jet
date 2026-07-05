@@ -85,7 +85,11 @@ function PanelBodyInner({
         </div>
       )
     case "locationlist":
-      return <LocationListPanel workspace={workspace} onOpenItem={onOpenLocationItem} />
+      return (
+        <div className="flex h-full min-h-0 flex-col">
+          <LocationListPanel workspace={workspace} onOpenItem={onOpenLocationItem} />
+        </div>
+      )
     case "output":
       return <OutputPanel workspace={workspace} />
     default:

@@ -38,6 +38,20 @@ test("buffer-list: shows open buffers", async ({ page }) => {
   expect(state.paletteOpen).toBe(false)
 })
 
+test("buffer-list: enter switches buffer", async ({ page }) => {
+  await agent(page).openFile("package.json")
+  await page.waitForTimeout(300)
+
+  await agent(page).executeCommand("workspace.bufferList")
+  await page.waitForTimeout(300)
+  await page.keyboard.type("index")
+  await page.waitForTimeout(200)
+  await page.keyboard.press("Enter")
+  await page.waitForTimeout(500)
+
+  await expect(page.locator(".cm-editor")).toContainText("export function main")
+})
+
 test("buffer-list: close buffer removes it from editor", async ({ page }) => {
   await agent(page).openFile("src/utils.ts")
   await page.waitForTimeout(300)

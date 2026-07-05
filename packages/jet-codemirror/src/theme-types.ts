@@ -132,6 +132,14 @@ export function applyJetThemeCss(theme: JetTheme): void {
   root.style.setProperty("--border", c.border)
   root.style.setProperty("--input", c.border)
   root.style.setProperty("--ring", c.focusBorder)
+  root.style.setProperty("--sidebar", c.panel)
+  root.style.setProperty("--sidebar-foreground", c.text)
+  root.style.setProperty("--sidebar-primary", c.accent)
+  root.style.setProperty("--sidebar-primary-foreground", onAccent)
+  root.style.setProperty("--sidebar-accent", c.hover)
+  root.style.setProperty("--sidebar-accent-foreground", c.text)
+  root.style.setProperty("--sidebar-border", c.border)
+  root.style.setProperty("--sidebar-ring", c.focusBorder)
   applyJetHighlightCssVars(theme)
 }
 

@@ -55,7 +55,7 @@ export function JetTitleBar({
       className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-background pr-1 text-xs select-none"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
-      <div className="w-[80px] shrink-0" aria-hidden data-jet-traffic-light-spacer />
+      <div aria-hidden data-jet-traffic-light-spacer />
       <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <Menubar className="h-7 border-0 bg-transparent p-0 shadow-none">
           {menus.map(menu => (

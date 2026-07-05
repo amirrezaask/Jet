@@ -219,6 +219,15 @@ export type RowTextVisibleOpts = {
   requireWithinRowBounds?: boolean
 }
 
+export type RowTextReadableOpts = {
+  selector?: string
+  minItems?: number
+  labelSelector?: string
+  minContrastRatio?: number
+  minLabelWidthPx?: number
+  minLabelHeightPx?: number
+}
+
 export async function expectRowTextVisible(page: Page, opts: RowTextVisibleOpts = {}): Promise<void> {
   const sel = opts.selector ?? "[data-jet-list-item]"
   const minItems = opts.minItems ?? 1
@@ -273,6 +282,120 @@ export async function expectRowTextVisible(page: Page, opts: RowTextVisibleOpts 
   if (report.totalProblems > 0) {
     throw new Error(
       `expectRowTextVisible: ${report.totalProblems} row(s) have unreadable text. Examples: ${JSON.stringify(report.problems)}`,
+    )
+  }
+}
+
+/** Assert list row labels have visible glyphs and sufficient contrast against the row background. */
+export async function expectRowTextReadable(page: Page, opts: RowTextReadableOpts = {}): Promise<void> {
+  const sel = opts.selector ?? "[data-jet-list-item]"
+  const minItems = opts.minItems ?? 1
+  const labelSel = opts.labelSelector ?? '[data-slot="row-label"], span.font-medium, span:first-of-type'
+  const minContrast = opts.minContrastRatio ?? 3
+  const minLabelW = opts.minLabelWidthPx ?? 12
+  const minLabelH = opts.minLabelHeightPx ?? 8
+
+  const report = await page.evaluate(
+    ({ sel, labelSel, minContrast, minLabelW, minLabelH }) => {
+      function parseRgb(c: string): [number, number, number, number] | null {
+        const m = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
+        if (!m) return null
+        return [+m[1]!, +m[2]!, +m[3]!, m[4] != null ? +m[4] : 1]
+      }
+      function luminance(r: number, g: number, b: number): number {
+        const [rs, gs, bs] = [r, g, b].map(v => {
+          v /= 255
+          return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+        })
+        return 0.2126 * rs! + 0.7152 * gs! + 0.0722 * bs!
+      }
+      function contrastRatio(fg: string, bg: string): number | null {
+        const f = parseRgb(fg)
+        const b = parseRgb(bg)
+        if (!f || !b || f[3] === 0) return null
+        const l1 = luminance(f[0], f[1], f[2])
+        const l2 = luminance(b[0], b[1], b[2])
+        const lighter = Math.max(l1, l2)
+        const darker = Math.min(l1, l2)
+        return (lighter + 0.05) / (darker + 0.05)
+      }
+      function effectiveBg(el: Element | null): string {
+        let cur: Element | null = el
+        while (cur) {
+          const cs = getComputedStyle(cur)
+          const bg = cs.backgroundColor
+          const alpha = bg.match(/rgba?\([^)]+,\s*([\d.]+)\)/)
+          if (bg !== "rgba(0, 0, 0, 0)" && (!alpha || +alpha[1]! > 0.05)) return bg
+          cur = cur.parentElement
+        }
+        return getComputedStyle(document.body).backgroundColor
+      }
+
+      const rows = Array.from(document.querySelectorAll<HTMLElement>(sel))
+      const problems: Array<{ i: number; reason: string; text: string }> = []
+
+      rows.forEach((row, i) => {
+        const label = row.querySelector<HTMLElement>(labelSel)
+        if (!label) {
+          problems.push({ i, reason: "no label element", text: (row.textContent ?? "").trim().slice(0, 40) })
+          return
+        }
+        const text = (label.textContent ?? "").trim()
+        if (text.length === 0) {
+          problems.push({ i, reason: "empty label text", text: "" })
+          return
+        }
+        const cs = getComputedStyle(label)
+        const rect = label.getBoundingClientRect()
+        const rowRect = row.getBoundingClientRect()
+        const isHidden =
+          cs.visibility === "hidden" ||
+          cs.display === "none" ||
+          parseFloat(cs.opacity || "1") === 0 ||
+          cs.color === "rgba(0, 0, 0, 0)"
+        if (isHidden) {
+          problems.push({ i, reason: "label hidden or transparent color", text })
+          return
+        }
+        if (rect.width < minLabelW || rect.height < minLabelH) {
+          problems.push({
+            i,
+            reason: `label box too small (${Math.round(rect.width)}×${Math.round(rect.height)}px)`,
+            text,
+          })
+          return
+        }
+        const intersectsRow =
+          rect.bottom > rowRect.top + 1 &&
+          rect.top < rowRect.bottom - 1 &&
+          rect.right > rowRect.left + 1 &&
+          rect.left < rowRect.right - 1
+        if (!intersectsRow) {
+          problems.push({ i, reason: "label outside row clip bounds", text })
+          return
+        }
+        const bg = effectiveBg(row)
+        const ratio = contrastRatio(cs.color, bg)
+        if (ratio == null || ratio < minContrast) {
+          problems.push({
+            i,
+            reason: `contrast ${ratio?.toFixed(2) ?? "n/a"} (fg=${cs.color}, bg=${bg})`,
+            text,
+          })
+        }
+      })
+
+      return { count: rows.length, problems: problems.slice(0, 5), totalProblems: problems.length }
+    },
+    { sel, labelSel, minContrast, minLabelW, minLabelH },
+  )
+
+  if (report.count < minItems) {
+    throw new Error(`expectRowTextReadable: found ${report.count} rows, expected >= ${minItems}`)
+  }
+  if (report.totalProblems > 0) {
+    throw new Error(
+      `expectRowTextReadable: ${report.totalProblems} row(s) have unreadable labels. Examples: ${JSON.stringify(report.problems)}`,
     )
   }
 }

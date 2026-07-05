@@ -15,6 +15,8 @@ export type JetAgentState = {
   activeEditorDirty: boolean
 }
 
+export type JetAgentCursor = { line: number; column: number }
+
 export type JetAgentAPI = {
   openWorkspace(folderPath: string): Promise<void>
   openFile(relativeOrUri: string): Promise<void>
@@ -23,6 +25,13 @@ export type JetAgentAPI = {
   waitForReady(): Promise<void>
   waitForEditor(timeoutMs?: number): Promise<void>
   setFontSize(px: number): void
+  getEditorText(): string | null
+  setEditorSelection(line: number, column: number): void
+  getCursorPosition(): JetAgentCursor | null
+  acceptConfirm(): Promise<void>
+  dismissConfirm(): Promise<void>
+  readFixtureFile(relativePath: string): Promise<string>
+  waitForListRows(panel: string, minItems: number, timeoutMs?: number): Promise<void>
 }
 
 export type AgentBridgeContext = {
@@ -39,6 +48,9 @@ export type AgentBridgeContext = {
   openWorkspace: (folderPath: string) => Promise<void>
   openFile: (uri: string, path: string) => void
   setFontSize: (px: number) => void
+  getEditorText?: () => string | null
+  setEditorSelection?: (line: number, column: number) => void
+  getCursorPosition?: () => JetAgentCursor | null
 }
 
 export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
@@ -93,6 +105,47 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
     },
     setFontSize(px: number) {
       ctx().setFontSize(px)
+    },
+    getEditorText() {
+      return ctx().getEditorText?.() ?? null
+    },
+    setEditorSelection(line: number, column: number) {
+      ctx().setEditorSelection?.(line, column)
+    },
+    getCursorPosition() {
+      return ctx().getCursorPosition?.() ?? null
+    },
+    async acceptConfirm() {
+      const btn = document.querySelector<HTMLElement>('[data-jet-confirm="accept"]')
+      if (!btn) throw new Error("No confirm dialog accept button visible")
+      btn.click()
+      await new Promise(r => setTimeout(r, 50))
+    },
+    async dismissConfirm() {
+      const btn = document.querySelector<HTMLElement>('[data-jet-confirm="cancel"]')
+      if (!btn) throw new Error("No confirm dialog cancel button visible")
+      btn.click()
+      await new Promise(r => setTimeout(r, 50))
+    },
+    async readFixtureFile(relativePath: string) {
+      const current = ctx()
+      const rootPath = current.workspace.root?.path
+      if (!rootPath) throw new Error("No workspace open")
+      const uri = toWorkspaceFileUri(rootPath, relativePath)
+      if (!window.jet?.fs?.readFile) {
+        throw new Error("window.jet.fs.readFile not available")
+      }
+      return window.jet.fs.readFile(uri)
+    },
+    async waitForListRows(panel: string, minItems: number, timeoutMs = 10_000) {
+      const sel = `[data-jet-list-panel="${panel}"] [data-jet-list-item]`
+      const deadline = Date.now() + timeoutMs
+      while (Date.now() < deadline) {
+        const count = document.querySelectorAll(sel).length
+        if (count >= minItems) return
+        await new Promise(r => setTimeout(r, 50))
+      }
+      throw new Error(`waitForListRows: expected >= ${minItems} rows in panel "${panel}"`)
     },
   }
 }

@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test"
 import { boot, SAMPLE, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
 import { expectElementWidth, expectSyntaxHighlighting } from "../helpers/list.js"
+import { focusEditor } from "../helpers/editor.js"
+import { confirmDialog } from "../helpers/overlays.js"
 
 test.beforeEach(async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
@@ -77,6 +79,8 @@ test("tab-lifecycle: split editor creates two panels", async ({ page }) => {
 test("tab-lifecycle: toggle comment adds // then removes it", async ({ page }) => {
   await page.locator(".cm-content").click()
   await page.keyboard.press("Home")
+  const before = await agent(page).getEditorText()
+  const firstLineBefore = before!.split("\n")[0]!
 
   await agent(page).executeCommand("editor.toggleComment")
   await page.waitForTimeout(200)
@@ -84,4 +88,43 @@ test("tab-lifecycle: toggle comment adds // then removes it", async ({ page }) =
 
   await agent(page).executeCommand("editor.toggleComment")
   await page.waitForTimeout(200)
+  const after = await agent(page).getEditorText()
+  expect(after!.split("\n")[0]).toBe(firstLineBefore)
+})
+
+test("tab-lifecycle: dirty close cancel keeps buffer", async ({ page }) => {
+  await focusEditor(page)
+  await page.keyboard.type(" DIRTY")
+  await page.waitForTimeout(200)
+  expect((await agent(page).getState()).activeEditorDirty).toBe(true)
+
+  void page.evaluate(() => window.__jetAgent!.executeCommand("workspace.closeBuffer"))
+  await expect(page.locator('[role="alertdialog"]')).toContainText("Unsaved changes", { timeout: 5000 })
+
+  await confirmDialog(page, "cancel")
+  await expect(page.locator(".cm-editor")).toContainText("DIRTY")
+})
+
+test("tab-lifecycle: dirty close confirm closes buffer", async ({ page }) => {
+  await agent(page).openFile("src/utils.ts")
+  await page.waitForTimeout(400)
+  await focusEditor(page)
+  await page.keyboard.type(" X")
+  await page.waitForTimeout(200)
+
+  void page.evaluate(() => window.__jetAgent!.executeCommand("workspace.closeBuffer"))
+  await expect(page.locator('[role="alertdialog"]')).toBeVisible({ timeout: 5000 })
+  await confirmDialog(page, "confirm")
+  await page.waitForTimeout(400)
+
+  await expect(page.locator(".cm-editor")).not.toContainText("export function greet")
+})
+
+test("tab-lifecycle: Mod-w closes buffer", async ({ page }) => {
+  await agent(page).openFile("src/utils.ts")
+  await page.waitForTimeout(400)
+  await focusEditor(page)
+  await page.keyboard.press("Meta+w")
+  await page.waitForTimeout(400)
+  await expect(page.locator(".cm-editor")).not.toContainText("export function greet")
 })

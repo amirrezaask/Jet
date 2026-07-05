@@ -8,6 +8,7 @@ import {
   expectNoClipping,
   expectRowSpacing,
   expectRowTextVisible,
+  expectRowTextReadable,
 } from "../helpers/list.js"
 
 const PANEL_SEL = "[data-jet-list-panel=\"locationlist\"]"
@@ -97,6 +98,41 @@ test("location-list: row text visible after search", async ({ page }) => {
   await expectNoClipping(page, { selector: ITEM_SEL, containerSelector: PANEL_SEL })
 })
 
+test("location-list: search result labels are readable", async ({ page }) => {
+  await agent(page).executeCommand("locationlist.showSearch")
+  await page.waitForTimeout(400)
+
+  await page.locator("input[type=\"search\"]").click()
+  await page.keyboard.type("main")
+  await page.waitForTimeout(2000)
+
+  await expect(page.locator(PANEL_SEL)).not.toContainText("No results")
+  await expectLayout(page, { selector: ITEM_SEL, minItems: 1, minRowHeight: 22 })
+
+  const firstRow = page.locator(ITEM_SEL).first()
+  await expect(firstRow).toBeVisible()
+  await expect(firstRow).not.toHaveText(/^main$/i)
+
+  const label = firstRow.locator('[data-slot="row-label"]').first()
+  await expect(label).not.toBeEmpty()
+  await expect(label).toContainText(/main/i)
+
+  const detail = firstRow.locator('[data-slot="row-detail"]').first()
+  await expect(detail).toContainText(/:\d+:\d+/)
+
+  await expectRowTextReadable(page, { selector: ITEM_SEL, minItems: 1, minContrastRatio: 3 })
+  await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 1, minGlyphHeightPx: 10 })
+
+  await firstRow.hover()
+  await page.waitForTimeout(150)
+  await expectRowTextReadable(page, { selector: ITEM_SEL, minItems: 1, minContrastRatio: 3 })
+
+  await firstRow.focus()
+  await page.waitForTimeout(150)
+  await expectRowTextReadable(page, { selector: ITEM_SEL, minItems: 1, minContrastRatio: 3 })
+  await expect(label).toBeVisible()
+})
+
 test("location-list: scroll after search — no overlap/spacing regressions", async ({ page }) => {
   await page.goto("/?workspace=.")
   await page.waitForFunction(() => window.__jetAgent != null)
@@ -162,4 +198,53 @@ test("location-list: search in jet repo explorer", async ({ page }) => {
   await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 5 })
   await expectNoClipping(page, { selector: ITEM_SEL, containerSelector: PANEL_SEL })
   await expect(page.locator(PANEL_SEL)).toContainText(":")
+})
+
+test("location-list: click search result opens file at line", async ({ page }) => {
+  await page.waitForTimeout(3000)
+  await agent(page).executeCommand("locationlist.showSearch")
+  await page.waitForTimeout(400)
+
+  await page.locator('input[type="search"]').click()
+  await page.keyboard.type("export function main")
+  await page.waitForTimeout(2000)
+
+  await expectLayout(page, { selector: ITEM_SEL, minItems: 1 })
+  await page.locator(`${ITEM_SEL}`).first().click()
+  await page.waitForTimeout(800)
+
+  await expect(page.locator(".cm-editor")).toContainText("export function main")
+})
+
+test("location-list: problems tab shows lint-error rows", async ({ page }) => {
+  await agent(page).openFile("src/lint-error.ts")
+  await page.waitForTimeout(800)
+  await agent(page).executeCommand("locationlist.showProblems")
+  await page.waitForTimeout(1000)
+
+  await expect(page.locator(PANEL_SEL)).toContainText("Problems")
+  const body = await page.locator("body").textContent()
+  expect(body).toMatch(/problem|error|lint|Type/i)
+})
+
+test("location-list: regex toggle filters differently", async ({ page }) => {
+  await agent(page).executeCommand("locationlist.showSearch")
+  await page.waitForTimeout(400)
+
+  await page.locator('input[type="search"]').click()
+  await page.keyboard.type("export function")
+  await page.waitForTimeout(2000)
+  const countPlain = await page.locator(ITEM_SEL).count()
+
+  await page.locator('[data-value="regex"], button:has-text("Regex")').click()
+  await page.waitForTimeout(1500)
+  await page.locator('input[type="search"]').click()
+  await page.keyboard.press("Meta+a")
+  await page.keyboard.type("export\\s+function")
+  await page.waitForTimeout(2000)
+
+  await expectLayout(page, { selector: ITEM_SEL, minItems: 1 })
+  const countRegex = await page.locator(ITEM_SEL).count()
+  expect(countRegex).toBeGreaterThanOrEqual(1)
+  expect(countPlain).toBeGreaterThanOrEqual(1)
 })

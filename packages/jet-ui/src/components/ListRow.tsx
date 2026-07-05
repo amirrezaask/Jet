@@ -7,16 +7,18 @@ export type ListRowProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 }
 
 export const ListRow = React.forwardRef<HTMLButtonElement, ListRowProps>(
-  ({ className, size = "default", children, ...props }, ref) => {
+  ({ className, size = "sm", children, ...props }, ref) => {
     return (
       <SidebarMenuButton
-        asChild
+        ref={ref}
         size={size}
-        className={cn("shrink-0 flex-col justify-center gap-0 px-2 text-left", className)}
+        className={cn(
+          "shrink-0 w-full flex-col items-stretch justify-center gap-0 overflow-visible p-0 text-left",
+          className,
+        )}
+        {...props}
       >
-        <button ref={ref} type="button" data-slot="list-row" {...props}>
-          {children}
-        </button>
+        {children}
       </SidebarMenuButton>
     )
   },

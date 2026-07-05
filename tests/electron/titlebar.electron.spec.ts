@@ -1,33 +1,17 @@
-import { _electron as electron, expect, test } from "@playwright/test"
-import { resolve } from "node:path"
-
-const REPO_ROOT = resolve(__dirname, "..", "..")
-const DESKTOP_DIR = resolve(REPO_ROOT, "apps/jet-desktop")
-const MAIN_JS = resolve(DESKTOP_DIR, "dist-electron/main.js")
-
-const TRAFFIC_LIGHT_ZONE_PX = 78
+import { expect, test } from "@playwright/test"
+import { launchJet } from "./_launch.js"
 
 test.describe("desktop shell", () => {
   test.skip(process.platform !== "darwin", "traffic lights are macOS-only")
 
   test("titlebar menubar clears the traffic-light zone", async () => {
-    const app = await electron.launch({
-      args: [MAIN_JS],
-      cwd: DESKTOP_DIR,
-      env: { ...process.env, JET_E2E: "1" },
-    })
+    const { app, page } = await launchJet()
+    const TRAFFIC_LIGHT_ZONE_PX = 78
     try {
-      const win = await app.firstWindow()
-      await win.waitForLoadState("domcontentloaded")
-      await win.waitForFunction(() => window.__jetAgent != null, null, { timeout: 30_000 })
-      await win.evaluate(async () => {
-        await window.__jetAgent!.waitForReady()
-      })
-
-      const bar = win.locator("[data-jet-titlebar]")
+      const bar = page.locator("[data-jet-titlebar]")
       await expect(bar).toBeVisible({ timeout: 10_000 })
 
-      const geom = await win.evaluate(zone => {
+      const geom = await page.evaluate(zone => {
         const bar = document.querySelector<HTMLElement>("[data-jet-titlebar]")
         if (!bar) return null
         const spacer = document.querySelector<HTMLElement>("[data-jet-traffic-light-spacer]")
@@ -55,6 +39,21 @@ test.describe("desktop shell", () => {
         geom!.minMenuLeft!,
         `first menu item left=${geom!.minMenuLeft} overlaps traffic-light zone (${TRAFFIC_LIGHT_ZONE_PX}px)`,
       ).toBeGreaterThanOrEqual(TRAFFIC_LIGHT_ZONE_PX)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("titlebar view menu opens explorer", async () => {
+    const { app, page } = await launchJet()
+    try {
+      const bar = page.locator("[data-jet-titlebar]")
+      await expect(bar).toBeVisible({ timeout: 10_000 })
+      await bar.getByText("View", { exact: true }).click()
+      await page.waitForTimeout(200)
+      await page.getByText("Show Explorer", { exact: true }).click()
+      await page.waitForTimeout(600)
+      await expect(page.locator('[data-jet-list-panel="explorer"]')).toBeVisible()
     } finally {
       await app.close()
     }

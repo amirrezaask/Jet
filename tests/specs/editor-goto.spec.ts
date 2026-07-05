@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test"
 import { boot, SAMPLE, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
 import { expectElementWidth } from "../helpers/list.js"
+import { expectCursorLine } from "../helpers/editor.js"
 
 test.beforeEach(async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
@@ -22,6 +23,7 @@ test("editor-goto: goto line dialog opens and navigates", async ({ page }) => {
 
   const state = await agent(page).getState()
   expect(state.paletteOpen).toBe(false)
+  await expectCursorLine(page, 3)
 })
 
 test("editor-goto: jump back and forward between files", async ({ page }) => {

@@ -16,6 +16,28 @@ async function bootWithTwoTabs(page: import("@playwright/test").Page): Promise<v
   await agent(page).waitForEditor()
 }
 
+test("tab-drag: split editor by dropping tab on left edge of same panel", async ({ page }) => {
+  await bootWithTwoTabs(page)
+  await dispatchTabDrag(page, { sourceTabIndex: 1, targetPanelIndex: 0, zone: "left" })
+
+  await page.waitForFunction(
+    () => (window.__jetAgent!.getState() as { panels: PanelSummary[] }).panels.filter(p => p.kind === "editor").length >= 2,
+    { timeout: 8000 },
+  )
+  expect(await editorPanelCount(page)).toBe(2)
+})
+
+test("tab-drag: split editor by dropping tab on top edge", async ({ page }) => {
+  await bootWithTwoTabs(page)
+  await dispatchTabDrag(page, { sourceTabIndex: 1, targetPanelIndex: 0, zone: "top" })
+
+  await page.waitForFunction(
+    () => (window.__jetAgent!.getState() as { panels: PanelSummary[] }).panels.filter(p => p.kind === "editor").length >= 2,
+    { timeout: 8000 },
+  )
+  expect(await editorPanelCount(page)).toBe(2)
+})
+
 test("tab-drag: split editor by dropping tab on right edge of same panel", async ({ page }) => {
   await bootWithTwoTabs(page)
   expect(await editorPanelCount(page)).toBe(1)

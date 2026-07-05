@@ -65,6 +65,25 @@ test("shell: toggle color scheme preserves syntax highlighting", async ({ page }
   await page.waitForTimeout(300)
 })
 
+test("shell: task.run opens output with task info", async ({ page }) => {
+  await page.waitForTimeout(1000)
+  await agent(page).executeCommand("task.run")
+  await page.waitForTimeout(800)
+
+  await expect(page.locator("body")).toContainText("Output")
+  await expect(page.locator("body")).toContainText(/Echo Hello|Tasks require Electron|\$ echo/i)
+})
+
+test("shell: set color scheme light applies light class", async ({ page }) => {
+  await agent(page).executeCommand("ui.setColorScheme.light")
+  await waitAnimationsIdle(page)
+
+  const hasLight = await page.evaluate(() => !document.documentElement.classList.contains("dark"))
+  expect(hasLight).toBe(true)
+
+  await agent(page).executeCommand("ui.setColorScheme.dark")
+})
+
 test("shell: zoom in/out updates font size", async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts", fontSize: 13 })
   await waitAnimationsIdle(page)

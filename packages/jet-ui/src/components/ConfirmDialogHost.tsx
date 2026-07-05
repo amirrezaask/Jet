@@ -80,10 +80,11 @@ export function ConfirmDialogHost() {
           <AlertDialogDescription>{options?.description ?? ""}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => finish(false)}>
+          <AlertDialogCancel data-jet-confirm="cancel" onClick={() => finish(false)}>
             {options?.cancelLabel ?? "Cancel"}
           </AlertDialogCancel>
           <AlertDialogAction
+            data-jet-confirm="accept"
             className={actionClassForVariant(options?.variant, options?.destructive)}
             onClick={() => finish(true)}
           >

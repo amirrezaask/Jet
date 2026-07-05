@@ -68,6 +68,7 @@ import {
   destroyEditorPanel,
   destroyEditorBuffer,
   setEditorCursor,
+  getEditorCursor,
   formatKeyBinding,
   problemsToLocationItems,
   WhichKeyPanel,
@@ -967,7 +968,6 @@ export function JetApp() {
   }, [commands, appCommands])
 
   useEffect(() => {
-    if (!isWebMode) return
     window.__jetAgent = createAgentBridge(() => ({
       workspace,
       commands,
@@ -982,6 +982,22 @@ export function JetApp() {
       openWorkspace: folderPath => Promise.resolve(openWorkspaceFolder(folderPath)),
       openFile: handleOpenFile,
       setFontSize,
+      getEditorText: () => {
+        const panel = focusedPanel ?? editorPanelRef.current
+        if (!panel) return null
+        const view = getEditorView(panel)
+        return view?.state.doc.toString() ?? null
+      },
+      setEditorSelection: (line, column) => {
+        const panel = focusedPanel ?? editorPanelRef.current
+        if (!panel) return
+        const view = getEditorView(panel)
+        if (view) jumpToLine(view, line, column)
+      },
+      getCursorPosition: () => {
+        const pos = getEditorCursor()
+        return pos ? { line: pos.line, column: pos.column } : null
+      },
     }))
     return () => {
       delete window.__jetAgent

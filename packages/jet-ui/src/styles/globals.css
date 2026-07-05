@@ -81,6 +81,8 @@
   --jet-fs-lg: 1.15rem;
   --jet-fs-xl: 1.85rem;
   --jet-row-height: 22px;
+  --jet-location-row-height: 40px;
+  --jet-traffic-light-inset: 80px;
   --jet-overlay-list-max: 22rem;
   --jet-hl-keyword: #b32c62;
   --jet-hl-control-keyword: #b32c62;
@@ -121,6 +123,66 @@
 .jet-explorer-tree {
   display: flex;
   flex-direction: column;
+}
+
+/* macOS titlebar — plain CSS so dev/HMR never drops traffic-light inset width. */
+[data-jet-titlebar] {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+[data-jet-traffic-light-spacer] {
+  width: var(--jet-traffic-light-inset);
+  min-width: var(--jet-traffic-light-inset);
+  flex: 0 0 var(--jet-traffic-light-inset);
+}
+
+/* Location list rows — plain CSS so dev/Electron never drops row layout or text colors. */
+[data-jet-list-panel="locationlist"] [data-jet-list-item] {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+  height: var(--jet-location-row-height);
+  min-height: var(--jet-location-row-height);
+  max-height: var(--jet-location-row-height);
+  padding: 2px 8px;
+  overflow: visible;
+  flex-shrink: 0;
+  color: var(--foreground);
+  text-align: left;
+}
+
+[data-jet-list-panel="locationlist"] [data-jet-list-item]:hover,
+[data-jet-list-panel="locationlist"] [data-jet-list-item]:focus-visible {
+  color: var(--foreground);
+}
+
+[data-jet-list-panel="locationlist"] [data-slot="row-label"] {
+  display: block;
+  flex-shrink: 0;
+  color: var(--foreground);
+  font-size: var(--jet-fs-sm);
+  font-weight: 500;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-jet-list-panel="locationlist"] [data-slot="row-detail"] {
+  display: block;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--jet-fs-xs);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Vercel dark — neutral primary, no phosphor accent */

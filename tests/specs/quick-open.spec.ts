@@ -61,3 +61,16 @@ test("quick-open: row text is visible", async ({ page }) => {
   })
   await page.keyboard.press("Escape")
 })
+
+test("quick-open: enter opens selected file", async ({ page }) => {
+  await agent(page).executeCommand("workspace.quickOpen")
+  await waitAnimationsIdle(page)
+
+  await page.keyboard.type("utils")
+  await page.waitForTimeout(500)
+  await expect(page.locator("body")).toContainText("utils.ts")
+  await page.keyboard.press("Enter")
+  await page.waitForTimeout(800)
+
+  await expect(page.locator(".cm-editor")).toContainText("export function greet")
+})

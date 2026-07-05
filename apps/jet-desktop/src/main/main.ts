@@ -129,10 +129,12 @@ function createWindow() {
     },
   })
 
+  const e2e = process.env.JET_E2E === "1"
+
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-    mainWindow.webContents.openDevTools({ mode: "detach" })
-  } else if (isDev) {
+    if (!e2e) mainWindow.webContents.openDevTools({ mode: "detach" })
+  } else if (isDev && !e2e) {
     mainWindow.loadURL("http://localhost:5173")
     mainWindow.webContents.openDevTools({ mode: "detach" })
   } else {

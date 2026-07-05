@@ -20,7 +20,7 @@ import { registerListPanel } from "@/lib/list-registry.js"
 import { CircleAlertIcon } from "lucide-react"
 
 /** Initial virtualizer guess — rows are measured after mount. */
-const ROW_HEIGHT_PX = 36
+const ROW_HEIGHT_PX = 40
 
 export function problemsToLocationItems(problems: JetProblem[]): LocationItem[] {
   return problems.map((p, i) => ({
@@ -99,7 +99,6 @@ export function LocationListPanel({
 
   const visible = state.itemsForActiveSource()
   const scrollRef = useRef<HTMLUListElement>(null)
-  useEffect(() => registerListPanel("locationlist", scrollRef.current), [])
   const rowVirtualizer = useVirtualizer({
     count: visible.length,
     getScrollElement: () => scrollRef.current,
@@ -107,9 +106,17 @@ export function LocationListPanel({
     overscan: 8,
   })
 
+  useEffect(() => {
+    registerListPanel("locationlist", scrollRef.current)
+  }, [visible.length])
+
+  useEffect(() => {
+    rowVirtualizer.measure()
+  }, [visible.length, rowVirtualizer])
+
   return (
-    <SidebarProvider className="!min-h-0 flex h-full min-h-0 flex-col">
-    <div className="flex h-full min-h-0 flex-col" data-jet-list-panel="locationlist">
+    <SidebarProvider className="!min-h-0 flex h-full min-h-0 flex-1 flex-col text-sidebar-foreground">
+    <div className="flex h-full min-h-0 flex-1 flex-col text-foreground" data-jet-list-panel="locationlist">
       <Tabs
         value={state.activeSource}
         onValueChange={v => state.setSource(v as LocationListSource)}
@@ -210,7 +217,6 @@ export function LocationListPanel({
                 <div
                   key={item.id}
                   data-index={virtualRow.index}
-                  className="overflow-hidden"
                   style={{
                     position: "absolute",
                     top: 0,
@@ -222,12 +228,11 @@ export function LocationListPanel({
                 >
                   <ListRow
                     data-jet-list-item
-                    className="h-full w-full min-w-0 overflow-hidden"
-                    style={{ height: ROW_HEIGHT_PX, minHeight: ROW_HEIGHT_PX, maxHeight: ROW_HEIGHT_PX }}
+                    className="w-full min-w-0"
                     onClick={() => onOpenItem(item)}
                   >
-                    <span className="truncate text-sm font-medium leading-snug">{item.label}</span>
-                    <span className="jet-mono-data truncate text-xs leading-snug text-muted-foreground">
+                    <span data-slot="row-label">{item.label}</span>
+                    <span data-slot="row-detail" className="jet-mono-data">
                       {item.path}:{item.line}:{item.column}
                       {item.detail ? ` · ${item.detail}` : ""}
                     </span>

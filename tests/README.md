@@ -8,7 +8,7 @@ Headless Chromium tests against `pnpm dev:web` (port **5174**). The dev server s
 pnpm test:web                  # all specs in tests/specs/ (default, headless)
 pnpm test:screenshots          # pixel-regression specs (*.screenshot.spec.ts)
 pnpm test:screenshots:update   # refresh golden PNGs
-pnpm test:electron             # native shell (Electron only)
+pnpm test:electron             # native shell (Electron only; builds jet-desktop first)
 ```
 
 ## Layout
@@ -17,8 +17,8 @@ pnpm test:electron             # native shell (Electron only)
 |------|---------|
 | `tests/specs/*.spec.ts` | Feature specs (boot, palette, explorer, editor, tab-drag, …) |
 | `tests/specs/*.screenshot.spec.ts` | Optional pixel snapshots (separate project) |
-| `tests/helpers/` | Shared boot, agent bridge, list assertions, drag helpers |
-| `tests/electron/` | Electron-only native chrome |
+| `tests/helpers/` | Shared boot, agent bridge, editor, overlays, list assertions, drag helpers |
+| `tests/electron/` | Electron-only native chrome + LSP |
 
 ## Writing a spec
 
@@ -36,10 +36,15 @@ test("my feature", async ({ page }) => {
 
 ### Helpers
 
-- **`boot(page, opts)`** — navigate with optional `workspace`, `file`, `fontSize`, query params; waits for `__jetAgent`.
-- **`agent(page)`** — typed wrapper around `window.__jetAgent` (`executeCommand`, `getState`, `openFile`, …).
+- **`boot(page, opts)`** — navigate with optional `workspace`, `file`, `fontSize`, `query`, `extraFiles`; waits for `__jetAgent`.
+- **`agent(page)`** — typed wrapper around `window.__jetAgent`:
+  - `executeCommand`, `getState`, `openFile`, `openWorkspace`
+  - `getEditorText`, `setEditorSelection`, `getCursorPosition`
+  - `readFixtureFile`, `acceptConfirm`, `dismissConfirm`, `waitForListRows`
+- **`focusEditor` / `typeInEditor` / `expectCursorLine`** — editor helpers (`tests/helpers/editor.ts`)
+- **`confirmDialog` / `expectOverlayOpen`** — overlay helpers (`tests/helpers/overlays.ts`)
 - **`showExplorer(page)`** — runs `explorer.show` and waits for the explorer list panel.
-- **`expectListRows` / `expectLayout` / `expectRowTextVisible`** — list/search anti-regression assertions (ported from the old JSON scenario runner).
+- **`expectListRows` / `expectLayout` / `expectRowTextVisible`** — list/search anti-regression assertions.
 - **`dispatchTabDrag` / `dispatchTabBarDrag`** — synthetic HTML5 drag for tab split/reorder tests.
 
 ### List/search assertions
@@ -59,7 +64,25 @@ await expectListRows(page, {
 | Variable | Effect |
 |----------|--------|
 | `JET_BASE_URL` | Override base URL (default `http://localhost:5174`) |
+| `JET_E2E=1` | Set when launching Electron for e2e (`tests/electron/_launch.ts`) |
 
-## Electron-only paths
+## Electron tests
 
-Browser specs cannot cover native traffic lights, folder dialogs, or LSP. Use `tests/electron/*.electron.spec.ts` for those.
+`pnpm test:electron` builds `jet-desktop` then runs specs in `tests/electron/`.
+
+| Spec | Requires |
+|------|----------|
+| `titlebar.electron.spec.ts` | macOS (traffic-light geometry) |
+| `location-list.electron.spec.ts` | Electron shell — location list row readability |
+| `lsp.electron.spec.ts` | `typescript-language-server` on PATH (auto-skipped if missing) |
+| `syntax-rust.electron.spec.ts` | Electron build |
+
+Install LSP for local Electron LSP tests:
+
+```bash
+npm install -g typescript-language-server typescript
+```
+
+## CI
+
+GitHub Actions workflow `.github/workflows/ci.yml` runs `pnpm -r typecheck`, `pnpm test:web`, and `pnpm test:electron` (macOS).
