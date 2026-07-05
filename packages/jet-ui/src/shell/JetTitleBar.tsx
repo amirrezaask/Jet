@@ -35,12 +35,9 @@ export type JetTitleBarMenu = {
   items: Array<JetTitleBarAction | JetTitleBarCheckboxAction | { kind: "separator" }>
 }
 
-/** macOS traffic-light reserve — hardcoded px so dev/HMR never collapses the spacer. */
-const TRAFFIC_LIGHT_INSET_PX = 100
-
 /**
  * Custom window titlebar for macOS `titleBarStyle: 'hiddenInset'`.
- * Left spacer reserves room for native traffic lights.
+ * Left spacer reserves room for native traffic lights (sized via --jet-traffic-light-inset).
  * The row is drag-region (WebkitAppRegion: 'drag'); interactive parts opt out with 'no-drag'.
  */
 export function JetTitleBar({
@@ -55,23 +52,17 @@ export function JetTitleBar({
   return (
     <div
       data-jet-titlebar
-      className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-background pr-1 text-xs select-none"
+      className="flex min-h-[var(--jet-titlebar-height)] shrink-0 items-center gap-2 border-b border-border bg-background pr-1 text-xs select-none"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
-      <div
-        aria-hidden
-        data-jet-traffic-light-spacer
-        style={{
-          width: `${TRAFFIC_LIGHT_INSET_PX}px`,
-          minWidth: `${TRAFFIC_LIGHT_INSET_PX}px`,
-          flex: `0 0 ${TRAFFIC_LIGHT_INSET_PX}px`,
-        }}
-      />
+      <div aria-hidden data-jet-traffic-light-spacer />
       <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        <Menubar className="h-7 border-0 bg-transparent p-0 shadow-none">
+        <Menubar className="h-[calc(var(--jet-titlebar-height)-0.5rem)] border-0 bg-transparent p-0 shadow-none">
           {menus.map(menu => (
             <MenubarMenu key={menu.id}>
-              <MenubarTrigger className="px-2 py-0.5 text-xs">{menu.label}</MenubarTrigger>
+              <MenubarTrigger className="px-2 py-0.5 text-xs text-foreground">
+                {menu.label}
+              </MenubarTrigger>
               <MenubarContent>
                 {menu.items.map((item, i) =>
                   "kind" in item && item.kind === "separator" ? (

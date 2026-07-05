@@ -122,7 +122,16 @@ function createWindow() {
     height: 900,
     backgroundColor: "#0a0a0c",
     titleBarStyle: isMac ? "hiddenInset" : "default",
-    ...(isMac ? { trafficLightPosition: { x: 14, y: 11 } } : {}),
+    ...(isMac
+      ? {
+          trafficLightPosition: { x: 14, y: 11 },
+          titleBarOverlay: {
+            height: 39,
+            color: "#000000",
+            symbolColor: "#ededed",
+          },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

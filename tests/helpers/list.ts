@@ -223,6 +223,8 @@ export type RowTextReadableOpts = {
   selector?: string
   minItems?: number
   labelSelector?: string
+  detailSelector?: string
+  checkDetail?: boolean
   minContrastRatio?: number
   minLabelWidthPx?: number
   minLabelHeightPx?: number
@@ -291,12 +293,14 @@ export async function expectRowTextReadable(page: Page, opts: RowTextReadableOpt
   const sel = opts.selector ?? "[data-jet-list-item]"
   const minItems = opts.minItems ?? 1
   const labelSel = opts.labelSelector ?? '[data-slot="row-label"], span.font-medium, span:first-of-type'
+  const detailSel = opts.detailSelector ?? '[data-slot="row-detail"]'
+  const checkDetail = opts.checkDetail !== false
   const minContrast = opts.minContrastRatio ?? 3
   const minLabelW = opts.minLabelWidthPx ?? 12
   const minLabelH = opts.minLabelHeightPx ?? 8
 
   const report = await page.evaluate(
-    ({ sel, labelSel, minContrast, minLabelW, minLabelH }) => {
+    ({ sel, labelSel, detailSel, checkDetail, minContrast, minLabelW, minLabelH }) => {
       function parseRgb(c: string): [number, number, number, number] | null {
         const m = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
         if (!m) return null
@@ -331,22 +335,17 @@ export async function expectRowTextReadable(page: Page, opts: RowTextReadableOpt
         return getComputedStyle(document.body).backgroundColor
       }
 
-      const rows = Array.from(document.querySelectorAll<HTMLElement>(sel))
-      const problems: Array<{ i: number; reason: string; text: string }> = []
-
-      rows.forEach((row, i) => {
-        const label = row.querySelector<HTMLElement>(labelSel)
-        if (!label) {
-          problems.push({ i, reason: "no label element", text: (row.textContent ?? "").trim().slice(0, 40) })
-          return
-        }
-        const text = (label.textContent ?? "").trim()
-        if (text.length === 0) {
-          problems.push({ i, reason: "empty label text", text: "" })
-          return
-        }
-        const cs = getComputedStyle(label)
-        const rect = label.getBoundingClientRect()
+      function checkTextEl(
+        el: HTMLElement,
+        row: HTMLElement,
+        i: number,
+        role: string,
+        problems: Array<{ i: number; reason: string; text: string }>,
+      ) {
+        const text = (el.textContent ?? "").trim()
+        if (text.length === 0) return
+        const cs = getComputedStyle(el)
+        const rect = el.getBoundingClientRect()
         const rowRect = row.getBoundingClientRect()
         const isHidden =
           cs.visibility === "hidden" ||
@@ -354,13 +353,13 @@ export async function expectRowTextReadable(page: Page, opts: RowTextReadableOpt
           parseFloat(cs.opacity || "1") === 0 ||
           cs.color === "rgba(0, 0, 0, 0)"
         if (isHidden) {
-          problems.push({ i, reason: "label hidden or transparent color", text })
+          problems.push({ i, reason: `${role} hidden or transparent color`, text })
           return
         }
         if (rect.width < minLabelW || rect.height < minLabelH) {
           problems.push({
             i,
-            reason: `label box too small (${Math.round(rect.width)}×${Math.round(rect.height)}px)`,
+            reason: `${role} box too small (${Math.round(rect.width)}×${Math.round(rect.height)}px)`,
             text,
           })
           return
@@ -371,7 +370,7 @@ export async function expectRowTextReadable(page: Page, opts: RowTextReadableOpt
           rect.right > rowRect.left + 1 &&
           rect.left < rowRect.right - 1
         if (!intersectsRow) {
-          problems.push({ i, reason: "label outside row clip bounds", text })
+          problems.push({ i, reason: `${role} outside row clip bounds`, text })
           return
         }
         const bg = effectiveBg(row)
@@ -379,15 +378,38 @@ export async function expectRowTextReadable(page: Page, opts: RowTextReadableOpt
         if (ratio == null || ratio < minContrast) {
           problems.push({
             i,
-            reason: `contrast ${ratio?.toFixed(2) ?? "n/a"} (fg=${cs.color}, bg=${bg})`,
+            reason: `${role} contrast ${ratio?.toFixed(2) ?? "n/a"} (fg=${cs.color}, bg=${bg})`,
             text,
           })
+        }
+      }
+
+      const rows = Array.from(document.querySelectorAll<HTMLElement>(sel))
+      const problems: Array<{ i: number; reason: string; text: string }> = []
+
+      rows.forEach((row, i) => {
+        const label = row.querySelector<HTMLElement>(labelSel)
+        if (!label) {
+          problems.push({ i, reason: "no label element", text: (row.textContent ?? "").trim().slice(0, 40) })
+          return
+        }
+        const labelText = (label.textContent ?? "").trim()
+        if (labelText.length === 0) {
+          problems.push({ i, reason: "empty label text", text: "" })
+          return
+        }
+        checkTextEl(label, row, i, "label", problems)
+        if (checkDetail) {
+          const detail = row.querySelector<HTMLElement>(detailSel)
+          if (detail && (detail.textContent ?? "").trim().length > 0) {
+            checkTextEl(detail, row, i, "detail", problems)
+          }
         }
       })
 
       return { count: rows.length, problems: problems.slice(0, 5), totalProblems: problems.length }
     },
-    { sel, labelSel, minContrast, minLabelW, minLabelH },
+    { sel, labelSel, detailSel, checkDetail, minContrast, minLabelW, minLabelH },
   )
 
   if (report.count < minItems) {
@@ -395,7 +417,7 @@ export async function expectRowTextReadable(page: Page, opts: RowTextReadableOpt
   }
   if (report.totalProblems > 0) {
     throw new Error(
-      `expectRowTextReadable: ${report.totalProblems} row(s) have unreadable labels. Examples: ${JSON.stringify(report.problems)}`,
+      `expectRowTextReadable: ${report.totalProblems} row(s) have unreadable text. Examples: ${JSON.stringify(report.problems)}`,
     )
   }
 }

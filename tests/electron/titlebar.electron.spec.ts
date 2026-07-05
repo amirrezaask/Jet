@@ -6,12 +6,19 @@ test.describe("desktop shell", () => {
 
   test("titlebar menubar clears the traffic-light zone", async () => {
     const { app, page } = await launchJet()
-    const TRAFFIC_LIGHT_ZONE_PX = 78
     try {
       const bar = page.locator("[data-jet-titlebar]")
       await expect(bar).toBeVisible({ timeout: 10_000 })
 
-      const geom = await page.evaluate(zone => {
+      const geom = await page.evaluate(() => {
+        const root = document.documentElement
+        const insetRaw = getComputedStyle(root).getPropertyValue("--jet-traffic-light-inset").trim()
+        const probe = document.createElement("div")
+        probe.style.width = insetRaw || "7.7rem"
+        document.body.appendChild(probe)
+        const zone = probe.getBoundingClientRect().width
+        probe.remove()
+
         const bar = document.querySelector<HTMLElement>("[data-jet-titlebar]")
         if (!bar) return null
         const spacer = document.querySelector<HTMLElement>("[data-jet-traffic-light-spacer]")
@@ -29,16 +36,16 @@ test.describe("desktop shell", () => {
           minMenuLeft: menuLefts.length ? Math.min(...menuLefts) : null,
           zone,
         }
-      }, TRAFFIC_LIGHT_ZONE_PX)
+      })
 
       expect(geom, "titlebar element must exist in Electron shell").not.toBeNull()
       expect(geom!.spacerRight, "traffic-light spacer must render").not.toBeNull()
-      expect(geom!.spacerRight!).toBeGreaterThanOrEqual(TRAFFIC_LIGHT_ZONE_PX)
+      expect(geom!.spacerRight!).toBeGreaterThanOrEqual(geom!.zone)
       expect(geom!.minMenuLeft, "at least one menu trigger must render").not.toBeNull()
       expect(
         geom!.minMenuLeft!,
-        `first menu item left=${geom!.minMenuLeft} overlaps traffic-light zone (${TRAFFIC_LIGHT_ZONE_PX}px)`,
-      ).toBeGreaterThanOrEqual(TRAFFIC_LIGHT_ZONE_PX)
+        `first menu item left=${geom!.minMenuLeft} overlaps traffic-light zone (${geom!.zone}px)`,
+      ).toBeGreaterThanOrEqual(geom!.zone)
     } finally {
       await app.close()
     }

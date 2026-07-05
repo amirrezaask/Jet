@@ -1,5 +1,6 @@
 import type { ListItem } from "@jet/workspace"
 import { useEffect, useRef } from "react"
+import { ListRow } from "@/components/ListRow.js"
 import {
   Empty,
   EmptyDescription,
@@ -55,20 +56,25 @@ export function LocationList({
         ) : (
           items.map(item => (
             <li key={item.id} className="jet-location-list-item">
-              <button
-                type="button"
+              <ListRow
                 data-jet-list-item
-                className="jet-location-list-row"
+                className="w-full min-w-0 px-2 py-0.5"
                 onClick={() => onOpenItem(item)}
               >
-                <span className="jet-location-list-row-label" data-slot="row-label">
+                <span
+                  data-slot="row-label"
+                  className="truncate text-sm font-medium text-foreground group-hover:text-accent-foreground"
+                >
                   {item.label}
                 </span>
-                <span className="jet-location-list-row-detail jet-mono-data" data-slot="row-detail">
+                <span
+                  data-slot="row-detail"
+                  className="jet-mono-data truncate text-xs text-muted-foreground group-hover:text-muted-foreground"
+                >
                   {item.path}:{item.line}:{item.column}
                   {item.detail ? ` · ${item.detail}` : ""}
                 </span>
-              </button>
+              </ListRow>
             </li>
           ))
         )}

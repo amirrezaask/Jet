@@ -17,7 +17,7 @@ export const ListRow = React.forwardRef<HTMLButtonElement, ListRowProps>(
         data-size={size}
         className={cn(
           sidebarMenuButtonVariants({ size }),
-          "h-full min-h-0 shrink-0 w-full flex-col items-stretch justify-center gap-0 overflow-hidden p-0 text-left",
+          "group min-h-[var(--jet-location-row-height)] w-full shrink-0 flex-col items-stretch justify-center gap-0 overflow-hidden p-0 text-left text-foreground appearance-none",
           className,
         )}
         {...props}

@@ -80,9 +80,10 @@
   --jet-fs-base: 1rem;
   --jet-fs-lg: 1.15rem;
   --jet-fs-xl: 1.85rem;
-  --jet-row-height: 22px;
-  --jet-location-row-height: 40px;
-  --jet-traffic-light-inset: 100px;
+  --jet-row-height: calc(var(--jet-fs-base) * 1.692);
+  --jet-titlebar-height: calc(var(--jet-fs-base) * 2.25);
+  --jet-location-row-height: calc(var(--jet-fs-base) * 2.5);
+  --jet-traffic-light-inset: 7.7rem;
   --jet-overlay-list-max: 22rem;
   --jet-hl-keyword: #b32c62;
   --jet-hl-control-keyword: #b32c62;
@@ -130,15 +131,17 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
+  min-height: var(--jet-titlebar-height);
+  padding-inline-end: 0.25rem;
 }
 
 [data-jet-traffic-light-spacer] {
-  width: 100px;
-  min-width: 100px;
-  flex: 0 0 100px;
+  width: var(--jet-traffic-light-inset);
+  min-width: var(--jet-traffic-light-inset);
+  flex: 0 0 var(--jet-traffic-light-inset);
 }
 
-/* Location list — plain CSS with pixel sizes (no Tailwind / virtualizer dependency). */
+/* Location list — shell + row height tokens (row styling via ListRow + Tailwind). */
 [data-jet-location-list] {
   background: var(--background);
   color: var(--foreground);
@@ -147,67 +150,14 @@
 .jet-location-list-scroll {
   list-style: none;
   margin: 0;
-  padding: 4px;
+  padding: 0.25rem;
   background: var(--background);
 }
 
 .jet-location-list-item {
   display: block;
-  height: 40px;
+  height: var(--jet-location-row-height);
   flex-shrink: 0;
-}
-
-.jet-location-list-row {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  width: 100%;
-  height: 40px;
-  min-height: 40px;
-  max-height: 40px;
-  padding: 2px 8px;
-  margin: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--foreground);
-  text-align: left;
-  overflow: hidden;
-  cursor: pointer;
-  font: inherit;
-  flex-shrink: 0;
-}
-
-.jet-location-list-row:hover,
-.jet-location-list-row:focus-visible {
-  background: var(--accent);
-  color: var(--accent-foreground);
-  outline: none;
-}
-
-.jet-location-list-row-label {
-  display: block;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--foreground);
-  font-size: 0.92rem;
-  font-weight: 500;
-  line-height: 1.3;
-}
-
-.jet-location-list-row-detail {
-  display: block;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted-foreground);
-  font-size: 0.85rem;
-  line-height: 1.3;
 }
 
 /* Vercel dark — neutral primary, no phosphor accent */
@@ -252,6 +202,11 @@
 
 * {
   box-sizing: border-box;
+}
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 html {
