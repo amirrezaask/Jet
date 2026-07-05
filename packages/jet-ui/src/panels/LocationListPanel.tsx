@@ -190,16 +190,18 @@ export function LocationListPanel({
       )}
       <ul ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-1">
         {visible.length === 0 ? (
-          <li className="p-1">
-            <Empty className="border-0 py-4">
-              <EmptyHeader>
-                <EmptyTitle className="text-sm">No results</EmptyTitle>
-                <EmptyDescription className="text-xs">
-                  Try another query or switch source tabs.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          </li>
+          state.searchLoading ? null : (
+            <li className="p-1">
+              <Empty className="border-0 py-4">
+                <EmptyHeader>
+                  <EmptyTitle className="text-sm">No results</EmptyTitle>
+                  <EmptyDescription className="text-xs">
+                    Try another query or switch source tabs.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </li>
+          )
         ) : (
           <li style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
             {rowVirtualizer.getVirtualItems().map(virtualRow => {

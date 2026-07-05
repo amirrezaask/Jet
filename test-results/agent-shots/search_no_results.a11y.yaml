@@ -17,7 +17,7 @@
   - tab "Refs"
   - tab "Defs"
   - tab "Tasks"
-- searchbox "Search project"
+- searchbox "Search project": zzzzznever_matches_anywhere_qwx
 - toolbar:
   - button "Case"
   - button "Regex"

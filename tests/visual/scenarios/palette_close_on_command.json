@@ -13,7 +13,7 @@
     { "key": "Enter" },
     { "wait": { "ms": 400 } },
     { "assert_state": { "paletteOpen": false } },
-    { "assert_a11y_contains": ["Search files"] },
+    { "assert_a11y_contains": ["file name"] },
     { "key": "Escape" },
     { "exit": 0 }
   ]

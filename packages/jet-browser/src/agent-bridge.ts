@@ -11,6 +11,7 @@ export type JetAgentState = {
   openBuffers: string[]
   panels: { id: number; kind: string }[]
   fontSize: number
+  activeEditorDirty: boolean
 }
 
 export type JetAgentAPI = {
@@ -32,6 +33,7 @@ export type AgentBridgeContext = {
   message: string | null
   layoutReady: boolean
   fontSize: number
+  activeEditorDirty: boolean
   executeCommand: (name: string) => Promise<void>
   openWorkspace: (folderPath: string) => Promise<void>
   openFile: (uri: string, path: string) => void
@@ -68,6 +70,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
         openBuffers: current.workspace.openBuffers,
         panels: collectPanels(current),
         fontSize: current.fontSize,
+        activeEditorDirty: current.activeEditorDirty,
       }
     },
     async waitForReady() {

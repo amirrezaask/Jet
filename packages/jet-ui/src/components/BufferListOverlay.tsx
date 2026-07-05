@@ -96,8 +96,7 @@ export function BufferListOverlay({
                   onOpenChange(false)
                 }}
               >
-                {name}
-                {dirty ? " •" : ""}
+                <span data-slot="row-label">{name}{dirty ? " •" : ""}</span>
               </CommandItem>
             ))}
           </CommandList>

@@ -12,7 +12,7 @@ export const ListRow = React.forwardRef<HTMLButtonElement, ListRowProps>(
       <SidebarMenuButton
         asChild
         size={size}
-        className={cn("flex-col justify-center gap-0 px-2 text-left", className)}
+        className={cn("shrink-0 flex-col justify-center gap-0 px-2 text-left", className)}
       >
         <button ref={ref} type="button" data-slot="list-row" {...props}>
           {children}

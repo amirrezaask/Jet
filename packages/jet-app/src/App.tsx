@@ -79,6 +79,7 @@ import {
   JetTitleBar,
   type JetTitleBarMenu,
   FindReplaceDrawer,
+  WelcomeView,
 } from "@jet/ui"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
@@ -220,6 +221,11 @@ export function JetApp() {
     return () => sub.dispose()
   }, [keymaps])
 
+  useEffect(() => {
+    const sub = workspace.onDidChangeDirty.event(() => setPanelRev(r => r + 1))
+    return () => sub.dispose()
+  }, [workspace])
+
   const keybindingByFn = useMemo(() => {
     const map = new Map<JetKeyBinding["run"], string>()
     for (const binding of keymapBindings) {
@@ -248,7 +254,7 @@ export function JetApp() {
     const file = workspace.fileForUri(view.fileUri)
     if (!file) return null
     return { name: file.name, languageId: file.languageId, isDirty: file.isDirty }
-  }, [focusedPanel, panelTree, workspace])
+  }, [focusedPanel, panelTree, workspace, panelRev])
 
   const keymapContext = useMemo(
     () => ({
@@ -932,6 +938,7 @@ export function JetApp() {
       message: null,
       layoutReady,
       fontSize: fontSizeRef.current,
+      activeEditorDirty: activeEditorFile?.isDirty ?? false,
       executeCommand,
       openWorkspace: folderPath => Promise.resolve(openWorkspaceFolder(folderPath)),
       openFile: handleOpenFile,
@@ -951,6 +958,7 @@ export function JetApp() {
     openWorkspaceFolder,
     handleOpenFile,
     setFontSize,
+    activeEditorFile,
   ])
 
   useEffect(() => {
@@ -1192,7 +1200,13 @@ export function JetApp() {
         </>
       }
     >
-      {workspace.root ? (
+      {!workspace.root && !hasWorkspaceQuery ? (
+        <WelcomeView
+          isWebMode={isWebMode}
+          bootstrapping={false}
+          onOpenFolder={() => executeCommand("workspace.openFolder")}
+        />
+      ) : workspace.root ? (
         <WorkspaceShell
           explorer={
             <ExplorerPanel

@@ -405,7 +405,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       const newPanel = tree.splitAtEdge(target, "right")
       const view = tree.getView(target)
       if (view?.kind === "editor") {
-        tree.setView(newPanel, { kind: "empty" })
+        tree.setView(newPanel, view)
       }
       deps.setFocusedPanel(newPanel)
       deps.commitTree(tree)

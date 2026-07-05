@@ -45,38 +45,39 @@
   - tab "Refs"
   - tab "Defs"
   - tab "Tasks"
-- searchbox "Search project": result
+- searchbox "Search project": PanelTree
 - toolbar:
   - button "Case"
   - button "Regex"
+  - button "Fuzzy"
 - list:
   - listitem:
-    - 'button "4. Read the `.a11y.yaml` outputs under `test-results/agent-shots/`. They are Playwright aria snapshots — diffable text, no pixel noise. Grep them or eyeball them. ./AGENTS.md:114:46"'
-    - button "- [x] **Workspace:** project search tab (ripgrep) + result navigation ./AGENTS.md:489:53"
-    - 'button "let result: unknown ./apps/jet-desktop/src/main/workers/fs-io.ts:8:9"'
-    - button "result = await readFile(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:11:9"
-    - button "result = undefined ./apps/jet-desktop/src/main/workers/fs-io.ts:15:9"
-    - button "result = await readDir(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:18:9"
-    - button "result = await stat(String(task.payload.uri ?? \"\")) ./apps/jet-desktop/src/main/workers/fs-io.ts:21:9"
-    - 'button "parentPort?.postMessage({ id: task.id, ok: true, result }) ./apps/jet-desktop/src/main/workers/fs-io.ts:26:54"'
-    - 'button "let result: unknown ./apps/jet-desktop/src/main/workers/search-ops.ts:9:9"'
-    - button "result = await listProjectFiles(rootUri) ./apps/jet-desktop/src/main/workers/search-ops.ts:12:9"
-    - 'button "result = await projectSearch(rootUri, String(task.payload.query ?? \"\"), { ./apps/jet-desktop/src/main/workers/search-ops.ts:15:9"'
-    - 'button "parentPort?.postMessage({ id: task.id, ok: true, result }) ./apps/jet-desktop/src/main/workers/search-ops.ts:23:54"'
-    - 'button "type WorkerReply = { id: number; ok: boolean; result?: unknown; error?: string } ./apps/jet-desktop/src/main/background-pool.ts:4:47"'
-    - button "if (msg.ok) p.resolve(msg.result) ./apps/jet-desktop/src/main/background-pool.ts:22:33"
-    - button "const results = [] ./scripts/extract-vscode-mac-keybindings.mjs:170:9"
-    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:180:7"'
-    - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:183:10"
-    - button "const results = [] ./scripts/extract-vscode-mac-keybindings.mjs:188:9"
-    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:197:7"'
-    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:210:7"'
-    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:223:7"'
-    - 'button "results.push({ commandId: idMatch[1], key, weight, sourceFile: rel }) ./scripts/extract-vscode-mac-keybindings.mjs:234:7"'
-    - button "results.push(...extractAction2Bindings(content, filePath)) ./scripts/extract-vscode-mac-keybindings.mjs:238:3"
-    - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:239:10"
-    - button "const results = [] ./scripts/extract-vscode-mac-keybindings.mjs:265:9"
-    - button "return results ./scripts/extract-vscode-mac-keybindings.mjs:270:12"
+    - 'button "{ \"text\": \"PanelTree\" }, tests/visual/scenarios/search_results_dense.json:11:16"'
+    - 'button "import { PanelTree, type PanelEvent } from \"@jet/panels\" packages/jet-app/src/App.tsx:10:10"'
+    - button "return PanelTree.editorOnlyLayout() packages/jet-app/src/App.tsx:124:10"
+    - button "const [panelTree, setPanelTree] = useState(() => initialLayout.tree) packages/jet-app/src/App.tsx:167:24"
+    - button "() => PanelTree.fromJSON(appStateRef.current.panelTree.toJSON()), packages/jet-app/src/App.tsx:325:11"
+    - 'button "const commitTree = useCallback((tree: PanelTree) => { packages/jet-app/src/App.tsx:329:41"'
+    - button "setPanelTree(PanelTree.fromJSON(tree.toJSON())) packages/jet-app/src/App.tsx:330:8"
+    - 'button "const { tree, editorPanel } = PanelTree.editorOnlyLayout() packages/jet-app/src/App.tsx:531:37"'
+    - button "setPanelTree(tree) packages/jet-app/src/App.tsx:534:10"
+    - 'button "getPanelTree: () => appStateRef.current.panelTree, packages/jet-app/src/App.tsx:720:12"'
+    - 'button "import type { PanelTree, PanelEvent } from \"@jet/panels\" packages/jet-app/src/app-commands.ts:21:15"'
+    - 'button "getPanelTree: () => PanelTree packages/jet-app/src/app-commands.ts:55:6"'
+    - 'button "cloneTree: () => PanelTree packages/jet-app/src/app-commands.ts:66:20"'
+    - 'button "commitTree: (tree: PanelTree) => void packages/jet-app/src/app-commands.ts:67:22"'
+    - button "const currentPanelTree = () => deps.getPanelTree() packages/jet-app/src/app-commands.ts:86:16"
+    - button "currentPanelTree(), packages/jet-app/src/app-commands.ts:124:14"
+    - button "const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel) packages/jet-app/src/app-commands.ts:152:62"
+    - button "const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel) packages/jet-app/src/app-commands.ts:193:62"
+    - button "const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel) packages/jet-app/src/app-commands.ts:263:62"
+    - button "const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel) packages/jet-app/src/app-commands.ts:280:62"
+    - button "const current = getActiveEditorFileUri(currentPanelTree(), panel) packages/jet-app/src/app-commands.ts:358:53"
+    - button "const current = getActiveEditorFileUri(currentPanelTree(), panel) packages/jet-app/src/app-commands.ts:368:53"
+    - button "const panelTree = currentPanelTree() packages/jet-app/src/app-commands.ts:378:32"
+    - button "const panelTree = currentPanelTree() packages/jet-app/src/app-commands.ts:397:32"
+    - 'button "import type { PanelTree } from \"@jet/panels\" packages/jet-browser/src/agent-bridge.ts:3:15"'
+    - 'button "panelTree: PanelTree packages/jet-browser/src/agent-bridge.ts:30:14"'
 - separator
 - text: Empty
 - button "Close panel"

@@ -7,6 +7,8 @@
     { "assert_a11y_contains": ["textbox"] },
     { "command": "explorer.show" },
     { "wait": { "ms": 500, "animations_idle": true } },
+    { "click_selector": "[data-jet-list-item][aria-label=\"src\"]" },
+    { "wait": { "ms": 500, "animations_idle": true } },
     { "a11y_snapshot": "test-results/agent-shots/explorer_with_editor.a11y.yaml" },
     { "assert_a11y_contains": ["Explorer", "textbox"] },
     { "assert_a11y_contains": ["index.ts"], "selector": "[data-jet-list-panel=\"explorer\"]" },

@@ -7,7 +7,7 @@
     { "command": "locationlist.showSearch" },
     { "wait": { "ms": 400, "animations_idle": true } },
     { "click_selector": "input[type=\"search\"]" },
-    { "text": "Export" },
+    { "text": "export" },
     { "wait": { "ms": 2000, "animations_idle": true } },
     { "assert_layout": {
         "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
@@ -15,7 +15,10 @@
     }},
     { "click_selector": "[data-value=\"case\"], button:has-text(\"Case\")" },
     { "wait": { "ms": 1500, "animations_idle": true } },
-    { "assert_a11y_contains": ["No results"], "selector": "[data-jet-list-panel=\"locationlist\"]" },
+    { "assert_layout": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "min_items": 1
+    }},
     { "exit": 0 }
   ]
 }

@@ -1,6 +1,4 @@
-- region "Notifications alt+T":
-  - list:
-    - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
+- region "Notifications alt+T"
 - dialog "Quick open":
   - combobox [expanded]: util
   - listbox "Suggestions":

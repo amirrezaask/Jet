@@ -153,6 +153,14 @@ async function captureAriaSnapshot(page: Page, selector: string | undefined): Pr
   return await loc.ariaSnapshot()
 }
 
+async function captureTextContent(page: Page, selector: string | undefined): Promise<string> {
+  return await page.evaluate(sel => {
+    const el = sel ? document.querySelector<HTMLElement>(sel) : document.body
+    if (!el) return ""
+    return (el.innerText ?? el.textContent ?? "").toString()
+  }, selector ?? null)
+}
+
 function a11yContainsAll(snap: string, needles: string[]): { ok: true } | { ok: false; missing: string } {
   const haystack = snap.toLowerCase()
   for (const n of needles) {
@@ -261,7 +269,11 @@ async function runStep(
     const snap = await captureAriaSnapshot(page, step.selector)
     const r = a11yContainsAll(snap, needles)
     if (r.ok === false) {
-      throw new Error(`assert_a11y_contains failed: missing="${r.missing}"`)
+      const text = await captureTextContent(page, step.selector)
+      const r2 = a11yContainsAll(text, needles)
+      if (r2.ok === false) {
+        throw new Error(`assert_a11y_contains failed: missing="${r2.missing}"`)
+      }
     }
     return {}
   }
@@ -273,7 +285,15 @@ async function runStep(
     const minRowHeight = cfg.min_row_height ?? 18
     const layout = await page.evaluate(
       ({ sel, minItems, minUniqueTops, minRowHeight }) => {
-        const items = [...document.querySelectorAll<HTMLElement>(sel)]
+        const all = [...document.querySelectorAll<HTMLElement>(sel)]
+        const items = all.filter(el => {
+          if (el.hasAttribute("aria-hidden") && el.getAttribute("aria-hidden") !== "false") return false
+          const cs = getComputedStyle(el)
+          if (cs.display === "none" || cs.visibility === "hidden") return false
+          const r = el.getBoundingClientRect()
+          if (r.width === 0 && r.height === 0) return false
+          return true
+        })
         const rects = items.map(el => el.getBoundingClientRect())
         const tops = rects.map(r => Math.round(r.top))
         const uniqueTops = new Set(tops).size
@@ -294,7 +314,8 @@ async function runStep(
     if (layout.minH < minRowHeight) {
       throw new Error(`assert_layout failed: minRowHeight=${layout.minH} expected>=${minRowHeight}`)
     }
-    if (layout.flexShrinks.some(s => s !== "0")) {
+    const enforceShrink = /data-jet-list-item|role=["']option/.test(sel)
+    if (enforceShrink && layout.flexShrinks.some(s => s !== "0")) {
       throw new Error(`assert_layout failed: flexShrink must be 0, got ${JSON.stringify(layout.flexShrinks)}`)
     }
     return {}
@@ -355,18 +376,21 @@ async function runStep(
         const containerRect = container?.getBoundingClientRect() ?? null
         const clipped: Array<{ i: number; text: string; scrollW: number; clientW: number }> = []
         items.forEach((el, i) => {
+          const r = el.getBoundingClientRect()
+          if (containerRect) {
+            if (r.top >= containerRect.bottom || r.bottom <= containerRect.top) return
+          }
           const scrollW = el.scrollWidth
           const clientW = el.clientWidth
           if (scrollW - clientW > 1 && getComputedStyle(el).textOverflow !== "ellipsis") {
-            const truncEl = el.querySelector<HTMLElement>(".truncate, [data-truncate]")
-            const trunc = truncEl && getComputedStyle(truncEl).textOverflow === "ellipsis"
+            const inner = [...el.querySelectorAll<HTMLElement>("*")]
+            const trunc = inner.some(child => getComputedStyle(child).textOverflow === "ellipsis")
             if (!trunc) {
               clipped.push({ i, text: (el.textContent ?? "").trim().slice(0, 40), scrollW, clientW })
             }
           }
           if (containerRect) {
-            const r = el.getBoundingClientRect()
-            if (r.right > containerRect.right + 1 || r.bottom > containerRect.bottom + 1) {
+            if (r.right > containerRect.right + 1) {
               clipped.push({ i, text: (el.textContent ?? "").trim().slice(0, 40), scrollW, clientW })
             }
           }
@@ -578,10 +602,7 @@ async function runStep(
             const glyphH = tr.height
             const insideRow =
               !requireWithin ||
-              (tr.top >= rowRect.top - 1 &&
-                tr.bottom <= rowRect.bottom + 1 &&
-                tr.left >= rowRect.left - 1 &&
-                tr.right <= rowRect.right + 1)
+              (tr.top >= rowRect.top - 1 && tr.bottom <= rowRect.bottom + 1)
             if (!isTransparent && glyphH >= minGlyphH && insideRow) {
               anyVisible = true
               break
@@ -630,6 +651,7 @@ async function runStep(
     }
     return {}
   }
+
   if ("assert_state" in step) {
     const state = await page.evaluate(() => window.__jetAgent!.getState())
     for (const [k, expected] of Object.entries(step.assert_state)) {

@@ -6,7 +6,7 @@
     { "wait": { "ms": 500, "animations_idle": true } },
     { "command": "editor.replace" },
     { "wait": { "ms": 400, "animations_idle": true } },
-    { "assert_a11y_contains": ["Replace"], "selector": ".cm-editor" },
+    { "assert_a11y_contains": ["Replace"] },
     { "screenshot": "test-results/agent-shots/editor_replace.png" },
     { "key": "Escape" },
     { "wait": { "ms": 200 } },

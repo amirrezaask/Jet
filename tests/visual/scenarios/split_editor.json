@@ -6,7 +6,7 @@
     { "wait": { "ms": 500, "animations_idle": true } },
     { "command": "view.splitEditor" },
     { "wait": { "ms": 500, "animations_idle": true } },
-    { "assert_layout": { "selector": ".cm-editor", "min_items": 2, "min_unique_tops": 1 } },
+    { "assert_layout": { "selector": ".cm-editor", "min_items": 2, "min_unique_tops": 1, "min_row_height": 20 } },
     { "assert_element_width": { "selector": ".cm-editor", "max_pct_of_viewport": 55 } },
     { "screenshot": "test-results/agent-shots/split_editor.png" },
     { "exit": 0 }

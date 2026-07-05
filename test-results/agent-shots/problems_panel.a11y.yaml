@@ -1,16 +1,24 @@
 - button "Toggle Sidebar"
 - text: Explorer
 - tree "Explorer":
-  - treeitem "src" [expanded] [level=1]:
-    - button "src" [expanded]
-    - group:
-      - treeitem "example.rs" [level=2]
-      - treeitem "index.ts" [level=2]
-      - treeitem "utils.ts" [level=2]
+  - treeitem "src" [level=1]:
+    - button "src"
   - treeitem "package.json" [level=1]:
     - button "package.json"
   - treeitem "tsconfig.json" [level=1]:
     - button "tsconfig.json"
+- separator
+- text: Locations
+- button "Panel actions"
+- button "Close panel"
+- tablist:
+  - tab "Search"
+  - tab "Problems" [selected]
+  - tab "Refs"
+  - tab "Defs"
+  - tab "Tasks"
+- list:
+  - listitem: No results Try another query or switch source tabs.
 - separator
 - button "Panel actions"
 - button "Close panel"
@@ -19,5 +27,5 @@
   - list:
     - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
 - contentinfo:
-  - text: sample-workspace index.ts TYPESCRIPT Ln 1, Col 1 UTF-8 · LF
+  - text: sample-workspace
   - button "Language server off": LSP off
