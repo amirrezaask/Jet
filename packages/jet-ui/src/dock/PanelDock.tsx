@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, type ReactNode } from "react"
+import { Fragment, memo, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react"
 import type { PanelEvent, PanelNode } from "@jet/panels"
 import type { PanelTree } from "@jet/panels"
 import type { PanelId } from "@jet/shared"
@@ -8,7 +8,8 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable.js"
-import { PanelDragProvider } from "./PanelDragContext.js"
+import { cn } from "@/lib/utils.js"
+import { PanelDragProvider, TAB_DRAG_MIME, usePanelDrag } from "./PanelDragContext.js"
 import { PanelDropOverlay } from "./PanelDropOverlay.js"
 
 export type PanelSlotMeta = {
@@ -59,20 +60,63 @@ function PanelLeaf<TView>({
   renderHeader: PanelDockProps<TView>["renderHeader"]
   renderContent: PanelDockProps<TView>["renderContent"]
 }) {
+  const drag = usePanelDrag()
+  const [dragOver, setDragOver] = useState(false)
   const onClose = () => onEvent({ type: "panelClose", panelId })
   const meta: PanelSlotMeta = { focused, onClose }
+  const tabDrag = drag.tabSource
+  const isDropTarget =
+    tabDrag != null && tabDrag.panelId.id !== panelId.id
+
+  useEffect(() => {
+    if (!tabDrag) setDragOver(false)
+  }, [tabDrag])
+
+  const onLeafDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    if (isDropTarget) setDragOver(true)
+  }
+  const onLeafDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setDragOver(false)
+  }
+  const onLeafDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    if (isDropTarget) {
+      e.preventDefault()
+      setDragOver(true)
+    }
+  }
+  const onLeafDrop = () => setDragOver(false)
+
   return (
     <div
-      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border border-border/80 bg-background"
-      onMouseDown={() => onFocusPanel(panelId)}
+      className={cn(
+        "relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border bg-background",
+        dragOver && isDropTarget
+          ? "border-primary/50 ring-1 ring-primary/30"
+          : "border-border/80",
+      )}
+      data-jet-panel-leaf={panelId.id}
+      data-jet-panel-dragged-over={dragOver && isDropTarget ? "" : undefined}
+      onMouseDown={e => {
+        // Skip focus on draggable descendants to avoid disrupting drag start.
+        const t = e.target as HTMLElement | null
+        if (t && (t.closest("[draggable=true]") || t.closest("[data-tab-id]"))) return
+        onFocusPanel(panelId)
+      }}
+      onDragEnter={onLeafDragEnter}
+      onDragLeave={onLeafDragLeave}
+      onDragOver={onLeafDragOver}
+      onDrop={onLeafDrop}
     >
       {renderHeader(view, panelId, meta)}
       <div className="relative min-h-0 flex-1">
         {renderContent(view, panelId, meta)}
         <PanelDropOverlay
           panelId={panelId}
-          onDrop={(source, target, action) =>
-            onEvent({ type: "panelDrop", source, target, action })
+          onTabDrop={(source, sourceUri, target, action) =>
+            onEvent({ type: "tabDrop", source, sourceUri, target, action })
           }
         />
       </div>

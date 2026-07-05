@@ -1,22 +1,9 @@
 import { useState, type DragEvent } from "react"
 import type { DropAction, Edge, PanelId } from "@jet/shared"
-import { PANEL_DRAG_MIME, usePanelDrag } from "./PanelDragContext.js"
+import { TAB_DRAG_MIME, usePanelDrag } from "./PanelDragContext.js"
+import { computeDropZone, type DropZone } from "./panel-drop-zones.js"
 
-type Zone = Edge | null
-
-const CENTER_HALF = 0.2
-
-function computeZone(x: number, y: number, w: number, h: number): Zone {
-  if (w <= 0 || h <= 0) return null
-  const nx = x / w - 0.5
-  const ny = y / h - 0.5
-  if (Math.abs(nx) < CENTER_HALF && Math.abs(ny) < CENTER_HALF) return "center"
-  if (Math.abs(nx) > Math.abs(ny)) return nx > 0 ? "right" : "left"
-  return ny > 0 ? "bottom" : "top"
-}
-
-function zoneStyle(zone: Zone): React.CSSProperties | null {
-  if (!zone) return null
+function zoneStyle(zone: DropZone): React.CSSProperties {
   const base: React.CSSProperties = {
     position: "absolute",
     background: "rgba(56, 139, 253, 0.28)",
@@ -37,59 +24,85 @@ function zoneStyle(zone: Zone): React.CSSProperties | null {
   }
 }
 
-function zoneToAction(zone: Zone): DropAction | null {
-  if (!zone) return null
+function zoneToAction(zone: DropZone): DropAction {
   if (zone === "center") return { kind: "moveToPane" }
-  return { kind: "split", edge: zone }
+  return { kind: "split", edge: zone as Exclude<Edge, "center"> }
 }
 
 export function PanelDropOverlay({
   panelId,
-  onDrop,
+  onTabDrop,
 }: {
   panelId: PanelId
-  onDrop: (source: PanelId, target: PanelId, action: DropAction) => void
+  onTabDrop: (
+    source: PanelId,
+    sourceUri: string,
+    target: PanelId,
+    action: DropAction,
+  ) => void
 }) {
   const drag = usePanelDrag()
-  const [zone, setZone] = useState<Zone>(null)
+  const [zone, setZone] = useState<DropZone | null>(null)
 
-  if (!drag.sourceId) return null
-  const sameSource = drag.sourceId.id === panelId.id
+  const tabDrag = drag.tabSource
+  if (!tabDrag) return null
+  const sameTabPanel = tabDrag.panelId.id === panelId.id
+  // When same-panel tab drag is active, disable moveToPane; still allow edge splits (pop into new pane).
+  const edgeOnly = sameTabPanel
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    if (!e.dataTransfer.types.includes(PANEL_DRAG_MIME)) return
-    e.preventDefault()
-    if (sameSource) {
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const nz = computeDropZone(
+      e.clientX - rect.left,
+      e.clientY - rect.top,
+      rect.width,
+      rect.height,
+    )
+    if (edgeOnly && nz === "center") {
+      // Let tab bar handle same-panel reorder.
       setZone(null)
       return
     }
-    const rect = e.currentTarget.getBoundingClientRect()
-    const nz = computeZone(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height)
+    if (!nz) {
+      setZone(null)
+      return
+    }
+    e.preventDefault()
     setZone(nz)
   }
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const nz =
+      zone ??
+      computeDropZone(
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        rect.width,
+        rect.height,
+      )
+    if (!nz) return
+    const action = zoneToAction(nz)
+    if (edgeOnly && action.kind === "moveToPane") return
     e.preventDefault()
-    const source = drag.sourceId
-    const action = zoneToAction(zone)
     setZone(null)
-    drag.end()
-    if (!source || !action || sameSource) return
-    onDrop(source, panelId, action)
+    drag.endTab()
+    onTabDrop(tabDrag.panelId, tabDrag.uri, panelId, action)
   }
 
   return (
     <div
       style={{ position: "absolute", inset: 0, zIndex: 40 }}
       onDragEnter={e => {
-        if (e.dataTransfer.types.includes(PANEL_DRAG_MIME)) e.preventDefault()
+        if (e.dataTransfer.types.includes(TAB_DRAG_MIME)) e.preventDefault()
       }}
       onDragOver={handleDragOver}
       onDragLeave={() => setZone(null)}
       onDrop={handleDrop}
       data-jet-panel-drop-overlay
     >
-      {zone ? <div style={zoneStyle(zone)!} /> : null}
+      {zone ? <div style={zoneStyle(zone)} /> : null}
     </div>
   )
 }

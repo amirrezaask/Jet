@@ -31,6 +31,9 @@ import {
   ProjectRegistry,
   JetPanelTree,
   type JetProject,
+  buildEditorView,
+  editorBuffers,
+  popPanelBufferView,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
@@ -48,7 +51,7 @@ import {
 import {
   PanelDock,
   PanelBody,
-  PanelHeader,
+  PanelTabBar,
   CommandPalette,
   StatusBar,
   themeForScheme,
@@ -63,6 +66,7 @@ import {
   getAllEditorViews,
   syncAllEditorThemes,
   destroyEditorPanel,
+  destroyEditorBuffer,
   setEditorCursor,
   formatKeyBinding,
   problemsToLocationItems,
@@ -623,16 +627,52 @@ export function JetApp() {
             leaves[0]
           if (next) setFocusedPanel(next)
         }
-      } else if (event.type === "panelDrop") {
-        const sourceView = tree.getView(event.source)
-        const moved = tree.applyDrop(event.source, event.target, event.action)
-        if (!moved) {
+      } else if (event.type === "tabActivate") {
+        const view = tree.getView(event.panelId)
+        if (view?.kind !== "editor" || view.fileUri === event.uri) {
           changed = false
         } else {
-          if (sourceView?.kind === "editor") destroyEditorPanel(event.source)
-          const leaves = getAllLeafPanels(tree)
-          const next = leaves.find(p => p.id === event.target.id) ?? leaves[0]
-          if (next) setFocusedPanel(next)
+          tree.setView(event.panelId, buildEditorView(event.uri, editorBuffers(view)))
+          setFocusedPanel(event.panelId)
+        }
+      } else if (event.type === "tabClose") {
+        const view = tree.getView(event.panelId)
+        if (view?.kind !== "editor") {
+          changed = false
+        } else {
+          destroyEditorBuffer(event.panelId, event.uri)
+          tree.setView(event.panelId, popPanelBufferView(view, event.uri))
+        }
+      } else if (event.type === "tabReorder") {
+        const view = tree.getView(event.panelId)
+        if (view?.kind !== "editor") {
+          changed = false
+        } else {
+          const buffers = editorBuffers(view).slice()
+          const from = buffers.indexOf(event.uri)
+          if (from < 0) {
+            changed = false
+          } else {
+            buffers.splice(from, 1)
+            const to = Math.max(0, Math.min(buffers.length, event.toIndex > from ? event.toIndex - 1 : event.toIndex))
+            buffers.splice(to, 0, event.uri)
+            tree.setView(event.panelId, { kind: "editor", fileUri: event.uri, buffers })
+          }
+        }
+      } else if (event.type === "tabDrop") {
+        destroyEditorBuffer(event.source, event.sourceUri)
+        const result = tree.applyTabDrop(
+          event.source,
+          event.sourceUri,
+          event.target,
+          event.action,
+        )
+        if (!result.moved) {
+          changed = false
+        } else if (result.createdPanel) {
+          setFocusedPanel(result.createdPanel)
+        } else {
+          setFocusedPanel(event.target)
         }
       }
       if (changed) commitTree(tree)
@@ -1212,16 +1252,23 @@ export function JetApp() {
           onFocusPanel={setFocusedPanel}
           onEvent={handlePanelEvent}
           renderHeader={(view, panelId, meta) => (
-            <PanelHeader
+            <PanelTabBar
               panelId={panelId}
               view={view}
               workspace={workspace}
               focused={meta.focused}
-              onClose={meta.onClose}
-              onSplitEditor={
-                view.kind === "editor"
-                  ? () => void executeCommand("view.splitEditor")
-                  : undefined
+              onActivateTab={uri =>
+                handlePanelEvent({ type: "tabActivate", panelId, uri })
+              }
+              onCloseTab={uri =>
+                handlePanelEvent({ type: "tabClose", panelId, uri })
+              }
+              onClosePanel={meta.onClose}
+              onReorderTab={(uri, toIndex) =>
+                handlePanelEvent({ type: "tabReorder", panelId, uri, toIndex })
+              }
+              onTabDrop={(source, sourceUri, target, action) =>
+                handlePanelEvent({ type: "tabDrop", source, sourceUri, target, action })
               }
             />
           )}

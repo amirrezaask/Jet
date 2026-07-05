@@ -1,8 +1,0 @@
-- region "Notifications alt+T":
-  - list:
-    - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
-- dialog "Buffer list":
-  - combobox [expanded]
-  - listbox "Suggestions":
-    - option "package.json"
-    - option "index.ts"

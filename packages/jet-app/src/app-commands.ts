@@ -248,16 +248,13 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.commitTree(tree)
     },
     explorer: () => {
-      if (deps.focusExplorer) {
-        deps.focusExplorer()
-        return
-      }
       const tree = deps.cloneTree()
       const target = resolveTargetPanel(tree, currentFocusedPanel())
       if (!target) return
       const panel = deps.workspace.ensurePanelView(tree, target, "explorer")
       deps.setFocusedPanel(panel)
       deps.commitTree(tree)
+      deps.focusExplorer?.()
     },
     jumpBack: ctx => {
       const panel = currentFocusedPanel()

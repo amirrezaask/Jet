@@ -1,7 +1,0 @@
-- text: Jet Keyboard-first editor shell — open a folder and stay in flow ModP files Mod⇧F search Mod⇧E explorer
-- button "Open Folder"
-- group: Browser dev setup
-- region "Notifications alt+T"
-- contentinfo:
-  - text: No folder open
-  - button "Language server off": LSP off

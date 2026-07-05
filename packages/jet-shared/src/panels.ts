@@ -7,7 +7,7 @@ export function panelId(id: number): PanelId {
 export type Edge = "left" | "right" | "top" | "bottom" | "center"
 
 export type DropAction =
-  | { kind: "moveToPane" }
+  | { kind: "moveToPane"; insertIndex?: number }
   | { kind: "split"; edge: Edge }
   | { kind: "insertAtBoundary"; parentPath: number[]; beforeChild: number }
 

@@ -1,6 +1,6 @@
 export { PanelDock, type PanelDockProps, type PanelSlotMeta } from "./dock/PanelDock.js"
 export { PanelBody } from "./dock/PanelBody.js"
-export { PanelHeader, panelTitle } from "./dock/PanelHeader.js"
+export { PanelTabBar, panelTabsFor, type PanelTab } from "./dock/PanelTabBar.js"
 export { AppShell } from "./shell/AppShell.js"
 export { JetTitleBar, type JetTitleBarAction, type JetTitleBarCheckboxAction, type JetTitleBarMenu } from "./shell/JetTitleBar.js"
 export { focusExplorerPanel } from "./explorer/focus.js"

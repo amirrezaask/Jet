@@ -1,6 +1,0 @@
-- region "Notifications alt+T"
-- dialog "Quick open":
-  - combobox [expanded]: util
-  - listbox "Suggestions":
-    - option "src/utils.ts" [selected]
-    - option "tsconfig.json"

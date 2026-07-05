@@ -104,39 +104,35 @@ Then validate with **browser MCP** on `pnpm dev:web` (see Agent browser testing)
 
 **Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, git/explorer views, error/status messages — MUST be visually verified before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient. A task closed on "types pass" without a screenshot review is a regression waiting to ship.
 
-### Preferred: scenario runner
+### Preferred: Playwright specs (headless)
 
-JSON-scripted, headless, agent-friendly. **Prefer a11y snapshots + `assert_a11y_contains` for verification. Screenshots are fallback for genuinely pixel-level checks.**
+Browser tests live in `tests/specs/*.spec.ts`. Playwright starts `pnpm dev:web` automatically (port **5174**, headless Chromium).
 
-1. Start dev server once: `pnpm dev:web` (port **5174**).
-2. Add or reuse a scenario under `tests/visual/scenarios/*.json` — schema in `tests/visual/README.md`.
-3. Run it: `pnpm visual tests/visual/scenarios/<name>.json` — stdout emits one JSON line with `screenshots`, `a11y_snapshots`, `dom_dumps` arrays.
-4. Read the `.a11y.yaml` outputs under `test-results/agent-shots/`. They are Playwright aria snapshots — diffable text, no pixel noise. Grep them or eyeball them.
-5. Fall back to PNGs only when the change is pixel-level: theme colors, layout dimensions, motion, icons, cursor animation. Do NOT open PNGs for structural checks the a11y snapshot already covers.
-6. New feature → new scenario. Assert structure with `assert_a11y_contains` and state with `assert_state`. Do not rely on the existing set to cover new code paths.
-7. Run `pnpm visual:all` before declaring a broad UI change complete. All scenarios must exit 0.
+1. Run all browser specs: `pnpm test:web`
+2. Add or extend a spec under `tests/specs/` — helpers in `tests/helpers/` (`boot`, `agent`, `showExplorer`, `expectListRows`, `dispatchTabDrag`, …). See `tests/README.md`.
+3. For pixel regressions only: `tests/specs/*.screenshot.spec.ts` via `pnpm test:screenshots`
+4. New feature → new spec with structural assertions (`expect`, `expectLayout`, scoped panel selectors). Do not rely on unrelated specs to cover new paths.
+5. Run `pnpm test:web` before declaring a broad UI change complete.
 
-Step vocabulary: `wait` / `wait_frames`, `key`, `text`, `command` (id from `packages/jet-app/src/app-commands.ts`), `open_workspace`, `open_file`, `a11y_snapshot`, `assert_a11y_contains`, `assert_state`, `screenshot`, `dom_dump`, `exit`. Full reference: `tests/visual/README.md`.
+**Verification preference (strict):**
 
-**Verification output preference (strict):**
+1. DOM/text assertions via Playwright `expect` on scoped selectors (palette open, row content, panel visibility).
+2. `agent(page).getState()` — workspace path, palette flag, panel kinds, font size.
+3. List helpers — `expectLayout`, `expectNoOverlap`, `expectRowTextVisible` on `[data-jet-list-panel="…"] [data-jet-list-item]`.
+4. Screenshots — only for pixel-level checks (`pnpm test:screenshots`); not the default gate.
+5. Browser MCP — when a check cannot be expressed in Playwright (see fallback below).
 
-1. `assert_a11y_contains` — structural/text assertions (palette open, N options listed, focused element).
-2. `assert_state` — bridge state (workspace path, tab kinds, palette open flag).
-3. `a11y_snapshot` — record aria tree so a reviewer can diff.
-4. `screenshot` — only when pixels are the point (theme change, layout regression, motion).
-5. `dom_dump` — CSS/computed-tree debugging (e.g. Tailwind purge regressions).
-
-**Rule:** if the runner cannot express the check (native folder dialog, LSP-only path), state that explicitly and fall back to the browser MCP flow below. Do NOT silently skip visual verification.
+**Rule:** if Playwright cannot express the check (native folder dialog, LSP-only path), state that explicitly and fall back to the browser MCP flow below. Do NOT silently skip visual verification.
 
 ### Anti-tautology rules for list/search UIs (MANDATORY)
 
-Query echoes are worthless as proof. `assert_a11y_contains: ["export"]` after typing `export` passes when the input value contains `export` — even if the result list is empty. Every list/search scenario MUST include:
+Query echoes are worthless as proof. Asserting `export` in `body` after typing `export` passes when the input value contains `export` — even if the result list is empty. Every list/search spec MUST include:
 
-1. **Row-count layout assertion** — `assert_layout` with `min_items >= 1` on `[data-jet-list-item]` (or the panel-scoped selector). This is the only real proof rows rendered.
-2. **Positive result content** — `assert_a11y_contains` targeted at the scoped panel selector (`[data-jet-list-panel="…"]`) with a needle that only appears in rendered rows (a fixture filename, a path segment, a line-number separator like `:`). Never assert the user-typed query alone.
-3. **Negative empty-state assertion** — `assert_a11y_not_contains: ["No results"]` when a hit is expected. This catches "input mirrored, list empty" regressions.
-4. **Spacing/overlap** — `assert_no_overlap` + `assert_row_spacing` on the scoped selector when >=2 rows are expected.
-5. **Row text visibility** — `assert_row_text_visible` on the scoped selector. Catches "row DOM exists but text is invisible" bugs (overflow-hidden clipping content, `color: transparent`, `opacity: 0`, zero-height span). Symptom in the wild: keyboard selection highlight moves across blank rows. `assert_layout` + `assert_a11y_contains` PASS in this failure mode because a11y tree reports the text even though it's visually clipped — `assert_row_text_visible` measures rendered glyph height inside the row's bounding rect.
+1. **Row-count layout assertion** — `expectLayout` with `minItems >= 1` on `[data-jet-list-panel="…"] [data-jet-list-item]`.
+2. **Positive result content** — `expect(locator).toContainText(...)` on the scoped panel with a needle that only appears in rendered rows (fixture filename, path segment, `:` line separator). Never assert the user-typed query alone.
+3. **Negative empty-state assertion** — `not.toContainText("No results")` when a hit is expected.
+4. **Spacing/overlap** — `expectNoOverlap` + `expectRowSpacing` when >=2 rows are expected.
+5. **Row text visibility** — `expectRowTextVisible` on the scoped selector.
 
 Scope every list assertion with the panel data attribute (`[data-jet-list-panel="locationlist"] [data-jet-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
 
@@ -472,7 +468,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **Remaining (Shell tier)**
 
-- [ ] **Shell:** tab drag/drop automated browser test (manual OK)
+- [x] **Shell:** tab drag/drop automated browser test (`tests/specs/tab-drag.spec.ts`)
 
 
 

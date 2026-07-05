@@ -1,26 +1,53 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import type { PanelId } from "@jet/shared"
 
-export const PANEL_DRAG_MIME = "application/x-jet-panel"
+export const TAB_DRAG_MIME = "application/x-jet-tab"
+
+export type TabDragSource = { panelId: PanelId; uri: string }
 
 type PanelDragState = {
-  sourceId: PanelId | null
-  start: (id: PanelId) => void
-  end: () => void
+  tabSource: TabDragSource | null
+  startTab: (src: TabDragSource) => void
+  endTab: () => void
 }
 
 const Ctx = createContext<PanelDragState | null>(null)
 
 export function PanelDragProvider({ children }: { children: ReactNode }) {
-  const [sourceId, setSourceId] = useState<PanelId | null>(null)
+  const [tabSource, setTabSource] = useState<TabDragSource | null>(null)
   const value = useMemo<PanelDragState>(
     () => ({
-      sourceId,
-      start: id => setSourceId(id),
-      end: () => setSourceId(null),
+      tabSource,
+      startTab: src => setTabSource(src),
+      endTab: () => setTabSource(null),
     }),
-    [sourceId],
+    [tabSource],
   )
+  // Window-level dragover: preventDefault for tab MIME so drop stays enabled
+  // even in a frame where the overlay hasn't mounted yet.
+  useEffect(() => {
+    if (!tabSource) return
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes(TAB_DRAG_MIME)) {
+        e.preventDefault()
+      }
+    }
+    const onDrop = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes(TAB_DRAG_MIME)) {
+        // Prevent default browser behavior (navigation) if drop escapes app zones.
+        e.preventDefault()
+      }
+    }
+    const onDragEnd = () => setTabSource(null)
+    window.addEventListener("dragover", onDragOver, true)
+    window.addEventListener("drop", onDrop, true)
+    window.addEventListener("dragend", onDragEnd, true)
+    return () => {
+      window.removeEventListener("dragover", onDragOver, true)
+      window.removeEventListener("drop", onDrop, true)
+      window.removeEventListener("dragend", onDragEnd, true)
+    }
+  }, [tabSource])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
