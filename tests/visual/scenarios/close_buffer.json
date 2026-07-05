@@ -1,0 +1,14 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "open_file": "src/utils.ts" },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "assert_a11y_contains": ["utils.ts"] },
+    { "command": "workspace.closeBuffer" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "assert_a11y_not_contains": ["utils.ts"], "selector": ".cm-editor" },
+    { "exit": 0 }
+  ]
+}

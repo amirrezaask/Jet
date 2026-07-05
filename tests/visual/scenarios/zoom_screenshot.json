@@ -1,0 +1,21 @@
+{
+  "window": { "width": 1280, "height": 800, "font_size": 13 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "assert_state": { "fontSize": 13 } },
+    { "screenshot": "test-results/agent-shots/zoom_13.png" },
+    { "command": "ui.zoomIn" },
+    { "command": "ui.zoomIn" },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "assert_state": { "fontSize": 17 } },
+    { "screenshot": "test-results/agent-shots/zoom_17.png" },
+    { "assert_syntax_highlighting": {
+        "selector": ".cm-line span",
+        "min_colored_spans": 5,
+        "min_unique_colors": 2
+    }},
+    { "exit": 0 }
+  ]
+}

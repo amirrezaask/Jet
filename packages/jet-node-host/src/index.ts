@@ -10,7 +10,15 @@ export {
   gitBranches,
   gitCheckout,
 } from "./git.js"
-export { projectSearch, listProjectFiles } from "./search.js"
+export {
+  projectSearch,
+  listProjectFiles,
+  fileSearch,
+  trackFileAccess,
+  ensureFffIndex,
+  isFffScanReady,
+} from "./search.js"
+export { probeFffAvailable, isFffAvailable, disposeFffIndex } from "./fff-service.js"
 export { assertAllowedPath, assertAllowedUri, normalizeRoots } from "./sandbox.js"
 export {
   handleJetDevRequest,

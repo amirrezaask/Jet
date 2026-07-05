@@ -44,9 +44,16 @@ export type JetElectronSearch = {
   project(
     rootUri: string,
     query: string,
-    opts?: { caseSensitive?: boolean; regex?: boolean },
+    opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
   ): Promise<ProjectSearchResult[]>
   listFiles(rootUri: string): Promise<string[]>
+  fileSearch(
+    rootUri: string,
+    query: string,
+    opts?: { pageSize?: number; currentFile?: string },
+  ): Promise<string[]>
+  trackFileAccess?(rootUri: string, query: string, path: string): Promise<void>
+  isScanReady?(rootUri: string): Promise<boolean>
 }
 
 export type JetTaskSpawnRequest = {
@@ -79,6 +86,7 @@ export type LaunchConfig = {
 export type JetElectronWorkspace = {
   activate(rootUri: string): Promise<{ ok: boolean }>
   onFileIndex(callback: (rootUri: string, files: string[]) => void): () => void
+  onSearchReady?(callback: (rootUri: string) => void): () => void
 }
 
 export type JetElectronAPI = {

@@ -80,7 +80,6 @@ import {
   type JetTitleBarMenu,
   FindReplaceDrawer,
 } from "@jet/ui"
-import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import {
@@ -184,7 +183,7 @@ export function JetApp() {
   const [cdOpen, setCdOpen] = useState(false)
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
   const [projects, setProjects] = useState<JetProject[]>([])
-  const [fileIndex, setFileIndex] = useState<string[]>([])
+  const [searchScanReady, setSearchScanReady] = useState(false)
   const [problems, setProblems] = useState<JetProblem[]>([])
   const [panelRev, setPanelRev] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
@@ -381,12 +380,12 @@ export function JetApp() {
   }, [workspace])
 
   useEffect(() => {
-    if (!window.jet?.workspace) return
-    return window.jet.workspace.onFileIndex((rootUri, files) => {
+    if (!window.jet?.workspace?.onSearchReady) return
+    return window.jet.workspace.onSearchReady(rootUri => {
       const current = workspace.root?.uri
       if (!current) return
       if (normalizeAbsPath(fileUriToPath(current)) !== normalizeAbsPath(fileUriToPath(rootUri))) return
-      if (files.length > 0) setFileIndex(files)
+      setSearchScanReady(true)
     })
   }, [workspace])
 
@@ -457,6 +456,27 @@ export function JetApp() {
     [handleOpenFile],
   )
 
+  const quickOpenSearch = useCallback(
+    async (query: string) => {
+      const root = workspace.root
+      if (!root?.uri || !window.jet?.search?.fileSearch) return []
+      const panel = focusedPanel
+      const activeUri = panel ? getActiveEditorFileUri(panelTree, panel) : null
+      let currentFile: string | undefined
+      if (activeUri) {
+        const abs = fileUriToPath(activeUri)
+        const rootPath = normalizeAbsPath(root.path)
+        const prefix = `${rootPath}/`
+        currentFile = abs.startsWith(prefix) ? abs.slice(prefix.length) : abs
+      }
+      return window.jet.search.fileSearch(root.uri, query, {
+        pageSize: 100,
+        currentFile,
+      })
+    },
+    [workspace, focusedPanel, panelTree],
+  )
+
   const openLocationItem = useCallback(
     (item: LocationItem) => {
       pushJumpFromActiveEditor(item.source)
@@ -508,7 +528,7 @@ export function JetApp() {
       setPanelTree(tree)
       setFocusedPanel(editorPanel)
       showJetToast(`Opened ${folderPath}`)
-      setFileIndex([])
+      setSearchScanReady(false)
 
       const jetDir = `${folderPath.replace(/[/\\]+$/, "")}/.jet`
       const initCtx = workspaceInitCtxRef.current
@@ -523,21 +543,19 @@ export function JetApp() {
         const rootUri = workspace.root?.uri
         if (!rootUri) return
         if (window.jet?.workspace) void window.jet.workspace.activate(rootUri)
+        void window.jet?.search?.fileSearch(rootUri, "", { pageSize: 1 }).catch(() => {})
         void (async () => {
-          if (workspaceInitGen.current !== gen) return
-          try {
-            const files = await indexWorkspaceFiles(
-              jetPlatformFS(),
-              rootUri,
-              50_000,
-              window.jet?.search?.listFiles,
-            )
+          for (let attempt = 0; attempt < 120; attempt++) {
             if (workspaceInitGen.current !== gen) return
-            setFileIndex(files)
-          } catch {
-            if (workspaceInitGen.current !== gen) return
-            setFileIndex([])
+            const ready = await window.jet?.search?.isScanReady?.(rootUri)
+            if (ready) {
+              setSearchScanReady(true)
+              return
+            }
+            await new Promise(resolve => window.setTimeout(resolve, 250))
           }
+          if (workspaceInitGen.current !== gen) return
+          setSearchScanReady(true)
         })()
       }
       setTimeout(finishOpen, 0)
@@ -1252,9 +1270,11 @@ export function JetApp() {
         <QuickOpenOverlay
           open
           onOpenChange={setQuickOpenOpen}
-          files={fileIndex}
-          onSelect={rel => {
+          scanReady={searchScanReady}
+          onSearch={quickOpenSearch}
+          onSelect={(rel, query) => {
             if (!workspace.root) return
+            void window.jet?.search?.trackFileAccess?.(workspace.root.uri, query, rel)
             const fullPath = `${workspace.root.path}/${rel.replace(/^\/+/, "")}`
             handleOpenFile(pathToFileUri(fullPath), fullPath)
           }}

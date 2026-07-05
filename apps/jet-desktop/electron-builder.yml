@@ -10,6 +10,8 @@ files:
 asar: true
 asarUnpack:
   - "**/node-pty/**"
+  - "**/@ff-labs/fff-bin-*/**"
+  - "**/@ff-labs/fff-node/**"
 npmRebuild: false
 mac:
   target:

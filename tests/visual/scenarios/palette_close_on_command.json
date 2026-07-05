@@ -1,0 +1,20 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "command": "ui.showCommandPalette" },
+    { "wait": { "ms": 300 } },
+    { "assert_state": { "paletteOpen": true } },
+    { "text": "quick open" },
+    { "wait": { "ms": 200 } },
+    { "assert_a11y_contains": ["Quick Open"] },
+    { "key": "Enter" },
+    { "wait": { "ms": 400 } },
+    { "assert_state": { "paletteOpen": false } },
+    { "assert_a11y_contains": ["Search files"] },
+    { "key": "Escape" },
+    { "exit": 0 }
+  ]
+}

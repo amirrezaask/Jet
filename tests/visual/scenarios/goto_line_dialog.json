@@ -5,11 +5,15 @@
   "steps": [
     { "wait": { "ms": 300, "animations_idle": true } },
     { "command": "editor.gotoLine" },
-    { "wait": { "ms": 200, "animations_idle": true } },
+    { "wait": { "ms": 300, "animations_idle": true } },
     { "a11y_snapshot": "test-results/agent-shots/goto_line_dialog.a11y.yaml" },
     { "assert_a11y_contains": ["Go to Line"] },
-    { "key": "Escape" },
+    { "assert_element_width": { "selector": "[role=\"dialog\"]", "min_px": 200 } },
+    { "text": "3" },
     { "wait": { "ms": 150 } },
+    { "key": "Enter" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "assert_state": { "paletteOpen": false } },
     { "exit": 0 }
   ]
 }

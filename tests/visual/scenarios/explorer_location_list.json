@@ -5,15 +5,15 @@
   "steps": [
     { "wait": { "ms": 300, "animations_idle": true } },
     { "command": "explorer.show" },
-    { "wait": { "ms": 300, "animations_idle": true } },
+    { "wait": { "ms": 400, "animations_idle": true } },
     { "a11y_snapshot": "test-results/agent-shots/explorer_panel.a11y.yaml" },
-    { "assert_a11y_contains": ["Explorer"] },
-    { "assert_a11y_contains": ["textbox"] },
+    { "assert_a11y_contains": ["Explorer", "textbox"] },
     { "assert_layout": { "min_items": 3, "min_unique_tops": 3, "min_row_height": 18 } },
+    { "assert_row_text_visible": { "selector": "[data-jet-list-item]", "min_items": 3 } },
     { "command": "locationlist.show" },
-    { "wait": { "ms": 300, "animations_idle": true } },
+    { "wait": { "ms": 400, "animations_idle": true } },
     { "a11y_snapshot": "test-results/agent-shots/location_list_panel.a11y.yaml" },
-    { "assert_a11y_contains": ["Search"] },
+    { "assert_a11y_contains": ["Search", "Problems"] },
     { "exit": 0 }
   ]
 }

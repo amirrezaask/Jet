@@ -1,8 +1,8 @@
 import { Worker } from "node:worker_threads"
 import path from "node:path"
 import type { BrowserWindow, IpcMain, WebContents } from "electron"
-import { uriToPath } from "@jet/node-host"
-import { getGitWorker, getSearchWorker } from "./background-pool.js"
+import { ensureFffIndex, uriToPath } from "@jet/node-host"
+import { getGitWorker } from "./background-pool.js"
 
 let activateGen = 0
 let watchWorker: Worker | null = null
@@ -39,16 +39,16 @@ function runGitBranch(gen: number, rootUri: string, webContents: WebContents): v
     })
 }
 
-function runFileIndex(gen: number, rootUri: string, webContents: WebContents): void {
-  void getSearchWorker()
-    .dispatch<string[]>("listFiles", { rootUri })
-    .then(files => {
+function runFffWarmup(gen: number, rootUri: string, webContents: WebContents): void {
+  void ensureFffIndex(rootUri)
+    .then(finder => {
       if (gen !== activateGen) return
-      sendToRenderer(webContents, "workspace:fileIndex", { rootUri, files })
+      if (finder) {
+        sendToRenderer(webContents, "workspace:searchReady", { rootUri })
+      }
     })
     .catch(() => {
       if (gen !== activateGen) return
-      sendToRenderer(webContents, "workspace:fileIndex", { rootUri, files: [] })
     })
 }
 
@@ -93,8 +93,8 @@ function scheduleWorkspaceBackground(
   }, 50)
   setTimeout(() => {
     if (gen !== activateGen) return
-    runFileIndex(gen, rootUri, webContents)
-  }, 2000)
+    runFffWarmup(gen, rootUri, webContents)
+  }, 50)
   setTimeout(() => {
     if (gen !== activateGen) return
     startWatchWorker(gen, rootUri, webContents)

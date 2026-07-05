@@ -7,10 +7,26 @@
     { "wait": { "ms": 400, "animations_idle": true } },
     { "click_selector": "input[type=\"search\"]" },
     { "text": "explorer" },
-    { "wait": { "ms": 1500, "animations_idle": true } },
+    { "wait": { "ms": 2000, "animations_idle": true } },
     { "screenshot": "test-results/agent-shots/explorer_search_results.png" },
+    { "assert_a11y_not_contains": ["No results"], "selector": "[data-jet-list-panel=\"locationlist\"]" },
+    { "assert_layout": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "min_items": 5,
+        "min_unique_tops": 5,
+        "min_row_height": 22
+    }},
     { "assert_no_overlap": { "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]", "min_items": 5 } },
     { "assert_row_spacing": { "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]", "min_items": 5, "max_gap_px": 2 } },
+    { "assert_row_text_visible": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "min_items": 5
+    }},
+    { "assert_no_clipping": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "container_selector": "[data-jet-list-panel=\"locationlist\"]"
+    }},
+    { "assert_a11y_contains": [":"], "selector": "[data-jet-list-panel=\"locationlist\"]" },
     { "exit": 0 }
   ]
 }

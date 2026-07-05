@@ -45,7 +45,7 @@ export default defineConfig({
           build: {
             outDir: electronOutDir,
             rollupOptions: {
-              external: ["electron", "ws", "node-pty"],
+              external: ["electron", "ws", "node-pty", "@ff-labs/fff-node"],
               input: {
                 main: path.resolve(__dirname, "src/main/main.ts"),
                 "workers/fs-io": path.resolve(__dirname, "src/main/workers/fs-io.ts"),

@@ -22,5 +22,10 @@ export default defineConfig({
       testMatch: "explorer-screenshot.spec.ts",
       snapshotPathTemplate: "{testDir}/golden/{testFilePath}/{arg}{ext}",
     },
+    {
+      name: "electron",
+      testDir: "./tests/electron",
+      testMatch: "*.electron.spec.ts",
+    },
   ],
 })

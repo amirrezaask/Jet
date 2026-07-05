@@ -1,0 +1,16 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "steps": [
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "command": "explorer.show" },
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "click_selector": "[data-jet-list-item][aria-label=\"src\"]" },
+    { "wait": { "ms": 400 } },
+    { "click_selector": "[data-jet-list-item][aria-label=\"utils.ts\"]" },
+    { "wait": { "ms": 800, "animations_idle": true } },
+    { "assert_a11y_contains": ["greet"], "selector": ".cm-editor" },
+    { "assert_element_width": { "selector": ".cm-editor", "min_pct_of_viewport": 40 } },
+    { "exit": 0 }
+  ]
+}

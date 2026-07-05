@@ -1,0 +1,16 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "command": "locationlist.showSearch" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "click_selector": "input[type=\"search\"]" },
+    { "text": "zzzzznever_matches_anywhere_qwx" },
+    { "wait": { "ms": 2000, "animations_idle": true } },
+    { "assert_a11y_contains": ["No results"], "selector": "[data-jet-list-panel=\"locationlist\"]" },
+    { "a11y_snapshot": "test-results/agent-shots/search_no_results.a11y.yaml" },
+    { "exit": 0 }
+  ]
+}

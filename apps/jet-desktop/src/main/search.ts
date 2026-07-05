@@ -1,17 +1,37 @@
 import type { IpcMain } from "electron"
-import { getSearchWorker } from "./background-pool.js"
+import {
+  fileSearch,
+  isFffScanReady,
+  listProjectFiles,
+  projectSearch,
+  trackFileAccess,
+} from "@jet/node-host"
 
 export function registerSearchHandlers(ipcMain: IpcMain) {
-  ipcMain.handle("search:listFiles", async (_e, rootUri: string) =>
-    getSearchWorker().dispatch<string[]>("listFiles", { rootUri }),
-  )
+  ipcMain.handle("search:listFiles", async (_e, rootUri: string) => listProjectFiles(rootUri))
   ipcMain.handle(
     "search:project",
     async (
       _e,
       rootUri: string,
       query: string,
-      opts?: { caseSensitive?: boolean; regex?: boolean },
-    ) => getSearchWorker().dispatch("project", { rootUri, query, ...opts }),
+      opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
+    ) => projectSearch(rootUri, query, opts),
   )
+  ipcMain.handle(
+    "search:fileSearch",
+    async (
+      _e,
+      rootUri: string,
+      query: string,
+      opts?: { pageSize?: number; currentFile?: string },
+    ) => fileSearch(rootUri, query, opts),
+  )
+  ipcMain.handle(
+    "search:trackFileAccess",
+    async (_e, rootUri: string, query: string, path: string) => {
+      await trackFileAccess(rootUri, query, path)
+    },
+  )
+  ipcMain.handle("search:isScanReady", (_e, rootUri: string) => isFffScanReady(rootUri))
 }

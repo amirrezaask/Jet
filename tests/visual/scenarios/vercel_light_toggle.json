@@ -3,13 +3,23 @@
   "workspace": "fixtures/sample-workspace",
   "files": ["src/index.ts"],
   "steps": [
-    { "wait": { "ms": 400, "animations_idle": true } },
+    { "wait": { "ms": 500, "animations_idle": true } },
     { "screenshot": "test-results/agent-shots/vercel_dark_before.png" },
+    { "assert_syntax_highlighting": {
+        "selector": ".cm-line span",
+        "min_colored_spans": 5,
+        "min_unique_colors": 2
+    }},
     { "command": "ui.toggleColorScheme" },
-    { "wait": { "ms": 300, "animations_idle": true } },
+    { "wait": { "ms": 500, "animations_idle": true } },
     { "screenshot": "test-results/agent-shots/vercel_light_after.png" },
+    { "assert_syntax_highlighting": {
+        "selector": ".cm-line span",
+        "min_colored_spans": 5,
+        "min_unique_colors": 2
+    }},
     { "command": "ui.toggleColorScheme" },
-    { "wait": { "ms": 200 } },
+    { "wait": { "ms": 300 } },
     { "exit": 0 }
   ]
 }

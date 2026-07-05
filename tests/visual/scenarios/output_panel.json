@@ -1,0 +1,14 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "command": "output.show" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "assert_a11y_contains": ["Output"] },
+    { "assert_element_width": { "selector": "[data-jet-panel-kind=\"output\"], [data-jet-list-panel=\"output\"]", "min_px": 100 } },
+    { "screenshot": "test-results/agent-shots/output_panel.png" },
+    { "exit": 0 }
+  ]
+}

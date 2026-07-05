@@ -59,6 +59,7 @@ export function LocationListPanel({
       const hits = await window.jet.search.project(workspace.root.uri, query, {
         caseSensitive: state.searchCaseSensitive,
         regex: state.searchRegex,
+        fuzzy: state.searchFuzzy,
       })
       if (gen !== searchGen.current) return
       const items: LocationItem[] = hits.map((h, i) => ({
@@ -86,7 +87,7 @@ export function LocationListPanel({
     if (state.activeSource !== "search") return
     const id = window.setTimeout(() => void runSearch(), 300)
     return () => window.clearTimeout(id)
-  }, [runSearch, state.activeSource, state.searchQuery, state.searchCaseSensitive, state.searchRegex])
+  }, [runSearch, state.activeSource, state.searchQuery, state.searchCaseSensitive, state.searchRegex, state.searchFuzzy])
 
   const sources: { id: LocationListSource; label: string }[] = [
     { id: "search", label: "Search" },
@@ -142,20 +143,30 @@ export function LocationListPanel({
               className="shrink-0"
               value={[
                 ...(state.searchCaseSensitive ? ["case"] : []),
-                ...(state.searchRegex ? ["regex"] : []),
+                ...(state.searchRegex && !state.searchFuzzy ? ["regex"] : []),
+                ...(state.searchFuzzy ? ["fuzzy"] : []),
               ]}
               onValueChange={values => {
+                const fuzzy = values.includes("fuzzy")
                 state.setSearchState({
                   caseSensitive: values.includes("case"),
-                  regex: values.includes("regex"),
+                  regex: fuzzy ? false : values.includes("regex"),
+                  fuzzy,
                 })
               }}
             >
               <ToggleGroupItem value="case" className="h-7 px-2 text-xs">
                 Case
               </ToggleGroupItem>
-              <ToggleGroupItem value="regex" className="h-7 px-2 text-xs">
+              <ToggleGroupItem
+                value="regex"
+                className="h-7 px-2 text-xs"
+                disabled={state.searchFuzzy}
+              >
                 Regex
+              </ToggleGroupItem>
+              <ToggleGroupItem value="fuzzy" className="h-7 px-2 text-xs">
+                Fuzzy
               </ToggleGroupItem>
             </ToggleGroup>
             {state.searchLoading && (

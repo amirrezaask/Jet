@@ -74,6 +74,7 @@ pnpm visual:all
 | `{ "assert_no_overlap": { "selector": "[data-jet-list-item]", "min_items": 2, "tolerance_px": 0 } }` | Fail if any visible list rows share vertical + horizontal pixel overlap |
 | `{ "assert_no_clipping": { "selector": "[data-jet-list-item]", "container_selector": "[data-jet-list-panel='explorer']" } }` | Fail if row text overflows without ellipsis or extends past container bounds |
 | `{ "assert_row_spacing": { "selector": "[data-jet-list-item]", "min_items": 2, "max_gap_px": 2 } }` | Fail if consecutive rows have excessive vertical gap (catches virtualizer estimate drift) |
+| `{ "assert_row_text_visible": { "selector": "[data-jet-list-item]", "min_items": 2, "min_glyph_height_px": 12, "text_selector": "span" } }` | Fail if row's inner text is invisible (0 opacity, transparent color, `display:none`, zero-height span, or overflowing row bounds). Catches "row DOM present but content clipped/hidden" bugs where selection highlight shows but no readable text. |
 | `{ "click_selector": "[data-jet-list-item][aria-label=\"packages\"]", "nth": 0 }` | Click element matching CSS selector (optional `nth` for disambiguation) |
 | `{ "wheel_scroll": { "selector": "[data-jet-list-panel=\"locationlist\"] ul", "delta_y": 800 } }` | Programmatic scroll on a container (for virtualized list regression) |
 | `{ "exit": 0 }` | End scenario with exit code |
@@ -84,6 +85,22 @@ pnpm visual:all
 - **`assert_state`** — for programmatic state on the `__jetAgent` bridge (workspace path, tab kinds, palette open flag).
 - **`screenshot`** — fallback / human sign-off. Use when the change is genuinely pixel-level: theme colors, layout dimensions, cursor animation, icons, motion. Do **not** rely on screenshots for structural checks — a11y snapshot is faster to diff.
 - **`dom_dump`** — last resort for CSS class / computed-tree debugging (e.g. Tailwind purge regressions).
+
+### Anti-tautology rule (list/search scenarios)
+
+Do NOT assert only the user-typed query. The input value contains it whether or not results rendered — a green run proves nothing. Every list/search scenario MUST include:
+
+1. `assert_layout` with `min_items >= 1` on `[data-jet-list-panel="…"] [data-jet-list-item]`.
+2. `assert_a11y_contains` with a needle that only appears in rendered rows (fixture filename, `:` line separator, etc.), scoped to the panel selector.
+3. `assert_a11y_not_contains: ["No results"]` when a hit is expected.
+4. `assert_no_overlap` + `assert_row_spacing` when >=2 rows expected.
+5. `assert_row_text_visible` — catches "row exists in DOM but text is clipped/invisible" (e.g. `overflow-hidden` on a 36px row with `p-2` padding + two 14px line-height spans → text pushed out of visible area, only selection highlight is drawn).
+
+`project_search.json` and `quick_open.json` are the canonical templates.
+
+### Electron-only checks
+
+Traffic lights, native menu, folder dialogs, and Electron main IPC are invisible to the browser runner. Add specs to `tests/electron/*.electron.spec.ts` (Playwright `_electron.launch`) and run `pnpm test:electron`. Do NOT try to verify traffic-light overlap via `?titlebar=1` — that renders the React component without the underlying window.
 
 Key names: Playwright `KeyboardEvent.key` values (`A`, `Enter`, `Escape`, `ArrowDown`, `F5`). Chords with `+`: `Meta+Shift+P`.
 

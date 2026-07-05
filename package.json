@@ -10,6 +10,7 @@
   "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test",
   "test:web": "playwright test",
   "test:visual": "playwright test --project=visual",
+  "test:electron": "pnpm --filter jet-desktop build && playwright test --project=electron",
   "test:visual:screenshots": "playwright test --project=visual-screenshots",
   "test:visual:screenshots:update": "playwright test --project=visual-screenshots --update-snapshots",
   "visual": "tsx tests/visual/runner.ts --scenario",

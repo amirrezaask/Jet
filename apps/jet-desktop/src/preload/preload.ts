@@ -20,6 +20,11 @@ ipcRenderer.on("workspace:fileIndex", (_e, payload: { rootUri: string; files: st
   for (const cb of fileIndexListeners) cb(payload.rootUri, payload.files)
 })
 
+const searchReadyListeners = new Set<(rootUri: string) => void>()
+ipcRenderer.on("workspace:searchReady", (_e, payload: { rootUri: string }) => {
+  for (const cb of searchReadyListeners) cb(payload.rootUri)
+})
+
 const api: JetElectronAPI = {
   fs: {
     readFile: uri => ipcRenderer.invoke("fs:readFile", uri),
@@ -40,11 +45,20 @@ const api: JetElectronAPI = {
       fileIndexListeners.add(callback)
       return () => fileIndexListeners.delete(callback)
     },
+    onSearchReady: callback => {
+      searchReadyListeners.add(callback)
+      return () => searchReadyListeners.delete(callback)
+    },
   },
   search: {
     project: (rootUri, query, opts) =>
       ipcRenderer.invoke("search:project", rootUri, query, opts),
     listFiles: rootUri => ipcRenderer.invoke("search:listFiles", rootUri),
+    fileSearch: (rootUri, query, opts) =>
+      ipcRenderer.invoke("search:fileSearch", rootUri, query, opts),
+    trackFileAccess: (rootUri, query, path) =>
+      ipcRenderer.invoke("search:trackFileAccess", rootUri, query, path),
+    isScanReady: rootUri => ipcRenderer.invoke("search:isScanReady", rootUri),
   },
   lsp: {
     start: (rootUri, languageId, command, args) =>

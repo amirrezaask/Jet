@@ -1,0 +1,34 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 3000, "animations_idle": true } },
+    { "command": "locationlist.showSearch" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "click_selector": "input[type=\"search\"]" },
+    { "text": "export" },
+    { "wait": { "ms": 2000, "animations_idle": true } },
+    { "assert_a11y_contains": ["export"] },
+    { "assert_a11y_not_contains": ["No results"], "selector": "[data-jet-list-panel=\"locationlist\"]" },
+    { "assert_layout": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "min_items": 2,
+        "min_unique_tops": 2,
+        "min_row_height": 22
+    }},
+    { "assert_no_overlap": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "min_items": 2
+    }},
+    { "assert_row_spacing": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "min_items": 2,
+        "max_gap_px": 2
+    }},
+    { "assert_a11y_contains": ["src/", ":"], "selector": "[data-jet-list-panel=\"locationlist\"]" },
+    { "a11y_snapshot": "test-results/agent-shots/project_search_plain.a11y.yaml" },
+    { "screenshot": "test-results/agent-shots/project_search_plain.png" },
+    { "exit": 0 }
+  ]
+}

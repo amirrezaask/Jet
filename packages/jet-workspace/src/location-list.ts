@@ -24,6 +24,7 @@ export class LocationListState {
   searchQuery = ""
   searchCaseSensitive = false
   searchRegex = false
+  searchFuzzy = false
   searchLoading = false
   searchError: string | null = null
 
@@ -51,12 +52,14 @@ export class LocationListState {
     query?: string
     caseSensitive?: boolean
     regex?: boolean
+    fuzzy?: boolean
     loading?: boolean
     error?: string | null
   }): void {
     if (patch.query !== undefined) this.searchQuery = patch.query
     if (patch.caseSensitive !== undefined) this.searchCaseSensitive = patch.caseSensitive
     if (patch.regex !== undefined) this.searchRegex = patch.regex
+    if (patch.fuzzy !== undefined) this.searchFuzzy = patch.fuzzy
     if (patch.loading !== undefined) this.searchLoading = patch.loading
     if (patch.error !== undefined) this.searchError = patch.error
     this.onDidChange.fire()

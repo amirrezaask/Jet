@@ -128,6 +128,31 @@ Step vocabulary: `wait` / `wait_frames`, `key`, `text`, `command` (id from `pack
 
 **Rule:** if the runner cannot express the check (native folder dialog, LSP-only path), state that explicitly and fall back to the browser MCP flow below. Do NOT silently skip visual verification.
 
+### Anti-tautology rules for list/search UIs (MANDATORY)
+
+Query echoes are worthless as proof. `assert_a11y_contains: ["export"]` after typing `export` passes when the input value contains `export` — even if the result list is empty. Every list/search scenario MUST include:
+
+1. **Row-count layout assertion** — `assert_layout` with `min_items >= 1` on `[data-jet-list-item]` (or the panel-scoped selector). This is the only real proof rows rendered.
+2. **Positive result content** — `assert_a11y_contains` targeted at the scoped panel selector (`[data-jet-list-panel="…"]`) with a needle that only appears in rendered rows (a fixture filename, a path segment, a line-number separator like `:`). Never assert the user-typed query alone.
+3. **Negative empty-state assertion** — `assert_a11y_not_contains: ["No results"]` when a hit is expected. This catches "input mirrored, list empty" regressions.
+4. **Spacing/overlap** — `assert_no_overlap` + `assert_row_spacing` on the scoped selector when >=2 rows are expected.
+5. **Row text visibility** — `assert_row_text_visible` on the scoped selector. Catches "row DOM exists but text is invisible" bugs (overflow-hidden clipping content, `color: transparent`, `opacity: 0`, zero-height span). Symptom in the wild: keyboard selection highlight moves across blank rows. `assert_layout` + `assert_a11y_contains` PASS in this failure mode because a11y tree reports the text even though it's visually clipped — `assert_row_text_visible` measures rendered glyph height inside the row's bounding rect.
+
+Scope every list assertion with the panel data attribute (`[data-jet-list-panel="locationlist"] [data-jet-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
+
+### Electron-only regressions (native chrome)
+
+Browser scenarios run in headless Chromium and **cannot see native macOS traffic lights, native menu bar, folder dialogs, or Electron-only IPC paths**. Any change to:
+
+- `titleBarStyle`, `trafficLightPosition`, `JetTitleBar` spacer geometry
+- Native menu (`Menu.setApplicationMenu`)
+- Window frame, min/max/close controls
+- Electron main IPC handlers (`fs:*`, `git:*`, `lsp:*`, `search:*`)
+
+MUST be verified by an Electron-side Playwright spec in `tests/electron/*.electron.spec.ts` using `_electron.launch`. Run `pnpm test:electron` (builds `jet-desktop` first, then launches the packaged main). The `tests/electron/titlebar.electron.spec.ts` spec is the canonical example — it geometry-asserts that the menubar's leftmost item clears the 78px traffic-light zone. Add a sibling spec when you touch native chrome.
+
+**Do not** rely on `?titlebar=1` browser preview alone — it renders the React component without the underlying Electron window, so overlap with real traffic lights is invisible.
+
 ### Fallback: browser MCP
 
 When a scenario cannot express the check, validate live via the **Cursor browser MCP** (`cursor-ide-browser`).
@@ -332,7 +357,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 - `LanguageServerManager.ensureServerForFile()` — TS/JS only for now
 - Requires `typescript-language-server` on **PATH** (TS/JS)
 - Requires `rust-analyzer` on **PATH** for Rust (optional)
-- Project search requires `rg` (ripgrep) on **PATH**
+- Project search uses `@ff-labs/fff-node` (FFF) when available; falls back to `rg` (ripgrep) on **PATH**
 - `findProjectRoot()` uses `pathToFileUri` from `@jet/shared`
 
 

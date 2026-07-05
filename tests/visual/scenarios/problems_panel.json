@@ -1,0 +1,14 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "command": "locationlist.showProblems" },
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "assert_a11y_contains": ["Problems"] },
+    { "a11y_snapshot": "test-results/agent-shots/problems_panel.a11y.yaml" },
+    { "screenshot": "test-results/agent-shots/problems_panel.png" },
+    { "exit": 0 }
+  ]
+}

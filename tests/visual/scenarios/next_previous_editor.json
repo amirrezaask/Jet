@@ -1,0 +1,16 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts", "src/utils.ts"],
+  "steps": [
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "assert_a11y_contains": ["greet"], "selector": ".cm-editor" },
+    { "command": "editor.previousEditor" },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "assert_a11y_contains": ["main"], "selector": ".cm-editor" },
+    { "command": "editor.nextEditor" },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "assert_a11y_contains": ["greet"], "selector": ".cm-editor" },
+    { "exit": 0 }
+  ]
+}

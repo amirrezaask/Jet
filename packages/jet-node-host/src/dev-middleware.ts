@@ -172,8 +172,40 @@ export async function handleJetDevRequest(
         results: await nodeSearch.projectSearch(rootUri, String(body.query ?? ""), {
           caseSensitive: Boolean(body.caseSensitive),
           regex: Boolean(body.regex),
+          fuzzy: Boolean(body.fuzzy),
         }),
       })
+      return true
+    }
+
+    if (pathname === "/__jet/search/fileSearch" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      sendJson(res, 200, {
+        files: await nodeSearch.fileSearch(rootUri, String(body.query ?? ""), {
+          pageSize: body.pageSize != null ? Number(body.pageSize) : undefined,
+          currentFile: body.currentFile ? String(body.currentFile) : undefined,
+        }),
+      })
+      return true
+    }
+
+    if (pathname === "/__jet/search/trackFileAccess" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      await nodeSearch.trackFileAccess(
+        rootUri,
+        String(body.query ?? ""),
+        String(body.path ?? ""),
+      )
+      sendJson(res, 200, { ok: true })
+      return true
+    }
+
+    if (pathname === "/__jet/search/isScanReady" && req.method === "POST") {
+      const rootUri = String(body.rootUri ?? "")
+      await guardUri(rootUri, opts.allowedRoots)
+      sendJson(res, 200, { ready: nodeSearch.isFffScanReady(rootUri) })
       return true
     }
 

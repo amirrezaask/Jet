@@ -1,0 +1,17 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "command": "explorer.show" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "command": "workbench.action.focusSideBar" },
+    { "wait": { "ms": 200 } },
+    { "assert_a11y_contains": ["Explorer"] },
+    { "command": "workbench.action.focusFirstEditorGroup" },
+    { "wait": { "ms": 200 } },
+    { "assert_state": { "paletteOpen": false } },
+    { "exit": 0 }
+  ]
+}

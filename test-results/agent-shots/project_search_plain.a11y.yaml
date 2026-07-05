@@ -1,0 +1,36 @@
+- button "Toggle Sidebar"
+- text: Explorer
+- tree "Explorer":
+  - treeitem "src" [level=1]:
+    - button "src"
+  - treeitem "package.json" [level=1]:
+    - button "package.json"
+  - treeitem "tsconfig.json" [level=1]:
+    - button "tsconfig.json"
+- separator
+- text: Locations
+- button "Panel actions"
+- button "Close panel"
+- tablist:
+  - tab "Search" [selected]
+  - tab "Problems"
+  - tab "Refs"
+  - tab "Defs"
+  - tab "Tasks"
+- searchbox "Search project": export
+- toolbar:
+  - button "Case"
+  - button "Regex"
+  - button "Fuzzy"
+- list:
+  - listitem:
+    - 'button "export function main(): string { src/index.ts:3:1"'
+    - 'button "export function greet(name: string): string { src/utils.ts:1:1"'
+- separator
+- button "Panel actions"
+- button "Close panel"
+- textbox
+- region "Notifications alt+T"
+- contentinfo:
+  - text: sample-workspace
+  - button "Language server off": LSP off

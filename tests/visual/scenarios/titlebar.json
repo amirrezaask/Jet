@@ -8,6 +8,15 @@
     { "a11y_snapshot": "test-results/agent-shots/titlebar.a11y.yaml", "selector": "[data-jet-titlebar]" },
     { "screenshot": "test-results/agent-shots/titlebar.png" },
     { "assert_a11y_contains": ["File", "Edit", "View", "Go"], "selector": "[data-jet-titlebar]" },
+    { "assert_element_width": {
+        "selector": "[data-jet-traffic-light-spacer]",
+        "min_px": 78,
+        "max_px": 96
+    }},
+    { "assert_no_overlap": {
+        "selector": "[data-jet-titlebar] [data-jet-traffic-light-spacer], [data-jet-titlebar] [role=\"menubar\"] > *",
+        "min_items": 2
+    }},
     { "exit": 0 }
   ]
 }

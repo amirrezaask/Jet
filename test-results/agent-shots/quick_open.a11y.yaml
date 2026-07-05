@@ -1,0 +1,11 @@
+- region "Notifications alt+T":
+  - list:
+    - listitem: Opened /Users/amirrezaask/dev/jet/fixtures/sample-workspace
+- dialog "Quick open":
+  - combobox [expanded]
+  - listbox "Suggestions":
+    - option "src/example.rs"
+    - option "package.json"
+    - option "tsconfig.json"
+    - option "src/index.ts"
+    - option "src/utils.ts"

@@ -1,0 +1,17 @@
+{
+  "window": { "width": 1280, "height": 800 },
+  "workspace": "fixtures/sample-workspace",
+  "files": ["src/index.ts"],
+  "steps": [
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "command": "workspace.newFile" },
+    { "wait": { "ms": 400, "animations_idle": true } },
+    { "assert_a11y_contains": ["Untitled"] },
+    { "click_selector": ".cm-content" },
+    { "text": "hello" },
+    { "wait": { "ms": 200 } },
+    { "assert_a11y_contains": ["hello"], "selector": ".cm-editor" },
+    { "screenshot": "test-results/agent-shots/new_file.png" },
+    { "exit": 0 }
+  ]
+}

@@ -7,12 +7,21 @@
     { "wait": { "ms": 400, "animations_idle": true } },
     { "click_selector": "input[type=\"search\"]" },
     { "text": "explorer" },
-    { "wait": { "ms": 1500, "animations_idle": true } },
+    { "wait": { "ms": 2000, "animations_idle": true } },
+    { "assert_layout": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "min_items": 5,
+        "min_row_height": 22
+    }},
     { "wheel_scroll": { "selector": "[data-jet-list-panel=\"locationlist\"] ul", "delta_y": 800 } },
     { "wait": { "ms": 400, "animations_idle": true } },
     { "screenshot": "test-results/agent-shots/search_scroll.png" },
     { "assert_no_overlap": { "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]", "min_items": 5 } },
     { "assert_row_spacing": { "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]", "min_items": 5, "max_gap_px": 2 } },
+    { "assert_row_text_visible": {
+        "selector": "[data-jet-list-panel=\"locationlist\"] [data-jet-list-item]",
+        "min_items": 5
+    }},
     { "exit": 0 }
   ]
 }

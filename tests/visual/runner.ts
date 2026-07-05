@@ -75,6 +75,15 @@ type Step =
         require_keyword_color?: boolean
       }
     }
+  | {
+      assert_row_text_visible: {
+        selector?: string
+        min_items?: number
+        text_selector?: string
+        min_glyph_height_px?: number
+        require_within_row_bounds?: boolean
+      }
+    }
   | { exit: number }
 
 type Scenario = {
@@ -536,6 +545,75 @@ async function runStep(
     }
     if (cfg.require_keyword_color && report.keywordCount > 0 && report.keywordUniqueColors < 1) {
       throw new Error("assert_syntax_highlighting: keyword tokens have no distinct color")
+    }
+    return {}
+  }
+  if ("assert_row_text_visible" in step) {
+    const cfg = step.assert_row_text_visible
+    const sel = cfg.selector ?? "[data-jet-list-item]"
+    const minItems = cfg.min_items ?? 1
+    const textSel = cfg.text_selector ?? "span, [data-slot='row-label'], [data-slot='row-detail']"
+    const minGlyphH = cfg.min_glyph_height_px ?? 8
+    const requireWithin = cfg.require_within_row_bounds !== false
+    const report = await page.evaluate(
+      ({ sel, textSel, minGlyphH, requireWithin }) => {
+        const rows = Array.from(document.querySelectorAll<HTMLElement>(sel))
+        const problems: Array<{ i: number; reason: string; text: string }> = []
+        rows.forEach((row, i) => {
+          const rowRect = row.getBoundingClientRect()
+          const texts = Array.from(row.querySelectorAll<HTMLElement>(textSel))
+          if (texts.length === 0 && (row.textContent ?? "").trim().length > 0) {
+            problems.push({ i, reason: "no text child elements", text: (row.textContent ?? "").trim().slice(0, 40) })
+            return
+          }
+          let anyVisible = false
+          for (const t of texts) {
+            const tr = t.getBoundingClientRect()
+            const cs = getComputedStyle(t)
+            const isTransparent =
+              cs.color === "rgba(0, 0, 0, 0)" ||
+              cs.visibility === "hidden" ||
+              cs.display === "none" ||
+              parseFloat(cs.opacity || "1") === 0
+            const glyphH = tr.height
+            const insideRow =
+              !requireWithin ||
+              (tr.top >= rowRect.top - 1 &&
+                tr.bottom <= rowRect.bottom + 1 &&
+                tr.left >= rowRect.left - 1 &&
+                tr.right <= rowRect.right + 1)
+            if (!isTransparent && glyphH >= minGlyphH && insideRow) {
+              anyVisible = true
+              break
+            }
+            if (!isTransparent && glyphH >= minGlyphH && !insideRow) {
+              problems.push({
+                i,
+                reason: `text overflows row bounds: text=(${Math.round(tr.top)},${Math.round(tr.bottom)}) row=(${Math.round(rowRect.top)},${Math.round(rowRect.bottom)})`,
+                text: (t.textContent ?? "").trim().slice(0, 40),
+              })
+              return
+            }
+          }
+          if (!anyVisible && (row.textContent ?? "").trim().length > 0) {
+            problems.push({
+              i,
+              reason: "no visible text (transparent/hidden/zero-height)",
+              text: (row.textContent ?? "").trim().slice(0, 40),
+            })
+          }
+        })
+        return { count: rows.length, problems: problems.slice(0, 5), totalProblems: problems.length }
+      },
+      { sel, textSel, minGlyphH, requireWithin },
+    )
+    if (report.count < minItems) {
+      throw new Error(`assert_row_text_visible: found ${report.count} rows, expected >= ${minItems}`)
+    }
+    if (report.totalProblems > 0) {
+      throw new Error(
+        `assert_row_text_visible failed: ${report.totalProblems} row(s) have unreadable text. Examples: ${JSON.stringify(report.problems)}`,
+      )
     }
     return {}
   }

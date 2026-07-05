@@ -3,13 +3,16 @@
   "workspace": "fixtures/sample-workspace",
   "files": ["src/index.ts"],
   "steps": [
-    { "wait": { "ms": 300, "animations_idle": true } },
+    { "wait": { "ms": 400, "animations_idle": true } },
     { "command": "editor.find" },
-    { "wait": { "ms": 200, "animations_idle": true } },
-    { "dom_dump": "test-results/agent-shots/editor_find.html", "selector": ".cm-editor" },
-    { "assert_a11y_contains": ["textbox"] },
+    { "wait": { "ms": 300, "animations_idle": true } },
+    { "assert_a11y_contains": ["Find"], "selector": ".cm-editor" },
+    { "text": "export" },
+    { "wait": { "ms": 200 } },
+    { "assert_element_width": { "selector": ".cm-search .cm-textfield", "min_px": 40 } },
     { "screenshot": "test-results/agent-shots/editor_find.png" },
     { "key": "Escape" },
+    { "wait": { "ms": 200 } },
     { "exit": 0 }
   ]
 }

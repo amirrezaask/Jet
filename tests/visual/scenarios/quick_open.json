@@ -3,12 +3,20 @@
   "workspace": "fixtures/sample-workspace",
   "files": ["src/index.ts"],
   "steps": [
-    { "wait": { "ms": 300, "animations_idle": true } },
+    { "wait": { "ms": 3000, "animations_idle": true } },
     { "command": "workspace.quickOpen" },
-    { "wait": { "ms": 200, "animations_idle": true } },
-    { "screenshot": "test-results/agent-shots/quick_open.png" },
+    { "wait": { "ms": 500, "animations_idle": true } },
+    { "a11y_snapshot": "test-results/agent-shots/quick_open.a11y.yaml" },
     { "text": "util" },
-    { "wait": { "ms": 200 } },
+    { "wait": { "ms": 500 } },
+    { "assert_a11y_contains": ["utils.ts"] },
+    { "assert_a11y_not_contains": ["No results"] },
+    { "assert_layout": {
+        "selector": "[data-jet-list-item], [role=\"option\"]",
+        "min_items": 1,
+        "min_row_height": 20
+    }},
+    { "a11y_snapshot": "test-results/agent-shots/quick_open_util.a11y.yaml" },
     { "screenshot": "test-results/agent-shots/quick_open_util.png" },
     { "key": "Escape" },
     { "exit": 0 }

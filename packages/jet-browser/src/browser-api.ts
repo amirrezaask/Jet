@@ -35,6 +35,16 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
         }).then(r => r.results),
       listFiles: rootUri =>
         postJson<{ files: string[] }>(baseUrl, "/search/listFiles", { rootUri }).then(r => r.files),
+      fileSearch: (rootUri, query, opts) =>
+        postJson<{ files: string[] }>(baseUrl, "/search/fileSearch", {
+          rootUri,
+          query,
+          ...opts,
+        }).then(r => r.files),
+      trackFileAccess: (rootUri, query, path) =>
+        postJson(baseUrl, "/search/trackFileAccess", { rootUri, query, path }).then(() => undefined),
+      isScanReady: rootUri =>
+        postJson<{ ready: boolean }>(baseUrl, "/search/isScanReady", { rootUri }).then(r => r.ready),
     },
     lsp: {
       start: (rootUri, languageId, command, args) =>
