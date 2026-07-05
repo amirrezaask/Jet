@@ -1,15 +1,12 @@
-import { memo, type ReactNode } from "react"
+import { memo } from "react"
 import type { PanelId, PanelView } from "@jet/shared"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import type { LSPClient } from "@jet/codemirror"
-import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@jet/workspace"
-import type { LocationItem } from "@jet/workspace"
+import type { KeymapContext, JetKeyBinding, ListItem, WorkspaceService } from "@jet/workspace"
 import type { JetTheme } from "@jet/codemirror"
-import { EditorTabHost } from "../tabs/EditorTabHost.js"
-import { ExplorerTab } from "../tabs/ExplorerTab.js"
-import { LocationListPanel } from "../panels/LocationListPanel.js"
-import { OutputPanel } from "../panels/OutputPanel.js"
+import { SidebarProvider } from "@/components/ui/sidebar.js"
+import { TabContent } from "../tabs/TabContent.js"
 import { PanelEmptyState } from "./PanelEmptyState.js"
 
 function PanelBodyInner({
@@ -22,7 +19,7 @@ function PanelBodyInner({
   executeCommand,
   runKeyBinding,
   onOpenFile,
-  onOpenLocationItem,
+  onOpenListItem,
   keymapBindings,
   userExtensions,
   keymapRevision,
@@ -42,7 +39,7 @@ function PanelBodyInner({
   executeCommand: (name: string) => Promise<void>
   runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
   onOpenFile: (uri: string, path: string) => void
-  onOpenLocationItem: (item: LocationItem) => void
+  onOpenListItem: (item: ListItem) => void
   keymapBindings: JetKeyBinding[]
   userExtensions: Extension[]
   keymapRevision: number
@@ -53,48 +50,35 @@ function PanelBodyInner({
   onProblemsChange?: () => void
   autoFocus?: boolean
 }) {
-  switch (view.kind) {
-    case "empty":
-      return <PanelEmptyState />
-    case "editor":
-      return (
-        <EditorTabHost
-          panelId={panelId}
-          fileUri={view.fileUri}
-          workspace={workspace}
-          theme={theme}
-          resolveLspClient={resolveLspClient}
-          lspRevision={lspRevision}
-          executeCommand={executeCommand}
-          runKeyBinding={runKeyBinding}
-          keymapBindings={keymapBindings}
-          userExtensions={userExtensions}
-          keymapRevision={keymapRevision}
-          keymapContext={keymapContext}
-          onEditorFocusChange={onEditorFocusChange}
-          onEditorSelectionChange={onEditorSelectionChange}
-          onLspAttachFailed={onLspAttachFailed}
-          onProblemsChange={onProblemsChange}
-          autoFocus={autoFocus}
-        />
-      )
-    case "explorer":
-      return (
-        <div className="h-full min-h-0">
-          <ExplorerTab workspace={workspace} onOpenFile={onOpenFile} />
-        </div>
-      )
-    case "locationlist":
-      return (
-        <div className="flex h-full min-h-0 flex-col">
-          <LocationListPanel workspace={workspace} onOpenItem={onOpenLocationItem} />
-        </div>
-      )
-    case "output":
-      return <OutputPanel workspace={workspace} />
-    default:
-      return null
+  if (view.kind === "empty") {
+    return <PanelEmptyState />
   }
+
+  return (
+    <SidebarProvider className="!min-h-0 flex h-full min-h-0 flex-1 flex-col text-sidebar-foreground">
+      <TabContent
+        tabId={view.activeTabId}
+        panelId={panelId}
+        workspace={workspace}
+        theme={theme}
+        resolveLspClient={resolveLspClient}
+        lspRevision={lspRevision}
+        executeCommand={executeCommand}
+        runKeyBinding={runKeyBinding}
+        onOpenFile={onOpenFile}
+        onOpenListItem={onOpenListItem}
+        keymapBindings={keymapBindings}
+        userExtensions={userExtensions}
+        keymapRevision={keymapRevision}
+        keymapContext={keymapContext}
+        onEditorFocusChange={onEditorFocusChange}
+        onEditorSelectionChange={onEditorSelectionChange}
+        onLspAttachFailed={onLspAttachFailed}
+        onProblemsChange={onProblemsChange}
+        autoFocus={autoFocus}
+      />
+    </SidebarProvider>
+  )
 }
 
 export const PanelBody = memo(PanelBodyInner)

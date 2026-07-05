@@ -1,5 +1,5 @@
 import { Emitter, pathToFileUri } from "@jet/shared"
-import type { LocationItem } from "./location-list.js"
+import type { ListItem } from "./list-document.js"
 
 export type JetTask = {
   label: string
@@ -15,7 +15,7 @@ export type TaskRunState = {
   status: "running" | "done" | "failed"
   output: string
   exitCode: number | null
-  errors: LocationItem[]
+  errors: ListItem[]
 }
 
 export type TaskSpawnRequest = {
@@ -33,8 +33,8 @@ const TS_ERROR = /^(.+)\((\d+),(\d+)\):\s+error\s+/m
 const CARGO_ERROR = /^\s*-->\s+(.+):(\d+):(\d+)/m
 const GENERIC_ERROR = /^(.+?):(\d+)(?::(\d+))?\s/m
 
-export function parseTaskOutput(output: string, workspacePath: string): LocationItem[] {
-  const items: LocationItem[] = []
+export function parseTaskOutput(output: string, workspacePath: string): ListItem[] {
+  const items: ListItem[] = []
   const lines = output.split("\n")
   let n = 0
   for (const line of lines) {
@@ -55,7 +55,6 @@ export function parseTaskOutput(output: string, workspacePath: string): Location
       line: lineNum,
       column: col,
       label: line.trim().slice(0, 120),
-      source: "task-errors",
     })
   }
   return items

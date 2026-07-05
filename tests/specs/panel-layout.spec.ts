@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test"
 import { boot, SAMPLE, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
+import { waitForSearchListPanel } from "../helpers/location-list.js"
 
 test.beforeEach(async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
@@ -44,17 +45,18 @@ test("panel-layout: toggle editor layout changes orientation", async ({ page }) 
   expect(after!.horizontal).not.toBe(before!.horizontal)
 })
 
-test("panel-layout: close location list panel removes it", async ({ page }) => {
-  await agent(page).executeCommand("locationlist.show")
+test("panel-layout: close search list tab removes it", async ({ page }) => {
+  await agent(page).executeCommand("locationlist.showSearch")
   await page.waitForTimeout(400)
+  const listId = await waitForSearchListPanel(page)
   const before = await agent(page).getState()
-  expect(before.panels.some(p => p.kind === "locationlist")).toBe(true)
+  expect(before.panels.some(p => p.kind === "search")).toBe(true)
 
-  await page.locator('[data-tab-id="locationlist"] [aria-label="Close tab"]').click()
+  await page.locator(`[data-tab-id="${listId}"] [aria-label="Close tab"]`).click()
   await page.waitForTimeout(400)
 
   const after = await agent(page).getState()
-  expect(after.panels.some(p => p.kind === "locationlist")).toBe(false)
+  expect(after.panels.some(p => p.kind === "search")).toBe(false)
 })
 
 test("panel-layout: focus last editor group", async ({ page }) => {

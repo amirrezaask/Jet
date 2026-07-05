@@ -4,9 +4,26 @@ import type { JetPanelTree } from "./panel-tree.js"
 import type { WorkspaceFile, WorkspaceRoot } from "./types.js"
 import type { FileSystemProvider } from "./types.js"
 import { JumpStack } from "./jump-stack.js"
-import { LocationListState } from "./location-list.js"
+import { allocListId, ListDocumentStore, type ListDocument } from "./list-document.js"
 import { TaskRunner } from "./task-runner.js"
-import { popPanelBufferView, pushPanelBufferView } from "./panel-buffers.js"
+import {
+  activatePanelTab,
+  buildTabsView,
+  findPanelWithTab,
+  panelHasTab,
+  panelTabIds,
+  popPanelTab,
+  pushPanelTab,
+} from "./panel-tabs.js"
+import {
+  EXPLORER_TAB_ID,
+  isListTabKind,
+  OUTPUT_TAB_ID,
+  PROBLEMS_TAB_ID,
+  TabRegistry,
+  type TabDescriptor,
+  type TabKind,
+} from "./tab-registry.js"
 
 export type ConfirmDiscardReloadFn = (fileName: string) => Promise<boolean>
 
@@ -17,11 +34,11 @@ export class WorkspaceService {
   private savedBaseline = new Map<string, string>()
   private recentWrites = new Map<string, number>()
   private untitledCounter = 1
-  /** Open buffer URIs in MRU order */
   openBuffers: string[] = []
 
   readonly jumpStack = new JumpStack()
-  readonly locationList = new LocationListState()
+  readonly tabRegistry = new TabRegistry()
+  readonly listStore = new ListDocumentStore()
   readonly taskRunner = new TaskRunner()
 
   readonly onDidOpenFile = new Emitter<WorkspaceFile>()
@@ -67,6 +84,7 @@ export class WorkspaceService {
     if (!file || file.isDirty === isDirty) return
     file.isDirty = isDirty
     this.onDidChangeDirty.fire({ uri, isDirty })
+    this.tabRegistry.update(uri, { label: file.name })
   }
 
   setSavedBaseline(uri: string, content: string): void {
@@ -153,6 +171,67 @@ export class WorkspaceService {
     return file
   }
 
+  registerTab(tab: TabDescriptor, listDoc?: ListDocument): void {
+    this.tabRegistry.register(tab)
+    if (listDoc && !this.listStore.get(listDoc.id)) {
+      this.listStore.create(listDoc)
+    }
+  }
+
+  disposeTab(tabId: string): void {
+    const kind = this.tabRegistry.kindFor(tabId)
+    this.tabRegistry.dispose(tabId)
+    if (kind && isListTabKind(kind)) {
+      this.listStore.dispose(tabId)
+    }
+  }
+
+  openTabInPanel(
+    tree: JetPanelTree,
+    panelId: PanelId,
+    tab: TabDescriptor,
+    listDoc?: ListDocument,
+    opts?: { replaceTabId?: string },
+  ): string {
+    this.registerTab(tab, listDoc)
+    if (tab.kind === "editor") {
+      const file = this.files.get(tab.id) ?? this.createWorkspaceFile(tab.id, tab.label)
+      this.touchBuffer(tab.id)
+      this.onDidOpenFile.fire(file)
+    }
+    const current = tree.getView(panelId)
+    tree.setView(panelId, pushPanelTab(current, tab.id, opts?.replaceTabId))
+    return tab.id
+  }
+
+  focusTabInPanel(tree: JetPanelTree, panelId: PanelId, tabId: string): void {
+    const view = tree.getView(panelId)
+    if (view?.kind !== "tabs") return
+    tree.setView(panelId, activatePanelTab(view, tabId))
+  }
+
+  openOrFocusTab(
+    tree: JetPanelTree,
+    panelId: PanelId,
+    tab: TabDescriptor,
+    listDoc?: ListDocument,
+  ): { panelId: PanelId; tabId: string } {
+    const existingPanel = findPanelWithTab(tree, tab.id)
+    if (existingPanel) {
+      this.registerTab(tab, listDoc)
+      this.focusTabInPanel(tree, existingPanel, tab.id)
+      return { panelId: existingPanel, tabId: tab.id }
+    }
+    const tabId = this.openTabInPanel(tree, panelId, tab, listDoc)
+    return { panelId, tabId }
+  }
+
+  closeTabInPanel(tree: JetPanelTree, panelId: PanelId, tabId: string): void {
+    const view = tree.getView(panelId)
+    if (view?.kind !== "tabs") return
+    tree.setView(panelId, popPanelTab(view, tabId))
+  }
+
   assignEditorPanel(
     tree: JetPanelTree,
     panelId: PanelId,
@@ -162,16 +241,17 @@ export class WorkspaceService {
   ): void {
     let file = this.files.get(uri)
     if (!file) file = this.createWorkspaceFile(uri, path)
-    const current = tree.getView(panelId)
-    tree.setView(panelId, pushPanelBufferView(current, uri, opts?.replaceUri))
-    this.touchBuffer(uri)
-    this.onDidOpenFile.fire(file)
+    this.openTabInPanel(
+      tree,
+      panelId,
+      { id: uri, kind: "editor", label: file.name },
+      undefined,
+      { replaceTabId: opts?.replaceUri },
+    )
   }
 
   popPanelBuffer(tree: JetPanelTree, panelId: PanelId, uri: string): void {
-    const view = tree.getView(panelId)
-    if (!view || view.kind !== "editor") return
-    tree.setView(panelId, popPanelBufferView(view, uri))
+    this.closeTabInPanel(tree, panelId, uri)
   }
 
   openUntitledInPanel(
@@ -191,9 +271,7 @@ export class WorkspaceService {
       isDirty: false,
     }
     this.registerFile(file)
-    tree.setView(panelId, pushPanelBufferView(tree.getView(panelId), uri))
-    this.touchBuffer(uri)
-    this.onDidOpenFile.fire(file)
+    this.openTabInPanel(tree, panelId, { id: uri, kind: "editor", label })
     return uri
   }
 
@@ -205,45 +283,93 @@ export class WorkspaceService {
     const idx = this.openBuffers.indexOf(oldUri)
     if (idx >= 0) this.openBuffers[idx] = fileUri
     else this.touchBuffer(fileUri)
+    this.tabRegistry.dispose(oldUri)
+    this.tabRegistry.register({ id: fileUri, kind: "editor", label: promoted.name })
     this.onDidChangeBuffers.fire()
-    void promoted
   }
 
   showPanelView(tree: JetPanelTree, panelId: PanelId, view: PanelView): void {
     tree.setView(panelId, view)
   }
 
-  ensurePanelView(
-    tree: JetPanelTree,
-    panelId: PanelId,
-    viewKind: Exclude<PanelView["kind"], "editor" | "empty">,
-  ): PanelId {
-    const existing = tree.findPanelWithView(v => v.kind === viewKind)
-    if (existing) {
-      tree.setView(existing, { kind: viewKind })
-      return existing
-    }
+  explorerTab(): TabDescriptor {
+    return { id: EXPLORER_TAB_ID, kind: "explorer", label: "Explorer" }
+  }
 
-    const sidebarPanel = tree.findPanelWithView(v => isSidebarView(v))
-    if (sidebarPanel) {
-      tree.setView(sidebarPanel, { kind: viewKind })
-      return sidebarPanel
-    }
+  outputTab(): TabDescriptor {
+    return { id: OUTPUT_TAB_ID, kind: "output", label: "Output" }
+  }
 
-    const fallbackView = tree.getView(panelId)
-    if (fallbackView?.kind === "editor" || fallbackView?.kind === "empty") {
-      const newSidebar = tree.attachAtViewportEdge("left")
-      tree.setView(newSidebar, { kind: viewKind })
-      return newSidebar
+  ensureProblemsList(): ListDocument {
+    const id = PROBLEMS_TAB_ID
+    const existing = this.listStore.get(id)
+    if (existing) return existing
+    const doc: ListDocument = {
+      id,
+      title: "Problems",
+      feed: "problems",
+      items: [],
     }
+    this.listStore.create(doc)
+    this.tabRegistry.register({ id, kind: "problems", label: "Problems" })
+    return doc
+  }
 
-    tree.setView(panelId, { kind: viewKind })
-    return panelId
+  createSearchList(): ListDocument {
+    const id = allocListId()
+    const doc: ListDocument = {
+      id,
+      title: "Search",
+      feed: "search",
+      items: [],
+      searchQuery: "",
+      searchCaseSensitive: false,
+      searchRegex: false,
+      searchFuzzy: false,
+      searchLoading: false,
+      searchError: null,
+    }
+    this.listStore.create(doc)
+    this.tabRegistry.register({ id, kind: "search", label: "Search" })
+    return doc
+  }
+
+  createReferencesList(title: string, items: ListDocument["items"]): ListDocument {
+    const id = allocListId()
+    const doc: ListDocument = { id, title, feed: "references", items }
+    this.listStore.create(doc)
+    this.tabRegistry.register({ id, kind: "references", label: title })
+    return doc
+  }
+
+  createTaskErrorsList(
+    title: string,
+    items: ListDocument["items"],
+    taskLabel: string,
+    taskStatus: ListDocument["taskStatus"],
+  ): ListDocument {
+    const id = allocListId()
+    const doc: ListDocument = {
+      id,
+      title,
+      feed: "task-errors",
+      items,
+      taskLabel,
+      taskStatus,
+    }
+    this.listStore.create(doc)
+    this.tabRegistry.register({ id, kind: "task-errors", label: title })
+    return doc
+  }
+
+  panelHasExplorerTab(tree: JetPanelTree, panel: PanelId): boolean {
+    return panelHasTab(tree.getView(panel), EXPLORER_TAB_ID)
+  }
+
+  mountExplorerTab(tree: JetPanelTree, panelId: PanelId): void {
+    this.openTabInPanel(tree, panelId, this.explorerTab())
   }
 }
 
-const SIDEBAR_VIEW_KINDS = new Set<PanelView["kind"]>(["explorer", "locationlist", "output"])
-
-function isSidebarView(view: PanelView): boolean {
-  return SIDEBAR_VIEW_KINDS.has(view.kind)
-}
+export { EXPLORER_TAB_ID, OUTPUT_TAB_ID, PROBLEMS_TAB_ID }
+export type { TabDescriptor, TabKind }

@@ -1,6 +1,12 @@
 import type { JetPanelTree } from "@jet/workspace"
+import { EXPLORER_TAB_ID, panelHasTab, panelTabIds } from "@jet/workspace"
 import type { PanelNode } from "@jet/panels"
-import type { PanelId, PanelView } from "@jet/shared"
+import type { Edge, PanelId, PanelView } from "@jet/shared"
+
+export type AuxiliaryPanelOptions = {
+  excludePanelIds?: ReadonlySet<number>
+  splitEdge?: Edge
+}
 
 export function resolveTargetPanel(
   tree: JetPanelTree,
@@ -20,27 +26,58 @@ export function resolveEditorPanel(
 
   if (focused) {
     const view = tree.getView(focused)
-    if (view?.kind === "editor" || view?.kind === "empty") return focused
+    if (view?.kind === "tabs" || view?.kind === "empty") return focused
   }
 
   if (editorPanel && panels.some(p => p.id === editorPanel.id)) {
     const view = tree.getView(editorPanel)
-    if (view?.kind === "editor" || view?.kind === "empty") return editorPanel
+    if (view?.kind === "tabs" || view?.kind === "empty") return editorPanel
   }
 
-  const withEditor = panels.find(p => tree.getView(p)?.kind === "editor")
-  if (withEditor) return withEditor
+  const withEditorTabs = panels.find(p => {
+    const view = tree.getView(p)
+    return view?.kind === "tabs" && view.tabIds.some(id => id.startsWith("file:") || id.startsWith("untitled:"))
+  })
+  if (withEditorTabs) return withEditorTabs
 
   const empty = panels.find(p => tree.getView(p)?.kind === "empty")
   if (empty) return empty
 
-  const nonSidebar = panels.filter(p => !isSidebarPanel(tree, p))
-  return pickLargestPanel(tree, nonSidebar.length > 0 ? nonSidebar : panels)
+  const nonExplorer = panels.filter(p => !panelHasExplorerTab(tree, p))
+  return pickLargestPanel(tree, nonExplorer.length > 0 ? nonExplorer : panels)
 }
 
-function isSidebarPanel(tree: JetPanelTree, panel: PanelId): boolean {
-  const view = tree.getView(panel)
-  return view?.kind === "explorer" || view?.kind === "locationlist"
+export function panelHasExplorerTab(tree: JetPanelTree, panel: PanelId): boolean {
+  return panelHasTab(tree.getView(panel), EXPLORER_TAB_ID)
+}
+
+export function resolveAuxiliaryPanel(
+  tree: JetPanelTree,
+  focused: PanelId | null,
+  opts: AuxiliaryPanelOptions = {},
+): PanelId {
+  const splitEdge = opts.splitEdge ?? "bottom"
+
+  for (const panel of getAllLeafPanels(tree)) {
+    if (opts.excludePanelIds?.has(panel.id)) continue
+    if (panelHasExplorerTab(tree, panel)) continue
+    const view = tree.getView(panel)
+    if (view?.kind === "tabs") return panel
+  }
+
+  for (const panel of getAllLeafPanels(tree)) {
+    if (opts.excludePanelIds?.has(panel.id)) continue
+    if (panelHasExplorerTab(tree, panel)) continue
+    if (tree.getView(panel)?.kind === "empty") return panel
+  }
+
+  const splitFrom =
+    focused && !opts.excludePanelIds?.has(focused.id) && !panelHasExplorerTab(tree, focused)
+      ? focused
+      : resolveEditorPanel(tree, null, focused) ?? getAllLeafPanels(tree)[0]
+
+  if (!splitFrom) return tree.allocPanelId()
+  return tree.splitAtEdge(splitFrom, splitEdge)
 }
 
 const EDITOR_LAYOUT_VIEWPORT = { x: 0, y: 0, width: 1280, height: 800 }
@@ -62,6 +99,17 @@ export function panelViewKind(
   return tree.getView(panel)?.kind
 }
 
+export function activeTabKind(
+  tree: JetPanelTree,
+  panel: PanelId | null,
+  tabRegistry: { kindFor(id: string): string | undefined },
+): string | undefined {
+  if (!panel) return undefined
+  const view = tree.getView(panel)
+  if (view?.kind !== "tabs") return view?.kind
+  return tabRegistry.kindFor(view.activeTabId) ?? "tabs"
+}
+
 export function getAllLeafPanels(tree: JetPanelTree): PanelId[] {
   const result: PanelId[] = []
   walk(tree.root, node => {
@@ -76,12 +124,27 @@ function walk(node: PanelNode<PanelView>, fn: (n: PanelNode<PanelView>) => void)
 }
 
 export function getEditorPanels(tree: JetPanelTree): PanelId[] {
-  return getAllLeafPanels(tree).filter(p => tree.getView(p)?.kind === "editor")
+  return getAllLeafPanels(tree).filter(p => {
+    const view = tree.getView(p)
+    return view?.kind === "tabs"
+  })
 }
 
 export function getActiveEditorFileUri(tree: JetPanelTree, panel: PanelId | null): string | null {
   if (!panel) return null
   const view = tree.getView(panel)
-  if (view?.kind !== "editor") return null
-  return view.fileUri
+  if (view?.kind !== "tabs") return null
+  const active = view.activeTabId
+  if (active.startsWith("file:") || active.startsWith("untitled:")) return active
+  const editorTab = panelTabIds(view).find(id => id.startsWith("file:") || id.startsWith("untitled:"))
+  return editorTab ?? null
+}
+
+export function getActiveListTabId(tree: JetPanelTree, panel: PanelId | null): string | null {
+  if (!panel) return null
+  const view = tree.getView(panel)
+  if (view?.kind !== "tabs") return null
+  const active = view.activeTabId
+  if (active.startsWith("jet:") || active.startsWith("list-")) return active
+  return null
 }

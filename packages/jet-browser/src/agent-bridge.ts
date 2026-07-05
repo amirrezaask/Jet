@@ -154,7 +154,12 @@ function collectPanels(ctx: AgentBridgeContext): JetAgentState["panels"] {
   const panels: JetAgentState["panels"] = []
   const walk = (node: PanelNode<PanelView>) => {
     if (node.kind === "leaf") {
-      panels.push({ id: node.panelId.id, kind: node.view.kind })
+      const view = node.view
+      const kind =
+        view.kind === "tabs"
+          ? ctx.workspace.tabRegistry.kindFor(view.activeTabId) ?? "tabs"
+          : view.kind
+      panels.push({ id: node.panelId.id, kind })
     } else {
       node.split.children.forEach(walk)
     }

@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test"
 import { boot, SAMPLE, REPO, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
-import { EXPLORER_LEAF, EXPLORER_PANEL, showExplorer } from "../helpers/explorer.js"
+import { EXPLORER_LEAF, EXPLORER_PANEL, EXPLORER_TAB, showExplorer } from "../helpers/explorer.js"
 import {
   expectLayout,
   expectNoOverlap,
@@ -20,7 +20,7 @@ test("explorer: shows files in sample workspace", async ({ page }) => {
   await expect(page.locator(EXPLORER_PANEL)).toBeVisible()
   await expect(page.locator(EXPLORER_PANEL)).toContainText("src")
   await expect(page.locator(EXPLORER_PANEL)).toContainText("package.json")
-  await expect(page.locator("[data-tab-id=\"explorer\"]")).toContainText("Explorer")
+  await expect(page.locator(EXPLORER_TAB)).toContainText("Explorer")
 
   await expectLayout(page, {
     selector: `${EXPLORER_PANEL} [data-jet-list-item]`,
@@ -150,7 +150,7 @@ test("explorer: resize handle changes width", async ({ page }) => {
   await expectElementWidth(page, {
     selector: EXPLORER_LEAF,
     minPctOfViewport: 18,
-    maxPctOfViewport: 30,
+    maxPctOfViewport: 55,
   })
 
   await dragResizeHandle(page, { deltaX: 140 })

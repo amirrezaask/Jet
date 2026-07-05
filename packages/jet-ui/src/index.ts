@@ -9,7 +9,19 @@ export { GotoLineModal } from "./components/GotoLineModal.js"
 export { OutlineOverlay, type OutlineEntry } from "./components/OutlineOverlay.js"
 export { QuickOpenOverlay } from "./components/QuickOpenOverlay.js"
 export { BufferListOverlay } from "./components/BufferListOverlay.js"
-export { problemsToLocationItems } from "./panels/LocationListPanel.js"
+export {
+  ListPanelBody,
+  LocationList,
+  SearchLocationList,
+  ReferencesLocationList,
+  DefinitionsLocationList,
+  DiagnosticsLocationList,
+  TaskErrorsLocationList,
+  problemsToListItems,
+  searchHitToListItem,
+  taskErrorsToListItems,
+  lspLocationToListItem,
+} from "./panels/location-list/index.js"
 export { OpenFileOverlay } from "./components/OpenFileOverlay.js"
 export { CdOverlay } from "./components/CdOverlay.js"
 export { ProjectSwitcherOverlay } from "./components/ProjectSwitcherOverlay.js"
@@ -29,6 +41,6 @@ export { TooltipProvider } from "./components/ui/tooltip.js"
 export { Toaster } from "./components/ui/sonner.js"
 export { ConfirmDialogHost, requestConfirm } from "./components/ConfirmDialogHost.js"
 export { showJetToast } from "./toast.js"
-export { registerListPanel, getListPanel, type ListPanelKind } from "./lib/list-registry.js"
+export { registerListPanel, getListPanel, registerExplorerPanel, getExplorerPanel } from "./lib/list-registry.js"
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
 export { FindReplaceDrawer } from "./components/FindReplaceDrawer.js"

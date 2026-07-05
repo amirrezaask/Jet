@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test"
 import { boot, SAMPLE, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
+import { SEARCH_LIST_PANEL, PROBLEMS_PANEL } from "../helpers/location-list.js"
 import { expectElementWidth, expectSyntaxHighlighting } from "../helpers/list.js"
 
 test.beforeEach(async ({ page }) => {
@@ -150,9 +151,9 @@ test("shell: design flow — welcome, editor, palette, quick open, location list
   await expect(page.locator("body")).toContainText("file name")
   await page.keyboard.press("Escape")
 
-  await agent(page).executeCommand("locationlist.show")
+  await agent(page).executeCommand("locationlist.showSearch")
   await page.waitForTimeout(300)
-  await expect(page.locator('[data-jet-list-panel="locationlist"]')).toBeVisible()
+  await expect(page.locator(SEARCH_LIST_PANEL)).toBeVisible()
 
   await agent(page).executeCommand("ui.toggleColorScheme")
   await waitAnimationsIdle(page)

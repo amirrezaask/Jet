@@ -12,7 +12,6 @@ export type KeymapContext = {
   outlineOpen: boolean
   workspaceOpen: boolean
   explorerFocus: boolean
-  locationListFocus: boolean
   outputFocus: boolean
   listFocus: boolean
 }

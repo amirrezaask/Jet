@@ -5,6 +5,25 @@ export const TAB_DRAG_MIME = "application/x-jet-tab"
 
 export type TabDragSource = { panelId: PanelId; uri: string }
 
+export function parseTabDragPayload(raw: string): TabDragSource | null {
+  const sep = raw.indexOf("|")
+  if (sep < 0) return null
+  const panelIdNum = Number(raw.slice(0, sep))
+  const uri = raw.slice(sep + 1)
+  if (!Number.isFinite(panelIdNum) || !uri) return null
+  return { panelId: { id: panelIdNum }, uri }
+}
+
+export function resolveTabDragSource(
+  e: Pick<DragEvent, "dataTransfer">,
+  tabSource: TabDragSource | null,
+): TabDragSource | null {
+  if (tabSource) return tabSource
+  const raw = e.dataTransfer?.getData(TAB_DRAG_MIME)
+  if (!raw) return null
+  return parseTabDragPayload(raw)
+}
+
 type PanelDragState = {
   tabSource: TabDragSource | null
   startTab: (src: TabDragSource) => void

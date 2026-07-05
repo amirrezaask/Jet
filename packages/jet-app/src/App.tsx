@@ -27,13 +27,15 @@ import {
   type JetCommandContext,
   type JetKeyBinding,
   type LaunchConfig,
-  type LocationItem,
+  type ListItem,
   ProjectRegistry,
   JetPanelTree,
   type JetProject,
-  buildEditorView,
-  editorBuffers,
-  popPanelBufferView,
+  activatePanelTab,
+  reorderPanelTab,
+  popPanelTab,
+  PROBLEMS_TAB_ID,
+  panelTabIds,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
@@ -65,12 +67,11 @@ import {
   getEditorView,
   getAllEditorViews,
   syncAllEditorThemes,
-  destroyEditorPanel,
   destroyEditorBuffer,
   setEditorCursor,
   getEditorCursor,
   formatKeyBinding,
-  problemsToLocationItems,
+  problemsToListItems,
   WhichKeyPanel,
   type OutlineEntry,
   type WhichKeyEntry,
@@ -82,6 +83,7 @@ import {
   AppShell,
   focusExplorerPanel,
   getListPanel,
+  getExplorerPanel,
   JetTitleBar,
   type JetTitleBarMenu,
   FindReplaceDrawer,
@@ -94,6 +96,8 @@ import {
   getAllLeafPanels,
   resolveEditorPanel,
   getActiveEditorFileUri,
+  getActiveListTabId,
+  activeTabKind,
 } from "./panel-routing.js"
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
 import { loadGlobalJetrc } from "./load-global-jetrc.js"
@@ -251,11 +255,16 @@ export function JetApp() {
     [focusedPanel, panelTree],
   )
 
+  const activeTabKindName = useMemo(
+    () => activeTabKind(panelTree, focusedPanel, workspace.tabRegistry),
+    [focusedPanel, panelTree, workspace, panelRev],
+  )
+
   const activeEditorFile = useMemo(() => {
     if (!focusedPanel) return null
-    const view = panelTree.getView(focusedPanel)
-    if (!view || view.kind !== "editor") return null
-    const file = workspace.fileForUri(view.fileUri)
+    const uri = getActiveEditorFileUri(panelTree, focusedPanel)
+    if (!uri) return null
+    const file = workspace.fileForUri(uri)
     if (!file) return null
     return { name: file.name, languageId: file.languageId, isDirty: file.isDirty }
   }, [focusedPanel, panelTree, workspace, panelRev])
@@ -272,12 +281,15 @@ export function JetApp() {
       gotoLineOpen,
       outlineOpen,
       workspaceOpen: workspace.root != null,
-      explorerFocus: activePanelKind === "explorer",
-      locationListFocus: activePanelKind === "locationlist",
-      outputFocus: activePanelKind === "output",
+      explorerFocus: activeTabKindName === "explorer",
+      outputFocus: activeTabKindName === "output",
       listFocus:
-        activePanelKind === "explorer" ||
-        activePanelKind === "locationlist",
+        activeTabKindName === "explorer" ||
+        activeTabKindName === "search" ||
+        activeTabKindName === "problems" ||
+        activeTabKindName === "references" ||
+        activeTabKindName === "definitions" ||
+        activeTabKindName === "task-errors",
     }),
     [
       editorFocused,
@@ -291,6 +303,7 @@ export function JetApp() {
       outlineOpen,
       workspace.root,
       activePanelKind,
+      activeTabKindName,
     ],
   )
 
@@ -484,17 +497,20 @@ export function JetApp() {
     [workspace, focusedPanel, panelTree],
   )
 
-  const openLocationItem = useCallback(
-    (item: LocationItem) => {
-      pushJumpFromActiveEditor(item.source)
+  const openListItem = useCallback(
+    (item: ListItem) => {
+      const label = workspace.tabRegistry.labelFor(
+        getActiveListTabId(panelTree, focusedPanel) ?? "",
+      )
+      pushJumpFromActiveEditor(label || "navigation")
       handleOpenFileAt(item.fileUri, fileUriToPath(item.fileUri), item.line, item.column)
     },
-    [handleOpenFileAt, pushJumpFromActiveEditor],
+    [handleOpenFileAt, pushJumpFromActiveEditor, workspace, panelTree, focusedPanel],
   )
 
-  const syncProblemsToLocationList = useCallback(() => {
-    const other = workspace.locationList.items.filter(i => i.source !== "problems")
-    workspace.locationList.setItems([...other, ...problemsToLocationItems(problems)])
+  const syncProblemsToListTab = useCallback(() => {
+    workspace.ensureProblemsList()
+    workspace.listStore.update(PROBLEMS_TAB_ID, { items: problemsToListItems(problems) })
   }, [workspace, problems])
 
   useEffect(() => {
@@ -529,9 +545,7 @@ export function JetApp() {
       void workspace.openWorkspace(folderPath)
       workspaceRootPathRef.current = folderPath
 
-      const { tree, sidebarPanel, editorPanel } = JetPanelTree.workspaceLayout()
-      tree.setView(sidebarPanel, { kind: "explorer" })
-      tree.setView(editorPanel, { kind: "empty" })
+      const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
       editorPanelRef.current = editorPanel
       setPanelTree(tree)
       setFocusedPanel(editorPanel)
@@ -616,8 +630,14 @@ export function JetApp() {
         changed = tree.setSplitRatios(event.path, event.ratios)
       } else if (event.type === "panelClose") {
         const view = tree.getView(event.panelId)
-        if (view?.kind === "editor") {
-          destroyEditorPanel(event.panelId)
+        if (view?.kind === "tabs") {
+          for (const tabId of panelTabIds(view)) {
+            const kind = workspace.tabRegistry.kindFor(tabId)
+            if (kind === "editor") {
+              destroyEditorBuffer(event.panelId, tabId)
+            }
+            workspace.disposeTab(tabId)
+          }
         }
         tree.closePanel(event.panelId)
         const leaves = getAllLeafPanels(tree)
@@ -630,38 +650,36 @@ export function JetApp() {
         }
       } else if (event.type === "tabActivate") {
         const view = tree.getView(event.panelId)
-        if (view?.kind !== "editor" || view.fileUri === event.uri) {
+        if (view?.kind !== "tabs" || view.activeTabId === event.uri) {
           changed = false
         } else {
-          tree.setView(event.panelId, buildEditorView(event.uri, editorBuffers(view)))
+          tree.setView(event.panelId, activatePanelTab(view, event.uri))
           setFocusedPanel(event.panelId)
         }
       } else if (event.type === "tabClose") {
         const view = tree.getView(event.panelId)
-        if (view?.kind !== "editor") {
+        if (view?.kind !== "tabs") {
           changed = false
         } else {
-          destroyEditorBuffer(event.panelId, event.uri)
-          tree.setView(event.panelId, popPanelBufferView(view, event.uri))
+          const kind = workspace.tabRegistry.kindFor(event.uri)
+          if (kind === "editor") {
+            destroyEditorBuffer(event.panelId, event.uri)
+          }
+          workspace.disposeTab(event.uri)
+          tree.setView(event.panelId, popPanelTab(view, event.uri))
         }
       } else if (event.type === "tabReorder") {
         const view = tree.getView(event.panelId)
-        if (view?.kind !== "editor") {
+        if (view?.kind !== "tabs") {
           changed = false
         } else {
-          const buffers = editorBuffers(view).slice()
-          const from = buffers.indexOf(event.uri)
-          if (from < 0) {
-            changed = false
-          } else {
-            buffers.splice(from, 1)
-            const to = Math.max(0, Math.min(buffers.length, event.toIndex > from ? event.toIndex - 1 : event.toIndex))
-            buffers.splice(to, 0, event.uri)
-            tree.setView(event.panelId, { kind: "editor", fileUri: event.uri, buffers })
-          }
+          tree.setView(event.panelId, reorderPanelTab(view, event.uri, event.toIndex))
         }
       } else if (event.type === "tabDrop") {
-        destroyEditorBuffer(event.source, event.sourceUri)
+        const kind = workspace.tabRegistry.kindFor(event.sourceUri)
+        if (kind === "editor") {
+          destroyEditorBuffer(event.source, event.sourceUri)
+        }
         const result = tree.applyTabDrop(
           event.source,
           event.sourceUri,
@@ -678,7 +696,7 @@ export function JetApp() {
       }
       if (changed) commitTree(tree)
     },
-    [cloneTree, commitTree, setFocusedPanel],
+    [cloneTree, commitTree, setFocusedPanel, workspace],
   )
 
   const keymapTargetViewRef = useRef<EditorView | null>(null)
@@ -701,9 +719,16 @@ export function JetApp() {
   }, [workspace])
 
   const handlePanelNavigation = useCallback((action: string) => {
-    const kind = appStateRef.current.activePanelKind
-    if (kind !== "explorer" && kind !== "locationlist") return
-    const el = getListPanel(kind)
+    const panel = appStateRef.current.focusedPanel
+    const tree = appStateRef.current.panelTree
+    const tabKind = activeTabKind(tree, panel, workspace.tabRegistry)
+    const listTabId = getActiveListTabId(tree, panel)
+    const el =
+      tabKind === "explorer"
+        ? getExplorerPanel()
+        : listTabId
+          ? getListPanel(listTabId)
+          : null
     if (!el) return
     const items = [...el.querySelectorAll<HTMLElement>("[data-jet-list-item]")]
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -736,7 +761,7 @@ export function JetApp() {
     else if (action === "focusPageDown") el.scrollBy({ top: page })
     else if (action === "focusFirst") el.scrollTop = 0
     else if (action === "focusLast") el.scrollTop = el.scrollHeight
-  }, [])
+  }, [workspace])
 
   const handleZoom = useCallback((delta: number) => {
     const next = fontSizeRef.current + delta * FONT_SIZE_STEP
@@ -773,8 +798,8 @@ export function JetApp() {
         openWorkspaceFolder,
         handlePanelEvent,
         openFileInEditor,
-        openLocationItem,
-        syncProblemsToLocationList,
+        openListItem,
+        syncProblemsToListTab,
         editorPanelRef,
         isWebMode,
         setZoomLevel: handleZoom,
@@ -793,8 +818,8 @@ export function JetApp() {
       openWorkspaceFolder,
       handlePanelEvent,
       openFileInEditor,
-      openLocationItem,
-      syncProblemsToLocationList,
+      openListItem,
+      syncProblemsToListTab,
       handleZoom,
       handlePanelNavigation,
       pushJumpFromActiveEditor,
@@ -1073,8 +1098,8 @@ export function JetApp() {
   }, [panelRev, refreshProblems])
 
   useEffect(() => {
-    syncProblemsToLocationList()
-  }, [problems, syncProblemsToLocationList])
+    syncProblemsToListTab()
+  }, [problems, syncProblemsToListTab])
 
   const handleLspAttachFailed = useCallback(
     (fileUri: string) => {
@@ -1084,8 +1109,8 @@ export function JetApp() {
   )
 
   useEffect(() => {
-    if (activePanelKind !== "editor") setEditorCursor(null)
-  }, [activePanelKind])
+    if (activeTabKindName !== "editor") setEditorCursor(null)
+  }, [activeTabKindName])
 
   useEffect(() => {
     let lastCloseAt = 0
@@ -1279,7 +1304,6 @@ export function JetApp() {
               onCloseTab={uri =>
                 handlePanelEvent({ type: "tabClose", panelId, uri })
               }
-              onClosePanel={meta.onClose}
               onReorderTab={(uri, toIndex) =>
                 handlePanelEvent({ type: "tabReorder", panelId, uri, toIndex })
               }
@@ -1299,7 +1323,7 @@ export function JetApp() {
               executeCommand={executeCommand}
               runKeyBinding={runKeyBinding}
               onOpenFile={handleOpenFile}
-              onOpenLocationItem={openLocationItem}
+              onOpenListItem={openListItem}
               keymapBindings={keymapBindings}
               userExtensions={userExtensions}
               keymapRevision={keymapRevision}
@@ -1310,7 +1334,7 @@ export function JetApp() {
               }
               onLspAttachFailed={handleLspAttachFailed}
               onProblemsChange={refreshProblems}
-              autoFocus={meta.focused && view.kind === "editor"}
+              autoFocus={meta.focused && activeTabKindName === "editor"}
             />
           )}
         />

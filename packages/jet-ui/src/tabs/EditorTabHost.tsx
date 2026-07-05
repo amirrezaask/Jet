@@ -114,7 +114,7 @@ export function getAllEditorViews(
 ): { panelId: PanelId; uri: string; view: EditorView }[] {
   const result: { panelId: PanelId; uri: string; view: EditorView }[] = []
   const walk = (node: import("@jet/panels").PanelNode<import("@jet/shared").PanelView>) => {
-    if (node.kind === "leaf" && node.view.kind === "editor") {
+    if (node.kind === "leaf" && node.view.kind === "tabs") {
       const sessions = sessionsByPanel.get(node.panelId.id)
       if (!sessions) return
       for (const [uri, session] of sessions) {

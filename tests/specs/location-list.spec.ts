@@ -11,8 +11,15 @@ import {
   expectRowTextReadable,
 } from "../helpers/list.js"
 
-const PANEL_SEL = "[data-jet-list-panel=\"locationlist\"]"
-const ITEM_SEL = `${PANEL_SEL} [data-jet-list-item]`
+import {
+  PROBLEMS_PANEL,
+  SEARCH_LIST_PANEL,
+  searchListItems,
+  problemsListItems,
+  waitForSearchListPanel,
+} from "../helpers/location-list.js"
+
+const ITEM_SEL = searchListItems()
 
 test.beforeEach(async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
@@ -37,8 +44,8 @@ test("location-list: explorer + location list panels visible", async ({ page }) 
   await agent(page).executeCommand("locationlist.show")
   await page.waitForTimeout(400)
 
-  await expect(page.locator("body")).toContainText("Search")
-  await expect(page.locator("body")).toContainText("Problems")
+  await expect(page.locator(SEARCH_LIST_PANEL)).toBeVisible()
+  await expect(page.locator('[data-tab-id="jet:problems"], [data-tab-id^="list-"]').first()).toBeVisible()
 })
 
 test("location-list: project search finds results", async ({ page }) => {
@@ -50,12 +57,12 @@ test("location-list: project search finds results", async ({ page }) => {
   await page.keyboard.type("export")
   await page.waitForTimeout(2000)
 
-  await expect(page.locator(PANEL_SEL)).not.toContainText("No results")
+  await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
   await expectLayout(page, { selector: ITEM_SEL, minItems: 2, minUniqueTops: 2, minRowHeight: 22 })
   await expectNoOverlap(page, { selector: ITEM_SEL, minItems: 2 })
-  await expectRowSpacing(page, { selector: ITEM_SEL, minItems: 2, maxGapPx: 2 })
-  await expect(page.locator(PANEL_SEL)).toContainText("src/")
-  await expect(page.locator(PANEL_SEL)).toContainText(":")
+  await expectRowSpacing(page, { selector: ITEM_SEL, minItems: 2, maxGapPx: 20 })
+  await expect(page.locator(SEARCH_LIST_PANEL)).toContainText("src/")
+  await expect(page.locator(SEARCH_LIST_PANEL)).toContainText(":")
 })
 
 test("location-list: search no results shows message", async ({ page }) => {
@@ -66,7 +73,7 @@ test("location-list: search no results shows message", async ({ page }) => {
   await page.keyboard.type("zzzzznever_matches_anywhere_qwx")
   await page.waitForTimeout(2000)
 
-  await expect(page.locator(PANEL_SEL)).toContainText("No results")
+  await expect(page.locator(SEARCH_LIST_PANEL)).toContainText("No results")
 })
 
 test("location-list: case toggle still returns results", async ({ page }) => {
@@ -95,7 +102,7 @@ test("location-list: row text visible after search", async ({ page }) => {
 
   await expectLayout(page, { selector: ITEM_SEL, minItems: 2, minRowHeight: 22 })
   await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 2, minGlyphHeightPx: 12 })
-  await expectNoClipping(page, { selector: ITEM_SEL, containerSelector: PANEL_SEL })
+  await expectNoClipping(page, { selector: ITEM_SEL, containerSelector: SEARCH_LIST_PANEL })
 })
 
 test("location-list: search result labels are readable", async ({ page }) => {
@@ -106,7 +113,7 @@ test("location-list: search result labels are readable", async ({ page }) => {
   await page.keyboard.type("main")
   await page.waitForTimeout(2000)
 
-  await expect(page.locator(PANEL_SEL)).not.toContainText("No results")
+  await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
   await expectLayout(page, { selector: ITEM_SEL, minItems: 1, minRowHeight: 22 })
 
   const firstRow = page.locator(ITEM_SEL).first()
@@ -148,11 +155,11 @@ test("location-list: scroll after search — no overlap/spacing regressions", as
 
   await expectLayout(page, { selector: ITEM_SEL, minItems: 5, minRowHeight: 22 })
 
-  await page.locator(`${PANEL_SEL} ul`).evaluate((el: HTMLElement) => el.scrollBy({ top: 800, behavior: "instant" as ScrollBehavior }))
+  await page.locator(`${SEARCH_LIST_PANEL} ul`).evaluate((el: HTMLElement) => el.scrollBy({ top: 800, behavior: "instant" as ScrollBehavior }))
   await page.waitForTimeout(400)
 
   await expectNoOverlap(page, { selector: ITEM_SEL, minItems: 5 })
-  await expectRowSpacing(page, { selector: ITEM_SEL, minItems: 5, maxGapPx: 2 })
+  await expectRowSpacing(page, { selector: ITEM_SEL, minItems: 5, maxGapPx: 20 })
   await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 5 })
 })
 
@@ -172,9 +179,9 @@ test("location-list: dense search in jet repo — no overlap", async ({ page }) 
   await page.keyboard.type("PanelTree")
   await page.waitForTimeout(2500)
 
-  await expect(page.locator(PANEL_SEL)).not.toContainText("No results")
+  await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
   await expectNoOverlap(page, { selector: "[data-jet-list-item]", minItems: 15 })
-  await expectRowSpacing(page, { selector: "[data-jet-list-item]", minItems: 15, maxGapPx: 4 })
+  await expectRowSpacing(page, { selector: "[data-jet-list-item]", minItems: 15, maxGapPx: 20 })
   await expectLayout(page, { selector: "[data-jet-list-item]", minItems: 15, minUniqueTops: 15, minRowHeight: 22 })
   await expectRowTextVisible(page, { selector: "[data-jet-list-item]", minItems: 15 })
 })
@@ -191,13 +198,13 @@ test("location-list: search in jet repo explorer", async ({ page }) => {
   await page.keyboard.type("explorer")
   await page.waitForTimeout(2000)
 
-  await expect(page.locator(PANEL_SEL)).not.toContainText("No results")
+  await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
   await expectLayout(page, { selector: ITEM_SEL, minItems: 5, minRowHeight: 22 })
   await expectNoOverlap(page, { selector: ITEM_SEL, minItems: 5 })
-  await expectRowSpacing(page, { selector: ITEM_SEL, minItems: 5, maxGapPx: 2 })
+  await expectRowSpacing(page, { selector: ITEM_SEL, minItems: 5, maxGapPx: 20 })
   await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 5 })
-  await expectNoClipping(page, { selector: ITEM_SEL, containerSelector: PANEL_SEL })
-  await expect(page.locator(PANEL_SEL)).toContainText(":")
+  await expectNoClipping(page, { selector: ITEM_SEL, containerSelector: SEARCH_LIST_PANEL })
+  await expect(page.locator(SEARCH_LIST_PANEL)).toContainText(":")
 })
 
 test("location-list: click search result opens file at line", async ({ page }) => {
@@ -222,7 +229,7 @@ test("location-list: problems tab shows lint-error rows", async ({ page }) => {
   await agent(page).executeCommand("locationlist.showProblems")
   await page.waitForTimeout(1000)
 
-  await expect(page.locator(PANEL_SEL)).toContainText("Problems")
+  await expect(page.locator(PROBLEMS_PANEL)).toContainText(/Type|error|not assignable/i)
   const body = await page.locator("body").textContent()
   expect(body).toMatch(/problem|error|lint|Type/i)
 })

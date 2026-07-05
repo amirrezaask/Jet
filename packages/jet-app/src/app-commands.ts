@@ -22,8 +22,9 @@ import type { JetPanelTree } from "@jet/workspace"
 import type { PanelEvent } from "@jet/panels"
 import type { PanelId } from "@jet/shared"
 import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shared"
-import type { JetCommandContext, JetCommands, JetCommandFn, WorkspaceService } from "@jet/workspace"
-import { problemsToLocationItems } from "@jet/ui"
+import type { JetCommandContext, JetCommands, JetCommandFn, ListItem, WorkspaceService } from "@jet/workspace"
+import { PROBLEMS_TAB_ID, EXPLORER_TAB_ID } from "@jet/workspace"
+import { problemsToListItems } from "@jet/ui"
 import { openJetSearch, openReplaceSearchPanel } from "@jet/codemirror"
 import {
   fetchDocumentOutline,
@@ -48,7 +49,15 @@ import {
   getAllLeafPanels,
   resolveEditorPanel,
   resolveTargetPanel,
+  panelHasExplorerTab,
 } from "./panel-routing.js"
+import {
+  openExplorerTab,
+  openOutputTab,
+  openProblemsTab,
+  openSearchTab,
+  openTabInAuxiliaryPanel,
+} from "./tab-routing.js"
 import { confirmCloseBuffer } from "./close-buffer.js"
 
 export type BuildAppCommandsDeps = {
@@ -69,8 +78,8 @@ export type BuildAppCommandsDeps = {
   openWorkspaceFolder: (path: string) => void
   handlePanelEvent: (event: PanelEvent) => void
   openFileInEditor: (uri: string, path: string, line?: number, column?: number, pushJump?: boolean) => void
-  openLocationItem: (item: import("@jet/workspace").LocationItem) => void
-  syncProblemsToLocationList: () => void
+  openListItem: (item: ListItem) => void
+  syncProblemsToListTab: () => void
   editorPanelRef: { current: PanelId | null }
   isWebMode: boolean
   setZoomLevel: (delta: number) => void
@@ -197,6 +206,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.workspace.clearDirtyState(fileUri)
       destroyEditorBuffer(panel, fileUri)
       deps.workspace.closeBuffer(fileUri)
+      deps.workspace.disposeTab(fileUri)
       const tree = deps.cloneTree()
       deps.workspace.popPanelBuffer(tree, panel, fileUri)
       tree.pruneEmptyLeaves()
@@ -213,46 +223,36 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     gotoLine: () => deps.setGotoLineOpen(true),
     locationList: () => {
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel())
-      if (!target) return
-      const panel = deps.workspace.ensurePanelView(tree, target, "locationlist")
-      deps.setFocusedPanel(panel)
+      const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())
+      deps.setFocusedPanel(panelId)
       deps.commitTree(tree)
     },
     locationListSearch: () => {
-      deps.syncProblemsToLocationList()
+      deps.syncProblemsToListTab()
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel())
-      if (!target) return
-      const panel = deps.workspace.ensurePanelView(tree, target, "locationlist")
-      deps.workspace.locationList.setSource("search")
-      deps.setFocusedPanel(panel)
+      const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())
+      deps.setFocusedPanel(panelId)
       deps.commitTree(tree)
     },
     locationListProblems: () => {
-      deps.syncProblemsToLocationList()
+      deps.syncProblemsToListTab()
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel())
-      if (!target) return
-      const panel = deps.workspace.ensurePanelView(tree, target, "locationlist")
-      deps.workspace.locationList.setSource("problems")
-      deps.setFocusedPanel(panel)
+      const { panelId } = openProblemsTab(deps.workspace, tree, currentFocusedPanel())
+      deps.setFocusedPanel(panelId)
       deps.commitTree(tree)
     },
     output: () => {
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      const target = resolveTargetPanel(tree, currentFocusedPanel()) ?? deps.editorPanelRef.current
       if (!target) return
-      const panel = deps.workspace.ensurePanelView(tree, target, "output")
-      deps.setFocusedPanel(panel)
+      const { panelId } = openOutputTab(deps.workspace, tree, target)
+      deps.setFocusedPanel(panelId)
       deps.commitTree(tree)
     },
     explorer: () => {
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel())
-      if (!target) return
-      const panel = deps.workspace.ensurePanelView(tree, target, "explorer")
-      deps.setFocusedPanel(panel)
+      const { panelId } = openExplorerTab(deps.workspace, tree, currentFocusedPanel())
+      deps.setFocusedPanel(panelId)
       deps.commitTree(tree)
       deps.focusExplorer?.()
     },
@@ -300,16 +300,29 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (!deps.workspace.root) return
       void deps.workspace.taskRunner.runTask(task, deps.workspace.root.path, deps.workspace.root.path)
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      const target = resolveTargetPanel(tree, currentFocusedPanel()) ?? deps.editorPanelRef.current
       if (target) {
-        const panel = deps.workspace.ensurePanelView(tree, target, "output")
-        deps.setFocusedPanel(panel)
+        const { panelId } = openOutputTab(deps.workspace, tree, target)
+        deps.setFocusedPanel(panelId)
         deps.commitTree(tree)
       }
       const run = deps.workspace.taskRunner.activeRun()
       if (run?.errors.length) {
-        const other = deps.workspace.locationList.items.filter(i => i.source !== "task-errors")
-        deps.workspace.locationList.setItems([...other, ...run.errors], "task-errors")
+        const doc = deps.workspace.createTaskErrorsList(
+          `Task: ${task.label}`,
+          run.errors,
+          task.label,
+          run.status,
+        )
+        const errTree = deps.cloneTree()
+        const { panelId } = openTabInAuxiliaryPanel(
+          deps.workspace,
+          errTree,
+          currentFocusedPanel(),
+          doc,
+        )
+        deps.setFocusedPanel(panelId)
+        deps.commitTree(errTree)
       }
     },
     runBuild: async ctx => {
@@ -321,10 +334,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (!deps.workspace.root) return
       void deps.workspace.taskRunner.runTask(build, deps.workspace.root.path, deps.workspace.root.path)
       const tree = deps.cloneTree()
-      const target = resolveTargetPanel(tree, currentFocusedPanel())
+      const target = resolveTargetPanel(tree, currentFocusedPanel()) ?? deps.editorPanelRef.current
       if (target) {
-        const panel = deps.workspace.ensurePanelView(tree, target, "output")
-        deps.setFocusedPanel(panel)
+        const { panelId } = openOutputTab(deps.workspace, tree, target)
+        deps.setFocusedPanel(panelId)
         deps.commitTree(tree)
       }
     },
@@ -369,20 +382,20 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.openFileInEditor(prev, fileUriToPath(prev), undefined, undefined, false)
     },
     focusSidebar: () => {
-      if (deps.focusExplorer) {
-        deps.focusExplorer()
-        return
-      }
-      const panelTree = currentPanelTree()
-      for (const panel of getAllLeafPanels(panelTree)) {
-        const view = panelTree.getView(panel)
-        if (view?.kind === "explorer" || view?.kind === "locationlist") {
+      const tree = deps.cloneTree()
+      for (const panel of getAllLeafPanels(tree)) {
+        if (panelHasExplorerTab(tree, panel)) {
+          deps.workspace.focusTabInPanel(tree, panel, EXPLORER_TAB_ID)
           deps.setFocusedPanel(panel)
+          deps.commitTree(tree)
+          deps.focusExplorer?.()
           return
         }
       }
-      const panels = getAllLeafPanels(panelTree)
-      if (panels[0]) deps.setFocusedPanel(panels[0])
+      const { panelId } = openExplorerTab(deps.workspace, tree, currentFocusedPanel())
+      deps.setFocusedPanel(panelId)
+      deps.commitTree(tree)
+      deps.focusExplorer?.()
     },
     focusEditorGroup: () => {
       const panel = activeEditorPanel()
@@ -393,7 +406,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     lastEditorGroup: () => {
       const panelTree = currentPanelTree()
-      const panels = getAllLeafPanels(panelTree).filter(p => panelTree.getView(p)?.kind === "editor")
+      const panels = getAllLeafPanels(panelTree).filter(p => panelTree.getView(p)?.kind === "tabs")
       if (panels.length > 0) deps.setFocusedPanel(panels[panels.length - 1]!)
     },
     splitEditorRight: () => {
@@ -402,7 +415,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (!target) return
       const newPanel = tree.splitAtEdge(target, "right")
       const view = tree.getView(target)
-      if (view?.kind === "editor") {
+      if (view?.kind === "tabs") {
         tree.setView(newPanel, view)
       }
       deps.setFocusedPanel(newPanel)

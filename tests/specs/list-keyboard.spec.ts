@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test"
 import { boot, SAMPLE, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
 import { showExplorer, EXPLORER_PANEL } from "../helpers/explorer.js"
+import { SEARCH_LIST_PANEL, waitForSearchListPanel } from "../helpers/location-list.js"
 
 test.beforeEach(async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
@@ -31,7 +32,8 @@ test("list-keyboard: location list search enter jumps to result", async ({ page 
   await page.keyboard.type("export")
   await page.waitForTimeout(2000)
 
-  await agent(page).waitForListRows("locationlist", 1)
+  const listId = await waitForSearchListPanel(page)
+  await agent(page).waitForListRows(listId, 1)
   await agent(page).executeCommand("workbench.action.focusSideBar")
   await page.waitForTimeout(200)
   await page.keyboard.press("ArrowDown")
@@ -54,12 +56,12 @@ test("list-keyboard: page down scrolls location list", async ({ page }) => {
   await page.keyboard.type("export")
   await page.waitForTimeout(2000)
 
-  const scrollBefore = await page.locator('[data-jet-list-panel="locationlist"] ul').evaluate(
+  const scrollBefore = await page.locator(`${SEARCH_LIST_PANEL} ul`).evaluate(
     (el: HTMLElement) => el.scrollTop,
   )
   await page.keyboard.press("PageDown")
   await page.waitForTimeout(300)
-  const scrollAfter = await page.locator('[data-jet-list-panel="locationlist"] ul').evaluate(
+  const scrollAfter = await page.locator(`${SEARCH_LIST_PANEL} ul`).evaluate(
     (el: HTMLElement) => el.scrollTop,
   )
   expect(scrollAfter).toBeGreaterThanOrEqual(scrollBefore)

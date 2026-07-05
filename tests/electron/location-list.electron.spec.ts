@@ -7,8 +7,14 @@ import {
   expectRowTextVisible,
 } from "../helpers/list.js"
 
-const PANEL_SEL = '[data-jet-list-panel="locationlist"]'
-const ITEM_SEL = `${PANEL_SEL} [data-jet-list-item]`
+import {
+  PROBLEMS_PANEL,
+  SEARCH_LIST_PANEL,
+  searchListItems,
+  problemsListItems,
+} from "../helpers/location-list.js"
+
+const ITEM_SEL = searchListItems()
 
 test.describe("electron location list", () => {
   test("search result labels are readable", async () => {
@@ -26,7 +32,7 @@ test.describe("electron location list", () => {
       await page.keyboard.type("main")
       await page.waitForTimeout(2500)
 
-      await expect(page.locator(PANEL_SEL)).not.toContainText("No results")
+      await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
       await expectLayout(page, { selector: ITEM_SEL, minItems: 1, minRowHeight: 22 })
 
       const firstRow = page.locator(ITEM_SEL).first()
@@ -38,11 +44,11 @@ test.describe("electron location list", () => {
 
       const detail = firstRow.locator('[data-slot="row-detail"]').first()
       await expect(detail).toContainText(/:\d+:\d+/)
-      await expect(page.locator(PANEL_SEL)).toContainText("src/")
+      await expect(page.locator(SEARCH_LIST_PANEL)).toContainText("src/")
 
       await expectRowTextReadable(page, { selector: ITEM_SEL, minItems: 1, minContrastRatio: 3 })
       await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 1, minGlyphHeightPx: 10 })
-      await expectNoClipping(page, { selector: ITEM_SEL, containerSelector: PANEL_SEL })
+      await expectNoClipping(page, { selector: ITEM_SEL, containerSelector: SEARCH_LIST_PANEL })
 
       await firstRow.hover()
       await page.waitForTimeout(150)
@@ -70,9 +76,9 @@ test.describe("electron location list", () => {
       await page.keyboard.type("window")
       await page.waitForTimeout(3000)
 
-      await expect(page.locator(PANEL_SEL)).not.toContainText("No results")
+      await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
       await expectLayout(page, { selector: ITEM_SEL, minItems: 3, minRowHeight: 22 })
-      await expect(page.locator(PANEL_SEL)).toContainText(":")
+      await expect(page.locator(SEARCH_LIST_PANEL)).toContainText(":")
       await expectRowTextReadable(page, { selector: ITEM_SEL, minItems: 3, minContrastRatio: 3 })
       await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 3, minGlyphHeightPx: 10 })
     } finally {
@@ -91,10 +97,10 @@ test.describe("electron location list", () => {
       })
       await page.waitForTimeout(1500)
 
-      await expect(page.locator(PANEL_SEL)).not.toContainText("No results")
-      await expectLayout(page, { selector: ITEM_SEL, minItems: 1, minRowHeight: 22 })
-      await expectRowTextReadable(page, { selector: ITEM_SEL, minItems: 1, minContrastRatio: 3 })
-      await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 1, minGlyphHeightPx: 10 })
+      await expect(page.locator(PROBLEMS_PANEL)).not.toContainText("No results")
+      await expectLayout(page, { selector: problemsListItems(), minItems: 1, minRowHeight: 22 })
+      await expectRowTextReadable(page, { selector: problemsListItems(), minItems: 1, minContrastRatio: 3 })
+      await expectRowTextVisible(page, { selector: problemsListItems(), minItems: 1, minGlyphHeightPx: 10 })
     } finally {
       await app.close()
     }

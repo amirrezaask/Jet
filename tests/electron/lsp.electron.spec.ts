@@ -1,10 +1,5 @@
 import { expect, test } from "@playwright/test"
-import {
-  hasTypescriptLanguageServer,
-  launchJet,
-  openFixtureFile,
-  waitForLspConnected,
-} from "./_launch.js"
+import { PROBLEMS_PANEL } from "../helpers/location-list.js"
 
 const lspAvailable = hasTypescriptLanguageServer()
 
@@ -88,7 +83,7 @@ test.describe("electron LSP", () => {
       })
       await page.waitForTimeout(1500)
 
-      await expect(page.locator('[data-jet-list-panel="locationlist"]')).toContainText(/error|Type|problem/i)
+      await expect(page.locator(PROBLEMS_PANEL)).toContainText(/error|Type|problem/i)
     } finally {
       await app.close()
     }

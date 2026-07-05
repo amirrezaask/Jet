@@ -58,6 +58,14 @@ export async function dispatchTabBarDrag(page: Page, opts: TabBarDragOpts): Prom
       if (!tabBar) throw new Error("tab bar not found")
 
       const dt = new DataTransfer()
+      const payload = (() => {
+        const bar = sourceTab.closest<HTMLElement>("[data-jet-tab-bar]")
+        const panelId = bar?.dataset.panelId
+        const tabId = sourceTab.dataset.tabId
+        if (!panelId || !tabId) throw new Error("tab drag payload missing panel/tab id")
+        return `${panelId}|${tabId}`
+      })()
+      dt.setData("application/x-jet-tab", payload)
       const tabRect = sourceTab.getBoundingClientRect()
       const sx = tabRect.x + tabRect.width / 2
       const sy = tabRect.y + tabRect.height / 2
@@ -65,7 +73,7 @@ export async function dispatchTabBarDrag(page: Page, opts: TabBarDragOpts): Prom
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
 
       const tr = targetTab.getBoundingClientRect()
-      const ex = side === "left" ? tr.left + 4 : tr.right - 4
+      const ex = side === "left" ? tr.left + Math.min(4, tr.width * 0.15) : tr.right - Math.min(4, tr.width * 0.15)
       const ey = tr.top + tr.height / 2
 
       tabBar.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
@@ -106,6 +114,14 @@ export async function dispatchTabDrag(page: Page, opts: TabDragOpts): Promise<vo
       if (!targetLeaf) throw new Error(`no leaf at index ${targetPanelIndex}`)
 
       const dt = new DataTransfer()
+      const payload = (() => {
+        const bar = sourceTab.closest<HTMLElement>("[data-jet-tab-bar]")
+        const panelId = bar?.dataset.panelId
+        const tabId = sourceTab.dataset.tabId
+        if (!panelId || !tabId) throw new Error("tab drag payload missing panel/tab id")
+        return `${panelId}|${tabId}`
+      })()
+      dt.setData("application/x-jet-tab", payload)
       const tabRect = sourceTab.getBoundingClientRect()
       const sx = tabRect.x + tabRect.width / 2
       const sy = tabRect.y + tabRect.height / 2

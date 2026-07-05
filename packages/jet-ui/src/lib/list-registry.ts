@@ -1,19 +1,29 @@
-/** Registry of scroll-container refs for list-style panels (explorer, locationlist, ...).
- *  Removes reliance on `document.querySelector('[data-jet-list-panel="..."]')` in App.tsx.
- *  Items within the container are still queried live via `[data-jet-list-item]` — they may be
- *  virtualized and reactive, so a live subtree query is the right layer to look them up on. */
-export type ListPanelKind = "explorer" | "locationlist"
+/** Registry of scroll-container refs for list-style panels keyed by listId. */
+const containers = new Map<string, HTMLElement>()
 
-const containers = new Map<ListPanelKind, HTMLElement>()
-
-export function registerListPanel(kind: ListPanelKind, el: HTMLElement | null): () => void {
+export function registerListPanel(listId: string, el: HTMLElement | null): () => void {
   if (!el) return () => {}
-  containers.set(kind, el)
+  containers.set(listId, el)
   return () => {
-    if (containers.get(kind) === el) containers.delete(kind)
+    if (containers.get(listId) === el) containers.delete(listId)
   }
 }
 
-export function getListPanel(kind: ListPanelKind): HTMLElement | null {
-  return containers.get(kind) ?? null
+export function getListPanel(listId: string): HTMLElement | null {
+  return containers.get(listId) ?? null
+}
+
+/** Explorer keeps a fixed kind key for keyboard nav. */
+const EXPLORER_KEY = "__explorer__"
+
+export function registerExplorerPanel(el: HTMLElement | null): () => void {
+  if (!el) return () => {}
+  containers.set(EXPLORER_KEY, el)
+  return () => {
+    if (containers.get(EXPLORER_KEY) === el) containers.delete(EXPLORER_KEY)
+  }
+}
+
+export function getExplorerPanel(): HTMLElement | null {
+  return containers.get(EXPLORER_KEY) ?? null
 }
