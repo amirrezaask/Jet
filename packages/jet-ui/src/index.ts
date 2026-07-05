@@ -1,7 +1,7 @@
 export { PanelDock } from "./dock/index.js"
 export { AppShell } from "./shell/AppShell.js"
 export { WorkspaceShell } from "./shell/WorkspaceShell.js"
-export { JetTitleBar, type JetTitleBarAction, type JetTitleBarMenu } from "./shell/JetTitleBar.js"
+export { JetTitleBar, type JetTitleBarAction, type JetTitleBarCheckboxAction, type JetTitleBarMenu } from "./shell/JetTitleBar.js"
 export { ExplorerPanel, focusExplorerPanel } from "./explorer/ExplorerPanel.js"
 export { CommandPalette } from "./components/CommandPalette.js"
 export { GotoLineModal } from "./components/GotoLineModal.js"
@@ -30,3 +30,4 @@ export { ConfirmDialogHost, requestConfirm } from "./components/ConfirmDialogHos
 export { showJetToast } from "./toast.js"
 export { registerListPanel, getListPanel, type ListPanelKind } from "./lib/list-registry.js"
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
+export { FindReplaceDrawer } from "./components/FindReplaceDrawer.js"

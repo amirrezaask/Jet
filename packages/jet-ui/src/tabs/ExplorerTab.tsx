@@ -69,17 +69,15 @@ function ExplorerTreeNode({
     if (nested) {
       return (
         <SidebarMenuSubItem role="treeitem" aria-level={level}>
-          <SidebarMenuSubButton asChild size="sm">
-            <button
-              type="button"
-              className="shrink-0"
-              data-jet-list-item
-              aria-label={entry.name}
-              onClick={() => onOpenFile(entry.uri, path)}
-            >
-              <File />
-              <span>{entry.name}</span>
-            </button>
+          <SidebarMenuSubButton
+            size="sm"
+            className="shrink-0"
+            data-jet-list-item
+            aria-label={entry.name}
+            onClick={() => onOpenFile(entry.uri, path)}
+          >
+            <File />
+            <span>{entry.name}</span>
           </SidebarMenuSubButton>
         </SidebarMenuSubItem>
       )

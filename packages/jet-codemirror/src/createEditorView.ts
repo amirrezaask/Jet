@@ -12,6 +12,7 @@ import { completionTooltipClass, completionTooltipTheme } from "./completion-the
 import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
+import { hiddenSearchPanel, jetSearchPanelKeymap } from "./search-bridge.js"
 import { LSPClient, jumpToDefinition } from "@codemirror/lsp-client"
 import { lspLanguageIdFromJet } from "@jet/shared"
 import type { WorkspaceFile } from "@jet/workspace"
@@ -126,7 +127,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   extensions.push(
     goToDefinitionOnClick,
     ...multiCursorExtensions(),
-    search({ top: true }),
+    search({ top: true, createPanel: hiddenSearchPanel }),
   )
 
   if (!largeFile) {
@@ -134,6 +135,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   }
 
   extensions.push(
+    jetSearchPanelKeymap(),
     keymap.of([
       ...searchKeymap,
       ...completionKeymap,

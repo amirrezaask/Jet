@@ -1,30 +1,23 @@
 import * as React from "react"
-import { Slot } from "radix-ui"
-import { sidebarMenuButtonVariants } from "@/components/ui/sidebar.js"
+import { SidebarMenuButton } from "@/components/ui/sidebar.js"
 import { cn } from "@/lib/utils.js"
 
 export type ListRowProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  asChild?: boolean
   size?: "default" | "sm" | "lg"
 }
 
 export const ListRow = React.forwardRef<HTMLButtonElement, ListRowProps>(
-  ({ className, size = "default", asChild = false, children, ...props }, ref) => {
-    const Comp = asChild ? Slot.Root : "button"
+  ({ className, size = "default", children, ...props }, ref) => {
     return (
-      <Comp
-        ref={ref}
-        type={asChild ? undefined : "button"}
-        data-slot="list-row"
-        className={cn(
-          sidebarMenuButtonVariants({ variant: "default", size }),
-          "flex-col justify-center gap-0 px-2 text-left",
-          className,
-        )}
-        {...props}
+      <SidebarMenuButton
+        asChild
+        size={size}
+        className={cn("flex-col justify-center gap-0 px-2 text-left", className)}
       >
-        {children}
-      </Comp>
+        <button ref={ref} type="button" data-slot="list-row" {...props}>
+          {children}
+        </button>
+      </SidebarMenuButton>
     )
   },
 )

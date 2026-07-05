@@ -1,6 +1,7 @@
 import type { WorkspaceService } from "@jet/workspace"
 import { useEffect, useRef, useState } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area.js"
+import { Alert, AlertDescription } from "@/components/ui/alert.js"
 
 export function OutputPanel({ workspace }: { workspace: WorkspaceService }) {
   useStateRev(workspace.taskRunner)
@@ -25,9 +26,11 @@ export function OutputPanel({ workspace }: { workspace: WorkspaceService }) {
         </pre>
       </ScrollArea>
       {run && run.errors.length > 0 && (
-        <div className="shrink-0 border-t border-border p-1 text-xs text-destructive">
-          {run.errors.length} error(s) — use Location List → Tasks or jump commands
-        </div>
+        <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-b-0 py-2">
+          <AlertDescription className="text-xs">
+            {run.errors.length} error(s) — use Location List → Tasks or jump commands
+          </AlertDescription>
+        </Alert>
       )}
     </div>
   )

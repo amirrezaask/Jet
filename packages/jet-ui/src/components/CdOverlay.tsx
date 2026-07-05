@@ -18,6 +18,7 @@ import {
 import {
   Command,
   CommandEmpty,
+  CommandInput,
   CommandItem,
   CommandList,
 } from "@/components/ui/command.js"
@@ -27,7 +28,6 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog.js"
-import { Input } from "@/components/ui/input.js"
 import { Button } from "@/components/ui/button.js"
 import { KeyBindingKbd } from "./KeyBindingKbd.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
@@ -215,70 +215,69 @@ export function CdOverlay({
       <DialogContent className="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
         <DialogTitle className="sr-only">Change directory</DialogTitle>
         <DialogDescription className="sr-only">Path to folder</DialogDescription>
-        <Input
-          ref={inputRef}
-          placeholder="Path to folder…"
-          value={pathInput}
-          onChange={e => {
-            setPathInput(e.target.value)
-            setCursor(e.target.selectionStart ?? e.target.value.length)
-          }}
-          onSelect={syncCursorFromInput}
-          onKeyUp={syncCursorFromInput}
-          onClick={syncCursorFromInput}
-          onKeyDown={e => {
-            if (e.altKey && e.key === "Backspace") {
-              const el = inputRef.current
-              if (!el) return
-              const start = el.selectionStart ?? pathInput.length
-              const end = el.selectionEnd ?? pathInput.length
-              const result = deletePathSegmentBackward(pathInput, start, end)
-              if (!result) return
-              e.preventDefault()
-              setPathInput(result.value)
-              setCursor(result.cursor)
-              requestAnimationFrame(() => {
-                el.setSelectionRange(result.cursor, result.cursor)
-              })
-              return
-            }
-
-            if (e.key === "ArrowDown" && !isListNavModified(e)) {
-              e.preventDefault()
-              moveHighlight(1)
-              return
-            }
-            if (e.key === "ArrowUp" && !isListNavModified(e)) {
-              e.preventDefault()
-              moveHighlight(-1)
-              return
-            }
-
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault()
-              confirmCurrent()
-              return
-            }
-
-            if (e.key === "Enter" || e.key === "Tab") {
-              if (!highlightedEntry) return
-              e.preventDefault()
-              applyCompletion(highlightedEntry.name)
-            }
-          }}
-          className="rounded-none border-0 border-b"
-          autoFocus
-          aria-controls="jet-cd-list"
-          aria-activedescendant={
-            highlightedEntry ? `jet-cd-item-${highlightedEntry.uri}` : undefined
-          }
-        />
         <Command
           shouldFilter={false}
           value={selectedValue}
           onValueChange={setSelectedValue}
           className="border-0"
         >
+          <CommandInput
+            ref={inputRef}
+            placeholder="Path to folder…"
+            value={pathInput}
+            onValueChange={value => {
+              setPathInput(value)
+              setCursor(value.length)
+            }}
+            onSelect={syncCursorFromInput}
+            onKeyUp={syncCursorFromInput}
+            onClick={syncCursorFromInput}
+            onKeyDown={e => {
+              if (e.altKey && e.key === "Backspace") {
+                const el = inputRef.current
+                if (!el) return
+                const start = el.selectionStart ?? pathInput.length
+                const end = el.selectionEnd ?? pathInput.length
+                const result = deletePathSegmentBackward(pathInput, start, end)
+                if (!result) return
+                e.preventDefault()
+                setPathInput(result.value)
+                setCursor(result.cursor)
+                requestAnimationFrame(() => {
+                  el.setSelectionRange(result.cursor, result.cursor)
+                })
+                return
+              }
+
+              if (e.key === "ArrowDown" && !isListNavModified(e)) {
+                e.preventDefault()
+                moveHighlight(1)
+                return
+              }
+              if (e.key === "ArrowUp" && !isListNavModified(e)) {
+                e.preventDefault()
+                moveHighlight(-1)
+                return
+              }
+
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                confirmCurrent()
+                return
+              }
+
+              if (e.key === "Enter" || e.key === "Tab") {
+                if (!highlightedEntry) return
+                e.preventDefault()
+                applyCompletion(highlightedEntry.name)
+              }
+            }}
+            className="h-12"
+            aria-controls="jet-cd-list"
+            aria-activedescendant={
+              highlightedEntry ? `jet-cd-item-${highlightedEntry.uri}` : undefined
+            }
+          />
           <CommandList
             id="jet-cd-list"
             className="max-h-[var(--jet-overlay-list-max,20rem)]"

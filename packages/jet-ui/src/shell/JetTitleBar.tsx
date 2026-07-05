@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import {
   Menubar,
+  MenubarCheckboxItem,
   MenubarContent,
   MenubarItem,
   MenubarMenu,
@@ -18,10 +19,20 @@ export type JetTitleBarAction = {
   destructive?: boolean
 }
 
+export type JetTitleBarCheckboxAction = {
+  kind: "checkbox"
+  id: string
+  label: string
+  shortcut?: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  disabled?: boolean
+}
+
 export type JetTitleBarMenu = {
   id: string
   label: string
-  items: Array<JetTitleBarAction | { kind: "separator" }>
+  items: Array<JetTitleBarAction | JetTitleBarCheckboxAction | { kind: "separator" }>
 }
 
 /**
@@ -52,8 +63,18 @@ export function JetTitleBar({
               <MenubarTrigger className="px-2 py-0.5 text-xs">{menu.label}</MenubarTrigger>
               <MenubarContent>
                 {menu.items.map((item, i) =>
-                  "kind" in item ? (
+                  "kind" in item && item.kind === "separator" ? (
                     <MenubarSeparator key={`sep-${i}`} />
+                  ) : "kind" in item && item.kind === "checkbox" ? (
+                    <MenubarCheckboxItem
+                      key={item.id}
+                      checked={item.checked}
+                      disabled={item.disabled}
+                      onCheckedChange={item.onCheckedChange}
+                    >
+                      {item.label}
+                      {item.shortcut ? <MenubarShortcut>{item.shortcut}</MenubarShortcut> : null}
+                    </MenubarCheckboxItem>
                   ) : (
                     <MenubarItem
                       key={item.id}

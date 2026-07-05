@@ -86,21 +86,8 @@ export function jetEditorTheme(theme: JetTheme) {
         outline: "none",
         borderRadius: "2px",
       },
-      ".cm-panel.cm-search": {
-        backgroundColor: theme.colors.panelRaised,
-        color: theme.colors.text,
-        border: `1px solid ${theme.colors.border}`,
-        fontSize: "1rem",
-      },
-      ".cm-panel.cm-search input": {
-        backgroundColor: theme.colors.panel,
-        color: theme.colors.text,
-        border: `1px solid ${theme.colors.border}`,
-      },
-      ".cm-panel.cm-search button": {
-        backgroundColor: theme.colors.panel,
-        color: theme.colors.text,
-        border: `1px solid ${theme.colors.border}`,
+      ".cm-panel.cm-search, .jet-search-panel-hidden": {
+        display: "none !important",
       },
       ".cm-indent-marker": {
         borderLeft: `1px solid ${theme.colors.border}`,

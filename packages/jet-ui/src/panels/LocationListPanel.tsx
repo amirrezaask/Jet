@@ -8,7 +8,14 @@ import { Input } from "@/components/ui/input.js"
 import { Spinner } from "@/components/ui/spinner.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert.js"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty.js"
 import { ListRow } from "@/components/ListRow.js"
+import { SidebarProvider } from "@/components/ui/sidebar.js"
 import { registerListPanel } from "@/lib/list-registry.js"
 import { CircleAlertIcon } from "lucide-react"
 
@@ -100,6 +107,7 @@ export function LocationListPanel({
   })
 
   return (
+    <SidebarProvider className="!min-h-0 flex h-full min-h-0 flex-col">
     <div className="flex h-full min-h-0 flex-col" data-jet-list-panel="locationlist">
       <Tabs
         value={state.activeSource}
@@ -171,7 +179,16 @@ export function LocationListPanel({
       )}
       <ul ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-1">
         {visible.length === 0 ? (
-          <li className="p-2 text-xs text-muted-foreground">No results</li>
+          <li className="p-1">
+            <Empty className="border-0 py-4">
+              <EmptyHeader>
+                <EmptyTitle className="text-sm">No results</EmptyTitle>
+                <EmptyDescription className="text-xs">
+                  Try another query or switch source tabs.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </li>
         ) : (
           <li style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
             {rowVirtualizer.getVirtualItems().map(virtualRow => {
@@ -209,6 +226,7 @@ export function LocationListPanel({
         )}
       </ul>
     </div>
+    </SidebarProvider>
   )
 }
 

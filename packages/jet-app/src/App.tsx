@@ -78,6 +78,7 @@ import {
   getListPanel,
   JetTitleBar,
   type JetTitleBarMenu,
+  FindReplaceDrawer,
 } from "@jet/ui"
 import { indexWorkspaceFiles } from "@jet/workspace"
 import type { JetProblem } from "@jet/shared"
@@ -1106,7 +1107,17 @@ export function JetApp() {
           { id: "locationList", label: "Show Location List", shortcut: shortcutFor("locationList"), onSelect: () => void executeCommand("locationlist.show") },
           { id: "output", label: "Show Output", shortcut: shortcutFor("output"), onSelect: () => void executeCommand("output.show") },
           { kind: "separator" as const },
-          { id: "theme", label: "Toggle Color Scheme", onSelect: () => void executeCommand("ui.toggleColorScheme") },
+          {
+            kind: "checkbox" as const,
+            id: "darkScheme",
+            label: "Dark Color Scheme",
+            checked: colorScheme === "dark",
+            onCheckedChange: checked => {
+              const next: ColorScheme = checked ? "dark" : "light"
+              setColorScheme(next)
+              localStorage.setItem(COLOR_SCHEME_KEY, next)
+            },
+          },
           { id: "zoomIn", label: "Zoom In", shortcut: shortcutFor("zoomIn"), onSelect: () => void executeCommand("ui.zoomIn") },
           { id: "zoomOut", label: "Zoom Out", shortcut: shortcutFor("zoomOut"), onSelect: () => void executeCommand("ui.zoomOut") },
         ],
@@ -1124,7 +1135,7 @@ export function JetApp() {
         ],
       },
     ]
-  }, [executeCommand, appCommands, keybindingByFn])
+  }, [executeCommand, appCommands, keybindingByFn, colorScheme])
 
   const isMac =
     typeof navigator !== "undefined" && /Mac|iPad|iPhone|iPod/i.test(navigator.userAgent)
@@ -1310,6 +1321,7 @@ export function JetApp() {
           onRun={id => executeCommand(id)}
         />
       )}
+      <FindReplaceDrawer />
       <ConfirmDialogHost />
       <Toaster position="bottom-right" />
     </AppShell>

@@ -17,6 +17,20 @@ export {
 } from "./createEditorView.js"
 export { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
 export { openReplaceSearchPanel, jumpToLine } from "./editor-actions.js"
+export {
+  openJetSearch,
+  closeJetSearch,
+  subscribeSearch,
+  patchJetSearchQuery,
+  getJetSearchState,
+  getSearchQuery,
+  findNext,
+  findPrevious,
+  replaceNext,
+  replaceAll,
+  type JetSearchMode,
+  type JetSearchState,
+} from "./search-bridge.js"
 export { setPendingEditorNavigation, consumePendingEditorNavigation } from "./editor-navigation.js"
 export { setPendingInitialContent, consumePendingInitialContent } from "./pending-content.js"
 export { collectProblemsFromViews, problemsFingerprint } from "./diagnostics.js"

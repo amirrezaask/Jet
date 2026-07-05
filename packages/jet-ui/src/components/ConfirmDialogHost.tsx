@@ -10,6 +10,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog.js"
 import type { JetVariant } from "../toast.js"
+import { buttonVariants } from "@/components/ui/button.js"
+import { cn } from "@/lib/utils.js"
 
 export type ConfirmOptions = {
   title: string
@@ -20,15 +22,15 @@ export type ConfirmOptions = {
   variant?: JetVariant
 }
 
-function actionClassForVariant(variant: JetVariant | undefined, destructive: boolean | undefined): string | undefined {
+function actionClassForVariant(variant: JetVariant | undefined, destructive: boolean | undefined): string {
   const resolved = variant ?? (destructive ? "destructive" : "default")
   switch (resolved) {
     case "destructive":
-      return "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+      return cn(buttonVariants({ variant: "destructive" }))
     case "warning":
-      return "bg-amber-500 hover:bg-amber-500/90 text-white"
+      return cn(buttonVariants({ variant: "warning" }))
     default:
-      return undefined
+      return cn(buttonVariants())
   }
 }
 

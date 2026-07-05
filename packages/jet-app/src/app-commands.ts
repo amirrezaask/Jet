@@ -23,7 +23,7 @@ import type { PanelId } from "@jet/shared"
 import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shared"
 import type { JetCommandContext, JetCommands, JetCommandFn, WorkspaceService } from "@jet/workspace"
 import { problemsToLocationItems } from "@jet/ui"
-import { openReplaceSearchPanel, openSearchPanel } from "@jet/codemirror"
+import { openJetSearch, openReplaceSearchPanel } from "@jet/codemirror"
 import {
   fetchDocumentOutline,
   runFindReferences,
@@ -203,7 +203,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     find: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
-      if (view) openSearchPanel(view)
+      if (view) openJetSearch(view, "find")
     },
     replace: ctx => {
       const view = ctx.getActiveEditorView() as EditorView | null
