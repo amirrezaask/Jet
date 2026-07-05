@@ -6,6 +6,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert.js"
 import { CircleAlertIcon } from "lucide-react"
 import { LocationList } from "./LocationList.js"
+import { useAutoFocus } from "@/lib/use-auto-focus.js"
 import { searchHitToListItem } from "./mappers.js"
 
 function useListDocument(doc: ListDocument, workspace: WorkspaceService): ListDocument {
@@ -22,14 +23,17 @@ export function SearchLocationList({
   listId,
   workspace,
   onOpenItem,
+  autoFocus = false,
 }: {
   listId: string
   workspace: WorkspaceService
   onOpenItem: (item: ListItem) => void
+  autoFocus?: boolean
 }) {
   const initial = workspace.listStore.get(listId)!
   const doc = useListDocument(initial, workspace)
   const searchGen = useRef(0)
+  const searchInputRef = useAutoFocus<HTMLInputElement>(autoFocus)
 
   const patchDoc = useCallback(
     (patch: Partial<ListDocument>) => workspace.listStore.update(listId, patch),
@@ -81,6 +85,7 @@ export function SearchLocationList({
       <div className="flex flex-wrap items-center gap-2">
         <Input
           id={`search-input-${listId}`}
+          ref={searchInputRef}
           type="search"
           value={doc.searchQuery ?? ""}
           onChange={e => patchDoc({ searchQuery: e.target.value })}

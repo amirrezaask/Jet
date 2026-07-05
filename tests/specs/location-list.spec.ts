@@ -53,7 +53,8 @@ test("location-list: project search finds results", async ({ page }) => {
   await agent(page).executeCommand("locationlist.showSearch")
   await page.waitForTimeout(400)
 
-  await page.locator("input[type=\"search\"]").click()
+  const searchInput = page.locator(`${SEARCH_LIST_PANEL} input[type="search"]`)
+  await expect(searchInput).toBeFocused()
   await page.keyboard.type("export")
   await page.waitForTimeout(2000)
 

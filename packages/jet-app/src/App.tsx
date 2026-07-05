@@ -419,9 +419,16 @@ export function JetApp() {
     [],
   )
 
-  const commitTree = useCallback((tree: JetPanelTree) => {
+  const commitTree = useCallback((tree: JetPanelTree, preferFocus?: PanelId | null) => {
     const prevFocused = appStateRef.current.focusedPanel
-    const nextFocused = reconcileFocusedPanel(tree, prevFocused, editorPanelRef.current)
+    const preferred =
+      preferFocus &&
+      getAllLeafPanels(tree).some(l => l.id === preferFocus.id) &&
+      tree.getView(preferFocus)?.kind === "tabs"
+        ? preferFocus
+        : null
+    const nextFocused =
+      preferred ?? reconcileFocusedPanel(tree, prevFocused, editorPanelRef.current)
     setPanelTree(tree)
     setPanelRev(r => r + 1)
     setFocusedPanel(nextFocused)

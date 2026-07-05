@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import type { PanelId } from "@jet/shared"
 import {
   closeJetSearch,
@@ -15,11 +15,11 @@ import { Button } from "@/components/ui/button.js"
 import { Input } from "@/components/ui/input.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { PanelFloatingPopover } from "@/dock/PanelFloatingPopover.js"
+import { useAutoFocus } from "@/lib/use-auto-focus.js"
 import { getEditorView } from "@/tabs/EditorTabHost.js"
 
 export function FindReplacePopover({ panelId }: { panelId: PanelId }) {
   const [state, setState] = useState<JetSearchState | null>(null)
-  const findRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => subscribeSearch(setState), [])
 
@@ -34,9 +34,8 @@ export function FindReplacePopover({ panelId }: { panelId: PanelId }) {
   const query = view && state ? getSearchQuery(view.state) : null
   void state?.version
 
-  useEffect(() => {
-    if (open) findRef.current?.focus()
-  }, [open, mode])
+  const findRef = useAutoFocus<HTMLInputElement>(open && mode === "find")
+  const replaceRef = useAutoFocus<HTMLInputElement>(open && mode === "replace")
 
   if (!open || !view) return null
 
@@ -81,6 +80,7 @@ export function FindReplacePopover({ panelId }: { panelId: PanelId }) {
           {mode === "replace" ? (
             <Input
               id="jet-replace-input"
+              ref={replaceRef}
               className="h-8 min-w-[10rem] flex-1"
               placeholder="Replace"
               value={query?.replace ?? ""}

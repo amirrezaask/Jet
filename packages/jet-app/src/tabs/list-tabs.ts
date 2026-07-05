@@ -21,21 +21,23 @@ function makeListTabType(
   typeId: string,
   Comp: typeof SearchLocationList,
   deps: TabContributorDeps,
+  options?: { autoFocusInput?: boolean },
 ): TabType<ListTabState> {
   return {
     id: typeId,
     title: state => deps.workspace.listStore.get(state.listId)?.title ?? state.listId,
-    render: instance =>
+    render: (instance, ctx) =>
       createElement(Comp, {
         listId: instance.state.listId,
         workspace: deps.workspace,
         onOpenItem: deps.onOpenListItem,
+        ...(options?.autoFocusInput ? { autoFocus: ctx.focused && ctx.isActive } : {}),
       }),
   }
 }
 
 export function createSearchTabType(deps: TabContributorDeps): TabType<ListTabState> {
-  return makeListTabType(SEARCH_TAB_TYPE_ID, SearchLocationList, deps)
+  return makeListTabType(SEARCH_TAB_TYPE_ID, SearchLocationList, deps, { autoFocusInput: true })
 }
 
 export function createProblemsTabType(deps: TabContributorDeps): TabType<ListTabState> {

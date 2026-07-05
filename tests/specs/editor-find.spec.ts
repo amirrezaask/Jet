@@ -15,6 +15,7 @@ test("editor-find: find panel opens and shows input", async ({ page }) => {
   const float = page.locator("[data-jet-panel-float]")
   await expect(float).toBeVisible()
   await expect(page.locator("#jet-find-input")).toBeVisible()
+  await expect(page.locator("#jet-find-input")).toBeFocused()
   await page.keyboard.type("export")
   await page.waitForTimeout(200)
 
@@ -43,6 +44,7 @@ test("editor-find: replace panel opens", async ({ page }) => {
   await page.waitForTimeout(400)
 
   await expect(page.locator("#jet-replace-input")).toBeVisible()
+  await expect(page.locator("#jet-replace-input")).toBeFocused()
   await page.keyboard.press("Escape")
   await page.waitForTimeout(200)
 })
