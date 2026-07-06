@@ -9,21 +9,31 @@ import { uriToPath } from "./paths.js"
 type FileFinderModule = typeof import("@ff-labs/fff-node")
 
 let fffModule: FileFinderModule | null = null
-let fffLoadAttempted = false
 let fffLoadFailed = false
+let fffLoadPromise: Promise<FileFinderModule | null> | null = null
+
+/** Electron asar archives cannot dlopen native libs; resolve from app.asar.unpacked. */
+function enableUnpackedNativeModules(): void {
+  if (!process.versions.electron) return
+  ;(process as NodeJS.Process & { noAsar?: boolean }).noAsar = true
+}
 
 async function loadFffModule(): Promise<FileFinderModule | null> {
   if (fffLoadFailed) return null
   if (fffModule) return fffModule
-  if (fffLoadAttempted) return null
-  fffLoadAttempted = true
-  try {
-    fffModule = await import("@ff-labs/fff-node")
-    return fffModule
-  } catch {
-    fffLoadFailed = true
-    return null
+  if (!fffLoadPromise) {
+    fffLoadPromise = (async () => {
+      try {
+        enableUnpackedNativeModules()
+        fffModule = await import("@ff-labs/fff-node")
+        return fffModule
+      } catch {
+        fffLoadFailed = true
+        return null
+      }
+    })()
   }
+  return fffLoadPromise
 }
 
 export function isFffAvailable(): boolean {
@@ -44,6 +54,8 @@ type FinderEntry = {
 
 const finders = new Map<string, FinderEntry>()
 const gitRepoCache = new Map<string, boolean>()
+/** Roots where FFF init failed; quick-open falls back to ripgrep immediately. */
+const fffUnavailableRoots = new Set<string>()
 
 function rootKey(rootUri: string): string {
   return path.normalize(uriToPath(rootUri))
@@ -84,7 +96,10 @@ export async function ensureFffIndex(rootUri: string, timeoutMs = 30_000): Promi
       frecencyDbPath: path.join(dbDir, "frecency"),
       historyDbPath: path.join(dbDir, "history"),
     })
-    if (!created.ok) return null
+    if (!created.ok) {
+      fffUnavailableRoots.add(rootPath)
+      return null
+    }
 
     const finder = created.value
     const ready = finder.waitForIndexReady(timeoutMs).then(result => {
@@ -107,6 +122,7 @@ export async function ensureFffIndex(rootUri: string, timeoutMs = 30_000): Promi
 export function isFffScanReady(rootUri: string): boolean {
   const key = rootKey(rootUri)
   if (gitRepoCache.get(key) === false) return true
+  if (fffLoadFailed || fffUnavailableRoots.has(key)) return true
   const entry = finders.get(key)
   return entry?.scanReady ?? false
 }
@@ -122,6 +138,7 @@ export function disposeFffIndex(rootUri: string): void {
   if (!entry) return
   entry.finder.destroy()
   finders.delete(rootPath)
+  fffUnavailableRoots.delete(rootPath)
 }
 
 export async function fffFileSearch(
