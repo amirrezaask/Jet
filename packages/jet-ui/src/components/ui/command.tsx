@@ -65,7 +65,7 @@ function CommandDialog({
 const CommandInput = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Input>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input> & { caretOverlay?: boolean }
->(({ className, caretOverlay = false, ...props }, ref) => {
+>(({ className, caretOverlay = true, ...props }, ref) => {
   const innerRef = React.useRef<HTMLInputElement>(null)
   const anchorRef = React.useRef<HTMLDivElement>(null)
   React.useImperativeHandle(ref, () => innerRef.current!)
@@ -77,7 +77,7 @@ const CommandInput = React.forwardRef<
       className="flex h-9 items-center gap-2 border-b px-3"
     >
       <SearchIcon className="size-4 shrink-0 opacity-50" aria-hidden="true" />
-      <div ref={anchorRef} className="relative min-w-0 flex-1">
+      <div ref={anchorRef} data-jet-caret-anchor="" className="relative min-w-0 flex-1">
         <CommandPrimitive.Input
           ref={innerRef}
           data-slot="command-input"

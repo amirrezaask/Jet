@@ -99,6 +99,20 @@ export type JetElectronWorkspace = {
   onSearchReady?(callback: (rootUri: string) => void): () => void
 }
 
+export type JetElectronAgents = {
+  listProviders(): Promise<import("@jet/agents").AgentProviderHealth[]>
+  listSessions(folderId?: string): Promise<unknown[]>
+  startSession(
+    req: import("@jet/agents").AgentStartSessionRequest,
+  ): Promise<{ stubMode: boolean }>
+  stopSession(sessionId: string): Promise<void>
+  stopAllForFolder(folderId: string): Promise<void>
+  sendTurn(req: import("@jet/agents").AgentSendTurnRequest): Promise<void>
+  interrupt(sessionId: string): Promise<void>
+  respondApproval(req: import("@jet/agents").AgentRespondApprovalRequest): Promise<void>
+  onEvent(callback: (event: import("@jet/agents").AgentEvent) => void): () => void
+}
+
 export type JetElectronAPI = {
   fs: JetElectronFS
   search: JetElectronSearch
@@ -106,6 +120,7 @@ export type JetElectronAPI = {
   terminal?: JetElectronTerminal
   tasks?: JetElectronTasks
   workspace?: JetElectronWorkspace
+  agents?: JetElectronAgents
   getLaunchConfig?(): Promise<LaunchConfig | null>
   getHomeDir?(): Promise<string>
   loadGlobalJetrcScanRoots?(): Promise<string[]>

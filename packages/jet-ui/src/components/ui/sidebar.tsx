@@ -6,6 +6,7 @@ import { PanelLeftIcon } from "lucide-react"
 import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
+import { JetCaretInput } from "@/motion/useJetCaretOverlay"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -327,7 +328,7 @@ function SidebarInput({
   ...props
 }: React.ComponentProps<typeof Input>) {
   return (
-    <Input
+    <JetCaretInput
       data-slot="sidebar-input"
       data-sidebar="input"
       className={cn("h-8 w-full bg-background shadow-none", className)}

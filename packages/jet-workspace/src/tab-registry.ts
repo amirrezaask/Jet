@@ -10,6 +10,7 @@ export const EXPLORER_TAB_ID = "jet:explorer"
 export const OUTPUT_TAB_ID = "jet:output"
 export const PROBLEMS_TAB_ID = "jet:problems"
 export const TERMINAL_TAB_ID_PREFIX = "jet:terminal:"
+export const AGENT_TAB_ID_PREFIX = "jet:agent:"
 
 export function terminalTabId(sessionKey: string): string {
   return `${TERMINAL_TAB_ID_PREFIX}${sessionKey}`
@@ -17,6 +18,20 @@ export function terminalTabId(sessionKey: string): string {
 
 export function isTerminalTabId(tabId: string): boolean {
   return tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
+}
+
+export function agentTabId(sessionKey: string): string {
+  return `${AGENT_TAB_ID_PREFIX}${sessionKey}`
+}
+
+export function isAgentTabId(tabId: string): boolean {
+  return tabId.startsWith(AGENT_TAB_ID_PREFIX)
+}
+
+let agentSessionCounter = 1
+
+export function allocAgentSessionKey(): string {
+  return `${Date.now()}-${agentSessionCounter++}`
 }
 
 export type TabDescriptor = {

@@ -116,6 +116,16 @@ importers:
         specifier: ^6.3.5
         version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)
 
+  packages/jet-agents:
+    dependencies:
+      '@jet/shared':
+        specifier: workspace:*
+        version: link:../jet-shared
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   packages/jet-app:
     dependencies:
       '@codemirror/commands':
@@ -130,6 +140,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.37.0
         version: 6.43.4
+      '@jet/agents':
+        specifier: workspace:*
+        version: link:../jet-agents
       '@jet/browser':
         specifier: workspace:*
         version: link:../jet-browser
@@ -296,6 +309,12 @@ importers:
       '@ff-labs/fff-node':
         specifier: ^0.9.6
         version: 0.9.6
+      '@jet/agents':
+        specifier: workspace:*
+        version: link:../jet-agents
+      '@jet/shared':
+        specifier: workspace:*
+        version: link:../jet-shared
       ws:
         specifier: ^8.18.2
         version: 8.21.0
@@ -304,9 +323,6 @@ importers:
         specifier: ^4.19.4
         version: 4.22.4
     devDependencies:
-      '@jet/shared':
-        specifier: workspace:*
-        version: link:../jet-shared
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
@@ -359,6 +375,9 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.2.8
         version: 5.2.8
+      '@jet/agents':
+        specifier: workspace:*
+        version: link:../jet-agents
       '@jet/codemirror':
         specifier: workspace:*
         version: link:../jet-codemirror
@@ -471,6 +490,9 @@ importers:
 
   packages/jet-workspace:
     dependencies:
+      '@jet/agents':
+        specifier: workspace:*
+        version: link:../jet-agents
       '@jet/panels':
         specifier: workspace:*
         version: link:../jet-panels

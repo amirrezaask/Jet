@@ -1,7 +1,7 @@
 import type { ListDocument, ListItem, WorkspaceService } from "@jet/workspace"
 import { projectSearchAcrossFolders } from "@jet/workspace"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Input } from "@/components/ui/input.js"
+import { JetCaretInput } from "@/motion/useJetCaretOverlay.js"
 import { Spinner } from "@/components/ui/spinner.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert.js"
@@ -91,7 +91,7 @@ export function SearchLocationList({
   const header = (
     <div className="flex shrink-0 flex-col gap-2 border-b border-border p-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Input
+        <JetCaretInput
           id={`search-input-${listId}`}
           ref={searchInputRef}
           type="search"

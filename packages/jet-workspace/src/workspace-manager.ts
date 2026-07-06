@@ -1,4 +1,5 @@
 import { basename, Emitter, fileUriToPath, languageIdFromPath, pathToFileUri } from "@jet/shared"
+import { AgentSessionStore } from "./agent-session-store.js"
 import type { WorkspaceEntry, WorkspaceFile, WorkspaceRoot } from "./types.js"
 import type { FileSystemProvider } from "./types.js"
 
@@ -35,6 +36,7 @@ export class WorkspaceFolderState {
   private recentWrites = new Map<string, number>()
   untitledCounter = 1
 
+  readonly agents = new AgentSessionStore()
   readonly onDidOpenFile = new Emitter<WorkspaceFile>()
   readonly onDidChangeDirty = new Emitter<{ uri: string; isDirty: boolean }>()
   readonly onDidChangeSavedBaseline = new Emitter<{ uri: string; content: string }>()
@@ -69,6 +71,7 @@ export class WorkspaceFolderState {
     this.savedBaseline.clear()
     this.recentWrites.clear()
     this.untitledCounter = 1
+    this.agents.disposeAll()
   }
 
   markDirty(uri: string, isDirty: boolean): void {

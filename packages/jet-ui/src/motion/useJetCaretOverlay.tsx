@@ -6,29 +6,86 @@ import {
   type InputHTMLAttributes,
 } from "react"
 import {
+  ANIM_EPSILON,
   CaretEndpointAnim,
-  CaretGhostBuffer,
   prefersReducedMotion,
   onReducedMotionChange,
   type CaretPoint,
 } from "@jet/shared"
 import { cn } from "@/lib/utils.js"
 
-function measureInputCaret(input: HTMLInputElement, anchor: HTMLElement): CaretPoint | null {
-  const style = getComputedStyle(input)
+const SVG_NS = "http://www.w3.org/2000/svg"
+const INPUT_STREAK_BASE_ALPHA = 0.32
+const INPUT_STREAK_MIN_ALPHA = 0.1
+const INPUT_STREAK_MAX_SHEAR_DEG = 6
+const INPUT_STREAK_Y_OVERSHOOT = 0.1
+
+let nextGradientId = 0
+
+type InputVisualState = {
+  point: CaretPoint | null
+  visible: boolean
+  allowStreak: boolean
+}
+
+type StreakEntry = {
+  svg: SVGSVGElement
+  rect: SVGRectElement
+  stopA: SVGStopElement
+  stopB: SVGStopElement
+}
+
+function createMirror(style: CSSStyleDeclaration): HTMLDivElement {
   const mirror = document.createElement("div")
-  const textBefore = input.value.slice(0, input.selectionStart ?? 0)
   mirror.style.position = "absolute"
   mirror.style.visibility = "hidden"
+  mirror.style.left = "-9999px"
+  mirror.style.top = "0"
   mirror.style.whiteSpace = "pre"
   mirror.style.font = style.font
+  mirror.style.fontKerning = style.fontKerning
+  mirror.style.fontVariantLigatures = style.fontVariantLigatures
   mirror.style.letterSpacing = style.letterSpacing
   mirror.style.textTransform = style.textTransform
+  mirror.style.textIndent = style.textIndent
+  mirror.style.textRendering = style.textRendering
   mirror.style.padding = "0"
-  mirror.textContent = textBefore || " "
+  mirror.style.border = "0"
+  mirror.style.margin = "0"
+  return mirror
+}
+
+function measureTextOffset(style: CSSStyleDeclaration, textBefore: string): number {
+  const mirror = createMirror(style)
+  const marker = document.createElement("span")
+  marker.textContent = "\u200b"
+  mirror.append(textBefore)
+  mirror.appendChild(marker)
   document.body.appendChild(mirror)
-  const textWidth = mirror.getBoundingClientRect().width
+  const mirrorRect = mirror.getBoundingClientRect()
+  const markerRect = marker.getBoundingClientRect()
   document.body.removeChild(mirror)
+  return markerRect.left - mirrorRect.left
+}
+
+function measureCharWidth(style: CSSStyleDeclaration, char: string, fallback: number): number {
+  if (!char) return fallback
+  const mirror = createMirror(style)
+  mirror.textContent = char
+  document.body.appendChild(mirror)
+  const width = mirror.getBoundingClientRect().width
+  document.body.removeChild(mirror)
+  return width > 0 ? width : fallback
+}
+
+function measureInputCaret(input: HTMLInputElement, anchor: HTMLElement): CaretPoint | null {
+  const selectionStart = input.selectionStart
+  const selectionEnd = input.selectionEnd
+  if (selectionStart == null || selectionEnd == null || selectionStart !== selectionEnd) return null
+
+  const style = getComputedStyle(input)
+  const textBefore = input.value.slice(0, selectionStart)
+  const textOffset = measureTextOffset(style, textBefore)
 
   const anchorRect = anchor.getBoundingClientRect()
   const inputRect = input.getBoundingClientRect()
@@ -43,56 +100,130 @@ function measureInputCaret(input: HTMLInputElement, anchor: HTMLElement): CaretP
       : fontSize * 1.4
   const padTop = parseFloat(style.paddingTop) || 0
   const padBottom = parseFloat(style.paddingBottom) || 0
+  const padLeft = parseFloat(style.paddingLeft) || 0
   const contentHeight = input.clientHeight - padTop - padBottom
   const caretH = Math.min(lineHeight, fontSize * 1.25)
-
   const scrollLeft = input.scrollLeft
-  const padLeft = parseFloat(style.paddingLeft) || 0
-  const charWidth =
-    textBefore.length > 0 ? textWidth / textBefore.length : fontSize * 0.55
+  const nextChar = input.value.slice(selectionStart, selectionStart + 1)
+  const prevChar = selectionStart > 0 ? input.value.slice(selectionStart - 1, selectionStart) : ""
+  const charWidth = measureCharWidth(style, nextChar || prevChar, fontSize * 0.55)
 
   return {
-    x: offsetX + padLeft + textWidth - scrollLeft,
+    x: offsetX + padLeft + textOffset - scrollLeft,
     y: offsetY + padTop + (contentHeight - caretH) / 2,
     h: caretH,
     charWidth,
   }
 }
 
-function renderCaretLayer(
-  layer: HTMLDivElement,
-  main: CaretEndpointAnim,
-  ghosts: ReturnType<CaretGhostBuffer["tick"]>,
-  focusOpacity: number,
-): void {
-  while (layer.children.length < ghosts.length + 1) {
-    const bar = document.createElement("div")
-    bar.className = "jet-input-caret-bar"
-    bar.style.position = "absolute"
-    bar.style.width = "2px"
-    bar.style.borderRadius = "1px"
-    bar.style.background = "var(--jet-cursor-color, #c4923a)"
-    bar.style.pointerEvents = "none"
-    layer.appendChild(bar)
-  }
-  while (layer.children.length > ghosts.length + 1) {
-    layer.lastChild?.remove()
+function createStreakLayer(): StreakEntry {
+  const svg = document.createElementNS(SVG_NS, "svg")
+  svg.classList.add("jet-input-caret-streak-layer")
+  svg.dataset.jetInputCaret = "streak-layer"
+  svg.style.position = "absolute"
+  svg.style.inset = "0"
+  svg.style.pointerEvents = "none"
+  svg.style.overflow = "visible"
+  svg.style.width = "100%"
+  svg.style.height = "100%"
+
+  const defs = document.createElementNS(SVG_NS, "defs")
+  svg.appendChild(defs)
+
+  const gradient = document.createElementNS(SVG_NS, "linearGradient")
+  const gradientId = `jet-input-streak-${nextGradientId++}`
+  gradient.setAttribute("id", gradientId)
+  gradient.setAttribute("gradientUnits", "objectBoundingBox")
+  gradient.setAttribute("x1", "0")
+  gradient.setAttribute("y1", "0")
+  gradient.setAttribute("x2", "1")
+  gradient.setAttribute("y2", "0")
+
+  const stopA = document.createElementNS(SVG_NS, "stop")
+  stopA.setAttribute("offset", "0")
+  stopA.setAttribute("stop-color", "var(--jet-cursor-color, #c4923a)")
+  const stopB = document.createElementNS(SVG_NS, "stop")
+  stopB.setAttribute("offset", "1")
+  stopB.setAttribute("stop-color", "var(--jet-cursor-color, #c4923a)")
+  gradient.appendChild(stopA)
+  gradient.appendChild(stopB)
+  defs.appendChild(gradient)
+
+  const rect = document.createElementNS(SVG_NS, "rect")
+  rect.dataset.jetInputCaret = "streak"
+  rect.setAttribute("fill", `url(#${gradientId})`)
+  rect.setAttribute("rx", "1")
+  svg.appendChild(rect)
+
+  return { svg, rect, stopA, stopB }
+}
+
+function hideCaretVisuals(caretBar: HTMLDivElement, streak: StreakEntry): void {
+  caretBar.style.display = "none"
+  streak.svg.style.display = "none"
+}
+
+function renderCaretBar(caretBar: HTMLDivElement, anim: CaretEndpointAnim): void {
+  caretBar.style.display = "block"
+  caretBar.style.transform = `translate3d(${anim.x}px, ${anim.y}px, 0)`
+  caretBar.style.height = `${anim.h}px`
+  caretBar.style.opacity = "1"
+}
+
+function renderStreak(streak: StreakEntry, anim: CaretEndpointAnim): void {
+  const dx = anim.targetX - anim.x
+  const dy = anim.targetY - anim.y
+  const distSq = dx * dx + dy * dy
+  if (distSq < ANIM_EPSILON * ANIM_EPSILON) {
+    streak.svg.style.display = "none"
+    return
   }
 
-  for (let i = 0; i < ghosts.length; i++) {
-    const g = ghosts[i]!
-    const el = layer.children[i] as HTMLElement
-    el.style.display = "block"
-    el.style.transform = `translate3d(${g.x}px, ${g.y}px, 0)`
-    el.style.height = `${g.h}px`
-    el.style.opacity = String(g.opacity * focusOpacity)
+  const x0 = Math.min(anim.x, anim.targetX)
+  const x1 = Math.max(anim.x, anim.targetX)
+  const width = Math.max(x1 - x0, 1)
+  const overshoot = anim.h * INPUT_STREAK_Y_OVERSHOOT
+  const y0 = anim.y - overshoot
+  const height = anim.h + overshoot * 2
+  const rightward = anim.targetX > anim.x
+  const leadAlpha = INPUT_STREAK_BASE_ALPHA
+  const trailAlpha = INPUT_STREAK_BASE_ALPHA * INPUT_STREAK_MIN_ALPHA
+
+  streak.stopA.setAttribute("stop-opacity", String(rightward ? trailAlpha : leadAlpha))
+  streak.stopB.setAttribute("stop-opacity", String(rightward ? leadAlpha : trailAlpha))
+
+  let shearDeg = 0
+  if (Math.abs(dy) > 1.5) {
+    const raw = (-Math.atan(dy * 0.5) * 180) / Math.PI
+    shearDeg = Math.max(-INPUT_STREAK_MAX_SHEAR_DEG, Math.min(INPUT_STREAK_MAX_SHEAR_DEG, raw))
+    if (!rightward) shearDeg = -shearDeg
   }
 
-  const mainEl = layer.children[ghosts.length] as HTMLElement
-  mainEl.style.display = "block"
-  mainEl.style.transform = `translate3d(${main.x}px, ${main.y}px, 0)`
-  mainEl.style.height = `${main.h}px`
-  mainEl.style.opacity = String(focusOpacity)
+  streak.rect.setAttribute("x", String(x0))
+  streak.rect.setAttribute("y", String(y0))
+  streak.rect.setAttribute("width", String(width))
+  streak.rect.setAttribute("height", String(height))
+  streak.rect.setAttribute(
+    "transform",
+    shearDeg !== 0 ? `skewY(${shearDeg.toFixed(2)})` : "",
+  )
+  streak.svg.style.display = "block"
+}
+
+function measureVisualState(
+  input: HTMLInputElement,
+  anchor: HTMLElement,
+  composing: boolean,
+  pointerSelecting: boolean,
+): InputVisualState {
+  const focused = document.activeElement === input
+  const point = measureInputCaret(input, anchor)
+  const visible = focused && point != null && !composing
+  return {
+    point,
+    visible,
+    allowStreak: visible && !pointerSelecting,
+  }
 }
 
 export function useJetCaretOverlay(
@@ -100,13 +231,13 @@ export function useJetCaretOverlay(
   enabled = true,
   anchorRef?: RefObject<HTMLElement | null>,
 ): void {
-  const layerRef = useRef<HTMLDivElement | null>(null)
   const animRef = useRef(new CaretEndpointAnim())
-  const ghostsRef = useRef(new CaretGhostBuffer())
   const rafRef = useRef<number | null>(null)
+  const eventRafRef = useRef<number | null>(null)
   const lastFrameRef = useRef(0)
   const reducedRef = useRef(prefersReducedMotion())
-  const prevPointRef = useRef<CaretPoint | null>(null)
+  const composingRef = useRef(false)
+  const pointerSelectingRef = useRef(false)
 
   useEffect(() => onReducedMotionChange(v => (reducedRef.current = v)), [])
 
@@ -116,27 +247,70 @@ export function useJetCaretOverlay(
     const anchor = anchorRef?.current ?? input?.parentElement
     if (!input || !anchor) return
 
+    const streak = createStreakLayer()
     const layer = document.createElement("div")
     layer.className = "jet-input-caret-layer"
+    layer.dataset.jetInputCaret = "layer"
     layer.style.position = "absolute"
     layer.style.inset = "0"
     layer.style.pointerEvents = "none"
     layer.style.overflow = "hidden"
-    layerRef.current = layer
+
+    const caretBar = document.createElement("div")
+    caretBar.className = "jet-input-caret-bar"
+    caretBar.dataset.jetInputCaret = "bar"
+    caretBar.style.position = "absolute"
+    caretBar.style.width = "2px"
+    caretBar.style.borderRadius = "1px"
+    caretBar.style.background = "var(--jet-cursor-color, #c4923a)"
+    caretBar.style.pointerEvents = "none"
+
+    layer.appendChild(caretBar)
+    anchor.appendChild(streak.svg)
     anchor.appendChild(layer)
+    hideCaretVisuals(caretBar, streak)
 
     input.style.caretColor = "transparent"
+
+    const stopAnimating = () => {
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    }
+
+    const render = (state: InputVisualState) => {
+      if (!state.visible || state.point == null) {
+        hideCaretVisuals(caretBar, streak)
+        return
+      }
+      renderCaretBar(caretBar, animRef.current)
+      if (!state.allowStreak || reducedRef.current) {
+        streak.svg.style.display = "none"
+        return
+      }
+      renderStreak(streak, animRef.current)
+    }
 
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - lastFrameRef.current) / 1000)
       lastFrameRef.current = now
-      const measured = measureInputCaret(input, anchor)
-      if (measured) {
-        animRef.current.followTarget(measured)
+
+      const state = measureVisualState(
+        input,
+        anchor,
+        composingRef.current,
+        pointerSelectingRef.current,
+      )
+      if (!state.visible || state.point == null) {
+        hideCaretVisuals(caretBar, streak)
+        rafRef.current = null
+        return
       }
+
+      animRef.current.followTarget(state.point)
       const active = animRef.current.step(dt)
-      const ghosts = ghostsRef.current.tick(now)
-      renderCaretLayer(layer, animRef.current, ghosts, document.activeElement === input ? 1 : 0.35)
+      render(state)
       if (active) {
         rafRef.current = requestAnimationFrame(tick)
       } else {
@@ -145,40 +319,90 @@ export function useJetCaretOverlay(
     }
 
     const schedule = (instant: boolean) => {
-      const measured = measureInputCaret(input, anchor)
-      if (!measured) return
-      const prev = prevPointRef.current
-      if (prev && !instant && !reducedRef.current) {
-        const dx = measured.x - prev.x
-        const dy = measured.y - prev.y
-        if (dx * dx + dy * dy > 0.5) {
-          ghostsRef.current.push(animRef.current.x, animRef.current.y, animRef.current.h)
-        }
-      }
-      animRef.current.setTarget(measured, instant || reducedRef.current)
-      prevPointRef.current = measured
-      renderCaretLayer(
-        layer,
-        animRef.current,
-        ghostsRef.current.tick(),
-        document.activeElement === input ? 1 : 0.35,
+      const state = measureVisualState(
+        input,
+        anchor,
+        composingRef.current,
+        pointerSelectingRef.current,
       )
+      if (!state.visible || state.point == null) {
+        hideCaretVisuals(caretBar, streak)
+        stopAnimating()
+        return
+      }
+
+      if (!instant && !reducedRef.current) {
+        animRef.current.lastRetargetAt = 0
+      }
+      animRef.current.setTarget(state.point, instant || reducedRef.current)
+      render(state)
+
+      const dx = animRef.current.targetX - animRef.current.x
+      const dy = animRef.current.targetY - animRef.current.y
+      const dh = animRef.current.targetH - animRef.current.h
+      const shouldAnimate =
+        !instant &&
+        !reducedRef.current &&
+        dx * dx + dy * dy + dh * dh > ANIM_EPSILON * ANIM_EPSILON
+
+      if (!shouldAnimate) {
+        stopAnimating()
+        return
+      }
+
       if (rafRef.current == null) {
         lastFrameRef.current = performance.now()
         rafRef.current = requestAnimationFrame(tick)
       }
     }
 
+    const scheduleDeferred = (instant: boolean) => {
+      if (eventRafRef.current != null) cancelAnimationFrame(eventRafRef.current)
+      eventRafRef.current = requestAnimationFrame(() => {
+        eventRafRef.current = null
+        schedule(instant)
+      })
+    }
+
     const onInput = () => schedule(false)
     const onSelect = () => schedule(false)
     const onFocus = () => schedule(true)
-    const onBlur = () => schedule(true)
+    const onBlur = () => {
+      pointerSelectingRef.current = false
+      schedule(true)
+    }
+    const onKeyDown = () => scheduleDeferred(false)
+    const onClick = () => scheduleDeferred(false)
+    const onPointerDown = () => {
+      pointerSelectingRef.current = true
+      schedule(true)
+    }
+    const onPointerUp = () => {
+      pointerSelectingRef.current = false
+      scheduleDeferred(false)
+    }
+    const onScroll = () => schedule(true)
+    const onCompositionStart = () => {
+      composingRef.current = true
+      schedule(true)
+    }
+    const onCompositionEnd = () => {
+      composingRef.current = false
+      scheduleDeferred(true)
+    }
 
     input.addEventListener("input", onInput)
     input.addEventListener("select", onSelect)
     input.addEventListener("focus", onFocus)
     input.addEventListener("blur", onBlur)
-    input.addEventListener("keydown", onInput)
+    input.addEventListener("keydown", onKeyDown)
+    input.addEventListener("click", onClick)
+    input.addEventListener("pointerdown", onPointerDown)
+    input.addEventListener("pointerup", onPointerUp)
+    input.addEventListener("pointercancel", onPointerUp)
+    input.addEventListener("scroll", onScroll)
+    input.addEventListener("compositionstart", onCompositionStart)
+    input.addEventListener("compositionend", onCompositionEnd)
     schedule(true)
 
     return () => {
@@ -186,11 +410,19 @@ export function useJetCaretOverlay(
       input.removeEventListener("select", onSelect)
       input.removeEventListener("focus", onFocus)
       input.removeEventListener("blur", onBlur)
-      input.removeEventListener("keydown", onInput)
+      input.removeEventListener("keydown", onKeyDown)
+      input.removeEventListener("click", onClick)
+      input.removeEventListener("pointerdown", onPointerDown)
+      input.removeEventListener("pointerup", onPointerUp)
+      input.removeEventListener("pointercancel", onPointerUp)
+      input.removeEventListener("scroll", onScroll)
+      input.removeEventListener("compositionstart", onCompositionStart)
+      input.removeEventListener("compositionend", onCompositionEnd)
       input.style.caretColor = ""
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+      stopAnimating()
+      if (eventRafRef.current != null) cancelAnimationFrame(eventRafRef.current)
       layer.remove()
-      layerRef.current = null
+      streak.svg.remove()
     }
   }, [inputRef, anchorRef, enabled])
 }
@@ -204,7 +436,7 @@ export const JetCaretInput = forwardRef<
   useJetCaretOverlay(innerRef, caretOverlay, anchorRef)
 
   return (
-    <div ref={anchorRef} className={cn("relative min-w-0", className)}>
+    <div ref={anchorRef} data-jet-caret-anchor="" className="relative min-w-0">
       <input
         ref={el => {
           innerRef.current = el
@@ -217,6 +449,7 @@ export const JetCaretInput = forwardRef<
           "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
           "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
           caretOverlay && "caret-transparent",
+          className,
         )}
         {...props}
       />
