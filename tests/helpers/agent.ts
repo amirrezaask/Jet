@@ -24,6 +24,7 @@ export type JetAgent = {
   getEditorText(): Promise<string | null>
   setEditorSelection(line: number, column: number): Promise<void>
   getCursorPosition(): Promise<JetAgentCursor | null>
+  getSelectionRangeCount(): Promise<number | null>
   acceptConfirm(): Promise<void>
   dismissConfirm(): Promise<void>
   readFixtureFile(relPath: string): Promise<string>
@@ -67,6 +68,7 @@ export function agent(page: Page): JetAgent {
         { line, column },
       ),
     getCursorPosition: () => page.evaluate(() => window.__jetAgent!.getCursorPosition()),
+    getSelectionRangeCount: () => page.evaluate(() => window.__jetAgent!.getSelectionRangeCount()),
     acceptConfirm: () => page.evaluate(async () => window.__jetAgent!.acceptConfirm()),
     dismissConfirm: () => page.evaluate(async () => window.__jetAgent!.dismissConfirm()),
     readFixtureFile: (relPath: string) =>

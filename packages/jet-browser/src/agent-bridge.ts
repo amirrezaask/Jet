@@ -28,6 +28,7 @@ export type JetAgentAPI = {
   getEditorText(): string | null
   setEditorSelection(line: number, column: number): void
   getCursorPosition(): JetAgentCursor | null
+  getSelectionRangeCount(): number | null
   acceptConfirm(): Promise<void>
   dismissConfirm(): Promise<void>
   readFixtureFile(relativePath: string): Promise<string>
@@ -51,6 +52,7 @@ export type AgentBridgeContext = {
   getEditorText?: () => string | null
   setEditorSelection?: (line: number, column: number) => void
   getCursorPosition?: () => JetAgentCursor | null
+  getSelectionRangeCount?: () => number | null
 }
 
 export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
@@ -114,6 +116,9 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
     },
     getCursorPosition() {
       return ctx().getCursorPosition?.() ?? null
+    },
+    getSelectionRangeCount() {
+      return ctx().getSelectionRangeCount?.() ?? null
     },
     async acceptConfirm() {
       const btn = document.querySelector<HTMLElement>('[data-jet-confirm="accept"]')

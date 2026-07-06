@@ -110,6 +110,8 @@ describe("jetKeyToCodeMirrorKey", () => {
     assert.equal(jetKeyToCodeMirrorKey("Cmd-f"), "Mod-f")
     assert.equal(jetKeyToCodeMirrorKey("Ctrl-g"), "Ctrl-g")
     assert.equal(jetKeyToCodeMirrorKey("Cmd-k Cmd-o"), null)
+    assert.equal(jetKeyToCodeMirrorKey("Ctrl-Shift-ArrowUp"), "Ctrl-Shift-ArrowUp")
+    assert.equal(jetKeyToCodeMirrorKey("Ctrl-Cmd-g"), "Mod-Ctrl-g")
   })
 })
 
@@ -144,6 +146,27 @@ describe("resolveKeydownBinding", () => {
     assert.notEqual(result, null)
     if (result && result !== "chord-started") {
       assert.equal(result.run, openFolder)
+    }
+  })
+
+  it("completes editor chord when editor is focused", () => {
+    const skip = () => {}
+    const editorCtx: KeymapContext = { ...baseCtx, editorFocus: true }
+    const chordState = createChordState()
+    chordState.prefix = "Cmd-k"
+    chordState.expiresAt = Date.now() + 5000
+    const bindings: JetKeyBinding[] = [
+      bind("Cmd-k Cmd-d", skip, ctx => ctx.editorFocus),
+    ]
+    const result = resolveKeydownBinding(
+      keyEvent({ key: "d", metaKey: true }),
+      bindings,
+      editorCtx,
+      chordState,
+    )
+    assert.notEqual(result, null)
+    if (result && result !== "chord-started") {
+      assert.equal(result.run, skip)
     }
   })
 })

@@ -1,17 +1,19 @@
-import { Compartment, EditorState, Text, type Extension } from "@codemirror/state"
+import { Compartment, EditorState, Prec, Text, type Extension } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers, drawSelection } from "@codemirror/view"
 import {
   defaultKeymap,
   history,
   historyKeymap,
   indentWithTab,
+  addCursorAbove,
+  addCursorBelow,
 } from "@codemirror/commands"
 import { autocompletion, completeAnyWord, completionKeymap } from "@codemirror/autocomplete"
 import { scopeCompletionSource } from "@codemirror/lang-javascript"
 import { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
 import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
-import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search"
+import { search, searchKeymap, highlightSelectionMatches, selectSelectionMatches, selectNextOccurrence } from "@codemirror/search"
 import { hiddenSearchPanel, jetSearchPanelKeymap } from "./search-bridge.js"
 import { LSPClient, jumpToDefinition } from "@codemirror/lsp-client"
 import { lspLanguageIdFromJet } from "@jet/shared"
@@ -23,7 +25,7 @@ import { jetKeyToCodeMirrorKey, matchesWhen, isEditorKeyBinding } from "@jet/wor
 import { jetEditorTheme, jetSyntaxHighlightingForTheme } from "./theme.js"
 import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { motionCursor } from "./motion-cursor.js"
-import { multiCursorExtensions } from "./multi-cursor.js"
+import { multiCursorExtensions, skipNextOccurrence } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
 import { eolOverlayExtension } from "./eol-overlays.js"
 import { braceScopeExtension } from "./brace-scope-extension.js"
@@ -33,6 +35,28 @@ import { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-inden
 
 const documentWordCompletion = EditorState.languageData.of(() => [
   { autocomplete: completeAnyWord },
+])
+
+/** Highest-priority multi-cursor keys — must beat browser/Electron defaults (e.g. Cmd+D bookmark). */
+const multiCursorPrecKeymap = Prec.highest(
+  keymap.of([
+    {
+      key: "Mod-d",
+      run: view => selectNextOccurrence({ state: view.state, dispatch: tr => view.dispatch(tr) }),
+      preventDefault: true,
+    },
+    { key: "Mod-k Mod-d", run: skipNextOccurrence, preventDefault: true },
+  ]),
+)
+
+/** Sublime-style multi-cursor keys at CM layer (Jet keymap also binds these for palette/chords). */
+const sublimeMultiCursorKeymap = keymap.of([
+  { key: "Ctrl-Shift-ArrowUp", run: addCursorAbove },
+  { key: "Ctrl-Shift-ArrowDown", run: addCursorBelow },
+  {
+    key: "Mod-Ctrl-g",
+    run: view => selectSelectionMatches({ state: view.state, dispatch: tr => view.dispatch(tr) }),
+  },
 ])
 
 const jsScopeCompletion = EditorState.languageData.of(() => [
@@ -106,6 +130,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   const indent = opts.indent ?? detectIndent(opts.initialText)
 
   const extensions: Extension[] = [
+    EditorState.allowMultipleSelections.of(true),
     lineNumbers(),
     history(),
     indentOnInput(),
@@ -127,6 +152,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   extensions.push(
     goToDefinitionOnClick,
     ...multiCursorExtensions(),
+    multiCursorPrecKeymap,
     search({ top: true, createPanel: hiddenSearchPanel }),
   )
 
@@ -136,8 +162,24 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
 
   extensions.push(
     jetSearchPanelKeymap(),
+    sublimeMultiCursorKeymap,
     keymap.of([
-      ...searchKeymap,
+      ...searchKeymap.map(binding =>
+        binding.key === "Mod-Shift-l"
+          ? {
+              key: "Mod-Shift-l",
+              run: (view: EditorView) =>
+                selectSelectionMatches({ state: view.state, dispatch: tr => view.dispatch(tr) }),
+            }
+          : binding.key === "Mod-d"
+            ? {
+                key: "Mod-d",
+                run: (view: EditorView) =>
+                  selectNextOccurrence({ state: view.state, dispatch: tr => view.dispatch(tr) }),
+                preventDefault: true,
+              }
+            : binding,
+      ),
       ...completionKeymap,
       ...defaultKeymap,
       ...historyKeymap,
@@ -269,9 +311,10 @@ export function applyUserKeymaps(
 ): void {
   perfMeasure("jet:apply-user-keymaps", () => {
     const active = bindings.filter(b => {
-      if (keymapContext && !matchesWhen(b, keymapContext)) return false
       if (!keymapContext || !b.when) return false
-      return isEditorKeyBinding(b, keymapContext)
+      if (!matchesWhen(b, keymapContext)) return false
+      if (!isEditorKeyBinding(b, keymapContext)) return false
+      return keymapContext.editorFocus
     })
     const cmBindings = active.flatMap(binding => {
       const cmKey = jetKeyToCodeMirrorKey(binding.key)

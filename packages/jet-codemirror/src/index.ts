@@ -59,3 +59,4 @@ export {
 export { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
 export { eolOverlayExtension, braceScopeExtension } from "./eol-overlays.js"
 export { jetReloadAnnotation } from "./reload-annotation.js"
+export { skipNextOccurrence } from "./multi-cursor.js"

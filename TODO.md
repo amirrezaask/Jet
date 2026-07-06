@@ -1,7 +1,6 @@
-- rewrite explorer
 - integrate terminal
 - Agent explorer
+- rewrite file explorer
 - name ?
 - icon
 - better chrome font size to editor font size ratio
-- 

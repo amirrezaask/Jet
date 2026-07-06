@@ -867,7 +867,6 @@ export function JetApp() {
   const keymapTargetViewRef = useRef<EditorView | null>(null)
 
   const getCommandContext = useCallback((): JetCommandContext => {
-    const currentFocusedPanel = appStateRef.current.focusedPanel
     return {
       workspace,
       ui: {
@@ -877,7 +876,7 @@ export function JetApp() {
       },
       getActiveEditorView: () => {
         if (keymapTargetViewRef.current) return keymapTargetViewRef.current
-        const panel = currentFocusedPanel
+        const panel = appStateRef.current.focusedPanel ?? editorPanelRef.current
         return panel ? (getEditorView(panel) ?? null) : null
       },
     }
@@ -1204,6 +1203,12 @@ export function JetApp() {
         const pos = getEditorCursor()
         return pos ? { line: pos.line, column: pos.column } : null
       },
+      getSelectionRangeCount: () => {
+        const panel = focusedPanel ?? editorPanelRef.current
+        if (!panel) return null
+        const view = getEditorView(panel)
+        return view?.state.selection.ranges.length ?? null
+      },
     }))
     return () => {
       delete window.__jetAgent
@@ -1351,7 +1356,16 @@ export function JetApp() {
         runKeyBinding(result)
         return
       }
-      if (result && isEditorKeyBinding(result, keymapContext)) return
+      if (result && isEditorKeyBinding(result, keymapContext)) {
+        const panel = appStateRef.current.focusedPanel ?? editorPanelRef.current
+        const view = panel ? getEditorView(panel) : null
+        if (view?.hasFocus || keymapContext.editorFocus) {
+          e.preventDefault()
+          e.stopPropagation()
+          runKeyBinding(result, view ?? undefined)
+        }
+        return
+      }
       if (result) {
         e.preventDefault()
         runKeyBinding(result)
@@ -1393,6 +1407,9 @@ export function JetApp() {
           { id: "goto", label: "Go to Line…", shortcut: shortcutFor("gotoLine"), onSelect: () => void executeCommand("editor.gotoLine") },
           { kind: "separator" as const },
           { id: "toggleComment", label: "Toggle Comment", shortcut: shortcutFor("toggleComment"), onSelect: () => void executeCommand("editor.toggleComment") },
+          { id: "selectNextOccurrence", label: "Select Next Occurrence", shortcut: shortcutFor("selectNextOccurrence"), onSelect: () => void executeCommand("editor.selectNextOccurrence") },
+          { id: "selectAllOccurrences", label: "Select All Occurrences", shortcut: shortcutFor("selectAllOccurrences"), onSelect: () => void executeCommand("editor.selectAllOccurrences") },
+          { id: "skipNextOccurrence", label: "Skip Next Occurrence", shortcut: shortcutFor("skipNextOccurrence"), onSelect: () => void executeCommand("editor.skipNextOccurrence") },
         ],
       },
       {

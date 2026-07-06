@@ -1,4 +1,5 @@
 import type { EditorView } from "@codemirror/view"
+import type { TransactionSpec } from "@codemirror/state"
 import {
   toggleComment,
   copyLineUp,
@@ -39,6 +40,7 @@ import {
   runTriggerSuggest,
   runShowHover,
   lspPluginForView,
+  skipNextOccurrence,
   type OutlineSymbol,
 } from "@jet/codemirror"
 import { scheduleCodeActions, applyCodeAction } from "@jet/lsp"
@@ -112,6 +114,22 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
     const view = ctx.getActiveEditorView() as EditorView | null
     if (view) fn(view)
+  }
+
+  /** @codemirror/search commands destructure `{ state, dispatch }` — pass bound dispatch. */
+  function runCmStateCmd(
+    ctx: JetCommandContext,
+    fn: (target: { state: EditorView["state"]; dispatch: (tr: TransactionSpec) => void }) => boolean,
+  ): void {
+    const view = ctx.getActiveEditorView() as EditorView | null
+    if (view) {
+      fn({
+        state: view.state,
+        dispatch: spec => {
+          view.dispatch(spec)
+        },
+      })
+    }
   }
 
   function flattenOutline(symbols: OutlineSymbol[], depth = 0): OutlineEntry[] {
@@ -359,8 +377,9 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     expandLineSelection: ctx => runCmCmd(ctx, selectLine),
     indentMore: ctx => runCmCmd(ctx, indentMore),
     indentLess: ctx => runCmCmd(ctx, indentLess),
-    selectNextOccurrence: ctx => runCmCmd(ctx, selectNextOccurrence),
-    selectAllOccurrences: ctx => runCmCmd(ctx, selectSelectionMatches),
+    selectNextOccurrence: ctx => runCmStateCmd(ctx, selectNextOccurrence),
+    selectAllOccurrences: ctx => runCmStateCmd(ctx, selectSelectionMatches),
+    skipNextOccurrence: ctx => runCmCmd(ctx, skipNextOccurrence),
     undo: ctx => runCmCmd(ctx, undo),
     redo: ctx => runCmCmd(ctx, redo),
     cursorUndo: ctx => runCmCmd(ctx, undoSelection),
@@ -596,6 +615,9 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.moveLineDown", fn: "moveLineDown", title: "Move Line Down", category: "Editor" },
   { id: "editor.indentMore", fn: "indentMore", title: "Indent Line", category: "Editor" },
   { id: "editor.addCursorBelow", fn: "addCursorBelow", title: "Add Cursor Below", category: "Editor" },
+  { id: "editor.selectNextOccurrence", fn: "selectNextOccurrence", title: "Select Next Occurrence", category: "Editor" },
+  { id: "editor.selectAllOccurrences", fn: "selectAllOccurrences", title: "Select All Occurrences", category: "Editor" },
+  { id: "editor.skipNextOccurrence", fn: "skipNextOccurrence", title: "Skip Next Occurrence", category: "Editor" },
   { id: "editor.nextEditor", fn: "nextBuffer", title: "Next Buffer", category: "Editor" },
   { id: "editor.previousEditor", fn: "prevBuffer", title: "Previous Buffer", category: "Editor" },
   { id: "view.splitEditor", fn: "splitEditorRight", title: "Split Editor Right", category: "View" },
