@@ -3,6 +3,7 @@ import type { DropAction, PanelId, PanelView } from "@jet/shared"
 import {
   buildTabsView,
   panelHasTab,
+  panelHasTabForFile,
   panelTabIds,
   popPanelTab,
 } from "./panel-tabs.js"
@@ -18,7 +19,7 @@ export class JetPanelTree extends PanelTree<PanelView> {
   }
 
   findEditorPanelForFile(fileUri: string): PanelId | null {
-    return this.findPanelWithView(v => panelHasTab(v, fileUri))
+    return this.findPanelWithView(v => panelHasTabForFile(v, fileUri))
   }
 
   applyTabDrop(

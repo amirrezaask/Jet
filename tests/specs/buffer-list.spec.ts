@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test"
 import { boot, SAMPLE } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
 import { expectLayout, expectRowTextVisible } from "../helpers/list.js"
+import { INDEX_MAIN, expectEditorBuffer, expectMinOpenBuffers, selectBufferFromList } from "../helpers/tabs.js"
 
 test.beforeEach(async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
@@ -9,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 
 test("buffer-list: shows open buffers", async ({ page }) => {
   await agent(page).openFile("package.json")
-  await page.waitForTimeout(300)
+  await expectMinOpenBuffers(page, 2)
 
   await agent(page).executeCommand("workspace.bufferList")
   await page.waitForTimeout(300)
@@ -42,14 +43,9 @@ test("buffer-list: enter switches buffer", async ({ page }) => {
   await agent(page).openFile("package.json")
   await page.waitForTimeout(300)
 
-  await agent(page).executeCommand("workspace.bufferList")
-  await page.waitForTimeout(300)
-  await page.keyboard.type("index")
-  await page.waitForTimeout(200)
-  await page.keyboard.press("Enter")
-  await page.waitForTimeout(500)
+  await selectBufferFromList(page, "index.ts")
 
-  await expect(page.locator(".cm-editor")).toContainText("export function main")
+  await expectEditorBuffer(page, { contains: INDEX_MAIN })
 })
 
 test("buffer-list: close buffer removes it from editor", async ({ page }) => {

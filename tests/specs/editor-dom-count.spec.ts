@@ -12,4 +12,9 @@ test("editor: only active editor remains mounted after file switch", async ({ pa
   await page.waitForTimeout(600)
 
   await expect(page.locator(".cm-editor")).toHaveCount(1)
+
+  await page.locator('[data-tab-id$="src/index.ts"]').click()
+  await page.waitForTimeout(200)
+  await expect(page.locator(".cm-editor")).toHaveCount(1)
+  await expect(page.locator(".cm-editor")).toContainText("export function main")
 })

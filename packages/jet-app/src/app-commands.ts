@@ -92,7 +92,7 @@ export type BuildAppCommandsDeps = {
   setFocusedPanel: (panel: PanelId) => void
   cloneTree: () => JetPanelTree
   commitTree: (tree: JetPanelTree, preferFocus?: PanelId | null) => void
-  openWorkspaceFolder: (path: string, opts?: { replace?: boolean }) => void
+  openWorkspaceFolder: (path: string, opts?: { replace?: boolean }) => void | Promise<void>
   addWorkspaceFolder: (path: string) => void
   removeWorkspaceFolder: (folderId: string) => Promise<boolean>
   setActiveWorkspaceFolder: (folderId: string) => void
@@ -254,13 +254,63 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     )
   }
 
+  function sameFileUri(a: string, b: string): boolean {
+    return fileUriToPath(a) === fileUriToPath(b)
+  }
+
+  function listEditorTabIds(panel: PanelId): string[] {
+    const view = currentPanelTree().getView(panel)
+    if (view?.kind !== "tabs") return []
+    return panelTabIds(view).filter(id => id.startsWith("file:") || id.startsWith("untitled:"))
+  }
+
+  function cycleEditorBuffer(delta: 1 | -1): void {
+    const panel = activeEditorPanel()
+    if (!panel) return
+    const tabs = listEditorTabIds(panel)
+    if (tabs.length < 2) return
+    const current = getActiveEditorFileUri(currentPanelTree(), panel)
+    let idx = current != null ? tabs.findIndex(t => sameFileUri(t, current)) : -1
+    if (idx < 0) idx = 0
+    const target = tabs[(idx + delta + tabs.length) % tabs.length]!
+    deps.workspace.touchBuffer(target)
+    deps.handlePanelEvent({ type: "tabActivate", panelId: panel, tabId: target })
+  }
+
+  function syncOpenBuffersFromPanels(): void {
+    const tree = currentPanelTree()
+    const uris: string[] = []
+    for (const panel of getAllLeafPanels(tree)) {
+      const view = tree.getView(panel)
+      if (view?.kind !== "tabs") continue
+      for (const id of panelTabIds(view)) {
+        if (!id.startsWith("file:") && !id.startsWith("untitled:")) continue
+        if (!uris.some(u => sameFileUri(u, id))) uris.push(id)
+      }
+    }
+    for (let i = uris.length - 1; i >= 0; i--) {
+      deps.workspace.touchBuffer(uris[i]!)
+    }
+  }
+
+  const showProjectSearch: JetCommandFn = ctx => {
+    if (gitSearchUnavailable(ctx)) return
+    deps.syncProblemsToListTab()
+    const tree = deps.cloneTree()
+    const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())
+    deps.commitTree(tree, panelId)
+  }
+
   const named: JetCommands = {
     palette: () => deps.setPaletteOpen(true),
     quickOpen: ctx => {
       if (gitSearchUnavailable(ctx)) return
       deps.setQuickOpenOpen(true)
     },
-    bufferList: () => deps.setBufferListOpen(true),
+    bufferList: () => {
+      syncOpenBuffersFromPanels()
+      deps.setBufferListOpen(true)
+    },
     openFile: ctx => {
       if (!deps.workspace.manager.hasFolders()) {
         void openFolder(ctx)
@@ -350,19 +400,14 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (view) openJetSearch(view, "replace", panel?.id)
     },
     gotoLine: () => deps.setGotoLineOpen(true),
+    search: showProjectSearch,
     locationList: ctx => {
       if (gitSearchUnavailable(ctx)) return
       const tree = deps.cloneTree()
       const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())
       deps.commitTree(tree, panelId)
     },
-    locationListSearch: ctx => {
-      if (gitSearchUnavailable(ctx)) return
-      deps.syncProblemsToListTab()
-      const tree = deps.cloneTree()
-      const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())
-      deps.commitTree(tree, panelId)
-    },
+    locationListSearch: showProjectSearch,
     locationListProblems: () => {
       deps.syncProblemsToListTab()
       const tree = deps.cloneTree()
@@ -547,26 +592,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     smartSelectExpand: ctx => runCmCmd(ctx, selectParentSyntax),
     smartSelectShrink: ctx => runCmCmd(ctx, simplifySelection),
 
-    nextBuffer: () => {
-      const buffers = deps.workspace.openBuffers
-      if (buffers.length < 2) return
-      const panel = activeEditorPanel()
-      if (!panel) return
-      const current = getActiveEditorFileUri(currentPanelTree(), panel)
-      const idx = current ? buffers.indexOf(current) : -1
-      const next = buffers[(idx + 1) % buffers.length]!
-      deps.openFileInEditor(next, fileUriToPath(next), undefined, undefined, false)
-    },
-    prevBuffer: () => {
-      const buffers = deps.workspace.openBuffers
-      if (buffers.length < 2) return
-      const panel = activeEditorPanel()
-      if (!panel) return
-      const current = getActiveEditorFileUri(currentPanelTree(), panel)
-      const idx = current ? buffers.indexOf(current) : 0
-      const prev = buffers[(idx - 1 + buffers.length) % buffers.length]!
-      deps.openFileInEditor(prev, fileUriToPath(prev), undefined, undefined, false)
-    },
+    nextBuffer: () => cycleEditorBuffer(1),
+    prevBuffer: () => cycleEditorBuffer(-1),
     focusSidebar: () => {
       const tree = deps.cloneTree()
       for (const panel of getAllLeafPanels(tree)) {
@@ -769,6 +796,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.replace", fn: "replace", title: "Replace in Editor", category: "Editor" },
   { id: "editor.gotoLine", fn: "gotoLine", title: "Go to Line…", category: "Editor" },
   { id: "locationlist.show", fn: "locationList", title: "Show Location List", category: "View" },
+  { id: "search.show", fn: "search", title: "Show Search", category: "View", aliases: ["project search", "find in files"] },
   { id: "locationlist.showSearch", fn: "locationListSearch", title: "Location List: Search", category: "View" },
   { id: "locationlist.showProblems", fn: "locationListProblems", title: "Location List: Problems", category: "View" },
   { id: "output.show", fn: "output", title: "Show Output", category: "View" },

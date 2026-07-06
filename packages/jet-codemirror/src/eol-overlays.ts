@@ -62,7 +62,6 @@ function eolItemClass(item: EolOverlayItem): string {
 }
 
 const eolOverlayMark = Decoration.mark({ class: "cm-eol-overlay-wrap-mark" })
-const braceGuideMark = Decoration.line({ class: "cm-brace-guide-line" })
 
 const setEolDeco = StateEffect.define<ReturnType<typeof Decoration.set>>()
 
@@ -149,11 +148,6 @@ function buildEolDecorations(
 
   const closeBraceByLine = new Map<number, string>()
   for (const scope of scopes) {
-    if (scope.openLine + 1 <= scope.closeLine - 1) {
-      for (let ln = scope.openLine + 1; ln <= scope.closeLine - 1; ln++) {
-        deco.push(braceGuideMark.range(doc.line(ln + 1).from))
-      }
-    }
     closeBraceByLine.set(scope.closeLine + 1, scope.label)
   }
 

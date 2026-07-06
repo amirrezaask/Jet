@@ -31,7 +31,6 @@ import { defaultJetTheme, type JetTheme } from "./theme-types.js"
 import { multiCursorExtensions, skipNextOccurrence } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
 import { eolOverlayExtension } from "./eol-overlays.js"
-import { braceScopeExtension } from "./brace-scope-extension.js"
 import { perfMeasure } from "./perf-instrumentation.js"
 import { jetReloadAnnotation } from "./reload-annotation.js"
 import { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
@@ -167,7 +166,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   extensions.push(indentMarkerCompartment.of(indentMarkerExtension(theme, largeFile)))
 
   if (!largeFile) {
-    extensions.push(eolOverlayExtension(), braceScopeExtension())
+    extensions.push(eolOverlayExtension())
   }
 
   extensions.push(

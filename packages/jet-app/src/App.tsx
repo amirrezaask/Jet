@@ -226,7 +226,7 @@ export function JetApp() {
   const fontSizeRef = useRef(loadStoredFontSize())
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
-  const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void>(
+  const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>>(
     () => {},
   )
   const addWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
@@ -783,22 +783,20 @@ export function JetApp() {
   )
 
   const openWorkspaceFolder = useCallback(
-    (folderPath: string, opts?: OpenWorkspaceOptions) => {
-      void (async () => {
-        const folder =
-          opts?.replace || !workspace.manager.hasFolders()
-            ? await workspace.replaceAllFolders(folderPath)
-            : await workspace.addFolder(folderPath)
-        workspaceRootPathRef.current = folderPath
-        if (!opts?.silent) {
-          if (opts?.replace || workspace.folders.length === 1) {
-            showJetToast(`Opened ${folderPath}`)
-          } else {
-            showJetToast(`Added ${folder.root.name}`)
-          }
+    async (folderPath: string, opts?: OpenWorkspaceOptions): Promise<void> => {
+      const folder =
+        opts?.replace || !workspace.manager.hasFolders()
+          ? await workspace.replaceAllFolders(folderPath)
+          : await workspace.addFolder(folderPath)
+      workspaceRootPathRef.current = folderPath
+      if (!opts?.silent) {
+        if (opts?.replace || workspace.folders.length === 1) {
+          showJetToast(`Opened ${folderPath}`)
+        } else {
+          showJetToast(`Added ${folder.root.name}`)
         }
-        activateFolderBackground(folder.id, folderPath)
-      })()
+      }
+      activateFolderBackground(folder.id, folderPath)
     },
     [workspace, activateFolderBackground],
   )
@@ -1417,7 +1415,9 @@ export function JetApp() {
       queryBootstrapDone.current = true
       void openWorkspaceFromQuery(
         window.location.search,
-        path => Promise.resolve(openWorkspaceRef.current(path, { replace: true, silent: true })),
+        async path => {
+          await openWorkspaceRef.current(path, { replace: true, silent: true })
+        },
         openFile,
       )
         .catch(err => console.warn("Failed to open workspace from query:", err))

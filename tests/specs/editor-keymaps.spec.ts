@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test"
 import { boot, SAMPLE, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
 import { focusEditor } from "../helpers/editor.js"
+import { SEARCH_LIST_PANEL } from "../helpers/location-list.js"
 
 test.beforeEach(async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
@@ -24,12 +25,12 @@ test("editor-keymaps: Cmd-/ toggles comment", async ({ page }) => {
   await expect(page.locator(".cm-editor")).toContainText("//")
 })
 
-test("editor-keymaps: Cmd-Shift-[ previous buffer", async ({ page }) => {
+test("editor-keymaps: previous buffer command switches content", async ({ page }) => {
   await agent(page).openFile("src/utils.ts")
   await page.waitForTimeout(400)
   await expect(page.locator(".cm-editor")).toContainText("greet")
 
-  await page.keyboard.press("Meta+Shift+[")
+  await agent(page).executeCommand("editor.previousEditor")
   await page.waitForTimeout(300)
   await expect(page.locator(".cm-editor")).toContainText("main")
 })
@@ -47,6 +48,14 @@ test("editor-keymaps: Cmd-Shift-e shows explorer", async ({ page }) => {
   await page.keyboard.press("Meta+Shift+E")
   await page.waitForTimeout(400)
   await expect(page.locator('[data-jet-list-panel="explorer"]')).toBeVisible()
+})
+
+test("editor-keymaps: Cmd-Shift-f opens project search", async ({ page }) => {
+  await focusEditor(page)
+  await page.keyboard.press("Meta+Shift+F")
+  await page.waitForTimeout(400)
+  await expect(page.locator(SEARCH_LIST_PANEL)).toBeVisible()
+  await expect(page.locator(`${SEARCH_LIST_PANEL} input[type="search"]`)).toBeFocused()
 })
 
 test("editor-keymaps: Cmd-p quick open", async ({ page }) => {

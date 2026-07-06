@@ -1,4 +1,5 @@
 import type { PanelId, PanelView } from "@jet/shared"
+import { fileUriToPath } from "@jet/shared"
 import type { JetPanelTree } from "./panel-tree.js"
 
 export type TabsPanelView = Extract<PanelView, { kind: "tabs" }>
@@ -19,6 +20,20 @@ export function panelHasTab(view: PanelView | null, tabId: string): boolean {
   return panelTabIds(view).includes(tabId)
 }
 
+export function sameFileTab(a: string, b: string): boolean {
+  return fileUriToPath(a) === fileUriToPath(b)
+}
+
+export function findTabIdForFile(view: PanelView | null, fileUri: string): string | null {
+  if (!view || view.kind !== "tabs") return null
+  const path = fileUriToPath(fileUri)
+  return panelTabIds(view).find(id => fileUriToPath(id) === path) ?? null
+}
+
+export function panelHasTabForFile(view: PanelView | null, fileUri: string): boolean {
+  return findTabIdForFile(view, fileUri) != null
+}
+
 export function pushPanelTab(
   current: PanelView | null,
   tabId: string,
@@ -27,6 +42,10 @@ export function pushPanelTab(
   if (current?.kind === "tabs") {
     let existing = panelTabIds(current)
     if (replaceTabId) existing = existing.map(id => (id === replaceTabId ? tabId : id))
+    const pathMatch = existing.find(id => sameFileTab(id, tabId))
+    if (pathMatch) {
+      return { kind: "tabs", activeTabId: pathMatch, tabIds: existing }
+    }
     if (!existing.includes(tabId)) existing = [...existing, tabId]
     return { kind: "tabs", activeTabId: tabId, tabIds: existing }
   }

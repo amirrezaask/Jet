@@ -106,9 +106,6 @@ export function jetEditorTheme(theme: JetTheme) {
       ".cm-panel.cm-search, .jet-search-panel-hidden": {
         display: "none !important",
       },
-      ".cm-indent-marker": {
-        borderLeft: `1px solid ${theme.colors.border}`,
-      },
       ".cm-eol-overlay-wrap": {
         pointerEvents: "none",
         userSelect: "none",
@@ -129,10 +126,6 @@ export function jetEditorTheme(theme: JetTheme) {
       },
       ".cm-eol-overlay-diagnostic-info": {
         color: theme.colors.textMuted,
-      },
-      ".cm-brace-guide-line": {
-        borderLeft: `1px solid ${theme.colors.border}`,
-        marginLeft: "2px",
       },
       ".cm-tooltip": {
         backgroundColor: theme.colors.panelRaised,

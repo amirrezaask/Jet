@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import { expect, type Page } from "@playwright/test"
 import { agent } from "./agent.js"
 
 const BASE_URL = process.env.JET_BASE_URL ?? "http://localhost:5174"
@@ -35,6 +35,12 @@ export async function boot(page: Page, opts: BootOpts = {}): Promise<void> {
 
   if (workspace) {
     await a.waitForEditor().catch(() => {})
+    if (file) {
+      const needle = file.endsWith(".json") ? '"name"' : "export function"
+      await expect
+        .poll(async () => (await a.getEditorText())?.includes(needle) ?? false, { timeout: 15_000 })
+        .toBe(true)
+    }
   }
 
   if (fontSize != null) {

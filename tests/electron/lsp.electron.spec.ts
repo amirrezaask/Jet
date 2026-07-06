@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { PROBLEMS_PANEL } from "../helpers/location-list.js"
+import { launchJet, openFixtureFile, waitForLspConnected, hasTypescriptLanguageServer } from "./_launch.js"
 
 const lspAvailable = hasTypescriptLanguageServer()
 
@@ -77,6 +78,26 @@ test.describe("electron LSP", () => {
       await openFixtureFile(page, "src/lint-error.ts")
       await waitForLspConnected(page)
       await page.waitForTimeout(2000)
+
+      await page.evaluate(async () => {
+        await window.__jetAgent!.executeCommand("locationlist.showProblems")
+      })
+      await page.waitForTimeout(1500)
+
+      await expect(page.locator(PROBLEMS_PANEL)).toContainText(/error|Type|problem/i)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("LSP resolves nested project root when workspace is parent folder", async () => {
+    const { app, page } = await launchJet("fixtures")
+    try {
+      await openFixtureFile(page, "sample-workspace/src/index.ts")
+      await waitForLspConnected(page)
+
+      await openFixtureFile(page, "sample-workspace/src/lint-error.ts")
+      await page.waitForTimeout(2500)
 
       await page.evaluate(async () => {
         await window.__jetAgent!.executeCommand("locationlist.showProblems")

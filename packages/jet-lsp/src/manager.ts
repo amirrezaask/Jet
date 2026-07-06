@@ -1,5 +1,6 @@
 import type { WorkspaceFile } from "@jet/workspace"
 import { Emitter, pathToFileUri, fileUriToPath } from "@jet/shared"
+import { findProjectRoot, parentDir } from "./project-root.js"
 
 export type LanguageServerDescriptor = {
   id: string
@@ -66,26 +67,28 @@ export class LanguageServerManager {
     const descriptor = this.descriptorForLanguage(file.languageId)
     if (!descriptor) return null
 
-    const rootUri = workspaceRoot
-    const key = `${descriptor.id}:${rootUri}`
+    const workspaceRootUri = workspaceRoot
+    const filePath = fileUriToPath(file.uri)
+    const startDir = parentDir(filePath)
+    const projectRoot = await findProjectRoot(startDir, descriptor.rootMarkers, window.jet?.fs)
+    if (!projectRoot) return null
+
+    const projectRootUri = pathToFileUri(projectRoot)
+    const key = `${descriptor.id}:${projectRootUri}`
     const existing = this.connections.get(key)
     if (existing) return existing
 
-    const rootPath = fileUriToPath(rootUri)
-    const projectRoot = await findProjectRoot(rootPath, descriptor.rootMarkers)
-    if (!projectRoot) return null
-
     try {
       const conn = await this.lspApi.start(
-        pathToFileUri(projectRoot),
+        projectRootUri,
         file.languageId,
         descriptor.command,
         descriptor.args,
       )
       const connection: LspConnection = {
         id: conn.id,
-        rootUri,
-        projectRootUri: pathToFileUri(projectRoot),
+        rootUri: workspaceRootUri,
+        projectRootUri,
         languageIds: descriptor.languageIds,
         transportUrl: conn.transportUrl,
         descriptorId: descriptor.id,
@@ -110,10 +113,10 @@ export class LanguageServerManager {
     return err
   }
 
-  getConnection(languageId: string, rootUri: string): LspConnection | null {
+  getConnection(languageId: string, projectRootUri: string): LspConnection | null {
     const descriptor = this.descriptorForLanguage(languageId)
     if (!descriptor) return null
-    return this.connections.get(`${descriptor.id}:${rootUri}`) ?? null
+    return this.connections.get(`${descriptor.id}:${projectRootUri}`) ?? null
   }
 
   hasAnyConnection(): boolean {
@@ -143,28 +146,6 @@ export class LanguageServerManager {
   private descriptorForLanguage(languageId: string): LanguageServerDescriptor | null {
     return DESCRIPTORS.find(d => d.languageIds.includes(languageId)) ?? null
   }
-}
-
-async function findProjectRoot(startPath: string, markers: string[]): Promise<string | null> {
-  const fs = window.jet?.fs
-  if (!fs) return startPath
-
-  let current = startPath
-  for (let i = 0; i < 20; i++) {
-    for (const marker of markers) {
-      try {
-        const uri = pathToFileUri(`${current}/${marker}`)
-        await fs.stat(uri)
-        return current
-      } catch {
-        /* continue */
-      }
-    }
-    const parent = current.replace(/[/\\][^/\\]+$/, "")
-    if (parent === current) break
-    current = parent
-  }
-  return startPath
 }
 
 export function getLanguageServerDescriptors(): LanguageServerDescriptor[] {

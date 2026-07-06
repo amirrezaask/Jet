@@ -235,11 +235,16 @@ function EditorTabHostInner({
       onBlur = blurHandler
       live.view.dom.addEventListener("focus", focusHandler)
       live.view.dom.addEventListener("blur", blurHandler)
-      if (autoFocus) live.view.focus()
       onProblemsChangeRef.current?.()
     }
 
-    ;(async () => {
+    // Cached sessions must attach synchronously — deferring to a microtask leaves a
+    // blank editor when keepMounted:false remounts the tab after a switch.
+    if (session) {
+      attachView(session)
+    }
+
+    void (async () => {
       if (!session) {
         const untitled = isUntitledUri(fileUri)
         const path = untitled ? "" : fileUriToPath(fileUri)
@@ -331,13 +336,14 @@ function EditorTabHostInner({
 
     return () => {
       cancelled = true
-      if (session && onFocus && onBlur) {
-        session.view.dom.removeEventListener("focus", onFocus)
-        session.view.dom.removeEventListener("blur", onBlur)
+      const live = panelSessions(panelId).get(fileUri)
+      if (live && onFocus && onBlur) {
+        live.view.dom.removeEventListener("focus", onFocus)
+        live.view.dom.removeEventListener("blur", onBlur)
       }
-      if (session) detachSessionDom(session, parent)
+      if (live) detachSessionDom(live, parent)
     }
-  }, [fileUri, panelId.id, workspace, userExtensions, autoFocus, runCommand, runBinding])
+  }, [fileUri, panelId.id, workspace, userExtensions, theme, runCommand, runBinding])
 
   useEffect(() => {
     for (const session of panelSessions(panelId).values()) {

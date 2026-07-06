@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test"
 import { boot, SAMPLE, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
+import { expectEditorAndTabInSync, INDEX_MAIN, UTILS_GREET } from "../helpers/tabs.js"
 import { expectElementWidth, expectSyntaxHighlighting } from "../helpers/list.js"
 import { focusEditor } from "../helpers/editor.js"
 import { confirmDialog } from "../helpers/overlays.js"
@@ -41,11 +42,11 @@ test("tab-lifecycle: next/previous editor navigation", async ({ page }) => {
 
   await agent(page).executeCommand("editor.previousEditor")
   await page.waitForTimeout(300)
-  await expect(page.locator(".cm-editor")).toContainText("main")
+  await expectEditorAndTabInSync(page, "src/index.ts", { contains: INDEX_MAIN })
 
   await agent(page).executeCommand("editor.nextEditor")
   await page.waitForTimeout(300)
-  await expect(page.locator(".cm-editor")).toContainText("greet")
+  await expectEditorAndTabInSync(page, "src/utils.ts", { contains: UTILS_GREET })
 })
 
 test("tab-lifecycle: save clears dirty flag", async ({ page }) => {

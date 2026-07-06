@@ -174,12 +174,14 @@ export class WorkspaceService {
   }
 
   touchBuffer(uri: string): void {
-    this.openBuffers = [uri, ...this.openBuffers.filter(u => u !== uri)]
+    const path = fileUriToPath(uri)
+    this.openBuffers = [uri, ...this.openBuffers.filter(u => fileUriToPath(u) !== path)]
     this.onDidChangeBuffers.fire()
   }
 
   closeBuffer(uri: string): void {
-    this.openBuffers = this.openBuffers.filter(u => u !== uri)
+    const path = fileUriToPath(uri)
+    this.openBuffers = this.openBuffers.filter(u => fileUriToPath(u) !== path)
     this.onDidChangeBuffers.fire()
   }
 
@@ -343,6 +345,16 @@ export class WorkspaceService {
   ): void {
     let file = this.fileForUri(uri)
     if (!file) file = this.createWorkspaceFile(uri, path)
+    const current = tree.getView(panelId)
+    if (current?.kind === "tabs") {
+      const existingTabId = panelTabIds(current).find(id => fileUriToPath(id) === fileUriToPath(uri))
+      if (existingTabId) {
+        this.registerTab({ id: existingTabId, kind: "editor", label: file.name })
+        this.touchBuffer(existingTabId)
+        tree.setView(panelId, activatePanelTab(current, existingTabId))
+        return
+      }
+    }
     this.openTabInPanel(
       tree,
       panelId,
@@ -353,7 +365,11 @@ export class WorkspaceService {
   }
 
   popPanelBuffer(tree: JetPanelTree, panelId: PanelId, uri: string): void {
-    this.closeTabInPanel(tree, panelId, uri)
+    const view = tree.getView(panelId)
+    if (view?.kind !== "tabs") return
+    const tabId =
+      panelTabIds(view).find(id => fileUriToPath(id) === fileUriToPath(uri)) ?? uri
+    this.closeTabInPanel(tree, panelId, tabId)
   }
 
   openUntitledInPanel(

@@ -15,7 +15,7 @@ pnpm test:electron             # native shell (Electron only; builds jet-desktop
 
 | Path | Purpose |
 |------|---------|
-| `tests/specs/*.spec.ts` | Feature specs (boot, palette, explorer, editor, tab-drag, …) |
+| `tests/specs/*.spec.ts` | Feature specs (boot, palette, explorer, editor, tab-drag, tab-switch, …) |
 | `tests/specs/*.screenshot.spec.ts` | Optional pixel snapshots (separate project) |
 | `tests/helpers/` | Shared boot, agent bridge, editor, overlays, list assertions, drag helpers |
 | `tests/electron/` | Electron-only native chrome + LSP |
@@ -42,6 +42,9 @@ test("my feature", async ({ page }) => {
   - `getEditorText`, `setEditorSelection`, `getCursorPosition`
   - `readFixtureFile`, `acceptConfirm`, `dismissConfirm`, `waitForListRows`
 - **`focusEditor` / `typeInEditor` / `expectCursorLine`** — editor helpers (`tests/helpers/editor.ts`)
+- **`expectEditorBuffer` / `switchTabExpectBuffer` / `expectActiveTabSuffix` / `expectEditorAndTabInSync`** — tab bar + CodeMirror doc sync (`tests/helpers/tabs.ts`); catches title/content drift when switching buffers.
+- **`selectBufferFromList` / `expectMinOpenBuffers`** — buffer list overlay selection + open-buffer count gate.
+- **`tests/specs/tab-switch.spec.ts`** — regression suite for tab bar clicks, rapid switching, buffer list, prev/next buffer commands, agent re-open, single CM instance, edit round-trip, tab bar active states.
 - **`confirmDialog` / `expectOverlayOpen`** — overlay helpers (`tests/helpers/overlays.ts`)
 - **`showExplorer(page)`** — runs `explorer.show` and waits for the explorer list panel.
 - **`expectListRows` / `expectLayout` / `expectRowTextVisible`** — list/search anti-regression assertions.
@@ -74,7 +77,7 @@ await expectListRows(page, {
 |------|----------|
 | `titlebar.electron.spec.ts` | macOS (traffic-light geometry) |
 | `location-list.electron.spec.ts` | Electron shell — location list row readability |
-| `lsp.electron.spec.ts` | `typescript-language-server` on PATH (auto-skipped if missing) |
+| `lsp.electron.spec.ts` | `typescript-language-server` on PATH (auto-skipped if missing); includes nested project-root case (`fixtures/` workspace → `sample-workspace/` TS project) |
 | `syntax-rust.electron.spec.ts` | Electron build |
 
 Install LSP for local Electron LSP tests:
