@@ -19,7 +19,6 @@ import {
   simplifySelection,
 } from "@codemirror/commands"
 import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search"
-import type { AgentProviderKind } from "@jet/agents"
 import type { JetPanelTree } from "@jet/workspace"
 import type { PanelEvent } from "@jet/panels"
 import type { PanelId } from "@jet/shared"
@@ -34,7 +33,7 @@ import type {
   WorkspaceService,
 } from "@jet/workspace"
 import { folderForFileUri, resolveWorkspaceFolder } from "@jet/workspace"
-import { PROBLEMS_TAB_ID, EXPLORER_TAB_ID, panelTabIds, isAgentTabId } from "@jet/workspace"
+import { PROBLEMS_TAB_ID, EXPLORER_TAB_ID, panelTabIds } from "@jet/workspace"
 import { problemsToListItems } from "@jet/ui"
 import { openJetSearch } from "@jet/codemirror"
 import {
@@ -73,7 +72,6 @@ import {
   openTerminalTab,
   listTerminalTabs,
   isActiveTerminalTab,
-  openAgentTab,
 } from "./tab-routing.js"
 import { confirmCloseBuffer } from "./close-buffer.js"
 
@@ -118,19 +116,6 @@ export type BuildAppCommandsDeps = {
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   const currentPanelTree = () => deps.getPanelTree()
   const currentFocusedPanel = () => deps.getFocusedPanel()
-
-  const openAgentSession = (provider: AgentProviderKind): void => {
-    if (!deps.workspace.manager.activeFolder) {
-      deps.setMessage("Open a workspace folder first")
-      return
-    }
-    const tree = deps.cloneTree()
-    const { panelId } = openAgentTab(deps.workspace, tree, currentFocusedPanel(), provider, {
-      stubMode: deps.isWebMode,
-    })
-    deps.setFocusedPanel(panelId)
-    deps.commitTree(tree, panelId)
-  }
 
   const openFolder: JetCommandFn = async () => {
     const folderPath = await window.jet?.fs.showOpenFolderDialog()
@@ -440,23 +425,6 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       })
       deps.setFocusedPanel(panelId)
       deps.commitTree(tree, panelId)
-    },
-    agentNewCodex: () => openAgentSession("codex"),
-    agentNewClaude: () => openAgentSession("claude"),
-    agentNewCursor: () => openAgentSession("cursor"),
-    agentNewOpenCode: () => openAgentSession("opencode"),
-    agentInterrupt: async () => {
-      const panel = currentFocusedPanel()
-      if (!panel) return
-      const view = currentPanelTree().getView(panel)
-      if (view?.kind !== "tabs" || !isAgentTabId(view.activeTabId)) {
-        deps.setMessage("Focus an agent tab to interrupt")
-        return
-      }
-      const doc = deps.workspace.folderStateForAgentTab(view.activeTabId)?.agents.get(view.activeTabId)
-      if (doc?.sessionId && window.jet?.agents) {
-        await window.jet.agents.interrupt(doc.sessionId)
-      }
     },
     explorer: () => {
       const tree = deps.cloneTree()
@@ -806,11 +774,6 @@ export const APP_COMMAND_REGISTRY = [
   { id: "output.show", fn: "output", title: "Show Output", category: "View" },
   { id: "terminal.show", fn: "terminal", title: "Toggle Terminal", category: "View", aliases: ["shell", "integrated terminal"] },
   { id: "terminal.new", fn: "terminalNew", title: "New Terminal", category: "View" },
-  { id: "agent.newSession.codex", fn: "agentNewCodex", title: "New Codex Agent", category: "Agent", aliases: ["codex", "agent"] },
-  { id: "agent.newSession.claude", fn: "agentNewClaude", title: "New Claude Agent", category: "Agent", aliases: ["claude agent"] },
-  { id: "agent.newSession.cursor", fn: "agentNewCursor", title: "New Cursor Agent", category: "Agent", aliases: ["cursor agent"] },
-  { id: "agent.newSession.opencode", fn: "agentNewOpenCode", title: "New OpenCode Agent", category: "Agent", aliases: ["opencode"] },
-  { id: "agent.interrupt", fn: "agentInterrupt", title: "Interrupt Agent Turn", category: "Agent" },
   { id: "task.run", fn: "runTask", title: "Run Task", category: "Tasks" },
   { id: "task.runBuild", fn: "runBuild", title: "Run Build Task", category: "Tasks" },
   { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"] },

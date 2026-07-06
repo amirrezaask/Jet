@@ -22,7 +22,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/geist-mono": "^5.2.8",
-    "@jet/agents": "workspace:*",
     "@jet/codemirror": "workspace:*",
     "@jet/lsp": "workspace:*",
     "@jet/panels": "workspace:*",

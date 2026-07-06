@@ -16,7 +16,6 @@ export type JetAgentState = {
   panels: { id: number; kind: string }[]
   fontSize: number
   activeEditorDirty: boolean
-  agentSessions: { tabId: string; provider: string; folderId: string; status: string }[]
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -106,7 +105,6 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
         panels: collectPanels(current),
         fontSize: current.fontSize,
         activeEditorDirty: current.activeEditorDirty,
-        agentSessions: collectAgentSessions(current),
       }
     },
     async waitForReady() {
@@ -192,21 +190,6 @@ function collectPanels(ctx: AgentBridgeContext): JetAgentState["panels"] {
   }
   walk(ctx.panelTree.root)
   return panels
-}
-
-function collectAgentSessions(ctx: AgentBridgeContext): JetAgentState["agentSessions"] {
-  const sessions: JetAgentState["agentSessions"] = []
-  for (const folder of ctx.workspace.folders) {
-    for (const doc of ctx.workspace.agentsForFolder(folder.id)) {
-      sessions.push({
-        tabId: doc.tabId,
-        provider: doc.provider,
-        folderId: doc.folderId,
-        status: doc.status,
-      })
-    }
-  }
-  return sessions
 }
 
 declare global {

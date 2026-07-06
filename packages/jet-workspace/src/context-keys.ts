@@ -14,7 +14,6 @@ export type KeymapContext = {
   explorerFocus: boolean
   outputFocus: boolean
   terminalFocus: boolean
-  agentFocus: boolean
   listFocus: boolean
 }
 

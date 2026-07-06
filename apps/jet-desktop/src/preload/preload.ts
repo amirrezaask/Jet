@@ -39,11 +39,6 @@ ipcRenderer.on("terminal:data", (_e, id: string, data: string) => {
   terminalDataBuffers.set(id, pending)
 })
 
-const agentEventListeners = new Set<(event: import("@jet/agents").AgentEvent) => void>()
-ipcRenderer.on("agents:event", (_e, event: import("@jet/agents").AgentEvent) => {
-  for (const cb of agentEventListeners) cb(event)
-})
-
 const api: JetElectronAPI = {
   fs: {
     readFile: uri => ipcRenderer.invoke("fs:readFile", uri),
@@ -118,20 +113,6 @@ const api: JetElectronAPI = {
       terminalDataBuffers.delete(id)
       terminalDataListeners.delete(id)
       return ipcRenderer.invoke("terminal:dispose", id)
-    },
-  },
-  agents: {
-    listProviders: () => ipcRenderer.invoke("agents:listProviders"),
-    listSessions: folderId => ipcRenderer.invoke("agents:listSessions", folderId),
-    startSession: req => ipcRenderer.invoke("agents:startSession", req),
-    stopSession: sessionId => ipcRenderer.invoke("agents:stopSession", sessionId),
-    stopAllForFolder: folderId => ipcRenderer.invoke("agents:stopAllForFolder", folderId),
-    sendTurn: req => ipcRenderer.invoke("agents:sendTurn", req),
-    interrupt: sessionId => ipcRenderer.invoke("agents:interrupt", sessionId),
-    respondApproval: req => ipcRenderer.invoke("agents:respondApproval", req),
-    onEvent: callback => {
-      agentEventListeners.add(callback)
-      return () => agentEventListeners.delete(callback)
     },
   },
   getLaunchConfig: () => ipcRenderer.invoke("jet:getLaunchConfig"),

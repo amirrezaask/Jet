@@ -10,17 +10,17 @@ export default defineConfig({
     headless: true,
     trace: "on-first-retry",
   },
-  webServer: {
-    command: "pnpm dev:web",
-    url: "http://localhost:5174",
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
   projects: [
     {
       name: "web",
       testDir: "./tests/specs",
       testIgnore: "**/*.screenshot.spec.ts",
+      webServer: {
+        command: "pnpm dev:web",
+        url: "http://localhost:5174",
+        reuseExistingServer: true,
+        timeout: 120_000,
+      },
     },
     {
       name: "screenshots",

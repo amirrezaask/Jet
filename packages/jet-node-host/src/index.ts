@@ -43,4 +43,3 @@ export {
   type LspSession,
   type StartLspSessionOptions,
 } from "./lsp-bridge.js"
-export { AgentHost, type HostedAgentSession, type AgentHostOptions } from "./agents/agent-host.js"

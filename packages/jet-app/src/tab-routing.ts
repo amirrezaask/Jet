@@ -1,9 +1,7 @@
-import type { AgentProviderKind } from "@jet/agents"
 import type { JetPanelTree, ListDocument, WorkspaceService } from "@jet/workspace"
 import {
   EXPLORER_TAB_ID,
   findPanelWithTab,
-  isAgentTabId,
   isTerminalTabId,
   panelTabIds,
   terminalTabId,
@@ -11,7 +9,6 @@ import {
 import type { PanelId } from "@jet/shared"
 import { resolveAuxiliaryPanel, resolveEditorPanel, getAllLeafPanels } from "./panel-routing.js"
 import { TERMINAL_TAB_TYPE_ID, registerTerminalSession } from "./tabs/terminal.tab.js"
-import { AGENT_TAB_TYPE_ID } from "./tabs/agent.tab.js"
 
 export function openTabInAuxiliaryPanel(
   workspace: WorkspaceService,
@@ -105,37 +102,6 @@ export function openTerminalTab(
     kind: TERMINAL_TAB_TYPE_ID,
     label,
   })
-}
-
-export function listAgentTabs(
-  tree: JetPanelTree,
-): { panelId: PanelId; tabId: string }[] {
-  const result: { panelId: PanelId; tabId: string }[] = []
-  for (const panel of getAllLeafPanels(tree)) {
-    const view = tree.getView(panel)
-    if (view?.kind !== "tabs") continue
-    for (const tabId of panelTabIds(view)) {
-      if (isAgentTabId(tabId)) result.push({ panelId: panel, tabId })
-    }
-  }
-  return result
-}
-
-export function openAgentTab(
-  workspace: WorkspaceService,
-  tree: JetPanelTree,
-  focused: PanelId | null,
-  provider: AgentProviderKind,
-  opts?: { stubMode?: boolean },
-): { panelId: PanelId; tabId: string; sessionId: string } {
-  const doc = workspace.createAgentSession(provider, { stubMode: opts?.stubMode })
-  const panel = resolveAuxiliaryPanel(tree, focused, { splitEdge: "bottom" })
-  const { tabId } = workspace.openOrFocusTab(tree, panel, {
-    id: doc.tabId,
-    kind: AGENT_TAB_TYPE_ID,
-    label: doc.label,
-  })
-  return { panelId: panel, tabId, sessionId: doc.sessionId }
 }
 
 export function openExplorerTab(

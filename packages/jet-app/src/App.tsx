@@ -44,7 +44,6 @@ import {
   fileSearchAcrossFolders,
   relativePathInFolder,
   resolveQuickOpenDisplayPath,
-  isAgentTabId,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import type { LSPClient } from "@jet/codemirror"
@@ -280,25 +279,6 @@ export function JetApp() {
           { label: desc.label, cwdRootUri: terminalCwdForTab(desc.id) || workspace.root?.uri || "" },
           desc.id,
         )
-      } else if (kind === "agent") {
-        const doc = workspace.folderStateForAgentTab(id)?.agents.get(id)
-        if (doc) {
-          tabStore.create<{
-            sessionId: string
-            folderId: string
-            provider: import("@jet/agents").AgentProviderKind
-            label: string
-          }>(
-            kind,
-            {
-              sessionId: doc.sessionId,
-              folderId: doc.folderId,
-              provider: doc.provider,
-              label: doc.label,
-            },
-            id,
-          )
-        }
       } else {
         tabStore.create<{ listId: string }>(kind, { listId: desc.id }, desc.id)
       }
@@ -410,7 +390,6 @@ export function JetApp() {
       explorerFocus: activeTabKindName === "explorer",
       outputFocus: activeTabKindName === "output",
       terminalFocus: activeTabKindName === "terminal",
-      agentFocus: activeTabKindName === "agent",
       listFocus:
         activeTabKindName === "explorer" ||
         activeTabKindName === "search" ||
@@ -842,13 +821,6 @@ export function JetApp() {
         const view = tree.getView(panel)
         if (view?.kind !== "tabs") continue
         for (const tabId of panelTabIds(view)) {
-          if (isAgentTabId(tabId)) {
-            const doc = workspace.folderStateForAgentTab(tabId)?.agents.get(tabId)
-            if (doc?.folderId !== folderId) continue
-            tabStore.dispose(tabId)
-            workspace.closeTabInPanel(tree, panel, tabId)
-            continue
-          }
           if (isUntitledUri(tabId)) continue
           const path = fileUriToPath(tabId)
           if (!path.startsWith(prefix) && normalizeAbsPath(path) !== normalizeAbsPath(rootPath)) {
@@ -862,9 +834,6 @@ export function JetApp() {
       }
       commitTree(tree)
 
-      if (window.jet?.agents?.stopAllForFolder) {
-        await window.jet.agents.stopAllForFolder(folderId)
-      }
       if (window.jet?.workspace?.deactivate) {
         await window.jet.workspace.deactivate(rootUri)
       }

@@ -29,8 +29,6 @@ import {
   type TabDescriptor,
   type TabKind,
 } from "./tab-registry.js"
-import type { AgentProviderKind, AgentSessionDocument } from "@jet/agents"
-import { agentTabLabel } from "@jet/agents"
 import {
   type ConfirmDiscardReloadFn,
   type WorkspaceFolder,
@@ -127,12 +125,6 @@ export class WorkspaceService {
   }
 
   removeFolder(id: string): boolean {
-    const state = this.manager.folderStateForId(id)
-    if (state) {
-      for (const doc of state.agents.list()) {
-        this.tabRegistry.dispose(doc.tabId)
-      }
-    }
     return this.manager.removeFolder(id)
   }
 
@@ -273,9 +265,6 @@ export class WorkspaceService {
 
   disposeTab(tabId: string): void {
     const kind = this.tabRegistry.kindFor(tabId)
-    if (kind === "agent") {
-      this.folderStateForAgentTab(tabId)?.agents.dispose(tabId)
-    }
     this.tabRegistry.dispose(tabId)
     if (kind && LIST_TAB_KINDS.has(kind)) {
       this.listStore.dispose(tabId)
@@ -481,73 +470,6 @@ export class WorkspaceService {
 
   mountExplorerTab(tree: JetPanelTree, panelId: PanelId): void {
     this.openTabInPanel(tree, panelId, this.explorerTab())
-  }
-
-  folderStateForAgentTab(tabId: string): WorkspaceFolderState | undefined {
-    for (const state of this.manager.allFolderStates()) {
-      if (state.agents.get(tabId)) return state
-    }
-    return undefined
-  }
-
-  agentsForFolder(folderId: string): AgentSessionDocument[] {
-    return this.manager.folderStateForId(folderId)?.agents.list() ?? []
-  }
-
-  agentsForActiveFolder(): AgentSessionDocument[] {
-    const folder = this.manager.activeFolder
-    if (!folder) return []
-    return this.agentsForFolder(folder.id)
-  }
-
-  createAgentSession(
-    provider: AgentProviderKind,
-    opts?: { folderId?: string; stubMode?: boolean },
-  ): AgentSessionDocument {
-    const folder =
-      opts?.folderId != null
-        ? this.manager.folders.find(f => f.id === opts.folderId)
-        : this.manager.activeFolder
-    if (!folder) throw new Error("No workspace folder open")
-    const state = this.manager.folderStateForId(folder.id)
-    if (!state) throw new Error("Workspace folder state missing")
-    const multiRoot = this.manager.folders.length > 1
-    const sameProvider = state.agents.list().filter(s => s.provider === provider).length
-    const label = agentTabLabel(
-      provider,
-      folder.root.name,
-      multiRoot,
-      sameProvider > 0 ? sameProvider : undefined,
-    )
-    const stubMode =
-      opts?.stubMode !== undefined
-        ? opts.stubMode
-        : typeof window === "undefined" || !window.jet?.agents
-    const doc = state.agents.create({
-      folderId: folder.id,
-      provider,
-      workspacePath: folder.root.path,
-      workspaceName: folder.root.name,
-      label,
-      stubMode,
-    })
-    this.tabRegistry.register({ id: doc.tabId, kind: "agent", label: doc.label })
-    return doc
-  }
-
-  disposeAgentSession(tabId: string): void {
-    const state = this.folderStateForAgentTab(tabId)
-    state?.agents.dispose(tabId)
-    this.tabRegistry.dispose(tabId)
-  }
-
-  disposeAgentSessionsForFolder(folderId: string): void {
-    const state = this.manager.folderStateForId(folderId)
-    if (!state) return
-    for (const doc of state.agents.list()) {
-      this.tabRegistry.dispose(doc.tabId)
-    }
-    state.agents.disposeAll()
   }
 }
 

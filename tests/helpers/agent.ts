@@ -9,7 +9,6 @@ export type JetAgentState = {
   panels: { id: number; kind: string }[]
   fontSize: number
   activeEditorDirty: boolean
-  agentSessions: { tabId: string; provider: string; folderId: string; status: string }[]
 }
 
 export type JetAgentCursor = { line: number; column: number }
