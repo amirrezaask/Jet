@@ -1,4 +1,5 @@
 import type { ListDocument, ListItem, WorkspaceService } from "@jet/workspace"
+import { projectSearchAcrossFolders } from "@jet/workspace"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Input } from "@/components/ui/input.js"
 import { Spinner } from "@/components/ui/spinner.js"
@@ -42,7 +43,8 @@ export function SearchLocationList({
 
   const runSearch = useCallback(async () => {
     const query = (doc.searchQuery ?? "").trim()
-    if (!workspace.root || !window.jet?.search || !query) {
+    const folders = workspace.folders
+    if (folders.length === 0 || !window.jet?.search || !query) {
       searchGen.current += 1
       patchDoc({ searchLoading: false, searchError: null })
       return
@@ -50,14 +52,20 @@ export function SearchLocationList({
     const gen = ++searchGen.current
     patchDoc({ searchLoading: true, searchError: null })
     try {
-      const hits = await window.jet.search.project(workspace.root.uri, query, {
+      const hits = await projectSearchAcrossFolders(folders, window.jet.search, query, {
         caseSensitive: doc.searchCaseSensitive ?? false,
         regex: doc.searchRegex ?? false,
         fuzzy: doc.searchFuzzy ?? false,
       })
       if (gen !== searchGen.current) return
+      const multiRoot = folders.length > 1
       const items = hits.map((h, i) =>
-        searchHitToListItem(h, i, workspace.root!.path),
+        searchHitToListItem(
+          h.result,
+          i,
+          h.folder.root.path,
+          multiRoot ? h.folder.root.name : undefined,
+        ),
       )
       patchDoc({ items, searchLoading: false })
     } catch (err) {

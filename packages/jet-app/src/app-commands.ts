@@ -81,7 +81,10 @@ export type BuildAppCommandsDeps = {
   setFocusedPanel: (panel: PanelId) => void
   cloneTree: () => JetPanelTree
   commitTree: (tree: JetPanelTree, preferFocus?: PanelId | null) => void
-  openWorkspaceFolder: (path: string) => void
+  openWorkspaceFolder: (path: string, opts?: { replace?: boolean }) => void
+  addWorkspaceFolder: (path: string) => void
+  removeWorkspaceFolder: (folderId: string) => Promise<boolean>
+  setActiveWorkspaceFolder: (folderId: string) => void
   handlePanelEvent: (event: PanelEvent) => void
   openFileInEditor: (uri: string, path: string, line?: number, column?: number, pushJump?: boolean) => void
   openListItem: (item: ListItem) => void
@@ -111,7 +114,44 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       }
       return
     }
-    deps.openWorkspaceFolder(folderPath)
+    if (deps.workspace.manager.hasFolders()) {
+      deps.addWorkspaceFolder(folderPath)
+    } else {
+      deps.openWorkspaceFolder(folderPath, { replace: true })
+    }
+  }
+
+  const addFolder: JetCommandFn = async () => {
+    const folderPath = await window.jet?.fs.showOpenFolderDialog()
+    if (!folderPath) {
+      if (deps.isWebMode) {
+        deps.setMessage("Browser mode: use window.__jetAgent.addWorkspace()")
+      }
+      return
+    }
+    deps.addWorkspaceFolder(folderPath)
+  }
+
+  const removeFolder: JetCommandFn = async () => {
+    const active = deps.workspace.manager.activeFolder
+    if (!active) {
+      deps.setMessage("No workspace folder to remove")
+      return
+    }
+    const ok = await deps.removeWorkspaceFolder(active.id)
+    if (!ok) return
+  }
+
+  const focusFolder: JetCommandFn = async ctx => {
+    const folders = deps.workspace.manager.folders
+    if (folders.length < 2) {
+      ctx.ui.showMessage("Only one workspace folder open")
+      return
+    }
+    const activeIdx = folders.findIndex(f => f.id === deps.workspace.manager.activeFolder?.id)
+    const next = folders[(activeIdx + 1) % folders.length]!
+    deps.setActiveWorkspaceFolder(next.id)
+    ctx.ui.showMessage(`Active folder: ${next.root.name}`)
   }
 
   function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
@@ -181,6 +221,9 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.setOpenFileOpen(true)
     },
     openFolder,
+    addFolder,
+    removeFolder,
+    focusFolder,
     cd: () => deps.setCdOpen(true),
     switchProject: () => deps.setProjectSwitcherOpen(true),
     refreshProjects: async ctx => {
@@ -311,7 +354,9 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         return
       }
 
-      const { panelId } = openTerminalTab(deps.workspace, tree, focused)
+      const { panelId } = openTerminalTab(deps.workspace, tree, focused, {
+        cwdRootUri: deps.workspace.root?.uri,
+      })
       deps.setFocusedPanel(panelId)
       deps.commitTree(tree, panelId)
     },
@@ -319,7 +364,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       const tree = deps.cloneTree()
       const count = listTerminalTabs(tree).length
       const label = count === 0 ? "Terminal" : `Terminal ${count + 1}`
-      const { panelId } = openTerminalTab(deps.workspace, tree, currentFocusedPanel(), { label })
+      const { panelId } = openTerminalTab(deps.workspace, tree, currentFocusedPanel(), {
+        label,
+        cwdRootUri: deps.workspace.root?.uri,
+      })
       deps.setFocusedPanel(panelId)
       deps.commitTree(tree, panelId)
     },
@@ -639,6 +687,9 @@ export const APP_COMMAND_REGISTRY = [
   { id: "workspace.saveFile", fn: "save", title: "Save File", category: "Workspace", aliases: ["write"] },
   { id: "workspace.openFile", fn: "openFile", title: "Open File", category: "Workspace", aliases: ["browse file"] },
   { id: "workspace.openFolder", fn: "openFolder", title: "Open Folder", category: "Workspace", aliases: ["open workspace"] },
+  { id: "workspace.addFolder", fn: "addFolder", title: "Add Folder to Workspace", category: "Workspace", aliases: ["add root", "multi-root"] },
+  { id: "workspace.removeFolder", fn: "removeFolder", title: "Remove Folder from Workspace", category: "Workspace", aliases: ["close folder root"] },
+  { id: "workspace.focusFolder", fn: "focusFolder", title: "Focus Next Workspace Folder", category: "Workspace", aliases: ["switch root"] },
   { id: "workspace.cd", fn: "cd", title: "Change Directory", category: "Workspace", aliases: ["switch workspace"] },
   { id: "workspace.switchProject", fn: "switchProject", title: "Switch Project", category: "Workspace", aliases: ["projects", "project"] },
   { id: "workspace.refreshProjects", fn: "refreshProjects", title: "Refresh Projects", category: "Workspace" },

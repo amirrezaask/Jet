@@ -18,14 +18,17 @@ export function searchHitToListItem(
   hit: { path: string; line: number; column: number; preview: string },
   index: number,
   workspacePath: string,
+  folderName?: string,
 ): ListItem {
+  const preview = hit.preview.trim() || hit.path
+  const pathLabel = folderName ? `${folderName}/${hit.path.replace(/^\/+/, "")}` : hit.path
   return {
-    id: `search-${index}-${hit.path}-${hit.line}`,
+    id: `search-${index}-${folderName ?? ""}-${hit.path}-${hit.line}`,
     fileUri: pathToFileUri(`${workspacePath}/${hit.path.replace(/^\/+/, "")}`),
-    path: hit.path,
+    path: pathLabel,
     line: hit.line,
     column: hit.column,
-    label: hit.preview.trim() || hit.path,
+    label: folderName ? `[${folderName}] ${preview}` : preview,
   }
 }
 

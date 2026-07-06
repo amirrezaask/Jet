@@ -8,7 +8,7 @@ import {
 } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
 import { resolveAuxiliaryPanel, resolveEditorPanel, getAllLeafPanels } from "./panel-routing.js"
-import { TERMINAL_TAB_TYPE_ID } from "./tabs/terminal.tab.js"
+import { TERMINAL_TAB_TYPE_ID, registerTerminalSession } from "./tabs/terminal.tab.js"
 
 export function openTabInAuxiliaryPanel(
   workspace: WorkspaceService,
@@ -61,6 +61,7 @@ export function openOutputTab(
 export type OpenTerminalTabOpts = {
   sessionKey?: string
   label?: string
+  cwdRootUri?: string
 }
 
 export function listTerminalTabs(
@@ -93,7 +94,9 @@ export function openTerminalTab(
   const sessionKey = opts.sessionKey ?? `session-${Date.now()}`
   const tabId = terminalTabId(sessionKey)
   const label = opts.label ?? "Terminal"
+  const cwdRootUri = opts.cwdRootUri ?? workspace.root?.uri ?? ""
   const panel = resolveAuxiliaryPanel(tree, focused, { splitEdge: "bottom" })
+  registerTerminalSession(tabId, cwdRootUri)
   return workspace.openOrFocusTab(tree, panel, {
     id: tabId,
     kind: TERMINAL_TAB_TYPE_ID,

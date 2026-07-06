@@ -3,11 +3,10 @@ import { Terminal as TerminalIcon } from "lucide-react"
 import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import type { JetTheme } from "@jet/codemirror"
-import type { WorkspaceService } from "@jet/workspace"
 import "@xterm/xterm/css/xterm.css"
 
 export type TerminalPanelProps = {
-  workspace: WorkspaceService
+  cwdRootUri: string
   theme: JetTheme
   tabId: string
   focused: boolean
@@ -72,7 +71,7 @@ function focusTerminalInput(): void {
 }
 
 export function TerminalPanel({
-  workspace,
+  cwdRootUri,
   theme,
   tabId,
   focused,
@@ -86,7 +85,7 @@ export function TerminalPanel({
 
   useEffect(() => {
     const terminalApi = window.jet?.terminal
-    if (!terminalApi || !workspace.root || !containerRef.current) return
+    if (!terminalApi || !cwdRootUri || !containerRef.current) return
     let cancelled = false
     const container = containerRef.current
 
@@ -138,7 +137,7 @@ export function TerminalPanel({
       }
       ptyStarted = true
       void terminalApi
-        .create(workspace.root!.uri)
+        .create(cwdRootUri)
         .then(({ id }) => {
           if (cancelled) {
             void terminalApi.dispose(id)
@@ -198,7 +197,7 @@ export function TerminalPanel({
       term.dispose()
       sessionRef.current = null
     }
-  }, [workspace.root, tabId, onPtyId])
+  }, [cwdRootUri, tabId, onPtyId])
 
   useEffect(() => {
     const session = sessionRef.current

@@ -6,6 +6,7 @@ import { resolveDevWorkspacePath, toWorkspaceFileUri } from "./browser-api.js"
 
 export type JetAgentState = {
   workspace: string | null
+  workspaces: { id: string; path: string; name: string }[]
   message: string | null
   paletteOpen: boolean
   focusedPanel: number | null
@@ -19,6 +20,8 @@ export type JetAgentCursor = { line: number; column: number }
 
 export type JetAgentAPI = {
   openWorkspace(folderPath: string): Promise<void>
+  addWorkspace(folderPath: string): Promise<void>
+  listWorkspaces(): { id: string; path: string; name: string }[]
   openFile(relativeOrUri: string): Promise<void>
   executeCommand(commandId: string): Promise<void>
   getState(): JetAgentState
@@ -47,6 +50,8 @@ export type AgentBridgeContext = {
   activeEditorDirty: boolean
   executeCommand: (name: string) => Promise<void>
   openWorkspace: (folderPath: string) => Promise<void>
+  addWorkspace?: (folderPath: string) => Promise<void>
+  listWorkspaces?: () => { id: string; path: string; name: string }[]
   openFile: (uri: string, path: string) => void
   setFontSize: (px: number) => void
   getEditorText?: () => string | null
@@ -60,6 +65,15 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
     async openWorkspace(folderPath: string) {
       const { path } = await resolveDevWorkspacePath(folderPath)
       await ctx().openWorkspace(path)
+    },
+    async addWorkspace(folderPath: string) {
+      const add = ctx().addWorkspace
+      if (!add) throw new Error("addWorkspace not available")
+      const { path } = await resolveDevWorkspacePath(folderPath)
+      await add(path)
+    },
+    listWorkspaces() {
+      return ctx().listWorkspaces?.() ?? []
     },
     async openFile(relativeOrUri: string) {
       const current = ctx()
@@ -79,6 +93,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
       const current = ctx()
       return {
         workspace: current.workspace.root?.path ?? null,
+        workspaces: current.listWorkspaces?.() ?? [],
         message: current.message,
         paletteOpen: current.paletteOpen,
         focusedPanel: current.focusedPanel?.id ?? null,

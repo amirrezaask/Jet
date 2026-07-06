@@ -16,6 +16,8 @@ export type StatusBarProps = {
   lspStatus: "connected" | "off" | "unavailable"
   workspaceName?: string | null
   workspacePath?: string | null
+  workspaceFolderCount?: number
+  workspaceFolderNames?: string[]
   gitBranch?: string | null
   hasWorkspace?: boolean
   activeFileName?: string | null
@@ -71,6 +73,8 @@ export function StatusBar({
   lspStatus,
   workspaceName,
   workspacePath,
+  workspaceFolderCount = 0,
+  workspaceFolderNames = [],
   gitBranch,
   hasWorkspace = false,
   activeFileName,
@@ -79,9 +83,15 @@ export function StatusBar({
 }: StatusBarProps) {
   const cursor = useSyncExternalStore(subscribeEditorCursor, getEditorCursor, getEditorCursor)
 
+  const multiRootSuffix =
+    workspaceFolderCount > 1 ? ` (${workspaceFolderCount} roots)` : ""
   const workspaceLabel = hasWorkspace
-    ? (workspaceName ?? workspacePath ?? "Workspace")
+    ? `${workspaceName ?? workspacePath ?? "Workspace"}${multiRootSuffix}`
     : "No folder open"
+  const workspaceTooltip =
+    workspaceFolderCount > 1
+      ? workspaceFolderNames.join("\n")
+      : (workspacePath ?? workspaceLabel)
   const lang = (activeLanguageId ?? "").toUpperCase()
 
   return (
@@ -104,7 +114,7 @@ export function StatusBar({
               )}
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={6}>{workspacePath}</TooltipContent>
+          <TooltipContent side="top" sideOffset={6}>{workspaceTooltip}</TooltipContent>
         </Tooltip>
       ) : (
         <span

@@ -5,7 +5,18 @@ import type { PanelView } from "@jet/shared"
 import { EXPLORER_TAB_ID } from "./tab-registry.js"
 import { buildTabsView } from "./panel-tabs.js"
 import { JetPanelTree } from "./panel-tree.js"
+import { WorkspaceManager } from "./workspace-manager.js"
 import { WorkspaceService } from "./workspace.js"
+
+function mockWorkspace(): WorkspaceService {
+  const mgr = new WorkspaceManager({
+    readFile: async () => "",
+    writeFile: async () => {},
+    readDir: async () => [],
+    stat: async () => ({ uri: "", isDirectory: false, size: 0 }),
+  })
+  return new WorkspaceService(mgr)
+}
 
 function countLeaves(tree: JetPanelTree): number {
   let count = 0
@@ -21,12 +32,7 @@ describe("openOrFocusTab", () => {
   it("mounts explorer as a tab without replacing the editor panel", () => {
     const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
     tree.setView(editorPanel, buildTabsView("file:///tmp/a.ts", ["file:///tmp/a.ts"]))
-    const workspace = new WorkspaceService({
-      readFile: async () => "",
-      writeFile: async () => {},
-      readDir: async () => [],
-      stat: async () => null,
-    })
+    const workspace = mockWorkspace()
     workspace.tabRegistry.register({ id: "file:///tmp/a.ts", kind: "editor", label: "a.ts" })
 
     const sidebar = tree.attachAtViewportEdge("left")
@@ -41,12 +47,7 @@ describe("openOrFocusTab", () => {
   it("reuses an existing tab when openOrFocusTab is called again", () => {
     const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
     tree.setView(editorPanel, buildTabsView("file:///tmp/a.ts", ["file:///tmp/a.ts"]))
-    const workspace = new WorkspaceService({
-      readFile: async () => "",
-      writeFile: async () => {},
-      readDir: async () => [],
-      stat: async () => null,
-    })
+    const workspace = mockWorkspace()
     workspace.tabRegistry.register({ id: "file:///tmp/a.ts", kind: "editor", label: "a.ts" })
 
     const sidebar = tree.attachAtViewportEdge("left")

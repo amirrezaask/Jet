@@ -3,7 +3,7 @@ import { registerListPanel } from "@/lib/list-registry.js"
 import { EXPLORER_LIST_ID } from "@/explorer/focus.js"
 import { ChevronRight, File, Folder } from "lucide-react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import type { WorkspaceEntry, WorkspaceService } from "@jet/workspace"
+import type { WorkspaceEntry, WorkspaceManager } from "@jet/workspace"
 import { SidebarContent, SidebarMenuSubButton, SidebarProvider } from "@/components/ui/sidebar.js"
 import { jetInteractiveRowClass } from "@/motion/tokens.js"
 import { cn } from "@/lib/utils.js"
@@ -16,6 +16,7 @@ type FlatRow = {
   isDirectory: boolean
   expanded: boolean
   loading: boolean
+  isWorkspaceRoot?: boolean
 }
 
 const OVERSCAN = 8
@@ -42,22 +43,16 @@ function toPath(uri: string): string {
   return uri.replace(/^file:\/\//, "")
 }
 
-/**
- * Owns expand/child cache for the explorer.
- *
- * Why not per-node React state: recursive React tree mounts + re-renders every
- * visible row on every expand. A single Set + Map lets us render a flat
- * virtualized window.
- */
 class ExplorerModel {
-  private readonly workspace: WorkspaceService
+  private readonly manager: WorkspaceManager
   private readonly childCache = new Map<string, WorkspaceEntry[]>()
   private readonly loading = new Set<string>()
   private readonly expanded = new Set<string>()
   private readonly listeners = new Set<() => void>()
+  private rootUris: string[] = []
 
-  constructor(workspace: WorkspaceService) {
-    this.workspace = workspace
+  constructor(manager: WorkspaceManager) {
+    this.manager = manager
   }
 
   subscribe(listener: () => void): () => void {
@@ -67,6 +62,10 @@ class ExplorerModel {
 
   private notify(): void {
     for (const l of this.listeners) l()
+  }
+
+  setRootUris(uris: string[]): void {
+    this.rootUris = uris
   }
 
   isExpanded(uri: string): boolean {
@@ -86,7 +85,7 @@ class ExplorerModel {
     this.loading.add(uri)
     this.notify()
     try {
-      const entries = await this.workspace.readDir(uri)
+      const entries = await this.manager.readDir(uri)
       this.childCache.set(uri, sortEntries(entries))
     } finally {
       this.loading.delete(uri)
@@ -105,70 +104,94 @@ class ExplorerModel {
     await this.ensureChildren(uri)
   }
 
-  invalidateRoot(): void {
+  invalidateRoots(): void {
     this.childCache.clear()
     this.expanded.clear()
     this.notify()
   }
 
-  /**
-   * Walk the expanded tree and produce a flat list of visible rows in render
-   * order. Called on each render — cheap because it only walks expanded nodes,
-   * not the whole workspace.
-   */
-  flattenVisible(rootUri: string): FlatRow[] {
+  flattenVisible(): FlatRow[] {
     const rows: FlatRow[] = []
-    const rootChildren = this.childCache.get(rootUri)
-    if (!rootChildren) return rows
-    const walk = (entries: WorkspaceEntry[], depth: number): void => {
-      for (const entry of entries) {
-        const expanded = this.expanded.has(entry.uri)
-        rows.push({
-          uri: entry.uri,
-          name: entry.name,
-          path: toPath(entry.uri),
-          depth,
-          isDirectory: entry.isDirectory,
-          expanded,
-          loading: this.loading.has(entry.uri),
-        })
-        if (entry.isDirectory && expanded) {
-          const children = this.childCache.get(entry.uri)
-          if (children) walk(children, depth + 1)
+    for (const rootUri of this.rootUris) {
+      const folder = this.manager.folders.find(f => f.root.uri === rootUri)
+      if (!folder) continue
+      const expanded = this.expanded.has(rootUri)
+      rows.push({
+        uri: rootUri,
+        name: folder.root.name,
+        path: folder.root.path,
+        depth: 0,
+        isDirectory: true,
+        expanded,
+        loading: this.loading.has(rootUri),
+        isWorkspaceRoot: true,
+      })
+      if (!expanded) continue
+      const rootChildren = this.childCache.get(rootUri)
+      if (!rootChildren) continue
+      const walk = (entries: WorkspaceEntry[], depth: number): void => {
+        for (const entry of entries) {
+          const entryExpanded = this.expanded.has(entry.uri)
+          rows.push({
+            uri: entry.uri,
+            name: entry.name,
+            path: toPath(entry.uri),
+            depth,
+            isDirectory: entry.isDirectory,
+            expanded: entryExpanded,
+            loading: this.loading.has(entry.uri),
+          })
+          if (entry.isDirectory && entryExpanded) {
+            const children = this.childCache.get(entry.uri)
+            if (children) walk(children, depth + 1)
+          }
         }
       }
+      walk(rootChildren, 1)
     }
-    walk(rootChildren, 1)
     return rows
   }
 }
 
 export function ExplorerTree({
-  workspace,
+  manager,
   onOpenFile,
 }: {
-  workspace: WorkspaceService
+  manager: WorkspaceManager
   onOpenFile: (uri: string, path: string) => void
 }) {
-  const rootUri = workspace.root?.uri
+  const rootUris = manager.folders.map(f => f.root.uri)
   const modelRef = useRef<ExplorerModel | null>(null)
-  if (modelRef.current === null) modelRef.current = new ExplorerModel(workspace)
+  if (modelRef.current === null) modelRef.current = new ExplorerModel(manager)
   const model = modelRef.current
   const [rev, setRev] = useState(0)
 
   useEffect(() => model.subscribe(() => setRev(r => r + 1)), [model])
 
   useEffect(() => {
-    if (!rootUri) return
-    model.invalidateRoot()
-    void model.ensureChildren(rootUri)
-  }, [rootUri, model])
+    model.setRootUris(rootUris)
+    model.invalidateRoots()
+    for (const uri of rootUris) {
+      void model.toggle(uri)
+    }
+  }, [rootUris.join("|"), model])
+
+  useEffect(() => {
+    const sub = manager.onDidChangeFolders.event(() => {
+      model.setRootUris(manager.folders.map(f => f.root.uri))
+      model.invalidateRoots()
+      for (const f of manager.folders) {
+        void model.toggle(f.root.uri)
+      }
+    })
+    return () => sub.dispose()
+  }, [manager, model])
 
   const rows: FlatRow[] = useMemo(() => {
     void rev
-    if (!rootUri) return []
-    return model.flattenVisible(rootUri)
-  }, [rev, rootUri, model])
+    if (rootUris.length === 0) return []
+    return model.flattenVisible()
+  }, [rev, rootUris.length, model])
 
   const contentRef = useRef<HTMLDivElement | null>(null)
   const [rowHeight, setRowHeight] = useState(readRowHeightPx)
@@ -177,7 +200,7 @@ export function ExplorerTree({
     setRowHeight(readRowHeightPx())
   }, [])
 
-  useEffect(() => registerListPanel(EXPLORER_LIST_ID, contentRef.current), [rootUri])
+  useEffect(() => registerListPanel(EXPLORER_LIST_ID, contentRef.current), [rootUris.length])
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -194,10 +217,11 @@ export function ExplorerTree({
     [model, onOpenFile],
   )
 
-  if (!rootUri) return null
+  if (rootUris.length === 0) return null
 
-  const rootChildren = model.childrenOf(rootUri)
-  const rootLoading = model.isLoading(rootUri) || rootChildren === null
+  const anyLoading =
+    rootUris.some(uri => model.isLoading(uri) || model.childrenOf(uri) === null) &&
+    rows.length <= rootUris.length
 
   return (
     <SidebarContent
@@ -208,7 +232,7 @@ export function ExplorerTree({
       role="tree"
       aria-label="Explorer"
     >
-      {rootLoading ? (
+      {anyLoading && rows.length === 0 ? (
         <div className="p-2 text-xs text-muted-foreground">Loading…</div>
       ) : (
         <div
@@ -263,13 +287,13 @@ function ExplorerRow({
     >
       <div
         role="treeitem"
-        aria-level={row.depth}
+        aria-level={row.depth + 1}
         aria-expanded={row.isDirectory ? row.expanded : undefined}
         data-jet-list-item
         data-uri={row.uri}
         aria-label={row.name}
         onClick={() => onClick(row)}
-        title={row.name}
+        title={row.isWorkspaceRoot ? row.path : row.name}
       >
         {row.isDirectory ? (
           <>
@@ -279,7 +303,7 @@ function ExplorerRow({
                 row.expanded && "rotate-90",
               )}
             />
-            <Folder className="size-3.5 shrink-0" />
+            <Folder className={cn("size-3.5 shrink-0", row.isWorkspaceRoot && "text-foreground")} />
           </>
         ) : (
           <>
@@ -287,7 +311,9 @@ function ExplorerRow({
             <File className="size-3.5 shrink-0" />
           </>
         )}
-        <span className="truncate">{row.name}</span>
+        <span className={cn("truncate", row.isWorkspaceRoot && "font-medium text-foreground")}>
+          {row.name}
+        </span>
         {row.loading ? <span className="ml-auto text-muted-foreground/60">…</span> : null}
       </div>
     </SidebarMenuSubButton>
@@ -295,13 +321,13 @@ function ExplorerRow({
 }
 
 export function ExplorerTab({
-  workspace,
+  manager,
   onOpenFile,
 }: {
-  workspace: WorkspaceService
+  manager: WorkspaceManager
   onOpenFile: (uri: string, path: string) => void
 }) {
-  if (!workspace.root) {
+  if (!manager.hasFolders()) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-muted-foreground">
         <p>Open a folder to browse files</p>
@@ -314,7 +340,7 @@ export function ExplorerTab({
 
   return (
     <SidebarProvider className="!min-h-0 flex h-full w-full min-h-0 flex-col">
-      <ExplorerTree workspace={workspace} onOpenFile={onOpenFile} />
+      <ExplorerTree manager={manager} onOpenFile={onOpenFile} />
     </SidebarProvider>
   )
 }

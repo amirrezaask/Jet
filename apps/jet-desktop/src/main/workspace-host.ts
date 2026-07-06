@@ -4,8 +4,12 @@ import type { BrowserWindow, IpcMain, WebContents } from "electron"
 import { ensureFffIndex, isGitWorkspace, isSearchScanReady, uriToPath } from "@jet/node-host"
 import { getGitWorker } from "./background-pool.js"
 
-let activateGen = 0
-let watchWorker: Worker | null = null
+type RootHostState = {
+  gen: number
+  watchWorker: Worker | null
+}
+
+const activeRoots = new Map<string, RootHostState>()
 
 function workerPath(name: string): string {
   return path.join(__dirname, "workers", `${name}.js`)
@@ -16,9 +20,9 @@ function terminateWorker(worker: Worker | null): void {
   void worker.terminate()
 }
 
-function stopWatchWorker(): void {
-  terminateWorker(watchWorker)
-  watchWorker = null
+function stopWatchWorker(state: RootHostState): void {
+  terminateWorker(state.watchWorker)
+  state.watchWorker = null
 }
 
 function sendToRenderer(webContents: WebContents, channel: string, payload: unknown): void {
@@ -30,11 +34,13 @@ function runGitBranch(gen: number, rootUri: string, webContents: WebContents): v
   void getGitWorker()
     .dispatch<string | null>("branch", { rootUri })
     .then(branch => {
-      if (gen !== activateGen) return
+      const state = activeRoots.get(rootUri)
+      if (!state || gen !== state.gen) return
       sendToRenderer(webContents, "workspace:gitBranch", { rootUri, branch })
     })
     .catch(() => {
-      if (gen !== activateGen) return
+      const state = activeRoots.get(rootUri)
+      if (!state || gen !== state.gen) return
       sendToRenderer(webContents, "workspace:gitBranch", { rootUri, branch: null })
     })
 }
@@ -44,34 +50,38 @@ function runFffWarmup(gen: number, rootUri: string, webContents: WebContents): v
     if (!(await isGitWorkspace(rootUri))) return
 
     if (await isSearchScanReady(rootUri)) {
-      if (gen !== activateGen) return
+      const state = activeRoots.get(rootUri)
+      if (!state || gen !== state.gen) return
       sendToRenderer(webContents, "workspace:searchReady", { rootUri })
       return
     }
     await ensureFffIndex(rootUri)
-    if (gen !== activateGen) return
+    const state = activeRoots.get(rootUri)
+    if (!state || gen !== state.gen) return
     if (await isSearchScanReady(rootUri)) {
       sendToRenderer(webContents, "workspace:searchReady", { rootUri })
     }
   })().catch(() => {
-    if (gen !== activateGen) return
+    const state = activeRoots.get(rootUri)
+    if (!state || gen !== state.gen) return
   })
 }
 
-function startWatchWorker(gen: number, rootUri: string, webContents: WebContents): void {
-  stopWatchWorker()
+function startWatchWorker(state: RootHostState, rootUri: string, webContents: WebContents): void {
+  stopWatchWorker(state)
 
   const rootPath = uriToPath(rootUri)
-  const requestId = gen
+  const requestId = state.gen
   const worker = new Worker(workerPath("fs-watch"), {
     workerData: { rootPath, requestId },
   })
-  watchWorker = worker
+  state.watchWorker = worker
 
   worker.on(
     "message",
     (msg: { requestId: number; type: string; uri?: string; error?: string }) => {
-      if (msg.requestId !== activateGen) return
+      const current = activeRoots.get(rootUri)
+      if (!current || msg.requestId !== current.gen) return
       if (msg.type === "change" && msg.uri) {
         sendToRenderer(webContents, "fs:changed", msg.uri)
       }
@@ -83,27 +93,32 @@ function startWatchWorker(gen: number, rootUri: string, webContents: WebContents
 
   worker.on("error", err => {
     console.warn("fs-watch worker failed:", err)
-    terminateWorker(watchWorker)
-    if (watchWorker === worker) watchWorker = null
+    terminateWorker(worker)
+    const current = activeRoots.get(rootUri)
+    if (current?.watchWorker === worker) current.watchWorker = null
   })
 }
 
 function scheduleWorkspaceBackground(
-  gen: number,
+  state: RootHostState,
   rootUri: string,
   webContents: WebContents,
 ): void {
+  const gen = state.gen
   setTimeout(() => {
-    if (gen !== activateGen) return
+    const current = activeRoots.get(rootUri)
+    if (!current || current.gen !== gen) return
     runGitBranch(gen, rootUri, webContents)
   }, 50)
   setTimeout(() => {
-    if (gen !== activateGen) return
+    const current = activeRoots.get(rootUri)
+    if (!current || current.gen !== gen) return
     runFffWarmup(gen, rootUri, webContents)
   }, 50)
   setTimeout(() => {
-    if (gen !== activateGen) return
-    startWatchWorker(gen, rootUri, webContents)
+    const current = activeRoots.get(rootUri)
+    if (!current || current.gen !== gen) return
+    startWatchWorker(current, rootUri, webContents)
   }, 10_000)
 }
 
@@ -115,14 +130,27 @@ export function registerWorkspaceHost(
     const webContents = getWindow()?.webContents
     if (!webContents) return { ok: false }
 
-    const gen = ++activateGen
-    stopWatchWorker()
-    setImmediate(() => scheduleWorkspaceBackground(gen, rootUri, webContents))
+    let state = activeRoots.get(rootUri)
+    if (state) return { ok: true }
+
+    state = { gen: 1, watchWorker: null }
+    activeRoots.set(rootUri, state)
+    setImmediate(() => scheduleWorkspaceBackground(state!, rootUri, webContents))
+    return { ok: true }
+  })
+
+  ipcMain.handle("workspace:deactivate", (_e, rootUri: string) => {
+    const state = activeRoots.get(rootUri)
+    if (!state) return { ok: true }
+    stopWatchWorker(state)
+    activeRoots.delete(rootUri)
     return { ok: true }
   })
 }
 
 export function stopWorkspaceHost(): void {
-  activateGen++
-  stopWatchWorker()
+  for (const state of activeRoots.values()) {
+    stopWatchWorker(state)
+  }
+  activeRoots.clear()
 }

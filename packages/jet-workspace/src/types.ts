@@ -94,6 +94,7 @@ export type LaunchConfig = {
 
 export type JetElectronWorkspace = {
   activate(rootUri: string): Promise<{ ok: boolean }>
+  deactivate?(rootUri: string): Promise<{ ok: boolean }>
   onFileIndex(callback: (rootUri: string, files: string[]) => void): () => void
   onSearchReady?(callback: (rootUri: string) => void): () => void
 }

@@ -55,6 +55,7 @@ const api: JetElectronAPI = {
   },
   workspace: {
     activate: rootUri => ipcRenderer.invoke("workspace:activate", rootUri),
+    deactivate: rootUri => ipcRenderer.invoke("workspace:deactivate", rootUri),
     onFileIndex: callback => {
       fileIndexListeners.add(callback)
       return () => fileIndexListeners.delete(callback)

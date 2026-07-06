@@ -12,7 +12,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc --emitDeclarationOnly --outDir dist",
-    "test": "tsx --test src/context-keys.test.ts src/keymaps.test.ts src/path-input.test.ts src/ensure-panel-view.test.ts src/panel-buffers.test.ts src/panel-tree.test.ts"
+    "test": "tsx --test src/context-keys.test.ts src/keymaps.test.ts src/path-input.test.ts src/ensure-panel-view.test.ts src/panel-buffers.test.ts src/panel-tree.test.ts src/workspace-manager.test.ts src/workspace-search.test.ts"
   },
   "dependencies": {
     "@jet/shared": "workspace:*",

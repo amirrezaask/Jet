@@ -13,7 +13,7 @@ export function createExplorerTabType(deps: TabContributorDeps): TabType<Explore
     title: () => "Explorer",
     render: () =>
       createElement(ExplorerTab, {
-        workspace: deps.workspace,
+        manager: deps.workspace.manager,
         onOpenFile: deps.onOpenFile,
       }),
   }

@@ -12,6 +12,7 @@ import type { PanelId, PanelView, DropAction } from "@jet/shared"
 import { pathToFileUri, isUntitledUri, fileUriToPath } from "@jet/shared"
 import {
   WorkspaceService,
+  WorkspaceManager,
   CommandRegistry,
   KeymapService,
   keyEventMatchesBinding,
@@ -36,6 +37,10 @@ import {
   popPanelTab,
   PROBLEMS_TAB_ID,
   panelTabIds,
+  aggregateFolderSearchState,
+  fileSearchAcrossFolders,
+  relativePathInFolder,
+  resolveQuickOpenDisplayPath,
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import type { LSPClient } from "@jet/codemirror"
@@ -98,6 +103,7 @@ import { getJetSearchState } from "@jet/codemirror"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
+import { terminalCwdForTab } from "./tabs/terminal.tab.js"
 import {
   panelViewKind,
   getAllLeafPanels,
@@ -204,6 +210,10 @@ export function JetApp() {
   const [projects, setProjects] = useState<JetProject[]>([])
   const [searchScanReady, setSearchScanReady] = useState(false)
   const [searchSupported, setSearchSupported] = useState(false)
+  const folderSearchStateRef = useRef(
+    new Map<string, { supported: boolean; scanReady: boolean }>(),
+  )
+  const [folderSearchRev, setFolderSearchRev] = useState(0)
   const [problems, setProblems] = useState<JetProblem[]>([])
   const [panelRev, setPanelRev] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
@@ -213,10 +223,11 @@ export function JetApp() {
   const fontSizeRef = useRef(loadStoredFontSize())
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
-  const openWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
+  const openWorkspaceRef = useRef<(folderPath: string, opts?: { replace?: boolean }) => void>(() => {})
+  const addWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
   const handleOpenFileRef = useRef<(uri: string, path: string) => void>(() => {})
   const editorPanelRef = useRef<PanelId | null>(initialLayout.editorPanel)
-  const workspaceInitGen = useRef(0)
+  const workspaceInitGen = useRef(new Map<string, number>())
   const workspaceRootPathRef = useRef<string | null>(null)
   const homeDirRef = useRef("")
   const workspaceInitCtxRef = useRef<JetInitContext | null>(null)
@@ -228,7 +239,8 @@ export function JetApp() {
     activePanelKind: undefined as string | undefined,
   })
 
-  const workspace = useMemo(() => new WorkspaceService(jetPlatformFS()), [])
+  const workspaceManager = useMemo(() => new WorkspaceManager(jetPlatformFS()), [])
+  const workspace = useMemo(() => new WorkspaceService(workspaceManager), [workspaceManager])
   const commands = useMemo(() => new CommandRegistry(), [])
   const keymaps = useMemo(() => new KeymapService(), [])
   const tabTypeRegistry = useMemo(() => new TabTypeRegistry(), [])
@@ -257,7 +269,11 @@ export function JetApp() {
       } else if (kind === "explorer" || kind === "output") {
         tabStore.create<Record<string, never>>(kind, {}, desc.id)
       } else if (kind === "terminal") {
-        tabStore.create<{ label: string }>(kind, { label: desc.label }, desc.id)
+        tabStore.create<{ label: string; cwdRootUri: string }>(
+          kind,
+          { label: desc.label, cwdRootUri: terminalCwdForTab(desc.id) || workspace.root?.uri || "" },
+          desc.id,
+        )
       } else {
         tabStore.create<{ listId: string }>(kind, { listId: desc.id }, desc.id)
       }
@@ -411,10 +427,12 @@ export function JetApp() {
 
   const resolveLspClient = useCallback(
     async (fileUri: string) => {
-      if (!lspManager || !workspace.root) return null
+      if (!lspManager) return null
+      const rootUri = workspace.resolveRootUriForFile(fileUri)
+      if (!rootUri) return null
       const path = isUntitledUri(fileUri) ? "" : fileUriToPath(fileUri)
       const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
-      const conn = await lspManager.ensureServerForFile(file, workspace.root.uri)
+      const conn = await lspManager.ensureServerForFile(file, rootUri)
       if (!conn) return null
       return lspClientPool.getOrCreateClient(conn)
     },
@@ -465,10 +483,12 @@ export function JetApp() {
 
   const ensureLspForFile = useCallback(
     async (fileUri: string) => {
-      if (!lspManager || !workspace.root || isUntitledUri(fileUri)) return
+      if (!lspManager || isUntitledUri(fileUri)) return
+      const rootUri = workspace.resolveRootUriForFile(fileUri)
+      if (!rootUri) return
       const path = fileUriToPath(fileUri)
       const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
-      const conn = await lspManager.ensureServerForFile(file, workspace.root.uri)
+      const conn = await lspManager.ensureServerForFile(file, rootUri)
       if (!conn) {
         const spawnErr = lspManager.consumeLastSpawnError()
         if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
@@ -514,16 +534,6 @@ export function JetApp() {
     if (!window.jet?.fs.onFileChanged) return
     return window.jet.fs.onFileChanged(uri => {
       void workspace.handleExternalFileChange(uri)
-    })
-  }, [workspace])
-
-  useEffect(() => {
-    if (!window.jet?.workspace?.onSearchReady) return
-    return window.jet.workspace.onSearchReady(rootUri => {
-      const current = workspace.root?.uri
-      if (!current) return
-      if (normalizeAbsPath(fileUriToPath(current)) !== normalizeAbsPath(fileUriToPath(rootUri))) return
-      setSearchScanReady(true)
     })
   }, [workspace])
 
@@ -596,18 +606,24 @@ export function JetApp() {
 
   const quickOpenSearch = useCallback(
     async (query: string) => {
-      const root = workspace.root
-      if (!root?.uri || !window.jet?.search?.fileSearch) return []
+      const folders = workspace.folders
+      if (folders.length === 0 || !window.jet?.search?.fileSearch) return []
+
       const panel = focusedPanel
       const activeUri = panel ? getActiveEditorFileUri(panelTree, panel) : null
-      let currentFile: string | undefined
+      let currentFile: { folderId: string; relativePath: string } | undefined
       if (activeUri) {
         const abs = fileUriToPath(activeUri)
-        const rootPath = normalizeAbsPath(root.path)
-        const prefix = `${rootPath}/`
-        currentFile = abs.startsWith(prefix) ? abs.slice(prefix.length) : abs
+        for (const folder of folders) {
+          const rel = relativePathInFolder(folder.root.path, abs)
+          if (rel != null) {
+            currentFile = { folderId: folder.id, relativePath: rel }
+            break
+          }
+        }
       }
-      return window.jet.search.fileSearch(root.uri, query, {
+
+      return fileSearchAcrossFolders(folders, window.jet.search, query, {
         pageSize: 100,
         currentFile,
       })
@@ -657,19 +673,19 @@ export function JetApp() {
     return list.length
   }, [projectRegistry])
 
-  const openWorkspaceFolder = useCallback(
-    (folderPath: string) => {
-      const gen = ++workspaceInitGen.current
-      void workspace.openWorkspace(folderPath)
-      workspaceRootPathRef.current = folderPath
+  const syncGlobalSearchState = useCallback(() => {
+    const { supported, scanReady } = aggregateFolderSearchState(
+      workspace.folders,
+      folderSearchStateRef.current,
+    )
+    setSearchSupported(supported)
+    setSearchScanReady(scanReady)
+  }, [workspace])
 
-      const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
-      editorPanelRef.current = editorPanel
-      setPanelTree(tree)
-      setFocusedPanel(editorPanel)
-      showJetToast(`Opened ${folderPath}`)
-      setSearchScanReady(false)
-      setSearchSupported(false)
+  const activateFolderBackground = useCallback(
+    (folderId: string, folderPath: string) => {
+      const gen = (workspaceInitGen.current.get(folderId) ?? 0) + 1
+      workspaceInitGen.current.set(folderId, gen)
 
       const jetDir = `${folderPath.replace(/[/\\]+$/, "")}/.jet`
       const initCtx = workspaceInitCtxRef.current
@@ -680,38 +696,149 @@ export function JetApp() {
       }
 
       const finishOpen = () => {
-        if (workspaceInitGen.current !== gen) return
-        const rootUri = workspace.root?.uri
+        if (workspaceInitGen.current.get(folderId) !== gen) return
+        const folder = workspace.manager.folders.find(f => f.id === folderId)
+        const rootUri = folder?.root.uri
         if (!rootUri) return
         if (window.jet?.workspace) void window.jet.workspace.activate(rootUri)
         void (async () => {
           const supported = (await window.jet?.search?.isSupported?.(rootUri)) ?? false
-          if (workspaceInitGen.current !== gen) return
-          setSearchSupported(supported)
+          if (workspaceInitGen.current.get(folderId) !== gen) return
           if (!supported) {
-            setSearchScanReady(true)
+            folderSearchStateRef.current.set(folderId, { supported: false, scanReady: true })
+            setFolderSearchRev(r => r + 1)
+            syncGlobalSearchState()
             return
           }
           void window.jet?.search?.fileSearch(rootUri, "", { pageSize: 1 }).catch(() => {})
           for (let attempt = 0; attempt < 120; attempt++) {
-            if (workspaceInitGen.current !== gen) return
+            if (workspaceInitGen.current.get(folderId) !== gen) return
             const ready = await window.jet?.search?.isScanReady?.(rootUri)
             if (ready) {
-              setSearchScanReady(true)
+              folderSearchStateRef.current.set(folderId, { supported: true, scanReady: true })
+              setFolderSearchRev(r => r + 1)
+              syncGlobalSearchState()
               return
             }
             await new Promise(resolve => window.setTimeout(resolve, 250))
           }
-          if (workspaceInitGen.current !== gen) return
-          setSearchScanReady(true)
+          if (workspaceInitGen.current.get(folderId) !== gen) return
+          folderSearchStateRef.current.set(folderId, { supported: true, scanReady: true })
+          setFolderSearchRev(r => r + 1)
+          syncGlobalSearchState()
         })()
       }
       setTimeout(finishOpen, 0)
     },
-    [workspace],
+    [workspace, syncGlobalSearchState],
   )
 
+  const addWorkspaceFolder = useCallback(
+    (folderPath: string) => {
+      void (async () => {
+        const folder = await workspace.addFolder(folderPath)
+        workspaceRootPathRef.current = folderPath
+        showJetToast(`Added ${folder.root.name}`)
+        activateFolderBackground(folder.id, folderPath)
+      })()
+    },
+    [workspace, activateFolderBackground],
+  )
+
+  const openWorkspaceFolder = useCallback(
+    (folderPath: string, opts?: { replace?: boolean }) => {
+      void (async () => {
+        const folder =
+          opts?.replace || !workspace.manager.hasFolders()
+            ? await workspace.replaceAllFolders(folderPath)
+            : await workspace.addFolder(folderPath)
+        workspaceRootPathRef.current = folderPath
+        if (opts?.replace || workspace.folders.length === 1) {
+          showJetToast(`Opened ${folderPath}`)
+        } else {
+          showJetToast(`Added ${folder.root.name}`)
+        }
+        activateFolderBackground(folder.id, folderPath)
+      })()
+    },
+    [workspace, activateFolderBackground],
+  )
+
+  const removeWorkspaceFolder = useCallback(
+    async (folderId: string): Promise<boolean> => {
+      const folder = workspace.manager.folders.find(f => f.id === folderId)
+      if (!folder) return false
+      if (workspace.hasDirtyFilesUnderFolder(folderId)) {
+        showJetToast("Cannot remove folder with unsaved changes", { variant: "destructive" })
+        return false
+      }
+
+      const rootUri = folder.root.uri
+      const rootPath = folder.root.path
+      const prefix = `${normalizeAbsPath(rootPath)}/`
+
+      const tree = cloneTree()
+      for (const panel of getAllLeafPanels(tree)) {
+        const view = tree.getView(panel)
+        if (view?.kind !== "tabs") continue
+        for (const tabId of panelTabIds(view)) {
+          if (isUntitledUri(tabId)) continue
+          const path = fileUriToPath(tabId)
+          if (!path.startsWith(prefix) && normalizeAbsPath(path) !== normalizeAbsPath(rootPath)) {
+            continue
+          }
+          destroyEditorBuffer(panel, tabId)
+          workspace.closeBuffer(tabId)
+          workspace.disposeTab(tabId)
+          workspace.closeTabInPanel(tree, panel, tabId)
+        }
+      }
+      commitTree(tree)
+
+      if (window.jet?.workspace?.deactivate) {
+        await window.jet.workspace.deactivate(rootUri)
+      }
+      if (lspManager) {
+        await lspManager.stopServersForRoot(rootUri)
+      }
+      folderSearchStateRef.current.delete(folderId)
+      workspaceInitGen.current.delete(folderId)
+      const removed = workspace.removeFolder(folderId)
+      if (removed) {
+        syncGlobalSearchState()
+        showJetToast(`Removed ${folder.root.name}`)
+      }
+      return removed
+    },
+    [workspace, cloneTree, commitTree, lspManager, syncGlobalSearchState],
+  )
+
+  useEffect(() => {
+    if (!window.jet?.workspace?.onSearchReady) return
+    return window.jet.workspace.onSearchReady(rootUri => {
+      const folder = workspace.manager.folders.find(
+        f => normalizeAbsPath(f.root.uri) === normalizeAbsPath(rootUri) || f.root.uri === rootUri,
+      )
+      if (!folder) return
+      const prev = folderSearchStateRef.current.get(folder.id)
+      folderSearchStateRef.current.set(folder.id, {
+        supported: prev?.supported ?? true,
+        scanReady: true,
+      })
+      setFolderSearchRev(r => r + 1)
+      syncGlobalSearchState()
+    })
+  }, [workspace, syncGlobalSearchState])
+
+  useEffect(() => {
+    const sub = workspace.manager.onDidChangeFolders.event(() => {
+      syncGlobalSearchState()
+    })
+    return () => sub.dispose()
+  }, [workspace, syncGlobalSearchState])
+
   openWorkspaceRef.current = openWorkspaceFolder
+  addWorkspaceRef.current = addWorkspaceFolder
   handleOpenFileRef.current = handleOpenFile
   handleOpenFileForTabs.current = handleOpenFile
   openListItemForTabs.current = openListItem
@@ -723,7 +850,7 @@ export function JetApp() {
 
   const bootstrapFromLaunchForDrop = useCallback((config: LaunchConfig) => {
     bootstrapFromLaunch(
-      path => openWorkspaceRef.current(path),
+      path => openWorkspaceRef.current(path, { replace: true }),
       (uri, path) => handleOpenFileRef.current(uri, path),
       config,
     )
@@ -962,6 +1089,11 @@ export function JetApp() {
         cloneTree,
         commitTree,
         openWorkspaceFolder,
+        addWorkspaceFolder,
+        removeWorkspaceFolder,
+        setActiveWorkspaceFolder: (id: string) => {
+          workspace.setActiveFolder(id)
+        },
         handlePanelEvent,
         openFileInEditor,
         openListItem,
@@ -983,6 +1115,8 @@ export function JetApp() {
       cloneTree,
       commitTree,
       openWorkspaceFolder,
+      addWorkspaceFolder,
+      removeWorkspaceFolder,
       handlePanelEvent,
       openFileInEditor,
       openListItem,
@@ -1187,7 +1321,9 @@ export function JetApp() {
       fontSize: fontSizeRef.current,
       activeEditorDirty: activeEditorFile?.isDirty ?? false,
       executeCommand,
-      openWorkspace: folderPath => Promise.resolve(openWorkspaceFolder(folderPath)),
+      openWorkspace: folderPath => Promise.resolve(openWorkspaceRef.current(folderPath, { replace: true })),
+      addWorkspace: folderPath => Promise.resolve(addWorkspaceRef.current(folderPath)),
+      listWorkspaces: () => workspace.manager.folders.map(f => ({ id: f.id, path: f.root.path, name: f.root.name })),
       openFile: handleOpenFile,
       setFontSize,
       getEditorText: () => {
@@ -1237,7 +1373,7 @@ export function JetApp() {
       queryBootstrapDone.current = true
       void openWorkspaceFromQuery(
         window.location.search,
-        path => Promise.resolve(openWorkspaceRef.current(path)),
+        path => Promise.resolve(openWorkspaceRef.current(path, { replace: true })),
         openFile,
       )
         .catch(err => console.warn("Failed to open workspace from query:", err))
@@ -1245,7 +1381,7 @@ export function JetApp() {
       void window.jet.getLaunchConfig().then(cfg => {
         if (!cfg || queryBootstrapDone.current) return
         queryBootstrapDone.current = true
-        bootstrapFromLaunch(path => openWorkspaceRef.current(path), openFile, cfg)
+        bootstrapFromLaunch(path => openWorkspaceRef.current(path, { replace: true }), openFile, cfg)
       })
     }
   }, [layoutReady])
@@ -1512,7 +1648,9 @@ export function JetApp() {
             lspStatus={lspStatus}
             workspaceName={workspace.root?.name}
             workspacePath={workspace.root?.path}
-            hasWorkspace={Boolean(workspace.root)}
+            workspaceFolderCount={workspace.folders.length}
+            workspaceFolderNames={workspace.folders.map(f => f.root.name)}
+            hasWorkspace={workspace.manager.hasFolders()}
             activeFileName={activeEditorFile?.name ?? null}
             activeLanguageId={activeEditorFile?.languageId ?? null}
             activeFileDirty={activeEditorFile?.isDirty ?? false}
@@ -1520,7 +1658,7 @@ export function JetApp() {
         </>
       }
     >
-      {!workspace.root && !hasWorkspaceQuery ? (
+      {!workspace.manager.hasFolders() && !hasWorkspaceQuery ? (
         <WelcomeView
           isWebMode={isWebMode}
           bootstrapping={false}
@@ -1576,11 +1714,15 @@ export function JetApp() {
           onOpenChange={setQuickOpenOpen}
           scanReady={searchScanReady}
           onSearch={quickOpenSearch}
-          onSelect={(rel, query) => {
-            if (!workspace.root) return
-            void window.jet?.search?.trackFileAccess?.(workspace.root.uri, query, rel)
-            const fullPath = `${workspace.root.path}/${rel.replace(/^\/+/, "")}`
-            handleOpenFile(pathToFileUri(fullPath), fullPath)
+          onSelect={(displayPath, query) => {
+            const resolved = resolveQuickOpenDisplayPath(displayPath, workspace.folders)
+            if (!resolved) return
+            void window.jet?.search?.trackFileAccess?.(
+              resolved.folder.root.uri,
+              query,
+              resolved.relativePath,
+            )
+            handleOpenFile(resolved.fileUri, resolved.fullPath)
           }}
         />
       )}
@@ -1608,7 +1750,7 @@ export function JetApp() {
           open
           onOpenChange={setCdOpen}
           initialPath={workspace.root?.path ?? null}
-          onSelectFolder={path => openWorkspaceFolder(path)}
+          onSelectFolder={path => openWorkspaceFolder(path, { replace: true })}
           resolveHomeDir={async () =>
             window.jet?.getHomeDir ? window.jet.getHomeDir() : (await resolveDevWorkspacePath(".")).path
           }
@@ -1620,7 +1762,7 @@ export function JetApp() {
           open
           onOpenChange={setProjectSwitcherOpen}
           projects={projects}
-          onSelect={path => openWorkspaceFolder(path)}
+          onSelect={path => openWorkspaceFolder(path, { replace: true })}
         />
       )}
 

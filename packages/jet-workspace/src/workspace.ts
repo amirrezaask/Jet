@@ -1,8 +1,14 @@
-import { basename, Emitter, languageIdFromPath, pathToFileUri, makeUntitledUri } from "@jet/shared"
+import {
+  basename,
+  Emitter,
+  fileUriToPath,
+  isUntitledUri,
+  languageIdFromPath,
+  makeUntitledUri,
+} from "@jet/shared"
 import type { PanelId, PanelView } from "@jet/shared"
 import type { JetPanelTree } from "./panel-tree.js"
 import type { WorkspaceFile, WorkspaceRoot } from "./types.js"
-import type { FileSystemProvider } from "./types.js"
 import { JumpStack } from "./jump-stack.js"
 import { allocListId, ListDocumentStore, type ListDocument } from "./list-document.js"
 import { TaskRunner } from "./task-runner.js"
@@ -23,6 +29,12 @@ import {
   type TabDescriptor,
   type TabKind,
 } from "./tab-registry.js"
+import {
+  type ConfirmDiscardReloadFn,
+  type WorkspaceFolder,
+  WorkspaceFolderState,
+  WorkspaceManager,
+} from "./workspace-manager.js"
 
 /** Tab kinds whose payload lives in the list store and should be disposed with the tab. */
 const LIST_TAB_KINDS = new Set<string>([
@@ -33,16 +45,14 @@ const LIST_TAB_KINDS = new Set<string>([
   "task-errors",
 ])
 
-export type ConfirmDiscardReloadFn = (fileName: string) => Promise<boolean>
+export type { ConfirmDiscardReloadFn, WorkspaceFolder }
+export { WorkspaceManager, WorkspaceFolderState }
 
 export class WorkspaceService {
-  root: WorkspaceRoot | null = null
   confirmDiscardReload: ConfirmDiscardReloadFn | null = null
-  private files = new Map<string, WorkspaceFile>()
-  private savedBaseline = new Map<string, string>()
-  private recentWrites = new Map<string, number>()
-  private untitledCounter = 1
   openBuffers: string[] = []
+  private untitledFiles = new Map<string, WorkspaceFile>()
+  private untitledCounter = 1
 
   readonly jumpStack = new JumpStack()
   readonly tabRegistry = new TabRegistry()
@@ -56,25 +66,113 @@ export class WorkspaceService {
   readonly onFileReload = new Emitter<{ uri: string; content: string }>()
   readonly onDidChangeBuffers = new Emitter<void>()
 
-  constructor(private fs: FileSystemProvider) {}
+  constructor(readonly manager: WorkspaceManager) {
+    this.wireFolderEvents()
+  }
+
+  get root(): WorkspaceRoot | null {
+    return this.manager.activeFolder?.root ?? null
+  }
+
+  get folders(): WorkspaceFolder[] {
+    return this.manager.folders
+  }
+
+  private wireFolderEvents(): void {
+    this.manager.onDidAddFolder.event(folder => {
+      const state = this.manager.folderStateForId(folder.id)
+      if (!state) return
+      this.bindFolderState(state)
+      this.onDidOpenWorkspace.fire(folder.root)
+    })
+  }
+
+  private bindFolderState(state: WorkspaceFolderState): void {
+    state.confirmDiscardReload = this.confirmDiscardReload
+    state.onDidOpenFile.event(file => this.onDidOpenFile.fire(file))
+    state.onDidChangeDirty.event(evt => {
+      this.onDidChangeDirty.fire(evt)
+      this.tabRegistry.update(evt.uri, { label: this.fileForUri(evt.uri)?.name ?? evt.uri })
+    })
+    state.onDidChangeSavedBaseline.event(evt => this.onDidChangeSavedBaseline.fire(evt))
+    state.onFileReload.event(evt => this.onFileReload.fire(evt))
+  }
+
+  set confirmDiscardReloadFn(fn: ConfirmDiscardReloadFn | null) {
+    this.confirmDiscardReload = fn
+    for (const state of this.manager.allFolderStates()) {
+      state.confirmDiscardReload = fn
+    }
+  }
 
   async openWorkspace(folderPath: string): Promise<void> {
-    const uri = pathToFileUri(folderPath)
-    this.root = { uri, path: folderPath, name: basename(folderPath) }
-    this.files.clear()
-    this.savedBaseline.clear()
-    this.recentWrites.clear()
+    await this.manager.replaceAllFolders(folderPath)
     this.openBuffers = []
-    this.onDidOpenWorkspace.fire(this.root)
+    this.untitledFiles.clear()
     this.onDidChangeBuffers.fire()
   }
 
+  async addFolder(folderPath: string): Promise<WorkspaceFolder> {
+    const folder = await this.manager.addFolder(folderPath)
+    const state = this.manager.folderStateForId(folder.id)
+    if (state) this.bindFolderState(state)
+    return folder
+  }
+
+  async replaceAllFolders(folderPath: string): Promise<WorkspaceFolder> {
+    await this.openWorkspace(folderPath)
+    return this.manager.activeFolder!
+  }
+
+  removeFolder(id: string): boolean {
+    return this.manager.removeFolder(id)
+  }
+
+  setActiveFolder(id: string): void {
+    this.manager.setActiveFolder(id)
+  }
+
+  folderStateForUri(uri: string): WorkspaceFolderState | undefined {
+    if (isUntitledUri(uri)) return undefined
+    return this.manager.folderStateForUri(uri)
+  }
+
+  resolveRootUriForFile(fileUri: string): string | null {
+    if (isUntitledUri(fileUri)) return this.root?.uri ?? null
+    return this.manager.folderStateForUri(fileUri)?.root.uri ?? this.root?.uri ?? null
+  }
+
+  hasDirtyFilesUnderFolder(folderId: string): boolean {
+    return this.manager.folderStateForId(folderId)?.hasDirtyFiles() ?? false
+  }
+
+  urisUnderFolder(folderId: string): string[] {
+    const state = this.manager.folderStateForId(folderId)
+    if (!state) return []
+    return [...state.allFiles()].map(f => f.uri)
+  }
+
+  private stateForFileUri(uri: string): WorkspaceFolderState | undefined {
+    if (isUntitledUri(uri)) return undefined
+    let state = this.manager.folderStateForUri(uri)
+    if (!state && this.manager.activeFolderState) {
+      state = this.manager.activeFolderState
+    }
+    return state
+  }
+
   fileForUri(uri: string): WorkspaceFile | undefined {
-    return this.files.get(uri)
+    if (isUntitledUri(uri)) return this.untitledFiles.get(uri)
+    return this.manager.folderStateForUri(uri)?.fileForUri(uri)
   }
 
   registerFile(file: WorkspaceFile): void {
-    this.files.set(file.uri, file)
+    if (isUntitledUri(file.uri)) {
+      this.untitledFiles.set(file.uri, file)
+      return
+    }
+    const state = this.stateForFileUri(file.uri)
+    state?.registerFile(file)
   }
 
   touchBuffer(uri: string): void {
@@ -88,94 +186,74 @@ export class WorkspaceService {
   }
 
   markDirty(uri: string, isDirty: boolean): void {
-    const file = this.files.get(uri)
-    if (!file || file.isDirty === isDirty) return
-    file.isDirty = isDirty
-    this.onDidChangeDirty.fire({ uri, isDirty })
-    this.tabRegistry.update(uri, { label: file.name })
+    if (isUntitledUri(uri)) {
+      const file = this.untitledFiles.get(uri)
+      if (!file || file.isDirty === isDirty) return
+      file.isDirty = isDirty
+      this.onDidChangeDirty.fire({ uri, isDirty })
+      this.tabRegistry.update(uri, { label: file.name })
+      return
+    }
+    const state = this.manager.folderStateForUri(uri)
+    state?.markDirty(uri, isDirty)
   }
 
   setSavedBaseline(uri: string, content: string): void {
-    this.savedBaseline.set(uri, content)
-    this.onDidChangeSavedBaseline.fire({ uri, content })
-    this.syncDirtyFromDoc(uri, content)
+    if (isUntitledUri(uri)) return
+    this.manager.folderStateForUri(uri)?.setSavedBaseline(uri, content)
   }
 
   savedBaselineFor(uri: string): string | undefined {
-    return this.savedBaseline.get(uri)
+    if (isUntitledUri(uri)) return undefined
+    return this.manager.folderStateForUri(uri)?.savedBaselineFor(uri)
   }
 
   syncDirtyFromDoc(uri: string, content: string): void {
-    if (!this.savedBaseline.has(uri)) return
-    const baseline = this.savedBaseline.get(uri)!
-    this.markDirty(uri, content !== baseline)
-  }
-
-  private isRecentlyWritten(uri: string, ttlMs = 2500): boolean {
-    const wroteAt = this.recentWrites.get(uri)
-    if (wroteAt == null) return false
-    if (Date.now() - wroteAt > ttlMs) {
-      this.recentWrites.delete(uri)
-      return false
-    }
-    return true
+    if (isUntitledUri(uri)) return
+    this.manager.folderStateForUri(uri)?.syncDirtyFromDoc(uri, content)
   }
 
   clearDirtyState(uri: string): void {
-    this.markDirty(uri, false)
+    if (isUntitledUri(uri)) {
+      const file = this.untitledFiles.get(uri)
+      if (file) file.isDirty = false
+      return
+    }
+    this.manager.folderStateForUri(uri)?.clearDirtyState(uri)
   }
 
   async readFile(uri: string): Promise<string> {
-    return this.fs.readFile(uri)
+    const state = this.manager.folderStateForUri(uri)
+    if (state) return state.readFile(uri)
+    return this.manager.readFile(uri)
   }
 
   async writeFile(uri: string, content: string): Promise<void> {
-    await this.fs.writeFile(uri, content)
-    this.recentWrites.set(uri, Date.now())
-    this.setSavedBaseline(uri, content)
+    const state = this.manager.folderStateForUri(uri) ?? this.manager.activeFolderState
+    if (!state) throw new Error("No workspace folder for file")
+    await state.writeFile(uri, content)
   }
 
   async reloadFileFromDisk(uri: string, opts?: { force?: boolean }): Promise<string | null> {
-    const file = this.files.get(uri)
-    if (!file) return null
-    if (file.isDirty && !opts?.force) return null
-    try {
-      const content = await this.fs.readFile(uri)
-      this.setSavedBaseline(uri, content)
-      this.onFileReload.fire({ uri, content })
-      return content
-    } catch {
-      return null
-    }
+    return this.manager.folderStateForUri(uri)?.reloadFileFromDisk(uri, opts) ?? null
   }
 
   async handleExternalFileChange(uri: string): Promise<void> {
-    const file = this.files.get(uri)
-    if (!file) return
-    if (this.isRecentlyWritten(uri)) return
-    if (file.isDirty) {
-      const ok = this.confirmDiscardReload
-        ? await this.confirmDiscardReload(file.name)
-        : false
-      if (ok) void this.reloadFileFromDisk(uri, { force: true })
-      return
-    }
-    void this.reloadFileFromDisk(uri)
+    await this.manager.folderStateForUri(uri)?.handleExternalFileChange(uri)
   }
 
   async readDir(uri: string) {
-    return this.fs.readDir(uri)
+    return this.manager.readDir(uri)
   }
 
   createWorkspaceFile(uri: string, path: string): WorkspaceFile {
-    const file: WorkspaceFile = {
-      uri,
-      path,
-      name: basename(path),
-      languageId: languageIdFromPath(path),
-      isDirty: false,
+    const state =
+      this.manager.folderStateForUri(uri) ??
+      this.manager.activeFolderState
+    if (!state) {
+      throw new Error("No workspace folder open")
     }
-    this.registerFile(file)
+    const file = state.createWorkspaceFile(uri, path, languageIdFromPath(path))
     return file
   }
 
@@ -203,13 +281,30 @@ export class WorkspaceService {
   ): string {
     this.registerTab(tab, listDoc)
     if (tab.kind === "editor") {
-      const file = this.files.get(tab.id) ?? this.createWorkspaceFile(tab.id, tab.label)
+      const path = isUntitledUri(tab.id) ? "" : fileUriToPath(tab.id)
+      const file =
+        this.fileForUri(tab.id) ??
+        (isUntitledUri(tab.id)
+          ? this.registerUntitledFile(tab.id, tab.label)
+          : this.createWorkspaceFile(tab.id, path))
       this.touchBuffer(tab.id)
       this.onDidOpenFile.fire(file)
     }
     const current = tree.getView(panelId)
     tree.setView(panelId, pushPanelTab(current, tab.id, opts?.replaceTabId))
     return tab.id
+  }
+
+  private registerUntitledFile(uri: string, label: string): WorkspaceFile {
+    const file: WorkspaceFile = {
+      uri,
+      path: "",
+      name: label,
+      languageId: "plaintext",
+      isDirty: false,
+    }
+    this.untitledFiles.set(uri, file)
+    return file
   }
 
   focusTabInPanel(tree: JetPanelTree, panelId: PanelId, tabId: string): void {
@@ -247,7 +342,7 @@ export class WorkspaceService {
     path: string,
     opts?: { replaceUri?: string },
   ): void {
-    let file = this.files.get(uri)
+    let file = this.fileForUri(uri)
     if (!file) file = this.createWorkspaceFile(uri, path)
     this.openTabInPanel(
       tree,
@@ -278,15 +373,15 @@ export class WorkspaceService {
       languageId,
       isDirty: false,
     }
-    this.registerFile(file)
+    this.untitledFiles.set(uri, file)
     this.openTabInPanel(tree, panelId, { id: uri, kind: "editor", label })
     return uri
   }
 
   promoteUntitled(oldUri: string, fileUri: string, path: string): void {
-    const file = this.files.get(oldUri)
+    const file = this.untitledFiles.get(oldUri)
     if (!file) return
-    this.files.delete(oldUri)
+    this.untitledFiles.delete(oldUri)
     const promoted = this.createWorkspaceFile(fileUri, path)
     const idx = this.openBuffers.indexOf(oldUri)
     if (idx >= 0) this.openBuffers[idx] = fileUri

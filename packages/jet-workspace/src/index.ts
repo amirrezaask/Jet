@@ -1,5 +1,7 @@
 export * from "./types.js"
 export * from "./workspace.js"
+export * from "./workspace-manager.js"
+export * from "./workspace-search.js"
 export * from "./commands.js"
 export * from "./keymaps.js"
 export * from "./context-keys.js"
