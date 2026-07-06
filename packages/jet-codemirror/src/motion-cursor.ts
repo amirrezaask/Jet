@@ -3,11 +3,16 @@ import type { Extension } from "@codemirror/state"
 import {
   ANIM_EPSILON,
   CaretEndpointAnim,
-  CaretGhostBuffer,
   onReducedMotionChange,
   prefersReducedMotion,
   type CaretPoint,
 } from "@jet/shared"
+
+const SVG_NS = "http://www.w3.org/2000/svg"
+const STREAK_BASE_ALPHA = 0.35
+const STREAK_MIN_ALPHA = 0.1
+const STREAK_MAX_SHEAR_DEG = 8
+const STREAK_Y_OVERSHOOT = 0.125
 
 const MAIN_THICKNESS = 4
 const ANCHOR_THICKNESS = 3
@@ -19,7 +24,6 @@ type RenderItem = {
   shape: BracketShape
   thickness: number
   opacity: number
-  ghost?: boolean
 }
 
 type EndpointTarget = {
@@ -109,9 +113,9 @@ function measureCursors(view: EditorView): MeasureResult | null {
   }
 }
 
-function createBracketGroup(ghost = false): HTMLDivElement {
+function createBracketGroup(): HTMLDivElement {
   const group = document.createElement("div")
-  group.className = ghost ? "jet-bracket-group jet-bracket-ghost" : "jet-bracket-group"
+  group.className = "jet-bracket-group"
   for (const part of ["top", "left", "bottom", "right"] as const) {
     const el = document.createElement("div")
     el.className = `jet-bracket-part jet-bracket-${part}`
@@ -193,28 +197,40 @@ function isTypingHop(update: ViewUpdate): boolean {
 
 class BracketCursorPlugin {
   private layer: HTMLDivElement
-  private ghostLayer: HTMLDivElement
+  private streakSvg: SVGSVGElement
+  private streakRects = new Map<string, {
+    rect: SVGRectElement
+    gradient: SVGLinearGradientElement
+    stopA: SVGStopElement
+    stopB: SVGStopElement
+  }>()
   private groups: HTMLDivElement[] = []
-  private ghostGroups: HTMLDivElement[] = []
   private anims = new Map<string, CaretEndpointAnim>()
-  private ghosts = new Map<string, CaretGhostBuffer>()
   private renderPlan: RenderItem[] = []
-  private ghostRenderPlan: RenderItem[] = []
   private focusOpacity = 1
-  private visible = true
   private rafId: number | null = null
   private lastFrameTime = 0
   private instantNext = true
   private reducedMotion: boolean
   private unsubMotion: (() => void) | null = null
+  private streakDefs: SVGDefsElement
 
   constructor(private view: EditorView) {
     this.reducedMotion = prefersReducedMotion()
-    this.ghostLayer = document.createElement("div")
-    this.ghostLayer.className = "jet-cursor-ghost-layer"
+    this.streakSvg = document.createElementNS(SVG_NS, "svg")
+    this.streakSvg.setAttribute("class", "jet-cursor-streak-layer")
+    this.streakSvg.style.position = "absolute"
+    this.streakSvg.style.inset = "0"
+    this.streakSvg.style.pointerEvents = "none"
+    this.streakSvg.style.overflow = "visible"
+    this.streakSvg.style.zIndex = "29"
+    this.streakSvg.style.width = "100%"
+    this.streakSvg.style.height = "100%"
+    this.streakDefs = document.createElementNS(SVG_NS, "defs")
+    this.streakSvg.appendChild(this.streakDefs)
     this.layer = document.createElement("div")
     this.layer.className = "jet-cursor-layer"
-    view.scrollDOM.appendChild(this.ghostLayer)
+    view.scrollDOM.appendChild(this.streakSvg)
     view.scrollDOM.appendChild(this.layer)
     this.unsubMotion = onReducedMotionChange(v => {
       this.reducedMotion = v
@@ -232,13 +248,11 @@ class BracketCursorPlugin {
     ) {
       const composing = (update.view.dom as HTMLElement).classList.contains("cm-composing")
       if (composing) {
-        this.visible = false
         this.layer.style.opacity = "0"
-        this.ghostLayer.style.opacity = "0"
+        this.streakSvg.style.opacity = "0"
         this.stopRaf()
         return
       }
-      this.visible = true
       const typingHop = isTypingHop(update)
       this.instantNext = this.reducedMotion || (update.docChanged && !typingHop)
       this.scheduleMeasure()
@@ -251,14 +265,14 @@ class BracketCursorPlugin {
       write: result => {
         if (!result || !result.visible) {
           this.layer.style.opacity = "0"
-          this.ghostLayer.style.opacity = "0"
+          this.streakSvg.style.opacity = "0"
           return
         }
 
         this.focusOpacity = result.focusOpacity
         this.renderPlan = result.renderPlan
         this.layer.style.opacity = "1"
-        this.ghostLayer.style.opacity = "1"
+        this.streakSvg.style.opacity = "1"
 
         const activeKeys = new Set<string>()
         let snapped = false
@@ -270,16 +284,8 @@ class BracketCursorPlugin {
             anim = new CaretEndpointAnim()
             anim.snap(point)
             this.anims.set(key, anim)
-            if (!this.ghosts.has(key)) this.ghosts.set(key, new CaretGhostBuffer())
             snapped = true
           } else {
-            if (!this.instantNext && !this.reducedMotion) {
-              const dx = point.x - anim.x
-              const dy = point.y - anim.y
-              if (dx * dx + dy * dy > 0.5) {
-                this.ghosts.get(key)?.push(anim.x, anim.y, anim.h)
-              }
-            }
             if (anim.setTarget(point, this.instantNext)) snapped = true
           }
         }
@@ -287,11 +293,10 @@ class BracketCursorPlugin {
         for (const key of this.anims.keys()) {
           if (!activeKeys.has(key)) {
             this.anims.delete(key)
-            this.ghosts.delete(key)
+            this.removeStreak(key)
           }
         }
 
-        this.buildGhostRenderPlan()
         this.render()
 
         const shouldAnimate =
@@ -308,23 +313,6 @@ class BracketCursorPlugin {
         this.instantNext = false
       },
     })
-  }
-
-  private buildGhostRenderPlan() {
-    const plan: RenderItem[] = []
-    const now = performance.now()
-    for (const [key, buffer] of this.ghosts) {
-      for (const g of buffer.tick(now)) {
-        plan.push({
-          key: `${key}-ghost-${g.bornAt}`,
-          shape: "open",
-          thickness: MAIN_THICKNESS - 1,
-          opacity: g.opacity,
-          ghost: true,
-        })
-      }
-    }
-    this.ghostRenderPlan = plan
   }
 
   private startRaf() {
@@ -356,37 +344,108 @@ class BracketCursorPlugin {
       if (anim.step(dt)) active = true
     }
 
-    this.buildGhostRenderPlan()
     this.render()
 
     if (active) this.rafId = requestAnimationFrame(t => this.tick(t))
     else this.rafId = null
   }
 
-  private renderGhostGroups() {
-    const ghosts = this.ghostRenderPlan
-    const now = performance.now()
-    let gi = 0
-    for (const [, buffer] of this.ghosts) {
-      for (const g of buffer.tick(now)) {
-        while (this.ghostGroups.length <= gi) {
-          const group = createBracketGroup(true)
-          this.ghostGroups.push(group)
-          this.ghostLayer.appendChild(group)
-        }
-        const group = this.ghostGroups[gi]!
-        group.style.display = "block"
-        layoutBracketGroup(group, g.x, g.y, g.h, "open", MAIN_THICKNESS - 1, g.opacity, this.focusOpacity)
-        gi++
+  private removeStreak(key: string) {
+    const entry = this.streakRects.get(key)
+    if (!entry) return
+    entry.rect.remove()
+    entry.gradient.remove()
+    this.streakRects.delete(key)
+  }
+
+  private ensureStreak(key: string) {
+    let entry = this.streakRects.get(key)
+    if (entry) return entry
+    const gradient = document.createElementNS(SVG_NS, "linearGradient")
+    const gradId = `jet-streak-${key.replace(/[^a-zA-Z0-9_-]/g, "_")}`
+    gradient.setAttribute("id", gradId)
+    gradient.setAttribute("gradientUnits", "objectBoundingBox")
+    gradient.setAttribute("x1", "0")
+    gradient.setAttribute("y1", "0")
+    gradient.setAttribute("x2", "1")
+    gradient.setAttribute("y2", "0")
+    const stopA = document.createElementNS(SVG_NS, "stop")
+    stopA.setAttribute("offset", "0")
+    stopA.setAttribute("stop-color", "var(--jet-cursor-color, #c4923a)")
+    const stopB = document.createElementNS(SVG_NS, "stop")
+    stopB.setAttribute("offset", "1")
+    stopB.setAttribute("stop-color", "var(--jet-cursor-color, #c4923a)")
+    gradient.appendChild(stopA)
+    gradient.appendChild(stopB)
+    this.streakDefs.appendChild(gradient)
+
+    const rect = document.createElementNS(SVG_NS, "rect")
+    rect.setAttribute("fill", `url(#${gradId})`)
+    rect.setAttribute("rx", "1")
+    this.streakSvg.appendChild(rect)
+    entry = { rect, gradient, stopA, stopB }
+    this.streakRects.set(key, entry)
+    return entry
+  }
+
+  private renderStreaks() {
+    const activeStreakKeys = new Set<string>()
+
+    for (const { key } of this.renderPlan) {
+      const endpointKey = key.replace(/-(open|close)$/, "")
+      const anim = this.anims.get(endpointKey)
+      if (!anim) continue
+
+      const dx = anim.targetX - anim.x
+      const dy = anim.targetY - anim.y
+      const distSq = dx * dx + dy * dy
+      if (this.reducedMotion || distSq < ANIM_EPSILON * ANIM_EPSILON) {
+        this.removeStreak(endpointKey)
+        continue
       }
+
+      activeStreakKeys.add(endpointKey)
+      const entry = this.ensureStreak(endpointKey)
+
+      const x0 = Math.min(anim.x, anim.targetX)
+      const x1 = Math.max(anim.x, anim.targetX)
+      const width = Math.max(x1 - x0, 1)
+      const overshoot = anim.h * STREAK_Y_OVERSHOOT
+      const y0 = anim.y - overshoot
+      const height = anim.h + overshoot * 2
+      const rightward = anim.targetX > anim.x
+      const baseAlpha = STREAK_BASE_ALPHA * this.focusOpacity
+
+      const leadAlpha = baseAlpha
+      const trailAlpha = baseAlpha * STREAK_MIN_ALPHA
+
+      entry.stopA.setAttribute("stop-opacity", String(rightward ? trailAlpha : leadAlpha))
+      entry.stopB.setAttribute("stop-opacity", String(rightward ? leadAlpha : trailAlpha))
+
+      let shearDeg = 0
+      if (Math.abs(dy) > 2) {
+        const raw = (-Math.atan(dy * 0.5) * 180) / Math.PI
+        shearDeg = Math.max(-STREAK_MAX_SHEAR_DEG, Math.min(STREAK_MAX_SHEAR_DEG, raw))
+        if (!rightward) shearDeg = -shearDeg
+      }
+
+      entry.rect.setAttribute("x", String(x0))
+      entry.rect.setAttribute("y", String(y0))
+      entry.rect.setAttribute("width", String(width))
+      entry.rect.setAttribute("height", String(height))
+      entry.rect.setAttribute(
+        "transform",
+        shearDeg !== 0 ? `skewY(${shearDeg.toFixed(2)})` : "",
+      )
     }
-    while (this.ghostGroups.length > gi) {
-      this.ghostGroups.pop()?.remove()
+
+    for (const key of Array.from(this.streakRects.keys())) {
+      if (!activeStreakKeys.has(key)) this.removeStreak(key)
     }
   }
 
   private render() {
-    this.renderGhostGroups()
+    this.renderStreaks()
 
     const needed = this.renderPlan.length
     while (this.groups.length < needed) {
@@ -425,9 +484,9 @@ class BracketCursorPlugin {
     this.stopRaf()
     this.unsubMotion?.()
     this.layer.remove()
-    this.ghostLayer.remove()
+    this.streakSvg.remove()
     this.anims.clear()
-    this.ghosts.clear()
+    this.streakRects.clear()
   }
 }
 
@@ -435,11 +494,12 @@ export function motionCursor(): Extension {
   return [
     drawSelection({ cursorBlinkRate: 0 }),
     EditorView.theme({
-      ".jet-cursor-ghost-layer": {
+      ".jet-cursor-streak-layer": {
         position: "absolute",
         inset: "0",
         pointerEvents: "none",
         zIndex: "29",
+        overflow: "visible",
       },
       ".jet-cursor-layer": {
         position: "absolute",
@@ -453,9 +513,6 @@ export function motionCursor(): Extension {
         left: "0",
         width: "0",
         willChange: "transform, opacity",
-      },
-      ".jet-bracket-ghost": {
-        filter: "blur(0.3px)",
       },
       ".jet-bracket-part": {
         position: "absolute",

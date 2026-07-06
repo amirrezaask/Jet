@@ -18,8 +18,8 @@ export {
 
 export const jetMotion = {
   duration: {
-    hot: 0.14,
-    fast: 0.15,
+    hot: 0.19,
+    fast: 0.18,
     overlay: 0.2,
     panel: 0.22,
     slowMenu: 0.28,

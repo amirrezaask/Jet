@@ -3,7 +3,9 @@ export const CURSOR_SHORT_HOP_MULT = 2.5
 export const CURSOR_RETARGET_WINDOW = 0.12
 export const ANIM_EPSILON = 0.5
 export const GHOST_MAX = 5
-export const GHOST_DECAY_MS = 120
+export const GHOST_DECAY_MS = 200
+export const GHOST_INITIAL_OPACITY = 0.7
+export const GHOST_DECAY_CURVE = 1.6
 
 export type CaretPoint = {
   x: number
@@ -145,14 +147,16 @@ export class CaretGhostBuffer {
   private ghosts: CaretGhost[] = []
 
   push(x: number, y: number, h: number, now = performance.now()): void {
-    this.ghosts.unshift({ x, y, h, opacity: 0.45, bornAt: now })
+    this.ghosts.unshift({ x, y, h, opacity: GHOST_INITIAL_OPACITY, bornAt: now })
     if (this.ghosts.length > GHOST_MAX) this.ghosts.length = GHOST_MAX
   }
 
   tick(now = performance.now()): CaretGhost[] {
     this.ghosts = this.ghosts.filter(g => {
       const age = now - g.bornAt
-      g.opacity = 0.45 * (1 - age / GHOST_DECAY_MS)
+      const remaining = 1 - age / GHOST_DECAY_MS
+      g.opacity =
+        remaining > 0 ? GHOST_INITIAL_OPACITY * Math.pow(remaining, GHOST_DECAY_CURVE) : 0
       return age < GHOST_DECAY_MS && g.opacity > 0.02
     })
     return this.ghosts

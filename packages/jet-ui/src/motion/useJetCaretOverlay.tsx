@@ -34,19 +34,27 @@ function measureInputCaret(input: HTMLInputElement, anchor: HTMLElement): CaretP
   const inputRect = input.getBoundingClientRect()
   const offsetX = inputRect.left - anchorRect.left
   const offsetY = inputRect.top - anchorRect.top
-  const lineHeight = input.clientHeight || parseFloat(style.lineHeight) || 20
-  const charWidth =
-    textBefore.length > 0
-      ? textWidth / textBefore.length
-      : parseFloat(style.fontSize) * 0.55
+
+  const parsedLineHeight = parseFloat(style.lineHeight)
+  const fontSize = parseFloat(style.fontSize) || 13
+  const lineHeight =
+    Number.isFinite(parsedLineHeight) && parsedLineHeight > 0
+      ? parsedLineHeight
+      : fontSize * 1.4
+  const padTop = parseFloat(style.paddingTop) || 0
+  const padBottom = parseFloat(style.paddingBottom) || 0
+  const contentHeight = input.clientHeight - padTop - padBottom
+  const caretH = Math.min(lineHeight, fontSize * 1.25)
 
   const scrollLeft = input.scrollLeft
   const padLeft = parseFloat(style.paddingLeft) || 0
+  const charWidth =
+    textBefore.length > 0 ? textWidth / textBefore.length : fontSize * 0.55
 
   return {
     x: offsetX + padLeft + textWidth - scrollLeft,
-    y: offsetY + (input.clientHeight - lineHeight) / 2,
-    h: lineHeight * 0.85,
+    y: offsetY + padTop + (contentHeight - caretH) / 2,
+    h: caretH,
     charWidth,
   }
 }
@@ -77,7 +85,7 @@ function renderCaretLayer(
     el.style.display = "block"
     el.style.transform = `translate3d(${g.x}px, ${g.y}px, 0)`
     el.style.height = `${g.h}px`
-    el.style.opacity = String(g.opacity * focusOpacity * 0.55)
+    el.style.opacity = String(g.opacity * focusOpacity)
   }
 
   const mainEl = layer.children[ghosts.length] as HTMLElement

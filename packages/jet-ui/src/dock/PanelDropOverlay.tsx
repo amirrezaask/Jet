@@ -91,7 +91,7 @@ function DropSiteTarget({
       ref={setNodeRef}
       data-drop-site={site.id}
       className={cn(
-        "pointer-events-auto absolute flex items-center justify-center rounded-md border shadow-sm transition-[opacity,transform] duration-[var(--jet-motion-menu)] ease-out",
+        "pointer-events-auto absolute flex items-center justify-center rounded-md border shadow-sm transition-[opacity,transform] duration-[var(--jet-motion-dnd-site)] ease-out",
         entered ? "opacity-100" : "opacity-0",
         hot
           ? "border-primary bg-primary/20 text-primary"
@@ -121,7 +121,7 @@ function AnimatedDropPreview({
   target: SiteRect
   panelSize: { w: number; h: number }
 }) {
-  const rect = useRadRectMorph(target, panelSize)
+  const rect = useRadRectMorph(target, panelSize, 55)
   if (!rect) return null
   return (
     <div

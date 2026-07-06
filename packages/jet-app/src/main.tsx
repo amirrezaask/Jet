@@ -6,7 +6,9 @@ import { JetApp } from "./App.js"
 
 if (!window.jet && import.meta.env.VITE_JET_WEB) {
   window.jet = createBrowserJetAPI()
+  console.log()
 }
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <JetApp />
