@@ -67,25 +67,28 @@ const CommandInput = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input> & { caretOverlay?: boolean }
 >(({ className, caretOverlay = true, ...props }, ref) => {
   const innerRef = React.useRef<HTMLInputElement>(null)
+  const anchorRef = React.useRef<HTMLDivElement>(null)
   React.useImperativeHandle(ref, () => innerRef.current!)
-  useJetCaretOverlay(innerRef, caretOverlay)
+  useJetCaretOverlay(innerRef, caretOverlay, anchorRef)
 
   return (
     <div
       data-slot="command-input-wrapper"
-      className="relative flex h-9 items-center gap-2 border-b px-3"
+      className="flex h-9 items-center gap-2 border-b px-3"
     >
       <SearchIcon className="size-4 shrink-0 opacity-50" aria-hidden="true" />
-      <CommandPrimitive.Input
-        ref={innerRef}
-        data-slot="command-input"
-        className={cn(
-          "flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-          caretOverlay && "caret-transparent",
-          className
-        )}
-        {...props}
-      />
+      <div ref={anchorRef} className="relative min-w-0 flex-1">
+        <CommandPrimitive.Input
+          ref={innerRef}
+          data-slot="command-input"
+          className={cn(
+            "flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+            caretOverlay && "caret-transparent",
+            className
+          )}
+          {...props}
+        />
+      </div>
     </div>
   )
 })

@@ -14,7 +14,7 @@ import {
 } from "@jet/shared"
 import { cn } from "@/lib/utils.js"
 
-function measureInputCaret(input: HTMLInputElement): CaretPoint | null {
+function measureInputCaret(input: HTMLInputElement, anchor: HTMLElement): CaretPoint | null {
   const style = getComputedStyle(input)
   const mirror = document.createElement("div")
   const textBefore = input.value.slice(0, input.selectionStart ?? 0)
@@ -30,7 +30,10 @@ function measureInputCaret(input: HTMLInputElement): CaretPoint | null {
   const textWidth = mirror.getBoundingClientRect().width
   document.body.removeChild(mirror)
 
+  const anchorRect = anchor.getBoundingClientRect()
   const inputRect = input.getBoundingClientRect()
+  const offsetX = inputRect.left - anchorRect.left
+  const offsetY = inputRect.top - anchorRect.top
   const lineHeight = input.clientHeight || parseFloat(style.lineHeight) || 20
   const charWidth =
     textBefore.length > 0
@@ -41,8 +44,8 @@ function measureInputCaret(input: HTMLInputElement): CaretPoint | null {
   const padLeft = parseFloat(style.paddingLeft) || 0
 
   return {
-    x: padLeft + textWidth - scrollLeft,
-    y: (input.clientHeight - lineHeight) / 2,
+    x: offsetX + padLeft + textWidth - scrollLeft,
+    y: offsetY + (input.clientHeight - lineHeight) / 2,
     h: lineHeight * 0.85,
     charWidth,
   }
@@ -87,6 +90,7 @@ function renderCaretLayer(
 export function useJetCaretOverlay(
   inputRef: RefObject<HTMLInputElement | null>,
   enabled = true,
+  anchorRef?: RefObject<HTMLElement | null>,
 ): void {
   const layerRef = useRef<HTMLDivElement | null>(null)
   const animRef = useRef(new CaretEndpointAnim())
@@ -101,13 +105,8 @@ export function useJetCaretOverlay(
   useEffect(() => {
     if (!enabled) return
     const input = inputRef.current
-    if (!input) return
-
-    const wrapper = input.parentElement
-    if (!wrapper) return
-    if (getComputedStyle(wrapper).position === "static") {
-      wrapper.style.position = "relative"
-    }
+    const anchor = anchorRef?.current ?? input?.parentElement
+    if (!input || !anchor) return
 
     const layer = document.createElement("div")
     layer.className = "jet-input-caret-layer"
@@ -116,14 +115,14 @@ export function useJetCaretOverlay(
     layer.style.pointerEvents = "none"
     layer.style.overflow = "hidden"
     layerRef.current = layer
-    wrapper.appendChild(layer)
+    anchor.appendChild(layer)
 
     input.style.caretColor = "transparent"
 
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - lastFrameRef.current) / 1000)
       lastFrameRef.current = now
-      const measured = measureInputCaret(input)
+      const measured = measureInputCaret(input, anchor)
       if (measured) {
         animRef.current.followTarget(measured)
       }
@@ -138,7 +137,7 @@ export function useJetCaretOverlay(
     }
 
     const schedule = (instant: boolean) => {
-      const measured = measureInputCaret(input)
+      const measured = measureInputCaret(input, anchor)
       if (!measured) return
       const prev = prevPointRef.current
       if (prev && !instant && !reducedRef.current) {
@@ -185,7 +184,7 @@ export function useJetCaretOverlay(
       layer.remove()
       layerRef.current = null
     }
-  }, [inputRef, enabled])
+  }, [inputRef, anchorRef, enabled])
 }
 
 export const JetCaretInput = forwardRef<
@@ -193,25 +192,27 @@ export const JetCaretInput = forwardRef<
   InputHTMLAttributes<HTMLInputElement> & { caretOverlay?: boolean }
 >(function JetCaretInput({ className, caretOverlay = true, ...props }, ref) {
   const innerRef = useRef<HTMLInputElement>(null)
-  useJetCaretOverlay(innerRef, caretOverlay)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  useJetCaretOverlay(innerRef, caretOverlay, anchorRef)
 
   return (
-    <input
-      ref={el => {
-        innerRef.current = el
-        if (typeof ref === "function") ref(el)
-        else if (ref) ref.current = el
-      }}
-      data-slot="input"
-      className={cn(
-        "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30",
-        "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
-        caretOverlay && "caret-transparent",
-        className,
-      )}
-      {...props}
-    />
+    <div ref={anchorRef} className={cn("relative min-w-0", className)}>
+      <input
+        ref={el => {
+          innerRef.current = el
+          if (typeof ref === "function") ref(el)
+          else if (ref) ref.current = el
+        }}
+        data-slot="input"
+        className={cn(
+          "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30",
+          "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
+          caretOverlay && "caret-transparent",
+        )}
+        {...props}
+      />
+    </div>
   )
 })
 

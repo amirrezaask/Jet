@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react"
 import {
   DndContext,
@@ -17,7 +18,9 @@ import {
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
+  type DropAnimation,
 } from "@dnd-kit/core"
+import { CSS } from "@dnd-kit/utilities"
 import { arrayMove } from "@dnd-kit/sortable"
 import type { DropAction, PanelId } from "@jet/shared"
 import { JetTabDragGhost } from "@/motion/JetOverlayMotion.js"
@@ -60,11 +63,70 @@ export function useDropHot(): DropHotState {
   return useContext(HotDropCtx)
 }
 
+type DropAnimTarget = { x: number; y: number; w: number; h: number }
+
+function resolveDropAnimTarget(hot: DropHotState): DropAnimTarget | null {
+  if (!hot) return null
+  const overlay = document.querySelector<HTMLElement>(
+    `[data-jet-panel-drop-overlay][data-jet-drop-panel="${hot.panelId.id}"]`,
+  )
+  if (!overlay) return null
+  const panelRect = overlay.getBoundingClientRect()
+  const p = hot.preview
+  return {
+    x: panelRect.left + p.x,
+    y: panelRect.top + p.y,
+    w: p.w,
+    h: p.h,
+  }
+}
+
+function createTabDropAnimation(
+  dropAnimTargetRef: RefObject<DropAnimTarget | null>,
+): DropAnimation {
+  return {
+    duration: 180,
+    easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+    keyframes({ transform, dragOverlay }) {
+      const target = dropAnimTargetRef.current
+      if (target && dragOverlay?.rect) {
+        const overlay = dragOverlay.rect
+        const dx = target.x + target.w / 2 - (overlay.left + overlay.width / 2)
+        const dy = target.y + target.h / 2 - (overlay.top + overlay.height / 2)
+        return [
+          { opacity: 1, transform: CSS.Transform.toString(transform.initial) },
+          {
+            opacity: 0,
+            transform: CSS.Transform.toString({
+              ...transform.initial,
+              x: transform.initial.x + dx,
+              y: transform.initial.y + dy,
+              scaleX: 0.94,
+              scaleY: 0.94,
+            }),
+          },
+        ]
+      }
+      return [
+        { opacity: 1, transform: CSS.Transform.toString(transform.initial) },
+        { opacity: 0, transform: CSS.Transform.toString(transform.initial) },
+      ]
+    },
+    sideEffects() {
+      return () => {
+        dropAnimTargetRef.current = null
+      }
+    },
+  }
+}
+
 function TabDndInner({ children, handlers }: TabDndInnerProps) {
   const drag = usePanelDrag()
   const [activeTab, setActiveTab] = useState<TabDragData | null>(null)
   const [dropHot, setDropHot] = useState<DropHotState>(null)
   const dropHotRef = useRef<DropHotState>(null)
+  const dropAnimTargetRef = useRef<DropAnimTarget | null>(null)
+  const dropAnimation = useMemo(() => createTabDropAnimation(dropAnimTargetRef), [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -114,6 +176,7 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
     (event: DragEndEvent) => {
       const data = event.active.data.current as TabDragData | undefined
       const hot = dropHotRef.current
+      dropAnimTargetRef.current = hot ? resolveDropAnimTarget(hot) : null
       setActiveTab(null)
       setDropHot(null)
       dropHotRef.current = null
@@ -193,7 +256,7 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
         onDragCancel={onDragCancel}
       >
         {children}
-        <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
+        <DragOverlay dropAnimation={dropAnimation}>
           {activeTab ? (
             <JetTabDragGhost label={activeTab.label} dirty={activeTab.dirty} />
           ) : null}

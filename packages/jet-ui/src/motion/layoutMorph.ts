@@ -1,4 +1,4 @@
-import { expSmooth, prefersReducedMotion } from "@jet/shared"
+import { prefersReducedMotion } from "@jet/shared"
 
 export type PanelRect = { x: number; y: number; w: number; h: number }
 
@@ -32,6 +32,10 @@ function clonePanelShell(from: HTMLElement): HTMLElement {
   return shell
 }
 
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3)
+}
+
 /**
  * FLIP-style morph from `before` rects to current DOM layout.
  * Resolves when animation completes or reduced-motion skips.
@@ -51,7 +55,8 @@ export function animateLayoutMorph(
     if (!Number.isFinite(id)) continue
     const toRect = el.getBoundingClientRect()
     const to: PanelRect = { x: toRect.left, y: toRect.top, w: toRect.width, h: toRect.height }
-    const from = spawnFrom.get(id) ?? before.get(id) ?? to
+    const fromSeed = spawnFrom.get(id) ?? before.get(id) ?? to
+    const from: PanelRect = { ...fromSeed }
     if (
       Math.abs(from.x - to.x) < 0.5 &&
       Math.abs(from.y - to.y) < 0.5 &&
@@ -74,33 +79,25 @@ export function animateLayoutMorph(
 
   return new Promise(resolve => {
     const start = performance.now()
-    const speed = 18
 
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / durationMs)
-      let active = false
+      const eased = easeOutCubic(t)
 
       for (const { el, from, to } of clones) {
-        const x = expSmooth(from.x, to.x, speed, 1 / 60)
-        const y = expSmooth(from.y, to.y, speed, 1 / 60)
-        const w = expSmooth(from.w, to.w, speed, 1 / 60)
-        const h = expSmooth(from.h, to.h, speed, 1 / 60)
-
-        from.x = x
-        from.y = y
-        from.w = w
-        from.h = h
+        const x = from.x + (to.x - from.x) * eased
+        const y = from.y + (to.y - from.y) * eased
+        const w = from.w + (to.w - from.w) * eased
+        const h = from.h + (to.h - from.h) * eased
 
         el.style.left = `${x}px`
         el.style.top = `${y}px`
         el.style.width = `${w}px`
         el.style.height = `${h}px`
         el.style.opacity = String(0.92 * (1 - t * 0.15))
-
-        if (t < 1) active = true
       }
 
-      if (active) {
+      if (t < 1) {
         requestAnimationFrame(tick)
       } else {
         for (const { el } of clones) el.remove()

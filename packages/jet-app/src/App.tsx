@@ -444,7 +444,9 @@ export function JetApp() {
       setFocusedPanel(nextFocused)
       if (beforeRects) {
         requestAnimationFrame(() => {
-          void animateLayoutMorph(beforeRects, { spawnFrom: morph?.spawnFrom })
+          requestAnimationFrame(() => {
+            void animateLayoutMorph(beforeRects, { spawnFrom: morph?.spawnFrom })
+          })
         })
       }
       if (nextFocused && nextFocused.id !== prevFocused?.id) {
