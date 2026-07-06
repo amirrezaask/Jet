@@ -54,6 +54,7 @@ export type JetElectronSearch = {
   ): Promise<string[]>
   trackFileAccess?(rootUri: string, query: string, path: string): Promise<void>
   isScanReady?(rootUri: string): Promise<boolean>
+  isSupported?(rootUri: string): Promise<boolean>
 }
 
 export type JetTaskSpawnRequest = {

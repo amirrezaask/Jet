@@ -203,6 +203,7 @@ export function JetApp() {
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
   const [projects, setProjects] = useState<JetProject[]>([])
   const [searchScanReady, setSearchScanReady] = useState(false)
+  const [searchSupported, setSearchSupported] = useState(false)
   const [problems, setProblems] = useState<JetProblem[]>([])
   const [panelRev, setPanelRev] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
@@ -665,6 +666,7 @@ export function JetApp() {
       setFocusedPanel(editorPanel)
       showJetToast(`Opened ${folderPath}`)
       setSearchScanReady(false)
+      setSearchSupported(false)
 
       const jetDir = `${folderPath.replace(/[/\\]+$/, "")}/.jet`
       const initCtx = workspaceInitCtxRef.current
@@ -679,8 +681,15 @@ export function JetApp() {
         const rootUri = workspace.root?.uri
         if (!rootUri) return
         if (window.jet?.workspace) void window.jet.workspace.activate(rootUri)
-        void window.jet?.search?.fileSearch(rootUri, "", { pageSize: 1 }).catch(() => {})
         void (async () => {
+          const supported = (await window.jet?.search?.isSupported?.(rootUri)) ?? false
+          if (workspaceInitGen.current !== gen) return
+          setSearchSupported(supported)
+          if (!supported) {
+            setSearchScanReady(true)
+            return
+          }
+          void window.jet?.search?.fileSearch(rootUri, "", { pageSize: 1 }).catch(() => {})
           for (let attempt = 0; attempt < 120; attempt++) {
             if (workspaceInitGen.current !== gen) return
             const ready = await window.jet?.search?.isScanReady?.(rootUri)
@@ -965,6 +974,7 @@ export function JetApp() {
         projectRegistry,
         refreshProjects,
         focusExplorer: focusExplorerPanel,
+        getSearchSupported: () => searchSupported,
       }),
     [
       workspace,
@@ -980,6 +990,7 @@ export function JetApp() {
       pushJumpFromActiveEditor,
       projectRegistry,
       refreshProjects,
+      searchSupported,
     ],
   )
 
@@ -1511,7 +1522,7 @@ export function JetApp() {
         }}
       />
 
-      {quickOpenOpen && (
+      {quickOpenOpen && searchSupported && (
         <QuickOpenOverlay
           open
           onOpenChange={setQuickOpenOpen}

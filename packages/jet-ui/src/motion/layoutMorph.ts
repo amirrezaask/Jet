@@ -1,4 +1,10 @@
-import { prefersReducedMotion } from "@jet/shared"
+import {
+  JET_RATE_MENU,
+  JET_LAYOUT_EPSILON,
+  prefersReducedMotion,
+  radAnimationRate,
+  radLerp,
+} from "@jet/shared"
 
 export type PanelRect = { x: number; y: number; w: number; h: number }
 
@@ -14,9 +20,10 @@ export function capturePanelLeafRects(): Map<number, PanelRect> {
 }
 
 export type LayoutMorphOptions = {
-  durationMs?: number
   /** New panels grow from this rect (panelId -> spawn rect). */
   spawnFrom?: Map<number, PanelRect>
+  /** RAD half-life N for menu-rate panel morph. */
+  halfLifeN?: number
 }
 
 function clonePanelShell(from: HTMLElement): HTMLElement {
@@ -32,13 +39,18 @@ function clonePanelShell(from: HTMLElement): HTMLElement {
   return shell
 }
 
-function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3)
+function panelRectSettled(current: PanelRect, target: PanelRect): boolean {
+  return (
+    Math.abs(current.x - target.x) < JET_LAYOUT_EPSILON &&
+    Math.abs(current.y - target.y) < JET_LAYOUT_EPSILON &&
+    Math.abs(current.w - target.w) < JET_LAYOUT_EPSILON &&
+    Math.abs(current.h - target.h) < JET_LAYOUT_EPSILON
+  )
 }
 
 /**
  * FLIP-style morph from `before` rects to current DOM layout.
- * Resolves when animation completes or reduced-motion skips.
+ * Uses RAD exponential smoothing at menu rate (N=70).
  */
 export function animateLayoutMorph(
   before: Map<number, PanelRect>,
@@ -46,9 +58,9 @@ export function animateLayoutMorph(
 ): Promise<void> {
   if (prefersReducedMotion() || before.size === 0) return Promise.resolve()
 
-  const durationMs = opts.durationMs ?? 220
+  const halfLifeN = opts.halfLifeN ?? JET_RATE_MENU
   const spawnFrom = opts.spawnFrom ?? new Map<number, PanelRect>()
-  const clones: { el: HTMLElement; from: PanelRect; to: PanelRect }[] = []
+  const clones: { el: HTMLElement; current: PanelRect; to: PanelRect; spawn: boolean }[] = []
 
   for (const el of document.querySelectorAll<HTMLElement>("[data-jet-panel-leaf]")) {
     const id = Number(el.dataset.jetPanelLeaf)
@@ -57,14 +69,8 @@ export function animateLayoutMorph(
     const to: PanelRect = { x: toRect.left, y: toRect.top, w: toRect.width, h: toRect.height }
     const fromSeed = spawnFrom.get(id) ?? before.get(id) ?? to
     const from: PanelRect = { ...fromSeed }
-    if (
-      Math.abs(from.x - to.x) < 0.5 &&
-      Math.abs(from.y - to.y) < 0.5 &&
-      Math.abs(from.w - to.w) < 0.5 &&
-      Math.abs(from.h - to.h) < 0.5
-    ) {
-      continue
-    }
+    if (panelRectSettled(from, to)) continue
+
     const shell = clonePanelShell(el)
     shell.style.left = `${from.x}px`
     shell.style.top = `${from.y}px`
@@ -72,32 +78,42 @@ export function animateLayoutMorph(
     shell.style.height = `${from.h}px`
     shell.style.opacity = spawnFrom.has(id) ? "0.85" : "0.92"
     document.body.appendChild(shell)
-    clones.push({ el: shell, from, to })
+    clones.push({ el: shell, current: { ...from }, to, spawn: spawnFrom.has(id) })
   }
 
   if (clones.length === 0) return Promise.resolve()
 
   return new Promise(resolve => {
-    const start = performance.now()
+    let lastFrame = performance.now()
+    let opacityT = 0
 
     const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / durationMs)
-      const eased = easeOutCubic(t)
+      const dt = Math.min(0.05, (now - lastFrame) / 1000)
+      lastFrame = now
+      const rate = radAnimationRate(halfLifeN, dt)
+      let active = false
 
-      for (const { el, from, to } of clones) {
-        const x = from.x + (to.x - from.x) * eased
-        const y = from.y + (to.y - from.y) * eased
-        const w = from.w + (to.w - from.w) * eased
-        const h = from.h + (to.h - from.h) * eased
+      for (const clone of clones) {
+        const { current, to } = clone
+        current.x = radLerp(current.x, to.x, rate)
+        current.y = radLerp(current.y, to.y, rate)
+        current.w = radLerp(current.w, to.w, rate)
+        current.h = radLerp(current.h, to.h, rate)
 
-        el.style.left = `${x}px`
-        el.style.top = `${y}px`
-        el.style.width = `${w}px`
-        el.style.height = `${h}px`
-        el.style.opacity = String(0.92 * (1 - t * 0.15))
+        clone.el.style.left = `${current.x}px`
+        clone.el.style.top = `${current.y}px`
+        clone.el.style.width = `${current.w}px`
+        clone.el.style.height = `${current.h}px`
+
+        if (!panelRectSettled(current, to)) active = true
       }
 
-      if (t < 1) {
+      opacityT = radLerp(opacityT, 1, rate)
+      for (const clone of clones) {
+        clone.el.style.opacity = String(0.92 * (1 - opacityT * 0.15))
+      }
+
+      if (active) {
         requestAnimationFrame(tick)
       } else {
         for (const { el } of clones) el.remove()

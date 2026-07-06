@@ -46,25 +46,17 @@ export function JetTabDragGhost({
   const reduced = useReducedMotion()
 
   return (
-    <JetMotionDiv
-      variant="center"
-      reducedMotion={reduced}
+    <div
       className={cn(
         "flex h-8 items-center gap-1 rounded-sm border border-primary/40 bg-muted/95 px-2 text-xs shadow-lg",
         !reduced && "rotate-1 scale-[1.04]",
         className,
       )}
-      {...(!reduced
-        ? {
-            layout: false,
-            transition: jetMotion.tabGhostSpring,
-          }
-        : {})}
     >
       <span className="truncate font-medium">
         {label}
         {dirty ? " •" : ""}
       </span>
-    </JetMotionDiv>
+    </div>
   )
 }

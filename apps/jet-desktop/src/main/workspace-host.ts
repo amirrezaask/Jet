@@ -1,7 +1,7 @@
 import { Worker } from "node:worker_threads"
 import path from "node:path"
 import type { BrowserWindow, IpcMain, WebContents } from "electron"
-import { ensureFffIndex, isSearchScanReady, uriToPath } from "@jet/node-host"
+import { ensureFffIndex, isGitWorkspace, isSearchScanReady, uriToPath } from "@jet/node-host"
 import { getGitWorker } from "./background-pool.js"
 
 let activateGen = 0
@@ -41,6 +41,8 @@ function runGitBranch(gen: number, rootUri: string, webContents: WebContents): v
 
 function runFffWarmup(gen: number, rootUri: string, webContents: WebContents): void {
   void (async () => {
+    if (!(await isGitWorkspace(rootUri))) return
+
     if (await isSearchScanReady(rootUri)) {
       if (gen !== activateGen) return
       sendToRenderer(webContents, "workspace:searchReady", { rootUri })

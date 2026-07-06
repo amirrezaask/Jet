@@ -59,6 +59,7 @@ const api: JetElectronAPI = {
     trackFileAccess: (rootUri, query, path) =>
       ipcRenderer.invoke("search:trackFileAccess", rootUri, query, path),
     isScanReady: rootUri => ipcRenderer.invoke("search:isScanReady", rootUri),
+    isSupported: rootUri => ipcRenderer.invoke("search:isSupported", rootUri),
   },
   lsp: {
     start: (rootUri, languageId, command, args) =>

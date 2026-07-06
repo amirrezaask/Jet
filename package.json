@@ -11,7 +11,7 @@
     "test:web": "playwright test --project=web",
     "test:screenshots": "playwright test --project=screenshots",
     "test:screenshots:update": "playwright test --project=screenshots --update-snapshots",
-    "test:electron": "pnpm --filter jet-desktop build && playwright test --project=electron",
+    "test:electron": "pnpm --filter @jet/node-host build && pnpm --filter jet-desktop build && playwright test --project=electron",
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
     "release": "pnpm --filter jet-desktop release && cp -r ./apps/jet-desktop/release/mac-arm64/Jet.app ~/Applications/",

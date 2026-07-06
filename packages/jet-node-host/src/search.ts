@@ -8,6 +8,7 @@ import {
   fffListFiles,
   fffTrackAccess,
   isFffScanReady,
+  isGitWorkspace,
   isSearchScanReady,
 } from "./fff-service.js"
 
@@ -19,14 +20,80 @@ const IGNORE_GLOBS = [
   "!.turbo/**",
 ]
 
-function spawnRg(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number | null }> {
+/** Cap ripgrep stdout so V8 never builds a multi-hundred-MB string (RangeError). */
+const MAX_RG_STDOUT_BYTES = 32 * 1024 * 1024
+const MAX_RG_STDERR_BYTES = 64 * 1024
+const MAX_RG_MATCH_RESULTS = 200
+
+function appendBounded(current: string, chunk: Buffer, maxBytes: number): string | null {
+  if (current.length >= maxBytes) return null
+  try {
+    const next = current + chunk.toString("utf8")
+    return next.length <= maxBytes ? next : null
+  } catch {
+    return null
+  }
+}
+
+function spawnRgLines(
+  args: string[],
+  cwd: string,
+  onLine: (line: string) => boolean,
+  opts?: { maxStdoutBytes?: number },
+): Promise<{ stderr: string; code: number | null; stoppedEarly: boolean }> {
+  const maxStdoutBytes = opts?.maxStdoutBytes ?? MAX_RG_STDOUT_BYTES
   return new Promise((resolve, reject) => {
     const proc = spawn("rg", args, { cwd, stdio: ["ignore", "pipe", "pipe"] })
-    let stdout = ""
+    let lineBuffer = ""
     let stderr = ""
-    proc.stdout.on("data", d => (stdout += d))
-    proc.stderr.on("data", d => (stderr += d))
-    proc.on("close", code => resolve({ stdout, stderr, code }))
+    let stdoutBytes = 0
+    let stoppedEarly = false
+
+    const stop = (): void => {
+      stoppedEarly = true
+      proc.kill()
+    }
+
+    proc.stdout.on("data", (chunk: Buffer) => {
+      try {
+        stdoutBytes += chunk.length
+        if (stdoutBytes > maxStdoutBytes) {
+          stop()
+          return
+        }
+        const merged = appendBounded(lineBuffer, chunk, maxStdoutBytes)
+        if (merged === null) {
+          stop()
+          return
+        }
+        lineBuffer = merged
+
+        let newlineAt = lineBuffer.indexOf("\n")
+        while (newlineAt >= 0) {
+          const line = lineBuffer.slice(0, newlineAt)
+          lineBuffer = lineBuffer.slice(newlineAt + 1)
+          if (!onLine(line)) {
+            stop()
+            return
+          }
+          newlineAt = lineBuffer.indexOf("\n")
+        }
+
+        if (lineBuffer.length > 1024 * 1024) {
+          stop()
+        }
+      } catch {
+        stop()
+      }
+    })
+
+    proc.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length >= MAX_RG_STDERR_BYTES) return
+      const merged = appendBounded(stderr, chunk, MAX_RG_STDERR_BYTES)
+      if (merged !== null) stderr = merged
+    })
+
+    proc.on("close", code => resolve({ stderr, code, stoppedEarly }))
     proc.on("error", err => {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         reject(new Error("ripgrep (rg) is not installed or not on PATH"))
@@ -37,23 +104,28 @@ function spawnRg(args: string[], cwd: string): Promise<{ stdout: string; stderr:
   })
 }
 
+function pushIgnoreGlobs(args: string[]): void {
+  for (const glob of IGNORE_GLOBS) args.push("--glob", glob)
+}
+
 async function rgListProjectFiles(rootUri: string, maxFiles = 50_000): Promise<string[]> {
   const cwd = uriToPath(rootUri)
   const args = ["--files"]
-  for (const glob of IGNORE_GLOBS) args.push("--glob", glob)
+  pushIgnoreGlobs(args)
   args.push(".")
 
-  const { stdout, stderr, code } = await spawnRg(args, cwd)
-  if (code !== 0 && code !== 1) {
+  const paths: string[] = []
+  const { stderr, code, stoppedEarly } = await spawnRgLines(args, cwd, line => {
+    if (!line) return true
+    paths.push(line.replace(/^\.\//, ""))
+    return paths.length < maxFiles
+  })
+
+  if (!stoppedEarly && code !== 0 && code !== 1) {
     throw new Error(stderr.trim() || `rg exit ${code}`)
   }
 
-  return stdout
-    .split("\n")
-    .filter(Boolean)
-    .map(p => p.replace(/^\.\//, ""))
-    .slice(0, maxFiles)
-    .sort()
+  return paths.sort()
 }
 
 function scoreFileTerm(term: string, filePath: string, base: string): number | null {
@@ -98,6 +170,8 @@ function fuzzyMatchFilesFallback(query: string, files: string[], limit = 100): s
 }
 
 export async function listProjectFiles(rootUri: string, maxFiles = 50_000): Promise<string[]> {
+  if (!(await isGitWorkspace(rootUri))) return []
+
   try {
     const fffFiles = await fffListFiles(rootUri, maxFiles)
     if (fffFiles) return fffFiles
@@ -112,6 +186,8 @@ export async function fileSearch(
   query: string,
   opts?: { pageSize?: number; currentFile?: string },
 ): Promise<string[]> {
+  if (!(await isGitWorkspace(rootUri))) return []
+
   try {
     const fffResults = await fffFileSearch(rootUri, query, opts)
     if (fffResults) return fffResults
@@ -128,6 +204,7 @@ export async function projectSearch(
   opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
 ): Promise<ProjectSearchResult[]> {
   if (!query.trim()) return []
+  if (!(await isGitWorkspace(rootUri))) return []
 
   try {
     const fffResults = await fffGrep(rootUri, query, opts)
@@ -141,29 +218,20 @@ export async function projectSearch(
   if (!opts?.caseSensitive) args.push("-i")
   if (opts?.regex) args.push("--regexp")
   else args.push("--fixed-strings")
+  pushIgnoreGlobs(args)
   args.push(query, ".")
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn("rg", args, { cwd, stdio: ["ignore", "pipe", "pipe"] })
-    let stdout = ""
-    let stderr = ""
-    proc.stdout.on("data", d => (stdout += d))
-    proc.stderr.on("data", d => (stderr += d))
-    proc.on("close", code => {
-      if (code === 0 || code === 1) {
-        resolve(parseRgJson(stdout))
-      } else {
-        reject(new Error(stderr.trim() || `rg exit ${code}`))
-      }
-    })
-    proc.on("error", err => {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        reject(new Error("ripgrep (rg) is not installed or not on PATH"))
-      } else {
-        reject(err)
-      }
-    })
+  const results: ProjectSearchResult[] = []
+  const { stderr, code, stoppedEarly } = await spawnRgLines(args, cwd, line => {
+    const match = parseRgJsonLine(line)
+    if (match) results.push(match)
+    return results.length < MAX_RG_MATCH_RESULTS
   })
+
+  if (!stoppedEarly && code !== 0 && code !== 1) {
+    throw new Error(stderr.trim() || `rg exit ${code}`)
+  }
+  return results
 }
 
 export async function trackFileAccess(
@@ -171,6 +239,7 @@ export async function trackFileAccess(
   query: string,
   selectedPath: string,
 ): Promise<void> {
+  if (!(await isGitWorkspace(rootUri))) return
   try {
     await fffTrackAccess(rootUri, query, selectedPath)
   } catch {
@@ -178,32 +247,28 @@ export async function trackFileAccess(
   }
 }
 
-export { ensureFffIndex, isFffScanReady, isSearchScanReady }
+export { ensureFffIndex, isFffScanReady, isGitWorkspace, isSearchScanReady }
 
-function parseRgJson(output: string): ProjectSearchResult[] {
-  const results: ProjectSearchResult[] = []
-  for (const line of output.split("\n")) {
-    if (!line.trim()) continue
-    try {
-      const obj = JSON.parse(line) as {
-        type?: string
-        data?: {
-          path?: { text?: string }
-          line_number?: number
-          submatches?: { start?: number; match?: { text?: string } }[]
-          lines?: { text?: string }
-        }
+function parseRgJsonLine(line: string): ProjectSearchResult | null {
+  if (!line.trim()) return null
+  try {
+    const obj = JSON.parse(line) as {
+      type?: string
+      data?: {
+        path?: { text?: string }
+        line_number?: number
+        submatches?: { start?: number; match?: { text?: string } }[]
+        lines?: { text?: string }
       }
-      if (obj.type !== "match" || !obj.data) continue
-      const path = obj.data.path?.text ?? ""
-      const lineNum = obj.data.line_number ?? 1
-      const sub = obj.data.submatches?.[0]
-      const column = (sub?.start ?? 0) + 1
-      const preview = (obj.data.lines?.text ?? "").trimEnd()
-      results.push({ path, line: lineNum, column, preview })
-    } catch {
-      /* skip malformed line */
     }
+    if (obj.type !== "match" || !obj.data) return null
+    const path = obj.data.path?.text ?? ""
+    const lineNum = obj.data.line_number ?? 1
+    const sub = obj.data.submatches?.[0]
+    const column = (sub?.start ?? 0) + 1
+    const preview = (obj.data.lines?.text ?? "").trimEnd()
+    return { path, line: lineNum, column, preview }
+  } catch {
+    return null
   }
-  return results
 }

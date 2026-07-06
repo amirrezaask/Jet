@@ -91,6 +91,7 @@ export type BuildAppCommandsDeps = {
   projectRegistry: import("@jet/workspace").ProjectRegistry
   refreshProjects: () => Promise<number>
   focusExplorer?: () => void
+  getSearchSupported: () => boolean
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -130,6 +131,12 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     return false
   }
 
+  function gitSearchUnavailable(ctx: JetCommandContext): boolean {
+    if (deps.getSearchSupported()) return false
+    ctx.ui.showMessage("Quick open and project search require a git repository")
+    return true
+  }
+
   function activeEditorPanel(): PanelId | null {
     return resolveEditorPanel(
       currentPanelTree(),
@@ -140,7 +147,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
 
   const named: JetCommands = {
     palette: () => deps.setPaletteOpen(true),
-    quickOpen: () => deps.setQuickOpenOpen(true),
+    quickOpen: ctx => {
+      if (gitSearchUnavailable(ctx)) return
+      deps.setQuickOpenOpen(true)
+    },
     bufferList: () => deps.setBufferListOpen(true),
     openFile: ctx => {
       if (!deps.workspace.root) {
@@ -223,12 +233,14 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (view) openJetSearch(view, "replace", panel?.id)
     },
     gotoLine: () => deps.setGotoLineOpen(true),
-    locationList: () => {
+    locationList: ctx => {
+      if (gitSearchUnavailable(ctx)) return
       const tree = deps.cloneTree()
       const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())
       deps.commitTree(tree, panelId)
     },
-    locationListSearch: () => {
+    locationListSearch: ctx => {
+      if (gitSearchUnavailable(ctx)) return
       deps.syncProblemsToListTab()
       const tree = deps.cloneTree()
       const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())

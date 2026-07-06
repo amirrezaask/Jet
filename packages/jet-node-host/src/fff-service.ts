@@ -58,6 +58,11 @@ async function resolveGitRepo(rootUri: string): Promise<boolean> {
   return isRepo
 }
 
+/** Search, quick-open, and FFF indexing are git-workspace features only. */
+export async function isGitWorkspace(rootUri: string): Promise<boolean> {
+  return resolveGitRepo(rootUri)
+}
+
 function frecencyDbDir(rootPath: string): string {
   const hash = createHash("sha256").update(rootPath).digest("hex").slice(0, 16)
   return path.join(homedir(), ".jet", "fff", hash)

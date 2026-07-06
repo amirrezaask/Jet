@@ -1,6 +1,7 @@
 import type { IpcMain } from "electron"
 import {
   fileSearch,
+  isGitWorkspace,
   isSearchScanReady,
   listProjectFiles,
   projectSearch,
@@ -34,4 +35,5 @@ export function registerSearchHandlers(ipcMain: IpcMain) {
     },
   )
   ipcMain.handle("search:isScanReady", (_e, rootUri: string) => isSearchScanReady(rootUri))
+  ipcMain.handle("search:isSupported", (_e, rootUri: string) => isGitWorkspace(rootUri))
 }

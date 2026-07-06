@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import type { PanelId } from "@jet/shared"
 import { cn } from "@/lib/utils.js"
+import { useRadRectMorph } from "@/motion/useRadRectMorph.js"
 import { usePanelDrag } from "./PanelDragContext.js"
 import { useDropHot } from "./TabDndRoot.js"
 import { dropDndId } from "./tab-dnd-types.js"
@@ -90,10 +91,10 @@ function DropSiteTarget({
       ref={setNodeRef}
       data-drop-site={site.id}
       className={cn(
-        "pointer-events-auto absolute flex items-center justify-center rounded-md border shadow-sm transition-all duration-[var(--jet-motion-fast)] ease-out",
-        entered ? "scale-100 opacity-100" : "scale-90 opacity-0",
+        "pointer-events-auto absolute flex items-center justify-center rounded-md border shadow-sm transition-[opacity,transform] duration-[var(--jet-motion-menu)] ease-out",
+        entered ? "opacity-100" : "opacity-0",
         hot
-          ? "border-primary bg-primary/20 text-primary scale-105"
+          ? "border-primary bg-primary/20 text-primary"
           : "border-border/70 bg-muted/70 text-muted-foreground backdrop-blur-sm",
       )}
       style={{
@@ -101,10 +102,32 @@ function DropSiteTarget({
         top: site.rect.y,
         width: site.rect.w,
         height: site.rect.h,
+        transform: entered
+          ? hot
+            ? "scale(1.05)"
+            : "scale(1)"
+          : "scale(var(--jet-motion-squish-scale))",
       }}
     >
       {siteIcon(site.id)}
     </div>
+  )
+}
+
+function AnimatedDropPreview({
+  target,
+  panelSize,
+}: {
+  target: SiteRect
+  panelSize: { w: number; h: number }
+}) {
+  const rect = useRadRectMorph(target, panelSize)
+  if (!rect) return null
+  return (
+    <div
+      className="pointer-events-none rounded-sm border border-primary/60 bg-primary/15"
+      style={previewStyle(rect)}
+    />
   )
 }
 
@@ -153,14 +176,12 @@ export function PanelDropOverlay({
       ref={containerRef}
       className={cn("absolute inset-0 z-40", !active && "pointer-events-none")}
       data-jet-panel-drop-overlay
+      data-jet-drop-panel={panelId.id}
     >
       {active && (
         <>
           {hotSite && (
-            <div
-              className="pointer-events-none rounded-sm border border-primary/60 bg-primary/15 transition-[left,top,width,height,opacity] duration-[var(--jet-motion-fast)] ease-out"
-              style={previewStyle(hotSite.preview)}
-            />
+            <AnimatedDropPreview target={hotSite.preview} panelSize={size} />
           )}
 
           {effectiveSites.map(site => (
@@ -178,5 +199,4 @@ export function PanelDropOverlay({
   )
 }
 
-// Keep siteToAction exported for tests
-void siteToAction
+export { siteToAction }

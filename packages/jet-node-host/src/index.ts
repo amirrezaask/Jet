@@ -17,6 +17,7 @@ export {
   trackFileAccess,
   ensureFffIndex,
   isFffScanReady,
+  isGitWorkspace,
   isSearchScanReady,
 } from "./search.js"
 export { probeFffAvailable, isFffAvailable, disposeFffIndex } from "./fff-service.js"

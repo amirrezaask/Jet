@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, it } from "node:test"
@@ -20,6 +22,17 @@ describe("search", () => {
     const results = await projectSearch(sampleRootUri, "export", { fuzzy: false })
     assert.ok(Array.isArray(results))
     assert.ok(results.length > 0)
+  })
+
+  it("fileSearch returns empty for non-git folders", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jet-nogit-"))
+    try {
+      const rootUri = pathToUri(dir)
+      assert.deepEqual(await fileSearch(rootUri, "index", { pageSize: 10 }), [])
+      assert.deepEqual(await projectSearch(rootUri, "export"), [])
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
   })
 
   it("probeFffAvailable reports native module load", async () => {

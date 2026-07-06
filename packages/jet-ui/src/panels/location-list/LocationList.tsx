@@ -1,6 +1,7 @@
 import type { ListItem } from "@jet/workspace"
 import { useEffect, useRef } from "react"
 import { ListRow } from "@/components/ListRow.js"
+import { jetScrollFadeClass } from "@/motion/tokens.js"
 import {
   Empty,
   EmptyDescription,
@@ -8,6 +9,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty.js"
 import { registerListPanel } from "@/lib/list-registry.js"
+import { cn } from "@/lib/utils.js"
 
 export type LocationListProps = {
   listId: string
@@ -43,7 +45,7 @@ export function LocationList({
       {header}
       <ul
         ref={scrollRef}
-        className="m-0 min-h-0 flex-1 list-none overflow-auto bg-background p-1"
+        className={cn("m-0 min-h-0 flex-1 list-none overflow-auto bg-background p-1", jetScrollFadeClass)}
       >
         {items.length === 0 ? (
           loading ? null : (

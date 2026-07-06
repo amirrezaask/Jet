@@ -5,6 +5,7 @@ import { ChevronRight, File, Folder } from "lucide-react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type { WorkspaceEntry, WorkspaceService } from "@jet/workspace"
 import { SidebarContent, SidebarMenuSubButton, SidebarProvider } from "@/components/ui/sidebar.js"
+import { jetInteractiveRowClass } from "@/motion/tokens.js"
 import { cn } from "@/lib/utils.js"
 
 type FlatRow = {
@@ -250,7 +251,10 @@ function ExplorerRow({
     <SidebarMenuSubButton
       asChild
       size="sm"
-      className="absolute left-0 top-0 h-[var(--jet-row-height)] w-full shrink-0 cursor-pointer gap-1 rounded-sm px-2"
+      className={cn(
+        "absolute left-0 top-0 h-[var(--jet-row-height)] w-full shrink-0 cursor-pointer gap-1 rounded-sm px-2",
+        jetInteractiveRowClass,
+      )}
       style={{
         transform: `translateY(${offset}px)`,
         height: rowHeight,

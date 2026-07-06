@@ -85,8 +85,8 @@ function createTabDropAnimation(
   dropAnimTargetRef: RefObject<DropAnimTarget | null>,
 ): DropAnimation {
   return {
-    duration: 180,
-    easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+    duration: 200,
+    easing: "ease-out",
     keyframes({ transform, dragOverlay }) {
       const target = dropAnimTargetRef.current
       if (target && dragOverlay?.rect) {
@@ -101,8 +101,8 @@ function createTabDropAnimation(
               ...transform.initial,
               x: transform.initial.x + dx,
               y: transform.initial.y + dy,
-              scaleX: 0.94,
-              scaleY: 0.94,
+              scaleX: 0.9,
+              scaleY: 0.9,
             }),
           },
         ]
