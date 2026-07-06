@@ -1,6 +1,8 @@
 import {
+  Suspense,
   useCallback,
   useEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
@@ -63,17 +65,8 @@ import {
   PanelDock,
   PanelBody,
   PanelTabBar,
-  CommandPalette,
   StatusBar,
   themeForScheme,
-  GotoLineModal,
-  OutlineOverlay,
-  QuickOpenOverlay,
-  BufferListOverlay,
-  OpenFileOverlay,
-  CdOverlay,
-  ProjectSwitcherOverlay,
-  WorkspaceFolderPickerOverlay,
   getEditorView,
   getAllEditorViews,
   syncAllEditorThemes,
@@ -126,6 +119,9 @@ const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 const FONT_SIZE_STORAGE_KEY = "jet-font-size"
 const DEFAULT_FONT_SIZE = 13
 const FONT_SIZE_STEP = 2
+const OverlayHost = lazy(() => import("./OverlayHost.js"))
+
+type OpenWorkspaceOptions = { replace?: boolean; silent?: boolean }
 
 function loadStoredFontSize(): number {
   try {
@@ -230,7 +226,9 @@ export function JetApp() {
   const fontSizeRef = useRef(loadStoredFontSize())
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
-  const openWorkspaceRef = useRef<(folderPath: string, opts?: { replace?: boolean }) => void>(() => {})
+  const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void>(
+    () => {},
+  )
   const addWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
   const handleOpenFileRef = useRef<(uri: string, path: string) => void>(() => {})
   const editorPanelRef = useRef<PanelId | null>(initialLayout.editorPanel)
@@ -785,17 +783,19 @@ export function JetApp() {
   )
 
   const openWorkspaceFolder = useCallback(
-    (folderPath: string, opts?: { replace?: boolean }) => {
+    (folderPath: string, opts?: OpenWorkspaceOptions) => {
       void (async () => {
         const folder =
           opts?.replace || !workspace.manager.hasFolders()
             ? await workspace.replaceAllFolders(folderPath)
             : await workspace.addFolder(folderPath)
         workspaceRootPathRef.current = folderPath
-        if (opts?.replace || workspace.folders.length === 1) {
-          showJetToast(`Opened ${folderPath}`)
-        } else {
-          showJetToast(`Added ${folder.root.name}`)
+        if (!opts?.silent) {
+          if (opts?.replace || workspace.folders.length === 1) {
+            showJetToast(`Opened ${folderPath}`)
+          } else {
+            showJetToast(`Added ${folder.root.name}`)
+          }
         }
         activateFolderBackground(folder.id, folderPath)
       })()
@@ -889,7 +889,7 @@ export function JetApp() {
 
   const bootstrapFromLaunchForDrop = useCallback((config: LaunchConfig) => {
     bootstrapFromLaunch(
-      path => openWorkspaceRef.current(path, { replace: true }),
+      path => openWorkspaceRef.current(path, { replace: true, silent: true }),
       (uri, path) => handleOpenFileRef.current(uri, path),
       config,
     )
@@ -913,7 +913,7 @@ export function JetApp() {
     fs: jetPlatformFS(),
     knownWorkspacePaths: workspace.folders.map(f => f.root.path),
     normalizePath: normalizeAbsPath,
-    openWorkspace: path => openWorkspaceRef.current(path, { replace: true }),
+    openWorkspace: path => openWorkspaceRef.current(path, { replace: true, silent: true }),
     addWorkspaceFolder: path => addWorkspaceRef.current(path),
     openFile: (uri, path) => handleOpenFileRef.current(uri, path),
     bootstrapFromLaunch: bootstrapFromLaunchForDrop,
@@ -1364,7 +1364,8 @@ export function JetApp() {
       fontSize: fontSizeRef.current,
       activeEditorDirty: activeEditorFile?.isDirty ?? false,
       executeCommand,
-      openWorkspace: folderPath => Promise.resolve(openWorkspaceRef.current(folderPath, { replace: true })),
+      openWorkspace: folderPath =>
+        Promise.resolve(openWorkspaceRef.current(folderPath, { replace: true, silent: true })),
       addWorkspace: folderPath => Promise.resolve(addWorkspaceRef.current(folderPath)),
       listWorkspaces: () => workspace.manager.folders.map(f => ({ id: f.id, path: f.root.path, name: f.root.name })),
       openFile: handleOpenFile,
@@ -1416,7 +1417,7 @@ export function JetApp() {
       queryBootstrapDone.current = true
       void openWorkspaceFromQuery(
         window.location.search,
-        path => Promise.resolve(openWorkspaceRef.current(path, { replace: true })),
+        path => Promise.resolve(openWorkspaceRef.current(path, { replace: true, silent: true })),
         openFile,
       )
         .catch(err => console.warn("Failed to open workspace from query:", err))
@@ -1424,7 +1425,11 @@ export function JetApp() {
       void window.jet.getLaunchConfig().then(cfg => {
         if (!cfg || queryBootstrapDone.current) return
         queryBootstrapDone.current = true
-        bootstrapFromLaunch(path => openWorkspaceRef.current(path, { replace: true }), openFile, cfg)
+        bootstrapFromLaunch(
+          path => openWorkspaceRef.current(path, { replace: true, silent: true }),
+          openFile,
+          cfg,
+        )
       })
     }
   }, [layoutReady])
@@ -1741,127 +1746,85 @@ export function JetApp() {
         />
       )}
 
-      <GotoLineModal
-        open={gotoLineOpen}
-        onOpenChange={setGotoLineOpen}
-        onSubmit={(line, column) => {
-          const panel = focusedPanel
-          const view = panel ? getEditorView(panel) : null
-          if (view) jumpToLine(view, line, column)
-        }}
-      />
-
-      {quickOpenOpen && searchSupported && (
-        <QuickOpenOverlay
-          open
-          onOpenChange={setQuickOpenOpen}
-          scanReady={searchScanReady}
-          onSearch={quickOpenSearch}
-          onSelect={(displayPath, query) => {
-            const resolved = resolveQuickOpenDisplayPath(displayPath, workspace.folders)
-            if (!resolved) return
-            void window.jet?.search?.trackFileAccess?.(
-              resolved.folder.root.uri,
-              query,
-              resolved.relativePath,
-            )
-            handleOpenFile(resolved.fileUri, resolved.fullPath)
-          }}
-        />
-      )}
-
-      {bufferListOpen && (
-        <BufferListOverlay
-          open
-          onOpenChange={setBufferListOpen}
-          workspace={workspace}
-          onSelect={uri => handleOpenFile(uri, fileUriToPath(uri))}
-        />
-      )}
-
-      {openFileOpen && (
-        <OpenFileOverlay
-          open
-          onOpenChange={setOpenFileOpen}
-          workspace={workspace}
-          onOpenFile={handleOpenFile}
-          onOpenFolder={() => {
-            setOpenFileOpen(false)
-            void executeCommand("workspace.openFolder")
-          }}
-        />
-      )}
-
-      {folderPickerOpen && (
-        <WorkspaceFolderPickerOverlay
-          open
-          onOpenChange={handleFolderPickerOpenChange}
-          folders={workspace.folders}
-          title="Select workspace folder"
-          onSelect={handleFolderPickerSelect}
-        />
-      )}
-
-      {switchFolderOpen && (
-        <WorkspaceFolderPickerOverlay
-          open
-          onOpenChange={setSwitchFolderOpen}
-          folders={workspace.folders}
-          title="Switch workspace folder"
-          description="Set the active workspace folder"
-          onSelect={folder => {
-            workspace.setActiveFolder(folder.id)
-            showJetToast(`Active folder: ${folder.root.name}`)
-          }}
-        />
-      )}
-
-      {cdOpen && (
-        <CdOverlay
-          open
-          onOpenChange={setCdOpen}
-          initialPath={workspace.root?.path ?? null}
-          workspaceFolders={workspace.folders.map(f => ({
-            name: f.root.name,
-            path: f.root.path,
-          }))}
-          onSelectFolder={path => openWorkspaceFolder(path, { replace: true })}
-          resolveHomeDir={async () =>
-            window.jet?.getHomeDir ? window.jet.getHomeDir() : (await resolveDevWorkspacePath(".")).path
-          }
-        />
-      )}
-
-      {projectSwitcherOpen && (
-        <ProjectSwitcherOverlay
-          open
-          onOpenChange={setProjectSwitcherOpen}
-          projects={projects}
-          onSelect={path => openWorkspaceFolder(path, { replace: true })}
-        />
-      )}
-
-      {outlineOpen && (
-        <OutlineOverlay
-          open
-          symbols={outlineSymbols}
-          onOpenChange={setOutlineOpen}
-          onSelect={line => {
-            const panel = focusedPanel
-            const view = panel ? getEditorView(panel) : null
-            if (view) jumpToLine(view, line, 1)
-          }}
-        />
-      )}
-
-      {paletteOpen && (
-        <CommandPalette
-          open
-          onOpenChange={setPaletteOpen}
-          commands={paletteCommands}
-          onRun={id => executeCommand(id)}
-        />
-      )}
+      <Suspense fallback={null}>
+        {(gotoLineOpen ||
+          (quickOpenOpen && searchSupported) ||
+          bufferListOpen ||
+          openFileOpen ||
+          folderPickerOpen ||
+          switchFolderOpen ||
+          cdOpen ||
+          projectSwitcherOpen ||
+          outlineOpen ||
+          paletteOpen) && (
+          <OverlayHost
+            gotoLineOpen={gotoLineOpen}
+            onGotoLineOpenChange={setGotoLineOpen}
+            onGotoLineSubmit={(line, column) => {
+              const panel = focusedPanel
+              const view = panel ? getEditorView(panel) : null
+              if (view) jumpToLine(view, line, column)
+            }}
+            quickOpenOpen={quickOpenOpen}
+            searchSupported={searchSupported}
+            searchScanReady={searchScanReady}
+            onQuickOpenOpenChange={setQuickOpenOpen}
+            onQuickOpenSearch={quickOpenSearch}
+            onQuickOpenSelect={(displayPath, query) => {
+              const resolved = resolveQuickOpenDisplayPath(displayPath, workspace.folders)
+              if (!resolved) return
+              void window.jet?.search?.trackFileAccess?.(
+                resolved.folder.root.uri,
+                query,
+                resolved.relativePath,
+              )
+              handleOpenFile(resolved.fileUri, resolved.fullPath)
+            }}
+            bufferListOpen={bufferListOpen}
+            onBufferListOpenChange={setBufferListOpen}
+            workspace={workspace}
+            onBufferSelect={uri => handleOpenFile(uri, fileUriToPath(uri))}
+            openFileOpen={openFileOpen}
+            onOpenFileOpenChange={setOpenFileOpen}
+            onOpenFile={handleOpenFile}
+            onRequestOpenFolder={() => {
+              setOpenFileOpen(false)
+              void executeCommand("workspace.openFolder")
+            }}
+            folderPickerOpen={folderPickerOpen}
+            onFolderPickerOpenChange={handleFolderPickerOpenChange}
+            onFolderPickerSelect={handleFolderPickerSelect}
+            switchFolderOpen={switchFolderOpen}
+            onSwitchFolderOpenChange={setSwitchFolderOpen}
+            cdOpen={cdOpen}
+            onCdOpenChange={setCdOpen}
+            onSelectFolder={path => openWorkspaceFolder(path, { replace: true })}
+            resolveHomeDir={async () =>
+              window.jet?.getHomeDir
+                ? window.jet.getHomeDir()
+                : (await resolveDevWorkspacePath(".")).path
+            }
+            projectSwitcherOpen={projectSwitcherOpen}
+            onProjectSwitcherOpenChange={setProjectSwitcherOpen}
+            projects={projects}
+            onSelectProject={path => openWorkspaceFolder(path, { replace: true })}
+            outlineOpen={outlineOpen}
+            onOutlineOpenChange={setOutlineOpen}
+            outlineSymbols={outlineSymbols}
+            onOutlineSelect={line => {
+              const panel = focusedPanel
+              const view = panel ? getEditorView(panel) : null
+              if (view) jumpToLine(view, line, 1)
+            }}
+            paletteOpen={paletteOpen}
+            onPaletteOpenChange={setPaletteOpen}
+            paletteCommands={paletteCommands}
+            onRunCommand={id => {
+              void executeCommand(id)
+            }}
+          />
+        )}
+      </Suspense>
       {focusedPanel ? <FindReplacePopover panelId={focusedPanel} /> : null}
       <ConfirmDialogHost />
       <Toaster position="bottom-right" />

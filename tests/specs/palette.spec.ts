@@ -44,16 +44,18 @@ test("palette: filter narrows commands", async ({ page }) => {
 
 test("palette: closes on Escape", async ({ page }) => {
   await agent(page).executeCommand("ui.showCommandPalette")
-  await page.waitForTimeout(300)
+  await expect(page.locator("body")).toContainText("Show Command Palette")
   await page.keyboard.press("Escape")
-  await page.waitForTimeout(200)
-
-  const state = await agent(page).getState()
-  expect(state.paletteOpen).toBe(false)
+  await expect
+    .poll(async () => (await agent(page).getState()).paletteOpen, {
+      message: "palette should close after Escape",
+    })
+    .toBe(false)
 })
 
 test("palette: no pre-selection on open", async ({ page }) => {
   await agent(page).executeCommand("ui.showCommandPalette")
+  await expect(page.locator("body")).toContainText("Show Command Palette")
   await waitAnimationsIdle(page)
 
   await expect(page.locator("body")).not.toContainText("[selected]")

@@ -8,8 +8,12 @@ import {
   addCursorAbove,
   addCursorBelow,
 } from "@codemirror/commands"
-import { autocompletion, completeAnyWord, completionKeymap } from "@codemirror/autocomplete"
-import { scopeCompletionSource } from "@codemirror/lang-javascript"
+import {
+  autocompletion,
+  completeAnyWord,
+  completionKeymap,
+  type CompletionSource,
+} from "@codemirror/autocomplete"
 import { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
 import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
@@ -58,8 +62,28 @@ const sublimeMultiCursorKeymap = keymap.of([
   },
 ])
 
+let globalScopeCompletionSource: CompletionSource | null = null
+let globalScopeCompletionSourcePromise: Promise<CompletionSource> | null = null
+
+async function resolveGlobalScopeCompletionSource(): Promise<CompletionSource> {
+  if (globalScopeCompletionSource) return globalScopeCompletionSource
+  if (!globalScopeCompletionSourcePromise) {
+    globalScopeCompletionSourcePromise = import("@codemirror/lang-javascript").then(mod => {
+      const source = mod.scopeCompletionSource(globalThis)
+      globalScopeCompletionSource = source
+      return source
+    })
+  }
+  return globalScopeCompletionSourcePromise
+}
+
 const jsScopeCompletion = EditorState.languageData.of(() => [
-  { autocomplete: scopeCompletionSource(globalThis) },
+  {
+    autocomplete: (async context => {
+      const source = await resolveGlobalScopeCompletionSource()
+      return source(context)
+    }) satisfies CompletionSource,
+  },
 ])
 
 function isJavaScriptLike(languageId: string): boolean {
@@ -138,7 +162,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     indentUnit.of(indentUnitFor(indent)),
   ]
 
-  extensions.push(drawSelection())
+  extensions.push(drawSelection({ cursorBlinkRate: 0 }))
 
   extensions.push(indentMarkerCompartment.of(indentMarkerExtension(theme, largeFile)))
 

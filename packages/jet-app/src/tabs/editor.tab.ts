@@ -12,6 +12,7 @@ export function createEditorTabType(deps: TabContributorDeps): TabType<EditorTab
   const { workspace } = deps
   return {
     id: EDITOR_TAB_TYPE_ID,
+    keepMounted: false,
     title: state => {
       const file = workspace.fileForUri(state.fileUri)
       return file?.name ?? basename(state.fileUri) ?? state.fileUri
