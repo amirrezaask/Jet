@@ -7,6 +7,7 @@ import { registerFsHandlers } from "./fs.js"
 import { registerSearchHandlers } from "./search.js"
 import { registerLspHandlers, stopAllLsp, setLspCrashHandler } from "./lsp-bridge.js"
 import { registerTaskHandlers } from "./tasks.js"
+import { registerTerminalHandlers, stopAllTerminals } from "./terminal.js"
 import { registerWorkspaceHost, stopWorkspaceHost } from "./workspace-host.js"
 import { stopAllBackgroundWorkers, prewarmBackgroundWorkers } from "./background-pool.js"
 
@@ -193,6 +194,7 @@ app.whenReady().then(() => {
   registerSearchHandlers(ipcMain)
   registerLspHandlers(ipcMain, getWindow)
   registerTaskHandlers(ipcMain)
+  registerTerminalHandlers(ipcMain)
   setLspCrashHandler(id => {
     getWindow()?.webContents.send("lsp:crashed", id)
   })
@@ -226,6 +228,7 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   stopAllLsp()
+  stopAllTerminals()
   stopWorkspaceHost()
   stopAllBackgroundWorkers()
   if (process.platform !== "darwin") app.quit()

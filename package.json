@@ -15,7 +15,7 @@
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
     "release": "pnpm --filter jet-desktop release && cp -r ./apps/jet-desktop/release/mac-arm64/Jet.app ~/Applications/",
-    "postinstall": "pnpm rebuild electron"
+    "postinstall": "pnpm rebuild electron && node scripts/fix-node-pty-perms.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

@@ -25,6 +25,20 @@ ipcRenderer.on("workspace:searchReady", (_e, payload: { rootUri: string }) => {
   for (const cb of searchReadyListeners) cb(payload.rootUri)
 })
 
+const terminalDataListeners = new Map<string, Set<(data: string) => void>>()
+const terminalDataBuffers = new Map<string, string[]>()
+
+ipcRenderer.on("terminal:data", (_e, id: string, data: string) => {
+  const listeners = terminalDataListeners.get(id)
+  if (listeners && listeners.size > 0) {
+    listeners.forEach(cb => cb(data))
+    return
+  }
+  const pending = terminalDataBuffers.get(id) ?? []
+  pending.push(data)
+  terminalDataBuffers.set(id, pending)
+})
+
 const api: JetElectronAPI = {
   fs: {
     readFile: uri => ipcRenderer.invoke("fs:readFile", uri),
@@ -72,6 +86,33 @@ const api: JetElectronAPI = {
   },
   tasks: {
     spawn: req => ipcRenderer.invoke("tasks:spawn", req),
+  },
+  terminal: {
+    create: cwdUri => ipcRenderer.invoke("terminal:create", cwdUri),
+    write: (id, data) => ipcRenderer.invoke("terminal:write", id, data),
+    resize: (id, cols, rows) => ipcRenderer.invoke("terminal:resize", id, cols, rows),
+    onData: (id, callback) => {
+      let set = terminalDataListeners.get(id)
+      if (!set) {
+        set = new Set()
+        terminalDataListeners.set(id, set)
+      }
+      set.add(callback)
+      const pending = terminalDataBuffers.get(id)
+      if (pending) {
+        for (const chunk of pending) callback(chunk)
+        terminalDataBuffers.delete(id)
+      }
+      return () => {
+        set!.delete(callback)
+        if (set!.size === 0) terminalDataListeners.delete(id)
+      }
+    },
+    dispose: id => {
+      terminalDataBuffers.delete(id)
+      terminalDataListeners.delete(id)
+      return ipcRenderer.invoke("terminal:dispose", id)
+    },
   },
   getLaunchConfig: () => ipcRenderer.invoke("jet:getLaunchConfig"),
   getHomeDir: () => ipcRenderer.invoke("jet:getHomeDir"),

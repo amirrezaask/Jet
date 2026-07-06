@@ -9,6 +9,15 @@ export type TabKind = string
 export const EXPLORER_TAB_ID = "jet:explorer"
 export const OUTPUT_TAB_ID = "jet:output"
 export const PROBLEMS_TAB_ID = "jet:problems"
+export const TERMINAL_TAB_ID_PREFIX = "jet:terminal:"
+
+export function terminalTabId(sessionKey: string): string {
+  return `${TERMINAL_TAB_ID_PREFIX}${sessionKey}`
+}
+
+export function isTerminalTabId(tabId: string): boolean {
+  return tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
+}
 
 export type TabDescriptor = {
   id: string

@@ -7,6 +7,28 @@ export const DESKTOP_DIR = resolve(REPO_ROOT, "apps/jet-desktop")
 export const MAIN_JS = resolve(DESKTOP_DIR, "dist-electron/main.js")
 export const SAMPLE = "fixtures/sample-workspace"
 
+let ptySpawnAvailable: boolean | null = null
+
+export function hasPtySpawn(): boolean {
+  if (ptySpawnAvailable != null) return ptySpawnAvailable
+  try {
+    const { spawn } = require(require.resolve("node-pty", { paths: [DESKTOP_DIR] })) as typeof import("node-pty")
+    const shell = process.env.SHELL || "/bin/zsh"
+    const pty = spawn(shell, ["-il"], {
+      name: "xterm-256color",
+      cwd: process.env.HOME || "/",
+      env: process.env as Record<string, string>,
+      cols: 80,
+      rows: 24,
+    })
+    pty.kill()
+    ptySpawnAvailable = true
+  } catch {
+    ptySpawnAvailable = false
+  }
+  return ptySpawnAvailable
+}
+
 export function hasTypescriptLanguageServer(): boolean {
   try {
     execSync("typescript-language-server --version", { stdio: "ignore" })
@@ -51,6 +73,20 @@ export async function openFixtureFile(page: Page, rel: string): Promise<void> {
     await window.__jetAgent!.openFile(f)
     await window.__jetAgent!.waitForEditor()
   }, rel)
+}
+
+export async function showTerminal(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await window.__jetAgent!.executeCommand("terminal.show")
+  })
+  await page.waitForSelector("[data-jet-terminal-panel] .xterm", { timeout: 15_000 })
+}
+
+export async function readTerminalText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const rows = document.querySelector("[data-jet-terminal-panel] .xterm-rows")
+    return rows?.textContent ?? ""
+  })
 }
 
 export async function waitForLspConnected(page: Page, timeoutMs = 20_000): Promise<void> {

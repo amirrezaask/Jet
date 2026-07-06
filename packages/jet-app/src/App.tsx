@@ -256,6 +256,8 @@ export function JetApp() {
         tabStore.create<{ fileUri: string }>(kind, { fileUri: desc.id }, desc.id)
       } else if (kind === "explorer" || kind === "output") {
         tabStore.create<Record<string, never>>(kind, {}, desc.id)
+      } else if (kind === "terminal") {
+        tabStore.create<{ label: string }>(kind, { label: desc.label }, desc.id)
       } else {
         tabStore.create<{ listId: string }>(kind, { listId: desc.id }, desc.id)
       }
@@ -366,6 +368,7 @@ export function JetApp() {
       workspaceOpen: workspace.root != null,
       explorerFocus: activeTabKindName === "explorer",
       outputFocus: activeTabKindName === "output",
+      terminalFocus: activeTabKindName === "terminal",
       listFocus:
         activeTabKindName === "explorer" ||
         activeTabKindName === "search" ||
@@ -1325,16 +1328,8 @@ export function JetApp() {
       lastCloseAt = now
       void executeCommand("workspace.closeBuffer")
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (anyOverlayOpen(keymapContext)) return
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (keyEventMatchesBinding(e, "Cmd-w")) {
-        if (!workspace.root) return
-        e.preventDefault()
-        e.stopPropagation()
-        closeBuffer()
-        return
-      }
+    const dispatchKeyBinding = (e: KeyboardEvent, opts?: { allowEditor?: boolean }): boolean => {
+      const allowEditor = opts?.allowEditor ?? false
       const hadPendingChord = chordState.prefix != null
       const result = resolveKeydownBinding(e, keymapBindings, keymapContext, chordState)
       if (result === "chord-started") {
@@ -1342,34 +1337,70 @@ export function JetApp() {
         setPendingChordPrefix(chordState.prefix)
         if (chordTimeout != null) window.clearTimeout(chordTimeout)
         chordTimeout = window.setTimeout(clearPendingChord, CHORD_TIMEOUT_MS)
-        return
+        return true
       }
       if (hadPendingChord && chordState.prefix == null) clearPendingChord()
       if (result && isChordBinding(result.key)) {
         e.preventDefault()
         runKeyBinding(result)
-        return
+        return true
       }
       if (result && !isEditorKeyBinding(result, keymapContext)) {
         e.preventDefault()
         e.stopPropagation()
         runKeyBinding(result)
-        return
+        return true
       }
-      if (result && isEditorKeyBinding(result, keymapContext)) {
+      if (allowEditor && result && isEditorKeyBinding(result, keymapContext)) {
         const panel = appStateRef.current.focusedPanel ?? editorPanelRef.current
         const view = panel ? getEditorView(panel) : null
         if (view?.hasFocus || keymapContext.editorFocus) {
           e.preventDefault()
           e.stopPropagation()
           runKeyBinding(result, view ?? undefined)
+          return true
+        }
+      }
+      if (allowEditor && result) {
+        e.preventDefault()
+        runKeyBinding(result)
+        return true
+      }
+      return false
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (anyOverlayOpen(keymapContext)) return
+      const target = e.target
+      const inXterm = target instanceof HTMLElement && target.closest(".xterm") != null
+      if (target instanceof HTMLInputElement || (target instanceof HTMLTextAreaElement && !inXterm)) {
+        return
+      }
+
+      if (keymapContext.terminalFocus || inXterm) {
+        if (dispatchKeyBinding(e)) return
+        if (keyEventMatchesBinding(e, "Cmd-=") || keyEventMatchesBinding(e, "Cmd--")) {
+          e.preventDefault()
+          e.stopPropagation()
+          void executeCommand(keyEventMatchesBinding(e, "Cmd--") ? "ui.zoomOut" : "ui.zoomIn")
+          return
+        }
+        if (keymapContext.terminalFocus && !inXterm) {
+          const textarea = document.querySelector<HTMLTextAreaElement>(
+            "[data-jet-tab-slot][data-jet-tab-active] [data-jet-terminal-panel] .xterm-helper-textarea",
+          )
+          if (textarea && document.activeElement !== textarea) textarea.focus()
         }
         return
       }
-      if (result) {
+
+      if (keyEventMatchesBinding(e, "Cmd-w")) {
+        if (!workspace.root) return
         e.preventDefault()
-        runKeyBinding(result)
+        e.stopPropagation()
+        closeBuffer()
+        return
       }
+      dispatchKeyBinding(e, { allowEditor: true })
     }
     window.addEventListener("keydown", onKey, true)
     return () => {

@@ -13,6 +13,7 @@ export type KeymapContext = {
   workspaceOpen: boolean
   explorerFocus: boolean
   outputFocus: boolean
+  terminalFocus: boolean
   listFocus: boolean
 }
 

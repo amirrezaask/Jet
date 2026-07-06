@@ -420,3 +420,19 @@ body,
     scroll-behavior: auto !important;
   }
 }
+
+/* xterm must fill the terminal tab slot; fit addon reads container clientHeight */
+[data-jet-terminal-panel] .jet-terminal-surface,
+[data-jet-terminal-panel] .xterm,
+[data-jet-terminal-panel] .xterm-viewport {
+  height: 100%;
+  width: 100%;
+}
+
+[data-jet-terminal-panel] .xterm-screen {
+  position: relative;
+}
+
+[data-jet-terminal-panel] .xterm .xterm-rows {
+  font-family: var(--font-mono);
+}

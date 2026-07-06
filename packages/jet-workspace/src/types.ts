@@ -79,6 +79,14 @@ export type JetElectronLSP = {
   onCrashed(cb: (id: string) => void): () => void
 }
 
+export type JetElectronTerminal = {
+  create(cwdUri: string): Promise<{ id: string }>
+  write(id: string, data: string): Promise<void>
+  resize(id: string, cols: number, rows: number): Promise<void>
+  onData(id: string, callback: (data: string) => void): () => void
+  dispose(id: string): Promise<void>
+}
+
 export type LaunchConfig = {
   workspacePath: string
   filePath?: string
@@ -94,6 +102,7 @@ export type JetElectronAPI = {
   fs: JetElectronFS
   search: JetElectronSearch
   lsp: JetElectronLSP
+  terminal?: JetElectronTerminal
   tasks?: JetElectronTasks
   workspace?: JetElectronWorkspace
   getLaunchConfig?(): Promise<LaunchConfig | null>

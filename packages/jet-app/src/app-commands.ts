@@ -24,7 +24,7 @@ import type { PanelEvent } from "@jet/panels"
 import type { PanelId } from "@jet/shared"
 import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shared"
 import type { JetCommandContext, JetCommands, JetCommandFn, ListItem, WorkspaceService } from "@jet/workspace"
-import { PROBLEMS_TAB_ID, EXPLORER_TAB_ID } from "@jet/workspace"
+import { PROBLEMS_TAB_ID, EXPLORER_TAB_ID, panelTabIds } from "@jet/workspace"
 import { problemsToListItems } from "@jet/ui"
 import { openJetSearch } from "@jet/codemirror"
 import {
@@ -60,6 +60,9 @@ import {
   openProblemsTab,
   openSearchTab,
   openTabInAuxiliaryPanel,
+  openTerminalTab,
+  listTerminalTabs,
+  isActiveTerminalTab,
 } from "./tab-routing.js"
 import { confirmCloseBuffer } from "./close-buffer.js"
 
@@ -275,6 +278,49 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       const target = resolveTargetPanel(tree, currentFocusedPanel()) ?? deps.editorPanelRef.current
       if (!target) return
       const { panelId } = openOutputTab(deps.workspace, tree, target)
+      deps.commitTree(tree, panelId)
+    },
+    terminal: () => {
+      const tree = deps.cloneTree()
+      const focused = currentFocusedPanel()
+
+      if (isActiveTerminalTab(tree, focused)) {
+        const editorPanel = resolveEditorPanel(tree, deps.editorPanelRef.current, focused)
+        if (editorPanel) {
+          const view = tree.getView(editorPanel)
+          if (view?.kind === "tabs") {
+            const editorTabId =
+              getActiveEditorFileUri(tree, editorPanel) ??
+              panelTabIds(view).find(id => id.startsWith("file:") || id.startsWith("untitled:"))
+            if (editorTabId) {
+              deps.workspace.focusTabInPanel(tree, editorPanel, editorTabId)
+            }
+          }
+          deps.setFocusedPanel(editorPanel)
+          deps.commitTree(tree, editorPanel)
+        }
+        return
+      }
+
+      const terminals = listTerminalTabs(tree)
+      if (terminals.length > 0) {
+        const last = terminals[terminals.length - 1]!
+        deps.workspace.focusTabInPanel(tree, last.panelId, last.tabId)
+        deps.setFocusedPanel(last.panelId)
+        deps.commitTree(tree, last.panelId)
+        return
+      }
+
+      const { panelId } = openTerminalTab(deps.workspace, tree, focused)
+      deps.setFocusedPanel(panelId)
+      deps.commitTree(tree, panelId)
+    },
+    terminalNew: () => {
+      const tree = deps.cloneTree()
+      const count = listTerminalTabs(tree).length
+      const label = count === 0 ? "Terminal" : `Terminal ${count + 1}`
+      const { panelId } = openTerminalTab(deps.workspace, tree, currentFocusedPanel(), { label })
+      deps.setFocusedPanel(panelId)
       deps.commitTree(tree, panelId)
     },
     explorer: () => {
@@ -607,6 +653,8 @@ export const APP_COMMAND_REGISTRY = [
   { id: "locationlist.showSearch", fn: "locationListSearch", title: "Location List: Search", category: "View" },
   { id: "locationlist.showProblems", fn: "locationListProblems", title: "Location List: Problems", category: "View" },
   { id: "output.show", fn: "output", title: "Show Output", category: "View" },
+  { id: "terminal.show", fn: "terminal", title: "Toggle Terminal", category: "View", aliases: ["shell", "integrated terminal"] },
+  { id: "terminal.new", fn: "terminalNew", title: "New Terminal", category: "View" },
   { id: "task.run", fn: "runTask", title: "Run Task", category: "Tasks" },
   { id: "task.runBuild", fn: "runBuild", title: "Run Build Task", category: "Tasks" },
   { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"] },
