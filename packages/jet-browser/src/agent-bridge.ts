@@ -5,7 +5,9 @@ import type { PanelView } from "@jet/shared"
 import { resolveDevWorkspacePath, toWorkspaceFileUri } from "./browser-api.js"
 
 export type JetAgentState = {
+  /** @deprecated Use `activeWorkspace` + `workspaces` for multi-root. */
   workspace: string | null
+  activeWorkspace: string | null
   workspaces: { id: string; path: string; name: string }[]
   message: string | null
   paletteOpen: boolean
@@ -91,8 +93,10 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
     },
     getState() {
       const current = ctx()
+      const activePath = current.workspace.manager.activeFolder?.root.path ?? null
       return {
-        workspace: current.workspace.root?.path ?? null,
+        workspace: activePath,
+        activeWorkspace: activePath,
         workspaces: current.listWorkspaces?.() ?? [],
         message: current.message,
         paletteOpen: current.paletteOpen,

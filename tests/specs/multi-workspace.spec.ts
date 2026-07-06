@@ -54,6 +54,60 @@ test("multi-workspace: explorer shows multiple roots and opens file from second 
   expect(stateAfter.openBuffers.length).toBeGreaterThanOrEqual(1)
 })
 
+test("multi-workspace: quick open dedupes same relative path across roots", async ({ page }) => {
+  await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
+  await page.waitForTimeout(3000)
+
+  await page.evaluate(async () => {
+    await window.__jetAgent!.addWorkspace("packages/jet-shared")
+  })
+  await page.waitForTimeout(2000)
+
+  await agent(page).executeCommand("workspace.quickOpen")
+  await page.keyboard.type("src/index.ts")
+  await page.waitForTimeout(800)
+
+  const items = page.locator('[role="dialog"] [cmdk-item]')
+  await expect(items.filter({ hasText: "sample-workspace" }).first()).toBeVisible()
+  await expect(items.filter({ hasText: "jet-shared" }).first()).toBeVisible()
+  await expect(page.locator('[role="dialog"]')).not.toContainText("No matching files")
+  await page.keyboard.press("Escape")
+})
+
+test("multi-workspace: remove folder blocked while dirty then succeeds after save", async ({
+  page,
+}) => {
+  await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
+  await page.waitForTimeout(500)
+
+  await page.evaluate(async () => {
+    await window.__jetAgent!.addWorkspace("packages/jet-shared")
+  })
+  await page.waitForTimeout(300)
+  await agent(page).executeCommand("workspace.focusFolder")
+  await page.waitForTimeout(200)
+
+  await page.locator(".cm-editor").click()
+  await page.keyboard.type("\n// dirty marker")
+
+  const workspacesBefore = await page.evaluate(() => window.__jetAgent!.listWorkspaces())
+  expect(workspacesBefore.length).toBe(2)
+
+  await agent(page).executeCommand("workspace.removeFolder")
+  await page.waitForTimeout(400)
+
+  const workspacesAfterBlock = await page.evaluate(() => window.__jetAgent!.listWorkspaces())
+  expect(workspacesAfterBlock.length).toBe(2)
+
+  await page.keyboard.press("Meta+s")
+  await page.waitForTimeout(300)
+  await agent(page).executeCommand("workspace.removeFolder")
+  await page.waitForTimeout(400)
+
+  const workspacesAfter = await page.evaluate(() => window.__jetAgent!.listWorkspaces())
+  expect(workspacesAfter.length).toBe(1)
+})
+
 test("multi-workspace: quick open finds files across roots", async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
   await page.waitForTimeout(3000)

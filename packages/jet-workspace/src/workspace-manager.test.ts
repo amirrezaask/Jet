@@ -80,6 +80,53 @@ describe("WorkspaceService facade", () => {
   })
 })
 
+describe("WorkspaceService foreign URI contract", () => {
+  it("writeFile rejects URIs outside open folders", async () => {
+    const mgr = new WorkspaceManager(mockFs())
+    const ws = new WorkspaceService(mgr)
+    await ws.addFolder("/proj/a")
+    const foreign = pathToFileUri("/proj/b/foo.ts")
+    await assert.rejects(() => ws.writeFile(foreign, "x"), /No workspace folder/)
+  })
+
+  it("createWorkspaceFile rejects URIs outside open folders", async () => {
+    const mgr = new WorkspaceManager(mockFs())
+    const ws = new WorkspaceService(mgr)
+    await ws.addFolder("/proj/a")
+    const foreign = pathToFileUri("/proj/b/foo.ts")
+    assert.throws(() => ws.createWorkspaceFile(foreign, "/proj/b/foo.ts"), /No workspace folder/)
+  })
+
+  it("resolveRootUriForFile returns null for foreign file URIs", async () => {
+    const mgr = new WorkspaceManager(mockFs())
+    const ws = new WorkspaceService(mgr)
+    await ws.addFolder("/proj/a")
+    await ws.addFolder("/proj/b")
+    ws.setActiveFolder(mgr.folders[1]!.id)
+    const foreign = pathToFileUri("/proj/c/foo.ts")
+    assert.equal(ws.resolveRootUriForFile(foreign), null)
+  })
+
+  it("resolveRootUriForFile uses sole folder for untitled URIs", async () => {
+    const mgr = new WorkspaceManager(mockFs())
+    const ws = new WorkspaceService(mgr)
+    const folder = await ws.addFolder("/proj/a")
+    assert.equal(ws.resolveRootUriForFile("untitled:1"), folder.root.uri)
+  })
+
+  it("dirty file blocks removal until saved", async () => {
+    const mgr = new WorkspaceManager(mockFs())
+    const ws = new WorkspaceService(mgr)
+    const folder = await ws.addFolder("/proj/a")
+    const uri = pathToFileUri("/proj/a/foo.ts")
+    ws.createWorkspaceFile(uri, "/proj/a/foo.ts")
+    ws.markDirty(uri, true)
+    assert.equal(ws.removeFolder(folder.id), false)
+    ws.clearDirtyState(uri)
+    assert.equal(ws.removeFolder(folder.id), true)
+  })
+})
+
 describe("path helpers", () => {
   it("isPathUnderRoot matches children", () => {
     assert.equal(isPathUnderRoot("/proj/a/src/x.ts", "/proj/a"), true)

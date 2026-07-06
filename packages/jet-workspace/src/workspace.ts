@@ -138,8 +138,12 @@ export class WorkspaceService {
   }
 
   resolveRootUriForFile(fileUri: string): string | null {
-    if (isUntitledUri(fileUri)) return this.root?.uri ?? null
-    return this.manager.folderStateForUri(fileUri)?.root.uri ?? this.root?.uri ?? null
+    if (isUntitledUri(fileUri)) {
+      const folders = this.manager.folders
+      if (folders.length === 1) return folders[0]!.root.uri
+      return this.manager.activeFolder?.root.uri ?? null
+    }
+    return this.manager.folderStateForUri(fileUri)?.root.uri ?? null
   }
 
   hasDirtyFilesUnderFolder(folderId: string): boolean {
@@ -152,15 +156,6 @@ export class WorkspaceService {
     return [...state.allFiles()].map(f => f.uri)
   }
 
-  private stateForFileUri(uri: string): WorkspaceFolderState | undefined {
-    if (isUntitledUri(uri)) return undefined
-    let state = this.manager.folderStateForUri(uri)
-    if (!state && this.manager.activeFolderState) {
-      state = this.manager.activeFolderState
-    }
-    return state
-  }
-
   fileForUri(uri: string): WorkspaceFile | undefined {
     if (isUntitledUri(uri)) return this.untitledFiles.get(uri)
     return this.manager.folderStateForUri(uri)?.fileForUri(uri)
@@ -171,8 +166,11 @@ export class WorkspaceService {
       this.untitledFiles.set(file.uri, file)
       return
     }
-    const state = this.stateForFileUri(file.uri)
-    state?.registerFile(file)
+    const state = this.manager.folderStateForUri(file.uri)
+    if (!state) {
+      throw new Error(`No workspace folder contains ${file.uri}`)
+    }
+    state.registerFile(file)
   }
 
   touchBuffer(uri: string): void {
@@ -229,8 +227,11 @@ export class WorkspaceService {
   }
 
   async writeFile(uri: string, content: string): Promise<void> {
-    const state = this.manager.folderStateForUri(uri) ?? this.manager.activeFolderState
-    if (!state) throw new Error("No workspace folder for file")
+    if (isUntitledUri(uri)) {
+      throw new Error("Cannot write untitled URI — promote before saving")
+    }
+    const state = this.manager.folderStateForUri(uri)
+    if (!state) throw new Error(`No workspace folder contains ${uri}`)
     await state.writeFile(uri, content)
   }
 
@@ -247,11 +248,9 @@ export class WorkspaceService {
   }
 
   createWorkspaceFile(uri: string, path: string): WorkspaceFile {
-    const state =
-      this.manager.folderStateForUri(uri) ??
-      this.manager.activeFolderState
+    const state = this.manager.folderStateForUri(uri)
     if (!state) {
-      throw new Error("No workspace folder open")
+      throw new Error(`No workspace folder contains ${uri}`)
     }
     const file = state.createWorkspaceFile(uri, path, languageIdFromPath(path))
     return file

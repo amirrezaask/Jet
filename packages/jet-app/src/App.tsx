@@ -32,6 +32,7 @@ import {
   ProjectRegistry,
   JetPanelTree,
   type JetProject,
+  type WorkspaceFolder,
   activatePanelTab,
   reorderPanelTab,
   popPanelTab,
@@ -72,6 +73,7 @@ import {
   OpenFileOverlay,
   CdOverlay,
   ProjectSwitcherOverlay,
+  WorkspaceFolderPickerOverlay,
   getEditorView,
   getAllEditorViews,
   syncAllEditorThemes,
@@ -207,6 +209,11 @@ export function JetApp() {
   const [openFileOpen, setOpenFileOpen] = useState(false)
   const [cdOpen, setCdOpen] = useState(false)
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
+  const [switchFolderOpen, setSwitchFolderOpen] = useState(false)
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
+  const folderPickerPendingRef = useRef<{
+    resolve: (folder: WorkspaceFolder | null) => void
+  } | null>(null)
   const [projects, setProjects] = useState<JetProject[]>([])
   const [searchScanReady, setSearchScanReady] = useState(false)
   const [searchSupported, setSearchSupported] = useState(false)
@@ -381,7 +388,7 @@ export function JetApp() {
       projectSwitcherOpen,
       gotoLineOpen,
       outlineOpen,
-      workspaceOpen: workspace.root != null,
+      workspaceOpen: workspace.manager.hasFolders(),
       explorerFocus: activeTabKindName === "explorer",
       outputFocus: activeTabKindName === "output",
       terminalFocus: activeTabKindName === "terminal",
@@ -673,6 +680,27 @@ export function JetApp() {
     return list.length
   }, [projectRegistry])
 
+  const pickWorkspaceFolder = useCallback((folders: WorkspaceFolder[]) => {
+    return new Promise<WorkspaceFolder | null>(resolve => {
+      folderPickerPendingRef.current = { resolve }
+      setFolderPickerOpen(true)
+    })
+  }, [])
+
+  const handleFolderPickerOpenChange = useCallback((open: boolean) => {
+    setFolderPickerOpen(open)
+    if (!open && folderPickerPendingRef.current) {
+      folderPickerPendingRef.current.resolve(null)
+      folderPickerPendingRef.current = null
+    }
+  }, [])
+
+  const handleFolderPickerSelect = useCallback((folder: WorkspaceFolder) => {
+    folderPickerPendingRef.current?.resolve(folder)
+    folderPickerPendingRef.current = null
+    setFolderPickerOpen(false)
+  }, [])
+
   const syncGlobalSearchState = useCallback(() => {
     const { supported, scanReady } = aggregateFolderSearchState(
       workspace.folders,
@@ -732,6 +760,17 @@ export function JetApp() {
     },
     [workspace, syncGlobalSearchState],
   )
+
+  useEffect(() => {
+    const sub = workspace.manager.onDidChangeFolders.event(folders => {
+      for (const folder of folders) {
+        if (!workspaceInitGen.current.has(folder.id)) {
+          activateFolderBackground(folder.id, folder.root.path)
+        }
+      }
+    })
+    return () => sub.dispose()
+  }, [workspace, activateFolderBackground])
 
   const addWorkspaceFolder = useCallback(
     (folderPath: string) => {
@@ -872,9 +911,10 @@ export function JetApp() {
 
   useFileDrop({
     fs: jetPlatformFS(),
-    workspaceRootPath: workspace.root?.path ?? workspaceRootPathRef.current,
+    knownWorkspacePaths: workspace.folders.map(f => f.root.path),
     normalizePath: normalizeAbsPath,
-    openWorkspace: path => openWorkspaceRef.current(path),
+    openWorkspace: path => openWorkspaceRef.current(path, { replace: true }),
+    addWorkspaceFolder: path => addWorkspaceRef.current(path),
     openFile: (uri, path) => handleOpenFileRef.current(uri, path),
     bootstrapFromLaunch: bootstrapFromLaunchForDrop,
     openUntitledFromDrop,
@@ -1083,6 +1123,8 @@ export function JetApp() {
         setOpenFileOpen,
         setCdOpen,
         setProjectSwitcherOpen,
+        setSwitchFolderOpen,
+        pickWorkspaceFolder,
         setGotoLineOpen,
         setMessage: showJetToast,
         setFocusedPanel,
@@ -1127,6 +1169,7 @@ export function JetApp() {
       projectRegistry,
       refreshProjects,
       searchSupported,
+      pickWorkspaceFolder,
     ],
   )
 
@@ -1458,7 +1501,7 @@ export function JetApp() {
       setPendingChordPrefix(null)
     }
     const closeBuffer = () => {
-      if (!workspace.root || anyOverlayOpen(keymapContext)) return
+      if (!workspace.manager.hasFolders() || anyOverlayOpen(keymapContext)) return
       const now = Date.now()
       if (now - lastCloseAt < 100) return
       lastCloseAt = now
@@ -1530,7 +1573,7 @@ export function JetApp() {
       }
 
       if (keyEventMatchesBinding(e, "Cmd-w")) {
-        if (!workspace.root) return
+        if (!workspace.manager.hasFolders()) return
         e.preventDefault()
         e.stopPropagation()
         closeBuffer()
@@ -1742,6 +1785,34 @@ export function JetApp() {
           onOpenChange={setOpenFileOpen}
           workspace={workspace}
           onOpenFile={handleOpenFile}
+          onOpenFolder={() => {
+            setOpenFileOpen(false)
+            void executeCommand("workspace.openFolder")
+          }}
+        />
+      )}
+
+      {folderPickerOpen && (
+        <WorkspaceFolderPickerOverlay
+          open
+          onOpenChange={handleFolderPickerOpenChange}
+          folders={workspace.folders}
+          title="Select workspace folder"
+          onSelect={handleFolderPickerSelect}
+        />
+      )}
+
+      {switchFolderOpen && (
+        <WorkspaceFolderPickerOverlay
+          open
+          onOpenChange={setSwitchFolderOpen}
+          folders={workspace.folders}
+          title="Switch workspace folder"
+          description="Set the active workspace folder"
+          onSelect={folder => {
+            workspace.setActiveFolder(folder.id)
+            showJetToast(`Active folder: ${folder.root.name}`)
+          }}
         />
       )}
 
@@ -1750,6 +1821,10 @@ export function JetApp() {
           open
           onOpenChange={setCdOpen}
           initialPath={workspace.root?.path ?? null}
+          workspaceFolders={workspace.folders.map(f => ({
+            name: f.root.name,
+            path: f.root.path,
+          }))}
           onSelectFolder={path => openWorkspaceFolder(path, { replace: true })}
           resolveHomeDir={async () =>
             window.jet?.getHomeDir ? window.jet.getHomeDir() : (await resolveDevWorkspacePath(".")).path

@@ -1,5 +1,6 @@
 import { basename, pathToFileUri } from "@jet/shared"
 import type { FileSystemProvider, LaunchConfig } from "@jet/workspace"
+import { isPathUnderRoot, normalizeAbsPath } from "@jet/workspace"
 
 const WORKSPACE_MARKERS = [
   ".git",
@@ -71,11 +72,18 @@ export function pathsFromDataTransfer(dt: DataTransfer): string[] {
 export type ProcessDroppedPathsContext = {
   fs: FileSystemProvider
   normalizePath: (p: string) => string
-  currentWorkspacePath: string | null
+  knownWorkspacePaths: string[]
   openWorkspace: (path: string) => void
+  addWorkspaceFolder: (path: string) => void
   openFile: (uri: string, path: string) => void
   bootstrapFromLaunch: (config: LaunchConfig) => void
   setMessage: (msg: string) => void
+}
+
+function workspacePathIsOpen(normPath: string, known: string[]): boolean {
+  return known.some(
+    k => normPath === k || isPathUnderRoot(normPath, k) || isPathUnderRoot(k, normPath),
+  )
 }
 
 export async function processDroppedPaths(
@@ -104,18 +112,32 @@ export async function processDroppedPaths(
     if (!cfg.filePath) workspacePath = cfg.workspacePath
   }
 
-  const current = ctx.currentWorkspacePath ? ctx.normalizePath(ctx.currentWorkspacePath) : null
+  const known = ctx.knownWorkspacePaths.map(p => ctx.normalizePath(p))
   const next = ctx.normalizePath(workspacePath)
 
   if (filesToOpen.length === 0) {
-    if (current === next) return
-    ctx.openWorkspace(next)
+    if (known.some(k => normalizeAbsPath(k) === next)) return
+    if (known.length > 0) {
+      ctx.addWorkspaceFolder(next)
+    } else {
+      ctx.openWorkspace(next)
+    }
     return
   }
 
-  if (current === next) {
+  if (workspacePathIsOpen(next, known)) {
     for (const fp of filesToOpen) {
       ctx.openFile(pathToFileUri(fp), fp)
+    }
+    return
+  }
+
+  if (known.length > 0) {
+    ctx.addWorkspaceFolder(next)
+    for (const fp of filesToOpen) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => ctx.openFile(pathToFileUri(fp), fp))
+      })
     }
     return
   }

@@ -23,7 +23,16 @@ import type { JetPanelTree } from "@jet/workspace"
 import type { PanelEvent } from "@jet/panels"
 import type { PanelId } from "@jet/shared"
 import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shared"
-import type { JetCommandContext, JetCommands, JetCommandFn, ListItem, WorkspaceService } from "@jet/workspace"
+import type {
+  JetCommandContext,
+  JetCommands,
+  JetCommandFn,
+  ListItem,
+  WorkspaceFolder,
+  WorkspaceFolderPicker,
+  WorkspaceService,
+} from "@jet/workspace"
+import { folderForFileUri, resolveWorkspaceFolder } from "@jet/workspace"
 import { PROBLEMS_TAB_ID, EXPLORER_TAB_ID, panelTabIds } from "@jet/workspace"
 import { problemsToListItems } from "@jet/ui"
 import { openJetSearch } from "@jet/codemirror"
@@ -76,6 +85,8 @@ export type BuildAppCommandsDeps = {
   setOpenFileOpen: (open: boolean) => void
   setCdOpen: (open: boolean) => void
   setProjectSwitcherOpen: (open: boolean) => void
+  setSwitchFolderOpen: (open: boolean) => void
+  pickWorkspaceFolder: WorkspaceFolderPicker
   setGotoLineOpen: (open: boolean) => void
   setMessage: (msg: string) => void
   setFocusedPanel: (panel: PanelId) => void
@@ -154,6 +165,43 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     ctx.ui.showMessage(`Active folder: ${next.root.name}`)
   }
 
+  const switchFolder: JetCommandFn = async () => {
+    deps.setSwitchFolderOpen(true)
+  }
+
+  async function resolveCommandFolder(
+    preferredFileUri?: string | null,
+  ): Promise<WorkspaceFolder | null> {
+    const preferred = preferredFileUri
+      ? folderForFileUri(deps.workspace, preferredFileUri)?.id
+      : undefined
+    return resolveWorkspaceFolder(deps.workspace, deps.pickWorkspaceFolder, {
+      preferredFolderId: preferred,
+    })
+  }
+
+  function terminalCwdRootUri(): string | undefined {
+    const panel = currentFocusedPanel()
+    const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
+    if (fileUri && !isUntitledUri(fileUri)) {
+      const folder = folderForFileUri(deps.workspace, fileUri)
+      if (folder) return folder.root.uri
+    }
+    return deps.workspace.manager.activeFolder?.root.uri
+  }
+
+  async function resolveTerminalCwdRootUri(): Promise<string | undefined> {
+    const fromEditor = terminalCwdRootUri()
+    if (deps.workspace.folders.length <= 1) return fromEditor
+    const folder = await resolveCommandFolder(
+      (() => {
+        const panel = currentFocusedPanel()
+        return panel ? getActiveEditorFileUri(currentPanelTree(), panel) : null
+      })(),
+    )
+    return folder?.root.uri ?? fromEditor
+  }
+
   function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
     const view = ctx.getActiveEditorView() as EditorView | null
     if (view) fn(view)
@@ -214,7 +262,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     bufferList: () => deps.setBufferListOpen(true),
     openFile: ctx => {
-      if (!deps.workspace.root) {
+      if (!deps.workspace.manager.hasFolders()) {
         void openFolder(ctx)
         return
       }
@@ -224,6 +272,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     addFolder,
     removeFolder,
     focusFolder,
+    switchFolder,
     cd: () => deps.setCdOpen(true),
     switchProject: () => deps.setProjectSwitcherOpen(true),
     refreshProjects: async ctx => {
@@ -238,12 +287,16 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (!fileUri) return
       const content = view.state.doc.toString()
       if (isUntitledUri(fileUri)) {
-        if (!deps.workspace.root) return
+        const folder = await resolveCommandFolder(fileUri)
+        if (!folder) return
         let savePath: string | null = null
         if (deps.isWebMode) {
-          const rel = window.prompt("Save as (relative to workspace root):", "untitled.ts")
+          const rel = window.prompt(
+            `Save as (relative to ${folder.root.name}):`,
+            "untitled.ts",
+          )
           if (!rel) return
-          savePath = `${deps.workspace.root.path}/${rel.replace(/^\/+/, "")}`
+          savePath = `${folder.root.path}/${rel.replace(/^\/+/, "")}`
         } else {
           savePath = (await window.jet?.fs.showSaveFileDialog()) ?? null
           if (!savePath) return
@@ -323,7 +376,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       const { panelId } = openOutputTab(deps.workspace, tree, target)
       deps.commitTree(tree, panelId)
     },
-    terminal: () => {
+    terminal: async () => {
       const tree = deps.cloneTree()
       const focused = currentFocusedPanel()
 
@@ -354,19 +407,21 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         return
       }
 
+      const cwdRootUri = await resolveTerminalCwdRootUri()
       const { panelId } = openTerminalTab(deps.workspace, tree, focused, {
-        cwdRootUri: deps.workspace.root?.uri,
+        cwdRootUri,
       })
       deps.setFocusedPanel(panelId)
       deps.commitTree(tree, panelId)
     },
-    terminalNew: () => {
+    terminalNew: async () => {
       const tree = deps.cloneTree()
       const count = listTerminalTabs(tree).length
       const label = count === 0 ? "Terminal" : `Terminal ${count + 1}`
+      const cwdRootUri = await resolveTerminalCwdRootUri()
       const { panelId } = openTerminalTab(deps.workspace, tree, currentFocusedPanel(), {
         label,
-        cwdRootUri: deps.workspace.root?.uri,
+        cwdRootUri,
       })
       deps.setFocusedPanel(panelId)
       deps.commitTree(tree, panelId)
@@ -418,8 +473,14 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         return
       }
       const task = tasks[0]!
-      if (!deps.workspace.root) return
-      void deps.workspace.taskRunner.runTask(task, deps.workspace.root.path, deps.workspace.root.path)
+      const folder = await resolveCommandFolder()
+      if (!folder) return
+      void deps.workspace.taskRunner.runTask(
+        task,
+        folder.root.path,
+        folder.root.path,
+        { folderId: folder.id, folderName: folder.root.name },
+      )
       const tree = deps.cloneTree()
       const target = resolveTargetPanel(tree, currentFocusedPanel()) ?? deps.editorPanelRef.current
       if (target) {
@@ -450,8 +511,14 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         ctx.ui.showMessage("No build task configured")
         return
       }
-      if (!deps.workspace.root) return
-      void deps.workspace.taskRunner.runTask(build, deps.workspace.root.path, deps.workspace.root.path)
+      const folder = await resolveCommandFolder()
+      if (!folder) return
+      void deps.workspace.taskRunner.runTask(
+        build,
+        folder.root.path,
+        folder.root.path,
+        { folderId: folder.id, folderName: folder.root.name },
+      )
       const tree = deps.cloneTree()
       const target = resolveTargetPanel(tree, currentFocusedPanel()) ?? deps.editorPanelRef.current
       if (target) {
@@ -690,6 +757,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "workspace.addFolder", fn: "addFolder", title: "Add Folder to Workspace", category: "Workspace", aliases: ["add root", "multi-root"] },
   { id: "workspace.removeFolder", fn: "removeFolder", title: "Remove Folder from Workspace", category: "Workspace", aliases: ["close folder root"] },
   { id: "workspace.focusFolder", fn: "focusFolder", title: "Focus Next Workspace Folder", category: "Workspace", aliases: ["switch root"] },
+  { id: "workspace.switchFolder", fn: "switchFolder", title: "Switch Workspace Folder…", category: "Workspace", aliases: ["pick root", "active folder"] },
   { id: "workspace.cd", fn: "cd", title: "Change Directory", category: "Workspace", aliases: ["switch workspace"] },
   { id: "workspace.switchProject", fn: "switchProject", title: "Switch Project", category: "Workspace", aliases: ["projects", "project"] },
   { id: "workspace.refreshProjects", fn: "refreshProjects", title: "Refresh Projects", category: "Workspace" },

@@ -50,12 +50,14 @@ export function CdOverlay({
   initialPath,
   onSelectFolder,
   resolveHomeDir,
+  workspaceFolders,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialPath: string | null
   onSelectFolder: (absPath: string) => void | Promise<void>
   resolveHomeDir?: () => Promise<string>
+  workspaceFolders?: { name: string; path: string }[]
 }) {
   const [pathInput, setPathInput] = useState("")
   const [cursor, setCursor] = useState(0)
@@ -64,6 +66,7 @@ export function CdOverlay({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedValue, setSelectedValue] = useState<string>(COMMAND_NO_SELECTION)
+  const [showWorkspaceRoots, setShowWorkspaceRoots] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const resolveHomeDirRef = useRef(resolveHomeDir)
   resolveHomeDirRef.current = resolveHomeDir
@@ -85,8 +88,12 @@ export function CdOverlay({
       setError(null)
       setLoading(false)
       setSelectedValue(COMMAND_NO_SELECTION)
+      setShowWorkspaceRoots(false)
       return
     }
+
+    const multiRoot = (workspaceFolders?.length ?? 0) > 1
+    setShowWorkspaceRoots(multiRoot)
 
     let cancelled = false
     void (async () => {
@@ -102,17 +109,19 @@ export function CdOverlay({
       }
       if (cancelled) return
       setHomeDir(home)
-      setPathInput(initialPath ?? home)
-      setCursor((initialPath ?? home).length)
+      if (!multiRoot) {
+        setPathInput(initialPath ?? home)
+        setCursor((initialPath ?? home).length)
+      }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [open, initialPath])
+  }, [open, initialPath, workspaceFolders])
 
   useEffect(() => {
-    if (!open || !completionCtx || !window.jet?.fs) {
+    if (!open || !completionCtx || !window.jet?.fs || showWorkspaceRoots) {
       setEntries([])
       return
     }
@@ -145,7 +154,33 @@ export function CdOverlay({
     return () => {
       cancelled = true
     }
-  }, [open, completionCtx?.parentPath])
+  }, [open, completionCtx?.parentPath, showWorkspaceRoots])
+
+  const workspaceRootItems = useMemo(() => {
+    if (!showWorkspaceRoots || !workspaceFolders) return []
+    const q = pathInput.trim().toLowerCase()
+    return workspaceFolders.filter(
+      f =>
+        !q ||
+        f.name.toLowerCase().includes(q) ||
+        f.path.toLowerCase().includes(q),
+    )
+  }, [showWorkspaceRoots, workspaceFolders, pathInput])
+
+  const pickWorkspaceRoot = useCallback(
+    (path: string) => {
+      setShowWorkspaceRoots(false)
+      setPathInput(path)
+      setCursor(path.length)
+      requestAnimationFrame(() => {
+        const el = inputRef.current
+        if (!el) return
+        el.focus()
+        el.setSelectionRange(path.length, path.length)
+      })
+    },
+    [],
+  )
 
   const completions = useMemo(() => {
     if (!completionCtx) return []
@@ -154,13 +189,22 @@ export function CdOverlay({
   }, [completionCtx, entries])
 
   useEffect(() => {
+    if (showWorkspaceRoots) {
+      if (workspaceRootItems.length === 0) {
+        setSelectedValue(COMMAND_NO_SELECTION)
+        return
+      }
+      const first = workspaceRootItems[0]!.path
+      setSelectedValue(prev => (workspaceRootItems.some(f => f.path === prev) ? prev : first))
+      return
+    }
     if (completions.length === 0) {
       setSelectedValue(COMMAND_NO_SELECTION)
       return
     }
     const first = completions[0]!.uri
     setSelectedValue(prev => (completions.some(e => e.uri === prev) ? prev : first))
-  }, [completions])
+  }, [completions, showWorkspaceRoots, workspaceRootItems])
 
   const syncCursorFromInput = useCallback(() => {
     const el = inputRef.current
@@ -194,6 +238,16 @@ export function CdOverlay({
 
   const moveHighlight = useCallback(
     (delta: 1 | -1) => {
+      if (showWorkspaceRoots) {
+        if (workspaceRootItems.length === 0) return
+        const idx = Math.max(
+          0,
+          workspaceRootItems.findIndex(f => f.path === selectedValue),
+        )
+        const next = (idx + delta + workspaceRootItems.length) % workspaceRootItems.length
+        setSelectedValue(workspaceRootItems[next]!.path)
+        return
+      }
       if (completions.length === 0) return
       const idx = Math.max(
         0,
@@ -202,12 +256,15 @@ export function CdOverlay({
       const next = (idx + delta + completions.length) % completions.length
       setSelectedValue(completions[next]!.uri)
     },
-    [completions, selectedValue],
+    [completions, selectedValue, showWorkspaceRoots, workspaceRootItems],
   )
 
   const highlightedEntry = useMemo(
-    () => completions.find(e => e.uri === selectedValue) ?? null,
-    [completions, selectedValue],
+    () =>
+      showWorkspaceRoots
+        ? (workspaceRootItems.find(f => f.path === selectedValue) ?? null)
+        : (completions.find(e => e.uri === selectedValue) ?? null),
+    [completions, selectedValue, showWorkspaceRoots, workspaceRootItems],
   )
 
   return (
@@ -267,7 +324,14 @@ export function CdOverlay({
               }
 
               if (e.key === "Enter" || e.key === "Tab") {
-                if (!highlightedEntry) return
+                if (showWorkspaceRoots) {
+                  const root = workspaceRootItems.find(f => f.path === selectedValue)
+                  if (!root) return
+                  e.preventDefault()
+                  pickWorkspaceRoot(root.path)
+                  return
+                }
+                if (!highlightedEntry || !("uri" in highlightedEntry)) return
                 e.preventDefault()
                 applyCompletion(highlightedEntry.name)
               }
@@ -275,7 +339,11 @@ export function CdOverlay({
             className="h-12"
             aria-controls="jet-cd-list"
             aria-activedescendant={
-              highlightedEntry ? `jet-cd-item-${highlightedEntry.uri}` : undefined
+              highlightedEntry
+                ? "uri" in highlightedEntry
+                  ? `jet-cd-item-${highlightedEntry.uri}`
+                  : `jet-cd-root-${highlightedEntry.path}`
+                : undefined
             }
           />
           <CommandList
@@ -284,6 +352,28 @@ export function CdOverlay({
           >
             {error ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">{error}</div>
+            ) : showWorkspaceRoots ? (
+              <>
+                <CommandEmpty>No matching workspace folders.</CommandEmpty>
+                <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
+                {workspaceRootItems.map(folder => (
+                  <CommandItem
+                    key={folder.path}
+                    id={`jet-cd-root-${folder.path}`}
+                    value={folder.path}
+                    onSelect={() => pickWorkspaceRoot(folder.path)}
+                    className="gap-2"
+                  >
+                    <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate font-mono text-foreground">{folder.name}</span>
+                      <span className="truncate font-mono text-xs text-muted-foreground">
+                        {folder.path}
+                      </span>
+                    </span>
+                  </CommandItem>
+                ))}
+              </>
             ) : !homeDir || loading ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">Loading…</div>
             ) : (
@@ -310,7 +400,7 @@ export function CdOverlay({
           <Button
             type="button"
             variant="secondary"
-            disabled={!pathInput.trim() || !homeDir}
+            disabled={showWorkspaceRoots || !pathInput.trim() || !homeDir}
             onClick={confirmCurrent}
             className="inline-flex w-full items-center justify-center gap-1.5"
           >

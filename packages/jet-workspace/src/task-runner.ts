@@ -16,6 +16,8 @@ export type TaskRunState = {
   output: string
   exitCode: number | null
   errors: ListItem[]
+  folderId?: string
+  folderName?: string
 }
 
 export type TaskSpawnRequest = {
@@ -95,7 +97,12 @@ export class TaskRunner {
     this.onDidChange.fire()
   }
 
-  async runTask(task: JetTask, cwd: string, workspacePath: string): Promise<TaskRunState> {
+  async runTask(
+    task: JetTask,
+    cwd: string,
+    workspacePath: string,
+    folderMeta?: { folderId: string; folderName: string },
+  ): Promise<TaskRunState> {
     const id = `run-${Date.now()}`
     const run: TaskRunState = {
       id,
@@ -104,6 +111,8 @@ export class TaskRunner {
       output: `$ ${task.command} ${(task.args ?? []).join(" ")}\n`,
       exitCode: null,
       errors: [],
+      folderId: folderMeta?.folderId,
+      folderName: folderMeta?.folderName,
     }
     this.runs.push(run)
     this.activeRunId = id

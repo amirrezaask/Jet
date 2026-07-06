@@ -1,4 +1,3 @@
-- Multi workspace
 - Agent explorer
 - rewrite file explorer
 - name ?

@@ -13,9 +13,10 @@ function readFileAsText(file: File): Promise<string> {
 
 export type UseFileDropOptions = {
   fs: FileSystemProvider
-  workspaceRootPath: string | null
+  knownWorkspacePaths: string[]
   normalizePath: (p: string) => string
   openWorkspace: (path: string) => void
+  addWorkspaceFolder: (path: string) => void
   openFile: (uri: string, path: string) => void
   bootstrapFromLaunch: (config: LaunchConfig) => void
   openUntitledFromDrop: (name: string, content: string) => void
@@ -65,8 +66,9 @@ export function useFileDrop(opts: UseFileDropOptions): void {
         void processDroppedPaths(paths, {
           fs: ctx.fs,
           normalizePath: ctx.normalizePath,
-          currentWorkspacePath: ctx.workspaceRootPath,
+          knownWorkspacePaths: ctx.knownWorkspacePaths,
           openWorkspace: ctx.openWorkspace,
+          addWorkspaceFolder: ctx.addWorkspaceFolder,
           openFile: ctx.openFile,
           bootstrapFromLaunch: ctx.bootstrapFromLaunch,
           setMessage: ctx.setMessage,
@@ -77,7 +79,7 @@ export function useFileDrop(opts: UseFileDropOptions): void {
       const files = [...e.dataTransfer.files]
       if (files.length === 0) return
 
-      if (!ctx.workspaceRootPath) {
+      if (ctx.knownWorkspacePaths.length === 0) {
         ctx.setMessage("Drop files after opening a folder (browser mode)")
         return
       }

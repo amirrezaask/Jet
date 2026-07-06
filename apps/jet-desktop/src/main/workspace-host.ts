@@ -131,7 +131,11 @@ export function registerWorkspaceHost(
     if (!webContents) return { ok: false }
 
     let state = activeRoots.get(rootUri)
-    if (state) return { ok: true }
+    if (state) {
+      state.gen += 1
+      scheduleWorkspaceBackground(state, rootUri, webContents)
+      return { ok: true }
+    }
 
     state = { gen: 1, watchWorker: null }
     activeRoots.set(rootUri, state)
