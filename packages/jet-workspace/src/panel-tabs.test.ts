@@ -4,9 +4,11 @@ import type { PanelNode } from "@jet/panels"
 import type { PanelView } from "@jet/shared"
 import { JetPanelTree } from "./panel-tree.js"
 import {
+  activatePanelTab,
   buildTabsView,
   popPanelTab,
   pushPanelTab,
+  reorderPanelTab,
 } from "./panel-tabs.js"
 
 function countLeaves(tree: JetPanelTree): number {
@@ -20,17 +22,25 @@ function countLeaves(tree: JetPanelTree): number {
 }
 
 describe("panel tabs", () => {
-  it("push activates tab at front of MRU order", () => {
+  it("push appends new tab and activates without reordering", () => {
     const first = buildTabsView("file://a", ["file://a"])
     const second = pushPanelTab(first, "file://b")
-    assert.deepEqual(second.tabIds, ["file://b", "file://a"])
+    assert.deepEqual(second.tabIds, ["file://a", "file://b"])
     assert.equal(second.activeTabId, "file://b")
   })
 
-  it("push activates existing tab without duplicate", () => {
+  it("push activates existing tab without reordering or duplicate", () => {
     const view = buildTabsView("file://a", ["file://a", "file://b"])
     const next = pushPanelTab(view, "file://b")
-    assert.deepEqual(next.tabIds, ["file://b", "file://a"])
+    assert.deepEqual(next.tabIds, ["file://a", "file://b"])
+    assert.equal(next.activeTabId, "file://b")
+  })
+
+  it("activate changes active tab without reordering", () => {
+    const view = buildTabsView("file://a", ["file://a", "file://b", "file://c"])
+    const next = activatePanelTab(view, "file://c")
+    assert.deepEqual(next.tabIds, ["file://a", "file://b", "file://c"])
+    assert.equal(next.activeTabId, "file://c")
   })
 
   it("pop reveals previous tab", () => {

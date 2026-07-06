@@ -9,8 +9,9 @@ export function panelTabIds(view: PanelView | null): string[] {
 }
 
 export function buildTabsView(activeTabId: string, tabIds: string[]): TabsPanelView {
-  const unique = [activeTabId, ...tabIds.filter(id => id !== activeTabId)]
-  return { kind: "tabs", activeTabId, tabIds: unique }
+  const ordered = tabIds.filter((id, i, arr) => arr.indexOf(id) === i)
+  if (!ordered.includes(activeTabId)) ordered.push(activeTabId)
+  return { kind: "tabs", activeTabId, tabIds: ordered }
 }
 
 export function panelHasTab(view: PanelView | null, tabId: string): boolean {
@@ -27,7 +28,7 @@ export function pushPanelTab(
     let existing = panelTabIds(current)
     if (replaceTabId) existing = existing.map(id => (id === replaceTabId ? tabId : id))
     if (!existing.includes(tabId)) existing = [...existing, tabId]
-    return buildTabsView(tabId, existing)
+    return { kind: "tabs", activeTabId: tabId, tabIds: existing }
   }
   return { kind: "tabs", activeTabId: tabId, tabIds: [tabId] }
 }
@@ -36,12 +37,13 @@ export function popPanelTab(current: TabsPanelView, tabId: string): PanelView {
   const tabIds = panelTabIds(current).filter(id => id !== tabId)
   if (tabIds.length === 0) return { kind: "empty" }
   const active = current.activeTabId === tabId ? tabIds[0]! : current.activeTabId
-  return buildTabsView(active, tabIds)
+  return { kind: "tabs", activeTabId: active, tabIds }
 }
 
 export function activatePanelTab(current: TabsPanelView, tabId: string): TabsPanelView {
-  if (!panelTabIds(current).includes(tabId)) return current
-  return buildTabsView(tabId, panelTabIds(current))
+  const tabIds = panelTabIds(current)
+  if (!tabIds.includes(tabId)) return current
+  return { kind: "tabs", activeTabId: tabId, tabIds }
 }
 
 export function reorderPanelTab(current: TabsPanelView, tabId: string, toIndex: number): TabsPanelView {
