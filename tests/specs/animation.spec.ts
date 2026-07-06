@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test"
 import { boot, SAMPLE } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
+import { focusEditor } from "../helpers/editor.js"
 
 test("animation: command palette uses jet overlay motion classes", async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
@@ -31,12 +32,13 @@ test("animation: squish scale token is 0.9 on root", async ({ page }) => {
   expect(squish).toBe("0.9")
 })
 
-test("animation: editor bracket cursor layer mounts", async ({ page }) => {
+test("animation: editor bar cursor mounts when focused", async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
   await agent(page).waitForEditor()
-  await page.locator(".cm-content").click()
+  await focusEditor(page)
   await page.keyboard.type("abc")
-  await expect(page.locator(".jet-cursor-layer")).toHaveCount(1)
+  await expect(page.locator(".cm-editor.cm-focused .cm-cursor-primary")).toHaveCount(1)
+  await expect(page.locator(".jet-cursor-layer")).toHaveCount(0)
 })
 
 test("animation: tactile press tokens and button class wired", async ({ page }) => {

@@ -12,7 +12,7 @@ export function jetLanguageServerExtensions() {
     // LSPClient only keeps extensions that are arrays or have `.extension`;
     // bare FacetProvider values are dropped, so wrap languageData.
     [EditorState.languageData.of(() => [{ autocomplete: serverCompletionSource }])],
-    hoverTooltips(),
+    hoverTooltips({ hoverTime: 750 }),
     signatureHelp({ keymap: false }),
     serverDiagnostics(),
   ]

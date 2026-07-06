@@ -76,7 +76,7 @@ export function jetEditorTheme(theme: JetTheme) {
         minWidth: 0,
       },
       ".cm-content": {
-        caretColor: "transparent",
+        caretColor: theme.colors.accent,
         fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
         fontSize: "1rem",
         whiteSpace: "pre",
@@ -89,6 +89,12 @@ export function jetEditorTheme(theme: JetTheme) {
         color: theme.colors.textMuted,
         border: "none",
         fontSize: "1rem",
+        paddingRight: "1rem",
+      },
+      ".cm-lineNumbers .cm-gutterElement": {
+        paddingLeft: "0.5rem",
+        paddingRight: "0.75rem",
+        minWidth: "2.5em",
       },
       ".cm-activeLineGutter": { backgroundColor: activeLineBg },
       ".cm-activeLine": { backgroundColor: activeLineBg },
@@ -161,7 +167,11 @@ export function jetEditorTheme(theme: JetTheme) {
       ".cm-selectionMatch": {
         backgroundColor: selectionMatchBg,
       },
-      ".cm-cursor": { visibility: "hidden" },
+      ".cm-cursor, .cm-dropCursor": {
+        borderLeftWidth: "2px",
+        borderLeftColor: theme.colors.accent,
+        marginLeft: "-1px",
+      },
     },
     { dark: isDarkTheme(theme) },
   )

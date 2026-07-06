@@ -24,7 +24,6 @@ import type { KeymapContext } from "@jet/workspace"
 import { jetKeyToCodeMirrorKey, matchesWhen, isEditorKeyBinding } from "@jet/workspace"
 import { jetEditorTheme, jetSyntaxHighlightingForTheme } from "./theme.js"
 import { defaultJetTheme, type JetTheme } from "./theme-types.js"
-import { motionCursor } from "./motion-cursor.js"
 import { multiCursorExtensions, skipNextOccurrence } from "./multi-cursor.js"
 import { loadLanguage } from "./languages.js"
 import { eolOverlayExtension } from "./eol-overlays.js"
@@ -139,9 +138,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     indentUnit.of(indentUnitFor(indent)),
   ]
 
-  if (largeFile) {
-    extensions.push(drawSelection())
-  }
+  extensions.push(drawSelection())
 
   extensions.push(indentMarkerCompartment.of(indentMarkerExtension(theme, largeFile)))
 
@@ -187,10 +184,6 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
     ]),
     themeCompartment.of([jetEditorTheme(theme), completionTooltipTheme(theme)]),
   )
-
-  if (!largeFile) {
-    extensions.push(motionCursor())
-  }
 
   const language = await loadLanguage(opts.file.languageId)
 
