@@ -1,9 +1,17 @@
-import { memo, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type ReactNode } from "react"
+import { memo, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react"
+import { useDroppable } from "@dnd-kit/core"
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import { XIcon } from "lucide-react"
 import type { DropAction, PanelId, PanelView } from "@jet/shared"
 import { Button } from "@/components/ui/button.js"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
-import { TAB_DRAG_MIME, usePanelDrag, resolveTabDragSource } from "./PanelDragContext.js"
+import { usePanelDrag } from "./PanelDragContext.js"
+import { tabBarDndId, tabDndId, type TabDragData } from "./tab-dnd-types.js"
 import type { TabStore, TabTypeRegistry } from "../tabs/registry.js"
 import { cn } from "@/lib/utils.js"
 
@@ -68,98 +76,52 @@ function useTabsSnapshot(store: TabStore, tabIds: string[]): PanelTab[] {
     return next
   }
 
-  // tabIdsKey change forces a fresh snapshot even without a store event
   void tabIdsKey
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-function getTabDragOverLocation(e: DragEvent, tabEl: HTMLElement): "left" | "right" {
-  const rect = tabEl.getBoundingClientRect()
-  return e.clientX - rect.left <= rect.width / 2 ? "left" : "right"
-}
-
-function computeInsertIndex(
-  e: DragEvent<HTMLDivElement>,
-  tabs: PanelTab[],
-): number {
-  const bar = e.currentTarget
-  const rect = bar.getBoundingClientRect()
-  const relX = e.clientX - rect.left
-  const children = Array.from(bar.querySelectorAll("[data-tab-index]"))
-  for (const child of children) {
-    const cr = (child as HTMLElement).getBoundingClientRect()
-    const cx = cr.left - rect.left + cr.width / 2
-    if (relX < cx) {
-      return Number((child as HTMLElement).dataset.tabIndex)
-    }
-  }
-  return tabs.length
-}
-
-type TabDropTarget = { tabIndex: number; side: "left" | "right" } | null
-
-function computeTabDropTarget(
-  e: DragEvent<HTMLDivElement>,
-  tabs: PanelTab[],
-): TabDropTarget {
-  const bar = e.currentTarget
-  const children = Array.from(bar.querySelectorAll("[data-tab-index]"))
-  for (const child of children) {
-    const el = child as HTMLElement
-    const idx = Number(el.dataset.tabIndex)
-    const rect = el.getBoundingClientRect()
-    if (
-      e.clientX >= rect.left &&
-      e.clientX <= rect.right &&
-      e.clientY >= rect.top &&
-      e.clientY <= rect.bottom
-    ) {
-      return { tabIndex: idx, side: getTabDragOverLocation(e, el) }
-    }
-  }
-  if (tabs.length > 0) {
-    const last = children[children.length - 1] as HTMLElement | undefined
-    if (last) {
-      const rect = last.getBoundingClientRect()
-      if (e.clientX > rect.right) {
-        return { tabIndex: tabs.length - 1, side: "right" }
-      }
-    }
-  }
-  return null
-}
-
-const PanelTabTrigger = memo(function PanelTabTrigger({
+const SortableTabTrigger = memo(function SortableTabTrigger({
   tab,
   index,
+  panelId,
   focused,
-  showLeft,
-  showRight,
-  onDragStart,
-  onDragEnd,
   onClose,
 }: {
   tab: PanelTab
   index: number
+  panelId: PanelId
   focused: boolean
-  showLeft: boolean
-  showRight: boolean
-  onDragStart: (e: DragEvent<HTMLButtonElement>, tabId: string) => void
-  onDragEnd: () => void
   onClose: (tabId: string) => void
 }) {
+  const id = tabDndId(panelId, tab.id)
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    data: {
+      type: "tab",
+      panelId,
+      tabId: tab.id,
+      label: tab.label,
+      dirty: tab.dirty,
+    } satisfies TabDragData,
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.35 : 1,
+  }
+
   return (
     <TabsTrigger
+      ref={setNodeRef}
       value={tab.id}
       data-tab-index={index}
       data-tab-id={tab.id}
-      draggable
-      onDragStart={e => onDragStart(e, tab.id)}
-      onDragEnd={onDragEnd}
+      style={style}
+      {...attributes}
+      {...listeners}
       className={cn(
-        "group h-8 max-w-none flex-none cursor-grab gap-1 rounded-none px-2 text-xs active:cursor-grabbing",
-        showLeft && "border-l-2 border-l-primary",
-        showRight && "border-r-2 border-r-primary",
+        "group h-8 max-w-none flex-none cursor-grab touch-none gap-1 rounded-none px-2 text-xs active:cursor-grabbing",
         !focused && "data-[state=active]:bg-background/60",
       )}
       title={tab.id}
@@ -198,8 +160,6 @@ export function PanelTabBar({
   focused,
   onActivateTab,
   onCloseTab,
-  onReorderTab,
-  onTabDrop,
 }: {
   panelId: PanelId
   view: PanelView
@@ -208,102 +168,60 @@ export function PanelTabBar({
   focused: boolean
   onActivateTab: (tabId: string) => void
   onCloseTab: (tabId: string) => void
-  onReorderTab: (tabId: string, toIndex: number) => void
-  onTabDrop: (
+  /** @deprecated handled by TabDndRoot */
+  onReorderTab?: (tabId: string, toIndex: number) => void
+  /** @deprecated handled by TabDndRoot */
+  onTabDrop?: (
     source: PanelId,
     sourceTabId: string,
     target: PanelId,
     action: DropAction,
   ) => void
 }) {
+  void registry
   const drag = usePanelDrag()
   const { tabIds, activeId } = tabIdsOf(view)
   const tabs = useTabsSnapshot(store, tabIds)
-  void registry
-  const [dropTarget, setDropTarget] = useState<TabDropTarget>(null)
   const hasTabs = view.kind === "tabs"
+  const sortableIds = useMemo(() => tabs.map(t => tabDndId(panelId, t.id)), [tabs, panelId.id])
 
-  const onTabDragStart = (e: DragEvent<HTMLButtonElement>, tabId: string) => {
-    e.stopPropagation()
-    e.dataTransfer.effectAllowed = "move"
-    e.dataTransfer.setData(TAB_DRAG_MIME, `${panelId.id}|${tabId}`)
-    const el = e.currentTarget as HTMLElement
-    e.dataTransfer.setDragImage(el, 10, 10)
-    drag.startTab({ panelId, tabId })
-  }
-
-  const onTabDragEnd = () => {
-    drag.endTab()
-    setDropTarget(null)
-  }
-
-  const onListDragOver = (e: DragEvent<HTMLDivElement>) => {
-    if (!hasTabs) return
-    if (!drag.tabSource && !e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
-    e.preventDefault()
-    e.stopPropagation()
-    setDropTarget(computeTabDropTarget(e, tabs))
-  }
-
-  const onListDrop = (e: DragEvent<HTMLDivElement>) => {
-    if (!hasTabs) return
-    const src = resolveTabDragSource(e, drag.tabSource)
-    if (!src) return
-    e.preventDefault()
-    e.stopPropagation()
-
-    const target = computeTabDropTarget(e, tabs)
-    let insertIndex = computeInsertIndex(e, tabs)
-    if (target) {
-      insertIndex = target.side === "right" ? target.tabIndex + 1 : target.tabIndex
-    }
-
-    setDropTarget(null)
-    drag.endTab()
-
-    if (src.panelId.id === panelId.id) {
-      onReorderTab(src.tabId, insertIndex)
-    } else {
-      onTabDrop(src.panelId, src.tabId, panelId, { kind: "moveToPane", insertIndex })
-    }
-  }
+  const { setNodeRef: setBarRef, isOver: barOver } = useDroppable({
+    id: tabBarDndId(panelId),
+    data: { type: "tabbar", panelId },
+    disabled: !drag.tabSource,
+  })
 
   if (!hasTabs) return null
 
-  const triggers: ReactNode[] = tabs.map((tab, i) => (
-    <PanelTabTrigger
-      key={tab.id}
-      tab={tab}
-      index={i}
-      focused={focused}
-      showLeft={dropTarget?.tabIndex === i && dropTarget.side === "left"}
-      showRight={dropTarget?.tabIndex === i && dropTarget.side === "right"}
-      onDragStart={onTabDragStart}
-      onDragEnd={onTabDragEnd}
-      onClose={onCloseTab}
-    />
-  ))
+  const isForeignDrag =
+    drag.tabSource != null && drag.tabSource.panelId.id !== panelId.id
 
   return (
-    <Tabs
-      value={activeId}
-      onValueChange={onActivateTab}
-      className="gap-0"
-    >
+    <Tabs value={activeId} onValueChange={onActivateTab} className="gap-0">
       <div
+        ref={setBarRef}
         data-panel-id={panelId.id}
         data-jet-tab-bar
         className={cn(
-          "shrink-0 border-b border-border",
+          "shrink-0 border-b border-border transition-colors duration-[var(--jet-motion-fast)]",
           focused ? "border-b-primary/50" : "",
+          (barOver || isForeignDrag) && isForeignDrag && "border-b-primary/40 bg-muted/30",
         )}
-        onDragOver={onListDragOver}
-        onDrop={onListDrop}
-        onDragLeave={() => setDropTarget(null)}
       >
-        <TabsList className="h-8 w-full justify-start overflow-x-auto rounded-none bg-muted/40 p-0">
-          {triggers}
-        </TabsList>
+        <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
+          <TabsList className="h-8 w-full justify-start overflow-x-auto rounded-none bg-muted/40 p-0">
+            {tabs.map((tab, i) => (
+              <SortableTabTrigger
+                key={tab.id}
+                tab={tab}
+                index={i}
+                panelId={panelId}
+                focused={focused}
+                onClose={onCloseTab}
+              />
+            ))}
+          </TabsList>
+        </SortableContext>
       </div>
     </Tabs>
   )

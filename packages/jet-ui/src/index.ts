@@ -48,7 +48,16 @@ export { OutputPanel } from "./panels/OutputPanel.js"
 export { showEditorContextMenuAt } from "./components/EditorContextMenu.js"
 export { bundledThemes, vercelDark, vercelLight, themeForScheme, type ColorScheme } from "./theme/bundled.js"
 export { defaultJetTheme, applyJetThemeCss, applyColorScheme } from "@jet/codemirror"
-export { jetMotion } from "./motion/tokens.js"
+export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetPressClass } from "./motion/tokens.js"
+export { useReducedMotion } from "./motion/useReducedMotion.js"
+export { JetMotionDiv, JetTabDragGhost } from "./motion/JetOverlayMotion.js"
+export {
+  animateLayoutMorph,
+  capturePanelLeafRects,
+  type LayoutMorphOptions,
+  type PanelRect,
+} from "./motion/layoutMorph.js"
+export { useJetCaretOverlay, JetCaretInput } from "./motion/useJetCaretOverlay.jsx"
 export { cn } from "./lib/utils.js"
 export { formatKeyBinding } from "./lib/format-key.js"
 export { TooltipProvider } from "./components/ui/tooltip.js"

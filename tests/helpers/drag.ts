@@ -2,14 +2,6 @@ import type { Page } from "@playwright/test"
 
 export type DragZone = "center" | "left" | "right" | "top" | "bottom"
 
-const ZONE_OFFSETS: Record<DragZone, [number, number]> = {
-  center: [0.5, 0.5],
-  left: [0.05, 0.5],
-  right: [0.95, 0.5],
-  top: [0.5, 0.05],
-  bottom: [0.5, 0.95],
-}
-
 export type TabDragOpts = {
   sourceTabIndex: number
   targetPanelIndex?: number
@@ -19,7 +11,6 @@ export type TabDragOpts = {
 export type TabBarDragOpts = {
   sourceTabIndex: number
   targetPanelIndex: number
-  /** Tab index within target panel's tab bar to drop beside. */
   targetTabIndex: number
   side: "left" | "right"
 }
@@ -40,51 +31,45 @@ async function waitFrames(page: Page, count = 2): Promise<void> {
   )
 }
 
-// Playwright's mouse.down/move/up doesn't reliably fire HTML5 dragstart on
-// draggable=true React elements. Dispatch native DragEvents directly.
-export async function dispatchTabBarDrag(page: Page, opts: TabBarDragOpts): Promise<void> {
-  await page.evaluate(
-    async ({ sourceTabIndex, targetPanelIndex, targetTabIndex, side }) => {
-      const tabEls = document.querySelectorAll<HTMLElement>("[data-tab-id]")
-      const sourceTab = tabEls[sourceTabIndex]
-      if (!sourceTab) throw new Error(`no tab at index ${sourceTabIndex}`)
-      const leaves = document.querySelectorAll<HTMLElement>("[data-jet-panel-leaf]")
-      const targetLeaf = leaves[targetPanelIndex]
-      if (!targetLeaf) throw new Error(`no leaf at index ${targetPanelIndex}`)
-      const targetTabs = targetLeaf.querySelectorAll<HTMLElement>("[data-tab-id]")
-      const targetTab = targetTabs[targetTabIndex]
-      if (!targetTab) throw new Error(`no target tab at index ${targetTabIndex}`)
-      const tabBar = targetLeaf.querySelector<HTMLElement>("[data-jet-tab-bar]")
-      if (!tabBar) throw new Error("tab bar not found")
+/** Pointer drag for @dnd-kit tab DnD (activation distance ~6px). */
+async function pointerDragTab(
+  page: Page,
+  sourceTabIndex: number,
+  endX: number,
+  endY: number,
+): Promise<void> {
+  const tab = page.locator("[data-tab-id]").nth(sourceTabIndex)
+  await tab.waitFor({ state: "visible" })
+  const box = await tab.boundingBox()
+  if (!box) throw new Error(`no tab at index ${sourceTabIndex}`)
 
-      const dt = new DataTransfer()
-      const payload = (() => {
-        const bar = sourceTab.closest<HTMLElement>("[data-jet-tab-bar]")
-        const panelId = bar?.dataset.panelId
-        const tabId = sourceTab.dataset.tabId
-        if (!panelId || !tabId) throw new Error("tab drag payload missing panel/tab id")
-        return `${panelId}|${tabId}`
-      })()
-      dt.setData("application/x-jet-tab", payload)
-      const tabRect = sourceTab.getBoundingClientRect()
-      const sx = tabRect.x + tabRect.width / 2
-      const sy = tabRect.y + tabRect.height / 2
-      sourceTab.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: sx, clientY: sy }))
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const startX = box.x + box.width / 2
+  const startY = box.y + box.height / 2
 
-      const tr = targetTab.getBoundingClientRect()
-      const ex = side === "left" ? tr.left + Math.min(4, tr.width * 0.15) : tr.right - Math.min(4, tr.width * 0.15)
-      const ey = tr.top + tr.height / 2
-
-      tabBar.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
-      tabBar.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-      tabBar.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
-      sourceTab.dispatchEvent(new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
-    },
-    opts,
-  )
+  await page.mouse.move(startX, startY)
+  await page.mouse.down()
+  await page.mouse.move(startX + 10, startY, { steps: 2 })
+  await page.waitForTimeout(50)
+  await page.mouse.move(endX, endY, { steps: 16 })
+  await page.waitForTimeout(80)
+  await page.mouse.up()
   await waitFrames(page, 4)
+}
+
+export async function dispatchTabBarDrag(page: Page, opts: TabBarDragOpts): Promise<void> {
+  const targetTab = page
+    .locator("[data-jet-panel-leaf]")
+    .nth(opts.targetPanelIndex)
+    .locator("[data-tab-id]")
+    .nth(opts.targetTabIndex)
+  await targetTab.waitFor({ state: "visible" })
+  const tr = await targetTab.boundingBox()
+  if (!tr) throw new Error("target tab not found")
+
+  const endX = opts.side === "left" ? tr.x + Math.min(4, tr.width * 0.15) : tr.x + tr.width - Math.min(4, tr.width * 0.15)
+  const endY = tr.y + tr.height / 2
+
+  await pointerDragTab(page, opts.sourceTabIndex, endX, endY)
 }
 
 export async function tabIdsInPanel(page: Page, panelIndex: number): Promise<string[]> {
@@ -97,56 +82,53 @@ export async function tabIdsInPanel(page: Page, panelIndex: number): Promise<str
 
 export async function dispatchTabDrag(page: Page, opts: TabDragOpts): Promise<void> {
   const targetPanelIndex = opts.targetPanelIndex ?? 0
-  const [fx, fy] = ZONE_OFFSETS[opts.zone]
 
   await page.waitForFunction(
     ({ sourceTabIndex }) => document.querySelectorAll("[data-tab-id]").length > sourceTabIndex,
     { sourceTabIndex: opts.sourceTabIndex },
   )
 
-  await page.evaluate(
-    async ({ sourceTabIndex, targetPanelIndex, fx, fy }) => {
-      const tabEls = document.querySelectorAll<HTMLElement>("[data-tab-id]")
-      const sourceTab = tabEls[sourceTabIndex]
-      if (!sourceTab) throw new Error(`no tab at index ${sourceTabIndex}`)
-      const leaves = document.querySelectorAll<HTMLElement>("[data-jet-panel-leaf]")
-      const targetLeaf = leaves[targetPanelIndex]
-      if (!targetLeaf) throw new Error(`no leaf at index ${targetPanelIndex}`)
+  const tab = page.locator("[data-tab-id]").nth(opts.sourceTabIndex)
+  const tabBox = await tab.boundingBox()
+  if (!tabBox) throw new Error(`no tab at index ${opts.sourceTabIndex}`)
 
-      const dt = new DataTransfer()
-      const payload = (() => {
-        const bar = sourceTab.closest<HTMLElement>("[data-jet-tab-bar]")
-        const panelId = bar?.dataset.panelId
-        const tabId = sourceTab.dataset.tabId
-        if (!panelId || !tabId) throw new Error("tab drag payload missing panel/tab id")
-        return `${panelId}|${tabId}`
-      })()
-      dt.setData("application/x-jet-tab", payload)
-      const tabRect = sourceTab.getBoundingClientRect()
-      const sx = tabRect.x + tabRect.width / 2
-      const sy = tabRect.y + tabRect.height / 2
-      sourceTab.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: sx, clientY: sy }))
+  const startX = tabBox.x + tabBox.width / 2
+  const startY = tabBox.y + tabBox.height / 2
 
-      for (let i = 0; i < 6; i++) {
-        await new Promise(r => requestAnimationFrame(r))
-      }
+  await page.mouse.move(startX, startY)
+  await page.mouse.down()
+  await page.mouse.move(startX + 10, startY, { steps: 2 })
 
-      const overlay = targetLeaf.querySelector<HTMLElement>("[data-jet-panel-drop-overlay]")
-      if (!overlay) throw new Error("overlay not mounted — drag context may not have started")
-      const rect = overlay.getBoundingClientRect()
-      const ex = rect.x + rect.width * fx
-      const ey = rect.y + rect.height * fy
-
-      overlay.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
-      overlay.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
-      await new Promise(r => setTimeout(r, 32))
-      overlay.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
-      await new Promise(r => setTimeout(r, 32))
-      overlay.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
-      sourceTab.dispatchEvent(new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ex, clientY: ey }))
+  await page.waitForFunction(
+    ({ targetPanelIndex }) => {
+      const overlay = document.querySelectorAll<HTMLElement>("[data-jet-panel-drop-overlay]")[targetPanelIndex]
+      return Boolean(overlay?.dataset.jetDropSites)
     },
-    { sourceTabIndex: opts.sourceTabIndex, targetPanelIndex, fx, fy },
+    { targetPanelIndex },
+    { timeout: 5000 },
   )
 
+  const end = await page.evaluate(
+    ({ targetPanelIndex, zone }) => {
+      const overlay = document.querySelectorAll<HTMLElement>("[data-jet-panel-drop-overlay]")[targetPanelIndex]
+      if (!overlay?.dataset.jetDropSites) throw new Error("drop sites not ready")
+      const sites = JSON.parse(overlay.dataset.jetDropSites) as {
+        id: string
+        rect: { x: number; y: number; w: number; h: number }
+      }[]
+      const site = sites.find(s => s.id === zone)
+      if (!site) throw new Error(`drop site ${zone} not found`)
+      const r = overlay.getBoundingClientRect()
+      return {
+        x: r.left + site.rect.x + site.rect.w / 2,
+        y: r.top + site.rect.y + site.rect.h / 2,
+      }
+    },
+    { targetPanelIndex, zone: opts.zone },
+  )
+
+  await page.mouse.move(end.x, end.y, { steps: 16 })
+  await page.waitForTimeout(80)
+  await page.mouse.up()
   await waitFrames(page, 4)
 }

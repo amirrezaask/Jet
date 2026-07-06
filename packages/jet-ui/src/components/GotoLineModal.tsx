@@ -6,8 +6,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.js"
-import { Input } from "@/components/ui/input.js"
 import { Label } from "@/components/ui/label.js"
+import { JetCaretInput } from "@/motion/useJetCaretOverlay.js"
 
 export function GotoLineModal({
   open,
@@ -48,7 +48,7 @@ export function GotoLineModal({
           <Label htmlFor="goto-line-input" className="sr-only">
             Line
           </Label>
-          <Input
+          <JetCaretInput
             id="goto-line-input"
             ref={inputRef}
             placeholder="Line or line:column"

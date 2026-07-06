@@ -6,6 +6,7 @@ import { SearchIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { KeyBindingKbd } from "@/components/KeyBindingKbd"
+import { useJetCaretOverlay } from "@/motion/useJetCaretOverlay.js"
 import {
   Dialog,
   DialogContent,
@@ -63,19 +64,24 @@ function CommandDialog({
 
 const CommandInput = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Input>,
-  React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
->(({ className, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input> & { caretOverlay?: boolean }
+>(({ className, caretOverlay = true, ...props }, ref) => {
+  const innerRef = React.useRef<HTMLInputElement>(null)
+  React.useImperativeHandle(ref, () => innerRef.current!)
+  useJetCaretOverlay(innerRef, caretOverlay)
+
   return (
     <div
       data-slot="command-input-wrapper"
-      className="flex h-9 items-center gap-2 border-b px-3"
+      className="relative flex h-9 items-center gap-2 border-b px-3"
     >
       <SearchIcon className="size-4 shrink-0 opacity-50" aria-hidden="true" />
       <CommandPrimitive.Input
-        ref={ref}
+        ref={innerRef}
         data-slot="command-input"
         className={cn(
           "flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+          caretOverlay && "caret-transparent",
           className
         )}
         {...props}

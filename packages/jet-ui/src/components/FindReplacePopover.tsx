@@ -12,7 +12,7 @@ import {
   type JetSearchState,
 } from "@jet/codemirror"
 import { Button } from "@/components/ui/button.js"
-import { Input } from "@/components/ui/input.js"
+import { JetCaretInput } from "@/motion/useJetCaretOverlay.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { PanelFloatingPopover } from "@/dock/PanelFloatingPopover.js"
 import { useAutoFocus } from "@/lib/use-auto-focus.js"
@@ -56,7 +56,7 @@ export function FindReplacePopover({ panelId }: { panelId: PanelId }) {
     >
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          <Input
+          <JetCaretInput
             id="jet-find-input"
             ref={findRef}
             className="h-8 min-w-[10rem] flex-1"
@@ -78,7 +78,7 @@ export function FindReplacePopover({ panelId }: { panelId: PanelId }) {
             autoComplete="off"
           />
           {mode === "replace" ? (
-            <Input
+            <JetCaretInput
               id="jet-replace-input"
               ref={replaceRef}
               className="h-8 min-w-[10rem] flex-1"

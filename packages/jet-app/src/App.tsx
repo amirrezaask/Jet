@@ -8,7 +8,7 @@ import {
   useDeferredValue,
 } from "react"
 import type { PanelEvent } from "@jet/panels"
-import type { PanelId, PanelView } from "@jet/shared"
+import type { PanelId, PanelView, DropAction } from "@jet/shared"
 import { pathToFileUri, isUntitledUri, fileUriToPath } from "@jet/shared"
 import {
   WorkspaceService,
@@ -90,6 +90,9 @@ import {
   type JetTitleBarMenu,
   WelcomeView,
   FindReplacePopover,
+  animateLayoutMorph,
+  capturePanelLeafRects,
+  type PanelRect,
 } from "@jet/ui"
 import { getJetSearchState } from "@jet/codemirror"
 import type { JetProblem } from "@jet/shared"
@@ -419,26 +422,40 @@ export function JetApp() {
     [],
   )
 
-  const commitTree = useCallback((tree: JetPanelTree, preferFocus?: PanelId | null) => {
-    const prevFocused = appStateRef.current.focusedPanel
-    const preferred =
-      preferFocus &&
-      getAllLeafPanels(tree).some(l => l.id === preferFocus.id) &&
-      tree.getView(preferFocus)?.kind === "tabs"
-        ? preferFocus
-        : null
-    const nextFocused =
-      preferred ?? reconcileFocusedPanel(tree, prevFocused, editorPanelRef.current)
-    setPanelTree(tree)
-    setPanelRev(r => r + 1)
-    setFocusedPanel(nextFocused)
-    if (nextFocused && nextFocused.id !== prevFocused?.id) {
-      requestAnimationFrame(() => {
-        if (getJetSearchState()?.open) return
-        getEditorView(nextFocused)?.focus()
-      })
-    }
-  }, [])
+  const commitTree = useCallback(
+    (
+      tree: JetPanelTree,
+      preferFocus?: PanelId | null,
+      morph?: { animate?: boolean; beforeRects?: Map<number, PanelRect>; spawnFrom?: Map<number, PanelRect> },
+    ) => {
+      const beforeRects =
+        morph?.animate ? (morph.beforeRects ?? capturePanelLeafRects()) : null
+      const prevFocused = appStateRef.current.focusedPanel
+      const preferred =
+        preferFocus &&
+        getAllLeafPanels(tree).some(l => l.id === preferFocus.id) &&
+        tree.getView(preferFocus)?.kind === "tabs"
+          ? preferFocus
+          : null
+      const nextFocused =
+        preferred ?? reconcileFocusedPanel(tree, prevFocused, editorPanelRef.current)
+      setPanelTree(tree)
+      setPanelRev(r => r + 1)
+      setFocusedPanel(nextFocused)
+      if (beforeRects) {
+        requestAnimationFrame(() => {
+          void animateLayoutMorph(beforeRects, { spawnFrom: morph?.spawnFrom })
+        })
+      }
+      if (nextFocused && nextFocused.id !== prevFocused?.id) {
+        requestAnimationFrame(() => {
+          if (getJetSearchState()?.open) return
+          getEditorView(nextFocused)?.focus()
+        })
+      }
+    },
+    [],
+  )
 
   const ensureLspForFile = useCallback(
     async (fileUri: string) => {
@@ -731,6 +748,7 @@ export function JetApp() {
       if (event.type === "splitRatiosChanged") {
         changed = tree.setSplitRatios(event.path, event.ratios)
       } else if (event.type === "panelClose") {
+        const morphBefore = capturePanelLeafRects()
         const view = tree.getView(event.panelId)
         if (view?.kind === "tabs") {
           for (const tabId of panelTabIds(view)) {
@@ -743,6 +761,8 @@ export function JetApp() {
           }
         }
         tree.closePanel(event.panelId)
+        commitTree(tree, undefined, { animate: true, beforeRects: morphBefore })
+        changed = false
       } else if (event.type === "tabActivate") {
         const view = tree.getView(event.panelId)
         if (view?.kind !== "tabs" || view.activeTabId === event.tabId) {
@@ -777,6 +797,7 @@ export function JetApp() {
         if (kind === "editor") {
           destroyEditorBuffer(event.source, event.sourceTabId)
         }
+        const morphBefore = capturePanelLeafRects()
         const result = tree.applyTabDrop(
           event.source,
           event.sourceTabId,
@@ -790,10 +811,46 @@ export function JetApp() {
         } else {
           setFocusedPanel(event.target)
         }
+        if (changed) {
+          commitTree(tree, undefined, {
+            animate: true,
+            beforeRects: morphBefore,
+            spawnFrom: result.createdPanel
+              ? new Map([
+                  [
+                    result.createdPanel.id,
+                    morphBefore.get(event.target.id) ?? { x: 0, y: 0, w: 0, h: 0 },
+                  ],
+                ])
+              : undefined,
+          })
+          changed = false
+        }
       }
       if (changed) commitTree(tree)
     },
     [cloneTree, commitTree, setFocusedPanel, workspace],
+  )
+
+  const tabDndHandlers = useMemo(
+    () => ({
+      onTabReorder: (panelId: PanelId, tabId: string, toIndex: number) => {
+        handlePanelEvent({ type: "tabReorder", panelId, tabId, toIndex })
+      },
+      onTabDrop: (
+        source: PanelId,
+        sourceTabId: string,
+        target: PanelId,
+        action: DropAction,
+      ) => {
+        handlePanelEvent({ type: "tabDrop", source, sourceTabId, target, action })
+      },
+      tabIdsForPanel: (panelId: PanelId) => {
+        const view = appStateRef.current.panelTree.getView(panelId)
+        return view?.kind === "tabs" ? panelTabIds(view) : []
+      },
+    }),
+    [handlePanelEvent],
   )
 
   const keymapTargetViewRef = useRef<EditorView | null>(null)
@@ -1414,6 +1471,7 @@ export function JetApp() {
           focusedPanelId={focusedPanel}
           onFocusPanel={setFocusedPanel}
           onEvent={handlePanelEvent}
+          tabDnd={tabDndHandlers}
           renderHeader={(view, panelId, meta) => (
             <PanelTabBar
               panelId={panelId}
@@ -1426,12 +1484,6 @@ export function JetApp() {
               }
               onCloseTab={tabId =>
                 handlePanelEvent({ type: "tabClose", panelId, tabId })
-              }
-              onReorderTab={(tabId, toIndex) =>
-                handlePanelEvent({ type: "tabReorder", panelId, tabId, toIndex })
-              }
-              onTabDrop={(source, sourceTabId, target, action) =>
-                handlePanelEvent({ type: "tabDrop", source, sourceTabId, target, action })
               }
             />
           )}

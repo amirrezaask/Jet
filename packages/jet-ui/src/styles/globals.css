@@ -85,6 +85,12 @@
   --jet-location-row-height: calc(var(--jet-fs-base) * 2.5);
   --jet-traffic-light-inset: 7.7rem;
   --jet-overlay-list-max: 22rem;
+  --jet-motion-fast: 150ms;
+  --jet-motion-overlay: 200ms;
+  --jet-motion-panel: 220ms;
+  --jet-cursor-color: #c4923a;
+  --jet-press-scale: 0.97;
+  --jet-press-y: 0.5px;
   --jet-hl-keyword: #b32c62;
   --jet-hl-control-keyword: #b32c62;
   --jet-hl-function: #7200c4;
@@ -224,6 +230,126 @@ body,
 
 .jet-editor-scroll-area .cm-scroller::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Tactile press — buttons, tabs, menu rows, and other clickable controls */
+.jet-press,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"]
+):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]) {
+  transform-origin: center;
+  transition-property: transform, filter, opacity, color, background-color, border-color, box-shadow;
+  transition-duration: var(--jet-motion-fast);
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.jet-press:active:not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]),
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"]
+):active:not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]) {
+  transform: scale(var(--jet-press-scale)) translateY(var(--jet-press-y));
+  filter: brightness(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jet-press:active,
+  :is(
+    [data-slot="button"],
+    [data-slot="tabs-trigger"],
+    [data-slot="toggle"],
+    [data-slot="toggle-group-item"],
+    [data-slot="command-item"],
+    [data-slot="item"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-group-action"],
+    [data-slot="sidebar-trigger"],
+    [data-slot="dialog-trigger"],
+    [data-slot="dialog-close"],
+    [data-slot="drawer-trigger"],
+    [data-slot="drawer-close"],
+    [data-slot="popover-trigger"],
+    [data-slot="context-menu-item"],
+    [data-slot="context-menu-sub-trigger"],
+    [data-slot="context-menu-checkbox-item"],
+    [data-slot="context-menu-radio-item"],
+    [data-slot="dropdown-menu-item"],
+    [data-slot="dropdown-menu-sub-trigger"],
+    [data-slot="dropdown-menu-checkbox-item"],
+    [data-slot="dropdown-menu-radio-item"],
+    [data-slot="menubar-trigger"],
+    [data-slot="menubar-item"],
+    [data-slot="menubar-sub-trigger"],
+    [data-slot="menubar-checkbox-item"],
+    [data-slot="menubar-radio-item"],
+    [data-slot="select-item"],
+    [data-slot="accordion-trigger"],
+    [data-slot="collapsible-trigger"]
+  ):active {
+    transform: none;
+    filter: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

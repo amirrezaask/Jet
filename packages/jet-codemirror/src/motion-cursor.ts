@@ -1,32 +1,30 @@
 import { EditorView, ViewPlugin, drawSelection, type ViewUpdate } from "@codemirror/view"
 import type { Extension } from "@codemirror/state"
+import {
+  ANIM_EPSILON,
+  CaretEndpointAnim,
+  CaretGhostBuffer,
+  onReducedMotionChange,
+  prefersReducedMotion,
+  type CaretPoint,
+} from "@jet/shared"
 
-const CURSOR_SPEED = 24
-const CURSOR_SHORT_HOP_MULT = 2.5
-const CURSOR_RETARGET_WINDOW = 0.12
-const ANIM_EPSILON = 0.5
 const MAIN_THICKNESS = 4
 const ANCHOR_THICKNESS = 3
 
 type BracketShape = "open" | "close"
-
-type MeasuredPoint = {
-  x: number
-  y: number
-  h: number
-  charWidth: number
-}
 
 type RenderItem = {
   key: string
   shape: BracketShape
   thickness: number
   opacity: number
+  ghost?: boolean
 }
 
 type EndpointTarget = {
   key: string
-  point: MeasuredPoint
+  point: CaretPoint
 }
 
 type MeasureResult = {
@@ -36,129 +34,7 @@ type MeasureResult = {
   visible: boolean
 }
 
-function expSmooth(current: number, target: number, speed: number, dt: number): number {
-  if (speed <= 0 || dt <= 0) return target
-  return current + (target - current) * (1 - Math.exp(-speed * dt))
-}
-
-class CursorEndpointAnim {
-  x = 0
-  y = 0
-  h = 0
-  targetX = 0
-  targetY = 0
-  targetH = 0
-  charWidth = 8
-  prevTargetX = 0
-  prevTargetY = 0
-  lastRetargetAt = 0
-  lastAnimY0 = 0
-  lastAnimY1 = 0
-
-  snap(point: MeasuredPoint): void {
-    this.x = point.x
-    this.y = point.y
-    this.h = point.h
-    this.targetX = point.x
-    this.targetY = point.y
-    this.targetH = point.h
-    this.charWidth = point.charWidth
-    this.prevTargetX = point.x
-    this.prevTargetY = point.y
-    this.lastAnimY0 = point.y
-    this.lastAnimY1 = point.y + point.h
-  }
-
-  setTarget(point: MeasuredPoint, instant: boolean): boolean {
-    const dx = point.x - this.prevTargetX
-    const dy = point.y - this.prevTargetY
-    const moved = dx * dx + dy * dy > 0.25
-
-    if (moved) {
-      const now = performance.now()
-      if (
-        this.lastRetargetAt > 0 &&
-        now - this.lastRetargetAt < CURSOR_RETARGET_WINDOW * 1000
-      ) {
-        this.snap(point)
-        this.prevTargetX = point.x
-        this.prevTargetY = point.y
-        this.lastRetargetAt = now
-        return true
-      }
-      this.lastRetargetAt = now
-      this.prevTargetX = point.x
-      this.prevTargetY = point.y
-    }
-
-    this.targetX = point.x
-    this.targetY = point.y
-    this.targetH = point.h
-    this.charWidth = point.charWidth
-
-    if (instant) {
-      this.snap(point)
-      return true
-    }
-    return false
-  }
-
-  /** Refresh target coords during rAF without retarget/snap policy. */
-  followTarget(point: MeasuredPoint): void {
-    this.targetX = point.x
-    this.targetY = point.y
-    this.targetH = point.h
-    this.charWidth = point.charWidth
-  }
-
-  step(dt: number): boolean {
-    const dx = this.targetX - this.x
-    const dy = this.targetY - this.y
-    const dh = this.targetH - this.h
-
-    if (
-      Math.abs(dx) < ANIM_EPSILON &&
-      Math.abs(dy) < ANIM_EPSILON &&
-      Math.abs(dh) < ANIM_EPSILON
-    ) {
-      this.x = this.targetX
-      this.y = this.targetY
-      this.h = this.targetH
-      this.lastAnimY0 = this.y
-      this.lastAnimY1 = this.y + this.h
-      return false
-    }
-
-    const shortHop =
-      Math.abs(dx) <= this.charWidth * 2.001 && Math.abs(dy) <= this.targetH * 0.001
-    const speed = shortHop ? CURSOR_SPEED * CURSOR_SHORT_HOP_MULT : CURSOR_SPEED
-
-    let nextX = expSmooth(this.x, this.targetX, speed, dt)
-    let nextY = expSmooth(this.y, this.targetY, speed, dt)
-    let nextH = expSmooth(this.h, this.targetH, speed, dt)
-
-    const yChange = this.targetY - this.lastAnimY0
-    if (Math.abs(yChange) > 0.001) {
-      nextH = this.targetH * (1 + Math.abs(yChange) / 60)
-    }
-
-    const nextY1 = nextY + nextH
-    if (this.targetY > this.lastAnimY0) {
-      if (nextY < this.lastAnimY0) nextY = this.lastAnimY0
-    } else if (this.targetY < this.lastAnimY0) {
-      if (nextY1 > this.lastAnimY1) nextH = this.lastAnimY1 - nextY
-    }
-
-    this.x = nextX
-    this.y = nextY
-    this.h = nextH
-    this.lastAnimY0 = nextY
-    this.lastAnimY1 = nextY + nextH
-    return true
-  }
-}
-
-function measurePoint(view: EditorView, pos: number): MeasuredPoint | null {
+function measurePoint(view: EditorView, pos: number): CaretPoint | null {
   const rect = view.coordsAtPos(pos)
   if (!rect) return null
   const scrollRect = view.scrollDOM.getBoundingClientRect()
@@ -233,9 +109,9 @@ function measureCursors(view: EditorView): MeasureResult | null {
   }
 }
 
-function createBracketGroup(): HTMLDivElement {
+function createBracketGroup(ghost = false): HTMLDivElement {
   const group = document.createElement("div")
-  group.className = "jet-bracket-group"
+  group.className = ghost ? "jet-bracket-group jet-bracket-ghost" : "jet-bracket-group"
   for (const part of ["top", "left", "bottom", "right"] as const) {
     const el = document.createElement("div")
     el.className = `jet-bracket-part jet-bracket-${part}`
@@ -303,23 +179,46 @@ function layoutBracketGroup(
   }
 }
 
+function isTypingHop(update: ViewUpdate): boolean {
+  if (!update.docChanged) return false
+  const prev = update.startState
+  const next = update.state
+  if (next.selection.ranges.length !== 1) return false
+  const r = next.selection.main
+  const pr = prev.selection.main
+  if (!r.empty || !pr.empty) return false
+  if (r.head !== pr.head + 1) return false
+  return prev.doc.lineAt(pr.head).number === next.doc.lineAt(r.head).number
+}
+
 class BracketCursorPlugin {
   private layer: HTMLDivElement
+  private ghostLayer: HTMLDivElement
   private groups: HTMLDivElement[] = []
-  private anims = new Map<string, CursorEndpointAnim>()
+  private ghostGroups: HTMLDivElement[] = []
+  private anims = new Map<string, CaretEndpointAnim>()
+  private ghosts = new Map<string, CaretGhostBuffer>()
   private renderPlan: RenderItem[] = []
+  private ghostRenderPlan: RenderItem[] = []
   private focusOpacity = 1
   private visible = true
   private rafId: number | null = null
   private lastFrameTime = 0
   private instantNext = true
   private reducedMotion: boolean
+  private unsubMotion: (() => void) | null = null
 
   constructor(private view: EditorView) {
-    this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    this.reducedMotion = prefersReducedMotion()
+    this.ghostLayer = document.createElement("div")
+    this.ghostLayer.className = "jet-cursor-ghost-layer"
     this.layer = document.createElement("div")
     this.layer.className = "jet-cursor-layer"
+    view.scrollDOM.appendChild(this.ghostLayer)
     view.scrollDOM.appendChild(this.layer)
+    this.unsubMotion = onReducedMotionChange(v => {
+      this.reducedMotion = v
+    })
     this.scheduleMeasure()
   }
 
@@ -335,12 +234,13 @@ class BracketCursorPlugin {
       if (composing) {
         this.visible = false
         this.layer.style.opacity = "0"
+        this.ghostLayer.style.opacity = "0"
         this.stopRaf()
         return
       }
       this.visible = true
-      // Only snap on doc edits or reduced-motion; scroll/geometry must not cancel tween
-      this.instantNext = this.reducedMotion || update.docChanged
+      const typingHop = isTypingHop(update)
+      this.instantNext = this.reducedMotion || (update.docChanged && !typingHop)
       this.scheduleMeasure()
     }
   }
@@ -351,33 +251,47 @@ class BracketCursorPlugin {
       write: result => {
         if (!result || !result.visible) {
           this.layer.style.opacity = "0"
+          this.ghostLayer.style.opacity = "0"
           return
         }
 
         this.focusOpacity = result.focusOpacity
         this.renderPlan = result.renderPlan
         this.layer.style.opacity = "1"
+        this.ghostLayer.style.opacity = "1"
 
         const activeKeys = new Set<string>()
-
         let snapped = false
+
         for (const { key, point } of result.endpoints) {
           activeKeys.add(key)
           let anim = this.anims.get(key)
           if (!anim) {
-            anim = new CursorEndpointAnim()
+            anim = new CaretEndpointAnim()
             anim.snap(point)
             this.anims.set(key, anim)
+            if (!this.ghosts.has(key)) this.ghosts.set(key, new CaretGhostBuffer())
             snapped = true
-          } else if (anim.setTarget(point, this.instantNext)) {
-            snapped = true
+          } else {
+            if (!this.instantNext && !this.reducedMotion) {
+              const dx = point.x - anim.x
+              const dy = point.y - anim.y
+              if (dx * dx + dy * dy > 0.5) {
+                this.ghosts.get(key)?.push(anim.x, anim.y, anim.h)
+              }
+            }
+            if (anim.setTarget(point, this.instantNext)) snapped = true
           }
         }
 
         for (const key of this.anims.keys()) {
-          if (!activeKeys.has(key)) this.anims.delete(key)
+          if (!activeKeys.has(key)) {
+            this.anims.delete(key)
+            this.ghosts.delete(key)
+          }
         }
 
+        this.buildGhostRenderPlan()
         this.render()
 
         const shouldAnimate =
@@ -389,14 +303,28 @@ class BracketCursorPlugin {
             return dx * dx + dy * dy > ANIM_EPSILON * ANIM_EPSILON
           })
 
-        if (!shouldAnimate) {
-          this.stopRaf()
-        } else {
-          this.startRaf()
-        }
+        if (!shouldAnimate) this.stopRaf()
+        else this.startRaf()
         this.instantNext = false
       },
     })
+  }
+
+  private buildGhostRenderPlan() {
+    const plan: RenderItem[] = []
+    const now = performance.now()
+    for (const [key, buffer] of this.ghosts) {
+      for (const g of buffer.tick(now)) {
+        plan.push({
+          key: `${key}-ghost-${g.bornAt}`,
+          shape: "open",
+          thickness: MAIN_THICKNESS - 1,
+          opacity: g.opacity,
+          ghost: true,
+        })
+      }
+    }
+    this.ghostRenderPlan = plan
   }
 
   private startRaf() {
@@ -428,16 +356,38 @@ class BracketCursorPlugin {
       if (anim.step(dt)) active = true
     }
 
+    this.buildGhostRenderPlan()
     this.render()
 
-    if (active) {
-      this.rafId = requestAnimationFrame(t => this.tick(t))
-    } else {
-      this.rafId = null
+    if (active) this.rafId = requestAnimationFrame(t => this.tick(t))
+    else this.rafId = null
+  }
+
+  private renderGhostGroups() {
+    const ghosts = this.ghostRenderPlan
+    const now = performance.now()
+    let gi = 0
+    for (const [, buffer] of this.ghosts) {
+      for (const g of buffer.tick(now)) {
+        while (this.ghostGroups.length <= gi) {
+          const group = createBracketGroup(true)
+          this.ghostGroups.push(group)
+          this.ghostLayer.appendChild(group)
+        }
+        const group = this.ghostGroups[gi]!
+        group.style.display = "block"
+        layoutBracketGroup(group, g.x, g.y, g.h, "open", MAIN_THICKNESS - 1, g.opacity, this.focusOpacity)
+        gi++
+      }
+    }
+    while (this.ghostGroups.length > gi) {
+      this.ghostGroups.pop()?.remove()
     }
   }
 
   private render() {
+    this.renderGhostGroups()
+
     const needed = this.renderPlan.length
     while (this.groups.length < needed) {
       const group = createBracketGroup()
@@ -473,8 +423,11 @@ class BracketCursorPlugin {
 
   destroy() {
     this.stopRaf()
+    this.unsubMotion?.()
     this.layer.remove()
+    this.ghostLayer.remove()
     this.anims.clear()
+    this.ghosts.clear()
   }
 }
 
@@ -482,6 +435,12 @@ export function motionCursor(): Extension {
   return [
     drawSelection({ cursorBlinkRate: 0 }),
     EditorView.theme({
+      ".jet-cursor-ghost-layer": {
+        position: "absolute",
+        inset: "0",
+        pointerEvents: "none",
+        zIndex: "29",
+      },
       ".jet-cursor-layer": {
         position: "absolute",
         inset: "0",
@@ -494,6 +453,9 @@ export function motionCursor(): Extension {
         left: "0",
         width: "0",
         willChange: "transform, opacity",
+      },
+      ".jet-bracket-ghost": {
+        filter: "blur(0.3px)",
       },
       ".jet-bracket-part": {
         position: "absolute",

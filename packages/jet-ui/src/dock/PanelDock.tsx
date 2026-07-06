@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react"
+import { Fragment, memo, useEffect, useMemo, useState, type ReactNode } from "react"
 import type { PanelEvent, PanelNode } from "@jet/panels"
 import type { PanelTree } from "@jet/panels"
 import type { PanelId } from "@jet/shared"
@@ -9,8 +9,9 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable.js"
 import { cn } from "@/lib/utils.js"
-import { PanelDragProvider, TAB_DRAG_MIME, usePanelDrag } from "./PanelDragContext.js"
+import { usePanelDrag } from "./PanelDragContext.js"
 import { PanelDropOverlay } from "./PanelDropOverlay.js"
+import { TabDndRoot, type TabDndHandlers } from "./TabDndRoot.js"
 
 export type PanelSlotMeta = {
   focused: boolean
@@ -22,9 +23,8 @@ export type PanelDockProps<TView> = {
   focusedPanelId: PanelId | null
   onFocusPanel: (id: PanelId) => void
   onEvent: (event: PanelEvent) => void
-  /** Render the header for a panel. Receives the view + focus/close actions. */
+  tabDnd: TabDndHandlers
   renderHeader: (view: TView, panelId: PanelId, meta: PanelSlotMeta) => ReactNode
-  /** Render the body content for a panel. */
   renderContent: (view: TView, panelId: PanelId, meta: PanelSlotMeta) => ReactNode
 }
 
@@ -63,29 +63,11 @@ function PanelLeaf<TView>({
   const onClose = () => onEvent({ type: "panelClose", panelId })
   const meta: PanelSlotMeta = { focused, onClose }
   const tabDrag = drag.tabSource
-  const isDropTarget =
-    tabDrag != null && tabDrag.panelId.id !== panelId.id
+  const isDropTarget = tabDrag != null && tabDrag.panelId.id !== panelId.id
 
   useEffect(() => {
     if (!tabDrag) setDragOver(false)
   }, [tabDrag])
-
-  const onLeafDragEnter = (e: DragEvent<HTMLDivElement>) => {
-    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
-    if (isDropTarget) setDragOver(true)
-  }
-  const onLeafDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
-    setDragOver(false)
-  }
-  const onLeafDragOver = (e: DragEvent<HTMLDivElement>) => {
-    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return
-    if (isDropTarget) {
-      e.preventDefault()
-      setDragOver(true)
-    }
-  }
-  const onLeafDrop = () => setDragOver(false)
 
   return (
     <div
@@ -98,25 +80,19 @@ function PanelLeaf<TView>({
       data-jet-panel-leaf={panelId.id}
       data-jet-panel-dragged-over={dragOver && isDropTarget ? "" : undefined}
       onMouseDown={e => {
-        // Skip focus on draggable descendants to avoid disrupting drag start.
         const t = e.target as HTMLElement | null
-        if (t && (t.closest("[draggable=true]") || t.closest("[data-tab-id]"))) return
+        if (t && (t.closest("[data-tab-id]") || t.closest("[data-jet-tab-bar]"))) return
         onFocusPanel(panelId)
       }}
-      onDragEnter={onLeafDragEnter}
-      onDragLeave={onLeafDragLeave}
-      onDragOver={onLeafDragOver}
-      onDrop={onLeafDrop}
+      onPointerEnter={() => {
+        if (isDropTarget) setDragOver(true)
+      }}
+      onPointerLeave={() => setDragOver(false)}
     >
       {renderHeader(view, panelId, meta)}
       <div className="relative min-h-0 min-w-0 flex-1">
         {renderContent(view, panelId, meta)}
-        <PanelDropOverlay
-          panelId={panelId}
-          onTabDrop={(source, sourceTabId, target, action) =>
-            onEvent({ type: "tabDrop", source, sourceTabId, target, action })
-          }
-        />
+        <PanelDropOverlay panelId={panelId} />
       </div>
     </div>
   )
@@ -144,7 +120,7 @@ function PanelSplitNode<TView>({
 
   return (
     <ResizablePanelGroup
-      key={structureKey(node)}
+      key={splitGroupDomId(path)}
       id={splitGroupDomId(path)}
       orientation={orientation}
       defaultLayout={defaultLayout}
@@ -162,7 +138,12 @@ function PanelSplitNode<TView>({
     >
       {children.map((child, index) => (
         <Fragment key={splitPanelDomId(path, index)}>
-          {index > 0 ? <ResizableHandle withHandle /> : null}
+          {index > 0 ? (
+            <ResizableHandle
+              withHandle
+              className="transition-colors duration-[var(--jet-motion-fast)] hover:bg-primary/20"
+            />
+          ) : null}
           <ResizablePanel
             id={splitPanelDomId(path, index)}
             defaultSize={`${ratios[index]! * 100}`}
@@ -207,11 +188,11 @@ function PanelTreeNode<TView>({
 
 function PanelDockInner<TView>(props: PanelDockProps<TView>) {
   return (
-    <PanelDragProvider>
+    <TabDndRoot handlers={props.tabDnd}>
       <div className="flex h-full min-h-0 w-full flex-col overflow-hidden" data-jet-panel-dock>
         <PanelTreeNode node={props.tree.root} path={[]} props={props} />
       </div>
-    </PanelDragProvider>
+    </TabDndRoot>
   )
 }
 
