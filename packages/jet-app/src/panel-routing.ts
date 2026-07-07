@@ -3,6 +3,7 @@ import { EXPLORER_TAB_ID, panelHasTab, panelTabIds } from "@jet/workspace"
 import type { PanelNode } from "@jet/panels"
 import type { Edge, PanelId, PanelView } from "@jet/shared"
 import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
+import { TERMINAL_EXPLORER_TAB_ID } from "./tabs/terminal-explorer.tab.js"
 
 export type AuxiliaryPanelOptions = {
   excludePanelIds?: ReadonlySet<number>
@@ -52,7 +53,11 @@ export function resolveEditorPanel(
 
 export function panelHasExplorerTab(tree: JetPanelTree, panel: PanelId): boolean {
   const view = tree.getView(panel)
-  return panelHasTab(view, EXPLORER_TAB_ID) || panelHasTab(view, AGENT_EXPLORER_TAB_ID)
+  return (
+    panelHasTab(view, EXPLORER_TAB_ID) ||
+    panelHasTab(view, AGENT_EXPLORER_TAB_ID) ||
+    panelHasTab(view, TERMINAL_EXPLORER_TAB_ID)
+  )
 }
 
 export function resolveAuxiliaryPanel(

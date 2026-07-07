@@ -8,7 +8,8 @@ import type {
   ListItem,
   WorkspaceService,
 } from "@jet/workspace"
-import type { AgentExplorerWorkspaceGroup } from "@jet/ui"
+import type { AgentExplorerWorkspaceGroup, TerminalExplorerGroup } from "@jet/ui"
+import type { PanelId } from "@jet/shared"
 
 /**
  * Ambient dependencies threaded into contributor tab types when they are
@@ -57,4 +58,9 @@ export type TabContributorDeps = {
   interruptAgentTurn: (rootUri: string, threadId: string) => Promise<void>
   archiveAgentThread: (rootUri: string, rootPath: string, threadId: string) => Promise<void>
   unarchiveAgentThread: (rootUri: string, rootPath: string, threadId: string) => Promise<void>
+  getTerminalExplorerGroups: () => TerminalExplorerGroup[]
+  focusTerminalTab: (panelId: PanelId, tabId: string) => void
+  newTerminalInWorkspace: (rootUri: string) => Promise<void>
+  closeTerminalTab: (panelId: PanelId, tabId: string) => void
+  getActiveTerminalTabId: () => string | null
 }

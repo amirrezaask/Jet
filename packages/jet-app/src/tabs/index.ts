@@ -11,6 +11,10 @@ import {
 import { createEditorTabType, EDITOR_TAB_TYPE_ID } from "./editor.tab.js"
 import { createExplorerTabType, EXPLORER_TAB_TYPE_ID } from "./explorer.tab.js"
 import { createOutputTabType, OUTPUT_TAB_TYPE_ID } from "./output.tab.js"
+import {
+  createTerminalExplorerTabType,
+  TERMINAL_EXPLORER_TAB_TYPE_ID,
+} from "./terminal-explorer.tab.js"
 import { createTerminalTabType, TERMINAL_TAB_TYPE_ID } from "./terminal.tab.js"
 import {
   createSearchTabType,
@@ -31,6 +35,7 @@ export {
   EDITOR_TAB_TYPE_ID,
   EXPLORER_TAB_TYPE_ID,
   OUTPUT_TAB_TYPE_ID,
+  TERMINAL_EXPLORER_TAB_TYPE_ID,
   TERMINAL_TAB_TYPE_ID,
   SEARCH_TAB_TYPE_ID,
   PROBLEMS_TAB_TYPE_ID,
@@ -49,6 +54,7 @@ export function registerBuiltinTabTypes(
   registry.register(createEditorTabType(deps))
   registry.register(createExplorerTabType(deps))
   registry.register(createOutputTabType(deps))
+  registry.register(createTerminalExplorerTabType(deps))
   registry.register(createTerminalTabType(deps))
   registry.register(createSearchTabType(deps))
   registry.register(createProblemsTabType(deps))

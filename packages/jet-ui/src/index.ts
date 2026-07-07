@@ -17,6 +17,7 @@ export {
 export { AppShell } from "./shell/AppShell.js"
 export { JetTitleBar, type JetTitleBarAction, type JetTitleBarCheckboxAction, type JetTitleBarMenu } from "./shell/JetTitleBar.js"
 export { focusExplorerPanel } from "./explorer/focus.js"
+export { focusTerminalExplorerPanel } from "./terminal-explorer/focus.js"
 export { CommandPalette } from "./components/CommandPalette.js"
 export { GotoLineModal } from "./components/GotoLineModal.js"
 export { OutlineOverlay, type OutlineEntry } from "./components/OutlineOverlay.js"
@@ -47,6 +48,11 @@ export { EditorTabHost, getEditorView, getAllEditorViews, syncAllEditorThemes, d
 export { ExplorerTab } from "./tabs/ExplorerTab.js"
 export { AgentChatView } from "./agents/AgentChatView.js"
 export { AgentExplorerTab, type AgentExplorerWorkspaceGroup } from "./agents/AgentExplorerTab.js"
+export {
+  TerminalExplorerTab,
+  type TerminalExplorerGroup,
+  type TerminalExplorerEntry,
+} from "./tabs/TerminalExplorerTab.js"
 export { OutputPanel } from "./panels/OutputPanel.js"
 export { TerminalPanel } from "./panels/TerminalPanel.js"
 export { showEditorContextMenuAt } from "./components/EditorContextMenu.js"

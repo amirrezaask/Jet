@@ -45,6 +45,7 @@ const baseCtx: KeymapContext = {
   outlineOpen: false,
   workspaceOpen: true,
   explorerFocus: false,
+  terminalExplorerFocus: false,
   outputFocus: false,
   terminalFocus: false,
   listFocus: false,

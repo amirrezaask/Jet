@@ -70,6 +70,7 @@ import {
   openProblemsTab,
   openSearchTab,
   openTabInAuxiliaryPanel,
+  openTerminalExplorerTab,
   openTerminalTab,
   listTerminalTabs,
   isActiveTerminalTab,
@@ -113,6 +114,7 @@ export type BuildAppCommandsDeps = {
   refreshProjects: () => Promise<number>
   focusExplorer?: () => void
   openAgentExplorer: () => Promise<void>
+  openTerminalExplorer: () => void
   createAgentThread: (rootUri: string, rootPath: string) => Promise<void>
   archiveActiveAgentThread: () => Promise<void>
   unarchiveActiveAgentThread: () => Promise<void>
@@ -499,6 +501,13 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       await deps.openAgentExplorer()
       await deps.createAgentThread(folder.root.uri, folder.root.path)
     },
+    terminalExplorer: () => {
+      if (!deps.workspace.manager.hasFolders()) {
+        deps.setMessage("Open a workspace folder first")
+        return
+      }
+      deps.openTerminalExplorer()
+    },
     archiveAgent: async () => {
       await deps.archiveActiveAgentThread()
     },
@@ -835,6 +844,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "output.show", fn: "output", title: "Show Output", category: "View" },
   { id: "terminal.show", fn: "terminal", title: "Toggle Terminal", category: "View", aliases: ["shell", "integrated terminal"] },
   { id: "terminal.new", fn: "terminalNew", title: "New Terminal", category: "View" },
+  { id: "terminal.explorer.show", fn: "terminalExplorer", title: "Show Terminal Explorer", category: "View", aliases: ["terminals", "terminal list"] },
   { id: "task.run", fn: "runTask", title: "Run Task", category: "Tasks" },
   { id: "task.runBuild", fn: "runBuild", title: "Run Build Task", category: "Tasks" },
   { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"] },

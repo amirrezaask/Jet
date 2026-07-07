@@ -42,6 +42,7 @@ import {
   popPanelTab,
   PROBLEMS_TAB_ID,
   panelTabIds,
+  isTerminalTabId,
   aggregateFolderSearchState,
   fileSearchAcrossFolders,
   relativePathInFolder,
@@ -79,6 +80,7 @@ import {
   problemsToListItems,
   WhichKeyPanel,
   type AgentExplorerWorkspaceGroup,
+  type TerminalExplorerGroup,
   type OutlineEntry,
   type WhichKeyEntry,
   TooltipProvider,
@@ -88,6 +90,7 @@ import {
   requestConfirm,
   AppShell,
   focusExplorerPanel,
+  focusTerminalExplorerPanel,
   getListPanel,
   JetTitleBar,
   type JetTitleBarMenu,
@@ -115,7 +118,8 @@ import {
   closePanelIfEmpty,
   reconcileFocusedPanel,
 } from "./panel-routing.js"
-import { openAgentChatTab, openAgentExplorerTab } from "./tab-routing.js"
+import { openAgentChatTab, openAgentExplorerTab, openTerminalExplorerTab, openTerminalTab } from "./tab-routing.js"
+import { buildTerminalExplorerGroups, nextTerminalLabel } from "./terminal-explorer.js"
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
 import { loadGlobalJetrc } from "./load-global-jetrc.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
@@ -309,7 +313,7 @@ export function JetApp() {
       const kind = desc.kind
       if (kind === "editor") {
         tabStore.create<{ fileUri: string }>(kind, { fileUri: desc.id }, desc.id)
-      } else if (kind === "explorer" || kind === "output" || kind === "agent-explorer") {
+      } else if (kind === "explorer" || kind === "output" || kind === "agent-explorer" || kind === "terminal-explorer") {
         tabStore.create<Record<string, never>>(kind, {}, desc.id)
       } else if (kind === "agent-chat") {
         const parsed = parseAgentChatTabId(desc.id)
@@ -393,6 +397,11 @@ export function JetApp() {
   const archiveAgentThreadRef = useRef<
     (rootUri: string, rootPath: string, threadId: string) => Promise<void>
   >(() => Promise.resolve())
+  const getTerminalExplorerGroupsRef = useRef<() => TerminalExplorerGroup[]>(() => [])
+  const getActiveTerminalTabIdRef = useRef<() => string | null>(() => null)
+  const focusTerminalTabRef = useRef<(panelId: PanelId, tabId: string) => void>(() => {})
+  const newTerminalInWorkspaceRef = useRef<(rootUri: string) => Promise<void>>(async () => {})
+  const closeTerminalTabRef = useRef<(panelId: PanelId, tabId: string) => void>(() => {})
   const unarchiveAgentThreadRef = useRef<
     (rootUri: string, rootPath: string, threadId: string) => Promise<void>
   >(() => Promise.resolve())
@@ -652,6 +661,11 @@ export function JetApp() {
         archiveAgentThreadRef.current(rootUri, rootPath, threadId),
       unarchiveAgentThread: (rootUri, rootPath, threadId) =>
         unarchiveAgentThreadRef.current(rootUri, rootPath, threadId),
+      getTerminalExplorerGroups: () => getTerminalExplorerGroupsRef.current(),
+      getActiveTerminalTabId: () => getActiveTerminalTabIdRef.current(),
+      focusTerminalTab: (panelId, tabId) => focusTerminalTabRef.current(panelId, tabId),
+      newTerminalInWorkspace: rootUri => newTerminalInWorkspaceRef.current(rootUri),
+      closeTerminalTab: (panelId, tabId) => closeTerminalTabRef.current(panelId, tabId),
     })
   }, [
     tabTypeRegistry,
@@ -711,12 +725,14 @@ export function JetApp() {
       outlineOpen,
       workspaceOpen: workspace.manager.hasFolders(),
       explorerFocus: activeTabKindName === "explorer",
+      terminalExplorerFocus: activeTabKindName === "terminal-explorer",
       outputFocus: activeTabKindName === "output",
       terminalFocus: activeTabKindName === "terminal",
       agentChatFocus: activeTabKindName === "agent-chat",
       listFocus:
         activeTabKindName === "explorer" ||
         activeTabKindName === "agent-explorer" ||
+        activeTabKindName === "terminal-explorer" ||
         activeTabKindName === "search" ||
         activeTabKindName === "problems" ||
         activeTabKindName === "references" ||
@@ -982,6 +998,64 @@ export function JetApp() {
     })
   }, [workspace, cloneTree, commitTree])
 
+  const openTerminalExplorer = useCallback((): void => {
+    const tree = cloneTree()
+    const { panelId } = openTerminalExplorerTab(workspace, tree, appStateRef.current.focusedPanel)
+    commitTree(tree, panelId)
+    requestAnimationFrame(() => focusTerminalExplorerPanel())
+  }, [workspace, cloneTree, commitTree])
+
+  const getTerminalExplorerGroups = useCallback(
+    () => buildTerminalExplorerGroups(appStateRef.current.panelTree, workspace),
+    [workspace],
+  )
+
+  const getActiveTerminalTabId = useCallback((): string | null => {
+    const focused = appStateRef.current.focusedPanel
+    if (!focused) return null
+    const tabId = getActiveTabId(appStateRef.current.panelTree, focused)
+    if (!tabId || !isTerminalTabId(tabId)) return null
+    return tabId
+  }, [])
+
+  const focusTerminalTab = useCallback(
+    (panelId: PanelId, tabId: string) => {
+      const tree = cloneTree()
+      workspace.focusTabInPanel(tree, panelId, tabId)
+      setFocusedPanel(panelId)
+      commitTree(tree, panelId)
+    },
+    [workspace, cloneTree, commitTree],
+  )
+
+  const newTerminalInWorkspace = useCallback(
+    async (rootUri: string) => {
+      const tree = cloneTree()
+      const label = nextTerminalLabel(tree)
+      const { panelId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
+        cwdRootUri: rootUri,
+        label,
+      })
+      setFocusedPanel(panelId)
+      commitTree(tree, panelId)
+    },
+    [workspace, cloneTree, commitTree],
+  )
+
+  const closeTerminalTab = useCallback(
+    (panelId: PanelId, tabId: string) => {
+      const tree = cloneTree()
+      const view = tree.getView(panelId)
+      if (view?.kind !== "tabs") return
+      workspace.disposeTab(tabId)
+      tabStore.dispose(tabId)
+      tree.setView(panelId, popPanelTab(view, tabId))
+      closePanelIfEmpty(tree, panelId)
+      commitTree(tree)
+    },
+    [cloneTree, commitTree, workspace, tabStore],
+  )
+
   const createAgentThread = useCallback(
     async (rootUri: string, rootPath: string): Promise<void> => {
       const transport = window.jet?.agents
@@ -1164,6 +1238,11 @@ export function JetApp() {
   archiveActiveAgentThreadRef.current = archiveActiveAgentThread
   unarchiveActiveAgentThreadRef.current = unarchiveActiveAgentThread
   interruptAgentTurnRef.current = interruptAgentTurn
+  getTerminalExplorerGroupsRef.current = getTerminalExplorerGroups
+  getActiveTerminalTabIdRef.current = getActiveTerminalTabId
+  focusTerminalTabRef.current = focusTerminalTab
+  newTerminalInWorkspaceRef.current = newTerminalInWorkspace
+  closeTerminalTabRef.current = closeTerminalTab
 
   useEffect(() => {
     const transport = window.jet?.agents
@@ -1807,6 +1886,7 @@ export function JetApp() {
         refreshProjects,
         focusExplorer: focusExplorerPanel,
         openAgentExplorer: openAgentsExplorer,
+        openTerminalExplorer,
         createAgentThread,
         archiveActiveAgentThread: () => archiveActiveAgentThreadRef.current(),
         unarchiveActiveAgentThread: () => unarchiveActiveAgentThreadRef.current(),
@@ -1829,6 +1909,7 @@ export function JetApp() {
       projectRegistry,
       refreshProjects,
       openAgentsExplorer,
+      openTerminalExplorer,
       createAgentThread,
       searchSupported,
       pickWorkspaceFolder,
