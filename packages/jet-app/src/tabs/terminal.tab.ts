@@ -33,6 +33,7 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         focused: ctx.focused && ctx.isActive,
         isActive: ctx.isActive,
         onPtyId: trackTerminalPtyId,
+        onTitleChange: deps.onTerminalTitleChange,
       }),
   }
 }

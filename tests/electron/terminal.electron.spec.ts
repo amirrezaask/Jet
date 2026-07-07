@@ -71,6 +71,39 @@ test.describe("electron terminal", () => {
     }
   })
 
+  test("updates tab label when shell emits OSC title sequence", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+
+      await page.locator("[data-jet-terminal-panel] .jet-terminal-surface").click()
+      await page.evaluate(() => {
+        const textarea = document.querySelector(
+          "[data-jet-terminal-panel] .xterm-helper-textarea",
+        ) as HTMLTextAreaElement | null
+        textarea?.focus()
+      })
+
+      await page.waitForFunction(
+        () => {
+          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          return text.trim().length > 0
+        },
+        null,
+        { timeout: 15_000 },
+      )
+
+      await page.keyboard.type("echo -ne '\\033]0;JetTitleTest\\007'")
+      await page.keyboard.press("Enter")
+
+      await expect(page.locator("[data-jet-tab-bar]")).toContainText("JetTitleTest", {
+        timeout: 15_000,
+      })
+    } finally {
+      await app.close()
+    }
+  })
+
   test("xterm viewport fills terminal surface below tab bar", async () => {
     const { app, page } = await launchJet()
     try {

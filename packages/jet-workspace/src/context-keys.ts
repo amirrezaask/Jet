@@ -80,6 +80,7 @@ function eventKeyMatches(expected: string, e: KeyboardEvent): boolean {
   if (fromKey === want) return true
   if (want === "`" && (e.code === "Backquote" || e.key === "`")) return true
   if (want === "-" && (e.key === "-" || e.key === "Minus" || e.code === "Minus")) return true
+  if (want === "\\" && (e.key === "\\" || e.code === "Backslash")) return true
   return false
 }
 

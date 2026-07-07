@@ -93,6 +93,23 @@ describe("keyEventMatchesBindingPart", () => {
       true,
     )
   })
+
+  it("matches Mod-backslash", () => {
+    assert.equal(
+      keyEventMatchesBindingPart(
+        keyEvent({ key: "\\", metaKey: true, code: "Backslash" }),
+        "Mod-\\",
+      ),
+      true,
+    )
+    assert.equal(
+      keyEventMatchesBindingPart(
+        keyEvent({ key: "\\", metaKey: true, shiftKey: true, code: "Backslash" }),
+        "Mod-Shift-\\",
+      ),
+      true,
+    )
+  })
 })
 
 describe("keyEventMatchesBinding", () => {

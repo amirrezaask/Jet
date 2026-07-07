@@ -21,7 +21,7 @@ import {
 import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search"
 import type { JetPanelTree } from "@jet/workspace"
 import type { PanelEvent } from "@jet/panels"
-import type { PanelId } from "@jet/shared"
+import type { PanelId, Edge } from "@jet/shared"
 import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@jet/shared"
 import type {
   JetCommandContext,
@@ -126,6 +126,15 @@ export type BuildAppCommandsDeps = {
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   const currentPanelTree = () => deps.getPanelTree()
   const currentFocusedPanel = () => deps.getFocusedPanel()
+
+  const splitPanelAtEdge = (edge: Edge) => {
+    const tree = deps.cloneTree()
+    const target = currentFocusedPanel() ?? deps.editorPanelRef.current
+    if (!target) return
+    const newPanel = tree.splitAtEdge(target, edge)
+    deps.setFocusedPanel(newPanel)
+    deps.commitTree(tree, newPanel)
+  }
 
   const openFolder: JetCommandFn = async () => {
     const folderPath = await window.jet?.fs.showOpenFolderDialog()
@@ -669,17 +678,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       const panels = getAllLeafPanels(panelTree).filter(p => panelTree.getView(p)?.kind === "tabs")
       if (panels.length > 0) deps.setFocusedPanel(panels[panels.length - 1]!)
     },
-    splitEditorRight: () => {
-      const tree = deps.cloneTree()
-      const target = currentFocusedPanel() ?? deps.editorPanelRef.current
-      if (!target) return
-      const newPanel = tree.splitAtEdge(target, "right")
-      const view = tree.getView(target)
-      if (view?.kind === "tabs") {
-        tree.setView(newPanel, view)
-      }
-      deps.commitTree(tree, newPanel)
-    },
+    splitEditorRight: () => splitPanelAtEdge("right"),
+    splitEditorBottom: () => splitPanelAtEdge("bottom"),
     toggleEditorLayout: () => {
       const tree = deps.cloneTree()
       const root = (tree as unknown as { root: { kind: string } }).root

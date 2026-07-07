@@ -12,6 +12,7 @@ export type TerminalPanelProps = {
   focused: boolean
   isActive: boolean
   onPtyId?: (tabId: string, ptyId: string | null) => void
+  onTitleChange?: (tabId: string, title: string) => void
 }
 
 type TerminalSession = {
@@ -77,11 +78,14 @@ export function TerminalPanel({
   focused,
   isActive,
   onPtyId,
+  onTitleChange,
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionRef = useRef<TerminalSession | null>(null)
   const themeRef = useRef(theme)
   themeRef.current = theme
+  const onTitleChangeRef = useRef(onTitleChange)
+  onTitleChangeRef.current = onTitleChange
 
   useEffect(() => {
     const terminalApi = window.jet?.terminal
@@ -103,6 +107,15 @@ export function TerminalPanel({
 
     const session: TerminalSession = { term, fit, ptyId: null }
     sessionRef.current = session
+
+    const titleDispose = term.onTitleChange(raw => {
+      const title = raw.trim()
+      if (!title) return
+      onTitleChangeRef.current?.(
+        tabId,
+        title.length > 80 ? `${title.slice(0, 77)}…` : title,
+      )
+    })
 
     let unsub: (() => void) | null = null
     let dataDispose: { dispose: () => void } | null = null
@@ -188,6 +201,7 @@ export function TerminalPanel({
       resizeObserver.disconnect()
       fontObserver.disconnect()
       visibilityObserver.disconnect()
+      titleDispose.dispose()
       dataDispose?.dispose()
       unsub?.()
       if (session.ptyId) {

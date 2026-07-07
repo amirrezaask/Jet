@@ -65,4 +65,5 @@ export type TabContributorDeps = {
   newTerminalInWorkspace: (rootUri: string) => Promise<void>
   closeTerminalTab: (panelId: PanelId, tabId: string) => void
   getActiveTerminalTabId: () => string | null
+  onTerminalTitleChange: (tabId: string, title: string) => void
 }

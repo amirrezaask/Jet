@@ -105,6 +105,7 @@ import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
 import { agentChatTabId, parseAgentChatTabId, type AgentChatTabState } from "./tabs/agent-chat.tab.js"
 import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
+import { TERMINAL_EXPLORER_TAB_ID } from "./tabs/terminal-explorer.tab.js"
 import { terminalCwdForTab } from "./tabs/terminal-session.js"
 import {
   panelViewKind,
@@ -405,6 +406,7 @@ export function JetApp() {
   const focusTerminalTabRef = useRef<(panelId: PanelId, tabId: string) => void>(() => {})
   const newTerminalInWorkspaceRef = useRef<(rootUri: string) => Promise<void>>(async () => {})
   const closeTerminalTabRef = useRef<(panelId: PanelId, tabId: string) => void>(() => {})
+  const onTerminalTitleChangeRef = useRef<(tabId: string, title: string) => void>(() => {})
   const unarchiveAgentThreadRef = useRef<
     (rootUri: string, rootPath: string, threadId: string) => Promise<void>
   >(() => Promise.resolve())
@@ -451,6 +453,20 @@ export function JetApp() {
   const refreshAgentExplorerTab = useCallback(() => {
     bumpAgentTab(AGENT_EXPLORER_TAB_ID)
   }, [bumpAgentTab])
+
+  const refreshTerminalExplorerTab = useCallback(() => {
+    bumpAgentTab(TERMINAL_EXPLORER_TAB_ID)
+  }, [bumpAgentTab])
+
+  const onTerminalTitleChange = useCallback(
+    (tabId: string, title: string) => {
+      const existing = workspace.tabRegistry.get(tabId)
+      if (!existing || existing.label === title) return
+      workspace.tabRegistry.update(tabId, { label: title })
+      refreshTerminalExplorerTab()
+    },
+    [workspace, refreshTerminalExplorerTab],
+  )
 
   const syncAgentThread = useCallback(
     (thread: AgentThread | null) => {
@@ -700,6 +716,7 @@ export function JetApp() {
       focusTerminalTab: (panelId, tabId) => focusTerminalTabRef.current(panelId, tabId),
       newTerminalInWorkspace: rootUri => newTerminalInWorkspaceRef.current(rootUri),
       closeTerminalTab: (panelId, tabId) => closeTerminalTabRef.current(panelId, tabId),
+      onTerminalTitleChange: (tabId, title) => onTerminalTitleChangeRef.current(tabId, title),
       getSearchFolders: () => {
         const folder = resolveContextFolder()
         return folder ? [folder] : workspace.folders
@@ -839,9 +856,7 @@ export function JetApp() {
         morph?.animate ? (morph.beforeRects ?? capturePanelLeafRects()) : null
       const prevFocused = appStateRef.current.focusedPanel
       const preferred =
-        preferFocus &&
-        getAllLeafPanels(tree).some(l => l.id === preferFocus.id) &&
-        tree.getView(preferFocus)?.kind === "tabs"
+        preferFocus && getAllLeafPanels(tree).some(l => l.id === preferFocus.id)
           ? preferFocus
           : null
       const nextFocused =
@@ -1282,6 +1297,7 @@ export function JetApp() {
   focusTerminalTabRef.current = focusTerminalTab
   newTerminalInWorkspaceRef.current = newTerminalInWorkspace
   closeTerminalTabRef.current = closeTerminalTab
+  onTerminalTitleChangeRef.current = onTerminalTitleChange
 
   useEffect(() => {
     const transport = window.jet?.agents
@@ -2030,6 +2046,16 @@ export function JetApp() {
         "Cmd-Shift-Backspace",
         appCommands.unarchiveAgent,
         ctx => ctx.agentChatFocus && noOverlay(ctx),
+      ),
+      bind(
+        "Mod-\\",
+        appCommands.splitEditorRight,
+        ctx => ctx.workspaceOpen && noOverlay(ctx),
+      ),
+      bind(
+        "Mod-Shift-\\",
+        appCommands.splitEditorBottom,
+        ctx => ctx.workspaceOpen && noOverlay(ctx),
       ),
     ])
   }, [keymaps, appCommands])
