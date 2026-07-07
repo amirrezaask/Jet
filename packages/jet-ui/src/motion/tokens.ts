@@ -40,9 +40,9 @@ export const jetMotion = {
   },
   squishScale: 0.9,
   /** Fixed-duration overlay transition approximating RAD menu rate (N=70). */
-  overlayTransition: { duration: 0.2, ease: "easeOut" as const },
+  overlayTransition: { duration: 0.2 /* overlay */, ease: "easeOut" as const },
   quickFade: { duration: 0.12, ease: "easeOut" as const },
-  tabGhostTransition: { duration: 0.2, ease: "easeOut" as const },
+  tabGhostTransition: { duration: 0.2 /* overlay */, ease: "easeOut" as const },
   overlayEnter: {
     initial: { opacity: 0, scale: 0.9, filter: "blur(4px)" },
     animate: { opacity: 1, scale: 1, filter: "blur(0px)" },

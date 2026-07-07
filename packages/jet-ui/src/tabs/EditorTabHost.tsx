@@ -27,7 +27,8 @@ import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu.j
 import {
   EditorContextMenu,
   registerEditorContextMenuHandler,
-} from "../components/EditorContextMenu.js"
+} from "@/components/EditorContextMenu.js"
+import { dispatchContextMenuAt } from "@/components/ContextMenuHost.js"
 
 type EditorSession = {
   fileUri: string
@@ -194,15 +195,7 @@ function EditorTabHostInner({
   useEffect(() => {
     return registerEditorContextMenuHandler((x, y) => {
       if (focusedPanelId !== panelId.id) return
-      hostRef.current?.dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          cancelable: true,
-          clientX: x,
-          clientY: y,
-          view: window,
-        }),
-      )
+      if (hostRef.current) dispatchContextMenuAt(hostRef.current, x, y)
     })
   }, [panelId.id])
 

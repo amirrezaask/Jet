@@ -9,19 +9,12 @@ import {
 } from "@/components/ui/context-menu.js"
 import { KeyBindingKbd } from "./KeyBindingKbd.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
+import { createContextMenuHost } from "./ContextMenuHost.js"
 
-let openAtHandler: ((x: number, y: number) => void) | null = null
+const editorContextMenu = createContextMenuHost()
 
-export function registerEditorContextMenuHandler(fn: (x: number, y: number) => void): () => void {
-  openAtHandler = fn
-  return () => {
-    if (openAtHandler === fn) openAtHandler = null
-  }
-}
-
-export function showEditorContextMenuAt(x: number, y: number): void {
-  openAtHandler?.(x, y)
-}
+export const registerEditorContextMenuHandler = editorContextMenu.register
+export const showEditorContextMenuAt = editorContextMenu.showAt
 
 export function EditorContextMenu({
   open,

@@ -1,5 +1,5 @@
 import type { PanelId } from "@jet/shared"
-import { Plus, Terminal, X } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { memo, useEffect, useMemo, useRef } from "react"
 import {
   ContextMenu,
@@ -29,7 +29,7 @@ export const TERMINAL_EXPLORER_LIST_ID = "jet:terminal-explorer"
 
 type TerminalNodeData =
   | { kind: "group"; group: TerminalExplorerGroup }
-  | { kind: "terminal"; entry: TerminalExplorerEntry }
+  | { kind: "terminal"; entry: TerminalExplorerEntry; index: number }
 
 export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
   groups: TerminalExplorerGroup[]
@@ -61,10 +61,10 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
       getChildren(id): TreeNode<TerminalNodeData>[] {
         const group = groupsRef.current.find(g => g.id === id)
         if (!group) return []
-        return group.terminals.map(entry => ({
+        return group.terminals.map((entry, index) => ({
           id: entry.tabId,
           isBranch: false,
-          data: { kind: "terminal", entry },
+          data: { kind: "terminal", entry, index },
         }))
       },
       subscribe(fn: () => void): () => void {
@@ -120,13 +120,30 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
                 type="button"
                 title="New terminal"
                 aria-label="New terminal"
-                className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/tree-row:opacity-100"
                 onClick={e => {
                   e.stopPropagation()
                   onNewTerminal(rootUri)
                 }}
               >
                 <Plus className="size-3" />
+              </button>
+            )
+          }
+          if (node.data.kind === "terminal") {
+            const entry = node.data.entry
+            return (
+              <button
+                type="button"
+                title="Close terminal"
+                aria-label="Close terminal"
+                className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/tree-row:opacity-100"
+                onClick={e => {
+                  e.stopPropagation()
+                  onCloseTerminal(entry.panelId, entry.tabId)
+                }}
+              >
+                <X className="size-3" />
               </button>
             )
           }
@@ -150,21 +167,36 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
         renderRow={node => {
           if (node.data.kind === "group") {
             const group = node.data.group
+            const letter = (group.name.trim()[0] ?? "?").toUpperCase()
             return (
-              <span
-                className="truncate font-medium text-foreground"
-                title={group.path || group.name}
-              >
-                {group.name}
-              </span>
+              <>
+                <span
+                  aria-hidden
+                  className="flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/15 text-[10px] font-semibold text-primary"
+                >
+                  {letter}
+                </span>
+                <span
+                  className="truncate font-medium text-foreground"
+                  title={group.path || group.name}
+                >
+                  {group.name}
+                </span>
+              </>
             )
           }
           const entry = node.data.entry
+          const num = node.data.index + 1
           return (
             <>
-              <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
               <span
-                className="truncate"
+                aria-hidden
+                className="flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-semibold tabular-nums text-primary"
+              >
+                {num}
+              </span>
+              <span
+                className="truncate text-muted-foreground"
                 title={entry.cwdRootUri ? entry.cwdRootUri.replace(/^file:\/\//, "") : entry.label}
               >
                 {entry.label}

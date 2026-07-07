@@ -64,7 +64,7 @@ function ThreadRow(props: {
             <span data-slot="row-label" className="block truncate text-sm text-foreground">
               {thread.title}
             </span>
-            <span data-slot="row-detail" className="block truncate text-[11px] text-muted-foreground">
+            <span data-slot="row-detail" className="block truncate text-3xs text-muted-foreground">
               {formatRelativeTime(thread.updatedAt)}
               {thread.messageCount > 0 ? ` · ${thread.messageCount} messages` : ""}
               {thread.status !== "idle" ? ` · ${thread.status}` : ""}
@@ -122,7 +122,7 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
       data-jet-list-panel="agent-explorer"
       tabIndex={-1}
     >
-      <div className="mb-2 px-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+      <div className="mb-2 px-2 text-3xs uppercase tracking-[0.16em] text-muted-foreground">
         Agents
       </div>
       <div className="space-y-2">

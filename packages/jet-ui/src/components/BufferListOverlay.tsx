@@ -1,20 +1,12 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo } from "react"
 import type { WorkspaceService } from "@jet/workspace"
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command.js"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog.js"
-import { COMMAND_NO_SELECTION, COMMAND_SHELL_CLASS } from "@/lib/command-shell.js"
+import { PaletteShell, type PaletteShellItem } from "./palette/PaletteShell.js"
+
+interface BufferEntry {
+  uri: string
+  name: string
+  dirty: boolean
+}
 
 export function BufferListOverlay({
   open,
@@ -27,81 +19,37 @@ export function BufferListOverlay({
   workspace: WorkspaceService
   onSelect: (uri: string) => void
 }) {
-  const [query, setQuery] = useState("")
-  const [selectedValue, setSelectedValue] = useState(COMMAND_NO_SELECTION)
-  const buffers = workspace.openBuffers
-
-  useEffect(() => {
-    if (!open) {
-      setQuery("")
-      setSelectedValue(COMMAND_NO_SELECTION)
-    }
-  }, [open])
-
-  const q = query.trim().toLowerCase()
-  const filtered = buffers.filter(uri => {
-    const file = workspace.fileForUri(uri)
-    const name = file?.name ?? uri
-    return !q || name.toLowerCase().includes(q) || uri.toLowerCase().includes(q)
-  })
-
-  useEffect(() => {
-    if (query.trim() === "") {
-      setSelectedValue(COMMAND_NO_SELECTION)
-      return
-    }
-    if (filtered.length > 0 && !filtered.includes(selectedValue)) {
-      setSelectedValue(filtered[0]!)
-    }
-  }, [filtered, query, selectedValue])
-
-  const items = useMemo(
+  const items = useMemo<PaletteShellItem<BufferEntry>[]>(
     () =>
-      filtered.map(uri => {
+      workspace.openBuffers.map(uri => {
         const file = workspace.fileForUri(uri)
-        return { uri, name: file?.name ?? uri, dirty: file?.isDirty ?? false }
+        const name = file?.name ?? uri
+        return {
+          key: uri,
+          value: `${name} ${uri}`,
+          data: { uri, name, dirty: file?.isDirty ?? false },
+        }
       }),
-    [filtered, workspace],
+    [workspace],
   )
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogHeader className="sr-only">
-        <DialogTitle>Buffer list</DialogTitle>
-        <DialogDescription>Switch buffer…</DialogDescription>
-      </DialogHeader>
-      <DialogContent className="max-w-[32rem] overflow-hidden p-0" showCloseButton={false}>
-        <Command
-          className={COMMAND_SHELL_CLASS}
-          shouldFilter={false}
-          value={selectedValue}
-          onValueChange={value => {
-            if (query.trim() === "") {
-              setSelectedValue(COMMAND_NO_SELECTION)
-              return
-            }
-            setSelectedValue(value)
-          }}
-        >
-          <CommandInput placeholder="Switch buffer…" value={query} onValueChange={setQuery} />
-          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
-            <CommandEmpty>No open buffers</CommandEmpty>
-            <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
-            {items.map(({ uri, name, dirty }) => (
-              <CommandItem
-                key={uri}
-                value={uri}
-                onSelect={() => {
-                  onSelect(uri)
-                  onOpenChange(false)
-                }}
-              >
-                <span data-slot="row-label">{name}{dirty ? " •" : ""}</span>
-              </CommandItem>
-            ))}
-          </CommandList>
-        </Command>
-      </DialogContent>
-    </Dialog>
+    <PaletteShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Buffer list"
+      description="Switch buffer…"
+      placeholder="Switch buffer…"
+      maxWidth="sm"
+      items={items}
+      onSelect={entry => onSelect(entry.uri)}
+      emptyLabel="No open buffers"
+      renderItem={entry => (
+        <span data-slot="row-label">
+          {entry.name}
+          {entry.dirty ? " •" : ""}
+        </span>
+      )}
+    />
   )
 }

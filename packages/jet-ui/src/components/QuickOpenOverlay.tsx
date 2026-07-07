@@ -1,20 +1,6 @@
-import { useDeferredValue, useEffect, useRef, useState } from "react"
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command.js"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog.js"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Spinner } from "@/components/ui/spinner.js"
-import { COMMAND_NO_SELECTION, COMMAND_SHELL_CLASS } from "@/lib/command-shell.js"
+import { PaletteShell, type PaletteShellItem } from "./palette/PaletteShell.js"
 
 export function QuickOpenOverlay({
   open,
@@ -30,7 +16,6 @@ export function QuickOpenOverlay({
   onSelect: (path: string, query: string) => void
 }) {
   const [query, setQuery] = useState("")
-  const [selectedValue, setSelectedValue] = useState(COMMAND_NO_SELECTION)
   const [results, setResults] = useState<string[]>([])
   const [searching, setSearching] = useState(false)
   const deferredQuery = useDeferredValue(query)
@@ -39,7 +24,6 @@ export function QuickOpenOverlay({
   useEffect(() => {
     if (!open) {
       setQuery("")
-      setSelectedValue(COMMAND_NO_SELECTION)
       setResults([])
       setSearching(false)
     }
@@ -70,73 +54,39 @@ export function QuickOpenOverlay({
     return () => window.clearTimeout(id)
   }, [open, scanReady, deferredQuery, onSearch])
 
-  useEffect(() => {
-    if (query.trim() === "") {
-      setSelectedValue(COMMAND_NO_SELECTION)
-      return
-    }
-    if (results.length > 0 && !results.includes(selectedValue)) {
-      setSelectedValue(results[0]!)
-    }
-  }, [results, query, selectedValue])
+  const items = useMemo<PaletteShellItem<string>[]>(
+    () => results.map(path => ({ key: path, value: path, data: path })),
+    [results],
+  )
+
+  const statusRow = !scanReady ? (
+    <div className="flex items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
+      <Spinner />
+      Indexing workspace…
+    </div>
+  ) : searching ? (
+    <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs text-muted-foreground">
+      <Spinner />
+      Searching…
+    </div>
+  ) : undefined
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogHeader className="sr-only">
-        <DialogTitle>Quick open</DialogTitle>
-        <DialogDescription>Type a file name…</DialogDescription>
-      </DialogHeader>
-      <DialogContent className="max-w-[36rem] overflow-hidden p-0" showCloseButton={false}>
-        <Command
-          className={COMMAND_SHELL_CLASS}
-          shouldFilter={false}
-          value={selectedValue}
-          onValueChange={value => {
-            if (query.trim() === "") {
-              setSelectedValue(COMMAND_NO_SELECTION)
-              return
-            }
-            setSelectedValue(value)
-          }}
-        >
-          <CommandInput
-            placeholder={scanReady ? "Type a file name…" : "Indexing workspace…"}
-            value={query}
-            onValueChange={setQuery}
-            disabled={!scanReady}
-          />
-          {!scanReady && (
-            <div className="flex items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
-              <Spinner />
-              Indexing workspace…
-            </div>
-          )}
-          {scanReady && searching && (
-            <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs text-muted-foreground">
-              <Spinner />
-              Searching…
-            </div>
-          )}
-          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
-            <CommandEmpty>
-              {scanReady ? "No matching files." : "Waiting for index…"}
-            </CommandEmpty>
-            <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
-            {results.map(path => (
-              <CommandItem
-                key={path}
-                value={path}
-                onSelect={() => {
-                  onSelect(path, query)
-                  onOpenChange(false)
-                }}
-              >
-                <span className="font-mono">{path}</span>
-              </CommandItem>
-            ))}
-          </CommandList>
-        </Command>
-      </DialogContent>
-    </Dialog>
+    <PaletteShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Quick open"
+      description="Type a file name…"
+      placeholder={scanReady ? "Type a file name…" : "Indexing workspace…"}
+      disabled={!scanReady}
+      query={query}
+      onQueryChange={setQuery}
+      items={items}
+      shouldFilter={false}
+      onSelect={path => onSelect(path, query)}
+      emptyLabel={scanReady ? "No matching files." : "Waiting for index…"}
+      statusRow={statusRow}
+      renderItem={path => <span className="font-mono">{path}</span>}
+    />
   )
 }

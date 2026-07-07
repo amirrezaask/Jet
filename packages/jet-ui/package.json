@@ -8,6 +8,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./primitives": {
+      "types": "./src/primitives.ts",
+      "default": "./src/primitives.ts"
+    },
     "./styles.css": "./src/styles/globals.css"
   },
   "scripts": {

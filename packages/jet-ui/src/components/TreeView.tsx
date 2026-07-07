@@ -297,7 +297,7 @@ function TreeRow<T>({
       size="sm"
       isActive={ctx.active}
       className={cn(
-        "absolute left-0 top-0 h-[var(--jet-row-height)] w-full shrink-0 cursor-pointer gap-1 rounded-sm px-2",
+        "group/tree-row absolute left-0 top-0 h-[var(--jet-row-height)] w-full shrink-0 cursor-pointer gap-1 rounded-sm px-2",
         jetInteractiveRowClass,
       )}
       style={{
