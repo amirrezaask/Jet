@@ -1,4 +1,12 @@
 import type { PanelId, PanelView, ProjectSearchResult } from "@jet/shared"
+import type {
+  AgentThread,
+  AgentWorkspaceSnapshot,
+  AgentProvidersState,
+  CreateAgentThreadInput,
+  SendAgentMessageInput,
+  SetAgentThreadArchivedInput,
+} from "@jet/agents"
 
 export type WorkspaceFile = {
   uri: string
@@ -99,6 +107,23 @@ export type JetElectronWorkspace = {
   onSearchReady?(callback: (rootUri: string) => void): () => void
 }
 
+export type JetElectronAgents = {
+  listThreads(
+    workspaceRootUri: string,
+    workspaceRootPath: string,
+  ): Promise<AgentWorkspaceSnapshot>
+  readThread(
+    workspaceRootUri: string,
+    workspaceRootPath: string,
+    threadId: string,
+  ): Promise<AgentThread | null>
+  createThread(input: CreateAgentThreadInput): Promise<AgentThread>
+  sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
+  setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
+  listProviders(): Promise<AgentProvidersState>
+  refreshProviders(): Promise<AgentProvidersState>
+}
+
 export type JetElectronAPI = {
   fs: JetElectronFS
   search: JetElectronSearch
@@ -106,6 +131,7 @@ export type JetElectronAPI = {
   terminal?: JetElectronTerminal
   tasks?: JetElectronTasks
   workspace?: JetElectronWorkspace
+  agents?: JetElectronAgents
   getLaunchConfig?(): Promise<LaunchConfig | null>
   getHomeDir?(): Promise<string>
   loadGlobalJetrcScanRoots?(): Promise<string[]>

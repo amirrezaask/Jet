@@ -7,9 +7,54 @@ import * as nodeGit from "./git.js"
 import * as nodeSearch from "./search.js"
 import { pathToUri, uriToPath } from "./paths.js"
 import { loadGlobalJetrcScanRoots } from "./global-jetrc.js"
+import {
+  buildWorkspaceSnapshot,
+  newAgentThread,
+  touchThread,
+  type AgentThread,
+  type CreateAgentThreadInput,
+  type SendAgentMessageInput,
+  type SetAgentThreadArchivedInput,
+  type AgentProvidersState,
+} from "@jet/agents"
 
 export type JetDevHostOptions = {
   allowedRoots: string[]
+}
+
+type AgentStorePayload = {
+  threads: AgentThread[]
+}
+
+function devAgentProvidersState(): AgentProvidersState {
+  return {
+    updatedAt: new Date().toISOString(),
+    providers: [
+      {
+        instanceId: "codex",
+        driverKind: "codex",
+        displayName: "Codex",
+        enabled: true,
+        status: "ready",
+        message: null,
+        models: [
+          { slug: "gpt-5", name: "GPT-5", shortName: "5" },
+          { slug: "gpt-5-mini", name: "GPT-5 Mini", shortName: "5 Mini" },
+        ],
+      },
+      {
+        instanceId: "claudeAgent",
+        driverKind: "claudeAgent",
+        displayName: "Claude",
+        enabled: true,
+        status: "ready",
+        message: null,
+        models: [
+          { slug: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", shortName: "Sonnet 4" },
+        ],
+      },
+    ],
+  }
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -23,6 +68,24 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status
   res.setHeader("Content-Type", "application/json")
   res.end(JSON.stringify(body))
+}
+
+function agentStorePath(rootPath: string): string {
+  return path.join(rootPath, ".jet", "agents", "state.json")
+}
+
+async function readAgentStore(rootPath: string): Promise<AgentStorePayload> {
+  try {
+    const raw = await nodeFs.readFile(pathToUri(agentStorePath(rootPath)))
+    const parsed = JSON.parse(raw) as Partial<AgentStorePayload>
+    return { threads: Array.isArray(parsed.threads) ? parsed.threads : [] }
+  } catch {
+    return { threads: [] }
+  }
+}
+
+async function writeAgentStore(rootPath: string, payload: AgentStorePayload): Promise<void> {
+  await nodeFs.writeFile(pathToUri(agentStorePath(rootPath)), JSON.stringify(payload, null, 2))
 }
 
 async function guardUri(uri: string, allowedRoots: string[]): Promise<void> {
@@ -248,6 +311,105 @@ export async function handleJetDevRequest(
       const homeDir = os.homedir()
       const scanRoots = await loadGlobalJetrcScanRoots(homeDir)
       sendJson(res, 200, { scanRoots, homeDir })
+      return true
+    }
+
+    if (pathname === "/__jet/agents/listProviders" && req.method === "POST") {
+      sendJson(res, 200, devAgentProvidersState())
+      return true
+    }
+
+    if (pathname === "/__jet/agents/refreshProviders" && req.method === "POST") {
+      sendJson(res, 200, devAgentProvidersState())
+      return true
+    }
+
+    if (pathname === "/__jet/agents/listThreads" && req.method === "POST") {
+      const workspaceRootUri = String(body.workspaceRootUri ?? "")
+      await guardUri(workspaceRootUri, opts.allowedRoots)
+      const rootPath = String(body.workspaceRootPath ?? "") || uriToPath(workspaceRootUri)
+      const payload = await readAgentStore(rootPath)
+      sendJson(res, 200, buildWorkspaceSnapshot(workspaceRootUri, rootPath, payload.threads))
+      return true
+    }
+
+    if (pathname === "/__jet/agents/readThread" && req.method === "POST") {
+      const workspaceRootUri = String(body.workspaceRootUri ?? "")
+      await guardUri(workspaceRootUri, opts.allowedRoots)
+      const rootPath = String(body.workspaceRootPath ?? "") || uriToPath(workspaceRootUri)
+      const payload = await readAgentStore(rootPath)
+      const threadId = String(body.threadId ?? "")
+      sendJson(res, 200, payload.threads.find((thread) => thread.id === threadId) ?? null)
+      return true
+    }
+
+    if (pathname === "/__jet/agents/createThread" && req.method === "POST") {
+      const input = body as Record<string, unknown> as CreateAgentThreadInput
+      await guardUri(String(input.workspaceRootUri ?? ""), opts.allowedRoots)
+      const rootPath = String(input.workspaceRootPath ?? "") || uriToPath(input.workspaceRootUri)
+      const payload = await readAgentStore(rootPath)
+      const thread = newAgentThread({ ...input, workspaceRootPath: rootPath })
+      payload.threads.unshift(thread)
+      await writeAgentStore(rootPath, payload)
+      sendJson(res, 200, thread)
+      return true
+    }
+
+    if (pathname === "/__jet/agents/sendMessage" && req.method === "POST") {
+      const input = body as Record<string, unknown> as SendAgentMessageInput
+      await guardUri(String(input.workspaceRootUri ?? ""), opts.allowedRoots)
+      const rootPath = String(input.workspaceRootPath ?? "") || uriToPath(input.workspaceRootUri)
+      const payload = await readAgentStore(rootPath)
+      const index = payload.threads.findIndex((thread) => thread.id === input.threadId)
+      if (index < 0) {
+        sendJson(res, 404, { error: `Unknown agent thread: ${input.threadId}` })
+        return true
+      }
+      const thread = payload.threads[index]!
+      const createdAt = new Date().toISOString()
+      const next = touchThread(thread, {
+        status: "idle",
+        lastError: null,
+        provider: input.provider ?? thread.provider ?? "codex",
+        model: input.model ?? thread.model ?? "gpt-5",
+        title:
+          thread.messages.length === 0
+            ? input.text.trim().slice(0, 64) || thread.title
+            : thread.title,
+        messages: [
+          ...thread.messages,
+          {
+            id: crypto.randomUUID(),
+            role: "user",
+            text: input.text,
+            createdAt,
+            updatedAt: createdAt,
+            streaming: false,
+          },
+        ],
+      })
+      payload.threads[index] = next
+      await writeAgentStore(rootPath, payload)
+      sendJson(res, 200, next)
+      return true
+    }
+
+    if (pathname === "/__jet/agents/setArchived" && req.method === "POST") {
+      const input = body as Record<string, unknown> as SetAgentThreadArchivedInput
+      await guardUri(String(input.workspaceRootUri ?? ""), opts.allowedRoots)
+      const rootPath = String(input.workspaceRootPath ?? "") || uriToPath(input.workspaceRootUri)
+      const payload = await readAgentStore(rootPath)
+      const index = payload.threads.findIndex((thread) => thread.id === input.threadId)
+      if (index < 0) {
+        sendJson(res, 200, null)
+        return true
+      }
+      const next = touchThread(payload.threads[index]!, {
+        archivedAt: input.archived ? new Date().toISOString() : null,
+      })
+      payload.threads[index] = next
+      await writeAgentStore(rootPath, payload)
+      sendJson(res, 200, next)
       return true
     }
 

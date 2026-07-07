@@ -1,5 +1,6 @@
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
+import type { AgentProvidersState, AgentThread, AgentWorkspaceSnapshot } from "@jet/agents"
 import type { LSPClient, JetTheme } from "@jet/codemirror"
 import type {
   JetKeyBinding,
@@ -7,6 +8,7 @@ import type {
   ListItem,
   WorkspaceService,
 } from "@jet/workspace"
+import type { AgentExplorerWorkspaceGroup } from "@jet/ui"
 
 /**
  * Ambient dependencies threaded into contributor tab types when they are
@@ -30,4 +32,15 @@ export type TabContributorDeps = {
   onProblemsChange: () => void
   onOpenFile: (uri: string, path: string) => void
   onOpenListItem: (item: ListItem) => void
+  getAgentExplorerGroups: () => AgentExplorerWorkspaceGroup[]
+  getAgentSnapshot: (rootUri: string) => AgentWorkspaceSnapshot | null
+  getAgentThread: (rootUri: string, threadId: string) => AgentThread | null
+  getAgentProviders: () => AgentProvidersState | null
+  openAgentThread: (rootUri: string, threadId: string) => Promise<void>
+  createAgentThread: (rootUri: string, rootPath: string) => Promise<void>
+  sendAgentMessage: (
+    rootUri: string,
+    threadId: string,
+    payload: { text: string; provider: string | null; model: string | null },
+  ) => Promise<void>
 }

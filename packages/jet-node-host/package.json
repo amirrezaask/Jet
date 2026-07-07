@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@ff-labs/fff-node": "^0.9.6",
+    "@jet/agents": "workspace:*",
     "@jet/shared": "workspace:*",
     "ws": "^8.18.2"
   },

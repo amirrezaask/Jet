@@ -12,3 +12,4 @@ packages/jet-app/dist-electron
 .raddebugger
 test-results
 .t3code
+.synara

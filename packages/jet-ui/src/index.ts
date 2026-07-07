@@ -45,6 +45,8 @@ export { setEditorCursor, getEditorCursor } from "./status/editor-cursor-store.j
 export { WelcomeView } from "./welcome/WelcomeView.js"
 export { EditorTabHost, getEditorView, getAllEditorViews, syncAllEditorThemes, destroyEditorBuffer, destroyEditorPanel } from "./tabs/EditorTabHost.js"
 export { ExplorerTab } from "./tabs/ExplorerTab.js"
+export { AgentChatView } from "./agents/AgentChatView.js"
+export { AgentExplorerTab, type AgentExplorerWorkspaceGroup } from "./agents/AgentExplorerTab.js"
 export { OutputPanel } from "./panels/OutputPanel.js"
 export { TerminalPanel } from "./panels/TerminalPanel.js"
 export { showEditorContextMenuAt } from "./components/EditorContextMenu.js"

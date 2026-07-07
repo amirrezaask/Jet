@@ -1,6 +1,14 @@
 import type { JetElectronAPI } from "@jet/workspace"
 import type { ProjectSearchResult } from "@jet/shared"
 import { pathToFileUri } from "@jet/shared"
+import type {
+  AgentThread,
+  AgentWorkspaceSnapshot,
+  AgentProvidersState,
+  CreateAgentThreadInput,
+  SendAgentMessageInput,
+  SetAgentThreadArchivedInput,
+} from "@jet/agents"
 
 async function postJson<T>(baseUrl: string, path: string, body: unknown): Promise<T> {
   const res = await fetch(`${baseUrl}${path}`, {
@@ -57,9 +65,32 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
           languageId,
           command,
           args,
-        }),
+      }),
       stop: id => postJson(baseUrl, "/lsp/stop", { id }).then(() => undefined),
       onCrashed: () => () => {},
+    },
+    agents: {
+      listThreads: (workspaceRootUri, workspaceRootPath) =>
+        postJson<AgentWorkspaceSnapshot>(baseUrl, "/agents/listThreads", {
+          workspaceRootUri,
+          workspaceRootPath,
+        }),
+      readThread: (workspaceRootUri, workspaceRootPath, threadId) =>
+        postJson<AgentThread | null>(baseUrl, "/agents/readThread", {
+          workspaceRootUri,
+          workspaceRootPath,
+          threadId,
+        }),
+      createThread: (input: CreateAgentThreadInput) =>
+        postJson<AgentThread>(baseUrl, "/agents/createThread", input),
+      sendMessage: (input: SendAgentMessageInput) =>
+        postJson<AgentThread>(baseUrl, "/agents/sendMessage", input),
+      setArchived: (input: SetAgentThreadArchivedInput) =>
+        postJson<AgentThread | null>(baseUrl, "/agents/setArchived", input),
+      listProviders: () =>
+        postJson<AgentProvidersState>(baseUrl, "/agents/listProviders", {}),
+      refreshProviders: () =>
+        postJson<AgentProvidersState>(baseUrl, "/agents/refreshProviders", {}),
     },
   }
 }

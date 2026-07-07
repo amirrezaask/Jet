@@ -9,6 +9,7 @@ import {
   startTransition,
   useDeferredValue,
 } from "react"
+import type { AgentProvidersState, AgentThread, AgentWorkspaceSnapshot } from "@jet/agents"
 import type { PanelEvent } from "@jet/panels"
 import type { PanelId, PanelView, DropAction } from "@jet/shared"
 import { pathToFileUri, isUntitledUri, fileUriToPath } from "@jet/shared"
@@ -76,6 +77,7 @@ import {
   formatKeyBinding,
   problemsToListItems,
   WhichKeyPanel,
+  type AgentExplorerWorkspaceGroup,
   type OutlineEntry,
   type WhichKeyEntry,
   TooltipProvider,
@@ -98,6 +100,8 @@ import { getJetSearchState } from "@jet/codemirror"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
+import { agentChatTabId, parseAgentChatTabId } from "./tabs/agent-chat.tab.js"
+import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
 import { terminalCwdForTab } from "./tabs/terminal.tab.js"
 import {
   panelViewKind,
@@ -109,6 +113,7 @@ import {
   closePanelIfEmpty,
   reconcileFocusedPanel,
 } from "./panel-routing.js"
+import { openAgentChatTab, openAgentExplorerTab } from "./tab-routing.js"
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
 import { loadGlobalJetrc } from "./load-global-jetrc.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
@@ -164,6 +169,25 @@ function normalizeAbsPath(p: string): string {
   return trimmed || p
 }
 
+function agentThreadStateKey(rootUri: string, threadId: string): string {
+  return `${rootUri}\u0000${threadId}`
+}
+
+function agentSnapshotFingerprint(snapshot: AgentWorkspaceSnapshot | null): string {
+  if (!snapshot) return ""
+  return snapshot.threads.map(t => `${t.id}:${t.updatedAt}:${t.messageCount}`).join("|")
+}
+
+function agentThreadsFingerprint(
+  threads: Record<string, AgentThread | null>,
+  rootUri: string,
+): string {
+  return Object.entries(threads)
+    .filter(([key]) => key.startsWith(`${rootUri}\u0000`))
+    .map(([key, thread]) => (thread ? `${key}:${thread.updatedAt}:${thread.messages.length}` : key))
+    .join("|")
+}
+
 function loadRecentCommands(): string[] {
   try {
     const raw = localStorage.getItem(COMMAND_RECENTS_STORAGE_KEY)
@@ -213,6 +237,9 @@ export function JetApp() {
   const [projects, setProjects] = useState<JetProject[]>([])
   const [searchScanReady, setSearchScanReady] = useState(false)
   const [searchSupported, setSearchSupported] = useState(false)
+  const [agentSnapshots, setAgentSnapshots] = useState<Record<string, AgentWorkspaceSnapshot | null>>({})
+  const [agentThreads, setAgentThreads] = useState<Record<string, AgentThread | null>>({})
+  const [agentProviders, setAgentProviders] = useState<AgentProvidersState | null>(null)
   const folderSearchStateRef = useRef(
     new Map<string, { supported: boolean; scanReady: boolean }>(),
   )
@@ -271,8 +298,15 @@ export function JetApp() {
       const kind = desc.kind
       if (kind === "editor") {
         tabStore.create<{ fileUri: string }>(kind, { fileUri: desc.id }, desc.id)
-      } else if (kind === "explorer" || kind === "output") {
+      } else if (kind === "explorer" || kind === "output" || kind === "agent-explorer") {
         tabStore.create<Record<string, never>>(kind, {}, desc.id)
+      } else if (kind === "agent-chat") {
+        const parsed = parseAgentChatTabId(desc.id)
+        if (!parsed) {
+          tabStore.dispose(desc.id)
+          return
+        }
+        tabStore.create<{ rootUri: string; threadId: string }>(kind, parsed, desc.id)
       } else if (kind === "terminal") {
         tabStore.create<{ label: string; cwdRootUri: string }>(
           kind,
@@ -305,6 +339,23 @@ export function JetApp() {
   const userExtensionsRef = useRef<Extension[]>([])
   const keymapRevisionRef = useRef(0)
   const keymapContextRef = useRef<KeymapContext | undefined>(undefined)
+  const agentSnapshotsRef = useRef<Record<string, AgentWorkspaceSnapshot | null>>({})
+  const agentThreadsRef = useRef<Record<string, AgentThread | null>>({})
+  const agentProvidersRef = useRef<AgentProvidersState | null>(null)
+  const sendAgentInFlightRef = useRef(false)
+  const openAgentThreadRef = useRef<(rootUri: string, threadId: string) => Promise<void>>(
+    () => Promise.resolve(),
+  )
+  const createAgentThreadRef = useRef<(rootUri: string, rootPath: string) => Promise<void>>(
+    () => Promise.resolve(),
+  )
+  const sendAgentMessageRef = useRef<
+    (
+      rootUri: string,
+      threadId: string,
+      payload: { text: string; provider: string | null; model: string | null },
+    ) => Promise<void>
+  >(() => Promise.resolve())
   const handleOpenFileForTabs = useRef<(uri: string, path: string) => void>(() => {})
   const openListItemForTabs = useRef<(item: ListItem) => void>(() => {})
   const setEditorFocusedRef = useRef<(f: boolean) => void>(() => {})
@@ -318,6 +369,168 @@ export function JetApp() {
   keymapBindingsRef.current = keymapBindings
   userExtensionsRef.current = userExtensions
   keymapRevisionRef.current = keymapRevision
+  agentSnapshotsRef.current = agentSnapshots
+  agentThreadsRef.current = agentThreads
+  agentProvidersRef.current = agentProviders
+
+  const findWorkspaceFolderByRootUri = useCallback(
+    (rootUri: string) =>
+      workspace.manager.folders.find(
+        folder =>
+          folder.root.uri === rootUri ||
+          normalizeAbsPath(folder.root.uri) === normalizeAbsPath(rootUri),
+      ) ?? null,
+    [workspace],
+  )
+
+  const bumpAgentTab = useCallback(
+    (tabId: string) => {
+      if (!workspace.tabRegistry.get(tabId)) return
+      tabStore.update(tabId, prev => prev)
+    },
+    [workspace, tabStore],
+  )
+
+  const refreshAgentExplorerTab = useCallback(() => {
+    bumpAgentTab(AGENT_EXPLORER_TAB_ID)
+  }, [bumpAgentTab])
+
+  const syncAgentThread = useCallback(
+    (thread: AgentThread | null) => {
+      if (!thread) return
+      const key = agentThreadStateKey(thread.workspaceRootUri, thread.id)
+      const nextThreads = { ...agentThreadsRef.current, [key]: thread }
+      agentThreadsRef.current = nextThreads
+      setAgentThreads(nextThreads)
+      const nextSnapshot: AgentWorkspaceSnapshot = {
+        workspaceRootUri: thread.workspaceRootUri,
+        workspaceRootPath: thread.workspaceRootPath,
+        threads: [
+          {
+            id: thread.id,
+            title: thread.title,
+            updatedAt: thread.updatedAt,
+            createdAt: thread.createdAt,
+            archivedAt: thread.archivedAt,
+            status: thread.status,
+            lastError: thread.lastError,
+            latestUserMessageAt:
+              [...thread.messages]
+                .reverse()
+                .find(message => message.role === "user")
+                ?.createdAt ?? null,
+            messageCount: thread.messages.length,
+          },
+          ...(agentSnapshotsRef.current[thread.workspaceRootUri]?.threads ?? []).filter(
+            entry => entry.id !== thread.id,
+          ),
+        ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+      }
+      const nextSnapshots = {
+        ...agentSnapshotsRef.current,
+        [thread.workspaceRootUri]: nextSnapshot,
+      }
+      agentSnapshotsRef.current = nextSnapshots
+      setAgentSnapshots(nextSnapshots)
+      const chatTabId = agentChatTabId(thread.workspaceRootUri, thread.id)
+      workspace.tabRegistry.update(chatTabId, { label: thread.title })
+      bumpAgentTab(chatTabId)
+      refreshAgentExplorerTab()
+    },
+    [workspace, bumpAgentTab, refreshAgentExplorerTab],
+  )
+
+  const loadAgentSnapshot = useCallback(
+    async (rootUri: string, rootPath: string): Promise<AgentWorkspaceSnapshot | null> => {
+      const transport = window.jet?.agents
+      if (!transport) return null
+      const snapshot = await transport.listThreads(rootUri, rootPath)
+      const prevSnapshot = agentSnapshotsRef.current[rootUri] ?? null
+      if (agentSnapshotFingerprint(prevSnapshot) !== agentSnapshotFingerprint(snapshot)) {
+        const nextSnapshots = { ...agentSnapshotsRef.current, [rootUri]: snapshot }
+        agentSnapshotsRef.current = nextSnapshots
+        setAgentSnapshots(nextSnapshots)
+      }
+      const loadedThreads = await Promise.all(
+        snapshot.threads.map(thread => transport.readThread(rootUri, rootPath, thread.id)),
+      )
+      if (loadedThreads.some(Boolean)) {
+        const prevFingerprint = agentThreadsFingerprint(agentThreadsRef.current, rootUri)
+        const nextThreads = { ...agentThreadsRef.current }
+        for (const thread of loadedThreads) {
+          if (!thread) continue
+          nextThreads[agentThreadStateKey(thread.workspaceRootUri, thread.id)] = thread
+        }
+        if (agentThreadsFingerprint(nextThreads, rootUri) !== prevFingerprint) {
+          agentThreadsRef.current = nextThreads
+          setAgentThreads(nextThreads)
+        }
+      }
+      refreshAgentExplorerTab()
+      return snapshot
+    },
+    [refreshAgentExplorerTab],
+  )
+
+  const loadAgentProviders = useCallback(async (): Promise<AgentProvidersState | null> => {
+    const transport = window.jet?.agents
+    if (!transport?.listProviders) return null
+    const state = await transport.listProviders()
+    agentProvidersRef.current = state
+    setAgentProviders(state)
+    return state
+  }, [])
+
+  const refreshAgentProviders = useCallback(async (): Promise<AgentProvidersState | null> => {
+    const transport = window.jet?.agents
+    if (!transport?.refreshProviders) return loadAgentProviders()
+    const state = await transport.refreshProviders()
+    agentProvidersRef.current = state
+    setAgentProviders(state)
+    return state
+  }, [loadAgentProviders])
+
+  const loadAgentThread = useCallback(
+    async (rootUri: string, rootPath: string, threadId: string): Promise<AgentThread | null> => {
+      const transport = window.jet?.agents
+      if (!transport) return null
+      const thread = await transport.readThread(rootUri, rootPath, threadId)
+      if (thread) syncAgentThread(thread)
+      return thread
+    },
+    [syncAgentThread],
+  )
+
+  const getAgentProviders = useCallback(() => agentProvidersRef.current, [])
+
+  const getAgentSnapshot = useCallback(
+    (rootUri: string) => agentSnapshotsRef.current[rootUri] ?? null,
+    [],
+  )
+
+  const getAgentThread = useCallback(
+    (rootUri: string, threadId: string) =>
+      agentThreadsRef.current[agentThreadStateKey(rootUri, threadId)] ?? null,
+    [],
+  )
+
+  const getAgentExplorerGroups = useCallback((): AgentExplorerWorkspaceGroup[] => {
+    return workspace.folders.map(folder => {
+      const snapshot = agentSnapshotsRef.current[folder.root.uri]
+      return {
+        id: folder.id,
+        name: folder.root.name,
+        path: folder.root.path,
+        rootUri: folder.root.uri,
+        snapshot: snapshot
+          ? {
+              ...snapshot,
+              threads: snapshot.threads.filter(thread => thread.archivedAt == null),
+            }
+          : null,
+      }
+    })
+  }, [workspace])
 
   useEffect(() => {
     registerBuiltinTabTypes(tabTypeRegistry, {
@@ -337,8 +550,24 @@ export function JetApp() {
       onProblemsChange: () => refreshProblemsRef.current(),
       onOpenFile: (uri, path) => handleOpenFileForTabs.current(uri, path),
       onOpenListItem: item => openListItemForTabs.current(item),
+      getAgentExplorerGroups,
+      getAgentSnapshot,
+      getAgentThread,
+      getAgentProviders,
+      openAgentThread: (rootUri, threadId) => openAgentThreadRef.current(rootUri, threadId),
+      createAgentThread: (rootUri, rootPath) =>
+        createAgentThreadRef.current(rootUri, rootPath),
+      sendAgentMessage: (rootUri, threadId, payload) =>
+        sendAgentMessageRef.current(rootUri, threadId, payload),
     })
-  }, [tabTypeRegistry, workspace])
+  }, [
+    tabTypeRegistry,
+    workspace,
+    getAgentExplorerGroups,
+    getAgentSnapshot,
+    getAgentThread,
+    getAgentProviders,
+  ])
 
   const keybindingByFn = useMemo(() => {
     const map = new Map<JetKeyBinding["run"], string>()
@@ -392,6 +621,7 @@ export function JetApp() {
       terminalFocus: activeTabKindName === "terminal",
       listFocus:
         activeTabKindName === "explorer" ||
+        activeTabKindName === "agent-explorer" ||
         activeTabKindName === "search" ||
         activeTabKindName === "problems" ||
         activeTabKindName === "references" ||
@@ -608,6 +838,98 @@ export function JetApp() {
     },
     [handleOpenFile],
   )
+
+  const openAgentThread = useCallback(
+    async (rootUri: string, threadId: string): Promise<void> => {
+      const folder = findWorkspaceFolderByRootUri(rootUri)
+      if (!folder) return
+      const snapshot = agentSnapshotsRef.current[rootUri]
+      const existingThread = agentThreadsRef.current[agentThreadStateKey(rootUri, threadId)]
+      const title =
+        existingThread?.title ??
+        snapshot?.threads.find(thread => thread.id === threadId)?.title ??
+        "Agent"
+      const tree = cloneTree()
+      const { panelId } = openAgentChatTab(
+        workspace,
+        tree,
+        appStateRef.current.focusedPanel,
+        rootUri,
+        threadId,
+        title,
+      )
+      commitTree(tree, panelId)
+      if (!existingThread) {
+        await loadAgentThread(rootUri, folder.root.path, threadId)
+      } else {
+        bumpAgentTab(agentChatTabId(rootUri, threadId))
+      }
+    },
+    [workspace, findWorkspaceFolderByRootUri, cloneTree, commitTree, loadAgentThread, bumpAgentTab],
+  )
+
+  const openAgentsExplorer = useCallback(async (): Promise<void> => {
+    const tree = cloneTree()
+    const { panelId } = openAgentExplorerTab(workspace, tree, appStateRef.current.focusedPanel)
+    commitTree(tree, panelId)
+    requestAnimationFrame(() => {
+      const list = getListPanel("jet:agent-explorer")
+      const first = list?.querySelector<HTMLElement>("[data-jet-list-item]")
+      ;(first ?? list)?.focus()
+    })
+  }, [workspace, cloneTree, commitTree])
+
+  const createAgentThread = useCallback(
+    async (rootUri: string, rootPath: string): Promise<void> => {
+      const transport = window.jet?.agents
+      if (!transport) {
+        showJetToast("Agents transport unavailable", { variant: "destructive" })
+        return
+      }
+      const thread = await transport.createThread({
+        workspaceRootUri: rootUri,
+        workspaceRootPath: rootPath,
+      })
+      syncAgentThread(thread)
+      await openAgentThread(rootUri, thread.id)
+    },
+    [syncAgentThread, openAgentThread],
+  )
+
+  const sendAgentMessage = useCallback(
+    async (
+      rootUri: string,
+      threadId: string,
+      payload: { text: string; provider: string | null; model: string | null },
+    ): Promise<void> => {
+      if (sendAgentInFlightRef.current) return
+      const transport = window.jet?.agents
+      const folder = findWorkspaceFolderByRootUri(rootUri)
+      if (!transport || !folder) {
+        showJetToast("Agents transport unavailable", { variant: "destructive" })
+        return
+      }
+      sendAgentInFlightRef.current = true
+      try {
+        const thread = await transport.sendMessage({
+          workspaceRootUri: rootUri,
+          workspaceRootPath: folder.root.path,
+          threadId,
+          text: payload.text,
+          provider: payload.provider,
+          model: payload.model,
+        })
+        syncAgentThread(thread)
+      } finally {
+        sendAgentInFlightRef.current = false
+      }
+    },
+    [findWorkspaceFolderByRootUri, syncAgentThread],
+  )
+
+  openAgentThreadRef.current = openAgentThread
+  createAgentThreadRef.current = createAgentThread
+  sendAgentMessageRef.current = sendAgentMessage
 
   const quickOpenSearch = useCallback(
     async (query: string) => {
@@ -842,6 +1164,18 @@ export function JetApp() {
       workspaceInitGen.current.delete(folderId)
       const removed = workspace.removeFolder(folderId)
       if (removed) {
+        setAgentSnapshots(prev => {
+          const next = { ...prev }
+          delete next[rootUri]
+          return next
+        })
+        setAgentThreads(prev => {
+          const next = { ...prev }
+          for (const key of Object.keys(next)) {
+            if (key.startsWith(`${rootUri}\u0000`)) delete next[key]
+          }
+          return next
+        })
         syncGlobalSearchState()
         showJetToast(`Removed ${folder.root.name}`)
       }
@@ -873,6 +1207,55 @@ export function JetApp() {
     })
     return () => sub.dispose()
   }, [workspace, syncGlobalSearchState])
+
+  useEffect(() => {
+    const syncAgentRoots = (folders: WorkspaceFolder[]) => {
+      const roots = folders.map(folder => ({
+        rootUri: folder.root.uri,
+        rootPath: folder.root.path,
+      }))
+      setAgentSnapshots(prev => {
+        const keep = new Set(roots.map(root => root.rootUri))
+        let changed = false
+        const next: Record<string, AgentWorkspaceSnapshot | null> = {}
+        for (const [key, value] of Object.entries(prev)) {
+          if (!keep.has(key)) {
+            changed = true
+            continue
+          }
+          next[key] = value
+        }
+        return changed ? next : prev
+      })
+      setAgentThreads(prev => {
+        const keep = new Set(roots.map(root => root.rootUri))
+        let changed = false
+        const next: Record<string, AgentThread | null> = {}
+        for (const [key, value] of Object.entries(prev)) {
+          const rootUri = key.split("\u0000", 1)[0]!
+          if (!keep.has(rootUri)) {
+            changed = true
+            continue
+          }
+          next[key] = value
+        }
+        return changed ? next : prev
+      })
+      for (const root of roots) {
+        void loadAgentSnapshot(root.rootUri, root.rootPath)
+      }
+    }
+
+    syncAgentRoots(workspace.manager.folders)
+    const sub = workspace.manager.onDidChangeFolders.event(folders => {
+      syncAgentRoots(folders)
+    })
+    return () => sub.dispose()
+  }, [workspace, loadAgentSnapshot])
+
+  useEffect(() => {
+    void loadAgentProviders()
+  }, [loadAgentProviders])
 
   openWorkspaceRef.current = openWorkspaceFolder
   addWorkspaceRef.current = addWorkspaceFolder
@@ -1148,6 +1531,8 @@ export function JetApp() {
         projectRegistry,
         refreshProjects,
         focusExplorer: focusExplorerPanel,
+        openAgentExplorer: openAgentsExplorer,
+        createAgentThread,
         getSearchSupported: () => searchSupported,
       }),
     [
@@ -1166,6 +1551,8 @@ export function JetApp() {
       pushJumpFromActiveEditor,
       projectRegistry,
       refreshProjects,
+      openAgentsExplorer,
+      createAgentThread,
       searchSupported,
       pickWorkspaceFolder,
     ],
@@ -1634,6 +2021,7 @@ export function JetApp() {
           { id: "palette", label: "Command Palette…", shortcut: shortcutFor("palette"), onSelect: () => void executeCommand("ui.showCommandPalette") },
           { id: "quickOpen", label: "Quick Open…", shortcut: shortcutFor("quickOpen"), onSelect: () => void executeCommand("workspace.quickOpen") },
           { id: "explorer", label: "Show Explorer", shortcut: shortcutFor("explorer"), onSelect: () => void executeCommand("explorer.show") },
+          { id: "agents", label: "Show Agents", shortcut: shortcutFor("agents"), onSelect: () => void executeCommand("agents.show") },
           { id: "locationList", label: "Show Location List", shortcut: shortcutFor("locationList"), onSelect: () => void executeCommand("locationlist.show") },
           { id: "output", label: "Show Output", shortcut: shortcutFor("output"), onSelect: () => void executeCommand("output.show") },
           { kind: "separator" as const },

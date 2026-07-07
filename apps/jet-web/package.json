@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @jet/node-host build && vite",
+    "dev": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   },

@@ -64,6 +64,7 @@ import {
   closePanelIfEmpty,
 } from "./panel-routing.js"
 import {
+  openAgentExplorerTab,
   openExplorerTab,
   openOutputTab,
   openProblemsTab,
@@ -74,6 +75,7 @@ import {
   isActiveTerminalTab,
 } from "./tab-routing.js"
 import { confirmCloseBuffer } from "./close-buffer.js"
+import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
 
 export type BuildAppCommandsDeps = {
   workspace: WorkspaceService
@@ -110,6 +112,8 @@ export type BuildAppCommandsDeps = {
   projectRegistry: import("@jet/workspace").ProjectRegistry
   refreshProjects: () => Promise<number>
   focusExplorer?: () => void
+  openAgentExplorer: () => Promise<void>
+  createAgentThread: (rootUri: string, rootPath: string) => Promise<void>
   getSearchSupported: () => boolean
 }
 
@@ -477,6 +481,22 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.commitTree(tree, panelId)
       deps.focusExplorer?.()
     },
+    agents: async ctx => {
+      if (!deps.workspace.manager.hasFolders()) {
+        await openFolder(ctx)
+        return
+      }
+      await deps.openAgentExplorer()
+    },
+    newAgent: async ctx => {
+      const folder = deps.workspace.manager.activeFolder
+      if (!folder) {
+        await openFolder(ctx)
+        return
+      }
+      await deps.openAgentExplorer()
+      await deps.createAgentThread(folder.root.uri, folder.root.path)
+    },
     jumpBack: ctx => {
       const panel = currentFocusedPanel()
       const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
@@ -598,13 +618,18 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       const tree = deps.cloneTree()
       for (const panel of getAllLeafPanels(tree)) {
         if (panelHasExplorerTab(tree, panel)) {
-          deps.workspace.focusTabInPanel(tree, panel, EXPLORER_TAB_ID)
+          const view = tree.getView(panel)
+          if (view?.kind !== "tabs") continue
+          const sidebarTabId =
+            panelTabIds(view).find(id => id === AGENT_EXPLORER_TAB_ID || id === EXPLORER_TAB_ID) ??
+            view.activeTabId
+          deps.workspace.focusTabInPanel(tree, panel, sidebarTabId)
           deps.commitTree(tree, panel)
           deps.focusExplorer?.()
           return
         }
       }
-      const { panelId } = openExplorerTab(deps.workspace, tree, currentFocusedPanel())
+      const { panelId } = openAgentExplorerTab(deps.workspace, tree, currentFocusedPanel())
       deps.commitTree(tree, panelId)
       deps.focusExplorer?.()
     },
@@ -805,6 +830,8 @@ export const APP_COMMAND_REGISTRY = [
   { id: "task.run", fn: "runTask", title: "Run Task", category: "Tasks" },
   { id: "task.runBuild", fn: "runBuild", title: "Run Build Task", category: "Tasks" },
   { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"] },
+  { id: "agents.show", fn: "agents", title: "Show Agents", category: "View", aliases: ["agent explorer", "chat sidebar"] },
+  { id: "agent.new", fn: "newAgent", title: "New Agent", category: "Agents", aliases: ["new chat", "new assistant"] },
   { id: "editor.toggleComment", fn: "toggleComment", title: "Toggle Comment", category: "Editor" },
   { id: "editor.copyLineDown", fn: "copyLineDown", title: "Copy Line Down", category: "Editor" },
   { id: "editor.moveLineDown", fn: "moveLineDown", title: "Move Line Down", category: "Editor" },

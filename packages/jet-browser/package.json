@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@jet/agents": "workspace:*",
     "@jet/panels": "workspace:*",
     "@jet/shared": "workspace:*",
     "@jet/workspace": "workspace:*"

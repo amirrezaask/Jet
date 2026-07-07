@@ -8,6 +8,8 @@ import {
 } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
 import { resolveAuxiliaryPanel, resolveEditorPanel, getAllLeafPanels } from "./panel-routing.js"
+import { agentChatTabId, AGENT_CHAT_TAB_TYPE_ID } from "./tabs/agent-chat.tab.js"
+import { AGENT_EXPLORER_TAB_ID, AGENT_EXPLORER_TAB_TYPE_ID } from "./tabs/agent-explorer.tab.js"
 import { TERMINAL_TAB_TYPE_ID, registerTerminalSession } from "./tabs/terminal.tab.js"
 
 export function openTabInAuxiliaryPanel(
@@ -110,7 +112,8 @@ export function openExplorerTab(
   focused: PanelId | null,
 ): { panelId: PanelId; tabId: string } {
   const tab = workspace.explorerTab()
-  const existingPanel = findPanelWithTab(tree, EXPLORER_TAB_ID)
+  const existingPanel =
+    findPanelWithTab(tree, EXPLORER_TAB_ID) ?? findPanelWithTab(tree, AGENT_EXPLORER_TAB_ID)
   if (existingPanel) {
     return workspace.openOrFocusTab(tree, existingPanel, tab)
   }
@@ -123,4 +126,43 @@ export function openExplorerTab(
 
   const sidebar = tree.splitAtEdge(editorPanel, "left")
   return workspace.openOrFocusTab(tree, sidebar, tab)
+}
+
+export function openAgentExplorerTab(
+  workspace: WorkspaceService,
+  tree: JetPanelTree,
+  focused: PanelId | null,
+): { panelId: PanelId; tabId: string } {
+  const tab = { id: AGENT_EXPLORER_TAB_ID, kind: AGENT_EXPLORER_TAB_TYPE_ID, label: "Agents" }
+  const existingPanel =
+    findPanelWithTab(tree, AGENT_EXPLORER_TAB_ID) ?? findPanelWithTab(tree, EXPLORER_TAB_ID)
+  if (existingPanel) {
+    return workspace.openOrFocusTab(tree, existingPanel, tab)
+  }
+
+  const editorPanel = resolveEditorPanel(tree, null, focused)
+  if (!editorPanel) {
+    const leaf = getAllLeafPanels(tree)[0]
+    return workspace.openOrFocusTab(tree, leaf ?? tree.allocPanelId(), tab)
+  }
+
+  const sidebar = tree.splitAtEdge(editorPanel, "left")
+  return workspace.openOrFocusTab(tree, sidebar, tab)
+}
+
+export function openAgentChatTab(
+  workspace: WorkspaceService,
+  tree: JetPanelTree,
+  focused: PanelId | null,
+  rootUri: string,
+  threadId: string,
+  title: string,
+): { panelId: PanelId; tabId: string } {
+  const tabId = agentChatTabId(rootUri, threadId)
+  const panel = resolveEditorPanel(tree, null, focused) ?? getAllLeafPanels(tree)[0] ?? tree.allocPanelId()
+  return workspace.openOrFocusTab(tree, panel, {
+    id: tabId,
+    kind: AGENT_CHAT_TAB_TYPE_ID,
+    label: title,
+  })
 }

@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { resolveLaunchTarget, loadGlobalJetrcScanRoots, applyLoginShellEnv, type LaunchConfig } from "@jet/node-host"
 import { registerFsHandlers } from "./fs.js"
+import { registerAgentHandlers } from "./agents.js"
 import { registerSearchHandlers } from "./search.js"
 import { registerLspHandlers, stopAllLsp, setLspCrashHandler } from "./lsp-bridge.js"
 import { registerTaskHandlers } from "./tasks.js"
@@ -190,6 +191,7 @@ app.whenReady().then(() => {
   applyLoginShellEnv()
   installAppMenu()
   registerFsHandlers(ipcMain, dialog)
+  registerAgentHandlers(ipcMain)
   registerWorkspaceHost(ipcMain, getWindow)
   registerSearchHandlers(ipcMain)
   registerLspHandlers(ipcMain, getWindow)

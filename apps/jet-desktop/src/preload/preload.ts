@@ -65,6 +65,17 @@ const api: JetElectronAPI = {
       return () => searchReadyListeners.delete(callback)
     },
   },
+  agents: {
+    listThreads: (workspaceRootUri, workspaceRootPath) =>
+      ipcRenderer.invoke("agents:listThreads", workspaceRootUri, workspaceRootPath),
+    readThread: (workspaceRootUri, workspaceRootPath, threadId) =>
+      ipcRenderer.invoke("agents:readThread", workspaceRootUri, workspaceRootPath, threadId),
+    createThread: input => ipcRenderer.invoke("agents:createThread", input),
+    sendMessage: input => ipcRenderer.invoke("agents:sendMessage", input),
+    setArchived: input => ipcRenderer.invoke("agents:setArchived", input),
+    listProviders: () => ipcRenderer.invoke("agents:listProviders"),
+    refreshProviders: () => ipcRenderer.invoke("agents:refreshProviders"),
+  },
   search: {
     project: (rootUri, query, opts) =>
       ipcRenderer.invoke("search:project", rootUri, query, opts),

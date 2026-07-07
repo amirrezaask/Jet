@@ -1,5 +1,13 @@
 import type { TabTypeRegistry } from "@jet/ui"
 import type { TabContributorDeps } from "./deps.js"
+import {
+  createAgentChatTabType,
+  AGENT_CHAT_TAB_TYPE_ID,
+} from "./agent-chat.tab.js"
+import {
+  createAgentExplorerTabType,
+  AGENT_EXPLORER_TAB_TYPE_ID,
+} from "./agent-explorer.tab.js"
 import { createEditorTabType, EDITOR_TAB_TYPE_ID } from "./editor.tab.js"
 import { createExplorerTabType, EXPLORER_TAB_TYPE_ID } from "./explorer.tab.js"
 import { createOutputTabType, OUTPUT_TAB_TYPE_ID } from "./output.tab.js"
@@ -18,6 +26,8 @@ import {
 } from "./list-tabs.js"
 
 export {
+  AGENT_CHAT_TAB_TYPE_ID,
+  AGENT_EXPLORER_TAB_TYPE_ID,
   EDITOR_TAB_TYPE_ID,
   EXPLORER_TAB_TYPE_ID,
   OUTPUT_TAB_TYPE_ID,
@@ -34,6 +44,8 @@ export function registerBuiltinTabTypes(
   registry: TabTypeRegistry,
   deps: TabContributorDeps,
 ): void {
+  registry.register(createAgentExplorerTabType(deps))
+  registry.register(createAgentChatTabType(deps))
   registry.register(createEditorTabType(deps))
   registry.register(createExplorerTabType(deps))
   registry.register(createOutputTabType(deps))
