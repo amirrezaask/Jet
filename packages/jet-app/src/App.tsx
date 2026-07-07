@@ -43,7 +43,6 @@ import {
   PROBLEMS_TAB_ID,
   panelTabIds,
   isTerminalTabId,
-  aggregateFolderSearchState,
   fileSearchAcrossFolders,
   relativePathInFolder,
   resolveQuickOpenDisplayPath,
@@ -106,7 +105,7 @@ import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
 import { agentChatTabId, parseAgentChatTabId, type AgentChatTabState } from "./tabs/agent-chat.tab.js"
 import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
-import { terminalCwdForTab } from "./tabs/terminal.tab.js"
+import { terminalCwdForTab } from "./tabs/terminal-session.js"
 import {
   panelViewKind,
   getAllLeafPanels,
@@ -120,6 +119,11 @@ import {
 } from "./panel-routing.js"
 import { openAgentChatTab, openAgentExplorerTab, openTerminalExplorerTab, openTerminalTab } from "./tab-routing.js"
 import { buildTerminalExplorerGroups, nextTerminalLabel } from "./terminal-explorer.js"
+import {
+  isContextualTabKind,
+  resolveContextWorkspaceFolder,
+  resolveFolderForActiveTab,
+} from "./resolve-tab-workspace.js"
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
 import { loadGlobalJetrc } from "./load-global-jetrc.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
@@ -250,14 +254,13 @@ export function JetApp() {
     resolve: (folder: WorkspaceFolder | null) => void
   } | null>(null)
   const [projects, setProjects] = useState<JetProject[]>([])
-  const [searchScanReady, setSearchScanReady] = useState(false)
-  const [searchSupported, setSearchSupported] = useState(false)
   const [agentSnapshots, setAgentSnapshots] = useState<Record<string, AgentWorkspaceSnapshot | null>>({})
   const [agentThreads, setAgentThreads] = useState<Record<string, AgentThread | null>>({})
   const [agentProviders, setAgentProviders] = useState<AgentProvidersState | null>(null)
   const folderSearchStateRef = useRef(
     new Map<string, { supported: boolean; scanReady: boolean }>(),
   )
+  const lastContextFolderRef = useRef<WorkspaceFolder | null>(null)
   const [folderSearchRev, setFolderSearchRev] = useState(0)
   const [problems, setProblems] = useState<JetProblem[]>([])
   const [panelRev, setPanelRev] = useState(0)
@@ -624,6 +627,37 @@ export function JetApp() {
     })
   }, [workspace])
 
+  const resolveContextFolder = useCallback((): WorkspaceFolder | null => {
+    return resolveContextWorkspaceFolder(
+      panelTree,
+      focusedPanel,
+      workspace.tabRegistry,
+      workspace,
+      lastContextFolderRef.current,
+    )
+  }, [panelTree, focusedPanel, workspace, panelRev])
+
+  const getContextSearchState = useCallback(() => {
+    void folderSearchRev
+    const folder = resolveContextFolder()
+    if (!folder) return { supported: false, scanReady: false }
+    const state = folderSearchStateRef.current.get(folder.id)
+    return { supported: state?.supported ?? false, scanReady: state?.scanReady ?? false }
+  }, [resolveContextFolder, folderSearchRev])
+
+  useEffect(() => {
+    const folder = resolveFolderForActiveTab(
+      panelTree,
+      focusedPanel,
+      workspace.tabRegistry,
+      workspace,
+    )
+    const kind = activeTabKind(panelTree, focusedPanel, workspace.tabRegistry)
+    if (folder && isContextualTabKind(kind)) {
+      lastContextFolderRef.current = folder
+    }
+  }, [panelTree, focusedPanel, workspace, panelRev])
+
   useEffect(() => {
     registerBuiltinTabTypes(tabTypeRegistry, {
       workspace,
@@ -666,6 +700,10 @@ export function JetApp() {
       focusTerminalTab: (panelId, tabId) => focusTerminalTabRef.current(panelId, tabId),
       newTerminalInWorkspace: rootUri => newTerminalInWorkspaceRef.current(rootUri),
       closeTerminalTab: (panelId, tabId) => closeTerminalTabRef.current(panelId, tabId),
+      getSearchFolders: () => {
+        const folder = resolveContextFolder()
+        return folder ? [folder] : workspace.folders
+      },
     })
   }, [
     tabTypeRegistry,
@@ -675,6 +713,7 @@ export function JetApp() {
     getAgentThread,
     subscribeAgentThread,
     getAgentProviders,
+    resolveContextFolder,
   ])
 
   const keybindingByFn = useMemo(() => {
@@ -1287,29 +1326,26 @@ export function JetApp() {
 
   const quickOpenSearch = useCallback(
     async (query: string) => {
-      const folders = workspace.folders
-      if (folders.length === 0 || !window.jet?.search?.fileSearch) return []
+      const folder = resolveContextFolder()
+      if (!folder || !window.jet?.search?.fileSearch) return []
 
       const panel = focusedPanel
       const activeUri = panel ? getActiveEditorFileUri(panelTree, panel) : null
       let currentFile: { folderId: string; relativePath: string } | undefined
       if (activeUri) {
         const abs = fileUriToPath(activeUri)
-        for (const folder of folders) {
-          const rel = relativePathInFolder(folder.root.path, abs)
-          if (rel != null) {
-            currentFile = { folderId: folder.id, relativePath: rel }
-            break
-          }
+        const rel = relativePathInFolder(folder.root.path, abs)
+        if (rel != null) {
+          currentFile = { folderId: folder.id, relativePath: rel }
         }
       }
 
-      return fileSearchAcrossFolders(folders, window.jet.search, query, {
+      return fileSearchAcrossFolders([folder], window.jet.search, query, {
         pageSize: 100,
         currentFile,
       })
     },
-    [workspace, focusedPanel, panelTree],
+    [resolveContextFolder, focusedPanel, panelTree],
   )
 
   const openListItem = useCallback(
@@ -1376,13 +1412,8 @@ export function JetApp() {
   }, [])
 
   const syncGlobalSearchState = useCallback(() => {
-    const { supported, scanReady } = aggregateFolderSearchState(
-      workspace.folders,
-      folderSearchStateRef.current,
-    )
-    setSearchSupported(supported)
-    setSearchScanReady(scanReady)
-  }, [workspace])
+    setFolderSearchRev(r => r + 1)
+  }, [])
 
   const activateFolderBackground = useCallback(
     (folderId: string, folderPath: string) => {
@@ -1890,7 +1921,8 @@ export function JetApp() {
         createAgentThread,
         archiveActiveAgentThread: () => archiveActiveAgentThreadRef.current(),
         unarchiveActiveAgentThread: () => unarchiveActiveAgentThreadRef.current(),
-        getSearchSupported: () => searchSupported,
+        getSearchSupported: () => getContextSearchState().supported,
+        getContextFolder: resolveContextFolder,
       }),
     [
       workspace,
@@ -1911,10 +1943,13 @@ export function JetApp() {
       openAgentsExplorer,
       openTerminalExplorer,
       createAgentThread,
-      searchSupported,
+      getContextSearchState,
+      resolveContextFolder,
       pickWorkspaceFolder,
     ],
   )
+
+  const contextSearchState = getContextSearchState()
 
   const deferredPanelRev = useDeferredValue(panelRev)
 
@@ -2503,7 +2538,7 @@ export function JetApp() {
 
       <Suspense fallback={null}>
         {(gotoLineOpen ||
-          (quickOpenOpen && searchSupported) ||
+          (quickOpenOpen && contextSearchState.supported) ||
           bufferListOpen ||
           openFileOpen ||
           folderPickerOpen ||
@@ -2521,12 +2556,14 @@ export function JetApp() {
               if (view) jumpToLine(view, line, column)
             }}
             quickOpenOpen={quickOpenOpen}
-            searchSupported={searchSupported}
-            searchScanReady={searchScanReady}
+            searchSupported={contextSearchState.supported}
+            searchScanReady={contextSearchState.scanReady}
             onQuickOpenOpenChange={setQuickOpenOpen}
             onQuickOpenSearch={quickOpenSearch}
             onQuickOpenSelect={(displayPath, query) => {
-              const resolved = resolveQuickOpenDisplayPath(displayPath, workspace.folders)
+              const folder = resolveContextFolder()
+              const folders = folder ? [folder] : workspace.folders
+              const resolved = resolveQuickOpenDisplayPath(displayPath, folders)
               if (!resolved) return
               void window.jet?.search?.trackFileAccess?.(
                 resolved.folder.root.uri,

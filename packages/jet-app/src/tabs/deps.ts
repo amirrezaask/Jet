@@ -33,6 +33,8 @@ export type TabContributorDeps = {
   onProblemsChange: () => void
   onOpenFile: (uri: string, path: string) => void
   onOpenListItem: (item: ListItem) => void
+  /** Scope project search to the current tab's workspace. */
+  getSearchFolders: () => import("@jet/workspace").WorkspaceFolder[]
   getAgentExplorerGroups: () => AgentExplorerWorkspaceGroup[]
   getAgentSnapshot: (rootUri: string) => AgentWorkspaceSnapshot | null
   getAgentThread: (rootUri: string, threadId: string) => AgentThread | null

@@ -54,7 +54,7 @@ test("multi-workspace: explorer shows multiple roots and opens file from second 
   expect(stateAfter.openBuffers.length).toBeGreaterThanOrEqual(1)
 })
 
-test("multi-workspace: quick open dedupes same relative path across roots", async ({ page }) => {
+test("multi-workspace: quick open scopes to current tab workspace", async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
   await page.waitForTimeout(3000)
 
@@ -65,11 +65,43 @@ test("multi-workspace: quick open dedupes same relative path across roots", asyn
 
   await agent(page).executeCommand("workspace.quickOpen")
   await page.keyboard.type("src/index.ts")
+  await page.waitForTimeout(2500)
+
+  const items = page.locator(
+    '[role="dialog"] [cmdk-item]:not([data-value="__jet_no_selection__"])',
+  )
+  await expect(items.first()).toBeVisible()
+  await expect(items.filter({ hasText: "sample-workspace" })).toHaveCount(0)
+  await expect(items.filter({ hasText: "jet-shared" })).toHaveCount(0)
+  await expect(page.locator('[role="dialog"]')).not.toContainText("No matching files")
+  await page.keyboard.press("Escape")
+})
+
+test("multi-workspace: quick open follows focused workspace after switch", async ({ page }) => {
+  await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
+  await page.waitForTimeout(3000)
+
+  await page.evaluate(async () => {
+    await window.__jetAgent!.addWorkspace("packages/jet-shared")
+  })
+  await page.waitForTimeout(2000)
+
+  await agent(page).executeCommand("workspace.switchFolder")
+  await page.locator('[role="dialog"] [cmdk-item]').filter({ hasText: "jet-shared" }).click()
+  await page.waitForTimeout(300)
+  await agent(page).openFile("src/caret-motion.ts")
   await page.waitForTimeout(800)
 
-  const items = page.locator('[role="dialog"] [cmdk-item]')
-  await expect(items.filter({ hasText: "sample-workspace" }).first()).toBeVisible()
-  await expect(items.filter({ hasText: "jet-shared" }).first()).toBeVisible()
+  await agent(page).executeCommand("workspace.quickOpen")
+  await page.keyboard.type("caret-motion")
+  await page.waitForTimeout(2500)
+
+  const items = page.locator(
+    '[role="dialog"] [cmdk-item]:not([data-value="__jet_no_selection__"])',
+  )
+  await expect(items.first()).toBeVisible()
+  await expect(items.filter({ hasText: "caret-motion" }).first()).toBeVisible()
+  await expect(items.filter({ hasText: "sample-workspace" })).toHaveCount(0)
   await expect(page.locator('[role="dialog"]')).not.toContainText("No matching files")
   await page.keyboard.press("Escape")
 })
@@ -108,7 +140,7 @@ test("multi-workspace: remove folder blocked while dirty then succeeds after sav
   expect(workspacesAfter.length).toBe(1)
 })
 
-test("multi-workspace: quick open finds files across roots", async ({ page }) => {
+test("multi-workspace: quick open finds files in focused workspace only", async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
   await page.waitForTimeout(3000)
 
@@ -119,10 +151,12 @@ test("multi-workspace: quick open finds files across roots", async ({ page }) =>
 
   await agent(page).executeCommand("workspace.quickOpen")
   await page.keyboard.type("jet-shared/src/index")
-  await page.waitForTimeout(800)
+  await page.waitForTimeout(2500)
 
-  const option = page.locator('[role="dialog"] [cmdk-item]').filter({ hasText: "jet-shared" })
-  await expect(option.first()).toBeVisible()
+  const option = page.locator(
+    '[role="dialog"] [cmdk-item]:not([data-value="__jet_no_selection__"])',
+  ).filter({ hasText: "jet-shared" })
+  await expect(option).toHaveCount(0)
   await expect(page.locator('[role="dialog"]')).not.toContainText("No matching files")
   await page.keyboard.press("Escape")
 })

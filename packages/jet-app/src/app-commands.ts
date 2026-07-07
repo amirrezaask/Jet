@@ -63,6 +63,7 @@ import {
   panelHasExplorerTab,
   closePanelIfEmpty,
 } from "./panel-routing.js"
+import { resolveFolderForActiveTab } from "./resolve-tab-workspace.js"
 import {
   openAgentExplorerTab,
   openExplorerTab,
@@ -119,6 +120,7 @@ export type BuildAppCommandsDeps = {
   archiveActiveAgentThread: () => Promise<void>
   unarchiveActiveAgentThread: () => Promise<void>
   getSearchSupported: () => boolean
+  getContextFolder: () => WorkspaceFolder | null
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -189,25 +191,25 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   }
 
   function terminalCwdRootUri(): string | undefined {
-    const panel = currentFocusedPanel()
-    const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
-    if (fileUri && !isUntitledUri(fileUri)) {
-      const folder = folderForFileUri(deps.workspace, fileUri)
-      if (folder) return folder.root.uri
-    }
-    return deps.workspace.manager.activeFolder?.root.uri
+    const folder = resolveFolderForActiveTab(
+      currentPanelTree(),
+      currentFocusedPanel(),
+      deps.workspace.tabRegistry,
+      deps.workspace,
+    )
+    return folder?.root.uri ?? deps.workspace.manager.activeFolder?.root.uri
   }
 
   async function resolveTerminalCwdRootUri(): Promise<string | undefined> {
-    const fromEditor = terminalCwdRootUri()
-    if (deps.workspace.folders.length <= 1) return fromEditor
+    const fromTab = terminalCwdRootUri()
+    if (deps.workspace.folders.length <= 1) return fromTab
     const folder = await resolveCommandFolder(
       (() => {
         const panel = currentFocusedPanel()
         return panel ? getActiveEditorFileUri(currentPanelTree(), panel) : null
       })(),
     )
-    return folder?.root.uri ?? fromEditor
+    return folder?.root.uri ?? fromTab
   }
 
   function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
@@ -249,6 +251,11 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   }
 
   function gitSearchUnavailable(ctx: JetCommandContext): boolean {
+    const folder = deps.getContextFolder()
+    if (!folder) {
+      ctx.ui.showMessage("Quick open and project search require an open workspace")
+      return true
+    }
     if (deps.getSearchSupported()) return false
     ctx.ui.showMessage("Quick open and project search require a git repository")
     return true

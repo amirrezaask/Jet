@@ -31,6 +31,7 @@ function makeListTabType(
         listId: instance.state.listId,
         workspace: deps.workspace,
         onOpenItem: deps.onOpenListItem,
+        getSearchFolders: deps.getSearchFolders,
         ...(options?.autoFocusInput ? { autoFocus: ctx.focused && ctx.isActive } : {}),
       }),
   }

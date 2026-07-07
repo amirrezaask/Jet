@@ -36,6 +36,15 @@ export function folderForFileUri(
   return workspace.folders.find(f => f.id === state.id) ?? null
 }
 
+/** Open workspace folder matching a root URI, if any. */
+export function folderForRootUri(
+  workspace: WorkspaceService,
+  rootUri: string,
+): WorkspaceFolder | null {
+  if (!rootUri) return null
+  return workspace.folders.find(f => f.root.uri === rootUri) ?? null
+}
+
 export type JetUI = {
   showMessage(message: string): void
   showCommandPalette(): void

@@ -2,26 +2,18 @@ import { createElement } from "react"
 import type { TabType } from "@jet/ui"
 import { TerminalPanel } from "@jet/ui"
 import type { TabContributorDeps } from "./deps.js"
+import {
+  clearTerminalSession,
+  registerTerminalSession,
+  terminalCwdForTab,
+  terminalPtyIdForTab,
+  trackTerminalPtyId,
+} from "./terminal-session.js"
 
 export const TERMINAL_TAB_TYPE_ID = "terminal"
+export { registerTerminalSession, terminalCwdForTab }
 
 export type TerminalTabState = { label: string; cwdRootUri: string }
-
-const ptyByTabId = new Map<string, string>()
-const cwdByTabId = new Map<string, string>()
-
-export function registerTerminalSession(tabId: string, cwdRootUri: string): void {
-  cwdByTabId.set(tabId, cwdRootUri)
-}
-
-export function terminalCwdForTab(tabId: string): string {
-  return cwdByTabId.get(tabId) ?? ""
-}
-
-function trackPtyId(tabId: string, ptyId: string | null): void {
-  if (ptyId) ptyByTabId.set(tabId, ptyId)
-  else ptyByTabId.delete(tabId)
-}
 
 export function createTerminalTabType(deps: TabContributorDeps): TabType<TerminalTabState> {
   return {
@@ -29,10 +21,9 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
     keepMounted: true,
     title: state => state.label,
     dispose: instance => {
-      const ptyId = ptyByTabId.get(instance.id)
+      const ptyId = terminalPtyIdForTab(instance.id)
       if (ptyId) void window.jet?.terminal?.dispose(ptyId)
-      ptyByTabId.delete(instance.id)
-      cwdByTabId.delete(instance.id)
+      clearTerminalSession(instance.id)
     },
     render: (instance, ctx) =>
       createElement(TerminalPanel, {
@@ -41,7 +32,7 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         tabId: instance.id,
         focused: ctx.focused && ctx.isActive,
         isActive: ctx.isActive,
-        onPtyId: trackPtyId,
+        onPtyId: trackTerminalPtyId,
       }),
   }
 }

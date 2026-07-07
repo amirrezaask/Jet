@@ -1,4 +1,4 @@
-import type { ListDocument, ListItem, WorkspaceService } from "@jet/workspace"
+import type { ListDocument, ListItem, WorkspaceFolder, WorkspaceService } from "@jet/workspace"
 import { projectSearchAcrossFolders } from "@jet/workspace"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { JetCaretInput } from "@/motion/useJetCaretOverlay.js"
@@ -24,11 +24,14 @@ export function SearchLocationList({
   listId,
   workspace,
   onOpenItem,
+  getSearchFolders,
   autoFocus = false,
 }: {
   listId: string
   workspace: WorkspaceService
   onOpenItem: (item: ListItem) => void
+  /** When set, project search is scoped to these folders (e.g. current tab workspace). */
+  getSearchFolders?: () => WorkspaceFolder[]
   autoFocus?: boolean
 }) {
   const initial = workspace.listStore.get(listId)!
@@ -43,7 +46,7 @@ export function SearchLocationList({
 
   const runSearch = useCallback(async () => {
     const query = (doc.searchQuery ?? "").trim()
-    const folders = workspace.folders
+    const folders = getSearchFolders?.() ?? workspace.folders
     if (folders.length === 0 || !window.jet?.search || !query) {
       searchGen.current += 1
       patchDoc({ searchLoading: false, searchError: null })
@@ -75,7 +78,7 @@ export function SearchLocationList({
         searchError: err instanceof Error ? err.message : String(err),
       })
     }
-  }, [workspace, doc, patchDoc])
+  }, [workspace, doc, patchDoc, getSearchFolders])
 
   useEffect(() => {
     const id = window.setTimeout(() => void runSearch(), 300)

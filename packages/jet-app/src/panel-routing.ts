@@ -4,6 +4,11 @@ import type { PanelNode } from "@jet/panels"
 import type { Edge, PanelId, PanelView } from "@jet/shared"
 import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
 import { TERMINAL_EXPLORER_TAB_ID } from "./tabs/terminal-explorer.tab.js"
+export {
+  activeTabKind,
+  getActiveEditorFileUri,
+  getActiveTabId,
+} from "./panel-tab-context.js"
 
 export type AuxiliaryPanelOptions = {
   excludePanelIds?: ReadonlySet<number>
@@ -108,22 +113,13 @@ export function panelViewKind(
   return tree.getView(panel)?.kind
 }
 
-export function activeTabKind(
-  tree: JetPanelTree,
-  panel: PanelId | null,
-  tabRegistry: { kindFor(id: string): string | undefined },
-): string | undefined {
-  if (!panel) return undefined
-  const view = tree.getView(panel)
-  if (view?.kind !== "tabs") return view?.kind
-  return tabRegistry.kindFor(view.activeTabId) ?? "tabs"
-}
-
-export function getActiveTabId(tree: JetPanelTree, panel: PanelId | null): string | null {
+export function getActiveListTabId(tree: JetPanelTree, panel: PanelId | null): string | null {
   if (!panel) return null
   const view = tree.getView(panel)
   if (view?.kind !== "tabs") return null
-  return view.activeTabId
+  const active = view.activeTabId
+  if (active.startsWith("jet:") || active.startsWith("list-")) return active
+  return null
 }
 
 export function getAllLeafPanels(tree: JetPanelTree): PanelId[] {
@@ -144,25 +140,6 @@ export function getEditorPanels(tree: JetPanelTree): PanelId[] {
     const view = tree.getView(p)
     return view?.kind === "tabs"
   })
-}
-
-export function getActiveEditorFileUri(tree: JetPanelTree, panel: PanelId | null): string | null {
-  if (!panel) return null
-  const view = tree.getView(panel)
-  if (view?.kind !== "tabs") return null
-  const active = view.activeTabId
-  if (active.startsWith("file:") || active.startsWith("untitled:")) return active
-  const editorTab = panelTabIds(view).find(id => id.startsWith("file:") || id.startsWith("untitled:"))
-  return editorTab ?? null
-}
-
-export function getActiveListTabId(tree: JetPanelTree, panel: PanelId | null): string | null {
-  if (!panel) return null
-  const view = tree.getView(panel)
-  if (view?.kind !== "tabs") return null
-  const active = view.activeTabId
-  if (active.startsWith("jet:") || active.startsWith("list-")) return active
-  return null
 }
 
 export function closePanelIfEmpty(tree: JetPanelTree, panelId: PanelId): void {

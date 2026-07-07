@@ -1,7 +1,7 @@
 import type { JetPanelTree, WorkspaceService } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
 import { listTerminalTabs } from "./tab-routing.js"
-import { terminalCwdForTab } from "./tabs/terminal.tab.js"
+import { terminalCwdForTab } from "./tabs/terminal-session.js"
 
 export type TerminalExplorerEntry = {
   tabId: string

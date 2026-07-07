@@ -1,5 +1,3 @@
-- Agent explorer
-- rewrite file explorer
-- name ?
-- icon
+- since we are mostly moving towards a terminal emulator for running agents on multiple workspaces, it's simpler for quick open or the project search to act on the current project based on the workspace of the terminal. 
+- name ? icon ?
 - better chrome font size to editor font size ratio

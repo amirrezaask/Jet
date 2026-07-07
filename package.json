@@ -7,7 +7,7 @@
     "dev:web": "turbo run dev --filter=jet-web",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test",
+    "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test && pnpm --filter @jet/app test",
     "test:web": "playwright test --project=web",
     "test:screenshots": "playwright test --project=screenshots",
     "test:screenshots:update": "playwright test --project=screenshots --update-snapshots",
