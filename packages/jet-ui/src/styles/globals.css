@@ -80,6 +80,13 @@
   --jet-fs-base: 1rem;
   --jet-fs-lg: 1.15rem;
   --jet-fs-xl: 1.85rem;
+  /* Row-height contract:
+   *   --jet-row-height          → tree/dense rows (file explorer, terminal explorer,
+   *                                any TreeView). Single-line label, one icon.
+   *   --jet-location-row-height → flat lists with two-line label+path
+   *                                (LocationList: search, problems, references, defs).
+   * Do not merge. Trees are for navigation density; location lists are for
+   * click-to-jump readability. Defined only in :root — scheme-invariant. */
   --jet-row-height: calc(var(--jet-fs-base) * 1.692);
   --jet-titlebar-height: calc(var(--jet-fs-base) * 2.25);
   --jet-location-row-height: calc(var(--jet-fs-base) * 2.5);
