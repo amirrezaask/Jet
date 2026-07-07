@@ -84,13 +84,11 @@ const SortableTabTrigger = memo(function SortableTabTrigger({
   tab,
   index,
   panelId,
-  focused,
   onClose,
 }: {
   tab: PanelTab
   index: number
   panelId: PanelId
-  focused: boolean
   onClose: (tabId: string) => void
 }) {
   const id = tabDndId(panelId, tab.id)
@@ -120,10 +118,7 @@ const SortableTabTrigger = memo(function SortableTabTrigger({
       style={style}
       {...attributes}
       {...listeners}
-      className={cn(
-        "group h-8 max-w-none flex-none cursor-grab touch-none gap-1 rounded-none px-2 text-xs active:cursor-grabbing",
-        !focused && "data-[state=active]:bg-background/60",
-      )}
+      className="group max-w-[220px] flex-none cursor-grab touch-none active:cursor-grabbing"
       title={tab.id}
     >
       {tab.icon}
@@ -179,6 +174,7 @@ export function PanelTabBar({
   ) => void
 }) {
   void registry
+  void focused
   const drag = usePanelDrag()
   const { tabIds, activeId } = tabIdsOf(view)
   const tabs = useTabsSnapshot(store, tabIds)
@@ -203,20 +199,18 @@ export function PanelTabBar({
         data-panel-id={panelId.id}
         data-jet-tab-bar
         className={cn(
-          "shrink-0 border-b border-border transition-colors duration-[var(--jet-motion-fast)]",
-          focused ? "border-b-primary/50" : "",
-          (barOver || isForeignDrag) && isForeignDrag && "border-b-primary/40 bg-muted/30",
+          "shrink-0 px-2 py-1.5 transition-colors duration-[var(--jet-motion-fast)]",
+          (barOver || isForeignDrag) && isForeignDrag && "bg-muted/30",
         )}
       >
         <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
-          <TabsList className="h-8 w-full justify-start overflow-x-auto rounded-none bg-muted/40 p-0">
+          <TabsList className="w-full justify-start overflow-x-auto">
             {tabs.map((tab, i) => (
               <SortableTabTrigger
                 key={tab.id}
                 tab={tab}
                 index={i}
                 panelId={panelId}
-                focused={focused}
                 onClose={onCloseTab}
               />
             ))}

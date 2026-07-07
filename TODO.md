@@ -1,3 +1,3 @@
-- since we are mostly moving towards a terminal emulator for running agents on multiple workspaces, it's simpler for quick open or the project search to act on the current project based on the workspace of the terminal. 
+- sidebar should become it's own thing always there only collapsable, with a centered tab bar on it's top using default shadcn look for switching between file explorer or terminal explorer.
 - name ? icon ?
 - better chrome font size to editor font size ratio
