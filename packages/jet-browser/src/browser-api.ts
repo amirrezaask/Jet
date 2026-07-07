@@ -6,8 +6,10 @@ import type {
   AgentWorkspaceSnapshot,
   AgentProvidersState,
   CreateAgentThreadInput,
+  InterruptAgentTurnInput,
   SendAgentMessageInput,
   SetAgentThreadArchivedInput,
+  UpdateAgentThreadSettingsInput,
 } from "@jet/agents"
 
 async function postJson<T>(baseUrl: string, path: string, body: unknown): Promise<T> {
@@ -85,12 +87,17 @@ export function createBrowserJetAPI(baseUrl = "/__jet"): JetElectronAPI {
         postJson<AgentThread>(baseUrl, "/agents/createThread", input),
       sendMessage: (input: SendAgentMessageInput) =>
         postJson<AgentThread>(baseUrl, "/agents/sendMessage", input),
+      interruptTurn: (input: InterruptAgentTurnInput) =>
+        postJson<AgentThread | null>(baseUrl, "/agents/interruptTurn", input),
       setArchived: (input: SetAgentThreadArchivedInput) =>
         postJson<AgentThread | null>(baseUrl, "/agents/setArchived", input),
+      updateThreadSettings: (input: UpdateAgentThreadSettingsInput) =>
+        postJson<AgentThread | null>(baseUrl, "/agents/updateThreadSettings", input),
       listProviders: () =>
         postJson<AgentProvidersState>(baseUrl, "/agents/listProviders", {}),
       refreshProviders: () =>
         postJson<AgentProvidersState>(baseUrl, "/agents/refreshProviders", {}),
+      onThreadUpdated: undefined,
     },
   }
 }

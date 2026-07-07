@@ -114,6 +114,13 @@ export function activeTabKind(
   return tabRegistry.kindFor(view.activeTabId) ?? "tabs"
 }
 
+export function getActiveTabId(tree: JetPanelTree, panel: PanelId | null): string | null {
+  if (!panel) return null
+  const view = tree.getView(panel)
+  if (view?.kind !== "tabs") return null
+  return view.activeTabId
+}
+
 export function getAllLeafPanels(tree: JetPanelTree): PanelId[] {
   const result: PanelId[] = []
   walk(tree.root, node => {

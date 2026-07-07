@@ -293,7 +293,7 @@ Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
 
 - `WorkspaceService` — root folder, file cache, dirty tracking, open editor tabs
 - `TabRegistry` — maps `TabId` → tab kind + label + dirty flag
-- Tab kinds: `editor`, `explorer`, `git`, `terminal` (stub), `search` (shell), `problems` (stub)
+- Tab kinds: `editor`, `explorer`, `git`, `terminal` (stub), `search` (shell), `problems` (stub), `agent-explorer`, `agent-chat`
 
 
 
@@ -334,6 +334,10 @@ Registered in `packages/jet-app/src/App.tsx`:
 | `search.show`           | Mod-Shift-f           |
 | `problems.show`         | —                     |
 | `terminal.show`         | —                     |
+| `agents.show`           | — (palette: Show Agents) |
+| `agent.new`             | — (palette: New Agent) |
+| `agent.archive`         | Cmd-Backspace (agent chat focused) |
+| `agent.unarchive`       | Cmd-Shift-Backspace (agent chat focused) |
 
 
 `CommandRegistry.execute()` receives `getActiveEditorView: () => unknown` — cast to `EditorView` in handlers that need `view.state.doc`.
@@ -369,6 +373,23 @@ Registered in `packages/jet-app/src/App.tsx`:
 | Search   | Project ripgrep search + in-buffer find                    |
 | Problems | LSP/CM lint diagnostics list + jump                        |
 | Terminal | xterm + node-pty (Electron); browser stub                  |
+| Agent explorer | Sidebar thread list per workspace root; archive section |
+| Agent chat | T3-style composer, streaming timeline, provider/model picker |
+
+
+
+### Agents (`@jet/agents` + Electron main)
+
+- **Storage:** `.jet/agents/state.json` per workspace root (threads, messages, provider/model selection)
+- **Transport:** `window.jet.agents` IPC in Electron; `POST /__jet/agents/*` in browser dev middleware
+- **Drivers (Electron):** cursor → claude → codex (`apps/jet-desktop/src/main/agent-drivers/`); probes PATH + `cursor-agent models` for model list
+- **Browser dev:** mock async turns only (`packages/jet-node-host/src/dev-agent-turn.ts`); no real CLI
+- **Env:** `JET_AGENT_MOCK=1` forces mock driver in Electron (also always mock in browser)
+- **Push updates:** `agents:threadUpdated` IPC in Electron; browser polls `readThread` during turns
+- **Key files:** `packages/jet-agents/`, `packages/jet-ui/src/agents/`, `apps/jet-desktop/src/main/agents.ts`, `packages/jet-app/src/tabs/agent-*.tab.ts`
+- **Tests:** `tests/specs/agents.spec.ts` (browser); `tests/electron/agents.electron.spec.ts` (real `cursor-agent`, skipped when CLI absent)
+
+Manual Electron smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop button → archive via explorer context menu or `agent.archive`.
 
 
 

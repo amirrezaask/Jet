@@ -35,7 +35,18 @@ export type TabContributorDeps = {
   getAgentExplorerGroups: () => AgentExplorerWorkspaceGroup[]
   getAgentSnapshot: (rootUri: string) => AgentWorkspaceSnapshot | null
   getAgentThread: (rootUri: string, threadId: string) => AgentThread | null
+  subscribeAgentThread: (
+    rootUri: string,
+    threadId: string,
+    listener: (thread: AgentThread | null) => void,
+  ) => () => void
   getAgentProviders: () => AgentProvidersState | null
+  refreshAgentProviders: () => Promise<AgentProvidersState | null>
+  updateAgentThreadSettings: (
+    rootUri: string,
+    threadId: string,
+    settings: { provider?: string | null; model?: string | null },
+  ) => Promise<void>
   openAgentThread: (rootUri: string, threadId: string) => Promise<void>
   createAgentThread: (rootUri: string, rootPath: string) => Promise<void>
   sendAgentMessage: (
@@ -43,4 +54,7 @@ export type TabContributorDeps = {
     threadId: string,
     payload: { text: string; provider: string | null; model: string | null },
   ) => Promise<void>
+  interruptAgentTurn: (rootUri: string, threadId: string) => Promise<void>
+  archiveAgentThread: (rootUri: string, rootPath: string, threadId: string) => Promise<void>
+  unarchiveAgentThread: (rootUri: string, rootPath: string, threadId: string) => Promise<void>
 }

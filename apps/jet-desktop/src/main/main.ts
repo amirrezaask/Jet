@@ -191,7 +191,7 @@ app.whenReady().then(() => {
   applyLoginShellEnv()
   installAppMenu()
   registerFsHandlers(ipcMain, dialog)
-  registerAgentHandlers(ipcMain)
+  registerAgentHandlers(ipcMain, getWindow)
   registerWorkspaceHost(ipcMain, getWindow)
   registerSearchHandlers(ipcMain)
   registerLspHandlers(ipcMain, getWindow)

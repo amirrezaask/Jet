@@ -1,14 +1,17 @@
 import type { AgentProvidersState, AgentThread } from "@jet/agents"
-import { AlertCircle, Loader2 } from "lucide-react"
+import {
+  buildTurnDiffSummaryByAssistantMessageId,
+  deriveTimelineEntriesFromThread,
+} from "@jet/agents"
+import { AlertCircle, ChevronDown, Loader2 } from "lucide-react"
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { AgentMarkdown } from "./AgentMarkdown.js"
-import { AgentPatchView } from "./AgentPatchView.js"
-import { ChangedFilesCard } from "./ChangedFilesTree.js"
 import { ChatComposer } from "./composer/ChatComposer.js"
 import {
   deriveProviderInstanceEntries,
   resolveDefaultProviderSelection,
 } from "./providerInstances.js"
+import { ChatHeader } from "./timeline/ChatHeader.js"
+import { MessagesTimeline } from "./timeline/MessagesTimeline.js"
 
 export const AgentChatView = memo(function AgentChatView(props: {
   thread: AgentThread | null
@@ -19,19 +22,35 @@ export const AgentChatView = memo(function AgentChatView(props: {
     provider: string | null
     model: string | null
   }) => Promise<void>
+  onInterrupt?: () => void
   onSelectionChange?: (instanceId: string, model: string) => void
+  onProvidersRefresh?: () => void
 }) {
-  const { thread, providers, theme, onSend, onSelectionChange } = props
+  const { thread, providers, theme, onSend, onInterrupt, onSelectionChange, onProvidersRefresh } =
+    props
   const [submitting, setSubmitting] = useState(false)
   const [expandAll, setExpandAll] = useState(true)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(120)
   const composerOverlayRef = useRef<HTMLDivElement | null>(null)
+  const listRef = useRef<import("@legendapp/list/react").LegendListRef | null>(null)
 
   const instanceEntries = useMemo(() => deriveProviderInstanceEntries(providers), [providers])
   const defaultSelection = useMemo(
     () => resolveDefaultProviderSelection(instanceEntries, thread?.provider, thread?.model),
     [instanceEntries, thread?.provider, thread?.model],
   )
+
+  const timelineEntries = useMemo(
+    () => (thread ? deriveTimelineEntriesFromThread(thread) : []),
+    [thread],
+  )
+  const turnDiffSummaryByAssistantMessageId = useMemo(
+    () => (thread ? buildTurnDiffSummaryByAssistantMessageId(thread) : new Map()),
+    [thread],
+  )
+
+  const isWorking = thread?.status === "running" || submitting
 
   useLayoutEffect(() => {
     const node = composerOverlayRef.current
@@ -57,7 +76,19 @@ export const AgentChatView = memo(function AgentChatView(props: {
       })
     } finally {
       setSubmitting(false)
+      scrollToEnd(true)
     }
+  }
+
+  useLayoutEffect(() => {
+    scrollToEnd(false)
+  }, [thread?.messages.length, thread?.updatedAt, thread?.id])
+
+  function scrollToEnd(animated = true) {
+    void listRef.current?.scrollToIndex({
+      index: Math.max(0, timelineEntries.length - 1),
+      animated,
+    })
   }
 
   if (!thread) {
@@ -68,57 +99,49 @@ export const AgentChatView = memo(function AgentChatView(props: {
     )
   }
 
+  const projectName = thread.workspaceRootPath.split("/").filter(Boolean).at(-1) ?? thread.workspaceRootPath
+
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
-      <div className="border-b border-border px-4 py-3">
-        <div className="font-medium text-foreground">{thread.title}</div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {thread.status === "running" ? <Loader2 className="size-3 animate-spin" /> : null}
-          {thread.status === "error" && thread.lastError ? (
-            <>
-              <AlertCircle className="size-3 text-destructive" />
-              <span className="text-destructive">{thread.lastError}</span>
-            </>
-          ) : (
-            <span>{thread.workspaceRootPath}</span>
-          )}
+      <ChatHeader activeThreadTitle={thread.title} activeProjectName={projectName} />
+
+      {thread.status === "error" && thread.lastError ? (
+        <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+          <AlertCircle className="size-3.5 shrink-0" />
+          <span>{thread.lastError}</span>
         </div>
-      </div>
-      <div
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
-        style={{ paddingBottom: composerOverlayHeight + 8 }}
-      >
-        <div className="mx-auto flex max-w-4xl flex-col gap-5">
-          {thread.messages.map(message => {
-            return (
-              <div
-                key={message.id}
-                className={
-                  message.role === "user"
-                    ? "ml-auto w-full max-w-3xl rounded-2xl border border-border bg-card/80 p-4"
-                    : "w-full max-w-4xl rounded-2xl border border-border/70 bg-card/40 p-4"
-                }
-              >
-                <div className="mb-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                  {message.role}
-                </div>
-                <AgentMarkdown text={message.text} theme={theme} />
-                {message.changedFiles && message.changedFiles.length > 0 ? (
-                  <ChangedFilesCard
-                    files={message.changedFiles}
-                    allDirectoriesExpanded={expandAll}
-                    onToggleAllDirectories={() => setExpandAll(value => !value)}
-                  />
-                ) : null}
-                {message.diffPatch ? (
-                  <div className="mt-4 overflow-hidden rounded-xl border border-input bg-card">
-                    <AgentPatchView patch={message.diffPatch} theme={theme} />
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
+      ) : null}
+
+      <div className="relative min-h-0 flex-1">
+        <MessagesTimeline
+          listRef={listRef}
+          timelineEntries={timelineEntries}
+          turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+          isWorking={isWorking}
+          theme={theme}
+          contentInsetEndAdjustment={composerOverlayHeight}
+          expandAll={expandAll}
+          onToggleAllDirectories={() => setExpandAll(value => !value)}
+          onIsAtEndChange={isAtEnd => setShowScrollToBottom(!isAtEnd)}
+        />
+
+        {showScrollToBottom ? (
+          <div
+            className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
+            style={{ bottom: composerOverlayHeight + 4 }}
+          >
+            <button
+              type="button"
+              aria-label="Scroll to end"
+              title="Scroll to end"
+              onClick={() => scrollToEnd(true)}
+              className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:border-border hover:text-foreground hover:cursor-pointer"
+            >
+              <ChevronDown className="size-3.5" />
+              Scroll to end
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div
@@ -135,6 +158,12 @@ export const AgentChatView = memo(function AgentChatView(props: {
           </div>
         </div>
         <div className="chat-composer-horizontal-inset pointer-events-auto relative z-10 isolate pb-4">
+          {thread.status === "running" ? (
+            <div className="mb-2 flex items-center gap-2 px-1 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              Agent is running…
+            </div>
+          ) : null}
           <ChatComposer
             providers={providers}
             instanceId={defaultSelection?.instanceId ?? thread.provider}
@@ -144,6 +173,8 @@ export const AgentChatView = memo(function AgentChatView(props: {
             isSendBusy={submitting}
             onInstanceModelChange={(instanceId, model) => onSelectionChange?.(instanceId, model)}
             onSend={handleSend}
+            onInterrupt={() => onInterrupt?.()}
+            onProvidersRefresh={onProvidersRefresh}
           />
         </div>
       </div>

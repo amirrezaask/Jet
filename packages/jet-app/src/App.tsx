@@ -12,7 +12,7 @@ import {
 import type { AgentProvidersState, AgentThread, AgentWorkspaceSnapshot } from "@jet/agents"
 import type { PanelEvent } from "@jet/panels"
 import type { PanelId, PanelView, DropAction } from "@jet/shared"
-import { pathToFileUri, isUntitledUri, fileUriToPath } from "@jet/shared"
+import { pathToFileUri, isUntitledUri, fileUriToPath, Emitter } from "@jet/shared"
 import {
   WorkspaceService,
   WorkspaceManager,
@@ -25,6 +25,7 @@ import {
   anyOverlayOpen,
   createDefaultKeybindings,
   isEditorKeyBinding,
+  bind,
   parseBindingKey,
   CHORD_TIMEOUT_MS,
   type KeymapContext,
@@ -100,7 +101,7 @@ import { getJetSearchState } from "@jet/codemirror"
 import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
-import { agentChatTabId, parseAgentChatTabId } from "./tabs/agent-chat.tab.js"
+import { agentChatTabId, parseAgentChatTabId, type AgentChatTabState } from "./tabs/agent-chat.tab.js"
 import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
 import { terminalCwdForTab } from "./tabs/terminal.tab.js"
 import {
@@ -110,6 +111,7 @@ import {
   getActiveEditorFileUri,
   getActiveListTabId,
   activeTabKind,
+  getActiveTabId,
   closePanelIfEmpty,
   reconcileFocusedPanel,
 } from "./panel-routing.js"
@@ -169,8 +171,17 @@ function normalizeAbsPath(p: string): string {
   return trimmed || p
 }
 
+function normalizeAgentRootUri(uri: string): string {
+  if (!uri.startsWith("file://")) return uri
+  return pathToFileUri(fileUriToPath(uri))
+}
+
 function agentThreadStateKey(rootUri: string, threadId: string): string {
-  return `${rootUri}\u0000${threadId}`
+  return `${normalizeAgentRootUri(rootUri)}\u0000${threadId}`
+}
+
+function agentThreadEmitterKey(rootUri: string, threadId: string): string {
+  return agentThreadStateKey(rootUri, threadId)
 }
 
 function agentSnapshotFingerprint(snapshot: AgentWorkspaceSnapshot | null): string {
@@ -306,7 +317,19 @@ export function JetApp() {
           tabStore.dispose(desc.id)
           return
         }
-        tabStore.create<{ rootUri: string; threadId: string }>(kind, parsed, desc.id)
+        const existing = tabStore.get(desc.id) as { state?: AgentChatTabState } | undefined
+        const prevState = existing?.state
+        tabStore.create<AgentChatTabState>(
+          kind,
+          prevState
+            ? {
+                ...prevState,
+                rootUri: parsed.rootUri,
+                threadId: parsed.threadId,
+              }
+            : parsed,
+          desc.id,
+        )
       } else if (kind === "terminal") {
         tabStore.create<{ label: string; cwdRootUri: string }>(
           kind,
@@ -341,6 +364,7 @@ export function JetApp() {
   const keymapContextRef = useRef<KeymapContext | undefined>(undefined)
   const agentSnapshotsRef = useRef<Record<string, AgentWorkspaceSnapshot | null>>({})
   const agentThreadsRef = useRef<Record<string, AgentThread | null>>({})
+  const agentThreadEmittersRef = useRef(new Map<string, Emitter<AgentThread | null>>())
   const agentProvidersRef = useRef<AgentProvidersState | null>(null)
   const sendAgentInFlightRef = useRef(false)
   const openAgentThreadRef = useRef<(rootUri: string, threadId: string) => Promise<void>>(
@@ -356,6 +380,27 @@ export function JetApp() {
       payload: { text: string; provider: string | null; model: string | null },
     ) => Promise<void>
   >(() => Promise.resolve())
+  const updateAgentThreadSettingsRef = useRef<
+    (
+      rootUri: string,
+      threadId: string,
+      settings: { provider?: string | null; model?: string | null },
+    ) => Promise<void>
+  >(() => Promise.resolve())
+  const refreshAgentProvidersRef = useRef<() => Promise<AgentProvidersState | null>>(
+    () => Promise.resolve(null),
+  )
+  const archiveAgentThreadRef = useRef<
+    (rootUri: string, rootPath: string, threadId: string) => Promise<void>
+  >(() => Promise.resolve())
+  const unarchiveAgentThreadRef = useRef<
+    (rootUri: string, rootPath: string, threadId: string) => Promise<void>
+  >(() => Promise.resolve())
+  const interruptAgentTurnRef = useRef<
+    (rootUri: string, threadId: string) => Promise<void>
+  >(() => Promise.resolve())
+  const archiveActiveAgentThreadRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  const unarchiveActiveAgentThreadRef = useRef<() => Promise<void>>(() => Promise.resolve())
   const handleOpenFileForTabs = useRef<(uri: string, path: string) => void>(() => {})
   const openListItemForTabs = useRef<(item: ListItem) => void>(() => {})
   const setEditorFocusedRef = useRef<(f: boolean) => void>(() => {})
@@ -402,6 +447,12 @@ export function JetApp() {
       const nextThreads = { ...agentThreadsRef.current, [key]: thread }
       agentThreadsRef.current = nextThreads
       setAgentThreads(nextThreads)
+      let emitter = agentThreadEmittersRef.current.get(key)
+      if (!emitter) {
+        emitter = new Emitter<AgentThread | null>()
+        agentThreadEmittersRef.current.set(key, emitter)
+      }
+      emitter.fire(thread)
       const nextSnapshot: AgentWorkspaceSnapshot = {
         workspaceRootUri: thread.workspaceRootUri,
         workspaceRootPath: thread.workspaceRootPath,
@@ -434,10 +485,24 @@ export function JetApp() {
       setAgentSnapshots(nextSnapshots)
       const chatTabId = agentChatTabId(thread.workspaceRootUri, thread.id)
       workspace.tabRegistry.update(chatTabId, { label: thread.title })
-      bumpAgentTab(chatTabId)
+      const parsed = parseAgentChatTabId(chatTabId)
+      if (parsed) {
+        tabStore.update(chatTabId, prev => {
+          const state = prev as AgentChatTabState
+          return {
+            ...state,
+            rootUri: parsed.rootUri,
+            threadId: parsed.threadId,
+            rev: thread.updatedAt,
+            thread,
+          }
+        })
+      } else {
+        bumpAgentTab(chatTabId)
+      }
       refreshAgentExplorerTab()
     },
-    [workspace, bumpAgentTab, refreshAgentExplorerTab],
+    [workspace, bumpAgentTab, refreshAgentExplorerTab, tabStore],
   )
 
   const loadAgentSnapshot = useCallback(
@@ -514,9 +579,26 @@ export function JetApp() {
     [],
   )
 
+  const subscribeAgentThread = useCallback(
+    (rootUri: string, threadId: string, listener: (thread: AgentThread | null) => void) => {
+      const key = agentThreadEmitterKey(rootUri, threadId)
+      let emitter = agentThreadEmittersRef.current.get(key)
+      if (!emitter) {
+        emitter = new Emitter<AgentThread | null>()
+        agentThreadEmittersRef.current.set(key, emitter)
+      }
+      listener(agentThreadsRef.current[key] ?? null)
+      const sub = emitter.event(listener)
+      return () => sub.dispose()
+    },
+    [],
+  )
+
   const getAgentExplorerGroups = useCallback((): AgentExplorerWorkspaceGroup[] => {
     return workspace.folders.map(folder => {
       const snapshot = agentSnapshotsRef.current[folder.root.uri]
+      const activeThreads = snapshot?.threads.filter(thread => thread.archivedAt == null) ?? []
+      const archivedThreads = snapshot?.threads.filter(thread => thread.archivedAt != null) ?? []
       return {
         id: folder.id,
         name: folder.root.name,
@@ -525,9 +607,10 @@ export function JetApp() {
         snapshot: snapshot
           ? {
               ...snapshot,
-              threads: snapshot.threads.filter(thread => thread.archivedAt == null),
+              threads: activeThreads,
             }
           : null,
+        archivedThreads,
       }
     })
   }, [workspace])
@@ -553,12 +636,22 @@ export function JetApp() {
       getAgentExplorerGroups,
       getAgentSnapshot,
       getAgentThread,
+      subscribeAgentThread,
       getAgentProviders,
+      refreshAgentProviders: () => refreshAgentProvidersRef.current(),
+      updateAgentThreadSettings: (rootUri, threadId, settings) =>
+        updateAgentThreadSettingsRef.current(rootUri, threadId, settings),
       openAgentThread: (rootUri, threadId) => openAgentThreadRef.current(rootUri, threadId),
       createAgentThread: (rootUri, rootPath) =>
         createAgentThreadRef.current(rootUri, rootPath),
       sendAgentMessage: (rootUri, threadId, payload) =>
         sendAgentMessageRef.current(rootUri, threadId, payload),
+      interruptAgentTurn: (rootUri, threadId) =>
+        interruptAgentTurnRef.current(rootUri, threadId),
+      archiveAgentThread: (rootUri, rootPath, threadId) =>
+        archiveAgentThreadRef.current(rootUri, rootPath, threadId),
+      unarchiveAgentThread: (rootUri, rootPath, threadId) =>
+        unarchiveAgentThreadRef.current(rootUri, rootPath, threadId),
     })
   }, [
     tabTypeRegistry,
@@ -566,6 +659,7 @@ export function JetApp() {
     getAgentExplorerGroups,
     getAgentSnapshot,
     getAgentThread,
+    subscribeAgentThread,
     getAgentProviders,
   ])
 
@@ -619,6 +713,7 @@ export function JetApp() {
       explorerFocus: activeTabKindName === "explorer",
       outputFocus: activeTabKindName === "output",
       terminalFocus: activeTabKindName === "terminal",
+      agentChatFocus: activeTabKindName === "agent-chat",
       listFocus:
         activeTabKindName === "explorer" ||
         activeTabKindName === "agent-explorer" ||
@@ -862,10 +957,18 @@ export function JetApp() {
       if (!existingThread) {
         await loadAgentThread(rootUri, folder.root.path, threadId)
       } else {
-        bumpAgentTab(agentChatTabId(rootUri, threadId))
+        const chatTabId = agentChatTabId(rootUri, threadId)
+        tabStore.update(chatTabId, prev => {
+          const state = prev as AgentChatTabState
+          return {
+            ...state,
+            rev: existingThread.updatedAt,
+            thread: existingThread,
+          }
+        })
       }
     },
-    [workspace, findWorkspaceFolderByRootUri, cloneTree, commitTree, loadAgentThread, bumpAgentTab],
+    [workspace, findWorkspaceFolderByRootUri, cloneTree, commitTree, loadAgentThread, tabStore],
   )
 
   const openAgentsExplorer = useCallback(async (): Promise<void> => {
@@ -920,6 +1023,18 @@ export function JetApp() {
           model: payload.model,
         })
         syncAgentThread(thread)
+        const supportsThreadPush = typeof transport.onThreadUpdated === "function"
+        const rootPath = thread.workspaceRootPath || folder.root.path
+        if (!supportsThreadPush) {
+          for (let attempt = 0; attempt < 75; attempt += 1) {
+            await new Promise(resolve => window.setTimeout(resolve, 200))
+            const fresh = await transport.readThread!(rootUri, rootPath, threadId)
+            if (fresh) syncAgentThread(fresh)
+            if (fresh && fresh.status !== "running") {
+              break
+            }
+          }
+        }
       } finally {
         sendAgentInFlightRef.current = false
       }
@@ -927,9 +1042,169 @@ export function JetApp() {
     [findWorkspaceFolderByRootUri, syncAgentThread],
   )
 
+  const interruptAgentTurn = useCallback(
+    async (rootUri: string, threadId: string): Promise<void> => {
+      const transport = window.jet?.agents
+      const folder = findWorkspaceFolderByRootUri(rootUri)
+      if (!transport?.interruptTurn || !folder) return
+      const thread = await transport.interruptTurn({
+        workspaceRootUri: rootUri,
+        workspaceRootPath: folder.root.path,
+        threadId,
+      })
+      if (thread) syncAgentThread(thread)
+    },
+    [findWorkspaceFolderByRootUri, syncAgentThread],
+  )
+
+  const closeAgentChatTabIfOpen = useCallback(
+    (rootUri: string, threadId: string) => {
+      const tabId = agentChatTabId(rootUri, threadId)
+      const tree = cloneTree()
+      for (const panel of getAllLeafPanels(tree)) {
+        const view = tree.getView(panel)
+        if (view?.kind !== "tabs" || !view.tabIds.includes(tabId)) continue
+        workspace.disposeTab(tabId)
+        tabStore.dispose(tabId)
+        tree.setView(panel, popPanelTab(view, tabId))
+        closePanelIfEmpty(tree, panel)
+        commitTree(tree, panel)
+        return
+      }
+    },
+    [cloneTree, commitTree, workspace, tabStore],
+  )
+
+  const setAgentThreadArchived = useCallback(
+    async (
+      rootUri: string,
+      rootPath: string,
+      threadId: string,
+      archived: boolean,
+    ): Promise<void> => {
+      const transport = window.jet?.agents
+      if (!transport?.setArchived) return
+      const thread = await transport.setArchived({
+        workspaceRootUri: rootUri,
+        workspaceRootPath: rootPath,
+        threadId,
+        archived,
+      })
+      if (thread) {
+        syncAgentThread(thread)
+        refreshAgentExplorerTab()
+        if (archived) closeAgentChatTabIfOpen(rootUri, threadId)
+      }
+    },
+    [syncAgentThread, refreshAgentExplorerTab, closeAgentChatTabIfOpen],
+  )
+
+  const archiveAgentThread = useCallback(
+    async (rootUri: string, rootPath: string, threadId: string): Promise<void> => {
+      await setAgentThreadArchived(rootUri, rootPath, threadId, true)
+    },
+    [setAgentThreadArchived],
+  )
+
+  const unarchiveAgentThread = useCallback(
+    async (rootUri: string, rootPath: string, threadId: string): Promise<void> => {
+      await setAgentThreadArchived(rootUri, rootPath, threadId, false)
+    },
+    [setAgentThreadArchived],
+  )
+
+  const updateAgentThreadSettings = useCallback(
+    async (
+      rootUri: string,
+      threadId: string,
+      settings: { provider?: string | null; model?: string | null },
+    ): Promise<void> => {
+      const transport = window.jet?.agents
+      const folder = findWorkspaceFolderByRootUri(rootUri)
+      if (!transport?.updateThreadSettings || !folder) return
+      const thread = await transport.updateThreadSettings({
+        workspaceRootUri: rootUri,
+        workspaceRootPath: folder.root.path,
+        threadId,
+        provider: settings.provider,
+        model: settings.model,
+      })
+      if (thread) syncAgentThread(thread)
+    },
+    [findWorkspaceFolderByRootUri, syncAgentThread],
+  )
+
+  const archiveActiveAgentThread = useCallback(async (): Promise<void> => {
+    const tabId = getActiveTabId(appStateRef.current.panelTree, appStateRef.current.focusedPanel)
+    if (!tabId) return
+    const parsed = parseAgentChatTabId(tabId)
+    if (!parsed) return
+    const folder = findWorkspaceFolderByRootUri(parsed.rootUri)
+    if (!folder) return
+    await setAgentThreadArchived(parsed.rootUri, folder.root.path, parsed.threadId, true)
+  }, [findWorkspaceFolderByRootUri, setAgentThreadArchived])
+
+  const unarchiveActiveAgentThread = useCallback(async (): Promise<void> => {
+    const tabId = getActiveTabId(appStateRef.current.panelTree, appStateRef.current.focusedPanel)
+    if (!tabId) return
+    const parsed = parseAgentChatTabId(tabId)
+    if (!parsed) return
+    const folder = findWorkspaceFolderByRootUri(parsed.rootUri)
+    if (!folder) return
+    await setAgentThreadArchived(parsed.rootUri, folder.root.path, parsed.threadId, false)
+  }, [findWorkspaceFolderByRootUri, setAgentThreadArchived])
+
   openAgentThreadRef.current = openAgentThread
   createAgentThreadRef.current = createAgentThread
   sendAgentMessageRef.current = sendAgentMessage
+  updateAgentThreadSettingsRef.current = updateAgentThreadSettings
+  refreshAgentProvidersRef.current = refreshAgentProviders
+  archiveAgentThreadRef.current = archiveAgentThread
+  unarchiveAgentThreadRef.current = unarchiveAgentThread
+  archiveActiveAgentThreadRef.current = archiveActiveAgentThread
+  unarchiveActiveAgentThreadRef.current = unarchiveActiveAgentThread
+  interruptAgentTurnRef.current = interruptAgentTurn
+
+  useEffect(() => {
+    const transport = window.jet?.agents
+    if (!transport?.onThreadUpdated) return
+    return transport.onThreadUpdated(thread => {
+      syncAgentThread(thread)
+    })
+  }, [syncAgentThread])
+
+  useEffect(() => {
+    const transport = window.jet?.agents
+    if (!transport?.readThread || transport.onThreadUpdated) return
+
+    let cancelled = false
+    const pollRunningThreads = async () => {
+      if (cancelled) return
+      const threads = Object.values(agentThreadsRef.current).filter(
+        (thread): thread is AgentThread => thread != null,
+      )
+      const running = threads.filter(thread => thread.status === "running")
+      if (running.length === 0) return
+      for (const thread of running) {
+        const folder = workspace.folders.find(f => f.root.uri === thread.workspaceRootUri)
+        if (!folder) continue
+        const fresh = await transport.readThread!(
+          thread.workspaceRootUri,
+          folder.root.path,
+          thread.id,
+        )
+        if (fresh) syncAgentThread(fresh)
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void pollRunningThreads()
+    }, 400)
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [syncAgentThread, workspace.folders])
 
   const quickOpenSearch = useCallback(
     async (query: string) => {
@@ -1533,6 +1808,8 @@ export function JetApp() {
         focusExplorer: focusExplorerPanel,
         openAgentExplorer: openAgentsExplorer,
         createAgentThread,
+        archiveActiveAgentThread: () => archiveActiveAgentThreadRef.current(),
+        unarchiveActiveAgentThread: () => unarchiveActiveAgentThreadRef.current(),
         getSearchSupported: () => searchSupported,
       }),
     [
@@ -1629,7 +1906,16 @@ export function JetApp() {
   )
 
   useEffect(() => {
-    keymaps.registerUser(createDefaultKeybindings(appCommands))
+    const noOverlay = (ctx: KeymapContext) => !anyOverlayOpen(ctx)
+    keymaps.registerUser([
+      ...createDefaultKeybindings(appCommands),
+      bind("Cmd-Backspace", appCommands.archiveAgent, ctx => ctx.agentChatFocus && noOverlay(ctx)),
+      bind(
+        "Cmd-Shift-Backspace",
+        appCommands.unarchiveAgent,
+        ctx => ctx.agentChatFocus && noOverlay(ctx),
+      ),
+    ])
   }, [keymaps, appCommands])
 
   useEffect(() => {

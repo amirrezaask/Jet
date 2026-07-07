@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from "electron"
 import type { JetElectronAPI } from "@jet/workspace"
 
 const lspCrashListeners = new Set<(id: string) => void>()
+const agentThreadUpdatedListeners = new Set<(thread: import("@jet/agents").AgentThread) => void>()
+ipcRenderer.on("agents:threadUpdated", (_e, thread: import("@jet/agents").AgentThread) => {
+  for (const cb of agentThreadUpdatedListeners) cb(thread)
+})
 ipcRenderer.on("lsp:crashed", (_e, id: string) => {
   for (const cb of lspCrashListeners) cb(id)
 })
@@ -72,9 +76,15 @@ const api: JetElectronAPI = {
       ipcRenderer.invoke("agents:readThread", workspaceRootUri, workspaceRootPath, threadId),
     createThread: input => ipcRenderer.invoke("agents:createThread", input),
     sendMessage: input => ipcRenderer.invoke("agents:sendMessage", input),
+    interruptTurn: input => ipcRenderer.invoke("agents:interruptTurn", input),
     setArchived: input => ipcRenderer.invoke("agents:setArchived", input),
+    updateThreadSettings: input => ipcRenderer.invoke("agents:updateThreadSettings", input),
     listProviders: () => ipcRenderer.invoke("agents:listProviders"),
     refreshProviders: () => ipcRenderer.invoke("agents:refreshProviders"),
+    onThreadUpdated: callback => {
+      agentThreadUpdatedListeners.add(callback)
+      return () => agentThreadUpdatedListeners.delete(callback)
+    },
   },
   search: {
     project: (rootUri, query, opts) =>

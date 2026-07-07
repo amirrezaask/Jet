@@ -114,6 +114,8 @@ export type BuildAppCommandsDeps = {
   focusExplorer?: () => void
   openAgentExplorer: () => Promise<void>
   createAgentThread: (rootUri: string, rootPath: string) => Promise<void>
+  archiveActiveAgentThread: () => Promise<void>
+  unarchiveActiveAgentThread: () => Promise<void>
   getSearchSupported: () => boolean
 }
 
@@ -497,6 +499,12 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       await deps.openAgentExplorer()
       await deps.createAgentThread(folder.root.uri, folder.root.path)
     },
+    archiveAgent: async () => {
+      await deps.archiveActiveAgentThread()
+    },
+    unarchiveAgent: async () => {
+      await deps.unarchiveActiveAgentThread()
+    },
     jumpBack: ctx => {
       const panel = currentFocusedPanel()
       const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
@@ -832,6 +840,8 @@ export const APP_COMMAND_REGISTRY = [
   { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"] },
   { id: "agents.show", fn: "agents", title: "Show Agents", category: "View", aliases: ["agent explorer", "chat sidebar"] },
   { id: "agent.new", fn: "newAgent", title: "New Agent", category: "Agents", aliases: ["new chat", "new assistant"] },
+  { id: "agent.archive", fn: "archiveAgent", title: "Archive Agent", category: "Agents", aliases: ["archive chat"] },
+  { id: "agent.unarchive", fn: "unarchiveAgent", title: "Unarchive Agent", category: "Agents", aliases: ["unarchive chat"] },
   { id: "editor.toggleComment", fn: "toggleComment", title: "Toggle Comment", category: "Editor" },
   { id: "editor.copyLineDown", fn: "copyLineDown", title: "Copy Line Down", category: "Editor" },
   { id: "editor.moveLineDown", fn: "moveLineDown", title: "Move Line Down", category: "Editor" },

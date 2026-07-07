@@ -28,6 +28,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
   onInstanceModelChange: (instanceId: string, model: string) => void
   onSend: (payload: { text: string; instanceId: string; model: string }) => Promise<void>
   onInterrupt?: () => void
+  onProvidersRefresh?: () => void
 }) {
   const [draft, setDraft] = useState("")
   const [isComposerFocused, setIsComposerFocused] = useState(false)
@@ -165,7 +166,10 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 instanceEntries={instanceEntries}
                 modelOptionsByInstance={modelOptionsByInstance}
                 open={isModelPickerOpen}
-                onOpenChange={setIsModelPickerOpen}
+                onOpenChange={open => {
+                  setIsModelPickerOpen(open)
+                  if (open) props.onProvidersRefresh?.()
+                }}
                 disabled={props.disabled || props.isSendBusy}
                 onInstanceModelChange={(instanceId, model) =>
                   props.onInstanceModelChange(instanceId, model)

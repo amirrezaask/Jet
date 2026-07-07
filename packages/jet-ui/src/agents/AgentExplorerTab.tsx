@@ -1,9 +1,15 @@
-import type { AgentWorkspaceSnapshot } from "@jet/agents"
-import { AlertCircle, ChevronRight, Loader2, MessageSquarePlus, MessagesSquare } from "lucide-react"
+import type { AgentThreadSummary, AgentWorkspaceSnapshot } from "@jet/agents"
+import { AlertCircle, Archive, ArchiveRestore, ChevronRight, Loader2, MessageSquarePlus, MessagesSquare } from "lucide-react"
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import { SidebarContent } from "../components/ui/sidebar.js"
 import { cn } from "../lib/utils.js"
 import { Button } from "../components/ui/button.js"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "../components/ui/context-menu.js"
 import { registerListPanel } from "../lib/list-registry.js"
 
 export type AgentExplorerWorkspaceGroup = {
@@ -12,6 +18,7 @@ export type AgentExplorerWorkspaceGroup = {
   path: string
   rootUri: string
   snapshot: AgentWorkspaceSnapshot | null
+  archivedThreads: ReadonlyArray<AgentThreadSummary>
 }
 
 function formatRelativeTime(iso: string): string {
@@ -35,20 +42,75 @@ function ThreadStatusIcon(props: { status: AgentWorkspaceSnapshot["threads"][num
   return <MessagesSquare className="size-4 shrink-0 text-muted-foreground" />
 }
 
+function ThreadRow(props: {
+  thread: AgentThreadSummary
+  onOpen: () => void
+  onArchive?: () => void
+  onUnarchive?: () => void
+  archived?: boolean
+}) {
+  const { thread, onOpen, onArchive, onUnarchive, archived = false } = props
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <button
+          data-jet-list-item
+          className="flex w-full shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:outline-none"
+          onClick={onOpen}
+          type="button"
+        >
+          <ThreadStatusIcon status={thread.status} />
+          <div className="min-w-0 flex-1">
+            <span data-slot="row-label" className="block truncate text-sm text-foreground">
+              {thread.title}
+            </span>
+            <span data-slot="row-detail" className="block truncate text-[11px] text-muted-foreground">
+              {formatRelativeTime(thread.updatedAt)}
+              {thread.messageCount > 0 ? ` · ${thread.messageCount} messages` : ""}
+              {thread.status !== "idle" ? ` · ${thread.status}` : ""}
+            </span>
+          </div>
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        {archived ? (
+          <ContextMenuItem onSelect={onUnarchive}>
+            <ArchiveRestore className="size-4" />
+            Unarchive
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={onArchive}>
+            <Archive className="size-4" />
+            Archive
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
 export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
   groups: AgentExplorerWorkspaceGroup[]
   onOpenThread: (rootUri: string, threadId: string) => void
   onCreateThread: (rootUri: string, rootPath: string) => Promise<void> | void
+  onArchiveThread?: (rootUri: string, rootPath: string, threadId: string) => void
+  onUnarchiveThread?: (rootUri: string, rootPath: string, threadId: string) => void
 }) {
-  const { groups, onOpenThread, onCreateThread } = props
+  const { groups, onOpenThread, onCreateThread, onArchiveThread, onUnarchiveThread } = props
   const contentRef = useRef<HTMLDivElement | null>(null)
   const [expandedRoots, setExpandedRoots] = useState<ReadonlySet<string>>(
     () => new Set(groups.map(group => group.id)),
   )
+  const [archivedExpanded, setArchivedExpanded] = useState(false)
 
   const sortedGroups = useMemo(
     () => [...groups].sort((a, b) => a.name.localeCompare(b.name)),
     [groups],
+  )
+
+  const archivedCount = useMemo(
+    () => sortedGroups.reduce((sum, group) => sum + group.archivedThreads.length, 0),
+    [sortedGroups],
   )
 
   useEffect(() => registerListPanel("jet:agent-explorer", contentRef.current), [])
@@ -109,31 +171,12 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
                     </div>
                   ) : (
                     group.snapshot!.threads.map(thread => (
-                      <button
+                      <ThreadRow
                         key={thread.id}
-                        data-jet-list-item
-                        className="flex w-full shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:outline-none"
-                        onClick={() => onOpenThread(group.rootUri, thread.id)}
-                        type="button"
-                      >
-                        <ThreadStatusIcon status={thread.status} />
-                        <div className="min-w-0 flex-1">
-                          <span
-                            data-slot="row-label"
-                            className="block truncate text-sm text-foreground"
-                          >
-                            {thread.title}
-                          </span>
-                          <span
-                            data-slot="row-detail"
-                            className="block truncate text-[11px] text-muted-foreground"
-                          >
-                            {formatRelativeTime(thread.updatedAt)}
-                            {thread.messageCount > 0 ? ` · ${thread.messageCount} messages` : ""}
-                            {thread.status !== "idle" ? ` · ${thread.status}` : ""}
-                          </span>
-                        </div>
-                      </button>
+                        thread={thread}
+                        onOpen={() => onOpenThread(group.rootUri, thread.id)}
+                        onArchive={() => onArchiveThread?.(group.rootUri, group.path, thread.id)}
+                      />
                     ))
                   )}
                 </div>
@@ -141,6 +184,40 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
             </div>
           )
         })}
+        {archivedCount > 0 ? (
+          <div className="rounded-xl border border-border/60 bg-card/20">
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-left"
+              onClick={() => setArchivedExpanded(current => !current)}
+              type="button"
+            >
+              <ChevronRight
+                className={cn(
+                  "size-4 text-muted-foreground transition-transform",
+                  archivedExpanded && "rotate-90",
+                )}
+              />
+              <span className="text-sm text-muted-foreground">Archived ({archivedCount})</span>
+            </button>
+            {archivedExpanded ? (
+              <div className="space-y-1 px-2 pb-2">
+                {sortedGroups.flatMap(group =>
+                  group.archivedThreads.map(thread => (
+                    <ThreadRow
+                      key={`${group.id}:${thread.id}`}
+                      archived
+                      thread={thread}
+                      onOpen={() => onOpenThread(group.rootUri, thread.id)}
+                      onUnarchive={() =>
+                        onUnarchiveThread?.(group.rootUri, group.path, thread.id)
+                      }
+                    />
+                  )),
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </SidebarContent>
   )

@@ -100,6 +100,65 @@ export type SetAgentThreadArchivedInput = {
   archived: boolean
 }
 
+export type InterruptAgentTurnInput = {
+  workspaceRootUri: string
+  workspaceRootPath: string
+  threadId: string
+}
+
+export type UpdateAgentThreadSettingsInput = {
+  workspaceRootUri: string
+  workspaceRootPath: string
+  threadId: string
+  provider?: string | null
+  model?: string | null
+}
+
+/** View-model message shape consumed by MessagesTimeline. */
+export type TimelineChatMessage = {
+  id: string
+  role: AgentMessageRole
+  text: string
+  createdAt: string
+  updatedAt: string
+  streaming: boolean
+  turnId?: string | null
+  diffPatch?: string
+  changedFiles?: AgentFileChange[]
+}
+
+export type TurnDiffSummary = {
+  turnId: string
+  completedAt: string
+  files: ReadonlyArray<AgentFileChange>
+}
+
+export type TimelineEntry =
+  | {
+      id: string
+      kind: "message"
+      createdAt: string
+      message: TimelineChatMessage
+    }
+  | {
+      id: string
+      kind: "proposed-plan"
+      createdAt: string
+      proposedPlan: { id: string; planMarkdown: string; createdAt: string }
+    }
+  | {
+      id: string
+      kind: "work"
+      createdAt: string
+      entry: {
+        id: string
+        createdAt: string
+        turnId?: string | null
+        label: string
+        tone?: string
+      }
+    }
+
 export type AgentTransport = {
   listThreads(
     workspaceRootUri: string,
@@ -112,7 +171,10 @@ export type AgentTransport = {
   ): Promise<AgentThread | null>
   createThread(input: CreateAgentThreadInput): Promise<AgentThread>
   sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
+  interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
+  updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
   listProviders(): Promise<AgentProvidersState>
   refreshProviders(): Promise<AgentProvidersState>
+  onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
 }

@@ -22,6 +22,12 @@ export function createAgentExplorerTabType(
         },
         onCreateThread: (rootUri: string, rootPath: string) =>
           deps.createAgentThread(rootUri, rootPath),
+        onArchiveThread: (rootUri: string, rootPath: string, threadId: string) => {
+          void deps.archiveAgentThread(rootUri, rootPath, threadId)
+        },
+        onUnarchiveThread: (rootUri: string, rootPath: string, threadId: string) => {
+          void deps.unarchiveAgentThread(rootUri, rootPath, threadId)
+        },
       }),
     keepMounted: true,
   }

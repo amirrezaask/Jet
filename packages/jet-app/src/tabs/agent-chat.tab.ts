@@ -1,7 +1,7 @@
 import { createElement } from "react"
-import { isDarkTheme } from "@jet/codemirror"
+import type { AgentThread } from "@jet/agents"
 import type { TabType } from "@jet/ui"
-import { AgentChatView } from "@jet/ui"
+import { AgentChatTabBody } from "./AgentChatTabBody.js"
 import type { TabContributorDeps } from "./deps.js"
 
 export const AGENT_CHAT_TAB_TYPE_ID = "agent-chat"
@@ -10,6 +10,10 @@ export const AGENT_CHAT_TAB_ID_PREFIX = "jet:agent-chat:"
 export type AgentChatTabState = {
   rootUri: string
   threadId: string
+  /** Bumped on thread sync so TabHost re-renders when messages change. */
+  rev?: string
+  /** Latest thread snapshot — source of truth for chat rendering. */
+  thread?: AgentThread | null
 }
 
 export function agentChatTabId(rootUri: string, threadId: string): string {
@@ -35,12 +39,10 @@ export function createAgentChatTabType(deps: TabContributorDeps): TabType<AgentC
       deps.getAgentSnapshot(state.rootUri)?.threads.find(thread => thread.id === state.threadId)?.title ??
       "Agent",
     render: instance =>
-      createElement(AgentChatView, {
-        thread: deps.getAgentThread(instance.state.rootUri, instance.state.threadId),
-        providers: deps.getAgentProviders(),
-        theme: isDarkTheme(deps.getTheme()) ? "dark" : "light",
-        onSend: payload =>
-          deps.sendAgentMessage(instance.state.rootUri, instance.state.threadId, payload),
+      createElement(AgentChatTabBody, {
+        rootUri: instance.state.rootUri,
+        threadId: instance.state.threadId,
+        deps,
       }),
     keepMounted: true,
   }

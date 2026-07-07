@@ -4,8 +4,10 @@ import type {
   AgentWorkspaceSnapshot,
   AgentProvidersState,
   CreateAgentThreadInput,
+  InterruptAgentTurnInput,
   SendAgentMessageInput,
   SetAgentThreadArchivedInput,
+  UpdateAgentThreadSettingsInput,
 } from "@jet/agents"
 
 export type WorkspaceFile = {
@@ -119,9 +121,12 @@ export type JetElectronAgents = {
   ): Promise<AgentThread | null>
   createThread(input: CreateAgentThreadInput): Promise<AgentThread>
   sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
+  interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
+  updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
   listProviders(): Promise<AgentProvidersState>
   refreshProviders(): Promise<AgentProvidersState>
+  onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
 }
 
 export type JetElectronAPI = {

@@ -38,6 +38,20 @@ export function hasTypescriptLanguageServer(): boolean {
   }
 }
 
+export function hasCursorAgent(): boolean {
+  try {
+    execSync("which cursor-agent", { stdio: "ignore" })
+    return true
+  } catch {
+    try {
+      execSync("which agent", { stdio: "ignore" })
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
 export async function launchJet(workspaceRel = SAMPLE): Promise<{ app: ElectronApplication; page: Page }> {
   const workspacePath = resolve(REPO_ROOT, workspaceRel)
   const app = await electron.launch({
