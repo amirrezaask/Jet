@@ -141,6 +141,12 @@ const DEFAULT_FONT_SIZE = 13
 const FONT_SIZE_STEP = 2
 const OverlayHost = lazy(() => import("./OverlayHost.js"))
 
+const FN_BY_COMMAND_ID = ((): Map<string, string> => {
+  const map = new Map<string, string>()
+  for (const entry of APP_COMMAND_REGISTRY) map.set(entry.id, entry.fn)
+  return map
+})()
+
 type OpenWorkspaceOptions = { replace?: boolean; silent?: boolean }
 
 function loadStoredFontSize(): number {
@@ -242,7 +248,9 @@ function jetPlatformFS(): import("@jet/workspace").FileSystemProvider {
 }
 
 export function JetApp() {
-  const initialLayout = useMemo(() => initialEditorLayout(), [])
+  const initialLayoutRef = useRef<ReturnType<typeof initialEditorLayout> | null>(null)
+  if (initialLayoutRef.current == null) initialLayoutRef.current = initialEditorLayout()
+  const initialLayout = initialLayoutRef.current
   const [panelTree, setPanelTree] = useState(() => initialLayout.tree)
   const [focusedPanel, setFocusedPanel] = useState<PanelId | null>(() => initialLayout.editorPanel)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -252,7 +260,7 @@ export function JetApp() {
   const [editorFocused, setEditorFocused] = useState(false)
   const [layoutReady, setLayoutReady] = useState(false)
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => loadStoredColorScheme())
-  const activeTheme = useMemo(() => themeForScheme(colorScheme), [colorScheme])
+  const activeTheme = themeForScheme(colorScheme)
   const [gotoLineOpen, setGotoLineOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [outlineSymbols, setOutlineSymbols] = useState<OutlineEntry[]>([])
@@ -759,18 +767,9 @@ export function JetApp() {
     return map
   }, [keymapBindings])
 
-  const fnByCommandId = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const entry of APP_COMMAND_REGISTRY) {
-      map.set(entry.id, entry.fn)
-    }
-    return map
-  }, [])
+  const fnByCommandId = FN_BY_COMMAND_ID
 
-  const activePanelKind = useMemo(
-    () => (focusedPanel ? panelViewKind(panelTree, focusedPanel) : undefined),
-    [focusedPanel, panelTree],
-  )
+  const activePanelKind = focusedPanel ? panelViewKind(panelTree, focusedPanel) : undefined
 
   const activeTabKindName = useMemo(
     () => activeTabKind(panelTree, focusedPanel, workspace.tabRegistry),

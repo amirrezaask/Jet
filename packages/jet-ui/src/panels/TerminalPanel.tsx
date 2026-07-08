@@ -4,6 +4,7 @@ import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import type { JetTheme } from "@jet/codemirror"
 import "@xterm/xterm/css/xterm.css"
+import { subscribeRootStyle } from "./root-style-observer.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
@@ -180,11 +181,7 @@ export function TerminalPanel({
     })
     resizeObserver.observe(container)
 
-    const fontObserver = new MutationObserver(() => syncTypography())
-    fontObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["style"],
-    })
+    const unsubscribeFontObserver = subscribeRootStyle(() => syncTypography())
 
     const visibilityObserver = new IntersectionObserver(entries => {
       if (!entries.some(e => e.isIntersecting)) return
@@ -199,7 +196,7 @@ export function TerminalPanel({
     return () => {
       cancelled = true
       resizeObserver.disconnect()
-      fontObserver.disconnect()
+      unsubscribeFontObserver()
       visibilityObserver.disconnect()
       titleDispose.dispose()
       dataDispose?.dispose()

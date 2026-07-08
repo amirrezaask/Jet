@@ -1,10 +1,9 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type RefObject,
 } from "react"
@@ -57,10 +56,27 @@ type DropHotState = {
   preview: DropSite["preview"]
 } | null
 
-const HotDropCtx = createContext<DropHotState>(null)
+let dropHotState: DropHotState = null
+const dropHotListeners = new Set<() => void>()
 
+function subscribeDropHot(cb: () => void): () => void {
+  dropHotListeners.add(cb)
+  return () => dropHotListeners.delete(cb)
+}
+
+function setDropHotState(next: DropHotState): void {
+  if (dropHotState === next) return
+  dropHotState = next
+  for (const cb of dropHotListeners) cb()
+}
+
+function getDropHot(): DropHotState {
+  return dropHotState
+}
+
+/** Subscribe to the current drop-hot zone. Fine-grained: only re-renders when hot changes. */
 export function useDropHot(): DropHotState {
-  return useContext(HotDropCtx)
+  return useSyncExternalStore(subscribeDropHot, getDropHot, getDropHot)
 }
 
 type DropAnimTarget = { x: number; y: number; w: number; h: number }
@@ -123,7 +139,6 @@ function createTabDropAnimation(
 function TabDndInner({ children, handlers }: TabDndInnerProps) {
   const drag = usePanelDrag()
   const [activeTab, setActiveTab] = useState<TabDragData | null>(null)
-  const [dropHot, setDropHot] = useState<DropHotState>(null)
   const dropHotRef = useRef<DropHotState>(null)
   const dropAnimTargetRef = useRef<DropAnimTarget | null>(null)
   const dropAnimation = useMemo(() => createTabDropAnimation(dropAnimTargetRef), [])
@@ -145,7 +160,8 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
   const onDragMove = useCallback((event: DragMoveEvent) => {
     const activator = event.activatorEvent
     if (!activator || !("clientX" in activator)) {
-      setDropHot(null)
+      dropHotRef.current = null
+      setDropHotState(null)
       return
     }
     const cx = (activator as PointerEvent).clientX + event.delta.x
@@ -168,8 +184,8 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
         break
       }
     }
-    setDropHot(best)
     dropHotRef.current = best
+    setDropHotState(best)
   }, [])
 
   const onDragEnd = useCallback(
@@ -178,8 +194,8 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
       const hot = dropHotRef.current
       dropAnimTargetRef.current = hot ? resolveDropAnimTarget(hot) : null
       setActiveTab(null)
-      setDropHot(null)
       dropHotRef.current = null
+      setDropHotState(null)
       drag.endTab()
       if (!data || data.type !== "tab") return
 
@@ -240,29 +256,27 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
 
   const onDragCancel = useCallback(() => {
     setActiveTab(null)
-    setDropHot(null)
     dropHotRef.current = null
+    setDropHotState(null)
     drag.endTab()
   }, [drag])
 
   return (
-    <HotDropCtx.Provider value={dropHot}>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={onDragStart}
-        onDragMove={onDragMove}
-        onDragEnd={onDragEnd}
-        onDragCancel={onDragCancel}
-      >
-        {children}
-        <DragOverlay dropAnimation={dropAnimation}>
-          {activeTab ? (
-            <JetTabDragGhost label={activeTab.label} dirty={activeTab.dirty} />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-    </HotDropCtx.Provider>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={onDragStart}
+      onDragMove={onDragMove}
+      onDragEnd={onDragEnd}
+      onDragCancel={onDragCancel}
+    >
+      {children}
+      <DragOverlay dropAnimation={dropAnimation}>
+        {activeTab ? (
+          <JetTabDragGhost label={activeTab.label} dirty={activeTab.dirty} />
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   )
 }
 
