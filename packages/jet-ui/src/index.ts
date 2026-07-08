@@ -15,6 +15,11 @@ export {
   type TabRenderCtx,
 } from "./tabs/registry.js"
 export { AppShell } from "./shell/AppShell.js"
+export {
+  JetWorkspaceSidebar,
+  type JetSidebarView,
+  type JetWorkspaceSidebarProps,
+} from "./shell/JetWorkspaceSidebar.js"
 export { JetTitleBar, type JetTitleBarAction, type JetTitleBarCheckboxAction, type JetTitleBarMenu } from "./shell/JetTitleBar.js"
 export { focusExplorerPanel } from "./explorer/focus.js"
 export { focusTerminalExplorerPanel } from "./terminal-explorer/focus.js"
@@ -61,7 +66,16 @@ export { createContextMenuHost, dispatchContextMenuAt } from "./components/Conte
 export { PromptDialog, type PromptDialogProps } from "./components/PromptDialog.js"
 export { Text, textVariants, type TextProps } from "./components/Text.js"
 export { Surface, surfaceVariants, type SurfaceProps } from "./components/Surface.js"
-export { bundledThemes, vercelDark, vercelLight, themeForScheme, type ColorScheme } from "./theme/bundled.js"
+export {
+  bundledThemes,
+  defaultDark,
+  defaultLight,
+  vercelDark,
+  vercelLight,
+  themeForScheme,
+  type ColorScheme,
+} from "./theme/bundled.js"
+export { syncNativeChromeFromTheme, readThemedNativeChrome } from "./theme/native-chrome.js"
 export { defaultJetTheme, applyJetThemeCss, applyColorScheme } from "@jet/codemirror"
 export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetPressClass } from "./motion/tokens.js"
 export { useReducedMotion } from "./motion/useReducedMotion.js"

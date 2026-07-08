@@ -145,6 +145,7 @@ const api: JetElectronAPI = {
     ipcRenderer.on("jet:launch", handler)
     return () => ipcRenderer.removeListener("jet:launch", handler)
   },
+  syncNativeChrome: colors => ipcRenderer.invoke("ui:syncNativeChrome", colors),
 }
 
 contextBridge.exposeInMainWorld("jet", api)

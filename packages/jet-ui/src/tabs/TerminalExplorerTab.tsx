@@ -7,7 +7,6 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../components/ui/context-menu.js"
-import { SidebarProvider } from "../components/ui/sidebar.js"
 import { TreeView, type TreeDataSource, type TreeNode } from "../components/TreeView.js"
 
 export type TerminalExplorerEntry = {
@@ -82,30 +81,33 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
 
   if (sortedGroups.length === 0) {
     return (
-      <SidebarProvider className="!min-h-0 flex h-full w-full min-h-0 flex-col">
-        <TreeView<TerminalNodeData>
-          listId={TERMINAL_EXPLORER_LIST_ID}
-          ariaLabel="Terminals"
-          source={source}
-          initiallyExpanded={initiallyExpanded}
-          renderRow={() => null}
-          emptyState={
-            <p className="px-2 py-2 text-xs text-muted-foreground">
-              Open a workspace to manage terminals.
-            </p>
-          }
-        />
-      </SidebarProvider>
-    )
-  }
-
-  return (
-    <SidebarProvider className="!min-h-0 flex h-full w-full min-h-0 flex-col">
       <TreeView<TerminalNodeData>
         listId={TERMINAL_EXPLORER_LIST_ID}
         ariaLabel="Terminals"
         source={source}
+        rowAriaLabel={node =>
+          node.data.kind === "group" ? node.data.group.name : node.data.entry.label
+        }
         initiallyExpanded={initiallyExpanded}
+        renderRow={() => null}
+        emptyState={
+          <p className="px-2 py-2 text-xs text-muted-foreground">
+            Open a workspace to manage terminals.
+          </p>
+        }
+      />
+    )
+  }
+
+  return (
+    <TreeView<TerminalNodeData>
+      listId={TERMINAL_EXPLORER_LIST_ID}
+      ariaLabel="Terminals"
+      source={source}
+      rowAriaLabel={node =>
+        node.data.kind === "group" ? node.data.group.name : node.data.entry.label
+      }
+      initiallyExpanded={initiallyExpanded}
         activeId={activeTerminalTabId}
         onActivate={node => {
           if (node.data.kind === "terminal") {
@@ -205,6 +207,5 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
           )
         }}
       />
-    </SidebarProvider>
   )
 })

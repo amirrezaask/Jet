@@ -8,7 +8,7 @@ test("explorer screenshot: jet repo panel rows must not overlap", async ({ page 
   await showExplorer(page)
 
   const layout = await page.evaluate(() => {
-    const items = [...document.querySelectorAll<HTMLElement>("[data-jet-list-panel='explorer'] [data-jet-list-item]")]
+    const items = [...document.querySelectorAll<HTMLElement>("[data-jet-list-panel='jet:explorer'] [data-jet-list-item]")]
     const tops = items.map(el => Math.round(el.getBoundingClientRect().top))
     const shrinks = items.slice(0, 5).map(el => getComputedStyle(el).flexShrink)
     return {
@@ -24,7 +24,7 @@ test("explorer screenshot: jet repo panel rows must not overlap", async ({ page 
   expect(layout.minHeight).toBeGreaterThanOrEqual(18)
   expect(layout.shrinks.every(s => s === "0")).toBe(true)
 
-  await expect(page.locator("[data-jet-list-panel='explorer']")).toHaveScreenshot(
+  await expect(page.locator("[data-jet-list-panel='jet:explorer']")).toHaveScreenshot(
     "explorer-jet-repo-panel.png",
     { maxDiffPixelRatio: 0.02 },
   )

@@ -47,7 +47,7 @@ test("editor-keymaps: Cmd-z undoes typing", async ({ page }) => {
 test("editor-keymaps: Cmd-Shift-e shows explorer", async ({ page }) => {
   await page.keyboard.press("Meta+Shift+E")
   await page.waitForTimeout(400)
-  await expect(page.locator('[data-jet-list-panel="explorer"]')).toBeVisible()
+  await expect(page.locator('[data-jet-list-panel="jet:explorer"]')).toBeVisible()
 })
 
 test("editor-keymaps: Cmd-Shift-f opens project search", async ({ page }) => {

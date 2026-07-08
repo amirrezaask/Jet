@@ -1,9 +1,7 @@
 import type { JetPanelTree } from "@jet/workspace"
-import { EXPLORER_TAB_ID, panelHasTab, panelTabIds } from "@jet/workspace"
+import { panelTabIds } from "@jet/workspace"
 import type { PanelNode } from "@jet/panels"
 import type { Edge, PanelId, PanelView } from "@jet/shared"
-import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
-import { TERMINAL_EXPLORER_TAB_ID } from "./tabs/terminal-explorer.tab.js"
 export {
   activeTabKind,
   getActiveEditorFileUri,
@@ -33,7 +31,7 @@ export function resolveEditorPanel(
 
   if (focused) {
     const view = tree.getView(focused)
-    if ((view?.kind === "tabs" || view?.kind === "empty") && !panelHasExplorerTab(tree, focused)) {
+    if (view?.kind === "tabs" || view?.kind === "empty") {
       return focused
     }
   }
@@ -52,17 +50,7 @@ export function resolveEditorPanel(
   const empty = panels.find(p => tree.getView(p)?.kind === "empty")
   if (empty) return empty
 
-  const nonExplorer = panels.filter(p => !panelHasExplorerTab(tree, p))
-  return pickLargestPanel(tree, nonExplorer.length > 0 ? nonExplorer : panels)
-}
-
-export function panelHasExplorerTab(tree: JetPanelTree, panel: PanelId): boolean {
-  const view = tree.getView(panel)
-  return (
-    panelHasTab(view, EXPLORER_TAB_ID) ||
-    panelHasTab(view, AGENT_EXPLORER_TAB_ID) ||
-    panelHasTab(view, TERMINAL_EXPLORER_TAB_ID)
-  )
+  return pickLargestPanel(tree, panels)
 }
 
 export function resolveAuxiliaryPanel(
@@ -74,19 +62,17 @@ export function resolveAuxiliaryPanel(
 
   for (const panel of getAllLeafPanels(tree)) {
     if (opts.excludePanelIds?.has(panel.id)) continue
-    if (panelHasExplorerTab(tree, panel)) continue
     const view = tree.getView(panel)
     if (view?.kind === "tabs") return panel
   }
 
   for (const panel of getAllLeafPanels(tree)) {
     if (opts.excludePanelIds?.has(panel.id)) continue
-    if (panelHasExplorerTab(tree, panel)) continue
     if (tree.getView(panel)?.kind === "empty") return panel
   }
 
   const splitFrom =
-    focused && !opts.excludePanelIds?.has(focused.id) && !panelHasExplorerTab(tree, focused)
+    focused && !opts.excludePanelIds?.has(focused.id)
       ? focused
       : resolveEditorPanel(tree, null, focused) ?? getAllLeafPanels(tree)[0]
 

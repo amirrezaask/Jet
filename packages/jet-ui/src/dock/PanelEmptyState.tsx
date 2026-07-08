@@ -10,7 +10,7 @@ import { formatKeyBinding } from "@/lib/format-key.js"
 
 export function PanelEmptyState() {
   return (
-    <Empty className="h-full border-0" aria-label="No file open">
+    <Empty className="h-full border-0 bg-background" aria-label="No file open">
       <EmptyHeader>
         <EmptyTitle>No file open</EmptyTitle>
         <EmptyDescription>Open a file or create a new buffer to get started.</EmptyDescription>

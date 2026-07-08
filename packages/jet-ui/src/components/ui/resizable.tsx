@@ -14,7 +14,7 @@ function ResizablePanelGroup({
       data-slot="resizable-panel-group"
       orientation={orientation}
       className={cn(
-        "flex h-full w-full data-[orientation=vertical]:flex-col",
+        "flex h-full w-full bg-background data-[orientation=vertical]:flex-col",
         className,
       )}
       {...props}

@@ -117,21 +117,31 @@ function installAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+/** shadcn default dark background — oklch(0.145 0 0) ≈ #252525 */
+const DEFAULT_WINDOW_BG = "#252525"
+
+function applyNativeChrome(win: BrowserWindow, colors: { background: string; foreground: string }) {
+  win.setBackgroundColor(colors.background)
+  if (process.platform === "darwin") return
+  if (process.platform === "win32") {
+    win.setTitleBarOverlay({
+      color: colors.background,
+      symbolColor: colors.foreground,
+      height: 39,
+    })
+  }
+}
+
 function createWindow() {
   const isMac = process.platform === "darwin"
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    backgroundColor: "#0a0a0c",
+    backgroundColor: DEFAULT_WINDOW_BG,
     titleBarStyle: isMac ? "hiddenInset" : "default",
     ...(isMac
       ? {
           trafficLightPosition: { x: 14, y: 11 },
-          titleBarOverlay: {
-            height: 39,
-            color: "#000000",
-            symbolColor: "#ededed",
-          },
         }
       : {}),
     webPreferences: {
@@ -208,6 +218,10 @@ app.whenReady().then(() => {
   })
   ipcMain.handle("jet:getHomeDir", () => os.homedir())
   ipcMain.handle("jet:loadGlobalJetrcScanRoots", () => loadGlobalJetrcScanRoots(os.homedir()))
+  ipcMain.handle("ui:syncNativeChrome", (_e, colors: { background: string; foreground: string }) => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) applyNativeChrome(win, colors)
+  })
 
   const userArgs = parseUserArgs(process.argv)
 

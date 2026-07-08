@@ -32,6 +32,7 @@ export interface TreeViewProps<T> {
   listId: string
   source: TreeDataSource<T>
   renderRow: (node: TreeNode<T>, ctx: TreeRowContext) => React.ReactNode
+  rowAriaLabel?: (node: TreeNode<T>) => string
   onActivate?: (node: TreeNode<T>) => void
   initiallyExpanded?: TreeNodeId[]
   ariaLabel: string
@@ -153,6 +154,7 @@ export function TreeView<T>({
   listId,
   source,
   renderRow,
+  rowAriaLabel,
   onActivate,
   initiallyExpanded,
   ariaLabel,
@@ -254,6 +256,7 @@ export function TreeView<T>({
                 offset={v.start}
                 rowHeight={rowHeight}
                 indentPx={indentPx}
+                rowAriaLabel={rowAriaLabel?.(entry.node)}
                 onClick={() => onRowClick(entry)}
                 renderRow={renderRow}
                 rowActions={rowActions}
@@ -277,6 +280,7 @@ function TreeRow<T>({
   offset,
   rowHeight,
   indentPx,
+  rowAriaLabel,
   onClick,
   renderRow,
   rowActions,
@@ -286,6 +290,7 @@ function TreeRow<T>({
   offset: number
   rowHeight: number
   indentPx: number
+  rowAriaLabel?: string
   onClick: () => void
   renderRow: (node: TreeNode<T>, ctx: TreeRowContext) => React.ReactNode
   rowActions?: (node: TreeNode<T>) => React.ReactNode
@@ -308,6 +313,7 @@ function TreeRow<T>({
     >
       <div
         role="treeitem"
+        aria-label={rowAriaLabel}
         aria-level={ctx.depth + 1}
         aria-expanded={ctx.isBranch ? ctx.expanded : undefined}
         data-jet-list-item

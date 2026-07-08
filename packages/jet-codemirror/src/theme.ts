@@ -64,7 +64,7 @@ export function jetEditorTheme(theme: JetTheme) {
   return EditorView.theme(
     {
       "&": {
-        backgroundColor: theme.colors.panelRaised,
+        backgroundColor: theme.colors.bg,
         color: theme.colors.text,
         height: "100%",
         width: "100%",

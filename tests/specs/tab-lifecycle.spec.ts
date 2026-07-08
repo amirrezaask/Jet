@@ -121,14 +121,15 @@ test("tab-lifecycle: dirty close confirm closes buffer", async ({ page }) => {
   await expect(page.locator(".cm-editor")).not.toContainText("export function greet")
 })
 
-test("tab-lifecycle: closing auxiliary tab collapses empty panel", async ({ page }) => {
+test("tab-lifecycle: sidebar collapse hides explorer list", async ({ page }) => {
   await agent(page).executeCommand("explorer.show")
   await page.waitForTimeout(400)
-  await expect(page.locator("[data-jet-panel-leaf]")).toHaveCount(2)
+  await expect(page.locator('[data-jet-list-panel="jet:explorer"]')).toBeVisible()
 
-  await page.locator('[data-tab-id="jet:explorer"] [aria-label="Close tab"]').click()
+  await page.keyboard.press("Meta+b")
   await page.waitForTimeout(400)
 
+  await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute("data-state", "collapsed")
   await expect(page.locator("[data-jet-panel-leaf]")).toHaveCount(1)
 })
 

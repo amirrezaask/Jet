@@ -141,6 +141,7 @@ export type JetElectronAPI = {
   getHomeDir?(): Promise<string>
   loadGlobalJetrcScanRoots?(): Promise<string[]>
   onLaunch?(cb: (config: LaunchConfig) => void): () => void
+  syncNativeChrome?(colors: { background: string; foreground: string }): Promise<void>
 }
 
 declare global {

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react"
 import { EXPLORER_LIST_ID } from "@/explorer/focus.js"
 import { File, Folder } from "lucide-react"
 import type { WorkspaceEntry, WorkspaceManager } from "@jet/workspace"
-import { SidebarProvider } from "@/components/ui/sidebar.js"
 import { TreeView, type TreeDataSource, type TreeNode } from "@/components/TreeView.js"
 import { cn } from "@/lib/utils.js"
 
@@ -90,47 +89,48 @@ export function ExplorerTab({
   }
 
   return (
-    <SidebarProvider className="!min-h-0 flex h-full w-full min-h-0 flex-col">
       <TreeView<ExplorerData>
         listId={EXPLORER_LIST_ID}
         source={source}
         ariaLabel="Explorer"
+        rowAriaLabel={node =>
+          node.data.kind === "root" ? node.data.name : node.data.entry.name
+        }
         initiallyExpanded={rootIds}
-        onActivate={node => {
-          if (node.data.kind === "entry" && !node.data.entry.isDirectory) {
-            onOpenFile(node.data.entry.uri, toPath(node.data.entry.uri))
-          }
-        }}
-        emptyState={<div className="p-2 text-xs text-muted-foreground">Loading…</div>}
-        renderRow={(node, ctx) => {
-          if (node.data.kind === "root") {
-            return (
-              <>
-                <Folder className="size-3.5 shrink-0 text-foreground" />
-                <span
-                  className="truncate font-medium text-foreground"
-                  title={node.data.path}
-                >
-                  {node.data.name}
-                </span>
-              </>
-            )
-          }
-          const entry = node.data.entry
+      onActivate={node => {
+        if (node.data.kind === "entry" && !node.data.entry.isDirectory) {
+          onOpenFile(node.data.entry.uri, toPath(node.data.entry.uri))
+        }
+      }}
+      emptyState={<div className="p-2 text-xs text-muted-foreground">Loading…</div>}
+      renderRow={(node, ctx) => {
+        if (node.data.kind === "root") {
           return (
             <>
-              {entry.isDirectory ? (
-                <Folder className="size-3.5 shrink-0" />
-              ) : (
-                <File className="size-3.5 shrink-0" />
-              )}
-              <span className={cn("truncate", ctx.active && "font-medium")} title={entry.name}>
-                {entry.name}
+              <Folder className="size-3.5 shrink-0 text-foreground" />
+              <span
+                className="truncate font-medium text-foreground"
+                title={node.data.path}
+              >
+                {node.data.name}
               </span>
             </>
           )
-        }}
-      />
-    </SidebarProvider>
+        }
+        const entry = node.data.entry
+        return (
+          <>
+            {entry.isDirectory ? (
+              <Folder className="size-3.5 shrink-0" />
+            ) : (
+              <File className="size-3.5 shrink-0" />
+            )}
+            <span className={cn("truncate", ctx.active && "font-medium")} title={entry.name}>
+              {entry.name}
+            </span>
+          </>
+        )
+      }}
+    />
   )
 }

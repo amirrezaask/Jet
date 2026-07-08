@@ -1,8 +1,10 @@
 export {
   bundledThemes,
-  vercelDark,
-  vercelLight,
+  defaultDark,
+  defaultLight,
   themeForScheme,
   type ColorScheme,
-} from "./vercel.js"
+} from "./default.js"
+/** Disabled — kept for reference; use `defaultDark` / `defaultLight` instead. */
+export { vercelDark, vercelLight } from "./vercel.js"
 export { defaultJetTheme, applyJetThemeCss, applyColorScheme } from "@jet/codemirror"

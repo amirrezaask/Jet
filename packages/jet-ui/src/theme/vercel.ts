@@ -1,6 +1,6 @@
 import type { JetHighlightColors, JetTheme } from "@jet/codemirror"
 
-/** Palette from vercel-theme/README.md — single source for shell + CM syntax. */
+/** Disabled Vercel palette — kept for reference; not wired as default. */
 
 const darkSyntax: JetHighlightColors = {
   keyword: "#f05b8d",
@@ -84,11 +84,8 @@ export const vercelLight: JetTheme = {
 
 export type ColorScheme = "dark" | "light"
 
-export const bundledThemes: Record<string, JetTheme> = {
+/** Disabled — use default.ts bundled themes instead. */
+export const vercelBundledThemes: Record<string, JetTheme> = {
   dark: vercelDark,
   light: vercelLight,
-}
-
-export function themeForScheme(scheme: ColorScheme): JetTheme {
-  return scheme === "light" ? vercelLight : vercelDark
 }

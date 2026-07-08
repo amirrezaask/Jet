@@ -33,7 +33,7 @@ import type {
   WorkspaceService,
 } from "@jet/workspace"
 import { folderForFileUri, resolveWorkspaceFolder } from "@jet/workspace"
-import { PROBLEMS_TAB_ID, EXPLORER_TAB_ID, panelTabIds } from "@jet/workspace"
+import { PROBLEMS_TAB_ID, panelTabIds } from "@jet/workspace"
 import { problemsToListItems } from "@jet/ui"
 import { openJetSearch } from "@jet/codemirror"
 import {
@@ -60,24 +60,21 @@ import {
   getAllLeafPanels,
   resolveEditorPanel,
   resolveTargetPanel,
-  panelHasExplorerTab,
   closePanelIfEmpty,
 } from "./panel-routing.js"
 import { resolveFolderForActiveTab } from "./resolve-tab-workspace.js"
 import {
   openAgentExplorerTab,
-  openExplorerTab,
   openOutputTab,
   openProblemsTab,
   openSearchTab,
   openTabInAuxiliaryPanel,
-  openTerminalExplorerTab,
   openTerminalTab,
   listTerminalTabs,
   isActiveTerminalTab,
 } from "./tab-routing.js"
 import { confirmCloseBuffer } from "./close-buffer.js"
-import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
+import type { JetSidebarView } from "@jet/ui"
 
 export type BuildAppCommandsDeps = {
   workspace: WorkspaceService
@@ -114,6 +111,10 @@ export type BuildAppCommandsDeps = {
   projectRegistry: import("@jet/workspace").ProjectRegistry
   refreshProjects: () => Promise<number>
   focusExplorer?: () => void
+  focusTerminalExplorer?: () => void
+  setSidebarOpen: (open: boolean) => void
+  setSidebarView: (view: JetSidebarView) => void
+  getSidebarView: () => JetSidebarView
   openAgentExplorer: () => Promise<void>
   openTerminalExplorer: () => void
   createAgentThread: (rootUri: string, rootPath: string) => Promise<void>
@@ -496,9 +497,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.commitTree(tree, panelId)
     },
     explorer: () => {
-      const tree = deps.cloneTree()
-      const { panelId } = openExplorerTab(deps.workspace, tree, currentFocusedPanel())
-      deps.commitTree(tree, panelId)
+      deps.setSidebarOpen(true)
+      deps.setSidebarView("explorer")
       deps.focusExplorer?.()
     },
     agents: async ctx => {
@@ -648,23 +648,14 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     nextBuffer: () => cycleEditorBuffer(1),
     prevBuffer: () => cycleEditorBuffer(-1),
     focusSidebar: () => {
-      const tree = deps.cloneTree()
-      for (const panel of getAllLeafPanels(tree)) {
-        if (panelHasExplorerTab(tree, panel)) {
-          const view = tree.getView(panel)
-          if (view?.kind !== "tabs") continue
-          const sidebarTabId =
-            panelTabIds(view).find(id => id === AGENT_EXPLORER_TAB_ID || id === EXPLORER_TAB_ID) ??
-            view.activeTabId
-          deps.workspace.focusTabInPanel(tree, panel, sidebarTabId)
-          deps.commitTree(tree, panel)
+      deps.setSidebarOpen(true)
+      requestAnimationFrame(() => {
+        if (deps.getSidebarView() === "terminal-explorer") {
+          deps.focusTerminalExplorer?.()
+        } else {
           deps.focusExplorer?.()
-          return
         }
-      }
-      const { panelId } = openAgentExplorerTab(deps.workspace, tree, currentFocusedPanel())
-      deps.commitTree(tree, panelId)
-      deps.focusExplorer?.()
+      })
     },
     focusEditorGroup: () => {
       const panel = activeEditorPanel()

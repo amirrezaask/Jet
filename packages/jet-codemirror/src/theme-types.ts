@@ -1,3 +1,10 @@
+import {
+  applyShadcnTokens,
+  jetColorsFromShadcn,
+  shadcnDefaultDark,
+  type JetShadcnTokens,
+} from "./shadcn-tokens.js"
+
 export type JetSemanticColors = {
   error: string
   warning: string
@@ -40,51 +47,42 @@ export type JetHighlightColors = {
   label: string
 }
 
+export type { JetShadcnTokens }
+export { shadcnDefaultDark, shadcnDefaultLight, jetColorsFromShadcn, applyShadcnTokens } from "./shadcn-tokens.js"
+
 export type JetTheme = {
   id: string
   name: string
   colors: JetColors
   highlights: JetHighlightColors
+  /** When set, shell tokens use exact shadcn CSS variables. */
+  shadcn?: JetShadcnTokens
 }
 
 export type ColorScheme = "dark" | "light"
 
-/** Vercel dark — canonical default (see vercel-theme/README.md). */
+/** Default dark — shadcn/ui palette (see jet-ui/src/theme/default.ts). */
 export const defaultJetTheme: JetTheme = {
-  id: "vercel-dark",
-  name: "Vercel Dark",
-  colors: {
-    bg: "#000000",
-    panel: "#000000",
-    panelRaised: "#0a0a0a",
-    text: "#ededed",
-    textMuted: "#a1a1a1",
-    accent: "#ededed",
-    hover: "#1a1a1a",
-    selection: "#333333",
-    border: "#333333",
-    focusBorder: "#ededed",
-    error: "#f56464",
-    warning: "#f99902",
-    success: "#58c760",
-    backdrop: "rgba(0,0,0,0.6)",
-  },
+  id: "default-dark",
+  name: "Default Dark",
+  colors: jetColorsFromShadcn(shadcnDefaultDark, "dark"),
+  shadcn: shadcnDefaultDark,
   highlights: {
-    keyword: "#f05b8d",
-    controlKeyword: "#f05b8d",
-    function: "#b675f1",
-    type: "#62a6ff",
-    string: "#58c760",
-    number: "#62a6ff",
-    boolean: "#62a6ff",
-    comment: "#a1a1a1",
-    operator: "#ededed",
-    variable: "#ededed",
-    attribute: "#b675f1",
-    constant: "#62a6ff",
-    field: "#62a6ff",
-    module: "#62a6ff",
-    label: "#f05b8d",
+    keyword: "oklch(0.704 0.191 22.216)",
+    controlKeyword: "oklch(0.704 0.191 22.216)",
+    function: "oklch(0.792 0.209 303.407)",
+    type: "oklch(0.623 0.214 259.815)",
+    string: "oklch(0.696 0.17 162.48)",
+    number: "oklch(0.828 0.189 84.429)",
+    boolean: "oklch(0.828 0.189 84.429)",
+    comment: "oklch(0.708 0 0)",
+    operator: "oklch(0.985 0 0)",
+    variable: "oklch(0.985 0 0)",
+    attribute: "oklch(0.792 0.209 303.407)",
+    constant: "oklch(0.623 0.214 259.815)",
+    field: "oklch(0.623 0.214 259.815)",
+    module: "oklch(0.623 0.214 259.815)",
+    label: "oklch(0.704 0.191 22.216)",
   },
 }
 
@@ -114,32 +112,36 @@ export function applyJetThemeCss(theme: JetTheme): void {
   root.style.setProperty("--jet-cursor-color", c.text)
   root.style.setProperty("--jet-row-height", "22px")
 
-  root.style.setProperty("--background", c.bg)
-  root.style.setProperty("--foreground", c.text)
-  root.style.setProperty("--card", c.panelRaised)
-  root.style.setProperty("--card-foreground", c.text)
-  root.style.setProperty("--popover", c.panelRaised)
-  root.style.setProperty("--popover-foreground", c.text)
-  root.style.setProperty("--primary", c.accent)
-  root.style.setProperty("--primary-foreground", onAccent)
-  root.style.setProperty("--secondary", c.hover)
-  root.style.setProperty("--secondary-foreground", c.text)
-  root.style.setProperty("--muted", c.panel)
-  root.style.setProperty("--muted-foreground", c.textMuted)
-  root.style.setProperty("--accent", c.hover)
-  root.style.setProperty("--accent-foreground", c.text)
-  root.style.setProperty("--destructive", c.error)
-  root.style.setProperty("--border", c.border)
-  root.style.setProperty("--input", c.border)
-  root.style.setProperty("--ring", c.focusBorder)
-  root.style.setProperty("--sidebar", c.panel)
-  root.style.setProperty("--sidebar-foreground", c.text)
-  root.style.setProperty("--sidebar-primary", c.accent)
-  root.style.setProperty("--sidebar-primary-foreground", onAccent)
-  root.style.setProperty("--sidebar-accent", c.hover)
-  root.style.setProperty("--sidebar-accent-foreground", c.text)
-  root.style.setProperty("--sidebar-border", c.border)
-  root.style.setProperty("--sidebar-ring", c.focusBorder)
+  if (theme.shadcn) {
+    applyShadcnTokens(theme.shadcn)
+  } else {
+    root.style.setProperty("--background", c.bg)
+    root.style.setProperty("--foreground", c.text)
+    root.style.setProperty("--card", c.panelRaised)
+    root.style.setProperty("--card-foreground", c.text)
+    root.style.setProperty("--popover", c.panelRaised)
+    root.style.setProperty("--popover-foreground", c.text)
+    root.style.setProperty("--primary", c.accent)
+    root.style.setProperty("--primary-foreground", onAccent)
+    root.style.setProperty("--secondary", c.hover)
+    root.style.setProperty("--secondary-foreground", c.text)
+    root.style.setProperty("--muted", c.panel)
+    root.style.setProperty("--muted-foreground", c.textMuted)
+    root.style.setProperty("--accent", c.hover)
+    root.style.setProperty("--accent-foreground", c.text)
+    root.style.setProperty("--destructive", c.error)
+    root.style.setProperty("--border", c.border)
+    root.style.setProperty("--input", c.border)
+    root.style.setProperty("--ring", c.focusBorder)
+    root.style.setProperty("--sidebar", c.panel)
+    root.style.setProperty("--sidebar-foreground", c.text)
+    root.style.setProperty("--sidebar-primary", c.accent)
+    root.style.setProperty("--sidebar-primary-foreground", onAccent)
+    root.style.setProperty("--sidebar-accent", c.hover)
+    root.style.setProperty("--sidebar-accent-foreground", c.text)
+    root.style.setProperty("--sidebar-border", c.border)
+    root.style.setProperty("--sidebar-ring", c.focusBorder)
+  }
   applyJetHighlightCssVars(theme)
 }
 

@@ -3,7 +3,7 @@ import { boot, SAMPLE, waitAnimationsIdle } from "../helpers/boot.js"
 import { agent } from "../helpers/agent.js"
 import { expectLayout, expectRowTextVisible } from "../helpers/list.js"
 
-const TERMINAL_EXPLORER_PANEL = '[data-jet-list-panel="terminal-explorer"]'
+const TERMINAL_EXPLORER_PANEL = '[data-jet-list-panel="jet:terminal-explorer"]'
 const TERMINAL_EXPLORER_ITEMS = `${TERMINAL_EXPLORER_PANEL} [data-jet-list-item]`
 const TERMINAL_PANEL = "[data-jet-terminal-panel]"
 
@@ -75,7 +75,7 @@ test("terminal explorer: plus creates another terminal", async ({ page }) => {
   await expectRowTextVisible(page, TERMINAL_EXPLORER_ITEMS, "Terminal 2")
 })
 
-test("terminal explorer: context menu closes terminal", async ({ page }) => {
+test("terminal explorer: close button removes terminal from list", async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
   await waitAnimationsIdle(page)
 
@@ -85,8 +85,7 @@ test("terminal explorer: context menu closes terminal", async ({ page }) => {
   await page.waitForSelector(TERMINAL_EXPLORER_PANEL, { timeout: 15_000 })
 
   const row = page.locator(TERMINAL_EXPLORER_ITEMS).filter({ hasText: "Terminal 2" })
-  await row.click({ button: "right" })
-  await page.getByRole("menuitem", { name: "Close Terminal" }).click()
+  await row.locator('button[aria-label="Close terminal"]').click()
   await waitAnimationsIdle(page)
 
   await expectLayout(page, {

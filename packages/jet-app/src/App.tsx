@@ -69,6 +69,7 @@ import {
   PanelTabBar,
   StatusBar,
   themeForScheme,
+  syncNativeChromeFromTheme,
   getEditorView,
   getAllEditorViews,
   syncAllEditorThemes,
@@ -88,6 +89,8 @@ import {
   showJetToast,
   requestConfirm,
   AppShell,
+  JetWorkspaceSidebar,
+  type JetSidebarView,
   focusExplorerPanel,
   focusTerminalExplorerPanel,
   getListPanel,
@@ -105,7 +108,6 @@ import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
 import { agentChatTabId, parseAgentChatTabId, type AgentChatTabState } from "./tabs/agent-chat.tab.js"
 import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
-import { TERMINAL_EXPLORER_TAB_ID } from "./tabs/terminal-explorer.tab.js"
 import { terminalCwdForTab } from "./tabs/terminal-session.js"
 import {
   panelViewKind,
@@ -118,7 +120,8 @@ import {
   closePanelIfEmpty,
   reconcileFocusedPanel,
 } from "./panel-routing.js"
-import { openAgentChatTab, openAgentExplorerTab, openTerminalExplorerTab, openTerminalTab } from "./tab-routing.js"
+import { openAgentChatTab, openAgentExplorerTab, openTerminalTab } from "./tab-routing.js"
+import { stripSidebarTabsFromTree } from "./sidebar-tree.js"
 import { buildTerminalExplorerGroups, nextTerminalLabel } from "./terminal-explorer.js"
 import {
   isContextualTabKind,
@@ -158,6 +161,14 @@ function applyRootFontSize(px: number): void {
 const isWebMode = Boolean(import.meta.env.VITE_JET_WEB)
 const hasWorkspaceQuery =
   isWebMode && new URLSearchParams(window.location.search).has("workspace")
+
+const SIDEBAR_VIEW_STORAGE_KEY = "jet-sidebar-view"
+
+function loadSidebarView(): JetSidebarView {
+  if (typeof localStorage === "undefined") return "explorer"
+  const stored = localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY)
+  return stored === "terminal-explorer" ? "terminal-explorer" : "explorer"
+}
 
 function initialEditorLayout() {
   return JetPanelTree.editorOnlyLayout()
@@ -267,6 +278,11 @@ export function JetApp() {
   const [panelRev, setPanelRev] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
   const [fileDragOver, setFileDragOver] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarView, setSidebarView] = useState<JetSidebarView>(loadSidebarView)
+  const [sidebarFocused, setSidebarFocused] = useState(false)
+  const sidebarViewRef = useRef<JetSidebarView>(sidebarView)
+  sidebarViewRef.current = sidebarView
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
   const [pendingChordPrefix, setPendingChordPrefix] = useState<string | null>(null)
   const fontSizeRef = useRef(loadStoredFontSize())
@@ -455,8 +471,8 @@ export function JetApp() {
   }, [bumpAgentTab])
 
   const refreshTerminalExplorerTab = useCallback(() => {
-    bumpAgentTab(TERMINAL_EXPLORER_TAB_ID)
-  }, [bumpAgentTab])
+    setPanelRev(r => r + 1)
+  }, [])
 
   const onTerminalTitleChange = useCallback(
     (tabId: string, title: string) => {
@@ -768,6 +784,20 @@ export function JetApp() {
     return { name: file.name, languageId: file.languageId, isDirty: file.isDirty }
   }, [focusedPanel, panelTree, workspace, panelRev])
 
+  useEffect(() => {
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) {
+        setSidebarFocused(false)
+        return
+      }
+      const sidebar = document.querySelector("[data-jet-workspace-sidebar]")
+      setSidebarFocused(Boolean(sidebar?.contains(target)))
+    }
+    document.addEventListener("focusin", onFocusIn)
+    return () => document.removeEventListener("focusin", onFocusIn)
+  }, [])
+
   const keymapContext = useMemo(
     () => ({
       editorFocus: editorFocused,
@@ -780,15 +810,15 @@ export function JetApp() {
       gotoLineOpen,
       outlineOpen,
       workspaceOpen: workspace.manager.hasFolders(),
-      explorerFocus: activeTabKindName === "explorer",
-      terminalExplorerFocus: activeTabKindName === "terminal-explorer",
+      explorerFocus: sidebarFocused && sidebarView === "explorer",
+      terminalExplorerFocus: sidebarFocused && sidebarView === "terminal-explorer",
       outputFocus: activeTabKindName === "output",
       terminalFocus: activeTabKindName === "terminal",
       agentChatFocus: activeTabKindName === "agent-chat",
       listFocus:
-        activeTabKindName === "explorer" ||
+        (sidebarFocused &&
+          (sidebarView === "explorer" || sidebarView === "terminal-explorer")) ||
         activeTabKindName === "agent-explorer" ||
-        activeTabKindName === "terminal-explorer" ||
         activeTabKindName === "search" ||
         activeTabKindName === "problems" ||
         activeTabKindName === "references" ||
@@ -808,6 +838,8 @@ export function JetApp() {
       workspace.root,
       activePanelKind,
       activeTabKindName,
+      sidebarFocused,
+      sidebarView,
     ],
   )
 
@@ -852,6 +884,7 @@ export function JetApp() {
       preferFocus?: PanelId | null,
       morph?: { animate?: boolean; beforeRects?: Map<number, PanelRect>; spawnFrom?: Map<number, PanelRect> },
     ) => {
+      stripSidebarTabsFromTree(tree)
       const beforeRects =
         morph?.animate ? (morph.beforeRects ?? capturePanelLeafRects()) : null
       const prevFocused = appStateRef.current.focusedPanel
@@ -904,6 +937,7 @@ export function JetApp() {
   useEffect(() => {
     applyColorScheme(colorScheme, activeTheme)
     syncAllEditorThemes(activeTheme)
+    syncNativeChromeFromTheme()
   }, [colorScheme, activeTheme])
 
   useEffect(() => {
@@ -1053,11 +1087,24 @@ export function JetApp() {
   }, [workspace, cloneTree, commitTree])
 
   const openTerminalExplorer = useCallback((): void => {
-    const tree = cloneTree()
-    const { panelId } = openTerminalExplorerTab(workspace, tree, appStateRef.current.focusedPanel)
-    commitTree(tree, panelId)
+    setSidebarOpen(true)
+    setSidebarView("terminal-explorer")
+    try {
+      localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, "terminal-explorer")
+    } catch {
+      /* ignore */
+    }
     requestAnimationFrame(() => focusTerminalExplorerPanel())
-  }, [workspace, cloneTree, commitTree])
+  }, [])
+
+  const handleSidebarViewChange = useCallback((view: JetSidebarView) => {
+    setSidebarView(view)
+    try {
+      localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, view)
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const getTerminalExplorerGroups = useCallback(
     () => buildTerminalExplorerGroups(appStateRef.current.panelTree, workspace),
@@ -1839,11 +1886,21 @@ export function JetApp() {
     const tree = appStateRef.current.panelTree
     const tabKind = activeTabKind(tree, panel, workspace.tabRegistry)
     const listTabId = getActiveListTabId(tree, panel)
-    const el = listTabId
-      ? getListPanel(listTabId)
-      : tabKind === "explorer"
-        ? getListPanel("jet:explorer")
-        : null
+    const sidebarEl = document.querySelector("[data-jet-workspace-sidebar]")
+    const sidebarActive =
+      sidebarEl?.contains(document.activeElement ?? null) ||
+      (sidebarEl?.contains(document.querySelector(":focus") ?? null) ?? false)
+    const el = sidebarActive
+      ? getListPanel(
+          sidebarViewRef.current === "terminal-explorer"
+            ? "jet:terminal-explorer"
+            : "jet:explorer",
+        )
+      : listTabId
+        ? getListPanel(listTabId)
+        : tabKind === "explorer"
+          ? getListPanel("jet:explorer")
+          : null
     if (!el) return
     const items = [...el.querySelectorAll<HTMLElement>("[data-jet-list-item]")]
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -1932,6 +1989,10 @@ export function JetApp() {
         projectRegistry,
         refreshProjects,
         focusExplorer: focusExplorerPanel,
+        focusTerminalExplorer: focusTerminalExplorerPanel,
+        setSidebarOpen,
+        setSidebarView: handleSidebarViewChange,
+        getSidebarView: () => sidebarViewRef.current,
         openAgentExplorer: openAgentsExplorer,
         openTerminalExplorer,
         createAgentThread,
@@ -1958,6 +2019,7 @@ export function JetApp() {
       refreshProjects,
       openAgentsExplorer,
       openTerminalExplorer,
+      handleSidebarViewChange,
       createAgentThread,
       getContextSearchState,
       resolveContextFolder,
@@ -2529,37 +2591,51 @@ export function JetApp() {
           onOpenFolder={() => executeCommand("workspace.openFolder")}
         />
       ) : (
-        <PanelDock<PanelView>
-          tree={panelTree}
-          focusedPanelId={focusedPanel}
-          onFocusPanel={setFocusedPanel}
-          onEvent={handlePanelEvent}
-          tabDnd={tabDndHandlers}
-          renderHeader={(view, panelId, meta) => (
-            <PanelTabBar
-              panelId={panelId}
-              view={view}
-              store={tabStore}
-              registry={tabTypeRegistry}
-              focused={meta.focused}
-              onActivateTab={tabId =>
-                handlePanelEvent({ type: "tabActivate", panelId, tabId })
-              }
-              onCloseTab={tabId =>
-                handlePanelEvent({ type: "tabClose", panelId, tabId })
-              }
-            />
-          )}
-          renderContent={(view, panelId, meta) => (
-            <PanelBody
-              panelId={panelId}
-              view={view}
-              store={tabStore}
-              registry={tabTypeRegistry}
-              focused={meta.focused}
-            />
-          )}
-        />
+        <JetWorkspaceSidebar
+          activeView={sidebarView}
+          onActiveViewChange={handleSidebarViewChange}
+          open={sidebarOpen}
+          onOpenChange={setSidebarOpen}
+          manager={workspace.manager}
+          onOpenFile={(uri, path) => handleOpenFile(uri, path)}
+          terminalExplorerGroups={getTerminalExplorerGroups()}
+          activeTerminalTabId={getActiveTerminalTabId()}
+          onFocusTerminal={focusTerminalTab}
+          onNewTerminal={rootUri => void newTerminalInWorkspace(rootUri)}
+          onCloseTerminal={closeTerminalTab}
+        >
+          <PanelDock<PanelView>
+            tree={panelTree}
+            focusedPanelId={focusedPanel}
+            onFocusPanel={setFocusedPanel}
+            onEvent={handlePanelEvent}
+            tabDnd={tabDndHandlers}
+            renderHeader={(view, panelId, meta) => (
+              <PanelTabBar
+                panelId={panelId}
+                view={view}
+                store={tabStore}
+                registry={tabTypeRegistry}
+                focused={meta.focused}
+                onActivateTab={tabId =>
+                  handlePanelEvent({ type: "tabActivate", panelId, tabId })
+                }
+                onCloseTab={tabId =>
+                  handlePanelEvent({ type: "tabClose", panelId, tabId })
+                }
+              />
+            )}
+            renderContent={(view, panelId, meta) => (
+              <PanelBody
+                panelId={panelId}
+                view={view}
+                store={tabStore}
+                registry={tabTypeRegistry}
+                focused={meta.focused}
+              />
+            )}
+          />
+        </JetWorkspaceSidebar>
       )}
 
       <Suspense fallback={null}>

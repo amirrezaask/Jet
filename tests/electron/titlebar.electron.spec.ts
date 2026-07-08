@@ -60,7 +60,7 @@ test.describe("desktop shell", () => {
       await page.waitForTimeout(200)
       await page.getByText("Show Explorer", { exact: true }).click()
       await page.waitForTimeout(600)
-      await expect(page.locator('[data-jet-list-panel="explorer"]')).toBeVisible()
+      await expect(page.locator('[data-jet-list-panel="jet:explorer"]')).toBeVisible()
     } finally {
       await app.close()
     }

@@ -1,6 +1,5 @@
 import type { JetPanelTree, ListDocument, WorkspaceService } from "@jet/workspace"
 import {
-  EXPLORER_TAB_ID,
   findPanelWithTab,
   isTerminalTabId,
   panelTabIds,
@@ -10,25 +9,7 @@ import type { PanelId } from "@jet/shared"
 import { resolveAuxiliaryPanel, resolveEditorPanel, getAllLeafPanels } from "./panel-routing.js"
 import { agentChatTabId, AGENT_CHAT_TAB_TYPE_ID } from "./tabs/agent-chat.tab.js"
 import { AGENT_EXPLORER_TAB_ID, AGENT_EXPLORER_TAB_TYPE_ID } from "./tabs/agent-explorer.tab.js"
-import {
-  TERMINAL_EXPLORER_TAB_ID,
-  TERMINAL_EXPLORER_TAB_TYPE_ID,
-} from "./tabs/terminal-explorer.tab.js"
 import { TERMINAL_TAB_TYPE_ID, registerTerminalSession } from "./tabs/terminal.tab.js"
-
-const SIDEBAR_EXPLORER_TAB_IDS = [
-  EXPLORER_TAB_ID,
-  AGENT_EXPLORER_TAB_ID,
-  TERMINAL_EXPLORER_TAB_ID,
-] as const
-
-export function findPanelWithAnySidebarExplorerTab(tree: JetPanelTree): PanelId | null {
-  for (const tabId of SIDEBAR_EXPLORER_TAB_IDS) {
-    const panel = findPanelWithTab(tree, tabId)
-    if (panel) return panel
-  }
-  return null
-}
 
 export function openTabInAuxiliaryPanel(
   workspace: WorkspaceService,
@@ -124,71 +105,18 @@ export function openTerminalTab(
   })
 }
 
-export function openExplorerTab(
-  workspace: WorkspaceService,
-  tree: JetPanelTree,
-  focused: PanelId | null,
-): { panelId: PanelId; tabId: string } {
-  const tab = workspace.explorerTab()
-  const existingPanel = findPanelWithAnySidebarExplorerTab(tree)
-  if (existingPanel) {
-    return workspace.openOrFocusTab(tree, existingPanel, tab)
-  }
-
-  const editorPanel = resolveEditorPanel(tree, null, focused)
-  if (!editorPanel) {
-    const leaf = getAllLeafPanels(tree)[0]
-    return workspace.openOrFocusTab(tree, leaf ?? tree.allocPanelId(), tab)
-  }
-
-  const sidebar = tree.splitAtEdge(editorPanel, "left")
-  return workspace.openOrFocusTab(tree, sidebar, tab)
-}
-
 export function openAgentExplorerTab(
   workspace: WorkspaceService,
   tree: JetPanelTree,
   focused: PanelId | null,
 ): { panelId: PanelId; tabId: string } {
   const tab = { id: AGENT_EXPLORER_TAB_ID, kind: AGENT_EXPLORER_TAB_TYPE_ID, label: "Agents" }
-  const existingPanel = findPanelWithAnySidebarExplorerTab(tree)
+  const existingPanel = findPanelWithTab(tree, AGENT_EXPLORER_TAB_ID)
   if (existingPanel) {
     return workspace.openOrFocusTab(tree, existingPanel, tab)
   }
-
-  const editorPanel = resolveEditorPanel(tree, null, focused)
-  if (!editorPanel) {
-    const leaf = getAllLeafPanels(tree)[0]
-    return workspace.openOrFocusTab(tree, leaf ?? tree.allocPanelId(), tab)
-  }
-
-  const sidebar = tree.splitAtEdge(editorPanel, "left")
-  return workspace.openOrFocusTab(tree, sidebar, tab)
-}
-
-export function openTerminalExplorerTab(
-  workspace: WorkspaceService,
-  tree: JetPanelTree,
-  focused: PanelId | null,
-): { panelId: PanelId; tabId: string } {
-  const tab = {
-    id: TERMINAL_EXPLORER_TAB_ID,
-    kind: TERMINAL_EXPLORER_TAB_TYPE_ID,
-    label: "Terminals",
-  }
-  const existingPanel = findPanelWithAnySidebarExplorerTab(tree)
-  if (existingPanel) {
-    return workspace.openOrFocusTab(tree, existingPanel, tab)
-  }
-
-  const editorPanel = resolveEditorPanel(tree, null, focused)
-  if (!editorPanel) {
-    const leaf = getAllLeafPanels(tree)[0]
-    return workspace.openOrFocusTab(tree, leaf ?? tree.allocPanelId(), tab)
-  }
-
-  const sidebar = tree.splitAtEdge(editorPanel, "left")
-  return workspace.openOrFocusTab(tree, sidebar, tab)
+  const panel = resolveAuxiliaryPanel(tree, focused)
+  return workspace.openOrFocusTab(tree, panel, tab)
 }
 
 export function openAgentChatTab(
