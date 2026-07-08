@@ -1963,6 +1963,7 @@ export function JetApp() {
         setBufferListOpen,
         setOpenFileOpen,
         setCdOpen,
+        setAddWorkspaceOpen,
         setProjectSwitcherOpen,
         setSwitchFolderOpen,
         pickWorkspaceFolder,

@@ -7,7 +7,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react"
-import { ArrowLeft, Folder, SearchIcon } from "lucide-react"
+import { ArrowLeft, File, Folder, SearchIcon } from "lucide-react"
 import { pathToFileUri } from "@jet/shared"
 import {
   applyPathCompletion,
@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils.js"
 type DirEntry = {
   uri: string
   name: string
+  isDirectory: boolean
 }
 
 const PARENT_VALUE = "__parent__"
@@ -64,8 +65,11 @@ export type CdOverlayProps = {
   onOpenChange: (open: boolean) => void
   initialPath: string | null
   onSelectFolder: (absPath: string) => void | Promise<void>
+  onSelectFile?: (uri: string, absPath: string) => void | Promise<void>
   resolveHomeDir?: () => Promise<string>
   workspaceFolders?: { name: string; path: string }[]
+  /** Include files in the list. Requires onSelectFile. */
+  showFiles?: boolean
   title?: string
   description?: string
   primaryHint?: string
@@ -76,8 +80,10 @@ export function CdOverlay({
   onOpenChange,
   initialPath,
   onSelectFolder,
+  onSelectFile,
   resolveHomeDir,
   workspaceFolders,
+  showFiles = false,
   title = "Change directory",
   description = "Path to folder",
   primaryHint = "Open",
@@ -160,9 +166,12 @@ export function CdOverlay({
         if (cancelled) return
         setEntries(
           list
-            .filter(e => e.isDirectory)
-            .map(e => ({ uri: e.uri, name: e.name }))
-            .sort((a, b) => a.name.localeCompare(b.name))
+            .filter(e => e.isDirectory || showFiles)
+            .map(e => ({ uri: e.uri, name: e.name, isDirectory: e.isDirectory }))
+            .sort((a, b) => {
+              if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+              return a.name.localeCompare(b.name)
+            })
             .slice(0, MAX_DIR_ENTRIES),
         )
       })
@@ -179,7 +188,7 @@ export function CdOverlay({
     return () => {
       cancelled = true
     }
-  }, [open, completionCtx?.parentPath, showWorkspaceRoots])
+  }, [open, completionCtx?.parentPath, showWorkspaceRoots, showFiles])
 
   const workspaceRootItems = useMemo(() => {
     if (!showWorkspaceRoots || !workspaceFolders) return []
@@ -251,9 +260,27 @@ export function CdOverlay({
   }, [])
 
   const applyCompletion = useCallback(
-    (dirName: string) => {
+    (entry: DirEntry) => {
       if (!completionCtx) return
-      const { value, cursor: nextCursor } = applyPathCompletion(pathInput, completionCtx, dirName)
+      if (entry.isDirectory) {
+        const { value, cursor: nextCursor } = applyPathCompletion(pathInput, completionCtx, entry.name)
+        setPathInput(value)
+        setCursor(nextCursor)
+        requestAnimationFrame(() => {
+          const el = inputRef.current
+          if (!el) return
+          el.focus()
+          el.setSelectionRange(nextCursor, nextCursor)
+        })
+        return
+      }
+      const sep = pathInput.includes("\\") ? "\\" : "/"
+      const value =
+        pathInput.slice(0, completionCtx.segmentStart) +
+        entry.name +
+        pathInput.slice(completionCtx.segmentEnd)
+      void sep
+      const nextCursor = completionCtx.segmentStart + entry.name.length
       setPathInput(value)
       setCursor(nextCursor)
       requestAnimationFrame(() => {
@@ -283,10 +310,25 @@ export function CdOverlay({
     if (!homeDir || !pathInput.trim()) return
     const path = resolvePathForOpen(pathInput, homeDir)
     onOpenChange(false)
-    void Promise.resolve(onSelectFolder(path)).catch(err => {
-      console.warn("Failed to select folder:", err)
-    })
-  }, [homeDir, pathInput, onSelectFolder, onOpenChange])
+    const stat = window.jet?.fs?.stat
+    void (async () => {
+      let isFile = false
+      if (showFiles && onSelectFile && stat) {
+        try {
+          const info = await stat(pathToFileUri(path))
+          isFile = !info.isDirectory
+        } catch {
+          isFile = false
+        }
+      }
+      const fn = isFile && onSelectFile ? () => onSelectFile(pathToFileUri(path), path) : () => onSelectFolder(path)
+      try {
+        await fn()
+      } catch (err) {
+        console.warn("Failed to select path:", err)
+      }
+    })()
+  }, [homeDir, pathInput, onSelectFolder, onSelectFile, onOpenChange, showFiles])
 
   const moveHighlight = useCallback(
     (delta: 1 | -1) => {
@@ -403,7 +445,7 @@ export function CdOverlay({
                     }
                     if (!highlightedEntry || !("uri" in highlightedEntry)) return
                     e.preventDefault()
-                    applyCompletion(highlightedEntry.name)
+                    applyCompletion(highlightedEntry as DirEntry)
                   }
                 }}
                 className="w-full bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground"
@@ -481,10 +523,14 @@ export function CdOverlay({
                   <CommandItem
                     key={entry.uri}
                     value={entry.uri}
-                    onSelect={() => applyCompletion(entry.name)}
+                    onSelect={() => applyCompletion(entry)}
                     className="gap-2"
                   >
-                    <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                    {entry.isDirectory ? (
+                      <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <File className="size-3.5 shrink-0 text-muted-foreground" />
+                    )}
                     <span className="flex-1 truncate font-mono">{entry.name}</span>
                   </CommandItem>
                 ))}

@@ -85,6 +85,7 @@ export type BuildAppCommandsDeps = {
   setBufferListOpen: (open: boolean) => void
   setOpenFileOpen: (open: boolean) => void
   setCdOpen: (open: boolean) => void
+  setAddWorkspaceOpen: (open: boolean) => void
   setProjectSwitcherOpen: (open: boolean) => void
   setSwitchFolderOpen: (open: boolean) => void
   pickWorkspaceFolder: WorkspaceFolderPicker
@@ -138,29 +139,11 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   }
 
   const openFolder: JetCommandFn = async () => {
-    const folderPath = await window.jet?.fs.showOpenFolderDialog()
-    if (!folderPath) {
-      if (deps.isWebMode) {
-        deps.setMessage("Browser mode: use ?workspace=… URL or window.__jetAgent.openWorkspace()")
-      }
-      return
-    }
-    if (deps.workspace.manager.hasFolders()) {
-      deps.addWorkspaceFolder(folderPath)
-    } else {
-      deps.openWorkspaceFolder(folderPath, { replace: true })
-    }
+    deps.setCdOpen(true)
   }
 
   const addFolder: JetCommandFn = async () => {
-    const folderPath = await window.jet?.fs.showOpenFolderDialog()
-    if (!folderPath) {
-      if (deps.isWebMode) {
-        deps.setMessage("Browser mode: use window.__jetAgent.addWorkspace()")
-      }
-      return
-    }
-    deps.addWorkspaceFolder(folderPath)
+    deps.setAddWorkspaceOpen(true)
   }
 
   const removeFolder: JetCommandFn = async () => {
@@ -336,11 +319,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       syncOpenBuffersFromPanels()
       deps.setBufferListOpen(true)
     },
-    openFile: ctx => {
-      if (!deps.workspace.manager.hasFolders()) {
-        void openFolder(ctx)
-        return
-      }
+    openFile: () => {
       deps.setOpenFileOpen(true)
     },
     openFolder,

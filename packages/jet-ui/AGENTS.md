@@ -55,9 +55,8 @@ All "Dialog + Command list + input + result" palettes MUST use this. Adapters:
 - `OutlineOverlay`
 - `QuickOpenOverlay`
 - `ProjectSwitcherOverlay`
-- `WorkspaceFolderPickerOverlay`
 
-Exceptions (bespoke): `CdOverlay`, `OpenFileOverlay` — they carry footer buttons + custom keyhandling + mode switching that would compromise the generic shell.
+Exceptions (bespoke): `CdOverlay` — carries interactive path input, ghost autocomplete, footer hint bar, top-right primary button, and file/dir mode. All file/folder open flows (openFile, openFolder, cd, addWorkspace, switchFolder, folderPicker) route through it.
 
 #### Adding a new palette
 

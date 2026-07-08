@@ -42,10 +42,8 @@ export {
   taskErrorsToListItems,
   lspLocationToListItem,
 } from "./panels/location-list/index.js"
-export { OpenFileOverlay } from "./components/OpenFileOverlay.js"
 export { CdOverlay } from "./components/CdOverlay.js"
 export { ProjectSwitcherOverlay } from "./components/ProjectSwitcherOverlay.js"
-export { WorkspaceFolderPickerOverlay } from "./components/WorkspaceFolderPickerOverlay.js"
 export { PaletteOverlay } from "./components/PaletteOverlay.js"
 export { StatusBar } from "./status/StatusBar.js"
 export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js"

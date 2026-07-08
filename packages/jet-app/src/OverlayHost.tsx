@@ -3,11 +3,9 @@ import {
   CdOverlay,
   CommandPalette,
   GotoLineModal,
-  OpenFileOverlay,
   OutlineOverlay,
   ProjectSwitcherOverlay,
   QuickOpenOverlay,
-  WorkspaceFolderPickerOverlay,
   showJetToast,
   type OutlineEntry,
 } from "@jet/ui"
@@ -97,36 +95,60 @@ export default function OverlayHost(props: OverlayHostProps) {
       ) : null}
 
       {props.openFileOpen ? (
-        <OpenFileOverlay
+        <CdOverlay
           open
           onOpenChange={props.onOpenFileOpenChange}
-          workspace={props.workspace}
-          onOpenFile={props.onOpenFile}
-          onOpenFolder={props.onRequestOpenFolder}
+          initialPath={props.workspace.root?.path ?? null}
+          showFiles
+          onSelectFile={(uri, path) => props.onOpenFile(uri, path)}
+          onSelectFolder={props.onSelectFolder}
+          resolveHomeDir={props.resolveHomeDir}
+          title="Open file or folder"
+          description="Path to file or folder"
+          primaryHint="Open"
         />
       ) : null}
 
       {props.folderPickerOpen ? (
-        <WorkspaceFolderPickerOverlay
+        <CdOverlay
           open
           onOpenChange={props.onFolderPickerOpenChange}
-          folders={workspaceFolders}
+          initialPath={props.workspace.root?.path ?? null}
+          workspaceFolders={workspaceFolders.map(folder => ({
+            name: folder.root.name,
+            path: folder.root.path,
+          }))}
+          onSelectFolder={path => {
+            const match = props.workspace.folders.find(f => f.root.path === path)
+            if (match) props.onFolderPickerSelect(match)
+          }}
+          resolveHomeDir={props.resolveHomeDir}
           title="Select workspace folder"
-          onSelect={props.onFolderPickerSelect}
+          description="Pick a workspace folder"
+          primaryHint="Select"
         />
       ) : null}
 
       {props.switchFolderOpen ? (
-        <WorkspaceFolderPickerOverlay
+        <CdOverlay
           open
           onOpenChange={props.onSwitchFolderOpenChange}
-          folders={workspaceFolders}
+          initialPath={props.workspace.root?.path ?? null}
+          workspaceFolders={workspaceFolders.map(folder => ({
+            name: folder.root.name,
+            path: folder.root.path,
+          }))}
+          onSelectFolder={path => {
+            const match = props.workspace.folders.find(f => f.root.path === path)
+            if (match) {
+              props.workspace.setActiveFolder(match.id)
+              showJetToast(`Active folder: ${match.root.name}`)
+            }
+          }}
+          resolveHomeDir={props.resolveHomeDir}
           title="Switch workspace folder"
           description="Set the active workspace folder"
-          onSelect={folder => {
-            props.workspace.setActiveFolder(folder.id)
-            showJetToast(`Active folder: ${folder.root.name}`)
-          }}
+          primaryHint="Set active"
         />
       ) : null}
 
