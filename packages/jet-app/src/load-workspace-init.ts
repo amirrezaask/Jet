@@ -1,4 +1,5 @@
 import type { Extension } from "@codemirror/state"
+import { pathToFileUri } from "@jet/shared"
 import type {
   CommandRegistry,
   JetCommandContext,
@@ -25,8 +26,16 @@ export async function loadWorkspaceInit(
   jetDir: string,
   ctx: JetInitContext,
 ): Promise<void> {
+  const fs = typeof window !== "undefined" ? window.jet?.fs : undefined
   for (const file of INIT_FILES) {
     const path = `${jetDir}/${file}`
+    if (fs) {
+      try {
+        await fs.stat(pathToFileUri(path))
+      } catch {
+        continue
+      }
+    }
     try {
       const mod = await import(/* @vite-ignore */ path)
       const setup = mod.default ?? mod.setup

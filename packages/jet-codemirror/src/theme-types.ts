@@ -110,7 +110,6 @@ export function applyJetThemeCss(theme: JetTheme): void {
   root.style.setProperty("--jet-success", c.success)
   root.style.setProperty("--jet-backdrop", c.backdrop)
   root.style.setProperty("--jet-cursor-color", c.text)
-  root.style.setProperty("--jet-row-height", "22px")
 
   if (theme.shadcn) {
     applyShadcnTokens(theme.shadcn)

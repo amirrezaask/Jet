@@ -48,11 +48,16 @@ const DEFAULT_INDENT_PX = 12
 
 function readRowHeightPx(): number {
   const root = document.documentElement
-  const fontSize = parseFloat(getComputedStyle(root).fontSize)
+  const fontSize = parseFloat(getComputedStyle(root).fontSize) || 13
   const raw = getComputedStyle(root).getPropertyValue("--jet-row-height").trim()
-  if (raw.endsWith("rem")) return parseFloat(raw) * fontSize
-  const px = parseFloat(raw)
-  return Number.isFinite(px) ? px : fontSize * 1.692
+  if (raw.endsWith("rem")) {
+    const rem = parseFloat(raw)
+    if (Number.isFinite(rem) && rem > 0) return rem * fontSize
+  } else {
+    const px = parseFloat(raw)
+    if (Number.isFinite(px) && px > 0) return px
+  }
+  return fontSize * 1.692
 }
 
 type FlatEntry<T> = {
@@ -201,7 +206,19 @@ export function TreeView<T>({
   const [rowHeight, setRowHeight] = useState(readRowHeightPx)
 
   useLayoutEffect(() => {
-    setRowHeight(readRowHeightPx())
+    const measure = () => setRowHeight(readRowHeightPx())
+    measure()
+    const raf = requestAnimationFrame(measure)
+    let cancelled = false
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      document.fonts.ready.then(() => {
+        if (!cancelled) measure()
+      })
+    }
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+    }
   }, [])
 
   useEffect(() => registerListPanel(listId, contentRef.current), [listId, rows.length])

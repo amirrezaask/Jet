@@ -1,3 +1,6 @@
-- sidebar should become it's own thing always there only collapsable, with a centered tab bar on it's top using default shadcn look for switching between file explorer or terminal explorer.
+- no welcome page needed
+- have a add workspace button on bottom of the sidebar both tabs it should open up a popover like the muxy app popover for opening workspaces.
+- custom title bar should follow the whole app theme.
+- release build: Terminal failed to start: Error invoking remote method 'terminal:create': Error: Failed to spawn /bin/zsh in /Users/amirrezaask/dev/jet: posix_spawnp failed.
 - name ? icon ?
 - better chrome font size to editor font size ratio

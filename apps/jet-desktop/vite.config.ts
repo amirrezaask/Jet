@@ -28,6 +28,23 @@ function resolveLaunchArgs(extra: string[]): string[] {
   return extra.map(arg => path.resolve(repoRoot, arg))
 }
 
+/**
+ * Strip Vite's `crossorigin` attribute from bundled <script> / <link>.
+ * Packaged Electron loads index.html via file:// — the CORS mode triggered
+ * by crossorigin blocks the CSS and its @font-face URLs, so Geist never
+ * loads and shadcn tokens miss their custom-property references. The dev
+ * server serves over HTTP with CORS headers, so dev looks fine and only
+ * release ships broken chrome.
+ */
+function stripCrossoriginFromHtml() {
+  return {
+    name: "jet-strip-crossorigin",
+    transformIndexHtml(html: string) {
+      return html.replace(/\s+crossorigin/g, "")
+    },
+  }
+}
+
 export default defineConfig({
   plugins: [
     react({
@@ -36,6 +53,7 @@ export default defineConfig({
       },
     }),
     tailwindcss(),
+    stripCrossoriginFromHtml(),
     electron({
       main: {
         entry: path.resolve(__dirname, "src/main/main.ts"),
