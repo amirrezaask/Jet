@@ -1,5 +1,16 @@
 import { Compartment, EditorState, Prec, Text, type Extension } from "@codemirror/state"
-import { EditorView, keymap, lineNumbers, drawSelection } from "@codemirror/view"
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  drawSelection,
+  dropCursor,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  highlightTrailingWhitespace,
+  scrollPastEnd,
+} from "@codemirror/view"
 import {
   defaultKeymap,
   history,
@@ -12,10 +23,20 @@ import {
   autocompletion,
   completeAnyWord,
   completionKeymap,
+  closeBrackets,
+  closeBracketsKeymap,
   type CompletionSource,
 } from "@codemirror/autocomplete"
 import { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
-import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language"
+import {
+  bracketMatching,
+  indentOnInput,
+  indentUnit,
+  foldGutter,
+  codeFolding,
+  foldKeymap,
+} from "@codemirror/language"
+import { lintGutter } from "@codemirror/lint"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches, selectSelectionMatches, selectNextOccurrence } from "@codemirror/search"
 import { hiddenSearchPanel, jetSearchPanelKeymap } from "./search-bridge.js"
@@ -35,8 +56,17 @@ import { perfMeasure } from "./perf-instrumentation.js"
 import { jetReloadAnnotation } from "./reload-annotation.js"
 import { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
 
+const wordCompletionSource: CompletionSource = async context => {
+  const result = await completeAnyWord(context)
+  if (!result) return result
+  return {
+    ...result,
+    options: result.options.map(o => ({ ...o, type: o.type ?? "text" })),
+  }
+}
+
 const documentWordCompletion = EditorState.languageData.of(() => [
-  { autocomplete: completeAnyWord },
+  { autocomplete: wordCompletionSource },
 ])
 
 /** Highest-priority multi-cursor keys — must beat browser/Electron defaults (e.g. Cmd+D bookmark). */
@@ -55,6 +85,8 @@ const multiCursorPrecKeymap = Prec.highest(
 const sublimeMultiCursorKeymap = keymap.of([
   { key: "Ctrl-Shift-ArrowUp", run: addCursorAbove },
   { key: "Ctrl-Shift-ArrowDown", run: addCursorBelow },
+  { mac: "Cmd-Alt-ArrowUp", run: addCursorAbove },
+  { mac: "Cmd-Alt-ArrowDown", run: addCursorBelow },
   {
     key: "Mod-Ctrl-g",
     run: view => selectSelectionMatches({ state: view.state, dispatch: tr => view.dispatch(tr) }),
@@ -80,7 +112,12 @@ const jsScopeCompletion = EditorState.languageData.of(() => [
   {
     autocomplete: (async context => {
       const source = await resolveGlobalScopeCompletionSource()
-      return source(context)
+      const result = await source(context)
+      if (!result) return result
+      return {
+        ...result,
+        options: result.options.map(o => ({ ...o, type: o.type ?? "variable" })),
+      }
     }) satisfies CompletionSource,
   },
 ])
@@ -106,6 +143,8 @@ export const extensionCompartment = new Compartment()
 export const themeCompartment = new Compartment()
 export const highlightCompartment = new Compartment()
 export const indentMarkerCompartment = new Compartment()
+export const readOnlyCompartment = new Compartment()
+export const lineWrappingCompartment = new Compartment()
 
 function indentMarkerExtension(theme: JetTheme, largeFile: boolean): Extension {
   return indentationMarkers({
@@ -135,6 +174,8 @@ export type CreateJetEditorViewOptions = {
   onViewUpdate?: (view: EditorView) => void
   largeFile?: boolean
   indent?: DetectedIndent
+  readOnly?: boolean
+  lineWrapping?: boolean
 }
 
 const goToDefinitionOnClick = EditorView.domEventHandlers({
@@ -154,11 +195,21 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   const extensions: Extension[] = [
     EditorState.allowMultipleSelections.of(true),
     lineNumbers(),
+    highlightActiveLine(),
+    highlightActiveLineGutter(),
+    highlightSpecialChars(),
     history(),
     indentOnInput(),
     bracketMatching(),
+    closeBrackets(),
+    codeFolding(),
+    foldGutter(),
+    dropCursor(),
+    scrollPastEnd(),
     EditorState.tabSize.of(indent.size),
     indentUnit.of(indentUnitFor(indent)),
+    readOnlyCompartment.of(EditorState.readOnly.of(opts.readOnly ?? false)),
+    lineWrappingCompartment.of(opts.lineWrapping ? EditorView.lineWrapping : []),
   ]
 
   extensions.push(drawSelection({ cursorBlinkRate: 0 }))
@@ -166,7 +217,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   extensions.push(indentMarkerCompartment.of(indentMarkerExtension(theme, largeFile)))
 
   if (!largeFile) {
-    extensions.push(eolOverlayExtension())
+    extensions.push(eolOverlayExtension(), highlightTrailingWhitespace(), lintGutter())
   }
 
   extensions.push(
@@ -200,7 +251,9 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
               }
             : binding,
       ),
+      ...closeBracketsKeymap,
       ...completionKeymap,
+      ...foldKeymap,
       ...defaultKeymap,
       ...historyKeymap,
       indentWithTab,
@@ -319,6 +372,18 @@ export function applyUserExtensions(view: EditorView, extensions: Extension[]): 
   })
 }
 
+export function setReadOnly(view: EditorView, readOnly: boolean): void {
+  view.dispatch({
+    effects: readOnlyCompartment.reconfigure(EditorState.readOnly.of(readOnly)),
+  })
+}
+
+export function setLineWrapping(view: EditorView, wrap: boolean): void {
+  view.dispatch({
+    effects: lineWrappingCompartment.reconfigure(wrap ? EditorView.lineWrapping : []),
+  })
+}
+
 export function applyUserKeymaps(
   view: EditorView,
   bindings: JetKeyBinding[],
@@ -346,7 +411,7 @@ export function applyUserKeymaps(
       ]
     })
     view.dispatch({
-      effects: userKeymapCompartment.reconfigure(keymap.of(cmBindings)),
+      effects: userKeymapCompartment.reconfigure(Prec.high(keymap.of(cmBindings))),
     })
   })
 }

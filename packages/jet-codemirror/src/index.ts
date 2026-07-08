@@ -8,12 +8,16 @@ export {
   detachLsp,
   isLargeFile,
   openSearchPanel,
+  setReadOnly,
+  setLineWrapping,
   userKeymapCompartment,
   extensionCompartment,
   lspCompartment,
   themeCompartment,
   highlightCompartment,
   languageCompartment,
+  readOnlyCompartment,
+  lineWrappingCompartment,
 } from "./createEditorView.js"
 export { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
 export { openReplaceSearchPanel, jumpToLine } from "./editor-actions.js"
@@ -29,6 +33,7 @@ export {
   findPrevious,
   replaceNext,
   replaceAll,
+  replaceAllPreserveCase,
   type JetSearchMode,
   type JetSearchState,
 } from "./search-bridge.js"
@@ -54,9 +59,15 @@ export {
   runShowHover,
   lspPluginForView,
   fetchDocumentOutline,
+  fetchCodeActions,
+  fetchInlayHints,
+  fetchWorkspaceSymbols,
   type OutlineSymbol,
+  type CodeAction,
+  type InlayHint,
+  type WorkspaceSymbol,
 } from "./lsp-editor-commands.js"
 export { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
-export { eolOverlayExtension, braceScopeExtension } from "./eol-overlays.js"
+export { eolOverlayExtension } from "./eol-overlays.js"
 export { jetReloadAnnotation } from "./reload-annotation.js"
 export { skipNextOccurrence } from "./multi-cursor.js"

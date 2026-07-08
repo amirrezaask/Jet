@@ -77,8 +77,8 @@ export function jetEditorTheme(theme: JetTheme) {
       },
       ".cm-content": {
         caretColor: theme.colors.accent,
-        fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
-        fontSize: "1rem",
+        fontFamily: "var(--font-mono, 'Geist Mono', 'IBM Plex Mono', 'SFMono-Regular', monospace)",
+        fontSize: "var(--jet-editor-fs, 1rem)",
         whiteSpace: "pre",
       },
       ".cm-line": {
@@ -88,7 +88,7 @@ export function jetEditorTheme(theme: JetTheme) {
         backgroundColor: theme.colors.panel,
         color: theme.colors.textMuted,
         border: "none",
-        fontSize: "1rem",
+        fontSize: "var(--jet-editor-fs, 1rem)",
         paddingRight: "1rem",
       },
       ".cm-lineNumbers .cm-gutterElement": {
@@ -131,18 +131,18 @@ export function jetEditorTheme(theme: JetTheme) {
         backgroundColor: theme.colors.panelRaised,
         color: theme.colors.text,
         border: `1px solid ${theme.colors.border}`,
-        fontSize: "1rem",
+        fontSize: "var(--jet-editor-fs, 1rem)",
       },
       ".cm-tooltip.cm-completionInfo": {
-        fontSize: "0.85rem",
-        fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+        fontSize: "var(--jet-fs-sm, 0.85rem)",
+        fontFamily: "var(--font-mono, 'Geist Mono', 'IBM Plex Mono', 'SFMono-Regular', monospace)",
       },
       ".cm-lsp-hover-tooltip, .cm-lsp-documentation": {
-        fontSize: "0.85rem",
-        fontFamily: '"Geist Mono", "IBM Plex Mono", "SFMono-Regular", monospace',
+        fontSize: "var(--jet-fs-sm, 0.85rem)",
+        fontFamily: "var(--font-mono, 'Geist Mono', 'IBM Plex Mono', 'SFMono-Regular', monospace)",
       },
       ".cm-lsp-signature-tooltip": {
-        fontSize: "0.85rem",
+        fontSize: "var(--jet-fs-sm, 0.85rem)",
       },
       ".cm-completionLabel": {
         color: theme.colors.text,

@@ -335,7 +335,3 @@ export function eolOverlayExtension(): Extension {
   ]
 }
 
-/** @deprecated Use `eolOverlayExtension` */
-export function braceScopeExtension(): Extension {
-  return eolOverlayExtension()
-}

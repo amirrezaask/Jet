@@ -1,4 +1,4 @@
-import { EditorView, ViewPlugin, drawSelection, type ViewUpdate } from "@codemirror/view"
+import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view"
 import type { Extension } from "@codemirror/state"
 import {
   ANIM_EPSILON,
@@ -492,7 +492,6 @@ class BracketCursorPlugin {
 
 export function motionCursor(): Extension {
   return [
-    drawSelection({ cursorBlinkRate: 0 }),
     EditorView.theme({
       ".jet-cursor-streak-layer": {
         position: "absolute",

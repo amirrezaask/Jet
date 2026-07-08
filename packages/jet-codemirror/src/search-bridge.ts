@@ -13,6 +13,49 @@ import {
 
 export { getSearchQuery, findNext, findPrevious, replaceNext, replaceAll }
 
+function matchCase(source: string, replacement: string): string {
+  if (!source) return replacement
+  if (source === source.toUpperCase() && source !== source.toLowerCase()) {
+    return replacement.toUpperCase()
+  }
+  if (source === source.toLowerCase()) return replacement.toLowerCase()
+  const first = source[0]
+  if (first && first === first.toUpperCase() && first !== first.toLowerCase()) {
+    return replacement[0]?.toUpperCase() + replacement.slice(1)
+  }
+  return replacement
+}
+
+/** Replace all occurrences preserving the original case pattern of each match. */
+export function replaceAllPreserveCase(view: EditorView): boolean {
+  const query = getSearchQuery(view.state)
+  if (!query.search) return false
+  if (query.regexp) return replaceAll(view)
+  const doc = view.state.doc.toString()
+  const needle = query.caseSensitive ? query.search : query.search.toLowerCase()
+  const hay = query.caseSensitive ? doc : doc.toLowerCase()
+  const changes: { from: number; to: number; insert: string }[] = []
+  let idx = 0
+  while ((idx = hay.indexOf(needle, idx)) >= 0) {
+    const end = idx + needle.length
+    const original = doc.slice(idx, end)
+    if (query.wholeWord) {
+      const before = doc[idx - 1] ?? ""
+      const after = doc[end] ?? ""
+      if (/\w/.test(before) || /\w/.test(after)) {
+        idx = end
+        continue
+      }
+    }
+    changes.push({ from: idx, to: end, insert: matchCase(original, query.replace) })
+    idx = end
+  }
+  if (!changes.length) return false
+  view.dispatch({ changes })
+  return true
+}
+
+
 export type JetSearchMode = "find" | "replace"
 
 export type JetSearchState = {

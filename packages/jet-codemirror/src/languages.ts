@@ -1,8 +1,7 @@
 import { LanguageDescription } from "@codemirror/language"
 import type { Extension } from "@codemirror/state"
-import type { LanguageSupport } from "@codemirror/language"
 
-const cache = new Map<string, LanguageSupport>()
+const cache = new Map<string, Extension>()
 
 const markdownCodeLanguages = [
   LanguageDescription.of({
@@ -32,57 +31,58 @@ const markdownCodeLanguages = [
 ]
 
 export async function loadLanguage(languageId: string): Promise<Extension> {
-  if (cache.has(languageId)) return cache.get(languageId)!
+  const cached = cache.get(languageId)
+  if (cached) return cached
 
-  let lang: LanguageSupport
+  let ext: Extension
   switch (languageId) {
     case "typescript":
     case "mts":
     case "cts": {
       const mod = await import("@codemirror/lang-javascript")
-      lang = mod.javascript({ typescript: true })
+      ext = mod.javascript({ typescript: true })
       break
     }
     case "tsx": {
       const mod = await import("@codemirror/lang-javascript")
-      lang = mod.javascript({ typescript: true, jsx: true })
+      ext = [mod.javascript({ typescript: true, jsx: true }), mod.autoCloseTags]
       break
     }
     case "javascript":
     case "mjs":
     case "cjs": {
       const mod = await import("@codemirror/lang-javascript")
-      lang = mod.javascript()
+      ext = mod.javascript()
       break
     }
     case "jsx": {
       const mod = await import("@codemirror/lang-javascript")
-      lang = mod.javascript({ jsx: true })
+      ext = [mod.javascript({ jsx: true }), mod.autoCloseTags]
       break
     }
     case "rust": {
       const mod = await import("@codemirror/lang-rust")
-      lang = mod.rust()
+      ext = mod.rust()
       break
     }
     case "json": {
       const mod = await import("@codemirror/lang-json")
-      lang = mod.json()
+      ext = mod.json()
       break
     }
     case "markdown": {
       const mod = await import("@codemirror/lang-markdown")
-      lang = mod.markdown({ codeLanguages: markdownCodeLanguages })
+      ext = mod.markdown({ codeLanguages: markdownCodeLanguages })
       break
     }
     case "css": {
       const mod = await import("@codemirror/lang-css")
-      lang = mod.css()
+      ext = mod.css()
       break
     }
     case "html": {
       const mod = await import("@codemirror/lang-html")
-      lang = mod.html()
+      ext = mod.html({ autoCloseTags: true })
       break
     }
     case "plaintext":
@@ -90,6 +90,6 @@ export async function loadLanguage(languageId: string): Promise<Extension> {
     default:
       return []
   }
-  cache.set(languageId, lang)
-  return lang
+  cache.set(languageId, ext)
+  return ext
 }

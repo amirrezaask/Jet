@@ -152,3 +152,104 @@ export async function fetchDocumentOutline(view: EditorView): Promise<OutlineSym
 type DocumentSymbolParams = {
   textDocument: { uri: string }
 }
+
+type LspRange = { start: { line: number; character: number }; end: { line: number; character: number } }
+type LspLocation = { uri: string; range: LspRange }
+
+export type CodeAction = {
+  title: string
+  kind?: string
+  isPreferred?: boolean
+  edit?: unknown
+  command?: { title: string; command: string; arguments?: unknown[] }
+  data?: unknown
+}
+
+type CodeActionParams = {
+  textDocument: { uri: string }
+  range: LspRange
+  context: { diagnostics: unknown[]; only?: string[] }
+}
+
+export async function fetchCodeActions(
+  view: EditorView,
+  from?: number,
+  to?: number,
+): Promise<CodeAction[]> {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return []
+  plugin.client.sync()
+  const sel = view.state.selection.main
+  const start = from ?? sel.from
+  const end = to ?? sel.to
+  const range: LspRange = {
+    start: plugin.toPosition(start),
+    end: plugin.toPosition(end),
+  }
+  const result = await plugin.client.request<CodeActionParams, CodeAction[] | null>(
+    "textDocument/codeAction",
+    {
+      textDocument: { uri: plugin.uri },
+      range,
+      context: { diagnostics: [] },
+    },
+  )
+  return result ?? []
+}
+
+export type InlayHint = {
+  position: { line: number; character: number }
+  label: string | { value: string }[]
+  kind?: 1 | 2
+  paddingLeft?: boolean
+  paddingRight?: boolean
+}
+
+type InlayHintParams = {
+  textDocument: { uri: string }
+  range: LspRange
+}
+
+export async function fetchInlayHints(
+  view: EditorView,
+  from?: number,
+  to?: number,
+): Promise<InlayHint[]> {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return []
+  plugin.client.sync()
+  const doc = view.state.doc
+  const startPos = from ?? 0
+  const endPos = to ?? doc.length
+  const range: LspRange = {
+    start: plugin.toPosition(startPos),
+    end: plugin.toPosition(endPos),
+  }
+  const result = await plugin.client.request<InlayHintParams, InlayHint[] | null>(
+    "textDocument/inlayHint",
+    { textDocument: { uri: plugin.uri }, range },
+  )
+  return result ?? []
+}
+
+export type WorkspaceSymbol = {
+  name: string
+  containerName?: string
+  location: LspLocation
+  kind?: number
+}
+
+type WorkspaceSymbolParams = { query: string }
+
+export async function fetchWorkspaceSymbols(
+  view: EditorView,
+  query: string,
+): Promise<WorkspaceSymbol[]> {
+  const plugin = lspPluginForView(view)
+  if (!plugin) return []
+  const result = await plugin.client.request<WorkspaceSymbolParams, WorkspaceSymbol[] | null>(
+    "workspace/symbol",
+    { query },
+  )
+  return result ?? []
+}
