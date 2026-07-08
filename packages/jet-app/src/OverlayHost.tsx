@@ -48,6 +48,9 @@ export type OverlayHostProps = {
   cdOpen: boolean
   onCdOpenChange: (open: boolean) => void
   onSelectFolder: (path: string) => void
+  addWorkspaceOpen: boolean
+  onAddWorkspaceOpenChange: (open: boolean) => void
+  onAddWorkspaceSelect: (path: string) => void
   resolveHomeDir: () => Promise<string>
   projectSwitcherOpen: boolean
   onProjectSwitcherOpenChange: (open: boolean) => void
@@ -138,6 +141,19 @@ export default function OverlayHost(props: OverlayHostProps) {
           }))}
           onSelectFolder={props.onSelectFolder}
           resolveHomeDir={props.resolveHomeDir}
+        />
+      ) : null}
+
+      {props.addWorkspaceOpen ? (
+        <CdOverlay
+          open
+          onOpenChange={props.onAddWorkspaceOpenChange}
+          initialPath={props.workspace.root?.path ?? null}
+          onSelectFolder={props.onAddWorkspaceSelect}
+          resolveHomeDir={props.resolveHomeDir}
+          title="Add workspace folder"
+          description="Pick a folder to add"
+          primaryHint="Add Project"
         />
       ) : null}
 

@@ -9,7 +9,9 @@ type TerminalEntry = { pty: IPty; webContents: WebContents }
 
 const terminals = new Map<string, TerminalEntry>()
 
-function resolveShell(): { file: string; args: string[] } {
+type ShellSpec = { file: string; args: string[] }
+
+function primaryShell(): ShellSpec {
   if (process.platform === "win32") {
     return { file: process.env.COMSPEC || "powershell.exe", args: [] }
   }
@@ -20,14 +22,26 @@ function resolveShell(): { file: string; args: string[] } {
   return { file, args: [] }
 }
 
+function fallbackShells(primary: ShellSpec): ShellSpec[] {
+  if (process.platform === "win32") return []
+  const alt: ShellSpec[] = []
+  if (primary.file !== "/bin/zsh") alt.push({ file: "/bin/zsh", args: ["-il"] })
+  if (primary.file !== "/bin/bash") alt.push({ file: "/bin/bash", args: ["-il"] })
+  alt.push({ file: "/bin/sh", args: [] })
+  return alt
+}
+
 function resolveCwd(cwdUri: string): string {
-  let cwd = fileUriToPath(cwdUri)
+  let cwd = ""
   try {
-    if (!fs.statSync(cwd).isDirectory()) {
-      cwd = os.homedir()
-    }
+    cwd = fileUriToPath(cwdUri)
   } catch {
-    cwd = os.homedir()
+    return os.homedir()
+  }
+  try {
+    if (!fs.statSync(cwd).isDirectory()) return os.homedir()
+  } catch {
+    return os.homedir()
   }
   return cwd
 }
@@ -35,26 +49,35 @@ function resolveCwd(cwdUri: string): string {
 export function registerTerminalHandlers(ipcMain: IpcMain) {
   ipcMain.handle("terminal:create", async (event, cwdUri: string) => {
     const id = `term-${Date.now()}`
-    const { file, args } = resolveShell()
+    const primary = primaryShell()
     const cwd = resolveCwd(cwdUri)
     const env = {
       ...process.env,
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
+      HOME: process.env.HOME || os.homedir(),
     } as Record<string, string>
 
-    let pty: IPty
-    try {
-      pty = spawnPty(file, args, {
-        name: "xterm-256color",
-        cwd,
-        env,
-        cols: 80,
-        rows: 24,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      throw new Error(`Failed to spawn ${file} in ${cwd}: ${message}`)
+    const attempts: ShellSpec[] = [primary, ...fallbackShells(primary)]
+    let pty: IPty | null = null
+    const errors: string[] = []
+    for (const attempt of attempts) {
+      try {
+        pty = spawnPty(attempt.file, attempt.args, {
+          name: "xterm-256color",
+          cwd,
+          env,
+          cols: 80,
+          rows: 24,
+        })
+        break
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        errors.push(`${attempt.file}: ${message}`)
+      }
+    }
+    if (!pty) {
+      throw new Error(`Failed to spawn shell in ${cwd}. Attempts: ${errors.join(" | ")}`)
     }
 
     const webContents = event.sender

@@ -98,7 +98,6 @@ import {
   getListPanel,
   JetTitleBar,
   type JetTitleBarMenu,
-  WelcomeView,
   FindReplacePopover,
   animateLayoutMorph,
   capturePanelLeafRects,
@@ -261,6 +260,7 @@ export function JetApp() {
   const [bufferListOpen, setBufferListOpen] = useState(false)
   const [openFileOpen, setOpenFileOpen] = useState(false)
   const [cdOpen, setCdOpen] = useState(false)
+  const [addWorkspaceOpen, setAddWorkspaceOpen] = useState(false)
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
   const [switchFolderOpen, setSwitchFolderOpen] = useState(false)
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
@@ -2599,6 +2599,7 @@ export function JetApp() {
             manager={workspace.manager}
             onOpenFile={(uri, path) => handleOpenFile(uri, path)}
             onOpenFolder={() => executeCommand("workspace.openFolder")}
+            onAddWorkspace={() => setAddWorkspaceOpen(true)}
             terminalExplorerGroups={getTerminalExplorerGroups()}
             activeTerminalTabId={getActiveTerminalTabId()}
             onFocusTerminal={focusTerminalTab}
@@ -2608,11 +2609,7 @@ export function JetApp() {
         ) : null}
         <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {!workspace.manager.hasFolders() && !hasWorkspaceQuery ? (
-          <WelcomeView
-            isWebMode={isWebMode}
-            bootstrapping={false}
-            onOpenFolder={() => executeCommand("workspace.openFolder")}
-          />
+          <div className="h-full w-full bg-background" />
         ) : (
           <PanelDock<PanelView>
             tree={panelTree}
@@ -2657,6 +2654,7 @@ export function JetApp() {
           folderPickerOpen ||
           switchFolderOpen ||
           cdOpen ||
+          addWorkspaceOpen ||
           projectSwitcherOpen ||
           outlineOpen ||
           paletteOpen) && (
@@ -2704,6 +2702,9 @@ export function JetApp() {
             cdOpen={cdOpen}
             onCdOpenChange={setCdOpen}
             onSelectFolder={path => openWorkspaceFolder(path, { replace: true })}
+            addWorkspaceOpen={addWorkspaceOpen}
+            onAddWorkspaceOpenChange={setAddWorkspaceOpen}
+            onAddWorkspaceSelect={path => openWorkspaceFolder(path)}
             resolveHomeDir={async () =>
               window.jet?.getHomeDir
                 ? window.jet.getHomeDir()

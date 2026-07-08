@@ -32,12 +32,17 @@ async function resolveLaunchPath(absPath: string): Promise<LaunchConfig> {
   return resolveLaunchTarget([absPath], path.dirname(absPath))
 }
 
+function defaultCwd(): string {
+  if (app.isPackaged) return os.homedir()
+  return path.resolve(process.cwd())
+}
+
 function resolveLaunchConfigFast(userArgs: string[]): LaunchConfig | null | undefined {
   if (!app.isPackaged && userArgs.length === 0) return null
-  if (userArgs.length === 0) return { workspacePath: path.resolve(process.cwd()) }
+  if (userArgs.length === 0) return { workspacePath: defaultCwd() }
   if (userArgs.length === 1) {
     const raw = userArgs[0]!
-    const target = path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw)
+    const target = path.isAbsolute(raw) ? raw : path.resolve(defaultCwd(), raw)
     try {
       const info = fs.statSync(target)
       if (info.isDirectory()) return { workspacePath: target }
@@ -119,9 +124,35 @@ function installAppMenu() {
 
 /** shadcn default dark background — oklch(0.145 0 0) ≈ #252525 */
 const DEFAULT_WINDOW_BG = "#252525"
+const DEFAULT_WINDOW_FG = "#fbfbfb"
+
+const CHROME_CACHE_PATH = path.join(app.getPath("userData"), "native-chrome.json")
+
+function readCachedChrome(): { background: string; foreground: string } {
+  try {
+    const raw = fs.readFileSync(CHROME_CACHE_PATH, "utf8")
+    const parsed = JSON.parse(raw) as { background?: string; foreground?: string }
+    if (typeof parsed.background === "string" && typeof parsed.foreground === "string") {
+      return { background: parsed.background, foreground: parsed.foreground }
+    }
+  } catch {
+    /* first launch or corrupt cache — fall through to default */
+  }
+  return { background: DEFAULT_WINDOW_BG, foreground: DEFAULT_WINDOW_FG }
+}
+
+function writeCachedChrome(colors: { background: string; foreground: string }): void {
+  try {
+    fs.mkdirSync(path.dirname(CHROME_CACHE_PATH), { recursive: true })
+    fs.writeFileSync(CHROME_CACHE_PATH, JSON.stringify(colors))
+  } catch (err) {
+    console.warn("[jet] failed to persist native chrome cache:", err)
+  }
+}
 
 function applyNativeChrome(win: BrowserWindow, colors: { background: string; foreground: string }) {
   win.setBackgroundColor(colors.background)
+  writeCachedChrome(colors)
   if (process.platform === "darwin") return
   if (process.platform === "win32") {
     win.setTitleBarOverlay({
@@ -134,11 +165,21 @@ function applyNativeChrome(win: BrowserWindow, colors: { background: string; for
 
 function createWindow() {
   const isMac = process.platform === "darwin"
+  const cachedChrome = readCachedChrome()
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    backgroundColor: DEFAULT_WINDOW_BG,
+    backgroundColor: cachedChrome.background,
     titleBarStyle: isMac ? "hiddenInset" : "default",
+    ...(process.platform === "win32"
+      ? {
+          titleBarOverlay: {
+            color: cachedChrome.background,
+            symbolColor: cachedChrome.foreground,
+            height: 39,
+          },
+        }
+      : {}),
     ...(isMac
       ? {
           trafficLightPosition: { x: 14, y: 11 },
@@ -175,7 +216,7 @@ if (!gotLock) {
   app.on("second-instance", (_e, argv) => {
     const args = parseUserArgs(argv)
     if (args.length > 0) {
-      void resolveLaunchTarget(args, process.cwd()).then(config => {
+      void resolveLaunchTarget(args, defaultCwd()).then(config => {
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore()
           mainWindow.focus()
@@ -237,7 +278,7 @@ app.whenReady().then(() => {
     if (fast !== undefined) {
       deliverLaunchConfig(fast, false)
     } else {
-      void resolveLaunchTarget(userArgs, process.cwd()).then(c => deliverLaunchConfig(c, true))
+      void resolveLaunchTarget(userArgs, defaultCwd()).then(c => deliverLaunchConfig(c, true))
     }
   }
 })

@@ -18,6 +18,10 @@ mac:
     - dir
   category: public.app-category.developer-tools
   identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
 win:
   target:
     - nsis

@@ -1,7 +1,14 @@
 import type { WorkspaceManager } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
+import { Plus } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
-import { Sidebar, SidebarContent, SidebarHeader } from "@/components/ui/sidebar.js"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+} from "@/components/ui/sidebar.js"
+import { Button } from "@/components/ui/button.js"
 import { ExplorerTab } from "@/tabs/ExplorerTab.js"
 import {
   TerminalExplorerTab,
@@ -16,6 +23,7 @@ export type JetWorkspaceSidebarProps = {
   manager: WorkspaceManager
   onOpenFile: (uri: string, path: string) => void
   onOpenFolder?: () => void
+  onAddWorkspace?: () => void
   terminalExplorerGroups: TerminalExplorerGroup[]
   activeTerminalTabId: string | null
   onFocusTerminal: (panelId: PanelId, tabId: string) => void
@@ -61,6 +69,7 @@ export function JetWorkspaceSidebar({
   manager,
   onOpenFile,
   onOpenFolder,
+  onAddWorkspace,
   terminalExplorerGroups,
   activeTerminalTabId,
   onFocusTerminal,
@@ -94,6 +103,20 @@ export function JetWorkspaceSidebar({
           />
         )}
       </SidebarContent>
+      {onAddWorkspace ? (
+        <SidebarFooter className="shrink-0 border-t border-sidebar-border px-2 py-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onAddWorkspace}
+            className="w-full justify-start gap-2 text-xs font-medium text-sidebar-foreground"
+          >
+            <Plus className="size-3.5" />
+            Add workspace
+          </Button>
+        </SidebarFooter>
+      ) : null}
     </Sidebar>
   )
 }

@@ -7,7 +7,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react"
-import { Folder } from "lucide-react"
+import { ArrowLeft, Folder, SearchIcon } from "lucide-react"
 import { pathToFileUri } from "@jet/shared"
 import {
   applyPathCompletion,
@@ -18,7 +18,6 @@ import {
 import {
   Command,
   CommandEmpty,
-  CommandInput,
   CommandItem,
   CommandList,
 } from "@/components/ui/command.js"
@@ -32,16 +31,44 @@ import { Button } from "@/components/ui/button.js"
 import { KeyBindingKbd } from "./KeyBindingKbd.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
 import { COMMAND_NO_SELECTION } from "@/lib/command-shell.js"
+import { cn } from "@/lib/utils.js"
 
 type DirEntry = {
   uri: string
   name: string
 }
 
+const PARENT_VALUE = "__parent__"
 const MAX_DIR_ENTRIES = 500
 
 function isListNavModified(e: KeyboardEvent): boolean {
   return e.shiftKey || e.metaKey || e.ctrlKey || e.altKey
+}
+
+function goUp(input: string, homeDir: string): { value: string; cursor: number } {
+  const trimmed = input.replace(/[/\\]+$/, "")
+  const sep = input.includes("\\") ? "\\" : "/"
+  const lastSep = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
+  let next: string
+  if (lastSep <= 0) {
+    if (trimmed.startsWith("/")) next = "/"
+    else next = homeDir + sep
+  } else {
+    next = trimmed.slice(0, lastSep) + sep
+  }
+  return { value: next, cursor: next.length }
+}
+
+export type CdOverlayProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  initialPath: string | null
+  onSelectFolder: (absPath: string) => void | Promise<void>
+  resolveHomeDir?: () => Promise<string>
+  workspaceFolders?: { name: string; path: string }[]
+  title?: string
+  description?: string
+  primaryHint?: string
 }
 
 export function CdOverlay({
@@ -51,14 +78,10 @@ export function CdOverlay({
   onSelectFolder,
   resolveHomeDir,
   workspaceFolders,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  initialPath: string | null
-  onSelectFolder: (absPath: string) => void | Promise<void>
-  resolveHomeDir?: () => Promise<string>
-  workspaceFolders?: { name: string; path: string }[]
-}) {
+  title = "Change directory",
+  description = "Path to folder",
+  primaryHint = "Open",
+}: CdOverlayProps) {
   const [pathInput, setPathInput] = useState("")
   const [cursor, setCursor] = useState(0)
   const [homeDir, setHomeDir] = useState("")
@@ -110,8 +133,10 @@ export function CdOverlay({
       if (cancelled) return
       setHomeDir(home)
       if (!multiRoot) {
-        setPathInput(initialPath ?? home)
-        setCursor((initialPath ?? home).length)
+        const start = initialPath ?? home
+        const withSep = start.endsWith("/") || start.endsWith("\\") ? start : `${start}/`
+        setPathInput(withSep)
+        setCursor(withSep.length)
       }
     })()
 
@@ -170,13 +195,14 @@ export function CdOverlay({
   const pickWorkspaceRoot = useCallback(
     (path: string) => {
       setShowWorkspaceRoots(false)
-      setPathInput(path)
-      setCursor(path.length)
+      const withSep = path.endsWith("/") || path.endsWith("\\") ? path : `${path}/`
+      setPathInput(withSep)
+      setCursor(withSep.length)
       requestAnimationFrame(() => {
         const el = inputRef.current
         if (!el) return
         el.focus()
-        el.setSelectionRange(path.length, path.length)
+        el.setSelectionRange(withSep.length, withSep.length)
       })
     },
     [],
@@ -187,6 +213,15 @@ export function CdOverlay({
     const prefix = completionCtx.partial.toLowerCase()
     return entries.filter(e => e.name.toLowerCase().startsWith(prefix))
   }, [completionCtx, entries])
+
+  const ghostCompletion = useMemo(() => {
+    if (!completionCtx || completions.length === 0) return ""
+    const partial = completionCtx.partial
+    const first = completions[0]!.name
+    if (!partial) return ""
+    if (!first.toLowerCase().startsWith(partial.toLowerCase())) return ""
+    return first.slice(partial.length)
+  }, [completionCtx, completions])
 
   useEffect(() => {
     if (showWorkspaceRoots) {
@@ -199,11 +234,15 @@ export function CdOverlay({
       return
     }
     if (completions.length === 0) {
-      setSelectedValue(COMMAND_NO_SELECTION)
+      setSelectedValue(PARENT_VALUE)
       return
     }
-    const first = completions[0]!.uri
-    setSelectedValue(prev => (completions.some(e => e.uri === prev) ? prev : first))
+    const firstUri = completions[0]!.uri
+    setSelectedValue(prev => {
+      if (prev === PARENT_VALUE) return prev
+      if (completions.some(e => e.uri === prev)) return prev
+      return firstUri
+    })
   }, [completions, showWorkspaceRoots, workspaceRootItems])
 
   const syncCursorFromInput = useCallback(() => {
@@ -227,12 +266,25 @@ export function CdOverlay({
     [completionCtx, pathInput],
   )
 
-  const confirmCurrent = useCallback(() => {
+  const doGoUp = useCallback(() => {
+    if (!homeDir) return
+    const { value, cursor: nextCursor } = goUp(pathInput, homeDir)
+    setPathInput(value)
+    setCursor(nextCursor)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(nextCursor, nextCursor)
+    })
+  }, [homeDir, pathInput])
+
+  const submit = useCallback(() => {
     if (!homeDir || !pathInput.trim()) return
     const path = resolvePathForOpen(pathInput, homeDir)
     onOpenChange(false)
     void Promise.resolve(onSelectFolder(path)).catch(err => {
-      console.warn("Failed to change directory:", err)
+      console.warn("Failed to select folder:", err)
     })
   }, [homeDir, pathInput, onSelectFolder, onOpenChange])
 
@@ -248,107 +300,140 @@ export function CdOverlay({
         setSelectedValue(workspaceRootItems[next]!.path)
         return
       }
-      if (completions.length === 0) return
-      const idx = Math.max(
-        0,
-        completions.findIndex(e => e.uri === selectedValue),
-      )
-      const next = (idx + delta + completions.length) % completions.length
-      setSelectedValue(completions[next]!.uri)
+      const flat: string[] = [PARENT_VALUE, ...completions.map(c => c.uri)]
+      if (flat.length === 0) return
+      const idx = Math.max(0, flat.indexOf(selectedValue))
+      const next = (idx + delta + flat.length) % flat.length
+      setSelectedValue(flat[next]!)
     },
     [completions, selectedValue, showWorkspaceRoots, workspaceRootItems],
   )
 
-  const highlightedEntry = useMemo(
-    () =>
-      showWorkspaceRoots
-        ? (workspaceRootItems.find(f => f.path === selectedValue) ?? null)
-        : (completions.find(e => e.uri === selectedValue) ?? null),
-    [completions, selectedValue, showWorkspaceRoots, workspaceRootItems],
-  )
+  const highlightedEntry = useMemo(() => {
+    if (showWorkspaceRoots) {
+      return workspaceRootItems.find(f => f.path === selectedValue) ?? null
+    }
+    if (selectedValue === PARENT_VALUE) return null
+    return completions.find(e => e.uri === selectedValue) ?? null
+  }, [completions, selectedValue, showWorkspaceRoots, workspaceRootItems])
+
+  const canSubmit = Boolean(homeDir && pathInput.trim())
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
-        <DialogTitle className="sr-only">Change directory</DialogTitle>
-        <DialogDescription className="sr-only">Path to folder</DialogDescription>
+      <DialogContent
+        className="overflow-hidden p-0 sm:max-w-2xl"
+        showCloseButton={false}
+      >
+        <DialogTitle className="sr-only">{title}</DialogTitle>
+        <DialogDescription className="sr-only">{description}</DialogDescription>
         <Command
           shouldFilter={false}
           value={selectedValue}
           onValueChange={setSelectedValue}
           className="border-0"
         >
-          <CommandInput
-            ref={inputRef}
-            placeholder="Path to folder…"
-            value={pathInput}
-            onValueChange={value => {
-              setPathInput(value)
-              setCursor(value.length)
-            }}
-            onSelect={syncCursorFromInput}
-            onKeyUp={syncCursorFromInput}
-            onClick={syncCursorFromInput}
-            onKeyDown={e => {
-              if (e.altKey && e.key === "Backspace") {
-                const el = inputRef.current
-                if (!el) return
-                const start = el.selectionStart ?? pathInput.length
-                const end = el.selectionEnd ?? pathInput.length
-                const result = deletePathSegmentBackward(pathInput, start, end)
-                if (!result) return
-                e.preventDefault()
-                setPathInput(result.value)
-                setCursor(result.cursor)
-                requestAnimationFrame(() => {
-                  el.setSelectionRange(result.cursor, result.cursor)
-                })
-                return
-              }
+          <div
+            data-slot="command-input-wrapper"
+            className="flex items-center gap-2 border-b border-border px-3 py-2"
+          >
+            <SearchIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <div className="relative min-w-0 flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                autoComplete="off"
+                placeholder="Path to folder…"
+                value={pathInput}
+                onChange={e => {
+                  setPathInput(e.target.value)
+                  setCursor(e.target.selectionStart ?? e.target.value.length)
+                }}
+                onKeyUp={syncCursorFromInput}
+                onClick={syncCursorFromInput}
+                onKeyDown={e => {
+                  if (e.altKey && e.key === "Backspace") {
+                    const el = inputRef.current
+                    if (!el) return
+                    const start = el.selectionStart ?? pathInput.length
+                    const end = el.selectionEnd ?? pathInput.length
+                    const result = deletePathSegmentBackward(pathInput, start, end)
+                    if (!result) return
+                    e.preventDefault()
+                    setPathInput(result.value)
+                    setCursor(result.cursor)
+                    requestAnimationFrame(() => {
+                      el.setSelectionRange(result.cursor, result.cursor)
+                    })
+                    return
+                  }
 
-              if (e.key === "ArrowDown" && !isListNavModified(e)) {
-                e.preventDefault()
-                moveHighlight(1)
-                return
-              }
-              if (e.key === "ArrowUp" && !isListNavModified(e)) {
-                e.preventDefault()
-                moveHighlight(-1)
-                return
-              }
+                  if (e.key === "ArrowDown" && !isListNavModified(e)) {
+                    e.preventDefault()
+                    moveHighlight(1)
+                    return
+                  }
+                  if (e.key === "ArrowUp" && !isListNavModified(e)) {
+                    e.preventDefault()
+                    moveHighlight(-1)
+                    return
+                  }
 
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault()
-                confirmCurrent()
-                return
-              }
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault()
+                    submit()
+                    return
+                  }
 
-              if (e.key === "Enter" || e.key === "Tab") {
-                if (showWorkspaceRoots) {
-                  const root = workspaceRootItems.find(f => f.path === selectedValue)
-                  if (!root) return
-                  e.preventDefault()
-                  pickWorkspaceRoot(root.path)
-                  return
-                }
-                if (!highlightedEntry || !("uri" in highlightedEntry)) return
-                e.preventDefault()
-                applyCompletion(highlightedEntry.name)
-              }
-            }}
-            className="h-12"
-            aria-controls="jet-cd-list"
-            aria-activedescendant={
-              highlightedEntry
-                ? "uri" in highlightedEntry
-                  ? `jet-cd-item-${highlightedEntry.uri}`
-                  : `jet-cd-root-${highlightedEntry.path}`
-                : undefined
-            }
-          />
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    if (showWorkspaceRoots) {
+                      const root = workspaceRootItems.find(f => f.path === selectedValue)
+                      if (!root) return
+                      e.preventDefault()
+                      pickWorkspaceRoot(root.path)
+                      return
+                    }
+                    if (selectedValue === PARENT_VALUE) {
+                      e.preventDefault()
+                      doGoUp()
+                      return
+                    }
+                    if (!highlightedEntry || !("uri" in highlightedEntry)) return
+                    e.preventDefault()
+                    applyCompletion(highlightedEntry.name)
+                  }
+                }}
+                className="w-full bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                aria-controls="jet-cd-list"
+              />
+              {ghostCompletion ? (
+                <span
+                  className="pointer-events-none absolute inset-0 flex items-center whitespace-pre font-mono text-sm text-muted-foreground/60"
+                  aria-hidden
+                >
+                  <span className="invisible">{pathInput}</span>
+                  <span>{ghostCompletion}</span>
+                </span>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={!canSubmit}
+              onClick={submit}
+              className="h-8 gap-1.5 whitespace-nowrap"
+            >
+              {primaryHint}
+              <KeyBindingKbd binding={formatKeyBinding("Mod-Enter")} />
+            </Button>
+          </div>
           <CommandList
             id="jet-cd-list"
-            className="max-h-[var(--jet-overlay-list-max,20rem)]"
+            className="max-h-[var(--jet-overlay-list-max,22rem)]"
           >
             {error ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">{error}</div>
@@ -359,7 +444,6 @@ export function CdOverlay({
                 {workspaceRootItems.map(folder => (
                   <CommandItem
                     key={folder.path}
-                    id={`jet-cd-root-${folder.path}`}
                     value={folder.path}
                     onSelect={() => pickWorkspaceRoot(folder.path)}
                     className="gap-2"
@@ -378,37 +462,67 @@ export function CdOverlay({
               <div className="px-3 py-2 text-sm text-muted-foreground">Loading…</div>
             ) : (
               <>
-                <CommandEmpty>No matching directories.</CommandEmpty>
                 <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
+                <CommandItem
+                  key="__parent__"
+                  value={PARENT_VALUE}
+                  onSelect={doGoUp}
+                  className="gap-2"
+                >
+                  <ArrowLeft className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="font-mono text-foreground">..</span>
+                </CommandItem>
+                {completions.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    No matching directories.
+                  </div>
+                ) : null}
                 {completions.map(entry => (
                   <CommandItem
                     key={entry.uri}
-                    id={`jet-cd-item-${entry.uri}`}
                     value={entry.uri}
                     onSelect={() => applyCompletion(entry.name)}
                     className="gap-2"
                   >
                     <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate">{entry.name}</span>
+                    <span className="flex-1 truncate font-mono">{entry.name}</span>
                   </CommandItem>
                 ))}
               </>
             )}
           </CommandList>
-        </Command>
-        <div className="border-t p-2">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={showWorkspaceRoots || !pathInput.trim() || !homeDir}
-            onClick={confirmCurrent}
-            className="inline-flex w-full items-center justify-center gap-1.5"
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border bg-muted/30",
+              "px-3 py-1.5 text-2xs text-muted-foreground",
+            )}
           >
-            Select folder
-            <KeyBindingKbd binding={formatKeyBinding("Mod-Enter")} />
-          </Button>
-        </div>
+            <HintKey binding="ArrowUp" label="Navigate" extra="ArrowDown" />
+            <HintKey binding="Tab" label="Autocomplete" extra="Enter" />
+            <HintKey binding={formatKeyBinding("Mod-Enter")} label={primaryHint} />
+            <HintKey binding={formatKeyBinding("Alt-Backspace")} label="Go back" />
+            <HintKey binding="Escape" label="Close" />
+          </div>
+        </Command>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function HintKey({
+  binding,
+  label,
+  extra,
+}: {
+  binding: string
+  label: string
+  extra?: string
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <KeyBindingKbd binding={binding} />
+      {extra ? <KeyBindingKbd binding={extra} /> : null}
+      <span>{label}</span>
+    </span>
   )
 }
