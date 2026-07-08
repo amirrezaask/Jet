@@ -31,6 +31,30 @@ function fallbackShells(primary: ShellSpec): ShellSpec[] {
   return alt
 }
 
+function shellTitleInit(shellFile: string): string | null {
+  if (shellFile.endsWith("zsh")) {
+    return [
+      "precmd_jet_title() { printf '\\033]0;%s\\007' \"${PWD##*/}\"; }",
+      "preexec_jet_title() { printf '\\033]0;%s\\007' \"$1\"; }",
+      "precmd_functions+=(precmd_jet_title)",
+      "preexec_functions+=(preexec_jet_title)",
+      "precmd_jet_title",
+      "",
+    ].join("\n")
+  }
+  if (shellFile.endsWith("bash")) {
+    return [
+      "__jet_title_precmd() { printf '\\033]0;%s\\007' \"${PWD##*/}\"; }",
+      "__jet_title_debug() { [ -n \"$COMP_LINE\" ] && return; [ \"$BASH_COMMAND\" = \"$PROMPT_COMMAND\" ] && return; printf '\\033]0;%s\\007' \"$BASH_COMMAND\"; }",
+      "PROMPT_COMMAND=\"__jet_title_precmd;${PROMPT_COMMAND:-}\"",
+      "trap '__jet_title_debug' DEBUG",
+      "__jet_title_precmd",
+      "",
+    ].join("\n")
+  }
+  return null
+}
+
 function resolveCwd(cwdUri: string): string {
   let cwd = ""
   try {
@@ -60,6 +84,7 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
 
     const attempts: ShellSpec[] = [primary, ...fallbackShells(primary)]
     let pty: IPty | null = null
+    let usedShell: ShellSpec | null = null
     const errors: string[] = []
     for (const attempt of attempts) {
       try {
@@ -70,15 +95,19 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
           cols: 80,
           rows: 24,
         })
+        usedShell = attempt
         break
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         errors.push(`${attempt.file}: ${message}`)
       }
     }
-    if (!pty) {
+    if (!pty || !usedShell) {
       throw new Error(`Failed to spawn shell in ${cwd}. Attempts: ${errors.join(" | ")}`)
     }
+
+    const init = shellTitleInit(usedShell.file)
+    if (init) pty.write(init)
 
     const webContents = event.sender
     terminals.set(id, { pty, webContents })
