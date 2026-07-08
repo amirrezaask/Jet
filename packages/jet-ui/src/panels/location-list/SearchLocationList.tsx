@@ -45,7 +45,9 @@ export function SearchLocationList({
   )
 
   const runSearch = useCallback(async () => {
-    const query = (doc.searchQuery ?? "").trim()
+    const current = workspace.listStore.get(listId)
+    if (!current) return
+    const query = (current.searchQuery ?? "").trim()
     const folders = getSearchFolders?.() ?? workspace.folders
     if (folders.length === 0 || !window.jet?.search || !query) {
       searchGen.current += 1
@@ -56,9 +58,9 @@ export function SearchLocationList({
     patchDoc({ searchLoading: true, searchError: null })
     try {
       const hits = await projectSearchAcrossFolders(folders, window.jet.search, query, {
-        caseSensitive: doc.searchCaseSensitive ?? false,
-        regex: doc.searchRegex ?? false,
-        fuzzy: doc.searchFuzzy ?? false,
+        caseSensitive: current.searchCaseSensitive ?? false,
+        regex: current.searchRegex ?? false,
+        fuzzy: current.searchFuzzy ?? false,
       })
       if (gen !== searchGen.current) return
       const multiRoot = folders.length > 1
@@ -78,7 +80,7 @@ export function SearchLocationList({
         searchError: err instanceof Error ? err.message : String(err),
       })
     }
-  }, [workspace, doc, patchDoc, getSearchFolders])
+  }, [workspace, listId, patchDoc, getSearchFolders])
 
   useEffect(() => {
     const id = window.setTimeout(() => void runSearch(), 300)

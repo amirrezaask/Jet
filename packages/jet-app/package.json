@@ -14,7 +14,6 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.37.0",
     "@jet/agents": "workspace:*",
-    "@jet/browser": "workspace:*",
     "@jet/codemirror": "workspace:*",
     "@jet/lsp": "workspace:*",
     "@jet/panels": "workspace:*",

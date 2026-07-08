@@ -1,5 +1,5 @@
 import type { ListItem } from "@jet/workspace"
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ListRow } from "@/components/ListRow.js"
 import { jetScrollFadeClass } from "@/motion/tokens.js"
@@ -25,12 +25,18 @@ export type LocationListProps = {
 const OVERSCAN = 8
 
 function readRowHeightPx(): number {
-  if (typeof document === "undefined") return 24
-  const raw = getComputedStyle(document.documentElement)
-    .getPropertyValue("--jet-location-row-height")
-    .trim()
-  const n = parseFloat(raw)
-  return Number.isFinite(n) && n > 0 ? n : 24
+  if (typeof document === "undefined") return 40
+  const root = document.documentElement
+  const fontSize = parseFloat(getComputedStyle(root).fontSize) || 16
+  const raw = getComputedStyle(root).getPropertyValue("--jet-location-row-height").trim()
+  if (raw.endsWith("rem")) {
+    const rem = parseFloat(raw)
+    if (Number.isFinite(rem) && rem > 0) return rem * fontSize
+  } else {
+    const px = parseFloat(raw)
+    if (Number.isFinite(px) && px > 0) return px
+  }
+  return fontSize * 2.5
 }
 
 export function LocationList({
@@ -43,6 +49,23 @@ export function LocationList({
   header,
 }: LocationListProps) {
   const scrollRef = useRef<HTMLUListElement>(null)
+  const [rowHeight, setRowHeight] = useState(readRowHeightPx)
+
+  useLayoutEffect(() => {
+    const measure = () => setRowHeight(readRowHeightPx())
+    measure()
+    const raf = requestAnimationFrame(measure)
+    let cancelled = false
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      document.fonts.ready.then(() => {
+        if (!cancelled) measure()
+      })
+    }
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+    }
+  }, [])
 
   useEffect(() => {
     return registerListPanel(listId, scrollRef.current)
@@ -51,7 +74,7 @@ export function LocationList({
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: readRowHeightPx,
+    estimateSize: () => rowHeight,
     overscan: OVERSCAN,
   })
 
@@ -97,7 +120,7 @@ export function LocationList({
                     top: 0,
                     left: 0,
                     width: "100%",
-                    height: v.size,
+                    height: rowHeight,
                     transform: `translateY(${v.start}px)`,
                   }}
                 >

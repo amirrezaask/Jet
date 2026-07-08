@@ -2,10 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "jet-web",
+      "name": "jet-desktop",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "jet-web", "dev"],
-      "port": 5174
+      "runtimeArgs": ["--filter", "jet-desktop", "dev"]
     }
   ]
 }

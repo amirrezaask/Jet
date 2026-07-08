@@ -49,7 +49,7 @@ import {
 } from "@jet/workspace"
 import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import type { LSPClient } from "@jet/codemirror"
-import { createAgentBridge, openWorkspaceFromQuery, resolveDevWorkspacePath } from "@jet/browser"
+import { createAgentBridge } from "./agent-bridge.js"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import {
@@ -165,9 +165,6 @@ function applyRootFontSize(px: number): void {
   document.documentElement.style.fontSize = `${px}px`
 }
 
-const isWebMode = Boolean(import.meta.env.VITE_JET_WEB)
-const hasWorkspaceQuery =
-  isWebMode && new URLSearchParams(window.location.search).has("workspace")
 
 const SIDEBAR_VIEW_STORAGE_KEY = "jet-sidebar-view"
 
@@ -1982,7 +1979,6 @@ export function JetApp() {
         openListItem,
         syncProblemsToListTab,
         editorPanelRef,
-        isWebMode,
         setZoomLevel: handleZoom,
         handlePanelNavigation,
         setOutlineOpen,
@@ -2290,17 +2286,7 @@ export function JetApp() {
   useEffect(() => {
     if (!layoutReady || queryBootstrapDone.current) return
     const openFile = (uri: string, path: string) => handleOpenFileRef.current(uri, path)
-    if (isWebMode && hasWorkspaceQuery) {
-      queryBootstrapDone.current = true
-      void openWorkspaceFromQuery(
-        window.location.search,
-        async path => {
-          await openWorkspaceRef.current(path, { replace: true, silent: true })
-        },
-        openFile,
-      )
-        .catch(err => console.warn("Failed to open workspace from query:", err))
-    } else if (!isWebMode && window.jet?.getLaunchConfig) {
+    if (window.jet?.getLaunchConfig) {
       void window.jet.getLaunchConfig().then(cfg => {
         if (!cfg || queryBootstrapDone.current) return
         queryBootstrapDone.current = true
@@ -2552,7 +2538,7 @@ export function JetApp() {
   const forceTitleBar =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("titlebar") === "1"
-  const showTitleBar = forceTitleBar || (!isWebMode && isMac)
+  const showTitleBar = forceTitleBar || isMac
 
   return (
     <TooltipProvider>
@@ -2608,7 +2594,7 @@ export function JetApp() {
           />
         ) : null}
         <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {!workspace.manager.hasFolders() && !hasWorkspaceQuery ? (
+        {!workspace.manager.hasFolders() ? (
           <div className="h-full w-full bg-background" />
         ) : (
           <PanelDock<PanelView>
@@ -2705,11 +2691,12 @@ export function JetApp() {
             addWorkspaceOpen={addWorkspaceOpen}
             onAddWorkspaceOpenChange={setAddWorkspaceOpen}
             onAddWorkspaceSelect={path => openWorkspaceFolder(path)}
-            resolveHomeDir={async () =>
-              window.jet?.getHomeDir
-                ? window.jet.getHomeDir()
-                : (await resolveDevWorkspacePath(".")).path
-            }
+            resolveHomeDir={async () => {
+              if (!window.jet?.getHomeDir) {
+                throw new Error("window.jet.getHomeDir not available")
+              }
+              return window.jet.getHomeDir()
+            }}
             projectSwitcherOpen={projectSwitcherOpen}
             onProjectSwitcherOpenChange={setProjectSwitcherOpen}
             projects={projects}

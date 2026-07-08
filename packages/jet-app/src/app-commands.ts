@@ -103,7 +103,6 @@ export type BuildAppCommandsDeps = {
   openListItem: (item: ListItem) => void
   syncProblemsToListTab: () => void
   editorPanelRef: { current: PanelId | null }
-  isWebMode: boolean
   setZoomLevel: (delta: number) => void
   handlePanelNavigation: (action: string) => void
   setOutlineOpen: (open: boolean) => void
@@ -343,18 +342,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (isUntitledUri(fileUri)) {
         const folder = await resolveCommandFolder(fileUri)
         if (!folder) return
-        let savePath: string | null = null
-        if (deps.isWebMode) {
-          const rel = window.prompt(
-            `Save as (relative to ${folder.root.name}):`,
-            "untitled.ts",
-          )
-          if (!rel) return
-          savePath = `${folder.root.path}/${rel.replace(/^\/+/, "")}`
-        } else {
-          savePath = (await window.jet?.fs.showSaveFileDialog()) ?? null
-          if (!savePath) return
-        }
+        const savePath = (await window.jet?.fs.showSaveFileDialog()) ?? null
+        if (!savePath) return
         const uri = pathToFileUri(savePath)
         await deps.workspace.writeFile(uri, content)
         const tree = deps.cloneTree()

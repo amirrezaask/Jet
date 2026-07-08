@@ -4,13 +4,9 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --filter=jet-desktop",
-    "dev:web": "turbo run dev --filter=jet-web",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test && pnpm --filter @jet/app test",
-    "test:web": "playwright test --project=web",
-    "test:screenshots": "playwright test --project=screenshots",
-    "test:screenshots:update": "playwright test --project=screenshots --update-snapshots",
     "test:electron": "pnpm --filter @jet/node-host build && pnpm --filter jet-desktop build && playwright test --project=electron",
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
@@ -22,7 +18,7 @@
     "babel-plugin-react-compiler": "^1.0.0",
     "tsx": "^4.19.4",
     "turbo": "^2.5.4",
-    "typescript": "^5.8.3"
+    "typescript": "^7.0.0"
   },
   "packageManager": "pnpm@9.15.0"
 }

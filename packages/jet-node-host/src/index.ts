@@ -22,11 +22,6 @@ export {
 } from "./search.js"
 export { probeFffAvailable, isFffAvailable, disposeFffIndex } from "./fff-service.js"
 export { assertAllowedPath, assertAllowedUri, normalizeRoots } from "./sandbox.js"
-export {
-  handleJetDevRequest,
-  resolveWorkspacePath,
-  type JetDevHostOptions,
-} from "./dev-middleware.js"
 export { loadGlobalJetrcScanRoots } from "./global-jetrc.js"
 export { applyLoginShellEnv, resolveLoginShellPath } from "./shell-env.js"
 export {

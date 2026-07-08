@@ -1,8 +1,8 @@
 import type { PanelId } from "@jet/shared"
+import { pathToFileUri } from "@jet/shared"
 import type { CommandRegistry, JetPanelTree, WorkspaceService } from "@jet/workspace"
 import type { PanelNode } from "@jet/panels"
 import type { PanelView } from "@jet/shared"
-import { resolveDevWorkspacePath, toWorkspaceFileUri } from "./browser-api.js"
 
 export type JetAgentState = {
   /** @deprecated Use `activeWorkspace` + `workspaces` for multi-root. */
@@ -62,17 +62,21 @@ export type AgentBridgeContext = {
   getSelectionRangeCount?: () => number | null
 }
 
+function toWorkspaceFileUri(workspacePath: string, relativeOrUri: string): string {
+  if (relativeOrUri.startsWith("file://")) return relativeOrUri
+  const normalized = relativeOrUri.replace(/^\/+/, "")
+  return pathToFileUri(`${workspacePath}/${normalized}`)
+}
+
 export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
   return {
     async openWorkspace(folderPath: string) {
-      const { path } = await resolveDevWorkspacePath(folderPath)
-      await ctx().openWorkspace(path)
+      await ctx().openWorkspace(folderPath)
     },
     async addWorkspace(folderPath: string) {
       const add = ctx().addWorkspace
       if (!add) throw new Error("addWorkspace not available")
-      const { path } = await resolveDevWorkspacePath(folderPath)
-      await add(path)
+      await add(folderPath)
     },
     listWorkspaces() {
       return ctx().listWorkspaces?.() ?? []
@@ -195,25 +199,5 @@ function collectPanels(ctx: AgentBridgeContext): JetAgentState["panels"] {
 declare global {
   interface Window {
     __jetAgent?: JetAgentAPI
-  }
-}
-
-export async function openWorkspaceFromQuery(
-  search: string,
-  openWorkspace: (path: string) => Promise<void>,
-  openFile: (uri: string, path: string) => void,
-): Promise<void> {
-  const params = new URLSearchParams(search)
-  const workspaceParam = params.get("workspace")
-  if (!workspaceParam) return
-
-  const { path } = await resolveDevWorkspacePath(workspaceParam)
-  await openWorkspace(path)
-
-  const fileParam = params.get("file")
-  if (fileParam) {
-    const fileUri = toWorkspaceFileUri(path, fileParam)
-    const filePath = fileUri.replace(/^file:\/\//, "")
-    openFile(fileUri, decodeURIComponent(filePath))
   }
 }
