@@ -3,6 +3,7 @@ import { EXPLORER_LIST_ID } from "@/explorer/focus.js"
 import { File, Folder } from "lucide-react"
 import type { WorkspaceEntry, WorkspaceManager } from "@jet/workspace"
 import { TreeView, type TreeDataSource, type TreeNode } from "@/components/TreeView.js"
+import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
 
 type ExplorerData =
@@ -71,19 +72,25 @@ function useExplorerSource(manager: WorkspaceManager): {
 export function ExplorerTab({
   manager,
   onOpenFile,
+  onOpenFolder,
 }: {
   manager: WorkspaceManager
   onOpenFile: (uri: string, path: string) => void
+  onOpenFolder?: () => void
 }) {
   const { source, rootIds } = useExplorerSource(manager)
 
   if (!manager.hasFolders()) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-muted-foreground">
-        <p>Open a folder to browse files</p>
-        <p className="text-xs">
-          Use the command palette or <strong>Open Folder</strong>.
-        </p>
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-muted-foreground">
+        <p className="text-sm">Open a folder to browse files</p>
+        {onOpenFolder ? (
+          <Button size="sm" onClick={onOpenFolder} className="font-medium">
+            Open Folder
+          </Button>
+        ) : (
+          <p className="text-xs">Use the command palette.</p>
+        )}
       </div>
     )
   }

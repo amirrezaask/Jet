@@ -89,6 +89,8 @@ import {
   showJetToast,
   requestConfirm,
   AppShell,
+  SidebarProvider,
+  SidebarInset,
   JetWorkspaceSidebar,
   type JetSidebarView,
   focusExplorerPanel,
@@ -2584,26 +2586,34 @@ export function JetApp() {
         </>
       }
     >
-      {!workspace.manager.hasFolders() && !hasWorkspaceQuery ? (
-        <WelcomeView
-          isWebMode={isWebMode}
-          bootstrapping={false}
-          onOpenFolder={() => executeCommand("workspace.openFolder")}
-        />
-      ) : (
-        <JetWorkspaceSidebar
-          activeView={sidebarView}
-          onActiveViewChange={handleSidebarViewChange}
-          open={sidebarOpen}
-          onOpenChange={setSidebarOpen}
-          manager={workspace.manager}
-          onOpenFile={(uri, path) => handleOpenFile(uri, path)}
-          terminalExplorerGroups={getTerminalExplorerGroups()}
-          activeTerminalTabId={getActiveTerminalTabId()}
-          onFocusTerminal={focusTerminalTab}
-          onNewTerminal={rootUri => void newTerminalInWorkspace(rootUri)}
-          onCloseTerminal={closeTerminalTab}
-        >
+      <SidebarProvider
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+        className="h-full min-h-0 w-full"
+        style={{ "--sidebar-width": "15rem" } as React.CSSProperties}
+      >
+        {sidebarOpen ? (
+          <JetWorkspaceSidebar
+            activeView={sidebarView}
+            onActiveViewChange={handleSidebarViewChange}
+            manager={workspace.manager}
+            onOpenFile={(uri, path) => handleOpenFile(uri, path)}
+            onOpenFolder={() => executeCommand("workspace.openFolder")}
+            terminalExplorerGroups={getTerminalExplorerGroups()}
+            activeTerminalTabId={getActiveTerminalTabId()}
+            onFocusTerminal={focusTerminalTab}
+            onNewTerminal={rootUri => void newTerminalInWorkspace(rootUri)}
+            onCloseTerminal={closeTerminalTab}
+          />
+        ) : null}
+        <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        {!workspace.manager.hasFolders() && !hasWorkspaceQuery ? (
+          <WelcomeView
+            isWebMode={isWebMode}
+            bootstrapping={false}
+            onOpenFolder={() => executeCommand("workspace.openFolder")}
+          />
+        ) : (
           <PanelDock<PanelView>
             tree={panelTree}
             focusedPanelId={focusedPanel}
@@ -2635,8 +2645,9 @@ export function JetApp() {
               />
             )}
           />
-        </JetWorkspaceSidebar>
-      )}
+        )}
+        </SidebarInset>
+      </SidebarProvider>
 
       <Suspense fallback={null}>
         {(gotoLineOpen ||

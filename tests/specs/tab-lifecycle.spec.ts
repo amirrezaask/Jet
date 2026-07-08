@@ -129,7 +129,7 @@ test("tab-lifecycle: sidebar collapse hides explorer list", async ({ page }) => 
   await page.keyboard.press("Meta+b")
   await page.waitForTimeout(400)
 
-  await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute("data-state", "collapsed")
+  await expect(page.locator('[data-jet-workspace-sidebar]')).toHaveAttribute("data-sidebar-open", "false")
   await expect(page.locator("[data-jet-panel-leaf]")).toHaveCount(1)
 })
 

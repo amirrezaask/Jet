@@ -60,7 +60,7 @@ export function JetTitleBar({
         <Menubar className="h-[calc(var(--jet-titlebar-height)-0.5rem)] border-0 bg-transparent p-0 shadow-none">
           {menus.map(menu => (
             <MenubarMenu key={menu.id}>
-              <MenubarTrigger className="px-2 py-0.5 text-xs text-foreground">
+              <MenubarTrigger className="px-2 py-0.5 text-xs">
                 {menu.label}
               </MenubarTrigger>
               <MenubarContent>

@@ -7,6 +7,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../components/ui/context-menu.js"
+import { Button } from "../components/ui/button.js"
 import { TreeView, type TreeDataSource, type TreeNode } from "../components/TreeView.js"
 
 export type TerminalExplorerEntry = {
@@ -36,8 +37,16 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
   onFocusTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
   onCloseTerminal: (panelId: PanelId, tabId: string) => void
+  onOpenFolder?: () => void
 }) {
-  const { groups, activeTerminalTabId, onFocusTerminal, onNewTerminal, onCloseTerminal } = props
+  const {
+    groups,
+    activeTerminalTabId,
+    onFocusTerminal,
+    onNewTerminal,
+    onCloseTerminal,
+    onOpenFolder,
+  } = props
 
   const sortedGroups = useMemo(
     () => [...groups].sort((a, b) => a.name.localeCompare(b.name)),
@@ -81,21 +90,14 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
 
   if (sortedGroups.length === 0) {
     return (
-      <TreeView<TerminalNodeData>
-        listId={TERMINAL_EXPLORER_LIST_ID}
-        ariaLabel="Terminals"
-        source={source}
-        rowAriaLabel={node =>
-          node.data.kind === "group" ? node.data.group.name : node.data.entry.label
-        }
-        initiallyExpanded={initiallyExpanded}
-        renderRow={() => null}
-        emptyState={
-          <p className="px-2 py-2 text-xs text-muted-foreground">
-            Open a workspace to manage terminals.
-          </p>
-        }
-      />
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-muted-foreground">
+        <p className="text-sm">Open a folder to manage terminals</p>
+        {onOpenFolder ? (
+          <Button size="sm" onClick={onOpenFolder} className="font-medium">
+            Open Folder
+          </Button>
+        ) : null}
+      </div>
     )
   }
 

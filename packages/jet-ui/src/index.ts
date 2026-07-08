@@ -15,6 +15,7 @@ export {
   type TabRenderCtx,
 } from "./tabs/registry.js"
 export { AppShell } from "./shell/AppShell.js"
+export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
 export {
   JetWorkspaceSidebar,
   type JetSidebarView,

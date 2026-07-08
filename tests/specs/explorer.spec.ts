@@ -141,6 +141,30 @@ test("explorer: narrow viewport — no clipping", async ({ page }) => {
   })
 })
 
+test("explorer: sidebar tabs switch between files and terminals", async ({ page }) => {
+  await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
+  await waitAnimationsIdle(page)
+
+  await expect(page.getByRole("tab", { name: "Files" })).toHaveAttribute("data-state", "active")
+  await expect(page.locator(EXPLORER_PANEL)).toBeVisible()
+
+  await page.getByRole("tab", { name: "Terminals" }).click()
+  await page.waitForTimeout(300)
+  await expect(page.getByRole("tab", { name: "Terminals" })).toHaveAttribute("data-state", "active")
+  await expect(page.locator('[data-jet-list-panel="jet:terminal-explorer"]')).toBeVisible()
+
+  await page.getByRole("tab", { name: "Files" }).click()
+  await page.waitForTimeout(300)
+  await expect(page.getByRole("tab", { name: "Files" })).toHaveAttribute("data-state", "active")
+  await expect(page.locator(EXPLORER_PANEL)).toBeVisible()
+  await expectLayout(page, {
+    selector: `${EXPLORER_PANEL} [data-jet-list-item]`,
+    minItems: 3,
+    minUniqueTops: 3,
+    minRowHeight: 18,
+  })
+})
+
 test("explorer: sidebar collapse leaves editor full width", async ({ page }) => {
   await boot(page, { workspace: SAMPLE, file: "src/index.ts" })
   await waitAnimationsIdle(page)
@@ -155,12 +179,12 @@ test("explorer: sidebar collapse leaves editor full width", async ({ page }) => 
   await page.keyboard.press("Meta+b")
   await page.waitForTimeout(400)
 
-  await expect(page.locator(EXPLORER_SIDEBAR)).toHaveAttribute("data-state", "collapsed")
+  await expect(page.locator("[data-jet-workspace-sidebar]")).toHaveAttribute("data-sidebar-open", "false")
   await expectElementWidth(page, { selector: ".cm-editor", minPctOfViewport: 70 })
 
   await page.keyboard.press("Meta+b")
   await page.waitForTimeout(400)
-  await expect(page.locator(EXPLORER_SIDEBAR)).toHaveAttribute("data-state", "expanded")
+  await expect(page.locator("[data-jet-workspace-sidebar]")).toHaveAttribute("data-sidebar-open", "true")
   await expect(page.locator(EXPLORER_PANEL)).toBeVisible()
 })
 
