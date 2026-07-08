@@ -7,7 +7,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react"
-import { ArrowLeft, File, Folder, SearchIcon } from "lucide-react"
+import { File, Folder, SearchIcon } from "lucide-react"
 import { pathToFileUri } from "@jet/shared"
 import {
   applyPathCompletion,
@@ -39,25 +39,10 @@ type DirEntry = {
   isDirectory: boolean
 }
 
-const PARENT_VALUE = "__parent__"
 const MAX_DIR_ENTRIES = 500
 
 function isListNavModified(e: KeyboardEvent): boolean {
   return e.shiftKey || e.metaKey || e.ctrlKey || e.altKey
-}
-
-function goUp(input: string, homeDir: string): { value: string; cursor: number } {
-  const trimmed = input.replace(/[/\\]+$/, "")
-  const sep = input.includes("\\") ? "\\" : "/"
-  const lastSep = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
-  let next: string
-  if (lastSep <= 0) {
-    if (trimmed.startsWith("/")) next = "/"
-    else next = homeDir + sep
-  } else {
-    next = trimmed.slice(0, lastSep) + sep
-  }
-  return { value: next, cursor: next.length }
 }
 
 export type CdOverlayProps = {
@@ -243,12 +228,11 @@ export function CdOverlay({
       return
     }
     if (completions.length === 0) {
-      setSelectedValue(PARENT_VALUE)
+      setSelectedValue(COMMAND_NO_SELECTION)
       return
     }
     const firstUri = completions[0]!.uri
     setSelectedValue(prev => {
-      if (prev === PARENT_VALUE) return prev
       if (completions.some(e => e.uri === prev)) return prev
       return firstUri
     })
@@ -293,19 +277,6 @@ export function CdOverlay({
     [completionCtx, pathInput],
   )
 
-  const doGoUp = useCallback(() => {
-    if (!homeDir) return
-    const { value, cursor: nextCursor } = goUp(pathInput, homeDir)
-    setPathInput(value)
-    setCursor(nextCursor)
-    requestAnimationFrame(() => {
-      const el = inputRef.current
-      if (!el) return
-      el.focus()
-      el.setSelectionRange(nextCursor, nextCursor)
-    })
-  }, [homeDir, pathInput])
-
   const submit = useCallback(() => {
     if (!homeDir || !pathInput.trim()) return
     const path = resolvePathForOpen(pathInput, homeDir)
@@ -342,11 +313,10 @@ export function CdOverlay({
         setSelectedValue(workspaceRootItems[next]!.path)
         return
       }
-      const flat: string[] = [PARENT_VALUE, ...completions.map(c => c.uri)]
-      if (flat.length === 0) return
-      const idx = Math.max(0, flat.indexOf(selectedValue))
-      const next = (idx + delta + flat.length) % flat.length
-      setSelectedValue(flat[next]!)
+      if (completions.length === 0) return
+      const idx = Math.max(0, completions.findIndex(c => c.uri === selectedValue))
+      const next = (idx + delta + completions.length) % completions.length
+      setSelectedValue(completions[next]!.uri)
     },
     [completions, selectedValue, showWorkspaceRoots, workspaceRootItems],
   )
@@ -355,7 +325,6 @@ export function CdOverlay({
     if (showWorkspaceRoots) {
       return workspaceRootItems.find(f => f.path === selectedValue) ?? null
     }
-    if (selectedValue === PARENT_VALUE) return null
     return completions.find(e => e.uri === selectedValue) ?? null
   }, [completions, selectedValue, showWorkspaceRoots, workspaceRootItems])
 
@@ -438,11 +407,6 @@ export function CdOverlay({
                       pickWorkspaceRoot(root.path)
                       return
                     }
-                    if (selectedValue === PARENT_VALUE) {
-                      e.preventDefault()
-                      doGoUp()
-                      return
-                    }
                     if (!highlightedEntry || !("uri" in highlightedEntry)) return
                     e.preventDefault()
                     applyCompletion(highlightedEntry as DirEntry)
@@ -505,15 +469,6 @@ export function CdOverlay({
             ) : (
               <>
                 <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
-                <CommandItem
-                  key="__parent__"
-                  value={PARENT_VALUE}
-                  onSelect={doGoUp}
-                  className="gap-2"
-                >
-                  <ArrowLeft className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="font-mono text-foreground">..</span>
-                </CommandItem>
                 {completions.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-muted-foreground">
                     No matching directories.
@@ -546,7 +501,7 @@ export function CdOverlay({
             <HintKey binding="ArrowUp" label="Navigate" extra="ArrowDown" />
             <HintKey binding="Tab" label="Autocomplete" extra="Enter" />
             <HintKey binding={formatKeyBinding("Mod-Enter")} label={primaryHint} />
-            <HintKey binding={formatKeyBinding("Alt-Backspace")} label="Go back" />
+            <HintKey binding={formatKeyBinding("Alt-Backspace")} label="Delete segment" />
             <HintKey binding="Escape" label="Close" />
           </div>
         </Command>
