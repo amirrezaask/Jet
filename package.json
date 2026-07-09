@@ -11,14 +11,14 @@
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
     "release": "pnpm --filter jet-desktop release && cp -r ./apps/jet-desktop/release/mac-arm64/Jet.app ~/Applications/",
-    "postinstall": "pnpm rebuild electron && node scripts/fix-node-pty-perms.mjs"
+    "postinstall": "node scripts/ensure-electron.mjs && pnpm rebuild electron && node scripts/fix-node-pty-perms.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0",
+    "@playwright/test": "^1.61.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "tsx": "^4.19.4",
-    "turbo": "^2.5.4",
-    "typescript": "^7.0.0"
+    "tsx": "^4.23.0",
+    "turbo": "^2.10.4",
+    "typescript": "^7.0.2"
   },
   "packageManager": "pnpm@9.15.0"
 }

@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "pnpm --filter @jet/agents build && node scripts/electron-dev.mjs",
+    "dev": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && node scripts/electron-dev.mjs",
     "build": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && vite build",
     "typecheck": "tsc --noEmit",
     "release": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && vite build && electron-builder --mac --dir --config electron-builder.yml",
