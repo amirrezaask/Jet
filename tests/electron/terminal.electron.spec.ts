@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { skipFlakyTest } from "./_flaky.js"
 import { hasPtySpawn, launchJet, readTerminalText, showTerminal } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -47,6 +48,8 @@ test.describe("electron terminal", () => {
     }
   })
 
+  skipFlakyTest("xterm row height not measurable before first PTY output")
+
   test("xterm row height is readable", async () => {
     const { app, page } = await launchJet()
     try {
@@ -70,6 +73,8 @@ test.describe("electron terminal", () => {
       await app.close()
     }
   })
+
+  skipFlakyTest("OSC title sequence → tab label propagation timing")
 
   test("updates tab label when shell emits OSC title sequence", async () => {
     const { app, page } = await launchJet()

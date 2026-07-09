@@ -72,6 +72,10 @@ export async function launchJet(
     "/usr/local/bin",
     process.env.PATH ?? "",
   ].join(":")
+  const workerStaggerMs = Number(process.env.TEST_PARALLEL_INDEX ?? 0) * 400
+  if (workerStaggerMs > 0) {
+    await new Promise(r => setTimeout(r, workerStaggerMs))
+  }
   const app = await electron.launch({
     args: [MAIN_JS, "--", workspacePath],
     cwd: DESKTOP_DIR,
@@ -97,7 +101,7 @@ export async function launchJet(
 
 /** Playwright may surface DevTools as firstWindow(); pick the renderer shell. */
 async function waitForAppPage(app: ElectronApplication): Promise<Page> {
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 120; i++) {
     for (const win of app.windows()) {
       const url = win.url()
       if (url.startsWith("devtools://")) continue

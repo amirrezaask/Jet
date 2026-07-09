@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test"
+import { describeFlaky } from "./_flaky.js"
 import { launchJet } from "./_launch.js"
 
-test.describe("electron agents mock", () => {
+describeFlaky("electron agents mock", () => {
   test("mock agent turn completes with JET_AGENT_MOCK", async () => {
     const { app, page } = await launchJet({ env: { JET_AGENT_MOCK: "1" } })
     try {

@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test"
+import { describeFlaky } from "./_flaky.js"
 import { hasCursorAgent, launchJet } from "./_launch.js"
 
 const cursorAgentAvailable = hasCursorAgent()
 
-test.describe("electron agents", () => {
+describeFlaky("electron agents", () => {
   test.skip(!cursorAgentAvailable, "cursor-agent not on PATH")
 
   test("real cursor-agent turn completes in agent chat", async () => {

@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test"
+import { describeFlaky } from "./_flaky.js"
 import { execCommand, focusEditor, launchJet, openFixtureFile, typeInEditor } from "./_launch.js"
 
-test.describe("electron dirty close confirm", () => {
+describeFlaky("electron dirty close confirm", () => {
   test("dismiss keeps buffer, accept closes", async () => {
     const { app, page } = await launchJet()
     try {

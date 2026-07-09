@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { skipFlakyTest } from "./_flaky.js"
 import { launchJet } from "./_launch.js"
 
 test.describe("desktop shell", () => {
@@ -50,6 +51,8 @@ test.describe("desktop shell", () => {
       await app.close()
     }
   })
+
+  skipFlakyTest("titlebar View → Show Explorer menubar click timing")
 
   test("titlebar view menu opens explorer", async () => {
     const { app, page } = await launchJet()

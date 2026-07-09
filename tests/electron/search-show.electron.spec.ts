@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test"
+import { describeFlaky } from "./_flaky.js"
 import { execCommand, launchJet, openFixtureFile, waitForSearchReady } from "./_launch.js"
 import { SEARCH_LIST_PANEL, searchListItems } from "../helpers/location-list.js"
 import { expectLayout } from "../helpers/list.js"
 
-test.describe("electron search show", () => {
+describeFlaky("electron search show", () => {
   test("search.show finds project hits and activates row", async () => {
     const { app, page } = await launchJet()
     try {

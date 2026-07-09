@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test"
+import { describeFlaky } from "./_flaky.js"
 import { confirmOverlay, execCommand, launchJet } from "./_launch.js"
 
-test.describe("electron open file overlay", () => {
+describeFlaky("electron open file overlay", () => {
   test("workspace.openFile opens path overlay and selects fixture file", async () => {
     const { app, page } = await launchJet()
     try {

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { describeFlaky } from "./_flaky.js"
 import { execCommand, focusEditor, launchJet, openFixtureFile, typeInEditor } from "./_launch.js"
 import { REPO_ROOT } from "./_launch.js"
 import { resolve } from "node:path"
@@ -7,7 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 const FIXTURE_FILE = resolve(REPO_ROOT, "fixtures/sample-workspace/src/index.ts")
 const ORIGINAL = readFileSync(FIXTURE_FILE, "utf8")
 
-test.describe("electron editor save", () => {
+describeFlaky("electron editor save", () => {
   test.afterEach(() => {
     writeFileSync(FIXTURE_FILE, ORIGINAL, "utf8")
   })

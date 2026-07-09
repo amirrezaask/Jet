@@ -5,9 +5,13 @@ Native Electron tests in `tests/electron/`. Builds `jet-desktop` before running.
 ## Commands
 
 ```bash
-pnpm test:electron   # all specs in tests/electron/
+pnpm test:electron   # all specs in tests/electron/ (parallel workers)
 pnpm test:bench      # UX latency benchmarks in tests/bench/
 ```
+
+Worker count defaults to ~half of CPU cores (see `playwright.config.ts`). Override with `PLAYWRIGHT_WORKERS=N`.
+
+Twelve flaky specs are skipped by default (`tests/electron/_flaky.ts`). Run `JET_E2E_RUN_FLAKY=1 pnpm test:electron` to include them. List + fix notes: `AGENTS.md` § Disabled flaky E2E specs.
 
 ### Headless by default
 

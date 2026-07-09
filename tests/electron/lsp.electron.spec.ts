@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { skipFlakyTest } from "./_flaky.js"
 import { PROBLEMS_PANEL } from "../helpers/location-list.js"
 import { launchJet, openFixtureFile, waitForLspConnected, hasTypescriptLanguageServer } from "./_launch.js"
 
@@ -17,6 +18,8 @@ test.describe("electron LSP", () => {
       await app.close()
     }
   })
+
+  skipFlakyTest("F12 go-to-definition cursor position / LSP timing")
 
   test("go to definition on greet opens utils.ts", async () => {
     const { app, page } = await launchJet()

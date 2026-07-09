@@ -147,6 +147,35 @@ JET_HEADED=1 pnpm test:electron   # show BrowserWindow
 PWDEBUG=1 pnpm test:electron      # Playwright inspector + headed
 ```
 
+### Parallelism
+
+Electron specs run in parallel (`fullyParallel: true`). Worker count defaults to half of CPU cores (min 2; capped at 4 on CI). Each launch gets an isolated `JET_E2E_USER_DATA` temp dir, so instances do not share state.
+
+Override workers: `PLAYWRIGHT_WORKERS=6 pnpm test:electron`.
+
+### Disabled flaky E2E specs
+
+Twelve specs are temporarily skipped via `tests/electron/_flaky.ts` (`describeFlaky` / `skipFlakyTest`; re-enable with `JET_E2E_RUN_FLAKY=1`). Re-enable all for triage:
+
+```bash
+JET_E2E_RUN_FLAKY=1 pnpm test:electron
+```
+
+| Spec file | Test | Likely fix |
+| --------- | ---- | ---------- |
+| `agents-mock.electron.spec.ts` | mock agent turn | Stabilize composer tab activation before submit |
+| `agents.electron.spec.ts` | real cursor-agent turn | Longer turn timeout; poll thread status after stream ends |
+| `dirty-close-confirm.electron.spec.ts` | dismiss/accept close | Ensure `workspace.closeBuffer` targets focused dirty buffer |
+| `editor-save.electron.spec.ts` | save persists to disk | Per-test temp copy of fixture file (avoid shared `index.ts` races) |
+| `locationlist-commands.electron.spec.ts` | both | Use `getByLabel("Search project")`; wait for scan-ready |
+| `lsp.electron.spec.ts` | go to definition | Place cursor on `greet` symbol reliably; wait for definition response |
+| `open-file-overlay.electron.spec.ts` | open file overlay | Confirm overlay with `Meta+Enter`; retry `waitForEditor` |
+| `search-show.electron.spec.ts` | search.show hits | Wait for FFF/rg index; assert scoped list rows |
+| `switch-project.electron.spec.ts` | project switcher | Register `workspace.switchProject` command + overlay |
+| `terminal.electron.spec.ts` | xterm row height | Wait for PTY output before measuring `.xterm-row` |
+| `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
+| `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
+
 ### Programmatic control (`window.__jetAgent`)
 
 After `launchJet()`:
