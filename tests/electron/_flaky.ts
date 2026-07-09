@@ -14,3 +14,13 @@ export const describeFlaky = skipFlaky ? test.describe.skip : test.describe
 export function skipFlakyTest(reason: string): void {
   test.skip(skipFlaky, flakyReason(reason))
 }
+
+/** Declare one flaky test without applying the modifier to its whole suite. */
+export function flakyTest(
+  reason: string,
+  title: string,
+  body: () => Promise<void>,
+): void {
+  const declare = skipFlaky ? test.skip : test
+  declare(title, body)
+}

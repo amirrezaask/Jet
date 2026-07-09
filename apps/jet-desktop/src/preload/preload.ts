@@ -110,7 +110,7 @@ const api: JetElectronAPI = {
     spawn: req => ipcRenderer.invoke("tasks:spawn", req),
   },
   terminal: {
-    create: cwdUri => ipcRenderer.invoke("terminal:create", cwdUri),
+    create: (cwdUri, launch) => ipcRenderer.invoke("terminal:create", cwdUri, launch),
     write: (id, data) => ipcRenderer.invoke("terminal:write", id, data),
     resize: (id, cols, rows) => ipcRenderer.invoke("terminal:resize", id, cols, rows),
     onData: (id, callback) => {

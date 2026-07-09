@@ -1,14 +1,22 @@
 import type { IpcMain, WebContents } from "electron"
 import fs from "node:fs"
 import os from "node:os"
+import path from "node:path"
 import type { IPty } from "node-pty"
 import { spawn as spawnPty } from "node-pty"
 import { fileUriToPath } from "@jet/shared"
 
-type TerminalEntry = { pty: IPty; webContents: WebContents }
+type TerminalEntry = {
+  pty: IPty
+  webContents: WebContents
+  cwd: string
+  shellTitleBase?: string
+  shellTitleIndex?: number
+}
 
 const terminals = new Map<string, TerminalEntry>()
 const terminalWebContents = new WeakSet<WebContents>()
+let terminalSequence = 0
 
 function disposeTerminal(id: string): void {
   const entry = terminals.get(id)
@@ -61,28 +69,20 @@ function fallbackShells(primary: ShellSpec): ShellSpec[] {
   return alt
 }
 
-function shellTitleInit(shellFile: string): string | null {
-  if (shellFile.endsWith("zsh")) {
-    return [
-      "precmd_jet_title() { printf '\\033]0;%s\\007' \"${PWD##*/}\"; }",
-      "preexec_jet_title() { printf '\\033]0;%s\\007' \"$1\"; }",
-      "precmd_functions+=(precmd_jet_title)",
-      "preexec_functions+=(preexec_jet_title)",
-      "precmd_jet_title",
-      "",
-    ].join("\n")
+function nextShellTitle(cwd: string, shellFile: string): {
+  base: string
+  index: number
+  title: string
+} {
+  const base = path.basename(shellFile).replace(/\.exe$/i, "") || "shell"
+  const used = new Set<number>()
+  for (const entry of terminals.values()) {
+    if (entry.cwd !== cwd || entry.shellTitleBase !== base) continue
+    if (entry.shellTitleIndex) used.add(entry.shellTitleIndex)
   }
-  if (shellFile.endsWith("bash")) {
-    return [
-      "__jet_title_precmd() { printf '\\033]0;%s\\007' \"${PWD##*/}\"; }",
-      "__jet_title_debug() { [ -n \"$COMP_LINE\" ] && return; [ \"$BASH_COMMAND\" = \"$PROMPT_COMMAND\" ] && return; printf '\\033]0;%s\\007' \"$BASH_COMMAND\"; }",
-      "PROMPT_COMMAND=\"__jet_title_precmd;${PROMPT_COMMAND:-}\"",
-      "trap '__jet_title_debug' DEBUG",
-      "__jet_title_precmd",
-      "",
-    ].join("\n")
-  }
-  return null
+  let index = 1
+  while (used.has(index)) index += 1
+  return { base, index, title: index === 1 ? base : `${base} ${index}` }
 }
 
 function resolveCwd(cwdUri: string): string {
@@ -101,9 +101,15 @@ function resolveCwd(cwdUri: string): string {
 }
 
 export function registerTerminalHandlers(ipcMain: IpcMain) {
-  ipcMain.handle("terminal:create", async (event, cwdUri: string) => {
-    const id = `term-${Date.now()}`
-    const primary = primaryShell()
+  ipcMain.handle("terminal:create", async (
+    event,
+    cwdUri: string,
+    launch?: { command: string; args?: string[] },
+  ) => {
+    const id = `term-${Date.now()}-${++terminalSequence}`
+    const primary = launch
+      ? { file: launch.command, args: launch.args ?? [] }
+      : primaryShell()
     const cwd = resolveCwd(cwdUri)
     const env = {
       ...process.env,
@@ -112,7 +118,7 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
       HOME: process.env.HOME || os.homedir(),
     } as Record<string, string>
 
-    const attempts: ShellSpec[] = [primary, ...fallbackShells(primary)]
+    const attempts: ShellSpec[] = launch ? [primary] : [primary, ...fallbackShells(primary)]
     let pty: IPty | null = null
     let usedShell: ShellSpec | null = null
     const errors: string[] = []
@@ -136,11 +142,15 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
       throw new Error(`Failed to spawn shell in ${cwd}. Attempts: ${errors.join(" | ")}`)
     }
 
-    const init = shellTitleInit(usedShell.file)
-    if (init) pty.write(init)
-
     const webContents = event.sender
-    terminals.set(id, { pty, webContents })
+    const shellTitle = launch ? null : nextShellTitle(cwd, usedShell.file)
+    terminals.set(id, {
+      pty,
+      webContents,
+      cwd,
+      shellTitleBase: shellTitle?.base,
+      shellTitleIndex: shellTitle?.index,
+    })
     if (!terminalWebContents.has(webContents)) {
       terminalWebContents.add(webContents)
       webContents.once("destroyed", () => disposeTerminalsForWebContents(webContents))
@@ -153,7 +163,7 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
     pty.onExit(() => {
       terminals.delete(id)
     })
-    return { id }
+    return { id, title: shellTitle?.title }
   })
 
   ipcMain.handle("terminal:write", async (_e, id: string, data: string) => {

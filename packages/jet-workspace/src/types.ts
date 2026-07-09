@@ -90,7 +90,10 @@ export type JetElectronLSP = {
 }
 
 export type JetElectronTerminal = {
-  create(cwdUri: string): Promise<{ id: string }>
+  create(
+    cwdUri: string,
+    launch?: { command: string; args?: string[] },
+  ): Promise<{ id: string; title?: string }>
   write(id: string, data: string): Promise<void>
   resize(id: string, cols: number, rows: number): Promise<void>
   onData(id: string, callback: (data: string) => void): () => void

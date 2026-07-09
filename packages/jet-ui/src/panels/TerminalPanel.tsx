@@ -8,7 +8,7 @@ import { subscribeRootStyle } from "./root-style-observer.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
-  initialCommand?: string
+  launchCommand?: string
   theme: JetTheme
   tabId: string
   focused: boolean
@@ -127,7 +127,7 @@ function focusTerminalInput(): void {
 
 export function TerminalPanel({
   cwdRootUri,
-  initialCommand,
+  launchCommand,
   theme,
   tabId,
   focused,
@@ -221,22 +221,18 @@ export function TerminalPanel({
       }
       ptyStarted = true
       void terminalApi
-        .create(cwdRootUri)
-        .then(({ id }) => {
+        .create(cwdRootUri, launchCommand ? { command: launchCommand } : undefined)
+        .then(({ id, title }) => {
           if (cancelled) {
             void terminalApi.dispose(id)
             return
           }
           session.ptyId = id
           onPtyId?.(tabId, id)
+          if (title) onTitleChangeRef.current?.(tabId, title)
           unsub = terminalApi.onData(id, data => term.write(data))
           dataDispose = term.onData(data => void terminalApi.write(id, data))
           syncFit()
-          if (initialCommand?.trim()) {
-            window.setTimeout(() => {
-              void terminalApi.write(id, `${initialCommand.trim()}\r`)
-            }, 80)
-          }
           if (focused && isActive) focusTerminalInput()
         })
         .catch(err => {
@@ -287,7 +283,7 @@ export function TerminalPanel({
       term.dispose()
       sessionRef.current = null
     }
-  }, [cwdRootUri, tabId, onPtyId, initialCommand])
+  }, [cwdRootUri, tabId, onPtyId, launchCommand])
 
   useEffect(() => {
     const session = sessionRef.current

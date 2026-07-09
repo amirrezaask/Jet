@@ -13,3 +13,4 @@ packages/jet-app/dist-electron
 test-results
 .t3code
 .synara
+.pnpm-store

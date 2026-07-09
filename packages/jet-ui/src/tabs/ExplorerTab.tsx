@@ -114,7 +114,7 @@ export function ExplorerTab({
         if (node.data.kind === "root") {
           return (
             <>
-              <Folder className="size-3.5 shrink-0 text-foreground" />
+              <Folder data-jet-project-icon className="size-6! shrink-0 text-foreground" />
               <span
                 className="truncate font-medium text-foreground"
                 title={node.data.path}

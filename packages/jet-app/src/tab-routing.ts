@@ -63,7 +63,7 @@ export type OpenTerminalTabOpts = {
   sessionKey?: string
   label?: string
   cwdRootUri?: string
-  initialCommand?: string
+  launchCommand?: string
 }
 
 export function listTerminalTabs(
@@ -98,7 +98,7 @@ export function openTerminalTab(
   const label = opts.label ?? "Terminal"
   const cwdRootUri = opts.cwdRootUri ?? workspace.root?.uri ?? ""
   const panel = resolveAuxiliaryPanel(tree, focused, { splitEdge: "bottom" })
-  registerTerminalSession(tabId, cwdRootUri, opts.initialCommand)
+  registerTerminalSession(tabId, cwdRootUri, opts.launchCommand)
   return workspace.openOrFocusTab(tree, panel, {
     id: tabId,
     kind: TERMINAL_TAB_TYPE_ID,

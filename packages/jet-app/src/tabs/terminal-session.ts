@@ -1,22 +1,22 @@
 const ptyByTabId = new Map<string, string>()
 const cwdByTabId = new Map<string, string>()
-const initialCommandByTabId = new Map<string, string>()
+const launchCommandByTabId = new Map<string, string>()
 
 export function registerTerminalSession(
   tabId: string,
   cwdRootUri: string,
-  initialCommand?: string,
+  launchCommand?: string,
 ): void {
   cwdByTabId.set(tabId, cwdRootUri)
-  if (initialCommand) initialCommandByTabId.set(tabId, initialCommand)
+  if (launchCommand) launchCommandByTabId.set(tabId, launchCommand)
 }
 
 export function terminalCwdForTab(tabId: string): string {
   return cwdByTabId.get(tabId) ?? ""
 }
 
-export function terminalInitialCommandForTab(tabId: string): string | undefined {
-  return initialCommandByTabId.get(tabId)
+export function terminalLaunchCommandForTab(tabId: string): string | undefined {
+  return launchCommandByTabId.get(tabId)
 }
 
 export function trackTerminalPtyId(tabId: string, ptyId: string | null): void {
@@ -31,5 +31,5 @@ export function terminalPtyIdForTab(tabId: string): string | undefined {
 export function clearTerminalSession(tabId: string): void {
   ptyByTabId.delete(tabId)
   cwdByTabId.delete(tabId)
-  initialCommandByTabId.delete(tabId)
+  launchCommandByTabId.delete(tabId)
 }
