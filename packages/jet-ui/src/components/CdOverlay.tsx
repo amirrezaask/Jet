@@ -137,42 +137,52 @@ export function CdOverlay({
     }
   }, [open, initialPath, workspaceFolders])
 
+  const readDirGen = useRef(0)
+
   useEffect(() => {
     if (!open || !completionCtx || !window.jet?.fs || showWorkspaceRoots) {
       setEntries([])
       return
     }
 
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    void window.jet.fs
-      .readDir(pathToFileUri(completionCtx.parentPath))
-      .then(list => {
-        if (cancelled) return
-        setEntries(
-          list
-            .filter(e => e.isDirectory || showFiles)
-            .map(e => ({ uri: e.uri, name: e.name, isDirectory: e.isDirectory }))
-            .sort((a, b) => {
-              if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
-              return a.name.localeCompare(b.name)
-            })
-            .slice(0, MAX_DIR_ENTRIES),
-        )
-      })
-      .catch(() => {
-        if (!cancelled) {
+    const gen = ++readDirGen.current
+    let spinnerId: number | undefined
+    const parentPath = completionCtx.parentPath
+    const run = () => {
+      spinnerId = window.setTimeout(() => {
+        if (gen === readDirGen.current) setLoading(true)
+      }, 60)
+      setError(null)
+      void window.jet!.fs!
+        .readDir(pathToFileUri(parentPath))
+        .then(list => {
+          if (spinnerId !== undefined) window.clearTimeout(spinnerId)
+          if (gen !== readDirGen.current) return
+          setEntries(
+            list
+              .filter(e => e.isDirectory || showFiles)
+              .map(e => ({ uri: e.uri, name: e.name, isDirectory: e.isDirectory }))
+              .sort((a, b) => {
+                if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+                return a.name.localeCompare(b.name)
+              })
+              .slice(0, MAX_DIR_ENTRIES),
+          )
+          setLoading(false)
+        })
+        .catch(() => {
+          if (spinnerId !== undefined) window.clearTimeout(spinnerId)
+          if (gen !== readDirGen.current) return
           setEntries([])
           setError("Cannot read this directory.")
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+          setLoading(false)
+        })
+    }
 
+    const id = window.setTimeout(run, 80)
     return () => {
-      cancelled = true
+      window.clearTimeout(id)
+      if (spinnerId !== undefined) window.clearTimeout(spinnerId)
     }
   }, [open, completionCtx?.parentPath, showWorkspaceRoots, showFiles])
 
