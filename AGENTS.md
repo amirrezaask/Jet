@@ -39,14 +39,12 @@ Do **not** copy large chunks wholesale; match Jet’s architecture.
 ```
 jet/
 ├── apps/
-│   ├── jet-desktop/        Electron shell (main, preload, vite config)
-│   └── jet-web/            Browser dev server for agent testing
+│   └── jet-desktop/        Electron shell (main, preload, vite config)
 ├── fixtures/
-│   └── sample-workspace/   Fixture project for browser smoke tests
+│   └── sample-workspace/   Fixture project for Electron smoke tests
 ├── packages/
 │   ├── jet-shared/         URIs, Emitter, git types, panel primitives
-│   ├── jet-node-host/      Shared Node FS/git + dev middleware
-│   ├── jet-browser/        Browser window.jet client + __jetAgent bridge
+│   ├── jet-node-host/      Shared Node FS/git helpers
 │   ├── jet-panels/         PanelTree — splits, tabs, resize, serde
 │   ├── jet-workspace/      WorkspaceService, TabRegistry, commands, keymaps
 │   ├── jet-codemirror/     createJetEditorView, theme, languages, LSP transport
@@ -54,6 +52,9 @@ jet/
 │   ├── jet-extension-host/ JetAPI + loadEditorRc
 │   ├── jet-ui/             PanelDock, tabs, CommandPalette, themes
 │   └── jet-app/            JetApp root React component + index.html
+├── tests/
+│   ├── electron/           Playwright Electron E2E specs
+│   └── bench/              UX latency benchmarks
 ├── package.json            turbo scripts, postinstall electron rebuild
 ├── pnpm-workspace.yaml
 ├── turbo.json
@@ -68,7 +69,7 @@ jet/
 jet-shared  ←  jet-panels, jet-workspace
 jet-workspace + jet-panels + jet-codemirror  ←  jet-ui
 jet-ui + jet-workspace + jet-lsp + jet-extension-host  ←  jet-app
-jet-app  ←  jet-desktop, jet-web
+jet-app  ←  jet-desktop
 ```
 
 Keep imports acyclic. Lower layers must not import React or Electron.
@@ -82,9 +83,9 @@ Keep imports acyclic. Lower layers must not import React or Electron.
 ```bash
 pnpm install          # runs postinstall: pnpm rebuild electron
 pnpm dev              # turbo → jet-desktop vite + electron
-pnpm dev:web          # browser dev server on :5174 (agent-testable)
 pnpm typecheck        # all packages
-pnpm test:web         # Playwright smoke (starts dev:web on :5174)
+pnpm test:electron    # Playwright Electron specs (headless via JET_E2E)
+pnpm test:bench       # UX latency benchmarks (tests/bench/)
 pnpm build            # production build (renderer + electron main/preload)
 ```
 
@@ -94,7 +95,7 @@ Run typecheck from repo root before finishing a task:
 pnpm -r typecheck
 ```
 
-Then validate with **browser MCP** on `pnpm dev:web` (see Agent browser testing).
+Then validate with **`pnpm test:electron`** (see Agent visual verification).
 
 ---
 
@@ -102,27 +103,26 @@ Then validate with **browser MCP** on `pnpm dev:web` (see Agent browser testing)
 
 ## Agent visual verification (MANDATORY)
 
-**Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, git/explorer views, error/status messages — MUST be visually verified before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient. A task closed on "types pass" without a screenshot review is a regression waiting to ship.
+**Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, explorer views, error/status messages — MUST be verified with Playwright Electron specs before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient.
 
-### Preferred: Playwright specs (headless)
+### Preferred: Electron Playwright specs (headless)
 
-Browser tests live in `tests/specs/*.spec.ts`. Playwright starts `pnpm dev:web` automatically (port **5174**, headless Chromium).
+Specs live in `tests/electron/*.electron.spec.ts`. `launchJet()` sets `JET_E2E=1`, which hides the window unless `JET_HEADED=1` or `PWDEBUG=1`.
 
-1. Run all browser specs: `pnpm test:web`
-2. Add or extend a spec under `tests/specs/` — helpers in `tests/helpers/` (`boot`, `agent`, `showExplorer`, `expectListRows`, `dispatchTabDrag`, …). See `tests/README.md`.
-3. For pixel regressions only: `tests/specs/*.screenshot.spec.ts` via `pnpm test:screenshots`
+1. Run all Electron specs: `pnpm test:electron`
+2. Add or extend a spec under `tests/electron/` — helpers in `tests/helpers/` and `tests/electron/_launch.ts`. See `tests/README.md`.
+3. Perf-sensitive changes (startup, editor mount, palette, search, theme) → also `pnpm test:bench`
 4. New feature → new spec with structural assertions (`expect`, `expectLayout`, scoped panel selectors). Do not rely on unrelated specs to cover new paths.
-5. Run `pnpm test:web` before declaring a broad UI change complete.
+5. Run `pnpm test:electron` before declaring a broad UI change complete.
 
 **Verification preference (strict):**
 
 1. DOM/text assertions via Playwright `expect` on scoped selectors (palette open, row content, panel visibility).
-2. `agent(page).getState()` — workspace path, palette flag, panel kinds, font size.
+2. `window.__jetAgent.getState()` — workspace path, palette flag, panel kinds, font size.
 3. List helpers — `expectLayout`, `expectNoOverlap`, `expectRowTextVisible` on `[data-jet-list-panel="…"] [data-jet-list-item]`.
-4. Screenshots — only for pixel-level checks (`pnpm test:screenshots`); not the default gate.
-5. Browser MCP — when a check cannot be expressed in Playwright (see fallback below).
+4. Benchmarks — `pnpm test:bench` for latency regressions (median vs `tests/bench/budgets.json`).
 
-**Rule:** if Playwright cannot express the check (native folder dialog, LSP-only path), state that explicitly and fall back to the browser MCP flow below. Do NOT silently skip visual verification.
+**Out of scope for automation (document explicitly if touched):** native OS folder/file dialogs, unimplemented git stage/revert chords.
 
 ### Anti-tautology rules for list/search UIs (MANDATORY)
 
@@ -136,48 +136,20 @@ Query echoes are worthless as proof. Asserting `export` in `body` after typing `
 
 Scope every list assertion with the panel data attribute (`[data-jet-list-panel="locationlist"] [data-jet-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
 
-### Electron-only regressions (native chrome)
+### Native chrome & Electron IPC
 
-Browser scenarios run in headless Chromium and **cannot see native macOS traffic lights, native menu bar, folder dialogs, or Electron-only IPC paths**. Any change to:
+Any change to title bar geometry, native menu, window frame, or Electron IPC (`fs:*`, `git:*`, `lsp:*`, `search:*`, `agents:*`) MUST have a sibling spec in `tests/electron/`. Run `pnpm test:electron`. Canonical example: `tests/electron/titlebar.electron.spec.ts` (macOS traffic-light clearance).
 
-- `titleBarStyle`, `trafficLightPosition`, `JetTitleBar` spacer geometry
-- Native menu (`Menu.setApplicationMenu`)
-- Window frame, min/max/close controls
-- Electron main IPC handlers (`fs:*`, `git:*`, `lsp:*`, `search:*`)
+### Headed debugging
 
-MUST be verified by an Electron-side Playwright spec in `tests/electron/*.electron.spec.ts` using `_electron.launch`. Run `pnpm test:electron` (builds `jet-desktop` first, then launches the packaged main). The `tests/electron/titlebar.electron.spec.ts` spec is the canonical example — it geometry-asserts that the menubar's leftmost item clears the 78px traffic-light zone. Add a sibling spec when you touch native chrome.
-
-**Do not** rely on `?titlebar=1` browser preview alone — it renders the React component without the underlying Electron window, so overlap with real traffic lights is invisible.
-
-### Fallback: browser MCP
-
-When a scenario cannot express the check, validate live via the **Cursor browser MCP** (`cursor-ide-browser`).
-
-Use `pnpm dev:web` to run Jet in a normal browser with real FS/git backed by a Vite dev middleware (sandboxed to allowed roots).
-
-### Browser MCP workflow (required)
-
-1. **Start server** — `pnpm dev:web` (port **5174**). If port in use, reuse existing server or `pkill -f "jet-web.*vite"` then restart.
-2. **Navigate** — `browser_navigate` to quick-start URL (below) or `/` for empty panel shell.
-3. **Lock** — `browser_lock` after navigate, before interactions.
-4. **Inspect** — `browser_snapshot` for a11y tree; `browser_take_screenshot` when visual check needed.
-5. **Interact** — `browser_click`, `browser_type`, `browser_press_key` for user flows.
-6. **Programmatic** — `browser_cdp` with `Runtime.evaluate` for `window.__jetAgent` (see below).
-7. **Unlock** — `browser_unlock` when finished.
-
-Prefer MCP browser tools over asking the user to test manually. Use `browser_cdp` for assertions; avoid CDP `Input.*` (use dedicated browser tools for clicks/keys).
-
-### Quick start URL
-
+```bash
+JET_HEADED=1 pnpm test:electron   # show BrowserWindow
+PWDEBUG=1 pnpm test:electron      # Playwright inspector + headed
 ```
-http://localhost:5174/?workspace=fixtures/sample-workspace&file=src/index.ts
-```
-
-
 
 ### Programmatic control (`window.__jetAgent`)
 
-After page load:
+After `launchJet()`:
 
 ```javascript
 await window.__jetAgent.waitForReady()
@@ -186,43 +158,8 @@ await window.__jetAgent.openFile("src/index.ts")
 await window.__jetAgent.waitForEditor()
 await window.__jetAgent.executeCommand("ui.showCommandPalette")
 window.__jetAgent.getState()
+window.__jetAgent.getPerfMeasures()  // User Timing measures (jet:*)
 ```
-
-Use via `browser_cdp` → `Runtime.evaluate` with `awaitPromise: true` for async calls.
-
-### Agent smoke checklist (run via browser MCP)
-
-1. `pnpm dev:web` — server on port **5174**
-2. `browser_navigate` → quick-start URL
-3. `browser_snapshot` — editor visible (`.cm-editor`); explorer **not** shown by default (use `explorer.show` / Mod-Shift-e)
-4. `browser_cdp` / `Runtime.evaluate`: `await __jetAgent.waitForReady()` then `waitForEditor()` after openFile
-5. `__jetAgent.getState()` — workspace path set, one editor tab per opened file
-6. `browser_click` editor → `browser_type` — chars appear without extra focus click
-7. Edit + save (Mod-s via `browser_press_key` or `executeCommand("workspace.saveFile")`) — persists under `fixtures/sample-workspace/`
-8. Git tab — status visible (fixture is a git repo)
-9. Close dirty tab — confirm dialog (may need user handoff in MCP; note if blocked)
-10. Cold start with no workspace query — empty panel (no auto-reopen of last folder)
-11. Command palette — `executeCommand("ui.showCommandPalette")` → centered modal (not trapped in panel)
-12. New file / open file — editor tab lands in **right** main panel, not stacked below sidebar
-
-For feature-specific work, add targeted MCP checks (e.g. `executeCommand("editor.find")` → search panel in snapshot; `executeCommand("ui.toggleColorScheme")` → light/dark shell + editor colors).
-
-### Browser mode limitations
-
-- No native folder dialog — use URL query params or `__jetAgent.openWorkspace()`
-- No LSP (TypeScript completions) — Electron only
-- FS access sandboxed to `JET_DEV_ROOTS` (default: `fixtures/` + repo root)
-- Dev-only — not a production web deployment
-
-
-
-### Allowed roots env
-
-```bash
-JET_DEV_ROOTS="/path/a:/path/b" pnpm dev:web
-```
-
-(Path separator is OS-native; on macOS/Linux use `:` between entries.)
 
 ### Dev gotchas (Electron + Vite)
 
@@ -233,7 +170,7 @@ JET_DEV_ROOTS="/path/a:/path/b" pnpm dev:web
    `package.json` `"main": "dist-electron/main.js"` is relative to `apps/jet-desktop`.
 3. **Do not bundle** `ws` in main process — mark external in rollup or you get `bufferutil` resolve errors.
 4. **Dev URL** — main process loads `process.env.VITE_DEV_SERVER_URL`, not hardcoded `:5173`.
-5. **Stale dev processes** — if port conflict: `pkill -f "jet-web.*vite"` or `pkill -f Electron` then `pnpm dev` / `pnpm dev:web`.
+5. **Stale dev processes** — if port conflict: `pkill -f Electron` then `pnpm dev`.
 6. **Stray output** — old builds may land in `packages/jet-app/dist-electron/`; canonical output is `apps/jet-desktop/dist-electron/`. Both are gitignored where applicable.
 7. **Tailwind v4 position utilities missing** — Vite root is `packages/jet-app`; classes like `absolute` / `fixed` / `inset-0` used only in sibling packages (`jet-ui`, …) were not generated until `@source` was added in `jet-ui/src/styles/globals.css`. Symptom: panels stack vertically (editor at bottom), palette full-width. After CSS changes, reload window if HMR does not pick up `@source`.
 
@@ -387,7 +324,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 - **Env:** `JET_AGENT_MOCK=1` forces mock driver in Electron (also always mock in browser)
 - **Push updates:** `agents:threadUpdated` IPC in Electron; browser polls `readThread` during turns
 - **Key files:** `packages/jet-agents/`, `packages/jet-ui/src/agents/`, `apps/jet-desktop/src/main/agents.ts`, `packages/jet-app/src/tabs/agent-*.tab.ts`
-- **Tests:** `tests/specs/agents.spec.ts` (browser); `tests/electron/agents.electron.spec.ts` (real `cursor-agent`, skipped when CLI absent)
+- **Tests:** `tests/electron/agents.electron.spec.ts` (real `cursor-agent`, skipped when CLI absent); `tests/electron/agents-mock.electron.spec.ts` (`JET_AGENT_MOCK=1`)
 
 Manual Electron smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop button → archive via explorer context menu or `agent.archive`.
 
@@ -432,7 +369,7 @@ Manual Electron smoke: `pnpm dev` → `agent.new` → send prompt → interrupt 
 
 ## What Works Today (smoke test)
 
-1. `pnpm dev` / `pnpm dev:web` → blank editor shell (single panel, no WelcomeView)
+1. `pnpm dev` → editor shell with workspace from cwd/CLI args
 2. **Open Folder** / `workspace.cd` / query URL / `__jetAgent.openWorkspace()` / desktop CLI (`jet .`, `jet path/to/file`) → FS + optional `.jet/editorrc.ts`
 3. Default layout on first open — **editor only** (no explorer/git until `explorer.show` / `git.showChanges`)
 4. Explorer tree — on demand via Mod-Shift-e; click file → editor tab
@@ -489,7 +426,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **Remaining (Shell tier)**
 
-- [x] **Shell:** tab drag/drop automated browser test (`tests/specs/tab-drag.spec.ts`)
+- [x] **Shell:** tab drag/drop automated Electron test (removed with tab bar — buffer list covers switcher)
 
 
 
@@ -520,7 +457,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] Welcome view when no folder open
 - [x] GitTab lazy import; PaletteOverlay
 - [x] Tab row overflow menu
-- [x] Playwright smoke tests wired to `pnpm dev:web` + `__jetAgent`
+- [x] Playwright Electron smoke tests wired to `pnpm test:electron` + `__jetAgent`
 - [x] **Shell:** Vercel dark/light theme + `ui.toggleColorScheme`
 - [x] **Shell:** welcome view, status bar (L/C, LSP, message)
 - [x] Reduce main bundle — lazy Search/Problems tabs; Vite `manualChunks` for git-diff/shiki
@@ -641,7 +578,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 3. Register command + keybinding if user-facing
 4. If new tab kind: extend `TabKind`, `TabRegistry`, `TabBody`, default registration in `App.tsx`
 5. Run `pnpm -r typecheck`
-6. **Browser MCP smoke test** — `pnpm dev:web` + checklist above; cover changed behavior
+6. **Electron Playwright** — `pnpm test:electron` (+ `pnpm test:bench` when perf-sensitive); cover changed behavior
 
 ---
 
@@ -649,7 +586,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 ## Agent Anti-patterns
 
-- Shipping UI/UX changes without **browser MCP** validation on `pnpm dev:web`
+- Shipping UI/UX changes without **`pnpm test:electron`** validation
 - Putting editor document text in React `useState`
 - Importing Electron in renderer packages (use `window.jet`)
 - Bundling native Node modules (`ws`, `node-pty`) in electron main vite build without `external`
@@ -670,7 +607,7 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 - [x] **`JetApp` unused imports** — removed unused `JetTheme` type import and stale `currentTree` local in `packages/jet-app/src/App.tsx`.
 
 ### Syntax highlighting for Rust (Electron only)
-- **Symptom:** User reports Rust files render with zero syntax colors when opening real repos (`loki/`) in the **Electron desktop app**. Fixture-based `.rs` files under `fixtures/sample-workspace` DO get highlighted correctly in `pnpm dev:web` (a11y-verified).
+- **Symptom:** User reports Rust files render with zero syntax colors when opening real repos (`loki/`) in the **Electron desktop app**. Fixture-based `.rs` files under `fixtures/sample-workspace` are covered by `tests/electron/syntax-rust.electron.spec.ts`.
 - **Investigated:** `@lezer/rust` styleTags map `t.definitionKeyword`/`t.moduleKeyword`/`t.modifier`/`t.integer`/`t.lineComment`/`t.paren` etc. All inherit from parent tags (`keyword`, `number`, `comment`, `bracket`) — theme should still color via inheritance. `packages/jet-codemirror/src/theme.ts` covers `t.keyword`, `t.controlKeyword+t.modifier`, `t.number`, `t.comment`, `t.operator`, `t.punctuation`, `t.string`. `t.bracket` is NOT mapped — but that only affects `{}`, `()`, `[]`.
 - **Repro path:** Only reproduces in Electron dev with real user workspace. Browser scenario runner cannot reproduce.
 - **Hypothesis to test next:** (a) `import("@codemirror/lang-rust")` dynamic import fails silently under Electron production/hot-reload → `loadLanguage` never resolves, view boots with no language extension. (b) `@replit/codemirror-indentation-markers` or another plugin's CSS is overriding token colors. (c) Race between `attachView` calling `reconfigureLanguage` and initial `createJetEditorView` when session cache hits.

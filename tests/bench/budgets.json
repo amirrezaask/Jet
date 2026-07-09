@@ -1,0 +1,9 @@
+{
+  "cold-start": 5000,
+  "open-file": 800,
+  "palette-open": 150,
+  "quick-open": 400,
+  "project-search": 1000,
+  "typing-latency": 50,
+  "theme-switch": 200
+}

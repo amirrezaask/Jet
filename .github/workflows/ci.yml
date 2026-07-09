@@ -36,3 +36,21 @@ jobs:
       - run: pnpm exec playwright install chromium --with-deps
       - run: npm install -g typescript-language-server typescript
       - run: pnpm test:electron
+
+  test-bench:
+    runs-on: macos-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm exec playwright install chromium --with-deps
+      - run: pnpm test:bench
+        env:
+          JET_BENCH_SLACK: "1.5"

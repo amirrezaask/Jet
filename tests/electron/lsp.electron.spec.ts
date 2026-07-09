@@ -90,6 +90,26 @@ test.describe("electron LSP", () => {
     }
   })
 
+  test("go to references populates location list", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/index.ts")
+      await waitForLspConnected(page)
+
+      await page.locator(".cm-content").click()
+      await page.keyboard.press("Home")
+      for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight")
+      await page.evaluate(async () => {
+        await window.__jetAgent!.executeCommand("editor.action.goToReferences")
+      })
+      await page.waitForTimeout(2000)
+
+      await expect(page.locator("body")).toContainText(/reference|utils|greet/i)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("LSP resolves nested project root when workspace is parent folder", async () => {
     const { app, page } = await launchJet("fixtures")
     try {

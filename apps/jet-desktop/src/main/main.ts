@@ -8,7 +8,7 @@ import { registerAgentHandlers } from "./agents.js"
 import { registerSearchHandlers } from "./search.js"
 import { registerLspHandlers, stopAllLsp, setLspCrashHandler } from "./lsp-bridge.js"
 import { registerTaskHandlers } from "./tasks.js"
-import { registerTerminalHandlers, stopAllTerminals } from "./terminal.js"
+import { registerTerminalHandlers, stopAllTerminals, disposeTerminalsForWebContents } from "./terminal.js"
 import { registerWorkspaceHost, stopWorkspaceHost } from "./workspace-host.js"
 import { stopAllBackgroundWorkers, prewarmBackgroundWorkers } from "./background-pool.js"
 
@@ -166,9 +166,13 @@ function applyNativeChrome(win: BrowserWindow, colors: { background: string; for
 function createWindow() {
   const isMac = process.platform === "darwin"
   const cachedChrome = readCachedChrome()
+  const e2e = process.env.JET_E2E === "1"
+  const headed = process.env.JET_HEADED === "1" || process.env.PWDEBUG === "1"
+  const headlessE2e = e2e && !headed
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
+    show: !headlessE2e,
     backgroundColor: cachedChrome.background,
     titleBarStyle: isMac ? "hiddenInset" : "default",
     ...(process.platform === "win32"
@@ -192,8 +196,6 @@ function createWindow() {
     },
   })
 
-  const e2e = process.env.JET_E2E === "1"
-
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
     if (!e2e) mainWindow.webContents.openDevTools({ mode: "detach" })
@@ -204,9 +206,20 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"))
   }
 
+  mainWindow.on("close", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      disposeTerminalsForWebContents(mainWindow.webContents)
+    }
+    stopAllTerminals()
+  })
+
   mainWindow.on("closed", () => {
     mainWindow = null
   })
+}
+
+if (process.env.JET_E2E === "1" && process.env.JET_E2E_USER_DATA) {
+  app.setPath("userData", process.env.JET_E2E_USER_DATA)
 }
 
 const gotLock = app.requestSingleInstanceLock()

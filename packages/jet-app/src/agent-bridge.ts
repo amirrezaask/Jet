@@ -38,6 +38,10 @@ export type JetAgentAPI = {
   dismissConfirm(): Promise<void>
   readFixtureFile(relativePath: string): Promise<string>
   waitForListRows(panel: string, minItems: number, timeoutMs?: number): Promise<void>
+  getPerfMeasures(names?: string[]): { name: string; durationMs: number }[]
+  clearPerf(): void
+  markPerf(name: string): void
+  measurePerf(name: string, startMark: string, endMark?: string): void
 }
 
 export type AgentBridgeContext = {
@@ -87,6 +91,9 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
       if (!rootPath) {
         throw new Error("No workspace open — call openWorkspace first")
       }
+      if (typeof performance?.mark === "function") {
+        performance.mark("jet:editor-mounted:start")
+      }
       const uri = toWorkspaceFileUri(rootPath, relativeOrUri)
       const path = uri.replace(/^file:\/\//, "")
       current.openFile(uri, decodeURIComponent(path))
@@ -112,9 +119,22 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
       }
     },
     async waitForReady() {
+      if (typeof performance?.mark === "function") {
+        performance.mark("jet:ready:start")
+      }
       const deadline = Date.now() + 10_000
       while (Date.now() < deadline) {
-        if (ctx().layoutReady) return
+        if (ctx().layoutReady) {
+          if (typeof performance?.mark === "function") {
+            performance.mark("jet:ready:end")
+            try {
+              performance.measure("jet:ready", "jet:ready:start", "jet:ready:end")
+            } catch {
+              performance.measure("jet:ready", "jet:ready:end")
+            }
+          }
+          return
+        }
         await new Promise(r => setTimeout(r, 50))
       }
       throw new Error("Jet layout did not become ready in time")
@@ -123,7 +143,17 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
       const deadline = Date.now() + timeoutMs
       while (Date.now() < deadline) {
         const editor = document.querySelector(".cm-editor")
-        if (editor) return
+        if (editor) {
+          if (typeof performance?.mark === "function") {
+            performance.mark("jet:editor-mounted:end")
+            try {
+              performance.measure("jet:editor-mounted", "jet:editor-mounted:start", "jet:editor-mounted:end")
+            } catch {
+              performance.measure("jet:editor-mounted", "jet:editor-mounted:end")
+            }
+          }
+          return
+        }
         await new Promise(r => setTimeout(r, 50))
       }
       throw new Error("Editor did not mount in time")
@@ -174,6 +204,33 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
         await new Promise(r => setTimeout(r, 50))
       }
       throw new Error(`waitForListRows: expected >= ${minItems} rows in panel "${panel}"`)
+    },
+    getPerfMeasures(names?: string[]) {
+      if (typeof performance?.getEntriesByType !== "function") return []
+      const measures = performance.getEntriesByType("measure") as PerformanceMeasure[]
+      const filtered = names?.length
+        ? measures.filter(m => names.includes(m.name))
+        : measures.filter(m => m.name.startsWith("jet:"))
+      return filtered.map(m => ({ name: m.name, durationMs: m.duration }))
+    },
+    clearPerf() {
+      if (typeof performance?.clearMeasures === "function") performance.clearMeasures()
+      if (typeof performance?.clearMarks === "function") performance.clearMarks()
+    },
+    markPerf(name: string) {
+      if (typeof performance?.mark === "function") performance.mark(name)
+    },
+    measurePerf(name: string, startMark: string, endMark?: string) {
+      if (typeof performance?.measure !== "function") return
+      try {
+        performance.measure(name, startMark, endMark)
+      } catch {
+        try {
+          performance.measure(name, startMark)
+        } catch {
+          // ignore invalid mark pairs in tests
+        }
+      }
     },
   }
 }

@@ -8,6 +8,36 @@ import { fileUriToPath } from "@jet/shared"
 type TerminalEntry = { pty: IPty; webContents: WebContents }
 
 const terminals = new Map<string, TerminalEntry>()
+const terminalWebContents = new WeakSet<WebContents>()
+
+function disposeTerminal(id: string): void {
+  const entry = terminals.get(id)
+  if (!entry) return
+  terminals.delete(id)
+  try {
+    entry.pty.kill()
+  } catch {
+    // pty may already be dead
+  }
+}
+
+function disposeTerminalsForWebContents(webContents: WebContents): void {
+  for (const [id, entry] of terminals) {
+    if (entry.webContents === webContents) disposeTerminal(id)
+  }
+}
+
+function sendTerminalData(entry: TerminalEntry, id: string, data: string): void {
+  if (entry.webContents.isDestroyed()) {
+    disposeTerminal(id)
+    return
+  }
+  try {
+    entry.webContents.send("terminal:data", id, data)
+  } catch {
+    disposeTerminal(id)
+  }
+}
 
 type ShellSpec = { file: string; args: string[] }
 
@@ -111,8 +141,14 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
 
     const webContents = event.sender
     terminals.set(id, { pty, webContents })
+    if (!terminalWebContents.has(webContents)) {
+      terminalWebContents.add(webContents)
+      webContents.once("destroyed", () => disposeTerminalsForWebContents(webContents))
+    }
     pty.onData(data => {
-      terminals.get(id)?.webContents.send("terminal:data", id, data)
+      const entry = terminals.get(id)
+      if (!entry) return
+      sendTerminalData(entry, id, data)
     })
     pty.onExit(() => {
       terminals.delete(id)
@@ -131,15 +167,12 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
   })
 
   ipcMain.handle("terminal:dispose", async (_e, id: string) => {
-    const entry = terminals.get(id)
-    if (entry) {
-      entry.pty.kill()
-      terminals.delete(id)
-    }
+    disposeTerminal(id)
   })
 }
 
 export function stopAllTerminals() {
-  for (const { pty } of terminals.values()) pty.kill()
-  terminals.clear()
+  for (const id of [...terminals.keys()]) disposeTerminal(id)
 }
+
+export { disposeTerminalsForWebContents }

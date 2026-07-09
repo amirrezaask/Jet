@@ -1,11 +1,18 @@
 import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test"
 import { resolve } from "node:path"
 import { execSync } from "node:child_process"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
 
 export const REPO_ROOT = resolve(__dirname, "..", "..")
 export const DESKTOP_DIR = resolve(REPO_ROOT, "apps/jet-desktop")
 export const MAIN_JS = resolve(DESKTOP_DIR, "dist-electron/main.js")
 export const SAMPLE = "fixtures/sample-workspace"
+
+export type LaunchJetOptions = {
+  workspaceRel?: string
+  env?: Record<string, string>
+}
 
 let ptySpawnAvailable: boolean | null = null
 
@@ -52,12 +59,31 @@ export function hasCursorAgent(): boolean {
   }
 }
 
-export async function launchJet(workspaceRel = SAMPLE): Promise<{ app: ElectronApplication; page: Page }> {
+export async function launchJet(
+  workspaceRelOrOpts: string | LaunchJetOptions = SAMPLE,
+): Promise<{ app: ElectronApplication; page: Page }> {
+  const opts: LaunchJetOptions =
+    typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
+  const workspaceRel = opts.workspaceRel ?? SAMPLE
   const workspacePath = resolve(REPO_ROOT, workspaceRel)
+  const userDataDir = mkdtempSync(resolve(tmpdir(), "jet-e2e-"))
+  const pathEnv = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    process.env.PATH ?? "",
+  ].join(":")
   const app = await electron.launch({
     args: [MAIN_JS, "--", workspacePath],
     cwd: DESKTOP_DIR,
-    env: { ...process.env, JET_E2E: "1" },
+    env: {
+      ...process.env,
+      ...opts.env,
+      PATH: pathEnv,
+      JET_E2E: "1",
+      JET_E2E_USER_DATA: userDataDir,
+      ...(process.env.JET_HEADED ? { JET_HEADED: process.env.JET_HEADED } : {}),
+      ...(process.env.PWDEBUG ? { PWDEBUG: process.env.PWDEBUG } : {}),
+    },
   })
 
   const page = await waitForAppPage(app)
@@ -87,6 +113,34 @@ export async function openFixtureFile(page: Page, rel: string): Promise<void> {
     await window.__jetAgent!.openFile(f)
     await window.__jetAgent!.waitForEditor()
   }, rel)
+  await focusEditor(page)
+}
+
+export async function focusEditor(page: Page): Promise<void> {
+  await page.locator(".cm-content").first().click({ timeout: 10_000 })
+}
+
+export async function waitForDialog(page: Page, timeoutMs = 30_000): Promise<void> {
+  await page.getByRole("dialog").first().waitFor({ state: "visible", timeout: timeoutMs })
+}
+
+export async function openQuickOpen(page: Page): Promise<void> {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    await execCommand(page, "workspace.quickOpen")
+    try {
+      await waitForDialog(page, 2_000)
+      return
+    } catch {
+      await page.waitForTimeout(250)
+    }
+  }
+  throw new Error("Quick open dialog did not appear")
+}
+
+export async function typeInEditor(page: Page, text: string): Promise<void> {
+  await focusEditor(page)
+  await page.keyboard.type(text)
 }
 
 export async function showTerminal(page: Page): Promise<void> {
@@ -103,13 +157,37 @@ export async function readTerminalText(page: Page): Promise<string> {
   })
 }
 
-export async function waitForLspConnected(page: Page, timeoutMs = 20_000): Promise<void> {
+export async function confirmOverlay(page: Page): Promise<void> {
+  await page.keyboard.press("Meta+Enter")
+}
+
+export async function waitForSearchReady(page: Page, timeoutMs = 30_000): Promise<void> {
   await page.waitForFunction(
-    () => {
-      const btn = document.querySelector("footer button")
-      return btn?.textContent?.includes("connected") ?? false
+    async () => {
+      const path = window.__jetAgent?.getState().activeWorkspace
+      if (!path || !window.jet?.search?.isScanReady) return false
+      const uri = path.startsWith("/") ? `file://${path}` : `file:///${path}`
+      return window.jet.search.isScanReady(uri)
     },
     null,
     { timeout: timeoutMs },
   )
+}
+
+export async function waitForLspConnected(page: Page, timeoutMs = 60_000): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const footer = document.querySelector("footer")
+      const text = footer?.textContent ?? ""
+      return text.includes("LSP connected") || text.includes("Language server connected")
+    },
+    null,
+    { timeout: timeoutMs },
+  )
+}
+
+export async function execCommand(page: Page, commandId: string): Promise<void> {
+  await page.evaluate(async (cmd: string) => {
+    await window.__jetAgent!.executeCommand(cmd)
+  }, commandId)
 }

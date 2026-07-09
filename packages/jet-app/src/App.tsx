@@ -1010,7 +1010,9 @@ export function JetApp() {
       const path = fileUriToPath(fileUri)
       const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
       const conn = await lspManager.ensureServerForFile(file, rootUri)
-      if (!conn) {
+      if (conn) {
+        bumpLspRevision()
+      } else {
         const spawnErr = lspManager.consumeLastSpawnError()
         if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
           showJetToast(
@@ -1019,7 +1021,7 @@ export function JetApp() {
         }
       }
     },
-    [lspManager, workspace],
+    [lspManager, workspace, bumpLspRevision],
   )
 
   useEffect(() => {
