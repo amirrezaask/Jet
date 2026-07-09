@@ -89,6 +89,30 @@ test.describe("electron terminal panel drag and focus", () => {
       await expect.poll(() => page.evaluate(() => window.__jetAgent!.getState().focusedPanel)).toBe(
         rightPanelId,
       )
+
+      const rightMarker = "JET-RIGHT-FOCUS-TEST"
+      await page.keyboard.type(rightMarker)
+      await expect
+        .poll(async () => (await rightPanel.locator(".xterm-rows").textContent()) ?? "")
+        .toContain(rightMarker)
+      await expect
+        .poll(async () => (await leftPanel.locator(".xterm-rows").textContent()) ?? "")
+        .not.toContain(rightMarker)
+
+      await leftPanel.locator(".jet-terminal-surface").click()
+      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getState().focusedPanel)).toBe(
+        leftPanelId,
+      )
+
+      const leftMarker = "JET-LEFT-FOCUS-TEST"
+      await page.keyboard.type(leftMarker)
+      await expect
+        .poll(async () => (await leftPanel.locator(".xterm-rows").textContent()) ?? "")
+        .toContain(leftMarker)
+      await expect
+        .poll(async () => (await rightPanel.locator(".xterm-rows").textContent()) ?? "")
+        .not.toContain(leftMarker)
+
       expect(runtimeErrors).toEqual([])
     } finally {
       await app.close()

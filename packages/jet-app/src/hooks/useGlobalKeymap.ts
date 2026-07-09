@@ -118,9 +118,11 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
           return
         }
         if (ctx.terminalFocus && !inXterm) {
-          const textarea = document.querySelector<HTMLTextAreaElement>(
-            "[data-jet-tab-slot][data-jet-tab-active] [data-jet-terminal-panel] .xterm-helper-textarea",
-          )
+          const panel = getFocusedPanelRef.current()
+          const selector = panel
+            ? `[data-jet-panel-leaf="${panel.id}"] [data-jet-tab-slot][data-jet-tab-active] [data-jet-terminal-panel] .xterm-helper-textarea`
+            : "[data-jet-tab-slot][data-jet-tab-active] [data-jet-terminal-panel] .xterm-helper-textarea"
+          const textarea = document.querySelector<HTMLTextAreaElement>(selector)
           if (textarea && document.activeElement !== textarea) textarea.focus()
         }
         return

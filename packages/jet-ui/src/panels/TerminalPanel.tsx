@@ -118,9 +118,9 @@ function resizePty(session: TerminalSession): void {
   void window.jet?.terminal?.resize(session.ptyId, session.term.cols, session.term.rows)
 }
 
-function focusTerminalInput(): void {
+function focusTerminalInput(tabId: string): void {
   const textarea = document.querySelector<HTMLTextAreaElement>(
-    "[data-jet-tab-slot][data-jet-tab-active] [data-jet-terminal-panel] .xterm-helper-textarea",
+    `[data-jet-tab-slot="${tabId}"] [data-jet-terminal-panel] .xterm-helper-textarea`,
   )
   textarea?.focus()
 }
@@ -233,7 +233,7 @@ export function TerminalPanel({
           unsub = terminalApi.onData(id, data => term.write(data))
           dataDispose = term.onData(data => void terminalApi.write(id, data))
           syncFit()
-          if (focused && isActive) focusTerminalInput()
+          if (focused && isActive) focusTerminalInput(tabId)
         })
         .catch(err => {
           const message = err instanceof Error ? err.message : String(err)
@@ -263,7 +263,7 @@ export function TerminalPanel({
       requestAnimationFrame(() => {
         syncTypography()
         if (syncFit()) term.refresh(0, term.rows - 1)
-        if (focused && isActive) focusTerminalInput()
+        if (focused && isActive) focusTerminalInput(tabId)
       })
     })
     visibilityObserver.observe(container)
@@ -299,9 +299,9 @@ export function TerminalPanel({
         resizePty(session)
         session.term.refresh(0, session.term.rows - 1)
       }
-      focusTerminalInput()
+      focusTerminalInput(tabId)
     })
-  }, [focused, isActive, theme])
+  }, [focused, isActive, theme, tabId])
 
   if (!window.jet?.terminal) {
     return (
@@ -325,7 +325,7 @@ export function TerminalPanel({
       className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
       data-jet-terminal-panel=""
       onMouseDown={() => {
-        focusTerminalInput()
+        focusTerminalInput(tabId)
       }}
     >
       <div
