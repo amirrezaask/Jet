@@ -8,6 +8,7 @@ import { subscribeRootStyle } from "./root-style-observer.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
+  initialCommand?: string
   theme: JetTheme
   tabId: string
   focused: boolean
@@ -45,12 +46,64 @@ function cellMetricsValid(term: XTerm): boolean {
 
 function themeOptions(theme: JetTheme): NonNullable<XTerm["options"]["theme"]> {
   const c = theme.colors
+  const ansi = theme.terminalAnsi
   return {
     background: c.bg,
     foreground: c.text,
     cursor: c.accent,
     selectionBackground: c.selection,
+    black: ansi?.black,
+    red: ansi?.red,
+    green: ansi?.green,
+    yellow: ansi?.yellow,
+    blue: ansi?.blue,
+    magenta: ansi?.magenta,
+    cyan: ansi?.cyan,
+    white: ansi?.white,
+    brightBlack: ansi?.brightBlack,
+    brightRed: ansi?.brightRed,
+    brightGreen: ansi?.brightGreen,
+    brightYellow: ansi?.brightYellow,
+    brightBlue: ansi?.brightBlue,
+    brightMagenta: ansi?.brightMagenta,
+    brightCyan: ansi?.brightCyan,
+    brightWhite: ansi?.brightWhite,
   }
+}
+
+function readCssVar(name: string): string | null {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value.length > 0 ? value : null
+}
+
+function liveThemeOptions(theme: JetTheme): NonNullable<XTerm["options"]["theme"]> {
+  const options = themeOptions(theme)
+  return {
+    ...options,
+    background: readCssVar("--jet-bg") ?? options.background,
+    foreground: readCssVar("--jet-text") ?? options.foreground,
+    cursor: readCssVar("--jet-accent") ?? options.cursor,
+    selectionBackground: readCssVar("--jet-selection") ?? options.selectionBackground,
+  }
+}
+
+function readTerminalBackground(theme: JetTheme): string {
+  return readCssVar("--jet-bg") ?? theme.colors.bg
+}
+
+function readTerminalLineHeight(): number {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--jet-terminal-line-height")
+    .trim()
+  const n = parseFloat(raw)
+  return Number.isFinite(n) && n >= 1 ? n : 1.2
+}
+
+function readTerminalCursorBlink(): boolean {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--jet-terminal-cursor-blink")
+    .trim()
+  return raw !== "0"
 }
 
 function fitWhenReady(session: TerminalSession, container: HTMLElement): boolean {
@@ -74,6 +127,7 @@ function focusTerminalInput(): void {
 
 export function TerminalPanel({
   cwdRootUri,
+  initialCommand,
   theme,
   tabId,
   focused,
@@ -98,8 +152,8 @@ export function TerminalPanel({
       theme: themeOptions(theme),
       fontSize: readRootFontSize(),
       fontFamily: readTerminalFontFamily(),
-      lineHeight: 1.2,
-      cursorBlink: true,
+      lineHeight: readTerminalLineHeight(),
+      cursorBlink: readTerminalCursorBlink(),
       scrollback: 5000,
     })
     const fit = new FitAddon()
@@ -131,6 +185,8 @@ export function TerminalPanel({
     const syncTypography = () => {
       const px = readRootFontSize()
       const family = readTerminalFontFamily()
+      const lineHeight = readTerminalLineHeight()
+      const cursorBlink = readTerminalCursorBlink()
       let changed = false
       if (term.options.fontSize !== px) {
         term.options.fontSize = px
@@ -140,7 +196,21 @@ export function TerminalPanel({
         term.options.fontFamily = family
         changed = true
       }
+      if (term.options.lineHeight !== lineHeight) {
+        term.options.lineHeight = lineHeight
+        changed = true
+      }
+      if (term.options.cursorBlink !== cursorBlink) {
+        term.options.cursorBlink = cursorBlink
+        changed = true
+      }
       if (changed && syncFit()) term.refresh(0, term.rows - 1)
+    }
+
+    const syncTheme = () => {
+      term.options.theme = liveThemeOptions(themeRef.current)
+      container.style.background = readTerminalBackground(themeRef.current)
+      term.refresh(0, Math.max(0, term.rows - 1))
     }
 
     const startPty = () => {
@@ -162,6 +232,11 @@ export function TerminalPanel({
           unsub = terminalApi.onData(id, data => term.write(data))
           dataDispose = term.onData(data => void terminalApi.write(id, data))
           syncFit()
+          if (initialCommand?.trim()) {
+            window.setTimeout(() => {
+              void terminalApi.write(id, `${initialCommand.trim()}\r`)
+            }, 80)
+          }
           if (focused && isActive) focusTerminalInput()
         })
         .catch(err => {
@@ -171,6 +246,7 @@ export function TerminalPanel({
     }
 
     requestAnimationFrame(() => {
+      syncTheme()
       syncTypography()
       syncFit()
       startPty()
@@ -181,7 +257,10 @@ export function TerminalPanel({
     })
     resizeObserver.observe(container)
 
-    const unsubscribeFontObserver = subscribeRootStyle(() => syncTypography())
+    const unsubscribeRootStyleObserver = subscribeRootStyle(() => {
+      syncTheme()
+      syncTypography()
+    })
 
     const visibilityObserver = new IntersectionObserver(entries => {
       if (!entries.some(e => e.isIntersecting)) return
@@ -196,7 +275,7 @@ export function TerminalPanel({
     return () => {
       cancelled = true
       resizeObserver.disconnect()
-      unsubscribeFontObserver()
+      unsubscribeRootStyleObserver()
       visibilityObserver.disconnect()
       titleDispose.dispose()
       dataDispose?.dispose()
@@ -208,14 +287,15 @@ export function TerminalPanel({
       term.dispose()
       sessionRef.current = null
     }
-  }, [cwdRootUri, tabId, onPtyId])
+  }, [cwdRootUri, tabId, onPtyId, initialCommand])
 
   useEffect(() => {
     const session = sessionRef.current
     const container = containerRef.current
     if (!session || !container) return
 
-    session.term.options.theme = themeOptions(themeRef.current)
+    session.term.options.theme = liveThemeOptions(themeRef.current)
+    container.style.background = readTerminalBackground(themeRef.current)
 
     if (!focused || !isActive) return
     requestAnimationFrame(() => {
@@ -246,7 +326,7 @@ export function TerminalPanel({
 
   return (
     <div
-      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden"
+      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
       data-jet-terminal-panel=""
       onMouseDown={() => {
         focusTerminalInput()
@@ -254,7 +334,7 @@ export function TerminalPanel({
     >
       <div
         ref={containerRef}
-        className="jet-terminal-surface min-h-0 flex-1 overflow-hidden p-1"
+        className="jet-terminal-surface min-h-0 flex-1 overflow-hidden p-1.5"
         style={{ background: theme.colors.bg }}
       />
     </div>

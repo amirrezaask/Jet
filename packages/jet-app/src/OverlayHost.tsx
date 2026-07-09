@@ -6,8 +6,11 @@ import {
   OutlineOverlay,
   ProjectSwitcherOverlay,
   QuickOpenOverlay,
+  SettingsOverlay,
   showJetToast,
+  bundledThemeList,
   type OutlineEntry,
+  type JetAppearanceSettings,
 } from "@jet/ui"
 import type { JetProject, WorkspaceFolder, WorkspaceService } from "@jet/workspace"
 
@@ -49,6 +52,11 @@ export type OverlayHostProps = {
   addWorkspaceOpen: boolean
   onAddWorkspaceOpenChange: (open: boolean) => void
   onAddWorkspaceSelect: (path: string) => void
+  settingsOpen: boolean
+  onSettingsOpenChange: (open: boolean) => void
+  appearanceSettings: JetAppearanceSettings
+  onAppearanceSettingsChange: (settings: JetAppearanceSettings) => void
+  onResetAppearanceSettings: () => void
   resolveHomeDir: () => Promise<string>
   projectSwitcherOpen: boolean
   onProjectSwitcherOpenChange: (open: boolean) => void
@@ -176,6 +184,17 @@ export default function OverlayHost(props: OverlayHostProps) {
           title="Add workspace folder"
           description="Pick a folder to add"
           primaryHint="Add Project"
+        />
+      ) : null}
+
+      {props.settingsOpen ? (
+        <SettingsOverlay
+          open
+          onOpenChange={props.onSettingsOpenChange}
+          themes={bundledThemeList}
+          settings={props.appearanceSettings}
+          onSettingsChange={props.onAppearanceSettingsChange}
+          onReset={props.onResetAppearanceSettings}
         />
       ) : null}
 

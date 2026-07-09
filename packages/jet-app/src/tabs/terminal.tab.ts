@@ -6,6 +6,7 @@ import {
   clearTerminalSession,
   registerTerminalSession,
   terminalCwdForTab,
+  terminalInitialCommandForTab,
   terminalPtyIdForTab,
   trackTerminalPtyId,
 } from "./terminal-session.js"
@@ -28,6 +29,7 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
     render: (instance, ctx) =>
       createElement(TerminalPanel, {
         cwdRootUri: instance.state.cwdRootUri,
+        initialCommand: terminalInitialCommandForTab(instance.id),
         theme: deps.getTheme(),
         tabId: instance.id,
         focused: ctx.focused && ctx.isActive,

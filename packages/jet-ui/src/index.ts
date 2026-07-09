@@ -45,6 +45,11 @@ export {
 export { CdOverlay } from "./components/CdOverlay.js"
 export { ProjectSwitcherOverlay } from "./components/ProjectSwitcherOverlay.js"
 export { PaletteOverlay } from "./components/PaletteOverlay.js"
+export {
+  SettingsOverlay,
+  type JetAppearanceSettings,
+  type JetDensity,
+} from "./components/SettingsOverlay.js"
 export { StatusBar } from "./status/StatusBar.js"
 export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js"
 export { setEditorCursor, getEditorCursor } from "./status/editor-cursor-store.js"
@@ -54,6 +59,7 @@ export { AgentChatView } from "./agents/AgentChatView.js"
 export { AgentExplorerTab, type AgentExplorerWorkspaceGroup } from "./agents/AgentExplorerTab.js"
 export {
   TerminalExplorerTab,
+  type TerminalAgentShortcut,
   type TerminalExplorerGroup,
   type TerminalExplorerEntry,
 } from "./tabs/TerminalExplorerTab.js"
@@ -66,8 +72,15 @@ export { Text, textVariants, type TextProps } from "./components/Text.js"
 export { Surface, surfaceVariants, type SurfaceProps } from "./components/Surface.js"
 export {
   bundledThemes,
+  bundledThemeList,
   defaultDark,
   defaultLight,
+  defaultThemeId,
+  defaultThemeIdForScheme,
+  getThemeById,
+  siblingThemeForScheme,
+  themeFamilyForId,
+  themePreviewSwatches,
   vercelDark,
   vercelLight,
   themeForScheme,

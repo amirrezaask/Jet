@@ -20,6 +20,8 @@ export function createTerminalExplorerTabType(
         activeTerminalTabId: deps.getActiveTerminalTabId(),
         onFocusTerminal: (panelId, tabId) => deps.focusTerminalTab(panelId, tabId),
         onNewTerminal: rootUri => void deps.newTerminalInWorkspace(rootUri),
+        onLaunchAgentTerminal: (rootUri, shortcut) =>
+          deps.launchAgentTerminal(rootUri, shortcut),
         onCloseTerminal: (panelId, tabId) => deps.closeTerminalTab(panelId, tabId),
       }),
     keepMounted: true,

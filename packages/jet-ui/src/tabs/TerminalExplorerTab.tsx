@@ -1,5 +1,5 @@
 import type { PanelId } from "@jet/shared"
-import { Plus, X } from "lucide-react"
+import { ChevronDown, Plus, X } from "lucide-react"
 import { memo, useEffect, useMemo, useRef } from "react"
 import {
   ContextMenu,
@@ -7,8 +7,15 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../components/ui/context-menu.js"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu.js"
 import { Button } from "../components/ui/button.js"
 import { TreeView, type TreeDataSource, type TreeNode } from "../components/TreeView.js"
+import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
 
 export type TerminalExplorerEntry = {
   tabId: string
@@ -25,7 +32,19 @@ export type TerminalExplorerGroup = {
   terminals: TerminalExplorerEntry[]
 }
 
+export type TerminalAgentShortcut = {
+  id: "codex" | "claude" | "cursor"
+  label: string
+  command: string
+}
+
 export const TERMINAL_EXPLORER_LIST_ID = "jet:terminal-explorer"
+
+const AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
+  { id: "codex", label: "Codex", command: "codex", Icon: OpenAI },
+  { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
+  { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
+]
 
 type TerminalNodeData =
   | { kind: "group"; group: TerminalExplorerGroup }
@@ -36,6 +55,7 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
   activeTerminalTabId: string | null
   onFocusTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
+  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   onCloseTerminal: (panelId: PanelId, tabId: string) => void
   onOpenFolder?: () => void
 }) {
@@ -44,6 +64,7 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
     activeTerminalTabId,
     onFocusTerminal,
     onNewTerminal,
+    onLaunchAgentTerminal,
     onCloseTerminal,
     onOpenFolder,
   } = props
@@ -120,18 +141,44 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
           if (node.data.kind === "group" && node.data.group.rootUri.length > 0) {
             const rootUri = node.data.group.rootUri
             return (
-              <button
-                type="button"
-                title="New terminal"
-                aria-label="New terminal"
-                className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/tree-row:opacity-100"
-                onClick={e => {
-                  e.stopPropagation()
-                  onNewTerminal(rootUri)
-                }}
-              >
-                <Plus className="size-3" />
-              </button>
+              <span className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  title="New terminal"
+                  aria-label="New terminal"
+                  className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:text-foreground group-hover/tree-row:opacity-100"
+                  onClick={e => {
+                    e.stopPropagation()
+                    onNewTerminal(rootUri)
+                  }}
+                >
+                  <Plus className="size-3" />
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      title="Launch agent"
+                      aria-label="Launch agent"
+                      className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:text-foreground group-hover/tree-row:opacity-100"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <ChevronDown className="size-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" side="right">
+                  {AGENT_SHORTCUTS.map(shortcut => (
+                    <DropdownMenuItem
+                      key={shortcut.id}
+                      onSelect={() => onLaunchAgentTerminal(rootUri, shortcut)}
+                    >
+                      <shortcut.Icon className="size-4" />
+                      {shortcut.label}
+                    </DropdownMenuItem>
+                  ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </span>
             )
           }
           if (node.data.kind === "terminal") {

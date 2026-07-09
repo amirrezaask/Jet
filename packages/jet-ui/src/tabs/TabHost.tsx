@@ -21,6 +21,7 @@ function TabSlotInner({
   isActive,
   store,
   registry,
+  renderRevision,
 }: {
   tabId: string
   panelId: PanelId
@@ -28,7 +29,9 @@ function TabSlotInner({
   isActive: boolean
   store: TabStore
   registry: TabTypeRegistry
+  renderRevision?: string | number
 }) {
+  void renderRevision
   useTabRevision(store, tabId)
   const instance = store.get(tabId)
   if (!instance) return null
@@ -50,6 +53,7 @@ function TabHostInner({
   focused,
   store,
   registry,
+  renderRevision,
 }: {
   tabIds: string[]
   activeTabId: string
@@ -57,6 +61,7 @@ function TabHostInner({
   focused: boolean
   store: TabStore
   registry: TabTypeRegistry
+  renderRevision?: string | number
 }) {
   return (
     <div className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
@@ -79,6 +84,7 @@ function TabHostInner({
               isActive={isActive}
               store={store}
               registry={registry}
+              renderRevision={renderRevision}
             />
           </div>
         )

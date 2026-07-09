@@ -47,12 +47,38 @@ export type JetHighlightColors = {
   label: string
 }
 
+export type JetTerminalAnsiColors = {
+  black: string
+  red: string
+  green: string
+  yellow: string
+  blue: string
+  magenta: string
+  cyan: string
+  white: string
+  brightBlack: string
+  brightRed: string
+  brightGreen: string
+  brightYellow: string
+  brightBlue: string
+  brightMagenta: string
+  brightCyan: string
+  brightWhite: string
+}
+
 export type { JetShadcnTokens }
 export { shadcnDefaultDark, shadcnDefaultLight, jetColorsFromShadcn, applyShadcnTokens } from "./shadcn-tokens.js"
 
 export type JetTheme = {
   id: string
   name: string
+  scheme?: ColorScheme
+  family?: string
+  sourceName?: string
+  sourceUrl?: string
+  license?: string
+  previewSwatches?: string[]
+  terminalAnsi?: JetTerminalAnsiColors
   colors: JetColors
   highlights: JetHighlightColors
   /** When set, shell tokens use exact shadcn CSS variables. */
@@ -87,6 +113,7 @@ export const defaultJetTheme: JetTheme = {
 }
 
 export function isDarkTheme(theme: JetTheme): boolean {
+  if (theme.scheme) return theme.scheme === "dark"
   return theme.id.includes("light") ? false : true
 }
 

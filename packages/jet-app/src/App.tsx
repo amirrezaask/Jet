@@ -59,7 +59,6 @@ import {
   problemsFingerprint,
   setPendingEditorNavigation,
   setPendingInitialContent,
-  type ColorScheme,
 } from "@jet/codemirror"
 import {
   TabStore,
@@ -68,7 +67,12 @@ import {
   PanelBody,
   PanelTabBar,
   StatusBar,
-  themeForScheme,
+  SettingsOverlay,
+  bundledThemeList,
+  defaultThemeId,
+  defaultThemeIdForScheme,
+  getThemeById,
+  siblingThemeForScheme,
   syncNativeChromeFromTheme,
   getEditorView,
   getAllEditorViews,
@@ -81,6 +85,8 @@ import {
   WhichKeyPanel,
   type AgentExplorerWorkspaceGroup,
   type TerminalExplorerGroup,
+  type TerminalAgentShortcut,
+  type JetAppearanceSettings,
   type OutlineEntry,
   type WhichKeyEntry,
   TooltipProvider,
@@ -121,7 +127,12 @@ import {
   closePanelIfEmpty,
   reconcileFocusedPanel,
 } from "./panel-routing.js"
-import { openAgentChatTab, openAgentExplorerTab, openTerminalTab } from "./tab-routing.js"
+import {
+  listTerminalTabs,
+  openAgentChatTab,
+  openAgentExplorerTab,
+  openTerminalTab,
+} from "./tab-routing.js"
 import { stripSidebarTabsFromTree } from "./sidebar-tree.js"
 import { buildTerminalExplorerGroups, nextTerminalLabel } from "./terminal-explorer.js"
 import {
@@ -134,11 +145,27 @@ import { loadGlobalJetrc } from "./load-global-jetrc.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
 import { useFileDrop } from "./use-file-drop.js"
 
+type ColorScheme = "dark" | "light"
+
+const THEME_ID_STORAGE_KEY = "jet-theme-id"
 const COLOR_SCHEME_KEY = "jet-color-scheme"
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 const FONT_SIZE_STORAGE_KEY = "jet-font-size"
+const APPEARANCE_STORAGE_KEY = "jet-appearance-settings"
 const DEFAULT_FONT_SIZE = 13
 const FONT_SIZE_STEP = 2
+const DEFAULT_MONO_FONT =
+  '"Geist Mono Variable", "Geist Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, monospace'
+const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
+  themeId: defaultThemeId,
+  fontSize: DEFAULT_FONT_SIZE,
+  monoFontFamily: DEFAULT_MONO_FONT,
+  terminalLineHeight: 1.2,
+  editorLineHeight: 1.45,
+  density: "compact",
+  cursorBlink: true,
+  reducedMotion: false,
+}
 const OverlayHost = lazy(() => import("./OverlayHost.js"))
 
 const FN_BY_COMMAND_ID = ((): Map<string, string> => {
@@ -148,6 +175,16 @@ const FN_BY_COMMAND_ID = ((): Map<string, string> => {
 })()
 
 type OpenWorkspaceOptions = { replace?: boolean; silent?: boolean }
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === "number" ? value : parseFloat(String(value ?? ""))
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(min, Math.min(max, n))
+}
+
+function normalizeThemeId(value: unknown): string {
+  return getThemeById(typeof value === "string" ? value : null).id
+}
 
 function loadStoredFontSize(): number {
   try {
@@ -161,33 +198,82 @@ function loadStoredFontSize(): number {
   }
 }
 
-function applyRootFontSize(px: number): void {
-  document.documentElement.style.fontSize = `${px}px`
+function loadStoredThemeId(): string {
+  try {
+    const rawTheme = localStorage.getItem(THEME_ID_STORAGE_KEY)
+    if (rawTheme) return normalizeThemeId(rawTheme)
+    const rawScheme = localStorage.getItem(COLOR_SCHEME_KEY)
+    if (rawScheme === "light" || rawScheme === "dark") {
+      return defaultThemeIdForScheme(rawScheme)
+    }
+  } catch {
+    /* ignore */
+  }
+  return defaultThemeId
+}
+
+function loadAppearanceSettings(): JetAppearanceSettings {
+  const base: JetAppearanceSettings = {
+    ...DEFAULT_APPEARANCE_SETTINGS,
+    themeId: loadStoredThemeId(),
+    fontSize: loadStoredFontSize(),
+  }
+  try {
+    const raw = localStorage.getItem(APPEARANCE_STORAGE_KEY)
+    if (!raw) return base
+    const parsed = JSON.parse(raw) as Partial<JetAppearanceSettings>
+    return {
+      themeId: normalizeThemeId(parsed.themeId ?? base.themeId),
+      fontSize: clampNumber(parsed.fontSize, base.fontSize, 10, 24),
+      monoFontFamily:
+        typeof parsed.monoFontFamily === "string" && parsed.monoFontFamily.trim().length > 0
+          ? parsed.monoFontFamily
+          : base.monoFontFamily,
+      terminalLineHeight: clampNumber(parsed.terminalLineHeight, base.terminalLineHeight, 1, 2),
+      editorLineHeight: clampNumber(parsed.editorLineHeight, base.editorLineHeight, 1.1, 2),
+      density: parsed.density === "comfortable" ? "comfortable" : "compact",
+      cursorBlink: parsed.cursorBlink !== false,
+      reducedMotion: parsed.reducedMotion === true,
+    }
+  } catch {
+    return base
+  }
+}
+
+function persistAppearanceSettings(settings: JetAppearanceSettings): void {
+  try {
+    localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(settings))
+    localStorage.setItem(THEME_ID_STORAGE_KEY, settings.themeId)
+    localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(settings.fontSize))
+    localStorage.setItem(COLOR_SCHEME_KEY, getThemeById(settings.themeId).scheme ?? "dark")
+  } catch {
+    /* ignore */
+  }
+}
+
+function applyAppearanceCss(settings: JetAppearanceSettings): void {
+  const root = document.documentElement
+  root.style.fontSize = `${settings.fontSize}px`
+  root.style.setProperty("--font-mono", settings.monoFontFamily)
+  root.style.setProperty("--jet-editor-line-height", String(settings.editorLineHeight))
+  root.style.setProperty("--jet-terminal-line-height", String(settings.terminalLineHeight))
+  root.style.setProperty("--jet-terminal-cursor-blink", settings.cursorBlink ? "1" : "0")
+  root.dataset.jetDensity = settings.density
+  root.dataset.jetReducedMotion = settings.reducedMotion ? "true" : "false"
 }
 
 
 const SIDEBAR_VIEW_STORAGE_KEY = "jet-sidebar-view"
 
 function loadSidebarView(): JetSidebarView {
-  if (typeof localStorage === "undefined") return "explorer"
+  if (typeof localStorage === "undefined") return "terminal-explorer"
   const stored = localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY)
-  return stored === "terminal-explorer" ? "terminal-explorer" : "explorer"
+  if (stored === "explorer" || stored === "terminal-explorer") return stored
+  return "terminal-explorer"
 }
 
 function initialEditorLayout() {
   return JetPanelTree.editorOnlyLayout()
-}
-
-function loadStoredColorScheme(): ColorScheme {
-  try {
-    const raw = localStorage.getItem(COLOR_SCHEME_KEY)
-    if (raw === "light" || raw === "dark") return raw
-    const legacy = localStorage.getItem("jet-theme-id")
-    if (legacy?.includes("light")) return "light"
-  } catch {
-    /* ignore */
-  }
-  return "dark"
 }
 
 function normalizeAbsPath(p: string): string {
@@ -256,8 +342,10 @@ export function JetApp() {
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [editorFocused, setEditorFocused] = useState(false)
   const [layoutReady, setLayoutReady] = useState(false)
-  const [colorScheme, setColorScheme] = useState<ColorScheme>(() => loadStoredColorScheme())
-  const activeTheme = themeForScheme(colorScheme)
+  const [appearanceSettings, setAppearanceSettings] =
+    useState<JetAppearanceSettings>(() => loadAppearanceSettings())
+  const activeTheme = getThemeById(appearanceSettings.themeId)
+  const colorScheme: ColorScheme = activeTheme.scheme ?? "dark"
   const [gotoLineOpen, setGotoLineOpen] = useState(false)
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [outlineSymbols, setOutlineSymbols] = useState<OutlineEntry[]>([])
@@ -266,6 +354,7 @@ export function JetApp() {
   const [openFileOpen, setOpenFileOpen] = useState(false)
   const [cdOpen, setCdOpen] = useState(false)
   const [addWorkspaceOpen, setAddWorkspaceOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
   const [switchFolderOpen, setSwitchFolderOpen] = useState(false)
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
@@ -292,7 +381,7 @@ export function JetApp() {
   sidebarViewRef.current = sidebarView
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
   const [pendingChordPrefix, setPendingChordPrefix] = useState<string | null>(null)
-  const fontSizeRef = useRef(loadStoredFontSize())
+  const fontSizeRef = useRef(appearanceSettings.fontSize)
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>>(
@@ -738,6 +827,7 @@ export function JetApp() {
       getActiveTerminalTabId: () => getActiveTerminalTabIdRef.current(),
       focusTerminalTab: (panelId, tabId) => focusTerminalTabRef.current(panelId, tabId),
       newTerminalInWorkspace: rootUri => newTerminalInWorkspaceRef.current(rootUri),
+      launchAgentTerminal: (rootUri, shortcut) => launchAgentTerminal(rootUri, shortcut),
       closeTerminalTab: (panelId, tabId) => closeTerminalTabRef.current(panelId, tabId),
       onTerminalTitleChange: (tabId, title) => onTerminalTitleChangeRef.current(tabId, title),
       getSearchFolders: () => {
@@ -939,8 +1029,10 @@ export function JetApp() {
   }, [colorScheme, activeTheme])
 
   useEffect(() => {
-    applyRootFontSize(fontSizeRef.current)
-  }, [])
+    fontSizeRef.current = appearanceSettings.fontSize
+    persistAppearanceSettings(appearanceSettings)
+    applyAppearanceCss(appearanceSettings)
+  }, [appearanceSettings])
 
   useEffect(() => {
     if (initialized.current) return
@@ -1134,6 +1226,20 @@ export function JetApp() {
       const { panelId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
         cwdRootUri: rootUri,
         label,
+      })
+      setFocusedPanel(panelId)
+      commitTree(tree, panelId)
+    },
+    [workspace, cloneTree, commitTree],
+  )
+
+  const launchAgentTerminal = useCallback(
+    (rootUri: string, shortcut: TerminalAgentShortcut) => {
+      const tree = cloneTree()
+      const { panelId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
+        cwdRootUri: rootUri,
+        label: shortcut.label,
+        initialCommand: shortcut.command,
       })
       setFocusedPanel(panelId)
       commitTree(tree, panelId)
@@ -1565,8 +1671,24 @@ export function JetApp() {
         }
       }
       activateFolderBackground(folder.id, folderPath)
+      const tree = cloneTree()
+      if (listTerminalTabs(tree).length === 0) {
+        const { panelId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
+          cwdRootUri: folder.root.uri,
+          label: "Terminal",
+        })
+        setSidebarOpen(true)
+        setSidebarView("terminal-explorer")
+        try {
+          localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, "terminal-explorer")
+        } catch {
+          /* ignore */
+        }
+        setFocusedPanel(panelId)
+        commitTree(tree, panelId)
+      }
     },
-    [workspace, activateFolderBackground],
+    [workspace, activateFolderBackground, cloneTree, commitTree],
   )
 
   const removeWorkspaceFolder = useCallback(
@@ -1934,18 +2056,22 @@ export function JetApp() {
   }, [workspace])
 
   const handleZoom = useCallback((delta: number) => {
-    const next = fontSizeRef.current + delta * FONT_SIZE_STEP
-    if (next <= 0) return
-    fontSizeRef.current = next
-    applyRootFontSize(next)
-    localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(next))
+    setAppearanceSettings(prev => ({
+      ...prev,
+      fontSize: Math.max(10, Math.min(24, prev.fontSize + delta * FONT_SIZE_STEP)),
+    }))
   }, [])
 
   const setFontSize = useCallback((px: number) => {
-    if (px <= 0) return
-    fontSizeRef.current = px
-    applyRootFontSize(px)
-    localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(px))
+    setAppearanceSettings(prev => ({
+      ...prev,
+      fontSize: Math.max(10, Math.min(24, px)),
+    }))
+  }, [])
+
+  const resetAppearanceSettings = useCallback(() => {
+    setAppearanceSettings(DEFAULT_APPEARANCE_SETTINGS)
+    showJetToast("Appearance reset")
   }, [])
 
   const appCommands = useMemo(
@@ -2183,11 +2309,12 @@ export function JetApp() {
       commands.register(
         "ui.toggleColorScheme",
         () => {
-          setColorScheme(prev => {
-            const next: ColorScheme = prev === "dark" ? "light" : "dark"
-            localStorage.setItem(COLOR_SCHEME_KEY, next)
-            showJetToast(`Color scheme: ${next}`)
-            return next
+          setAppearanceSettings(prev => {
+            const current = getThemeById(prev.themeId)
+            const nextScheme: ColorScheme = current.scheme === "light" ? "dark" : "light"
+            const next = siblingThemeForScheme(prev.themeId, nextScheme)
+            showJetToast(`Theme: ${next.name}`)
+            return { ...prev, themeId: next.id }
           })
         },
         {
@@ -2202,9 +2329,11 @@ export function JetApp() {
       commands.register(
         "ui.setColorScheme.dark",
         () => {
-          setColorScheme("dark")
-          localStorage.setItem(COLOR_SCHEME_KEY, "dark")
-          showJetToast("Color scheme: dark")
+          setAppearanceSettings(prev => {
+            const next = siblingThemeForScheme(prev.themeId, "dark")
+            showJetToast(`Theme: ${next.name}`)
+            return { ...prev, themeId: next.id }
+          })
         },
         { id: "ui.setColorScheme.dark", title: "Color Scheme: Dark", category: "UI" },
       ),
@@ -2213,17 +2342,72 @@ export function JetApp() {
       commands.register(
         "ui.setColorScheme.light",
         () => {
-          setColorScheme("light")
-          localStorage.setItem(COLOR_SCHEME_KEY, "light")
-          showJetToast("Color scheme: light")
+          setAppearanceSettings(prev => {
+            const next = siblingThemeForScheme(prev.themeId, "light")
+            showJetToast(`Theme: ${next.name}`)
+            return { ...prev, themeId: next.id }
+          })
         },
         { id: "ui.setColorScheme.light", title: "Color Scheme: Light", category: "UI" },
+      ),
+    )
+    disposables.push(
+      commands.register(
+        "settings.show",
+        () => setSettingsOpen(true),
+        {
+          id: "settings.show",
+          title: "Settings",
+          category: "UI",
+          aliases: ["preferences", "appearance", "font", "terminal settings"],
+        },
+      ),
+    )
+    disposables.push(
+      commands.register(
+        "ui.showThemePicker",
+        () => setSettingsOpen(true),
+        {
+          id: "ui.showThemePicker",
+          title: "Theme Picker",
+          category: "UI",
+          aliases: ["themes", "colors", "ayu", "everforest", "gruvbox", "tokyonight"],
+        },
+      ),
+    )
+    for (const theme of bundledThemeList) {
+      disposables.push(
+        commands.register(
+          `ui.setTheme.${theme.id}`,
+          () => {
+            setAppearanceSettings(prev => ({ ...prev, themeId: theme.id }))
+            showJetToast(`Theme: ${theme.name}`)
+          },
+          {
+            id: `ui.setTheme.${theme.id}`,
+            title: `Theme: ${theme.name}`,
+            category: "UI",
+            aliases: [theme.family ?? "", theme.scheme ?? "", "theme"].filter(Boolean),
+          },
+        ),
+      )
+    }
+    disposables.push(
+      commands.register(
+        "ui.resetAppearance",
+        resetAppearanceSettings,
+        {
+          id: "ui.resetAppearance",
+          title: "Reset Appearance",
+          category: "UI",
+          aliases: ["reset theme", "reset font"],
+        },
       ),
     )
     return () => {
       for (const d of disposables) d?.dispose()
     }
-  }, [commands, appCommands])
+  }, [commands, appCommands, resetAppearanceSettings])
 
   useEffect(() => {
     window.__jetAgent = createAgentBridge(() => ({
@@ -2503,6 +2687,8 @@ export function JetApp() {
           { id: "locationList", label: "Show Location List", shortcut: shortcutFor("locationList"), onSelect: () => void executeCommand("locationlist.show") },
           { id: "output", label: "Show Output", shortcut: shortcutFor("output"), onSelect: () => void executeCommand("output.show") },
           { kind: "separator" as const },
+          { id: "settings", label: "Settings…", onSelect: () => void executeCommand("settings.show") },
+          { id: "themePicker", label: "Theme Picker…", onSelect: () => void executeCommand("ui.showThemePicker") },
           {
             kind: "checkbox" as const,
             id: "darkScheme",
@@ -2510,8 +2696,10 @@ export function JetApp() {
             checked: colorScheme === "dark",
             onCheckedChange: checked => {
               const next: ColorScheme = checked ? "dark" : "light"
-              setColorScheme(next)
-              localStorage.setItem(COLOR_SCHEME_KEY, next)
+              setAppearanceSettings(prev => ({
+                ...prev,
+                themeId: siblingThemeForScheme(prev.themeId, next).id,
+              }))
             },
           },
           { id: "zoomIn", label: "Zoom In", shortcut: shortcutFor("zoomIn"), onSelect: () => void executeCommand("ui.zoomIn") },
@@ -2590,6 +2778,7 @@ export function JetApp() {
             activeTerminalTabId={getActiveTerminalTabId()}
             onFocusTerminal={focusTerminalTab}
             onNewTerminal={rootUri => void newTerminalInWorkspace(rootUri)}
+            onLaunchAgentTerminal={launchAgentTerminal}
             onCloseTerminal={closeTerminalTab}
           />
         ) : null}
@@ -2625,6 +2814,7 @@ export function JetApp() {
                 store={tabStore}
                 registry={tabTypeRegistry}
                 focused={meta.focused}
+                renderRevision={`${activeTheme.id}:${appearanceSettings.fontSize}:${appearanceSettings.monoFontFamily}:${appearanceSettings.terminalLineHeight}:${appearanceSettings.cursorBlink}`}
               />
             )}
           />
@@ -2641,6 +2831,7 @@ export function JetApp() {
           switchFolderOpen ||
           cdOpen ||
           addWorkspaceOpen ||
+          settingsOpen ||
           projectSwitcherOpen ||
           outlineOpen ||
           paletteOpen) && (
@@ -2691,6 +2882,11 @@ export function JetApp() {
             addWorkspaceOpen={addWorkspaceOpen}
             onAddWorkspaceOpenChange={setAddWorkspaceOpen}
             onAddWorkspaceSelect={path => openWorkspaceFolder(path)}
+            settingsOpen={settingsOpen}
+            onSettingsOpenChange={setSettingsOpen}
+            appearanceSettings={appearanceSettings}
+            onAppearanceSettingsChange={setAppearanceSettings}
+            onResetAppearanceSettings={resetAppearanceSettings}
             resolveHomeDir={async () => {
               if (!window.jet?.getHomeDir) {
                 throw new Error("window.jet.getHomeDir not available")

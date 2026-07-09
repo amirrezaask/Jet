@@ -8,7 +8,11 @@ import type {
   ListItem,
   WorkspaceService,
 } from "@jet/workspace"
-import type { AgentExplorerWorkspaceGroup, TerminalExplorerGroup } from "@jet/ui"
+import type {
+  AgentExplorerWorkspaceGroup,
+  TerminalAgentShortcut,
+  TerminalExplorerGroup,
+} from "@jet/ui"
 import type { PanelId } from "@jet/shared"
 
 /**
@@ -63,6 +67,7 @@ export type TabContributorDeps = {
   getTerminalExplorerGroups: () => TerminalExplorerGroup[]
   focusTerminalTab: (panelId: PanelId, tabId: string) => void
   newTerminalInWorkspace: (rootUri: string) => Promise<void>
+  launchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   closeTerminalTab: (panelId: PanelId, tabId: string) => void
   getActiveTerminalTabId: () => string | null
   onTerminalTitleChange: (tabId: string, title: string) => void

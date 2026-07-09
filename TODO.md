@@ -1,6 +1,6 @@
-- no welcome page needed
-- have a add workspace button on bottom of the sidebar both tabs it should open up a popover like the muxy app popover for opening workspaces.
-- custom title bar should follow the whole app theme.
-- release build: Terminal failed to start: Error invoking remote method 'terminal:create': Error: Failed to spawn /bin/zsh in /Users/amirrezaask/dev/jet: posix_spawnp failed.
+- settings improvments ?
+- terminal tab should be closed after terminal process dies
+- each workspace has it's own set of tabs in the main panel, seperate different workspace tab sets not merge all in one.
+- custom title bar is not needed if possible merge it with the sidebar so after traffic light buttons comes the Files | terminal tab group.
 - name ? icon ?
 - better chrome font size to editor font size ratio

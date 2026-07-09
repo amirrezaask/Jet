@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button.js"
 import { ExplorerTab } from "@/tabs/ExplorerTab.js"
 import {
   TerminalExplorerTab,
+  type TerminalAgentShortcut,
   type TerminalExplorerGroup,
 } from "@/tabs/TerminalExplorerTab.js"
 
@@ -28,6 +29,7 @@ export type JetWorkspaceSidebarProps = {
   activeTerminalTabId: string | null
   onFocusTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
+  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   onCloseTerminal: (panelId: PanelId, tabId: string) => void
 }
 
@@ -74,6 +76,7 @@ export function JetWorkspaceSidebar({
   activeTerminalTabId,
   onFocusTerminal,
   onNewTerminal,
+  onLaunchAgentTerminal,
   onCloseTerminal,
 }: JetWorkspaceSidebarProps) {
   return (
@@ -98,6 +101,7 @@ export function JetWorkspaceSidebar({
             activeTerminalTabId={activeTerminalTabId}
             onFocusTerminal={onFocusTerminal}
             onNewTerminal={onNewTerminal}
+            onLaunchAgentTerminal={onLaunchAgentTerminal}
             onCloseTerminal={onCloseTerminal}
             onOpenFolder={onOpenFolder}
           />

@@ -1,5 +1,5 @@
 import type { JetPanelTree } from "@jet/workspace"
-import { panelTabIds } from "@jet/workspace"
+import { isTerminalTabId, panelTabIds } from "@jet/workspace"
 import type { PanelNode } from "@jet/panels"
 import type { Edge, PanelId, PanelView } from "@jet/shared"
 export {
@@ -31,7 +31,10 @@ export function resolveEditorPanel(
 
   if (focused) {
     const view = tree.getView(focused)
-    if (view?.kind === "tabs" || view?.kind === "empty") {
+    if (view?.kind === "empty") {
+      return focused
+    }
+    if (view?.kind === "tabs" && !isTerminalTabId(view.activeTabId)) {
       return focused
     }
   }

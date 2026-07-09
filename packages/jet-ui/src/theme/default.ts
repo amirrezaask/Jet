@@ -1,86 +1,637 @@
-import type { JetHighlightColors, JetTheme } from "@jet/codemirror"
-import {
-  jetColorsFromShadcn,
-  shadcnDefaultDark,
-  shadcnDefaultLight,
-  type JetShadcnTokens,
+import type {
+  JetColors,
+  JetHighlightColors,
+  JetTerminalAnsiColors,
+  JetTheme,
 } from "@jet/codemirror"
-
-const defaultDarkSyntax: JetHighlightColors = {
-  keyword: "oklch(0.704 0.191 22.216)",
-  controlKeyword: "oklch(0.704 0.191 22.216)",
-  function: "oklch(0.792 0.209 303.407)",
-  type: "oklch(0.623 0.214 259.815)",
-  string: "oklch(0.696 0.17 162.48)",
-  number: "oklch(0.828 0.189 84.429)",
-  boolean: "oklch(0.828 0.189 84.429)",
-  comment: "oklch(0.708 0 0)",
-  operator: "oklch(0.985 0 0)",
-  variable: "oklch(0.985 0 0)",
-  attribute: "oklch(0.792 0.209 303.407)",
-  constant: "oklch(0.623 0.214 259.815)",
-  field: "oklch(0.623 0.214 259.815)",
-  module: "oklch(0.623 0.214 259.815)",
-  label: "oklch(0.704 0.191 22.216)",
-}
-
-const defaultLightSyntax: JetHighlightColors = {
-  keyword: "oklch(0.577 0.245 27.325)",
-  controlKeyword: "oklch(0.577 0.245 27.325)",
-  function: "oklch(0.496 0.265 301.924)",
-  type: "oklch(0.488 0.243 264.376)",
-  string: "oklch(0.527 0.154 150.069)",
-  number: "oklch(0.666 0.179 58.318)",
-  boolean: "oklch(0.666 0.179 58.318)",
-  comment: "oklch(0.556 0 0)",
-  operator: "oklch(0.145 0 0)",
-  variable: "oklch(0.145 0 0)",
-  attribute: "oklch(0.496 0.265 301.924)",
-  constant: "oklch(0.488 0.243 264.376)",
-  field: "oklch(0.488 0.243 264.376)",
-  module: "oklch(0.488 0.243 264.376)",
-  label: "oklch(0.577 0.245 27.325)",
-}
-
-function buildDefaultTheme(
-  id: string,
-  name: string,
-  shadcn: JetShadcnTokens,
-  scheme: "dark" | "light",
-  highlights: JetHighlightColors,
-): JetTheme {
-  return {
-    id,
-    name,
-    colors: jetColorsFromShadcn(shadcn, scheme),
-    highlights,
-    shadcn,
-  }
-}
-
-export const defaultDark: JetTheme = buildDefaultTheme(
-  "default-dark",
-  "Default Dark",
-  shadcnDefaultDark,
-  "dark",
-  defaultDarkSyntax,
-)
-
-export const defaultLight: JetTheme = buildDefaultTheme(
-  "default-light",
-  "Default Light",
-  shadcnDefaultLight,
-  "light",
-  defaultLightSyntax,
-)
 
 export type ColorScheme = "dark" | "light"
 
+export const defaultThemeId = "ayu-dark"
+
+type ThemeFamily = "Ayu" | "Everforest" | "Gruvbox" | "TokyoNight"
+
+type PaletteThemeInput = {
+  id: string
+  name: string
+  family: ThemeFamily
+  scheme: ColorScheme
+  sourceName: string
+  sourceUrl: string
+  license: string
+  colors: JetColors
+  highlights: JetHighlightColors
+  terminalAnsi: JetTerminalAnsiColors
+}
+
+function swatches(theme: Pick<PaletteThemeInput, "colors" | "highlights" | "terminalAnsi">): string[] {
+  return [
+    theme.colors.bg,
+    theme.colors.panel,
+    theme.colors.text,
+    theme.colors.accent,
+    theme.highlights.keyword,
+    theme.highlights.function,
+    theme.highlights.string,
+    theme.terminalAnsi.yellow,
+    theme.terminalAnsi.cyan,
+    theme.colors.error,
+  ]
+}
+
+function makeTheme(input: PaletteThemeInput): JetTheme {
+  return {
+    ...input,
+    previewSwatches: swatches(input),
+  }
+}
+
+function colors(input: {
+  bg: string
+  panel: string
+  panelRaised: string
+  text: string
+  textMuted: string
+  accent: string
+  hover: string
+  selection: string
+  border: string
+  focusBorder?: string
+  error: string
+  warning: string
+  success: string
+}): JetColors {
+  return {
+    ...input,
+    focusBorder: input.focusBorder ?? input.accent,
+    backdrop: "#00000080",
+  }
+}
+
+function highlights(input: {
+  keyword: string
+  controlKeyword?: string
+  function: string
+  type: string
+  string: string
+  number: string
+  boolean?: string
+  comment: string
+  operator: string
+  variable: string
+  attribute?: string
+  constant?: string
+  field?: string
+  module?: string
+  label?: string
+}): JetHighlightColors {
+  return {
+    keyword: input.keyword,
+    controlKeyword: input.controlKeyword ?? input.keyword,
+    function: input.function,
+    type: input.type,
+    string: input.string,
+    number: input.number,
+    boolean: input.boolean ?? input.number,
+    comment: input.comment,
+    operator: input.operator,
+    variable: input.variable,
+    attribute: input.attribute ?? input.function,
+    constant: input.constant ?? input.type,
+    field: input.field ?? input.type,
+    module: input.module ?? input.type,
+    label: input.label ?? input.keyword,
+  }
+}
+
+function ansi(input: {
+  black: string
+  red: string
+  green: string
+  yellow: string
+  blue: string
+  magenta: string
+  cyan: string
+  white: string
+  brightBlack?: string
+  brightRed?: string
+  brightGreen?: string
+  brightYellow?: string
+  brightBlue?: string
+  brightMagenta?: string
+  brightCyan?: string
+  brightWhite?: string
+}): JetTerminalAnsiColors {
+  return {
+    ...input,
+    brightBlack: input.brightBlack ?? input.black,
+    brightRed: input.brightRed ?? input.red,
+    brightGreen: input.brightGreen ?? input.green,
+    brightYellow: input.brightYellow ?? input.yellow,
+    brightBlue: input.brightBlue ?? input.blue,
+    brightMagenta: input.brightMagenta ?? input.magenta,
+    brightCyan: input.brightCyan ?? input.cyan,
+    brightWhite: input.brightWhite ?? input.white,
+  }
+}
+
+const ayuSource = "https://github.com/ayu-theme/ayu-colors"
+const everforestSource = "https://raw.githubusercontent.com/sainnhe/everforest/master/palette.md"
+const gruvboxSource = "https://raw.githubusercontent.com/morhetz/gruvbox/master/colors/gruvbox.vim"
+const tokyoNightSource = "https://github.com/folke/tokyonight.nvim"
+
+export const ayuDark = makeTheme({
+  id: "ayu-dark",
+  name: "Ayu Dark",
+  family: "Ayu",
+  scheme: "dark",
+  sourceName: "ayu-theme/ayu-colors",
+  sourceUrl: ayuSource,
+  license: "MIT",
+  colors: colors({
+    bg: "#0a0e14",
+    panel: "#0f1419",
+    panelRaised: "#14191f",
+    text: "#b3b1ad",
+    textMuted: "#5c6773",
+    accent: "#ffb454",
+    hover: "#1f2430",
+    selection: "#253340",
+    border: "#1f2430",
+    error: "#f07178",
+    warning: "#ffb454",
+    success: "#aad94c",
+  }),
+  highlights: highlights({
+    keyword: "#ff8f40",
+    function: "#ffb454",
+    type: "#59c2ff",
+    string: "#aad94c",
+    number: "#d2a6ff",
+    comment: "#5c6773",
+    operator: "#f29668",
+    variable: "#b3b1ad",
+    attribute: "#ffd173",
+    constant: "#d2a6ff",
+    field: "#73d0ff",
+    module: "#95e6cb",
+  }),
+  terminalAnsi: ansi({
+    black: "#01060e",
+    red: "#ea6c73",
+    green: "#91b362",
+    yellow: "#f9af4f",
+    blue: "#53bdfa",
+    magenta: "#fae994",
+    cyan: "#90e1c6",
+    white: "#c7c7c7",
+    brightBlack: "#686868",
+    brightRed: "#f07178",
+    brightGreen: "#c2d94c",
+    brightYellow: "#ffb454",
+    brightBlue: "#59c2ff",
+    brightMagenta: "#ffee99",
+    brightCyan: "#95e6cb",
+    brightWhite: "#ffffff",
+  }),
+})
+
+export const ayuLight = makeTheme({
+  id: "ayu-light",
+  name: "Ayu Light",
+  family: "Ayu",
+  scheme: "light",
+  sourceName: "ayu-theme/ayu-colors",
+  sourceUrl: ayuSource,
+  license: "MIT",
+  colors: colors({
+    bg: "#fafafa",
+    panel: "#f3f4f5",
+    panelRaised: "#ffffff",
+    text: "#5c6166",
+    textMuted: "#8a9199",
+    accent: "#ff9940",
+    hover: "#e7eaed",
+    selection: "#d1e4ff",
+    border: "#d8dfe6",
+    error: "#f51818",
+    warning: "#ff9940",
+    success: "#86b300",
+  }),
+  highlights: highlights({
+    keyword: "#fa8d3e",
+    function: "#f2ae49",
+    type: "#55b4d4",
+    string: "#86b300",
+    number: "#a37acc",
+    comment: "#abb0b6",
+    operator: "#ed9366",
+    variable: "#5c6166",
+    attribute: "#f2ae49",
+    constant: "#a37acc",
+    field: "#55b4d4",
+    module: "#4cbf99",
+  }),
+  terminalAnsi: ansi({
+    black: "#000000",
+    red: "#f51818",
+    green: "#86b300",
+    yellow: "#ff9940",
+    blue: "#399ee6",
+    magenta: "#a37acc",
+    cyan: "#4cbf99",
+    white: "#bfbfbf",
+    brightBlack: "#686868",
+    brightRed: "#ff3333",
+    brightGreen: "#9acc00",
+    brightYellow: "#ffaa33",
+    brightBlue: "#55b4d4",
+    brightMagenta: "#b294bb",
+    brightCyan: "#6cc4a3",
+    brightWhite: "#ffffff",
+  }),
+})
+
+export const everforestDark = makeTheme({
+  id: "everforest-dark",
+  name: "Everforest Dark",
+  family: "Everforest",
+  scheme: "dark",
+  sourceName: "sainnhe/everforest medium",
+  sourceUrl: everforestSource,
+  license: "MIT",
+  colors: colors({
+    bg: "#2d353b",
+    panel: "#232a2e",
+    panelRaised: "#343f44",
+    text: "#d3c6aa",
+    textMuted: "#859289",
+    accent: "#a7c080",
+    hover: "#3d484d",
+    selection: "#4f585e",
+    border: "#475258",
+    error: "#e67e80",
+    warning: "#dbbc7f",
+    success: "#a7c080",
+  }),
+  highlights: highlights({
+    keyword: "#e67e80",
+    function: "#a7c080",
+    type: "#7fbbb3",
+    string: "#a7c080",
+    number: "#d699b6",
+    comment: "#859289",
+    operator: "#d3c6aa",
+    variable: "#d3c6aa",
+    attribute: "#dbbc7f",
+    constant: "#d699b6",
+    field: "#83c092",
+    module: "#7fbbb3",
+  }),
+  terminalAnsi: ansi({
+    black: "#475258",
+    red: "#e67e80",
+    green: "#a7c080",
+    yellow: "#dbbc7f",
+    blue: "#7fbbb3",
+    magenta: "#d699b6",
+    cyan: "#83c092",
+    white: "#d3c6aa",
+    brightBlack: "#859289",
+    brightRed: "#e67e80",
+    brightGreen: "#a7c080",
+    brightYellow: "#dbbc7f",
+    brightBlue: "#7fbbb3",
+    brightMagenta: "#d699b6",
+    brightCyan: "#83c092",
+    brightWhite: "#fff9e8",
+  }),
+})
+
+export const everforestLight = makeTheme({
+  id: "everforest-light",
+  name: "Everforest Light",
+  family: "Everforest",
+  scheme: "light",
+  sourceName: "sainnhe/everforest medium",
+  sourceUrl: everforestSource,
+  license: "MIT",
+  colors: colors({
+    bg: "#fdf6e3",
+    panel: "#efebd4",
+    panelRaised: "#fff9e8",
+    text: "#5c6a72",
+    textMuted: "#829181",
+    accent: "#dfa000",
+    hover: "#f4f0d9",
+    selection: "#e0dcc7",
+    border: "#d8d3ba",
+    error: "#f85552",
+    warning: "#dfa000",
+    success: "#8da101",
+  }),
+  highlights: highlights({
+    keyword: "#f85552",
+    function: "#8da101",
+    type: "#3a94c5",
+    string: "#8da101",
+    number: "#df69ba",
+    comment: "#939f91",
+    operator: "#5c6a72",
+    variable: "#5c6a72",
+    attribute: "#dfa000",
+    constant: "#df69ba",
+    field: "#35a77c",
+    module: "#3a94c5",
+  }),
+  terminalAnsi: ansi({
+    black: "#5c6a72",
+    red: "#f85552",
+    green: "#8da101",
+    yellow: "#dfa000",
+    blue: "#3a94c5",
+    magenta: "#df69ba",
+    cyan: "#35a77c",
+    white: "#fdf6e3",
+    brightBlack: "#829181",
+    brightRed: "#f85552",
+    brightGreen: "#93b259",
+    brightYellow: "#dfa000",
+    brightBlue: "#3a94c5",
+    brightMagenta: "#df69ba",
+    brightCyan: "#35a77c",
+    brightWhite: "#fff9e8",
+  }),
+})
+
+export const gruvboxDark = makeTheme({
+  id: "gruvbox-dark",
+  name: "Gruvbox Dark",
+  family: "Gruvbox",
+  scheme: "dark",
+  sourceName: "morhetz/gruvbox",
+  sourceUrl: gruvboxSource,
+  license: "MIT",
+  colors: colors({
+    bg: "#282828",
+    panel: "#1d2021",
+    panelRaised: "#3c3836",
+    text: "#ebdbb2",
+    textMuted: "#928374",
+    accent: "#fabd2f",
+    hover: "#32302f",
+    selection: "#504945",
+    border: "#504945",
+    error: "#fb4934",
+    warning: "#fabd2f",
+    success: "#b8bb26",
+  }),
+  highlights: highlights({
+    keyword: "#fb4934",
+    function: "#fabd2f",
+    type: "#8ec07c",
+    string: "#b8bb26",
+    number: "#d3869b",
+    comment: "#928374",
+    operator: "#ebdbb2",
+    variable: "#ebdbb2",
+    attribute: "#fe8019",
+    constant: "#d3869b",
+    field: "#83a598",
+    module: "#8ec07c",
+  }),
+  terminalAnsi: ansi({
+    black: "#282828",
+    red: "#cc241d",
+    green: "#98971a",
+    yellow: "#d79921",
+    blue: "#458588",
+    magenta: "#b16286",
+    cyan: "#689d6a",
+    white: "#a89984",
+    brightBlack: "#928374",
+    brightRed: "#fb4934",
+    brightGreen: "#b8bb26",
+    brightYellow: "#fabd2f",
+    brightBlue: "#83a598",
+    brightMagenta: "#d3869b",
+    brightCyan: "#8ec07c",
+    brightWhite: "#ebdbb2",
+  }),
+})
+
+export const gruvboxLight = makeTheme({
+  id: "gruvbox-light",
+  name: "Gruvbox Light",
+  family: "Gruvbox",
+  scheme: "light",
+  sourceName: "morhetz/gruvbox",
+  sourceUrl: gruvboxSource,
+  license: "MIT",
+  colors: colors({
+    bg: "#fbf1c7",
+    panel: "#f2e5bc",
+    panelRaised: "#f9f5d7",
+    text: "#3c3836",
+    textMuted: "#7c6f64",
+    accent: "#b57614",
+    hover: "#ebdbb2",
+    selection: "#d5c4a1",
+    border: "#d5c4a1",
+    error: "#9d0006",
+    warning: "#b57614",
+    success: "#79740e",
+  }),
+  highlights: highlights({
+    keyword: "#9d0006",
+    function: "#b57614",
+    type: "#427b58",
+    string: "#79740e",
+    number: "#8f3f71",
+    comment: "#928374",
+    operator: "#3c3836",
+    variable: "#3c3836",
+    attribute: "#af3a03",
+    constant: "#8f3f71",
+    field: "#076678",
+    module: "#427b58",
+  }),
+  terminalAnsi: ansi({
+    black: "#fbf1c7",
+    red: "#cc241d",
+    green: "#98971a",
+    yellow: "#d79921",
+    blue: "#458588",
+    magenta: "#b16286",
+    cyan: "#689d6a",
+    white: "#7c6f64",
+    brightBlack: "#928374",
+    brightRed: "#9d0006",
+    brightGreen: "#79740e",
+    brightYellow: "#b57614",
+    brightBlue: "#076678",
+    brightMagenta: "#8f3f71",
+    brightCyan: "#427b58",
+    brightWhite: "#3c3836",
+  }),
+})
+
+export const tokyoNightDark = makeTheme({
+  id: "tokyonight-dark",
+  name: "TokyoNight Dark",
+  family: "TokyoNight",
+  scheme: "dark",
+  sourceName: "folke/tokyonight.nvim night",
+  sourceUrl: tokyoNightSource,
+  license: "Apache-2.0",
+  colors: colors({
+    bg: "#1a1b26",
+    panel: "#16161e",
+    panelRaised: "#24283b",
+    text: "#c0caf5",
+    textMuted: "#565f89",
+    accent: "#7aa2f7",
+    hover: "#292e42",
+    selection: "#33467c",
+    border: "#2f3549",
+    error: "#f7768e",
+    warning: "#e0af68",
+    success: "#9ece6a",
+  }),
+  highlights: highlights({
+    keyword: "#bb9af7",
+    function: "#7aa2f7",
+    type: "#2ac3de",
+    string: "#9ece6a",
+    number: "#ff9e64",
+    comment: "#565f89",
+    operator: "#89ddff",
+    variable: "#c0caf5",
+    attribute: "#e0af68",
+    constant: "#ff9e64",
+    field: "#73daca",
+    module: "#7dcfff",
+  }),
+  terminalAnsi: ansi({
+    black: "#15161e",
+    red: "#f7768e",
+    green: "#9ece6a",
+    yellow: "#e0af68",
+    blue: "#7aa2f7",
+    magenta: "#bb9af7",
+    cyan: "#7dcfff",
+    white: "#a9b1d6",
+    brightBlack: "#414868",
+    brightRed: "#f7768e",
+    brightGreen: "#9ece6a",
+    brightYellow: "#e0af68",
+    brightBlue: "#7aa2f7",
+    brightMagenta: "#bb9af7",
+    brightCyan: "#7dcfff",
+    brightWhite: "#c0caf5",
+  }),
+})
+
+export const tokyoNightLight = makeTheme({
+  id: "tokyonight-light",
+  name: "TokyoNight Light",
+  family: "TokyoNight",
+  scheme: "light",
+  sourceName: "folke/tokyonight.nvim day",
+  sourceUrl: tokyoNightSource,
+  license: "Apache-2.0",
+  colors: colors({
+    bg: "#e1e2e7",
+    panel: "#d5d6db",
+    panelRaised: "#f1f2f7",
+    text: "#3760bf",
+    textMuted: "#6172b0",
+    accent: "#2e7de9",
+    hover: "#c4c8da",
+    selection: "#b7c1e3",
+    border: "#b7c1e3",
+    error: "#f52a65",
+    warning: "#8c6c3e",
+    success: "#587539",
+  }),
+  highlights: highlights({
+    keyword: "#7847bd",
+    function: "#2e7de9",
+    type: "#007197",
+    string: "#587539",
+    number: "#965027",
+    comment: "#848cb5",
+    operator: "#007197",
+    variable: "#3760bf",
+    attribute: "#8c6c3e",
+    constant: "#965027",
+    field: "#007197",
+    module: "#2e7de9",
+  }),
+  terminalAnsi: ansi({
+    black: "#e1e2e7",
+    red: "#f52a65",
+    green: "#587539",
+    yellow: "#8c6c3e",
+    blue: "#2e7de9",
+    magenta: "#7847bd",
+    cyan: "#007197",
+    white: "#6172b0",
+    brightBlack: "#a1a6c5",
+    brightRed: "#f52a65",
+    brightGreen: "#587539",
+    brightYellow: "#8c6c3e",
+    brightBlue: "#2e7de9",
+    brightMagenta: "#7847bd",
+    brightCyan: "#007197",
+    brightWhite: "#3760bf",
+  }),
+})
+
 export const bundledThemes: Record<string, JetTheme> = {
-  dark: defaultDark,
-  light: defaultLight,
+  [ayuDark.id]: ayuDark,
+  [ayuLight.id]: ayuLight,
+  [everforestDark.id]: everforestDark,
+  [everforestLight.id]: everforestLight,
+  [gruvboxDark.id]: gruvboxDark,
+  [gruvboxLight.id]: gruvboxLight,
+  [tokyoNightDark.id]: tokyoNightDark,
+  [tokyoNightLight.id]: tokyoNightLight,
+}
+
+export const bundledThemeList: JetTheme[] = Object.values(bundledThemes)
+export const defaultDark = ayuDark
+export const defaultLight = ayuLight
+
+export function getThemeById(id: string | null | undefined): JetTheme {
+  if (!id) return ayuDark
+  return bundledThemes[id] ?? ayuDark
+}
+
+export function themePreviewSwatches(theme: JetTheme): string[] {
+  return theme.previewSwatches?.length ? theme.previewSwatches : [
+    theme.colors.bg,
+    theme.colors.panel,
+    theme.colors.text,
+    theme.colors.accent,
+  ]
+}
+
+export function defaultThemeIdForScheme(scheme: ColorScheme): string {
+  return scheme === "light" ? ayuLight.id : ayuDark.id
 }
 
 export function themeForScheme(scheme: ColorScheme): JetTheme {
-  return scheme === "light" ? defaultLight : defaultDark
+  return getThemeById(defaultThemeIdForScheme(scheme))
+}
+
+export function themeFamilyForId(id: string | null | undefined): string {
+  return getThemeById(id).family ?? "Ayu"
+}
+
+export function siblingThemeForScheme(id: string, scheme: ColorScheme): JetTheme {
+  const current = getThemeById(id)
+  const family = current.family
+  const match = bundledThemeList.find(theme => theme.family === family && theme.scheme === scheme)
+  return match ?? themeForScheme(scheme)
 }

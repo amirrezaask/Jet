@@ -79,9 +79,11 @@ export function jetEditorTheme(theme: JetTheme) {
         caretColor: theme.colors.accent,
         fontFamily: "var(--font-mono, 'Geist Mono', 'IBM Plex Mono', 'SFMono-Regular', monospace)",
         fontSize: "var(--jet-editor-fs, 1rem)",
+        lineHeight: "var(--jet-editor-line-height, 1.45)",
         whiteSpace: "pre",
       },
       ".cm-line": {
+        lineHeight: "var(--jet-editor-line-height, 1.45)",
         whiteSpace: "pre",
       },
       ".cm-gutters": {
