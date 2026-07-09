@@ -36,7 +36,7 @@ import {
   codeFolding,
   foldKeymap,
 } from "@codemirror/language"
-import { lintGutter } from "@codemirror/lint"
+import { lintGutter, setDiagnosticsEffect } from "@codemirror/lint"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches, selectSelectionMatches, selectNextOccurrence } from "@codemirror/search"
 import { hiddenSearchPanel, jetSearchPanelKeymap } from "./search-bridge.js"
@@ -258,7 +258,7 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
       ...historyKeymap,
       indentWithTab,
     ]),
-    themeCompartment.of([jetEditorTheme(theme), completionTooltipTheme(theme)]),
+    themeCompartment.of([jetEditorTheme(theme), completionTooltipTheme()]),
   )
 
   const language = await loadLanguage(opts.file.languageId)
@@ -291,7 +291,12 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
         const line = update.state.doc.lineAt(pos)
         opts.onSelectionChange(line.number, pos - line.from + 1, update.state.selection.ranges.length)
       }
-      opts.onViewUpdate?.(update.view)
+      const lintChanged = update.transactions.some(tr =>
+        tr.effects.some(effect => effect.is(setDiagnosticsEffect)),
+      )
+      if (update.docChanged || lintChanged) {
+        opts.onViewUpdate?.(update.view)
+      }
     }),
   )
 
@@ -317,7 +322,7 @@ export function applyTheme(view: EditorView, theme: JetTheme): void {
   const largeFile = view.state.doc.length > 4 * 1024 * 1024
   view.dispatch({
     effects: [
-      themeCompartment.reconfigure([jetEditorTheme(theme), completionTooltipTheme(theme)]),
+      themeCompartment.reconfigure([jetEditorTheme(theme), completionTooltipTheme()]),
       highlightCompartment.reconfigure(jetSyntaxHighlightingForTheme(theme)),
       indentMarkerCompartment.reconfigure(indentMarkerExtension(theme, largeFile)),
     ],

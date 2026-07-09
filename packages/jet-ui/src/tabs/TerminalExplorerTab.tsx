@@ -142,29 +142,33 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
             const rootUri = node.data.group.rootUri
             return (
               <span className="flex items-center gap-0.5">
-                <button
+                <Button
                   type="button"
+                  size="icon-sm"
+                  variant="ghost"
                   title="New terminal"
                   aria-label="New terminal"
-                  className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:text-foreground group-hover/tree-row:opacity-100"
+                  className="size-5 opacity-70 group-hover/tree-row:opacity-100"
                   onClick={e => {
                     e.stopPropagation()
                     onNewTerminal(rootUri)
                   }}
                 >
                   <Plus className="size-3" />
-                </button>
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button
+                    <Button
                       type="button"
+                      size="icon-sm"
+                      variant="ghost"
                       title="Launch agent"
                       aria-label="Launch agent"
-                      className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:text-foreground group-hover/tree-row:opacity-100"
+                      className="size-5 opacity-70 group-hover/tree-row:opacity-100"
                       onClick={e => e.stopPropagation()}
                     >
                       <ChevronDown className="size-3" />
-                    </button>
+                    </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" side="right">
                   {AGENT_SHORTCUTS.map(shortcut => (
@@ -184,18 +188,20 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
           if (node.data.kind === "terminal") {
             const entry = node.data.entry
             return (
-              <button
+              <Button
                 type="button"
+                size="icon-sm"
+                variant="ghost"
                 title="Close terminal"
                 aria-label="Close terminal"
-                className="jet-interactive-row inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/tree-row:opacity-100"
+                className="size-5 opacity-0 group-hover/tree-row:opacity-100"
                 onClick={e => {
                   e.stopPropagation()
                   onCloseTerminal(entry.panelId, entry.tabId)
                 }}
               >
                 <X className="size-3" />
-              </button>
+              </Button>
             )
           }
           return null

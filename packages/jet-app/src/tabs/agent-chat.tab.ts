@@ -10,7 +10,9 @@ import {
   type AgentChatTabState,
 } from "./agent-chat-id.js"
 
-export const AGENT_CHAT_TAB_TYPE_ID = "agent-chat"
+import type { KnownTabKind } from "@jet/workspace"
+
+export const AGENT_CHAT_TAB_TYPE_ID: KnownTabKind = "agent-chat"
 export { AGENT_CHAT_TAB_ID_PREFIX, agentChatTabId, parseAgentChatTabId }
 export type { AgentChatTabState }
 

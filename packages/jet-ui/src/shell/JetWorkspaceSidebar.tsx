@@ -31,6 +31,7 @@ export type JetWorkspaceSidebarProps = {
   onNewTerminal: (rootUri: string) => void
   onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   onCloseTerminal: (panelId: PanelId, tabId: string) => void
+  onSidebarFocusChange?: (focused: boolean) => void
 }
 
 function SidebarViewTabs({
@@ -78,12 +79,19 @@ export function JetWorkspaceSidebar({
   onNewTerminal,
   onLaunchAgentTerminal,
   onCloseTerminal,
+  onSidebarFocusChange,
 }: JetWorkspaceSidebarProps) {
   return (
     <Sidebar
       collapsible="none"
       data-jet-workspace-sidebar
       className="h-full border-r border-sidebar-border"
+      onFocusCapture={() => onSidebarFocusChange?.(true)}
+      onBlurCapture={e => {
+        const next = e.relatedTarget
+        if (next instanceof Node && e.currentTarget.contains(next)) return
+        onSidebarFocusChange?.(false)
+      }}
     >
       <SidebarHeader className="shrink-0 border-b border-sidebar-border px-2 py-2">
         <SidebarViewTabs activeView={activeView} onActiveViewChange={onActiveViewChange} />

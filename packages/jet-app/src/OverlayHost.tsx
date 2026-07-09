@@ -9,219 +9,162 @@ import {
   SettingsOverlay,
   showJetToast,
   bundledThemeList,
-  type OutlineEntry,
-  type JetAppearanceSettings,
 } from "@jet/ui"
-import type { JetProject, WorkspaceFolder, WorkspaceService } from "@jet/workspace"
+import { useOverlayController } from "./hooks/OverlayController.js"
 
-type PaletteCommand = {
-  id: string
-  title: string
-  category?: string
-  keybinding?: string
-  aliases?: string[]
-  recent?: boolean
-}
-
-export type OverlayHostProps = {
-  gotoLineOpen: boolean
-  onGotoLineOpenChange: (open: boolean) => void
-  onGotoLineSubmit: (line: number, column: number) => void
-  quickOpenOpen: boolean
-  searchSupported: boolean
-  searchScanReady: boolean
-  onQuickOpenOpenChange: (open: boolean) => void
-  onQuickOpenSearch: (query: string) => Promise<string[]>
-  onQuickOpenSelect: (displayPath: string, query: string) => void
-  bufferListOpen: boolean
-  onBufferListOpenChange: (open: boolean) => void
-  workspace: WorkspaceService
-  onBufferSelect: (uri: string) => void
-  openFileOpen: boolean
-  onOpenFileOpenChange: (open: boolean) => void
-  onOpenFile: (uri: string, path: string) => void
-  onRequestOpenFolder: () => void
-  folderPickerOpen: boolean
-  onFolderPickerOpenChange: (open: boolean) => void
-  onFolderPickerSelect: (folder: WorkspaceFolder) => void
-  switchFolderOpen: boolean
-  onSwitchFolderOpenChange: (open: boolean) => void
-  cdOpen: boolean
-  onCdOpenChange: (open: boolean) => void
-  onSelectFolder: (path: string) => void
-  addWorkspaceOpen: boolean
-  onAddWorkspaceOpenChange: (open: boolean) => void
-  onAddWorkspaceSelect: (path: string) => void
-  settingsOpen: boolean
-  onSettingsOpenChange: (open: boolean) => void
-  appearanceSettings: JetAppearanceSettings
-  onAppearanceSettingsChange: (settings: JetAppearanceSettings) => void
-  onResetAppearanceSettings: () => void
-  resolveHomeDir: () => Promise<string>
-  projectSwitcherOpen: boolean
-  onProjectSwitcherOpenChange: (open: boolean) => void
-  projects: JetProject[]
-  onSelectProject: (path: string) => void
-  outlineOpen: boolean
-  onOutlineOpenChange: (open: boolean) => void
-  outlineSymbols: OutlineEntry[]
-  onOutlineSelect: (line: number) => void
-  paletteOpen: boolean
-  onPaletteOpenChange: (open: boolean) => void
-  paletteCommands: PaletteCommand[]
-  onRunCommand: (id: string) => void
-}
-
-export default function OverlayHost(props: OverlayHostProps) {
-  const workspaceFolders = props.workspace.folders
+export default function OverlayHost() {
+  const { state, workspace, handlers } = useOverlayController()
+  const { open, outlineSymbols, appearanceSettings, projects, paletteCommands, searchSupported, searchScanReady } =
+    state
+  const workspaceFolders = workspace.folders
 
   return (
     <>
       <GotoLineModal
-        open={props.gotoLineOpen}
-        onOpenChange={props.onGotoLineOpenChange}
-        onSubmit={props.onGotoLineSubmit}
+        open={open.gotoLine}
+        onOpenChange={v => handlers.setOverlayOpen("gotoLine", v)}
+        onSubmit={handlers.onGotoLineSubmit}
       />
 
-      {props.quickOpenOpen && props.searchSupported ? (
+      {open.quickOpen && searchSupported ? (
         <QuickOpenOverlay
           open
-          onOpenChange={props.onQuickOpenOpenChange}
-          scanReady={props.searchScanReady}
-          onSearch={props.onQuickOpenSearch}
-          onSelect={props.onQuickOpenSelect}
+          onOpenChange={v => handlers.setOverlayOpen("quickOpen", v)}
+          scanReady={searchScanReady}
+          onSearch={handlers.onQuickOpenSearch}
+          onSelect={handlers.onQuickOpenSelect}
         />
       ) : null}
 
-      {props.bufferListOpen ? (
+      {open.bufferList ? (
         <BufferListOverlay
           open
-          onOpenChange={props.onBufferListOpenChange}
-          workspace={props.workspace}
-          onSelect={props.onBufferSelect}
+          onOpenChange={v => handlers.setOverlayOpen("bufferList", v)}
+          workspace={workspace}
+          onSelect={handlers.onBufferSelect}
         />
       ) : null}
 
-      {props.openFileOpen ? (
+      {open.openFile ? (
         <CdOverlay
           open
-          onOpenChange={props.onOpenFileOpenChange}
-          initialPath={props.workspace.root?.path ?? null}
+          onOpenChange={v => handlers.setOverlayOpen("openFile", v)}
+          initialPath={workspace.root?.path ?? null}
           showFiles
-          onSelectFile={(uri, path) => props.onOpenFile(uri, path)}
-          onSelectFolder={props.onSelectFolder}
-          resolveHomeDir={props.resolveHomeDir}
+          onSelectFile={(uri, path) => handlers.onOpenFile(uri, path)}
+          onSelectFolder={handlers.onSelectFolder}
+          resolveHomeDir={handlers.resolveHomeDir}
           title="Open file or folder"
           description="Path to file or folder"
           primaryHint="Open"
         />
       ) : null}
 
-      {props.folderPickerOpen ? (
+      {open.folderPicker ? (
         <CdOverlay
           open
-          onOpenChange={props.onFolderPickerOpenChange}
-          initialPath={props.workspace.root?.path ?? null}
+          onOpenChange={handlers.onFolderPickerOpenChange}
+          initialPath={workspace.root?.path ?? null}
           workspaceFolders={workspaceFolders.map(folder => ({
             name: folder.root.name,
             path: folder.root.path,
           }))}
           onSelectFolder={path => {
-            const match = props.workspace.folders.find(f => f.root.path === path)
-            if (match) props.onFolderPickerSelect(match)
+            const match = workspace.folders.find(f => f.root.path === path)
+            if (match) handlers.onFolderPickerSelect(match)
           }}
-          resolveHomeDir={props.resolveHomeDir}
+          resolveHomeDir={handlers.resolveHomeDir}
           title="Select workspace folder"
           description="Pick a workspace folder"
           primaryHint="Select"
         />
       ) : null}
 
-      {props.switchFolderOpen ? (
+      {open.switchFolder ? (
         <CdOverlay
           open
-          onOpenChange={props.onSwitchFolderOpenChange}
-          initialPath={props.workspace.root?.path ?? null}
+          onOpenChange={v => handlers.setOverlayOpen("switchFolder", v)}
+          initialPath={workspace.root?.path ?? null}
           workspaceFolders={workspaceFolders.map(folder => ({
             name: folder.root.name,
             path: folder.root.path,
           }))}
           onSelectFolder={path => {
-            const match = props.workspace.folders.find(f => f.root.path === path)
+            const match = workspace.folders.find(f => f.root.path === path)
             if (match) {
-              props.workspace.setActiveFolder(match.id)
+              workspace.setActiveFolder(match.id)
               showJetToast(`Active folder: ${match.root.name}`)
             }
           }}
-          resolveHomeDir={props.resolveHomeDir}
+          resolveHomeDir={handlers.resolveHomeDir}
           title="Switch workspace folder"
           description="Set the active workspace folder"
           primaryHint="Set active"
         />
       ) : null}
 
-      {props.cdOpen ? (
+      {open.cd ? (
         <CdOverlay
           open
-          onOpenChange={props.onCdOpenChange}
-          initialPath={props.workspace.root?.path ?? null}
+          onOpenChange={v => handlers.setOverlayOpen("cd", v)}
+          initialPath={workspace.root?.path ?? null}
           workspaceFolders={workspaceFolders.map(folder => ({
             name: folder.root.name,
             path: folder.root.path,
           }))}
-          onSelectFolder={props.onSelectFolder}
-          resolveHomeDir={props.resolveHomeDir}
+          onSelectFolder={handlers.onSelectFolder}
+          resolveHomeDir={handlers.resolveHomeDir}
         />
       ) : null}
 
-      {props.addWorkspaceOpen ? (
+      {open.addWorkspace ? (
         <CdOverlay
           open
-          onOpenChange={props.onAddWorkspaceOpenChange}
-          initialPath={props.workspace.root?.path ?? null}
-          onSelectFolder={props.onAddWorkspaceSelect}
-          resolveHomeDir={props.resolveHomeDir}
+          onOpenChange={v => handlers.setOverlayOpen("addWorkspace", v)}
+          initialPath={workspace.root?.path ?? null}
+          onSelectFolder={handlers.onAddWorkspaceSelect}
+          resolveHomeDir={handlers.resolveHomeDir}
           title="Add workspace folder"
           description="Pick a folder to add"
           primaryHint="Add Project"
         />
       ) : null}
 
-      {props.settingsOpen ? (
+      {open.settings ? (
         <SettingsOverlay
           open
-          onOpenChange={props.onSettingsOpenChange}
+          onOpenChange={v => handlers.setOverlayOpen("settings", v)}
           themes={bundledThemeList}
-          settings={props.appearanceSettings}
-          onSettingsChange={props.onAppearanceSettingsChange}
-          onReset={props.onResetAppearanceSettings}
+          settings={appearanceSettings}
+          onSettingsChange={handlers.onAppearanceSettingsChange}
+          onReset={handlers.onResetAppearanceSettings}
         />
       ) : null}
 
-      {props.projectSwitcherOpen ? (
+      {open.projectSwitcher ? (
         <ProjectSwitcherOverlay
           open
-          onOpenChange={props.onProjectSwitcherOpenChange}
-          projects={props.projects}
-          onSelect={props.onSelectProject}
+          onOpenChange={v => handlers.setOverlayOpen("projectSwitcher", v)}
+          projects={projects}
+          onSelect={handlers.onSelectProject}
         />
       ) : null}
 
-      {props.outlineOpen ? (
+      {open.outline ? (
         <OutlineOverlay
           open
-          symbols={props.outlineSymbols}
-          onOpenChange={props.onOutlineOpenChange}
-          onSelect={props.onOutlineSelect}
+          symbols={outlineSymbols}
+          onOpenChange={v => handlers.setOverlayOpen("outline", v)}
+          onSelect={handlers.onOutlineSelect}
         />
       ) : null}
 
-      {props.paletteOpen ? (
+      {open.palette ? (
         <CommandPalette
           open
-          onOpenChange={props.onPaletteOpenChange}
-          commands={props.paletteCommands}
-          onRun={props.onRunCommand}
+          onOpenChange={v => handlers.setOverlayOpen("palette", v)}
+          commands={paletteCommands}
+          onRun={handlers.onRunCommand}
         />
       ) : null}
     </>

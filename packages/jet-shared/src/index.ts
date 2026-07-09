@@ -13,19 +13,9 @@ export class Emitter<T> {
   }
 }
 
-export function pathToFileUri(path: string): string {
-  const normalized = path.replace(/\\/g, "/")
-  if (normalized.startsWith("/")) return `file://${normalized}`
-  return `file:///${normalized}`
-}
+import { fileUriToPath } from "./uri.js"
 
-export function fileUriToPath(uri: string): string {
-  if (!uri.startsWith("file://")) return uri
-  let path = decodeURIComponent(uri.slice(7))
-  // file:///C:/... on Windows
-  if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1)
-  return path
-}
+export { type FileUri, isFileUri, pathToFileUri, fileUriToPath } from "./uri.js"
 
 export function basename(uriOrPath: string): string {
   const path = uriOrPath.startsWith("file://") ? fileUriToPath(uriOrPath) : uriOrPath

@@ -156,19 +156,50 @@ type DocumentSymbolParams = {
 type LspRange = { start: { line: number; character: number }; end: { line: number; character: number } }
 type LspLocation = { uri: string; range: LspRange }
 
+type LspTextEdit = {
+  range: LspRange
+  newText: string
+}
+
+type LspDocumentEdit = {
+  textDocument: { uri: string; version?: number | null }
+  edits: LspTextEdit[]
+}
+
+type LspWorkspaceEdit = {
+  changes?: Record<string, LspTextEdit[]>
+  documentChanges?: (LspTextEdit | LspDocumentEdit)[]
+}
+
+type LspCommand = {
+  title: string
+  command: string
+  arguments?: unknown[]
+}
+
+type LspDiagnostic = {
+  range: LspRange
+  message: string
+  severity?: number
+  code?: string | number
+  source?: string
+}
+
 export type CodeAction = {
   title: string
   kind?: string
+  diagnostics?: LspDiagnostic[]
   isPreferred?: boolean
-  edit?: unknown
-  command?: { title: string; command: string; arguments?: unknown[] }
+  disabled?: { reason: string }
+  edit?: LspWorkspaceEdit
+  command?: LspCommand
   data?: unknown
 }
 
 type CodeActionParams = {
   textDocument: { uri: string }
   range: LspRange
-  context: { diagnostics: unknown[]; only?: string[] }
+  context: { diagnostics: LspDiagnostic[]; only?: string[] }
 }
 
 export async function fetchCodeActions(

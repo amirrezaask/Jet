@@ -10,14 +10,12 @@ function PanelBodyInner({
   store,
   registry,
   focused,
-  renderRevision,
 }: {
   panelId: PanelId
   view: PanelView
   store: TabStore
   registry: TabTypeRegistry
   focused: boolean
-  renderRevision?: string | number
 }) {
   if (view.kind === "empty") {
     return <PanelEmptyState />
@@ -31,7 +29,6 @@ function PanelBodyInner({
       focused={focused}
       store={store}
       registry={registry}
-      renderRevision={renderRevision}
     />
   )
 }

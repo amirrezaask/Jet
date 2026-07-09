@@ -2,6 +2,7 @@ import type { TimelineEntry, TurnDiffSummary } from "@jet/agents"
 import { LegendList, type LegendListRef } from "@legendapp/list/react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { cn } from "../../lib/utils.js"
+import { Button } from "../../components/ui/button.js"
 import { AgentMarkdown } from "../AgentMarkdown.js"
 import { AgentPatchView } from "../AgentPatchView.js"
 import { ChangedFilesTree } from "../ChangedFilesTree.js"
@@ -77,14 +78,15 @@ function AssistantChangedFilesSection(props: {
             </>
           ) : null}
         </p>
-        <button
+        <Button
           type="button"
+          size="xs"
+          variant="outline"
           data-scroll-anchor-ignore
           onClick={onToggleAllDirectories}
-          className="rounded-md border border-border bg-background px-2 py-0.5 text-xs text-foreground hover:bg-accent"
         >
           {allDirectoriesExpanded ? "Collapse all" : "Expand all"}
-        </button>
+        </Button>
       </div>
       <ChangedFilesTree files={files} allDirectoriesExpanded={allDirectoriesExpanded} />
     </div>

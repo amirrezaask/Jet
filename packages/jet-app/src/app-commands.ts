@@ -205,7 +205,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   }
 
   function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
-    const view = ctx.getActiveEditorView() as EditorView | null
+    const view = ctx.getActiveEditorView()
     if (view) fn(view)
   }
 
@@ -214,7 +214,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     ctx: JetCommandContext,
     fn: (target: { state: EditorView["state"]; dispatch: (tr: TransactionSpec) => void }) => boolean,
   ): void {
-    const view = ctx.getActiveEditorView() as EditorView | null
+    const view = ctx.getActiveEditorView()
     if (view) {
       fn({
         state: view.state,
@@ -333,7 +333,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       ctx.ui.showMessage(count === 0 ? "No git projects found" : `Found ${count} projects`)
     },
     save: async ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       const panel = currentFocusedPanel()
       const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
@@ -383,12 +383,12 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.commitTree(tree)
     },
     find: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       const panel = currentFocusedPanel()
       if (view) openJetSearch(view, "find", panel?.id)
     },
     replace: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       const panel = currentFocusedPanel()
       if (view) openJetSearch(view, "replace", panel?.id)
     },
@@ -501,7 +501,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     jumpBack: ctx => {
       const panel = currentFocusedPanel()
       const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!fileUri || !view) return
       const pos = view.state.selection.main.head
       const line = view.state.doc.lineAt(pos)
@@ -518,7 +518,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     jumpForward: ctx => {
       const panel = currentFocusedPanel()
       const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!fileUri || !view) return
       const pos = view.state.selection.main.head
       const line = view.state.doc.lineAt(pos)
@@ -641,8 +641,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     splitEditorBottom: () => splitPanelAtEdge("bottom"),
     toggleEditorLayout: () => {
       const tree = deps.cloneTree()
-      const root = (tree as unknown as { root: { kind: string } }).root
-      root.kind = root.kind === "row" ? "column" : "row"
+      tree.toggleRootOrientation()
       deps.commitTree(tree)
     },
     zoomIn: () => deps.setZoomLevel(1),
@@ -663,7 +662,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
 
     quickOutline: async ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       try {
@@ -675,60 +674,60 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       }
     },
     formatDocument: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       if (!runFormatDocument(view)) ctx.ui.showMessage("Format not available for this file")
     },
     rename: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       if (!runRenameSymbol(view)) ctx.ui.showMessage("Rename not available for this symbol")
     },
     goToReferences: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       deps.pushJumpFromActiveEditor("references")
       if (!runFindReferences(view)) ctx.ui.showMessage("Find references not available")
     },
     triggerParameterHints: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       if (!runParameterHints(view)) ctx.ui.showMessage("Parameter hints not available")
     },
     goToDefinition: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       deps.pushJumpFromActiveEditor("definition")
       if (!runGoToDefinition(view)) ctx.ui.showMessage("Go to definition not available")
     },
     goToDeclaration: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       deps.pushJumpFromActiveEditor("definition")
       if (!runGoToDeclaration(view)) ctx.ui.showMessage("Go to declaration not available")
     },
     goToTypeDefinition: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       deps.pushJumpFromActiveEditor("definition")
       if (!runGoToTypeDefinition(view)) ctx.ui.showMessage("Go to type definition not available")
     },
     goToImplementation: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       deps.pushJumpFromActiveEditor("definition")
       if (!runGoToImplementation(view)) ctx.ui.showMessage("Go to implementation not available")
     },
     triggerSuggest: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) {
         ctx.ui.showMessage("No active editor")
         return
@@ -742,13 +741,13 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       }
     },
     showHover: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       if (!runShowHover(view)) ctx.ui.showMessage("Hover not available")
     },
     quickFix: async ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       const actions = await scheduleCodeActions(view, true)
@@ -763,7 +762,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       ctx.ui.showMessage(`Quick fixes: ${actions.map(a => a.title).join(", ")}`)
     },
     showContextMenu: ctx => {
-      const view = ctx.getActiveEditorView() as EditorView | null
+      const view = ctx.getActiveEditorView()
       if (!view) return
       const pos = view.state.selection.main.head
       const coords = view.coordsAtPos(pos)

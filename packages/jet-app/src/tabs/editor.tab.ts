@@ -4,7 +4,9 @@ import type { TabType } from "@jet/ui"
 import { EditorTabHost } from "@jet/ui"
 import type { TabContributorDeps } from "./deps.js"
 
-export const EDITOR_TAB_TYPE_ID = "editor"
+import type { KnownTabKind } from "@jet/workspace"
+
+export const EDITOR_TAB_TYPE_ID: KnownTabKind = "editor"
 
 export type EditorTabState = { fileUri: string }
 

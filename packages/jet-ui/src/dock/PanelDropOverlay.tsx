@@ -63,6 +63,10 @@ function siteIcon(kind: DropSiteKind) {
       return <PanelTopIcon className={cls} />
     case "bottom":
       return <PanelBottomIcon className={cls} />
+    default: {
+      const _exhaustive: never = kind
+      return _exhaustive
+    }
   }
 }
 

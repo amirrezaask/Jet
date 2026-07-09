@@ -3,7 +3,9 @@ import type { TabType } from "@jet/ui"
 import { AgentExplorerTab } from "@jet/ui"
 import type { TabContributorDeps } from "./deps.js"
 
-export const AGENT_EXPLORER_TAB_TYPE_ID = "agent-explorer"
+import type { KnownTabKind } from "@jet/workspace"
+
+export const AGENT_EXPLORER_TAB_TYPE_ID: KnownTabKind = "agent-explorer"
 export const AGENT_EXPLORER_TAB_ID = "jet:agent-explorer"
 
 export type AgentExplorerTabState = Record<string, never>

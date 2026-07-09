@@ -2,7 +2,7 @@ import { type ProviderInstanceId } from "../t3contracts.js";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SparklesIcon, StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
 import { cn } from "@/lib/utils.js";
 import { isProviderInstancePickerReady, type ProviderInstanceEntry } from "../providerInstances.js";
 
@@ -121,29 +121,27 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             <div className="mb-1 border-b pb-1">
               <div className="relative w-full">
                 <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        className={cn(
-                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-muted",
-                        )}
-                        onClick={() => handleSelect("favorites")}
-                        type="button"
-                        data-model-picker-provider="favorites"
-                        aria-label="Favorites"
-                      >
-                        <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
-                      </button>
-                    }
-                  />
-                  <TooltipPopup
+                  <TooltipTrigger asChild>
+                    <button
+                      className={cn(
+                        "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-muted",
+                      )}
+                      onClick={() => handleSelect("favorites")}
+                      type="button"
+                      data-model-picker-provider="favorites"
+                      aria-label="Favorites"
+                    >
+                      <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
                     side={PICKER_TOOLTIP_SIDE}
                     sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
                     align="center"
                     className={PICKER_TOOLTIP_CLASS}
                   >
                     Favorites
-                  </TooltipPopup>
+                  </TooltipContent>
                 </Tooltip>
               </div>
             </div>
@@ -230,15 +228,15 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             return (
               <div key={entry.instanceId} className="relative w-full">
                 <Tooltip>
-                  <TooltipTrigger render={trigger} />
-                  <TooltipPopup
+                  <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+                  <TooltipContent
                     side={PICKER_TOOLTIP_SIDE}
                     sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
                     align="center"
                     className={PICKER_TOOLTIP_CLASS}
                   >
                     {tooltip}
-                  </TooltipPopup>
+                  </TooltipContent>
                 </Tooltip>
               </div>
             );

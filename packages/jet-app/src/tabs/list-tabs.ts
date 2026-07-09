@@ -1,5 +1,6 @@
-import { createElement } from "react"
-import type { TabType } from "@jet/ui"
+import type { KnownTabKind } from "@jet/workspace"
+import { createElement, type ComponentType } from "react"
+import type { LocationListTabProps, TabType } from "@jet/ui"
 import {
   SearchLocationList,
   ReferencesLocationList,
@@ -11,15 +12,15 @@ import type { TabContributorDeps } from "./deps.js"
 
 export type ListTabState = { listId: string }
 
-export const SEARCH_TAB_TYPE_ID = "search"
-export const PROBLEMS_TAB_TYPE_ID = "problems"
-export const REFERENCES_TAB_TYPE_ID = "references"
-export const DEFINITIONS_TAB_TYPE_ID = "definitions"
-export const TASK_ERRORS_TAB_TYPE_ID = "task-errors"
+export const SEARCH_TAB_TYPE_ID: KnownTabKind = "search"
+export const PROBLEMS_TAB_TYPE_ID: KnownTabKind = "problems"
+export const REFERENCES_TAB_TYPE_ID: KnownTabKind = "references"
+export const DEFINITIONS_TAB_TYPE_ID: KnownTabKind = "definitions"
+export const TASK_ERRORS_TAB_TYPE_ID: KnownTabKind = "task-errors"
 
 function makeListTabType(
   typeId: string,
-  Comp: typeof SearchLocationList,
+  Comp: ComponentType<LocationListTabProps>,
   deps: TabContributorDeps,
   options?: { autoFocusInput?: boolean },
 ): TabType<ListTabState> {
@@ -42,17 +43,17 @@ export function createSearchTabType(deps: TabContributorDeps): TabType<ListTabSt
 }
 
 export function createProblemsTabType(deps: TabContributorDeps): TabType<ListTabState> {
-  return makeListTabType(PROBLEMS_TAB_TYPE_ID, DiagnosticsLocationList as typeof SearchLocationList, deps)
+  return makeListTabType(PROBLEMS_TAB_TYPE_ID, DiagnosticsLocationList, deps)
 }
 
 export function createReferencesTabType(deps: TabContributorDeps): TabType<ListTabState> {
-  return makeListTabType(REFERENCES_TAB_TYPE_ID, ReferencesLocationList as typeof SearchLocationList, deps)
+  return makeListTabType(REFERENCES_TAB_TYPE_ID, ReferencesLocationList, deps)
 }
 
 export function createDefinitionsTabType(deps: TabContributorDeps): TabType<ListTabState> {
-  return makeListTabType(DEFINITIONS_TAB_TYPE_ID, DefinitionsLocationList as typeof SearchLocationList, deps)
+  return makeListTabType(DEFINITIONS_TAB_TYPE_ID, DefinitionsLocationList, deps)
 }
 
 export function createTaskErrorsTabType(deps: TabContributorDeps): TabType<ListTabState> {
-  return makeListTabType(TASK_ERRORS_TAB_TYPE_ID, TaskErrorsLocationList as typeof SearchLocationList, deps)
+  return makeListTabType(TASK_ERRORS_TAB_TYPE_ID, TaskErrorsLocationList, deps)
 }

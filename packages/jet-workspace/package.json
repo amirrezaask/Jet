@@ -15,12 +15,13 @@
     "test": "tsx --test src/context-keys.test.ts src/keymaps.test.ts src/path-input.test.ts src/ensure-panel-view.test.ts src/panel-buffers.test.ts src/panel-tree.test.ts src/workspace-manager.test.ts src/workspace-search.test.ts"
   },
   "dependencies": {
+    "@codemirror/view": "^6.37.0",
     "@jet/agents": "workspace:*",
     "@jet/shared": "workspace:*",
     "@jet/panels": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^7.0.2"
   }
 }

@@ -3,7 +3,9 @@ import type { TabType } from "@jet/ui"
 import { TerminalExplorerTab } from "@jet/ui"
 import type { TabContributorDeps } from "./deps.js"
 
-export const TERMINAL_EXPLORER_TAB_TYPE_ID = "terminal-explorer"
+import type { KnownTabKind } from "@jet/workspace"
+
+export const TERMINAL_EXPLORER_TAB_TYPE_ID: KnownTabKind = "terminal-explorer"
 export const TERMINAL_EXPLORER_TAB_ID = "jet:terminal-explorer"
 
 export type TerminalExplorerTabState = Record<string, never>

@@ -7,10 +7,10 @@ import {
   type ModelEsque,
   PROVIDER_ICON_BY_PROVIDER,
 } from "./providerIconUtils";
-import { ComboboxItem } from "./ui/combobox.js";
+import { ComboboxItem } from "@/components/ui/combobox.js";
 import { Button } from "@/components/ui/button.js";
 import { Kbd } from "@/components/ui/kbd.js";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
 import { cn } from "@/lib/utils.js";
 
 export const ModelListRow = memo(function ModelListRow(props: {
@@ -91,37 +91,35 @@ export const ModelListRow = memo(function ModelListRow(props: {
           <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-3xs">{props.jumpLabel}</Kbd>
         ) : null}
         <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost"
+          <TooltipTrigger asChild>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              className={cn(
+                "-mr-1 shrink-0 text-muted-foreground/70 opacity-64 transition-[color,opacity] hover:text-foreground hover:opacity-100 group-hover:opacity-100",
+                props.isFavorite && "text-foreground opacity-100",
+              )}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onToggleFavorite();
+              }}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+              }}
+              disabled={Boolean(props.disabledReason)}
+              aria-label={props.isFavorite ? "Remove from favorites" : "Add to favorites"}
+            >
+              <StarIcon
                 className={cn(
-                  "-mr-1 shrink-0 text-muted-foreground/70 opacity-64 transition-[color,opacity] hover:text-foreground hover:opacity-100 group-hover:opacity-100",
-                  props.isFavorite && "text-foreground opacity-100",
+                  "size-3.5 sm:size-3",
+                  props.isFavorite && "fill-current text-yellow-500",
                 )}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  props.onToggleFavorite();
-                }}
-                onKeyDown={(event) => {
-                  event.stopPropagation();
-                }}
-                disabled={Boolean(props.disabledReason)}
-                aria-label={props.isFavorite ? "Remove from favorites" : "Add to favorites"}
-              >
-                <StarIcon
-                  className={cn(
-                    "size-3.5 sm:size-3",
-                    props.isFavorite && "fill-current text-yellow-500",
-                  )}
-                />
-              </Button>
-            }
-          />
-          <TooltipPopup side="top" align="center">
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="center">
             {props.isFavorite ? "Remove from favorites" : "Add to favorites"}
-          </TooltipPopup>
+          </TooltipContent>
         </Tooltip>
       </div>
     </ComboboxItem>
@@ -133,10 +131,10 @@ export const ModelListRow = memo(function ModelListRow(props: {
 
   return (
     <Tooltip>
-      <TooltipTrigger render={row} />
-      <TooltipPopup side="left" align="center" className="max-w-64 text-balance leading-snug">
+      <TooltipTrigger asChild>{row}</TooltipTrigger>
+      <TooltipContent side="left" align="center" className="max-w-64 text-balance leading-snug">
         {props.disabledReason}
-      </TooltipPopup>
+      </TooltipContent>
     </Tooltip>
   );
 });

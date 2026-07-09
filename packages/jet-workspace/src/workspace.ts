@@ -28,6 +28,7 @@ import {
   TabRegistry,
   type TabDescriptor,
   type TabKind,
+  type KnownTabKind,
 } from "./tab-registry.js"
 import {
   type ConfirmDiscardReloadFn,
@@ -182,6 +183,11 @@ export class WorkspaceService {
   closeBuffer(uri: string): void {
     const path = fileUriToPath(uri)
     this.openBuffers = this.openBuffers.filter(u => fileUriToPath(u) !== path)
+    if (isUntitledUri(uri)) {
+      this.untitledFiles.delete(uri)
+    } else {
+      this.manager.folderStateForUri(uri)?.evictFile(uri)
+    }
     this.onDidChangeBuffers.fire()
   }
 
@@ -490,4 +496,4 @@ export class WorkspaceService {
 }
 
 export { EXPLORER_TAB_ID, OUTPUT_TAB_ID, PROBLEMS_TAB_ID }
-export type { TabDescriptor, TabKind }
+export type { TabDescriptor, TabKind, KnownTabKind }

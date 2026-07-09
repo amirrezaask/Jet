@@ -41,6 +41,8 @@ export {
   searchHitToListItem,
   taskErrorsToListItems,
   lspLocationToListItem,
+  type LocationListProps,
+  type LocationListTabProps,
 } from "./panels/location-list/index.js"
 export { CdOverlay } from "./components/CdOverlay.js"
 export { ProjectSwitcherOverlay } from "./components/ProjectSwitcherOverlay.js"
@@ -104,6 +106,7 @@ export { TooltipProvider } from "./components/ui/tooltip.js"
 export { Toaster } from "./components/ui/sonner.js"
 export { ConfirmDialogHost, requestConfirm } from "./components/ConfirmDialogHost.js"
 export { showJetToast } from "./toast.js"
-export { registerListPanel, getListPanel } from "./lib/list-registry.js"
+export { registerListPanel, getListPanel, getListItems, focusListPanel, focusFirstListItem, getListPanelController, type ListFocusAction, type ListPanelController } from "./lib/list-registry.js"
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
+export { SettingsField } from "./components/SettingsField.js"
 export { FindReplacePopover } from "./components/FindReplacePopover.js"

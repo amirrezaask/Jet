@@ -53,6 +53,12 @@ export class WorkspaceFolderState {
     this.files.set(file.uri, file)
   }
 
+  evictFile(uri: string): void {
+    this.files.delete(uri)
+    this.savedBaseline.delete(uri)
+    this.recentWrites.delete(uri)
+  }
+
   allFiles(): Iterable<WorkspaceFile> {
     return this.files.values()
   }

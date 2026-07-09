@@ -1,10 +1,21 @@
 import { Emitter } from "@jet/shared"
 
-/**
- * Opaque tab type identifier. Framework treats it as a string; individual apps
- * register their own type ids (e.g. "editor", "explorer", "jet:search").
- */
-export type TabKind = string
+/** Registered Jet tab type ids (mirrors `@jet/ui` TabTypeRegistry). */
+export type KnownTabKind =
+  | "editor"
+  | "explorer"
+  | "output"
+  | "terminal"
+  | "terminal-explorer"
+  | "agent-explorer"
+  | "agent-chat"
+  | "search"
+  | "problems"
+  | "references"
+  | "definitions"
+  | "task-errors"
+
+export type TabKind = KnownTabKind
 
 export const EXPLORER_TAB_ID = "jet:explorer"
 export const OUTPUT_TAB_ID = "jet:output"

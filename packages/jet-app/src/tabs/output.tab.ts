@@ -3,7 +3,9 @@ import type { TabType } from "@jet/ui"
 import { OutputPanel } from "@jet/ui"
 import type { TabContributorDeps } from "./deps.js"
 
-export const OUTPUT_TAB_TYPE_ID = "output"
+import type { KnownTabKind } from "@jet/workspace"
+
+export const OUTPUT_TAB_TYPE_ID: KnownTabKind = "output"
 
 export type OutputTabState = Record<string, never>
 

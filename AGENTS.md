@@ -83,7 +83,7 @@ Keep imports acyclic. Lower layers must not import React or Electron.
 ```bash
 pnpm install          # runs postinstall: pnpm rebuild electron
 pnpm dev              # turbo → jet-desktop vite + electron
-pnpm typecheck        # all packages
+pnpm typecheck        # all packages (TypeScript 7)
 pnpm test:electron    # Playwright Electron specs (headless via JET_E2E)
 pnpm test:bench       # UX latency benchmarks (tests/bench/)
 pnpm build            # production build (renderer + electron main/preload)
@@ -94,6 +94,8 @@ Run typecheck from repo root before finishing a task:
 ```bash
 pnpm -r typecheck
 ```
+
+Monorepo uses **TypeScript 7** (`^7.0.2` at root; `pnpm.overrides` in `pnpm-workspace.yaml` pins one version).
 
 Then validate with **`pnpm test:electron`** (see Agent visual verification).
 

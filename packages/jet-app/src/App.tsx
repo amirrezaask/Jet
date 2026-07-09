@@ -19,15 +19,10 @@ import {
   CommandRegistry,
   KeymapService,
   keyEventMatchesBinding,
-  isChordBinding,
-  resolveKeydownBinding,
-  createChordState,
-  anyOverlayOpen,
   createDefaultKeybindings,
-  isEditorKeyBinding,
   bind,
   parseBindingKey,
-  CHORD_TIMEOUT_MS,
+  anyOverlayOpen,
   type KeymapContext,
   type JetCommandContext,
   type JetKeyBinding,
@@ -47,13 +42,11 @@ import {
   relativePathInFolder,
   resolveQuickOpenDisplayPath,
 } from "@jet/workspace"
-import { LanguageServerManager, LspClientPool } from "@jet/lsp"
 import type { LSPClient } from "@jet/codemirror"
 import { createAgentBridge } from "./agent-bridge.js"
 import type { Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import {
-  applyColorScheme,
   jumpToLine,
   collectProblemsFromViews,
   problemsFingerprint,
@@ -67,16 +60,13 @@ import {
   PanelBody,
   PanelTabBar,
   StatusBar,
-  SettingsOverlay,
   bundledThemeList,
   defaultThemeId,
   defaultThemeIdForScheme,
   getThemeById,
   siblingThemeForScheme,
-  syncNativeChromeFromTheme,
   getEditorView,
   getAllEditorViews,
-  syncAllEditorThemes,
   destroyEditorBuffer,
   setEditorCursor,
   getEditorCursor,
@@ -101,7 +91,8 @@ import {
   type JetSidebarView,
   focusExplorerPanel,
   focusTerminalExplorerPanel,
-  getListPanel,
+  getListPanelController,
+  focusFirstListItem,
   JetTitleBar,
   type JetTitleBarMenu,
   FindReplacePopover,
@@ -144,6 +135,21 @@ import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js
 import { loadGlobalJetrc } from "./load-global-jetrc.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
 import { useFileDrop } from "./use-file-drop.js"
+import { useAppearanceSettings } from "./hooks/useAppearanceSettings.js"
+import { usePanelLayout } from "./hooks/usePanelLayout.js"
+import { useAgentSync } from "./hooks/useAgentSync.js"
+import { useLspLifecycle } from "./hooks/useLspLifecycle.js"
+import { useOverlayState } from "./hooks/useOverlayState.js"
+import { useGlobalKeymap } from "./hooks/useGlobalKeymap.js"
+import {
+  createTabContributorBridge,
+} from "./hooks/tab-contributor-bridge.js"
+import type { TabContributorDeps } from "./tabs/deps.js"
+import { OverlayControllerSync } from "./hooks/OverlayControllerSync.js"
+import {
+  OverlayControllerProvider,
+  type OverlayHandlers,
+} from "./hooks/OverlayController.js"
 
 type ColorScheme = "dark" | "light"
 
@@ -156,16 +162,6 @@ const DEFAULT_FONT_SIZE = 13
 const FONT_SIZE_STEP = 2
 const DEFAULT_MONO_FONT =
   '"Geist Mono Variable", "Geist Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, monospace'
-const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
-  themeId: defaultThemeId,
-  fontSize: DEFAULT_FONT_SIZE,
-  monoFontFamily: DEFAULT_MONO_FONT,
-  terminalLineHeight: 1.2,
-  editorLineHeight: 1.45,
-  density: "compact",
-  cursorBlink: true,
-  reducedMotion: false,
-}
 const OverlayHost = lazy(() => import("./OverlayHost.js"))
 
 const FN_BY_COMMAND_ID = ((): Map<string, string> => {
@@ -211,57 +207,6 @@ function loadStoredThemeId(): string {
   }
   return defaultThemeId
 }
-
-function loadAppearanceSettings(): JetAppearanceSettings {
-  const base: JetAppearanceSettings = {
-    ...DEFAULT_APPEARANCE_SETTINGS,
-    themeId: loadStoredThemeId(),
-    fontSize: loadStoredFontSize(),
-  }
-  try {
-    const raw = localStorage.getItem(APPEARANCE_STORAGE_KEY)
-    if (!raw) return base
-    const parsed = JSON.parse(raw) as Partial<JetAppearanceSettings>
-    return {
-      themeId: normalizeThemeId(parsed.themeId ?? base.themeId),
-      fontSize: clampNumber(parsed.fontSize, base.fontSize, 10, 24),
-      monoFontFamily:
-        typeof parsed.monoFontFamily === "string" && parsed.monoFontFamily.trim().length > 0
-          ? parsed.monoFontFamily
-          : base.monoFontFamily,
-      terminalLineHeight: clampNumber(parsed.terminalLineHeight, base.terminalLineHeight, 1, 2),
-      editorLineHeight: clampNumber(parsed.editorLineHeight, base.editorLineHeight, 1.1, 2),
-      density: parsed.density === "comfortable" ? "comfortable" : "compact",
-      cursorBlink: parsed.cursorBlink !== false,
-      reducedMotion: parsed.reducedMotion === true,
-    }
-  } catch {
-    return base
-  }
-}
-
-function persistAppearanceSettings(settings: JetAppearanceSettings): void {
-  try {
-    localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(settings))
-    localStorage.setItem(THEME_ID_STORAGE_KEY, settings.themeId)
-    localStorage.setItem(FONT_SIZE_STORAGE_KEY, String(settings.fontSize))
-    localStorage.setItem(COLOR_SCHEME_KEY, getThemeById(settings.themeId).scheme ?? "dark")
-  } catch {
-    /* ignore */
-  }
-}
-
-function applyAppearanceCss(settings: JetAppearanceSettings): void {
-  const root = document.documentElement
-  root.style.fontSize = `${settings.fontSize}px`
-  root.style.setProperty("--font-mono", settings.monoFontFamily)
-  root.style.setProperty("--jet-editor-line-height", String(settings.editorLineHeight))
-  root.style.setProperty("--jet-terminal-line-height", String(settings.terminalLineHeight))
-  root.style.setProperty("--jet-terminal-cursor-blink", settings.cursorBlink ? "1" : "0")
-  root.dataset.jetDensity = settings.density
-  root.dataset.jetReducedMotion = settings.reducedMotion ? "true" : "false"
-}
-
 
 const SIDEBAR_VIEW_STORAGE_KEY = "jet-sidebar-view"
 
@@ -321,7 +266,11 @@ function loadRecentCommands(): string[] {
 }
 
 function jetPlatformFS(): import("@jet/workspace").FileSystemProvider {
-  const fs = window.jet!.fs
+  const jet = window.jet
+  if (!jet?.fs) {
+    throw new Error("window.jet.fs not available")
+  }
+  const fs = jet.fs
   return {
     readFile: uri => fs.readFile(uri),
     writeFile: (uri, content) => fs.writeFile(uri, content),
@@ -331,57 +280,77 @@ function jetPlatformFS(): import("@jet/workspace").FileSystemProvider {
 }
 
 export function JetApp() {
-  const initialLayoutRef = useRef<ReturnType<typeof initialEditorLayout> | null>(null)
-  if (initialLayoutRef.current == null) initialLayoutRef.current = initialEditorLayout()
-  const initialLayout = initialLayoutRef.current
-  const [panelTree, setPanelTree] = useState(() => initialLayout.tree)
-  const [focusedPanel, setFocusedPanel] = useState<PanelId | null>(() => initialLayout.editorPanel)
-  const [paletteOpen, setPaletteOpen] = useState(false)
-  const [lspRevision, setLspRevision] = useState(0)
+  const {
+    appearanceSettings,
+    setAppearanceSettings,
+    activeTheme,
+    colorScheme,
+    fontSize,
+    handleZoom,
+    setFontSize,
+    resetAppearanceSettings,
+    toggleColorScheme,
+    setColorScheme,
+    setThemeId,
+  } = useAppearanceSettings()
+
+  const overlay = useOverlayState()
+  const {
+    open: overlayOpen,
+    paletteOpen,
+    gotoLineOpen,
+    outlineOpen,
+    quickOpenOpen,
+    bufferListOpen,
+    openFileOpen,
+    cdOpen,
+    addWorkspaceOpen,
+    settingsOpen,
+    projectSwitcherOpen,
+    switchFolderOpen,
+    folderPickerOpen,
+    setPaletteOpen,
+    setGotoLineOpen,
+    setOutlineOpen,
+    setQuickOpenOpen,
+    setBufferListOpen,
+    setOpenFileOpen,
+    setCdOpen,
+    setAddWorkspaceOpen,
+    setSettingsOpen,
+    setProjectSwitcherOpen,
+    setSwitchFolderOpen,
+    setFolderPickerOpen,
+    setOpen,
+  } = overlay
+
+  const [outlineSymbols, setOutlineSymbols] = useState<OutlineEntry[]>([])
   const [userExtensions, setUserExtensions] = useState<Extension[]>([])
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [editorFocused, setEditorFocused] = useState(false)
   const [layoutReady, setLayoutReady] = useState(false)
-  const [appearanceSettings, setAppearanceSettings] =
-    useState<JetAppearanceSettings>(() => loadAppearanceSettings())
-  const activeTheme = getThemeById(appearanceSettings.themeId)
-  const colorScheme: ColorScheme = activeTheme.scheme ?? "dark"
-  const [gotoLineOpen, setGotoLineOpen] = useState(false)
-  const [outlineOpen, setOutlineOpen] = useState(false)
-  const [outlineSymbols, setOutlineSymbols] = useState<OutlineEntry[]>([])
-  const [quickOpenOpen, setQuickOpenOpen] = useState(false)
-  const [bufferListOpen, setBufferListOpen] = useState(false)
-  const [openFileOpen, setOpenFileOpen] = useState(false)
-  const [cdOpen, setCdOpen] = useState(false)
-  const [addWorkspaceOpen, setAddWorkspaceOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
-  const [switchFolderOpen, setSwitchFolderOpen] = useState(false)
-  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const folderPickerPendingRef = useRef<{
     resolve: (folder: WorkspaceFolder | null) => void
   } | null>(null)
   const [projects, setProjects] = useState<JetProject[]>([])
-  const [agentSnapshots, setAgentSnapshots] = useState<Record<string, AgentWorkspaceSnapshot | null>>({})
-  const [agentThreads, setAgentThreads] = useState<Record<string, AgentThread | null>>({})
-  const [agentProviders, setAgentProviders] = useState<AgentProvidersState | null>(null)
   const folderSearchStateRef = useRef(
     new Map<string, { supported: boolean; scanReady: boolean }>(),
   )
   const lastContextFolderRef = useRef<WorkspaceFolder | null>(null)
   const [folderSearchRev, setFolderSearchRev] = useState(0)
   const [problems, setProblems] = useState<JetProblem[]>([])
-  const [panelRev, setPanelRev] = useState(0)
-  const [lspCrashed, setLspCrashed] = useState(false)
   const [fileDragOver, setFileDragOver] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarView, setSidebarView] = useState<JetSidebarView>(loadSidebarView)
   const [sidebarFocused, setSidebarFocused] = useState(false)
+  const sidebarFocusedRef = useRef(false)
+  sidebarFocusedRef.current = sidebarFocused
   const sidebarViewRef = useRef<JetSidebarView>(sidebarView)
   sidebarViewRef.current = sidebarView
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
   const [pendingChordPrefix, setPendingChordPrefix] = useState<string | null>(null)
-  const fontSizeRef = useRef(appearanceSettings.fontSize)
+  const fontSizeRef = useRef(fontSize)
+  fontSizeRef.current = fontSize
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>>(
@@ -389,17 +358,17 @@ export function JetApp() {
   )
   const addWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
   const handleOpenFileRef = useRef<(uri: string, path: string) => void>(() => {})
-  const editorPanelRef = useRef<PanelId | null>(initialLayout.editorPanel)
   const workspaceInitGen = useRef(new Map<string, number>())
   const workspaceRootPathRef = useRef<string | null>(null)
   const homeDirRef = useRef("")
   const workspaceInitCtxRef = useRef<JetInitContext | null>(null)
   const projectRegistry = useMemo(() => new ProjectRegistry(), [])
   const appStateRef = useRef({
-    panelTree,
-    focusedPanel,
+    panelTree: null! as JetPanelTree,
+    focusedPanel: null as PanelId | null,
     keymapContext: undefined as KeymapContext | undefined,
     activePanelKind: undefined as string | undefined,
+    editorPanelRef: null as React.MutableRefObject<PanelId | null> | null,
   })
 
   const workspaceManager = useMemo(() => new WorkspaceManager(jetPlatformFS()), [])
@@ -408,6 +377,37 @@ export function JetApp() {
   const keymaps = useMemo(() => new KeymapService(), [])
   const tabTypeRegistry = useMemo(() => new TabTypeRegistry(), [])
   const tabStore = useMemo(() => new TabStore(tabTypeRegistry), [tabTypeRegistry])
+
+  const {
+    panelTree,
+    focusedPanel,
+    setFocusedPanel,
+    editorPanelRef,
+    cloneTree,
+    commitTree,
+    handlePanelEvent,
+    tabDndHandlers,
+  } = usePanelLayout(workspace, tabStore, appStateRef as never)
+
+  const agentSync = useAgentSync(workspace, tabStore)
+  const {
+    syncAgentThread,
+    loadAgentThread,
+    refreshAgentProviders,
+    getAgentProviders,
+    getAgentSnapshot,
+    getAgentThread,
+    subscribeAgentThread,
+    getAgentExplorerGroups,
+    sendAgentMessage,
+    interruptAgentTurn,
+    updateAgentThreadSettings,
+    archiveAgentThread: archiveAgentThreadFromHook,
+    unarchiveAgentThread: unarchiveAgentThreadFromHook,
+    refreshAgentExplorerTab,
+    findWorkspaceFolderByRootUri,
+    removeAgentRoot,
+  } = agentSync
 
   const keymapBindings = useMemo(() => keymaps.allBindings(), [keymaps, keymapRevision])
 
@@ -474,57 +474,37 @@ export function JetApp() {
     return () => sub.dispose()
   }, [workspace])
 
-  const activeThemeRef = useRef(activeTheme)
-  activeThemeRef.current = activeTheme
-  const lspRevisionRef = useRef(lspRevision)
-  lspRevisionRef.current = lspRevision
+  const lspRevisionRef = useRef(0)
   const keymapBindingsRef = useRef<JetKeyBinding[]>([])
   const userExtensionsRef = useRef<Extension[]>([])
   const keymapRevisionRef = useRef(0)
   const keymapContextRef = useRef<KeymapContext | undefined>(undefined)
-  const agentSnapshotsRef = useRef<Record<string, AgentWorkspaceSnapshot | null>>({})
-  const agentThreadsRef = useRef<Record<string, AgentThread | null>>({})
-  const agentThreadEmittersRef = useRef(new Map<string, Emitter<AgentThread | null>>())
-  const agentProvidersRef = useRef<AgentProvidersState | null>(null)
-  const sendAgentInFlightRef = useRef(false)
   const openAgentThreadRef = useRef<(rootUri: string, threadId: string) => Promise<void>>(
     () => Promise.resolve(),
   )
   const createAgentThreadRef = useRef<(rootUri: string, rootPath: string) => Promise<void>>(
     () => Promise.resolve(),
   )
-  const sendAgentMessageRef = useRef<
-    (
-      rootUri: string,
-      threadId: string,
-      payload: { text: string; provider: string | null; model: string | null },
-    ) => Promise<void>
-  >(() => Promise.resolve())
-  const updateAgentThreadSettingsRef = useRef<
-    (
-      rootUri: string,
-      threadId: string,
-      settings: { provider?: string | null; model?: string | null },
-    ) => Promise<void>
-  >(() => Promise.resolve())
-  const refreshAgentProvidersRef = useRef<() => Promise<AgentProvidersState | null>>(
-    () => Promise.resolve(null),
+  const refreshAgentProvidersRef = useRef(refreshAgentProviders)
+  refreshAgentProvidersRef.current = refreshAgentProviders
+  const archiveAgentThreadRef = useRef(
+    async (_rootUri: string, _rootPath: string, _threadId: string): Promise<void> => {},
   )
-  const archiveAgentThreadRef = useRef<
-    (rootUri: string, rootPath: string, threadId: string) => Promise<void>
-  >(() => Promise.resolve())
+  const unarchiveAgentThreadRef = useRef(
+    async (_rootUri: string, _rootPath: string, _threadId: string): Promise<void> => {},
+  )
+  const sendAgentMessageRef = useRef(sendAgentMessage)
+  sendAgentMessageRef.current = sendAgentMessage
+  const updateAgentThreadSettingsRef = useRef(updateAgentThreadSettings)
+  updateAgentThreadSettingsRef.current = updateAgentThreadSettings
+  const interruptAgentTurnRef = useRef(interruptAgentTurn)
+  interruptAgentTurnRef.current = interruptAgentTurn
   const getTerminalExplorerGroupsRef = useRef<() => TerminalExplorerGroup[]>(() => [])
   const getActiveTerminalTabIdRef = useRef<() => string | null>(() => null)
   const focusTerminalTabRef = useRef<(panelId: PanelId, tabId: string) => void>(() => {})
   const newTerminalInWorkspaceRef = useRef<(rootUri: string) => Promise<void>>(async () => {})
   const closeTerminalTabRef = useRef<(panelId: PanelId, tabId: string) => void>(() => {})
   const onTerminalTitleChangeRef = useRef<(tabId: string, title: string) => void>(() => {})
-  const unarchiveAgentThreadRef = useRef<
-    (rootUri: string, rootPath: string, threadId: string) => Promise<void>
-  >(() => Promise.resolve())
-  const interruptAgentTurnRef = useRef<
-    (rootUri: string, threadId: string) => Promise<void>
-  >(() => Promise.resolve())
   const archiveActiveAgentThreadRef = useRef<() => Promise<void>>(() => Promise.resolve())
   const unarchiveActiveAgentThreadRef = useRef<() => Promise<void>>(() => Promise.resolve())
   const handleOpenFileForTabs = useRef<(uri: string, path: string) => void>(() => {})
@@ -540,220 +520,22 @@ export function JetApp() {
   keymapBindingsRef.current = keymapBindings
   userExtensionsRef.current = userExtensions
   keymapRevisionRef.current = keymapRevision
-  agentSnapshotsRef.current = agentSnapshots
-  agentThreadsRef.current = agentThreads
-  agentProvidersRef.current = agentProviders
-
-  const findWorkspaceFolderByRootUri = useCallback(
-    (rootUri: string) =>
-      workspace.manager.folders.find(
-        folder =>
-          folder.root.uri === rootUri ||
-          normalizeAbsPath(folder.root.uri) === normalizeAbsPath(rootUri),
-      ) ?? null,
-    [workspace],
-  )
-
-  const bumpAgentTab = useCallback(
-    (tabId: string) => {
-      if (!workspace.tabRegistry.get(tabId)) return
-      tabStore.update(tabId, prev => prev)
-    },
-    [workspace, tabStore],
-  )
-
-  const refreshAgentExplorerTab = useCallback(() => {
-    bumpAgentTab(AGENT_EXPLORER_TAB_ID)
-  }, [bumpAgentTab])
-
-  const refreshTerminalExplorerTab = useCallback(() => {
-    setPanelRev(r => r + 1)
-  }, [])
 
   const onTerminalTitleChange = useCallback(
     (tabId: string, title: string) => {
       const existing = workspace.tabRegistry.get(tabId)
       if (!existing || existing.label === title) return
       workspace.tabRegistry.update(tabId, { label: title })
-      refreshTerminalExplorerTab()
     },
-    [workspace, refreshTerminalExplorerTab],
+    [workspace],
   )
+  onTerminalTitleChangeRef.current = onTerminalTitleChange
 
-  const syncAgentThread = useCallback(
-    (thread: AgentThread | null) => {
-      if (!thread) return
-      const key = agentThreadStateKey(thread.workspaceRootUri, thread.id)
-      const nextThreads = { ...agentThreadsRef.current, [key]: thread }
-      agentThreadsRef.current = nextThreads
-      setAgentThreads(nextThreads)
-      let emitter = agentThreadEmittersRef.current.get(key)
-      if (!emitter) {
-        emitter = new Emitter<AgentThread | null>()
-        agentThreadEmittersRef.current.set(key, emitter)
-      }
-      emitter.fire(thread)
-      const nextSnapshot: AgentWorkspaceSnapshot = {
-        workspaceRootUri: thread.workspaceRootUri,
-        workspaceRootPath: thread.workspaceRootPath,
-        threads: [
-          {
-            id: thread.id,
-            title: thread.title,
-            updatedAt: thread.updatedAt,
-            createdAt: thread.createdAt,
-            archivedAt: thread.archivedAt,
-            status: thread.status,
-            lastError: thread.lastError,
-            latestUserMessageAt:
-              [...thread.messages]
-                .reverse()
-                .find(message => message.role === "user")
-                ?.createdAt ?? null,
-            messageCount: thread.messages.length,
-          },
-          ...(agentSnapshotsRef.current[thread.workspaceRootUri]?.threads ?? []).filter(
-            entry => entry.id !== thread.id,
-          ),
-        ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-      }
-      const nextSnapshots = {
-        ...agentSnapshotsRef.current,
-        [thread.workspaceRootUri]: nextSnapshot,
-      }
-      agentSnapshotsRef.current = nextSnapshots
-      setAgentSnapshots(nextSnapshots)
-      const chatTabId = agentChatTabId(thread.workspaceRootUri, thread.id)
-      workspace.tabRegistry.update(chatTabId, { label: thread.title })
-      const parsed = parseAgentChatTabId(chatTabId)
-      if (parsed) {
-        tabStore.update(chatTabId, prev => {
-          const state = prev as AgentChatTabState
-          return {
-            ...state,
-            rootUri: parsed.rootUri,
-            threadId: parsed.threadId,
-            rev: thread.updatedAt,
-            thread,
-          }
-        })
-      } else {
-        bumpAgentTab(chatTabId)
-      }
-      refreshAgentExplorerTab()
-    },
-    [workspace, bumpAgentTab, refreshAgentExplorerTab, tabStore],
-  )
-
-  const loadAgentSnapshot = useCallback(
-    async (rootUri: string, rootPath: string): Promise<AgentWorkspaceSnapshot | null> => {
-      const transport = window.jet?.agents
-      if (!transport) return null
-      const snapshot = await transport.listThreads(rootUri, rootPath)
-      const prevSnapshot = agentSnapshotsRef.current[rootUri] ?? null
-      if (agentSnapshotFingerprint(prevSnapshot) !== agentSnapshotFingerprint(snapshot)) {
-        const nextSnapshots = { ...agentSnapshotsRef.current, [rootUri]: snapshot }
-        agentSnapshotsRef.current = nextSnapshots
-        setAgentSnapshots(nextSnapshots)
-      }
-      const loadedThreads = await Promise.all(
-        snapshot.threads.map(thread => transport.readThread(rootUri, rootPath, thread.id)),
-      )
-      if (loadedThreads.some(Boolean)) {
-        const prevFingerprint = agentThreadsFingerprint(agentThreadsRef.current, rootUri)
-        const nextThreads = { ...agentThreadsRef.current }
-        for (const thread of loadedThreads) {
-          if (!thread) continue
-          nextThreads[agentThreadStateKey(thread.workspaceRootUri, thread.id)] = thread
-        }
-        if (agentThreadsFingerprint(nextThreads, rootUri) !== prevFingerprint) {
-          agentThreadsRef.current = nextThreads
-          setAgentThreads(nextThreads)
-        }
-      }
-      refreshAgentExplorerTab()
-      return snapshot
-    },
-    [refreshAgentExplorerTab],
-  )
-
-  const loadAgentProviders = useCallback(async (): Promise<AgentProvidersState | null> => {
-    const transport = window.jet?.agents
-    if (!transport?.listProviders) return null
-    const state = await transport.listProviders()
-    agentProvidersRef.current = state
-    setAgentProviders(state)
-    return state
-  }, [])
-
-  const refreshAgentProviders = useCallback(async (): Promise<AgentProvidersState | null> => {
-    const transport = window.jet?.agents
-    if (!transport?.refreshProviders) return loadAgentProviders()
-    const state = await transport.refreshProviders()
-    agentProvidersRef.current = state
-    setAgentProviders(state)
-    return state
-  }, [loadAgentProviders])
-
-  const loadAgentThread = useCallback(
-    async (rootUri: string, rootPath: string, threadId: string): Promise<AgentThread | null> => {
-      const transport = window.jet?.agents
-      if (!transport) return null
-      const thread = await transport.readThread(rootUri, rootPath, threadId)
-      if (thread) syncAgentThread(thread)
-      return thread
-    },
-    [syncAgentThread],
-  )
-
-  const getAgentProviders = useCallback(() => agentProvidersRef.current, [])
-
-  const getAgentSnapshot = useCallback(
-    (rootUri: string) => agentSnapshotsRef.current[rootUri] ?? null,
+  const tabContributorRef = useRef<TabContributorDeps>(null!)
+  const tabContributorBridge = useMemo(
+    () => createTabContributorBridge(() => tabContributorRef.current),
     [],
   )
-
-  const getAgentThread = useCallback(
-    (rootUri: string, threadId: string) =>
-      agentThreadsRef.current[agentThreadStateKey(rootUri, threadId)] ?? null,
-    [],
-  )
-
-  const subscribeAgentThread = useCallback(
-    (rootUri: string, threadId: string, listener: (thread: AgentThread | null) => void) => {
-      const key = agentThreadEmitterKey(rootUri, threadId)
-      let emitter = agentThreadEmittersRef.current.get(key)
-      if (!emitter) {
-        emitter = new Emitter<AgentThread | null>()
-        agentThreadEmittersRef.current.set(key, emitter)
-      }
-      listener(agentThreadsRef.current[key] ?? null)
-      const sub = emitter.event(listener)
-      return () => sub.dispose()
-    },
-    [],
-  )
-
-  const getAgentExplorerGroups = useCallback((): AgentExplorerWorkspaceGroup[] => {
-    return workspace.folders.map(folder => {
-      const snapshot = agentSnapshotsRef.current[folder.root.uri]
-      const activeThreads = snapshot?.threads.filter(thread => thread.archivedAt == null) ?? []
-      const archivedThreads = snapshot?.threads.filter(thread => thread.archivedAt != null) ?? []
-      return {
-        id: folder.id,
-        name: folder.root.name,
-        path: folder.root.path,
-        rootUri: folder.root.uri,
-        snapshot: snapshot
-          ? {
-              ...snapshot,
-              threads: activeThreads,
-            }
-          : null,
-        archivedThreads,
-      }
-    })
-  }, [workspace])
 
   const resolveContextFolder = useCallback((): WorkspaceFolder | null => {
     return resolveContextWorkspaceFolder(
@@ -763,7 +545,7 @@ export function JetApp() {
       workspace,
       lastContextFolderRef.current,
     )
-  }, [panelTree, focusedPanel, workspace, panelRev])
+  }, [panelTree, focusedPanel, workspace])
 
   const getContextSearchState = useCallback(() => {
     void folderSearchRev
@@ -784,67 +566,14 @@ export function JetApp() {
     if (folder && isContextualTabKind(kind)) {
       lastContextFolderRef.current = folder
     }
-  }, [panelTree, focusedPanel, workspace, panelRev])
+  }, [panelTree, focusedPanel, workspace])
+
+  const activeThemeRef = useRef(activeTheme)
+  activeThemeRef.current = activeTheme
 
   useEffect(() => {
-    registerBuiltinTabTypes(tabTypeRegistry, {
-      workspace,
-      getTheme: () => activeThemeRef.current,
-      resolveLspClient: uri => resolveLspClientRef.current(uri),
-      getLspRevision: () => lspRevisionRef.current,
-      executeCommand: name => executeCommandRef.current(name),
-      runKeyBinding: (binding, view) => runKeyBindingRef.current(binding, view),
-      getKeymapBindings: () => keymapBindingsRef.current,
-      getUserExtensions: () => userExtensionsRef.current,
-      getKeymapRevision: () => keymapRevisionRef.current,
-      getKeymapContext: () => keymapContextRef.current,
-      onEditorFocusChange: f => setEditorFocusedRef.current(f),
-      onEditorSelectionChange: (l, c, r) => setEditorSelectionRef.current(l, c, r),
-      onLspAttachFailed: uri => handleLspAttachFailedRef.current(uri),
-      onProblemsChange: () => refreshProblemsRef.current(),
-      onOpenFile: (uri, path) => handleOpenFileForTabs.current(uri, path),
-      onOpenListItem: item => openListItemForTabs.current(item),
-      getAgentExplorerGroups,
-      getAgentSnapshot,
-      getAgentThread,
-      subscribeAgentThread,
-      getAgentProviders,
-      refreshAgentProviders: () => refreshAgentProvidersRef.current(),
-      updateAgentThreadSettings: (rootUri, threadId, settings) =>
-        updateAgentThreadSettingsRef.current(rootUri, threadId, settings),
-      openAgentThread: (rootUri, threadId) => openAgentThreadRef.current(rootUri, threadId),
-      createAgentThread: (rootUri, rootPath) =>
-        createAgentThreadRef.current(rootUri, rootPath),
-      sendAgentMessage: (rootUri, threadId, payload) =>
-        sendAgentMessageRef.current(rootUri, threadId, payload),
-      interruptAgentTurn: (rootUri, threadId) =>
-        interruptAgentTurnRef.current(rootUri, threadId),
-      archiveAgentThread: (rootUri, rootPath, threadId) =>
-        archiveAgentThreadRef.current(rootUri, rootPath, threadId),
-      unarchiveAgentThread: (rootUri, rootPath, threadId) =>
-        unarchiveAgentThreadRef.current(rootUri, rootPath, threadId),
-      getTerminalExplorerGroups: () => getTerminalExplorerGroupsRef.current(),
-      getActiveTerminalTabId: () => getActiveTerminalTabIdRef.current(),
-      focusTerminalTab: (panelId, tabId) => focusTerminalTabRef.current(panelId, tabId),
-      newTerminalInWorkspace: rootUri => newTerminalInWorkspaceRef.current(rootUri),
-      launchAgentTerminal: (rootUri, shortcut) => launchAgentTerminal(rootUri, shortcut),
-      closeTerminalTab: (panelId, tabId) => closeTerminalTabRef.current(panelId, tabId),
-      onTerminalTitleChange: (tabId, title) => onTerminalTitleChangeRef.current(tabId, title),
-      getSearchFolders: () => {
-        const folder = resolveContextFolder()
-        return folder ? [folder] : workspace.folders
-      },
-    })
-  }, [
-    tabTypeRegistry,
-    workspace,
-    getAgentExplorerGroups,
-    getAgentSnapshot,
-    getAgentThread,
-    subscribeAgentThread,
-    getAgentProviders,
-    resolveContextFolder,
-  ])
+    registerBuiltinTabTypes(tabTypeRegistry, tabContributorBridge)
+  }, [tabTypeRegistry, tabContributorBridge])
 
   const keybindingByFn = useMemo(() => {
     const map = new Map<JetKeyBinding["run"], string>()
@@ -860,7 +589,7 @@ export function JetApp() {
 
   const activeTabKindName = useMemo(
     () => activeTabKind(panelTree, focusedPanel, workspace.tabRegistry),
-    [focusedPanel, panelTree, workspace, panelRev],
+    [focusedPanel, panelTree, workspace],
   )
 
   const activeEditorFile = useMemo(() => {
@@ -870,21 +599,7 @@ export function JetApp() {
     const file = workspace.fileForUri(uri)
     if (!file) return null
     return { name: file.name, languageId: file.languageId, isDirty: file.isDirty }
-  }, [focusedPanel, panelTree, workspace, panelRev])
-
-  useEffect(() => {
-    const onFocusIn = (event: FocusEvent) => {
-      const target = event.target
-      if (!(target instanceof Node)) {
-        setSidebarFocused(false)
-        return
-      }
-      const sidebar = document.querySelector("[data-jet-workspace-sidebar]")
-      setSidebarFocused(Boolean(sidebar?.contains(target)))
-    }
-    document.addEventListener("focusin", onFocusIn)
-    return () => document.removeEventListener("focusin", onFocusIn)
-  }, [])
+  }, [focusedPanel, panelTree, workspace])
 
   const keymapContext = useMemo(
     () => ({
@@ -936,105 +651,27 @@ export function JetApp() {
     focusedPanel,
     keymapContext,
     activePanelKind,
+    editorPanelRef,
   }
 
-  const lspManager = useMemo(
-    () => (window.jet ? new LanguageServerManager(window.jet.lsp) : null),
-    [],
-  )
-
-  const lspClientPool = useMemo(() => new LspClientPool(), [])
-
-  const bumpLspRevision = useCallback(() => setLspRevision(r => r + 1), [])
-
-  const resolveLspClient = useCallback(
-    async (fileUri: string) => {
-      if (!lspManager) return null
-      const rootUri = workspace.resolveRootUriForFile(fileUri)
-      if (!rootUri) return null
-      const path = isUntitledUri(fileUri) ? "" : fileUriToPath(fileUri)
-      const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
-      const conn = await lspManager.ensureServerForFile(file, rootUri)
-      if (!conn) return null
-      return lspClientPool.getOrCreateClient(conn)
-    },
-    [lspManager, workspace, lspClientPool],
-  )
-
-  const cloneTree = useCallback(
-    () => appStateRef.current.panelTree.clone(),
-    [],
-  )
-
-  const commitTree = useCallback(
-    (
-      tree: JetPanelTree,
-      preferFocus?: PanelId | null,
-      morph?: { animate?: boolean; beforeRects?: Map<number, PanelRect>; spawnFrom?: Map<number, PanelRect> },
-    ) => {
-      stripSidebarTabsFromTree(tree)
-      const beforeRects =
-        morph?.animate ? (morph.beforeRects ?? capturePanelLeafRects()) : null
-      const prevFocused = appStateRef.current.focusedPanel
-      const preferred =
-        preferFocus && getAllLeafPanels(tree).some(l => l.id === preferFocus.id)
-          ? preferFocus
-          : null
-      const nextFocused =
-        preferred ?? reconcileFocusedPanel(tree, prevFocused, editorPanelRef.current)
-      setPanelTree(tree)
-      setPanelRev(r => r + 1)
-      setFocusedPanel(nextFocused)
-      if (beforeRects) {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            void animateLayoutMorph(beforeRects, { spawnFrom: morph?.spawnFrom })
-          })
-        })
-      }
-      if (nextFocused && nextFocused.id !== prevFocused?.id) {
-        requestAnimationFrame(() => {
-          if (getJetSearchState()?.open) return
-          getEditorView(nextFocused)?.focus()
-        })
-      }
-    },
-    [],
-  )
-
-  const ensureLspForFile = useCallback(
-    async (fileUri: string) => {
-      if (!lspManager || isUntitledUri(fileUri)) return
-      const rootUri = workspace.resolveRootUriForFile(fileUri)
-      if (!rootUri) return
-      const path = fileUriToPath(fileUri)
-      const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
-      const conn = await lspManager.ensureServerForFile(file, rootUri)
-      if (conn) {
-        bumpLspRevision()
-      } else {
-        const spawnErr = lspManager.consumeLastSpawnError()
-        if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
-          showJetToast(
-            `Language server unavailable for ${file.name} — is ${file.languageId === "rust" ? "rust-analyzer" : "typescript-language-server"} on PATH?`,
-          )
-        }
-      }
-    },
-    [lspManager, workspace, bumpLspRevision],
-  )
-
-  useEffect(() => {
-    applyColorScheme(colorScheme, activeTheme)
-    syncAllEditorThemes(activeTheme)
-    syncNativeChromeFromTheme()
-  }, [colorScheme, activeTheme])
-
-  useEffect(() => {
-    fontSizeRef.current = appearanceSettings.fontSize
-    persistAppearanceSettings(appearanceSettings)
-    applyAppearanceCss(appearanceSettings)
-  }, [appearanceSettings])
+  const {
+    lspManager,
+    lspRevision,
+    resolveLspClient,
+    ensureLspForFile,
+    handleLspAttachFailed,
+    lspStatus,
+  } = useLspLifecycle(workspace, (uri, path, line, column) => {
+    handleOpenFileRef.current(uri, path)
+    if (line != null) {
+      const panel = appStateRef.current.focusedPanel ?? editorPanelRef.current
+      const view = panel ? getEditorView(panel) : null
+      if (view) jumpToLine(view, line, column ?? 1)
+    }
+  })
+  lspRevisionRef.current = lspRevision
+  resolveLspClientRef.current = resolveLspClient
+  handleLspAttachFailedRef.current = handleLspAttachFailed
 
   useEffect(() => {
     if (initialized.current) return
@@ -1134,8 +771,8 @@ export function JetApp() {
     async (rootUri: string, threadId: string): Promise<void> => {
       const folder = findWorkspaceFolderByRootUri(rootUri)
       if (!folder) return
-      const snapshot = agentSnapshotsRef.current[rootUri]
-      const existingThread = agentThreadsRef.current[agentThreadStateKey(rootUri, threadId)]
+      const snapshot = getAgentSnapshot(rootUri)
+      const existingThread = getAgentThread(rootUri, threadId)
       const title =
         existingThread?.title ??
         snapshot?.threads.find(thread => thread.id === threadId)?.title ??
@@ -1164,7 +801,7 @@ export function JetApp() {
         })
       }
     },
-    [workspace, findWorkspaceFolderByRootUri, cloneTree, commitTree, loadAgentThread, tabStore],
+    [workspace, findWorkspaceFolderByRootUri, cloneTree, commitTree, loadAgentThread, tabStore, getAgentSnapshot, getAgentThread],
   )
 
   const openAgentsExplorer = useCallback(async (): Promise<void> => {
@@ -1172,9 +809,7 @@ export function JetApp() {
     const { panelId } = openAgentExplorerTab(workspace, tree, appStateRef.current.focusedPanel)
     commitTree(tree, panelId)
     requestAnimationFrame(() => {
-      const list = getListPanel("jet:agent-explorer")
-      const first = list?.querySelector<HTMLElement>("[data-jet-list-item]")
-      ;(first ?? list)?.focus()
+      focusFirstListItem("jet:agent-explorer")
     })
   }, [workspace, cloneTree, commitTree])
 
@@ -1280,64 +915,6 @@ export function JetApp() {
     [syncAgentThread, openAgentThread],
   )
 
-  const sendAgentMessage = useCallback(
-    async (
-      rootUri: string,
-      threadId: string,
-      payload: { text: string; provider: string | null; model: string | null },
-    ): Promise<void> => {
-      if (sendAgentInFlightRef.current) return
-      const transport = window.jet?.agents
-      const folder = findWorkspaceFolderByRootUri(rootUri)
-      if (!transport || !folder) {
-        showJetToast("Agents transport unavailable", { variant: "destructive" })
-        return
-      }
-      sendAgentInFlightRef.current = true
-      try {
-        const thread = await transport.sendMessage({
-          workspaceRootUri: rootUri,
-          workspaceRootPath: folder.root.path,
-          threadId,
-          text: payload.text,
-          provider: payload.provider,
-          model: payload.model,
-        })
-        syncAgentThread(thread)
-        const supportsThreadPush = typeof transport.onThreadUpdated === "function"
-        const rootPath = thread.workspaceRootPath || folder.root.path
-        if (!supportsThreadPush) {
-          for (let attempt = 0; attempt < 75; attempt += 1) {
-            await new Promise(resolve => window.setTimeout(resolve, 200))
-            const fresh = await transport.readThread!(rootUri, rootPath, threadId)
-            if (fresh) syncAgentThread(fresh)
-            if (fresh && fresh.status !== "running") {
-              break
-            }
-          }
-        }
-      } finally {
-        sendAgentInFlightRef.current = false
-      }
-    },
-    [findWorkspaceFolderByRootUri, syncAgentThread],
-  )
-
-  const interruptAgentTurn = useCallback(
-    async (rootUri: string, threadId: string): Promise<void> => {
-      const transport = window.jet?.agents
-      const folder = findWorkspaceFolderByRootUri(rootUri)
-      if (!transport?.interruptTurn || !folder) return
-      const thread = await transport.interruptTurn({
-        workspaceRootUri: rootUri,
-        workspaceRootPath: folder.root.path,
-        threadId,
-      })
-      if (thread) syncAgentThread(thread)
-    },
-    [findWorkspaceFolderByRootUri, syncAgentThread],
-  )
-
   const closeAgentChatTabIfOpen = useCallback(
     (rootUri: string, threadId: string) => {
       const tabId = agentChatTabId(rootUri, threadId)
@@ -1394,27 +971,6 @@ export function JetApp() {
     [setAgentThreadArchived],
   )
 
-  const updateAgentThreadSettings = useCallback(
-    async (
-      rootUri: string,
-      threadId: string,
-      settings: { provider?: string | null; model?: string | null },
-    ): Promise<void> => {
-      const transport = window.jet?.agents
-      const folder = findWorkspaceFolderByRootUri(rootUri)
-      if (!transport?.updateThreadSettings || !folder) return
-      const thread = await transport.updateThreadSettings({
-        workspaceRootUri: rootUri,
-        workspaceRootPath: folder.root.path,
-        threadId,
-        provider: settings.provider,
-        model: settings.model,
-      })
-      if (thread) syncAgentThread(thread)
-    },
-    [findWorkspaceFolderByRootUri, syncAgentThread],
-  )
-
   const archiveActiveAgentThread = useCallback(async (): Promise<void> => {
     const tabId = getActiveTabId(appStateRef.current.panelTree, appStateRef.current.focusedPanel)
     if (!tabId) return
@@ -1451,47 +1007,6 @@ export function JetApp() {
   newTerminalInWorkspaceRef.current = newTerminalInWorkspace
   closeTerminalTabRef.current = closeTerminalTab
   onTerminalTitleChangeRef.current = onTerminalTitleChange
-
-  useEffect(() => {
-    const transport = window.jet?.agents
-    if (!transport?.onThreadUpdated) return
-    return transport.onThreadUpdated(thread => {
-      syncAgentThread(thread)
-    })
-  }, [syncAgentThread])
-
-  useEffect(() => {
-    const transport = window.jet?.agents
-    if (!transport?.readThread || transport.onThreadUpdated) return
-
-    let cancelled = false
-    const pollRunningThreads = async () => {
-      if (cancelled) return
-      const threads = Object.values(agentThreadsRef.current).filter(
-        (thread): thread is AgentThread => thread != null,
-      )
-      const running = threads.filter(thread => thread.status === "running")
-      if (running.length === 0) return
-      for (const thread of running) {
-        const folder = workspace.folders.find(f => f.root.uri === thread.workspaceRootUri)
-        if (!folder) continue
-        const fresh = await transport.readThread!(
-          thread.workspaceRootUri,
-          folder.root.path,
-          thread.id,
-        )
-        if (fresh) syncAgentThread(fresh)
-      }
-    }
-
-    const intervalId = window.setInterval(() => {
-      void pollRunningThreads()
-    }, 400)
-    return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
-    }
-  }, [syncAgentThread, workspace.folders])
 
   const quickOpenSearch = useCallback(
     async (query: string) => {
@@ -1532,21 +1047,6 @@ export function JetApp() {
     workspace.ensureProblemsList()
     workspace.listStore.update(PROBLEMS_TAB_ID, { items: problemsToListItems(problems) })
   }, [workspace, problems])
-
-  useEffect(() => {
-    lspClientPool.setWorkspaceDeps({
-      openFile: (uri, path, line, column) => {
-        handleOpenFile(uri, path, line, column)
-      },
-      readFile: uri => workspace.readFile(uri),
-      getLanguageId: uri => {
-        const file = workspace.fileForUri(uri)
-        if (file) return file.languageId
-        const path = isUntitledUri(uri) ? "" : fileUriToPath(uri)
-        return workspace.createWorkspaceFile(uri, path).languageId
-      },
-    })
-  }, [lspClientPool, handleOpenFile, workspace])
 
   const refreshProjects = useCallback(async (): Promise<number> => {
     let homeDir = homeDirRef.current
@@ -1734,18 +1234,7 @@ export function JetApp() {
       workspaceInitGen.current.delete(folderId)
       const removed = workspace.removeFolder(folderId)
       if (removed) {
-        setAgentSnapshots(prev => {
-          const next = { ...prev }
-          delete next[rootUri]
-          return next
-        })
-        setAgentThreads(prev => {
-          const next = { ...prev }
-          for (const key of Object.keys(next)) {
-            if (key.startsWith(`${rootUri}\u0000`)) delete next[key]
-          }
-          return next
-        })
+        removeAgentRoot(rootUri)
         syncGlobalSearchState()
         showJetToast(`Removed ${folder.root.name}`)
       }
@@ -1778,55 +1267,6 @@ export function JetApp() {
     return () => sub.dispose()
   }, [workspace, syncGlobalSearchState])
 
-  useEffect(() => {
-    const syncAgentRoots = (folders: WorkspaceFolder[]) => {
-      const roots = folders.map(folder => ({
-        rootUri: folder.root.uri,
-        rootPath: folder.root.path,
-      }))
-      setAgentSnapshots(prev => {
-        const keep = new Set(roots.map(root => root.rootUri))
-        let changed = false
-        const next: Record<string, AgentWorkspaceSnapshot | null> = {}
-        for (const [key, value] of Object.entries(prev)) {
-          if (!keep.has(key)) {
-            changed = true
-            continue
-          }
-          next[key] = value
-        }
-        return changed ? next : prev
-      })
-      setAgentThreads(prev => {
-        const keep = new Set(roots.map(root => root.rootUri))
-        let changed = false
-        const next: Record<string, AgentThread | null> = {}
-        for (const [key, value] of Object.entries(prev)) {
-          const rootUri = key.split("\u0000", 1)[0]!
-          if (!keep.has(rootUri)) {
-            changed = true
-            continue
-          }
-          next[key] = value
-        }
-        return changed ? next : prev
-      })
-      for (const root of roots) {
-        void loadAgentSnapshot(root.rootUri, root.rootPath)
-      }
-    }
-
-    syncAgentRoots(workspace.manager.folders)
-    const sub = workspace.manager.onDidChangeFolders.event(folders => {
-      syncAgentRoots(folders)
-    })
-    return () => sub.dispose()
-  }, [workspace, loadAgentSnapshot])
-
-  useEffect(() => {
-    void loadAgentProviders()
-  }, [loadAgentProviders])
-
   openWorkspaceRef.current = openWorkspaceFolder
   addWorkspaceRef.current = addWorkspaceFolder
   handleOpenFileRef.current = handleOpenFile
@@ -1837,6 +1277,56 @@ export function JetApp() {
     setEditorCursor({ line, column, rangeCount })
   resolveLspClientRef.current = resolveLspClient
   keymapContextRef.current = keymapContext
+
+  const launchAgentTerminalRef = useRef(launchAgentTerminal)
+  launchAgentTerminalRef.current = launchAgentTerminal
+
+  tabContributorRef.current = {
+    workspace,
+    getTheme: () => activeThemeRef.current,
+    resolveLspClient: uri => resolveLspClientRef.current(uri),
+    getLspRevision: () => lspRevisionRef.current,
+    executeCommand: name => executeCommandRef.current(name),
+    runKeyBinding: (binding, view) => runKeyBindingRef.current(binding, view),
+    getKeymapBindings: () => keymapBindingsRef.current,
+    getUserExtensions: () => userExtensionsRef.current,
+    getKeymapRevision: () => keymapRevisionRef.current,
+    getKeymapContext: () => keymapContextRef.current,
+    onEditorFocusChange: f => setEditorFocusedRef.current(f),
+    onEditorSelectionChange: (l, c, r) => setEditorSelectionRef.current(l, c, r),
+    onLspAttachFailed: uri => handleLspAttachFailedRef.current(uri),
+    onProblemsChange: () => refreshProblemsRef.current(),
+    onOpenFile: (uri, path) => handleOpenFileForTabs.current(uri, path),
+    onOpenListItem: item => openListItemForTabs.current(item),
+    getAgentExplorerGroups,
+    getAgentSnapshot,
+    getAgentThread,
+    subscribeAgentThread,
+    getAgentProviders,
+    refreshAgentProviders: () => refreshAgentProvidersRef.current(),
+    updateAgentThreadSettings: (rootUri, threadId, settings) =>
+      updateAgentThreadSettingsRef.current(rootUri, threadId, settings),
+    openAgentThread: (rootUri, threadId) => openAgentThreadRef.current(rootUri, threadId),
+    createAgentThread: (rootUri, rootPath) => createAgentThreadRef.current(rootUri, rootPath),
+    sendAgentMessage: (rootUri, threadId, payload) =>
+      sendAgentMessageRef.current(rootUri, threadId, payload),
+    interruptAgentTurn: (rootUri, threadId) => interruptAgentTurnRef.current(rootUri, threadId),
+    archiveAgentThread: (rootUri, rootPath, threadId) =>
+      archiveAgentThreadRef.current(rootUri, rootPath, threadId),
+    unarchiveAgentThread: (rootUri, rootPath, threadId) =>
+      unarchiveAgentThreadRef.current(rootUri, rootPath, threadId),
+    getTerminalExplorerGroups: () => getTerminalExplorerGroupsRef.current(),
+    getActiveTerminalTabId: () => getActiveTerminalTabIdRef.current(),
+    focusTerminalTab: (panelId, tabId) => focusTerminalTabRef.current(panelId, tabId),
+    newTerminalInWorkspace: rootUri => newTerminalInWorkspaceRef.current(rootUri),
+    launchAgentTerminal: (rootUri, shortcut) => launchAgentTerminalRef.current(rootUri, shortcut),
+    closeTerminalTab: (panelId, tabId) => closeTerminalTabRef.current(panelId, tabId),
+    onTerminalTitleChange: (tabId, title) => onTerminalTitleChangeRef.current(tabId, title),
+    getSearchFolders: () => {
+      const folder = resolveContextFolder()
+      return folder ? [folder] : workspace.folders
+    },
+  }
 
   const bootstrapFromLaunchForDrop = useCallback((config: LaunchConfig) => {
     bootstrapFromLaunch(
@@ -1873,116 +1363,32 @@ export function JetApp() {
     onDragOverChange: setFileDragOver,
   })
 
-  const handlePanelEvent = useCallback(
-    (event: PanelEvent) => {
-      const tree = cloneTree()
-      let changed = true
-      if (event.type === "splitRatiosChanged") {
-        changed = tree.setSplitRatios(event.path, event.ratios)
-      } else if (event.type === "panelClose") {
-        const morphBefore = capturePanelLeafRects()
-        const view = tree.getView(event.panelId)
-        if (view?.kind === "tabs") {
-          for (const tabId of panelTabIds(view)) {
-            const kind = workspace.tabRegistry.kindFor(tabId)
-            if (kind === "editor") {
-              destroyEditorBuffer(event.panelId, tabId)
-            }
-            workspace.disposeTab(tabId)
-            tabStore.dispose(tabId)
-          }
-        }
-        tree.closePanel(event.panelId)
-        commitTree(tree, undefined, { animate: true, beforeRects: morphBefore })
-        changed = false
-      } else if (event.type === "tabActivate") {
-        const view = tree.getView(event.panelId)
-        if (view?.kind !== "tabs" || view.activeTabId === event.tabId) {
-          changed = false
-        } else {
-          tree.setView(event.panelId, activatePanelTab(view, event.tabId))
-          setFocusedPanel(event.panelId)
-        }
-      } else if (event.type === "tabClose") {
-        const view = tree.getView(event.panelId)
-        if (view?.kind !== "tabs") {
-          changed = false
-        } else {
-          const kind = workspace.tabRegistry.kindFor(event.tabId)
-          if (kind === "editor") {
-            destroyEditorBuffer(event.panelId, event.tabId)
-          }
-          workspace.disposeTab(event.tabId)
-          tabStore.dispose(event.tabId)
-          tree.setView(event.panelId, popPanelTab(view, event.tabId))
-          closePanelIfEmpty(tree, event.panelId)
-        }
-      } else if (event.type === "tabReorder") {
-        const view = tree.getView(event.panelId)
-        if (view?.kind !== "tabs") {
-          changed = false
-        } else {
-          tree.setView(event.panelId, reorderPanelTab(view, event.tabId, event.toIndex))
-        }
-      } else if (event.type === "tabDrop") {
-        const kind = workspace.tabRegistry.kindFor(event.sourceTabId)
-        if (kind === "editor") {
-          destroyEditorBuffer(event.source, event.sourceTabId)
-        }
-        const morphBefore = capturePanelLeafRects()
-        const result = tree.applyTabDrop(
-          event.source,
-          event.sourceTabId,
-          event.target,
-          event.action,
-        )
-        if (!result.moved) {
-          changed = false
-        } else if (result.createdPanel) {
-          setFocusedPanel(result.createdPanel)
-        } else {
-          setFocusedPanel(event.target)
-        }
-        if (changed) {
-          commitTree(tree, undefined, {
-            animate: true,
-            beforeRects: morphBefore,
-            spawnFrom: result.createdPanel
-              ? new Map([
-                  [
-                    result.createdPanel.id,
-                    morphBefore.get(event.target.id) ?? { x: 0, y: 0, w: 0, h: 0 },
-                  ],
-                ])
-              : undefined,
-          })
-          changed = false
-        }
-      }
-      if (changed) commitTree(tree)
-    },
-    [cloneTree, commitTree, setFocusedPanel, workspace],
+  const renderPanelHeader = useCallback(
+    (view: PanelView, panelId: PanelId, meta: { focused: boolean }) => (
+      <PanelTabBar
+        panelId={panelId}
+        view={view}
+        store={tabStore}
+        registry={tabTypeRegistry}
+        focused={meta.focused}
+        onActivateTab={tabId => handlePanelEvent({ type: "tabActivate", panelId, tabId })}
+        onCloseTab={tabId => handlePanelEvent({ type: "tabClose", panelId, tabId })}
+      />
+    ),
+    [tabStore, tabTypeRegistry, handlePanelEvent],
   )
 
-  const tabDndHandlers = useMemo(
-    () => ({
-      onTabReorder: (panelId: PanelId, tabId: string, toIndex: number) => {
-        handlePanelEvent({ type: "tabReorder", panelId, tabId, toIndex })
-      },
-      onTabDrop: (
-        source: PanelId,
-        sourceTabId: string,
-        target: PanelId,
-        action: DropAction,
-      ) => {
-        handlePanelEvent({ type: "tabDrop", source, sourceTabId, target, action })
-      },
-      tabIdsForPanel: (panelId: PanelId) => {
-        const view = appStateRef.current.panelTree.getView(panelId)
-        return view?.kind === "tabs" ? panelTabIds(view) : []
-      },
-    }),
-    [handlePanelEvent],
+  const renderPanelContent = useCallback(
+    (view: PanelView, panelId: PanelId, meta: { focused: boolean }) => (
+      <PanelBody
+        panelId={panelId}
+        view={view}
+        store={tabStore}
+        registry={tabTypeRegistry}
+        focused={meta.focused}
+      />
+    ),
+    [tabStore, tabTypeRegistry],
   )
 
   const keymapTargetViewRef = useRef<EditorView | null>(null)
@@ -2008,73 +1414,57 @@ export function JetApp() {
     const tree = appStateRef.current.panelTree
     const tabKind = activeTabKind(tree, panel, workspace.tabRegistry)
     const listTabId = getActiveListTabId(tree, panel)
-    const sidebarEl = document.querySelector("[data-jet-workspace-sidebar]")
-    const sidebarActive =
-      sidebarEl?.contains(document.activeElement ?? null) ||
-      (sidebarEl?.contains(document.querySelector(":focus") ?? null) ?? false)
-    const el = sidebarActive
-      ? getListPanel(
-          sidebarViewRef.current === "terminal-explorer"
-            ? "jet:terminal-explorer"
-            : "jet:explorer",
-        )
+    const listId = sidebarFocusedRef.current
+      ? sidebarViewRef.current === "terminal-explorer"
+        ? "jet:terminal-explorer"
+        : "jet:explorer"
       : listTabId
-        ? getListPanel(listTabId)
+        ? listTabId
         : tabKind === "explorer"
-          ? getListPanel("jet:explorer")
+          ? "jet:explorer"
           : null
-    if (!el) return
-    const items = [...el.querySelectorAll<HTMLElement>("[data-jet-list-item]")]
-    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const focusItem = (index: number) => {
-      const next = items[Math.max(0, Math.min(items.length - 1, index))]
-      next?.focus()
+    if (!listId) return
+
+    const controller = getListPanelController(listId)
+    if (!controller) return
+
+    switch (action) {
+      case "focusNext":
+        controller.focusNext()
+        break
+      case "focusPrev":
+        controller.focusPrev()
+        break
+      case "activate":
+        controller.activate()
+        break
+      case "focusFirstItem":
+        controller.focusFirstItem()
+        break
+      case "focusLastItem":
+        controller.focusLastItem()
+        break
+      case "focusPageUp":
+        controller.focusPageUp()
+        break
+      case "focusPageDown":
+        controller.focusPageDown()
+        break
+      case "focusFirst":
+        controller.focusFirst()
+        break
+      case "focusLast":
+        controller.focusLast()
+        break
+      default:
+        break
     }
-    if (action === "focusNext") {
-      focusItem((active ? items.indexOf(active) : -1) + 1)
-      return
-    }
-    if (action === "focusPrev") {
-      focusItem((active ? items.indexOf(active) : items.length) - 1)
-      return
-    }
-    if (action === "activate") {
-      active?.click()
-      return
-    }
-    if (action === "focusFirstItem") {
-      focusItem(0)
-      return
-    }
-    if (action === "focusLastItem") {
-      focusItem(items.length - 1)
-      return
-    }
-    const page = Math.max(80, Math.floor(el.clientHeight * 0.85))
-    if (action === "focusPageUp") el.scrollBy({ top: -page })
-    else if (action === "focusPageDown") el.scrollBy({ top: page })
-    else if (action === "focusFirst") el.scrollTop = 0
-    else if (action === "focusLast") el.scrollTop = el.scrollHeight
   }, [workspace])
 
-  const handleZoom = useCallback((delta: number) => {
-    setAppearanceSettings(prev => ({
-      ...prev,
-      fontSize: Math.max(10, Math.min(24, prev.fontSize + delta * FONT_SIZE_STEP)),
-    }))
-  }, [])
-
-  const setFontSize = useCallback((px: number) => {
-    setAppearanceSettings(prev => ({
-      ...prev,
-      fontSize: Math.max(10, Math.min(24, px)),
-    }))
-  }, [])
-
-  const resetAppearanceSettings = useCallback(() => {
-    setAppearanceSettings(DEFAULT_APPEARANCE_SETTINGS)
+  const resetAppearanceWithToast = useCallback(() => {
+    resetAppearanceSettings()
     showJetToast("Appearance reset")
-  }, [])
+  }, [resetAppearanceSettings])
 
   const appCommands = useMemo(
     () =>
@@ -2155,14 +1545,10 @@ export function JetApp() {
 
   const contextSearchState = getContextSearchState()
 
-  const deferredPanelRev = useDeferredValue(panelRev)
+  const deferredPanelTree = useDeferredValue(panelTree)
 
-  // Base list: id/title/keybinding for every command in the current context.
-  // Depends on layoutRev (deferredPanelRev) and keybinding map, NOT on
-  // recentCommands or paletteOpen — so opening the palette or bumping the
-  // recent list does not re-scan or re-sort every command.
   const paletteBaseCommands = useMemo(() => {
-    void deferredPanelRev // context depends on active panel; recompute on layout change
+    void deferredPanelTree
     const list = commands.list(getCommandContext()).map(cmd => {
       const fnName = fnByCommandId.get(cmd.id)
       const run = fnName ? appCommands[fnName as keyof typeof appCommands] : undefined
@@ -2175,7 +1561,7 @@ export function JetApp() {
     })
     list.sort((a, b) => a.title.localeCompare(b.title))
     return list
-  }, [commands, deferredPanelRev, appCommands, keybindingByFn, fnByCommandId, getCommandContext])
+  }, [commands, deferredPanelTree, appCommands, keybindingByFn, fnByCommandId, getCommandContext])
 
   // Recent overlay: linear pass, no re-sort. When no recent, return base by
   // identity so downstream memos/renders see stable reference.
@@ -2485,23 +1871,6 @@ export function JetApp() {
     }
   }, [layoutReady])
 
-  useEffect(() => {
-    if (!window.jet?.lsp?.onCrashed) return
-    return window.jet.lsp.onCrashed(id => {
-      lspClientPool.releaseConnection(id)
-      setLspCrashed(true)
-      bumpLspRevision()
-      showJetToast("LSP crashed — will retry on next editor focus")
-    })
-  }, [lspClientPool, bumpLspRevision])
-
-  const lspStatus = useMemo((): "connected" | "off" | "unavailable" => {
-    if (!window.jet?.lsp) return "unavailable"
-    if (lspCrashed) return "off"
-    if (lspManager?.hasAnyConnection()) return "connected"
-    return "off"
-  }, [lspManager, lspCrashed, lspRevision])
-
   const problemsFpRef = useRef("")
   const problemsRafRef = useRef<number | null>(null)
   const refreshProblems = useCallback(() => {
@@ -2525,124 +1894,95 @@ export function JetApp() {
   // sessions. Re-scan on layoutRev, not on per-keystroke content signals.
   useEffect(() => {
     scheduleRefreshProblems()
-  }, [panelRev, scheduleRefreshProblems])
+  }, [panelTree, scheduleRefreshProblems])
 
   useEffect(() => {
     syncProblemsToListTab()
   }, [problems, syncProblemsToListTab])
 
-  const handleLspAttachFailed = useCallback(
-    (fileUri: string) => {
-      void ensureLspForFile(fileUri)
-    },
-    [ensureLspForFile],
-  )
-
   executeCommandRef.current = executeCommand
   runKeyBindingRef.current = runKeyBinding
-  handleLspAttachFailedRef.current = handleLspAttachFailed
   refreshProblemsRef.current = scheduleRefreshProblems
 
   useEffect(() => {
     if (activeTabKindName !== "editor") setEditorCursor(null)
   }, [activeTabKindName])
 
-  useEffect(() => {
-    let lastCloseAt = 0
-    const chordState = createChordState()
-    let chordTimeout: number | null = null
-    const clearPendingChord = () => {
-      if (chordTimeout != null) window.clearTimeout(chordTimeout)
-      chordTimeout = null
-      setPendingChordPrefix(null)
-    }
-    const closeBuffer = () => {
-      if (!workspace.manager.hasFolders() || anyOverlayOpen(keymapContext)) return
-      const now = Date.now()
-      if (now - lastCloseAt < 100) return
-      lastCloseAt = now
-      void executeCommand("workspace.closeBuffer")
-    }
-    const dispatchKeyBinding = (e: KeyboardEvent, opts?: { allowEditor?: boolean }): boolean => {
-      const allowEditor = opts?.allowEditor ?? false
-      const hadPendingChord = chordState.prefix != null
-      const result = resolveKeydownBinding(e, keymapBindings, keymapContext, chordState)
-      if (result === "chord-started") {
-        e.preventDefault()
-        setPendingChordPrefix(chordState.prefix)
-        if (chordTimeout != null) window.clearTimeout(chordTimeout)
-        chordTimeout = window.setTimeout(clearPendingChord, CHORD_TIMEOUT_MS)
-        return true
-      }
-      if (hadPendingChord && chordState.prefix == null) clearPendingChord()
-      if (result && isChordBinding(result.key)) {
-        e.preventDefault()
-        runKeyBinding(result)
-        return true
-      }
-      if (result && !isEditorKeyBinding(result, keymapContext)) {
-        e.preventDefault()
-        e.stopPropagation()
-        runKeyBinding(result)
-        return true
-      }
-      if (allowEditor && result && isEditorKeyBinding(result, keymapContext)) {
-        const panel = appStateRef.current.focusedPanel ?? editorPanelRef.current
+  useGlobalKeymap({
+    keymapBindings,
+    keymapContext,
+    workspace,
+    getFocusedPanel: () => appStateRef.current.focusedPanel,
+    getEditorPanel: () => editorPanelRef.current,
+    executeCommand,
+    runKeyBinding,
+    setPendingChordPrefix,
+  })
+
+  const overlayHandlers = useMemo(
+    (): OverlayHandlers => ({
+      setOverlayOpen: setOpen,
+      onAppearanceSettingsChange: setAppearanceSettings,
+      onGotoLineSubmit: (line, column) => {
+        const panel = appStateRef.current.focusedPanel
         const view = panel ? getEditorView(panel) : null
-        if (view?.hasFocus || keymapContext.editorFocus) {
-          e.preventDefault()
-          e.stopPropagation()
-          runKeyBinding(result, view ?? undefined)
-          return true
+        if (view) jumpToLine(view, line, column)
+      },
+      onQuickOpenSearch: quickOpenSearch,
+      onQuickOpenSelect: (displayPath, query) => {
+        const folder = resolveContextFolder()
+        const folders = folder ? [folder] : workspace.folders
+        const resolved = resolveQuickOpenDisplayPath(displayPath, folders)
+        if (!resolved) return
+        void window.jet?.search?.trackFileAccess?.(
+          resolved.folder.root.uri,
+          query,
+          resolved.relativePath,
+        )
+        handleOpenFile(resolved.fileUri, resolved.fullPath)
+      },
+      onBufferSelect: uri => handleOpenFile(uri, fileUriToPath(uri)),
+      onOpenFile: handleOpenFile,
+      onRequestOpenFolder: () => {
+        setOpenFileOpen(false)
+        void executeCommand("workspace.openFolder")
+      },
+      onFolderPickerSelect: handleFolderPickerSelect,
+      onSelectFolder: path => openWorkspaceFolder(path, { replace: true }),
+      onAddWorkspaceSelect: path => openWorkspaceFolder(path),
+      onResetAppearanceSettings: resetAppearanceWithToast,
+      onSelectProject: path => openWorkspaceFolder(path, { replace: true }),
+      onOutlineSelect: line => {
+        const panel = appStateRef.current.focusedPanel
+        const view = panel ? getEditorView(panel) : null
+        if (view) jumpToLine(view, line, 1)
+      },
+      onRunCommand: id => {
+        void executeCommand(id)
+      },
+      onFolderPickerOpenChange: handleFolderPickerOpenChange,
+      resolveHomeDir: async () => {
+        if (!window.jet?.getHomeDir) {
+          throw new Error("window.jet.getHomeDir not available")
         }
-      }
-      if (allowEditor && result) {
-        e.preventDefault()
-        runKeyBinding(result)
-        return true
-      }
-      return false
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (anyOverlayOpen(keymapContext)) return
-      const target = e.target
-      const inXterm = target instanceof HTMLElement && target.closest(".xterm") != null
-      if (target instanceof HTMLInputElement || (target instanceof HTMLTextAreaElement && !inXterm)) {
-        return
-      }
-
-      if (keymapContext.terminalFocus || inXterm) {
-        if (dispatchKeyBinding(e)) return
-        if (keyEventMatchesBinding(e, "Cmd-=") || keyEventMatchesBinding(e, "Cmd--")) {
-          e.preventDefault()
-          e.stopPropagation()
-          void executeCommand(keyEventMatchesBinding(e, "Cmd--") ? "ui.zoomOut" : "ui.zoomIn")
-          return
-        }
-        if (keymapContext.terminalFocus && !inXterm) {
-          const textarea = document.querySelector<HTMLTextAreaElement>(
-            "[data-jet-tab-slot][data-jet-tab-active] [data-jet-terminal-panel] .xterm-helper-textarea",
-          )
-          if (textarea && document.activeElement !== textarea) textarea.focus()
-        }
-        return
-      }
-
-      if (keyEventMatchesBinding(e, "Cmd-w")) {
-        if (!workspace.manager.hasFolders()) return
-        e.preventDefault()
-        e.stopPropagation()
-        closeBuffer()
-        return
-      }
-      dispatchKeyBinding(e, { allowEditor: true })
-    }
-    window.addEventListener("keydown", onKey, true)
-    return () => {
-      window.removeEventListener("keydown", onKey, true)
-      if (chordTimeout != null) window.clearTimeout(chordTimeout)
-    }
-  }, [keymapBindings, keymapContext, runKeyBinding, workspace.root, executeCommand])
+        return window.jet.getHomeDir()
+      },
+    }),
+    [
+      setOpen,
+      setAppearanceSettings,
+      quickOpenSearch,
+      handleOpenFile,
+      setOpenFileOpen,
+      executeCommand,
+      handleFolderPickerSelect,
+      openWorkspaceFolder,
+      resetAppearanceWithToast,
+      resolveContextFolder,
+      workspace.folders,
+      handleFolderPickerOpenChange,
+    ],
+  )
 
   const titleBarMenus = useMemo<JetTitleBarMenu[]>(() => {
     const shortcutFor = (fnName: string): string | undefined => {
@@ -2730,7 +2070,35 @@ export function JetApp() {
     new URLSearchParams(window.location.search).get("titlebar") === "1"
   const showTitleBar = forceTitleBar || isMac
 
+  const showOverlayHost =
+    gotoLineOpen ||
+    (quickOpenOpen && contextSearchState.supported) ||
+    bufferListOpen ||
+    openFileOpen ||
+    folderPickerOpen ||
+    switchFolderOpen ||
+    cdOpen ||
+    addWorkspaceOpen ||
+    settingsOpen ||
+    projectSwitcherOpen ||
+    outlineOpen ||
+    paletteOpen
+
   return (
+    <OverlayControllerProvider
+      initialAppearanceSettings={appearanceSettings}
+      workspace={workspace}
+      handlers={overlayHandlers}
+    >
+      <OverlayControllerSync
+        open={overlayOpen}
+        appearanceSettings={appearanceSettings}
+        projects={projects}
+        outlineSymbols={outlineSymbols}
+        searchSupported={contextSearchState.supported}
+        searchScanReady={contextSearchState.scanReady}
+        paletteCommands={paletteCommands}
+      />
     <TooltipProvider>
     <div className="h-full w-full" data-drag-over={fileDragOver || undefined}>
     <AppShell
@@ -2782,6 +2150,7 @@ export function JetApp() {
             onNewTerminal={rootUri => void newTerminalInWorkspace(rootUri)}
             onLaunchAgentTerminal={launchAgentTerminal}
             onCloseTerminal={closeTerminalTab}
+            onSidebarFocusChange={setSidebarFocused}
           />
         ) : null}
         <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -2794,127 +2163,15 @@ export function JetApp() {
             onFocusPanel={setFocusedPanel}
             onEvent={handlePanelEvent}
             tabDnd={tabDndHandlers}
-            renderHeader={(view, panelId, meta) => (
-              <PanelTabBar
-                panelId={panelId}
-                view={view}
-                store={tabStore}
-                registry={tabTypeRegistry}
-                focused={meta.focused}
-                onActivateTab={tabId =>
-                  handlePanelEvent({ type: "tabActivate", panelId, tabId })
-                }
-                onCloseTab={tabId =>
-                  handlePanelEvent({ type: "tabClose", panelId, tabId })
-                }
-              />
-            )}
-            renderContent={(view, panelId, meta) => (
-              <PanelBody
-                panelId={panelId}
-                view={view}
-                store={tabStore}
-                registry={tabTypeRegistry}
-                focused={meta.focused}
-                renderRevision={`${activeTheme.id}:${appearanceSettings.fontSize}:${appearanceSettings.monoFontFamily}:${appearanceSettings.terminalLineHeight}:${appearanceSettings.cursorBlink}`}
-              />
-            )}
+            renderHeader={renderPanelHeader}
+            renderContent={renderPanelContent}
           />
         )}
         </SidebarInset>
       </SidebarProvider>
 
       <Suspense fallback={null}>
-        {(gotoLineOpen ||
-          (quickOpenOpen && contextSearchState.supported) ||
-          bufferListOpen ||
-          openFileOpen ||
-          folderPickerOpen ||
-          switchFolderOpen ||
-          cdOpen ||
-          addWorkspaceOpen ||
-          settingsOpen ||
-          projectSwitcherOpen ||
-          outlineOpen ||
-          paletteOpen) && (
-          <OverlayHost
-            gotoLineOpen={gotoLineOpen}
-            onGotoLineOpenChange={setGotoLineOpen}
-            onGotoLineSubmit={(line, column) => {
-              const panel = focusedPanel
-              const view = panel ? getEditorView(panel) : null
-              if (view) jumpToLine(view, line, column)
-            }}
-            quickOpenOpen={quickOpenOpen}
-            searchSupported={contextSearchState.supported}
-            searchScanReady={contextSearchState.scanReady}
-            onQuickOpenOpenChange={setQuickOpenOpen}
-            onQuickOpenSearch={quickOpenSearch}
-            onQuickOpenSelect={(displayPath, query) => {
-              const folder = resolveContextFolder()
-              const folders = folder ? [folder] : workspace.folders
-              const resolved = resolveQuickOpenDisplayPath(displayPath, folders)
-              if (!resolved) return
-              void window.jet?.search?.trackFileAccess?.(
-                resolved.folder.root.uri,
-                query,
-                resolved.relativePath,
-              )
-              handleOpenFile(resolved.fileUri, resolved.fullPath)
-            }}
-            bufferListOpen={bufferListOpen}
-            onBufferListOpenChange={setBufferListOpen}
-            workspace={workspace}
-            onBufferSelect={uri => handleOpenFile(uri, fileUriToPath(uri))}
-            openFileOpen={openFileOpen}
-            onOpenFileOpenChange={setOpenFileOpen}
-            onOpenFile={handleOpenFile}
-            onRequestOpenFolder={() => {
-              setOpenFileOpen(false)
-              void executeCommand("workspace.openFolder")
-            }}
-            folderPickerOpen={folderPickerOpen}
-            onFolderPickerOpenChange={handleFolderPickerOpenChange}
-            onFolderPickerSelect={handleFolderPickerSelect}
-            switchFolderOpen={switchFolderOpen}
-            onSwitchFolderOpenChange={setSwitchFolderOpen}
-            cdOpen={cdOpen}
-            onCdOpenChange={setCdOpen}
-            onSelectFolder={path => openWorkspaceFolder(path, { replace: true })}
-            addWorkspaceOpen={addWorkspaceOpen}
-            onAddWorkspaceOpenChange={setAddWorkspaceOpen}
-            onAddWorkspaceSelect={path => openWorkspaceFolder(path)}
-            settingsOpen={settingsOpen}
-            onSettingsOpenChange={setSettingsOpen}
-            appearanceSettings={appearanceSettings}
-            onAppearanceSettingsChange={setAppearanceSettings}
-            onResetAppearanceSettings={resetAppearanceSettings}
-            resolveHomeDir={async () => {
-              if (!window.jet?.getHomeDir) {
-                throw new Error("window.jet.getHomeDir not available")
-              }
-              return window.jet.getHomeDir()
-            }}
-            projectSwitcherOpen={projectSwitcherOpen}
-            onProjectSwitcherOpenChange={setProjectSwitcherOpen}
-            projects={projects}
-            onSelectProject={path => openWorkspaceFolder(path, { replace: true })}
-            outlineOpen={outlineOpen}
-            onOutlineOpenChange={setOutlineOpen}
-            outlineSymbols={outlineSymbols}
-            onOutlineSelect={line => {
-              const panel = focusedPanel
-              const view = panel ? getEditorView(panel) : null
-              if (view) jumpToLine(view, line, 1)
-            }}
-            paletteOpen={paletteOpen}
-            onPaletteOpenChange={setPaletteOpen}
-            paletteCommands={paletteCommands}
-            onRunCommand={id => {
-              void executeCommand(id)
-            }}
-          />
-        )}
+        {showOverlayHost && <OverlayHost />}
       </Suspense>
       {focusedPanel ? <FindReplacePopover panelId={focusedPanel} /> : null}
       <ConfirmDialogHost />
@@ -2922,5 +2179,6 @@ export function JetApp() {
     </AppShell>
     </div>
     </TooltipProvider>
+    </OverlayControllerProvider>
   )
 }

@@ -11,7 +11,9 @@ import {
   trackTerminalPtyId,
 } from "./terminal-session.js"
 
-export const TERMINAL_TAB_TYPE_ID = "terminal"
+import type { KnownTabKind } from "@jet/workspace"
+
+export const TERMINAL_TAB_TYPE_ID: KnownTabKind = "terminal"
 export { registerTerminalSession, terminalCwdForTab }
 
 export type TerminalTabState = { label: string; cwdRootUri: string }

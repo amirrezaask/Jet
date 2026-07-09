@@ -4,7 +4,7 @@ import { fileUriToPath, pathToFileUri } from "@jet/shared"
 import { findProjectRoot, parentDir } from "./project-root.js"
 
 function mockFs(existing: string[]): { stat(uri: string): Promise<{ isFile: boolean }> } {
-  const set = new Set(existing.map(p => pathToFileUri(p)))
+  const set = new Set<string>(existing.map(p => pathToFileUri(p)))
   return {
     async stat(uri: string) {
       if (set.has(uri)) return { isFile: true }

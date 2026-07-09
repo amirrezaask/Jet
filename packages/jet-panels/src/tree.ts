@@ -170,6 +170,14 @@ export class PanelTree<TView> {
     walk(this.root)
   }
 
+  /** Shallow structural clone — shares leaf views until mutated on the copy. */
+  clone(): PanelTree<TView> {
+    const tree = new PanelTree(this.options)
+    tree.root = clonePanelNode(this.root)
+    tree.nextPanelId = this.nextPanelId
+    return tree
+  }
+
   toJSON(): PanelTreeSnapshot<TView> {
     return {
       root: structuredClone(this.root),
@@ -177,13 +185,35 @@ export class PanelTree<TView> {
     }
   }
 
+  applySnapshot(snapshot: PanelTreeSnapshot<TView>): void {
+    this.root = snapshot.root
+    this.nextPanelId = snapshot.nextPanelId
+  }
+
+  static fromSnapshot<TView>(
+    options: PanelTreeOptions<TView>,
+    snapshot: PanelTreeSnapshot<TView>,
+  ): PanelTree<TView> {
+    const tree = new PanelTree(options)
+    tree.applySnapshot(snapshot)
+    return tree
+  }
+
   static fromJSON<TView>(
     options: PanelTreeOptions<TView>,
     snapshot: PanelTreeSnapshot<TView>,
   ): PanelTree<TView> {
-    const tree = new PanelTree(options, snapshot.root)
-    tree.nextPanelId = snapshot.nextPanelId
-    return tree
+    return PanelTree.fromSnapshot(options, snapshot)
+  }
+
+  /** Toggle root split between row and column; no-op when root is a leaf. */
+  toggleRootOrientation(): boolean {
+    if (this.root.kind !== "row" && this.root.kind !== "column") return false
+    this.root = {
+      kind: this.root.kind === "row" ? "column" : "row",
+      split: this.root.split,
+    }
+    return true
   }
 
   private createDefaultLeaf(): PanelNode<TView> {
@@ -263,4 +293,18 @@ export class PanelTree<TView> {
   }
 }
 
+function clonePanelNode<TView>(node: PanelNode<TView>): PanelNode<TView> {
+  if (node.kind === "leaf") {
+    return { kind: "leaf", panelId: node.panelId, view: node.view }
+  }
+  return {
+    kind: node.kind,
+    split: {
+      children: node.split.children.map(clonePanelNode),
+      ratios: [...node.split.ratios],
+    },
+  }
+}
+
+export { clonePanelNode }
 export * from "./events.js"

@@ -1,5 +1,4 @@
 import type { JetTheme } from "@jet/codemirror"
-import type { ReactNode } from "react"
 import { RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import { Checkbox } from "@/components/ui/checkbox.js"
@@ -16,6 +15,7 @@ import { Label } from "@/components/ui/label.js"
 import { ScrollArea } from "@/components/ui/scroll-area.js"
 import { Separator } from "@/components/ui/separator.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
+import { SettingsField } from "@/components/SettingsField.js"
 import { themePreviewSwatches } from "@/theme/bundled.js"
 
 export type JetDensity = "compact" | "comfortable"
@@ -51,26 +51,6 @@ function settingPatch(
   patch: Partial<JetAppearanceSettings>,
 ): JetAppearanceSettings {
   return { ...settings, ...patch }
-}
-
-function SettingsField({
-  label,
-  detail,
-  children,
-}: {
-  label: string
-  detail?: string
-  children: ReactNode
-}) {
-  return (
-    <div className="grid items-center gap-2 sm:grid-cols-[minmax(10rem,14rem)_minmax(14rem,1fr)] sm:gap-4">
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-foreground">{label}</div>
-        {detail ? <div className="mt-1 text-3xs text-muted-foreground">{detail}</div> : null}
-      </div>
-      <div className="min-w-0 sm:justify-self-stretch">{children}</div>
-    </div>
-  )
 }
 
 function ThemeButton({

@@ -334,8 +334,7 @@ export function TerminalPanel({
     >
       <div
         ref={containerRef}
-        className="jet-terminal-surface min-h-0 flex-1 overflow-hidden p-1.5"
-        style={{ background: theme.colors.bg }}
+        className="jet-terminal-surface min-h-0 flex-1 overflow-hidden bg-background p-1.5"
       />
     </div>
   )

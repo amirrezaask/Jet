@@ -3,6 +3,11 @@ import { memo, useCallback, useMemo, useState } from "react"
 import { ChevronRightIcon, FolderClosedIcon, FolderIcon } from "lucide-react"
 import { cn } from "../lib/utils.js"
 import { Button } from "../components/ui/button.js"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../components/ui/collapsible.js"
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel.js"
 import {
   buildTurnDiffTree,
@@ -96,40 +101,44 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
     if (node.kind === "directory") {
       const isExpanded = expandedDirectories[node.path] ?? allDirectoriesExpanded
       return (
-        <div key={`dir:${node.path}`}>
-          <button
-            type="button"
-            className="group flex w-full items-center gap-1.5 rounded-xl py-1 pr-3 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-            style={{ paddingLeft: `${leftPadding}px` }}
-            onClick={() => toggleDirectory(node.path)}
-          >
-            <ChevronRightIcon
-              aria-hidden="true"
-              className={cn(
-                "size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-hover:text-foreground/80",
-                isExpanded && "rotate-90",
+        <Collapsible
+          key={`dir:${node.path}`}
+          open={isExpanded}
+          onOpenChange={() => toggleDirectory(node.path)}
+        >
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-auto w-full justify-start gap-1.5 rounded-xl py-1 pr-3 font-normal hover:bg-accent/60"
+              style={{ paddingLeft: `${leftPadding}px` }}
+            >
+              <ChevronRightIcon
+                aria-hidden="true"
+                className={cn(
+                  "size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-hover:text-foreground/80",
+                  isExpanded && "rotate-90",
+                )}
+              />
+              {isExpanded ? (
+                <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
+              ) : (
+                <FolderClosedIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
               )}
-            />
-            {isExpanded ? (
-              <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
-            ) : (
-              <FolderClosedIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
-            )}
-            <span className="truncate font-mono text-3xs text-muted-foreground/90 group-hover:text-foreground/90">
-              {node.name}
-            </span>
-            {hasNonZeroStat(node.stat) ? (
-              <span className="ml-auto shrink-0 font-mono text-3xs tabular-nums">
-                <DiffStatLabel additions={node.stat.additions} deletions={node.stat.deletions} />
+              <span className="truncate font-mono text-3xs text-muted-foreground/90 group-hover:text-foreground/90">
+                {node.name}
               </span>
-            ) : null}
-          </button>
-          {isExpanded ? (
-            <div className="space-y-0.5">
-              {node.children.map(childNode => renderTreeNode(childNode, depth + 1))}
-            </div>
-          ) : null}
-        </div>
+              {hasNonZeroStat(node.stat) ? (
+                <span className="ml-auto shrink-0 font-mono text-3xs tabular-nums">
+                  <DiffStatLabel additions={node.stat.additions} deletions={node.stat.deletions} />
+                </span>
+              ) : null}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-0.5">
+            {node.children.map(childNode => renderTreeNode(childNode, depth + 1))}
+          </CollapsibleContent>
+        </Collapsible>
       )
     }
 

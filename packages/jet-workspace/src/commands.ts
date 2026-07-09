@@ -1,3 +1,4 @@
+import type { EditorView } from "@codemirror/view"
 import type { WorkspaceFolder } from "./workspace-manager.js"
 import type { WorkspaceService } from "./workspace.js"
 
@@ -54,7 +55,7 @@ export type JetUI = {
 export type JetCommandContext = {
   workspace: WorkspaceService
   ui: JetUI
-  getActiveEditorView: () => unknown
+  getActiveEditorView: () => EditorView | null
 }
 
 export type JetCommand = (ctx: JetCommandContext, args?: unknown) => unknown | Promise<unknown>

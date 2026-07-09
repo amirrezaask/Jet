@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.js"
 import { Button } from "@/components/ui/button.js"
+import { Input } from "@/components/ui/input.js"
 import { KeyBindingKbd } from "./KeyBindingKbd.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
 import { COMMAND_NO_SELECTION } from "@/lib/command-shell.js"
@@ -350,7 +351,7 @@ export function CdOverlay({
           >
             <SearchIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             <div className="relative min-w-0 flex-1">
-              <input
+              <Input
                 ref={inputRef}
                 type="text"
                 spellCheck={false}
@@ -412,7 +413,7 @@ export function CdOverlay({
                     applyCompletion(highlightedEntry as DirEntry)
                   }
                 }}
-                className="w-full bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                className="border-0 bg-transparent font-mono text-sm shadow-none focus-visible:ring-0"
                 aria-controls="jet-cd-list"
               />
               {ghostCompletion ? (

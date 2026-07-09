@@ -5,8 +5,8 @@ import { CheckIcon, ChevronsUpDownIcon, XIcon } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils.js";
-import { Input } from "./input.js";
-import { ScrollArea } from "./scroll-area.js";
+import { Input } from "./combobox-field.js";
+import { ScrollArea } from "./base-scroll-area.js";
 
 const ComboboxContext = React.createContext<{
   chipsRef: React.RefObject<Element | null> | null;

@@ -79,8 +79,8 @@ importers:
         specifier: ^4.1.8
         version: 4.3.1
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
       vite:
         specifier: ^6.3.5
         version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
@@ -98,8 +98,8 @@ importers:
         version: link:../jet-shared
     devDependencies:
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/jet-app:
     dependencies:
@@ -165,8 +165,8 @@ importers:
         specifier: ^4.19.4
         version: 4.22.4
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
       vite:
         specifier: ^6.3.5
         version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)
@@ -232,8 +232,8 @@ importers:
         specifier: ^4.19.4
         version: 4.22.4
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/jet-lsp:
     dependencies:
@@ -259,9 +259,12 @@ importers:
         specifier: workspace:*
         version: link:../jet-workspace
     devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/jet-node-host:
     dependencies:
@@ -286,8 +289,8 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/jet-panels:
     dependencies:
@@ -299,20 +302,23 @@ importers:
         specifier: ^4.19.4
         version: 4.22.4
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/jet-shared:
     devDependencies:
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/jet-ui:
     dependencies:
       '@base-ui/react':
         specifier: ^1.4.1
         version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@codemirror/autocomplete':
+        specifier: ^6.18.6
+        version: 6.20.3
       '@codemirror/state':
         specifier: ^6.5.2
         version: 6.7.0
@@ -468,11 +474,14 @@ importers:
         specifier: ^4.19.4
         version: 4.22.4
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/jet-workspace:
     dependencies:
+      '@codemirror/view':
+        specifier: ^6.37.0
+        version: 6.43.4
       '@jet/agents':
         specifier: workspace:*
         version: link:../jet-agents
@@ -487,8 +496,8 @@ importers:
         specifier: ^4.19.4
         version: 4.22.4
       typescript:
-        specifier: ^5.8.3
-        version: 5.9.3
+        specifier: ^7.0.2
+        version: 7.0.2
 
 packages:
 
@@ -1059,7 +1068,6 @@ packages:
   '@ff-labs/fff-node@0.9.6':
     resolution: {integrity: sha512-2LbHJjwW/7vOLh1lSv0ipzA9Du5+LatUGiumQFaO9IcjMT8YgpmrCp/RRMyInsG0iBIX6A0WSxgei8qOFJLlNw==}
     engines: {node: '>=18.0.0'}
-    cpu: [x64, arm64]
     os: [darwin, linux, win32]
 
   '@floating-ui/core@1.7.5':

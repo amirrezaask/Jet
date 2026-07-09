@@ -25,16 +25,20 @@ export type TabType<S = unknown> = {
 }
 
 export class TabTypeRegistry {
-  private types = new Map<string, TabType<any>>()
+  private types = new Map<string, TabType<unknown>>()
   readonly onDidChange = new Emitter<{ typeId: string }>()
 
   register<S>(type: TabType<S>): void {
-    this.types.set(type.id, type as TabType<any>)
+    this.types.set(type.id, type as TabType<unknown>)
     this.onDidChange.fire({ typeId: type.id })
   }
 
-  get(typeId: string): TabType<any> | undefined {
+  get(typeId: string): TabType<unknown> | undefined {
     return this.types.get(typeId)
+  }
+
+  getTyped<S>(typeId: string): TabType<S> | undefined {
+    return this.types.get(typeId) as TabType<S> | undefined
   }
 
   has(typeId: string): boolean {
@@ -43,7 +47,7 @@ export class TabTypeRegistry {
 }
 
 export class TabStore {
-  private instances = new Map<string, TabInstance<any>>()
+  private instances = new Map<string, TabInstance<unknown>>()
   private counter = 1
   readonly onDidChange = new Emitter<{ id: string }>()
 
@@ -62,16 +66,20 @@ export class TabStore {
       return existing as TabInstance<S>
     }
     const instance: TabInstance<S> = { id: tabId, typeId, state }
-    this.instances.set(tabId, instance)
+    this.instances.set(tabId, instance as TabInstance<unknown>)
     this.onDidChange.fire({ id: tabId })
     return instance
   }
 
-  get(id: string): TabInstance<any> | undefined {
+  get(id: string): TabInstance<unknown> | undefined {
     return this.instances.get(id)
   }
 
-  typeOf(id: string): TabType<any> | undefined {
+  getTyped<S>(id: string): TabInstance<S> | undefined {
+    return this.instances.get(id) as TabInstance<S> | undefined
+  }
+
+  typeOf(id: string): TabType<unknown> | undefined {
     const inst = this.instances.get(id)
     if (!inst) return undefined
     return this.registry.get(inst.typeId)
@@ -82,7 +90,7 @@ export class TabStore {
   }
 
   update<S>(id: string, next: S | ((prev: S) => S)): void {
-    const inst = this.instances.get(id) as TabInstance<S> | undefined
+    const inst = this.getTyped<S>(id)
     if (!inst) return
     inst.state = typeof next === "function" ? (next as (prev: S) => S)(inst.state) : next
     this.onDidChange.fire({ id })

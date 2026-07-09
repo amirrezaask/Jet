@@ -7,8 +7,8 @@ import { memo, useEffect, useMemo, useState } from "react";
 import type { VariantProps } from "class-variance-authority";
 import { ChevronDownIcon } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button.js";
-import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover.js";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip.js";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
 import { cn } from "@/lib/utils.js";
 import { ModelPickerContent } from "./ModelPickerContent";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
@@ -143,52 +143,49 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         setIsMenuOpen(open);
       }}
     >
-      <PopoverTrigger
-        render={
-          <Button
-            size="sm"
-            variant={props.triggerVariant ?? "ghost"}
-            data-chat-provider-model-picker="true"
-            className={cn(
-              "min-w-0 justify-between whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80",
-              props.compact ? "max-w-42 shrink-0" : "max-w-48 shrink sm:max-w-56 sm:px-3",
-              props.triggerClassName,
-            )}
-            disabled={props.disabled}
-          />
-        }
-      >
-        <span className="flex min-w-0 flex-1 items-center gap-2">
-          {activeEntry ? (
-            <ProviderInstanceIcon
-              driverKind={activeEntry.driverKind}
-              displayName={activeEntry.displayName}
-              accentColor={activeEntry.accentColor}
-              showBadge={showInstanceBadge}
-              className={showInstanceBadge ? "size-5" : "size-4"}
-              iconClassName={cn("size-4", props.activeProviderIconClassName)}
-              indicatorBackground="var(--input)"
-              badgeClassName={cn(
-                "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3",
-                "px-0.5 text-4xs",
-              )}
-            />
-          ) : null}
-          <Tooltip>
-            <TooltipTrigger render={<span className="min-w-0 flex-1 overflow-hidden truncate" />}>
-              {triggerTitle}
-            </TooltipTrigger>
-            <TooltipPopup side="top">{triggerLabel}</TooltipPopup>
-          </Tooltip>
-        </span>
-        <span aria-hidden="true" className="flex items-center">
-          <ChevronDownIcon aria-hidden="true" className="!ms-0 !-me-1 size-3 shrink-0 opacity-60" />
-        </span>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          variant={props.triggerVariant ?? "ghost"}
+          data-chat-provider-model-picker="true"
+          className={cn(
+            "min-w-0 justify-between whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80",
+            props.compact ? "max-w-42 shrink-0" : "max-w-48 shrink sm:max-w-56 sm:px-3",
+            props.triggerClassName,
+          )}
+          disabled={props.disabled}
+        >
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            {activeEntry ? (
+              <ProviderInstanceIcon
+                driverKind={activeEntry.driverKind}
+                displayName={activeEntry.displayName}
+                accentColor={activeEntry.accentColor}
+                showBadge={showInstanceBadge}
+                className={showInstanceBadge ? "size-5" : "size-4"}
+                iconClassName={cn("size-4", props.activeProviderIconClassName)}
+                indicatorBackground="var(--input)"
+                badgeClassName={cn(
+                  "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3",
+                  "px-0.5 text-4xs",
+                )}
+              />
+            ) : null}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="min-w-0 flex-1 overflow-hidden truncate">{triggerTitle}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top">{triggerLabel}</TooltipContent>
+            </Tooltip>
+          </span>
+          <span aria-hidden="true" className="flex items-center">
+            <ChevronDownIcon aria-hidden="true" className="!ms-0 !-me-1 size-3 shrink-0 opacity-60" />
+          </span>
+        </Button>
       </PopoverTrigger>
-      <PopoverPopup
+      <PopoverContent
         align="start"
-        className="border-0 bg-transparent p-0 shadow-none before:hidden [--viewport-inline-padding:0]"
-        viewportClassName="!overflow-hidden p-0"
+        className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
         <ModelPickerContent
           activeInstanceId={activeInstanceId}
@@ -205,7 +202,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             : {})}
           onInstanceModelChange={handleInstanceModelChange}
         />
-      </PopoverPopup>
+      </PopoverContent>
     </Popover>
   );
 });

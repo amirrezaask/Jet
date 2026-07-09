@@ -23,6 +23,7 @@
     "@codemirror/view": "^6.37.0"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "@types/node": "^22.15.29",
+    "typescript": "^7.0.2"
   }
 }

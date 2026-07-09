@@ -1,12 +1,12 @@
-import type { JetPanelTree, WorkspaceFolder, WorkspaceService } from "@jet/workspace"
+import type { JetPanelTree, KnownTabKind, WorkspaceFolder, WorkspaceService } from "@jet/workspace"
 import { folderForFileUri, folderForRootUri } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
 import { isUntitledUri } from "@jet/shared"
-import { activeTabKind, getActiveEditorFileUri, getActiveTabId } from "./panel-tab-context.js"
+import { activeTabKind, getActiveEditorFileUri, getActiveTabId, type ActiveTabKind } from "./panel-tab-context.js"
 import { parseAgentChatTabId } from "./tabs/agent-chat-id.js"
 import { terminalCwdForTab } from "./tabs/terminal-session.js"
 
-function isContextualTabKind(kind: string | undefined): boolean {
+function isContextualTabKind(kind: ActiveTabKind | undefined): kind is KnownTabKind {
   return kind === "editor" || kind === "terminal" || kind === "agent-chat"
 }
 
@@ -14,7 +14,7 @@ function isContextualTabKind(kind: string | undefined): boolean {
 export function resolveFolderForActiveTab(
   tree: JetPanelTree,
   panel: PanelId | null,
-  tabRegistry: { kindFor(id: string): string | undefined },
+  tabRegistry: { kindFor(id: string): KnownTabKind | undefined },
   workspace: WorkspaceService,
 ): WorkspaceFolder | null {
   if (!panel) return workspace.manager.activeFolder ?? workspace.folders[0] ?? null
@@ -36,7 +36,7 @@ export function resolveFolderForActiveTab(
   }
 
   const fileUri = getActiveEditorFileUri(tree, panel)
-  if (fileUri && !isUntitledUri(fileUri)) {
+  if (fileUri) {
     const folder = folderForFileUri(workspace, fileUri)
     if (folder) return folder
   }
@@ -56,7 +56,7 @@ export function resolveFolderForActiveTab(
 export function resolveContextWorkspaceFolder(
   tree: JetPanelTree,
   panel: PanelId | null,
-  tabRegistry: { kindFor(id: string): string | undefined },
+  tabRegistry: { kindFor(id: string): KnownTabKind | undefined },
   workspace: WorkspaceService,
   lastContextFolder: WorkspaceFolder | null,
 ): WorkspaceFolder | null {

@@ -235,11 +235,7 @@ body,
   font-size: inherit;
 }
 
-/* CodeMirror autocomplete — shell tokens (theme.ts adds per-JetTheme colors) */
-.cm-tooltip.cm-tooltip-autocomplete.jet-completion-tooltip > ul > li[aria-selected] {
-  background-color: var(--accent);
-  color: var(--accent-foreground);
-}
+/* CodeMirror autocomplete — native tooltip hidden; Jet renders Radix ContextMenu in EditorTabHost. */
 
 /*
  * Editor horizontal/vertical scroll — CodeMirror owns .cm-scroller (not shadcn
