@@ -91,7 +91,7 @@ export class JetPanelTree extends PanelTree<PanelView> {
   }
 
   clone(): JetPanelTree {
-    return super.clone() as JetPanelTree
+    return this.cloneInto(new JetPanelTree())
   }
 
   static editorOnlyLayout(): { tree: JetPanelTree; editorPanel: PanelId } {

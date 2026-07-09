@@ -80,6 +80,21 @@ describe("JetPanelTree — normalizeTabViews", () => {
 })
 
 describe("JetPanelTree — applyTabDrop", () => {
+  it("clone preserves JetPanelTree drop behavior and panel ids", () => {
+    const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
+    const right = tree.splitAtEdge(editorPanel, "right")
+    tree.setView(editorPanel, buildTabsView("file:///a.ts", ["file:///a.ts"]))
+
+    const clone = tree.clone()
+    const res = clone.applyTabDrop(editorPanel, "file:///a.ts", right, {
+      kind: "split",
+      edge: "bottom",
+    })
+
+    assert.equal(res.moved, true)
+    assert.equal(res.createdPanel?.id, 3)
+  })
+
   it("moveToPane merges tab into target stack and removes from source", () => {
     const { tree, editorPanel } = JetPanelTree.editorOnlyLayout()
     const right = tree.splitAtEdge(editorPanel, "right")

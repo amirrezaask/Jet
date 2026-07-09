@@ -169,6 +169,7 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
     const overlays = document.querySelectorAll<HTMLElement>("[data-jet-panel-drop-overlay]")
     let best: DropHotState = null
     for (const overlay of overlays) {
+      if (overlay.closest("[data-jet-layout-morph-clone]")) continue
       const rect = overlay.getBoundingClientRect()
       if (cx < rect.left || cx > rect.right || cy < rect.top || cy > rect.bottom) continue
       const sitesRaw = overlay.dataset.jetDropSites

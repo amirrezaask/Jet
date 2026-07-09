@@ -172,7 +172,11 @@ export class PanelTree<TView> {
 
   /** Shallow structural clone — shares leaf views until mutated on the copy. */
   clone(): PanelTree<TView> {
-    const tree = new PanelTree(this.options)
+    return this.cloneInto(new PanelTree(this.options))
+  }
+
+  /** Preserve runtime subclass identity while copying the tree's mutable structure. */
+  protected cloneInto<TTree extends PanelTree<TView>>(tree: TTree): TTree {
     tree.root = clonePanelNode(this.root)
     tree.nextPanelId = this.nextPanelId
     return tree

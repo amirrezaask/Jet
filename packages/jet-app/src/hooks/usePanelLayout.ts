@@ -150,13 +150,9 @@ export function usePanelLayout(
         )
         if (!result.moved) {
           changed = false
-        } else if (result.createdPanel) {
-          setFocusedPanel(result.createdPanel)
-        } else {
-          setFocusedPanel(event.target)
         }
         if (changed) {
-          commitTree(tree, undefined, {
+          commitTree(tree, result.createdPanel ?? event.target, {
             animate: true,
             beforeRects: morphBefore,
             spawnFrom: result.createdPanel

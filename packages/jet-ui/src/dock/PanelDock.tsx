@@ -79,11 +79,7 @@ function PanelLeaf<TView>({
       )}
       data-jet-panel-leaf={panelId.id}
       data-jet-panel-dragged-over={dragOver && isDropTarget ? "" : undefined}
-      onMouseDown={e => {
-        const t = e.target as HTMLElement | null
-        if (t && (t.closest("[data-tab-id]") || t.closest("[data-jet-tab-bar]"))) return
-        onFocusPanel(panelId)
-      }}
+      onPointerDownCapture={() => onFocusPanel(panelId)}
       onPointerEnter={() => {
         if (isDropTarget) setDragOver(true)
       }}

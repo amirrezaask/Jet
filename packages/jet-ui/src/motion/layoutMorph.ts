@@ -11,6 +11,7 @@ export type PanelRect = { x: number; y: number; w: number; h: number }
 export function capturePanelLeafRects(): Map<number, PanelRect> {
   const map = new Map<number, PanelRect>()
   for (const el of document.querySelectorAll<HTMLElement>("[data-jet-panel-leaf]")) {
+    if (el.closest("[data-jet-layout-morph-clone]")) continue
     const id = Number(el.dataset.jetPanelLeaf)
     if (!Number.isFinite(id)) continue
     const r = el.getBoundingClientRect()
@@ -28,6 +29,8 @@ export type LayoutMorphOptions = {
 
 function clonePanelShell(from: HTMLElement): HTMLElement {
   const shell = document.createElement("div")
+  shell.dataset.jetLayoutMorphClone = ""
+  shell.setAttribute("aria-hidden", "true")
   shell.className =
     "pointer-events-none fixed z-[100] overflow-hidden rounded-sm border border-border/80 bg-background shadow-md"
   shell.style.willChange = "transform, width, height, opacity"
@@ -63,6 +66,7 @@ export function animateLayoutMorph(
   const clones: { el: HTMLElement; current: PanelRect; to: PanelRect; spawn: boolean }[] = []
 
   for (const el of document.querySelectorAll<HTMLElement>("[data-jet-panel-leaf]")) {
+    if (el.closest("[data-jet-layout-morph-clone]")) continue
     const id = Number(el.dataset.jetPanelLeaf)
     if (!Number.isFinite(id)) continue
     const toRect = el.getBoundingClientRect()
