@@ -32,8 +32,9 @@ function clonePanelShell(from: HTMLElement): HTMLElement {
   shell.dataset.jetLayoutMorphClone = ""
   shell.setAttribute("aria-hidden", "true")
   shell.className =
-    "pointer-events-none fixed z-[100] overflow-hidden rounded-sm border border-border/80 bg-background shadow-md"
-  shell.style.willChange = "transform, width, height, opacity"
+    "pointer-events-none fixed top-0 left-0 z-[100] overflow-hidden rounded-sm border border-border/80 bg-background shadow-md"
+  shell.style.willChange = "transform, opacity"
+  shell.style.transformOrigin = "0 0"
   const inner = from.cloneNode(true) as HTMLElement
   inner.style.pointerEvents = "none"
   inner.style.width = "100%"
@@ -63,7 +64,14 @@ export function animateLayoutMorph(
 
   const halfLifeN = opts.halfLifeN ?? JET_RATE_MENU
   const spawnFrom = opts.spawnFrom ?? new Map<number, PanelRect>()
-  const clones: { el: HTMLElement; current: PanelRect; to: PanelRect; spawn: boolean }[] = []
+  const clones: {
+    el: HTMLElement
+    current: PanelRect
+    to: PanelRect
+    fromW: number
+    fromH: number
+    spawn: boolean
+  }[] = []
 
   for (const el of document.querySelectorAll<HTMLElement>("[data-jet-panel-leaf]")) {
     if (el.closest("[data-jet-layout-morph-clone]")) continue
@@ -76,13 +84,14 @@ export function animateLayoutMorph(
     if (panelRectSettled(from, to)) continue
 
     const shell = clonePanelShell(el)
-    shell.style.left = `${from.x}px`
-    shell.style.top = `${from.y}px`
-    shell.style.width = `${from.w}px`
-    shell.style.height = `${from.h}px`
+    const fromW = Math.max(1, from.w)
+    const fromH = Math.max(1, from.h)
+    shell.style.width = `${fromW}px`
+    shell.style.height = `${fromH}px`
+    shell.style.transform = `translate3d(${from.x}px, ${from.y}px, 0) scale(1, 1)`
     shell.style.opacity = spawnFrom.has(id) ? "0.85" : "0.92"
     document.body.appendChild(shell)
-    clones.push({ el: shell, current: { ...from }, to, spawn: spawnFrom.has(id) })
+    clones.push({ el: shell, current: { ...from }, to, fromW, fromH, spawn: spawnFrom.has(id) })
   }
 
   if (clones.length === 0) return Promise.resolve()
@@ -95,26 +104,23 @@ export function animateLayoutMorph(
       const dt = Math.min(0.05, (now - lastFrame) / 1000)
       lastFrame = now
       const rate = radAnimationRate(halfLifeN, dt)
+      opacityT = radLerp(opacityT, 1, rate)
+      const alpha = 0.92 * (1 - opacityT * 0.15)
       let active = false
 
       for (const clone of clones) {
-        const { current, to } = clone
+        const { current, to, fromW, fromH } = clone
         current.x = radLerp(current.x, to.x, rate)
         current.y = radLerp(current.y, to.y, rate)
         current.w = radLerp(current.w, to.w, rate)
         current.h = radLerp(current.h, to.h, rate)
 
-        clone.el.style.left = `${current.x}px`
-        clone.el.style.top = `${current.y}px`
-        clone.el.style.width = `${current.w}px`
-        clone.el.style.height = `${current.h}px`
+        const sx = current.w / fromW
+        const sy = current.h / fromH
+        clone.el.style.transform = `translate3d(${current.x}px, ${current.y}px, 0) scale(${sx}, ${sy})`
+        clone.el.style.opacity = String(alpha)
 
         if (!panelRectSettled(current, to)) active = true
-      }
-
-      opacityT = radLerp(opacityT, 1, rate)
-      for (const clone of clones) {
-        clone.el.style.opacity = String(0.92 * (1 - opacityT * 0.15))
       }
 
       if (active) {

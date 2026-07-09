@@ -15,6 +15,7 @@ import { useDropHot } from "./TabDndRoot.js"
 import { dropDndId } from "./tab-dnd-types.js"
 import {
   computeDropSites,
+  dropSitesRegistry,
   siteToAction,
   type DropSite,
   type DropSiteKind,
@@ -167,11 +168,9 @@ export function PanelDropOverlay({
     const el = containerRef.current
     if (!el) return
     if (active && effectiveSites.length > 0) {
-      el.dataset.jetDropPanel = String(panelId.id)
-      el.dataset.jetDropSites = JSON.stringify(effectiveSites)
+      dropSitesRegistry.set(el, effectiveSites)
     } else {
-      delete el.dataset.jetDropPanel
-      delete el.dataset.jetDropSites
+      dropSitesRegistry.delete(el)
     }
   }, [active, effectiveSites, panelId.id])
 

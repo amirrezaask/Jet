@@ -36,22 +36,38 @@ export function QuickOpenOverlay({
     }
 
     const gen = ++searchGen.current
-    const id = window.setTimeout(() => {
-      setSearching(true)
+    let spinnerId: number | undefined
+    const run = () => {
+      spinnerId = window.setTimeout(() => {
+        if (gen === searchGen.current) setSearching(true)
+      }, 60)
       void onSearch(deferredQuery)
         .then(paths => {
+          if (spinnerId !== undefined) window.clearTimeout(spinnerId)
           if (gen !== searchGen.current) return
           setResults(paths)
           setSearching(false)
         })
         .catch(() => {
+          if (spinnerId !== undefined) window.clearTimeout(spinnerId)
           if (gen !== searchGen.current) return
           setResults([])
           setSearching(false)
         })
-    }, 80)
+    }
 
-    return () => window.clearTimeout(id)
+    if (deferredQuery === "") {
+      run()
+      return () => {
+        if (spinnerId !== undefined) window.clearTimeout(spinnerId)
+      }
+    }
+
+    const id = window.setTimeout(run, 80)
+    return () => {
+      window.clearTimeout(id)
+      if (spinnerId !== undefined) window.clearTimeout(spinnerId)
+    }
   }, [open, scanReady, deferredQuery, onSearch])
 
   const items = useMemo<PaletteShellItem<string>[]>(

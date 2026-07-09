@@ -105,8 +105,9 @@ const SortableTabTrigger = memo(function SortableTabTrigger({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging ? "none" : transition,
     opacity: isDragging ? 0.35 : 1,
+    willChange: isDragging ? ("transform" as const) : undefined,
   }
 
   return (

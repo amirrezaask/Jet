@@ -44,15 +44,15 @@ export const jetMotion = {
   quickFade: { duration: 0.12, ease: "easeOut" as const },
   tabGhostTransition: { duration: 0.2 /* overlay */, ease: "easeOut" as const },
   overlayEnter: {
-    initial: { opacity: 0, scale: 0.9, filter: "blur(4px)" },
-    animate: { opacity: 1, scale: 1, filter: "blur(0px)" },
-    exit: { opacity: 0, scale: 0.9, filter: "blur(2px)" },
+    initial: { opacity: 0, scale: 0.9 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.9 },
     transition: { duration: 0.2, ease: "easeOut" as const },
   },
   overlayEnterTop: {
-    initial: { opacity: 0, scale: 0.9, y: -8, filter: "blur(4px)" },
-    animate: { opacity: 1, scale: 1, y: 0, filter: "blur(0px)" },
-    exit: { opacity: 0, scale: 0.9, y: -4, filter: "blur(2px)" },
+    initial: { opacity: 0, scale: 0.9, y: -8 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.9, y: -4 },
     transition: { duration: 0.2, ease: "easeOut" as const },
   },
 }

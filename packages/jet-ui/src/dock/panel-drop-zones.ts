@@ -88,3 +88,6 @@ export function siteToAction(kind: DropSiteKind): DropAction {
   if (kind === "center") return { kind: "moveToPane" }
   return { kind: "split", edge: kind }
 }
+
+/** Per-overlay drop-site cache. Avoids JSON round-trip on the drag hot path. */
+export const dropSitesRegistry = new WeakMap<HTMLElement, DropSite[]>()

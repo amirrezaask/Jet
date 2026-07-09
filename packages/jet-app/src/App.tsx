@@ -416,6 +416,18 @@ export function JetApp() {
     return () => sub.dispose()
   }, [keymaps])
 
+  useEffect(() => {
+    const warm = () => {
+      void import("./OverlayHost.js")
+    }
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback
+    if (typeof ric === "function") {
+      ric(warm, { timeout: 2000 })
+    } else {
+      window.setTimeout(warm, 800)
+    }
+  }, [])
+
   // Keep tabStore in sync with workspace.tabRegistry: mirror label + typeId so
   // TabTypeRegistry.render() and PanelTabBar can look up title/dirty per tab id
   // without knowing tab-kind semantics.

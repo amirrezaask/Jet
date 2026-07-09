@@ -24,7 +24,12 @@ import { arrayMove } from "@dnd-kit/sortable"
 import type { DropAction, PanelId } from "@jet/shared"
 import { JetTabDragGhost } from "@/motion/JetOverlayMotion.js"
 import type { DropSiteKind } from "./panel-drop-zones.js"
-import { hitTestSites, siteToAction, type DropSite } from "./panel-drop-zones.js"
+import {
+  dropSitesRegistry,
+  hitTestSites,
+  siteToAction,
+  type DropSite,
+} from "./panel-drop-zones.js"
 import {
   parseDropDndId,
   parseTabBarDndId,
@@ -136,16 +141,54 @@ function createTabDropAnimation(
   }
 }
 
+type OverlaySnapshot = {
+  el: HTMLElement
+  panelId: number
+  rect: DOMRect
+  ro: ResizeObserver
+}
+
 function TabDndInner({ children, handlers }: TabDndInnerProps) {
   const drag = usePanelDrag()
   const [activeTab, setActiveTab] = useState<TabDragData | null>(null)
   const dropHotRef = useRef<DropHotState>(null)
   const dropAnimTargetRef = useRef<DropAnimTarget | null>(null)
   const dropAnimation = useMemo(() => createTabDropAnimation(dropAnimTargetRef), [])
+  const overlaysRef = useRef<OverlaySnapshot[]>([])
+  const pendingMoveRef = useRef<{ cx: number; cy: number } | null>(null)
+  const rafRef = useRef<number | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   )
+
+  const clearOverlaySnapshots = useCallback(() => {
+    for (const s of overlaysRef.current) s.ro.disconnect()
+    overlaysRef.current = []
+  }, [])
+
+  const runMove = useCallback(() => {
+    rafRef.current = null
+    const pending = pendingMoveRef.current
+    if (!pending) return
+    const { cx, cy } = pending
+    let best: DropHotState = null
+    for (const snap of overlaysRef.current) {
+      const rect = snap.rect
+      if (cx < rect.left || cx > rect.right || cy < rect.top || cy > rect.bottom) continue
+      const sites = dropSitesRegistry.get(snap.el)
+      if (!sites || sites.length === 0) continue
+      const mx = cx - rect.left
+      const my = cy - rect.top
+      const hit = hitTestSites(mx, my, sites)
+      if (hit) {
+        best = { panelId: { id: snap.panelId }, zone: hit.id, preview: hit.preview }
+        break
+      }
+    }
+    dropHotRef.current = best
+    setDropHotState(best)
+  }, [])
 
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -153,8 +196,29 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
       if (!data || data.type !== "tab") return
       setActiveTab(data)
       drag.startTab({ panelId: data.panelId, tabId: data.tabId })
+
+      clearOverlaySnapshots()
+      const els = document.querySelectorAll<HTMLElement>("[data-jet-panel-drop-overlay]")
+      const snapshots: OverlaySnapshot[] = []
+      for (const el of els) {
+        if (el.closest("[data-jet-layout-morph-clone]")) continue
+        const panelId = Number(el.dataset.jetDropPanel)
+        if (!Number.isFinite(panelId)) continue
+        const rect = el.getBoundingClientRect()
+        const snap: OverlaySnapshot = {
+          el,
+          panelId,
+          rect,
+          ro: new ResizeObserver(() => {
+            snap.rect = el.getBoundingClientRect()
+          }),
+        }
+        snap.ro.observe(el)
+        snapshots.push(snap)
+      }
+      overlaysRef.current = snapshots
     },
-    [drag],
+    [drag, clearOverlaySnapshots],
   )
 
   const onDragMove = useCallback((event: DragMoveEvent) => {
@@ -164,30 +228,14 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
       setDropHotState(null)
       return
     }
-    const cx = (activator as PointerEvent).clientX + event.delta.x
-    const cy = (activator as PointerEvent).clientY + event.delta.y
-    const overlays = document.querySelectorAll<HTMLElement>("[data-jet-panel-drop-overlay]")
-    let best: DropHotState = null
-    for (const overlay of overlays) {
-      if (overlay.closest("[data-jet-layout-morph-clone]")) continue
-      const rect = overlay.getBoundingClientRect()
-      if (cx < rect.left || cx > rect.right || cy < rect.top || cy > rect.bottom) continue
-      const sitesRaw = overlay.dataset.jetDropSites
-      if (!sitesRaw) continue
-      const panelId = Number(overlay.dataset.jetDropPanel)
-      if (!Number.isFinite(panelId)) continue
-      const sites = JSON.parse(sitesRaw) as DropSite[]
-      const mx = cx - rect.left
-      const my = cy - rect.top
-      const hit = hitTestSites(mx, my, sites)
-      if (hit) {
-        best = { panelId: { id: panelId }, zone: hit.id, preview: hit.preview }
-        break
-      }
+    pendingMoveRef.current = {
+      cx: (activator as PointerEvent).clientX + event.delta.x,
+      cy: (activator as PointerEvent).clientY + event.delta.y,
     }
-    dropHotRef.current = best
-    setDropHotState(best)
-  }, [])
+    if (rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(runMove)
+    }
+  }, [runMove])
 
   const onDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -198,6 +246,12 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
       dropHotRef.current = null
       setDropHotState(null)
       drag.endTab()
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      pendingMoveRef.current = null
+      clearOverlaySnapshots()
       if (!data || data.type !== "tab") return
 
       const overId = event.over ? String(event.over.id) : null
@@ -252,7 +306,7 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
         insertIndex: insertIndex >= 0 ? insertIndex : undefined,
       })
     },
-    [drag, handlers],
+    [drag, handlers, clearOverlaySnapshots],
   )
 
   const onDragCancel = useCallback(() => {
@@ -260,7 +314,13 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
     dropHotRef.current = null
     setDropHotState(null)
     drag.endTab()
-  }, [drag])
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    pendingMoveRef.current = null
+    clearOverlaySnapshots()
+  }, [drag, clearOverlaySnapshots])
 
   return (
     <DndContext
