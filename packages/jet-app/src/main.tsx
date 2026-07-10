@@ -4,6 +4,7 @@ import "@jet/ui/styles.css"
 import { JetApp } from "./App.js"
 import { AppErrorBoundary } from "./AppErrorBoundary.js"
 
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AppErrorBoundary>

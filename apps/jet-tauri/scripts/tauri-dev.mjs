@@ -1,24 +1,13 @@
 #!/usr/bin/env node
-import { spawn, execSync } from "node:child_process"
+import { spawn } from "node:child_process"
+import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const repoRoot = path.resolve(__dirname, "../../..")
-const sidecarEntry = path.resolve(repoRoot, "packages/jet-host/dist/sidecar.js")
-const devPort = process.env.JET_TAURI_DEV_PORT ?? "5174"
+import "./cleanup-e2e-artifacts.mjs"
 
-function freePort(port) {
-  try {
-    const pids = execSync(`lsof -ti :${port}`, { encoding: "utf8" }).trim()
-    if (!pids) return
-    for (const pid of pids.split(/\s+/)) {
-      if (pid) process.kill(Number(pid), "SIGKILL")
-    }
-  } catch {
-    /* port free */
-  }
-}
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const devPort = Number(process.env.JET_TAURI_DEV_PORT ?? 5174)
 
 function forwardLaunchArgs() {
   const dash = process.argv.indexOf("--")
@@ -29,70 +18,47 @@ function forwardLaunchArgs() {
   return launchArgs
 }
 
-async function waitForPort(child, timeoutMs = 15_000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("jet-host sidecar did not become ready")), timeoutMs)
-    child.stdout?.on("data", chunk => {
-      const text = chunk.toString()
-      process.stdout.write(text)
-      const match = text.match(/JET_HOST_READY port=(\d+)/)
-      if (match) {
-        clearTimeout(timer)
-        resolve(Number(match[1]))
-      }
+async function isPortFree(port) {
+  return new Promise(resolve => {
+    const server = net.createServer()
+    server.once("error", () => resolve(false))
+    server.once("listening", () => {
+      server.close(() => resolve(true))
     })
-    child.on("exit", code => {
-      clearTimeout(timer)
-      reject(new Error(`jet-host sidecar exited (${code ?? "unknown"})`))
-    })
-    child.on("error", err => {
-      clearTimeout(timer)
-      reject(err)
-    })
+    server.listen(port, "127.0.0.1")
   })
 }
 
-function pkillStaleSidecars() {
-  try {
-    execSync("pkill -f 'jet-host/dist/sidecar.js'", { stdio: "ignore" })
-  } catch {
-    /* none running */
+async function waitForPortFree(port, timeoutMs = 5_000) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (await isPortFree(port)) return
+    await new Promise(r => setTimeout(r, 100))
   }
+  throw new Error(`port ${port} still in use after ${timeoutMs}ms`)
 }
 
 const launchArgs = forwardLaunchArgs()
-freePort(devPort)
-pkillStaleSidecars()
-
-const sidecar = spawn(process.execPath, [sidecarEntry, "--", ...launchArgs], {
-  cwd: repoRoot,
-  env: { ...process.env },
-  stdio: ["ignore", "pipe", "inherit"],
-})
-
-const port = await waitForPort(sidecar)
-process.env.VITE_JET_HOST_URL = `http://127.0.0.1:${port}`
-process.env.JET_TAURI_DEV_PORT = devPort
-
-const shutdown = () => {
-  sidecar.kill("SIGTERM")
+if (launchArgs.length > 0) {
+  process.env.JET_LAUNCH_ARGS = JSON.stringify(launchArgs)
 }
 
-process.on("SIGINT", shutdown)
-process.on("SIGTERM", shutdown)
-sidecar.on("exit", code => {
-  if (code && code !== 0) process.exit(code)
-})
+await waitForPortFree(devPort)
+process.env.JET_TAURI_DEV_PORT = String(devPort)
 
 const tauriBin = path.resolve(__dirname, "../node_modules/.bin/tauri")
-const child = spawn(tauriBin, ["dev"], {
+const tauriArgs = ["dev"]
+if (launchArgs.length > 0) {
+  tauriArgs.push("--", ...launchArgs)
+}
+
+const child = spawn(tauriBin, tauriArgs, {
   stdio: "inherit",
   cwd: path.resolve(__dirname, ".."),
   env: process.env,
 })
 
 child.on("exit", (code, signal) => {
-  shutdown()
   if (signal) process.kill(process.pid, signal)
   else process.exit(code ?? 0)
 })

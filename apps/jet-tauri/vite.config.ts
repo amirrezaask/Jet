@@ -7,6 +7,7 @@ const appRoot = path.resolve(__dirname, "../../packages/jet-app")
 const uiRoot = path.resolve(__dirname, "../../packages/jet-ui/src")
 
 export default defineConfig({
+  base: "./",
   define: {
     "import.meta.env.JET_ENABLE_AGENT_CHAT": JSON.stringify(process.env.JET_ENABLE_AGENT_CHAT ?? "0"),
     "import.meta.env.VITE_JET_HOST_URL": JSON.stringify(process.env.VITE_JET_HOST_URL ?? ""),
@@ -23,7 +24,7 @@ export default defineConfig({
       transformIndexHtml(html: string) {
         return html.replace(
           '<script type="module" src="/src/main.tsx"></script>',
-          '<script type="module" src="/@fs/bootstrap.ts"></script>',
+          '<script type="module" src="/@tauri-bootstrap"></script>',
         )
       },
     },
@@ -32,10 +33,15 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        index: path.resolve(appRoot, "index.tauri.html"),
+      },
+    },
   },
   resolve: {
     alias: {
-      "/@fs/bootstrap.ts": path.resolve(__dirname, "src/bootstrap.ts"),
+      "/@tauri-bootstrap": path.resolve(__dirname, "src/bootstrap.ts"),
       "@jet/ui/styles.css": path.resolve(uiRoot, "styles/globals.css"),
       "@": uiRoot,
     },

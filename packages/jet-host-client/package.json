@@ -17,6 +17,7 @@
     "@jet/workspace": "workspace:*"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.4.0",
     "typescript": "^7.0.2"
   }
 }

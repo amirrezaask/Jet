@@ -1,0 +1,286 @@
+use serde::Deserialize;
+use serde_json::Value;
+use std::sync::Mutex;
+use tauri::{AppHandle, Manager, WebviewWindow};
+
+use crate::host::events::emit_host;
+use crate::host::launch::LaunchConfig;
+
+#[derive(Default)]
+pub struct ShellState {
+    launch_config: Mutex<Option<LaunchConfig>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NativeChromeColors {
+    pub background: String,
+    pub foreground: String,
+}
+
+#[tauri::command]
+pub async fn jet_show_open_folder_dialog(window: WebviewWindow) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let folder = window
+        .dialog()
+        .file()
+        .blocking_pick_folder();
+    Ok(folder.map(|p| p.to_string()))
+}
+
+#[tauri::command]
+pub async fn jet_show_save_file_dialog(
+    window: WebviewWindow,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut builder = window.dialog().file();
+    if let Some(path) = default_path {
+        builder = builder.set_file_name(&path);
+    }
+    Ok(builder.blocking_save_file().map(|p| p.to_string()))
+}
+
+#[tauri::command]
+pub async fn jet_sync_native_chrome(
+    window: WebviewWindow,
+    colors: NativeChromeColors,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
+    }
+    let _ = window.set_background_color(Some(parse_color(&colors.background)?));
+    #[cfg(target_os = "windows")]
+    apply_windows_title_bar_overlay(&window, &colors)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn jet_get_launch_config(state: tauri::State<ShellState>) -> Option<LaunchConfig> {
+    state.launch_config.lock().ok()?.take()
+}
+
+#[tauri::command]
+pub async fn jet_host_invoke(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: tauri::State<'_, crate::host::HostState>,
+    shell: tauri::State<'_, ShellState>,
+    channel: String,
+    args: Vec<Value>,
+    client_id: Option<String>,
+) -> Result<Value, String> {
+    if channel == "jet:getLaunchConfig" {
+        return Ok(shell
+            .launch_config
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take())
+            .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
+            .unwrap_or(Value::Null));
+    }
+    if channel == "ui:syncNativeChrome" {
+        if let Some(colors) = args.first() {
+            if let Ok(parsed) = serde_json::from_value::<NativeChromeColors>(colors.clone()) {
+                jet_sync_native_chrome(window, parsed).await?;
+            }
+        }
+        return Ok(Value::Null);
+    }
+    if channel == "fs:showOpenFolderDialog" {
+        return Ok(serde_json::to_value(jet_show_open_folder_dialog(window).await?).unwrap());
+    }
+    if channel == "fs:showSaveFileDialog" {
+        let default_path = args.first().and_then(|v| v.as_str()).map(str::to_string);
+        return Ok(serde_json::to_value(jet_show_save_file_dialog(window, default_path).await?).unwrap());
+    }
+    let client = client_id.unwrap_or_else(|| window.label().to_string());
+    host.invoke(&app, &channel, args, &client)
+}
+
+pub fn deliver_launch(app: &AppHandle, config: LaunchConfig) {
+    if let Some(shell) = app.try_state::<ShellState>() {
+        if let Ok(mut guard) = shell.launch_config.lock() {
+            *guard = Some(config.clone());
+        }
+    }
+    emit_host(
+        app,
+        "jet:launch",
+        vec![serde_json::to_value(config).unwrap_or(Value::Null)],
+    );
+}
+
+pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+    let close_tab =
+        MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
+    let file_sep = PredefinedMenuItem::separator(app)?;
+    let close_window = PredefinedMenuItem::close_window(app, None)?;
+    let file_submenu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&close_tab, &file_sep, &close_window],
+    )?;
+
+    let undo = PredefinedMenuItem::undo(app, None)?;
+    let redo = PredefinedMenuItem::redo(app, None)?;
+    let edit_sep1 = PredefinedMenuItem::separator(app)?;
+    let cut = PredefinedMenuItem::cut(app, None)?;
+    let copy = PredefinedMenuItem::copy(app, None)?;
+    let paste = PredefinedMenuItem::paste(app, None)?;
+    let select_all = PredefinedMenuItem::select_all(app, None)?;
+
+    #[cfg(target_os = "macos")]
+    let edit_submenu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &undo as &dyn IsMenuItem<tauri::Wry>,
+            &redo,
+            &edit_sep1,
+            &cut,
+            &copy,
+            &paste,
+            &select_all,
+        ],
+    )?;
+    #[cfg(not(target_os = "macos"))]
+    let edit_submenu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &undo as &dyn IsMenuItem<tauri::Wry>,
+            &redo,
+            &edit_sep1,
+            &cut,
+            &copy,
+            &paste,
+            &select_all,
+        ],
+    )?;
+
+    let fullscreen = PredefinedMenuItem::fullscreen(app, None)?;
+    let view_submenu = Submenu::with_items(app, "View", true, &[&fullscreen])?;
+
+    #[cfg(target_os = "macos")]
+    let app_submenu = {
+        let about = PredefinedMenuItem::about(app, Some("About Jet"), None)?;
+        let app_sep1 = PredefinedMenuItem::separator(app)?;
+        let services = PredefinedMenuItem::services(app, None)?;
+        let app_sep2 = PredefinedMenuItem::separator(app)?;
+        let hide = PredefinedMenuItem::hide(app, None)?;
+        let hide_others = PredefinedMenuItem::hide_others(app, None)?;
+        let show_all = PredefinedMenuItem::show_all(app, None)?;
+        let app_sep3 = PredefinedMenuItem::separator(app)?;
+        let quit = PredefinedMenuItem::quit(app, None)?;
+        Submenu::with_items(
+            app,
+            "Jet",
+            true,
+            &[
+                &about as &dyn IsMenuItem<tauri::Wry>,
+                &app_sep1,
+                &services,
+                &app_sep2,
+                &hide,
+                &hide_others,
+                &show_all,
+                &app_sep3,
+                &quit,
+            ],
+        )?
+    };
+
+    #[cfg(target_os = "macos")]
+    let window_submenu = {
+        let minimize = PredefinedMenuItem::minimize(app, None)?;
+        let maximize = PredefinedMenuItem::maximize(app, None)?;
+        let window_sep = PredefinedMenuItem::separator(app)?;
+        let bring_all = PredefinedMenuItem::bring_all_to_front(app, None)?;
+        Submenu::with_items(
+            app,
+            "Window",
+            true,
+            &[&minimize, &maximize, &window_sep, &bring_all],
+        )?
+    };
+
+    #[cfg(target_os = "macos")]
+    let menu = Menu::with_items(
+        app,
+        &[
+            &app_submenu as &dyn IsMenuItem<tauri::Wry>,
+            &file_submenu,
+            &edit_submenu,
+            &view_submenu,
+            &window_submenu,
+        ],
+    )?;
+    #[cfg(not(target_os = "macos"))]
+    let menu = Menu::with_items(app, &[&file_submenu, &edit_submenu, &view_submenu])?;
+
+    app.set_menu(menu)?;
+    Ok(())
+}
+
+pub fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
+    if event.id().as_ref() == "close-tab" {
+        emit_host(app, "jet:close-tab", vec![]);
+    }
+}
+
+fn parse_color(hex: &str) -> Result<tauri::window::Color, String> {
+    let raw = hex.trim().trim_start_matches('#');
+    if raw.len() != 6 {
+        return Err(format!("invalid color hex: {hex}"));
+    }
+    let r = u8::from_str_radix(&raw[0..2], 16).map_err(|e| e.to_string())?;
+    let g = u8::from_str_radix(&raw[2..4], 16).map_err(|e| e.to_string())?;
+    let b = u8::from_str_radix(&raw[4..6], 16).map_err(|e| e.to_string())?;
+    Ok(tauri::window::Color(r, g, b, 255))
+}
+
+fn hex_to_colorref(hex: &str) -> Result<u32, String> {
+    let raw = hex.trim().trim_start_matches('#');
+    if raw.len() != 6 {
+        return Err(format!("invalid color hex: {hex}"));
+    }
+    let r = u8::from_str_radix(&raw[0..2], 16).map_err(|e| e.to_string())?;
+    let g = u8::from_str_radix(&raw[2..4], 16).map_err(|e| e.to_string())?;
+    let b = u8::from_str_radix(&raw[4..6], 16).map_err(|e| e.to_string())?;
+    Ok(u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r))
+}
+
+#[cfg(target_os = "windows")]
+fn apply_windows_title_bar_overlay(
+    window: &WebviewWindow,
+    colors: &NativeChromeColors,
+) -> Result<(), String> {
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR};
+
+    let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+    let caption = hex_to_colorref(&colors.background)?;
+    let text = hex_to_colorref(&colors.foreground)?;
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR,
+            &caption as *const _ as *const _,
+            std::mem::size_of::<u32>() as u32,
+        )
+        .map_err(|e| e.to_string())?;
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TEXT_COLOR,
+            &text as *const _ as *const _,
+            std::mem::size_of::<u32>() as u32,
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}

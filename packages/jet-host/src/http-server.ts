@@ -12,6 +12,20 @@ type HostHttpServer = {
   close(): Promise<void>
 }
 
+const LOCAL_DEV_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
+
+function corsHeaders(origin: string | undefined): Record<string, string> {
+  if (origin && LOCAL_DEV_ORIGIN.test(origin)) {
+    return {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type",
+      Vary: "Origin",
+    }
+  }
+  return {}
+}
+
 function rendererFromSocket(ws: WebSocket, clientId: string): HostRenderer {
   return {
     send(channel: string, ...args: unknown[]) {
@@ -29,6 +43,15 @@ export async function startHostHttpServer(registry: HostRegistry): Promise<HostH
   const defaultClientId = "default"
 
   const server = http.createServer(async (req, res) => {
+    const origin = req.headers.origin
+    const cors = corsHeaders(origin)
+
+    if (req.method === "OPTIONS" && req.url === "/rpc") {
+      res.writeHead(204, cors)
+      res.end()
+      return
+    }
+
     if (req.method === "POST" && req.url === "/rpc") {
       let body = ""
       req.on("data", chunk => {
@@ -38,24 +61,24 @@ export async function startHostHttpServer(registry: HostRegistry): Promise<HostH
         try {
           const parsed = JSON.parse(body) as { channel?: string; args?: unknown[]; clientId?: string }
           if (!parsed.channel) {
-            res.writeHead(400, { "content-type": "application/json" })
+            res.writeHead(400, { "content-type": "application/json", ...cors })
             res.end(JSON.stringify({ ok: false, error: "missing channel" }))
             return
           }
           const clientId = parsed.clientId ?? defaultClientId
           const result = await registry.invoke(parsed.channel, parsed.args ?? [], clientId)
-          res.writeHead(200, { "content-type": "application/json" })
+          res.writeHead(200, { "content-type": "application/json", ...cors })
           res.end(JSON.stringify({ ok: true, result }))
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
-          res.writeHead(500, { "content-type": "application/json" })
+          res.writeHead(500, { "content-type": "application/json", ...cors })
           res.end(JSON.stringify({ ok: false, error: message }))
         }
       })
       return
     }
 
-    res.writeHead(404)
+    res.writeHead(404, cors)
     res.end()
   })
 

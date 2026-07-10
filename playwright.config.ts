@@ -18,6 +18,11 @@ export default defineConfig({
       testMatch: "*.electron.spec.ts",
     },
     {
+      name: "tauri",
+      testDir: "./tests/tauri",
+      testMatch: "*.tauri.spec.ts",
+    },
+    {
       name: "bench",
       testDir: "./tests/bench",
       testMatch: "*.bench.ts",

@@ -3,9 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @jet/host build && node scripts/tauri-dev.mjs",
-    "dev:frontend": "vite",
-    "build": "pnpm --filter @jet/host build && vite build",
+    "dev": "node scripts/tauri-dev.mjs",
+    "dev:frontend": "node scripts/dev-frontend.mjs",
+    "build": "vite build && node scripts/rename-tauri-index.mjs",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri"
   },
@@ -14,7 +14,8 @@
     "@jet/app": "workspace:*",
     "@jet/host-client": "workspace:*",
     "@jet/shared": "workspace:*",
-    "@jet/workspace": "workspace:*"
+    "@jet/workspace": "workspace:*",
+    "@tauri-apps/api": "^2.4.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.8",
