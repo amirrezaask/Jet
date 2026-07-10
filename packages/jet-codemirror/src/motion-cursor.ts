@@ -3,521 +3,291 @@ import type { Extension } from "@codemirror/state"
 import {
   ANIM_EPSILON,
   CaretEndpointAnim,
+  CaretGhostBuffer,
   onReducedMotionChange,
   prefersReducedMotion,
   type CaretPoint,
 } from "@jet/shared"
 
-const SVG_NS = "http://www.w3.org/2000/svg"
-const STREAK_BASE_ALPHA = 0.35
-const STREAK_MIN_ALPHA = 0.1
-const STREAK_MAX_SHEAR_DEG = 8
-const STREAK_Y_OVERSHOOT = 0.125
+type CursorStyle = "bar" | "block" | "underline"
+type CursorMotion = "trail" | "smooth" | "off"
 
-const MAIN_THICKNESS = 4
-const ANCHOR_THICKNESS = 3
-
-type BracketShape = "open" | "close"
-
-type RenderItem = {
-  key: string
-  shape: BracketShape
-  thickness: number
-  opacity: number
+type CursorEntry = {
+  anim: CaretEndpointAnim
+  ghosts: CaretGhostBuffer
+  cursor: HTMLDivElement
+  ghostEls: HTMLDivElement[]
+  lastGhostX: number
+  lastGhostY: number
 }
 
-type EndpointTarget = {
-  key: string
-  point: CaretPoint
+function rootSetting<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
+  const root = getComputedStyle(document.documentElement)
+  const value = root.getPropertyValue(name).trim() as T
+  return allowed.includes(value) ? value : fallback
 }
 
-type MeasureResult = {
-  endpoints: EndpointTarget[]
-  renderPlan: RenderItem[]
-  focusOpacity: number
-  visible: boolean
+function cursorStyle(): CursorStyle {
+  return rootSetting("--jet-cursor-style", ["bar", "block", "underline"], "bar")
 }
 
-function measurePoint(view: EditorView, pos: number): CaretPoint | null {
+function cursorMotion(): CursorMotion {
+  return rootSetting("--jet-cursor-motion", ["trail", "smooth", "off"], "trail")
+}
+
+function pointAt(view: EditorView, pos: number): CaretPoint | null {
   const rect = view.coordsAtPos(pos)
   if (!rect) return null
   const scrollRect = view.scrollDOM.getBoundingClientRect()
-  const x = rect.left - scrollRect.left + view.scrollDOM.scrollLeft
-  const y = rect.top - scrollRect.top + view.scrollDOM.scrollTop
-  const h = rect.bottom - rect.top
-
-  let charWidth = rect.right - rect.left
-  const doc = view.state.doc
-  if (pos + 1 <= doc.length) {
+  const h = Math.max(1, rect.bottom - rect.top)
+  let charWidth = view.defaultCharacterWidth
+  if (pos < view.state.doc.length) {
     const next = view.coordsAtPos(pos + 1)
-    if (next && Math.abs(next.top - rect.top) < 1) {
+    if (next && Math.abs(next.top - rect.top) < 1 && next.left > rect.left) {
       charWidth = next.left - rect.left
     }
   }
-  if (charWidth <= 0) charWidth = h * 0.55
-
-  return { x, y, h, charWidth }
-}
-
-function measureCursors(view: EditorView): MeasureResult | null {
-  const ranges = view.state.selection.ranges
-  const endpoints: EndpointTarget[] = []
-  const renderPlan: RenderItem[] = []
-
-  for (let i = 0; i < ranges.length; i++) {
-    const range = ranges[i]!
-    const headPoint = measurePoint(view, range.head)
-    if (!headPoint) continue
-
-    const headKey = `r${i}-head`
-    endpoints.push({ key: headKey, point: headPoint })
-
-    if (range.empty) {
-      renderPlan.push(
-        { key: `${headKey}-open`, shape: "open", thickness: MAIN_THICKNESS, opacity: 1 },
-        { key: `${headKey}-close`, shape: "close", thickness: MAIN_THICKNESS, opacity: 1 },
-      )
-      continue
-    }
-
-    const anchorPoint = measurePoint(view, range.anchor)
-    if (!anchorPoint) continue
-    const anchorKey = `r${i}-anchor`
-    endpoints.push({ key: anchorKey, point: anchorPoint })
-
-    const headBeforeAnchor = range.head <= range.anchor
-    const headShape: BracketShape = headBeforeAnchor ? "open" : "close"
-    const anchorShape: BracketShape = headBeforeAnchor ? "close" : "open"
-
-    renderPlan.push({
-      key: `${headKey}-${headShape}`,
-      shape: headShape,
-      thickness: MAIN_THICKNESS,
-      opacity: 1,
-    })
-    renderPlan.push({
-      key: `${anchorKey}-${anchorShape}`,
-      shape: anchorShape,
-      thickness: ANCHOR_THICKNESS,
-      opacity: 0.65,
-    })
-  }
-
-  if (endpoints.length === 0) return null
-
   return {
-    endpoints,
-    renderPlan,
-    focusOpacity: view.hasFocus ? 1 : 0.4,
-    visible: true,
+    x: rect.left - scrollRect.left + view.scrollDOM.scrollLeft,
+    y: rect.top - scrollRect.top + view.scrollDOM.scrollTop,
+    h,
+    charWidth: Math.max(1, charWidth),
   }
 }
 
-function createBracketGroup(): HTMLDivElement {
-  const group = document.createElement("div")
-  group.className = "jet-bracket-group"
-  for (const part of ["top", "left", "bottom", "right"] as const) {
-    const el = document.createElement("div")
-    el.className = `jet-bracket-part jet-bracket-${part}`
-    group.appendChild(el)
-  }
-  return group
+function typingHop(update: ViewUpdate): boolean {
+  if (!update.docChanged || update.state.selection.ranges.length !== 1) return false
+  const before = update.startState.selection.main
+  const after = update.state.selection.main
+  if (!before.empty || !after.empty || after.head !== before.head + 1) return false
+  return update.startState.doc.lineAt(before.head).number === update.state.doc.lineAt(after.head).number
 }
 
-function layoutBracketGroup(
-  group: HTMLDivElement,
-  x: number,
-  y: number,
-  h: number,
-  shape: BracketShape,
-  thickness: number,
-  opacity: number,
-  focusOpacity: number,
-): void {
-  const bracketW = h * 0.5
-  group.style.transform = `translate3d(${x}px, ${y}px, 0)`
-  group.style.height = `${h}px`
-  group.style.opacity = String(opacity * focusOpacity)
-
-  const top = group.querySelector<HTMLElement>(".jet-bracket-top")!
-  const left = group.querySelector<HTMLElement>(".jet-bracket-left")!
-  const bottom = group.querySelector<HTMLElement>(".jet-bracket-bottom")!
-  const right = group.querySelector<HTMLElement>(".jet-bracket-right")!
-
-  for (const part of [top, left, bottom, right]) {
-    part.style.display = "none"
-  }
-
-  const color = "var(--jet-cursor-color, #c4923a)"
-
-  if (shape === "open") {
-    top.style.display = "block"
-    top.style.left = `${thickness}px`
-    top.style.top = "0"
-    top.style.width = `${bracketW}px`
-    top.style.height = `${thickness}px`
-
-    left.style.display = "block"
-    left.style.left = "0"
-    left.style.top = "0"
-    left.style.width = `${thickness}px`
-    left.style.height = `${h}px`
-  } else {
-    bottom.style.display = "block"
-    bottom.style.left = `${-bracketW}px`
-    bottom.style.top = `${h - thickness}px`
-    bottom.style.width = `${bracketW}px`
-    bottom.style.height = `${thickness}px`
-
-    right.style.display = "block"
-    right.style.left = "0"
-    right.style.top = "0"
-    right.style.width = `${thickness}px`
-    right.style.height = `${h}px`
-  }
-
-  for (const part of [top, left, bottom, right]) {
-    if (part.style.display !== "none") {
-      part.style.background = color
-    }
-  }
+function createCursorElement(kind: "cursor" | "ghost"): HTMLDivElement {
+  const element = document.createElement("div")
+  element.dataset[kind === "cursor" ? "jetEditorCursor" : "jetEditorCursorGhost"] = ""
+  Object.assign(element.style, {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    pointerEvents: "none",
+    willChange: "transform, width, height, opacity",
+  })
+  return element
 }
 
-function isTypingHop(update: ViewUpdate): boolean {
-  if (!update.docChanged) return false
-  const prev = update.startState
-  const next = update.state
-  if (next.selection.ranges.length !== 1) return false
-  const r = next.selection.main
-  const pr = prev.selection.main
-  if (!r.empty || !pr.empty) return false
-  if (r.head !== pr.head + 1) return false
-  return prev.doc.lineAt(pr.head).number === next.doc.lineAt(r.head).number
-}
-
-class BracketCursorPlugin {
-  private layer: HTMLDivElement
-  private streakSvg: SVGSVGElement
-  private streakRects = new Map<string, {
-    rect: SVGRectElement
-    gradient: SVGLinearGradientElement
-    stopA: SVGStopElement
-    stopB: SVGStopElement
-  }>()
-  private groups: HTMLDivElement[] = []
-  private anims = new Map<string, CaretEndpointAnim>()
-  private renderPlan: RenderItem[] = []
-  private focusOpacity = 1
-  private rafId: number | null = null
-  private lastFrameTime = 0
+class MotionCursorPlugin {
+  private readonly layer = document.createElement("div")
+  private readonly entries = new Map<number, CursorEntry>()
+  private reduced = prefersReducedMotion()
+  private raf: number | null = null
+  private lastFrame = 0
   private instantNext = true
-  private reducedMotion: boolean
-  private unsubMotion: (() => void) | null = null
-  private streakDefs: SVGDefsElement
+  private readonly unsubscribeReduced: () => void
+  private readonly rootObserver: MutationObserver
 
-  constructor(private view: EditorView) {
-    this.reducedMotion = prefersReducedMotion()
-    this.streakSvg = document.createElementNS(SVG_NS, "svg")
-    this.streakSvg.setAttribute("class", "jet-cursor-streak-layer")
-    this.streakSvg.style.position = "absolute"
-    this.streakSvg.style.inset = "0"
-    this.streakSvg.style.pointerEvents = "none"
-    this.streakSvg.style.overflow = "visible"
-    this.streakSvg.style.zIndex = "29"
-    this.streakSvg.style.width = "100%"
-    this.streakSvg.style.height = "100%"
-    this.streakDefs = document.createElementNS(SVG_NS, "defs")
-    this.streakSvg.appendChild(this.streakDefs)
-    this.layer = document.createElement("div")
-    this.layer.className = "jet-cursor-layer"
-    view.scrollDOM.appendChild(this.streakSvg)
+  constructor(private readonly view: EditorView) {
+    this.layer.className = "jet-editor-cursor-layer"
+    this.layer.dataset.jetEditorCursorLayer = ""
     view.scrollDOM.appendChild(this.layer)
-    this.unsubMotion = onReducedMotionChange(v => {
-      this.reducedMotion = v
+    this.unsubscribeReduced = onReducedMotionChange(reduced => {
+      this.reduced = reduced
+      this.instantNext = true
+      this.measureAndRetarget()
     })
-    this.scheduleMeasure()
+    this.rootObserver = new MutationObserver(() => {
+      this.instantNext = true
+      this.measureAndRetarget()
+    })
+    this.rootObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style", "data-jet-reduced-motion"],
+    })
+    this.measureAndRetarget()
   }
 
-  update(update: ViewUpdate) {
+  update(update: ViewUpdate): void {
     if (
-      update.selectionSet ||
-      update.docChanged ||
-      update.viewportChanged ||
-      update.geometryChanged ||
-      update.focusChanged
-    ) {
-      const composing = (update.view.dom as HTMLElement).classList.contains("cm-composing")
-      if (composing) {
-        this.layer.style.opacity = "0"
-        this.streakSvg.style.opacity = "0"
-        this.stopRaf()
-        return
-      }
-      const typingHop = isTypingHop(update)
-      this.instantNext = this.reducedMotion || (update.docChanged && !typingHop)
-      this.scheduleMeasure()
+      !update.selectionSet &&
+      !update.docChanged &&
+      !update.viewportChanged &&
+      !update.geometryChanged &&
+      !update.focusChanged
+    ) return
+
+    const composing = update.view.composing
+    this.layer.style.visibility = composing ? "hidden" : "visible"
+    if (composing) {
+      this.stop()
+      return
     }
+    this.instantNext = this.reduced || cursorMotion() === "off" || (update.docChanged && !typingHop(update))
+    this.measureAndRetarget()
   }
 
-  private scheduleMeasure() {
+  private ensureEntry(index: number, point: CaretPoint): CursorEntry {
+    const existing = this.entries.get(index)
+    if (existing) return existing
+    const cursor = createCursorElement("cursor")
+    const ghostEls = Array.from({ length: 5 }, () => createCursorElement("ghost"))
+    this.layer.append(cursor, ...ghostEls)
+    const anim = new CaretEndpointAnim()
+    anim.snap(point)
+    const entry: CursorEntry = {
+      anim,
+      ghosts: new CaretGhostBuffer(),
+      cursor,
+      ghostEls,
+      lastGhostX: point.x,
+      lastGhostY: point.y,
+    }
+    this.entries.set(index, entry)
+    return entry
+  }
+
+  private measureAndRetarget(): void {
     this.view.requestMeasure({
-      read: view => measureCursors(view),
-      write: result => {
-        if (!result || !result.visible) {
-          this.layer.style.opacity = "0"
-          this.streakSvg.style.opacity = "0"
-          return
-        }
-
-        this.focusOpacity = result.focusOpacity
-        this.renderPlan = result.renderPlan
-        this.layer.style.opacity = "1"
-        this.streakSvg.style.opacity = "1"
-
-        const activeKeys = new Set<string>()
-        let snapped = false
-
-        for (const { key, point } of result.endpoints) {
-          activeKeys.add(key)
-          let anim = this.anims.get(key)
-          if (!anim) {
-            anim = new CaretEndpointAnim()
-            anim.snap(point)
-            this.anims.set(key, anim)
-            snapped = true
+      read: view => view.state.selection.ranges.map(range => pointAt(view, range.head)),
+      write: points => {
+        const active = new Set<number>()
+        points.forEach((point, index) => {
+          if (!point) return
+          active.add(index)
+          const entry = this.ensureEntry(index, point)
+          const dx = point.x - entry.anim.targetX
+          const dy = point.y - entry.anim.targetY
+          const largeJump = Math.abs(dx) > point.charWidth * 10 || Math.abs(dy) > point.h * 5
+          if (this.instantNext || largeJump) {
+            entry.anim.snap(point)
+            entry.ghosts.clear()
+            entry.lastGhostX = point.x
+            entry.lastGhostY = point.y
           } else {
-            if (anim.setTarget(point, this.instantNext)) snapped = true
+            entry.anim.followTarget(point)
           }
+        })
+        for (const [index, entry] of this.entries) {
+          if (active.has(index)) continue
+          entry.cursor.remove()
+          entry.ghostEls.forEach(el => el.remove())
+          this.entries.delete(index)
         }
-
-        for (const key of this.anims.keys()) {
-          if (!activeKeys.has(key)) {
-            this.anims.delete(key)
-            this.removeStreak(key)
-          }
-        }
-
-        this.render()
-
-        const shouldAnimate =
-          !this.instantNext &&
-          !snapped &&
-          [...this.anims.values()].some(a => {
-            const dx = a.targetX - a.x
-            const dy = a.targetY - a.y
-            return dx * dx + dy * dy > ANIM_EPSILON * ANIM_EPSILON
-          })
-
-        if (!shouldAnimate) this.stopRaf()
-        else this.startRaf()
+        this.render(performance.now())
         this.instantNext = false
+        const moving = [...this.entries.values()].some(entry => {
+          const dx = entry.anim.targetX - entry.anim.x
+          const dy = entry.anim.targetY - entry.anim.y
+          return dx * dx + dy * dy > ANIM_EPSILON * ANIM_EPSILON
+        })
+        if (moving) this.start()
+        else this.stop()
       },
     })
   }
 
-  private startRaf() {
-    if (this.rafId != null) return
-    this.lastFrameTime = performance.now()
-    this.rafId = requestAnimationFrame(t => this.tick(t))
+  private start(): void {
+    if (this.raf != null) return
+    this.lastFrame = performance.now()
+    this.raf = requestAnimationFrame(time => this.tick(time))
   }
 
-  private stopRaf() {
-    if (this.rafId != null) {
-      cancelAnimationFrame(this.rafId)
-      this.rafId = null
-    }
+  private stop(): void {
+    if (this.raf != null) cancelAnimationFrame(this.raf)
+    this.raf = null
   }
 
-  private tick(time: number) {
-    const dt = Math.min(0.05, (time - this.lastFrameTime) / 1000)
-    this.lastFrameTime = time
-
-    const measured = measureCursors(this.view)
-    if (measured) {
-      for (const { key, point } of measured.endpoints) {
-        this.anims.get(key)?.followTarget(point)
+  private tick(time: number): void {
+    this.raf = null
+    const dt = Math.min(0.05, Math.max(0, (time - this.lastFrame) / 1000))
+    this.lastFrame = time
+    let moving = false
+    let ghostsAlive = false
+    const motion = cursorMotion()
+    for (const entry of this.entries.values()) {
+      const previousX = entry.anim.x
+      const previousY = entry.anim.y
+      if (motion !== "off" && !this.reduced && entry.anim.step(dt)) moving = true
+      else if (motion === "off" || this.reduced) entry.anim.snap({
+        x: entry.anim.targetX,
+        y: entry.anim.targetY,
+        h: entry.anim.targetH,
+        charWidth: entry.anim.charWidth,
+      })
+      if (motion === "trail" && !this.reduced) {
+        const distance = Math.hypot(entry.anim.x - entry.lastGhostX, entry.anim.y - entry.lastGhostY)
+        if (distance >= Math.max(1.5, entry.anim.charWidth * 0.35)) {
+          entry.ghosts.push(previousX, previousY, entry.anim.h, time)
+          entry.lastGhostX = entry.anim.x
+          entry.lastGhostY = entry.anim.y
+        }
+        if (entry.ghosts.tick(time).length > 0) ghostsAlive = true
+      } else {
+        entry.ghosts.clear()
       }
     }
-
-    let active = false
-    for (const anim of this.anims.values()) {
-      if (anim.step(dt)) active = true
-    }
-
-    this.render()
-
-    if (active) this.rafId = requestAnimationFrame(t => this.tick(t))
-    else this.rafId = null
+    this.render(time)
+    if (moving || ghostsAlive) this.start()
   }
 
-  private removeStreak(key: string) {
-    const entry = this.streakRects.get(key)
-    if (!entry) return
-    entry.rect.remove()
-    entry.gradient.remove()
-    this.streakRects.delete(key)
+  private styleElement(
+    element: HTMLElement,
+    entry: CursorEntry,
+    x: number,
+    y: number,
+    h: number,
+    opacity: number,
+  ): void {
+    const style = cursorStyle()
+    const width = style === "bar" ? 2 : entry.anim.charWidth
+    const height = style === "underline" ? 2 : h
+    const offsetY = style === "underline" ? Math.max(0, h - height) : 0
+    element.style.transform = `translate3d(${x}px, ${y + offsetY}px, 0)`
+    element.style.width = `${Math.max(1, width)}px`
+    element.style.height = `${Math.max(1, height)}px`
+    element.style.opacity = String(opacity)
+    element.style.borderRadius = style === "block" ? "2px" : "1px"
+    element.style.background = "var(--jet-cursor-color, var(--jet-accent))"
   }
 
-  private ensureStreak(key: string) {
-    let entry = this.streakRects.get(key)
-    if (entry) return entry
-    const gradient = document.createElementNS(SVG_NS, "linearGradient")
-    const gradId = `jet-streak-${key.replace(/[^a-zA-Z0-9_-]/g, "_")}`
-    gradient.setAttribute("id", gradId)
-    gradient.setAttribute("gradientUnits", "objectBoundingBox")
-    gradient.setAttribute("x1", "0")
-    gradient.setAttribute("y1", "0")
-    gradient.setAttribute("x2", "1")
-    gradient.setAttribute("y2", "0")
-    const stopA = document.createElementNS(SVG_NS, "stop")
-    stopA.setAttribute("offset", "0")
-    stopA.setAttribute("stop-color", "var(--jet-cursor-color, #c4923a)")
-    const stopB = document.createElementNS(SVG_NS, "stop")
-    stopB.setAttribute("offset", "1")
-    stopB.setAttribute("stop-color", "var(--jet-cursor-color, #c4923a)")
-    gradient.appendChild(stopA)
-    gradient.appendChild(stopB)
-    this.streakDefs.appendChild(gradient)
-
-    const rect = document.createElementNS(SVG_NS, "rect")
-    rect.setAttribute("fill", `url(#${gradId})`)
-    rect.setAttribute("rx", "1")
-    this.streakSvg.appendChild(rect)
-    entry = { rect, gradient, stopA, stopB }
-    this.streakRects.set(key, entry)
-    return entry
-  }
-
-  private renderStreaks() {
-    const activeStreakKeys = new Set<string>()
-
-    for (const { key } of this.renderPlan) {
-      const endpointKey = key.replace(/-(open|close)$/, "")
-      const anim = this.anims.get(endpointKey)
-      if (!anim) continue
-
-      const dx = anim.targetX - anim.x
-      const dy = anim.targetY - anim.y
-      const distSq = dx * dx + dy * dy
-      if (this.reducedMotion || distSq < ANIM_EPSILON * ANIM_EPSILON) {
-        this.removeStreak(endpointKey)
-        continue
-      }
-
-      activeStreakKeys.add(endpointKey)
-      const entry = this.ensureStreak(endpointKey)
-
-      const x0 = Math.min(anim.x, anim.targetX)
-      const x1 = Math.max(anim.x, anim.targetX)
-      const width = Math.max(x1 - x0, 1)
-      const overshoot = anim.h * STREAK_Y_OVERSHOOT
-      const y0 = anim.y - overshoot
-      const height = anim.h + overshoot * 2
-      const rightward = anim.targetX > anim.x
-      const baseAlpha = STREAK_BASE_ALPHA * this.focusOpacity
-
-      const leadAlpha = baseAlpha
-      const trailAlpha = baseAlpha * STREAK_MIN_ALPHA
-
-      entry.stopA.setAttribute("stop-opacity", String(rightward ? trailAlpha : leadAlpha))
-      entry.stopB.setAttribute("stop-opacity", String(rightward ? leadAlpha : trailAlpha))
-
-      let shearDeg = 0
-      if (Math.abs(dy) > 2) {
-        const raw = (-Math.atan(dy * 0.5) * 180) / Math.PI
-        shearDeg = Math.max(-STREAK_MAX_SHEAR_DEG, Math.min(STREAK_MAX_SHEAR_DEG, raw))
-        if (!rightward) shearDeg = -shearDeg
-      }
-
-      entry.rect.setAttribute("x", String(x0))
-      entry.rect.setAttribute("y", String(y0))
-      entry.rect.setAttribute("width", String(width))
-      entry.rect.setAttribute("height", String(height))
-      entry.rect.setAttribute(
-        "transform",
-        shearDeg !== 0 ? `skewY(${shearDeg.toFixed(2)})` : "",
-      )
-    }
-
-    for (const key of Array.from(this.streakRects.keys())) {
-      if (!activeStreakKeys.has(key)) this.removeStreak(key)
+  private render(time: number): void {
+    const focusOpacity = this.view.hasFocus ? 0.92 : 0.42
+    for (const entry of this.entries.values()) {
+      this.styleElement(entry.cursor, entry, entry.anim.x, entry.anim.y, entry.anim.h, focusOpacity)
+      const ghosts = entry.ghosts.tick(time)
+      entry.ghostEls.forEach((element, index) => {
+        const ghost = ghosts[index]
+        if (!ghost) {
+          element.style.opacity = "0"
+          return
+        }
+        this.styleElement(element, entry, ghost.x, ghost.y, ghost.h, ghost.opacity * focusOpacity)
+      })
     }
   }
 
-  private render() {
-    this.renderStreaks()
-
-    const needed = this.renderPlan.length
-    while (this.groups.length < needed) {
-      const group = createBracketGroup()
-      this.groups.push(group)
-      this.layer.appendChild(group)
-    }
-    while (this.groups.length > needed) {
-      this.groups.pop()?.remove()
-    }
-
-    for (let i = 0; i < needed; i++) {
-      const item = this.renderPlan[i]!
-      const group = this.groups[i]!
-      const endpointKey = item.key.replace(/-(open|close)$/, "")
-      const anim = this.anims.get(endpointKey)
-      if (!anim) {
-        group.style.display = "none"
-        continue
-      }
-      group.style.display = "block"
-      layoutBracketGroup(
-        group,
-        anim.x,
-        anim.y,
-        anim.h,
-        item.shape,
-        item.thickness,
-        item.opacity,
-        this.focusOpacity,
-      )
-    }
-  }
-
-  destroy() {
-    this.stopRaf()
-    this.unsubMotion?.()
+  destroy(): void {
+    this.stop()
+    this.unsubscribeReduced()
+    this.rootObserver.disconnect()
+    this.entries.clear()
     this.layer.remove()
-    this.streakSvg.remove()
-    this.anims.clear()
-    this.streakRects.clear()
   }
 }
 
 export function motionCursor(): Extension {
   return [
     EditorView.theme({
-      ".jet-cursor-streak-layer": {
+      ".jet-editor-cursor-layer": {
         position: "absolute",
         inset: "0",
+        zIndex: "30",
         pointerEvents: "none",
-        zIndex: "29",
         overflow: "visible",
       },
-      ".jet-cursor-layer": {
-        position: "absolute",
-        inset: "0",
-        pointerEvents: "none",
-        zIndex: "30",
-      },
-      ".jet-bracket-group": {
-        position: "absolute",
-        top: "0",
-        left: "0",
-        width: "0",
-        willChange: "transform, opacity",
-      },
-      ".jet-bracket-part": {
-        position: "absolute",
-        borderRadius: "1px",
+      ".cm-cursor": {
+        opacity: "0 !important",
       },
     }),
-    ViewPlugin.fromClass(BracketCursorPlugin),
+    ViewPlugin.fromClass(MotionCursorPlugin),
   ]
 }

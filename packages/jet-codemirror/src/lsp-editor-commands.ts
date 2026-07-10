@@ -103,6 +103,34 @@ export function runShowHover(view: EditorView): boolean {
 }
 
 export async function fetchHoverPlaintext(view: EditorView, pos: number): Promise<string | null> {
+  let state = hoverCache.get(view)
+  if (!state || state.doc !== view.state.doc) {
+    state = { doc: view.state.doc, values: new Map(), pending: new Map() }
+    hoverCache.set(view, state)
+  }
+  if (state.values.has(pos)) return state.values.get(pos) ?? null
+  const pending = state.pending.get(pos)
+  if (pending) return pending
+  const request = requestHoverPlaintext(view, pos).catch(() => null).then(value => {
+    const current = hoverCache.get(view)
+    if (current?.doc === view.state.doc) {
+      if (current.values.size >= 64) current.values.delete(current.values.keys().next().value ?? -1)
+      current.values.set(pos, value)
+      current.pending.delete(pos)
+    }
+    return value
+  })
+  state.pending.set(pos, request)
+  return request
+}
+
+const hoverCache = new WeakMap<EditorView, {
+  doc: EditorView["state"]["doc"]
+  values: Map<number, string | null>
+  pending: Map<number, Promise<string | null>>
+}>()
+
+async function requestHoverPlaintext(view: EditorView, pos: number): Promise<string | null> {
   const plugin = lspPluginForView(view)
   if (!plugin) return null
   plugin.client.sync()

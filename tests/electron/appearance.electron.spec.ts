@@ -51,10 +51,10 @@ test.describe("electron appearance and terminal-first UX", () => {
       await page.locator("[data-jet-setting='terminal-cursor-style-bar']").click()
       await page.locator("[data-jet-setting='terminal-cursor-motion-off']").click()
       await expect
-        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--jet-terminal-cursor-style").trim()))
+        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--jet-cursor-style").trim()))
         .toBe("bar")
       await expect
-        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--jet-terminal-cursor-motion").trim()))
+        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--jet-cursor-motion").trim()))
         .toBe("off")
 
       await page.locator("[data-jet-theme-option='gruvbox-light']").click()

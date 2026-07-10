@@ -11,9 +11,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc --emitDeclarationOnly --outDir dist"
+    "build": "tsc --emitDeclarationOnly --outDir dist",
+    "test": "tsx --test src/rad-scroll.test.ts"
   },
   "devDependencies": {
+    "tsx": "^4.23.0",
     "typescript": "^7.0.2"
   }
 }

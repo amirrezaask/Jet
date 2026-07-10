@@ -40,7 +40,7 @@ import { lintGutter, setDiagnosticsEffect } from "@codemirror/lint"
 import { indentationMarkers } from "@replit/codemirror-indentation-markers"
 import { search, searchKeymap, highlightSelectionMatches, selectSelectionMatches, selectNextOccurrence } from "@codemirror/search"
 import { hiddenSearchPanel, jetSearchPanelKeymap } from "./search-bridge.js"
-import { LSPClient, jumpToDefinition } from "@codemirror/lsp-client"
+import { LSPClient } from "@codemirror/lsp-client"
 import { lspLanguageIdFromJet } from "@jet/shared"
 import type { WorkspaceFile } from "@jet/workspace"
 import type { WorkspaceService } from "@jet/workspace"
@@ -55,6 +55,11 @@ import { eolOverlayExtension } from "./eol-overlays.js"
 import { perfMeasure } from "./perf-instrumentation.js"
 import { jetReloadAnnotation } from "./reload-annotation.js"
 import { detectIndent, indentUnitFor, type DetectedIndent } from "./detect-indent.js"
+import { motionCursor } from "./motion-cursor.js"
+import { smoothEditorScroll } from "./smooth-scroll.js"
+import { definitionLink } from "./definition-link.js"
+import { inlayHints } from "./inlay-hints.js"
+import { semanticTokens } from "./semantic-tokens.js"
 
 const wordCompletionSource: CompletionSource = async context => {
   const result = await completeAnyWord(context)
@@ -178,15 +183,6 @@ export type CreateJetEditorViewOptions = {
   lineWrapping?: boolean
 }
 
-const goToDefinitionOnClick = EditorView.domEventHandlers({
-  mousedown(event, view) {
-    if (!(event.metaKey || event.ctrlKey) || event.button !== 0) return false
-    jumpToDefinition(view)
-    event.preventDefault()
-    return true
-  },
-})
-
 export async function createJetEditorView(opts: CreateJetEditorViewOptions): Promise<EditorView> {
   const theme = opts.theme ?? defaultJetTheme
   const largeFile = opts.largeFile ?? false
@@ -217,11 +213,13 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   extensions.push(indentMarkerCompartment.of(indentMarkerExtension(theme, largeFile)))
 
   if (!largeFile) {
-    extensions.push(eolOverlayExtension(), highlightTrailingWhitespace(), lintGutter())
+    extensions.push(eolOverlayExtension(), inlayHints(), semanticTokens(), highlightTrailingWhitespace(), lintGutter())
   }
 
   extensions.push(
-    goToDefinitionOnClick,
+    motionCursor(),
+    smoothEditorScroll(),
+    definitionLink(opts.executeCommand),
     ...multiCursorExtensions(),
     multiCursorPrecKeymap,
     search({ top: true, createPanel: hiddenSearchPanel }),

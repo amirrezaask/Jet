@@ -7,6 +7,7 @@ import "@xterm/xterm/css/xterm.css"
 import { subscribeRootStyle } from "./root-style-observer.js"
 import { Button } from "../components/ui/button.js"
 import { TerminalCursorMotionLayer } from "./terminal-cursor-motion.js"
+import { TerminalScrollMotion } from "./terminal-scroll-motion.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
@@ -31,6 +32,7 @@ type TerminalSession = {
   fit: FitAddon
   ptyId: string | null
   cursorMotion: TerminalCursorMotionLayer | null
+  scrollMotion: TerminalScrollMotion
 }
 
 const MONO_FONT_FALLBACK =
@@ -187,6 +189,7 @@ export function TerminalPanel({
       fit,
       ptyId: null,
       cursorMotion: screen ? new TerminalCursorMotionLayer(term, screen) : null,
+      scrollMotion: new TerminalScrollMotion(term, container),
     }
     session.cursorMotion?.setActive(focused && isActive)
     sessionRef.current = session
@@ -338,6 +341,7 @@ export function TerminalPanel({
       dataDispose?.dispose()
       unsub?.()
       session.cursorMotion?.dispose()
+      session.scrollMotion.dispose()
       term.dispose()
       sessionRef.current = null
     }

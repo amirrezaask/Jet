@@ -19,8 +19,8 @@ import { SettingsField } from "@/components/SettingsField.js"
 import { themePreviewSwatches } from "@/theme/bundled.js"
 
 export type JetDensity = "compact" | "comfortable"
-export type JetTerminalCursorStyle = "block" | "bar" | "underline"
-export type JetTerminalCursorMotion = "trail" | "smooth" | "off"
+export type JetCursorStyle = "block" | "bar" | "underline"
+export type JetCursorMotion = "trail" | "smooth" | "off"
 
 export type JetAppearanceSettings = {
   themeId: string
@@ -30,8 +30,8 @@ export type JetAppearanceSettings = {
   editorLineHeight: number
   density: JetDensity
   cursorBlink: boolean
-  terminalCursorStyle: JetTerminalCursorStyle
-  terminalCursorMotion: JetTerminalCursorMotion
+  cursorStyle: JetCursorStyle
+  cursorMotion: JetCursorMotion
   reducedMotion: boolean
 }
 
@@ -281,13 +281,13 @@ export function SettingsOverlay({
                     Blink in terminal
                   </Label>
                 </SettingsField>
-                <SettingsField label="Cursor shape">
+                <SettingsField label="Editor and terminal cursor shape">
                   <ToggleGroup
                     type="single"
-                    value={settings.terminalCursorStyle}
+                    value={settings.cursorStyle}
                     onValueChange={value => {
                       if (value === "block" || value === "bar" || value === "underline") {
-                        onSettingsChange(settingPatch(settings, { terminalCursorStyle: value }))
+                        onSettingsChange(settingPatch(settings, { cursorStyle: value }))
                       }
                     }}
                     variant="outline"
@@ -299,13 +299,13 @@ export function SettingsOverlay({
                     <ToggleGroupItem value="underline" data-jet-setting="terminal-cursor-style-underline" className="flex-1">Line</ToggleGroupItem>
                   </ToggleGroup>
                 </SettingsField>
-                <SettingsField label="Cursor motion" detail="Trail uses a bounded five-frame ghost tail.">
+                <SettingsField label="Editor and terminal cursor motion" detail="Trail uses a bounded five-frame ghost tail.">
                   <ToggleGroup
                     type="single"
-                    value={settings.terminalCursorMotion}
+                    value={settings.cursorMotion}
                     onValueChange={value => {
                       if (value === "trail" || value === "smooth" || value === "off") {
-                        onSettingsChange(settingPatch(settings, { terminalCursorMotion: value }))
+                        onSettingsChange(settingPatch(settings, { cursorMotion: value }))
                       }
                     }}
                     variant="outline"

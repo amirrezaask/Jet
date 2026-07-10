@@ -9,3 +9,4 @@ export {
 } from "./layoutMorph.js"
 export { useRadRectMorph, type RadRect } from "./useRadRectMorph.js"
 export { useJetCaretOverlay, JetCaretInput } from "./useJetCaretOverlay.jsx"
+export { UniversalCaretLayer } from "./UniversalCaretLayer.js"

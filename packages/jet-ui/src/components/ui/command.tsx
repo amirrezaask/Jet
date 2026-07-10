@@ -83,7 +83,6 @@ const CommandInput = React.forwardRef<
           data-slot="command-input"
           className={cn(
             "flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-            caretOverlay && "caret-transparent",
             className
           )}
           {...props}

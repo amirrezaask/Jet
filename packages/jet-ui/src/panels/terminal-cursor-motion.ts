@@ -16,11 +16,11 @@ function readSetting<T extends string>(name: string, allowed: readonly T[], fall
 }
 
 function cursorStyle(): CursorStyle {
-  return readSetting("--jet-terminal-cursor-style", ["block", "bar", "underline"], "block")
+  return readSetting("--jet-cursor-style", ["block", "bar", "underline"], "bar")
 }
 
 function cursorMotion(): CursorMotion {
-  return readSetting("--jet-terminal-cursor-motion", ["trail", "smooth", "off"], "trail")
+  return readSetting("--jet-cursor-motion", ["trail", "smooth", "off"], "trail")
 }
 
 export class TerminalCursorMotionLayer {

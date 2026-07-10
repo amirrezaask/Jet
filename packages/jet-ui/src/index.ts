@@ -52,6 +52,8 @@ export {
   SettingsOverlay,
   type JetAppearanceSettings,
   type JetDensity,
+  type JetCursorStyle,
+  type JetCursorMotion,
 } from "./components/SettingsOverlay.js"
 export { StatusBar } from "./status/StatusBar.js"
 export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js"

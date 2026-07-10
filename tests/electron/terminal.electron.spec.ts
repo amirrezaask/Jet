@@ -263,4 +263,37 @@ test.describe("electron terminal", () => {
       await app.close()
     }
   })
+
+  test("uses RAD smooth scrolling for terminal scrollback", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      const surface = page.locator("[data-jet-terminal-panel] .jet-terminal-surface")
+      await surface.click()
+      await page.keyboard.type("seq 1 240")
+      await page.keyboard.press("Enter")
+      await page.waitForFunction(() => {
+        const viewport = document.querySelector<HTMLElement>("[data-jet-terminal-panel] .xterm-viewport")
+        return viewport != null && viewport.scrollHeight > viewport.clientHeight * 2
+      }, null, { timeout: 15_000 })
+
+      const samples = await page.locator("[data-jet-terminal-panel] .xterm-viewport").evaluate(async viewport => {
+        viewport.scrollTop = viewport.scrollHeight
+        viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -640, bubbles: true, cancelable: true }))
+        const values: number[] = []
+        for (let frame = 0; frame < 30; frame++) {
+          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+          values.push(viewport.scrollTop)
+          if (viewport.dataset.jetScrollActive === "false" && frame > 2) break
+        }
+        return values
+      })
+      const moving = samples.filter((value, index) => index === 0 || value !== samples[index - 1])
+      expect(moving.length).toBeGreaterThanOrEqual(3)
+      expect(samples.at(-1)).toBeLessThan(samples[0]!)
+      expect(samples.every((value, index) => index === 0 || value <= samples[index - 1]!)).toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
 })

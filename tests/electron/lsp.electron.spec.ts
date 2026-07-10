@@ -39,6 +39,43 @@ test.describe("electron LSP", () => {
     }
   })
 
+  test("modifier hover marks the clicked symbol and preserves jump navigation", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/index.ts")
+      await waitForLspConnected(page)
+      const point = await page.locator(".cm-line").nth(3).evaluate(line => {
+        const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT)
+        let node = walker.nextNode() as Text | null
+        while (node) {
+          const index = node.data.indexOf("greet")
+          if (index >= 0) {
+            const range = document.createRange()
+            range.setStart(node, index)
+            range.setEnd(node, index + 5)
+            const rect = range.getBoundingClientRect()
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          }
+          node = walker.nextNode() as Text | null
+        }
+        throw new Error("greet token not rendered")
+      })
+
+      await page.keyboard.down("Meta")
+      await page.mouse.move(point.x, point.y)
+      await expect(page.locator("[data-jet-definition-link]")).toHaveCount(1, { timeout: 5_000 })
+      await page.mouse.click(point.x, point.y)
+      await page.keyboard.up("Meta")
+      await expect(page.locator(".cm-editor")).toContainText("export function greet", { timeout: 8_000 })
+
+      await page.evaluate(async () => window.__jetAgent!.executeCommand("navigation.jumpBack"))
+      await expect(page.locator(".cm-editor")).toContainText("function main", { timeout: 5_000 })
+    } finally {
+      await page.keyboard.up("Meta").catch(() => {})
+      await app.close()
+    }
+  })
+
   test("quick outline lists main symbol", async () => {
     const { app, page } = await launchJet()
     try {
