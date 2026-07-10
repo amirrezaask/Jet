@@ -18,13 +18,13 @@ export {
 
 export const jetMotion = {
   duration: {
-    hot: 0.19,
-    fast: 0.18,
-    overlay: 0.2,
+    hot: 0.12,
+    fast: 0.12,
+    overlay: 0.18,
     panel: 0.22,
-    slowMenu: 0.28,
+    slowMenu: 0.24,
     scroll: 0.14,
-    entity: 0.35,
+    entity: 0.24,
     overlayExit: 0.15,
   },
   css: {
@@ -40,20 +40,20 @@ export const jetMotion = {
   },
   squishScale: 0.9,
   /** Fixed-duration overlay transition approximating RAD menu rate (N=70). */
-  overlayTransition: { duration: 0.2 /* overlay */, ease: "easeOut" as const },
+  overlayTransition: { duration: 0.18 /* overlay */, ease: "easeOut" as const },
   quickFade: { duration: 0.12, ease: "easeOut" as const },
-  tabGhostTransition: { duration: 0.2 /* overlay */, ease: "easeOut" as const },
+  tabGhostTransition: { duration: 0.18 /* overlay */, ease: "easeOut" as const },
   overlayEnter: {
     initial: { opacity: 0, scale: 0.9 },
     animate: { opacity: 1, scale: 1 },
     exit: { opacity: 0, scale: 0.9 },
-    transition: { duration: 0.2, ease: "easeOut" as const },
+    transition: { duration: 0.18, ease: "easeOut" as const },
   },
   overlayEnterTop: {
     initial: { opacity: 0, scale: 0.9, y: -8 },
     animate: { opacity: 1, scale: 1, y: 0 },
     exit: { opacity: 0, scale: 0.9, y: -4 },
-    transition: { duration: 0.2, ease: "easeOut" as const },
+    transition: { duration: 0.18, ease: "easeOut" as const },
   },
 }
 

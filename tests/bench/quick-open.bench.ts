@@ -1,6 +1,6 @@
 import { test } from "@playwright/test"
 import { assertBudget, logBenchResult, runBench } from "./_bench.js"
-import { launchJet } from "../electron/_launch.js"
+import { launchJet, waitForSearchReady } from "../electron/_launch.js"
 
 test("bench quick-open", async () => {
   const result = await runBench({
@@ -8,6 +8,7 @@ test("bench quick-open", async () => {
     measure: async () => {
       const { app, page } = await launchJet()
       try {
+        await waitForSearchReady(page)
         const t0 = Date.now()
         await page.evaluate(async () => {
           await window.__jetAgent!.executeCommand("workspace.quickOpen")

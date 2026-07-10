@@ -2,7 +2,9 @@
 export function prefersReducedMotion(): boolean {
   const g = globalThis as typeof globalThis & {
     matchMedia?: (query: string) => { matches: boolean; addEventListener?: (type: string, fn: () => void) => void; removeEventListener?: (type: string, fn: () => void) => void }
+    document?: { documentElement: { dataset: Record<string, string | undefined> } }
   }
+  if (g.document?.documentElement.dataset.jetReducedMotion === "true") return true
   if (typeof g.matchMedia !== "function") return false
   return g.matchMedia("(prefers-reduced-motion: reduce)").matches
 }
@@ -14,10 +16,24 @@ export function onReducedMotionChange(listener: (reduced: boolean) => void): () 
       addEventListener: (type: string, fn: () => void) => void
       removeEventListener: (type: string, fn: () => void) => void
     }
+    document?: { documentElement: { dataset: Record<string, string | undefined> } }
+    MutationObserver?: new (callback: () => void) => {
+      observe(target: unknown, options: { attributes: boolean; attributeFilter: string[] }): void
+      disconnect(): void
+    }
   }
-  if (typeof g.matchMedia !== "function") return () => {}
-  const mq = g.matchMedia("(prefers-reduced-motion: reduce)")
-  const handler = () => listener(mq.matches)
-  mq.addEventListener("change", handler)
-  return () => mq.removeEventListener("change", handler)
+  const mq = typeof g.matchMedia === "function"
+    ? g.matchMedia("(prefers-reduced-motion: reduce)")
+    : null
+  const handler = () => listener(prefersReducedMotion())
+  mq?.addEventListener("change", handler)
+  const root = g.document?.documentElement
+  const observer = root && g.MutationObserver
+    ? new g.MutationObserver(handler)
+    : null
+  observer?.observe(root!, { attributes: true, attributeFilter: ["data-jet-reduced-motion"] })
+  return () => {
+    mq?.removeEventListener("change", handler)
+    observer?.disconnect()
+  }
 }

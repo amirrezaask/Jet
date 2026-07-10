@@ -28,6 +28,8 @@ export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   editorLineHeight: 1.45,
   density: "compact",
   cursorBlink: true,
+  terminalCursorStyle: "block",
+  terminalCursorMotion: "trail",
   reducedMotion: false,
 }
 
@@ -88,6 +90,14 @@ function loadAppearanceSettings(): JetAppearanceSettings {
       editorLineHeight: clampNumber(parsed.editorLineHeight, base.editorLineHeight, 1.1, 2),
       density: parsed.density === "comfortable" ? "comfortable" : "compact",
       cursorBlink: parsed.cursorBlink !== false,
+      terminalCursorStyle:
+        parsed.terminalCursorStyle === "bar" || parsed.terminalCursorStyle === "underline"
+          ? parsed.terminalCursorStyle
+          : "block",
+      terminalCursorMotion:
+        parsed.terminalCursorMotion === "smooth" || parsed.terminalCursorMotion === "off"
+          ? parsed.terminalCursorMotion
+          : "trail",
       reducedMotion: parsed.reducedMotion === true,
     }
   } catch {
@@ -113,6 +123,8 @@ function applyAppearanceCss(settings: JetAppearanceSettings): void {
   root.style.setProperty("--jet-editor-line-height", String(settings.editorLineHeight))
   root.style.setProperty("--jet-terminal-line-height", String(settings.terminalLineHeight))
   root.style.setProperty("--jet-terminal-cursor-blink", settings.cursorBlink ? "1" : "0")
+  root.style.setProperty("--jet-terminal-cursor-style", settings.terminalCursorStyle)
+  root.style.setProperty("--jet-terminal-cursor-motion", settings.terminalCursorMotion)
   root.dataset.jetDensity = settings.density
   root.dataset.jetReducedMotion = settings.reducedMotion ? "true" : "false"
 }

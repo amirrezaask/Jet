@@ -1,4 +1,6 @@
 import type { JetPanelTree, ListDocument, WorkspaceService } from "@jet/workspace"
+import { normalizeAbsPath } from "@jet/workspace"
+import { fileUriToPath } from "@jet/shared"
 import {
   findPanelWithTab,
   isTerminalTabId,
@@ -10,6 +12,7 @@ import { resolveAuxiliaryPanel, resolveEditorPanel, getAllLeafPanels } from "./p
 import { agentChatTabId, AGENT_CHAT_TAB_TYPE_ID } from "./tabs/agent-chat.tab.js"
 import { AGENT_EXPLORER_TAB_ID, AGENT_EXPLORER_TAB_TYPE_ID } from "./tabs/agent-explorer.tab.js"
 import { TERMINAL_TAB_TYPE_ID, registerTerminalSession } from "./tabs/terminal.tab.js"
+import { terminalCwdForTab } from "./tabs/terminal-session.js"
 
 export function openTabInAuxiliaryPanel(
   workspace: WorkspaceService,
@@ -78,6 +81,25 @@ export function listTerminalTabs(
     }
   }
   return result
+}
+
+function rootUriKey(uri: string): string {
+  if (!uri) return ""
+  try {
+    return normalizeAbsPath(fileUriToPath(uri))
+  } catch {
+    return uri
+  }
+}
+
+export function listTerminalTabsForRoot(
+  tree: JetPanelTree,
+  rootUri: string,
+): { panelId: PanelId; tabId: string }[] {
+  const key = rootUriKey(rootUri)
+  return listTerminalTabs(tree).filter(
+    ({ tabId }) => rootUriKey(terminalCwdForTab(tabId)) === key,
+  )
 }
 
 export function isActiveTerminalTab(tree: JetPanelTree, focused: PanelId | null): boolean {

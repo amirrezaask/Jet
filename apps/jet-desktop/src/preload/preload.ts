@@ -30,17 +30,31 @@ ipcRenderer.on("workspace:searchReady", (_e, payload: { rootUri: string }) => {
 })
 
 const terminalDataListeners = new Map<string, Set<(data: string) => void>>()
-const terminalDataBuffers = new Map<string, string[]>()
+type BufferedTerminalData = { data: string; sequence: number }
+const terminalDataBuffers = new Map<string, BufferedTerminalData[]>()
+const terminalReplayFloors = new Map<string, number>()
+const MAX_BUFFERED_TERMINAL_CHARS = 4 * 1024 * 1024
+const terminalExitListeners = new Set<(id: string, exitCode: number, signal?: number) => void>()
 
-ipcRenderer.on("terminal:data", (_e, id: string, data: string) => {
+ipcRenderer.on("terminal:data", (_e, id: string, data: string, sequence = 0) => {
+  const floor = terminalReplayFloors.get(id) ?? 0
+  if (sequence > 0 && sequence <= floor) return
   const listeners = terminalDataListeners.get(id)
   if (listeners && listeners.size > 0) {
     listeners.forEach(cb => cb(data))
     return
   }
   const pending = terminalDataBuffers.get(id) ?? []
-  pending.push(data)
+  pending.push({ data, sequence })
+  let size = pending.reduce((total, chunk) => total + chunk.data.length, 0)
+  while (size > MAX_BUFFERED_TERMINAL_CHARS && pending.length > 1) {
+    size -= pending.shift()!.data.length
+  }
   terminalDataBuffers.set(id, pending)
+})
+
+ipcRenderer.on("terminal:exit", (_e, id: string, exitCode: number, signal?: number) => {
+  for (const cb of terminalExitListeners) cb(id, exitCode, signal)
 })
 
 const api: JetElectronAPI = {
@@ -111,6 +125,20 @@ const api: JetElectronAPI = {
   },
   terminal: {
     create: (cwdUri, launch) => ipcRenderer.invoke("terminal:create", cwdUri, launch),
+    attach: async id => {
+      const result = await ipcRenderer.invoke("terminal:attach", id)
+      if (result) {
+        terminalReplayFloors.set(id, result.lastSequence)
+        const pending = terminalDataBuffers.get(id)
+        if (pending) {
+          terminalDataBuffers.set(
+            id,
+            pending.filter(chunk => chunk.sequence === 0 || chunk.sequence > result.lastSequence),
+          )
+        }
+      }
+      return result
+    },
     write: (id, data) => ipcRenderer.invoke("terminal:write", id, data),
     resize: (id, cols, rows) => ipcRenderer.invoke("terminal:resize", id, cols, rows),
     onData: (id, callback) => {
@@ -122,7 +150,7 @@ const api: JetElectronAPI = {
       set.add(callback)
       const pending = terminalDataBuffers.get(id)
       if (pending) {
-        for (const chunk of pending) callback(chunk)
+        for (const chunk of pending) callback(chunk.data)
         terminalDataBuffers.delete(id)
       }
       return () => {
@@ -130,9 +158,14 @@ const api: JetElectronAPI = {
         if (set!.size === 0) terminalDataListeners.delete(id)
       }
     },
+    onExit: cb => {
+      terminalExitListeners.add(cb)
+      return () => terminalExitListeners.delete(cb)
+    },
     dispose: id => {
       terminalDataBuffers.delete(id)
       terminalDataListeners.delete(id)
+      terminalReplayFloors.delete(id)
       return ipcRenderer.invoke("terminal:dispose", id)
     },
   },

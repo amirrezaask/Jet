@@ -1,6 +1,6 @@
 import { test } from "@playwright/test"
 import { assertBudget, logBenchResult, runBench } from "./_bench.js"
-import { launchJet } from "../electron/_launch.js"
+import { launchJet, waitForSearchReady } from "../electron/_launch.js"
 
 test("bench project-search", async () => {
   const result = await runBench({
@@ -12,6 +12,7 @@ test("bench project-search", async () => {
           await window.__jetAgent!.openFile("src/index.ts")
           await window.__jetAgent!.waitForEditor()
         })
+        await waitForSearchReady(page)
         const t0 = Date.now()
         await page.evaluate(async () => {
           await window.__jetAgent!.executeCommand("locationlist.showSearch")

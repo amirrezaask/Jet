@@ -46,6 +46,9 @@ function stripCrossoriginFromHtml() {
 }
 
 export default defineConfig({
+  define: {
+    "import.meta.env.JET_ENABLE_AGENT_CHAT": JSON.stringify(process.env.JET_ENABLE_AGENT_CHAT ?? "0"),
+  },
   plugins: [
     react({
       babel: {

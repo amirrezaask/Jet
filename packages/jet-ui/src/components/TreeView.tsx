@@ -35,6 +35,7 @@ export interface TreeViewProps<T> {
   rowAriaLabel?: (node: TreeNode<T>) => string
   onActivate?: (node: TreeNode<T>) => void
   initiallyExpanded?: TreeNodeId[]
+  syncExpanded?: boolean
   ariaLabel: string
   activeId?: TreeNodeId | null
   emptyState?: React.ReactNode
@@ -46,10 +47,10 @@ export interface TreeViewProps<T> {
 const OVERSCAN = 8
 const DEFAULT_INDENT_PX = 12
 
-function readRowHeightPx(): number {
+function readCssLengthPx(name: string, fallbackRem: number): number {
   const root = document.documentElement
   const fontSize = parseFloat(getComputedStyle(root).fontSize) || 13
-  const raw = getComputedStyle(root).getPropertyValue("--jet-row-height").trim()
+  const raw = getComputedStyle(root).getPropertyValue(name).trim()
   if (raw.endsWith("rem")) {
     const rem = parseFloat(raw)
     if (Number.isFinite(rem) && rem > 0) return rem * fontSize
@@ -57,7 +58,14 @@ function readRowHeightPx(): number {
     const px = parseFloat(raw)
     if (Number.isFinite(px) && px > 0) return px
   }
-  return fontSize * 1.692
+  return fontSize * fallbackRem
+}
+
+function readRowHeights(): { project: number; child: number } {
+  return {
+    project: readCssLengthPx("--jet-project-row-height", 2.3),
+    child: readCssLengthPx("--jet-row-height", 1.85),
+  }
 }
 
 type FlatEntry<T> = {
@@ -128,6 +136,12 @@ class TreeState<T> {
     return this.toggle(id)
   }
 
+  setExpanded(ids: TreeNodeId[]): void {
+    this.expanded.clear()
+    for (const id of ids) this.expanded.add(id)
+    this.notify()
+  }
+
   invalidate(): void {
     this.childCache.clear()
     this.notify()
@@ -162,6 +176,7 @@ export function TreeView<T>({
   rowAriaLabel,
   onActivate,
   initiallyExpanded,
+  syncExpanded = false,
   ariaLabel,
   activeId,
   emptyState,
@@ -194,8 +209,9 @@ export function TreeView<T>({
   }, [source, state, initiallyExpanded])
 
   useEffect(() => {
+    if (syncExpanded) state.setExpanded(initiallyExpanded ?? [])
     for (const id of initiallyExpanded ?? []) void state.ensureChildren(id)
-  }, [initiallyExpanded?.join("|"), state])
+  }, [initiallyExpanded?.join("|"), state, syncExpanded])
 
   const rows: FlatEntry<T>[] = useMemo(() => {
     void rev
@@ -203,10 +219,10 @@ export function TreeView<T>({
   }, [rev, state])
 
   const contentRef = useRef<HTMLDivElement | null>(null)
-  const [rowHeight, setRowHeight] = useState(readRowHeightPx)
+  const [rowHeights, setRowHeights] = useState(readRowHeights)
 
   useLayoutEffect(() => {
-    const measure = () => setRowHeight(readRowHeightPx())
+    const measure = () => setRowHeights(readRowHeights())
     measure()
     const raf = requestAnimationFrame(measure)
     let cancelled = false
@@ -226,7 +242,7 @@ export function TreeView<T>({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => contentRef.current,
-    estimateSize: () => rowHeight,
+    estimateSize: index => rows[index]?.depth === 0 ? rowHeights.project : rowHeights.child,
     overscan: OVERSCAN,
   })
 
@@ -271,7 +287,7 @@ export function TreeView<T>({
                 entry={entry}
                 ctx={ctx}
                 offset={v.start}
-                rowHeight={rowHeight}
+                rowHeight={entry.depth === 0 ? rowHeights.project : rowHeights.child}
                 indentPx={indentPx}
                 rowAriaLabel={rowAriaLabel?.(entry.node)}
                 onClick={() => onRowClick(entry)}
@@ -335,7 +351,13 @@ function TreeRow<T>({
         aria-expanded={ctx.isBranch ? ctx.expanded : undefined}
         data-jet-list-item
         data-node-id={entry.node.id}
-        onClick={onClick}
+        onClick={event => {
+          // React portal events bubble through the component tree even though the
+          // menu content is not a DOM child of this row. Keep actions rendered in
+          // a portal from also toggling/activating the owning tree item.
+          if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
+          onClick()
+        }}
         className="flex w-full min-w-0 items-center gap-1"
       >
         {ctx.isBranch ? (

@@ -19,6 +19,8 @@ import { SettingsField } from "@/components/SettingsField.js"
 import { themePreviewSwatches } from "@/theme/bundled.js"
 
 export type JetDensity = "compact" | "comfortable"
+export type JetTerminalCursorStyle = "block" | "bar" | "underline"
+export type JetTerminalCursorMotion = "trail" | "smooth" | "off"
 
 export type JetAppearanceSettings = {
   themeId: string
@@ -28,6 +30,8 @@ export type JetAppearanceSettings = {
   editorLineHeight: number
   density: JetDensity
   cursorBlink: boolean
+  terminalCursorStyle: JetTerminalCursorStyle
+  terminalCursorMotion: JetTerminalCursorMotion
   reducedMotion: boolean
 }
 
@@ -276,6 +280,42 @@ export function SettingsOverlay({
                     />
                     Blink in terminal
                   </Label>
+                </SettingsField>
+                <SettingsField label="Cursor shape">
+                  <ToggleGroup
+                    type="single"
+                    value={settings.terminalCursorStyle}
+                    onValueChange={value => {
+                      if (value === "block" || value === "bar" || value === "underline") {
+                        onSettingsChange(settingPatch(settings, { terminalCursorStyle: value }))
+                      }
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="block" data-jet-setting="terminal-cursor-style-block" className="flex-1">Block</ToggleGroupItem>
+                    <ToggleGroupItem value="bar" data-jet-setting="terminal-cursor-style-bar" className="flex-1">Bar</ToggleGroupItem>
+                    <ToggleGroupItem value="underline" data-jet-setting="terminal-cursor-style-underline" className="flex-1">Line</ToggleGroupItem>
+                  </ToggleGroup>
+                </SettingsField>
+                <SettingsField label="Cursor motion" detail="Trail uses a bounded five-frame ghost tail.">
+                  <ToggleGroup
+                    type="single"
+                    value={settings.terminalCursorMotion}
+                    onValueChange={value => {
+                      if (value === "trail" || value === "smooth" || value === "off") {
+                        onSettingsChange(settingPatch(settings, { terminalCursorMotion: value }))
+                      }
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="trail" data-jet-setting="terminal-cursor-motion-trail" className="flex-1">Trail</ToggleGroupItem>
+                    <ToggleGroupItem value="smooth" data-jet-setting="terminal-cursor-motion-smooth" className="flex-1">Smooth</ToggleGroupItem>
+                    <ToggleGroupItem value="off" data-jet-setting="terminal-cursor-motion-off" className="flex-1">Off</ToggleGroupItem>
+                  </ToggleGroup>
                 </SettingsField>
               </section>
 

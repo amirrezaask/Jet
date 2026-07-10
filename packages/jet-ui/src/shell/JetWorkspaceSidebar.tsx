@@ -1,14 +1,13 @@
 import type { WorkspaceManager } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
 import { Plus } from "lucide-react"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarHeader,
 } from "@/components/ui/sidebar.js"
 import { Button } from "@/components/ui/button.js"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
 import { ExplorerTab } from "@/tabs/ExplorerTab.js"
 import {
   TerminalExplorerTab,
@@ -20,21 +19,26 @@ export type JetSidebarView = "explorer" | "terminal-explorer"
 
 export type JetWorkspaceSidebarProps = {
   activeView: JetSidebarView
-  onActiveViewChange: (view: JetSidebarView) => void
   manager: WorkspaceManager
   onOpenFile: (uri: string, path: string) => void
   onOpenFolder?: () => void
   onAddWorkspace?: () => void
   terminalExplorerGroups: TerminalExplorerGroup[]
+  activeProjectRootUri: string | null
   activeTerminalTabId: string | null
+  onActivateProject: (rootUri: string) => void
   onFocusTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
   onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   onCloseTerminal: (panelId: PanelId, tabId: string) => void
+  onRenameTerminal: (tabId: string, label: string) => void
+  onDuplicateTerminal: (tabId: string) => void
+  onRestartTerminal: (tabId: string) => void
+  onRemoveProject: (rootUri: string) => void
   onSidebarFocusChange?: (focused: boolean) => void
 }
 
-function SidebarViewTabs({
+export function JetSidebarViewTabs({
   activeView,
   onActiveViewChange,
 }: {
@@ -43,24 +47,15 @@ function SidebarViewTabs({
 }) {
   return (
     <Tabs
+      data-jet-titlebar-tabs
       value={activeView}
-      onValueChange={value => {
-        if (value === "explorer" || value === "terminal-explorer") {
-          onActiveViewChange(value)
-        }
-      }}
-      className="w-full"
+      onValueChange={value => onActiveViewChange(value as JetSidebarView)}
+      aria-label="Sidebar views"
+      className="min-w-0 flex-1"
     >
-      <TabsList
-        className="mx-auto w-fit bg-muted p-[3px]"
-        aria-label="Sidebar views"
-      >
-        <TabsTrigger value="explorer" className="h-7 min-w-[4.5rem] px-2.5 text-xs">
-          Files
-        </TabsTrigger>
-        <TabsTrigger value="terminal-explorer" className="h-7 min-w-[4.5rem] px-2.5 text-xs">
-          Terminals
-        </TabsTrigger>
+      <TabsList variant="line" className="w-full">
+        <TabsTrigger value="explorer">Files</TabsTrigger>
+        <TabsTrigger value="terminal-explorer">Terminals</TabsTrigger>
       </TabsList>
     </Tabs>
   )
@@ -68,17 +63,22 @@ function SidebarViewTabs({
 
 export function JetWorkspaceSidebar({
   activeView,
-  onActiveViewChange,
   manager,
   onOpenFile,
   onOpenFolder,
   onAddWorkspace,
   terminalExplorerGroups,
+  activeProjectRootUri,
   activeTerminalTabId,
+  onActivateProject,
   onFocusTerminal,
   onNewTerminal,
   onLaunchAgentTerminal,
   onCloseTerminal,
+  onRenameTerminal,
+  onDuplicateTerminal,
+  onRestartTerminal,
+  onRemoveProject,
   onSidebarFocusChange,
 }: JetWorkspaceSidebarProps) {
   return (
@@ -93,24 +93,30 @@ export function JetWorkspaceSidebar({
         onSidebarFocusChange?.(false)
       }}
     >
-      <SidebarHeader className="shrink-0 border-b border-sidebar-border px-2 py-2">
-        <SidebarViewTabs activeView={activeView} onActiveViewChange={onActiveViewChange} />
-      </SidebarHeader>
       <SidebarContent className="min-h-0 flex-1 overflow-hidden">
         {activeView === "explorer" ? (
           <ExplorerTab
             manager={manager}
             onOpenFile={onOpenFile}
             onOpenFolder={onOpenFolder}
+            onActivateProject={onActivateProject}
+            onNewTerminal={onNewTerminal}
+            onRemoveProject={onRemoveProject}
           />
         ) : (
           <TerminalExplorerTab
             groups={terminalExplorerGroups}
+            activeProjectRootUri={activeProjectRootUri}
             activeTerminalTabId={activeTerminalTabId}
+            onActivateProject={onActivateProject}
             onFocusTerminal={onFocusTerminal}
             onNewTerminal={onNewTerminal}
             onLaunchAgentTerminal={onLaunchAgentTerminal}
             onCloseTerminal={onCloseTerminal}
+            onRenameTerminal={onRenameTerminal}
+            onDuplicateTerminal={onDuplicateTerminal}
+            onRestartTerminal={onRestartTerminal}
+            onRemoveProject={onRemoveProject}
             onOpenFolder={onOpenFolder}
           />
         )}

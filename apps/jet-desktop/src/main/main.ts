@@ -29,7 +29,8 @@ function parseUserArgs(argv: string[]): string[] {
 }
 
 async function resolveLaunchPath(absPath: string): Promise<LaunchConfig> {
-  return resolveLaunchTarget([absPath], path.dirname(absPath))
+  const config = await resolveLaunchTarget([absPath], path.dirname(absPath))
+  return { ...config, source: "external" }
 }
 
 function defaultCwd(): string {
@@ -39,13 +40,13 @@ function defaultCwd(): string {
 
 function resolveLaunchConfigFast(userArgs: string[]): LaunchConfig | null | undefined {
   if (!app.isPackaged && userArgs.length === 0) return null
-  if (userArgs.length === 0) return { workspacePath: defaultCwd() }
+  if (userArgs.length === 0) return { workspacePath: defaultCwd(), source: "default" }
   if (userArgs.length === 1) {
     const raw = userArgs[0]!
     const target = path.isAbsolute(raw) ? raw : path.resolve(defaultCwd(), raw)
     try {
       const info = fs.statSync(target)
-      if (info.isDirectory()) return { workspacePath: target }
+      if (info.isDirectory()) return { workspacePath: target, source: "explicit" }
     } catch {
       return null
     }
@@ -193,6 +194,7 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   })
 
@@ -230,6 +232,7 @@ if (!gotLock) {
     const args = parseUserArgs(argv)
     if (args.length > 0) {
       void resolveLaunchTarget(args, defaultCwd()).then(config => {
+        config.source = "explicit"
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore()
           mainWindow.focus()
@@ -291,7 +294,12 @@ app.whenReady().then(() => {
     if (fast !== undefined) {
       deliverLaunchConfig(fast, false)
     } else {
-      void resolveLaunchTarget(userArgs, defaultCwd()).then(c => deliverLaunchConfig(c, true))
+      void resolveLaunchTarget(userArgs, defaultCwd()).then(c =>
+        deliverLaunchConfig(
+          { ...c, source: userArgs.length > 0 ? "explicit" : "default" },
+          true,
+        ),
+      )
     }
   }
 })

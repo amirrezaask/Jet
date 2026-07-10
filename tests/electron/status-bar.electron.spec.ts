@@ -1,32 +1,33 @@
 import { expect, test } from "@playwright/test"
-import { focusEditor, hasTypescriptLanguageServer, launchJet, openFixtureFile, waitForLspConnected } from "./_launch.js"
+import { resolve } from "node:path"
+import { focusEditor, launchJet, openFixtureFile, REPO_ROOT } from "./_launch.js"
 
-const lspAvailable = hasTypescriptLanguageServer()
-
-test.describe("electron status bar", () => {
-  test("shows workspace path and updates line/col on cursor move", async () => {
+test.describe("electron workspace chrome", () => {
+  test("shows the active project in the titlebar and updates on project switch", async () => {
     const { app, page } = await launchJet()
+    const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
     try {
-      await openFixtureFile(page, "src/index.ts")
-      await expect(page.locator("[data-jet-status-zone]").first()).toContainText(/sample-workspace/i)
+      const titlebar = page.locator("[data-jet-titlebar-main]")
+      await expect(titlebar).toContainText("sample-workspace")
 
-      await focusEditor(page)
-      await page.keyboard.press("End")
-      const pos = await page.evaluate(() => window.__jetAgent!.getCursorPosition())
-      expect(pos).not.toBeNull()
-      await expect(page.locator("footer")).toContainText(`Ln ${pos!.line}`)
+      await page.evaluate(path => window.__jetAgent!.openWorkspace(path), secondPath)
+      await expect(titlebar).toContainText("second-workspace")
+      await expect(page.locator("[data-jet-status-zone]")).toHaveCount(0)
     } finally {
       await app.close()
     }
   })
 
-  test("LSP zone shows connected when language server available", async () => {
-    test.skip(!lspAvailable, "typescript-language-server not on PATH")
+  test("tracks editor cursor state without permanent status-bar chrome", async () => {
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/index.ts")
-      await waitForLspConnected(page)
-      await expect(page.locator("footer")).toContainText(/LSP connected/i)
+      await focusEditor(page)
+      await page.evaluate(() => window.__jetAgent!.setEditorSelection(2, 1))
+      await expect
+        .poll(() => page.evaluate(() => window.__jetAgent!.getCursorPosition()))
+        .toEqual({ line: 2, column: 1 })
+      await expect(page.locator("footer")).toHaveCount(0)
     } finally {
       await app.close()
     }

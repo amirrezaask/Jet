@@ -18,6 +18,7 @@ export { AppShell } from "./shell/AppShell.js"
 export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
 export {
   JetWorkspaceSidebar,
+  JetSidebarViewTabs,
   type JetSidebarView,
   type JetWorkspaceSidebarProps,
 } from "./shell/JetWorkspaceSidebar.js"

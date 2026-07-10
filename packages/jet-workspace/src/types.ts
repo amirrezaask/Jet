@@ -94,15 +94,26 @@ export type JetElectronTerminal = {
     cwdUri: string,
     launch?: { command: string; args?: string[] },
   ): Promise<{ id: string; title?: string }>
+  attach(id: string): Promise<{
+    id: string
+    title?: string
+    output: string
+    lastSequence: number
+    status: "running" | "exited"
+    exitCode?: number
+    signal?: number
+  } | null>
   write(id: string, data: string): Promise<void>
   resize(id: string, cols: number, rows: number): Promise<void>
   onData(id: string, callback: (data: string) => void): () => void
+  onExit(cb: (id: string, exitCode: number, signal?: number) => void): () => void
   dispose(id: string): Promise<void>
 }
 
 export type LaunchConfig = {
   workspacePath: string
   filePath?: string
+  source?: "default" | "explicit" | "external"
 }
 
 export type JetElectronWorkspace = {

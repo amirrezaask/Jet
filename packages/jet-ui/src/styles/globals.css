@@ -97,20 +97,21 @@
    *                                (LocationList: search, problems, references, defs).
    * Do not merge. Trees are for navigation density; location lists are for
    * click-to-jump readability. Defined only in :root — scheme-invariant. */
-  --jet-row-height: calc(var(--jet-fs-base) * 1.692);
+  --jet-project-row-height: calc(var(--jet-fs-base) * 2.3);
+  --jet-row-height: calc(var(--jet-fs-base) * 1.85);
   --jet-titlebar-height: calc(var(--jet-fs-base) * 2.25);
   --jet-location-row-height: calc(var(--jet-fs-base) * 2.5);
   --jet-traffic-light-inset: 7.7rem;
   --jet-overlay-list-max: 22rem;
-  --jet-motion-fast: 180ms;
-  --jet-motion-hot: 190ms;
-  --jet-motion-menu: 200ms;
-  --jet-motion-overlay: 200ms;
+  --jet-motion-fast: 120ms;
+  --jet-motion-hot: 120ms;
+  --jet-motion-menu: 160ms;
+  --jet-motion-overlay: 180ms;
   --jet-motion-panel: 220ms;
-  --jet-motion-slow-menu: 280ms;
+  --jet-motion-slow-menu: 240ms;
   --jet-motion-scroll: 140ms;
-  --jet-motion-entity: 350ms;
-  --jet-motion-dnd-site: 260ms;
+  --jet-motion-entity: 240ms;
+  --jet-motion-dnd-site: 220ms;
   --jet-motion-squish-scale: 0.9;
   --jet-cursor-color: oklch(0.145 0 0);
   --jet-press-scale: 0.98;
@@ -145,17 +146,72 @@
 [data-jet-titlebar] {
   display: flex;
   flex-shrink: 0;
-  align-items: center;
+  align-items: stretch;
   min-height: var(--jet-titlebar-height);
-  padding-inline-end: 0.25rem;
-  background-color: var(--background);
   color: var(--foreground);
+}
+
+[data-jet-titlebar-sidebar] {
+  background-color: var(--sidebar);
 }
 
 [data-jet-traffic-light-spacer] {
   width: var(--jet-traffic-light-inset);
   min-width: var(--jet-traffic-light-inset);
   flex: 0 0 var(--jet-traffic-light-inset);
+}
+
+/* Titlebar sidebar view tabs — plain CSS so compact size survives HMR / utility drops. */
+[data-jet-titlebar-tabs] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 1.5rem;
+  min-width: 0;
+}
+
+[data-jet-titlebar-tabs] [data-slot="tabs-list"] {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 1.5rem !important;
+  gap: 0.125rem;
+  padding: 2px;
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in oklch, var(--sidebar-accent) 40%, transparent);
+  overflow: visible;
+}
+
+[data-jet-titlebar-tabs] [data-slot="tabs-trigger"] {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100% !important;
+  min-width: 0;
+  padding: 0 0.375rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  font-size: var(--jet-fs-3xs) !important;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-jet-titlebar-tabs] [data-slot="tabs-trigger"]::after {
+  display: none;
+}
+
+[data-jet-titlebar-tabs] [data-slot="tabs-trigger"][data-state="active"] {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
+[data-jet-titlebar-tabs] [data-slot="tabs-trigger"]:hover {
+  color: var(--sidebar-accent-foreground);
 }
 
 /* shadcn/ui default dark */
@@ -436,6 +492,32 @@ body,
     transform: none;
     filter: none;
   }
+}
+
+:root[data-jet-reduced-motion="true"] .jet-press:active,
+:root[data-jet-reduced-motion="true"] :is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="context-menu-item"],
+  [data-slot="dropdown-menu-item"]
+):active {
+  transform: none;
+  filter: none;
+}
+
+:root[data-jet-reduced-motion="true"] *,
+:root[data-jet-reduced-motion="true"] *::before,
+:root[data-jet-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

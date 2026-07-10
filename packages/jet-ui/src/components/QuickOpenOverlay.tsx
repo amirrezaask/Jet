@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { Spinner } from "@/components/ui/spinner.js"
+import { FileIcon } from "@/lib/file-icon.js"
 import { PaletteShell, type PaletteShellItem } from "./palette/PaletteShell.js"
 
 export function QuickOpenOverlay({
@@ -102,7 +103,12 @@ export function QuickOpenOverlay({
       onSelect={path => onSelect(path, query)}
       emptyLabel={scanReady ? "No matching files." : "Waiting for index…"}
       statusRow={statusRow}
-      renderItem={path => <span className="font-mono">{path}</span>}
+      renderItem={path => (
+        <>
+          <FileIcon path={path} />
+          <span className="truncate font-mono">{path}</span>
+        </>
+      )}
     />
   )
 }

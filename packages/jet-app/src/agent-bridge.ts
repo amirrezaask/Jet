@@ -16,6 +16,7 @@ export type JetAgentState = {
   panels: { id: number; kind: string }[]
   fontSize: number
   activeEditorDirty: boolean
+  searchReady: boolean
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -54,6 +55,7 @@ export type AgentBridgeContext = {
   layoutReady: boolean
   fontSize: number
   activeEditorDirty: boolean
+  searchReady: boolean
   executeCommand: (name: string) => Promise<void>
   openWorkspace: (folderPath: string) => Promise<void>
   addWorkspace?: (folderPath: string) => Promise<void>
@@ -116,6 +118,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
         panels: collectPanels(current),
         fontSize: current.fontSize,
         activeEditorDirty: current.activeEditorDirty,
+        searchReady: current.searchReady,
       }
     },
     async waitForReady() {
@@ -124,7 +127,12 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): JetAgentAPI {
       }
       const deadline = Date.now() + 10_000
       while (Date.now() < deadline) {
-        if (ctx().layoutReady) {
+        const current = ctx()
+        if (
+          current.layoutReady &&
+          current.commands.has("workspace.quickOpen") &&
+          current.workspace.manager.hasFolders()
+        ) {
           if (typeof performance?.mark === "function") {
             performance.mark("jet:ready:end")
             try {

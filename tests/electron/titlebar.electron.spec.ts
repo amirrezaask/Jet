@@ -54,6 +54,35 @@ test.describe("desktop shell", () => {
       expect(geom!.spacerRight!).toBeLessThanOrEqual(geom!.titlebarSidebarRight)
       expect(geom!.titlebarSidebarColor).toBe(geom!.workspaceSidebarColor)
       expect(geom!.hasMenubar).toBe(false)
+
+      const tabFont = await page.evaluate(() => {
+        const triggers = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-jet-titlebar-tabs] [data-slot="tabs-trigger"]',
+          ),
+        )
+        if (triggers.length < 2) return null
+        const root = getComputedStyle(document.documentElement)
+        const rootPx = parseFloat(root.fontSize)
+        const threeXs = parseFloat(root.getPropertyValue("--jet-fs-3xs"))
+        const expected = rootPx * threeXs
+        const sizes = triggers.map(trigger => parseFloat(getComputedStyle(trigger).fontSize))
+        const list = document.querySelector<HTMLElement>('[data-jet-titlebar-tabs] [data-slot="tabs-list"]')
+        const listHeight = list ? parseFloat(getComputedStyle(list).height) : 0
+        const expectedListHeight = rootPx * 1.5
+        return {
+          sizes,
+          expected,
+          listHeight,
+          expectedListHeight,
+          allSameSize: sizes.every(size => Math.abs(size - sizes[0]!) < 0.5),
+        }
+      })
+      expect(tabFont, "titlebar sidebar tabs must exist").not.toBeNull()
+      expect(tabFont!.sizes).toHaveLength(2)
+      expect(tabFont!.allSameSize).toBe(true)
+      expect(tabFont!.sizes[0]).toBeCloseTo(tabFont!.expected, 0)
+      expect(tabFont!.listHeight).toBeCloseTo(tabFont!.expectedListHeight, 0)
     } finally {
       await app.close()
     }

@@ -12,6 +12,8 @@ export const SAMPLE = "fixtures/sample-workspace"
 export type LaunchJetOptions = {
   workspaceRel?: string
   env?: Record<string, string>
+  userDataDir?: string
+  launchWithoutWorkspace?: boolean
 }
 
 let ptySpawnAvailable: boolean | null = null
@@ -66,7 +68,7 @@ export async function launchJet(
     typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
   const workspaceRel = opts.workspaceRel ?? SAMPLE
   const workspacePath = resolve(REPO_ROOT, workspaceRel)
-  const userDataDir = mkdtempSync(resolve(tmpdir(), "jet-e2e-"))
+  const userDataDir = opts.userDataDir ?? mkdtempSync(resolve(tmpdir(), "jet-e2e-"))
   const pathEnv = [
     "/opt/homebrew/bin",
     "/usr/local/bin",
@@ -77,7 +79,7 @@ export async function launchJet(
     await new Promise(r => setTimeout(r, workerStaggerMs))
   }
   const app = await electron.launch({
-    args: [MAIN_JS, "--", workspacePath],
+    args: opts.launchWithoutWorkspace ? [MAIN_JS] : [MAIN_JS, "--", workspacePath],
     cwd: DESKTOP_DIR,
     env: {
       ...process.env,
@@ -168,6 +170,7 @@ export async function confirmOverlay(page: Page): Promise<void> {
 export async function waitForSearchReady(page: Page, timeoutMs = 30_000): Promise<void> {
   await page.waitForFunction(
     async () => {
+      if (!window.__jetAgent?.getState().searchReady) return false
       const path = window.__jetAgent?.getState().activeWorkspace
       if (!path || !window.jet?.search?.isScanReady) return false
       const uri = path.startsWith("/") ? `file://${path}` : `file:///${path}`

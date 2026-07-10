@@ -7,8 +7,9 @@ import {
   useState,
   type KeyboardEvent,
 } from "react"
-import { File, Folder, SearchIcon } from "lucide-react"
+import { SearchIcon } from "lucide-react"
 import { pathToFileUri } from "@jet/shared"
+import { FileIcon } from "@/lib/file-icon.js"
 import {
   applyPathCompletion,
   deletePathSegmentBackward,
@@ -465,7 +466,7 @@ export function CdOverlay({
                     onSelect={() => pickWorkspaceRoot(folder.path)}
                     className="gap-2"
                   >
-                    <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                    <FileIcon path={folder.name} isDirectory />
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate font-mono text-foreground">{folder.name}</span>
                       <span className="truncate font-mono text-xs text-muted-foreground">
@@ -492,11 +493,7 @@ export function CdOverlay({
                     onSelect={() => applyCompletion(entry)}
                     className="gap-2"
                   >
-                    {entry.isDirectory ? (
-                      <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <File className="size-3.5 shrink-0 text-muted-foreground" />
-                    )}
+                    <FileIcon path={entry.name} isDirectory={entry.isDirectory} />
                     <span className="flex-1 truncate font-mono">{entry.name}</span>
                   </CommandItem>
                 ))}

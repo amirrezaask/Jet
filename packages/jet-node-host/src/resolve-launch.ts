@@ -6,6 +6,7 @@ import { pathToUri } from "./paths.js"
 export type LaunchConfig = {
   workspacePath: string
   filePath?: string
+  source?: "default" | "explicit" | "external"
 }
 
 export const WORKSPACE_MARKERS = [

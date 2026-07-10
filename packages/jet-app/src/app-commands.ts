@@ -193,15 +193,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   }
 
   async function resolveTerminalCwdRootUri(): Promise<string | undefined> {
-    const fromTab = terminalCwdRootUri()
-    if (deps.workspace.folders.length <= 1) return fromTab
-    const folder = await resolveCommandFolder(
-      (() => {
-        const panel = currentFocusedPanel()
-        return panel ? getActiveEditorFileUri(currentPanelTree(), panel) : null
-      })(),
-    )
-    return folder?.root.uri ?? fromTab
+    // Terminal commands are scoped to the active project runtime. A multi-project
+    // terminal multiplexer must not interrupt a command with a folder picker or
+    // accidentally create the PTY under another project's panel tree.
+    return terminalCwdRootUri()
   }
 
   function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
@@ -242,13 +237,18 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     return false
   }
 
-  function gitSearchUnavailable(ctx: JetCommandContext): boolean {
+  async function gitSearchUnavailable(ctx: JetCommandContext): Promise<boolean> {
     const folder = deps.getContextFolder()
     if (!folder) {
       ctx.ui.showMessage("Quick open and project search require an open workspace")
       return true
     }
     if (deps.getSearchSupported()) return false
+    try {
+      if (await window.jet?.search?.isSupported?.(folder.root.uri)) return false
+    } catch {
+      // Fall through to the same user-facing unavailable state as browser mode.
+    }
     ctx.ui.showMessage("Quick open and project search require a git repository")
     return true
   }
@@ -300,8 +300,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     }
   }
 
-  const showProjectSearch: JetCommandFn = ctx => {
-    if (gitSearchUnavailable(ctx)) return
+  const showProjectSearch: JetCommandFn = async ctx => {
+    if (await gitSearchUnavailable(ctx)) return
     deps.syncProblemsToListTab()
     const tree = deps.cloneTree()
     const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())
@@ -310,8 +310,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
 
   const named: JetCommands = {
     palette: () => deps.setPaletteOpen(true),
-    quickOpen: ctx => {
-      if (gitSearchUnavailable(ctx)) return
+    quickOpen: async ctx => {
+      if (await gitSearchUnavailable(ctx)) return
       deps.setQuickOpenOpen(true)
     },
     bufferList: () => {
@@ -394,8 +394,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     gotoLine: () => deps.setGotoLineOpen(true),
     search: showProjectSearch,
-    locationList: ctx => {
-      if (gitSearchUnavailable(ctx)) return
+    locationList: async ctx => {
+      if (await gitSearchUnavailable(ctx)) return
       const tree = deps.cloneTree()
       const { panelId } = openSearchTab(deps.workspace, tree, currentFocusedPanel())
       deps.commitTree(tree, panelId)

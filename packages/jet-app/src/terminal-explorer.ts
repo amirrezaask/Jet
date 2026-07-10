@@ -1,13 +1,15 @@
 import type { JetPanelTree, WorkspaceService } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
 import { listTerminalTabs } from "./tab-routing.js"
-import { terminalCwdForTab } from "./tabs/terminal-session.js"
+import { terminalCwdForTab, terminalSessionForTab } from "./tabs/terminal-session.js"
 
 export type TerminalExplorerEntry = {
   tabId: string
   panelId: PanelId
   label: string
   cwdRootUri: string
+  status: "starting" | "running" | "exited" | "failed"
+  exitCode?: number
 }
 
 export type TerminalExplorerGroup = {
@@ -21,10 +23,18 @@ export type TerminalExplorerGroup = {
 const OTHER_GROUP_ID = "jet:terminal-explorer:other"
 
 export function buildTerminalExplorerGroups(
-  tree: JetPanelTree,
+  treeOrTrees: JetPanelTree | JetPanelTree[],
   workspace: WorkspaceService,
 ): TerminalExplorerGroup[] {
-  const terminals = listTerminalTabs(tree)
+  const trees = Array.isArray(treeOrTrees) ? treeOrTrees : [treeOrTrees]
+  const seenTabs = new Set<string>()
+  const terminals = trees.flatMap(tree =>
+    listTerminalTabs(tree).filter(({ tabId }) => {
+      if (seenTabs.has(tabId)) return false
+      seenTabs.add(tabId)
+      return true
+    }),
+  )
   const byRootUri = new Map<string, TerminalExplorerEntry[]>()
   const orphans: TerminalExplorerEntry[] = []
 
@@ -35,7 +45,15 @@ export function buildTerminalExplorerGroups(
   for (const { panelId, tabId } of terminals) {
     const cwdRootUri = terminalCwdForTab(tabId) || workspace.root?.uri || ""
     const label = workspace.tabRegistry.get(tabId)?.label ?? "Terminal"
-    const entry: TerminalExplorerEntry = { tabId, panelId, label, cwdRootUri }
+    const session = terminalSessionForTab(tabId)
+    const entry: TerminalExplorerEntry = {
+      tabId,
+      panelId,
+      label,
+      cwdRootUri,
+      status: session?.status ?? "starting",
+      exitCode: session?.exitCode,
+    }
 
     if (folderByRootUri.has(cwdRootUri)) {
       const list = byRootUri.get(cwdRootUri) ?? []

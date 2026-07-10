@@ -10,31 +10,41 @@ export function JetTitleBar({
   right,
   sidebarOpen,
   sidebarWidth,
+  sidebarChrome,
 }: {
   center?: ReactNode
   right?: ReactNode
   sidebarOpen: boolean
   sidebarWidth: string
+  sidebarChrome?: ReactNode
 }) {
   return (
     <div
       data-jet-titlebar
-      className="flex min-h-[var(--jet-titlebar-height)] shrink-0 border-b border-border text-xs select-none"
+      className="flex min-h-[var(--jet-titlebar-height)] shrink-0 text-xs select-none"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <div
         data-jet-titlebar-sidebar
         data-sidebar-open={sidebarOpen || undefined}
-        className="flex shrink-0 items-center border-r border-sidebar-border bg-sidebar"
+        className="flex shrink-0 items-center border-r border-sidebar-border bg-sidebar pr-2"
         style={{
           width: sidebarOpen ? sidebarWidth : "var(--jet-traffic-light-inset)",
         }}
       >
-        <div aria-hidden data-jet-traffic-light-spacer />
+        <div aria-hidden data-jet-traffic-light-spacer className="shrink-0" />
+        {sidebarOpen && sidebarChrome ? (
+          <div
+            className="flex min-w-0 flex-1 items-center pl-1"
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
+            {sidebarChrome}
+          </div>
+        ) : null}
       </div>
       <div
         data-jet-titlebar-main
-        className="flex min-w-0 flex-1 items-center bg-background px-2"
+        className="flex min-w-0 flex-1 items-center border-b border-border bg-background px-2"
       >
         <div
           className="min-w-0 flex-1 truncate text-center text-muted-foreground"

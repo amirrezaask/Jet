@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from "react"
 import { EXPLORER_LIST_ID } from "@/explorer/focus.js"
-import { File, Folder } from "lucide-react"
+import { Copy, Folder, Focus, Plus, Trash2 } from "lucide-react"
 import type { WorkspaceEntry, WorkspaceManager } from "@jet/workspace"
 import { TreeView, type TreeDataSource, type TreeNode } from "@/components/TreeView.js"
 import { Button } from "@/components/ui/button.js"
+import { FileIcon } from "@/lib/file-icon.js"
 import { cn } from "@/lib/utils.js"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu.js"
 
 type ExplorerData =
   | { kind: "root"; uri: string; name: string; path: string }
@@ -26,12 +35,17 @@ function toPath(uri: string): string {
 function useExplorerSource(manager: WorkspaceManager): {
   source: TreeDataSource<ExplorerData>
   rootIds: string[]
+  activeRootId: string | null
 } {
   const [rev, setRev] = useState(0)
 
   useEffect(() => {
     const sub = manager.onDidChangeFolders.event(() => setRev(r => r + 1))
-    return () => sub.dispose()
+    const activeSub = manager.onDidChangeActiveFolder.event(() => setRev(r => r + 1))
+    return () => {
+      sub.dispose()
+      activeSub.dispose()
+    }
   }, [manager])
 
   const rootIds = useMemo(() => {
@@ -66,19 +80,25 @@ function useExplorerSource(manager: WorkspaceManager): {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manager, rev])
 
-  return { source, rootIds }
+  return { source, rootIds, activeRootId: manager.activeFolder?.root.uri ?? null }
 }
 
 export function ExplorerTab({
   manager,
   onOpenFile,
   onOpenFolder,
+  onActivateProject,
+  onNewTerminal,
+  onRemoveProject,
 }: {
   manager: WorkspaceManager
   onOpenFile: (uri: string, path: string) => void
   onOpenFolder?: () => void
+  onActivateProject?: (rootUri: string) => void
+  onNewTerminal?: (rootUri: string) => void
+  onRemoveProject?: (rootUri: string) => void
 }) {
-  const { source, rootIds } = useExplorerSource(manager)
+  const { source, rootIds, activeRootId } = useExplorerSource(manager)
 
   if (!manager.hasFolders()) {
     return (
@@ -103,18 +123,57 @@ export function ExplorerTab({
         rowAriaLabel={node =>
           node.data.kind === "root" ? node.data.name : node.data.entry.name
         }
-        initiallyExpanded={rootIds}
+        initiallyExpanded={activeRootId ? [activeRootId] : rootIds.slice(0, 1)}
+        syncExpanded
+      activeId={activeRootId}
       onActivate={node => {
-        if (node.data.kind === "entry" && !node.data.entry.isDirectory) {
+        if (node.data.kind === "root") {
+          onActivateProject?.(node.data.uri)
+        } else if (!node.data.entry.isDirectory) {
           onOpenFile(node.data.entry.uri, toPath(node.data.entry.uri))
         }
       }}
       emptyState={<div className="p-2 text-xs text-muted-foreground">Loading…</div>}
+      wrapRow={(node, row) => {
+        if (node.data.kind !== "root") return row
+        const project = node.data
+        return (
+          <ContextMenu>
+            <ContextMenuTrigger asChild><div>{row}</div></ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuGroup>
+                <ContextMenuItem onSelect={() => onActivateProject?.(project.uri)}>
+                  <Focus className="size-4" />
+                  Activate Project
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => onNewTerminal?.(project.uri)}>
+                  <Plus className="size-4" />
+                  New Terminal
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(project.path)}>
+                  <Copy className="size-4" />
+                  Copy Project Path
+                </ContextMenuItem>
+              </ContextMenuGroup>
+              <ContextMenuSeparator />
+              <ContextMenuItem variant="destructive" onSelect={() => onRemoveProject?.(project.uri)}>
+                <Trash2 className="size-4" />
+                Remove Project
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        )
+      }}
       renderRow={(node, ctx) => {
         if (node.data.kind === "root") {
           return (
             <>
-              <Folder data-jet-project-icon className="size-6! shrink-0 text-foreground" />
+              <span
+                aria-hidden
+                data-jet-project-activity={node.data.uri === activeRootId ? "active" : "idle"}
+                className={node.data.uri === activeRootId ? "h-4 w-0.5 rounded-full bg-primary" : "h-1.5 w-0.5 rounded-full bg-muted-foreground/35"}
+              />
+              <Folder data-jet-project-icon className="size-6! shrink-0 text-foreground/85" />
               <span
                 className="truncate font-medium text-foreground"
                 title={node.data.path}
@@ -127,11 +186,7 @@ export function ExplorerTab({
         const entry = node.data.entry
         return (
           <>
-            {entry.isDirectory ? (
-              <Folder className="size-3.5 shrink-0" />
-            ) : (
-              <File className="size-3.5 shrink-0" />
-            )}
+            <FileIcon path={entry.name} isDirectory={entry.isDirectory} />
             <span className={cn("truncate", ctx.active && "font-medium")} title={entry.name}>
               {entry.name}
             </span>

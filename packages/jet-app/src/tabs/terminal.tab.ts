@@ -8,6 +8,9 @@ import {
   terminalCwdForTab,
   terminalLaunchCommandForTab,
   terminalPtyIdForTab,
+  terminalSessionForTab,
+  markTerminalFailed,
+  restartTerminalSession,
   trackTerminalPtyId,
 } from "./terminal-session.js"
 
@@ -28,16 +31,29 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
       if (ptyId) void window.jet?.terminal?.dispose(ptyId)
       clearTerminalSession(instance.id)
     },
-    render: (instance, ctx) =>
-      createElement(TerminalPanel, {
+    render: (instance, ctx) => {
+      const session = terminalSessionForTab(instance.id)
+      return createElement(TerminalPanel, {
         cwdRootUri: instance.state.cwdRootUri,
         launchCommand: terminalLaunchCommandForTab(instance.id),
         theme: deps.getTheme(),
         tabId: instance.id,
         focused: ctx.focused && ctx.isActive,
         isActive: ctx.isActive,
+        existingPtyId: session?.ptyId,
+        status: session?.status,
+        exitCode: session?.exitCode,
+        sessionGeneration: session?.generation,
         onPtyId: trackTerminalPtyId,
         onTitleChange: deps.onTerminalTitleChange,
-      }),
+        onFailed: () => markTerminalFailed(instance.id),
+        onRestart: () => {
+          const ptyId = terminalPtyIdForTab(instance.id)
+          if (ptyId) void window.jet?.terminal?.dispose(ptyId)
+          restartTerminalSession(instance.id)
+        },
+        onClose: () => deps.closeTerminalTab(ctx.panelId, instance.id),
+      })
+    },
   }
 }

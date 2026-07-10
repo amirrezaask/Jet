@@ -1,5 +1,6 @@
 import { useDeferredValue, useMemo, useState } from "react"
 import type { JetProject } from "@jet/workspace"
+import { FileIcon } from "@/lib/file-icon.js"
 import { PaletteShell, type PaletteShellItem } from "./palette/PaletteShell.js"
 
 function matchProject(query: string, project: JetProject): boolean {
@@ -55,12 +56,15 @@ export function ProjectSwitcherOverlay({
       onSelect={project => onSelect(project.path)}
       emptyLabel={emptyMessage}
       renderItem={project => (
-        <span className="flex min-w-0 items-baseline gap-2">
-          <span className="shrink-0 font-mono text-foreground">{project.name}</span>
-          <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-            {project.path}
+        <>
+          <FileIcon path={project.name} isDirectory />
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="shrink-0 font-mono text-foreground">{project.name}</span>
+            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+              {project.path}
+            </span>
           </span>
-        </span>
+        </>
       )}
     />
   )

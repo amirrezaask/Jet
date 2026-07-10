@@ -1,10 +1,12 @@
-import { useEffect, useRef } from "react"
-import { Terminal as TerminalIcon } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { RotateCcw, Terminal as TerminalIcon, X } from "lucide-react"
 import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import type { JetTheme } from "@jet/codemirror"
 import "@xterm/xterm/css/xterm.css"
 import { subscribeRootStyle } from "./root-style-observer.js"
+import { Button } from "../components/ui/button.js"
+import { TerminalCursorMotionLayer } from "./terminal-cursor-motion.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
@@ -13,14 +15,22 @@ export type TerminalPanelProps = {
   tabId: string
   focused: boolean
   isActive: boolean
+  existingPtyId?: string
+  status?: "starting" | "running" | "exited" | "failed"
+  exitCode?: number
+  sessionGeneration?: number
   onPtyId?: (tabId: string, ptyId: string | null) => void
   onTitleChange?: (tabId: string, title: string) => void
+  onRestart?: () => void
+  onClose?: () => void
+  onFailed?: () => void
 }
 
 type TerminalSession = {
   term: XTerm
   fit: FitAddon
   ptyId: string | null
+  cursorMotion: TerminalCursorMotionLayer | null
 }
 
 const MONO_FONT_FALLBACK =
@@ -132,15 +142,26 @@ export function TerminalPanel({
   tabId,
   focused,
   isActive,
+  existingPtyId,
+  status = "starting",
+  exitCode,
+  sessionGeneration = 0,
   onPtyId,
   onTitleChange,
+  onRestart,
+  onClose,
+  onFailed,
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionRef = useRef<TerminalSession | null>(null)
+  const [displayStatus, setDisplayStatus] = useState(status)
+  const [displayExitCode, setDisplayExitCode] = useState(exitCode)
   const themeRef = useRef(theme)
   themeRef.current = theme
   const onTitleChangeRef = useRef(onTitleChange)
   onTitleChangeRef.current = onTitleChange
+  const onFailedRef = useRef(onFailed)
+  onFailedRef.current = onFailed
 
   useEffect(() => {
     const terminalApi = window.jet?.terminal
@@ -160,7 +181,14 @@ export function TerminalPanel({
     term.loadAddon(fit)
     term.open(container)
 
-    const session: TerminalSession = { term, fit, ptyId: null }
+    const screen = container.querySelector<HTMLElement>(".xterm-screen")
+    const session: TerminalSession = {
+      term,
+      fit,
+      ptyId: null,
+      cursorMotion: screen ? new TerminalCursorMotionLayer(term, screen) : null,
+    }
+    session.cursorMotion?.setActive(focused && isActive)
     sessionRef.current = session
 
     const titleDispose = term.onTitleChange(raw => {
@@ -175,6 +203,11 @@ export function TerminalPanel({
     let unsub: (() => void) | null = null
     let dataDispose: { dispose: () => void } | null = null
     let ptyStarted = false
+    const exitUnsubscribe = terminalApi.onExit((id, code) => {
+      if (session.ptyId !== id) return
+      setDisplayStatus("exited")
+      setDisplayExitCode(code)
+    })
 
     const syncFit = () => {
       if (cancelled || !fitWhenReady(session, container)) return false
@@ -205,12 +238,24 @@ export function TerminalPanel({
         changed = true
       }
       if (changed && syncFit()) term.refresh(0, term.rows - 1)
+      session.cursorMotion?.refresh(changed)
     }
 
     const syncTheme = () => {
       term.options.theme = liveThemeOptions(themeRef.current)
       container.style.background = readTerminalBackground(themeRef.current)
       term.refresh(0, Math.max(0, term.rows - 1))
+      session.cursorMotion?.refresh(false)
+    }
+
+    const connectPty = (id: string) => {
+      session.ptyId = id
+      setDisplayStatus("running")
+      setDisplayExitCode(undefined)
+      unsub = terminalApi.onData(id, data => term.write(data))
+      dataDispose = term.onData(data => void terminalApi.write(id, data))
+      syncFit()
+      if (focused && isActive) focusTerminalInput(tabId)
     }
 
     const startPty = () => {
@@ -220,6 +265,24 @@ export function TerminalPanel({
         return
       }
       ptyStarted = true
+      if (existingPtyId) {
+        void terminalApi.attach(existingPtyId).then(attached => {
+          if (cancelled) return
+          if (!attached) {
+            term.writeln("\r\n\x1b[31mTerminal session is no longer available.\x1b[0m")
+            onFailedRef.current?.()
+            return
+          }
+          if (attached.output) term.write(attached.output)
+          if (attached.title) onTitleChangeRef.current?.(tabId, attached.title)
+          connectPty(existingPtyId)
+          if (attached.status === "exited") {
+            setDisplayStatus("exited")
+            setDisplayExitCode(attached.exitCode)
+          }
+        })
+        return
+      }
       void terminalApi
         .create(cwdRootUri, launchCommand ? { command: launchCommand } : undefined)
         .then(({ id, title }) => {
@@ -227,17 +290,14 @@ export function TerminalPanel({
             void terminalApi.dispose(id)
             return
           }
-          session.ptyId = id
           onPtyId?.(tabId, id)
           if (title) onTitleChangeRef.current?.(tabId, title)
-          unsub = terminalApi.onData(id, data => term.write(data))
-          dataDispose = term.onData(data => void terminalApi.write(id, data))
-          syncFit()
-          if (focused && isActive) focusTerminalInput(tabId)
+          connectPty(id)
         })
         .catch(err => {
           const message = err instanceof Error ? err.message : String(err)
           term.writeln(`\r\n\x1b[31mTerminal failed to start:\x1b[0m ${message}`)
+          onFailedRef.current?.()
         })
     }
 
@@ -274,16 +334,19 @@ export function TerminalPanel({
       unsubscribeRootStyleObserver()
       visibilityObserver.disconnect()
       titleDispose.dispose()
+      exitUnsubscribe()
       dataDispose?.dispose()
       unsub?.()
-      if (session.ptyId) {
-        void terminalApi.dispose(session.ptyId)
-        onPtyId?.(tabId, null)
-      }
+      session.cursorMotion?.dispose()
       term.dispose()
       sessionRef.current = null
     }
-  }, [cwdRootUri, tabId, onPtyId, launchCommand])
+  }, [cwdRootUri, tabId, onPtyId, launchCommand, sessionGeneration])
+
+  useEffect(() => {
+    setDisplayStatus(status)
+    setDisplayExitCode(exitCode)
+  }, [status, exitCode, sessionGeneration])
 
   useEffect(() => {
     const session = sessionRef.current
@@ -292,6 +355,7 @@ export function TerminalPanel({
 
     session.term.options.theme = liveThemeOptions(themeRef.current)
     container.style.background = readTerminalBackground(themeRef.current)
+    session.cursorMotion?.setActive(focused && isActive)
 
     if (!focused || !isActive) return
     requestAnimationFrame(() => {
@@ -324,6 +388,7 @@ export function TerminalPanel({
     <div
       className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
       data-jet-terminal-panel=""
+      data-jet-terminal-status={displayStatus}
       onMouseDown={() => {
         focusTerminalInput(tabId)
       }}
@@ -332,6 +397,25 @@ export function TerminalPanel({
         ref={containerRef}
         className="jet-terminal-surface min-h-0 flex-1 overflow-hidden bg-background p-1.5"
       />
+      {displayStatus === "exited" || displayStatus === "failed" ? (
+        <div
+          data-jet-terminal-exit-bar
+          className="flex h-9 shrink-0 items-center gap-2 border-t border-border/70 bg-muted/35 px-2.5 text-xs text-muted-foreground"
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {displayStatus === "failed"
+              ? "Terminal failed to start"
+              : `Process exited${displayExitCode == null ? "" : ` with code ${displayExitCode}`}`}
+          </span>
+          <Button type="button" size="xs" variant="ghost" onClick={onRestart}>
+            <RotateCcw className="size-3" />
+            Restart
+          </Button>
+          <Button type="button" size="icon-xs" variant="ghost" aria-label="Close terminal" onClick={onClose}>
+            <X className="size-3" />
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

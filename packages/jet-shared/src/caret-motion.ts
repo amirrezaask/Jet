@@ -4,7 +4,7 @@ export const CURSOR_RETARGET_WINDOW = 0.12
 export const ANIM_EPSILON = 0.5
 export const GHOST_MAX = 5
 export const GHOST_DECAY_MS = 200
-export const GHOST_INITIAL_OPACITY = 0.7
+export const GHOST_INITIAL_OPACITY = 0.28
 export const GHOST_DECAY_CURVE = 1.6
 
 export type CaretPoint = {

@@ -37,6 +37,7 @@ import {
   popPanelTab,
   PROBLEMS_TAB_ID,
   panelTabIds,
+  findPanelWithTab,
   isTerminalTabId,
   fileSearchAcrossFolders,
   relativePathInFolder,
@@ -87,6 +88,7 @@ import {
   SidebarProvider,
   SidebarInset,
   JetWorkspaceSidebar,
+  JetSidebarViewTabs,
   type JetSidebarView,
   focusExplorerPanel,
   focusTerminalExplorerPanel,
@@ -104,7 +106,16 @@ import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
 import { agentChatTabId, parseAgentChatTabId, type AgentChatTabState } from "./tabs/agent-chat.tab.js"
 import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
-import { terminalCwdForTab } from "./tabs/terminal-session.js"
+import {
+  clearTerminalSession,
+  restartTerminalSession,
+  subscribeTerminalSessions,
+  terminalCwdForTab,
+  terminalLaunchCommandForTab,
+  terminalPtyIdForTab,
+  terminalSessionForTab,
+  setTerminalCustomLabel,
+} from "./tabs/terminal-session.js"
 import {
   panelViewKind,
   getAllLeafPanels,
@@ -117,7 +128,6 @@ import {
   reconcileFocusedPanel,
 } from "./panel-routing.js"
 import {
-  listTerminalTabs,
   openAgentChatTab,
   openAgentExplorerTab,
   openTerminalTab,
@@ -132,11 +142,15 @@ import {
 import { loadWorkspaceInit, type JetInitContext } from "./load-workspace-init.js"
 import { loadGlobalJetrc } from "./load-global-jetrc.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
+import { WorkspaceLayoutStore } from "./workspace-layout-store.js"
+import { swapWorkspaceLayout } from "./swap-workspace-layout.js"
+import { readProjectCatalog, writeProjectCatalog } from "./project-catalog-store.js"
 import { useFileDrop } from "./use-file-drop.js"
 import { useAppearanceSettings } from "./hooks/useAppearanceSettings.js"
 import { usePanelLayout } from "./hooks/usePanelLayout.js"
 import { useAgentSync } from "./hooks/useAgentSync.js"
 import { useLspLifecycle } from "./hooks/useLspLifecycle.js"
+import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle.js"
 import { useOverlayState } from "./hooks/useOverlayState.js"
 import { useGlobalKeymap } from "./hooks/useGlobalKeymap.js"
 import {
@@ -161,6 +175,7 @@ const FONT_SIZE_STEP = 2
 const DEFAULT_MONO_FONT =
   '"Geist Mono Variable", "Geist Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, monospace'
 const OverlayHost = lazy(() => import("./OverlayHost.js"))
+const ENABLE_AGENT_CHAT = import.meta.env.JET_ENABLE_AGENT_CHAT === "1"
 
 const FN_BY_COMMAND_ID = ((): Map<string, string> => {
   const map = new Map<string, string>()
@@ -336,12 +351,13 @@ export function JetApp() {
     new Map<string, { supported: boolean; scanReady: boolean }>(),
   )
   const lastContextFolderRef = useRef<WorkspaceFolder | null>(null)
-  const [folderSearchRev, setFolderSearchRev] = useState(0)
+  const [, setFolderSearchRev] = useState(0)
   const [problems, setProblems] = useState<JetProblem[]>([])
   const [fileDragOver, setFileDragOver] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarView, setSidebarView] = useState<JetSidebarView>(loadSidebarView)
   const [sidebarFocused, setSidebarFocused] = useState(false)
+  const [, setTerminalSessionRevision] = useState(0)
   const sidebarFocusedRef = useRef(false)
   sidebarFocusedRef.current = sidebarFocused
   const sidebarViewRef = useRef<JetSidebarView>(sidebarView)
@@ -352,6 +368,7 @@ export function JetApp() {
   fontSizeRef.current = fontSize
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
+  const projectCatalogReadyRef = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>>(
     () => {},
   )
@@ -359,6 +376,8 @@ export function JetApp() {
   const handleOpenFileRef = useRef<(uri: string, path: string) => void>(() => {})
   const workspaceInitGen = useRef(new Map<string, number>())
   const workspaceRootPathRef = useRef<string | null>(null)
+  const workspaceLayoutStoreRef = useRef(new WorkspaceLayoutStore())
+  const lastActiveRootUriRef = useRef<string | null>(null)
   const homeDirRef = useRef("")
   const workspaceInitCtxRef = useRef<JetInitContext | null>(null)
   const projectRegistry = useMemo(() => new ProjectRegistry(), [])
@@ -534,6 +553,7 @@ export function JetApp() {
 
   const onTerminalTitleChange = useCallback(
     (tabId: string, title: string) => {
+      if (terminalSessionForTab(tabId)?.customLabel) return
       const existing = workspace.tabRegistry.get(tabId)
       if (!existing || existing.label === title) return
       workspace.tabRegistry.update(tabId, { label: title })
@@ -549,22 +569,22 @@ export function JetApp() {
   )
 
   const resolveContextFolder = useCallback((): WorkspaceFolder | null => {
+    const current = appStateRef.current
     return resolveContextWorkspaceFolder(
-      panelTree,
-      focusedPanel,
+      current.panelTree,
+      current.focusedPanel,
       workspace.tabRegistry,
       workspace,
       lastContextFolderRef.current,
     )
-  }, [panelTree, focusedPanel, workspace])
+  }, [workspace])
 
   const getContextSearchState = useCallback(() => {
-    void folderSearchRev
     const folder = resolveContextFolder()
     if (!folder) return { supported: false, scanReady: false }
     const state = folderSearchStateRef.current.get(folder.id)
     return { supported: state?.supported ?? false, scanReady: state?.scanReady ?? false }
-  }, [resolveContextFolder, folderSearchRev])
+  }, [resolveContextFolder])
 
   useEffect(() => {
     const folder = resolveFolderForActiveTab(
@@ -682,6 +702,16 @@ export function JetApp() {
   lspRevisionRef.current = lspRevision
   resolveLspClientRef.current = resolveLspClient
   handleLspAttachFailedRef.current = handleLspAttachFailed
+
+  useTerminalLifecycle()
+
+  useEffect(
+    () => subscribeTerminalSessions(tabId => {
+      tabStore.update(tabId, previous => ({ ...(previous as object) }))
+      setTerminalSessionRevision(revision => revision + 1)
+    }),
+    [tabStore],
+  )
 
   useEffect(() => {
     if (initialized.current) return
@@ -844,8 +874,38 @@ export function JetApp() {
   }, [])
 
   const getTerminalExplorerGroups = useCallback(
-    () => buildTerminalExplorerGroups(appStateRef.current.panelTree, workspace),
+    () => {
+      const trees = [appStateRef.current.panelTree]
+      const activeRootUri = workspace.root?.uri ?? null
+      for (const folder of workspace.folders) {
+        if (folder.root.uri === activeRootUri) continue
+        const saved = workspaceLayoutStoreRef.current.load(folder.root.uri)
+        if (saved) trees.push(saved.tree)
+      }
+      return buildTerminalExplorerGroups(trees, workspace)
+    },
     [workspace],
+  )
+
+  const activateProject = useCallback(
+    (rootUri: string) => {
+      const folder = workspace.folders.find(candidate => candidate.root.uri === rootUri)
+      if (folder) workspace.setActiveFolder(folder.id)
+    },
+    [workspace],
+  )
+
+  const openFileFromSidebar = useCallback(
+    (uri: string, path: string) => {
+      const rootUri = workspace.resolveRootUriForFile(uri)
+      if (rootUri && rootUri !== workspace.root?.uri) {
+        activateProject(rootUri)
+        requestAnimationFrame(() => handleOpenFileRef.current(uri, path))
+        return
+      }
+      handleOpenFile(uri, path)
+    },
+    [workspace, activateProject, handleOpenFile],
   )
 
   const getActiveTerminalTabId = useCallback((): string | null => {
@@ -858,55 +918,108 @@ export function JetApp() {
 
   const focusTerminalTab = useCallback(
     (panelId: PanelId, tabId: string) => {
-      const tree = cloneTree()
-      workspace.focusTabInPanel(tree, panelId, tabId)
-      setFocusedPanel(panelId)
-      commitTree(tree, panelId)
+      const focus = () => {
+        const tree = cloneTree()
+        const owningPanel = findPanelWithTab(tree, tabId) ?? panelId
+        workspace.focusTabInPanel(tree, owningPanel, tabId)
+        setFocusedPanel(owningPanel)
+        commitTree(tree, owningPanel)
+      }
+      const rootUri = terminalCwdForTab(tabId)
+      if (rootUri && rootUri !== workspace.root?.uri) {
+        activateProject(rootUri)
+        requestAnimationFrame(focus)
+      } else {
+        focus()
+      }
     },
-    [workspace, cloneTree, commitTree],
+    [workspace, cloneTree, commitTree, activateProject, setFocusedPanel],
   )
 
-  const newTerminalInWorkspace = useCallback(
-    async (rootUri: string) => {
+  const openTerminalInWorkspace = useCallback(
+    async (rootUri: string, opts?: { label?: string; launchCommand?: string }) => {
+      if (rootUri && rootUri !== workspace.root?.uri) {
+        activateProject(rootUri)
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      }
       const tree = cloneTree()
-      const label = nextTerminalLabel(tree)
+      const label = opts?.label ?? nextTerminalLabel(tree)
       const { panelId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
         cwdRootUri: rootUri,
         label,
+        launchCommand: opts?.launchCommand,
       })
       setFocusedPanel(panelId)
       commitTree(tree, panelId)
     },
-    [workspace, cloneTree, commitTree],
+    [workspace, activateProject, cloneTree, commitTree, setFocusedPanel],
+  )
+
+  const newTerminalInWorkspace = useCallback(
+    (rootUri: string) => openTerminalInWorkspace(rootUri),
+    [openTerminalInWorkspace],
   )
 
   const launchAgentTerminal = useCallback(
     (rootUri: string, shortcut: TerminalAgentShortcut) => {
-      const tree = cloneTree()
-      const { panelId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
-        cwdRootUri: rootUri,
+      void openTerminalInWorkspace(rootUri, {
         label: shortcut.label,
         launchCommand: shortcut.command,
       })
-      setFocusedPanel(panelId)
-      commitTree(tree, panelId)
     },
-    [workspace, cloneTree, commitTree],
+    [openTerminalInWorkspace],
   )
 
   const closeTerminalTab = useCallback(
     (panelId: PanelId, tabId: string) => {
-      const tree = cloneTree()
-      const view = tree.getView(panelId)
-      if (view?.kind !== "tabs") return
-      workspace.disposeTab(tabId)
-      tabStore.dispose(tabId)
-      tree.setView(panelId, popPanelTab(view, tabId))
-      closePanelIfEmpty(tree, panelId)
-      commitTree(tree)
+      const close = () => {
+        const tree = cloneTree()
+        const owningPanel = findPanelWithTab(tree, tabId) ?? panelId
+        const view = tree.getView(owningPanel)
+        if (view?.kind !== "tabs") return
+        workspace.disposeTab(tabId)
+        tabStore.dispose(tabId)
+        tree.setView(owningPanel, popPanelTab(view, tabId))
+        closePanelIfEmpty(tree, owningPanel)
+        commitTree(tree)
+      }
+      const rootUri = terminalCwdForTab(tabId)
+      if (rootUri && rootUri !== workspace.root?.uri) {
+        activateProject(rootUri)
+        requestAnimationFrame(close)
+      } else {
+        close()
+      }
     },
-    [cloneTree, commitTree, workspace, tabStore],
+    [cloneTree, commitTree, workspace, tabStore, activateProject],
   )
+
+  const renameTerminal = useCallback(
+    (tabId: string, label: string) => {
+      setTerminalCustomLabel(tabId, label)
+      workspace.tabRegistry.update(tabId, { label })
+    },
+    [workspace],
+  )
+
+  const duplicateTerminal = useCallback(
+    (tabId: string) => {
+      const session = terminalSessionForTab(tabId)
+      if (!session) return
+      const label = workspace.tabRegistry.get(tabId)?.label ?? "Terminal"
+      void openTerminalInWorkspace(session.cwdRootUri, {
+        label: `${label} copy`,
+        launchCommand: terminalLaunchCommandForTab(tabId),
+      })
+    },
+    [workspace, openTerminalInWorkspace],
+  )
+
+  const restartTerminal = useCallback((tabId: string) => {
+    const ptyId = terminalPtyIdForTab(tabId)
+    if (ptyId) void window.jet?.terminal?.dispose(ptyId)
+    restartTerminalSession(tabId)
+  }, [])
 
   const createAgentThread = useCallback(
     async (rootUri: string, rootPath: string): Promise<void> => {
@@ -1156,6 +1269,29 @@ export function JetApp() {
     return () => sub.dispose()
   }, [workspace, activateFolderBackground])
 
+  useEffect(() => {
+    const sub = workspace.manager.onDidChangeActiveFolder.event(folder => {
+      const incoming = folder?.root.uri ?? null
+      const outgoing = lastActiveRootUriRef.current
+      lastActiveRootUriRef.current = incoming
+
+      if (!incoming || !outgoing || incoming === outgoing) return
+
+      const currentTree = cloneTree()
+      const swapped = swapWorkspaceLayout({
+        store: workspaceLayoutStoreRef.current,
+        outgoingRootUri: outgoing,
+        incomingRootUri: incoming,
+        currentTree,
+        editorPanel: editorPanelRef.current,
+      })
+      editorPanelRef.current =
+        swapped.editorPanel ?? resolveEditorPanel(swapped.tree, null, null)
+      commitTree(swapped.tree)
+    })
+    return () => sub.dispose()
+  }, [workspace, cloneTree, commitTree])
+
   const addWorkspaceFolder = useCallback(
     (folderPath: string) => {
       void (async () => {
@@ -1170,37 +1306,22 @@ export function JetApp() {
 
   const openWorkspaceFolder = useCallback(
     async (folderPath: string, opts?: OpenWorkspaceOptions): Promise<void> => {
-      const folder =
-        opts?.replace || !workspace.manager.hasFolders()
-          ? await workspace.replaceAllFolders(folderPath)
-          : await workspace.addFolder(folderPath)
+      const normalized = normalizeAbsPath(folderPath)
+      const existing = workspace.folders.find(
+        folder => normalizeAbsPath(folder.root.path) === normalized,
+      )
+      const folder = await workspace.addFolder(folderPath)
       workspaceRootPathRef.current = folderPath
       if (!opts?.silent) {
-        if (opts?.replace || workspace.folders.length === 1) {
+        if (existing || opts?.replace || workspace.folders.length === 1) {
           showJetToast(`Opened ${folderPath}`)
         } else {
           showJetToast(`Added ${folder.root.name}`)
         }
       }
       activateFolderBackground(folder.id, folderPath)
-      const tree = cloneTree()
-      if (listTerminalTabs(tree).length === 0) {
-        const { panelId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
-          cwdRootUri: folder.root.uri,
-          label: "Terminal",
-        })
-        setSidebarOpen(true)
-        setSidebarView("terminal-explorer")
-        try {
-          localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, "terminal-explorer")
-        } catch {
-          /* ignore */
-        }
-        setFocusedPanel(panelId)
-        commitTree(tree, panelId)
-      }
     },
-    [workspace, activateFolderBackground, cloneTree, commitTree],
+    [workspace, activateFolderBackground],
   )
 
   const removeWorkspaceFolder = useCallback(
@@ -1213,6 +1334,25 @@ export function JetApp() {
       }
 
       const rootUri = folder.root.uri
+      const terminalEntries = getTerminalExplorerGroups()
+        .find(group => group.rootUri === rootUri)?.terminals ?? []
+      if (terminalEntries.length > 0) {
+        const confirmed = await requestConfirm({
+          title: `Remove ${folder.root.name}?`,
+          description: `${terminalEntries.length} live terminal${terminalEntries.length === 1 ? "" : "s"} will be closed. Files and terminal sessions are not restored after relaunch.`,
+          confirmLabel: "Remove Project",
+          cancelLabel: "Cancel",
+          destructive: true,
+        })
+        if (!confirmed) return false
+        for (const entry of terminalEntries) {
+          const ptyId = terminalPtyIdForTab(entry.tabId)
+          if (ptyId) await window.jet?.terminal?.dispose(ptyId)
+          workspace.disposeTab(entry.tabId)
+          tabStore.dispose(entry.tabId)
+          clearTerminalSession(entry.tabId)
+        }
+      }
       const rootPath = folder.root.path
       const prefix = `${normalizeAbsPath(rootPath)}/`
 
@@ -1221,6 +1361,7 @@ export function JetApp() {
         const view = tree.getView(panel)
         if (view?.kind !== "tabs") continue
         for (const tabId of panelTabIds(view)) {
+          if (workspace.tabRegistry.kindFor(tabId) !== "editor") continue
           if (isUntitledUri(tabId)) continue
           const path = fileUriToPath(tabId)
           if (!path.startsWith(prefix) && normalizeAbsPath(path) !== normalizeAbsPath(rootPath)) {
@@ -1244,13 +1385,22 @@ export function JetApp() {
       workspaceInitGen.current.delete(folderId)
       const removed = workspace.removeFolder(folderId)
       if (removed) {
+        workspaceLayoutStoreRef.current.delete(rootUri)
         removeAgentRoot(rootUri)
         syncGlobalSearchState()
         showJetToast(`Removed ${folder.root.name}`)
       }
       return removed
     },
-    [workspace, cloneTree, commitTree, lspManager, syncGlobalSearchState, tabStore],
+    [workspace, cloneTree, commitTree, lspManager, syncGlobalSearchState, tabStore, getTerminalExplorerGroups],
+  )
+
+  const removeProjectByRootUri = useCallback(
+    (rootUri: string) => {
+      const folder = workspace.folders.find(candidate => candidate.root.uri === rootUri)
+      if (folder) void removeWorkspaceFolder(folder.id)
+    },
+    [workspace, removeWorkspaceFolder],
   )
 
   useEffect(() => {
@@ -1273,9 +1423,26 @@ export function JetApp() {
   useEffect(() => {
     const sub = workspace.manager.onDidChangeFolders.event(() => {
       syncGlobalSearchState()
+      if (projectCatalogReadyRef.current) {
+        writeProjectCatalog(
+          workspace.manager.folders,
+          workspace.manager.activeFolder?.id ?? null,
+        )
+      }
     })
     return () => sub.dispose()
   }, [workspace, syncGlobalSearchState])
+
+  useEffect(() => {
+    const sub = workspace.manager.onDidChangeActiveFolder.event(() => {
+      if (!projectCatalogReadyRef.current) return
+      writeProjectCatalog(
+        workspace.manager.folders,
+        workspace.manager.activeFolder?.id ?? null,
+      )
+    })
+    return () => sub.dispose()
+  }, [workspace])
 
   openWorkspaceRef.current = openWorkspaceFolder
   addWorkspaceRef.current = addWorkspaceFolder
@@ -1693,7 +1860,9 @@ export function JetApp() {
   )
 
   useEffect(() => {
-    const disposables = APP_COMMAND_REGISTRY.map(entry => {
+    const disposables = APP_COMMAND_REGISTRY
+      .filter(entry => ENABLE_AGENT_CHAT || !entry.id.startsWith("agent"))
+      .map(entry => {
       const run = appCommands[entry.fn]
       if (!run) return null
       return commands.register(entry.id, run, {
@@ -1702,7 +1871,8 @@ export function JetApp() {
         category: entry.category,
         aliases: "aliases" in entry ? [...entry.aliases] : undefined,
       })
-    }).filter(Boolean)
+      })
+      .filter(Boolean)
     disposables.push(
       commands.register(
         "ui.toggleColorScheme",
@@ -1720,6 +1890,54 @@ export function JetApp() {
           title: "Toggle Color Scheme",
           category: "UI",
           aliases: ["theme", "dark mode", "light mode"],
+        },
+      ),
+    )
+    disposables.push(
+      commands.register(
+        "project.activate",
+        () => setProjectSwitcherOpen(true),
+        {
+          id: "project.activate",
+          title: "Activate Project…",
+          category: "Projects",
+          aliases: ["switch workspace", "project picker"],
+        },
+      ),
+      commands.register(
+        "project.remove",
+        () => {
+          const rootUri = workspace.root?.uri
+          if (rootUri) removeProjectByRootUri(rootUri)
+        },
+        {
+          id: "project.remove",
+          title: "Remove Active Project",
+          category: "Projects",
+        },
+      ),
+      commands.register(
+        "terminal.duplicateActive",
+        () => {
+          const tabId = getActiveTerminalTabId()
+          if (tabId) duplicateTerminal(tabId)
+        },
+        {
+          id: "terminal.duplicateActive",
+          title: "Duplicate Active Terminal",
+          category: "Terminal",
+        },
+      ),
+      commands.register(
+        "terminal.restartActive",
+        () => {
+          const tabId = getActiveTerminalTabId()
+          if (tabId) restartTerminal(tabId)
+        },
+        {
+          id: "terminal.restartActive",
+          title: "Restart Active Terminal",
+          category: "Terminal",
         },
       ),
     )
@@ -1805,7 +2023,17 @@ export function JetApp() {
     return () => {
       for (const d of disposables) d?.dispose()
     }
-  }, [commands, appCommands, resetAppearanceSettings])
+  }, [
+    commands,
+    appCommands,
+    resetAppearanceSettings,
+    setProjectSwitcherOpen,
+    workspace,
+    removeProjectByRootUri,
+    getActiveTerminalTabId,
+    duplicateTerminal,
+    restartTerminal,
+  ])
 
   useEffect(() => {
     window.__jetAgent = createAgentBridge(() => ({
@@ -1817,10 +2045,19 @@ export function JetApp() {
       message: null,
       layoutReady,
       fontSize: fontSizeRef.current,
-      activeEditorDirty: activeEditorFile?.isDirty ?? false,
+      activeEditorDirty: (() => {
+        const panel = appStateRef.current.focusedPanel
+        const tabId = getActiveTabId(appStateRef.current.panelTree, panel)
+        if (!tabId || workspace.tabRegistry.kindFor(tabId) !== "editor") return false
+        return workspace.fileForUri(tabId)?.isDirty ?? false
+      })(),
+      searchReady: (() => {
+        const state = getContextSearchState()
+        return state.supported && state.scanReady
+      })(),
       executeCommand,
       openWorkspace: folderPath =>
-        Promise.resolve(openWorkspaceRef.current(folderPath, { replace: true, silent: true })),
+        Promise.resolve(openWorkspaceRef.current(folderPath, { silent: true })),
       addWorkspace: folderPath => Promise.resolve(addWorkspaceRef.current(folderPath)),
       listWorkspaces: () => workspace.manager.folders.map(f => ({ id: f.id, path: f.root.path, name: f.root.name })),
       openFile: handleOpenFile,
@@ -1863,23 +2100,53 @@ export function JetApp() {
     handleOpenFile,
     setFontSize,
     activeEditorFile,
+    getContextSearchState,
   ])
 
   useEffect(() => {
     if (!layoutReady || queryBootstrapDone.current) return
-    const openFile = (uri: string, path: string) => handleOpenFileRef.current(uri, path)
-    if (window.jet?.getLaunchConfig) {
-      void window.jet.getLaunchConfig().then(cfg => {
-        if (!cfg || queryBootstrapDone.current) return
-        queryBootstrapDone.current = true
-        bootstrapFromLaunch(
-          path => openWorkspaceRef.current(path, { replace: true, silent: true }),
-          openFile,
-          cfg,
+    queryBootstrapDone.current = true
+    void (async () => {
+      const cfg = window.jet?.getLaunchConfig ? await window.jet.getLaunchConfig() : null
+      const catalog = readProjectCatalog()
+      const paths = catalog.projects.map(project => project.path)
+      const explicitLaunch = cfg?.source === "explicit" || cfg?.source === "external" || !!cfg?.filePath
+
+      if (cfg && (explicitLaunch || paths.length === 0)) {
+        const launchPath = normalizeAbsPath(cfg.workspacePath)
+        if (!paths.some(path => normalizeAbsPath(path) === launchPath)) paths.push(launchPath)
+      }
+
+      for (const path of paths) {
+        try {
+          await workspace.addFolder(path)
+        } catch {
+          showJetToast(`Could not restore ${path}`, { variant: "warning" })
+        }
+      }
+
+      const activePath = explicitLaunch
+        ? cfg?.workspacePath ?? null
+        : catalog.activePath ?? cfg?.workspacePath ?? null
+      if (activePath) {
+        const normalized = normalizeAbsPath(activePath)
+        const active = workspace.folders.find(
+          folder => normalizeAbsPath(folder.root.path) === normalized,
         )
-      })
-    }
-  }, [layoutReady])
+        if (active) workspace.setActiveFolder(active.id)
+      }
+
+      projectCatalogReadyRef.current = true
+      writeProjectCatalog(
+        workspace.manager.folders,
+        workspace.manager.activeFolder?.id ?? null,
+      )
+
+      if (cfg?.filePath) {
+        handleOpenFileRef.current(pathToFileUri(cfg.filePath), cfg.filePath)
+      }
+    })()
+  }, [layoutReady, workspace])
 
   const problemsFpRef = useRef("")
   const problemsRafRef = useRef<number | null>(null)
@@ -1961,7 +2228,7 @@ export function JetApp() {
       onSelectFolder: path => openWorkspaceFolder(path, { replace: true }),
       onAddWorkspaceSelect: path => openWorkspaceFolder(path),
       onResetAppearanceSettings: resetAppearanceWithToast,
-      onSelectProject: path => openWorkspaceFolder(path, { replace: true }),
+      onSelectProject: path => openWorkspaceFolder(path),
       onOutlineSelect: line => {
         const panel = appStateRef.current.focusedPanel
         const view = panel ? getEditorView(panel) : null
@@ -2043,6 +2310,12 @@ export function JetApp() {
               : "Jet"}
             sidebarOpen={sidebarOpen}
             sidebarWidth={WORKSPACE_SIDEBAR_WIDTH}
+            sidebarChrome={
+              <JetSidebarViewTabs
+                activeView={sidebarView}
+                onActiveViewChange={handleSidebarViewChange}
+              />
+            }
           />
         ) : undefined
       }
@@ -2061,17 +2334,22 @@ export function JetApp() {
         {sidebarOpen ? (
           <JetWorkspaceSidebar
             activeView={sidebarView}
-            onActiveViewChange={handleSidebarViewChange}
             manager={workspace.manager}
-            onOpenFile={(uri, path) => handleOpenFile(uri, path)}
+            onOpenFile={openFileFromSidebar}
             onOpenFolder={() => executeCommand("workspace.openFolder")}
             onAddWorkspace={() => setAddWorkspaceOpen(true)}
             terminalExplorerGroups={getTerminalExplorerGroups()}
+            activeProjectRootUri={workspace.root?.uri ?? null}
             activeTerminalTabId={getActiveTerminalTabId()}
+            onActivateProject={activateProject}
             onFocusTerminal={focusTerminalTab}
             onNewTerminal={rootUri => void newTerminalInWorkspace(rootUri)}
             onLaunchAgentTerminal={launchAgentTerminal}
             onCloseTerminal={closeTerminalTab}
+            onRenameTerminal={renameTerminal}
+            onDuplicateTerminal={duplicateTerminal}
+            onRestartTerminal={restartTerminal}
+            onRemoveProject={removeProjectByRootUri}
             onSidebarFocusChange={setSidebarFocused}
           />
         ) : null}

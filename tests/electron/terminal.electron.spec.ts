@@ -157,6 +157,46 @@ test.describe("electron terminal", () => {
     }
   })
 
+  test("keeps exited terminal output visible and offers restart", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+
+      await page.locator("[data-jet-terminal-panel] .jet-terminal-surface").click()
+      await page.evaluate(() => {
+        const textarea = document.querySelector(
+          "[data-jet-terminal-panel] .xterm-helper-textarea",
+        ) as HTMLTextAreaElement | null
+        textarea?.focus()
+      })
+
+      await page.waitForFunction(
+        () => {
+          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          return text.trim().length > 0
+        },
+        null,
+        { timeout: 15_000 },
+      )
+
+      await page.keyboard.type("exit")
+      await page.keyboard.press("Enter")
+
+      await expect(page.locator("[data-jet-terminal-panel]")).toHaveAttribute(
+        "data-jet-terminal-status",
+        "exited",
+        { timeout: 15_000 },
+      )
+      const exitBar = page.locator("[data-jet-terminal-exit-bar]")
+      await expect(exitBar).toBeVisible({ timeout: 15_000 })
+      await expect(exitBar).toContainText("Process exited")
+      await expect(exitBar.getByRole("button", { name: "Restart" })).toBeVisible()
+      await expect(page.locator("[data-jet-terminal-panel] .xterm-rows")).toBeVisible()
+    } finally {
+      await app.close()
+    }
+  })
+
   test("xterm viewport fills terminal surface below tab bar", async () => {
     const { app, page } = await launchJet()
     try {
@@ -184,6 +224,41 @@ test.describe("electron terminal", () => {
       expect(layout!.viewportHeight).toBeGreaterThan(24)
       expect(layout!.viewportTop).toBeGreaterThanOrEqual(0)
       expect(layout!.viewportTop).toBeLessThan(8)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("renders smooth terminal cursor with a bounded ghost trail", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      const panel = page.locator("[data-jet-terminal-panel]")
+      await expect(panel).toHaveAttribute("data-jet-terminal-status", "running")
+
+      const layer = panel.locator("[data-jet-terminal-cursor-layer]")
+      await expect(layer).toBeVisible()
+      await expect(layer.locator("[data-jet-terminal-cursor]")).toHaveCount(1)
+      await expect(layer.locator("[data-jet-terminal-cursor-ghost]")).toHaveCount(5)
+
+      await page.evaluate(() => {
+        const cursorLayer = document.querySelector<HTMLElement>("[data-jet-terminal-cursor-layer]")
+        if (!cursorLayer) return
+        const observer = new MutationObserver(() => {
+          const visibleGhost = [...cursorLayer.querySelectorAll<HTMLElement>("[data-jet-terminal-cursor-ghost]")]
+            .some(ghost => Number.parseFloat(ghost.style.opacity || "0") > 0.02)
+          if (visibleGhost) {
+            cursorLayer.dataset.jetGhostObserved = "true"
+            observer.disconnect()
+          }
+        })
+        observer.observe(cursorLayer, { subtree: true, attributes: true, attributeFilter: ["style"] })
+        window.setTimeout(() => observer.disconnect(), 1_000)
+      })
+
+      await panel.locator(".jet-terminal-surface").click()
+      await page.keyboard.type("cursor")
+      await expect(layer).toHaveAttribute("data-jet-ghost-observed", "true", { timeout: 1_000 })
     } finally {
       await app.close()
     }
