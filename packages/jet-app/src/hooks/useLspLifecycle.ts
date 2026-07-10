@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { LanguageServerManager, LspClientPool } from "@jet/lsp"
+import { LanguageServerManager, LspClientPool, languageServerCommandFor } from "@jet/lsp"
 import type { LSPClient } from "@jet/codemirror"
 import { isUntitledUri, fileUriToPath } from "@jet/shared"
 import type { WorkspaceService } from "@jet/workspace"
@@ -47,9 +47,8 @@ export function useLspLifecycle(
       } else {
         const spawnErr = lspManager.consumeLastSpawnError()
         if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
-          showJetToast(
-            `Language server unavailable for ${file.name} — is ${file.languageId === "rust" ? "rust-analyzer" : "typescript-language-server"} on PATH?`,
-          )
+          const command = languageServerCommandFor(file.languageId) ?? "language server"
+          showJetToast(`Language server unavailable for ${file.name} — is ${command} on PATH?`)
         }
       }
     },

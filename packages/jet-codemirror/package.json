@@ -15,11 +15,10 @@
     "test": "tsx --test src/hover-signature.test.ts src/multi-cursor.test.ts"
   },
   "dependencies": {
-    "@jet/shared": "workspace:*",
-    "@jet/workspace": "workspace:*",
     "@codemirror/autocomplete": "^6.20.0",
     "@codemirror/commands": "^6.10.0",
     "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-go": "^6.0.1",
     "@codemirror/lang-html": "^6.4.11",
     "@codemirror/lang-javascript": "^6.2.4",
     "@codemirror/lang-json": "^6.0.2",
@@ -31,6 +30,8 @@
     "@codemirror/search": "^6.5.11",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.37.0",
+    "@jet/shared": "workspace:*",
+    "@jet/workspace": "workspace:*",
     "@lezer/highlight": "^1.2.1",
     "@replit/codemirror-indentation-markers": "^6.5.3"
   },

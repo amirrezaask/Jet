@@ -1,6 +1,7 @@
 export {
   LanguageServerManager,
   getLanguageServerDescriptors,
+  languageServerCommandFor,
   type LanguageServerDescriptor,
   type LspConnection,
 } from "./manager.js"

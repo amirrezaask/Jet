@@ -255,6 +255,9 @@ importers:
       '@codemirror/lang-css':
         specifier: ^6.3.1
         version: 6.3.1
+      '@codemirror/lang-go':
+        specifier: ^6.0.1
+        version: 6.0.1
       '@codemirror/lang-html':
         specifier: ^6.4.11
         version: 6.4.11
@@ -756,6 +759,9 @@ packages:
   '@codemirror/lang-css@6.3.1':
     resolution: {integrity: sha512-kr5fwBGiGtmz6l0LSJIbno9QrifNMUusivHbnA1H6Dmqy4HZFte3UAICix1VuKo0lMPKQr2rqB+0BkKi/S3Ejg==}
 
+  '@codemirror/lang-go@6.0.1':
+    resolution: {integrity: sha512-7fNvbyNylvqCphW9HD6WFnRpcDjr+KXX/FgqXy5H5ZS0eC5edDljukm/yNgYkwTsgp2busdod50AOTIy6Jikfg==}
+
   '@codemirror/lang-html@6.4.11':
     resolution: {integrity: sha512-9NsXp7Nwp891pQchI7gPdTwBuSuT3K65NGTHWHNJ55HjYcHLllr0rbIZNdOzas9ztc1EUVBlHou85FFZS4BNnw==}
 
@@ -1197,6 +1203,7 @@ packages:
   '@ff-labs/fff-node@0.9.6':
     resolution: {integrity: sha512-2LbHJjwW/7vOLh1lSv0ipzA9Du5+LatUGiumQFaO9IcjMT8YgpmrCp/RRMyInsG0iBIX6A0WSxgei8qOFJLlNw==}
     engines: {node: '>=18.0.0'}
+    cpu: [x64, arm64]
     os: [darwin, linux, win32]
 
   '@floating-ui/core@1.7.5':
@@ -1498,6 +1505,9 @@ packages:
 
   '@lezer/css@1.3.4':
     resolution: {integrity: sha512-N+tn9tej2hPvyKgHEApMOQfHczDJCwxrRFS3SPn9QjYN+uwHvEDnCgKRrb3mxDYxRS8sKMM8fhC3+lc04Abz5Q==}
+
+  '@lezer/go@1.0.1':
+    resolution: {integrity: sha512-xToRsYxwsgJNHTgNdStpcvmbVuKxTapV0dM0wey1geMMRc9aggoVyKgzYp41D2/vVOx+Ii4hmE206kvxIXBVXQ==}
 
   '@lezer/highlight@1.2.3':
     resolution: {integrity: sha512-qXdH7UqTvGfdVBINrgKhDsVTJTxactNNxLk7+UMwZhU13lMHaOBlJe9Vqp907ya56Y3+ed2tlqzys7jDkTmW0g==}
@@ -6326,6 +6336,14 @@ snapshots:
       '@lezer/common': 1.5.2
       '@lezer/css': 1.3.4
 
+  '@codemirror/lang-go@6.0.1':
+    dependencies:
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.0
+      '@lezer/common': 1.5.2
+      '@lezer/go': 1.0.1
+
   '@codemirror/lang-html@6.4.11':
     dependencies:
       '@codemirror/autocomplete': 6.20.3
@@ -7085,6 +7103,12 @@ snapshots:
   '@lezer/common@1.5.2': {}
 
   '@lezer/css@1.3.4':
+    dependencies:
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
+      '@lezer/lr': 1.4.10
+
+  '@lezer/go@1.0.1':
     dependencies:
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3

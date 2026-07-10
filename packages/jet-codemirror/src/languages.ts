@@ -28,6 +28,10 @@ const markdownCodeLanguages = [
     name: "rust",
     load: () => import("@codemirror/lang-rust").then(m => m.rust()),
   }),
+  LanguageDescription.of({
+    name: "go",
+    load: () => import("@codemirror/lang-go").then(m => m.go()),
+  }),
 ]
 
 export async function loadLanguage(languageId: string): Promise<Extension> {
@@ -63,6 +67,11 @@ export async function loadLanguage(languageId: string): Promise<Extension> {
     case "rust": {
       const mod = await import("@codemirror/lang-rust")
       ext = mod.rust()
+      break
+    }
+    case "go": {
+      const mod = await import("@codemirror/lang-go")
+      ext = mod.go()
       break
     }
     case "json": {

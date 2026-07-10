@@ -41,6 +41,7 @@ export function languageIdFromPath(path: string): string {
     ".mjs": "javascript",
     ".cjs": "javascript",
     ".rs": "rust",
+    ".go": "go",
     ".json": "json",
     ".md": "markdown",
     ".css": "css",

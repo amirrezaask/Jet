@@ -34,6 +34,13 @@ const DESCRIPTORS: LanguageServerDescriptor[] = [
     args: [],
     rootMarkers: ["Cargo.toml"],
   },
+  {
+    id: "gopls",
+    languageIds: ["go"],
+    command: "gopls",
+    args: ["serve"],
+    rootMarkers: ["go.mod"],
+  },
 ]
 
 export class LanguageServerManager {
@@ -150,4 +157,8 @@ export class LanguageServerManager {
 
 export function getLanguageServerDescriptors(): LanguageServerDescriptor[] {
   return DESCRIPTORS
+}
+
+export function languageServerCommandFor(languageId: string): string | null {
+  return DESCRIPTORS.find(d => d.languageIds.includes(languageId))?.command ?? null
 }
