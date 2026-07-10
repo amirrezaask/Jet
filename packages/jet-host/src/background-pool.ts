@@ -1,5 +1,8 @@
 import { Worker } from "node:worker_threads"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 
 type WorkerReply = { id: number; ok: boolean; result?: unknown; error?: string }
 
@@ -47,7 +50,7 @@ export class BackgroundWorker {
 }
 
 function workerFile(name: string): string {
-  return path.join(__dirname, "workers", `${name}.js`)
+  return path.join(moduleDir, "workers", `${name}.js`)
 }
 
 let fsWorker: BackgroundWorker | null = null

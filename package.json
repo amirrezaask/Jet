@@ -4,6 +4,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --filter=jet-desktop",
+    "dev:tauri": "pnpm --filter jet-tauri dev",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test && pnpm --filter @jet/app test",

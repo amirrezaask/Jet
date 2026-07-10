@@ -1,0 +1,47 @@
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
+import tailwindcss from "@tailwindcss/vite"
+import path from "node:path"
+
+const appRoot = path.resolve(__dirname, "../../packages/jet-app")
+const uiRoot = path.resolve(__dirname, "../../packages/jet-ui/src")
+
+export default defineConfig({
+  define: {
+    "import.meta.env.JET_ENABLE_AGENT_CHAT": JSON.stringify(process.env.JET_ENABLE_AGENT_CHAT ?? "0"),
+    "import.meta.env.VITE_JET_HOST_URL": JSON.stringify(process.env.VITE_JET_HOST_URL ?? ""),
+  },
+  plugins: [
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", {}]],
+      },
+    }),
+    tailwindcss(),
+    {
+      name: "jet-tauri-bootstrap-entry",
+      transformIndexHtml(html: string) {
+        return html.replace(
+          '<script type="module" src="/src/main.tsx"></script>',
+          '<script type="module" src="/@fs/bootstrap.ts"></script>',
+        )
+      },
+    },
+  ],
+  root: appRoot,
+  build: {
+    outDir: path.resolve(__dirname, "dist"),
+    emptyOutDir: true,
+  },
+  resolve: {
+    alias: {
+      "/@fs/bootstrap.ts": path.resolve(__dirname, "src/bootstrap.ts"),
+      "@jet/ui/styles.css": path.resolve(uiRoot, "styles/globals.css"),
+      "@": uiRoot,
+    },
+  },
+  server: {
+    port: Number(process.env.JET_TAURI_DEV_PORT ?? 5174),
+    strictPort: true,
+  },
+})

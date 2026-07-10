@@ -4,8 +4,8 @@
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && node scripts/electron-dev.mjs",
-    "build": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && vite build",
+    "dev": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && pnpm --filter @jet/host build && node scripts/electron-dev.mjs",
+    "build": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && pnpm --filter @jet/host build && vite build",
     "typecheck": "tsc --noEmit",
     "release": "pnpm --filter @jet/agents build && pnpm --filter @jet/node-host build && vite build && electron-builder --mac --dir --config electron-builder.yml",
     "pack:mac": "pnpm release",
@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@ff-labs/fff-node": "^0.9.6",
+    "@jet/host": "workspace:*",
+    "@jet/host-client": "workspace:*",
     "node-pty": "^1.0.0",
     "ws": "^8.18.2"
   },

@@ -2,15 +2,24 @@ import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { resolveLaunchTarget, loadGlobalJetrcScanRoots, applyLoginShellEnv, type LaunchConfig } from "@jet/node-host"
-import { registerFsHandlers } from "./fs.js"
-import { registerAgentHandlers } from "./agents.js"
-import { registerSearchHandlers } from "./search.js"
-import { registerLspHandlers, stopAllLsp, setLspCrashHandler } from "./lsp-bridge.js"
-import { registerTaskHandlers } from "./tasks.js"
-import { registerTerminalHandlers, stopAllTerminals, disposeTerminalsForWebContents } from "./terminal.js"
-import { registerWorkspaceHost, stopWorkspaceHost } from "./workspace-host.js"
-import { stopAllBackgroundWorkers, prewarmBackgroundWorkers } from "./background-pool.js"
+import {
+  applyLoginShellEnv,
+  loadGlobalJetrcScanRoots,
+  resolveLaunchTarget,
+  type LaunchConfig,
+} from "@jet/node-host"
+import {
+  bindElectronRenderer,
+  createHostRegistry,
+  disposeTerminalsForClient,
+  sendToRenderer,
+  stopAllBackgroundWorkers,
+  stopAllLsp,
+  stopAllTerminals,
+  stopWorkspaceHost,
+  wireRegistryToElectron,
+  type HostServices,
+} from "@jet/host"
 
 const isDev = !app.isPackaged
 
@@ -57,13 +66,7 @@ function resolveLaunchConfigFast(userArgs: string[]): LaunchConfig | null | unde
 function deliverLaunchConfig(config: LaunchConfig | null, notifyRenderer: boolean): void {
   launchConfig = config
   if (!notifyRenderer || !config) return
-  const wc = getWindow()?.webContents
-  if (!wc || wc.isDestroyed()) return
-  const send = () => {
-    if (!wc.isDestroyed()) wc.send("jet:launch", config)
-  }
-  if (wc.isLoading()) wc.once("did-finish-load", send)
-  else send()
+  sendToRenderer("jet:launch", config)
 }
 
 function queueLaunchPath(absPath: string): void {
@@ -78,13 +81,13 @@ async function flushPendingLaunchPaths(): Promise<void> {
   if (mainWindow?.webContents.isLoading()) {
     launchConfig = config
   } else {
-    mainWindow?.webContents.send("jet:launch", config)
+    sendToRenderer("jet:launch", config)
   }
 }
 
 function installAppMenu() {
   const closeTab = (): void => {
-    getWindow()?.webContents.send("jet:close-tab")
+    sendToRenderer("jet:close-tab")
   }
 
   const fileSubmenu: Electron.MenuItemConstructorOptions[] = [
@@ -123,7 +126,6 @@ function installAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-/** shadcn default dark background — oklch(0.145 0 0) ≈ #252525 */
 const DEFAULT_WINDOW_BG = "#252525"
 const DEFAULT_WINDOW_FG = "#fbfbfb"
 
@@ -137,7 +139,7 @@ function readCachedChrome(): { background: string; foreground: string } {
       return { background: parsed.background, foreground: parsed.foreground }
     }
   } catch {
-    /* first launch or corrupt cache — fall through to default */
+    /* first launch */
   }
   return { background: DEFAULT_WINDOW_BG, foreground: DEFAULT_WINDOW_FG }
 }
@@ -198,6 +200,8 @@ function createWindow() {
     },
   })
 
+  bindElectronRenderer(mainWindow.webContents)
+
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
     if (!e2e) mainWindow.webContents.openDevTools({ mode: "detach" })
@@ -210,7 +214,7 @@ function createWindow() {
 
   mainWindow.on("close", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      disposeTerminalsForWebContents(mainWindow.webContents)
+      disposeTerminalsForClient(String(mainWindow.webContents.id))
     }
     stopAllTerminals()
   })
@@ -236,7 +240,7 @@ if (!gotLock) {
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore()
           mainWindow.focus()
-          mainWindow.webContents.send("jet:launch", config)
+          sendToRenderer("jet:launch", config)
         } else {
           launchConfig = config
         }
@@ -257,33 +261,46 @@ app.on("open-file", (e, filePath) => {
 app.whenReady().then(() => {
   applyLoginShellEnv()
   installAppMenu()
-  registerFsHandlers(ipcMain, dialog)
-  registerAgentHandlers(ipcMain, getWindow)
-  registerWorkspaceHost(ipcMain, getWindow)
-  registerSearchHandlers(ipcMain)
-  registerLspHandlers(ipcMain, getWindow)
-  registerTaskHandlers(ipcMain)
-  registerTerminalHandlers(ipcMain)
-  setLspCrashHandler(id => {
-    getWindow()?.webContents.send("lsp:crashed", id)
-  })
 
-  ipcMain.handle("jet:getLaunchConfig", () => {
-    const config = launchConfig
-    launchConfig = null
-    return config
-  })
-  ipcMain.handle("jet:getHomeDir", () => os.homedir())
-  ipcMain.handle("jet:loadGlobalJetrcScanRoots", () => loadGlobalJetrcScanRoots(os.homedir()))
-  ipcMain.handle("ui:syncNativeChrome", (_e, colors: { background: string; foreground: string }) => {
-    const win = getWindow()
-    if (win && !win.isDestroyed()) applyNativeChrome(win, colors)
-  })
+  const services: HostServices = {
+    dialog: {
+      showOpenFolderDialog: async () => {
+        const result = await dialog.showOpenDialog({
+          properties: ["openDirectory"],
+        })
+        return result.canceled ? null : result.filePaths[0] ?? null
+      },
+      showSaveFileDialog: async (defaultPath?: string) => {
+        const result = await dialog.showSaveDialog({ defaultPath })
+        return result.canceled ? null : result.filePath ?? null
+      },
+    },
+    nativeChrome: {
+      syncNativeChrome: async colors => {
+        const win = getWindow()
+        if (win && !win.isDestroyed()) applyNativeChrome(win, colors)
+      },
+    },
+    launch: {
+      async getLaunchConfig() {
+        const config = launchConfig
+        launchConfig = null
+        return config
+      },
+      deliverLaunch(config) {
+        deliverLaunchConfig(config, true)
+      },
+    },
+    getHomeDir: () => os.homedir(),
+    loadGlobalJetrcScanRoots: () => loadGlobalJetrcScanRoots(os.homedir()),
+  }
+
+  const registry = createHostRegistry(services)
+  wireRegistryToElectron(ipcMain, registry)
 
   const userArgs = parseUserArgs(process.argv)
 
   createWindow()
-  prewarmBackgroundWorkers()
 
   if (pendingLaunchPaths.length > 0) {
     const last = pendingLaunchPaths[pendingLaunchPaths.length - 1]!

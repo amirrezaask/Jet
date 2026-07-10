@@ -14,3 +14,4 @@ test-results
 .t3code
 .synara
 .pnpm-store
+**/target

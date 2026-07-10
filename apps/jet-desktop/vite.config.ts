@@ -6,6 +6,7 @@ import path from "node:path"
 
 const electronOutDir = path.resolve(__dirname, "dist-electron")
 const repoRoot = path.resolve(__dirname, "../..")
+const hostRoot = path.resolve(repoRoot, "packages/jet-host/src")
 
 function forwardDevArgs(): string[] {
   const fromEnv = process.env.JET_LAUNCH_ARGS
@@ -73,10 +74,10 @@ export default defineConfig({
               external: ["electron", "ws", "node-pty", "@ff-labs/fff-node"],
               input: {
                 main: path.resolve(__dirname, "src/main/main.ts"),
-                "workers/fs-io": path.resolve(__dirname, "src/main/workers/fs-io.ts"),
-                "workers/git-ops": path.resolve(__dirname, "src/main/workers/git-ops.ts"),
-                "workers/search-ops": path.resolve(__dirname, "src/main/workers/search-ops.ts"),
-                "workers/fs-watch": path.resolve(__dirname, "src/main/workers/fs-watch.ts"),
+                "workers/fs-io": path.resolve(hostRoot, "workers/fs-io.ts"),
+                "workers/git-ops": path.resolve(hostRoot, "workers/git-ops.ts"),
+                "workers/search-ops": path.resolve(hostRoot, "workers/search-ops.ts"),
+                "workers/fs-watch": path.resolve(hostRoot, "workers/fs-watch.ts"),
               },
               output: {
                 entryFileNames: chunk => (chunk.name === "main" ? "main.js" : `${chunk.name}.js`),

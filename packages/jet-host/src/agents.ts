@@ -1,4 +1,3 @@
-import type { IpcMain, BrowserWindow } from "electron"
 import { uriToPath } from "@jet/node-host"
 import {
   buildWorkspaceSnapshot,
@@ -7,6 +6,7 @@ import {
   type AgentThread,
   type CreateAgentThreadInput,
   type InterruptAgentTurnInput,
+  type SendAgentMessageInput,
   type SetAgentThreadArchivedInput,
   type UpdateAgentThreadSettingsInput,
 } from "@jet/agents"
@@ -17,14 +17,11 @@ import {
   writeAgentStore,
 } from "./agent-store.js"
 import { AgentTurnRunner } from "./agent-turn-runner.js"
+import { sendToRenderer } from "./host-renderer.js"
+import type { HostRegistry } from "./registry.js"
 
-function publishThreadUpdated(
-  getWindow: () => BrowserWindow | null,
-  thread: AgentThread,
-): void {
-  const wc = getWindow()?.webContents
-  if (!wc || wc.isDestroyed()) return
-  wc.send("agents:threadUpdated", thread)
+function publishThreadUpdated(thread: AgentThread): void {
+  sendToRenderer("agents:threadUpdated", thread)
 }
 
 async function listThreads(workspaceRootUri: string, workspaceRootPath: string) {
@@ -74,37 +71,33 @@ async function updateThreadSettings(
   return next
 }
 
-export function registerAgentHandlers(
-  ipcMain: IpcMain,
-  getWindow: () => BrowserWindow | null,
-) {
-  const turnRunner = new AgentTurnRunner(getWindow)
+export function registerAgentHandlers(registry: HostRegistry): void {
+  const turnRunner = new AgentTurnRunner()
 
-  ipcMain.handle("agents:listProviders", () => listProviders())
-  ipcMain.handle("agents:refreshProviders", () => refreshProviders())
-  ipcMain.handle("agents:listThreads", (_e, workspaceRootUri: string, workspaceRootPath: string) =>
-    listThreads(workspaceRootUri, workspaceRootPath),
+  registry.handle("agents:listProviders", async () => listProviders())
+  registry.handle("agents:refreshProviders", async () => refreshProviders())
+  registry.handle("agents:listThreads", async args =>
+    listThreads(args[0] as string, args[1] as string),
   )
-  ipcMain.handle(
-    "agents:readThread",
-    (_e, workspaceRootUri: string, workspaceRootPath: string, threadId: string) =>
-      readAgentThread(workspaceRootPath || uriToPath(workspaceRootUri), threadId),
+  registry.handle("agents:readThread", async args =>
+    readAgentThread(
+      (args[1] as string) || uriToPath(args[0] as string),
+      args[2] as string,
+    ),
   )
-  ipcMain.handle("agents:createThread", (_e, input: CreateAgentThreadInput) => createThread(input))
-  ipcMain.handle("agents:sendMessage", (_e, input) => turnRunner.sendMessage(input))
-  ipcMain.handle("agents:interruptTurn", (_e, input: InterruptAgentTurnInput) =>
-    turnRunner.interruptTurn(input),
+  registry.handle("agents:createThread", async args => createThread(args[0] as CreateAgentThreadInput))
+  registry.handle("agents:sendMessage", async args => turnRunner.sendMessage(args[0] as SendAgentMessageInput))
+  registry.handle("agents:interruptTurn", async args =>
+    turnRunner.interruptTurn(args[0] as InterruptAgentTurnInput),
   )
-  ipcMain.handle("agents:setArchived", (_e, input: SetAgentThreadArchivedInput) => {
-    return setArchived(input).then(thread => {
-      if (thread) publishThreadUpdated(getWindow, thread)
-      return thread
-    })
+  registry.handle("agents:setArchived", async args => {
+    const thread = await setArchived(args[0] as SetAgentThreadArchivedInput)
+    if (thread) publishThreadUpdated(thread)
+    return thread
   })
-  ipcMain.handle("agents:updateThreadSettings", (_e, input: UpdateAgentThreadSettingsInput) => {
-    return updateThreadSettings(input).then(thread => {
-      if (thread) publishThreadUpdated(getWindow, thread)
-      return thread
-    })
+  registry.handle("agents:updateThreadSettings", async args => {
+    const thread = await updateThreadSettings(args[0] as UpdateAgentThreadSettingsInput)
+    if (thread) publishThreadUpdated(thread)
+    return thread
   })
 }

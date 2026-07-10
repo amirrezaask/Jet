@@ -1,14 +1,15 @@
-import type { IpcMain, WebContents } from "electron"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import type { IPty } from "node-pty"
 import { spawn as spawnPty } from "node-pty"
 import { fileUriToPath } from "@jet/shared"
+import { sendToClient } from "./host-renderer.js"
+import type { HostRegistry } from "./registry.js"
 
 type TerminalEntry = {
   pty: IPty | null
-  webContents: WebContents
+  clientId: string
   cwd: string
   shellTitleBase?: string
   shellTitleIndex?: number
@@ -21,7 +22,6 @@ type TerminalEntry = {
 }
 
 const terminals = new Map<string, TerminalEntry>()
-const terminalWebContents = new WeakSet<WebContents>()
 let terminalSequence = 0
 const MAX_TERMINAL_REPLAY_CHARS = 4 * 1024 * 1024
 
@@ -36,36 +36,23 @@ function disposeTerminal(id: string): void {
   }
 }
 
-function disposeTerminalsForWebContents(webContents: WebContents): void {
+export function disposeTerminalsForClient(clientId: string): void {
   for (const [id, entry] of terminals) {
-    if (entry.webContents === webContents) disposeTerminal(id)
+    if (entry.clientId === clientId) disposeTerminal(id)
   }
 }
 
 function sendTerminalData(entry: TerminalEntry, id: string, data: string): void {
-  if (entry.webContents.isDestroyed()) {
-    disposeTerminal(id)
-    return
-  }
   entry.sequence += 1
   entry.output += data
   if (entry.output.length > MAX_TERMINAL_REPLAY_CHARS) {
     entry.output = entry.output.slice(entry.output.length - MAX_TERMINAL_REPLAY_CHARS)
   }
-  try {
-    entry.webContents.send("terminal:data", id, data, entry.sequence)
-  } catch {
-    disposeTerminal(id)
-  }
+  sendToClient(entry.clientId, "terminal:data", id, data, entry.sequence)
 }
 
 function sendTerminalExit(entry: TerminalEntry, id: string, exitCode: number, signal?: number): void {
-  if (entry.webContents.isDestroyed()) return
-  try {
-    entry.webContents.send("terminal:exit", id, exitCode, signal)
-  } catch {
-    /* webContents gone */
-  }
+  sendToClient(entry.clientId, "terminal:exit", id, exitCode, signal)
 }
 
 type ShellSpec = { file: string; args: string[] }
@@ -121,12 +108,10 @@ function resolveCwd(cwdUri: string): string {
   return cwd
 }
 
-export function registerTerminalHandlers(ipcMain: IpcMain) {
-  ipcMain.handle("terminal:create", async (
-    event,
-    cwdUri: string,
-    launch?: { command: string; args?: string[] },
-  ) => {
+export function registerTerminalHandlers(registry: HostRegistry): void {
+  registry.handle("terminal:create", async (args, ctx) => {
+    const cwdUri = args[0] as string
+    const launch = args[1] as { command: string; args?: string[] } | undefined
     if (typeof cwdUri !== "string" || cwdUri.length > 32_768) {
       throw new Error("Invalid terminal working directory")
     }
@@ -174,11 +159,10 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
       throw new Error(`Failed to spawn shell in ${cwd}. Attempts: ${errors.join(" | ")}`)
     }
 
-    const webContents = event.sender
     const shellTitle = launch ? null : nextShellTitle(cwd, usedShell.file)
     terminals.set(id, {
       pty,
-      webContents,
+      clientId: ctx.clientId,
       cwd,
       shellTitleBase: shellTitle?.base,
       shellTitleIndex: shellTitle?.index,
@@ -187,10 +171,6 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
       output: "",
       sequence: 0,
     })
-    if (!terminalWebContents.has(webContents)) {
-      terminalWebContents.add(webContents)
-      webContents.once("destroyed", () => disposeTerminalsForWebContents(webContents))
-    }
     pty.onData(data => {
       const entry = terminals.get(id)
       if (!entry) return
@@ -209,12 +189,17 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
     return { id, title: shellTitle?.title }
   })
 
-  ipcMain.handle("terminal:write", async (_e, id: string, data: string) => {
+  registry.handle("terminal:write", async args => {
+    const id = args[0] as string
+    const data = args[1] as string
     if (typeof id !== "string" || typeof data !== "string" || data.length > 1024 * 1024) return
     terminals.get(id)?.pty?.write(data)
   })
 
-  ipcMain.handle("terminal:resize", async (_e, id: string, cols: number, rows: number) => {
+  registry.handle("terminal:resize", async args => {
+    const id = args[0] as string
+    const cols = args[1] as number
+    const rows = args[2] as number
     if (typeof id !== "string" || !Number.isFinite(cols) || !Number.isFinite(rows)) return
     const entry = terminals.get(id)
     if (!entry) return
@@ -224,10 +209,11 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
     )
   })
 
-  ipcMain.handle("terminal:attach", async (event, id: string) => {
+  registry.handle("terminal:attach", async (args, ctx) => {
+    const id = args[0] as string
     if (typeof id !== "string" || id.length > 256) return null
     const entry = terminals.get(id)
-    if (!entry || entry.webContents !== event.sender) return null
+    if (!entry || entry.clientId !== ctx.clientId) return null
     return {
       id,
       title: entry.title,
@@ -239,7 +225,8 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
     }
   })
 
-  ipcMain.handle("terminal:dispose", async (_e, id: string) => {
+  registry.handle("terminal:dispose", async args => {
+    const id = args[0] as string
     if (typeof id !== "string" || id.length > 256) return
     disposeTerminal(id)
   })
@@ -248,5 +235,3 @@ export function registerTerminalHandlers(ipcMain: IpcMain) {
 export function stopAllTerminals() {
   for (const id of [...terminals.keys()]) disposeTerminal(id)
 }
-
-export { disposeTerminalsForWebContents }

@@ -1,4 +1,3 @@
-import type { BrowserWindow } from "electron"
 import {
   applyTurnEvent,
   prepareSendMessageTurn,
@@ -18,6 +17,7 @@ import {
   writeAgentStore,
 } from "./agent-store.js"
 import { isProviderBinaryAvailable } from "./agent-providers.js"
+import { sendToRenderer } from "./host-renderer.js"
 
 type ActiveTurn = {
   abort: AbortController
@@ -27,12 +27,8 @@ type ActiveTurn = {
 export class AgentTurnRunner {
   private readonly activeTurns = new Map<string, ActiveTurn>()
 
-  constructor(private readonly getWindow: () => BrowserWindow | null) {}
-
   private publishThread(thread: AgentThread): void {
-    const wc = this.getWindow()?.webContents
-    if (!wc || wc.isDestroyed()) return
-    wc.send("agents:threadUpdated", thread)
+    sendToRenderer("agents:threadUpdated", thread)
   }
 
   private async persistTurnEvent(

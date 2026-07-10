@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process"
-import type { IpcMain } from "electron"
 import type { JetTaskSpawnRequest } from "@jet/workspace"
+import type { HostRegistry } from "./registry.js"
 
-export function registerTaskHandlers(ipcMain: IpcMain): void {
-  ipcMain.handle("tasks:spawn", async (_event, req: JetTaskSpawnRequest) => {
+export function registerTaskHandlers(registry: HostRegistry): void {
+  registry.handle("tasks:spawn", async args => {
+    const req = args[0] as JetTaskSpawnRequest
     return new Promise<{ exitCode: number; output: string }>(resolve => {
       let output = ""
       const child = spawn(req.command, req.args, {
