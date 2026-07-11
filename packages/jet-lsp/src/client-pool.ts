@@ -21,6 +21,7 @@ function sanitizeLspHtml(html: string): string {
 
 export class LspClientPool {
   private clients = new Map<string, LSPClient>()
+  private pendingClients = new Map<string, Promise<LSPClient>>()
   private workspaceDeps: JetLspWorkspaceDeps | null = null
 
   setWorkspaceDeps(deps: JetLspWorkspaceDeps): void {
@@ -30,22 +31,32 @@ export class LspClientPool {
   async getOrCreateClient(conn: LspConnection): Promise<LSPClient> {
     const existing = this.clients.get(conn.id)
     if (existing) return existing
+    const pending = this.pendingClients.get(conn.id)
+    if (pending) return pending
 
-    const deps = this.workspaceDeps
-    const transport = await simpleWebSocketTransport(conn.transportUrl)
-    const client = new LSPClient({
-      rootUri: conn.projectRootUri,
-      extensions: jetLanguageServerExtensions(),
-      sanitizeHTML: sanitizeLspHtml,
-      workspace: client => {
-        if (deps) return new JetLspWorkspace(client, deps)
-        throw new Error("LSP workspace deps not configured")
-      },
-    }).connect(transport)
+    const connecting = (async () => {
+      const deps = this.workspaceDeps
+      const transport = await simpleWebSocketTransport(conn.transportUrl)
+      const client = new LSPClient({
+        rootUri: conn.projectRootUri,
+        extensions: jetLanguageServerExtensions(),
+        sanitizeHTML: sanitizeLspHtml,
+        workspace: client => {
+          if (deps) return new JetLspWorkspace(client, deps)
+          throw new Error("LSP workspace deps not configured")
+        },
+      }).connect(transport)
 
-    await client.initializing
-    this.clients.set(conn.id, client)
-    return client
+      await client.initializing
+      this.clients.set(conn.id, client)
+      return client
+    })()
+    this.pendingClients.set(conn.id, connecting)
+    try {
+      return await connecting
+    } finally {
+      this.pendingClients.delete(conn.id)
+    }
   }
 
   getClient(connectionId: string): LSPClient | undefined {
@@ -53,6 +64,7 @@ export class LspClientPool {
   }
 
   releaseConnection(connectionId: string): void {
+    this.pendingClients.delete(connectionId)
     const client = this.clients.get(connectionId)
     if (client) {
       client.disconnect()
@@ -61,6 +73,7 @@ export class LspClientPool {
   }
 
   clear(): void {
+    this.pendingClients.clear()
     for (const id of [...this.clients.keys()]) {
       this.releaseConnection(id)
     }

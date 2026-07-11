@@ -15,12 +15,11 @@ function readSetting<T extends string>(name: string, allowed: readonly T[], fall
   return allowed.includes(value) ? value : fallback
 }
 
-function cursorStyle(): CursorStyle {
-  return readSetting("--jet-cursor-style", ["block", "bar", "underline"], "bar")
-}
-
-function cursorMotion(): CursorMotion {
-  return readSetting("--jet-cursor-motion", ["trail", "smooth", "off"], "trail")
+function readCursorAppearance(): { style: CursorStyle; motion: CursorMotion } {
+  return {
+    style: readSetting("--jet-cursor-style", ["block", "bar", "underline"], "bar"),
+    motion: readSetting("--jet-cursor-motion", ["trail", "smooth", "off"], "trail"),
+  }
 }
 
 export class TerminalCursorMotionLayer {
@@ -31,6 +30,7 @@ export class TerminalCursorMotionLayer {
   private readonly ghosts = new CaretGhostBuffer()
   private readonly disposables: IDisposable[] = []
   private readonly resizeObserver: ResizeObserver
+  private readonly rootObserver: MutationObserver
   private readonly nativeCursorLayer: HTMLElement | null
   private reduced = prefersReducedMotion()
   private unsubscribeReducedMotion: (() => void) | null = null
@@ -40,6 +40,7 @@ export class TerminalCursorMotionLayer {
   private active = true
   private lastGhostX = 0
   private lastGhostY = 0
+  private appearance = readCursorAppearance()
 
   constructor(
     private readonly term: Terminal,
@@ -75,6 +76,14 @@ export class TerminalCursorMotionLayer {
     )
     this.resizeObserver = new ResizeObserver(() => this.retarget(true))
     this.resizeObserver.observe(screen)
+    this.rootObserver = new MutationObserver(() => {
+      this.appearance = readCursorAppearance()
+      this.retarget(true)
+    })
+    this.rootObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style", "data-jet-reduced-motion"],
+    })
     this.unsubscribeReducedMotion = onReducedMotionChange(reduced => {
       this.reduced = reduced
       this.retarget(true)
@@ -111,7 +120,7 @@ export class TerminalCursorMotionLayer {
   }
 
   private retarget(forceSnap: boolean): void {
-    const motion = cursorMotion()
+    const motion = this.appearance.motion
     const enabled = motion !== "off"
     this.layer.style.display = enabled ? "block" : "none"
     if (this.nativeCursorLayer) this.nativeCursorLayer.style.opacity = enabled ? "0" : "1"
@@ -156,7 +165,7 @@ export class TerminalCursorMotionLayer {
     const previousX = this.anim.x
     const previousY = this.anim.y
     const moving = this.anim.step(dt)
-    const motion = cursorMotion()
+    const motion = this.appearance.motion
 
     if (motion === "trail" && !this.reduced) {
       const ghostDistance = Math.hypot(this.anim.x - this.lastGhostX, this.anim.y - this.lastGhostY)
@@ -175,7 +184,7 @@ export class TerminalCursorMotionLayer {
   }
 
   private styleCursor(el: HTMLElement, x: number, y: number, h: number, opacity: number): void {
-    const style = cursorStyle()
+    const style = this.appearance.style
     const charWidth = Math.max(1, this.anim.charWidth)
     const width = style === "bar" ? 2 : charWidth
     const height = style === "underline" ? 2 : Math.max(1, h)
@@ -206,6 +215,7 @@ export class TerminalCursorMotionLayer {
   dispose(): void {
     this.stop()
     this.resizeObserver.disconnect()
+    this.rootObserver.disconnect()
     this.unsubscribeReducedMotion?.()
     for (const disposable of this.disposables) disposable.dispose()
     if (this.nativeCursorLayer) this.nativeCursorLayer.style.opacity = "1"

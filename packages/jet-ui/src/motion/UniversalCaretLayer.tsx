@@ -28,12 +28,11 @@ function setting<T extends string>(name: string, allowed: readonly T[], fallback
   return allowed.includes(value) ? value : fallback
 }
 
-function cursorStyle(): CursorStyle {
-  return setting("--jet-cursor-style", ["bar", "block", "underline"], "bar")
-}
-
-function cursorMotion(): CursorMotion {
-  return setting("--jet-cursor-motion", ["trail", "smooth", "off"], "trail")
+function readCursorAppearance(): { style: CursorStyle; motion: CursorMotion } {
+  return {
+    style: setting("--jet-cursor-style", ["bar", "block", "underline"], "bar"),
+    motion: setting("--jet-cursor-motion", ["trail", "smooth", "off"], "trail"),
+  }
 }
 
 function copyTextStyle(mirror: HTMLElement, style: CSSStyleDeclaration): void {
@@ -186,6 +185,7 @@ class UniversalCaretController {
   private raf: number | null = null
   private eventRaf: number | null = null
   private lastFrame = 0
+  private appearance = readCursorAppearance()
   private readonly unsubscribeReduced: () => void
 
   constructor() {
@@ -220,7 +220,10 @@ class UniversalCaretController {
       this.reduced = reduced
       this.schedule(true)
     })
-    this.rootObserver = new MutationObserver(() => this.schedule(true))
+    this.rootObserver = new MutationObserver(() => {
+      this.appearance = readCursorAppearance()
+      this.schedule(true)
+    })
     this.rootObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] })
   }
 
@@ -271,7 +274,7 @@ class UniversalCaretController {
       return
     }
     this.useCustomCaret()
-    const motion = cursorMotion()
+    const motion = this.appearance.motion
     const snap = instant || this.reduced || motion === "off" || !this.initialized
     const dx = point.x - this.anim.targetX
     const dy = point.y - this.anim.targetY
@@ -316,7 +319,7 @@ class UniversalCaretController {
     const previousX = this.anim.x
     const previousY = this.anim.y
     const moving = this.anim.step(dt)
-    if (cursorMotion() === "trail" && !this.reduced) {
+    if (this.appearance.motion === "trail" && !this.reduced) {
       const distance = Math.hypot(this.anim.x - this.lastGhostX, this.anim.y - this.lastGhostY)
       if (distance >= Math.max(1.5, this.anim.charWidth * 0.35)) {
         this.ghosts.push(previousX, previousY, this.anim.h, time)
@@ -332,7 +335,7 @@ class UniversalCaretController {
   }
 
   private styleVisual(element: HTMLElement, x: number, y: number, h: number, opacity: number): void {
-    const style = cursorStyle()
+    const style = this.appearance.style
     const width = style === "bar" ? 2 : Math.max(1, this.anim.charWidth)
     const height = style === "underline" ? 2 : Math.max(1, h)
     const offsetY = style === "underline" ? Math.max(0, h - height) : 0

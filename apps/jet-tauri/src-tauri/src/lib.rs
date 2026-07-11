@@ -7,10 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            let args: Vec<String> = argv
-                .into_iter()
-                .filter(|a| !a.starts_with('-'))
-                .collect();
+            let args: Vec<String> = argv.into_iter().filter(|a| !a.starts_with('-')).collect();
             let cwd = std::env::current_dir().unwrap_or_default();
             let config = host::launch::resolve_launch_target(&args, &cwd);
             shell::deliver_launch(app, config);
@@ -19,9 +16,22 @@ pub fn run() {
             }
         }));
 
+    // Finder/Explorer launches start with a minimal PATH. Seed the standard
+    // developer-tool locations synchronously, then let the login-shell probe
+    // refine it without delaying first paint.
+    seed_common_executable_paths();
+
     #[cfg(feature = "e2e")]
     {
-        builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+        builder = builder
+            .append_invoke_initialization_script(
+                r#"if (window.name !== "__jet_e2e_initialized__") {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    window.name = "__jet_e2e_initialized__";
+                }"#,
+            )
+            .plugin(tauri_plugin_wdio_webdriver::init());
     }
 
     let app = builder
@@ -91,8 +101,7 @@ pub fn run() {
                 if let Ok(path) = url.to_file_path() {
                     let path_str = path.to_string_lossy().into_owned();
                     let cwd = std::env::current_dir().unwrap_or_default();
-                    let mut config =
-                        host::launch::resolve_launch_target(&[path_str], &cwd);
+                    let mut config = host::launch::resolve_launch_target(&[path_str], &cwd);
                     config.source = Some("explicit".to_string());
                     shell::deliver_launch(app_handle, config);
                     if let Some(window) = app_handle.get_webview_window("main") {
@@ -104,6 +113,31 @@ pub fn run() {
         _ => {}
     });
 }
+
+#[cfg(not(target_os = "windows"))]
+fn seed_common_executable_paths() {
+    use std::path::PathBuf;
+
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = Vec::<PathBuf>::new();
+    if let Some(home) = dirs::home_dir() {
+        paths.push(home.join(".local/bin"));
+        paths.push(home.join(".cargo/bin"));
+        paths.push(home.join("Library/pnpm"));
+    }
+    paths.push(PathBuf::from("/opt/homebrew/bin"));
+    paths.push(PathBuf::from("/usr/local/bin"));
+    paths.extend(std::env::split_paths(&current));
+
+    let mut seen = std::collections::HashSet::new();
+    paths.retain(|path| seen.insert(path.clone()));
+    if let Ok(joined) = std::env::join_paths(paths) {
+        std::env::set_var("PATH", joined);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn seed_common_executable_paths() {}
 
 #[cfg(not(target_os = "windows"))]
 fn apply_login_shell_path() {

@@ -1,29 +1,31 @@
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 use tauri::AppHandle;
-use tungstenite::{accept, Message, WebSocket};
+use tungstenite::{accept, Error as WebSocketError, Message};
 
 use super::events::emit_host;
 use super::launch::uri_to_path;
 
 struct LspSession {
     child: Arc<Mutex<Option<Child>>>,
-    shutdown: Arc<Mutex<bool>>,
+    shutdown: Arc<AtomicBool>,
 }
 
 pub struct LspHost {
-    sessions: Mutex<HashMap<String, LspSession>>,
+    sessions: Arc<Mutex<HashMap<String, LspSession>>>,
 }
 
 impl LspHost {
     pub fn new() -> Self {
         Self {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -44,6 +46,10 @@ impl LspHost {
         let id = format!("lsp-{cmd}-{}", chrono::Utc::now().timestamp_millis());
         let cwd = uri_to_path(root_uri);
 
+        // Bind first so a socket error cannot leave an orphaned language server.
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+
         let mut child = match Command::new(cmd)
             .args(&args)
             .current_dir(&cwd)
@@ -60,14 +66,11 @@ impl LspHost {
             }
         };
 
-        let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
-        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-
         let stdin = child.stdin.take().ok_or("failed to open lsp stdin")?;
         let stdout = child.stdout.take().ok_or("failed to open lsp stdout")?;
 
         let child_slot = Arc::new(Mutex::new(Some(child)));
-        let shutdown = Arc::new(Mutex::new(false));
+        let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_bridge = shutdown.clone();
 
         thread::spawn(move || {
@@ -77,14 +80,34 @@ impl LspHost {
         let app_exit = app.clone();
         let id_exit = id.clone();
         let child_wait = child_slot.clone();
+        let shutdown_wait = shutdown.clone();
+        let sessions_wait = self.sessions.clone();
         thread::spawn(move || {
-            let exit_code = child_wait
-                .lock()
-                .ok()
-                .and_then(|mut guard| guard.take())
-                .and_then(|mut c| c.wait().ok())
-                .map(|s| s.code())
-                .flatten();
+            let mut exit_code = None;
+            loop {
+                if shutdown_wait.load(Ordering::Acquire) {
+                    if let Ok(mut guard) = child_wait.lock() {
+                        if let Some(mut child) = guard.take() {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                        }
+                    }
+                    break;
+                }
+                let exited = child_wait.lock().ok().and_then(|mut guard| {
+                    let status = guard.as_mut()?.try_wait().ok().flatten()?;
+                    guard.take();
+                    Some(status.code())
+                });
+                if let Some(code) = exited {
+                    exit_code = code;
+                    break;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            if let Ok(mut sessions) = sessions_wait.lock() {
+                sessions.remove(&id_exit);
+            }
             if exit_code.is_some_and(|code| code != 0) {
                 emit_host(&app_exit, "lsp:crashed", vec![Value::String(id_exit)]);
             }
@@ -95,7 +118,7 @@ impl LspHost {
                 id.clone(),
                 LspSession {
                     child: child_slot,
-                    shutdown,
+                    shutdown: shutdown.clone(),
                 },
             );
         }
@@ -109,9 +132,7 @@ impl LspHost {
     pub fn stop(&self, id: &str) -> Result<(), String> {
         if let Ok(mut sessions) = self.sessions.lock() {
             if let Some(session) = sessions.remove(id) {
-                if let Ok(mut flag) = session.shutdown.lock() {
-                    *flag = true;
-                }
+                session.shutdown.store(true, Ordering::Release);
                 if let Ok(mut guard) = session.child.lock() {
                     if let Some(mut child) = guard.take() {
                         let _ = child.kill();
@@ -139,79 +160,116 @@ fn bridge_stdio_to_websocket(
     listener: TcpListener,
     mut stdin: impl Write + Send + 'static,
     stdout: impl Read + Send + 'static,
-    shutdown: Arc<Mutex<bool>>,
+    shutdown: Arc<AtomicBool>,
 ) {
-    let Ok((tcp, _)) = listener.accept() else {
+    if listener.set_nonblocking(true).is_err() {
+        shutdown.store(true, Ordering::Release);
+        return;
+    }
+    let tcp = loop {
+        if shutdown.load(Ordering::Acquire) {
+            return;
+        }
+        match listener.accept() {
+            Ok((tcp, _)) => break tcp,
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(2));
+            }
+            Err(_) => {
+                shutdown.store(true, Ordering::Release);
+                return;
+            }
+        }
+    };
+
+    let Ok(mut ws) = accept(tcp) else {
+        shutdown.store(true, Ordering::Release);
         return;
     };
-    if *shutdown.lock().unwrap() {
+    if ws.get_mut().set_nonblocking(true).is_err() {
+        shutdown.store(true, Ordering::Release);
         return;
     }
 
-    let Ok(ws) = accept(tcp) else {
-        return;
-    };
-    let ws = Arc::new(Mutex::new(ws));
-
-    let ws_out = ws.clone();
-    thread::spawn(move || pump_stdout_to_ws(stdout, ws_out, shutdown));
-
-    pump_ws_to_stdin(&mut stdin, ws);
-}
-
-fn pump_stdout_to_ws<R: Read + Send>(
-    mut stdout: R,
-    ws: Arc<Mutex<WebSocket<std::net::TcpStream>>>,
-    shutdown: Arc<Mutex<bool>>,
-) {
-    let mut decoder = LspDecoder::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        if *shutdown.lock().unwrap() {
-            break;
-        }
-        match stdout.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                for msg in decoder.feed(&buf[..n]) {
-                    let mut guard = match ws.lock() {
-                        Ok(g) => g,
-                        Err(_) => return,
-                    };
-                    if guard.send(Message::Text(msg.into())).is_err() {
-                        return;
+    // One thread owns the WebSocket. The stdout reader only decodes frames and
+    // feeds a bounded channel, avoiding the old read-lock/write-lock deadlock.
+    let (server_tx, server_rx) = mpsc::sync_channel::<String>(256);
+    let shutdown_stdout = shutdown.clone();
+    thread::spawn(move || {
+        let mut stdout = stdout;
+        let mut decoder = LspDecoder::new();
+        let mut buf = [0u8; 8192];
+        while !shutdown_stdout.load(Ordering::Acquire) {
+            match stdout.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    for message in decoder.feed(&buf[..n]) {
+                        if server_tx.send(message).is_err() {
+                            return;
+                        }
                     }
                 }
             }
-            Err(_) => break,
         }
-    }
-}
+    });
 
-fn pump_ws_to_stdin(
-    stdin: &mut impl Write,
-    ws: Arc<Mutex<WebSocket<std::net::TcpStream>>>,
-) {
-    loop {
-        let message = {
-            let mut guard = match ws.lock() {
-                Ok(g) => g,
-                Err(_) => break,
-            };
-            match guard.read() {
-                Ok(Message::Text(json)) => Some(json),
-                Ok(Message::Close(_)) | Err(_) => None,
-                Ok(_) => continue,
+    let mut pending_server_messages = VecDeque::new();
+    while !shutdown.load(Ordering::Acquire) {
+        let mut did_work = false;
+        loop {
+            match server_rx.try_recv() {
+                Ok(json) => {
+                    did_work = true;
+                    pending_server_messages.push_back(Message::Text(json.into()));
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => break,
             }
-        };
-        let Some(json) = message else {
-            break;
-        };
-        if stdin
-            .write_all(encode_lsp_message(&json).as_bytes())
-            .is_err()
-        {
-            break;
+        }
+
+        while let Some(message) = pending_server_messages.pop_front() {
+            match ws.write(message) {
+                Ok(()) => did_work = true,
+                Err(WebSocketError::WriteBufferFull(message)) => {
+                    pending_server_messages.push_front(message);
+                    break;
+                }
+                // Tungstenite retains the frame when the socket temporarily
+                // cannot accept more bytes. A later flush completes it.
+                Err(WebSocketError::Io(err)) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(_) => {
+                    shutdown.store(true, Ordering::Release);
+                    break;
+                }
+            }
+        }
+        match ws.flush() {
+            Ok(()) => {}
+            Err(WebSocketError::Io(err)) if err.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(_) => shutdown.store(true, Ordering::Release),
+        }
+
+        match ws.read() {
+            Ok(Message::Text(json)) => {
+                did_work = true;
+                if stdin
+                    .write_all(encode_lsp_message(&json).as_bytes())
+                    .and_then(|_| stdin.flush())
+                    .is_err()
+                {
+                    shutdown.store(true, Ordering::Release);
+                }
+            }
+            Ok(Message::Close(_)) => shutdown.store(true, Ordering::Release),
+            Ok(_) => did_work = true,
+            Err(WebSocketError::Io(err)) if err.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(_) => shutdown.store(true, Ordering::Release),
+        }
+
+        if !did_work {
+            thread::sleep(Duration::from_millis(1));
         }
     }
 }
@@ -234,10 +292,11 @@ impl LspDecoder {
                 break;
             };
             let header = String::from_utf8_lossy(&self.buffer[..header_end]);
-            let Some(len_str) = header
-                .lines()
-                .find_map(|line| line.strip_prefix("Content-Length:").map(str::trim))
-            else {
+            let Some(len_str) = header.lines().find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("Content-Length")
+                    .then(|| value.trim())
+            }) else {
                 self.buffer.drain(..header_end + 4);
                 continue;
             };
@@ -249,8 +308,8 @@ impl LspDecoder {
             if self.buffer.len() < body_start + length {
                 break;
             }
-            let body = String::from_utf8_lossy(&self.buffer[body_start..body_start + length])
-                .into_owned();
+            let body =
+                String::from_utf8_lossy(&self.buffer[body_start..body_start + length]).into_owned();
             messages.push(body);
             self.buffer.drain(..body_start + length);
         }
@@ -270,7 +329,10 @@ pub fn handle(
 ) -> Result<Value, String> {
     match channel {
         "lsp:start" => {
-            let root_uri = args.first().and_then(|v| v.as_str()).ok_or("missing rootUri")?;
+            let root_uri = args
+                .first()
+                .and_then(|v| v.as_str())
+                .ok_or("missing rootUri")?;
             let command = args.get(2).and_then(|v| v.as_str());
             let cmd_args = args.get(3).and_then(|v| v.as_array()).map(|arr| {
                 arr.iter()
@@ -285,5 +347,31 @@ pub fn handle(
             Ok(Value::Null)
         }
         _ => Err(format!("unknown lsp channel: {channel}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn framing_uses_utf8_bytes_and_decodes_chunked_messages() {
+        let json = r#"{"jsonrpc":"2.0","id":1,"result":"سلام"}"#;
+        let framed = encode_lsp_message(json);
+        assert!(framed.starts_with(&format!("Content-Length: {}\r\n", json.len())));
+
+        let bytes = framed.as_bytes();
+        let mut decoder = LspDecoder::new();
+        assert!(decoder.feed(&bytes[..11]).is_empty());
+        assert_eq!(decoder.feed(&bytes[11..]), vec![json.to_string()]);
+    }
+
+    #[test]
+    fn framing_header_is_case_insensitive() {
+        let mut decoder = LspDecoder::new();
+        assert_eq!(
+            decoder.feed(b"content-length: 2\r\n\r\n{}"),
+            vec!["{}".to_string()]
+        );
     }
 }

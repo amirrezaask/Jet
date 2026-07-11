@@ -60,6 +60,7 @@ import {
   PanelDock,
   PanelBody,
   PanelTabBar,
+  StatusBar,
   bundledThemeList,
   defaultThemeId,
   defaultThemeIdForScheme,
@@ -691,6 +692,7 @@ export function JetApp() {
     resolveLspClient,
     ensureLspForFile,
     handleLspAttachFailed,
+    lspStatus,
   } = useLspLifecycle(workspace, (uri, path, line, column) => {
     handleOpenFileRef.current(uri, path)
     if (line != null) {
@@ -2320,9 +2322,22 @@ export function JetApp() {
         ) : undefined
       }
       footer={
-        pendingChordPrefix ? (
-          <WhichKeyPanel prefix={formatKeyBinding(pendingChordPrefix)} entries={whichKeyEntries} />
-        ) : undefined
+        <>
+          {pendingChordPrefix && (
+            <WhichKeyPanel prefix={formatKeyBinding(pendingChordPrefix)} entries={whichKeyEntries} />
+          )}
+          <StatusBar
+            lspStatus={lspStatus}
+            workspaceName={workspace.root?.name}
+            workspacePath={workspace.root?.path}
+            workspaceFolderCount={workspace.folders.length}
+            workspaceFolderNames={workspace.folders.map(folder => folder.root.name)}
+            hasWorkspace={workspace.manager.hasFolders()}
+            activeFileName={activeEditorFile?.name ?? null}
+            activeLanguageId={activeEditorFile?.languageId ?? null}
+            activeFileDirty={activeEditorFile?.isDirty ?? false}
+          />
+        </>
       }
     >
       <SidebarProvider

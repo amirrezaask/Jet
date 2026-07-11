@@ -62,7 +62,6 @@ pub fn jet_get_launch_config(state: tauri::State<ShellState>) -> Option<LaunchCo
 pub async fn jet_host_invoke(
     app: AppHandle,
     window: WebviewWindow,
-    host: tauri::State<'_, crate::host::HostState>,
     shell: tauri::State<'_, ShellState>,
     channel: String,
     args: Vec<Value>,
@@ -95,7 +94,13 @@ pub async fn jet_host_invoke(
         );
     }
     let client = client_id.unwrap_or_else(|| window.label().to_string());
-    host.invoke(&app, &channel, args, &client)
+    let host_app = app.clone();
+    tokio::task::spawn_blocking(move || {
+        let host = host_app.state::<crate::host::HostState>();
+        host.invoke(&host_app, &channel, args, &client)
+    })
+    .await
+    .map_err(|err| format!("host task failed: {err}"))?
 }
 
 pub fn deliver_launch(app: &AppHandle, config: LaunchConfig) {
@@ -120,16 +125,11 @@ pub fn apply_cached_chrome(window: &WebviewWindow) {
 pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
     use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 
-    let close_tab =
-        MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
+    let close_tab = MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
     let file_sep = PredefinedMenuItem::separator(app)?;
     let close_window = PredefinedMenuItem::close_window(app, None)?;
-    let file_submenu = Submenu::with_items(
-        app,
-        "File",
-        true,
-        &[&close_tab, &file_sep, &close_window],
-    )?;
+    let file_submenu =
+        Submenu::with_items(app, "File", true, &[&close_tab, &file_sep, &close_window])?;
 
     let undo = PredefinedMenuItem::undo(app, None)?;
     let redo = PredefinedMenuItem::redo(app, None)?;
@@ -171,12 +171,15 @@ pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
         Some("Alt+CmdOrCtrl+I"),
     )?;
     let view_sep2 = PredefinedMenuItem::separator(app)?;
-    let zoom_reset =
-        MenuItem::with_id(app, "view-zoom-reset", "Actual Size", true, Some("CmdOrCtrl+0"))?;
-    let zoom_in =
-        MenuItem::with_id(app, "view-zoom-in", "Zoom In", true, Some("CmdOrCtrl+Plus"))?;
-    let zoom_out =
-        MenuItem::with_id(app, "view-zoom-out", "Zoom Out", true, Some("CmdOrCtrl+-"))?;
+    let zoom_reset = MenuItem::with_id(
+        app,
+        "view-zoom-reset",
+        "Actual Size",
+        true,
+        Some("CmdOrCtrl+0"),
+    )?;
+    let zoom_in = MenuItem::with_id(app, "view-zoom-in", "Zoom In", true, Some("CmdOrCtrl+Plus"))?;
+    let zoom_out = MenuItem::with_id(app, "view-zoom-out", "Zoom Out", true, Some("CmdOrCtrl+-"))?;
     let view_sep3 = PredefinedMenuItem::separator(app)?;
     let fullscreen = PredefinedMenuItem::fullscreen(app, None)?;
     let view_submenu = Submenu::with_items(
@@ -372,7 +375,9 @@ fn apply_windows_title_bar_overlay(
     window: &WebviewWindow,
     colors: &NativeChromeColors,
 ) -> Result<(), String> {
-    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR};
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+    };
 
     let hwnd = window.hwnd().map_err(|e| e.to_string())?;
     let caption = hex_to_colorref(&colors.background)?;

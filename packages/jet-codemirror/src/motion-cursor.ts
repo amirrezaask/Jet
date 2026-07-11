@@ -27,12 +27,11 @@ function rootSetting<T extends string>(name: string, allowed: readonly T[], fall
   return allowed.includes(value) ? value : fallback
 }
 
-function cursorStyle(): CursorStyle {
-  return rootSetting("--jet-cursor-style", ["bar", "block", "underline"], "bar")
-}
-
-function cursorMotion(): CursorMotion {
-  return rootSetting("--jet-cursor-motion", ["trail", "smooth", "off"], "trail")
+function readCursorAppearance(): { style: CursorStyle; motion: CursorMotion } {
+  return {
+    style: rootSetting("--jet-cursor-style", ["bar", "block", "underline"], "bar"),
+    motion: rootSetting("--jet-cursor-motion", ["trail", "smooth", "off"], "trail"),
+  }
 }
 
 function pointAt(view: EditorView, pos: number): CaretPoint | null {
@@ -85,6 +84,7 @@ class MotionCursorPlugin {
   private raf: number | null = null
   private lastFrame = 0
   private instantNext = true
+  private appearance = readCursorAppearance()
   private readonly unsubscribeReduced: () => void
   private readonly rootObserver: MutationObserver
 
@@ -98,6 +98,7 @@ class MotionCursorPlugin {
       this.measureAndRetarget()
     })
     this.rootObserver = new MutationObserver(() => {
+      this.appearance = readCursorAppearance()
       this.instantNext = true
       this.measureAndRetarget()
     })
@@ -123,7 +124,7 @@ class MotionCursorPlugin {
       this.stop()
       return
     }
-    this.instantNext = this.reduced || cursorMotion() === "off" || (update.docChanged && !typingHop(update))
+    this.instantNext = this.reduced || this.appearance.motion === "off" || (update.docChanged && !typingHop(update))
     this.measureAndRetarget()
   }
 
@@ -204,7 +205,7 @@ class MotionCursorPlugin {
     this.lastFrame = time
     let moving = false
     let ghostsAlive = false
-    const motion = cursorMotion()
+    const motion = this.appearance.motion
     for (const entry of this.entries.values()) {
       const previousX = entry.anim.x
       const previousY = entry.anim.y
@@ -239,7 +240,7 @@ class MotionCursorPlugin {
     h: number,
     opacity: number,
   ): void {
-    const style = cursorStyle()
+    const style = this.appearance.style
     const width = style === "bar" ? 2 : entry.anim.charWidth
     const height = style === "underline" ? 2 : h
     const offsetY = style === "underline" ? Math.max(0, h - height) : 0

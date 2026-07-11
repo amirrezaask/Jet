@@ -31,6 +31,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 chrono = { version = "0.4", features = ["serde"] }
 tungstenite = "0.24"
+url = "2"
 fff-search = "0.9.6"
 sha2 = "0.10"
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
@@ -42,5 +43,5 @@ windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dw
 panic = "abort"
 codegen-units = 1
 lto = true
-opt-level = "s"
+opt-level = 3
 strip = true

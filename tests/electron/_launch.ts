@@ -1,6 +1,6 @@
 import { _electron as electron } from "@playwright/test"
 import { resolve } from "node:path"
-import { execSync } from "node:child_process"
+import { execFileSync, execSync } from "node:child_process"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { wrapPlaywrightPage } from "../shell/playwright-driver.js"
@@ -43,12 +43,20 @@ export function hasPtySpawn(): boolean {
 }
 
 export function hasTypescriptLanguageServer(): boolean {
-  try {
-    execSync("typescript-language-server --version", { stdio: "ignore" })
-    return true
-  } catch {
-    return false
+  const candidates = [
+    "/opt/homebrew/bin/typescript-language-server",
+    "/usr/local/bin/typescript-language-server",
+    "typescript-language-server",
+  ]
+  for (const command of candidates) {
+    try {
+      execFileSync(command, ["--version"], { stdio: "ignore" })
+      return true
+    } catch {
+      /* try the next standard install location */
+    }
   }
+  return false
 }
 
 export function hasCursorAgent(): boolean {

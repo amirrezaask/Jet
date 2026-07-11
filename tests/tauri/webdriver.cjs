@@ -49,6 +49,11 @@ function createWebDriver(port = 4445) {
 
   let sessionId = null
 
+  function sessionRequest(method, path, body) {
+    if (!sessionId) throw new Error("no session")
+    return request(method, `/session/${sessionId}${path}`, body)
+  }
+
   return {
     async newSession() {
       const value = await request("POST", "/session", {
@@ -77,18 +82,44 @@ function createWebDriver(port = 4445) {
     },
 
     async execute(script, ...args) {
-      if (!sessionId) throw new Error("no session")
-      return request("POST", `/session/${sessionId}/execute/sync`, {
+      const value = await sessionRequest("POST", "/execute/sync", {
         script: serializeScript(script),
         args,
       })
+      // tauri-plugin-wdio-webdriver currently wraps script results twice.
+      // Unwrap only the protocol-shaped single-key object so ordinary domain
+      // objects containing a `value` field keep their shape.
+      return value && typeof value === "object" && Object.keys(value).length === 1 && "value" in value
+        ? value.value
+        : value
     },
 
     async executeAsync(script, ...args) {
-      if (!sessionId) throw new Error("no session")
-      return request("POST", `/session/${sessionId}/execute/async`, {
+      const value = await sessionRequest("POST", "/execute/async", {
         script: serializeScript(script),
         args,
+      })
+      return value && typeof value === "object" && Object.keys(value).length === 1 && "value" in value
+        ? value.value
+        : value
+    },
+
+    async performActions(actions) {
+      await sessionRequest("POST", "/actions", { actions })
+    },
+
+    async releaseActions() {
+      await sessionRequest("DELETE", "/actions")
+    },
+
+    async sendKeys(text) {
+      const found = await sessionRequest("GET", "/element/active")
+      const element = found && typeof found === "object" && "value" in found ? found.value : found
+      const id = element?.["element-6066-11e4-a52e-4f735466cecf"] ?? element?.ELEMENT
+      if (!id) throw new Error("active element not found")
+      await sessionRequest("POST", `/element/${encodeURIComponent(id)}/value`, {
+        text,
+        value: [...text],
       })
     },
 

@@ -152,13 +152,18 @@ export class CaretGhostBuffer {
   }
 
   tick(now = performance.now()): CaretGhost[] {
-    this.ghosts = this.ghosts.filter(g => {
+    let write = 0
+    for (let read = 0; read < this.ghosts.length; read++) {
+      const g = this.ghosts[read]!
       const age = now - g.bornAt
       const remaining = 1 - age / GHOST_DECAY_MS
       g.opacity =
         remaining > 0 ? GHOST_INITIAL_OPACITY * Math.pow(remaining, GHOST_DECAY_CURVE) : 0
-      return age < GHOST_DECAY_MS && g.opacity > 0.02
-    })
+      if (age < GHOST_DECAY_MS && g.opacity > 0.02) {
+        this.ghosts[write++] = g
+      }
+    }
+    this.ghosts.length = write
     return this.ghosts
   }
 

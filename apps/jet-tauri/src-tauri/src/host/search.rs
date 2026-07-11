@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde_json::Value;
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
@@ -86,12 +87,12 @@ fn rg_list_project_files(root_uri: &str, max_files: usize) -> Result<Vec<String>
     }
     args.push(".");
 
-    let output = Command::new("rg")
+    let mut child = Command::new("rg")
         .args(&args)
         .current_dir(&cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 "ripgrep (rg) is not installed or not on PATH".to_string()
@@ -100,17 +101,27 @@ fn rg_list_project_files(root_uri: &str, max_files: usize) -> Result<Vec<String>
             }
         })?;
 
-    if !output.status.success() && output.status.code() != Some(1) {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = child.stdout.take().ok_or("failed to read ripgrep stdout")?;
+    let mut paths = Vec::with_capacity(max_files.min(4096));
+    for line in BufReader::new(stdout).lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        let path = line.trim_start_matches("./");
+        if !path.is_empty() {
+            paths.push(path.to_string());
+        }
+        if paths.len() >= max_files {
+            let _ = child.kill();
+            break;
+        }
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if !status.success() && status.code() != Some(1) && paths.len() < max_files {
+        let mut stderr = String::new();
+        if let Some(stream) = child.stderr.take() {
+            let _ = stream.take(64 * 1024).read_to_string(&mut stderr);
+        }
         return Err(stderr.trim().to_string());
     }
-
-    let mut paths: Vec<String> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(|line| line.trim_start_matches("./").to_string())
-        .filter(|line| !line.is_empty())
-        .take(max_files)
-        .collect();
     paths.sort();
     Ok(paths)
 }
@@ -154,7 +165,7 @@ fn rg_project_search(
     regex: bool,
 ) -> Result<Vec<SearchResult>, String> {
     let cwd = uri_to_path(root_uri);
-    let mut args = vec!["--json", "--max-count", "1"];
+    let mut args = vec!["--json", "--max-count", "200"];
     if !case_sensitive {
         args.push("-i");
     }
@@ -170,18 +181,23 @@ fn rg_project_search(
     args.push(query);
     args.push(".");
 
-    let output = Command::new("rg")
+    let mut child = Command::new("rg")
         .args(&args)
         .current_dir(&cwd)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| e.to_string())?;
 
     let mut results = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
+    let stdout = child.stdout.take().ok_or("failed to read ripgrep stdout")?;
+    for line in BufReader::new(stdout).lines() {
         if results.len() >= 200 {
+            let _ = child.kill();
             break;
         }
-        let Ok(parsed) = serde_json::from_str::<Value>(line) else {
+        let line = line.map_err(|e| e.to_string())?;
+        let Ok(parsed) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
         if parsed.get("type").and_then(|v| v.as_str()) != Some("match") {
@@ -195,7 +211,10 @@ fn rg_project_search(
             .unwrap_or("")
             .trim_start_matches("./")
             .to_string();
-        let line_number = data.get("line_number").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+        let line_number = data
+            .get("line_number")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1) as u32;
         let preview = data
             .get("lines")
             .and_then(|v| v.get("text"))
@@ -218,10 +237,22 @@ fn rg_project_search(
             preview,
         });
     }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if !status.success() && status.code() != Some(1) && results.len() < 200 {
+        let mut stderr = String::new();
+        if let Some(stream) = child.stderr.take() {
+            let _ = stream.take(64 * 1024).read_to_string(&mut stderr);
+        }
+        return Err(stderr.trim().to_string());
+    }
     Ok(results)
 }
 
-pub fn file_search(root_uri: &str, query: &str, opts: Option<&Value>) -> Result<Vec<String>, String> {
+pub fn file_search(
+    root_uri: &str,
+    query: &str,
+    opts: Option<&Value>,
+) -> Result<Vec<String>, String> {
     if !is_git_workspace(root_uri) {
         return Ok(Vec::new());
     }
@@ -242,7 +273,11 @@ pub fn file_search(root_uri: &str, query: &str, opts: Option<&Value>) -> Result<
     fuzzy_match_files_fallback(query, &files, limit)
 }
 
-fn fuzzy_match_files_fallback(query: &str, files: &[String], limit: usize) -> Result<Vec<String>, String> {
+fn fuzzy_match_files_fallback(
+    query: &str,
+    files: &[String],
+    limit: usize,
+) -> Result<Vec<String>, String> {
     let trimmed = query.trim().to_lowercase();
     if trimmed.is_empty() {
         return Ok(files.iter().take(limit).cloned().collect());
@@ -273,8 +308,15 @@ fn fuzzy_match_files_fallback(query: &str, files: &[String], limit: usize) -> Re
     Ok(scored.into_iter().take(limit).map(|(_, p)| p).collect())
 }
 
-pub fn handle(channel: &str, args: &[Value], app: Option<&tauri::AppHandle>) -> Result<Value, String> {
-    let root_uri = args.first().and_then(|v| v.as_str()).ok_or("missing rootUri")?;
+pub fn handle(
+    channel: &str,
+    args: &[Value],
+    app: Option<&tauri::AppHandle>,
+) -> Result<Value, String> {
+    let root_uri = args
+        .first()
+        .and_then(|v| v.as_str())
+        .ok_or("missing rootUri")?;
     match channel {
         "search:listFiles" => {
             let files = list_project_files(root_uri)?;
@@ -290,12 +332,14 @@ pub fn handle(channel: &str, args: &[Value], app: Option<&tauri::AppHandle>) -> 
         "search:project" => {
             let query = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
             let opts = args.get(2);
-            Ok(serde_json::to_value(project_search(root_uri, query, opts)?).map_err(|e| e.to_string())?)
+            Ok(serde_json::to_value(project_search(root_uri, query, opts)?)
+                .map_err(|e| e.to_string())?)
         }
         "search:fileSearch" => {
             let query = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
             let opts = args.get(2);
-            Ok(serde_json::to_value(file_search(root_uri, query, opts)?).map_err(|e| e.to_string())?)
+            Ok(serde_json::to_value(file_search(root_uri, query, opts)?)
+                .map_err(|e| e.to_string())?)
         }
         "search:trackFileAccess" => {
             let query = args.get(1).and_then(|v| v.as_str()).unwrap_or("");

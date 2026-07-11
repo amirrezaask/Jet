@@ -11,15 +11,11 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { skipFlakyTest } from "./_flaky.js"
+import { flakyTest } from "./_flaky.js"
 import { PROBLEMS_PANEL } from "../helpers/location-list.js"
-import { launchJet, openFixtureFile, waitForLspConnected, hasTypescriptLanguageServer } from "./_launch.js"
-
-const lspAvailable = hasTypescriptLanguageServer()
+import { launchJet, openFixtureFile, waitForLspConnected } from "./_launch.js"
 
 test.describe("electron LSP", () => {
-  test.skip(!lspAvailable, "typescript-language-server not on PATH")
-
   test("LSP connects when opening TypeScript file", async () => {
     const { app, page } = await launchJet()
     try {
@@ -31,25 +27,27 @@ test.describe("electron LSP", () => {
     }
   })
 
-  skipFlakyTest("F12 go-to-definition cursor position / LSP timing")
+  flakyTest(
+    "F12 go-to-definition cursor position / LSP timing",
+    "go to definition on greet opens utils.ts",
+    async () => {
+      const { app, page } = await launchJet()
+      try {
+        await openFixtureFile(page, "src/index.ts")
+        await waitForLspConnected(page)
 
-  test("go to definition on greet opens utils.ts", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await openFixtureFile(page, "src/index.ts")
-      await waitForLspConnected(page)
+        await page.locator(".cm-content").click()
+        await page.keyboard.press("Home")
+        for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight")
+        await page.keyboard.press("F12")
+        await page.waitForTimeout(2000)
 
-      await page.locator(".cm-content").click()
-      await page.keyboard.press("Home")
-      for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight")
-      await page.keyboard.press("F12")
-      await page.waitForTimeout(2000)
-
-      await expectContainsText(page, ".cm-editor", "export function greet")
-    } finally {
-      await app.close()
-    }
-  })
+        await expectContainsText(page, ".cm-editor", "export function greet")
+      } finally {
+        await app.close()
+      }
+    },
+  )
 
   test("modifier hover marks the clicked symbol and preserves jump navigation", async () => {
     const { app, page } = await launchJet()

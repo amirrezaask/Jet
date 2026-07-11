@@ -43,7 +43,13 @@ export function useLspLifecycle(
       const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
       const conn = await lspManager.ensureServerForFile(file, rootUri)
       if (conn) {
-        bumpLspRevision()
+        try {
+          await lspClientPool.getOrCreateClient(conn)
+          bumpLspRevision()
+        } catch {
+          lspManager.clearConnection(conn.id)
+          lspClientPool.releaseConnection(conn.id)
+        }
       } else {
         const spawnErr = lspManager.consumeLastSpawnError()
         if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
@@ -52,7 +58,7 @@ export function useLspLifecycle(
         }
       }
     },
-    [lspManager, workspace, bumpLspRevision],
+    [lspManager, workspace, lspClientPool, bumpLspRevision],
   )
 
   const handleLspAttachFailed = useCallback(

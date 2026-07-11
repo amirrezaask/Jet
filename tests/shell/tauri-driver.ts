@@ -11,6 +11,9 @@ const { browserFn } = createRequire(__filename)("./browser-fn.cjs") as {
 export type TauriWebDriver = {
   execute<R>(script: string | ((...args: unknown[]) => R), ...args: unknown[]): Promise<R>
   executeAsync<R>(script: string | ((...args: unknown[]) => void), ...args: unknown[]): Promise<R>
+  performActions(actions: unknown[]): Promise<void>
+  releaseActions(): Promise<void>
+  sendKeys(text: string): Promise<void>
   waitUntil(fn: () => Promise<boolean>, options?: { timeout?: number; interval?: number; timeoutMsg?: string }): Promise<unknown>
 }
 
@@ -45,7 +48,15 @@ class TauriLocator implements ShellLocator {
     return this.index
   }
 
+  private async waitForElement(timeout = 10_000): Promise<void> {
+    await this.wd.waitUntil(async () => (await this.count()) > this.resolveIndex([]), {
+      timeout,
+      timeoutMsg: `no element for ${this.selector}`,
+    })
+  }
+
   private async withElement<R>(fn: (el: Element) => R | Promise<R>): Promise<R> {
+    await this.waitForElement()
     const fnBody = browserFn(fn.toString())
     const isAsync = /\basync\b/.test(fn.toString())
     const pattern =
@@ -57,7 +68,7 @@ class TauriLocator implements ShellLocator {
       var nodes = [...document.querySelectorAll(${JSON.stringify(this.selector)})];
       var list = nodes;
       var pattern = ${pattern};
-      if (pattern) list = nodes.filter(function(n){ return pattern.test(n.textContent || ""); });
+      if (pattern) list = nodes.filter(function(n){ return pattern.test(n.getAttribute("aria-label") || n.textContent || ""); });
       var el = list[${idxExpr}];
       if (!el) throw new Error("no element for ${this.selector}");
     `
@@ -68,27 +79,47 @@ class TauriLocator implements ShellLocator {
     return runAsync<R>(this.wd, script)
   }
 
-  click(options?: { timeout?: number }): Promise<void> {
+  click(options?: { timeout?: number; button?: "left" | "right" | "middle" }): Promise<void> {
     const timeout = options?.timeout ?? 10_000
     return this.wd.waitUntil(
       async () => {
         await this.wd.execute(
-          (sel, idx, pattern, flags) => {
+          (sel, idx, pattern, flags, button) => {
             const nodes = [...document.querySelectorAll(sel)]
             let list = nodes
             if (pattern) {
               const re = new RegExp(pattern, flags)
-              list = nodes.filter(n => re.test(n.textContent ?? ""))
+              list = nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? ""))
             }
             const resolved = idx < 0 ? Math.max(0, list.length + idx) : idx
             const el = list[resolved] as HTMLElement | undefined
             if (!el) throw new Error("missing element")
-            el.click()
+            el.scrollIntoView({ block: "nearest", inline: "nearest" })
+            const rect = el.getBoundingClientRect()
+            const x = rect.left + rect.width / 2
+            const y = rect.top + rect.height / 2
+            if (button === "right") {
+              el.dispatchEvent(new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                button: 2,
+                buttons: 2,
+                clientX: x,
+                clientY: y,
+              }))
+            } else {
+              el.focus({ preventScroll: true })
+              const eventInit = { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: x, clientY: y }
+              el.dispatchEvent(new MouseEvent("mousedown", eventInit))
+              el.dispatchEvent(new MouseEvent("mouseup", { ...eventInit, buttons: 0 }))
+              el.dispatchEvent(new MouseEvent("click", { ...eventInit, buttons: 0 }))
+            }
           },
           this.selector,
           this.index,
           this.textFilter instanceof RegExp ? this.textFilter.source : (this.textFilter ?? ""),
           this.textFilter instanceof RegExp ? this.textFilter.flags : "",
+          options?.button ?? "left",
         )
         return true
       },
@@ -103,7 +134,7 @@ class TauriLocator implements ShellLocator {
         let list = nodes
         if (pattern) {
           const re = new RegExp(pattern, flags)
-          list = nodes.filter(n => re.test(n.textContent ?? ""))
+          list = nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? ""))
         }
         const resolved = idx < 0 ? Math.max(0, list.length + idx) : idx
         const el = list[resolved] as HTMLElement | undefined
@@ -140,12 +171,24 @@ class TauriLocator implements ShellLocator {
   }
 
   press(key: string): Promise<void> {
-    return dispatchKey(this.wd, key)
+    return this.focus().then(() => dispatchKey(this.wd, key))
   }
 
   async focus(): Promise<void> {
     await this.withElement(el => {
       ;(el as HTMLElement).focus()
+    })
+  }
+
+  async hover(): Promise<void> {
+    await this.withElement(el => {
+      const rect = el.getBoundingClientRect()
+      el.dispatchEvent(new MouseEvent("mousemove", {
+        bubbles: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      }))
+      el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }))
     })
   }
 
@@ -172,7 +215,7 @@ class TauriLocator implements ShellLocator {
         let list = nodes
         if (pattern) {
           const re = new RegExp(pattern, flags)
-          list = nodes.filter(n => re.test(n.textContent ?? ""))
+          list = nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? ""))
         }
         const resolved = idx < 0 ? Math.max(0, list.length + idx) : idx
         const el = list[resolved]
@@ -226,10 +269,11 @@ class TauriLocator implements ShellLocator {
 
   evaluate<R, Arg>(pageFunction: (arg: Arg, element: Element) => R | Promise<R>, arg: Arg): Promise<R>
   evaluate<R>(pageFunction: (element: Element) => R | Promise<R>): Promise<R>
-  evaluate<R, Arg>(
+  async evaluate<R, Arg>(
     pageFunction: ((arg: Arg, element: Element) => R | Promise<R>) | ((element: Element) => R | Promise<R>),
     arg?: Arg,
   ): Promise<R> {
+    await this.waitForElement()
     const fnBody = browserFn(pageFunction.toString())
     const isAsync = /\basync\b/.test(pageFunction.toString())
     const pattern =
@@ -242,15 +286,13 @@ class TauriLocator implements ShellLocator {
       var nodes = [...document.querySelectorAll(${JSON.stringify(this.selector)})];
       var list = nodes;
       var pattern = ${pattern};
-      if (pattern) list = nodes.filter(function(n){ return pattern.test(n.textContent || ""); });
+      if (pattern) list = nodes.filter(function(n){ return pattern.test(n.getAttribute("aria-label") || n.textContent || ""); });
       var el = list[${idxExpr}];
       if (!el) throw new Error("no element for ${this.selector}");
     `
     if (!isAsync) {
-      const script =
-        arg === undefined
-          ? `${prelude} var cb = arguments[arguments.length - 1]; Promise.resolve((${fnBody})(el)).then(cb).catch(function(e){ cb({ __error: String(e) }); });`
-          : `${prelude} var cb = arguments[arguments.length - 1]; Promise.resolve((${fnBody})(el, ${argLiteral})).then(cb).catch(function(e){ cb({ __error: String(e) }); });`
+      const call = arg === undefined ? `(${fnBody})(el)` : `(${fnBody})(el, ${argLiteral})`
+      const script = `${prelude} var cb = arguments[arguments.length - 1]; try { Promise.resolve(${call}).then(cb).catch(function(e){ cb({ __error: String(e) }); }); } catch (e) { cb({ __error: String(e) }); }`
       return runAsync<R>(this.wd, script)
     }
     const call = arg === undefined ? `(${fnBody})(el)` : `(${fnBody})(el, ${argLiteral})`
@@ -265,9 +307,10 @@ class TauriLocator implements ShellLocator {
         let list = nodes
         if (pattern) {
           const re = new RegExp(pattern, flags)
-          list = nodes.filter(n => re.test(n.textContent ?? ""))
+          list = nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? ""))
         }
-        const el = list[idx] as HTMLElement | undefined
+        const resolved = idx < 0 ? Math.max(0, list.length + idx) : idx
+        const el = list[resolved] as HTMLElement | undefined
         if (!el) return false
         const cs = getComputedStyle(el)
         if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false
@@ -287,7 +330,7 @@ class TauriLocator implements ShellLocator {
         const nodes = [...document.querySelectorAll(sel)]
         if (!pattern) return nodes.length
         const re = new RegExp(pattern, flags)
-        return nodes.filter(n => re.test(n.textContent ?? "")).length
+        return nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? "")).length
       },
       this.selector,
       this.textFilter instanceof RegExp ? this.textFilter.source : (this.textFilter ?? ""),
@@ -300,141 +343,131 @@ function runAsync<R>(wd: TauriWebDriver, script: string): Promise<R> {
   return wd.executeAsync(script).then(result => unwrapAsyncResult<R>(result))
 }
 
+const WEBDRIVER_KEYS: Record<string, string> = {
+  Backspace: "\uE003",
+  Tab: "\uE004",
+  Enter: "\uE007",
+  Shift: "\uE008",
+  Control: "\uE009",
+  Ctrl: "\uE009",
+  Alt: "\uE00A",
+  Escape: "\uE00C",
+  Space: "\uE00D",
+  PageUp: "\uE00E",
+  PageDown: "\uE00F",
+  End: "\uE010",
+  Home: "\uE011",
+  ArrowLeft: "\uE012",
+  ArrowUp: "\uE013",
+  ArrowRight: "\uE014",
+  ArrowDown: "\uE015",
+  Insert: "\uE016",
+  Delete: "\uE017",
+  F12: "\uE03C",
+  Meta: "\uE03D",
+}
+
+function keyValue(key: string): string {
+  return WEBDRIVER_KEYS[key] ?? key
+}
+
+async function ensureKeyboardFocus(wd: TauriWebDriver): Promise<void> {
+  await wd.execute(() => {
+    const active = document.activeElement as HTMLElement | null
+    if (active && active !== document.body && active !== document.documentElement) return
+    const candidates = [
+      document.querySelector<HTMLElement>("[data-jet-terminal-panel] .xterm-helper-textarea"),
+      document.querySelector<HTMLElement>(".cm-content"),
+    ]
+    const target = candidates.find(element => {
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    })
+    target?.focus()
+  })
+}
+
+function keyActions(events: Array<{ type: "keyDown" | "keyUp"; value: string }>): unknown[] {
+  return [{
+    type: "key",
+    id: "jet-keyboard",
+    actions: events,
+  }]
+}
+
 function dispatchKey(wd: TauriWebDriver, key: string): Promise<void> {
-  const map: Record<string, { key: string; code?: string; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean }> = {
-    Enter: { key: "Enter", code: "Enter" },
-    Escape: { key: "Escape", code: "Escape" },
-    Tab: { key: "Tab", code: "Tab" },
-    Home: { key: "Home", code: "Home" },
-    ArrowRight: { key: "ArrowRight", code: "ArrowRight" },
-    ArrowDown: { key: "ArrowDown", code: "ArrowDown" },
-    ArrowUp: { key: "ArrowUp", code: "ArrowUp" },
-    ArrowLeft: { key: "ArrowLeft", code: "ArrowLeft" },
-    Backspace: { key: "Backspace", code: "Backspace" },
-    "Meta+Enter": { key: "Enter", code: "Enter", metaKey: true },
-    "Control+Space": { key: " ", code: "Space", ctrlKey: true },
-    "Meta+z": { key: "z", code: "KeyZ", metaKey: true },
-    "Meta+Shift+z": { key: "z", code: "KeyZ", metaKey: true, shiftKey: true },
-    F12: { key: "F12", code: "F12" },
+  const parts = key.split("+")
+  const mainName = parts.pop() ?? key
+  const main = keyValue(mainName)
+  const modifiers = parts.map(keyValue)
+  if (modifiers.length > 0 || mainName === "Escape") {
+    return ensureKeyboardFocus(wd).then(() => wd.execute(
+      (pressedKey, modifierNames) => {
+        const target = document.activeElement ?? document.body
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          key: pressedKey === "Space" ? " " : pressedKey,
+          code: pressedKey === "Space" ? "Space" : pressedKey,
+          altKey: modifierNames.includes("Alt"),
+          ctrlKey: modifierNames.includes("Control") || modifierNames.includes("Ctrl"),
+          metaKey: modifierNames.includes("Meta"),
+          shiftKey: modifierNames.includes("Shift"),
+        }
+        target.dispatchEvent(new KeyboardEvent("keydown", init))
+        target.dispatchEvent(new KeyboardEvent("keyup", init))
+      },
+      mainName,
+      parts,
+    ))
   }
-  if (key.includes("+") && !map[key]) {
-    const parts = key.split("+")
-    const main = parts[parts.length - 1]!
-    const chord = {
-      key: main.length === 1 ? main : main,
-      code: main.length === 1 ? `Key${main.toUpperCase()}` : main,
-      metaKey: parts.includes("Meta"),
-      ctrlKey: parts.includes("Control") || parts.includes("Ctrl"),
-      shiftKey: parts.includes("Shift"),
-      altKey: parts.includes("Alt"),
-    }
-    return wd.execute(ch => {
-      const cm = document.querySelector(".cm-content")
-      const term = document.querySelector("[data-jet-terminal-panel] .xterm-helper-textarea")
-      const target = (term ?? cm ?? document.activeElement ?? document.body) as HTMLElement
-      target.focus()
-      const opts = {
-        key: ch.key,
-        code: ch.code,
-        bubbles: true,
-        cancelable: true,
-        metaKey: !!ch.metaKey,
-        ctrlKey: !!ch.ctrlKey,
-        shiftKey: !!ch.shiftKey,
-        altKey: !!ch.altKey,
-      }
-      target.dispatchEvent(new KeyboardEvent("keydown", opts))
-      target.dispatchEvent(new KeyboardEvent("keyup", opts))
-    }, chord) as Promise<void>
-  }
-  const chord = map[key] ?? { key, code: key }
-  return wd.execute(ch => {
-    const cm = document.querySelector(".cm-content")
-    const term = document.querySelector("[data-jet-terminal-panel] .xterm-helper-textarea")
-    const target = (term ?? cm ?? document.activeElement ?? document.body) as HTMLElement
-    target.focus()
-    target.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: ch.key,
-        code: ch.code,
-        bubbles: true,
-        cancelable: true,
-        metaKey: !!ch.metaKey,
-        ctrlKey: !!ch.ctrlKey,
-        shiftKey: !!ch.shiftKey,
-        altKey: !!ch.altKey,
-      }),
-    )
-    if (ch.key.length === 1 && !ch.metaKey && !ch.ctrlKey && !ch.shiftKey && !ch.altKey) {
-      target.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, inputType: "insertText", data: ch.key }))
-      target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: ch.key }))
-    }
-    target.dispatchEvent(
-      new KeyboardEvent("keyup", {
-        key: ch.key,
-        code: ch.code,
-        bubbles: true,
-        metaKey: !!ch.metaKey,
-        ctrlKey: !!ch.ctrlKey,
-        shiftKey: !!ch.shiftKey,
-        altKey: !!ch.altKey,
-      }),
-    )
-  }, chord) as Promise<void>
+  return ensureKeyboardFocus(wd).then(() => wd.sendKeys(main))
 }
 
 export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
+  const heldModifiers = new Set<string>()
   const keyboard = {
     press: (key: string) => dispatchKey(wd, key),
     type: async (text: string) => {
-      await wd.execute(t => {
-        const cm = document.querySelector(".cm-content")
-        const term = document.querySelector("[data-jet-terminal-panel] .xterm-helper-textarea")
-        const target = (term ?? cm ?? document.activeElement ?? document.body) as HTMLElement
-        target.focus()
-        for (const ch of t) {
-          target.dispatchEvent(
-            new KeyboardEvent("keydown", { key: ch, bubbles: true, cancelable: true }),
-          )
-          const inserted = document.execCommand("insertText", false, ch)
-          if (!inserted) {
-            target.dispatchEvent(
-              new InputEvent("beforeinput", {
-                bubbles: true,
-                cancelable: true,
-                inputType: "insertText",
-                data: ch,
-              }),
-            )
-            target.dispatchEvent(
-              new InputEvent("input", { bubbles: true, inputType: "insertText", data: ch }),
-            )
-          }
-          target.dispatchEvent(new KeyboardEvent("keyup", { key: ch, bubbles: true }))
-        }
-      }, text)
+      await ensureKeyboardFocus(wd)
+      for (const char of text) await wd.sendKeys(char)
     },
-    down: (key: string) =>
-      wd.execute(k => {
-        const target = document.activeElement ?? document.body
-        target.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, [`${k.toLowerCase()}Key`]: true }))
-      }, key === "Meta" ? "Meta" : key),
-    up: (key: string) =>
-      wd.execute(k => {
-        const target = document.activeElement ?? document.body
-        target.dispatchEvent(new KeyboardEvent("keyup", { key: k, bubbles: true }))
-      }, key === "Meta" ? "Meta" : key),
+    down: async (key: string) => {
+      await ensureKeyboardFocus(wd)
+      heldModifiers.add(key)
+      await wd.performActions(keyActions([{ type: "keyDown", value: keyValue(key) }]))
+    },
+    up: async (key: string) => {
+      await wd.performActions(keyActions([{ type: "keyUp", value: keyValue(key) }]))
+      await wd.releaseActions()
+      heldModifiers.delete(key)
+    },
   }
+
+  const pointerModifiers = () => ({
+    altKey: heldModifiers.has("Alt"),
+    ctrlKey: heldModifiers.has("Control") || heldModifiers.has("Ctrl"),
+    metaKey: heldModifiers.has("Meta"),
+    shiftKey: heldModifiers.has("Shift"),
+  })
 
   const mouse = {
     move: async (x: number, y: number) => {
       await wd.execute(
-        (px, py) => {
+        (px, py, modifiers) => {
           const el = document.elementFromPoint(px, py)
-          el?.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: px, clientY: py }))
+          el?.dispatchEvent(new MouseEvent("mousemove", {
+            bubbles: true,
+            clientX: px,
+            clientY: py,
+            ...modifiers,
+          }))
         },
         x,
         y,
+        pointerModifiers(),
       )
     },
     down: async () => {
@@ -449,14 +482,16 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
     },
     click: async (x: number, y: number) => {
       await wd.execute(
-        (px, py) => {
+        (px, py, modifiers) => {
           const el = document.elementFromPoint(px, py) as HTMLElement | null
-          el?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: px, clientY: py }))
-          el?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: px, clientY: py }))
-          el?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: px, clientY: py }))
+          const init = { bubbles: true, clientX: px, clientY: py, ...modifiers }
+          el?.dispatchEvent(new MouseEvent("mousedown", init))
+          el?.dispatchEvent(new MouseEvent("mouseup", init))
+          el?.dispatchEvent(new MouseEvent("click", init))
         },
         x,
         y,
+        pointerModifiers(),
       )
     },
   }
