@@ -28,15 +28,26 @@ export function JetTitleBar({
       <div
         data-jet-titlebar-sidebar
         data-sidebar-open={sidebarOpen || undefined}
-        className="flex shrink-0 items-center border-r border-sidebar-border bg-sidebar pr-2"
+        data-tauri-drag-region="deep"
+        className="flex shrink-0 items-stretch border-r border-sidebar-border bg-sidebar pr-2"
         style={{
           width: sidebarOpen ? sidebarWidth : "var(--jet-traffic-light-inset)",
-        }}
+          WebkitAppRegion: "drag",
+        } as React.CSSProperties}
       >
-        <div aria-hidden data-jet-traffic-light-spacer className="shrink-0" />
+        {/* Traffic-light clearance: full-height drag + dbl-click maximize (Electron
+            -webkit-app-region; Tauri data-tauri-drag-region — bare attr is self-only). */}
+        <div
+          aria-hidden
+          data-jet-traffic-light-spacer
+          data-tauri-drag-region="true"
+          className="shrink-0 self-stretch"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        />
         {sidebarOpen && sidebarChrome ? (
           <div
             className="flex min-w-0 flex-1 items-center pl-1"
+            data-tauri-drag-region="false"
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           >
             {sidebarChrome}

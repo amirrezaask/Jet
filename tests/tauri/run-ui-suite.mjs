@@ -253,10 +253,15 @@ async function testTitlebar(wd) {
     const titlebar = document.querySelector("[data-jet-titlebar]")
     if (!titlebar) return null
     const spacer = document.querySelector("[data-jet-traffic-light-spacer]")
+    const sidebar = document.querySelector("[data-jet-titlebar-sidebar]")
     return {
       visible: titlebar.getBoundingClientRect().height > 0,
       hasSpacer: spacer != null,
       spacerWidth: spacer?.getBoundingClientRect().width ?? 0,
+      spacerHeight: spacer?.getBoundingClientRect().height ?? 0,
+      titlebarHeight: titlebar.getBoundingClientRect().height,
+      spacerDrag: spacer?.hasAttribute("data-tauri-drag-region") === true,
+      sidebarDeepDrag: sidebar?.getAttribute("data-tauri-drag-region") === "deep",
       zone,
       platform: navigator.platform,
     }
@@ -269,6 +274,12 @@ async function testTitlebar(wd) {
       geom.spacerWidth >= geom.zone * 0.5,
       `traffic-light spacer too narrow: ${geom.spacerWidth} vs zone ${geom.zone}`,
     )
+    assert(
+      geom.spacerHeight >= geom.titlebarHeight * 0.8,
+      `traffic-light spacer too short: ${geom.spacerHeight} vs titlebar ${geom.titlebarHeight}`,
+    )
+    assert(geom.spacerDrag, "traffic-light spacer missing data-tauri-drag-region")
+    assert(geom.sidebarDeepDrag, "titlebar sidebar must use deep drag region")
   }
 }
 

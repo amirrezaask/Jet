@@ -159,6 +159,8 @@
   width: var(--jet-traffic-light-inset);
   min-width: var(--jet-traffic-light-inset);
   flex: 0 0 var(--jet-traffic-light-inset);
+  align-self: stretch;
+  min-height: 100%;
 }
 
 /* Titlebar sidebar view tabs — plain CSS so compact size survives HMR / utility drops. */

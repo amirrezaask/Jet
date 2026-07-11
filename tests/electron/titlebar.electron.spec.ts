@@ -56,6 +56,12 @@ test.describe("desktop shell", () => {
           tauriDragRegion: bar.hasAttribute("data-tauri-drag-region"),
           tauriCenterDragRegion:
             document.querySelector("[data-jet-titlebar-main] [data-tauri-drag-region]") != null,
+          tauriSpacerDragRegion:
+            spacer?.hasAttribute("data-tauri-drag-region") === true,
+          tauriSidebarDeepDrag:
+            titlebarSidebar.getAttribute("data-tauri-drag-region") === "deep",
+          spacerHeight: spacer?.getBoundingClientRect().height ?? 0,
+          titlebarHeight: bar.getBoundingClientRect().height,
           zone,
         }
       })
@@ -71,6 +77,9 @@ test.describe("desktop shell", () => {
       expect(geom!.hasMenubar).toBe(false)
       expect(geom!.tauriDragRegion).toBe(true)
       expect(geom!.tauriCenterDragRegion).toBe(true)
+      expect(geom!.tauriSpacerDragRegion).toBe(true)
+      expect(geom!.tauriSidebarDeepDrag).toBe(true)
+      expect(geom!.spacerHeight).toBeGreaterThanOrEqual(geom!.titlebarHeight - 1)
 
       const tabFont = await page.evaluate(() => {
         const triggers = Array.from(
@@ -154,6 +163,17 @@ test.describe("desktop shell", () => {
       expect(box).not.toBeNull()
       expect(box!.width).toBeGreaterThan(40)
       expect(box!.height).toBeGreaterThan(8)
+
+      const spacer = page.locator("[data-jet-traffic-light-spacer]")
+      await expectLocatorVisible(spacer, { timeout: 10_000 })
+      await expectLocatorAttribute(spacer, "data-tauri-drag-region", "true")
+      const spacerBox = await spacer.boundingBox()
+      expect(spacerBox).not.toBeNull()
+      expect(spacerBox!.width).toBeGreaterThan(40)
+      expect(spacerBox!.height).toBeGreaterThan(8)
+
+      const sidebar = page.locator("[data-jet-titlebar-sidebar]")
+      await expectLocatorAttribute(sidebar, "data-tauri-drag-region", "deep")
     } finally {
       await app.close()
     }
