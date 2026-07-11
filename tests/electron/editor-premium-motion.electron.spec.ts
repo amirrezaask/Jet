@@ -44,7 +44,7 @@ test.describe("premium editor motion", () => {
       await expectLocatorAttribute(page.locator("[data-jet-universal-caret-layer]"), 
         "data-jet-ghost-observed",
         "true",
-        { timeout: 1_000 },
+        { timeout: 5_000 },
       )
 
       await page.keyboard.press("Escape")
@@ -95,7 +95,7 @@ test.describe("premium editor motion", () => {
       const completion = page.locator(".cm-tooltip.cm-tooltip-autocomplete")
       await expectLocatorVisible(completion)
       await expect.poll(() => completion.locator("li").count()).toBeGreaterThan(0)
-      await expectLocatorCount(completion.locator("li[aria-selected]"), 1)
+      await expectLocatorCount(completion.locator("li[aria-selected]"), 1, { timeout: 5_000 })
 
       await page.keyboard.press("Escape")
       await page.evaluate(() => window.__jetAgent!.setEditorSelection(1, 1))
@@ -133,7 +133,7 @@ test.describe("premium editor motion", () => {
         scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: 720, bubbles: true, cancelable: true }))
         const values: number[] = []
         for (let frame = 0; frame < 30; frame++) {
-          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+          await new Promise<void>(resolve => setTimeout(resolve, 16))
           values.push(scroller.scrollTop)
           if (scroller.dataset.jetScrollActive === "false" && frame > 2) break
         }

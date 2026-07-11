@@ -20,7 +20,7 @@ function browserFn(source) {
       : trimmed.startsWith("(")
         ? source
         : `(${source})`
-  const { code } = esbuild.transformSync(wrapped, { loader: "ts", target: "es2020" })
+  const { code } = esbuild.transformSync(wrapped, { loader: "ts", target: "es2017" })
   return code.trim().replace(/;\s*$/, "")
 }
 

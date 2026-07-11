@@ -158,6 +158,7 @@ export function TerminalPanel({
   const sessionRef = useRef<TerminalSession | null>(null)
   const [displayStatus, setDisplayStatus] = useState(status)
   const [displayExitCode, setDisplayExitCode] = useState(exitCode)
+  const [connectedPtyId, setConnectedPtyId] = useState<string | null>(existingPtyId ?? null)
   const themeRef = useRef(theme)
   themeRef.current = theme
   const onTitleChangeRef = useRef(onTitleChange)
@@ -253,6 +254,7 @@ export function TerminalPanel({
 
     const connectPty = (id: string) => {
       session.ptyId = id
+      setConnectedPtyId(id)
       setDisplayStatus("running")
       setDisplayExitCode(undefined)
       unsub = terminalApi.onData(id, data => term.write(data))
@@ -392,6 +394,7 @@ export function TerminalPanel({
     <div
       className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
       data-jet-terminal-panel=""
+      data-jet-terminal-pty-id={connectedPtyId ?? ""}
       data-jet-terminal-status={displayStatus}
       onMouseDown={() => {
         focusTerminalInput(tabId)

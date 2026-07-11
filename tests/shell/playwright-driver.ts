@@ -156,5 +156,8 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
     async fillSelector(selector, value) {
       await page.locator(selector).fill(value)
     },
+    reload() {
+      return page.reload().then(() => undefined)
+    },
   }
 }

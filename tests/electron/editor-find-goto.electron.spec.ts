@@ -11,7 +11,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { execCommand, launchJet, openFixtureFile } from "./_launch.js"
+import { execCommand, launchJet, openFixtureFile, waitForDialog } from "./_launch.js"
 
 test.describe("electron editor find and goto", () => {
   test("find opens search UI in editor", async () => {
@@ -30,7 +30,7 @@ test.describe("electron editor find and goto", () => {
     try {
       await openFixtureFile(page, "src/index.ts")
       await execCommand(page, "editor.gotoLine")
-      await expectLocatorVisible(page.getByRole("dialog"))
+      await waitForDialog(page)
       const input = page.getByRole("dialog").locator("input").first()
       await input.fill("5")
       await page.keyboard.press("Enter")

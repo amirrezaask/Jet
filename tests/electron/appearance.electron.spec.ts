@@ -11,7 +11,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { hasPtySpawn, launchJet, showTerminal } from "./_launch.js"
+import { hasPtySpawn, launchJet } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -26,7 +26,10 @@ test.describe("electron appearance and terminal-first UX", () => {
         await window.__jetAgent!.waitForReady()
         await window.__jetAgent!.executeCommand("ui.setTheme.ayu-dark")
       })
-      await showTerminal(page)
+      await page.evaluate(async () => {
+        await window.__jetAgent!.executeCommand("terminal.show")
+      })
+      await page.waitForSelector("[data-jet-terminal-panel] .xterm", { timeout: 30_000 })
       await page.waitForSelector("[data-jet-terminal-panel] .jet-terminal-surface", {
         timeout: 15_000,
       })

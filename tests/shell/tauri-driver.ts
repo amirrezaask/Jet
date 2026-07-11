@@ -4,8 +4,48 @@
 import { createRequire } from "node:module"
 import type { ShellDriver, ShellLocator } from "./driver.js"
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function textFilterPattern(filter?: string | RegExp): string {
+  if (!filter) return ""
+  if (filter instanceof RegExp) return filter.source
+  return escapeRegExp(filter)
+}
+
+function textFilterFlags(filter?: string | RegExp): string {
+  return filter instanceof RegExp ? filter.flags : "i"
+}
+
+function roleSelector(role: string): string {
+  switch (role) {
+    case "button":
+      return 'button:not([disabled]), [role="button"]:not([aria-disabled="true"])'
+    case "textbox":
+      return 'input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), textarea, [role="textbox"]'
+    case "treeitem":
+      return '[role="treeitem"]'
+    case "menuitem":
+      return '[role="menuitem"]'
+    case "menu":
+      return '[role="menu"]'
+    case "option":
+      return '[role="option"]'
+    case "listbox":
+      return '[role="listbox"]'
+    case "dialog":
+      return '[role="dialog"][data-state="open"], [data-slot="dialog-content"][data-state="open"]'
+    default:
+      return `[role="${role}"]`
+  }
+}
+
 const { browserFn } = createRequire(__filename)("./browser-fn.cjs") as {
   browserFn: (source: string) => string
+}
+const { waitForJetReady } = createRequire(__filename)("../tauri/webdriver.cjs") as {
+  waitForJetReady: (wd: TauriWebDriver) => Promise<void>
 }
 
 export type TauriWebDriver = {
@@ -37,15 +77,62 @@ class TauriLocator implements ShellLocator {
     private readonly selector: string,
     private readonly index = 0,
     private readonly textFilter?: string | RegExp,
+    private readonly parent?: TauriLocator,
   ) {}
 
   toSelector(): string {
-    return this.selector
+    return this.parent ? `${this.parent.toSelector()} >> ${this.selector}` : this.selector
   }
 
   private resolveIndex(list: Element[]): number {
     if (this.index < 0) return Math.max(0, list.length + this.index)
     return this.index
+  }
+
+  private patternExpr(): string {
+    return this.textFilter
+      ? `new RegExp(${JSON.stringify(textFilterPattern(this.textFilter))}, ${JSON.stringify(textFilterFlags(this.textFilter))})`
+      : "null"
+  }
+
+  private indexExpr(): string {
+    return this.index < 0 ? `Math.max(0, list.length + ${this.index})` : String(this.index)
+  }
+
+  private buildListBlock(): string {
+    const pattern = this.patternExpr()
+    const idxExpr = this.indexExpr()
+    if (!this.parent) {
+      return `
+        var nodes = [...document.querySelectorAll(${JSON.stringify(this.selector)})];
+        var list = nodes;
+        var pattern = ${pattern};
+        if (pattern) list = nodes.filter(function(n){ return pattern.test(n.getAttribute("aria-label") || n.textContent || ""); });
+      `
+    }
+    return `
+      ${this.parent.buildResolveBlock("root")}
+      var list = [];
+      if (root) {
+        var nodes = [...root.querySelectorAll(${JSON.stringify(this.selector)})];
+        list = nodes;
+        var pattern = ${pattern};
+        if (pattern) list = nodes.filter(function(n){ return pattern.test(n.getAttribute("aria-label") || n.textContent || ""); });
+      }
+    `
+  }
+
+  private buildResolveBlock(resultVar = "el"): string {
+    const pattern = this.patternExpr()
+    const idxExpr = this.indexExpr()
+    return `
+      ${this.buildListBlock()}
+      var ${resultVar} = list[${idxExpr}];
+    `
+  }
+
+  private missingTargetMsg(): string {
+    return `no element for ${this.toSelector()}`
   }
 
   private async waitForElement(timeout = 10_000): Promise<void> {
@@ -59,68 +146,43 @@ class TauriLocator implements ShellLocator {
     await this.waitForElement()
     const fnBody = browserFn(fn.toString())
     const isAsync = /\basync\b/.test(fn.toString())
-    const pattern =
-      this.textFilter instanceof RegExp
-        ? `new RegExp(${JSON.stringify(this.textFilter.source)}, ${JSON.stringify(this.textFilter.flags)})`
-        : "null"
-    const idxExpr = this.index < 0 ? `Math.max(0, list.length + ${this.index})` : String(this.index)
-    const prelude = `
-      var nodes = [...document.querySelectorAll(${JSON.stringify(this.selector)})];
-      var list = nodes;
-      var pattern = ${pattern};
-      if (pattern) list = nodes.filter(function(n){ return pattern.test(n.getAttribute("aria-label") || n.textContent || ""); });
-      var el = list[${idxExpr}];
-      if (!el) throw new Error("no element for ${this.selector}");
-    `
+    const resolveBlock = this.buildResolveBlock("el")
     if (!isAsync) {
-      return this.wd.execute(`${prelude} return (${fnBody})(el);`) as Promise<R>
+      return this.wd.execute(`${resolveBlock} if (!el) throw new Error(${JSON.stringify(this.missingTargetMsg())}); return (${fnBody})(el);`) as Promise<R>
     }
-    const script = `${prelude} var cb = arguments[arguments.length - 1]; Promise.resolve((${fnBody})(el)).then(cb).catch(function(e){ cb({ __error: String(e) }); });`
+    const script = `
+      var cb = arguments[arguments.length - 1];
+      ${resolveBlock}
+      if (!el) { cb({ __error: ${JSON.stringify(this.missingTargetMsg())} }); return; }
+      Promise.resolve((${fnBody})(el)).then(cb).catch(function(e){ cb({ __error: String(e) }); });
+    `
     return runAsync<R>(this.wd, script)
   }
 
   click(options?: { timeout?: number; button?: "left" | "right" | "middle" }): Promise<void> {
     const timeout = options?.timeout ?? 10_000
+    const button = options?.button ?? "left"
+    if (button === "right") {
+      return this.evaluate(el => {
+        const target = el as HTMLElement
+        const rect = target.getBoundingClientRect()
+        target.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            button: 2,
+            buttons: 2,
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top + rect.height / 2,
+          }),
+        )
+      })
+    }
     return this.wd.waitUntil(
       async () => {
-        await this.wd.execute(
-          (sel, idx, pattern, flags, button) => {
-            const nodes = [...document.querySelectorAll(sel)]
-            let list = nodes
-            if (pattern) {
-              const re = new RegExp(pattern, flags)
-              list = nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? ""))
-            }
-            const resolved = idx < 0 ? Math.max(0, list.length + idx) : idx
-            const el = list[resolved] as HTMLElement | undefined
-            if (!el) throw new Error("missing element")
-            el.scrollIntoView({ block: "nearest", inline: "nearest" })
-            const rect = el.getBoundingClientRect()
-            const x = rect.left + rect.width / 2
-            const y = rect.top + rect.height / 2
-            if (button === "right") {
-              el.dispatchEvent(new MouseEvent("contextmenu", {
-                bubbles: true,
-                cancelable: true,
-                button: 2,
-                buttons: 2,
-                clientX: x,
-                clientY: y,
-              }))
-            } else {
-              el.focus({ preventScroll: true })
-              const eventInit = { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: x, clientY: y }
-              el.dispatchEvent(new MouseEvent("mousedown", eventInit))
-              el.dispatchEvent(new MouseEvent("mouseup", { ...eventInit, buttons: 0 }))
-              el.dispatchEvent(new MouseEvent("click", { ...eventInit, buttons: 0 }))
-            }
-          },
-          this.selector,
-          this.index,
-          this.textFilter instanceof RegExp ? this.textFilter.source : (this.textFilter ?? ""),
-          this.textFilter instanceof RegExp ? this.textFilter.flags : "",
-          options?.button ?? "left",
-        )
+        await this.evaluate(el => {
+          ;(el as HTMLElement).click()
+        })
         return true
       },
       { timeout, timeoutMsg: `click timeout ${this.selector}` },
@@ -128,46 +190,26 @@ class TauriLocator implements ShellLocator {
   }
 
   async fill(value: string): Promise<void> {
-    await this.wd.execute(
-      (sel, idx, pattern, flags, text) => {
-        const nodes = [...document.querySelectorAll(sel)]
-        let list = nodes
-        if (pattern) {
-          const re = new RegExp(pattern, flags)
-          list = nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? ""))
-        }
-        const resolved = idx < 0 ? Math.max(0, list.length + idx) : idx
-        const el = list[resolved] as HTMLElement | undefined
-        if (!el) throw new Error("missing input")
-        el.focus()
-        const fillable =
-          el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable
-            ? el
-            : (el.querySelector("input,textarea,[contenteditable=true]") as HTMLElement | null)
-        if (!fillable) {
-          el.focus()
-          document.execCommand("insertText", false, text)
-        } else if (fillable instanceof HTMLInputElement || fillable instanceof HTMLTextAreaElement) {
-          const setter = Object.getOwnPropertyDescriptor(
-            fillable instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
-            "value",
-          )?.set
-          setter?.call(fillable, text)
-          fillable.dispatchEvent(new Event("input", { bubbles: true }))
-          fillable.dispatchEvent(new Event("change", { bubbles: true }))
-          return
-        } else {
-          fillable.textContent = text
-        }
-        el.dispatchEvent(new Event("input", { bubbles: true }))
-        el.dispatchEvent(new Event("change", { bubbles: true }))
-      },
-      this.selector,
-      this.index,
-      this.textFilter instanceof RegExp ? this.textFilter.source : (this.textFilter ?? ""),
-      this.textFilter instanceof RegExp ? this.textFilter.flags : "",
-      value,
-    )
+    await this.wd.execute(`${this.buildResolveBlock("el")}
+      if (!el) throw new Error(${JSON.stringify(this.missingTargetMsg())});
+      el.focus();
+      var fillable = (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable)
+        ? el
+        : el.querySelector("input,textarea,[contenteditable=true]");
+      if (!fillable) {
+        document.execCommand("insertText", false, ${JSON.stringify(value)});
+      } else if (fillable instanceof HTMLInputElement || fillable instanceof HTMLTextAreaElement) {
+        var proto = fillable instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        var desc = Object.getOwnPropertyDescriptor(proto, "value");
+        if (desc && desc.set) desc.set.call(fillable, ${JSON.stringify(value)});
+        fillable.dispatchEvent(new Event("input", { bubbles: true }));
+        fillable.dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        fillable.textContent = ${JSON.stringify(value)};
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    `)
   }
 
   press(key: string): Promise<void> {
@@ -193,40 +235,23 @@ class TauriLocator implements ShellLocator {
   }
 
   first(): ShellLocator {
-    return new TauriLocator(this.wd, this.selector, 0, this.textFilter)
+    return new TauriLocator(this.wd, this.selector, 0, this.textFilter, this.parent)
   }
 
   nth(index: number): ShellLocator {
-    return new TauriLocator(this.wd, this.selector, index, this.textFilter)
+    return new TauriLocator(this.wd, this.selector, index, this.textFilter, this.parent)
   }
 
   filter(options: { hasText?: string | RegExp }): ShellLocator {
-    return new TauriLocator(this.wd, this.selector, this.index, options.hasText)
+    return new TauriLocator(this.wd, this.selector, this.index, options.hasText, this.parent)
   }
 
   last(): ShellLocator {
-    return new TauriLocator(this.wd, this.selector, -1, this.textFilter)
+    return new TauriLocator(this.wd, this.selector, -1, this.textFilter, this.parent)
   }
 
   async getAttribute(name: string): Promise<string | null> {
-    return this.wd.execute(
-      (sel, idx, pattern, flags, attr) => {
-        const nodes = [...document.querySelectorAll(sel)]
-        let list = nodes
-        if (pattern) {
-          const re = new RegExp(pattern, flags)
-          list = nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? ""))
-        }
-        const resolved = idx < 0 ? Math.max(0, list.length + idx) : idx
-        const el = list[resolved]
-        return el?.getAttribute(attr) ?? null
-      },
-      this.selector,
-      this.index,
-      this.textFilter instanceof RegExp ? this.textFilter.source : (this.textFilter ?? ""),
-      this.textFilter instanceof RegExp ? this.textFilter.flags : "",
-      name,
-    ) as Promise<string | null>
+    return this.wd.execute(`${this.buildResolveBlock("el")} return el ? el.getAttribute(${JSON.stringify(name)}) : null;`) as Promise<string | null>
   }
 
   async textContent(): Promise<string | null> {
@@ -235,15 +260,12 @@ class TauriLocator implements ShellLocator {
 
   getByRole(role: string, options?: { name?: string | RegExp }): ShellLocator {
     const name = options?.name
-    const namePattern = name instanceof RegExp ? name.source : name ?? ""
-    const flags = name instanceof RegExp ? name.flags : "i"
-    const sel = `${this.selector} [role="${role}"]`
-    return new TauriLocator(this.wd, sel, 0, namePattern ? new RegExp(namePattern, flags) : undefined)
+    const namePattern = name instanceof RegExp ? name : name ? new RegExp(escapeRegExp(name), "i") : undefined
+    return new TauriLocator(this.wd, roleSelector(role), 0, namePattern, this)
   }
 
   locator(selector: string): ShellLocator {
-    const scoped = `${this.selector} ${selector}`
-    return new TauriLocator(this.wd, scoped, 0, this.textFilter)
+    return new TauriLocator(this.wd, selector, 0, this.textFilter, this)
   }
 
   async waitFor(options?: { state?: "visible" | "attached" | "hidden"; timeout?: number }): Promise<void> {
@@ -275,67 +297,30 @@ class TauriLocator implements ShellLocator {
   ): Promise<R> {
     await this.waitForElement()
     const fnBody = browserFn(pageFunction.toString())
-    const isAsync = /\basync\b/.test(pageFunction.toString())
-    const pattern =
-      this.textFilter instanceof RegExp
-        ? `new RegExp(${JSON.stringify(this.textFilter.source)}, ${JSON.stringify(this.textFilter.flags)})`
-        : "null"
-    const idxExpr = this.index < 0 ? `Math.max(0, list.length + ${this.index})` : String(this.index)
     const argLiteral = arg === undefined ? "" : JSON.stringify(arg)
-    const prelude = `
-      var nodes = [...document.querySelectorAll(${JSON.stringify(this.selector)})];
-      var list = nodes;
-      var pattern = ${pattern};
-      if (pattern) list = nodes.filter(function(n){ return pattern.test(n.getAttribute("aria-label") || n.textContent || ""); });
-      var el = list[${idxExpr}];
-      if (!el) throw new Error("no element for ${this.selector}");
-    `
-    if (!isAsync) {
-      const call = arg === undefined ? `(${fnBody})(el)` : `(${fnBody})(el, ${argLiteral})`
-      const script = `${prelude} var cb = arguments[arguments.length - 1]; try { Promise.resolve(${call}).then(cb).catch(function(e){ cb({ __error: String(e) }); }); } catch (e) { cb({ __error: String(e) }); }`
-      return runAsync<R>(this.wd, script)
-    }
     const call = arg === undefined ? `(${fnBody})(el)` : `(${fnBody})(el, ${argLiteral})`
-    const script = `${prelude} var cb = arguments[arguments.length - 1]; Promise.resolve(${call}).then(cb).catch(function(e){ cb({ __error: String(e) }); });`
+    const script = `
+      var cb = arguments[arguments.length - 1];
+      ${this.buildResolveBlock("el")}
+      if (!el) { cb({ __error: ${JSON.stringify(this.missingTargetMsg())} }); return; }
+      try { Promise.resolve(${call}).then(cb).catch(function(e){ cb({ __error: String(e) }); }); }
+      catch (e) { cb({ __error: String(e) }); }
+    `
     return runAsync<R>(this.wd, script)
   }
 
   async isVisible(): Promise<boolean> {
-    return this.wd.execute(
-      (sel, idx, pattern, flags) => {
-        const nodes = [...document.querySelectorAll(sel)]
-        let list = nodes
-        if (pattern) {
-          const re = new RegExp(pattern, flags)
-          list = nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? ""))
-        }
-        const resolved = idx < 0 ? Math.max(0, list.length + idx) : idx
-        const el = list[resolved] as HTMLElement | undefined
-        if (!el) return false
-        const cs = getComputedStyle(el)
-        if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false
-        const r = el.getBoundingClientRect()
-        return r.width > 0 && r.height > 0
-      },
-      this.selector,
-      this.index,
-      this.textFilter instanceof RegExp ? this.textFilter.source : (this.textFilter ?? ""),
-      this.textFilter instanceof RegExp ? this.textFilter.flags : "",
-    ) as Promise<boolean>
+    return this.wd.execute(`${this.buildResolveBlock("el")}
+      if (!el) return false;
+      var cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+      var r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    `) as Promise<boolean>
   }
 
   async count(): Promise<number> {
-    return this.wd.execute(
-      (sel, pattern, flags) => {
-        const nodes = [...document.querySelectorAll(sel)]
-        if (!pattern) return nodes.length
-        const re = new RegExp(pattern, flags)
-        return nodes.filter(n => re.test(n.getAttribute("aria-label") ?? n.textContent ?? "")).length
-      },
-      this.selector,
-      this.textFilter instanceof RegExp ? this.textFilter.source : (this.textFilter ?? ""),
-      this.textFilter instanceof RegExp ? this.textFilter.flags : "",
-    ) as Promise<number>
+    return this.wd.execute(`${this.buildListBlock()} return list.length;`) as Promise<number>
   }
 }
 
@@ -371,12 +356,30 @@ function keyValue(key: string): string {
   return WEBDRIVER_KEYS[key] ?? key
 }
 
+async function writeTerminalInput(wd: TauriWebDriver, payload: string): Promise<boolean> {
+  return wd.execute(async (text: string) => {
+    const panel = document.querySelector("[data-jet-terminal-panel][data-jet-terminal-pty-id]")
+    const id = panel?.getAttribute("data-jet-terminal-pty-id")
+    const textarea = document.querySelector("[data-jet-terminal-panel] .xterm-helper-textarea")
+    const active = document.activeElement
+    if (!panel || !id || !window.jet?.terminal) return false
+    const inTerminal =
+      active === textarea ||
+      active === panel ||
+      (active instanceof Element && active.closest("[data-jet-terminal-panel]") != null)
+    if (!inTerminal) return false
+    await window.jet.terminal.write(id, text)
+    return true
+  }, payload) as Promise<boolean>
+}
+
 async function ensureKeyboardFocus(wd: TauriWebDriver): Promise<void> {
   await wd.execute(() => {
     const active = document.activeElement as HTMLElement | null
     if (active && active !== document.body && active !== document.documentElement) return
     const candidates = [
       document.querySelector<HTMLElement>("[data-jet-terminal-panel] .xterm-helper-textarea"),
+      document.querySelector<HTMLElement>('[role="dialog"] input:not([disabled])'),
       document.querySelector<HTMLElement>(".cm-content"),
     ]
     const target = candidates.find(element => {
@@ -397,31 +400,52 @@ function keyActions(events: Array<{ type: "keyDown" | "keyUp"; value: string }>)
   }]
 }
 
+const DOM_KEYBOARD_KEYS = new Set([
+  "Enter",
+  "Escape",
+  "Tab",
+  "Backspace",
+  "Delete",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+])
+
+function dispatchKeyboardEvent(wd: TauriWebDriver, key: string, modifierNames: string[]): Promise<void> {
+  return ensureKeyboardFocus(wd).then(() => wd.execute(
+    (pressedKey, mods) => {
+      const target = document.activeElement ?? document.body
+      const init = {
+        bubbles: true,
+        cancelable: true,
+        key: pressedKey === "Space" ? " " : pressedKey,
+        code: pressedKey === "Space" ? "Space" : pressedKey,
+        altKey: mods.includes("Alt"),
+        ctrlKey: mods.includes("Control") || mods.includes("Ctrl"),
+        metaKey: mods.includes("Meta"),
+        shiftKey: mods.includes("Shift"),
+      }
+      target.dispatchEvent(new KeyboardEvent("keydown", init))
+      target.dispatchEvent(new KeyboardEvent("keypress", init))
+      target.dispatchEvent(new KeyboardEvent("keyup", init))
+    },
+    key,
+    modifierNames,
+  ))
+}
+
 function dispatchKey(wd: TauriWebDriver, key: string): Promise<void> {
   const parts = key.split("+")
   const mainName = parts.pop() ?? key
   const main = keyValue(mainName)
   const modifiers = parts.map(keyValue)
-  if (modifiers.length > 0 || mainName === "Escape") {
-    return ensureKeyboardFocus(wd).then(() => wd.execute(
-      (pressedKey, modifierNames) => {
-        const target = document.activeElement ?? document.body
-        const init = {
-          bubbles: true,
-          cancelable: true,
-          key: pressedKey === "Space" ? " " : pressedKey,
-          code: pressedKey === "Space" ? "Space" : pressedKey,
-          altKey: modifierNames.includes("Alt"),
-          ctrlKey: modifierNames.includes("Control") || modifierNames.includes("Ctrl"),
-          metaKey: modifierNames.includes("Meta"),
-          shiftKey: modifierNames.includes("Shift"),
-        }
-        target.dispatchEvent(new KeyboardEvent("keydown", init))
-        target.dispatchEvent(new KeyboardEvent("keyup", init))
-      },
-      mainName,
-      parts,
-    ))
+  if (modifiers.length > 0 || DOM_KEYBOARD_KEYS.has(mainName)) {
+    return dispatchKeyboardEvent(wd, mainName, parts)
   }
   return ensureKeyboardFocus(wd).then(() => wd.sendKeys(main))
 }
@@ -429,8 +453,15 @@ function dispatchKey(wd: TauriWebDriver, key: string): Promise<void> {
 export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
   const heldModifiers = new Set<string>()
   const keyboard = {
-    press: (key: string) => dispatchKey(wd, key),
+    press: async (key: string) => {
+      if (key === "Enter" || key === "Return") {
+        if (await writeTerminalInput(wd, "\r\n")) return
+        if (await writeTerminalInput(wd, "\n")) return
+      }
+      return dispatchKey(wd, key)
+    },
     type: async (text: string) => {
+      if (await writeTerminalInput(wd, text)) return
       await ensureKeyboardFocus(wd)
       for (const char of text) await wd.sendKeys(char)
     },
@@ -457,13 +488,22 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
     move: async (x: number, y: number) => {
       await wd.execute(
         (px, py, modifiers) => {
-          const el = document.elementFromPoint(px, py)
-          el?.dispatchEvent(new MouseEvent("mousemove", {
+          const editor = document.querySelector(".cm-editor")
+          const content = document.querySelector(".cm-content")
+          const init = {
             bubbles: true,
             clientX: px,
             clientY: py,
-            ...modifiers,
-          }))
+            metaKey: !!modifiers.metaKey,
+            ctrlKey: !!modifiers.ctrlKey,
+            altKey: !!modifiers.altKey,
+            shiftKey: !!modifiers.shiftKey,
+          }
+          const el = document.elementFromPoint(px, py)
+          el?.dispatchEvent(new MouseEvent("mousemove", init))
+          el?.dispatchEvent(new MouseEvent("mouseover", init))
+          content?.dispatchEvent(new MouseEvent("mousemove", init))
+          editor?.dispatchEvent(new MouseEvent("mousemove", init))
         },
         x,
         y,
@@ -483,8 +523,26 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
     click: async (x: number, y: number) => {
       await wd.execute(
         (px, py, modifiers) => {
+          const init = {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            buttons: 1,
+            clientX: px,
+            clientY: py,
+            metaKey: !!modifiers.metaKey,
+            ctrlKey: !!modifiers.ctrlKey,
+            altKey: !!modifiers.altKey,
+            shiftKey: !!modifiers.shiftKey,
+          }
+          const editor = document.querySelector(".cm-editor")
+          if (editor) {
+            editor.dispatchEvent(new MouseEvent("mousedown", init))
+            editor.dispatchEvent(new MouseEvent("mouseup", init))
+            editor.dispatchEvent(new MouseEvent("click", init))
+            return
+          }
           const el = document.elementFromPoint(px, py) as HTMLElement | null
-          const init = { bubbles: true, clientX: px, clientY: py, ...modifiers }
           el?.dispatchEvent(new MouseEvent("mousedown", init))
           el?.dispatchEvent(new MouseEvent("mouseup", init))
           el?.dispatchEvent(new MouseEvent("click", init))
@@ -501,7 +559,11 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
       const fnBody = browserFn(pageFunction.toString())
       const argLiteral = arg === undefined ? "" : `(${JSON.stringify(arg)})`
       const call = arg === undefined ? `(${fnBody})()` : `(${fnBody})${argLiteral}`
-      const script = `var cb = arguments[arguments.length - 1]; Promise.resolve(${call}).then(cb).catch(function(e){ cb({ __error: String(e) }); });`
+      const script = `
+        var cb = arguments[arguments.length - 1];
+        try { Promise.resolve(${call}).then(cb).catch(function(e){ cb({ __error: String(e) }); }); }
+        catch (e) { cb({ __error: String(e) }); }
+      `
       return runAsync<R>(wd, script)
     },
     waitForFunction(pageFunction, arg, options) {
@@ -550,9 +612,8 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
     },
     getByRole(role, options) {
       const name = options?.name
-      const sel = `[role="${role}"]`
-      const filter = name instanceof RegExp ? name : name ? new RegExp(name, "i") : undefined
-      return new TauriLocator(wd, sel, 0, filter)
+      const filter = name instanceof RegExp ? name : name ? new RegExp(escapeRegExp(name), "i") : undefined
+      return new TauriLocator(wd, roleSelector(role), 0, filter)
     },
     getByPlaceholder(text) {
       const pattern = text instanceof RegExp ? text : new RegExp(text, "i")
@@ -576,6 +637,19 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
     },
     fillSelector(selector, value) {
       return new TauriLocator(wd, selector).fill(value)
+    },
+    reload() {
+      return (async () => {
+        await wd.execute(() => {
+          window.location.reload()
+        })
+        await wd.waitUntil(
+          async () =>
+            !!(await wd.execute(() => document.readyState === "complete" && window.__jetAgent != null)),
+          { timeout: 60_000, timeoutMsg: "reload __jetAgent" },
+        )
+        await waitForJetReady(wd)
+      })()
     },
   }
 }

@@ -13,7 +13,7 @@ import {
   expectNotContainsText,
 } from "../shell/assert.js"
 
-import { execCommand, launchJet, openFixtureFile } from "./_launch.js"
+import { execCommand, launchJet, openBufferList, openFixtureFile } from "./_launch.js"
 
 test.describe("electron buffer list", () => {
   test("lists open buffers and switches active file", async () => {
@@ -22,8 +22,7 @@ test.describe("electron buffer list", () => {
       await openFixtureFile(page, "src/index.ts")
       await openFixtureFile(page, "src/utils.ts")
 
-      await execCommand(page, "workspace.bufferList")
-      await expectLocatorVisible(page.getByRole("dialog"))
+      await openBufferList(page)
       await expectLocatorContainsText(page.getByRole("dialog"), "index.ts")
       await expectLocatorContainsText(page.getByRole("dialog"), "utils.ts")
 

@@ -85,7 +85,13 @@ function waitForPort(port: number, timeoutMs = 60_000): Promise<void> {
   })
 }
 
-let portCounter = 4445
+let launchSerial = 0
+
+function allocateWebDriverPort(): number {
+  const worker = Number(process.env.TEST_WORKER_INDEX ?? 0)
+  const serial = launchSerial++ % 40
+  return 4445 + worker * 100 + serial
+}
 
 export type LaunchTauriOptions = {
   workspaceRel?: string
@@ -100,7 +106,7 @@ export async function launchTauri(
   const opts: LaunchTauriOptions =
     typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
   const workspacePath = resolve(REPO_ROOT, opts.workspaceRel ?? "fixtures/sample-workspace")
-  const port = portCounter++
+  const port = allocateWebDriverPort()
   const pathEnv = ["/opt/homebrew/bin", "/usr/local/bin", process.env.PATH ?? ""].join(":")
 
   const args = opts.launchWithoutWorkspace ? [] : [workspacePath]

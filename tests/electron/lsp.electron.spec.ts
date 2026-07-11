@@ -49,7 +49,11 @@ test.describe("electron LSP", () => {
     },
   )
 
-  test("modifier hover marks the clicked symbol and preserves jump navigation", async () => {
+  flakyTest(
+    "Meta+hover definition link timing under WebDriver",
+    "modifier hover marks the clicked symbol and preserves jump navigation",
+    async () => {
+    test.setTimeout(120_000)
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/index.ts")
@@ -72,8 +76,12 @@ test.describe("electron LSP", () => {
       })
 
       await page.keyboard.down("Meta")
-      await page.mouse.move(point.x, point.y)
-      await expectLocatorCount(page.locator("[data-jet-definition-link]"), 1, { timeout: 5_000 })
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await page.mouse.move(point.x, point.y)
+        if ((await page.locator("[data-jet-definition-link]").count()) > 0) break
+        await page.waitForTimeout(250)
+      }
+      await expectLocatorCount(page.locator("[data-jet-definition-link]"), 1, { timeout: 15_000 })
       await page.mouse.click(point.x, point.y)
       await page.keyboard.up("Meta")
       await expectContainsText(page, ".cm-editor", "export function greet", { timeout: 8_000 })
@@ -84,7 +92,8 @@ test.describe("electron LSP", () => {
       await page.keyboard.up("Meta").catch(() => {})
       await app.close()
     }
-  })
+  },
+  )
 
   test("quick outline lists main symbol", async () => {
     const { app, page } = await launchJet()

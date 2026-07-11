@@ -39,12 +39,26 @@ test.describe("electron color scheme and zoom", () => {
   test("zoom commands change reported font size", async () => {
     const { app, page } = await launchJet()
     try {
+      await page.evaluate(() => {
+        localStorage.removeItem("jet-font-size")
+        localStorage.removeItem("jet-appearance-settings")
+        window.__jetAgent!.setFontSize(13)
+      })
+      await expect
+        .poll(() => page.evaluate(() => window.__jetAgent!.getState().fontSize))
+        .toBe(13)
+
       const before = await page.evaluate(() => window.__jetAgent!.getState().fontSize)
       await execCommand(page, "ui.zoomIn")
+      await expect
+        .poll(() => page.evaluate(() => window.__jetAgent!.getState().fontSize))
+        .toBeGreaterThan(before)
       const afterIn = await page.evaluate(() => window.__jetAgent!.getState().fontSize)
-      expect(afterIn).toBeGreaterThan(before)
 
       await execCommand(page, "ui.zoomOut")
+      await expect
+        .poll(() => page.evaluate(() => window.__jetAgent!.getState().fontSize))
+        .toBeLessThanOrEqual(afterIn)
       const afterOut = await page.evaluate(() => window.__jetAgent!.getState().fontSize)
       expect(afterOut).toBeLessThanOrEqual(afterIn)
     } finally {

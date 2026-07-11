@@ -11,7 +11,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { launchJet, openFixtureFile, readTerminalText, REPO_ROOT, showTerminal } from "./_launch.js"
+import { launchJet, openFixtureFile, readTerminalText, REPO_ROOT, showTerminal, focusTerminal } from "./_launch.js"
 import { resolve } from "node:path"
 
 test.describe("electron workspace tab isolation", () => {
@@ -66,11 +66,10 @@ test.describe("electron workspace tab isolation", () => {
     const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
     try {
       await showTerminal(page)
-      const surface = page.locator("[data-jet-terminal-panel] .jet-terminal-surface")
-      await surface.click()
+      await focusTerminal(page)
       await page.keyboard.type("printf JET_PTY_SURVIVES")
       await page.keyboard.press("Enter")
-      await expect.poll(() => readTerminalText(page)).toContain("JET_PTY_SURVIVES")
+      await expect.poll(() => readTerminalText(page), { timeout: 15_000 }).toContain("JET_PTY_SURVIVES")
 
       await page.evaluate(path => window.__jetAgent!.openWorkspace(path), secondPath)
       await expect

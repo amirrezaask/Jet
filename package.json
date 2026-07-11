@@ -5,7 +5,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev --filter=jet-desktop",
     "dev:tauri": "pnpm --filter jet-tauri dev",
-    "test:tauri": "playwright test --project=tauri --project=tauri-e2e",
+    "test:tauri": "playwright test --project=tauri && PLAYWRIGHT_WORKERS=1 playwright test --project=tauri-e2e",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test && pnpm --filter @jet/app test",

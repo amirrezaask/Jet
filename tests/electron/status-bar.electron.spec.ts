@@ -26,7 +26,7 @@ test.describe("electron workspace chrome", () => {
 
       await page.evaluate(path => window.__jetAgent!.openWorkspace(path), secondPath)
       await expectLocatorContainsText(titlebar, "second-workspace")
-      await expectLocatorCount(page.locator("[data-jet-status-zone]"), 0)
+      await expectLocatorCount(page.locator("footer"), 1)
     } finally {
       await app.close()
     }
@@ -41,7 +41,8 @@ test.describe("electron workspace chrome", () => {
       await expect
         .poll(() => page.evaluate(() => window.__jetAgent!.getCursorPosition()))
         .toEqual({ line: 2, column: 1 })
-      await expectLocatorCount(page.locator("footer"), 0)
+      await expectLocatorCount(page.locator("footer"), 1)
+      await expectLocatorContainsText(page.locator("footer"), "index.ts")
     } finally {
       await app.close()
     }

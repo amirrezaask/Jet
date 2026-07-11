@@ -113,14 +113,25 @@ function createWebDriver(port = 4445) {
     },
 
     async sendKeys(text) {
-      const found = await sessionRequest("GET", "/element/active")
-      const element = found && typeof found === "object" && "value" in found ? found.value : found
-      const id = element?.["element-6066-11e4-a52e-4f735466cecf"] ?? element?.ELEMENT
-      if (!id) throw new Error("active element not found")
-      await sessionRequest("POST", `/element/${encodeURIComponent(id)}/value`, {
-        text,
-        value: [...text],
-      })
+      if (!text) return
+      await this.execute(keys => {
+        const active = document.activeElement
+        if (!active) throw new Error("active element not found")
+        if (active.isContentEditable) {
+          document.execCommand("insertText", false, keys)
+          return
+        }
+        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+          const proto =
+            active instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+          const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set
+          setter?.call(active, `${active.value}${keys}`)
+          active.dispatchEvent(new InputEvent("input", { bubbles: true, data: keys, inputType: "insertText" }))
+          active.dispatchEvent(new Event("change", { bubbles: true }))
+          return
+        }
+        document.execCommand("insertText", false, keys)
+      }, text)
     },
 
     async waitUntil(fn, { timeout = 15_000, interval = 250, timeoutMsg } = {}) {

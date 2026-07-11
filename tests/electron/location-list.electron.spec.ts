@@ -13,7 +13,7 @@ import {
   expectNotContainsText,
 } from "../shell/assert.js"
 
-import { execCommand, launchJet, openFixtureFile, waitForSearchReady } from "./_launch.js"
+import { execCommand, launchJet, openFixtureFile, waitForLspConnected, waitForSearchReady } from "./_launch.js"
 import {
   expectLayout,
   expectNoClipping,
@@ -44,7 +44,9 @@ test.describe("electron location list", () => {
 
       await page.locator('input[type="search"]').click()
       await page.keyboard.type("main")
-      await page.waitForTimeout(2500)
+      await expect
+        .poll(async () => page.locator(ITEM_SEL).count(), { timeout: 30_000 })
+        .toBeGreaterThan(0)
 
       await expectNotContainsText(page, SEARCH_LIST_PANEL, "No results")
       await expectLayout(page, { selector: ITEM_SEL, minItems: 1, minRowHeight: 22 })
@@ -88,7 +90,9 @@ test.describe("electron location list", () => {
 
       await page.locator('input[type="search"]').click()
       await page.keyboard.type("greet")
-      await page.waitForTimeout(2500)
+      await expect
+        .poll(async () => page.locator(ITEM_SEL).count(), { timeout: 30_000 })
+        .toBeGreaterThan(0)
 
       await expectNotContainsText(page, SEARCH_LIST_PANEL, "No results")
       await expectLayout(page, { selector: ITEM_SEL, minItems: 1, minRowHeight: 22 })
@@ -103,14 +107,20 @@ test.describe("electron location list", () => {
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/lint-error.ts")
-      await page.waitForTimeout(1500)
+      await waitForLspConnected(page)
+      await page.waitForTimeout(2000)
 
       await page.evaluate(async () => {
         await window.__jetAgent!.executeCommand("locationlist.showProblems")
       })
-      await page.waitForTimeout(1500)
+
+      const problemsSel = problemsListItems()
+      await expect
+        .poll(async () => page.locator(problemsSel).count(), { timeout: 30_000 })
+        .toBeGreaterThan(0)
 
       await expectNotContainsText(page, PROBLEMS_PANEL, "No results")
+      await expectContainsText(page, PROBLEMS_PANEL, /error|Type|problem/i)
       await expectLayout(page, { selector: problemsListItems(), minItems: 1, minRowHeight: 22 })
       await expectRowTextReadable(page, { selector: problemsListItems(), minItems: 1, minContrastRatio: 3 })
       await expectRowTextVisible(page, { selector: problemsListItems(), minItems: 1, minGlyphHeightPx: 10 })
