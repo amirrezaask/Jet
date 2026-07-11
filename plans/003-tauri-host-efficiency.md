@@ -12,6 +12,7 @@
 - **Depends on**: `plans/001-tauri-verification.md`
 - **Category**: bug / performance
 - **Planned at**: commit `a52fab2`, 2026-07-11
+- **Completed**: 2026-07-12 — watcher cancel/gen gates, LSP blocking idle timeouts, terminal deque bounds, lifecycle tests.
 
 ## Why this matters
 

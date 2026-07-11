@@ -12,6 +12,7 @@
 - **Depends on**: none
 - **Category**: tests / DX
 - **Planned at**: commit `a52fab2`, 2026-07-11
+- **Completed**: 2026-07-12 — CI + critical-path restore done; full WDIO service rewrite STOP'd (adapter sufficient). Agents E2E excluded by user.
 
 ## Why this matters
 

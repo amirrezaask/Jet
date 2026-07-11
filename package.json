@@ -3,20 +3,19 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --filter=jet-desktop",
+    "dev": "pnpm --filter jet-tauri dev",
     "dev:tauri": "pnpm --filter jet-tauri dev",
     "test:tauri": "playwright test --project=tauri && PLAYWRIGHT_WORKERS=1 playwright test --project=tauri-e2e",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test && pnpm --filter @jet/app test",
-    "test:electron": "pnpm --filter @jet/node-host build && pnpm --filter jet-desktop build && playwright test --project=electron",
-    "test:bench": "pnpm --filter @jet/node-host build && pnpm --filter jet-desktop build && playwright test --project=bench",
+    "test:electron": "echo 'Electron shell removed; use pnpm test:tauri (tauri-e2e runs tests/electron specs)' && exit 1",
+    "test:bench": "JET_SHELL=tauri playwright test --project=bench",
     "bench:startup:tauri": "pnpm --filter jet-tauri bench:startup:debug && pnpm --filter jet-tauri bench:startup:release",
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
-    "release": "pnpm --filter jet-desktop release && cp -r ./apps/jet-desktop/release/mac-arm64/Jet.app ~/Applications/",
-    "release:tauri": "pnpm --filter jet-tauri release && cp -r ./apps/jet-tauri/src-tauri/target/release/bundle/macos/Jet-Tauri.app ~/Applications/",
-    "postinstall": "node scripts/ensure-electron.mjs && pnpm rebuild electron && node scripts/fix-node-pty-perms.mjs"
+    "release": "pnpm --filter jet-tauri release && cp -r ./apps/jet-tauri/src-tauri/target/release/bundle/macos/Jet-Tauri.app ~/Applications/",
+    "release:tauri": "pnpm --filter jet-tauri release && cp -r ./apps/jet-tauri/src-tauri/target/release/bundle/macos/Jet-Tauri.app ~/Applications/"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

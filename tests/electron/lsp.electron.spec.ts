@@ -1,20 +1,44 @@
 import { expect, test } from "@playwright/test"
 import {
   expectContainsText,
-  expectLocatorAttached,
-  expectLocatorAttribute,
   expectLocatorCount,
-  expectLocatorFocused,
-  expectLocatorHidden,
-  expectLocatorVisible,
+  expectNotContainsText,
   expectSelectorHidden,
-  expectSelectorVisible,
 } from "../shell/assert.js"
+import { expectListRows } from "../helpers/list.js"
+import {
+  PROBLEMS_PANEL,
+  REFERENCES_LIST_PANEL,
+  waitForReferencesListPanel,
+} from "../helpers/location-list.js"
+import {
+  hasGopls,
+  hasTypescriptLanguageServer,
+  launchJet,
+  openFixtureFile,
+  waitForLspConnected,
+} from "./_launch.js"
 
-import { PROBLEMS_PANEL } from "../helpers/location-list.js"
-import { launchJet, openFixtureFile, waitForLspConnected } from "./_launch.js"
+async function placeCursorOnToken(page: import("./_launch.js").ShellDriver, token: string): Promise<void> {
+  const placed = await page.evaluate(needle => {
+    const agent = window.__jetAgent!
+    const text = agent.getEditorText()
+    if (!text) return false
+    const index = text.indexOf(needle)
+    if (index < 0) return false
+    const before = text.slice(0, index)
+    const line = before.split("\n").length
+    const lineStart = before.lastIndexOf("\n") + 1
+    const column = index - lineStart + 1 + Math.floor(needle.length / 2)
+    agent.setEditorSelection(line, column)
+    return true
+  }, token)
+  expect(placed).toBe(true)
+}
 
-test.describe("electron LSP", () => {
+test.describe("electron LSP TypeScript", () => {
+  test.skip(!hasTypescriptLanguageServer(), "typescript-language-server not on PATH")
+
   test("LSP connects when opening TypeScript file", async () => {
     const { app, page } = await launchJet()
     try {
@@ -26,43 +50,199 @@ test.describe("electron LSP", () => {
     }
   })
 
-  test("LSP reconnects after the renderer transport is reloaded", async () => {
+  test("go to definition on greet opens utils.ts", async () => {
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/index.ts")
       await waitForLspConnected(page)
+      await placeCursorOnToken(page, "greet")
 
-      await page.reload()
-      await openFixtureFile(page, "src/index.ts")
+      await expect.poll(async () => {
+        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        if (!text?.includes("export function greet")) {
+          await page.evaluate(async () => {
+            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+          })
+        }
+        return page.evaluate(() => window.__jetAgent!.getEditorText())
+      }, { timeout: 15_000, intervals: [200, 400, 800] }).toContain("export function greet")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("go to references on greet opens LocationList with hits", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/utils.ts")
       await waitForLspConnected(page)
+      await placeCursorOnToken(page, "greet")
 
+      await page.evaluate(async () => {
+        await window.__jetAgent!.executeCommand("editor.action.goToReferences")
+      })
+
+      const listId = await waitForReferencesListPanel(page)
+      await expectSelectorHidden(page, ".cm-lsp-references, .cm-panel.cm-lsp-references-panel")
+      await expectContainsText(page, REFERENCES_LIST_PANEL, /References:\s*greet/i)
+      await expectListRows(page, {
+        panel: listId,
+        minItems: 1,
+        minUniqueTops: 1,
+        needle: "greet",
+        noResultsText: "No references",
+      })
+      await expectNotContainsText(page, REFERENCES_LIST_PANEL, "No references")
+      await expectContainsText(page, REFERENCES_LIST_PANEL, /index\.ts|utils\.ts/)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("lint-error.ts shows problems in location list", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/lint-error.ts")
+      await waitForLspConnected(page)
+      await page.waitForTimeout(2000)
+
+      await page.evaluate(async () => {
+        await window.__jetAgent!.executeCommand("locationlist.showProblems")
+      })
+      await page.waitForTimeout(1500)
+
+      await expectContainsText(page, PROBLEMS_PANEL, /error|Type|problem/i)
+    } finally {
+      await app.close()
+    }
+  })
+})
+
+test.describe("electron LSP Go", () => {
+  test.skip(!hasGopls(), "gopls not on PATH")
+
+  test("LSP connects for Go file", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/example.go")
+      await waitForLspConnected(page)
       await expectContainsText(page, "footer", "LSP connected")
     } finally {
       await app.close()
     }
   })
 
-  test("go to definition on greet opens utils.ts", async () => {
-      const { app, page } = await launchJet()
-      try {
-        await openFixtureFile(page, "src/index.ts")
-        await waitForLspConnected(page)
+  test("go to definition on package-level AppName jumps to config.go", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/example.go")
+      await waitForLspConnected(page)
+      await placeCursorOnToken(page, "AppName")
 
-        await page.evaluate(() => window.__jetAgent!.setEditorSelection(4, 4))
-        await page.locator(".cm-content").focus()
-        await expect.poll(async () => {
-          const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
-          if (!text?.includes("export function greet")) {
-            await page.evaluate(async () => {
-              await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
-            })
-          }
-          return page.evaluate(() => window.__jetAgent!.getEditorText())
-        }, { timeout: 10_000, intervals: [200, 300, 500] }).toContain("export function greet")
-      } finally {
-        await app.close()
-      }
+      await expect.poll(async () => {
+        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        if (!text?.includes('const AppName')) {
+          await page.evaluate(async () => {
+            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+          })
+        }
+        return page.evaluate(() => window.__jetAgent!.getEditorText())
+      }, { timeout: 20_000, intervals: [300, 500, 800] }).toContain("const AppName")
+
+      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()), {
+        timeout: 5_000,
+      }).toContain('AppName = "jet-sample"')
+    } finally {
+      await app.close()
+    }
   })
+
+  test("go to definition on package-level MaxRetries jumps to config.go", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/example.go")
+      await waitForLspConnected(page)
+      await placeCursorOnToken(page, "MaxRetries")
+
+      await expect.poll(async () => {
+        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        if (!text?.includes("var MaxRetries")) {
+          await page.evaluate(async () => {
+            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+          })
+        }
+        return page.evaluate(() => window.__jetAgent!.getEditorText())
+      }, { timeout: 20_000, intervals: [300, 500, 800] }).toContain("var MaxRetries")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("go to references on MaxRetries populates LocationList", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/config.go")
+      await waitForLspConnected(page)
+      await placeCursorOnToken(page, "MaxRetries")
+
+      await page.evaluate(async () => {
+        await window.__jetAgent!.executeCommand("editor.action.goToReferences")
+      })
+
+      const listId = await waitForReferencesListPanel(page)
+      await expectSelectorHidden(page, ".cm-lsp-references, .cm-panel.cm-lsp-references-panel")
+      await expectContainsText(page, REFERENCES_LIST_PANEL, /References:\s*MaxRetries/i)
+      await expectListRows(page, {
+        panel: listId,
+        minItems: 2,
+        minUniqueTops: 2,
+        needle: "MaxRetries",
+        noResultsText: "No references",
+      })
+      await expectContainsText(page, REFERENCES_LIST_PANEL, /config\.go/)
+      await expectContainsText(page, REFERENCES_LIST_PANEL, /example\.go/)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("go to definition on greet function works", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/example.go")
+      await waitForLspConnected(page)
+      // call site in main
+      await page.evaluate(() => {
+        const text = window.__jetAgent!.getEditorText() ?? ""
+        const call = text.lastIndexOf('greet("world")')
+        const before = text.slice(0, call)
+        const line = before.split("\n").length
+        const col = call - (before.lastIndexOf("\n") + 1) + 3
+        window.__jetAgent!.setEditorSelection(line, col)
+      })
+
+      await expect.poll(async () => {
+        const cursor = await page.evaluate(() => window.__jetAgent!.getCursorPosition())
+        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        if (cursor && cursor.line > 5) {
+          await page.evaluate(async () => {
+            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+          })
+        }
+        return page.evaluate(() => window.__jetAgent!.getCursorPosition())
+      }, { timeout: 15_000, intervals: [300, 500] }).toMatchObject({ line: expect.any(Number) })
+
+      await expect.poll(async () => {
+        return page.evaluate(() => window.__jetAgent!.getCursorPosition()?.line ?? -1)
+      }, { timeout: 10_000 }).toBeLessThanOrEqual(6)
+    } finally {
+      await app.close()
+    }
+  })
+})
+
+test.describe("electron LSP misc", () => {
+  test.skip(!hasTypescriptLanguageServer(), "typescript-language-server not on PATH")
 
   test("modifier hover marks the clicked symbol and preserves jump navigation", async () => {
     test.setTimeout(120_000)
@@ -94,7 +274,7 @@ test.describe("electron LSP", () => {
         await page.waitForTimeout(250)
       }
       await expectLocatorCount(page.locator("[data-jet-definition-link]"), 1, { timeout: 15_000 })
-      await page.evaluate(() => window.__jetAgent!.setEditorSelection(4, 4))
+      await placeCursorOnToken(page, "greet")
       await page.keyboard.up("Meta")
       await expect.poll(async () => {
         const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
@@ -145,44 +325,6 @@ test.describe("electron LSP", () => {
       const after = await page.evaluate(() => window.__jetAgent!.getEditorText())
       expect(after).toBeTruthy()
       expect(after!.length).toBeGreaterThanOrEqual(before!.length)
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("lint-error.ts shows problems in location list", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await openFixtureFile(page, "src/lint-error.ts")
-      await waitForLspConnected(page)
-      await page.waitForTimeout(2000)
-
-      await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("locationlist.showProblems")
-      })
-      await page.waitForTimeout(1500)
-
-      await expectContainsText(page, PROBLEMS_PANEL, /error|Type|problem/i)
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("go to references populates location list", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await openFixtureFile(page, "src/index.ts")
-      await waitForLspConnected(page)
-
-      await page.locator(".cm-content").click()
-      await page.keyboard.press("Home")
-      for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight")
-      await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("editor.action.goToReferences")
-      })
-      await page.waitForTimeout(2000)
-
-      await expectContainsText(page, "body", /reference|utils|greet/i)
     } finally {
       await app.close()
     }

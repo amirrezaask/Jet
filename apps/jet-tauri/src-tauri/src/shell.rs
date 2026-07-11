@@ -350,8 +350,7 @@ fn apply_chrome_colors(window: &WebviewWindow, colors: &NativeChromeColors) -> R
     Ok(())
 }
 
-/// Electron `trafficLightPosition: { x: 14, y: 11 }` — keep in sync with
-/// `apps/jet-desktop/src/main/main.ts` and `tauri.conf.json`.
+/// Traffic-light inset `{ x: 14, y: 11 }` — keep in sync with `tauri.conf.json`.
 #[cfg(target_os = "macos")]
 pub const TRAFFIC_LIGHT_X: f64 = 14.0;
 #[cfg(target_os = "macos")]

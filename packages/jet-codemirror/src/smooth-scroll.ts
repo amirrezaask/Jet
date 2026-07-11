@@ -4,13 +4,8 @@ import {
   RadScrollController,
   onReducedMotionChange,
   prefersReducedMotion,
+  wheelDeltaPixels,
 } from "@jet/shared"
-
-function wheelPixels(event: WheelEvent, lineHeight: number, pageHeight: number): number {
-  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * lineHeight
-  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return event.deltaY * pageHeight
-  return event.deltaY
-}
 
 class SmoothEditorScroll {
   private reduced = prefersReducedMotion()
@@ -68,7 +63,7 @@ class SmoothEditorScroll {
   private readonly onWheel = (event: WheelEvent): void => {
     if (event.deltaY === 0 || event.shiftKey || event.ctrlKey || event.metaKey) return
     const lineHeight = this.view.defaultLineHeight || 16
-    const delta = wheelPixels(event, lineHeight, this.view.scrollDOM.clientHeight)
+    const delta = wheelDeltaPixels(event, lineHeight, this.view.scrollDOM.clientHeight)
     if (delta === 0) return
     event.preventDefault()
     event.stopImmediatePropagation()

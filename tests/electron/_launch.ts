@@ -1,9 +1,5 @@
-import { _electron as electron } from "@playwright/test"
 import { resolve } from "node:path"
 import { execFileSync, execSync } from "node:child_process"
-import { mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { wrapPlaywrightPage } from "../shell/playwright-driver.js"
 import { launchTauri } from "../shell/launch-tauri.js"
 import type { LaunchShellResult, ShellDriver } from "../shell/driver.js"
 
@@ -16,30 +12,11 @@ export type LaunchJetOptions = {
 }
 
 export const REPO_ROOT = resolve(__dirname, "..", "..")
-export const DESKTOP_DIR = resolve(REPO_ROOT, "apps/jet-desktop")
-export const MAIN_JS = resolve(DESKTOP_DIR, "dist-electron/main.js")
 export const SAMPLE = "fixtures/sample-workspace"
 
-let ptySpawnAvailable: boolean | null = null
-
+/** Tauri host owns PTY; assume available on Unix CI/dev machines. */
 export function hasPtySpawn(): boolean {
-  if (ptySpawnAvailable != null) return ptySpawnAvailable
-  try {
-    const { spawn } = require(require.resolve("node-pty", { paths: [DESKTOP_DIR] })) as typeof import("node-pty")
-    const shell = process.env.SHELL || "/bin/zsh"
-    const pty = spawn(shell, ["-il"], {
-      name: "xterm-256color",
-      cwd: process.env.HOME || "/",
-      env: process.env as Record<string, string>,
-      cols: 80,
-      rows: 24,
-    })
-    pty.kill()
-    ptySpawnAvailable = true
-  } catch {
-    ptySpawnAvailable = false
-  }
-  return ptySpawnAvailable
+  return process.platform !== "win32"
 }
 
 export function hasTypescriptLanguageServer(): boolean {
@@ -59,6 +36,25 @@ export function hasTypescriptLanguageServer(): boolean {
   return false
 }
 
+export function hasGopls(): boolean {
+  const candidates = [
+    "/opt/homebrew/bin/gopls",
+    "/usr/local/bin/gopls",
+    `${process.env.HOME ?? ""}/.local/share/nvim/mason/bin/gopls`,
+    "gopls",
+  ]
+  for (const command of candidates) {
+    if (!command) continue
+    try {
+      execFileSync(command, ["version"], { stdio: "ignore" })
+      return true
+    } catch {
+      /* try next */
+    }
+  }
+  return false
+}
+
 export function hasCursorAgent(): boolean {
   try {
     execSync("which cursor-agent", { stdio: "ignore" })
@@ -73,71 +69,13 @@ export function hasCursorAgent(): boolean {
   }
 }
 
-function isTauriShell(): boolean {
-  return process.env.JET_SHELL === "tauri" || process.env.PLAYWRIGHT_PROJECT_NAME === "tauri-e2e"
-}
-
+/** Shared E2E entry — Tauri shell only (Electron retired). Specs stay under tests/electron/. */
 export async function launchJet(
   workspaceRelOrOpts: string | LaunchJetOptions = SAMPLE,
 ): Promise<LaunchShellResult> {
-  if (isTauriShell()) {
-    const opts: LaunchJetOptions =
-      typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
-    return launchTauri(opts)
-  }
-
   const opts: LaunchJetOptions =
     typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
-  const workspaceRel = opts.workspaceRel ?? SAMPLE
-  const workspacePath = resolve(REPO_ROOT, workspaceRel)
-  const userDataDir = opts.userDataDir ?? mkdtempSync(resolve(tmpdir(), "jet-e2e-"))
-  const pathEnv = [
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    process.env.PATH ?? "",
-  ].join(":")
-  const workerStaggerMs = Number(process.env.TEST_PARALLEL_INDEX ?? 0) * 400
-  if (workerStaggerMs > 0) {
-    await new Promise(r => setTimeout(r, workerStaggerMs))
-  }
-  const app = await electron.launch({
-    args: opts.launchWithoutWorkspace ? [MAIN_JS] : [MAIN_JS, "--", workspacePath],
-    cwd: DESKTOP_DIR,
-    env: {
-      ...process.env,
-      ...opts.env,
-      PATH: pathEnv,
-      JET_E2E: "1",
-      JET_E2E_USER_DATA: userDataDir,
-      ...(process.env.JET_HEADED ? { JET_HEADED: process.env.JET_HEADED } : {}),
-      ...(process.env.PWDEBUG ? { PWDEBUG: process.env.PWDEBUG } : {}),
-    },
-  })
-
-  const rawPage = await waitForAppPage(app)
-  await rawPage.waitForLoadState("domcontentloaded")
-  await rawPage.waitForFunction(() => window.__jetAgent != null, null, { timeout: 30_000 })
-  await rawPage.evaluate(async () => {
-    await window.__jetAgent!.waitForReady()
-  })
-  const page = wrapPlaywrightPage(rawPage)
-  return {
-    app: { close: () => app.close() },
-    page,
-  }
-}
-
-/** Playwright may surface DevTools as firstWindow(); pick the renderer shell. */
-async function waitForAppPage(app: Awaited<ReturnType<typeof electron.launch>>) {
-  for (let i = 0; i < 120; i++) {
-    for (const win of app.windows()) {
-      const url = win.url()
-      if (url.startsWith("devtools://")) continue
-      if (url.startsWith("file://") || url.startsWith("http://")) return win
-    }
-    await new Promise(r => setTimeout(r, 250))
-  }
-  throw new Error("Electron app window not found (only DevTools?)")
+  return launchTauri(opts)
 }
 
 export async function openFixtureFile(page: ShellDriver, rel: string): Promise<void> {

@@ -1,4 +1,4 @@
-/** Host RPC channels implemented in the Tauri Rust shell (not Node sidecar). */
+/** Host RPC channels implemented in the Tauri Rust shell. */
 export const RUST_HOST_CHANNELS = new Set([
   "fs:readFile",
   "fs:writeFile",

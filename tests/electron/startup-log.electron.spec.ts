@@ -19,7 +19,7 @@ test.describe("desktop startup telemetry", () => {
       const latest = JSON.parse(
         fs.readFileSync(logPath!, "utf8").trim().split("\n").at(-1)!,
       ) as Record<string, unknown>
-      expect(latest.shell).toBe(process.env.JET_SHELL === "tauri" ? "tauri" : "electron")
+      expect(latest.shell).toBe("tauri")
       expect(latest.buildMode).toMatch(/debug|release/)
       expect(latest.rendererReadyMs).toEqual(expect.any(Number))
       expect(latest.hostProcessElapsedMs).toEqual(expect.any(Number))

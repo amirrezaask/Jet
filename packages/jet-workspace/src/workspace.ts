@@ -466,6 +466,14 @@ export class WorkspaceService {
     return doc
   }
 
+  createDefinitionsList(title: string, items: ListDocument["items"]): ListDocument {
+    const id = allocListId()
+    const doc: ListDocument = { id, title, feed: "definitions", items }
+    this.listStore.create(doc)
+    this.tabRegistry.register({ id, kind: "definitions", label: title })
+    return doc
+  }
+
   createTaskErrorsList(
     title: string,
     items: ListDocument["items"],

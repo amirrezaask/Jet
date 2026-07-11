@@ -12,7 +12,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc --emitDeclarationOnly --outDir dist",
-    "test": "tsx --test src/hover-signature.test.ts src/multi-cursor.test.ts"
+    "test": "tsx --test src/hover-signature.test.ts src/multi-cursor.test.ts src/lsp-locations.test.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",

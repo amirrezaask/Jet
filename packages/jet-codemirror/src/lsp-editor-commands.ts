@@ -4,14 +4,17 @@ import {
   LSPPlugin,
   formatDocument,
   renameSymbol,
-  findReferences,
   showSignatureHelp,
-  jumpToDefinition,
   jumpToDeclaration,
   jumpToTypeDefinition,
   jumpToImplementation,
 } from "@codemirror/lsp-client"
 import { hoverContentsToPlain, type HoverContents } from "./hover-signature.js"
+import {
+  fetchLspDefinitions,
+  fetchLspReferences,
+  type LspLocation as FetchedLspLocation,
+} from "./lsp-locations.js"
 
 type HoverParams = {
   position: { line: number; character: number }
@@ -43,10 +46,8 @@ export function runRenameSymbol(view: EditorView): boolean {
   return renameSymbol(view)
 }
 
-export function runFindReferences(view: EditorView): boolean {
-  const plugin = lspPluginForView(view)
-  if (!plugin) return false
-  return findReferences(view)
+export async function requestFindReferences(view: EditorView): Promise<FetchedLspLocation[]> {
+  return fetchLspReferences(view)
 }
 
 export function runParameterHints(view: EditorView): boolean {
@@ -55,10 +56,8 @@ export function runParameterHints(view: EditorView): boolean {
   return showSignatureHelp(view)
 }
 
-export function runGoToDefinition(view: EditorView): boolean {
-  const plugin = lspPluginForView(view)
-  if (!plugin) return false
-  return jumpToDefinition(view)
+export async function requestGoToDefinition(view: EditorView): Promise<FetchedLspLocation[]> {
+  return fetchLspDefinitions(view)
 }
 
 export function runGoToDeclaration(view: EditorView): boolean {

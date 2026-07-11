@@ -93,7 +93,7 @@ test.describe("electron appearance and terminal-first UX", () => {
   })
 
   test("shows agent launch menu from workspace chevron", async () => {
-    test.skip(process.env.JET_SHELL === "tauri", "agent UI not in tauri e2e scope")
+    test.skip(true, "agent UI not in tauri e2e scope")
     const { app, page } = await launchJet()
     try {
       const terminalExplorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")

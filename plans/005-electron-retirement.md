@@ -12,6 +12,7 @@
 - **Depends on**: `plans/001-tauri-verification.md`, `plans/003-tauri-host-efficiency.md`, `plans/004-premium-motion.md`
 - **Category**: migration / correctness
 - **Planned at**: commit `a52fab2`, 2026-07-11
+- **Status**: DONE (2026-07-12) — user override: Electron deleted; Tauri is sole shell. Remaining agent/packaging gaps tracked separately.
 
 ## Why this matters
 

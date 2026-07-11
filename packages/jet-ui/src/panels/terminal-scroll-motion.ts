@@ -3,13 +3,8 @@ import {
   RadScrollController,
   onReducedMotionChange,
   prefersReducedMotion,
+  wheelDeltaPixels,
 } from "@jet/shared"
-
-function wheelPixels(event: WheelEvent, rowHeight: number, pageHeight: number): number {
-  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * rowHeight
-  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return event.deltaY * pageHeight
-  return event.deltaY
-}
 
 /** xterm adapter for Jet's shared RAD scroll curve. */
 export class TerminalScrollMotion {
@@ -58,7 +53,7 @@ export class TerminalScrollMotion {
 
   private readonly onWheel = (event: WheelEvent): void => {
     if (!this.controller || event.deltaY === 0 || event.shiftKey || event.ctrlKey || event.metaKey) return
-    const delta = wheelPixels(event, this.rowHeight(), this.viewport!.clientHeight)
+    const delta = wheelDeltaPixels(event, this.rowHeight(), this.viewport!.clientHeight)
     if (delta === 0) return
     event.preventDefault()
     event.stopImmediatePropagation()

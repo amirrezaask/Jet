@@ -6,12 +6,19 @@ export const PROBLEMS_PANEL = '[data-jet-list-panel="jet:problems"]'
 /** Search (and other ephemeral list tabs) use allocListId() — prefix match. */
 export const SEARCH_LIST_PANEL = '[data-jet-list-panel^="list-"]'
 
+export const REFERENCES_LIST_PANEL = '[data-jet-list-feed="references"]'
+export const DEFINITIONS_LIST_PANEL = '[data-jet-list-feed="definitions"]'
+
 export function searchListItems(panelSel = SEARCH_LIST_PANEL): string {
   return `${panelSel} [data-jet-list-item]`
 }
 
 export function problemsListItems(): string {
   return `${PROBLEMS_PANEL} [data-jet-list-item]`
+}
+
+export function referencesListItems(): string {
+  return `${REFERENCES_LIST_PANEL} [data-jet-list-item]`
 }
 
 export async function waitForSearchListPanel(page: ShellDriver): Promise<string> {
@@ -21,5 +28,15 @@ export async function waitForSearchListPanel(page: ShellDriver): Promise<string>
     return el?.getAttribute("data-jet-list-panel") ?? ""
   }, SEARCH_LIST_PANEL)
   if (!id) throw new Error("search list panel missing data-jet-list-panel")
+  return id
+}
+
+export async function waitForReferencesListPanel(page: ShellDriver): Promise<string> {
+  await page.locator(REFERENCES_LIST_PANEL).first().waitFor({ state: "visible", timeout: 15_000 })
+  const id = await page.evaluate(sel => {
+    const el = document.querySelector(sel)
+    return el?.getAttribute("data-jet-list-panel") ?? ""
+  }, REFERENCES_LIST_PANEL)
+  if (!id) throw new Error("references list panel missing data-jet-list-panel")
   return id
 }

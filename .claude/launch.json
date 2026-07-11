@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "jet-desktop",
+      "name": "jet-tauri",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "jet-desktop", "dev"]
+      "runtimeArgs": ["dev"]
     }
   ]
 }

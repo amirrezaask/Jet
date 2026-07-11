@@ -1,6 +1,6 @@
 import { test } from "@playwright/test"
 
-/** Re-enable skipped flaky specs: `JET_E2E_RUN_FLAKY=1 pnpm test:electron` */
+/** Re-enable skipped flaky specs: `JET_E2E_RUN_FLAKY=1 pnpm test:tauri` */
 export const skipFlaky = process.env.JET_E2E_RUN_FLAKY !== "1"
 
 export function flakyReason(detail: string): string {

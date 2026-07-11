@@ -12,19 +12,12 @@ let fffModule: FileFinderModule | null = null
 let fffLoadFailed = false
 let fffLoadPromise: Promise<FileFinderModule | null> | null = null
 
-/** Electron asar archives cannot dlopen native libs; resolve from app.asar.unpacked. */
-function enableUnpackedNativeModules(): void {
-  if (!process.versions.electron) return
-  ;(process as NodeJS.Process & { noAsar?: boolean }).noAsar = true
-}
-
 async function loadFffModule(): Promise<FileFinderModule | null> {
   if (fffLoadFailed) return null
   if (fffModule) return fffModule
   if (!fffLoadPromise) {
     fffLoadPromise = (async () => {
       try {
-        enableUnpackedNativeModules()
         fffModule = await import("@ff-labs/fff-node")
         return fffModule
       } catch {

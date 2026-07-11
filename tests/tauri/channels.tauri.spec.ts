@@ -74,20 +74,15 @@ test.describe("tauri host channel registry", () => {
       path.join(process.cwd(), "apps/jet-tauri/src-tauri/src/shell.rs"),
       "utf8",
     )
-    const electronMain = fs.readFileSync(
-      path.join(process.cwd(), "apps/jet-desktop/src/main/main.ts"),
-      "utf8",
-    )
 
     expect(capability.permissions).toContain("core:window:allow-start-dragging")
     expect(config.app.windows[0]?.titleBarStyle).toBe("Overlay")
     expect(config.app.windows[0]?.trafficLightPosition).toEqual({ x: 14, y: 11 })
     // Config alone is not enough on modern macOS — shell must force button origin.y
-    // to match Electron trafficLightPosition (see apply_traffic_light_position).
+    // to match trafficLightPosition (see apply_traffic_light_position).
     expect(shellRs).toMatch(/TRAFFIC_LIGHT_X:\s*f64\s*=\s*14\.0/)
     expect(shellRs).toMatch(/TRAFFIC_LIGHT_Y:\s*f64\s*=\s*11\.0/)
     expect(shellRs).toContain("apply_traffic_light_position")
     expect(shellRs).toContain("rect.origin.y = 0.0")
-    expect(electronMain).toContain("trafficLightPosition: { x: 14, y: 11 }")
   })
 })

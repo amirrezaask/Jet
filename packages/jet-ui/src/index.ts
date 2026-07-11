@@ -42,6 +42,7 @@ export {
   searchHitToListItem,
   taskErrorsToListItems,
   lspLocationToListItem,
+  lspLocationsToListItems,
   type LocationListProps,
   type LocationListTabProps,
 } from "./panels/location-list/index.js"

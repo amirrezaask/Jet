@@ -38,6 +38,7 @@ export function ReferencesLocationList({
       emptyTitle="No references"
       emptyDescription="No reference locations found for this symbol."
       header={header}
+      feed="references"
     />
   )
 }
@@ -68,6 +69,7 @@ export function DefinitionsLocationList({
       emptyTitle="No definitions"
       emptyDescription="No definition locations found."
       header={header}
+      feed="definitions"
     />
   )
 }

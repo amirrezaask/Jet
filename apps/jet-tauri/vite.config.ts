@@ -13,7 +13,6 @@ export default defineConfig({
   base: "./",
   define: {
     "import.meta.env.JET_ENABLE_AGENT_CHAT": JSON.stringify(process.env.JET_ENABLE_AGENT_CHAT ?? "0"),
-    "import.meta.env.VITE_JET_HOST_URL": JSON.stringify(process.env.VITE_JET_HOST_URL ?? ""),
   },
   build: {
     target: webviewTargets,

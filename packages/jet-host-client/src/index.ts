@@ -1,7 +1,4 @@
 export { createJetApi } from "./create-jet-api.js"
-export { createElectronTransport } from "./electron-transport.js"
-export { createHttpTransport } from "./http-transport.js"
-export { createHybridTransport } from "./hybrid-transport.js"
 export { createTauriTransport, loadTauriTransport } from "./tauri-transport.js"
 export { RUST_HOST_CHANNELS } from "./rust-channels.js"
 export type { JetHostTransport } from "./transport.js"

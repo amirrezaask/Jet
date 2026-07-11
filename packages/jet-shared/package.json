@@ -13,7 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "tsx --test src/rad-scroll.test.ts"
+    "test": "tsx --test src/rad-scroll.test.ts src/wheel-delta.test.ts"
   },
   "devDependencies": {
     "tsx": "^4.23.0",

@@ -66,7 +66,7 @@ test.describe("desktop shell", () => {
         }
       })
 
-      expect(geom, "titlebar element must exist in Electron shell").not.toBeNull()
+      expect(geom, "titlebar element must exist in desktop shell").not.toBeNull()
       expect(geom!.spacerRight, "traffic-light spacer must render").not.toBeNull()
       expect(geom!.spacerRight!).toBeGreaterThanOrEqual(geom!.zone)
       expect(geom!.titlebarSidebarLeft).toBeCloseTo(geom!.workspaceSidebarLeft, 0)

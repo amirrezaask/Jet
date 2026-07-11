@@ -12,6 +12,7 @@
 - **Depends on**: `plans/001-tauri-verification.md`
 - **Category**: performance
 - **Planned at**: commit `a52fab2`, 2026-07-11
+- **Completed**: 2026-07-12 — Shiki off initial graph; aspirational 300/400 ms host budgets not met (main chunk + webview); regression budgets enforced.
 
 ## Why this matters
 

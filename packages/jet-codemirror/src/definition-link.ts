@@ -3,9 +3,11 @@ import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate
 import { LSPPlugin } from "@codemirror/lsp-client"
 import { fetchHoverPlaintext } from "./lsp-editor-commands.js"
 import { plainHoverSnippet } from "./hover-signature.js"
-
-type LspPosition = { line: number; character: number }
-type DefinitionLocation = { uri: string; range: { start: LspPosition; end: LspPosition } }
+import {
+  lspOffsetForSymbol,
+  normalizeLspLocations,
+  symbolRangeAt,
+} from "./lsp-locations.js"
 
 const setDefinitionLink = StateEffect.define<{ from: number; to: number; preview: string } | null>()
 
@@ -63,13 +65,13 @@ class DefinitionLinkPlugin {
     }
     const pos = this.view.posAtCoords({ x: event.clientX, y: event.clientY })
     if (pos == null) return this.clear()
-    const word = this.view.state.wordAt(pos)
+    const word = symbolRangeAt(this.view.state, pos)
     if (!word) return this.clear()
     if (this.activeRange?.from === word.from && this.activeRange.to === word.to) return
-    void this.resolve(word.from, word.to)
+    void this.resolve(word.from, word.to, pos)
   }
 
-  private async resolve(from: number, to: number): Promise<void> {
+  private async resolve(from: number, to: number, clickPos: number): Promise<void> {
     const plugin = LSPPlugin.get(this.view)
     if (!plugin) {
       this.clear()
@@ -82,20 +84,21 @@ class DefinitionLinkPlugin {
       return
     }
     const stamp = ++this.requestStamp
+    const lspPos = lspOffsetForSymbol(this.view.state, clickPos)
     plugin.client.sync()
     try {
       const [definition, hover] = await Promise.all([
-        plugin.client.request<
-          { textDocument: { uri: string }; position: LspPosition },
-          DefinitionLocation | DefinitionLocation[] | null
-        >("textDocument/definition", {
-          textDocument: { uri: plugin.uri },
-          position: plugin.toPosition(from),
-        }),
-        fetchHoverPlaintext(this.view, from).catch(() => null),
+        plugin.client.request(
+          "textDocument/definition",
+          {
+            textDocument: { uri: plugin.uri },
+            position: plugin.toPosition(lspPos),
+          },
+        ),
+        fetchHoverPlaintext(this.view, lspPos).catch(() => null),
       ])
       if (stamp !== this.requestStamp || this.view.state.doc !== this.doc) return
-      const available = Array.isArray(definition) ? definition.length > 0 : definition != null
+      const available = normalizeLspLocations(definition).length > 0
       const preview = hover ? plainHoverSnippet(hover).slice(0, 140) || "Go to definition" : "Go to definition"
       if (this.cache.size >= 64) this.cache.delete(this.cache.keys().next().value ?? "")
       this.cache.set(key, { available, preview })

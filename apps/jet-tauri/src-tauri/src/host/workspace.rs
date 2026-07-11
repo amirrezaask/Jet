@@ -265,4 +265,54 @@ mod tests {
         assert!(should_ignore_path(Path::new("/proj/dist/bundle.js")));
         assert!(!should_ignore_path(Path::new("/proj/src/index.ts")));
     }
+
+    #[test]
+    fn repeated_activation_cancels_superseded_watchers() {
+        let host = WorkspaceHost::new();
+        let uri = "file:///tmp/jet-ws-lifecycle";
+        let mut cancelled = Vec::new();
+
+        for round in 1..=20u64 {
+            let stop = Arc::new(AtomicBool::new(false));
+            let mut roots = host.roots.lock().unwrap();
+            if let Some(state) = roots.get_mut(uri) {
+                if let Some(previous) = state.watch_stop.replace(stop.clone()) {
+                    previous.store(true, Ordering::Release);
+                    cancelled.push(previous);
+                }
+                state.gen = round;
+            } else {
+                roots.insert(
+                    uri.to_string(),
+                    RootState {
+                        gen: round,
+                        watch_stop: Some(stop.clone()),
+                    },
+                );
+            }
+            drop(roots);
+            assert!(root_is_current(&host.roots, uri, round));
+            assert!(!root_is_current(&host.roots, uri, round + 1));
+        }
+
+        assert_eq!(cancelled.len(), 19);
+        for stop in &cancelled {
+            assert!(stop.load(Ordering::Acquire));
+        }
+
+        let live = host
+            .roots
+            .lock()
+            .unwrap()
+            .get(uri)
+            .and_then(|state| state.watch_stop.clone())
+            .expect("latest stop");
+        assert!(!live.load(Ordering::Acquire));
+        assert_eq!(host.roots.lock().unwrap().get(uri).unwrap().gen, 20);
+
+        host.deactivate(uri).unwrap();
+        assert!(host.roots.lock().unwrap().is_empty());
+        assert!(live.load(Ordering::Acquire));
+        assert!(!root_is_current(&host.roots, uri, 20));
+    }
 }

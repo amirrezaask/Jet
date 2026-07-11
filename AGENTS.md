@@ -4,7 +4,7 @@ Guide for AI agents and contributors working in this repo.
 
 ## What Jet Is
 
-**Jet** (Jasmin Extensible Text Editor) is a greenfield desktop code editor inspired by RAD Debugger / 4coder / Nameless Editor aesthetics, built as a modern Electron app.
+**Jet** (Jasmin Extensible Text Editor) is a greenfield desktop code editor inspired by RAD Debugger / 4coder / Nameless Editor aesthetics, built as a modern **Tauri** app (Rust host + React/CodeMirror renderer).
 
 **Core split:**
 
@@ -15,7 +15,7 @@ Guide for AI agents and contributors working in this repo.
 | **Jet Workspace** | Files, open buffers, dirty state, commands, jump stack, tasks |
 | **Jet Panels**    | Split tree — one view per panel (no tab bar)                  |
 | **Jet UI / App**  | React shell, themes, explorer, location list, output        |
-| **Electron main** | FS, search, LSP bridge, task spawn                            |
+| **Tauri / Rust host** | FS, search, LSP bridge, terminal, tasks, native chrome |
 
 
 React holds **orchestration state** (panel tree, focus, palette). Editor document text lives in **CodeMirror**, not React state.
@@ -39,12 +39,13 @@ Do **not** copy large chunks wholesale; match Jet’s architecture.
 ```
 jet/
 ├── apps/
-│   └── jet-desktop/        Electron shell (main, preload, vite config)
+│   └── jet-tauri/          Tauri shell (Rust host + vite frontend)
 ├── fixtures/
-│   └── sample-workspace/   Fixture project for Electron smoke tests
+│   └── sample-workspace/   Fixture project for E2E smoke tests
 ├── packages/
 │   ├── jet-shared/         URIs, Emitter, git types, panel primitives
-│   ├── jet-node-host/      Shared Node FS/git helpers
+│   ├── jet-node-host/      Shared Node FS/git helpers (tooling / unit tests)
+│   ├── jet-host-client/    Renderer transport → Tauri invoke/listen
 │   ├── jet-panels/         PanelTree — splits, tabs, resize, serde
 │   ├── jet-workspace/      WorkspaceService, TabRegistry, commands, keymaps
 │   ├── jet-codemirror/     createJetEditorView, theme, languages, LSP transport
@@ -53,9 +54,10 @@ jet/
 │   ├── jet-ui/             PanelDock, tabs, CommandPalette, themes
 │   └── jet-app/            JetApp root React component + index.html
 ├── tests/
-│   ├── electron/           Playwright Electron E2E specs
+│   ├── electron/           Shared UI E2E specs (run via tauri-e2e)
+│   ├── tauri/              Tauri-native channel / smoke specs
 │   └── bench/              UX latency benchmarks
-├── package.json            turbo scripts, postinstall electron rebuild
+├── package.json            turbo scripts
 ├── pnpm-workspace.yaml
 ├── turbo.json
 └── tsconfig.base.json
@@ -69,10 +71,10 @@ jet/
 jet-shared  ←  jet-panels, jet-workspace
 jet-workspace + jet-panels + jet-codemirror  ←  jet-ui
 jet-ui + jet-workspace + jet-lsp + jet-extension-host  ←  jet-app
-jet-app  ←  jet-desktop
+jet-app + jet-host-client  ←  jet-tauri
 ```
 
-Keep imports acyclic. Lower layers must not import React or Electron.
+Keep imports acyclic. Lower layers must not import React or Tauri APIs.
 
 ---
 
@@ -81,12 +83,12 @@ Keep imports acyclic. Lower layers must not import React or Electron.
 ## Commands
 
 ```bash
-pnpm install          # runs postinstall: pnpm rebuild electron
-pnpm dev              # turbo → jet-desktop vite + electron
+pnpm install          # workspace install
+pnpm dev              # Tauri shell (Rust host + vite)
 pnpm typecheck        # all packages (TypeScript 7)
-pnpm test:electron    # Playwright Electron specs (headless via JET_E2E)
+pnpm test:tauri       # Tauri native + shared UI specs (headless via JET_E2E)
 pnpm test:bench       # UX latency benchmarks (tests/bench/)
-pnpm build            # production build (renderer + electron main/preload)
+pnpm build            # production build (jet-tauri)
 ```
 
 Run typecheck from repo root before finishing a task:
@@ -97,7 +99,7 @@ pnpm -r typecheck
 
 Monorepo uses **TypeScript 7** (`^7.0.2` at root; `pnpm.overrides` in `pnpm-workspace.yaml` pins one version).
 
-Then validate with **`pnpm test:electron`** (see Agent visual verification).
+Then validate with **`pnpm test:tauri`** (see Agent visual verification).
 
 ---
 
@@ -105,17 +107,17 @@ Then validate with **`pnpm test:electron`** (see Agent visual verification).
 
 ## Agent visual verification (MANDATORY)
 
-**Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, explorer views, error/status messages — MUST be verified with Playwright Electron specs before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient.
+**Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, explorer views, error/status messages — MUST be verified with Playwright Tauri specs before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient.
 
-### Preferred: Electron Playwright specs (headless)
+### Preferred: Tauri Playwright / WebDriver specs (headless)
 
-Specs live in `tests/electron/*.electron.spec.ts`. `launchJet()` sets `JET_E2E=1`, which hides the window unless `JET_HEADED=1` or `PWDEBUG=1`.
+Specs live in `tests/electron/*.electron.spec.ts` (shared suite) and `tests/tauri/*.tauri.spec.ts`. `launchJet()` launches Tauri and sets `JET_E2E=1` (window off-screen) unless `JET_HEADED=1`.
 
-1. Run all Electron specs: `pnpm test:electron`
+1. Run all shared UI specs (tauri-e2e): `pnpm test:tauri`
 2. Add or extend a spec under `tests/electron/` — helpers in `tests/helpers/` and `tests/electron/_launch.ts`. See `tests/README.md`.
 3. Perf-sensitive changes (startup, editor mount, palette, search, theme) → also `pnpm test:bench`
 4. New feature → new spec with structural assertions (`expect`, `expectLayout`, scoped panel selectors). Do not rely on unrelated specs to cover new paths.
-5. Run `pnpm test:electron` before declaring a broad UI change complete.
+5. Run `pnpm test:tauri` before declaring a broad UI change complete.
 
 **Verification preference (strict):**
 
@@ -138,29 +140,26 @@ Query echoes are worthless as proof. Asserting `export` in `body` after typing `
 
 Scope every list assertion with the panel data attribute (`[data-jet-list-panel="locationlist"] [data-jet-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
 
-### Native chrome & Electron IPC
+### Native chrome & host IPC
 
-Any change to title bar geometry, native menu, window frame, or Electron IPC (`fs:*`, `git:*`, `lsp:*`, `search:*`, `agents:*`) MUST have a sibling spec in `tests/electron/`. Run `pnpm test:electron`. Canonical example: `tests/electron/titlebar.electron.spec.ts` (macOS traffic-light clearance).
+Any change to title bar geometry, native menu, window frame, or host IPC (`fs:*`, `git:*`, `lsp:*`, `search:*`, `agents:*`) MUST have a sibling spec in `tests/electron/` (run via `tauri-e2e`) or `tests/tauri/`. Run `pnpm test:tauri`. Canonical example: `tests/electron/titlebar.electron.spec.ts` (macOS traffic-light clearance).
 
 ### Headed debugging
 
 ```bash
-JET_HEADED=1 pnpm test:electron   # show BrowserWindow
-PWDEBUG=1 pnpm test:electron      # Playwright inspector + headed
+JET_HEADED=1 pnpm test:tauri   # show Tauri window on-screen
 ```
 
 ### Parallelism
 
-Electron specs run in parallel (`fullyParallel: true`). Worker count defaults to half of CPU cores (min 2; capped at 4 on CI). Each launch gets an isolated `JET_E2E_USER_DATA` temp dir, so instances do not share state.
-
-Override workers: `PLAYWRIGHT_WORKERS=6 pnpm test:electron`.
+`tauri` project runs in parallel (`fullyParallel: true`). `tauri-e2e` (shared UI specs) runs with `workers: 1`. Override with `PLAYWRIGHT_WORKERS=N`.
 
 ### Disabled flaky E2E specs
 
 Twelve specs are temporarily skipped via `tests/electron/_flaky.ts` (`describeFlaky` / `skipFlakyTest`; re-enable with `JET_E2E_RUN_FLAKY=1`). Re-enable all for triage:
 
 ```bash
-JET_E2E_RUN_FLAKY=1 pnpm test:electron
+JET_E2E_RUN_FLAKY=1 pnpm test:tauri
 ```
 
 | Spec file | Test | Likely fix |
@@ -192,18 +191,12 @@ window.__jetAgent.getState()
 window.__jetAgent.getPerfMeasures()  // User Timing measures (jet:*)
 ```
 
-### Dev gotchas (Electron + Vite)
+### Dev gotchas (Tauri + Vite)
 
-1. **Electron binary missing** — `path.txt` absent under `node_modules/.../electron/`
-  Fix: `pnpm rebuild electron` or `node node_modules/.pnpm/electron@*/node_modules/electron/install.js`
-2. **Vite** `root` **is** `packages/jet-app` but electron lives in `apps/jet-desktop`.
-  Electron build **must** use explicit `outDir`:
-   `package.json` `"main": "dist-electron/main.js"` is relative to `apps/jet-desktop`.
-3. **Do not bundle** `ws` in main process — mark external in rollup or you get `bufferutil` resolve errors.
-4. **Dev URL** — main process loads `process.env.VITE_DEV_SERVER_URL`, not hardcoded `:5173`.
-5. **Stale dev processes** — if port conflict: `pkill -f Electron` then `pnpm dev`.
-6. **Stray output** — old builds may land in `packages/jet-app/dist-electron/`; canonical output is `apps/jet-desktop/dist-electron/`. Both are gitignored where applicable.
-7. **Tailwind v4 position utilities missing** — Vite root is `packages/jet-app`; classes like `absolute` / `fixed` / `inset-0` used only in sibling packages (`jet-ui`, …) were not generated until `@source` was added in `jet-ui/src/styles/globals.css`. Symptom: panels stack vertically (editor at bottom), palette full-width. After CSS changes, reload window if HMR does not pick up `@source`.
+1. **Rust toolchain** — `cargo` / `rustc` required for `pnpm dev` and `pnpm test:tauri`.
+2. **Vite frontend** — `apps/jet-tauri` builds from `packages/jet-app` via `index.tauri.html`.
+3. **Stale Tauri processes** — if WebDriver ports stick: `pkill -f target/release/jet-tauri` then retry.
+4. **Tailwind v4 position utilities missing** — Vite must scan sibling packages; `@source` in `jet-ui/src/styles/globals.css`. Symptom: panels stack vertically (editor at bottom), palette full-width. After CSS changes, reload window if HMR does not pick up `@source`.
 
 ---
 
@@ -215,17 +208,17 @@ window.__jetAgent.getPerfMeasures()  // User Timing measures (jet:*)
 
 ### Desktop CLI startup
 
-Electron main resolves launch target from `process.argv` + `process.cwd()` via `@jet/node-host` `resolveLaunchTarget`:
+Tauri Rust host resolves launch target from argv / cwd:
 
 - No args → open `cwd` as workspace
 - Directory arg → open that directory
 - File arg → open file; workspace = nearest project root (`.git`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `.jet`)
 
-Forwarded to renderer via `jet:getLaunchConfig` IPC; macOS `open-file` and second-instance reuse `jet:launch`.
+Forwarded to renderer via `getLaunchConfig` / `jet:launch`; macOS open-file and single-instance reuse the same path.
 
-### Electron IPC (`window.jet`)
+### Host IPC (`window.jet`)
 
-Exposed via preload → `@jet/workspace` types (`JetElectronAPI`).
+Wired by `@jet/host-client` `loadTauriTransport()` → `createJetApi()`; types live in `@jet/workspace` (`JetElectronAPI` name retained for API stability).
 
 
 | Channel                                                | Purpose                          |
@@ -236,8 +229,8 @@ Exposed via preload → `@jet/workspace` types (`JetElectronAPI`).
 | `lsp:start`, `lsp:stop`                                | Spawn language server, WS bridge |
 
 
-Main entry: `apps/jet-desktop/src/main/main.ts`  
-Handlers: `fs.ts`, `git.ts`, `lsp-bridge.ts`
+Rust host: `apps/jet-tauri/src-tauri/src/host/`  
+Shell chrome: `apps/jet-tauri/src-tauri/src/shell.rs`
 
 ### Panel docking (`@jet/panels`)
 
@@ -325,7 +318,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 - `LanguageServerManager.ensureServerForFile()` — TS/JS only for now
 - Requires `typescript-language-server` on **PATH** (TS/JS)
 - Requires `rust-analyzer` on **PATH** for Rust (optional)
-- Project search uses `@ff-labs/fff-node` (FFF) when available; falls back to `rg` (ripgrep) on **PATH**
+- Project search uses ripgrep / host search on **PATH**
 - `findProjectRoot()` uses `pathToFileUri` from `@jet/shared`
 
 
@@ -340,24 +333,22 @@ Registered in `packages/jet-app/src/App.tsx`:
 | Editor   | CodeMirror host + in-buffer find                           |
 | Search   | Project ripgrep search + in-buffer find                    |
 | Problems | LSP/CM lint diagnostics list + jump                        |
-| Terminal | xterm + node-pty (Electron); browser stub                  |
+| Terminal | xterm + Rust PTY (Tauri host)                              |
 | Agent explorer | Sidebar thread list per workspace root; archive section |
 | Agent chat | T3-style composer, streaming timeline, provider/model picker |
 
 
 
-### Agents (`@jet/agents` + Electron main)
+### Agents (`@jet/agents` + Tauri Rust host)
 
 - **Storage:** `.jet/agents/state.json` per workspace root (threads, messages, provider/model selection)
-- **Transport:** `window.jet.agents` IPC in Electron; `POST /__jet/agents/*` in browser dev middleware
-- **Drivers (Electron):** cursor → claude → codex (`apps/jet-desktop/src/main/agent-drivers/`); probes PATH + `cursor-agent models` for model list
-- **Browser dev:** mock async turns only (`packages/jet-node-host/src/dev-agent-turn.ts`); no real CLI
-- **Env:** `JET_AGENT_MOCK=1` forces mock driver in Electron (also always mock in browser)
-- **Push updates:** `agents:threadUpdated` IPC in Electron; browser polls `readThread` during turns
-- **Key files:** `packages/jet-agents/`, `packages/jet-ui/src/agents/`, `apps/jet-desktop/src/main/agents.ts`, `packages/jet-app/src/tabs/agent-*.tab.ts`
-- **Tests:** `tests/electron/agents.electron.spec.ts` (real `cursor-agent`, skipped when CLI absent); `tests/electron/agents-mock.electron.spec.ts` (`JET_AGENT_MOCK=1`)
+- **Transport:** `window.jet.agents` via Tauri host invoke/events
+- **Drivers:** cursor / Claude / Codex probed from PATH in Rust host (`apps/jet-tauri/src-tauri/src/host/agents.rs`)
+- **Env:** `JET_AGENT_MOCK=1` forces mock driver
+- **Key files:** `packages/jet-agents/`, `packages/jet-ui/src/agents/`, `apps/jet-tauri/src-tauri/src/host/agents.rs`, `packages/jet-app/src/tabs/agent-*.tab.ts`
+- **Tests:** agent specs exist under `tests/electron/` but are excluded from `tauri-e2e` for now
 
-Manual Electron smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop button → archive via explorer context menu or `agent.archive`.
+Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop button → archive via explorer context menu or `agent.archive`.
 
 
 
@@ -407,7 +398,7 @@ Manual Electron smoke: `pnpm dev` → `agent.new` → send prompt → interrupt 
 5. Edit + **Mod-s** save (click editor tab first if needed)
 6. **Mod-p** command palette — centered screen modal
 7. Location list (`locationlist.show`) — search + problems unified panel
-8. Output panel + `task.run` (Electron; browser stub)
+8. Output panel + `task.run` (Tauri host)
 9. Jump stack — `navigation.jumpBack` / `jumpForward` (Alt-j / Alt-Shift-j)
 10. Buffer list — `workspace.bufferList` (Cmd-Shift-b)
 11. Panel split resize — drag gutter between panels
@@ -419,7 +410,7 @@ Manual Electron smoke: `pnpm dev` → `agent.new` → send prompt → interrupt 
 
 ## Prioritized Next Work
 
-Design references (read-only): `.4coder/`, `.4coder_fleury/`, `.raddebugger/`, `Nameless_Editor/`. Jet aspires to **RAD/Nameless shell polish** + **4coder/Fleury editor identity** on CodeMirror 6 + Electron — not a port.
+Design references (read-only): `.4coder/`, `.4coder_fleury/`, `.raddebugger/`, `Nameless_Editor/`. Jet aspires to **RAD/Nameless shell polish** + **4coder/Fleury editor identity** on CodeMirror 6 + Tauri — not a port.
 
 Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific) inside each phase.
 
@@ -457,7 +448,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **Remaining (Shell tier)**
 
-- [x] **Shell:** tab drag/drop automated Electron test (removed with tab bar — buffer list covers switcher)
+- [x] **Shell:** tab drag/drop automated test (removed with tab bar — buffer list covers switcher)
 
 
 
@@ -488,7 +479,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 - [x] Welcome view when no folder open
 - [x] GitTab lazy import; PaletteOverlay
 - [x] Tab row overflow menu
-- [x] Playwright Electron smoke tests wired to `pnpm test:electron` + `__jetAgent`
+- [x] Playwright Tauri smoke tests wired to `pnpm test:tauri` + `__jetAgent`
 - [x] **Shell:** Vercel dark/light theme + `ui.toggleColorScheme`
 - [x] **Shell:** welcome view, status bar (L/C, LSP, message)
 - [x] Reduce main bundle — lazy Search/Problems tabs; Vite `manualChunks` for git-diff/shiki
@@ -510,7 +501,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 - [x] Tier 1 editor commands — comment, line ops, indent, undo/redo, smart select, multi-cursor CM commands
 - [x] Tier 2 layout — tab cycle, close all, focus sidebar/editor, split, zoom, overlays
-- [x] Tier 3 LSP — format, rename, references, parameter hints, document outline (Electron; browser shows message)
+- [x] Tier 3 LSP — format, rename, references, parameter hints, document outline (Tauri host)
 - [x] Tier 4 list nav — PageUp/Down/Home/End scroll on explorer/git/search/problems
 - [x] Git chord placeholders — message stubs (not bound to `undo`)
 
@@ -527,13 +518,13 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 - [x] Quick-open files (`workspace.quickOpen` / Mod-Shift-o)
 - [x] Full git panel (stage, commit, branch checkout)
-- [x] Terminal PTY (Electron `node-pty` + xterm; browser stub)
+- [x] Terminal PTY (Tauri Rust PTY + xterm; browser stub)
 - [x] Problems panel — diagnostics list + jump to source (CM lint aggregation)
-- [x] Watch mode / file change reload from disk (Electron `fs.watch`; dirty-tab confirm)
+- [x] Watch mode / file change reload from disk (Tauri host watch; dirty-tab confirm)
 
 **Platform**
 
-- [x] electron-builder config + pack scripts (`pack:mac` / `pack:win` / `pack:linux`; unsigned)
+- [x] Tauri bundler / release scripts (`pnpm release`)
 - [x] LSP crash recovery (`lsp.onCrashed` + auto-retry on editor focus)
 - [x] Additional language servers (rust-analyzer descriptor registry)
 
@@ -574,7 +565,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | Output / tasks                   | build   | ✓       | ✓          | ✓ minimal task runner                  |
 | Git / terminal                   | —       | ✓       | ✓          | removed                                |
 | Fleury chrome                    | —       | ✓       | ✓          | brace guides + token highlight         |
-| LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Electron + rust-analyzer             |
+| LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Tauri + rust-analyzer                |
 | Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | partial (no macros/kill ring)          |
 | Extension / custom layer         | C hooks | C++     | Rust setup | `.jet/editorrc.ts`                     |
 
@@ -593,8 +584,8 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | `packages/jet-panels/src/tree.ts`                 | Split/tab model                                     |
 | `packages/jet-ui/src/tabs/EditorTabHost.tsx`      | CM mount lifecycle                                  |
 | `packages/jet-codemirror/src/createEditorView.ts` | Editor extensions + LSP attach                      |
-| `apps/jet-desktop/vite.config.ts`                 | Critical electron/vite paths                        |
-| `apps/jet-desktop/src/main/main.ts`               | Electron bootstrap                                  |
+| `apps/jet-tauri/vite.config.ts`                   | Tauri frontend vite paths                           |
+| `apps/jet-tauri/src-tauri/src/lib.rs`             | Tauri / Rust host bootstrap                         |
 | `packages/jet-extension-host/src/index.ts`        | Extension API surface                               |
 
 
@@ -604,12 +595,12 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 ## Adding a Feature (checklist)
 
-1. Decide layer — shared / panels / workspace / codemirror / ui / app / electron
+1. Decide layer — shared / panels / workspace / codemirror / ui / app / tauri host
 2. Add types to `@jet/shared` or `@jet/workspace` if cross-cutting
 3. Register command + keybinding if user-facing
 4. If new tab kind: extend `TabKind`, `TabRegistry`, `TabBody`, default registration in `App.tsx`
 5. Run `pnpm -r typecheck`
-6. **Electron Playwright** — `pnpm test:electron` (+ `pnpm test:bench` when perf-sensitive); cover changed behavior
+6. **Tauri Playwright** — `pnpm test:tauri` (+ `pnpm test:bench` when perf-sensitive); cover changed behavior
 
 ---
 
@@ -617,12 +608,10 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 ## Agent Anti-patterns
 
-- Shipping UI/UX changes without **`pnpm test:electron`** validation
+- Shipping UI/UX changes without **`pnpm test:tauri`** validation
 - Putting editor document text in React `useState`
-- Importing Electron in renderer packages (use `window.jet`)
-- Bundling native Node modules (`ws`, `node-pty`) in electron main vite build without `external`
-- Setting vite electron outDir relative to `jet-app` root (breaks `package.json` main)
-- **Dual shell:** Electron (`jet-desktop`) is the primary ship target; **Tauri** (`jet-tauri`) is an alternate shell with a **Rust host** (`apps/jet-tauri/src-tauri/src/host/`) wired via `@jet/host-client` `loadTauriTransport()`. Dev: `pnpm dev:tauri` (no Node sidecar). Tests: `pnpm test:tauri` — Playwright channel registry + node:http WebDriver UI suite (`tests/tauri/run-e2e.mjs` → `run-ui-suite.mjs`; embedded `tauri-plugin-wdio-webdriver`, `cargo feature e2e`, `tauri build --features e2e`). Covers palette, terminal, quick-open, editor open, titlebar. E2E binary starts with `visible: false` + `JET_E2E=1` (window hidden); `JET_HEADED=1 pnpm test:tauri` shows it.
+- Calling Tauri APIs from lower packages (use `window.jet` / `@jet/host-client`)
+- **Shell:** Tauri (`jet-tauri`) is the only desktop shell. Rust host under `apps/jet-tauri/src-tauri/src/host/`; renderer via `@jet/host-client` `loadTauriTransport()`. Dev: `pnpm dev`. Tests: `pnpm test:tauri` (channel suite + shared UI specs via `tauri-e2e` / WebDriver). E2E uses `JET_E2E=1` (window off-screen); `JET_HEADED=1 pnpm test:tauri` shows it.
 - Large shadcn default styling — keep RAD/custom theme direction
 
 ## Open Backlog (updated 2026-07-05)
@@ -637,12 +626,12 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 - [x] **`EditorContextMenu.tsx` root/trigger** — verified `EditorTabHost.tsx:415` already wraps content in `<ContextMenu>` root + `<ContextMenuTrigger asChild>` around the host `<div>`. External `showEditorContextMenuAt(x, y)` dispatches synthetic `contextmenu` on trigger — Radix opens via native event so focus-trap + z-index are correct. No change needed; backlog note was stale.
 - [x] **`JetApp` unused imports** — removed unused `JetTheme` type import and stale `currentTree` local in `packages/jet-app/src/App.tsx`.
 
-### Syntax highlighting for Rust (Electron only)
-- **Symptom:** User reports Rust files render with zero syntax colors when opening real repos (`loki/`) in the **Electron desktop app**. Fixture-based `.rs` files under `fixtures/sample-workspace` are covered by `tests/electron/syntax-rust.electron.spec.ts`.
+### Syntax highlighting for Rust (desktop)
+- **Symptom:** User reports Rust files render with zero syntax colors when opening real repos (`loki/`) in the **Tauri desktop app**. Fixture-based `.rs` files under `fixtures/sample-workspace` are covered by `tests/electron/syntax-rust.electron.spec.ts`.
 - **Investigated:** `@lezer/rust` styleTags map `t.definitionKeyword`/`t.moduleKeyword`/`t.modifier`/`t.integer`/`t.lineComment`/`t.paren` etc. All inherit from parent tags (`keyword`, `number`, `comment`, `bracket`) — theme should still color via inheritance. `packages/jet-codemirror/src/theme.ts` covers `t.keyword`, `t.controlKeyword+t.modifier`, `t.number`, `t.comment`, `t.operator`, `t.punctuation`, `t.string`. `t.bracket` is NOT mapped — but that only affects `{}`, `()`, `[]`.
-- **Repro path:** Only reproduces in Electron dev with real user workspace. Browser scenario runner cannot reproduce.
-- **Hypothesis to test next:** (a) `import("@codemirror/lang-rust")` dynamic import fails silently under Electron production/hot-reload → `loadLanguage` never resolves, view boots with no language extension. (b) `@replit/codemirror-indentation-markers` or another plugin's CSS is overriding token colors. (c) Race between `attachView` calling `reconfigureLanguage` and initial `createJetEditorView` when session cache hits.
-- **Suggested attack:** open a Rust file in Electron, run `getComputedStyle` on `.cm-line span` in devtools to check whether spans get `.ͼNN` classes at all. If not → language load failed. If classes present but color=inherit → CSS override.
+- **Repro path:** Originally reported in desktop app with real user workspace. Browser scenario runner cannot reproduce.
+- **Hypothesis to test next:** (a) `import("@codemirror/lang-rust")` dynamic import fails silently under production/hot-reload → `loadLanguage` never resolves, view boots with no language extension. (b) `@replit/codemirror-indentation-markers` or another plugin's CSS is overriding token colors. (c) Race between `attachView` calling `reconfigureLanguage` and initial `createJetEditorView` when session cache hits.
+- **Suggested attack:** open a Rust file in Tauri, run `getComputedStyle` on `.cm-line span` in devtools to check whether spans get `.ͼNN` classes at all. If not → language load failed. If classes present but color=inherit → CSS override.
 - **Also add** explicit tag mappings even though inheritance should cover: `t.bracket`, `t.self`, `t.character`, `t.macroName`, `t.meta` in `packages/jet-codemirror/src/theme.ts` — defense in depth.
 
 ### Indent-marker colors don't toggle theme (Task #14)
@@ -675,7 +664,7 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 
 ### Custom decoration follow-ups (Task #4 tail)
 - macOS shipped with `hiddenInset` + `JetTitleBar` component. Verified via `?titlebar=1` browser query + `tests/visual/scenarios/titlebar.json`.
-- **Not yet done:** Windows/Linux custom decoration (title bar drag region + min/max/close buttons via shadcn Button + custom SVG icons). Would use `titleBarStyle:'hidden'` on those platforms and `WindowControls` sub-component. Currently they fall back to Electron native menu + native window frame.
+- **Not yet done:** Windows/Linux custom decoration (title bar drag region + min/max/close buttons via shadcn Button + custom SVG icons). Would use `titleBarStyle:'hidden'` on those platforms and `WindowControls` sub-component. Currently they fall back to native window frame / OS chrome.
 - **Not yet done:** wire `checkbox`/`radio` states in menubar (e.g. "Toggle Color Scheme" should be a `CheckboxItem` showing current scheme). Currently a plain `Item`.
 - **Not yet done:** window title (center label) currently derives from workspace + file; if `activeEditorFile.isDirty`, uses `•` marker. Consider dedicated dirty-badge component.
 

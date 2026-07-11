@@ -10,4 +10,5 @@ export {
   searchHitToListItem,
   taskErrorsToListItems,
   lspLocationToListItem,
+  lspLocationsToListItems,
 } from "./mappers.js"

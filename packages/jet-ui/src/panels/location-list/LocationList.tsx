@@ -20,6 +20,7 @@ export type LocationListProps = {
   emptyTitle?: string
   emptyDescription?: string
   header?: React.ReactNode
+  feed?: string
 }
 
 const OVERSCAN = 8
@@ -47,6 +48,7 @@ export function LocationList({
   emptyTitle = "No results",
   emptyDescription = "Nothing to show in this list.",
   header,
+  feed,
 }: LocationListProps) {
   const scrollRef = useRef<HTMLUListElement>(null)
   const [rowHeight, setRowHeight] = useState(readRowHeightPx)
@@ -83,6 +85,7 @@ export function LocationList({
       className="flex h-full min-h-0 flex-1 flex-col bg-background text-foreground"
       data-jet-list-panel={listId}
       data-jet-location-list
+      data-jet-list-feed={feed}
     >
       {header}
       <ul

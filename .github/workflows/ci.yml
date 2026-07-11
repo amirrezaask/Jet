@@ -20,23 +20,6 @@ jobs:
       - run: pnpm install
       - run: pnpm -r typecheck
 
-  test-electron:
-    runs-on: macos-latest
-    needs: typecheck
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install
-      - run: pnpm exec playwright install chromium --with-deps
-      - run: npm install -g typescript-language-server typescript
-      - run: pnpm test:electron
-
   test-tauri:
     strategy:
       fail-fast: false
@@ -63,6 +46,8 @@ jobs:
       - run: pnpm install
       - run: npm install -g typescript-language-server typescript
       - run: cargo test --manifest-path apps/jet-tauri/src-tauri/Cargo.toml
+      - name: Verify Tauri startup graph (no Shiki/diffs/xterm preload)
+        run: pnpm --filter jet-tauri build
       - name: Tauri native suite (macOS)
         if: runner.os == 'macOS'
         run: pnpm test:tauri
@@ -86,8 +71,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/jet-tauri/src-tauri
       - run: pnpm install
-      - run: pnpm exec playwright install chromium --with-deps
       - run: pnpm test:bench
         env:
           JET_BENCH_SLACK: "1.5"
+          JET_SHELL: tauri

@@ -1,4 +1,4 @@
-/** Minimal page surface shared by Electron Playwright and Tauri WebDriver shells. */
+/** Minimal page surface shared by Playwright and Tauri WebDriver shells. */
 export type ShellDriver = {
   evaluate<R, Arg>(pageFunction: (arg: Arg) => R | Promise<R>, arg: Arg): Promise<R>
   evaluate<R>(pageFunction: () => R | Promise<R>): Promise<R>

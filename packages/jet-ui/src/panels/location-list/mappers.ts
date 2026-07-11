@@ -46,11 +46,27 @@ export function lspLocationToListItem(
   path: string,
 ): ListItem {
   return {
-    id: `ref-${index}-${loc.uri}-${loc.range.start.line}`,
+    id: `ref-${index}-${loc.uri}-${loc.range.start.line}-${loc.range.start.character}`,
     fileUri: loc.uri,
     path,
     line: loc.range.start.line + 1,
     column: loc.range.start.character + 1,
     label,
   }
+}
+
+export function lspLocationsToListItems(
+  locs: { uri: string; range: { start: { line: number; character: number } } }[],
+  symbol: string,
+): ListItem[] {
+  return locs.map((loc, index) => {
+    const path = loc.uri.replace(/^file:\/\//, "")
+    const base = path.split("/").pop() ?? path
+    return lspLocationToListItem(
+      loc,
+      index,
+      `${symbol} — ${base}:${loc.range.start.line + 1}`,
+      path,
+    )
+  })
 }

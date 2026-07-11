@@ -12,6 +12,7 @@
 - **Depends on**: `plans/001-tauri-verification.md`, `plans/002-tauri-startup.md`
 - **Category**: bug / performance / UX
 - **Planned at**: commit `a52fab2`, 2026-07-11
+- **Completed**: 2026-07-12 — rAF-batched glow, imperative drop morph, shell-only layout morph, caret teardown; bench budgets cover palette/typing.
 
 ## Why this matters
 

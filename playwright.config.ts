@@ -15,11 +15,6 @@ export default defineConfig({
   globalTeardown: "./tests/tauri/global-teardown.ts",
   projects: [
     {
-      name: "electron",
-      testDir: "./tests/electron",
-      testMatch: "*.electron.spec.ts",
-    },
-    {
       name: "tauri",
       testDir: "./tests/tauri",
       testMatch: "*.tauri.spec.ts",

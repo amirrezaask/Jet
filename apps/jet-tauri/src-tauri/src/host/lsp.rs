@@ -227,6 +227,8 @@ fn is_executable_candidate(path: &Path) -> bool {
     }
 }
 
+const LSP_IDLE_TIMEOUT: Duration = Duration::from_millis(50);
+
 fn accept_client(listener: &TcpListener, shutdown: &AtomicBool) -> Option<TcpStream> {
     loop {
         if shutdown.load(Ordering::Acquire) {
@@ -235,7 +237,8 @@ fn accept_client(listener: &TcpListener, shutdown: &AtomicBool) -> Option<TcpStr
         match listener.accept() {
             Ok((tcp, _)) => return Some(tcp),
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(2));
+                // Listener stays nonblocking so shutdown can be observed; wake sparsely.
+                thread::sleep(LSP_IDLE_TIMEOUT);
             }
             Err(_) => {
                 shutdown.store(true, Ordering::Release);
@@ -243,6 +246,14 @@ fn accept_client(listener: &TcpListener, shutdown: &AtomicBool) -> Option<TcpStr
             }
         }
     }
+}
+
+fn configure_client_stream(tcp: &TcpStream) -> std::io::Result<()> {
+    // Blocking + short timeouts: idle bridge sleeps in the kernel instead of spin-polling.
+    tcp.set_nonblocking(false)?;
+    tcp.set_read_timeout(Some(LSP_IDLE_TIMEOUT))?;
+    tcp.set_write_timeout(Some(LSP_IDLE_TIMEOUT))?;
+    Ok(())
 }
 
 fn bridge_stdio_to_websocket(
@@ -283,13 +294,13 @@ fn bridge_stdio_to_websocket(
         let Some(tcp) = accept_client(&listener, &shutdown) else {
             return;
         };
+        if configure_client_stream(&tcp).is_err() {
+            continue;
+        }
         let Ok(mut ws) = accept(tcp) else {
             // Bad handshake — keep listening for the next client.
             continue;
         };
-        if ws.get_mut().set_nonblocking(true).is_err() {
-            continue;
-        }
 
         if !serve_websocket_client(
             &mut ws,
@@ -314,11 +325,9 @@ fn serve_websocket_client(
     shutdown: &AtomicBool,
 ) -> bool {
     while !shutdown.load(Ordering::Acquire) {
-        let mut did_work = false;
         while pending_server_messages.len() < MAX_PENDING_SERVER_MESSAGES {
             match server_rx.try_recv() {
                 Ok(json) => {
-                    did_work = true;
                     pending_server_messages.push_back(Message::Text(json));
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
@@ -332,12 +341,17 @@ fn serve_websocket_client(
 
         while let Some(message) = pending_server_messages.pop_front() {
             match ws.write(message) {
-                Ok(()) => did_work = true,
+                Ok(()) => {}
                 Err(WebSocketError::WriteBufferFull(message)) => {
                     pending_server_messages.push_front(message);
                     break;
                 }
-                Err(WebSocketError::Io(err)) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                Err(WebSocketError::Io(err))
+                    if matches!(
+                        err.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
                     break;
                 }
                 Err(_) => {
@@ -348,13 +362,16 @@ fn serve_websocket_client(
         }
         match ws.flush() {
             Ok(()) => {}
-            Err(WebSocketError::Io(err)) if err.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(WebSocketError::Io(err))
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
             Err(_) => return true,
         }
 
         match ws.read() {
             Ok(Message::Text(json)) => {
-                did_work = true;
                 if stdin
                     .write_all(encode_lsp_message(&json).as_bytes())
                     .and_then(|_| stdin.flush())
@@ -365,13 +382,16 @@ fn serve_websocket_client(
                 }
             }
             Ok(Message::Close(_)) => return true,
-            Ok(_) => did_work = true,
-            Err(WebSocketError::Io(err)) if err.kind() == std::io::ErrorKind::WouldBlock => {}
+            Ok(_) => {}
+            Err(WebSocketError::Io(err))
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                // Idle: kernel waited up to LSP_IDLE_TIMEOUT; loop to drain stdout / check shutdown.
+            }
             Err(_) => return true,
-        }
-
-        if !did_work {
-            thread::sleep(Duration::from_millis(8));
         }
     }
     false

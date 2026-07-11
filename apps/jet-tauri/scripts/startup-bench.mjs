@@ -90,6 +90,10 @@ for (let sampleIndex = 0; sampleIndex < rounds; sampleIndex++) {
 
 const values = records.map(record => Number(record.hostProcessElapsedMs))
 const rendererValues = records.map(record => Number(record.rendererReadyMs))
+const coldMs = values[0]
+const warmValues = values.slice(1)
+const warmMedian = warmValues.length > 0 ? percentile(warmValues, 0.5) : percentile(values, 0.5)
+const rendererMedian = percentile(rendererValues, 0.5)
 const summary = fs.existsSync(summaryPath)
   ? JSON.parse(fs.readFileSync(summaryPath, "utf8"))
   : {}
@@ -97,11 +101,36 @@ summary[mode] = {
   commit,
   recordedAt: new Date().toISOString(),
   rounds,
+  coldMs,
+  warmMedianMs: warmMedian,
   medianMs: percentile(values, 0.5),
   p95Ms: percentile(values, 0.95),
-  rendererMedianMs: percentile(rendererValues, 0.5),
+  rendererMedianMs: rendererMedian,
   rendererP95Ms: percentile(rendererValues, 0.95),
   samplesMs: values,
 }
 fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`)
 console.log(`[startup:${mode}] persisted ${summaryPath}`)
+
+if (mode === "release") {
+  const budgetsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "startup-budgets.json")
+  const budgets = JSON.parse(fs.readFileSync(budgetsPath, "utf8")).release
+  const failures = []
+  if (coldMs > budgets.coldHostMs) {
+    failures.push(`cold host ${coldMs.toFixed(1)}ms > ${budgets.coldHostMs}ms`)
+  }
+  if (warmMedian > budgets.warmHostMedianMs) {
+    failures.push(`warm host median ${warmMedian.toFixed(1)}ms > ${budgets.warmHostMedianMs}ms`)
+  }
+  if (rendererMedian > budgets.rendererMedianMs) {
+    failures.push(
+      `renderer median ${rendererMedian.toFixed(1)}ms > ${budgets.rendererMedianMs}ms`,
+    )
+  }
+  if (failures.length > 0) {
+    console.error(`[startup:${mode}] budget failures:\n- ${failures.join("\n- ")}`)
+    process.exitCode = 1
+  } else {
+    console.log(`[startup:${mode}] budgets ok (cold<=${budgets.coldHostMs} warm<=${budgets.warmHostMedianMs})`)
+  }
+}

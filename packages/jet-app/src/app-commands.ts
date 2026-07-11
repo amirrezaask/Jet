@@ -38,11 +38,11 @@ import { problemsToListItems } from "@jet/ui"
 import { openJetSearch } from "@jet/codemirror"
 import {
   fetchDocumentOutline,
-  runFindReferences,
+  requestFindReferences,
   runFormatDocument,
   runParameterHints,
   runRenameSymbol,
-  runGoToDefinition,
+  requestGoToDefinition,
   runGoToDeclaration,
   runGoToTypeDefinition,
   runGoToImplementation,
@@ -50,11 +50,12 @@ import {
   runShowHover,
   lspPluginForView,
   skipNextOccurrence,
+  symbolTextAt,
   type OutlineSymbol,
 } from "@jet/codemirror"
 import { scheduleCodeActions, applyCodeAction } from "@jet/lsp"
 import type { OutlineEntry } from "@jet/ui"
-import { getEditorView, showEditorContextMenuAt, destroyEditorBuffer } from "@jet/ui"
+import { getEditorView, showEditorContextMenuAt, destroyEditorBuffer, lspLocationsToListItems } from "@jet/ui"
 import {
   getActiveEditorFileUri,
   getAllLeafPanels,
@@ -685,12 +686,22 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (lspUnavailable(ctx)) return
       if (!runRenameSymbol(view)) ctx.ui.showMessage("Rename not available for this symbol")
     },
-    goToReferences: ctx => {
+    goToReferences: async ctx => {
       const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       deps.pushJumpFromActiveEditor("references")
-      if (!runFindReferences(view)) ctx.ui.showMessage("Find references not available")
+      const locs = await requestFindReferences(view)
+      if (!locs.length) {
+        ctx.ui.showMessage("No references found")
+        return
+      }
+      const symbol = symbolTextAt(view.state, view.state.selection.main.head) ?? "symbol"
+      const items = lspLocationsToListItems(locs, symbol)
+      const doc = deps.workspace.createReferencesList(`References: ${symbol}`, items)
+      const tree = deps.cloneTree()
+      const { panelId } = openTabInAuxiliaryPanel(deps.workspace, tree, currentFocusedPanel(), doc)
+      deps.commitTree(tree, panelId)
     },
     triggerParameterHints: ctx => {
       const view = ctx.getActiveEditorView()
@@ -698,12 +709,33 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (lspUnavailable(ctx)) return
       if (!runParameterHints(view)) ctx.ui.showMessage("Parameter hints not available")
     },
-    goToDefinition: ctx => {
+    goToDefinition: async ctx => {
       const view = ctx.getActiveEditorView()
       if (!view) return
       if (lspUnavailable(ctx)) return
       deps.pushJumpFromActiveEditor("definition")
-      if (!runGoToDefinition(view)) ctx.ui.showMessage("Go to definition not available")
+      const locs = await requestGoToDefinition(view)
+      if (!locs.length) {
+        ctx.ui.showMessage("No definition found")
+        return
+      }
+      if (locs.length === 1) {
+        const loc = locs[0]!
+        deps.openFileInEditor(
+          loc.uri,
+          fileUriToPath(loc.uri),
+          loc.range.start.line + 1,
+          loc.range.start.character + 1,
+          false,
+        )
+        return
+      }
+      const symbol = symbolTextAt(view.state, view.state.selection.main.head) ?? "symbol"
+      const items = lspLocationsToListItems(locs, symbol)
+      const doc = deps.workspace.createDefinitionsList(`Definitions: ${symbol}`, items)
+      const tree = deps.cloneTree()
+      const { panelId } = openTabInAuxiliaryPanel(deps.workspace, tree, currentFocusedPanel(), doc)
+      deps.commitTree(tree, panelId)
     },
     goToDeclaration: ctx => {
       const view = ctx.getActiveEditorView()

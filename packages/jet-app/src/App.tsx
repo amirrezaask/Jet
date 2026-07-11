@@ -2156,7 +2156,7 @@ export function JetApp() {
     const bootstrapAt =
       (window as Window & { __jetStartupBootstrapAt?: number }).__jetStartupBootstrapAt ?? 0
     void window.jet.recordStartup({
-      shell: "__TAURI_INTERNALS__" in window ? "tauri" : "electron",
+      shell: "tauri",
       buildMode: import.meta.env.DEV ? "debug" : "release",
       rendererBootstrapMs: bootstrapAt,
       rendererReadyMs: performance.now(),

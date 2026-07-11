@@ -148,15 +148,13 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
           terminalReplayFloors.set(id, result.lastSequence)
           const pending = terminalDataBuffers.get(id)
           if (pending) {
-            terminalDataBuffers.set(
-              id,
-              pending.filter(chunk => chunk.sequence === 0 || chunk.sequence > result.lastSequence),
+            const kept = pending.filter(
+              chunk => chunk.sequence === 0 || chunk.sequence > result.lastSequence,
             )
-            terminalDataBufferSizes.set(
-              id,
-              pending.reduce((total, chunk) =>
-                total + (chunk.sequence === 0 || chunk.sequence > result.lastSequence ? chunk.data.length : 0), 0),
-            )
+            let size = 0
+            for (const chunk of kept) size += chunk.data.length
+            terminalDataBuffers.set(id, kept)
+            terminalDataBufferSizes.set(id, size)
           }
         }
         return result

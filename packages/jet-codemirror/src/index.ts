@@ -53,9 +53,9 @@ export type { LSPClient } from "@codemirror/lsp-client"
 export {
   runFormatDocument,
   runRenameSymbol,
-  runFindReferences,
+  requestFindReferences,
   runParameterHints,
-  runGoToDefinition,
+  requestGoToDefinition,
   runGoToDeclaration,
   runGoToTypeDefinition,
   runGoToImplementation,
@@ -71,6 +71,17 @@ export {
   type InlayHint,
   type WorkspaceSymbol,
 } from "./lsp-editor-commands.js"
+export {
+  symbolRangeAt,
+  symbolTextAt,
+  lspOffsetForSymbol,
+  normalizeLspLocations,
+  fetchLspReferences,
+  fetchLspDefinitions,
+  type LspLocation,
+  type LspRange,
+  type LspPosition,
+} from "./lsp-locations.js"
 export { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
 export { signatureHelpAfterComplete } from "./signature-help-trigger.js"
 export { eolOverlayExtension } from "./eol-overlays.js"
