@@ -1,4 +1,18 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+  expectLocatorContainsText,
+  expectNotContainsText,
+} from "../shell/assert.js"
+
 import { hasPtySpawn, launchJet, showTerminal, execCommand } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -13,7 +27,7 @@ test.describe("electron terminal explorer", () => {
       await execCommand(page, "terminal.new")
       await page.waitForTimeout(500)
       await execCommand(page, "terminal.explorer.show")
-      await expect(page.locator("[data-jet-list-panel='jet:terminal-explorer']")).toBeVisible()
+      await expectSelectorVisible(page, "[data-jet-list-panel='jet:terminal-explorer']")
     } finally {
       await app.close()
     }
@@ -23,7 +37,7 @@ test.describe("electron terminal explorer", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      await expect(page.locator("[data-jet-terminal-panel]")).toBeVisible()
+      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
       await execCommand(page, "terminal.show")
       await page.waitForTimeout(400)
     } finally {
@@ -36,12 +50,12 @@ test.describe("electron terminal explorer", () => {
     try {
       const explorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")
       const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
-      await expect(projectRow).toHaveAttribute("aria-expanded", "true")
+      await expectLocatorAttribute(projectRow, "aria-expanded", "true")
 
       await projectRow.getByRole("button", { name: "Launch agent" }).click()
       await page.getByRole("menuitem", { name: "Codex" }).click()
 
-      await expect(projectRow).toHaveAttribute("aria-expanded", "true")
+      await expectLocatorAttribute(projectRow, "aria-expanded", "true")
     } finally {
       await app.close()
     }
@@ -53,27 +67,27 @@ test.describe("electron terminal explorer", () => {
       const explorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")
       const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
       await projectRow.click({ button: "right" })
-      await expect(page.getByRole("menuitem", { name: "Activate Project" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "New Terminal" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "Launch Agent" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "Copy Project Path" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "Remove Project" })).toBeVisible()
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Activate Project" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "New Terminal" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Launch Agent" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Copy Project Path" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Remove Project" }))
       await page.keyboard.press("Escape")
 
       await projectRow.getByRole("button", { name: "New terminal" }).click()
       const terminalRow = explorer.locator("[role='treeitem'][aria-level='2']").first()
-      await expect(terminalRow).toBeVisible()
+      await expectLocatorVisible(terminalRow)
       await terminalRow.click({ button: "right" })
-      await expect(page.getByRole("menuitem", { name: "Focus" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "Rename…" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "Copy Working Directory" })).toBeVisible()
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Focus" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Rename…" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Duplicate" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Copy Working Directory" }))
       await page.getByRole("menuitem", { name: "Rename…" }).click()
 
       const rename = explorer.getByRole("textbox", { name: /Rename/ })
       await rename.fill("Build agent")
       await rename.press("Enter")
-      await expect(terminalRow).toContainText("Build agent")
+      await expectLocatorContainsText(terminalRow, "Build agent")
     } finally {
       await app.close()
     }

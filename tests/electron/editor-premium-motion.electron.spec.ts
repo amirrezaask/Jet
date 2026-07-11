@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { launchJet, openFixtureFile } from "./_launch.js"
 
 test.describe("premium editor motion", () => {
@@ -7,10 +19,10 @@ test.describe("premium editor motion", () => {
     try {
       await page.evaluate(async () => window.__jetAgent!.executeCommand("ui.showCommandPalette"))
       const paletteInput = page.locator("[data-slot='command-input']")
-      await expect(paletteInput).toBeFocused()
-      await expect(page.locator("[data-jet-universal-caret-layer]")).toBeAttached()
-      await expect(page.locator("[data-jet-universal-cursor]")).toHaveCount(1)
-      await expect(page.locator("[data-jet-universal-cursor-ghost]")).toHaveCount(5)
+      await expectLocatorFocused(paletteInput)
+      await expectLocatorAttached(page.locator("[data-jet-universal-caret-layer]"))
+      await expectLocatorCount(page.locator("[data-jet-universal-cursor]"), 1)
+      await expectLocatorCount(page.locator("[data-jet-universal-cursor-ghost]"), 5)
       await expect
         .poll(() => paletteInput.evaluate(element => getComputedStyle(element).caretColor))
         .toBe("rgba(0, 0, 0, 0)")
@@ -29,7 +41,7 @@ test.describe("premium editor motion", () => {
         window.setTimeout(() => observer.disconnect(), 1_000)
       })
       await page.keyboard.type("open")
-      await expect(page.locator("[data-jet-universal-caret-layer]")).toHaveAttribute(
+      await expectLocatorAttribute(page.locator("[data-jet-universal-caret-layer]"), 
         "data-jet-ghost-observed",
         "true",
         { timeout: 1_000 },
@@ -42,10 +54,10 @@ test.describe("premium editor motion", () => {
       await expect
         .poll(() => numberInput.evaluate(element => getComputedStyle(element).caretColor))
         .toBe("rgba(0, 0, 0, 0)")
-      await expect(page.locator("[data-jet-universal-cursor]")).toBeVisible()
+      await expectSelectorVisible(page, "[data-jet-universal-cursor]")
 
       await page.keyboard.press("Escape")
-      await expect(page.locator("[data-jet-settings-overlay]")).toBeHidden()
+      await expectSelectorHidden(page, "[data-jet-settings-overlay]")
       await page.evaluate(() => {
         const editable = document.createElement("div")
         editable.contentEditable = "true"
@@ -65,7 +77,7 @@ test.describe("premium editor motion", () => {
       await expect
         .poll(() => editable.evaluate(element => getComputedStyle(element).caretColor))
         .toBe("rgba(0, 0, 0, 0)")
-      await expect(page.locator("[data-jet-universal-cursor]")).toBeVisible()
+      await expectSelectorVisible(page, "[data-jet-universal-cursor]")
 
     } finally {
       await app.close()
@@ -76,14 +88,14 @@ test.describe("premium editor motion", () => {
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/index.ts")
-      await expect(page.locator("[data-jet-editor-cursor-layer]")).toBeVisible()
-      await expect(page.locator("[data-jet-editor-cursor]")).toHaveCount(1)
+      await expectSelectorVisible(page, "[data-jet-editor-cursor-layer]")
+      await expectLocatorCount(page.locator("[data-jet-editor-cursor]"), 1)
 
       await page.keyboard.press("Control+Space")
       const completion = page.locator(".cm-tooltip.cm-tooltip-autocomplete")
-      await expect(completion).toBeVisible()
-      await expect(completion.locator("li")).not.toHaveCount(0)
-      await expect(completion.locator("li[aria-selected]")).toHaveCount(1)
+      await expectLocatorVisible(completion)
+      await expect.poll(() => completion.locator("li").count()).toBeGreaterThan(0)
+      await expectLocatorCount(completion.locator("li[aria-selected]"), 1)
 
       await page.keyboard.press("Escape")
       await page.evaluate(() => window.__jetAgent!.setEditorSelection(1, 1))
@@ -102,7 +114,7 @@ test.describe("premium editor motion", () => {
         window.setTimeout(() => observer.disconnect(), 1_000)
       })
       await page.keyboard.press("ArrowDown")
-      await expect(page.locator("[data-jet-editor-cursor-layer]")).toHaveAttribute(
+      await expectLocatorAttribute(page.locator("[data-jet-editor-cursor-layer]"), 
         "data-jet-ghost-observed",
         "true",
         { timeout: 1_000 },

@@ -1,4 +1,18 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+  expectLocatorContainsText,
+  expectNotContainsText,
+} from "../shell/assert.js"
+
 import { flakyTest } from "./_flaky.js"
 import { hasPtySpawn, launchJet, readTerminalText, showTerminal } from "./_launch.js"
 
@@ -149,7 +163,7 @@ test.describe("electron terminal", () => {
       await page.keyboard.type("echo -ne '\\033]0;JetTitleTest\\007'")
       await page.keyboard.press("Enter")
 
-      await expect(page.locator("[data-jet-tab-bar]")).toContainText("JetTitleTest", {
+      await expectContainsText(page, "[data-jet-tab-bar]", "JetTitleTest", {
         timeout: 15_000,
       })
     } finally {
@@ -182,16 +196,16 @@ test.describe("electron terminal", () => {
       await page.keyboard.type("exit")
       await page.keyboard.press("Enter")
 
-      await expect(page.locator("[data-jet-terminal-panel]")).toHaveAttribute(
+      await expectLocatorAttribute(page.locator("[data-jet-terminal-panel]"), 
         "data-jet-terminal-status",
         "exited",
         { timeout: 15_000 },
       )
       const exitBar = page.locator("[data-jet-terminal-exit-bar]")
-      await expect(exitBar).toBeVisible({ timeout: 15_000 })
-      await expect(exitBar).toContainText("Process exited")
-      await expect(exitBar.getByRole("button", { name: "Restart" })).toBeVisible()
-      await expect(page.locator("[data-jet-terminal-panel] .xterm-rows")).toBeVisible()
+      await expectLocatorVisible(exitBar, { timeout: 15_000 })
+      await expectLocatorContainsText(exitBar, "Process exited")
+      await expectLocatorVisible(exitBar.getByRole("button", { name: "Restart" }))
+      await expectSelectorVisible(page, "[data-jet-terminal-panel] .xterm-rows")
     } finally {
       await app.close()
     }
@@ -234,12 +248,12 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
       const panel = page.locator("[data-jet-terminal-panel]")
-      await expect(panel).toHaveAttribute("data-jet-terminal-status", "running")
+      await expectLocatorAttribute(panel, "data-jet-terminal-status", "running")
 
       const layer = panel.locator("[data-jet-terminal-cursor-layer]")
-      await expect(layer).toBeVisible()
-      await expect(layer.locator("[data-jet-terminal-cursor]")).toHaveCount(1)
-      await expect(layer.locator("[data-jet-terminal-cursor-ghost]")).toHaveCount(5)
+      await expectLocatorVisible(layer)
+      await expectLocatorCount(layer.locator("[data-jet-terminal-cursor]"), 1)
+      await expectLocatorCount(layer.locator("[data-jet-terminal-cursor-ghost]"), 5)
 
       await page.evaluate(() => {
         const cursorLayer = document.querySelector<HTMLElement>("[data-jet-terminal-cursor-layer]")
@@ -258,7 +272,7 @@ test.describe("electron terminal", () => {
 
       await panel.locator(".jet-terminal-surface").click()
       await page.keyboard.type("cursor")
-      await expect(layer).toHaveAttribute("data-jet-ghost-observed", "true", { timeout: 1_000 })
+      await expectLocatorAttribute(layer, "data-jet-ghost-observed", "true", { timeout: 1_000 })
     } finally {
       await app.close()
     }

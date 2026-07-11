@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { skipFlakyTest } from "./_flaky.js"
 import { PROBLEMS_PANEL } from "../helpers/location-list.js"
 import { launchJet, openFixtureFile, waitForLspConnected, hasTypescriptLanguageServer } from "./_launch.js"
@@ -13,7 +25,7 @@ test.describe("electron LSP", () => {
     try {
       await openFixtureFile(page, "src/index.ts")
       await waitForLspConnected(page)
-      await expect(page.locator("footer")).toContainText("LSP connected")
+      await expectContainsText(page, "footer", "LSP connected")
     } finally {
       await app.close()
     }
@@ -33,7 +45,7 @@ test.describe("electron LSP", () => {
       await page.keyboard.press("F12")
       await page.waitForTimeout(2000)
 
-      await expect(page.locator(".cm-editor")).toContainText("export function greet")
+      await expectContainsText(page, ".cm-editor", "export function greet")
     } finally {
       await app.close()
     }
@@ -63,13 +75,13 @@ test.describe("electron LSP", () => {
 
       await page.keyboard.down("Meta")
       await page.mouse.move(point.x, point.y)
-      await expect(page.locator("[data-jet-definition-link]")).toHaveCount(1, { timeout: 5_000 })
+      await expectLocatorCount(page.locator("[data-jet-definition-link]"), 1, { timeout: 5_000 })
       await page.mouse.click(point.x, point.y)
       await page.keyboard.up("Meta")
-      await expect(page.locator(".cm-editor")).toContainText("export function greet", { timeout: 8_000 })
+      await expectContainsText(page, ".cm-editor", "export function greet", { timeout: 8_000 })
 
       await page.evaluate(async () => window.__jetAgent!.executeCommand("navigation.jumpBack"))
-      await expect(page.locator(".cm-editor")).toContainText("function main", { timeout: 5_000 })
+      await expectContainsText(page, ".cm-editor", "function main", { timeout: 5_000 })
     } finally {
       await page.keyboard.up("Meta").catch(() => {})
       await app.close()
@@ -87,7 +99,7 @@ test.describe("electron LSP", () => {
       })
       await page.waitForTimeout(1500)
 
-      await expect(page.locator("body")).toContainText("main")
+      await expectContainsText(page, "body", "main")
     } finally {
       await app.close()
     }
@@ -124,7 +136,7 @@ test.describe("electron LSP", () => {
       })
       await page.waitForTimeout(1500)
 
-      await expect(page.locator(PROBLEMS_PANEL)).toContainText(/error|Type|problem/i)
+      await expectContainsText(page, PROBLEMS_PANEL, /error|Type|problem/i)
     } finally {
       await app.close()
     }
@@ -144,7 +156,7 @@ test.describe("electron LSP", () => {
       })
       await page.waitForTimeout(2000)
 
-      await expect(page.locator("body")).toContainText(/reference|utils|greet/i)
+      await expectContainsText(page, "body", /reference|utils|greet/i)
     } finally {
       await app.close()
     }
@@ -164,7 +176,7 @@ test.describe("electron LSP", () => {
       })
       await page.waitForTimeout(1500)
 
-      await expect(page.locator(PROBLEMS_PANEL)).toContainText(/error|Type|problem/i)
+      await expectContainsText(page, PROBLEMS_PANEL, /error|Type|problem/i)
     } finally {
       await app.close()
     }

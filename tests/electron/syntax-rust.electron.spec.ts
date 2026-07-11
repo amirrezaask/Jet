@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { launchJet, openFixtureFile } from "./_launch.js"
 
 test("electron syntax: rust file has colored spans", async () => {

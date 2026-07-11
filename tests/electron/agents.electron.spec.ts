@@ -15,12 +15,12 @@ describeFlaky("electron agents", () => {
       })
 
       const chatTab = page.locator('[data-jet-tab-slot^="jet:agent-chat:"][data-jet-tab-active]')
-      await expect(chatTab).toBeVisible({ timeout: 15_000 })
+      await expectLocatorVisible(chatTab, { timeout: 15_000 })
       await chatTab.locator('[data-testid="composer-editor"]').click()
       await page.keyboard.type("Reply with exactly: OK")
       await chatTab.locator('button[type="submit"]').click()
 
-      await expect(chatTab).toContainText("OK", { timeout: 120_000 })
+      await expectLocatorContainsText(chatTab, "OK", { timeout: 120_000 })
 
       const threadStatus = await page.evaluate(async () => {
         const folder = window.__jetAgent!.getState().workspacePath

@@ -1,4 +1,18 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+  expectLocatorContainsText,
+  expectNotContainsText,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet, openFixtureFile, waitForSearchReady } from "./_launch.js"
 import {
   expectLayout,
@@ -32,19 +46,19 @@ test.describe("electron location list", () => {
       await page.keyboard.type("main")
       await page.waitForTimeout(2500)
 
-      await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
+      await expectNotContainsText(page, SEARCH_LIST_PANEL, "No results")
       await expectLayout(page, { selector: ITEM_SEL, minItems: 1, minRowHeight: 22 })
 
       const firstRow = page.locator(ITEM_SEL).first()
-      await expect(firstRow).toBeVisible()
+      await expectLocatorVisible(firstRow)
 
       const label = firstRow.locator('[data-slot="row-label"]').first()
-      await expect(label).not.toBeEmpty()
-      await expect(label).toContainText(/main/i)
+      await expect.poll(() => label.evaluate(el => (el.textContent ?? "").trim().length)).toBeGreaterThan(0)
+      await expectLocatorContainsText(label, /main/i)
 
       const detail = firstRow.locator('[data-slot="row-detail"]').first()
-      await expect(detail).toContainText(/:\d+:\d+/)
-      await expect(page.locator(SEARCH_LIST_PANEL)).toContainText("src/")
+      await expectLocatorContainsText(detail, /:\d+:\d+/)
+      await expectContainsText(page, SEARCH_LIST_PANEL, "src/")
 
       await expectRowTextReadable(page, { selector: ITEM_SEL, minItems: 1, minContrastRatio: 2.5 })
       await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 1, minGlyphHeightPx: 10 })
@@ -57,7 +71,7 @@ test.describe("electron location list", () => {
       await firstRow.focus()
       await page.waitForTimeout(150)
       await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 1, minGlyphHeightPx: 10 })
-      await expect(label).toBeVisible()
+      await expectLocatorVisible(label)
     } finally {
       await app.close()
     }
@@ -70,15 +84,15 @@ test.describe("electron location list", () => {
       await waitForSearchReady(page)
       await execCommand(page, "view.splitEditor")
       await execCommand(page, "locationlist.showSearch")
-      await expect(page.locator('input[type="search"]')).toBeVisible({ timeout: 10_000 })
+      await expectSelectorVisible(page, 'input[type="search"]', { timeout: 10_000 })
 
       await page.locator('input[type="search"]').click()
       await page.keyboard.type("greet")
       await page.waitForTimeout(2500)
 
-      await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
+      await expectNotContainsText(page, SEARCH_LIST_PANEL, "No results")
       await expectLayout(page, { selector: ITEM_SEL, minItems: 1, minRowHeight: 22 })
-      await expect(page.locator(SEARCH_LIST_PANEL)).toContainText("utils.ts")
+      await expectContainsText(page, SEARCH_LIST_PANEL, "utils.ts")
       await expectRowTextVisible(page, { selector: ITEM_SEL, minItems: 1, minGlyphHeightPx: 10 })
     } finally {
       await app.close()
@@ -96,7 +110,7 @@ test.describe("electron location list", () => {
       })
       await page.waitForTimeout(1500)
 
-      await expect(page.locator(PROBLEMS_PANEL)).not.toContainText("No results")
+      await expectNotContainsText(page, PROBLEMS_PANEL, "No results")
       await expectLayout(page, { selector: problemsListItems(), minItems: 1, minRowHeight: 22 })
       await expectRowTextReadable(page, { selector: problemsListItems(), minItems: 1, minContrastRatio: 3 })
       await expectRowTextVisible(page, { selector: problemsListItems(), minItems: 1, minGlyphHeightPx: 10 })

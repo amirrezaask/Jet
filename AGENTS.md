@@ -622,7 +622,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 - Importing Electron in renderer packages (use `window.jet`)
 - Bundling native Node modules (`ws`, `node-pty`) in electron main vite build without `external`
 - Setting vite electron outDir relative to `jet-app` root (breaks `package.json` main)
-- **Dual shell:** Electron (`jet-desktop`) is the primary ship target; **Tauri** (`jet-tauri`) is an alternate shell with a **Rust host** (`apps/jet-tauri/src-tauri/src/host/`) wired via `@jet/host-client` `loadTauriTransport()`. Dev: `pnpm dev:tauri` (no Node sidecar). Tests: `pnpm test:tauri` — Playwright channel registry + WebdriverIO smoke (`tests/tauri/run-e2e.mjs`, embedded `tauri-plugin-wdio-webdriver`, `cargo feature e2e`, `tauri build --features e2e`).
+- **Dual shell:** Electron (`jet-desktop`) is the primary ship target; **Tauri** (`jet-tauri`) is an alternate shell with a **Rust host** (`apps/jet-tauri/src-tauri/src/host/`) wired via `@jet/host-client` `loadTauriTransport()`. Dev: `pnpm dev:tauri` (no Node sidecar). Tests: `pnpm test:tauri` — Playwright channel registry + node:http WebDriver UI suite (`tests/tauri/run-e2e.mjs` → `run-ui-suite.mjs`; embedded `tauri-plugin-wdio-webdriver`, `cargo feature e2e`, `tauri build --features e2e`). Covers palette, terminal, quick-open, editor open, titlebar.
 - Large shadcn default styling — keep RAD/custom theme direction
 
 ## Open Backlog (updated 2026-07-05)

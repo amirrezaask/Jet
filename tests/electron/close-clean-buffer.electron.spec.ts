@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet, openFixtureFile } from "./_launch.js"
 
 test.describe("electron close clean buffer", () => {
@@ -10,7 +22,7 @@ test.describe("electron close clean buffer", () => {
       expect(before).toBeGreaterThan(0)
 
       await execCommand(page, "workspace.closeBuffer")
-      await expect(page.locator('[data-jet-confirm="accept"]')).toHaveCount(0)
+      await expectLocatorCount(page.locator('[data-jet-confirm="accept"]'), 0)
       await page.waitForTimeout(300)
     } finally {
       await app.close()

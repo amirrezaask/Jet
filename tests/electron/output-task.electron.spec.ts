@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet } from "./_launch.js"
 
 test.describe("electron output and tasks", () => {
@@ -6,7 +18,7 @@ test.describe("electron output and tasks", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "output.show")
-      await expect(page.locator('[data-jet-list-panel="output"]')).toBeVisible()
+      await expectSelectorVisible(page, '[data-jet-list-panel="output"]')
     } finally {
       await app.close()
     }

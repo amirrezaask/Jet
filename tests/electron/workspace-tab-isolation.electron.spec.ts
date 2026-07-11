@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { launchJet, openFixtureFile, readTerminalText, REPO_ROOT, showTerminal } from "./_launch.js"
 import { resolve } from "node:path"
 
@@ -64,13 +76,13 @@ test.describe("electron workspace tab isolation", () => {
       await expect
         .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
         .toBe(secondPath)
-      await expect(page.locator("[data-jet-terminal-panel]")).toHaveCount(0)
+      await expectLocatorCount(page.locator("[data-jet-terminal-panel]"), 0)
 
       await page.evaluate(path => window.__jetAgent!.openWorkspace(path), samplePath)
       await expect
         .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
         .toBe(samplePath)
-      await expect(page.locator("[data-jet-terminal-panel]")).toBeVisible()
+      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
       await expect.poll(() => readTerminalText(page)).toContain("JET_PTY_SURVIVES")
     } finally {
       await app.close()

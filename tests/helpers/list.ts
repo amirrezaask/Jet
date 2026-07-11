@@ -1,5 +1,5 @@
-import type { Page } from "@playwright/test"
-import { expect } from "@playwright/test"
+import type { ShellDriver } from "../shell/driver.js"
+import { expectContainsText, expectNotContainsText, expectSelectorVisible } from "../shell/assert.js"
 
 export type ListRowsOpts = {
   panel: string
@@ -10,16 +10,16 @@ export type ListRowsOpts = {
   noResultsText?: string
 }
 
-export async function expectListRows(page: Page, opts: ListRowsOpts): Promise<void> {
+export async function expectListRows(page: ShellDriver, opts: ListRowsOpts): Promise<void> {
   const { panel, minItems, minUniqueTops = minItems, minRowHeight = 18, needle, noResultsText = "No results" } = opts
   const panelSel = `[data-jet-list-panel="${panel}"]`
   const itemSel = `${panelSel} [data-jet-list-item]`
 
-  await expect(page.locator(panelSel)).toBeVisible()
-  await expect(page.locator(panelSel)).not.toContainText(noResultsText)
+  await expectSelectorVisible(page, panelSel)
+  await expectNotContainsText(page, panelSel, noResultsText)
 
   if (needle) {
-    await expect(page.locator(panelSel)).toContainText(needle)
+    await expectContainsText(page, panelSel, needle)
   }
 
   await expectLayout(page, { selector: itemSel, minItems, minUniqueTops, minRowHeight })
@@ -34,7 +34,7 @@ export type LayoutOpts = {
   minRowHeight?: number
 }
 
-export async function expectLayout(page: Page, opts: LayoutOpts): Promise<void> {
+export async function expectLayout(page: ShellDriver, opts: LayoutOpts): Promise<void> {
   const sel = opts.selector ?? "[data-jet-list-item]"
   const minItems = opts.minItems ?? 2
   const minUniqueTops = opts.minUniqueTops ?? minItems
@@ -84,7 +84,7 @@ export type NoOverlapOpts = {
   tolerancePx?: number
 }
 
-export async function expectNoOverlap(page: Page, opts: NoOverlapOpts = {}): Promise<void> {
+export async function expectNoOverlap(page: ShellDriver, opts: NoOverlapOpts = {}): Promise<void> {
   const sel = opts.selector ?? "[data-jet-list-item]"
   const minItems = opts.minItems ?? 2
   const tol = opts.tolerancePx ?? 0
@@ -128,7 +128,7 @@ export type NoClippingOpts = {
   containerSelector?: string
 }
 
-export async function expectNoClipping(page: Page, opts: NoClippingOpts = {}): Promise<void> {
+export async function expectNoClipping(page: ShellDriver, opts: NoClippingOpts = {}): Promise<void> {
   const sel = opts.selector ?? "[data-jet-list-item]"
   const containerSel = opts.containerSelector ?? null
 
@@ -177,7 +177,7 @@ export type RowSpacingOpts = {
   tolerancePx?: number
 }
 
-export async function expectRowSpacing(page: Page, opts: RowSpacingOpts = {}): Promise<void> {
+export async function expectRowSpacing(page: ShellDriver, opts: RowSpacingOpts = {}): Promise<void> {
   const sel = opts.selector ?? "[data-jet-list-item]"
   const minItems = opts.minItems ?? 2
   const maxGap = opts.maxGapPx ?? 2
@@ -230,7 +230,7 @@ export type RowTextReadableOpts = {
   minLabelHeightPx?: number
 }
 
-export async function expectRowTextVisible(page: Page, opts: RowTextVisibleOpts = {}): Promise<void> {
+export async function expectRowTextVisible(page: ShellDriver, opts: RowTextVisibleOpts = {}): Promise<void> {
   const sel = opts.selector ?? "[data-jet-list-item]"
   const minItems = opts.minItems ?? 1
   const textSel = opts.textSelector ?? "span, [data-slot='row-label'], [data-slot='row-detail']"
@@ -289,7 +289,7 @@ export async function expectRowTextVisible(page: Page, opts: RowTextVisibleOpts 
 }
 
 /** Assert list row labels have visible glyphs and sufficient contrast against the row background. */
-export async function expectRowTextReadable(page: Page, opts: RowTextReadableOpts = {}): Promise<void> {
+export async function expectRowTextReadable(page: ShellDriver, opts: RowTextReadableOpts = {}): Promise<void> {
   const sel = opts.selector ?? "[data-jet-list-item]"
   const minItems = opts.minItems ?? 1
   const labelSel = opts.labelSelector ?? '[data-slot="row-label"], span.font-medium, span:first-of-type'
@@ -430,7 +430,7 @@ export type ElementWidthOpts = {
   maxPctOfViewport?: number
 }
 
-export async function expectElementWidth(page: Page, opts: ElementWidthOpts): Promise<void> {
+export async function expectElementWidth(page: ShellDriver, opts: ElementWidthOpts): Promise<void> {
   const report = await page.evaluate(
     ({ sel }) => {
       const el = document.querySelector<HTMLElement>(sel)
@@ -468,7 +468,7 @@ export type SyntaxHighlightingOpts = {
   requireKeywordColor?: boolean
 }
 
-export async function expectSyntaxHighlighting(page: Page, opts: SyntaxHighlightingOpts = {}): Promise<void> {
+export async function expectSyntaxHighlighting(page: ShellDriver, opts: SyntaxHighlightingOpts = {}): Promise<void> {
   const sel = opts.selector ?? ".cm-line span"
   const minSpans = opts.minColoredSpans ?? 5
   const minColors = opts.minUniqueColors ?? 3
@@ -506,7 +506,7 @@ export async function expectSyntaxHighlighting(page: Page, opts: SyntaxHighlight
   }
 }
 
-export async function dragResizeHandle(page: Page, opts: { selector?: string; deltaX?: number; deltaY?: number }): Promise<void> {
+export async function dragResizeHandle(page: ShellDriver, opts: { selector?: string; deltaX?: number; deltaY?: number }): Promise<void> {
   const sel = opts.selector ?? '[data-slot="resizable-handle"]'
   const deltaX = opts.deltaX ?? 0
   const deltaY = opts.deltaY ?? 0

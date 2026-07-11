@@ -1,4 +1,18 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+  expectLocatorContainsText,
+  expectNotContainsText,
+} from "../shell/assert.js"
+
 import { resolve } from "node:path"
 import { expectLayout, expectNoOverlap, expectRowSpacing, expectRowTextVisible } from "../helpers/list.js"
 import { launchJet, REPO_ROOT } from "./_launch.js"
@@ -18,7 +32,7 @@ test.describe("electron project persistence", () => {
         .toBe(secondPath)
       const secondRow = page.getByRole("treeitem", { name: "second-workspace" })
       await secondRow.getByRole("button", { name: "New terminal" }).click()
-      await expect(page.locator("[data-jet-terminal-panel]")).toBeVisible()
+      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
       await page.evaluate(() => window.__jetAgent!.openFile("src/marker.ts"))
       await page.evaluate(() => window.__jetAgent!.waitForEditor())
       await expect
@@ -36,16 +50,16 @@ test.describe("electron project persistence", () => {
         .toBe(secondPath)
 
       const panel = page.locator(PANEL)
-      await expect(panel).toContainText("sample-workspace")
-      await expect(panel).toContainText("second-workspace")
-      await expect(panel).not.toContainText("No results")
+      await expectLocatorContainsText(panel, "sample-workspace")
+      await expectLocatorContainsText(panel, "second-workspace")
+      await expect.poll(async () => !(await panel.evaluate(el => el.textContent ?? "")).includes("No results")).toBe(true)
       await expectLayout(page, { selector: ROWS, minItems: 2, minUniqueTops: 2 })
       await expectNoOverlap(page, { selector: ROWS, minItems: 2 })
       await expectRowSpacing(page, { selector: ROWS, minItems: 2 })
       await expectRowTextVisible(page, { selector: ROWS, minItems: 2 })
 
-      await expect(page.locator("[data-jet-terminal-panel]")).toHaveCount(0)
-      await expect(page.locator(".cm-editor")).toHaveCount(0)
+      await expectLocatorCount(page.locator("[data-jet-terminal-panel]"), 0)
+      await expectLocatorCount(page.locator(".cm-editor"), 0)
     } finally {
       await app.close()
     }

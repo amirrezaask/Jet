@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { describeFlaky } from "./_flaky.js"
 import { execCommand, focusEditor, launchJet, openFixtureFile, typeInEditor } from "./_launch.js"
 
@@ -16,7 +28,7 @@ describeFlaky("electron dirty close confirm", () => {
       await execCommand(page, "workbench.action.focusFirstEditorGroup")
       await focusEditor(page)
       await execCommand(page, "workspace.closeBuffer")
-      await expect(page.locator('[data-jet-confirm="accept"]')).toBeVisible({ timeout: 10_000 })
+      await expectSelectorVisible(page, '[data-jet-confirm="accept"]', { timeout: 10_000 })
 
       await page.evaluate(() => window.__jetAgent!.dismissConfirm())
       await expect
@@ -24,7 +36,7 @@ describeFlaky("electron dirty close confirm", () => {
         .toBeGreaterThan(0)
 
       await execCommand(page, "workspace.closeBuffer")
-      await expect(page.locator('[data-jet-confirm="accept"]')).toBeVisible({ timeout: 10_000 })
+      await expectSelectorVisible(page, '[data-jet-confirm="accept"]', { timeout: 10_000 })
       await page.evaluate(() => window.__jetAgent!.acceptConfirm())
       await page.waitForTimeout(300)
     } finally {

@@ -1,4 +1,18 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+  expectLocatorContainsText,
+  expectNotContainsText,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet, openFixtureFile } from "./_launch.js"
 
 test.describe("electron buffer list", () => {
@@ -9,13 +23,13 @@ test.describe("electron buffer list", () => {
       await openFixtureFile(page, "src/utils.ts")
 
       await execCommand(page, "workspace.bufferList")
-      await expect(page.getByRole("dialog")).toBeVisible()
-      await expect(page.getByRole("dialog")).toContainText("index.ts")
-      await expect(page.getByRole("dialog")).toContainText("utils.ts")
+      await expectLocatorVisible(page.getByRole("dialog"))
+      await expectLocatorContainsText(page.getByRole("dialog"), "index.ts")
+      await expectLocatorContainsText(page.getByRole("dialog"), "utils.ts")
 
       await page.getByRole("option", { name: /index\.ts/i }).click()
       await page.evaluate(() => window.__jetAgent!.waitForEditor())
-      await expect(page.locator(".cm-editor")).toContainText("main()")
+      await expectContainsText(page, ".cm-editor", "main()")
     } finally {
       await app.close()
     }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Jet",
+  "productName": "Jet-Tauri",
   "version": "0.0.1",
   "identifier": "com.jet.editor.tauri",
   "build": {
@@ -20,7 +20,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Jet",
+        "title": "Jet-Tauri",
         "width": 1400,
         "height": 900,
         "decorations": true,

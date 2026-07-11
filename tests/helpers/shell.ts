@@ -1,13 +1,13 @@
-import type { Page } from "@playwright/test"
-import { expect } from "@playwright/test"
+import type { ShellDriver } from "../shell/driver.js"
+import { expectDialogCount, expectRoleVisible } from "../shell/assert.js"
 
-export async function expectPaletteOpen(page: Page): Promise<void> {
-  await expect(page.getByRole("dialog")).toBeVisible()
-  await expect(page.getByPlaceholder(/filter|search|command/i)).toBeVisible()
+export async function expectPaletteOpen(page: ShellDriver): Promise<void> {
+  await expectRoleVisible(page, "dialog")
+  await page.waitForSelector('[role="dialog"] [role="combobox"], [role="dialog"] input', { timeout: 10_000 })
 }
 
-export async function expectPaletteClosed(page: Page): Promise<void> {
-  await expect(page.getByRole("dialog")).toHaveCount(0)
+export async function expectPaletteClosed(page: ShellDriver): Promise<void> {
+  await expectDialogCount(page, 0)
 }
 
 export const EXPLORER_PANEL = '[data-jet-list-panel="jet:explorer"]'

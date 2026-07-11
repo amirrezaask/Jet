@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { execCommand, focusEditor, launchJet, openFixtureFile } from "./_launch.js"
 
 test.describe("electron editor replace", () => {
@@ -8,7 +20,7 @@ test.describe("electron editor replace", () => {
       await openFixtureFile(page, "src/utils.ts")
       await execCommand(page, "editor.replace")
       const findInput = page.locator('input[placeholder*="Find"], input[aria-label*="Find"]').first()
-      await expect(findInput).toBeVisible()
+      await expectLocatorVisible(findInput)
       await findInput.fill("Hello")
       const replaceInput = page.locator('input[placeholder*="Replace"], input[aria-label*="Replace"]').first()
       await replaceInput.fill("Hi")

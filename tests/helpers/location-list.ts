@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import type { ShellDriver } from "../shell/driver.js"
 
 /** Problems list tab uses a stable well-known id. */
 export const PROBLEMS_PANEL = '[data-jet-list-panel="jet:problems"]'
@@ -14,10 +14,12 @@ export function problemsListItems(): string {
   return `${PROBLEMS_PANEL} [data-jet-list-item]`
 }
 
-export async function waitForSearchListPanel(page: Page): Promise<string> {
-  const handle = page.locator(SEARCH_LIST_PANEL).first()
-  await handle.waitFor({ state: "visible", timeout: 15_000 })
-  const id = await handle.getAttribute("data-jet-list-panel")
+export async function waitForSearchListPanel(page: ShellDriver): Promise<string> {
+  await page.locator(SEARCH_LIST_PANEL).first().waitFor({ state: "visible", timeout: 15_000 })
+  const id = await page.evaluate(sel => {
+    const el = document.querySelector(sel)
+    return el?.getAttribute("data-jet-list-panel") ?? ""
+  }, SEARCH_LIST_PANEL)
   if (!id) throw new Error("search list panel missing data-jet-list-panel")
   return id
 }

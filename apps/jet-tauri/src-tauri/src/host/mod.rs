@@ -38,6 +38,12 @@ impl HostState {
         }
     }
 
+    pub fn shutdown(&self) {
+        self.lsp.stop_all();
+        self.terminal.stop_all();
+        self.workspace.stop_all();
+    }
+
     pub fn invoke(
         &self,
         app: &AppHandle,

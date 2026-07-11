@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { describeFlaky } from "./_flaky.js"
 import { execCommand, launchJet, openFixtureFile, waitForSearchReady } from "./_launch.js"
 import { PROBLEMS_PANEL, SEARCH_LIST_PANEL } from "../helpers/location-list.js"
@@ -9,8 +21,8 @@ describeFlaky("electron location list commands", () => {
     try {
       await waitForSearchReady(page)
       await execCommand(page, "locationlist.showSearch")
-      await expect(page.locator('input[type="search"]')).toBeVisible({ timeout: 15_000 })
-      await expect(page.locator(SEARCH_LIST_PANEL)).toBeVisible()
+      await expectSelectorVisible(page, 'input[type="search"]', { timeout: 15_000 })
+      await expectSelectorVisible(page, SEARCH_LIST_PANEL)
     } finally {
       await app.close()
     }
@@ -23,11 +35,11 @@ describeFlaky("electron location list commands", () => {
       await page.waitForTimeout(1500)
 
       await execCommand(page, "locationlist.showSearch")
-      await expect(page.locator('input[type="search"]')).toBeVisible()
+      await expectSelectorVisible(page, 'input[type="search"]')
 
       await execCommand(page, "locationlist.showProblems")
       await page.waitForTimeout(1000)
-      await expect(page.locator(PROBLEMS_PANEL)).toBeVisible()
+      await expectSelectorVisible(page, PROBLEMS_PANEL)
     } finally {
       await app.close()
     }

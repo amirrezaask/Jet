@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { hasPtySpawn, launchJet, showTerminal } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -19,8 +31,8 @@ test.describe("electron appearance and terminal-first UX", () => {
         timeout: 15_000,
       })
 
-      await expect(page.locator("[data-jet-list-panel='jet:terminal-explorer']")).toBeVisible()
-      await expect(page.locator("[data-jet-terminal-panel]")).toBeVisible()
+      await expectSelectorVisible(page, "[data-jet-list-panel='jet:terminal-explorer']")
+      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
 
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
@@ -41,13 +53,13 @@ test.describe("electron appearance and terminal-first UX", () => {
         await window.__jetAgent!.executeCommand("settings.show")
       })
 
-      await expect(page.locator("[data-jet-settings-overlay]")).toBeVisible()
-      await expect(page.locator("[data-jet-theme-option]")).toHaveCount(8)
-      await expect(page.locator("[data-jet-theme-option='ayu-dark']")).toBeVisible()
-      await expect(page.locator("[data-jet-theme-option='everforest-dark']")).toBeVisible()
-      await expect(page.locator("[data-jet-theme-option='gruvbox-light']")).toBeVisible()
-      await expect(page.locator("[data-jet-theme-option='tokyonight-light']")).toBeVisible()
-      await expect(page.locator("[data-jet-setting='terminal-cursor-motion-trail']")).toHaveAttribute("data-state", "on")
+      await expectSelectorVisible(page, "[data-jet-settings-overlay]")
+      await expectLocatorCount(page.locator("[data-jet-theme-option]"), 8)
+      await expectSelectorVisible(page, "[data-jet-theme-option='ayu-dark']")
+      await expectSelectorVisible(page, "[data-jet-theme-option='everforest-dark']")
+      await expectSelectorVisible(page, "[data-jet-theme-option='gruvbox-light']")
+      await expectSelectorVisible(page, "[data-jet-theme-option='tokyonight-light']")
+      await expectLocatorAttribute(page.locator("[data-jet-setting='terminal-cursor-motion-trail']"), "data-state", "on")
       await page.locator("[data-jet-setting='terminal-cursor-style-bar']").click()
       await page.locator("[data-jet-setting='terminal-cursor-motion-off']").click()
       await expect
@@ -78,18 +90,19 @@ test.describe("electron appearance and terminal-first UX", () => {
   })
 
   test("shows agent launch menu from workspace chevron", async () => {
+    test.skip(process.env.JET_SHELL === "tauri", "agent UI not in tauri e2e scope")
     const { app, page } = await launchJet()
     try {
       const terminalExplorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")
-      await expect(terminalExplorer).toBeVisible()
+      await expectLocatorVisible(terminalExplorer)
 
       const launcher = page.getByRole("button", { name: "Launch agent" }).first()
-      await expect(launcher).toBeVisible()
+      await expectLocatorVisible(launcher)
       await launcher.click()
 
-      await expect(page.getByRole("menuitem", { name: "Codex" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "Claude" })).toBeVisible()
-      await expect(page.getByRole("menuitem", { name: "Cursor Agent" })).toBeVisible()
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Codex" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Claude" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Cursor Agent" }))
     } finally {
       await app.close()
     }

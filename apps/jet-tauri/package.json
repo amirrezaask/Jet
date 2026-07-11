@@ -6,6 +6,7 @@
     "dev": "node scripts/tauri-dev.mjs",
     "dev:frontend": "node scripts/dev-frontend.mjs",
     "build": "vite build && node scripts/rename-tauri-index.mjs",
+    "release": "node scripts/release.mjs",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri"
   },

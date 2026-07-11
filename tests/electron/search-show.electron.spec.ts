@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { describeFlaky } from "./_flaky.js"
 import { execCommand, launchJet, openFixtureFile, waitForSearchReady } from "./_launch.js"
 import { SEARCH_LIST_PANEL, searchListItems } from "../helpers/location-list.js"
@@ -17,13 +29,13 @@ describeFlaky("electron search show", () => {
       await page.waitForTimeout(2500)
 
       const items = searchListItems()
-      await expect(page.locator(SEARCH_LIST_PANEL)).not.toContainText("No results")
+      await expectNotContainsText(page, SEARCH_LIST_PANEL, "No results")
       await expectLayout(page, { selector: items, minItems: 1, minRowHeight: 18 })
-      await expect(page.locator(SEARCH_LIST_PANEL)).toContainText("utils.ts")
+      await expectContainsText(page, SEARCH_LIST_PANEL, "utils.ts")
 
       await page.locator(items).first().click()
       await page.waitForTimeout(500)
-      await expect(page.locator(".cm-editor")).toContainText("export function greet")
+      await expectContainsText(page, ".cm-editor", "export function greet")
     } finally {
       await app.close()
     }

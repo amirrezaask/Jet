@@ -1,6 +1,7 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    use tauri::Manager;
+    use tauri::{Manager, RunEvent, WindowEvent};
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -23,9 +24,10 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
     }
 
-    builder
+    let app = builder
         .setup(|app| {
-            apply_login_shell_path();
+            // Don't block first paint on login-shell PATH probe — refresh in background.
+            std::thread::spawn(|| apply_login_shell_path());
 
             let home = dirs::home_dir()
                 .map(|p| p.to_string_lossy().into_owned())
@@ -36,6 +38,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
+            }
+
+            if let Some(window) = app.get_webview_window("main") {
+                shell::apply_cached_chrome(&window);
             }
 
             let args: Vec<String> = std::env::args()
@@ -53,6 +59,16 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| shell::on_menu_event(app, event))
+        .on_window_event(|window, event| {
+            if matches!(
+                event,
+                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
+            ) {
+                if let Some(host) = window.try_state::<host::HostState>() {
+                    host.terminal.dispose_for_client(window.label());
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             shell::jet_show_open_folder_dialog,
             shell::jet_show_save_file_dialog,
@@ -60,8 +76,33 @@ pub fn run() {
             shell::jet_get_launch_config,
             shell::jet_host_invoke,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running jet-tauri");
+        .build(tauri::generate_context!())
+        .expect("error while building jet-tauri");
+
+    app.run(|app_handle, event| match event {
+        RunEvent::Exit => {
+            if let Some(host) = app_handle.try_state::<host::HostState>() {
+                host.shutdown();
+            }
+        }
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        RunEvent::Opened { urls } => {
+            for url in urls {
+                if let Ok(path) = url.to_file_path() {
+                    let path_str = path.to_string_lossy().into_owned();
+                    let cwd = std::env::current_dir().unwrap_or_default();
+                    let mut config =
+                        host::launch::resolve_launch_target(&[path_str], &cwd);
+                    config.source = Some("explicit".to_string());
+                    shell::deliver_launch(app_handle, config);
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.set_focus();
+                    }
+                }
+            }
+        }
+        _ => {}
+    });
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet } from "./_launch.js"
 import { EXPLORER_PANEL } from "../helpers/shell.js"
 
@@ -7,7 +19,7 @@ test.describe("electron list keyboard", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "explorer.show")
-      await expect(page.locator(EXPLORER_PANEL)).toBeVisible()
+      await expectSelectorVisible(page, EXPLORER_PANEL)
       await page.waitForTimeout(300)
 
       await execCommand(page, "list.focusDown")

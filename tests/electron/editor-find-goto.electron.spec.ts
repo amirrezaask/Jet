@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet, openFixtureFile } from "./_launch.js"
 
 test.describe("electron editor find and goto", () => {
@@ -7,7 +19,7 @@ test.describe("electron editor find and goto", () => {
     try {
       await openFixtureFile(page, "src/index.ts")
       await execCommand(page, "editor.find")
-      await expect(page.locator('input[placeholder*="Find"], input[aria-label*="Find"]').first()).toBeVisible()
+      await expectLocatorVisible(page.locator('input[placeholder*="Find"], input[aria-label*="Find"]').first())
     } finally {
       await app.close()
     }
@@ -18,7 +30,7 @@ test.describe("electron editor find and goto", () => {
     try {
       await openFixtureFile(page, "src/index.ts")
       await execCommand(page, "editor.gotoLine")
-      await expect(page.getByRole("dialog")).toBeVisible()
+      await expectLocatorVisible(page.getByRole("dialog"))
       const input = page.getByRole("dialog").locator("input").first()
       await input.fill("5")
       await page.keyboard.press("Enter")

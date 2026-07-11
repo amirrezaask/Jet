@@ -1,5 +1,5 @@
-import os from "node:os"
 import { defineConfig } from "@playwright/test"
+import os from "node:os"
 
 const cpuCount = os.cpus().length
 const defaultWorkers = process.env.CI
@@ -11,6 +11,8 @@ export default defineConfig({
   retries: 1,
   workers: process.env.PLAYWRIGHT_WORKERS ? Number(process.env.PLAYWRIGHT_WORKERS) : defaultWorkers,
   fullyParallel: true,
+  globalSetup: "./tests/tauri/global-setup.ts",
+  globalTeardown: "./tests/tauri/global-teardown.ts",
   projects: [
     {
       name: "electron",
@@ -21,6 +23,15 @@ export default defineConfig({
       name: "tauri",
       testDir: "./tests/tauri",
       testMatch: "*.tauri.spec.ts",
+    },
+    {
+      name: "tauri-e2e",
+      testDir: "./tests/electron",
+      testMatch: "*.electron.spec.ts",
+      grepInvert: /agents|agent launch|Launch agent|workspace-open-via-agent/,
+      workers: 1,
+      retries: 0,
+      timeout: 180_000,
     },
     {
       name: "bench",

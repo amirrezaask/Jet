@@ -1,20 +1,24 @@
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test"
+import { _electron as electron } from "@playwright/test"
 import { resolve } from "node:path"
 import { execSync } from "node:child_process"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
+import { wrapPlaywrightPage } from "../shell/playwright-driver.js"
+import { launchTauri } from "../shell/launch-tauri.js"
+import type { LaunchShellResult, ShellDriver } from "../shell/driver.js"
 
-export const REPO_ROOT = resolve(__dirname, "..", "..")
-export const DESKTOP_DIR = resolve(REPO_ROOT, "apps/jet-desktop")
-export const MAIN_JS = resolve(DESKTOP_DIR, "dist-electron/main.js")
-export const SAMPLE = "fixtures/sample-workspace"
-
+export type { ShellDriver }
 export type LaunchJetOptions = {
   workspaceRel?: string
   env?: Record<string, string>
   userDataDir?: string
   launchWithoutWorkspace?: boolean
 }
+
+export const REPO_ROOT = resolve(__dirname, "..", "..")
+export const DESKTOP_DIR = resolve(REPO_ROOT, "apps/jet-desktop")
+export const MAIN_JS = resolve(DESKTOP_DIR, "dist-electron/main.js")
+export const SAMPLE = "fixtures/sample-workspace"
 
 let ptySpawnAvailable: boolean | null = null
 
@@ -61,9 +65,19 @@ export function hasCursorAgent(): boolean {
   }
 }
 
+function isTauriShell(): boolean {
+  return process.env.JET_SHELL === "tauri" || process.env.PLAYWRIGHT_PROJECT_NAME === "tauri-e2e"
+}
+
 export async function launchJet(
   workspaceRelOrOpts: string | LaunchJetOptions = SAMPLE,
-): Promise<{ app: ElectronApplication; page: Page }> {
+): Promise<LaunchShellResult> {
+  if (isTauriShell()) {
+    const opts: LaunchJetOptions =
+      typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
+    return launchTauri(opts)
+  }
+
   const opts: LaunchJetOptions =
     typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
   const workspaceRel = opts.workspaceRel ?? SAMPLE
@@ -92,17 +106,21 @@ export async function launchJet(
     },
   })
 
-  const page = await waitForAppPage(app)
-  await page.waitForLoadState("domcontentloaded")
-  await page.waitForFunction(() => window.__jetAgent != null, null, { timeout: 30_000 })
-  await page.evaluate(async () => {
+  const rawPage = await waitForAppPage(app)
+  await rawPage.waitForLoadState("domcontentloaded")
+  await rawPage.waitForFunction(() => window.__jetAgent != null, null, { timeout: 30_000 })
+  await rawPage.evaluate(async () => {
     await window.__jetAgent!.waitForReady()
   })
-  return { app, page }
+  const page = wrapPlaywrightPage(rawPage)
+  return {
+    app: { close: () => app.close() },
+    page,
+  }
 }
 
 /** Playwright may surface DevTools as firstWindow(); pick the renderer shell. */
-async function waitForAppPage(app: ElectronApplication): Promise<Page> {
+async function waitForAppPage(app: Awaited<ReturnType<typeof electron.launch>>) {
   for (let i = 0; i < 120; i++) {
     for (const win of app.windows()) {
       const url = win.url()
@@ -114,7 +132,7 @@ async function waitForAppPage(app: ElectronApplication): Promise<Page> {
   throw new Error("Electron app window not found (only DevTools?)")
 }
 
-export async function openFixtureFile(page: Page, rel: string): Promise<void> {
+export async function openFixtureFile(page: ShellDriver, rel: string): Promise<void> {
   await page.evaluate(async (f: string) => {
     await window.__jetAgent!.openFile(f)
     await window.__jetAgent!.waitForEditor()
@@ -122,15 +140,15 @@ export async function openFixtureFile(page: Page, rel: string): Promise<void> {
   await focusEditor(page)
 }
 
-export async function focusEditor(page: Page): Promise<void> {
+export async function focusEditor(page: ShellDriver): Promise<void> {
   await page.locator(".cm-content").first().click({ timeout: 10_000 })
 }
 
-export async function waitForDialog(page: Page, timeoutMs = 30_000): Promise<void> {
-  await page.getByRole("dialog").first().waitFor({ state: "visible", timeout: timeoutMs })
+export async function waitForDialog(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
+  await page.locator('[role="dialog"]').first().waitFor({ state: "visible", timeout: timeoutMs })
 }
 
-export async function openQuickOpen(page: Page): Promise<void> {
+export async function openQuickOpen(page: ShellDriver): Promise<void> {
   const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     await execCommand(page, "workspace.quickOpen")
@@ -144,30 +162,30 @@ export async function openQuickOpen(page: Page): Promise<void> {
   throw new Error("Quick open dialog did not appear")
 }
 
-export async function typeInEditor(page: Page, text: string): Promise<void> {
+export async function typeInEditor(page: ShellDriver, text: string): Promise<void> {
   await focusEditor(page)
   await page.keyboard.type(text)
 }
 
-export async function showTerminal(page: Page): Promise<void> {
+export async function showTerminal(page: ShellDriver): Promise<void> {
   await page.evaluate(async () => {
     await window.__jetAgent!.executeCommand("terminal.show")
   })
   await page.waitForSelector("[data-jet-terminal-panel] .xterm", { timeout: 15_000 })
 }
 
-export async function readTerminalText(page: Page): Promise<string> {
+export async function readTerminalText(page: ShellDriver): Promise<string> {
   return page.evaluate(() => {
     const rows = document.querySelector("[data-jet-terminal-panel] .xterm-rows")
     return rows?.textContent ?? ""
   })
 }
 
-export async function confirmOverlay(page: Page): Promise<void> {
+export async function confirmOverlay(page: ShellDriver): Promise<void> {
   await page.keyboard.press("Meta+Enter")
 }
 
-export async function waitForSearchReady(page: Page, timeoutMs = 30_000): Promise<void> {
+export async function waitForSearchReady(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
   await page.waitForFunction(
     async () => {
       if (!window.__jetAgent?.getState().searchReady) return false
@@ -181,7 +199,7 @@ export async function waitForSearchReady(page: Page, timeoutMs = 30_000): Promis
   )
 }
 
-export async function waitForLspConnected(page: Page, timeoutMs = 60_000): Promise<void> {
+export async function waitForLspConnected(page: ShellDriver, timeoutMs = 60_000): Promise<void> {
   await page.waitForFunction(
     () => {
       const footer = document.querySelector("footer")
@@ -193,7 +211,7 @@ export async function waitForLspConnected(page: Page, timeoutMs = 60_000): Promi
   )
 }
 
-export async function execCommand(page: Page, commandId: string): Promise<void> {
+export async function execCommand(page: ShellDriver, commandId: string): Promise<void> {
   await page.evaluate(async (cmd: string) => {
     await window.__jetAgent!.executeCommand(cmd)
   }, commandId)

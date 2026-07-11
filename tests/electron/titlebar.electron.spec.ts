@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { expectListRows } from "../helpers/list.js"
 import { execCommand, launchJet } from "./_launch.js"
 
@@ -9,7 +21,7 @@ test.describe("desktop shell", () => {
     const { app, page } = await launchJet()
     try {
       const bar = page.locator("[data-jet-titlebar]")
-      await expect(bar).toBeVisible({ timeout: 10_000 })
+      await expectLocatorVisible(bar, { timeout: 10_000 })
 
       const geom = await page.evaluate(() => {
         const root = document.documentElement
@@ -100,7 +112,7 @@ test.describe("desktop shell", () => {
       const projectIcon = page.locator(
         '[data-jet-list-panel="jet:explorer"] [data-jet-project-icon]',
       ).first()
-      await expect(projectIcon).toBeVisible()
+      await expectLocatorVisible(projectIcon)
       const box = await projectIcon.boundingBox()
       expect(box?.width ?? 0).toBeGreaterThanOrEqual(18)
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(18)

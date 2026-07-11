@@ -11,12 +11,12 @@ describeFlaky("electron agents mock", () => {
       })
 
       const composer = page.locator('[data-testid="composer-editor"]').first()
-      await expect(composer).toBeVisible({ timeout: 20_000 })
+      await expectLocatorVisible(composer, { timeout: 20_000 })
       await composer.click()
       await page.keyboard.type("hello mock")
       await page.locator('button[type="submit"]').first().click()
 
-      await expect(page.locator('[data-jet-tab-slot^="jet:agent-chat:"]')).not.toContainText("Running", {
+      await expectNotContainsText(page, '[data-jet-tab-slot^="jet:agent-chat:"]', "Running", {
         timeout: 60_000,
       })
 

@@ -38,7 +38,9 @@ function cursorMotion(): CursorMotion {
 function pointAt(view: EditorView, pos: number): CaretPoint | null {
   const rect = view.coordsAtPos(pos)
   if (!rect) return null
-  const scrollRect = view.scrollDOM.getBoundingClientRect()
+  // Position relative to .cm-editor (not .cm-scroller). WKWebView mis-composites
+  // transform layers inside overflow scrollers; Electron/Chromium tolerate it.
+  const editorRect = view.dom.getBoundingClientRect()
   const h = Math.max(1, rect.bottom - rect.top)
   let charWidth = view.defaultCharacterWidth
   if (pos < view.state.doc.length) {
@@ -48,8 +50,8 @@ function pointAt(view: EditorView, pos: number): CaretPoint | null {
     }
   }
   return {
-    x: rect.left - scrollRect.left + view.scrollDOM.scrollLeft,
-    y: rect.top - scrollRect.top + view.scrollDOM.scrollTop,
+    x: rect.left - editorRect.left,
+    y: rect.top - editorRect.top,
     h,
     charWidth: Math.max(1, charWidth),
   }
@@ -89,7 +91,7 @@ class MotionCursorPlugin {
   constructor(private readonly view: EditorView) {
     this.layer.className = "jet-editor-cursor-layer"
     this.layer.dataset.jetEditorCursorLayer = ""
-    view.scrollDOM.appendChild(this.layer)
+    view.dom.appendChild(this.layer)
     this.unsubscribeReduced = onReducedMotionChange(reduced => {
       this.reduced = reduced
       this.instantNext = true
@@ -283,7 +285,14 @@ export function motionCursor(): Extension {
         zIndex: "30",
         pointerEvents: "none",
         overflow: "visible",
+        WebkitBackfaceVisibility: "hidden",
+        backfaceVisibility: "hidden",
       },
+      ".jet-editor-cursor-layer [data-jet-editor-cursor], .jet-editor-cursor-layer [data-jet-editor-cursor-ghost]":
+        {
+          WebkitBackfaceVisibility: "hidden",
+          backfaceVisibility: "hidden",
+        },
       ".cm-cursor": {
         opacity: "0 !important",
       },

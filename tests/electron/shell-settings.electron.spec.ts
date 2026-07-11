@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet } from "./_launch.js"
 
 test.describe("electron shell settings", () => {
@@ -9,8 +21,8 @@ test.describe("electron shell settings", () => {
       await execCommand(page, "ui.setTheme.ayu-dark")
       await execCommand(page, "settings.show")
 
-      await expect(page.locator("[data-jet-settings-overlay]")).toBeVisible()
-      await expect(page.locator("[data-jet-theme-option]")).toHaveCount(8)
+      await expectSelectorVisible(page, "[data-jet-settings-overlay]")
+      await expectLocatorCount(page.locator("[data-jet-theme-option]"), 8)
 
       await page.locator("[data-jet-theme-option='gruvbox-light']").click()
       await expect
@@ -30,7 +42,7 @@ test.describe("electron shell settings", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "ui.showThemePicker")
-      await expect(page.locator("[data-jet-settings-overlay]")).toBeVisible()
+      await expectSelectorVisible(page, "[data-jet-settings-overlay]")
     } finally {
       await app.close()
     }

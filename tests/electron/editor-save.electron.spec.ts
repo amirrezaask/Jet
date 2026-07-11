@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { describeFlaky } from "./_flaky.js"
 import { execCommand, focusEditor, launchJet, openFixtureFile, typeInEditor } from "./_launch.js"
 import { REPO_ROOT } from "./_launch.js"

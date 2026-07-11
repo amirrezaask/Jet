@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { confirmOverlay, execCommand, launchJet, REPO_ROOT } from "./_launch.js"
 
 test.describe("electron cd overlay", () => {
@@ -7,7 +19,7 @@ test.describe("electron cd overlay", () => {
     try {
       const target = `${REPO_ROOT}/fixtures/sample-workspace`
       await execCommand(page, "workspace.cd")
-      await expect(page.getByRole("dialog")).toBeVisible()
+      await expectLocatorVisible(page.getByRole("dialog"))
       const input = page.getByRole("dialog").locator("input").first()
       await input.fill(target)
       await confirmOverlay(page)

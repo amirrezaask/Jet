@@ -44,14 +44,21 @@ impl LspHost {
         let id = format!("lsp-{cmd}-{}", chrono::Utc::now().timestamp_millis());
         let cwd = uri_to_path(root_uri);
 
-        let mut child = Command::new(cmd)
+        let mut child = match Command::new(cmd)
             .args(&args)
             .current_dir(&cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|e| e.to_string())?;
+        {
+            Ok(child) => child,
+            Err(err) => {
+                // Match Electron: notify renderer so it can retry on focus.
+                emit_host(app, "lsp:crashed", vec![Value::String(id.clone())]);
+                return Err(err.to_string());
+            }
+        };
 
         let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -114,6 +121,17 @@ impl LspHost {
             }
         }
         Ok(())
+    }
+
+    pub fn stop_all(&self) {
+        let ids: Vec<String> = self
+            .sessions
+            .lock()
+            .map(|s| s.keys().cloned().collect())
+            .unwrap_or_default();
+        for id in ids {
+            let _ = self.stop(&id);
+        }
     }
 }
 

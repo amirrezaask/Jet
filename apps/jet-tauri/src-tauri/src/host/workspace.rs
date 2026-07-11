@@ -1,16 +1,27 @@
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
 use super::events::emit_host;
 use super::git::git_branch;
 use super::launch::uri_to_path;
 use super::search::{is_git_workspace, warm_search_index};
+
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
+
+const WATCH_IGNORE_SEGMENTS: &[&str] = &[
+    "node_modules",
+    ".git",
+    "dist",
+    "dist-electron",
+    ".turbo",
+    ".pnpm-store",
+];
 
 pub struct WorkspaceHost {
     roots: Mutex<HashMap<String, RootState>>,
@@ -62,6 +73,17 @@ impl WorkspaceHost {
         Ok(serde_json::json!({ "ok": true }))
     }
 
+    pub fn stop_all(&self) {
+        let uris: Vec<String> = self
+            .roots
+            .lock()
+            .map(|r| r.keys().cloned().collect())
+            .unwrap_or_default();
+        for uri in uris {
+            let _ = self.deactivate(&uri);
+        }
+    }
+
     pub fn start_watch(&self, app: &AppHandle, root_uri: &str, gen: u64) {
         let root_path = uri_to_path(root_uri);
         let stop = Arc::new(Mutex::new(false));
@@ -78,8 +100,8 @@ impl WorkspaceHost {
         }
 
         let app_handle = app.clone();
-        let root_uri_owned = root_uri.to_string();
         thread::spawn(move || {
+            // Defer watch start so cold open stays snappy (matches Electron delay).
             thread::sleep(Duration::from_secs(10));
             if *stop.lock().unwrap() {
                 return;
@@ -100,32 +122,64 @@ impl WorkspaceHost {
             {
                 return;
             }
-            while let Ok(event) = rx.recv() {
+
+            let mut pending: HashMap<String, Instant> = HashMap::new();
+            loop {
                 if *stop.lock().unwrap() {
                     break;
                 }
-                if let Ok(event) = event {
-                    for path in event.paths {
-                        let uri = super::launch::path_to_uri(&path.to_string_lossy());
-                        emit_host(&app_handle, "fs:changed", vec![Value::String(uri)]);
+                match rx.recv_timeout(Duration::from_millis(50)) {
+                    Ok(Ok(event)) => {
+                        for path in event.paths {
+                            if should_ignore_path(&path) {
+                                continue;
+                            }
+                            let uri = super::launch::path_to_uri(&path.to_string_lossy());
+                            pending.insert(uri, Instant::now());
+                        }
                     }
+                    Ok(Err(_)) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+
+                let now = Instant::now();
+                let ready: Vec<String> = pending
+                    .iter()
+                    .filter(|(_, at)| now.duration_since(**at) >= WATCH_DEBOUNCE)
+                    .map(|(uri, _)| uri.clone())
+                    .collect();
+                for uri in ready {
+                    pending.remove(&uri);
+                    emit_host(&app_handle, "fs:changed", vec![Value::String(uri)]);
                 }
             }
         });
     }
 }
 
-fn schedule_background(app: AppHandle, root_uri: String, gen: u64) {
+fn should_ignore_path(path: &Path) -> bool {
+    path.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .map(|s| WATCH_IGNORE_SEGMENTS.iter().any(|seg| *seg == s))
+            .unwrap_or(false)
+    })
+}
+
+fn schedule_background(app: AppHandle, root_uri: String, _gen: u64) {
     thread::sleep(Duration::from_millis(50));
-    if is_git_workspace(&root_uri) {
-        if let Some(branch) = git_branch(&root_uri) {
-            emit_host(
-                &app,
-                "workspace:gitBranch",
-                vec![serde_json::json!({ "rootUri": root_uri, "branch": branch })],
-            );
-        }
-    }
+    let branch = if is_git_workspace(&root_uri) {
+        git_branch(&root_uri)
+    } else {
+        None
+    };
+    // Always emit (including null) so status bar clears on non-git roots — Electron parity.
+    emit_host(
+        &app,
+        "workspace:gitBranch",
+        vec![serde_json::json!({ "rootUri": root_uri, "branch": branch })],
+    );
 
     thread::spawn({
         let app = app.clone();
@@ -167,5 +221,18 @@ pub fn handle(
             host.deactivate(root_uri)
         }
         _ => Err(format!("unknown workspace channel: {channel}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignores_node_modules_and_git() {
+        assert!(should_ignore_path(Path::new("/proj/node_modules/pkg/index.js")));
+        assert!(should_ignore_path(Path::new("/proj/.git/HEAD")));
+        assert!(should_ignore_path(Path::new("/proj/dist/bundle.js")));
+        assert!(!should_ignore_path(Path::new("/proj/src/index.ts")));
     }
 }

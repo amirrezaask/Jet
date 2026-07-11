@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { runUiSuite } from "./run-ui-suite.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, "../..")
@@ -96,7 +97,9 @@ try {
 
   await waitForPort(WEBDRIVER_PORT)
 
-  run("pnpm", ["exec", "wdio", "run", "tests/tauri/wdio.conf.mjs"])
+  console.log("\nTauri UI E2E (node:http WebDriver)\n")
+  await runUiSuite(WEBDRIVER_PORT)
+  console.log("\nAll Tauri UI E2E specs passed.\n")
 } finally {
   if (appProcess && !appProcess.killed) {
     appProcess.kill("SIGTERM")

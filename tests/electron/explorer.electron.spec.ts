@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet } from "./_launch.js"
 import { expectListRows } from "../helpers/list.js"
 import { EXPLORER_PANEL } from "../helpers/shell.js"
@@ -10,14 +22,14 @@ test.describe("electron explorer", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "explorer.show")
-      await expect(page.locator(EXPLORER_PANEL)).toBeVisible()
+      await expectSelectorVisible(page, EXPLORER_PANEL)
       await expectListRows(page, { panel: "jet:explorer", minItems: 1, needle: "sample-workspace" })
 
       await page.locator(EXPLORER_ITEMS).filter({ hasText: /^src$/i }).first().click()
       await page.waitForTimeout(400)
       await page.locator(EXPLORER_ITEMS).filter({ hasText: /utils\.ts/i }).first().click()
       await page.evaluate(() => window.__jetAgent!.waitForEditor())
-      await expect(page.locator(".cm-editor")).toContainText("export function greet")
+      await expectContainsText(page, ".cm-editor", "export function greet")
     } finally {
       await app.close()
     }

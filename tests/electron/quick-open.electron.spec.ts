@@ -1,4 +1,18 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+  expectLocatorContainsText,
+  expectNotContainsText,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet, openQuickOpen } from "./_launch.js"
 
 test.describe("electron quick open", () => {
@@ -9,10 +23,10 @@ test.describe("electron quick open", () => {
       const input = page.getByRole("dialog").getByRole("combobox")
       await input.fill("utils")
       await page.waitForTimeout(800)
-      await expect(page.getByRole("dialog")).toContainText("utils.ts")
+      await expectLocatorContainsText(page.getByRole("dialog"), "utils.ts")
       await page.getByRole("option").filter({ hasText: "utils.ts" }).first().click()
       await page.evaluate(() => window.__jetAgent!.waitForEditor())
-      await expect(page.locator(".cm-editor")).toContainText("export function greet")
+      await expectContainsText(page, ".cm-editor", "export function greet")
     } finally {
       await app.close()
     }

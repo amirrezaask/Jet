@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test"
+import {
+  expectContainsText,
+  expectLocatorAttached,
+  expectLocatorAttribute,
+  expectLocatorCount,
+  expectLocatorFocused,
+  expectLocatorHidden,
+  expectLocatorVisible,
+  expectSelectorHidden,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+
 import { execCommand, launchJet, typeInEditor } from "./_launch.js"
 
 test.describe("electron new file", () => {
@@ -7,7 +19,7 @@ test.describe("electron new file", () => {
     try {
       await execCommand(page, "workspace.newFile")
       await page.evaluate(() => window.__jetAgent!.waitForEditor())
-      await expect(page.locator(".cm-editor")).toBeVisible()
+      await expectSelectorVisible(page, ".cm-editor")
 
       const panels = await page.evaluate(() => window.__jetAgent!.getState().panels)
       const editorPanels = panels.filter(p => p.kind === "editor")

@@ -1,17 +1,24 @@
-use serde::Deserialize;
 use serde_json::Value;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::host::events::emit_host;
 use crate::host::launch::LaunchConfig;
 
+const DEFAULT_ZOOM: f64 = 1.0;
+const ZOOM_STEP: f64 = 0.1;
+const MIN_ZOOM: f64 = 0.5;
+const MAX_ZOOM: f64 = 3.0;
+
 #[derive(Default)]
 pub struct ShellState {
     launch_config: Mutex<Option<LaunchConfig>>,
+    zoom: Mutex<Option<f64>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct NativeChromeColors {
     pub background: String,
     pub foreground: String,
@@ -20,10 +27,7 @@ pub struct NativeChromeColors {
 #[tauri::command]
 pub async fn jet_show_open_folder_dialog(window: WebviewWindow) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let folder = window
-        .dialog()
-        .file()
-        .blocking_pick_folder();
+    let folder = window.dialog().file().blocking_pick_folder();
     Ok(folder.map(|p| p.to_string()))
 }
 
@@ -45,14 +49,8 @@ pub async fn jet_sync_native_chrome(
     window: WebviewWindow,
     colors: NativeChromeColors,
 ) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
-    }
-    let _ = window.set_background_color(Some(parse_color(&colors.background)?));
-    #[cfg(target_os = "windows")]
-    apply_windows_title_bar_overlay(&window, &colors)?;
-    Ok(())
+    write_chrome_cache(&colors);
+    apply_chrome_colors(&window, &colors)
 }
 
 #[tauri::command]
@@ -92,7 +90,9 @@ pub async fn jet_host_invoke(
     }
     if channel == "fs:showSaveFileDialog" {
         let default_path = args.first().and_then(|v| v.as_str()).map(str::to_string);
-        return Ok(serde_json::to_value(jet_show_save_file_dialog(window, default_path).await?).unwrap());
+        return Ok(
+            serde_json::to_value(jet_show_save_file_dialog(window, default_path).await?).unwrap(),
+        );
     }
     let client = client_id.unwrap_or_else(|| window.label().to_string());
     host.invoke(&app, &channel, args, &client)
@@ -109,6 +109,12 @@ pub fn deliver_launch(app: &AppHandle, config: LaunchConfig) {
         "jet:launch",
         vec![serde_json::to_value(config).unwrap_or(Value::Null)],
     );
+}
+
+pub fn apply_cached_chrome(window: &WebviewWindow) {
+    if let Some(colors) = read_chrome_cache() {
+        let _ = apply_chrome_colors(window, &colors);
+    }
 }
 
 pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
@@ -132,23 +138,6 @@ pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
     let copy = PredefinedMenuItem::copy(app, None)?;
     let paste = PredefinedMenuItem::paste(app, None)?;
     let select_all = PredefinedMenuItem::select_all(app, None)?;
-
-    #[cfg(target_os = "macos")]
-    let edit_submenu = Submenu::with_items(
-        app,
-        "Edit",
-        true,
-        &[
-            &undo as &dyn IsMenuItem<tauri::Wry>,
-            &redo,
-            &edit_sep1,
-            &cut,
-            &copy,
-            &paste,
-            &select_all,
-        ],
-    )?;
-    #[cfg(not(target_os = "macos"))]
     let edit_submenu = Submenu::with_items(
         app,
         "Edit",
@@ -164,8 +153,49 @@ pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
+    // Electron role:"viewMenu" parity — reload / zoom / fullscreen / devtools.
+    let reload = MenuItem::with_id(app, "view-reload", "Reload", true, Some("CmdOrCtrl+R"))?;
+    let force_reload = MenuItem::with_id(
+        app,
+        "view-force-reload",
+        "Force Reload",
+        true,
+        Some("CmdOrCtrl+Shift+R"),
+    )?;
+    let view_sep1 = PredefinedMenuItem::separator(app)?;
+    let toggle_devtools = MenuItem::with_id(
+        app,
+        "view-devtools",
+        "Toggle Developer Tools",
+        true,
+        Some("Alt+CmdOrCtrl+I"),
+    )?;
+    let view_sep2 = PredefinedMenuItem::separator(app)?;
+    let zoom_reset =
+        MenuItem::with_id(app, "view-zoom-reset", "Actual Size", true, Some("CmdOrCtrl+0"))?;
+    let zoom_in =
+        MenuItem::with_id(app, "view-zoom-in", "Zoom In", true, Some("CmdOrCtrl+Plus"))?;
+    let zoom_out =
+        MenuItem::with_id(app, "view-zoom-out", "Zoom Out", true, Some("CmdOrCtrl+-"))?;
+    let view_sep3 = PredefinedMenuItem::separator(app)?;
     let fullscreen = PredefinedMenuItem::fullscreen(app, None)?;
-    let view_submenu = Submenu::with_items(app, "View", true, &[&fullscreen])?;
+    let view_submenu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[
+            &reload as &dyn IsMenuItem<tauri::Wry>,
+            &force_reload,
+            &view_sep1,
+            &toggle_devtools,
+            &view_sep2,
+            &zoom_reset,
+            &zoom_in,
+            &zoom_out,
+            &view_sep3,
+            &fullscreen,
+        ],
+    )?;
 
     #[cfg(target_os = "macos")]
     let app_submenu = {
@@ -229,9 +259,90 @@ pub fn install_menu(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
-    if event.id().as_ref() == "close-tab" {
-        emit_host(app, "jet:close-tab", vec![]);
+    let id = event.id().as_ref();
+    match id {
+        "close-tab" => emit_host(app, "jet:close-tab", vec![]),
+        "view-reload" | "view-force-reload" => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.reload();
+            }
+        }
+        "view-devtools" => {
+            if let Some(window) = app.get_webview_window("main") {
+                if window.is_devtools_open() {
+                    window.close_devtools();
+                } else {
+                    window.open_devtools();
+                }
+            }
+        }
+        "view-zoom-reset" => set_zoom(app, DEFAULT_ZOOM),
+        "view-zoom-in" => adjust_zoom(app, ZOOM_STEP),
+        "view-zoom-out" => adjust_zoom(app, -ZOOM_STEP),
+        _ => {}
     }
+}
+
+fn adjust_zoom(app: &AppHandle, delta: f64) {
+    let Some(shell) = app.try_state::<ShellState>() else {
+        return;
+    };
+    let next = {
+        let Ok(mut zoom) = shell.zoom.lock() else {
+            return;
+        };
+        let current = zoom.unwrap_or(DEFAULT_ZOOM);
+        let next = (current + delta).clamp(MIN_ZOOM, MAX_ZOOM);
+        *zoom = Some(next);
+        next
+    };
+    set_zoom(app, next);
+}
+
+fn set_zoom(app: &AppHandle, factor: f64) {
+    let clamped = factor.clamp(MIN_ZOOM, MAX_ZOOM);
+    if let Some(shell) = app.try_state::<ShellState>() {
+        if let Ok(mut zoom) = shell.zoom.lock() {
+            *zoom = Some(clamped);
+        }
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_zoom(clamped);
+    }
+}
+
+fn chrome_cache_path() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    Some(home.join(".jet").join("native-chrome.json"))
+}
+
+fn read_chrome_cache() -> Option<NativeChromeColors> {
+    let path = chrome_cache_path()?;
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn write_chrome_cache(colors: &NativeChromeColors) {
+    let Some(path) = chrome_cache_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(raw) = serde_json::to_string(colors) {
+        let _ = fs::write(path, raw);
+    }
+}
+
+fn apply_chrome_colors(window: &WebviewWindow, colors: &NativeChromeColors) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
+    }
+    let _ = window.set_background_color(Some(parse_color(&colors.background)?));
+    #[cfg(target_os = "windows")]
+    apply_windows_title_bar_overlay(window, colors)?;
+    Ok(())
 }
 
 fn parse_color(hex: &str) -> Result<tauri::window::Color, String> {
