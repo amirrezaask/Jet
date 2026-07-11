@@ -39,6 +39,8 @@ export const RUST_HOST_CHANNELS = new Set([
   "agents:interruptTurn",
   "agents:setArchived",
   "agents:updateThreadSettings",
+  "perf:recordStartup",
+  "perf:getStartupLogPath",
   "jet:getLaunchConfig",
   "jet:getHomeDir",
   "jet:loadGlobalJetrcScanRoots",

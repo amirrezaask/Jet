@@ -108,15 +108,27 @@ test.describe("electron location list", () => {
     try {
       await openFixtureFile(page, "src/lint-error.ts")
       await waitForLspConnected(page)
-      await page.waitForTimeout(2000)
-
-      await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("locationlist.showProblems")
-      })
+      // Connected ≠ publishDiagnostics applied to CM lint. Wait for editor marks.
+      await page.waitForFunction(
+        () =>
+          document.querySelector(
+            ".cm-lintRange-error, .cm-lintRange-warning, .cm-diagnostic, .cm-gutterElement.cm-lint-marker, .cm-eol-overlay-diagnostic-error",
+          ) != null,
+        null,
+        { timeout: 60_000 },
+      )
 
       const problemsSel = problemsListItems()
       await expect
-        .poll(async () => page.locator(problemsSel).count(), { timeout: 30_000 })
+        .poll(
+          async () => {
+            await page.evaluate(async () => {
+              await window.__jetAgent!.executeCommand("locationlist.showProblems")
+            })
+            return page.locator(problemsSel).count()
+          },
+          { timeout: 30_000 },
+        )
         .toBeGreaterThan(0)
 
       await expectNotContainsText(page, PROBLEMS_PANEL, "No results")

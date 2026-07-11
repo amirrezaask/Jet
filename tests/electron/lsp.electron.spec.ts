@@ -27,6 +27,22 @@ test.describe("electron LSP", () => {
     }
   })
 
+  test("LSP reconnects after the renderer transport is reloaded", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/index.ts")
+      await waitForLspConnected(page)
+
+      await page.reload()
+      await openFixtureFile(page, "src/index.ts")
+      await waitForLspConnected(page)
+
+      await expectContainsText(page, "footer", "LSP connected")
+    } finally {
+      await app.close()
+    }
+  })
+
   flakyTest(
     "F12 go-to-definition cursor position / LSP timing",
     "go to definition on greet opens utils.ts",

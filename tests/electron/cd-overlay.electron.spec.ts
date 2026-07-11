@@ -11,7 +11,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { confirmOverlay, execCommand, launchJet, REPO_ROOT } from "./_launch.js"
+import { confirmOverlay, execCommand, launchJet, REPO_ROOT, waitForDialog } from "./_launch.js"
 
 test.describe("electron cd overlay", () => {
   test("workspace.cd switches active workspace path", async () => {
@@ -19,6 +19,7 @@ test.describe("electron cd overlay", () => {
     try {
       const target = `${REPO_ROOT}/fixtures/sample-workspace`
       await execCommand(page, "workspace.cd")
+      await waitForDialog(page)
       await expectLocatorVisible(page.getByRole("dialog"))
       const input = page.getByRole("dialog").locator("input").first()
       await input.fill(target)

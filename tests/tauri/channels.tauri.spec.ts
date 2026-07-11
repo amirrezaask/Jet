@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test"
 import { RUST_HOST_CHANNELS } from "@jet/host-client"
+import fs from "node:fs"
+import path from "node:path"
 
 test.describe("tauri host channel registry", () => {
   test("rust allowlist includes core jet api channels", () => {
@@ -30,6 +32,8 @@ test.describe("tauri host channel registry", () => {
       "terminal:attach",
       "terminal:dispose",
       "tasks:spawn",
+      "perf:recordStartup",
+      "perf:getStartupLogPath",
       "agents:listProviders",
       "agents:sendMessage",
       "jet:getLaunchConfig",
@@ -44,5 +48,31 @@ test.describe("tauri host channel registry", () => {
   test("allowlist size stays within expected host surface", () => {
     expect(RUST_HOST_CHANNELS.size).toBeGreaterThanOrEqual(30)
     expect(RUST_HOST_CHANNELS.size).toBeLessThanOrEqual(60)
+  })
+
+  test("native titlebar grants drag permission and keeps centered traffic lights", () => {
+    const capability = JSON.parse(
+      fs.readFileSync(
+        path.join(process.cwd(), "apps/jet-tauri/src-tauri/capabilities/default.json"),
+        "utf8",
+      ),
+    ) as { permissions: string[] }
+    const config = JSON.parse(
+      fs.readFileSync(
+        path.join(process.cwd(), "apps/jet-tauri/src-tauri/tauri.conf.json"),
+        "utf8",
+      ),
+    ) as {
+      app: {
+        windows: Array<{
+          titleBarStyle?: string
+          trafficLightPosition?: { x: number; y: number }
+        }>
+      }
+    }
+
+    expect(capability.permissions).toContain("core:window:allow-start-dragging")
+    expect(config.app.windows[0]?.titleBarStyle).toBe("Overlay")
+    expect(config.app.windows[0]?.trafficLightPosition).toEqual({ x: 14, y: 11 })
   })
 })

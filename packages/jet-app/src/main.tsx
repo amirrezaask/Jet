@@ -4,6 +4,8 @@ import "@jet/ui/styles.css"
 import { JetApp } from "./App.js"
 import { AppErrorBoundary } from "./AppErrorBoundary.js"
 
+const startupWindow = window as Window & { __jetStartupBootstrapAt?: number }
+startupWindow.__jetStartupBootstrapAt ??= performance.now()
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

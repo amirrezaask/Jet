@@ -22,6 +22,16 @@ JET_HEADED=1 pnpm test:electron   # show windows while debugging
 PWDEBUG=1 pnpm test:electron        # Playwright debug + headed
 ```
 
+## Tauri
+
+`pnpm test:tauri` builds the e2e binary and sets `JET_E2E=1`. Headless parks the window
+off-screen (not `hide()` — WKWebView throttles timers when fully hidden):
+
+```bash
+JET_HEADED=1 pnpm test:tauri   # show Tauri window on-screen while debugging
+```
+
+True OS-headless Tauri is not available on macOS (WebKit needs a display); this matches Electron's `show: false` pattern.
 ## Layout
 
 | Path | Role |

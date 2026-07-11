@@ -23,6 +23,7 @@ test.describe("premium editor motion", () => {
       await expectLocatorAttached(page.locator("[data-jet-universal-caret-layer]"))
       await expectLocatorCount(page.locator("[data-jet-universal-cursor]"), 1)
       await expectLocatorCount(page.locator("[data-jet-universal-cursor-ghost]"), 5)
+      await expectLocatorCount(page.locator("[data-jet-caret-measure-mirror]"), 1)
       await expect
         .poll(() => paletteInput.evaluate(element => getComputedStyle(element).caretColor))
         .toBe("rgba(0, 0, 0, 0)")
@@ -41,6 +42,7 @@ test.describe("premium editor motion", () => {
         window.setTimeout(() => observer.disconnect(), 1_000)
       })
       await page.keyboard.type("open")
+      await expectLocatorCount(page.locator("[data-jet-caret-measure-mirror]"), 1)
       await expectLocatorAttribute(page.locator("[data-jet-universal-caret-layer]"), 
         "data-jet-ghost-observed",
         "true",
@@ -127,18 +129,54 @@ test.describe("premium editor motion", () => {
   test("smooth editor scroll converges through intermediate positions", async () => {
     const { app, page } = await launchJet(".")
     try {
-      await openFixtureFile(page, "packages/jet-app/src/App.tsx")
-      const samples = await page.locator(".cm-scroller").evaluate(async scroller => {
-        scroller.scrollTop = 0
-        scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: 720, bubbles: true, cancelable: true }))
-        const values: number[] = []
-        for (let frame = 0; frame < 30; frame++) {
-          await new Promise<void>(resolve => setTimeout(resolve, 16))
-          values.push(scroller.scrollTop)
-          if (scroller.dataset.jetScrollActive === "false" && frame > 2) break
-        }
-        return values
+      // Force motion on so headless OS "reduce" preference does not snap-scroll.
+      await page.evaluate(() => {
+        const original = window.matchMedia.bind(window)
+        window.matchMedia = ((query: string) => {
+          if (String(query).includes("prefers-reduced-motion")) {
+            return {
+              matches: false,
+              media: query,
+              onchange: null,
+              addListener() {},
+              removeListener() {},
+              addEventListener() {},
+              removeEventListener() {},
+              dispatchEvent() {
+                return false
+              },
+            } as MediaQueryList
+          }
+          return original(query)
+        }) as typeof window.matchMedia
       })
+      await openFixtureFile(page, "packages/jet-app/src/App.tsx")
+      await page.locator(".cm-scroller").evaluate(scroller => {
+        if (!("jetSmoothScroll" in scroller.dataset)) {
+          throw new Error("smooth scroll plugin not attached")
+        }
+        scroller.scrollTop = 0
+        scroller.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY: 720,
+            deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+      })
+      // Sample from the host — long in-page async scripts time out under WebDriver,
+      // and hidden/throttled webviews stall setTimeout loops.
+      const samples: number[] = []
+      for (let frame = 0; frame < 45; frame++) {
+        await page.waitForTimeout(16)
+        const sample = await page.locator(".cm-scroller").evaluate(scroller => ({
+          top: scroller.scrollTop,
+          active: scroller.dataset.jetScrollActive ?? "",
+        }))
+        samples.push(sample.top)
+        if (sample.active === "false" && frame > 2) break
+      }
       const moving = samples.filter((value, index) => index === 0 || value !== samples[index - 1])
       expect(moving.length).toBeGreaterThanOrEqual(3)
       expect(samples.at(-1)).toBeGreaterThan(300)

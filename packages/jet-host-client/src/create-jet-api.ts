@@ -193,5 +193,7 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
       })
     },
     syncNativeChrome: colors => transport.invoke("ui:syncNativeChrome", colors),
+    recordStartup: record => transport.invoke("perf:recordStartup", record),
+    getStartupLogPath: () => transport.invoke("perf:getStartupLogPath"),
   }
 }

@@ -4,6 +4,7 @@ import { prewarmBackgroundWorkers } from "./background-pool.js"
 import { registerFsHandlers } from "./fs.js"
 import { registerGitHandlers } from "./git.js"
 import { registerLspHandlers } from "./lsp-bridge.js"
+import { registerPerfHandlers } from "./perf.js"
 import { registerSearchHandlers } from "./search.js"
 import { registerTaskHandlers } from "./tasks.js"
 import { registerTerminalHandlers } from "./terminal.js"
@@ -19,6 +20,7 @@ export function createHostRegistry(services: HostServices): HostRegistry {
   registerWorkspaceHost(registry)
   registerSearchHandlers(registry)
   registerLspHandlers(registry)
+  registerPerfHandlers(registry)
   registerTaskHandlers(registry)
   registerTerminalHandlers(registry)
 

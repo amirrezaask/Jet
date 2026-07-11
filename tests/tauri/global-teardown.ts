@@ -1,5 +1,4 @@
-import { restoreTauriE2eConf } from "../shell/launch-tauri.js"
-
 export default async function globalTeardown(): Promise<void> {
-  restoreTauriE2eConf()
+  // E2E capabilities are enabled through tauri.e2e.conf.json, so teardown has
+  // no tracked production configuration to restore.
 }

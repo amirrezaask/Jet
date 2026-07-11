@@ -370,6 +370,7 @@ export function JetApp() {
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
   const projectCatalogReadyRef = useRef(false)
+  const startupRecordedRef = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>>(
     () => {},
   )
@@ -2149,6 +2150,35 @@ export function JetApp() {
       }
     })()
   }, [layoutReady, workspace])
+
+  useEffect(() => {
+    if (
+      startupRecordedRef.current ||
+      !layoutReady ||
+      !projectCatalogReadyRef.current ||
+      !workspace.manager.hasFolders() ||
+      !window.jet?.recordStartup
+    ) {
+      return
+    }
+    startupRecordedRef.current = true
+    const navigation = performance.getEntriesByType("navigation")[0] as
+      | PerformanceNavigationTiming
+      | undefined
+    const bootstrapAt =
+      (window as Window & { __jetStartupBootstrapAt?: number }).__jetStartupBootstrapAt ?? 0
+    void window.jet.recordStartup({
+      shell: "__TAURI_INTERNALS__" in window ? "tauri" : "electron",
+      buildMode: import.meta.env.DEV ? "debug" : "release",
+      rendererBootstrapMs: bootstrapAt,
+      rendererReadyMs: performance.now(),
+      domContentLoadedMs: navigation?.domContentLoadedEventEnd ?? null,
+      loadEventMs: navigation?.loadEventEnd ?? null,
+      workspaceRootCount: workspace.folders.length,
+    }).catch(() => {
+      startupRecordedRef.current = false
+    })
+  }, [layoutReady, workspace, workspace.folders.length])
 
   const problemsFpRef = useRef("")
   const problemsRafRef = useRef<number | null>(null)

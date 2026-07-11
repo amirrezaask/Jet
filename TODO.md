@@ -1,6 +1,4 @@
-- settings improvments ?
-- terminal tab should be closed after terminal process dies
-- each workspace has it's own set of tabs in the main panel, seperate different workspace tab sets not merge all in one.
-- custom title bar is not needed if possible merge it with the sidebar so after traffic light buttons comes the Files | terminal tab group.
+- when filling in functions there should be signature help in form of overlays
+- when opening a popup overlay the modal first starts at wrong location then it fixes it's location, also the cursor in overlays has the same problem and starts in wrong location then fixes itself ( the wrong location is a bit lower in screen both overlay and cursor move up a bit after a frame or two)
 - name ? icon ?
 - better chrome font size to editor font size ratio

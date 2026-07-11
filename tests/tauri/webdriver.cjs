@@ -125,7 +125,16 @@ function createWebDriver(port = 4445) {
           const proto =
             active instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
           const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set
-          setter?.call(active, `${active.value}${keys}`)
+          const start = active.selectionStart ?? active.value.length
+          const end = active.selectionEnd ?? active.value.length
+          const next = `${active.value.slice(0, start)}${keys}${active.value.slice(end)}`
+          setter?.call(active, next)
+          const cursor = start + keys.length
+          try {
+            active.setSelectionRange(cursor, cursor)
+          } catch {
+            /* number/email inputs may reject setSelectionRange */
+          }
           active.dispatchEvent(new InputEvent("input", { bubbles: true, data: keys, inputType: "insertText" }))
           active.dispatchEvent(new Event("change", { bubbles: true }))
           return

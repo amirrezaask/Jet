@@ -78,6 +78,8 @@ class TauriLocator implements ShellLocator {
     private readonly index = 0,
     private readonly textFilter?: string | RegExp,
     private readonly parent?: TauriLocator,
+    private readonly hasSelector?: string,
+    private readonly hasNotSelector?: string,
   ) {}
 
   toSelector(): string {
@@ -108,6 +110,8 @@ class TauriLocator implements ShellLocator {
         var list = nodes;
         var pattern = ${pattern};
         if (pattern) list = nodes.filter(function(n){ return pattern.test(n.getAttribute("aria-label") || n.textContent || ""); });
+        if (${JSON.stringify(this.hasSelector ?? "")}) list = list.filter(function(n){ return n.querySelector(${JSON.stringify(this.hasSelector ?? "")}) != null; });
+        if (${JSON.stringify(this.hasNotSelector ?? "")}) list = list.filter(function(n){ return n.querySelector(${JSON.stringify(this.hasNotSelector ?? "")}) == null; });
       `
     }
     return `
@@ -118,6 +122,8 @@ class TauriLocator implements ShellLocator {
         list = nodes;
         var pattern = ${pattern};
         if (pattern) list = nodes.filter(function(n){ return pattern.test(n.getAttribute("aria-label") || n.textContent || ""); });
+        if (${JSON.stringify(this.hasSelector ?? "")}) list = list.filter(function(n){ return n.querySelector(${JSON.stringify(this.hasSelector ?? "")}) != null; });
+        if (${JSON.stringify(this.hasNotSelector ?? "")}) list = list.filter(function(n){ return n.querySelector(${JSON.stringify(this.hasNotSelector ?? "")}) == null; });
       }
     `
   }
@@ -235,19 +241,57 @@ class TauriLocator implements ShellLocator {
   }
 
   first(): ShellLocator {
-    return new TauriLocator(this.wd, this.selector, 0, this.textFilter, this.parent)
+    return new TauriLocator(
+      this.wd,
+      this.selector,
+      0,
+      this.textFilter,
+      this.parent,
+      this.hasSelector,
+      this.hasNotSelector,
+    )
   }
 
   nth(index: number): ShellLocator {
-    return new TauriLocator(this.wd, this.selector, index, this.textFilter, this.parent)
+    return new TauriLocator(
+      this.wd,
+      this.selector,
+      index,
+      this.textFilter,
+      this.parent,
+      this.hasSelector,
+      this.hasNotSelector,
+    )
   }
 
-  filter(options: { hasText?: string | RegExp }): ShellLocator {
+  filter(
+    options: { hasText?: string | RegExp } | { has?: ShellLocator; hasNot?: ShellLocator },
+  ): ShellLocator {
+    if ("has" in options || "hasNot" in options) {
+      const relation = options as { has?: ShellLocator; hasNot?: ShellLocator }
+      return new TauriLocator(
+        this.wd,
+        this.selector,
+        this.index,
+        this.textFilter,
+        this.parent,
+        relation.has?.toSelector(),
+        relation.hasNot?.toSelector(),
+      )
+    }
     return new TauriLocator(this.wd, this.selector, this.index, options.hasText, this.parent)
   }
 
   last(): ShellLocator {
-    return new TauriLocator(this.wd, this.selector, -1, this.textFilter, this.parent)
+    return new TauriLocator(
+      this.wd,
+      this.selector,
+      -1,
+      this.textFilter,
+      this.parent,
+      this.hasSelector,
+      this.hasNotSelector,
+    )
   }
 
   async getAttribute(name: string): Promise<string | null> {
@@ -400,54 +444,61 @@ function keyActions(events: Array<{ type: "keyDown" | "keyUp"; value: string }>)
   }]
 }
 
-const DOM_KEYBOARD_KEYS = new Set([
-  "Enter",
-  "Escape",
-  "Tab",
-  "Backspace",
-  "Delete",
-  "ArrowLeft",
-  "ArrowRight",
-  "ArrowUp",
-  "ArrowDown",
-  "Home",
-  "End",
-  "PageUp",
-  "PageDown",
-])
-
-function dispatchKeyboardEvent(wd: TauriWebDriver, key: string, modifierNames: string[]): Promise<void> {
-  return ensureKeyboardFocus(wd).then(() => wd.execute(
-    (pressedKey, mods) => {
-      const target = document.activeElement ?? document.body
-      const init = {
-        bubbles: true,
-        cancelable: true,
-        key: pressedKey === "Space" ? " " : pressedKey,
-        code: pressedKey === "Space" ? "Space" : pressedKey,
-        altKey: mods.includes("Alt"),
-        ctrlKey: mods.includes("Control") || mods.includes("Ctrl"),
-        metaKey: mods.includes("Meta"),
-        shiftKey: mods.includes("Shift"),
-      }
-      target.dispatchEvent(new KeyboardEvent("keydown", init))
-      target.dispatchEvent(new KeyboardEvent("keypress", init))
-      target.dispatchEvent(new KeyboardEvent("keyup", init))
-    },
-    key,
-    modifierNames,
-  ))
-}
-
-function dispatchKey(wd: TauriWebDriver, key: string): Promise<void> {
+async function dispatchKey(wd: TauriWebDriver, key: string): Promise<void> {
   const parts = key.split("+")
   const mainName = parts.pop() ?? key
   const main = keyValue(mainName)
   const modifiers = parts.map(keyValue)
-  if (modifiers.length > 0 || DOM_KEYBOARD_KEYS.has(mainName)) {
-    return dispatchKeyboardEvent(wd, mainName, parts)
+  await ensureKeyboardFocus(wd)
+
+  // Named keys (Enter/Escape/Arrow*/Space/F*) must be synthesized: the plugin's
+  // special-key action path is unreliable for React/CodeMirror handlers, and it
+  // drops modifier flags when chords include named keys.
+  // Multi-modifier letter chords (Meta+Shift+z) also fail through performActions —
+  // synthesize them. Keep `event.key` as the binding name (e.g. "z"), not shifted
+  // glyphs ("Z") — CodeMirror matches Mod-Shift-z against key "z" + shiftKey.
+  const isNamedKey = mainName.length > 1
+  if (isNamedKey || modifiers.length > 1) {
+    await wd.execute(
+      (pressedKey, modifierNames) => {
+        const target = document.activeElement ?? document.body
+        const keyName = pressedKey === "Space" ? " " : pressedKey
+        const code = pressedKey === "Space"
+          ? "Space"
+          : pressedKey.length === 1
+            ? `Key${pressedKey.toUpperCase()}`
+            : pressedKey
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          key: keyName,
+          code,
+          altKey: modifierNames.includes("Alt"),
+          ctrlKey: modifierNames.includes("Control") || modifierNames.includes("Ctrl"),
+          metaKey: modifierNames.includes("Meta"),
+          shiftKey: modifierNames.includes("Shift"),
+        }
+        target.dispatchEvent(new KeyboardEvent("keydown", init))
+        target.dispatchEvent(new KeyboardEvent("keyup", init))
+      },
+      mainName,
+      parts,
+    )
+    return
   }
-  return ensureKeyboardFocus(wd).then(() => wd.sendKeys(main))
+
+  if (modifiers.length === 0 && main.length === 1) {
+    await wd.sendKeys(main)
+    return
+  }
+
+  await wd.performActions(keyActions([
+    ...modifiers.map(value => ({ type: "keyDown" as const, value })),
+    { type: "keyDown", value: main },
+    { type: "keyUp", value: main },
+    ...[...modifiers].reverse().map(value => ({ type: "keyUp" as const, value })),
+  ]))
+  await wd.releaseActions()
 }
 
 export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
@@ -477,80 +528,42 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
     },
   }
 
-  const pointerModifiers = () => ({
-    altKey: heldModifiers.has("Alt"),
-    ctrlKey: heldModifiers.has("Control") || heldModifiers.has("Ctrl"),
-    metaKey: heldModifiers.has("Meta"),
-    shiftKey: heldModifiers.has("Shift"),
-  })
-
+  let pointerX = 0
+  let pointerY = 0
+  const pointerActions = (actions: unknown[]) => [{
+    type: "pointer",
+    id: "jet-pointer",
+    parameters: { pointerType: "mouse" },
+    actions,
+  }]
   const mouse = {
-    move: async (x: number, y: number) => {
-      await wd.execute(
-        (px, py, modifiers) => {
-          const editor = document.querySelector(".cm-editor")
-          const content = document.querySelector(".cm-content")
-          const init = {
-            bubbles: true,
-            clientX: px,
-            clientY: py,
-            metaKey: !!modifiers.metaKey,
-            ctrlKey: !!modifiers.ctrlKey,
-            altKey: !!modifiers.altKey,
-            shiftKey: !!modifiers.shiftKey,
-          }
-          const el = document.elementFromPoint(px, py)
-          el?.dispatchEvent(new MouseEvent("mousemove", init))
-          el?.dispatchEvent(new MouseEvent("mouseover", init))
-          content?.dispatchEvent(new MouseEvent("mousemove", init))
-          editor?.dispatchEvent(new MouseEvent("mousemove", init))
-        },
-        x,
-        y,
-        pointerModifiers(),
-      )
+    move: async (x: number, y: number, options?: { steps?: number }) => {
+      const steps = Math.max(1, options?.steps ?? 1)
+      const actions = Array.from({ length: steps }, (_, index) => ({
+        type: "pointerMove",
+        duration: 16,
+        origin: "viewport",
+        x: Math.round(pointerX + ((x - pointerX) * (index + 1)) / steps),
+        y: Math.round(pointerY + ((y - pointerY) * (index + 1)) / steps),
+      }))
+      await wd.performActions(pointerActions(actions))
+      pointerX = x
+      pointerY = y
     },
-    down: async () => {
-      await wd.execute(() => {
-        document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
-      })
-    },
+    down: () => wd.performActions(pointerActions([{ type: "pointerDown", button: 0 }])),
     up: async () => {
-      await wd.execute(() => {
-        document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }))
-      })
+      await wd.performActions(pointerActions([{ type: "pointerUp", button: 0 }]))
+      await wd.releaseActions()
     },
     click: async (x: number, y: number) => {
-      await wd.execute(
-        (px, py, modifiers) => {
-          const init = {
-            bubbles: true,
-            cancelable: true,
-            button: 0,
-            buttons: 1,
-            clientX: px,
-            clientY: py,
-            metaKey: !!modifiers.metaKey,
-            ctrlKey: !!modifiers.ctrlKey,
-            altKey: !!modifiers.altKey,
-            shiftKey: !!modifiers.shiftKey,
-          }
-          const editor = document.querySelector(".cm-editor")
-          if (editor) {
-            editor.dispatchEvent(new MouseEvent("mousedown", init))
-            editor.dispatchEvent(new MouseEvent("mouseup", init))
-            editor.dispatchEvent(new MouseEvent("click", init))
-            return
-          }
-          const el = document.elementFromPoint(px, py) as HTMLElement | null
-          el?.dispatchEvent(new MouseEvent("mousedown", init))
-          el?.dispatchEvent(new MouseEvent("mouseup", init))
-          el?.dispatchEvent(new MouseEvent("click", init))
-        },
-        x,
-        y,
-        pointerModifiers(),
-      )
+      await wd.performActions(pointerActions([
+        { type: "pointerMove", duration: 0, origin: "viewport", x: Math.round(x), y: Math.round(y) },
+        { type: "pointerDown", button: 0 },
+        { type: "pointerUp", button: 0 },
+      ]))
+      await wd.releaseActions()
+      pointerX = x
+      pointerY = y
     },
   }
 

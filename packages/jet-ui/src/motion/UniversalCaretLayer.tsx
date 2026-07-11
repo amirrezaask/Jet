@@ -20,7 +20,10 @@ function isCaretTarget(value: EventTarget | null): value is CaretTarget {
   if (value instanceof HTMLInputElement) {
     return !value.disabled && !value.readOnly && TEXT_INPUT_TYPES.has(value.type.toLowerCase())
   }
-  return value instanceof HTMLElement && value.isContentEditable
+  return value instanceof HTMLElement && (
+    value.isContentEditable ||
+    ["true", "plaintext-only"].includes(value.getAttribute("contenteditable") ?? "")
+  )
 }
 
 function setting<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
@@ -47,7 +50,26 @@ function copyTextStyle(mirror: HTMLElement, style: CSSStyleDeclaration): void {
   mirror.style.tabSize = style.tabSize
 }
 
-function measureTextControl(target: HTMLInputElement | HTMLTextAreaElement): CaretPoint | null {
+class TextCaretMeasurer {
+  readonly mirror = document.createElement("div")
+  readonly marker = document.createElement("span")
+  readonly context = document.createElement("canvas").getContext("2d")
+
+  constructor() {
+    this.mirror.dataset.jetCaretMeasureMirror = ""
+    this.marker.textContent = "\u200b"
+    document.body.appendChild(this.mirror)
+  }
+
+  dispose(): void {
+    this.mirror.remove()
+  }
+}
+
+function measureTextControl(
+  target: HTMLInputElement | HTMLTextAreaElement,
+  measurer: TextCaretMeasurer,
+): CaretPoint | null {
   const numberFallback = target instanceof HTMLInputElement && target.type === "number"
     ? target.value.length
     : null
@@ -63,7 +85,8 @@ function measureTextControl(target: HTMLInputElement | HTMLTextAreaElement): Car
   const paddingTop = parseFloat(style.paddingTop) || 0
   const paddingRight = parseFloat(style.paddingRight) || 0
 
-  const mirror = document.createElement("div")
+  const mirror = measurer.mirror
+  mirror.replaceChildren()
   Object.assign(mirror.style, {
     position: "fixed",
     visibility: "hidden",
@@ -81,18 +104,14 @@ function measureTextControl(target: HTMLInputElement | HTMLTextAreaElement): Car
   mirror.textContent = target instanceof HTMLInputElement && target.type === "password"
     ? "•".repeat(start)
     : target.value.slice(0, start)
-  const marker = document.createElement("span")
-  marker.textContent = "\u200b"
+  const marker = measurer.marker
   mirror.appendChild(marker)
-  document.body.appendChild(mirror)
   const markerRect = marker.getBoundingClientRect()
-  mirror.remove()
 
   const nextChar = target.value.slice(start, start + 1) || target.value.slice(Math.max(0, start - 1), start)
   let charWidth = fontSize * 0.55
   if (nextChar) {
-    const canvas = document.createElement("canvas")
-    const context = canvas.getContext("2d")
+    const context = measurer.context
     if (context) {
       context.font = style.font
       charWidth = Math.max(1, context.measureText(nextChar).width)
@@ -145,9 +164,9 @@ function measureContentEditable(target: HTMLElement): CaretPoint | null {
   }
 }
 
-function measureCaret(target: CaretTarget): CaretPoint | null {
+function measureCaret(target: CaretTarget, measurer: TextCaretMeasurer): CaretPoint | null {
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-    return measureTextControl(target)
+    return measureTextControl(target, measurer)
   }
   return measureContentEditable(target)
 }
@@ -173,6 +192,7 @@ class UniversalCaretController {
   private readonly anim = new CaretEndpointAnim()
   private readonly ghosts = new CaretGhostBuffer()
   private readonly events = new AbortController()
+  private readonly measurer = new TextCaretMeasurer()
   private readonly rootObserver: MutationObserver
   private target: CaretTarget | null = null
   private originalCaretColor = ""
@@ -268,7 +288,7 @@ class UniversalCaretController {
       this.hide()
       return
     }
-    const point = measureCaret(target)
+    const point = measureCaret(target, this.measurer)
     if (!point) {
       this.hide()
       return
@@ -409,6 +429,7 @@ class UniversalCaretController {
     this.events.abort()
     this.unsubscribeReduced()
     this.rootObserver.disconnect()
+    this.measurer.dispose()
     this.stop()
     if (this.eventRaf != null) cancelAnimationFrame(this.eventRaf)
     this.layer.remove()

@@ -1,12 +1,16 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use tauri::{Manager, RunEvent, WindowEvent};
+    let process_started = std::time::Instant::now();
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        .plugin(tauri_plugin_shell::init());
+
+    #[cfg(not(feature = "e2e"))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             let args: Vec<String> = argv.into_iter().filter(|a| !a.starts_with('-')).collect();
             let cwd = std::env::current_dir().unwrap_or_default();
             let config = host::launch::resolve_launch_target(&args, &cwd);
@@ -15,7 +19,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }));
-
+    }
     // Finder/Explorer launches start with a minimal PATH. Seed the standard
     // developer-tool locations synchronously, then let the login-shell probe
     // refine it without delaying first paint.
@@ -35,23 +39,32 @@ pub fn run() {
     }
 
     let app = builder
-        .setup(|app| {
+        .setup(move |app| {
             // Don't block first paint on login-shell PATH probe — refresh in background.
             std::thread::spawn(|| apply_login_shell_path());
 
             let home = dirs::home_dir()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "/".to_string());
-            app.manage(host::HostState::new(home));
+            app.manage(host::HostState::new(home, process_started));
             app.manage(shell::ShellState::default());
 
-            #[cfg(target_os = "macos")]
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
-            }
-
+            let e2e = std::env::var("JET_E2E").ok().as_deref() == Some("1");
+            let headed = std::env::var("JET_HEADED").ok().as_deref() == Some("1")
+                || std::env::var("PWDEBUG").ok().as_deref() == Some("1");
             if let Some(window) = app.get_webview_window("main") {
                 shell::apply_cached_chrome(&window);
+                if e2e && headed {
+                    let _ = window.show();
+                } else if e2e && !headed {
+                    // Fully hidden WKWebViews throttle timers/rAF hard enough to break
+                    // Radix dialogs, caret motion, and scroll sampling. Park off-screen
+                    // so the desktop stays clear without freezing the webview.
+                    let _ = window.set_position(tauri::Position::Physical(
+                        tauri::PhysicalPosition::new(-40_000, -40_000),
+                    ));
+                    let _ = window.show();
+                }
             }
 
             let args: Vec<String> = std::env::args()

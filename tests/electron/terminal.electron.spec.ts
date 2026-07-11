@@ -69,6 +69,43 @@ test.describe("electron terminal", () => {
     }
   })
 
+  test("streams Unicode output without corrupting the terminal session", async () => {
+    const { app, page } = await launchJet()
+    try {
+      const output = await page.evaluate(async () => {
+        const terminal = window.jet?.terminal
+        const workspacePath = window.__jetAgent?.getState().activeWorkspace
+        if (!terminal || !workspacePath) throw new Error("Terminal API or workspace unavailable")
+        const direct = await terminal.create(`file://${workspacePath}`, {
+          command: "/bin/sh",
+          args: ["-c", "printf 'سلام🙂 jet-unicode-tail'"],
+        })
+        const text = await new Promise<string>((resolve, reject) => {
+          let received = ""
+          let unsubscribe = () => {}
+          const timeout = window.setTimeout(() => {
+            unsubscribe()
+            reject(new Error(`Timed out waiting for Unicode output: ${received}`))
+          }, 5_000)
+          unsubscribe = terminal.onData(direct.id, chunk => {
+            received += chunk
+            if (!received.includes("jet-unicode-tail")) return
+            window.clearTimeout(timeout)
+            unsubscribe()
+            resolve(received)
+          })
+        })
+        await terminal.dispose(direct.id)
+        return text
+      })
+
+      expect(output).toContain("سلام🙂")
+      expect(output).toContain("jet-unicode-tail")
+    } finally {
+      await app.close()
+    }
+  })
+
   test("runs ls and shows fixture directory listing", async () => {
     const { app, page } = await launchJet()
     try {

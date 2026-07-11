@@ -168,10 +168,7 @@ impl TerminalHost {
                             let mut e = entry_reader.lock().unwrap();
                             e.sequence += 1;
                             e.output.push_str(&data);
-                            if e.output.len() > MAX_TERMINAL_REPLAY {
-                                let keep = e.output.len() - MAX_TERMINAL_REPLAY;
-                                e.output = e.output[keep..].to_string();
-                            }
+                            trim_terminal_replay(&mut e.output, MAX_TERMINAL_REPLAY);
                             e.sequence
                         };
                         emit_host(
@@ -326,6 +323,17 @@ impl TerminalHost {
             let _ = self.dispose(&id);
         }
     }
+}
+
+fn trim_terminal_replay(output: &mut String, max_bytes: usize) {
+    if output.len() <= max_bytes {
+        return;
+    }
+    let mut start = output.len() - max_bytes;
+    while start < output.len() && !output.is_char_boundary(start) {
+        start += 1;
+    }
+    output.drain(..start);
 }
 
 struct ShellTitle {
@@ -559,5 +567,14 @@ mod tests {
         let parsed = parse_launch(Some(&v)).unwrap().unwrap();
         assert_eq!(parsed.0, "/bin/sh");
         assert_eq!(parsed.1, vec!["-c".to_string(), "echo hi".to_string()]);
+    }
+
+    #[test]
+    fn replay_trim_preserves_utf8_boundaries_and_tail() {
+        let mut output = format!("{}jet-unicode-tail", "سلام🙂".repeat(128));
+        trim_terminal_replay(&mut output, 73);
+        assert!(output.len() <= 73);
+        assert!(output.ends_with("jet-unicode-tail"));
+        assert!(std::str::from_utf8(output.as_bytes()).is_ok());
     }
 }

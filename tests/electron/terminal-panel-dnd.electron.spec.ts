@@ -29,9 +29,28 @@ async function dragTabToPanelCenter(page: ShellDriver, tab: ShellLocator, panel:
 
 test.describe("electron terminal panel drag and focus", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
-  test.skip(process.env.JET_SHELL === "tauri", "Playwright filter/has locators not yet ported to Tauri WebDriver")
 
-  test("moves terminal tabs between panels and focuses split terminals by click", async () => {
+  test("exposes drop overlays after splitting a terminal panel", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await execCommand(page, "view.splitEditor")
+      // Site targets mount only while a tab drag is active; the overlay hosts are always present.
+      await expect.poll(async () => page.locator("[data-jet-panel-drop-overlay]").count()).toBeGreaterThanOrEqual(2)
+      await expect.poll(async () => page.locator("[data-jet-panel-dock] [data-jet-panel-leaf]").count()).toBeGreaterThanOrEqual(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("moves terminal tabs between panels and focuses split terminals by click", async ({}, testInfo) => {
+    // Off-screen Tauri E2E windows do not receive reliable WebDriver pointer streams
+    // for @dnd-kit tab drags (drop sites never go hot). Run headed to exercise DnD.
+    test.skip(
+      testInfo.project.name === "tauri-e2e" && !process.env.JET_HEADED && !process.env.PWDEBUG,
+      "Requires headed Tauri window for pointer DnD",
+    )
+
     const { app, page } = await launchJet()
     const runtimeErrors: string[] = []
 

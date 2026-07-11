@@ -11,6 +11,7 @@
     "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test && pnpm --filter @jet/app test",
     "test:electron": "pnpm --filter @jet/node-host build && pnpm --filter jet-desktop build && playwright test --project=electron",
     "test:bench": "pnpm --filter @jet/node-host build && pnpm --filter jet-desktop build && playwright test --project=bench",
+    "bench:startup:tauri": "pnpm --filter jet-tauri bench:startup:debug && pnpm --filter jet-tauri bench:startup:release",
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
     "release": "pnpm --filter jet-desktop release && cp -r ./apps/jet-desktop/release/mac-arm64/Jet.app ~/Applications/",

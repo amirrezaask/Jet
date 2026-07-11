@@ -28,6 +28,10 @@ class PlaywrightLocator implements ShellLocator {
     return this.pw.focus()
   }
 
+  hover(): Promise<void> {
+    return this.pw.hover()
+  }
+
   first(): ShellLocator {
     return new PlaywrightLocator(this.page, this.selector, this.pw.first())
   }
@@ -60,11 +64,6 @@ class PlaywrightLocator implements ShellLocator {
     return this.pw.textContent()
   }
 
-  getByRole(role: string, options?: { name?: string | RegExp }): ShellLocator {
-    const inner = this.pw.getByRole(role as Parameters<Page["getByRole"]>[0], options)
-    return new PlaywrightLocator(this.page, this.selector, inner as ReturnType<Page["locator"]>)
-  }
-
   waitFor(options?: { state?: "visible" | "attached" | "hidden"; timeout?: number }): Promise<void> {
     return this.pw.waitFor(options)
   }
@@ -95,12 +94,19 @@ class PlaywrightLocator implements ShellLocator {
 
   getByRole(role: string, options?: { name?: string | RegExp }): ShellLocator {
     const inner = this.pw.getByRole(role as Parameters<Page["getByRole"]>[0], options)
-    return new PlaywrightLocator(this.page, `${this.selector} [role="${role}"]`, inner as ReturnType<Page["locator"]>)
+    return new PlaywrightLocator(
+      this.page,
+      `${this.selector} >> role=${role}`,
+      inner as ReturnType<Page["locator"]>,
+    )
   }
 
   locator(selector: string): ShellLocator {
-    const scoped = selector.startsWith(":scope") ? selector : `${this.selector} ${selector}`
-    return new PlaywrightLocator(this.page, scoped, this.pw.locator(scoped))
+    return new PlaywrightLocator(
+      this.page,
+      `${this.selector} >> ${selector}`,
+      this.pw.locator(selector),
+    )
   }
 }
 

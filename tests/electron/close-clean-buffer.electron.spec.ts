@@ -28,4 +28,20 @@ test.describe("electron close clean buffer", () => {
       await app.close()
     }
   })
+
+  test("native close accelerator reaches the shared close-buffer command", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/utils.ts")
+      const before = await page.evaluate(() => window.__jetAgent!.getState().openBuffers.length)
+
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+w" : "Control+w")
+
+      await expect
+        .poll(() => page.evaluate(() => window.__jetAgent!.getState().openBuffers.length))
+        .toBe(before - 1)
+    } finally {
+      await app.close()
+    }
+  })
 })

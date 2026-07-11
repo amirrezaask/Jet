@@ -55,6 +55,8 @@ pub async fn jet_sync_native_chrome(
 
 #[tauri::command]
 pub fn jet_get_launch_config(state: tauri::State<ShellState>) -> Option<LaunchConfig> {
+    // Consume-once — matches Electron. Sticky config would force argv workspace
+    // on every webview reload and ignore the project catalog's last active path.
     state.launch_config.lock().ok()?.take()
 }
 
@@ -338,10 +340,6 @@ fn write_chrome_cache(colors: &NativeChromeColors) {
 }
 
 fn apply_chrome_colors(window: &WebviewWindow, colors: &NativeChromeColors) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
-    }
     let _ = window.set_background_color(Some(parse_color(&colors.background)?));
     #[cfg(target_os = "windows")]
     apply_windows_title_bar_overlay(window, colors)?;

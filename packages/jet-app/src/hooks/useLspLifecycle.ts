@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { LanguageServerManager, LspClientPool, languageServerCommandFor } from "@jet/lsp"
 import type { LSPClient } from "@jet/codemirror"
 import { isUntitledUri, fileUriToPath } from "@jet/shared"
@@ -11,6 +11,8 @@ export function useLspLifecycle(
 ) {
   const [lspRevision, setLspRevision] = useState(0)
   const [lspCrashed, setLspCrashed] = useState(false)
+  const lastEnsuredUriRef = useRef<string | null>(null)
+  const ensureLspForFileRef = useRef<(fileUri: string) => Promise<void>>(async () => {})
 
   const lspManager = useMemo(
     () => (window.jet ? new LanguageServerManager(window.jet.lsp) : null),
@@ -37,29 +39,40 @@ export function useLspLifecycle(
   const ensureLspForFile = useCallback(
     async (fileUri: string) => {
       if (!lspManager || isUntitledUri(fileUri)) return
+      lastEnsuredUriRef.current = fileUri
       const rootUri = workspace.resolveRootUriForFile(fileUri)
       if (!rootUri) return
       const path = fileUriToPath(fileUri)
       const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
-      const conn = await lspManager.ensureServerForFile(file, rootUri)
-      if (conn) {
-        try {
-          await lspClientPool.getOrCreateClient(conn)
-          bumpLspRevision()
-        } catch {
-          lspManager.clearConnection(conn.id)
-          lspClientPool.releaseConnection(conn.id)
-        }
-      } else {
-        const spawnErr = lspManager.consumeLastSpawnError()
-        if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
-          const command = languageServerCommandFor(file.languageId) ?? "language server"
-          showJetToast(`Language server unavailable for ${file.name} — is ${command} on PATH?`)
-        }
+      const attach = async () => {
+        const conn = await lspManager.ensureServerForFile(file, rootUri)
+        if (!conn) return false
+        await lspClientPool.getOrCreateClient(conn)
+        setLspCrashed(false)
+        bumpLspRevision()
+        return true
+      }
+      try {
+        if (await attach()) return
+      } catch {
+        lspClientPool.clear()
+      }
+      // One automatic retry covers the race where a transport blip clears the
+      // host session while the renderer is still finishing its first attach.
+      try {
+        if (await attach()) return
+      } catch {
+        /* fall through to spawn-error toast */
+      }
+      const spawnErr = lspManager.consumeLastSpawnError()
+      if (spawnErr && lspManager.isLanguageSupported(file.languageId)) {
+        const command = languageServerCommandFor(file.languageId) ?? "language server"
+        showJetToast(`Language server unavailable for ${file.name} — is ${command} on PATH?`)
       }
     },
     [lspManager, workspace, lspClientPool, bumpLspRevision],
   )
+  ensureLspForFileRef.current = ensureLspForFile
 
   const handleLspAttachFailed = useCallback(
     (fileUri: string) => {
@@ -88,13 +101,21 @@ export function useLspLifecycle(
       setLspCrashed(true)
       bumpLspRevision()
       showJetToast("LSP crashed — will retry on next editor focus")
+      const uri = lastEnsuredUriRef.current
+      if (uri) {
+        window.setTimeout(() => {
+          void ensureLspForFileRef.current(uri)
+        }, 250)
+      }
     })
   }, [lspClientPool, bumpLspRevision])
 
   const lspStatus = useMemo((): "connected" | "off" | "unavailable" => {
     if (!window.jet?.lsp) return "unavailable"
-    if (lspCrashed) return "off"
+    // A live connection wins over a prior crash sticky-flag so reconnect
+    // (and the status bar) recover after transport loss.
     if (lspManager?.hasAnyConnection()) return "connected"
+    if (lspCrashed) return "off"
     return "off"
   }, [lspManager, lspCrashed, lspRevision])
 

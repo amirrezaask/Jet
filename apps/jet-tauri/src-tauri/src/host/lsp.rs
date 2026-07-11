@@ -16,6 +16,7 @@ use super::launch::uri_to_path;
 struct LspSession {
     child: Arc<Mutex<Option<Child>>>,
     shutdown: Arc<AtomicBool>,
+    explicit_stop: Arc<AtomicBool>,
 }
 
 pub struct LspHost {
@@ -71,6 +72,7 @@ impl LspHost {
 
         let child_slot = Arc::new(Mutex::new(Some(child)));
         let shutdown = Arc::new(AtomicBool::new(false));
+        let explicit_stop = Arc::new(AtomicBool::new(false));
         let shutdown_bridge = shutdown.clone();
 
         thread::spawn(move || {
@@ -81,6 +83,7 @@ impl LspHost {
         let id_exit = id.clone();
         let child_wait = child_slot.clone();
         let shutdown_wait = shutdown.clone();
+        let explicit_stop_wait = explicit_stop.clone();
         let sessions_wait = self.sessions.clone();
         thread::spawn(move || {
             let mut exit_code = None;
@@ -108,7 +111,7 @@ impl LspHost {
             if let Ok(mut sessions) = sessions_wait.lock() {
                 sessions.remove(&id_exit);
             }
-            if exit_code.is_some_and(|code| code != 0) {
+            if should_emit_crash(explicit_stop_wait.load(Ordering::Acquire), exit_code) {
                 emit_host(&app_exit, "lsp:crashed", vec![Value::String(id_exit)]);
             }
         });
@@ -119,6 +122,7 @@ impl LspHost {
                 LspSession {
                     child: child_slot,
                     shutdown: shutdown.clone(),
+                    explicit_stop,
                 },
             );
         }
@@ -132,6 +136,7 @@ impl LspHost {
     pub fn stop(&self, id: &str) -> Result<(), String> {
         if let Ok(mut sessions) = self.sessions.lock() {
             if let Some(session) = sessions.remove(id) {
+                session.explicit_stop.store(true, Ordering::Release);
                 session.shutdown.store(true, Ordering::Release);
                 if let Ok(mut guard) = session.child.lock() {
                     if let Some(mut child) = guard.take() {
@@ -154,6 +159,10 @@ impl LspHost {
             let _ = self.stop(&id);
         }
     }
+}
+
+fn should_emit_crash(explicit_stop: bool, _exit_code: Option<i32>) -> bool {
+    !explicit_stop
 }
 
 fn bridge_stdio_to_websocket(
@@ -373,5 +382,12 @@ mod tests {
             decoder.feed(b"content-length: 2\r\n\r\n{}"),
             vec!["{}".to_string()]
         );
+    }
+
+    #[test]
+    fn unexpected_transport_loss_is_reported_as_a_crash() {
+        assert!(should_emit_crash(false, None));
+        assert!(should_emit_crash(false, Some(0)));
+        assert!(!should_emit_crash(true, None));
     }
 }

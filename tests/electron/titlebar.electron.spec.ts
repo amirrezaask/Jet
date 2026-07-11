@@ -53,6 +53,9 @@ test.describe("desktop shell", () => {
           titlebarSidebarColor: getComputedStyle(titlebarSidebar).backgroundColor,
           workspaceSidebarColor: getComputedStyle(workspaceSidebar).backgroundColor,
           hasMenubar: document.querySelector("[data-jet-titlebar] [role='menubar']") != null,
+          tauriDragRegion: bar.hasAttribute("data-tauri-drag-region"),
+          tauriCenterDragRegion:
+            document.querySelector("[data-jet-titlebar-main] [data-tauri-drag-region]") != null,
           zone,
         }
       })
@@ -66,6 +69,8 @@ test.describe("desktop shell", () => {
       expect(geom!.spacerRight!).toBeLessThanOrEqual(geom!.titlebarSidebarRight)
       expect(geom!.titlebarSidebarColor).toBe(geom!.workspaceSidebarColor)
       expect(geom!.hasMenubar).toBe(false)
+      expect(geom!.tauriDragRegion).toBe(true)
+      expect(geom!.tauriCenterDragRegion).toBe(true)
 
       const tabFont = await page.evaluate(() => {
         const triggers = Array.from(
@@ -95,6 +100,60 @@ test.describe("desktop shell", () => {
       expect(tabFont!.allSameSize).toBe(true)
       expect(tabFont!.sizes[0]).toBeCloseTo(tabFont!.expected, 0)
       expect(tabFont!.listHeight).toBeCloseTo(tabFont!.expectedListHeight, 0)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Tauri titlebar drag region moves the native window", async ({}, testInfo) => {
+    test.skip(testInfo.project.name !== "tauri-e2e", "Tauri native window behavior")
+    // Hidden E2E windows (`visible: false` / `window.hide`) do not accept OS drag.
+    test.skip(!process.env.JET_HEADED && !process.env.PWDEBUG, "Requires headed Tauri window")
+
+    const { app, page } = await launchJet()
+    try {
+      const titlebar = page.locator("[data-jet-titlebar-main] [data-tauri-drag-region]")
+      await expectLocatorVisible(titlebar, { timeout: 10_000 })
+      const box = await titlebar.boundingBox()
+      expect(box).not.toBeNull()
+
+      const getWindowPosition = () => page.evaluate(async () => {
+        const tauri = (window as Window & {
+          __TAURI__?: { window?: { getCurrentWindow?: () => { outerPosition(): Promise<{ x: number; y: number }> } } }
+        }).__TAURI__
+        const currentWindow = tauri?.window?.getCurrentWindow?.()
+        if (!currentWindow) throw new Error("Tauri global window API is unavailable")
+        return currentWindow.outerPosition()
+      })
+
+      const before = await getWindowPosition()
+      const x = box!.x + box!.width / 2
+      const y = box!.y + box!.height / 2
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      await page.mouse.move(x + 48, y + 32, { steps: 12 })
+      await page.mouse.up()
+      await page.waitForTimeout(150)
+      const after = await getWindowPosition()
+
+      expect(Math.abs(after.x - before.x) + Math.abs(after.y - before.y)).toBeGreaterThan(20)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Tauri titlebar exposes a native drag region", async ({}, testInfo) => {
+    test.skip(testInfo.project.name !== "tauri-e2e", "Tauri native window behavior")
+
+    const { app, page } = await launchJet()
+    try {
+      const titlebar = page.locator("[data-jet-titlebar-main] [data-tauri-drag-region]")
+      await expectLocatorVisible(titlebar, { timeout: 10_000 })
+      await expectLocatorAttribute(titlebar, "data-tauri-drag-region", "true")
+      const box = await titlebar.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.width).toBeGreaterThan(40)
+      expect(box!.height).toBeGreaterThan(8)
     } finally {
       await app.close()
     }

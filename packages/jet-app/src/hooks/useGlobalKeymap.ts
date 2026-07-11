@@ -138,9 +138,13 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       dispatchKeyBinding(e, { allowEditor: true })
     }
 
+    const onNativeCloseTab = () => closeBuffer()
+
     window.addEventListener("keydown", onKey, true)
+    window.addEventListener("jet-close-tab", onNativeCloseTab)
     return () => {
       window.removeEventListener("keydown", onKey, true)
+      window.removeEventListener("jet-close-tab", onNativeCloseTab)
       if (chordTimeout != null) window.clearTimeout(chordTimeout)
     }
   }, [

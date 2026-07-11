@@ -23,6 +23,7 @@ struct FffHandles {
 
 static FFF_INDEXES: OnceLock<Mutex<HashMap<String, FffHandles>>> = OnceLock::new();
 static FFF_UNAVAILABLE: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static FFF_INIT: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn indexes() -> &'static Mutex<HashMap<String, FffHandles>> {
     FFF_INDEXES.get_or_init(|| Mutex::new(HashMap::new()))
@@ -30,6 +31,10 @@ fn indexes() -> &'static Mutex<HashMap<String, FffHandles>> {
 
 fn unavailable_roots() -> &'static Mutex<HashSet<String>> {
     FFF_UNAVAILABLE.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn init_lock() -> &'static Mutex<()> {
+    FFF_INIT.get_or_init(|| Mutex::new(()))
 }
 
 fn root_key(root_uri: &str) -> String {
@@ -56,6 +61,19 @@ fn ensure_handles(root_uri: &str) -> Option<FffHandles> {
         return None;
     }
 
+    if let Ok(guard) = indexes().lock() {
+        if let Some(handles) = guard.get(&key) {
+            return Some(handles.clone());
+        }
+    }
+    let _init = init_lock().lock().ok()?;
+    if unavailable_roots()
+        .lock()
+        .map(|guard| guard.contains(&key))
+        .unwrap_or(false)
+    {
+        return None;
+    }
     if let Ok(guard) = indexes().lock() {
         if let Some(handles) = guard.get(&key) {
             return Some(handles.clone());
@@ -111,18 +129,20 @@ fn ensure_handles(root_uri: &str) -> Option<FffHandles> {
         return None;
     }
 
-    let scan_ready = Arc::new(AtomicBool::new(
-        shared_picker.wait_for_indexing_complete(Duration::from_secs(30)),
-    ));
+    let scan_ready = Arc::new(AtomicBool::new(false));
     let handles = FffHandles {
-        shared_picker,
+        shared_picker: shared_picker.clone(),
         shared_query,
-        scan_ready,
+        scan_ready: scan_ready.clone(),
     };
 
     if let Ok(mut guard) = indexes().lock() {
         guard.insert(key, handles.clone());
     }
+    std::thread::spawn(move || {
+        let ready = shared_picker.wait_for_indexing_complete(Duration::from_secs(30));
+        scan_ready.store(ready, Ordering::Release);
+    });
     Some(handles)
 }
 

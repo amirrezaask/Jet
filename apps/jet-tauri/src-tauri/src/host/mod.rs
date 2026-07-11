@@ -8,6 +8,7 @@ pub mod fs;
 pub mod git;
 pub mod launch;
 pub mod lsp;
+pub mod perf;
 pub mod search;
 pub mod tasks;
 pub mod terminal;
@@ -16,6 +17,7 @@ pub mod workspace;
 
 use agents::AgentsHost;
 use lsp::LspHost;
+use perf::PerfHost;
 use terminal::TerminalHost;
 use workspace::WorkspaceHost;
 
@@ -24,16 +26,18 @@ pub struct HostState {
     pub lsp: LspHost,
     pub terminal: TerminalHost,
     pub agents: AgentsHost,
+    pub perf: PerfHost,
     pub home_dir: String,
 }
 
 impl HostState {
-    pub fn new(home_dir: String) -> Self {
+    pub fn new(home_dir: String, process_started: std::time::Instant) -> Self {
         Self {
             workspace: WorkspaceHost::new(),
             lsp: LspHost::new(),
             terminal: TerminalHost::new(),
             agents: AgentsHost::new(),
+            perf: PerfHost::new(&home_dir, process_started),
             home_dir,
         }
     }
@@ -75,6 +79,9 @@ impl HostState {
         }
         if channel.starts_with("agents:") {
             return agents::handle(&self.agents, app, channel, args_ref);
+        }
+        if channel.starts_with("perf:") {
+            return perf::handle(&self.perf, channel, args_ref);
         }
         if channel.starts_with("jet:") {
             return launch::handle(channel, args_ref, &self.home_dir);

@@ -21,6 +21,7 @@ export function JetTitleBar({
   return (
     <div
       data-jet-titlebar
+      data-tauri-drag-region
       className="flex min-h-[var(--jet-titlebar-height)] shrink-0 text-xs select-none"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
@@ -47,6 +48,7 @@ export function JetTitleBar({
         className="flex min-w-0 flex-1 items-center border-b border-border bg-background px-2"
       >
         <div
+          data-tauri-drag-region
           className="min-w-0 flex-1 truncate text-center text-muted-foreground"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         >

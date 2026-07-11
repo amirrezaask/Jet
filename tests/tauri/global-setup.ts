@@ -1,4 +1,4 @@
-import { ensureTauriE2eBuild, restoreTauriE2eConf } from "../shell/launch-tauri.js"
+import { ensureTauriE2eBuild } from "../shell/launch-tauri.js"
 
 export default async function globalSetup(): Promise<void> {
   const argv = process.argv.join(" ")
