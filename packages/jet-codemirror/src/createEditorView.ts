@@ -28,6 +28,7 @@ import {
   type CompletionSource,
 } from "@codemirror/autocomplete"
 import { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
+import { signatureHelpAfterComplete } from "./signature-help-trigger.js"
 import {
   bracketMatching,
   indentOnInput,
@@ -213,7 +214,14 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   extensions.push(indentMarkerCompartment.of(indentMarkerExtension(theme, largeFile)))
 
   if (!largeFile) {
-    extensions.push(eolOverlayExtension(), inlayHints(), semanticTokens(), highlightTrailingWhitespace(), lintGutter())
+    extensions.push(
+      eolOverlayExtension(),
+      inlayHints(),
+      semanticTokens(),
+      highlightTrailingWhitespace(),
+      lintGutter(),
+      signatureHelpAfterComplete(),
+    )
   }
 
   extensions.push(

@@ -84,6 +84,9 @@ function measureTextControl(
   const paddingLeft = parseFloat(style.paddingLeft) || 0
   const paddingTop = parseFloat(style.paddingTop) || 0
   const paddingRight = parseFloat(style.paddingRight) || 0
+  const paddingBottom = parseFloat(style.paddingBottom) || 0
+  const borderTop = parseFloat(style.borderTopWidth) || 0
+  const borderBottom = parseFloat(style.borderBottomWidth) || 0
 
   const mirror = measurer.mirror
   mirror.replaceChildren()
@@ -117,10 +120,23 @@ function measureTextControl(
       charWidth = Math.max(1, context.measureText(nextChar).width)
     }
   }
+
+  // Single-line inputs vertically center glyphs in the content box; mirror text sits at paddingTop.
+  let y = markerRect.top - target.scrollTop
+  let h = Math.max(1, lineHeight)
+  if (target instanceof HTMLInputElement) {
+    const contentHeight = Math.max(
+      0,
+      rect.height - paddingTop - paddingBottom - borderTop - borderBottom,
+    )
+    h = Math.max(1, Math.min(lineHeight, contentHeight || lineHeight))
+    y = rect.top + borderTop + paddingTop + Math.max(0, (contentHeight - h) / 2) - target.scrollTop
+  }
+
   return {
     x: markerRect.left - target.scrollLeft,
-    y: markerRect.top - target.scrollTop,
-    h: Math.max(1, lineHeight),
+    y,
+    h,
     charWidth,
   }
 }
@@ -194,6 +210,7 @@ class UniversalCaretController {
   private readonly events = new AbortController()
   private readonly measurer = new TextCaretMeasurer()
   private readonly rootObserver: MutationObserver
+  private targetObserver: ResizeObserver | null = null
   private target: CaretTarget | null = null
   private originalCaretColor = ""
   private reduced = prefersReducedMotion()
@@ -204,6 +221,7 @@ class UniversalCaretController {
   private lastGhostY = 0
   private raf: number | null = null
   private eventRaf: number | null = null
+  private settleRaf: number | null = null
   private lastFrame = 0
   private appearance = readCursorAppearance()
   private readonly unsubscribeReduced: () => void
@@ -247,12 +265,44 @@ class UniversalCaretController {
     this.rootObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] })
   }
 
+  private clearSettle(): void {
+    if (this.settleRaf != null) {
+      cancelAnimationFrame(this.settleRaf)
+      this.settleRaf = null
+    }
+  }
+
+  /** Snap for a few frames after focus — overlay layout/fonts can settle after first paint. */
+  private settleAfterFocus(): void {
+    this.clearSettle()
+    const started = performance.now()
+    const tick = () => {
+      this.schedule(true)
+      if (performance.now() - started < 220) {
+        this.settleRaf = requestAnimationFrame(tick)
+      } else {
+        this.settleRaf = null
+      }
+    }
+    this.settleRaf = requestAnimationFrame(tick)
+  }
+
+  private observeTarget(target: CaretTarget | null): void {
+    this.targetObserver?.disconnect()
+    this.targetObserver = null
+    if (!target || typeof ResizeObserver === "undefined") return
+    this.targetObserver = new ResizeObserver(() => this.schedule(true))
+    this.targetObserver.observe(target)
+  }
+
   private setTarget(target: CaretTarget | null): void {
     if (this.target === target) return
     this.restoreNativeCaret()
+    this.clearSettle()
     this.target = target
     this.initialized = false
     this.ghosts.clear()
+    this.observeTarget(target)
     if (!target) {
       this.hide()
       return
@@ -260,6 +310,7 @@ class UniversalCaretController {
     this.originalCaretColor = target.style.caretColor
     target.style.caretColor = "transparent"
     this.schedule(true)
+    this.settleAfterFocus()
   }
 
   private eventIsWithinTarget(event: Event): boolean {
@@ -429,8 +480,10 @@ class UniversalCaretController {
     this.events.abort()
     this.unsubscribeReduced()
     this.rootObserver.disconnect()
+    this.targetObserver?.disconnect()
     this.measurer.dispose()
     this.stop()
+    this.clearSettle()
     if (this.eventRaf != null) cancelAnimationFrame(this.eventRaf)
     this.layer.remove()
   }

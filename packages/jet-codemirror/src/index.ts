@@ -72,6 +72,7 @@ export {
   type WorkspaceSymbol,
 } from "./lsp-editor-commands.js"
 export { completionTooltipClass, completionTooltipTheme } from "./completion-theme.js"
+export { signatureHelpAfterComplete } from "./signature-help-trigger.js"
 export { eolOverlayExtension } from "./eol-overlays.js"
 export { jetReloadAnnotation } from "./reload-annotation.js"
 export { skipNextOccurrence } from "./multi-cursor.js"

@@ -65,8 +65,9 @@ export const jetScrollFadeClass = "jet-scroll-fade"
 
 export const jetOverlayEnterClass = "jet-overlay-enter"
 
+/** Fade only — zoom transform skews getBoundingClientRect and makes overlay carets jump. */
 export const jetOverlayContentClass =
-  "jet-overlay-enter duration-[var(--jet-motion-overlay)] data-[state=closed]:duration-[var(--jet-motion-fast)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-90 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-90"
+  "jet-overlay-enter duration-[var(--jet-motion-overlay)] data-[state=closed]:duration-[var(--jet-motion-fast)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0"
 
 export const jetPopoverContentClass =
-  "jet-overlay-enter duration-[var(--jet-motion-overlay)] data-[state=closed]:duration-[var(--jet-motion-fast)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-90 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-90"
+  "jet-overlay-enter duration-[var(--jet-motion-overlay)] data-[state=closed]:duration-[var(--jet-motion-fast)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0"

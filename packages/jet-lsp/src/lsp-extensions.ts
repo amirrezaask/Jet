@@ -40,7 +40,7 @@ export function jetLanguageServerExtensions() {
     // bare FacetProvider values are dropped, so wrap languageData.
     [EditorState.languageData.of(() => [{ autocomplete: serverCompletionSource }])],
     hoverTooltips({ hoverTime: 750 }),
-    signatureHelp({ keymap: false }),
+    signatureHelp(),
     serverDiagnostics(),
     semanticTokenCapabilities,
   ]

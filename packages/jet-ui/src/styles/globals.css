@@ -444,14 +444,9 @@ body,
   );
 }
 
-/* Overlay squish enter — scale from RAD squish token */
-.jet-overlay-enter[data-state="open"] {
-  --tw-enter-scale: var(--jet-motion-squish-scale);
-}
-
-.jet-overlay-enter[data-state="closed"] {
-  --tw-exit-scale: var(--jet-motion-squish-scale);
-}
+/* Overlay enter is fade-only. Do NOT set --tw-enter-scale here — tw-animate's
+   enter keyframe always applies scale, and a non-1 value makes dialog inputs
+   (and the universal caret) start low then jump up as scale lerps to 1. */
 
 @media (prefers-reduced-motion: reduce) {
   .jet-press:active,

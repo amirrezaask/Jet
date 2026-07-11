@@ -143,8 +143,36 @@ export function jetEditorTheme(theme: JetTheme) {
         fontSize: "var(--jet-fs-sm, 0.85rem)",
         fontFamily: "var(--font-mono, 'Geist Mono', 'IBM Plex Mono', 'SFMono-Regular', monospace)",
       },
-      ".cm-lsp-signature-tooltip": {
+      ".cm-tooltip.cm-lsp-signature-tooltip, .cm-lsp-signature-tooltip": {
+        maxWidth: "min(40rem, calc(100vw - 2rem))",
+        padding: "6px 10px",
+        borderRadius: "6px",
+        boxShadow:
+          "0 14px 38px color-mix(in srgb, var(--jet-bg) 68%, transparent), 0 1px 0 color-mix(in srgb, white 6%, transparent) inset",
         fontSize: "var(--jet-fs-sm, 0.85rem)",
+        fontFamily: "var(--font-mono, 'Geist Mono', 'IBM Plex Mono', 'SFMono-Regular', monospace)",
+        lineHeight: "1.45",
+      },
+      ".cm-lsp-signature-tooltip .cm-lsp-signature": {
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+      },
+      ".cm-lsp-signature-tooltip .cm-lsp-active-parameter": {
+        color: theme.colors.accent,
+        fontWeight: "650",
+        textDecoration: "underline",
+        textUnderlineOffset: "2px",
+      },
+      ".cm-lsp-signature-tooltip .cm-lsp-signature-num": {
+        color: theme.colors.textMuted,
+        fontSize: "var(--jet-fs-2xs, 0.77rem)",
+        marginBottom: "2px",
+      },
+      ".cm-lsp-signature-tooltip .cm-lsp-signature-documentation": {
+        marginTop: "6px",
+        paddingTop: "6px",
+        borderTop: `1px solid ${theme.colors.border}`,
+        color: theme.colors.textMuted,
       },
       ".cm-completionLabel": {
         color: theme.colors.text,
