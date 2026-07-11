@@ -100,7 +100,7 @@ export function useLspLifecycle(
       lspClientPool.releaseConnection(id)
       setLspCrashed(true)
       bumpLspRevision()
-      showJetToast("LSP crashed — will retry on next editor focus")
+      showJetToast("LSP crashed — retrying…")
       const uri = lastEnsuredUriRef.current
       if (uri) {
         window.setTimeout(() => {

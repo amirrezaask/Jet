@@ -179,6 +179,8 @@ fn seed_common_executable_paths() {}
 
 #[cfg(not(target_os = "windows"))]
 fn apply_login_shell_path() {
+    use std::path::PathBuf;
+
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
     let shell_base = std::path::Path::new(&shell)
         .file_name()
@@ -197,9 +199,20 @@ fn apply_login_shell_path() {
         .output()
     {
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                std::env::set_var("PATH", path);
+            let login = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if login.is_empty() {
+                return;
+            }
+            // Merge login-shell PATH with current (seeded) PATH — never replace
+            // wholesale so /opt/homebrew/bin and ~/.cargo/bin stay available.
+            let current = std::env::var_os("PATH").unwrap_or_default();
+            let mut paths = Vec::<PathBuf>::new();
+            paths.extend(std::env::split_paths(std::ffi::OsStr::new(&login)));
+            paths.extend(std::env::split_paths(&current));
+            let mut seen = std::collections::HashSet::new();
+            paths.retain(|path| seen.insert(path.clone()));
+            if let Ok(joined) = std::env::join_paths(paths) {
+                std::env::set_var("PATH", joined);
             }
         }
     }
