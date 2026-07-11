@@ -9,13 +9,15 @@ use super::uri::{file_uri_to_path, path_to_file_uri};
 pub struct DirEntry {
     pub uri: String,
     pub name: String,
-    pub isDirectory: bool,
+    #[serde(rename = "isDirectory")]
+    pub is_directory: bool,
 }
 
 #[derive(Serialize)]
 pub struct FileStat {
     pub uri: String,
-    pub isDirectory: bool,
+    #[serde(rename = "isDirectory")]
+    pub is_directory: bool,
     pub size: u64,
 }
 
@@ -44,7 +46,7 @@ pub fn read_dir(uri: &str) -> Result<Vec<DirEntry>, String> {
         entries.push(DirEntry {
             uri: path_to_file_uri(&path.to_string_lossy()),
             name,
-            isDirectory: file_type.is_dir(),
+            is_directory: file_type.is_dir(),
         });
     }
     Ok(entries)
@@ -55,7 +57,7 @@ pub fn stat(uri: &str) -> Result<FileStat, String> {
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
     Ok(FileStat {
         uri: uri.to_string(),
-        isDirectory: meta.is_dir(),
+        is_directory: meta.is_dir(),
         size: meta.len(),
     })
 }

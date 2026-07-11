@@ -25,14 +25,12 @@ export default defineConfig({
         index: path.resolve(appRoot, "index.tauri.html"),
       },
       output: {
+        onlyExplicitManualChunks: true,
         manualChunks(id) {
           if (id.includes("node_modules")) {
-            if (id.includes("@pierre/diffs") || id.includes("shiki") || id.includes("@shikijs")) {
-              return "shiki"
-            }
+            if (id.includes("@pierre/diffs")) return "diffs"
+            if (id.includes("shiki") || id.includes("@shikijs")) return "shiki"
             if (id.includes("@xterm")) return "xterm"
-            if (id.includes("@codemirror") || id.includes("codemirror")) return "codemirror"
-            if (id.includes("react-dom") || id.includes("/react/")) return "react"
           }
         },
       },

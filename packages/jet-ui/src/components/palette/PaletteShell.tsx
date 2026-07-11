@@ -113,13 +113,17 @@ export function PaletteShell<T>({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent
-        className={[MAX_WIDTH[maxWidth], "overflow-hidden p-0", contentClassName]
+        className={[
+          MAX_WIDTH[maxWidth],
+          "max-h-[calc(100dvh-2rem)] overflow-hidden border-border/70 bg-popover p-0 shadow-2xl shadow-black/25",
+          contentClassName,
+        ]
           .filter(Boolean)
           .join(" ")}
         showCloseButton={false}
       >
         <Command
-          className={COMMAND_SHELL_CLASS}
+          className={`${COMMAND_SHELL_CLASS} min-h-0`}
           shouldFilter={shouldFilter}
           value={selectedValue}
           onValueChange={value => {
@@ -137,7 +141,7 @@ export function PaletteShell<T>({
             disabled={disabled}
           />
           {statusRow}
-          <CommandList className="max-h-[var(--jet-overlay-list-max)]">
+          <CommandList className="min-h-0 max-h-[min(var(--jet-overlay-list-max),calc(100dvh-5rem))] pb-1">
             <CommandEmpty>{emptyLabel}</CommandEmpty>
             <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
             {items.map(it => (

@@ -27,7 +27,7 @@ export type LayoutMorphOptions = {
   halfLifeN?: number
 }
 
-function clonePanelShell(from: HTMLElement): HTMLElement {
+function clonePanelShell(): HTMLElement {
   const shell = document.createElement("div")
   shell.dataset.jetLayoutMorphClone = ""
   shell.setAttribute("aria-hidden", "true")
@@ -35,11 +35,6 @@ function clonePanelShell(from: HTMLElement): HTMLElement {
     "pointer-events-none fixed top-0 left-0 z-[100] overflow-hidden rounded-sm border border-border/80 bg-background shadow-md"
   shell.style.willChange = "transform, opacity"
   shell.style.transformOrigin = "0 0"
-  const inner = from.cloneNode(true) as HTMLElement
-  inner.style.pointerEvents = "none"
-  inner.style.width = "100%"
-  inner.style.height = "100%"
-  shell.appendChild(inner)
   return shell
 }
 
@@ -83,7 +78,7 @@ export function animateLayoutMorph(
     const from: PanelRect = { ...fromSeed }
     if (panelRectSettled(from, to)) continue
 
-    const shell = clonePanelShell(el)
+    const shell = clonePanelShell()
     const fromW = Math.max(1, from.w)
     const fromH = Math.max(1, from.h)
     shell.style.width = `${fromW}px`

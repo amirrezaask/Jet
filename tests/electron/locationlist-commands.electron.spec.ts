@@ -11,11 +11,10 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { describeFlaky } from "./_flaky.js"
 import { execCommand, launchJet, openFixtureFile, waitForSearchReady } from "./_launch.js"
 import { PROBLEMS_PANEL, SEARCH_LIST_PANEL } from "../helpers/location-list.js"
 
-describeFlaky("electron location list commands", () => {
+test.describe("electron location list commands", () => {
   test("locationlist.show opens unified panel", async () => {
     const { app, page } = await launchJet()
     try {

@@ -112,35 +112,8 @@ function createWebDriver(port = 4445) {
       await sessionRequest("DELETE", "/actions")
     },
 
-    async sendKeys(text) {
-      if (!text) return
-      await this.execute(keys => {
-        const active = document.activeElement
-        if (!active) throw new Error("active element not found")
-        if (active.isContentEditable) {
-          document.execCommand("insertText", false, keys)
-          return
-        }
-        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
-          const proto =
-            active instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
-          const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set
-          const start = active.selectionStart ?? active.value.length
-          const end = active.selectionEnd ?? active.value.length
-          const next = `${active.value.slice(0, start)}${keys}${active.value.slice(end)}`
-          setter?.call(active, next)
-          const cursor = start + keys.length
-          try {
-            active.setSelectionRange(cursor, cursor)
-          } catch {
-            /* number/email inputs may reject setSelectionRange */
-          }
-          active.dispatchEvent(new InputEvent("input", { bubbles: true, data: keys, inputType: "insertText" }))
-          active.dispatchEvent(new Event("change", { bubbles: true }))
-          return
-        }
-        document.execCommand("insertText", false, keys)
-      }, text)
+    async screenshot() {
+      return sessionRequest("GET", "/screenshot")
     },
 
     async waitUntil(fn, { timeout = 15_000, interval = 250, timeoutMsg } = {}) {

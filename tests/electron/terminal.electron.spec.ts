@@ -13,7 +13,6 @@ import {
   expectNotContainsText,
 } from "../shell/assert.js"
 
-import { flakyTest } from "./_flaky.js"
 import { hasPtySpawn, launchJet, readTerminalText, showTerminal } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -151,14 +150,14 @@ test.describe("electron terminal", () => {
     }
   })
 
-  flakyTest("xterm row height not measurable before first PTY output", "xterm row height is readable", async () => {
+  test("xterm row height is readable", async () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
 
       await page.waitForFunction(
         () => {
-          const row = document.querySelector("[data-jet-terminal-panel] .xterm-rows .xterm-row") as HTMLElement | null
+          const row = document.querySelector("[data-jet-terminal-panel] .xterm-rows > div") as HTMLElement | null
           return row != null && row.getBoundingClientRect().height >= 10
         },
         null,
@@ -166,7 +165,7 @@ test.describe("electron terminal", () => {
       )
 
       const rowHeight = await page.evaluate(() => {
-        const row = document.querySelector("[data-jet-terminal-panel] .xterm-rows .xterm-row") as HTMLElement | null
+        const row = document.querySelector("[data-jet-terminal-panel] .xterm-rows > div") as HTMLElement | null
         return row?.getBoundingClientRect().height ?? 0
       })
       expect(rowHeight).toBeGreaterThanOrEqual(10)
@@ -175,7 +174,7 @@ test.describe("electron terminal", () => {
     }
   })
 
-  flakyTest("OSC title sequence → tab label propagation timing", "updates tab label when shell emits OSC title sequence", async () => {
+  test("updates tab label when shell emits OSC title sequence", async () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)

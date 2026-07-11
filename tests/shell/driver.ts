@@ -31,6 +31,7 @@ export type ShellDriver = {
   textContent(selector: string): Promise<string>
   clickSelector(selector: string): Promise<void>
   fillSelector(selector: string, value: string): Promise<void>
+  screenshot(): Promise<string>
   reload(): Promise<void>
 }
 

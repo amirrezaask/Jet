@@ -2,7 +2,7 @@ use portable_pty::{
     native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize,
 };
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -33,7 +33,8 @@ struct TerminalEntry {
     status: String,
     exit_code: Option<i32>,
     signal: Option<i32>,
-    output: String,
+    output: VecDeque<String>,
+    output_bytes: usize,
     sequence: u64,
 }
 
@@ -150,7 +151,8 @@ impl TerminalHost {
             status: "running".to_string(),
             exit_code: None,
             signal: None,
-            output: String::new(),
+            output: VecDeque::new(),
+            output_bytes: 0,
             sequence: 0,
         }));
 
@@ -167,8 +169,17 @@ impl TerminalHost {
                         let seq = {
                             let mut e = entry_reader.lock().unwrap();
                             e.sequence += 1;
-                            e.output.push_str(&data);
-                            trim_terminal_replay(&mut e.output, MAX_TERMINAL_REPLAY);
+                            let TerminalEntry {
+                                output,
+                                output_bytes,
+                                ..
+                            } = &mut *e;
+                            push_terminal_replay(
+                                output,
+                                output_bytes,
+                                data.clone(),
+                                MAX_TERMINAL_REPLAY,
+                            );
                             e.sequence
                         };
                         emit_host(
@@ -275,7 +286,7 @@ impl TerminalHost {
         Ok(Some(serde_json::json!({
             "id": id,
             "title": e.title,
-            "output": e.output,
+            "output": e.output.iter().map(String::as_str).collect::<String>(),
             "lastSequence": e.sequence,
             "status": e.status,
             "exitCode": e.exit_code,
@@ -325,15 +336,29 @@ impl TerminalHost {
     }
 }
 
-fn trim_terminal_replay(output: &mut String, max_bytes: usize) {
-    if output.len() <= max_bytes {
-        return;
+fn push_terminal_replay(
+    output: &mut VecDeque<String>,
+    output_bytes: &mut usize,
+    chunk: String,
+    max_bytes: usize,
+) {
+    *output_bytes += chunk.len();
+    output.push_back(chunk);
+    while *output_bytes > max_bytes && output.len() > 1 {
+        if let Some(removed) = output.pop_front() {
+            *output_bytes -= removed.len();
+        }
     }
-    let mut start = output.len() - max_bytes;
-    while start < output.len() && !output.is_char_boundary(start) {
-        start += 1;
+    if *output_bytes > max_bytes {
+        if let Some(front) = output.front_mut() {
+            let mut start = front.len() - max_bytes;
+            while start < front.len() && !front.is_char_boundary(start) {
+                start += 1;
+            }
+            front.drain(..start);
+            *output_bytes = front.len();
+        }
     }
-    output.drain(..start);
 }
 
 struct ShellTitle {
@@ -571,10 +596,17 @@ mod tests {
 
     #[test]
     fn replay_trim_preserves_utf8_boundaries_and_tail() {
-        let mut output = format!("{}jet-unicode-tail", "سلام🙂".repeat(128));
-        trim_terminal_replay(&mut output, 73);
-        assert!(output.len() <= 73);
-        assert!(output.ends_with("jet-unicode-tail"));
-        assert!(std::str::from_utf8(output.as_bytes()).is_ok());
+        let mut output = VecDeque::new();
+        let mut output_bytes = 0;
+        push_terminal_replay(
+            &mut output,
+            &mut output_bytes,
+            format!("{}jet-unicode-tail", "سلام🙂".repeat(128)),
+            73,
+        );
+        let joined = output.iter().map(String::as_str).collect::<String>();
+        assert!(output_bytes <= 73);
+        assert!(joined.ends_with("jet-unicode-tail"));
+        assert!(std::str::from_utf8(joined.as_bytes()).is_ok());
     }
 }

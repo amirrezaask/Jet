@@ -13,16 +13,15 @@ import {
   expectNotContainsText,
 } from "../shell/assert.js"
 
-import { describeFlaky } from "./_flaky.js"
 import { execCommand, launchJet } from "./_launch.js"
 
-describeFlaky("electron switch project", () => {
+test.describe("electron switch project", () => {
   test("opens project switcher overlay", async () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "workspace.switchProject")
       await expectLocatorVisible(page.getByRole("dialog"))
-      await expectLocatorContainsText(page.getByRole("dialog"), /project/i)
+      await expectLocatorVisible(page.locator('input[placeholder="Filter projects…"]'))
     } finally {
       await app.close()
     }

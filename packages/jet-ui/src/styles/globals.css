@@ -607,6 +607,12 @@ body,
   opacity: 1;
 }
 
+/* Embedded native WebDrivers may deliver pointermove without CSS :hover. */
+[data-jet-hot-active]:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before {
+  opacity: 1;
+  transition-duration: 0ms;
+}
+
 .jet-hot-glow:active::before,
 .jet-press:active::before,
 .jet-interactive-row:active::before,

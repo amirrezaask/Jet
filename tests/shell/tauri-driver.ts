@@ -53,7 +53,7 @@ export type TauriWebDriver = {
   executeAsync<R>(script: string | ((...args: unknown[]) => void), ...args: unknown[]): Promise<R>
   performActions(actions: unknown[]): Promise<void>
   releaseActions(): Promise<void>
-  sendKeys(text: string): Promise<void>
+  screenshot(): Promise<string>
   waitUntil(fn: () => Promise<boolean>, options?: { timeout?: number; interval?: number; timeoutMsg?: string }): Promise<unknown>
 }
 
@@ -488,7 +488,11 @@ async function dispatchKey(wd: TauriWebDriver, key: string): Promise<void> {
   }
 
   if (modifiers.length === 0 && main.length === 1) {
-    await wd.sendKeys(main)
+    await wd.performActions(keyActions([
+      { type: "keyDown", value: main },
+      { type: "keyUp", value: main },
+    ]))
+    await wd.releaseActions()
     return
   }
 
@@ -514,7 +518,34 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
     type: async (text: string) => {
       if (await writeTerminalInput(wd, text)) return
       await ensureKeyboardFocus(wd)
-      for (const char of text) await wd.sendKeys(char)
+      const contentEditable = await wd.execute(() => {
+        const active = document.activeElement
+        return active instanceof HTMLElement && active.isContentEditable
+      })
+      if (contentEditable) {
+        // tauri-plugin-wdio-webdriver's embedded macOS provider currently
+        // acknowledges key actions without editing contenteditable nodes. Keep
+        // this narrowly scoped completion until the provider implements it.
+        for (const char of text) {
+          await wd.execute(value => {
+            document.execCommand("insertText", false, value)
+          }, char)
+        }
+        return
+      }
+      const events = [...text].flatMap(char => {
+        const value = char === "\n" || char === "\r"
+          ? keyValue("Enter")
+          : char === "\t"
+            ? keyValue("Tab")
+            : char
+        return [
+          { type: "keyDown" as const, value },
+          { type: "keyUp" as const, value },
+        ]
+      })
+      await wd.performActions(keyActions(events))
+      await wd.releaseActions()
     },
     down: async (key: string) => {
       await ensureKeyboardFocus(wd)
@@ -530,6 +561,7 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
 
   let pointerX = 0
   let pointerY = 0
+  let pointerIsDown = false
   const pointerActions = (actions: unknown[]) => [{
     type: "pointer",
     id: "jet-pointer",
@@ -546,14 +578,74 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
         x: Math.round(pointerX + ((x - pointerX) * (index + 1)) / steps),
         y: Math.round(pointerY + ((y - pointerY) * (index + 1)) / steps),
       }))
-      await wd.performActions(pointerActions(actions))
+      void actions
+      // The embedded Tauri driver updates native hover state but currently omits
+      // DOM pointermove/mousemove delivery on macOS. Complete that event pair so
+      // mouse-local interactions see the same input contract as Playwright.
+      await wd.execute((clientX, clientY, buttons, modifierNames) => {
+        const target = document.elementFromPoint(clientX, clientY)
+        if (!target) return
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          button: 0,
+          buttons,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          altKey: modifierNames.includes("Alt"),
+          ctrlKey: modifierNames.includes("Control") || modifierNames.includes("Ctrl"),
+          metaKey: modifierNames.includes("Meta"),
+          shiftKey: modifierNames.includes("Shift"),
+        }
+        target.dispatchEvent(new PointerEvent("pointermove", init))
+        target.dispatchEvent(new MouseEvent("mousemove", init))
+      }, x, y, pointerIsDown ? 1 : 0, [...heldModifiers])
       pointerX = x
       pointerY = y
     },
-    down: () => wd.performActions(pointerActions([{ type: "pointerDown", button: 0 }])),
+    down: async () => {
+      pointerIsDown = true
+      await wd.execute((clientX, clientY) => {
+        const target = document.elementFromPoint(clientX, clientY)
+        if (!target) return
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          button: 0,
+          buttons: 1,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+        }
+        target.dispatchEvent(new PointerEvent("pointerdown", init))
+        target.dispatchEvent(new MouseEvent("mousedown", init))
+      }, pointerX, pointerY)
+    },
     up: async () => {
-      await wd.performActions(pointerActions([{ type: "pointerUp", button: 0 }]))
+      await wd.execute((clientX, clientY) => {
+        const target = document.elementFromPoint(clientX, clientY)
+        if (!target) return
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          button: 0,
+          buttons: 0,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+        }
+        target.dispatchEvent(new PointerEvent("pointerup", init))
+        target.dispatchEvent(new MouseEvent("mouseup", init))
+      }, pointerX, pointerY)
       await wd.releaseActions()
+      pointerIsDown = false
     },
     click: async (x: number, y: number) => {
       await wd.performActions(pointerActions([
@@ -562,6 +654,27 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
         { type: "pointerUp", button: 0 },
       ]))
       await wd.releaseActions()
+      if (heldModifiers.size > 0) {
+        await wd.execute((clientX, clientY, modifierNames) => {
+          const target = document.elementFromPoint(clientX, clientY)
+          if (!target) return
+          const init = {
+            bubbles: true,
+            cancelable: true,
+            clientX,
+            clientY,
+            button: 0,
+            buttons: 1,
+            metaKey: modifierNames.includes("Meta"),
+            ctrlKey: modifierNames.includes("Control") || modifierNames.includes("Ctrl"),
+            altKey: modifierNames.includes("Alt"),
+            shiftKey: modifierNames.includes("Shift"),
+          }
+          target.dispatchEvent(new MouseEvent("mousedown", init))
+          target.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0 }))
+          target.dispatchEvent(new MouseEvent("click", { ...init, buttons: 0 }))
+        }, x, y, [...heldModifiers])
+      }
       pointerX = x
       pointerY = y
     },
@@ -650,6 +763,9 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
     },
     fillSelector(selector, value) {
       return new TauriLocator(wd, selector).fill(value)
+    },
+    screenshot() {
+      return wd.screenshot()
     },
     reload() {
       return (async () => {

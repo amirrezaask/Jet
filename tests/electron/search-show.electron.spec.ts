@@ -9,14 +9,14 @@ import {
   expectLocatorVisible,
   expectSelectorHidden,
   expectSelectorVisible,
+  expectNotContainsText,
 } from "../shell/assert.js"
 
-import { describeFlaky } from "./_flaky.js"
 import { execCommand, launchJet, openFixtureFile, waitForSearchReady } from "./_launch.js"
 import { SEARCH_LIST_PANEL, searchListItems } from "../helpers/location-list.js"
 import { expectLayout } from "../helpers/list.js"
 
-describeFlaky("electron search show", () => {
+test.describe("electron search show", () => {
   test("search.show finds project hits and activates row", async () => {
     const { app, page } = await launchJet()
     try {
@@ -33,9 +33,9 @@ describeFlaky("electron search show", () => {
       await expectLayout(page, { selector: items, minItems: 1, minRowHeight: 18 })
       await expectContainsText(page, SEARCH_LIST_PANEL, "utils.ts")
 
-      await page.locator(items).first().click()
+      await page.locator(items).filter({ hasText: "utils.ts" }).first().click()
       await page.waitForTimeout(500)
-      await expectContainsText(page, ".cm-editor", "export function greet")
+      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText())).toContain("export function greet")
     } finally {
       await app.close()
     }

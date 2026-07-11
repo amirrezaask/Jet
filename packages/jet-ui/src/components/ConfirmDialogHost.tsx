@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,27 +36,28 @@ function actionClassForVariant(variant: JetVariant | undefined, destructive: boo
 
 let pending: ConfirmOptions | null = null
 let resolveFn: ((value: boolean) => void) | null = null
-let notify: (() => void) | null = null
+const listeners = new Set<() => void>()
+
+function emitChange(): void {
+  for (const listener of listeners) listener()
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
 
 export function requestConfirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise(resolve => {
+    resolveFn?.(false)
     pending = options
     resolveFn = resolve
-    notify?.()
+    emitChange()
   })
 }
 
 export function ConfirmDialogHost() {
-  const [, bump] = useState(0)
-
-  useEffect(() => {
-    notify = () => bump(n => n + 1)
-    return () => {
-      notify = null
-    }
-  }, [])
-
-  const options = pending
+  const options = useSyncExternalStore(subscribe, () => pending, () => null)
   const open = options != null
 
   const finish = (value: boolean) => {
@@ -64,7 +65,7 @@ export function ConfirmDialogHost() {
     const resolve = resolveFn
     resolveFn = null
     resolve?.(value)
-    bump(n => n + 1)
+    emitChange()
   }
 
   return (

@@ -1,10 +1,10 @@
 {
   "cold-start": 5000,
   "open-file": 800,
-  "palette-open": 150,
+  "palette-open": 50,
   "quick-open": 400,
   "project-search": 1000,
-  "typing-latency": 50,
+  "typing-latency": 16,
   "theme-switch": 200,
   "scroll-next-paint": 20
 }

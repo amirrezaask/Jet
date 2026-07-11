@@ -2,6 +2,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -24,30 +25,33 @@ const WATCH_IGNORE_SEGMENTS: &[&str] = &[
 ];
 
 pub struct WorkspaceHost {
-    roots: Mutex<HashMap<String, RootState>>,
+    roots: Arc<Mutex<HashMap<String, RootState>>>,
 }
 
 struct RootState {
     gen: u64,
-    _watch_stop: Option<Arc<Mutex<bool>>>,
+    watch_stop: Option<Arc<AtomicBool>>,
 }
 
 impl WorkspaceHost {
     pub fn new() -> Self {
         Self {
-            roots: Mutex::new(HashMap::new()),
+            roots: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     pub fn activate(&self, app: &AppHandle, root_uri: &str) -> Result<Value, String> {
         let mut roots = self.roots.lock().map_err(|e| e.to_string())?;
         let gen = if let Some(state) = roots.get_mut(root_uri) {
+            if let Some(stop) = state.watch_stop.take() {
+                stop.store(true, Ordering::Release);
+            }
             state.gen += 1;
             state.gen
         } else {
             let state = RootState {
                 gen: 1,
-                _watch_stop: None,
+                watch_stop: None,
             };
             roots.insert(root_uri.to_string(), state);
             1
@@ -56,17 +60,16 @@ impl WorkspaceHost {
 
         let app_clone = app.clone();
         let root_uri_owned = root_uri.to_string();
-        thread::spawn(move || schedule_background(app_clone, root_uri_owned, gen));
+        let roots = self.roots.clone();
+        thread::spawn(move || schedule_background(roots, app_clone, root_uri_owned, gen));
         Ok(serde_json::json!({ "ok": true }))
     }
 
     pub fn deactivate(&self, root_uri: &str) -> Result<Value, String> {
         let mut roots = self.roots.lock().map_err(|e| e.to_string())?;
         if let Some(mut state) = roots.remove(root_uri) {
-            if let Some(stop) = state._watch_stop.take() {
-                if let Ok(mut flag) = stop.lock() {
-                    *flag = true;
-                }
+            if let Some(stop) = state.watch_stop.take() {
+                stop.store(true, Ordering::Release);
             }
         }
         super::search::dispose_search_index(root_uri);
@@ -86,14 +89,16 @@ impl WorkspaceHost {
 
     pub fn start_watch(&self, app: &AppHandle, root_uri: &str, gen: u64) {
         let root_path = uri_to_path(root_uri);
-        let stop = Arc::new(Mutex::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
         {
             let mut roots = self.roots.lock().unwrap();
             if let Some(state) = roots.get_mut(root_uri) {
                 if state.gen != gen {
                     return;
                 }
-                state._watch_stop = Some(stop.clone());
+                if let Some(previous) = state.watch_stop.replace(stop.clone()) {
+                    previous.store(true, Ordering::Release);
+                }
             } else {
                 return;
             }
@@ -103,7 +108,7 @@ impl WorkspaceHost {
         thread::spawn(move || {
             // Defer watch start so cold open stays snappy (matches Electron delay).
             thread::sleep(Duration::from_secs(10));
-            if *stop.lock().unwrap() {
+            if stop.load(Ordering::Acquire) {
                 return;
             }
             let (tx, rx) = std::sync::mpsc::channel();
@@ -125,7 +130,7 @@ impl WorkspaceHost {
 
             let mut pending: HashMap<String, Instant> = HashMap::new();
             loop {
-                if *stop.lock().unwrap() {
+                if stop.load(Ordering::Acquire) {
                     break;
                 }
                 match rx.recv_timeout(Duration::from_millis(50)) {
@@ -167,25 +172,50 @@ fn should_ignore_path(path: &Path) -> bool {
     })
 }
 
-fn schedule_background(app: AppHandle, root_uri: String, _gen: u64) {
+fn root_is_current(
+    roots: &Arc<Mutex<HashMap<String, RootState>>>,
+    root_uri: &str,
+    gen: u64,
+) -> bool {
+    roots
+        .lock()
+        .ok()
+        .and_then(|roots| roots.get(root_uri).map(|state| state.gen == gen))
+        .unwrap_or(false)
+}
+
+fn schedule_background(
+    roots: Arc<Mutex<HashMap<String, RootState>>>,
+    app: AppHandle,
+    root_uri: String,
+    gen: u64,
+) {
     thread::sleep(Duration::from_millis(50));
+    if !root_is_current(&roots, &root_uri, gen) {
+        return;
+    }
     let branch = if is_git_workspace(&root_uri) {
         git_branch(&root_uri)
     } else {
         None
     };
     // Always emit (including null) so status bar clears on non-git roots — Electron parity.
-    emit_host(
-        &app,
-        "workspace:gitBranch",
-        vec![serde_json::json!({ "rootUri": root_uri, "branch": branch })],
-    );
+    if root_is_current(&roots, &root_uri, gen) {
+        emit_host(
+            &app,
+            "workspace:gitBranch",
+            vec![serde_json::json!({ "rootUri": root_uri, "branch": branch })],
+        );
+    }
 
     thread::spawn({
         let app = app.clone();
         let root_uri = root_uri.clone();
+        let roots = roots.clone();
         move || {
-            if warm_search_index(&root_uri) {
+            if root_is_current(&roots, &root_uri, gen) && warm_search_index(&root_uri)
+                && root_is_current(&roots, &root_uri, gen)
+            {
                 emit_host(
                     &app,
                     "workspace:searchReady",

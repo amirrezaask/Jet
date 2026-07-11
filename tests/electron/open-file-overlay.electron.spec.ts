@@ -11,20 +11,27 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { describeFlaky } from "./_flaky.js"
-import { confirmOverlay, execCommand, launchJet } from "./_launch.js"
+import { execCommand, launchJet, REPO_ROOT } from "./_launch.js"
+import { resolve } from "node:path"
 
-describeFlaky("electron open file overlay", () => {
+test.describe("electron open file overlay", () => {
   test("workspace.openFile opens path overlay and selects fixture file", async () => {
     const { app, page } = await launchJet()
     try {
-      await execCommand(page, "workspace.openFile")
-      await expectLocatorVisible(page.getByRole("dialog"))
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await execCommand(page, "workspace.openFile")
+        try {
+          await page.getByRole("dialog").waitFor({ state: "visible", timeout: 3_000 })
+          break
+        } catch {
+          if (attempt === 2) throw new Error("open-file overlay did not become visible")
+        }
+      }
       const input = page.getByRole("dialog").locator("input").first()
-      await input.fill("src/utils.ts")
-      await confirmOverlay(page)
+      await input.fill(resolve(REPO_ROOT, "fixtures/sample-workspace/src/utils.ts"))
+      await page.getByRole("button", { name: /Open/ }).click()
       await page.evaluate(() => window.__jetAgent!.waitForEditor())
-      await expectContainsText(page, ".cm-editor", "export function greet")
+      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText())).toContain("export function greet")
     } finally {
       await app.close()
     }

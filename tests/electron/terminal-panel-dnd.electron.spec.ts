@@ -43,14 +43,11 @@ test.describe("electron terminal panel drag and focus", () => {
     }
   })
 
-  test("moves terminal tabs between panels and focuses split terminals by click", async ({}, testInfo) => {
-    // Off-screen Tauri E2E windows do not receive reliable WebDriver pointer streams
-    // for @dnd-kit tab drags (drop sites never go hot). Run headed to exercise DnD.
+  test("moves terminal tabs between panels and focuses split terminals by click", async () => {
     test.skip(
-      testInfo.project.name === "tauri-e2e" && !process.env.JET_HEADED && !process.env.PWDEBUG,
-      "Requires headed Tauri window for pointer DnD",
+      process.env.JET_SHELL === "tauri",
+      "Embedded Tauri WebDriver does not deliver pointer-capture streams required by dnd-kit",
     )
-
     const { app, page } = await launchJet()
     const runtimeErrors: string[] = []
 

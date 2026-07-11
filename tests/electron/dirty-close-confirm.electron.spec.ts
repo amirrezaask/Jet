@@ -11,10 +11,9 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { describeFlaky } from "./_flaky.js"
 import { execCommand, focusEditor, launchJet, openFixtureFile, typeInEditor } from "./_launch.js"
 
-describeFlaky("electron dirty close confirm", () => {
+test.describe("electron dirty close confirm", () => {
   test("dismiss keeps buffer, accept closes", async () => {
     const { app, page } = await launchJet()
     try {
@@ -27,7 +26,9 @@ describeFlaky("electron dirty close confirm", () => {
 
       await execCommand(page, "workbench.action.focusFirstEditorGroup")
       await focusEditor(page)
-      await execCommand(page, "workspace.closeBuffer")
+      await page.evaluate(() => {
+        void window.__jetAgent!.executeCommand("workspace.closeBuffer")
+      })
       await expectSelectorVisible(page, '[data-jet-confirm="accept"]', { timeout: 10_000 })
 
       await page.evaluate(() => window.__jetAgent!.dismissConfirm())
@@ -35,7 +36,10 @@ describeFlaky("electron dirty close confirm", () => {
         .poll(() => page.evaluate(() => window.__jetAgent!.getState().openBuffers.length))
         .toBeGreaterThan(0)
 
-      await execCommand(page, "workspace.closeBuffer")
+      await focusEditor(page)
+      await page.evaluate(() => {
+        void window.__jetAgent!.executeCommand("workspace.closeBuffer")
+      })
       await expectSelectorVisible(page, '[data-jet-confirm="accept"]', { timeout: 10_000 })
       await page.evaluate(() => window.__jetAgent!.acceptConfirm())
       await page.waitForTimeout(300)

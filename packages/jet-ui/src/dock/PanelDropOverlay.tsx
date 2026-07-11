@@ -8,8 +8,14 @@ import {
   SquareIcon,
 } from "lucide-react"
 import type { PanelId } from "@jet/shared"
+import {
+  JET_LAYOUT_EPSILON,
+  JET_RATE_MENU,
+  prefersReducedMotion,
+  radAnimationRate,
+  radLerp,
+} from "@jet/shared"
 import { cn } from "@/lib/utils.js"
-import { useRadRectMorph } from "@/motion/useRadRectMorph.js"
 import { usePanelDrag } from "./PanelDragContext.js"
 import { useDropHot } from "./TabDndRoot.js"
 import { dropDndId } from "./tab-dnd-types.js"
@@ -71,10 +77,6 @@ function siteIcon(kind: DropSiteKind) {
   }
 }
 
-function previewStyle(r: SiteRect): React.CSSProperties {
-  return { position: "absolute", left: r.x, top: r.y, width: r.w, height: r.h }
-}
-
 function DropSiteTarget({
   panelId,
   site,
@@ -126,12 +128,80 @@ function AnimatedDropPreview({
   target: SiteRect
   panelSize: { w: number; h: number }
 }) {
-  const rect = useRadRectMorph(target, panelSize, 55)
-  if (!rect) return null
+  const elementRef = useRef<HTMLDivElement>(null)
+  const currentRef = useRef<SiteRect | null>(null)
+
+  useEffect(() => {
+    const element = elementRef.current
+    if (!element || target.w <= 0 || target.h <= 0) return
+    let frame: number | null = null
+    let lastFrame = performance.now()
+    const current = currentRef.current ?? {
+      x: panelSize.w / 2,
+      y: panelSize.h / 2,
+      w: 0,
+      h: 0,
+    }
+    currentRef.current = current
+
+    const paint = () => {
+      const scaleX = current.w / target.w
+      const scaleY = current.h / target.h
+      element.style.transform =
+        `translate3d(${current.x}px, ${current.y}px, 0) scale(${scaleX}, ${scaleY})`
+    }
+
+    if (prefersReducedMotion()) {
+      Object.assign(current, target)
+      paint()
+      return
+    }
+
+    element.style.willChange = "transform"
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000))
+      lastFrame = now
+      const rate = radAnimationRate(JET_RATE_MENU, dt)
+      current.x = radLerp(current.x, target.x, rate)
+      current.y = radLerp(current.y, target.y, rate)
+      current.w = radLerp(current.w, target.w, rate)
+      current.h = radLerp(current.h, target.h, rate)
+      paint()
+
+      const settled =
+        Math.abs(current.x - target.x) < JET_LAYOUT_EPSILON &&
+        Math.abs(current.y - target.y) < JET_LAYOUT_EPSILON &&
+        Math.abs(current.w - target.w) < JET_LAYOUT_EPSILON &&
+        Math.abs(current.h - target.h) < JET_LAYOUT_EPSILON
+      if (settled) {
+        Object.assign(current, target)
+        paint()
+        element.style.willChange = "auto"
+      } else {
+        frame = requestAnimationFrame(tick)
+      }
+    }
+    paint()
+    frame = requestAnimationFrame(tick)
+    return () => {
+      if (frame != null) cancelAnimationFrame(frame)
+      element.style.willChange = "auto"
+    }
+  }, [panelSize.h, panelSize.w, target.h, target.w, target.x, target.y])
+
   return (
     <div
+      ref={elementRef}
       className="pointer-events-none rounded-sm border border-primary/60 bg-primary/15"
-      style={previewStyle(rect)}
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: target.w,
+        height: target.h,
+        transformOrigin: "0 0",
+        transform: `translate3d(${panelSize.w / 2}px, ${panelSize.h / 2}px, 0) scale(0)`,
+      }}
     />
   )
 }

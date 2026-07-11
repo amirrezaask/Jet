@@ -369,7 +369,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       requestAnimationFrame(() => getEditorView(panel)?.focus())
     },
     closeBuffer: async () => {
-      const panel = currentFocusedPanel()
+      const panel = activeEditorPanel()
       const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
       if (!fileUri || !panel) return
       if (!(await confirmCloseBuffer(deps.workspace, fileUri))) return

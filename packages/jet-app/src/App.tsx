@@ -2,11 +2,9 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  lazy,
   useMemo,
   useRef,
   useState,
-  startTransition,
   useDeferredValue,
 } from "react"
 import type { AgentProvidersState, AgentThread, AgentWorkspaceSnapshot } from "@jet/agents"
@@ -102,7 +100,6 @@ import {
   type PanelRect,
 } from "@jet/ui"
 import { getJetSearchState } from "@jet/codemirror"
-import type { JetProblem } from "@jet/shared"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
 import { agentChatTabId, parseAgentChatTabId, type AgentChatTabState } from "./tabs/agent-chat.tab.js"
@@ -151,6 +148,7 @@ import { useAppearanceSettings } from "./hooks/useAppearanceSettings.js"
 import { usePanelLayout } from "./hooks/usePanelLayout.js"
 import { useAgentSync } from "./hooks/useAgentSync.js"
 import { useLspLifecycle } from "./hooks/useLspLifecycle.js"
+import OverlayHost from "./OverlayHost.js"
 import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle.js"
 import { useOverlayState } from "./hooks/useOverlayState.js"
 import { useGlobalKeymap } from "./hooks/useGlobalKeymap.js"
@@ -175,7 +173,6 @@ const DEFAULT_FONT_SIZE = 13
 const FONT_SIZE_STEP = 2
 const DEFAULT_MONO_FONT =
   '"Geist Mono Variable", "Geist Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, monospace'
-const OverlayHost = lazy(() => import("./OverlayHost.js"))
 const ENABLE_AGENT_CHAT = import.meta.env.JET_ENABLE_AGENT_CHAT === "1"
 
 const FN_BY_COMMAND_ID = ((): Map<string, string> => {
@@ -353,7 +350,6 @@ export function JetApp() {
   )
   const lastContextFolderRef = useRef<WorkspaceFolder | null>(null)
   const [, setFolderSearchRev] = useState(0)
-  const [problems, setProblems] = useState<JetProblem[]>([])
   const [fileDragOver, setFileDragOver] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarView, setSidebarView] = useState<JetSidebarView>(loadSidebarView)
@@ -435,18 +431,6 @@ export function JetApp() {
     const sub = keymaps.onDidChange.event(() => setKeymapRevision(r => r + 1))
     return () => sub.dispose()
   }, [keymaps])
-
-  useEffect(() => {
-    const warm = () => {
-      void import("./OverlayHost.js")
-    }
-    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback
-    if (typeof ric === "function") {
-      ric(warm, { timeout: 2000 })
-    } else {
-      window.setTimeout(warm, 800)
-    }
-  }, [])
 
   // Keep tabStore in sync with workspace.tabRegistry: mirror label + typeId so
   // TabTypeRegistry.render() and PanelTabBar can look up title/dirty per tab id
@@ -1170,9 +1154,13 @@ export function JetApp() {
   )
 
   const syncProblemsToListTab = useCallback(() => {
+    const views = getAllEditorViews()
+    const currentProblems = collectProblemsFromViews(
+      views.map(v => ({ uri: v.uri, view: v.view })),
+    )
     workspace.ensureProblemsList()
-    workspace.listStore.update(PROBLEMS_TAB_ID, { items: problemsToListItems(problems) })
-  }, [workspace, problems])
+    workspace.listStore.update(PROBLEMS_TAB_ID, { items: problemsToListItems(currentProblems) })
+  }, [workspace])
 
   const refreshProjects = useCallback(async (): Promise<number> => {
     let homeDir = homeDirRef.current
@@ -2188,8 +2176,9 @@ export function JetApp() {
     const fp = problemsFingerprint(next)
     if (fp === problemsFpRef.current) return
     problemsFpRef.current = fp
-    startTransition(() => setProblems(next))
-  }, [])
+    workspace.ensureProblemsList()
+    workspace.listStore.update(PROBLEMS_TAB_ID, { items: problemsToListItems(next) })
+  }, [workspace])
 
   const scheduleRefreshProblems = useCallback(() => {
     if (problemsRafRef.current != null) return
@@ -2204,10 +2193,6 @@ export function JetApp() {
   useEffect(() => {
     scheduleRefreshProblems()
   }, [panelTree, scheduleRefreshProblems])
-
-  useEffect(() => {
-    syncProblemsToListTab()
-  }, [problems, syncProblemsToListTab])
 
   executeCommandRef.current = executeCommand
   runKeyBindingRef.current = runKeyBinding

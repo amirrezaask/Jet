@@ -434,6 +434,7 @@ fn parse_color(hex: &str) -> Result<tauri::window::Color, String> {
     Ok(tauri::window::Color(r, g, b, 255))
 }
 
+#[cfg(target_os = "windows")]
 fn hex_to_colorref(hex: &str) -> Result<u32, String> {
     let raw = hex.trim().trim_start_matches('#');
     if raw.len() != 6 {

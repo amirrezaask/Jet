@@ -37,6 +37,43 @@ jobs:
       - run: npm install -g typescript-language-server typescript
       - run: pnpm test:electron
 
+  test-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/jet-tauri/src-tauri
+      - name: Install Linux WebKit dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb
+      - run: pnpm install
+      - run: npm install -g typescript-language-server typescript
+      - run: cargo test --manifest-path apps/jet-tauri/src-tauri/Cargo.toml
+      - name: Tauri native suite (macOS)
+        if: runner.os == 'macOS'
+        run: pnpm test:tauri
+        env:
+          JET_E2E_RUN_FLAKY: "1"
+      - name: Tauri native suite (Linux/Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm test:tauri
+        env:
+          JET_E2E_RUN_FLAKY: "1"
+
   test-bench:
     runs-on: macos-latest
     needs: typecheck

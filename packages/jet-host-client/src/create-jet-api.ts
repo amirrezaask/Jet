@@ -7,6 +7,7 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
   const terminalDataListeners = new Map<string, Set<(data: string) => void>>()
   type BufferedTerminalData = { data: string; sequence: number }
   const terminalDataBuffers = new Map<string, BufferedTerminalData[]>()
+  const terminalDataBufferSizes = new Map<string, number>()
   const terminalReplayFloors = new Map<string, number>()
 
   transport.on("agents:threadUpdated", (...args: unknown[]) => {
@@ -45,11 +46,12 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
     }
     const pending = terminalDataBuffers.get(id) ?? []
     pending.push({ data, sequence })
-    let size = pending.reduce((total, chunk) => total + chunk.data.length, 0)
+    let size = (terminalDataBufferSizes.get(id) ?? 0) + data.length
     while (size > MAX_BUFFERED_TERMINAL_CHARS && pending.length > 1) {
       size -= pending.shift()!.data.length
     }
     terminalDataBuffers.set(id, pending)
+    terminalDataBufferSizes.set(id, size)
   })
   transport.on("terminal:exit", (...args: unknown[]) => {
     const id = args[0] as string
@@ -150,6 +152,11 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
               id,
               pending.filter(chunk => chunk.sequence === 0 || chunk.sequence > result.lastSequence),
             )
+            terminalDataBufferSizes.set(
+              id,
+              pending.reduce((total, chunk) =>
+                total + (chunk.sequence === 0 || chunk.sequence > result.lastSequence ? chunk.data.length : 0), 0),
+            )
           }
         }
         return result
@@ -167,6 +174,7 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
         if (pending) {
           for (const chunk of pending) callback(chunk.data)
           terminalDataBuffers.delete(id)
+          terminalDataBufferSizes.delete(id)
         }
         return () => {
           set!.delete(callback)
@@ -179,6 +187,7 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
       },
       dispose: id => {
         terminalDataBuffers.delete(id)
+        terminalDataBufferSizes.delete(id)
         terminalDataListeners.delete(id)
         terminalReplayFloors.delete(id)
         return transport.invoke("terminal:dispose", id)

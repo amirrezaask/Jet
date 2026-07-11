@@ -8,10 +8,23 @@ import { execCommand, launchJet } from "./_launch.js"
 import { expectPaletteOpen } from "../helpers/shell.js"
 
 test.describe("overlay position stability", () => {
+  async function openPalette(page: Parameters<typeof execCommand>[0]) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await execCommand(page, "ui.showCommandPalette")
+      try {
+        await page.getByRole("dialog").waitFor({ state: "visible", timeout: 3_000 })
+        return
+      } catch {
+        // Lazy overlay chunk can still be resolving on a cold native webview.
+      }
+    }
+    throw new Error("command palette did not become visible")
+  }
+
   test("command palette opens centered without upward jump", async () => {
     const { app, page } = await launchJet()
     try {
-      await execCommand(page, "ui.showCommandPalette")
+      await openPalette(page)
       await expectPaletteOpen(page)
 
       const dialog = page.locator("[data-slot='dialog-content']").first()
@@ -41,7 +54,7 @@ test.describe("overlay position stability", () => {
   test("overlay caret aligns with palette input from the first frames", async () => {
     const { app, page } = await launchJet()
     try {
-      await execCommand(page, "ui.showCommandPalette")
+      await openPalette(page)
       await expectPaletteOpen(page)
 
       const input = page.locator("[data-slot='command-input']")

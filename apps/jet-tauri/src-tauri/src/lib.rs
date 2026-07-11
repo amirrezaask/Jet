@@ -57,13 +57,14 @@ pub fn run() {
                 if e2e && headed {
                     let _ = window.show();
                 } else if e2e && !headed {
-                    // Fully hidden WKWebViews throttle timers/rAF hard enough to break
-                    // Radix dialogs, caret motion, and scroll sampling. Park off-screen
-                    // so the desktop stays clear without freezing the webview.
+                    // WKWebView suspends rAF for hidden, minimized, and fully off-screen
+                    // windows. Native UI tests therefore need a composited window on
+                    // macOS (Linux CI can put it inside Xvfb instead).
                     let _ = window.set_position(tauri::Position::Physical(
-                        tauri::PhysicalPosition::new(-40_000, -40_000),
+                        tauri::PhysicalPosition::new(0, 0),
                     ));
                     let _ = window.show();
+                    let _ = window.set_focus();
                 }
             }
 

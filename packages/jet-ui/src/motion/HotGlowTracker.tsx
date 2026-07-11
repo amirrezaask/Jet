@@ -54,17 +54,49 @@ function findHotGlowTarget(node: EventTarget | null): HTMLElement | null {
  */
 export function HotGlowTracker() {
   useEffect(() => {
+    let frame: number | null = null
+    let fallback: number | null = null
+    let pending: { target: HTMLElement; x: number; y: number } | null = null
+    let activeTarget: HTMLElement | null = null
+
+    const flush = () => {
+      frame = null
+      if (fallback != null) window.clearTimeout(fallback)
+      fallback = null
+      const update = pending
+      pending = null
+      if (!update || !update.target.isConnected) return
+      const rect = update.target.getBoundingClientRect()
+      if (activeTarget !== update.target) {
+        activeTarget?.removeAttribute("data-jet-hot-active")
+        activeTarget = update.target
+        activeTarget.setAttribute("data-jet-hot-active", "")
+      }
+      update.target.style.setProperty("--jet-hot-x", `${update.x - rect.left}px`)
+      update.target.style.setProperty("--jet-hot-y", `${update.y - rect.top}px`)
+    }
+
     const onMove = (event: PointerEvent) => {
       const target = findHotGlowTarget(event.target)
-      if (!target) return
-      const rect = target.getBoundingClientRect()
-      target.style.setProperty("--jet-hot-x", `${event.clientX - rect.left}px`)
-      target.style.setProperty("--jet-hot-y", `${event.clientY - rect.top}px`)
+      if (!target) {
+        activeTarget?.removeAttribute("data-jet-hot-active")
+        activeTarget = null
+        pending = null
+        return
+      }
+      pending = { target, x: event.clientX, y: event.clientY }
+      if (frame == null) {
+        frame = requestAnimationFrame(flush)
+        fallback = window.setTimeout(flush, 32)
+      }
     }
 
     document.addEventListener("pointermove", onMove, { passive: true })
     return () => {
       document.removeEventListener("pointermove", onMove)
+      if (frame != null) cancelAnimationFrame(frame)
+      if (fallback != null) window.clearTimeout(fallback)
+      activeTarget?.removeAttribute("data-jet-hot-active")
     }
   }, [])
 

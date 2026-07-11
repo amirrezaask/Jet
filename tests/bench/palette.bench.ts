@@ -8,12 +8,19 @@ test("bench palette-open", async () => {
     measure: async () => {
       const { app, page } = await launchJet()
       try {
-        const t0 = Date.now()
-        await page.evaluate(async () => {
+        return await page.evaluate(async () => {
+          const t0 = performance.now()
           await window.__jetAgent!.executeCommand("ui.showCommandPalette")
+          const deadline = t0 + 2_000
+          while (performance.now() < deadline) {
+            const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
+            if (dialog && dialog.getBoundingClientRect().height > 0) {
+              return performance.now() - t0
+            }
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+          }
+          throw new Error("palette did not become visible")
         })
-        await page.getByRole("dialog").waitFor({ state: "visible", timeout: 10_000 })
-        return Date.now() - t0
       } finally {
         await app.close()
       }

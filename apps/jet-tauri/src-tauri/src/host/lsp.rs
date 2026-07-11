@@ -14,6 +14,8 @@ use tungstenite::{accept, Error as WebSocketError, Message, WebSocket};
 use super::events::emit_host;
 use super::launch::uri_to_path;
 
+const MAX_PENDING_SERVER_MESSAGES: usize = 256;
+
 struct LspSession {
     child: Arc<Mutex<Option<Child>>>,
     shutdown: Arc<AtomicBool>,
@@ -313,7 +315,7 @@ fn serve_websocket_client(
 ) -> bool {
     while !shutdown.load(Ordering::Acquire) {
         let mut did_work = false;
-        loop {
+        while pending_server_messages.len() < MAX_PENDING_SERVER_MESSAGES {
             match server_rx.try_recv() {
                 Ok(json) => {
                     did_work = true;
@@ -369,7 +371,7 @@ fn serve_websocket_client(
         }
 
         if !did_work {
-            thread::sleep(Duration::from_millis(1));
+            thread::sleep(Duration::from_millis(8));
         }
     }
     false
@@ -377,32 +379,39 @@ fn serve_websocket_client(
 
 struct LspDecoder {
     buffer: Vec<u8>,
+    offset: usize,
 }
 
 impl LspDecoder {
     fn new() -> Self {
-        Self { buffer: Vec::new() }
+        Self {
+            buffer: Vec::new(),
+            offset: 0,
+        }
     }
 
     fn feed(&mut self, chunk: &[u8]) -> Vec<String> {
         self.buffer.extend_from_slice(chunk);
         let mut messages = Vec::new();
         loop {
-            let header_end = self.buffer.windows(4).position(|w| w == b"\r\n\r\n");
+            let unread = &self.buffer[self.offset..];
+            let header_end = unread.windows(4).position(|w| w == b"\r\n\r\n");
             let Some(header_end) = header_end else {
                 break;
             };
-            let header = String::from_utf8_lossy(&self.buffer[..header_end]);
+            let header_start = self.offset;
+            let header_end = header_start + header_end;
+            let header = String::from_utf8_lossy(&self.buffer[header_start..header_end]);
             let Some(len_str) = header.lines().find_map(|line| {
                 let (name, value) = line.split_once(':')?;
                 name.eq_ignore_ascii_case("Content-Length")
                     .then(|| value.trim())
             }) else {
-                self.buffer.drain(..header_end + 4);
+                self.offset = header_end + 4;
                 continue;
             };
             let Ok(length) = len_str.parse::<usize>() else {
-                self.buffer.drain(..header_end + 4);
+                self.offset = header_end + 4;
                 continue;
             };
             let body_start = header_end + 4;
@@ -412,7 +421,11 @@ impl LspDecoder {
             let body =
                 String::from_utf8_lossy(&self.buffer[body_start..body_start + length]).into_owned();
             messages.push(body);
-            self.buffer.drain(..body_start + length);
+            self.offset = body_start + length;
+        }
+        if self.offset > 64 * 1024 || self.offset * 2 > self.buffer.len() {
+            self.buffer.drain(..self.offset);
+            self.offset = 0;
         }
         messages
     }

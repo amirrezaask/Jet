@@ -30,6 +30,7 @@ test.describe("RAD hot glow", () => {
           beforeContent: before.content,
           beforeBg: before.backgroundImage,
           matchesHover: el.matches(":hover"),
+          hotActive: el.hasAttribute("data-jet-hot-active"),
           className: el.className,
           dataSlot: el.getAttribute("data-slot"),
         }
@@ -45,7 +46,10 @@ test.describe("RAD hot glow", () => {
       expect(glow.beforeBg, `::before must use radial soft circle (got ${glow.beforeBg})`).toContain("radial-gradient")
       expect(glow.hotX, "--jet-hot-x must be set by tracker").toMatch(/px$/)
       expect(glow.hotY, "--jet-hot-y must be set by tracker").toMatch(/px$/)
-      expect(glow.matchesHover, "row must match :hover after mouse move").toBe(true)
+      expect(
+        glow.matchesHover || glow.hotActive,
+        "row must have native or driver-compatible pointer hover state",
+      ).toBe(true)
       expect(
         Number.parseFloat(glow.beforeOpacity),
         `::before opacity (hover=${glow.matchesHover} bg=${glow.beforeBg})`,

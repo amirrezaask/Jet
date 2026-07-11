@@ -1,11 +1,11 @@
 import { useEffect } from "react"
 import {
-  ANIM_EPSILON,
   CaretEndpointAnim,
   CaretGhostBuffer,
   onReducedMotionChange,
   prefersReducedMotion,
   type CaretPoint,
+  type CaretGhost,
 } from "@jet/shared"
 
 type CaretTarget = HTMLInputElement | HTMLTextAreaElement | HTMLElement
@@ -210,6 +210,7 @@ class UniversalCaretController {
   private readonly events = new AbortController()
   private readonly measurer = new TextCaretMeasurer()
   private readonly rootObserver: MutationObserver
+  private readonly targetRemovalObserver: MutationObserver
   private targetObserver: ResizeObserver | null = null
   private target: CaretTarget | null = null
   private originalCaretColor = ""
@@ -221,7 +222,10 @@ class UniversalCaretController {
   private lastGhostY = 0
   private raf: number | null = null
   private eventRaf: number | null = null
+  private eventTimer: number | null = null
   private settleRaf: number | null = null
+  private settleTimer: number | null = null
+  private tickTimer: number | null = null
   private lastFrame = 0
   private appearance = readCursorAppearance()
   private readonly unsubscribeReduced: () => void
@@ -263,6 +267,9 @@ class UniversalCaretController {
       this.schedule(true)
     })
     this.rootObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] })
+    this.targetRemovalObserver = new MutationObserver(() => {
+      if (this.target && !this.target.isConnected) this.setTarget(null)
+    })
   }
 
   private clearSettle(): void {
@@ -270,29 +277,36 @@ class UniversalCaretController {
       cancelAnimationFrame(this.settleRaf)
       this.settleRaf = null
     }
+    if (this.settleTimer != null) {
+      window.clearTimeout(this.settleTimer)
+      this.settleTimer = null
+    }
   }
 
-  /** Snap for a few frames after focus — overlay layout/fonts can settle after first paint. */
+  /** Snap once after focus — enough for portal layout without masking immediate typing motion. */
   private settleAfterFocus(): void {
     this.clearSettle()
-    const started = performance.now()
-    const tick = () => {
+    const settle = () => {
+      if (this.settleRaf != null) cancelAnimationFrame(this.settleRaf)
+      if (this.settleTimer != null) window.clearTimeout(this.settleTimer)
+      this.settleRaf = null
+      this.settleTimer = null
       this.schedule(true)
-      if (performance.now() - started < 220) {
-        this.settleRaf = requestAnimationFrame(tick)
-      } else {
-        this.settleRaf = null
-      }
     }
-    this.settleRaf = requestAnimationFrame(tick)
+    this.settleRaf = requestAnimationFrame(settle)
+    this.settleTimer = window.setTimeout(settle, 32)
   }
 
   private observeTarget(target: CaretTarget | null): void {
     this.targetObserver?.disconnect()
     this.targetObserver = null
-    if (!target || typeof ResizeObserver === "undefined") return
-    this.targetObserver = new ResizeObserver(() => this.schedule(true))
-    this.targetObserver.observe(target)
+    this.targetRemovalObserver.disconnect()
+    if (!target) return
+    if (typeof ResizeObserver !== "undefined") {
+      this.targetObserver = new ResizeObserver(() => this.schedule(true))
+      this.targetObserver.observe(target)
+    }
+    this.targetRemovalObserver.observe(document.body, { childList: true, subtree: true })
   }
 
   private setTarget(target: CaretTarget | null): void {
@@ -335,7 +349,11 @@ class UniversalCaretController {
 
   private schedule(instant: boolean): void {
     const target = this.target
-    if (!target || document.activeElement !== target || this.composing || this.selecting) {
+    if (target && (!target.isConnected || document.activeElement !== target)) {
+      this.setTarget(null)
+      return
+    }
+    if (!target || this.composing || this.selecting) {
       this.hide()
       return
     }
@@ -356,7 +374,7 @@ class UniversalCaretController {
       this.lastGhostX = point.x
       this.lastGhostY = point.y
       this.initialized = true
-      this.render(performance.now())
+      this.render(this.ghosts.tick(performance.now()))
       this.stop()
       return
     }
@@ -366,25 +384,37 @@ class UniversalCaretController {
 
   private scheduleDeferred(instant: boolean): void {
     if (this.eventRaf != null) cancelAnimationFrame(this.eventRaf)
-    this.eventRaf = requestAnimationFrame(() => {
+    if (this.eventTimer != null) window.clearTimeout(this.eventTimer)
+    const run = () => {
+      if (this.eventRaf != null) cancelAnimationFrame(this.eventRaf)
+      if (this.eventTimer != null) window.clearTimeout(this.eventTimer)
       this.eventRaf = null
+      this.eventTimer = null
       this.schedule(instant)
-    })
+    }
+    this.eventRaf = requestAnimationFrame(run)
+    this.eventTimer = window.setTimeout(run, 32)
   }
 
   private start(): void {
-    if (this.raf != null) return
+    if (this.raf != null || this.tickTimer != null) return
     this.lastFrame = performance.now()
     this.raf = requestAnimationFrame(time => this.tick(time))
+    this.tickTimer = window.setTimeout(() => this.tick(performance.now()), 32)
   }
 
   private stop(): void {
     if (this.raf != null) cancelAnimationFrame(this.raf)
+    if (this.tickTimer != null) window.clearTimeout(this.tickTimer)
     this.raf = null
+    this.tickTimer = null
   }
 
   private tick(time: number): void {
+    if (this.raf != null) cancelAnimationFrame(this.raf)
+    if (this.tickTimer != null) window.clearTimeout(this.tickTimer)
     this.raf = null
+    this.tickTimer = null
     const dt = Math.min(0.05, Math.max(0, (time - this.lastFrame) / 1000))
     this.lastFrame = time
     const previousX = this.anim.x
@@ -400,8 +430,9 @@ class UniversalCaretController {
     } else {
       this.ghosts.clear()
     }
-    const ghostsAlive = this.ghosts.tick(time).length > 0
-    this.render(time)
+    const ghosts = this.ghosts.tick(time)
+    const ghostsAlive = ghosts.length > 0
+    this.render(ghosts)
     if (moving || ghostsAlive) this.start()
   }
 
@@ -417,9 +448,8 @@ class UniversalCaretController {
     element.style.borderRadius = style === "block" ? "2px" : "1px"
   }
 
-  private render(time: number): void {
+  private render(ghosts: CaretGhost[]): void {
     this.styleVisual(this.cursor, this.anim.x, this.anim.y, this.anim.h, 0.92)
-    const ghosts = this.ghosts.tick(time)
     this.ghostEls.forEach((element, index) => {
       const ghost = ghosts[index]
       if (!ghost) {
@@ -480,11 +510,13 @@ class UniversalCaretController {
     this.events.abort()
     this.unsubscribeReduced()
     this.rootObserver.disconnect()
+    this.targetRemovalObserver.disconnect()
     this.targetObserver?.disconnect()
     this.measurer.dispose()
     this.stop()
     this.clearSettle()
     if (this.eventRaf != null) cancelAnimationFrame(this.eventRaf)
+    if (this.eventTimer != null) window.clearTimeout(this.eventTimer)
     this.layer.remove()
   }
 }

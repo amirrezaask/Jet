@@ -162,6 +162,9 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
     async fillSelector(selector, value) {
       await page.locator(selector).fill(value)
     },
+    async screenshot() {
+      return (await page.screenshot({ type: "png" })).toString("base64")
+    },
     reload() {
       return page.reload().then(() => undefined)
     },

@@ -265,10 +265,9 @@ export function TerminalPanel({
 
     const startPty = () => {
       if (ptyStarted || cancelled) return
-      if (!syncFit()) {
-        requestAnimationFrame(startPty)
-        return
-      }
+      // PTY creation must not depend on a paint or measurable foreground tab.
+      // Start at xterm's default geometry and resize when layout becomes ready.
+      syncFit()
       ptyStarted = true
       if (existingPtyId) {
         void terminalApi.attach(existingPtyId).then(attached => {
@@ -306,12 +305,10 @@ export function TerminalPanel({
         })
     }
 
-    requestAnimationFrame(() => {
-      syncTheme()
-      syncTypography()
-      syncFit()
-      startPty()
-    })
+    syncTheme()
+    syncTypography()
+    syncFit()
+    startPty()
 
     const resizeObserver = new ResizeObserver(() => {
       if (syncFit()) term.refresh(0, term.rows - 1)

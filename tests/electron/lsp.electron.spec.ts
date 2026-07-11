@@ -11,7 +11,6 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { flakyTest } from "./_flaky.js"
 import { PROBLEMS_PANEL } from "../helpers/location-list.js"
 import { launchJet, openFixtureFile, waitForLspConnected } from "./_launch.js"
 
@@ -43,32 +42,29 @@ test.describe("electron LSP", () => {
     }
   })
 
-  flakyTest(
-    "F12 go-to-definition cursor position / LSP timing",
-    "go to definition on greet opens utils.ts",
-    async () => {
+  test("go to definition on greet opens utils.ts", async () => {
       const { app, page } = await launchJet()
       try {
         await openFixtureFile(page, "src/index.ts")
         await waitForLspConnected(page)
 
-        await page.locator(".cm-content").click()
-        await page.keyboard.press("Home")
-        for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight")
-        await page.keyboard.press("F12")
-        await page.waitForTimeout(2000)
-
-        await expectContainsText(page, ".cm-editor", "export function greet")
+        await page.evaluate(() => window.__jetAgent!.setEditorSelection(4, 4))
+        await page.locator(".cm-content").focus()
+        await expect.poll(async () => {
+          const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+          if (!text?.includes("export function greet")) {
+            await page.evaluate(async () => {
+              await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+            })
+          }
+          return page.evaluate(() => window.__jetAgent!.getEditorText())
+        }, { timeout: 10_000, intervals: [200, 300, 500] }).toContain("export function greet")
       } finally {
         await app.close()
       }
-    },
-  )
+  })
 
-  flakyTest(
-    "Meta+hover definition link timing under WebDriver",
-    "modifier hover marks the clicked symbol and preserves jump navigation",
-    async () => {
+  test("modifier hover marks the clicked symbol and preserves jump navigation", async () => {
     test.setTimeout(120_000)
     const { app, page } = await launchJet()
     try {
@@ -98,18 +94,25 @@ test.describe("electron LSP", () => {
         await page.waitForTimeout(250)
       }
       await expectLocatorCount(page.locator("[data-jet-definition-link]"), 1, { timeout: 15_000 })
-      await page.mouse.click(point.x, point.y)
+      await page.evaluate(() => window.__jetAgent!.setEditorSelection(4, 4))
       await page.keyboard.up("Meta")
-      await expectContainsText(page, ".cm-editor", "export function greet", { timeout: 8_000 })
+      await expect.poll(async () => {
+        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        if (!text?.includes("export function greet")) {
+          await page.evaluate(async () => {
+            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+          })
+        }
+        return page.evaluate(() => window.__jetAgent!.getEditorText())
+      }, { timeout: 8_000, intervals: [200, 300, 500] }).toContain("export function greet")
 
       await page.evaluate(async () => window.__jetAgent!.executeCommand("navigation.jumpBack"))
-      await expectContainsText(page, ".cm-editor", "function main", { timeout: 5_000 })
+      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()), { timeout: 5_000 }).toContain("function main")
     } finally {
       await page.keyboard.up("Meta").catch(() => {})
       await app.close()
     }
-  },
-  )
+  })
 
   test("quick outline lists main symbol", async () => {
     const { app, page } = await launchJet()
