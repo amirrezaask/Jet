@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { HotGlowTracker } from "../motion/HotGlowTracker.js"
 import { UniversalCaretLayer } from "../motion/UniversalCaretLayer.js"
 
 /**
@@ -21,6 +22,7 @@ export function AppShell({
       data-jet-universal-caret
     >
       <UniversalCaretLayer />
+      <HotGlowTracker />
       {titleBar}
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       {footer}

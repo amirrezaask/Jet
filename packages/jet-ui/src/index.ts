@@ -93,7 +93,7 @@ export {
 } from "./theme/bundled.js"
 export { syncNativeChromeFromTheme, readThemedNativeChrome } from "./theme/native-chrome.js"
 export { defaultJetTheme, applyJetThemeCss, applyColorScheme } from "@jet/codemirror"
-export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetPressClass } from "./motion/tokens.js"
+export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetPressClass, jetHotGlowClass } from "./motion/tokens.js"
 export { useReducedMotion } from "./motion/useReducedMotion.js"
 export { JetMotionDiv, JetTabDragGhost } from "./motion/JetOverlayMotion.js"
 export {

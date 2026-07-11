@@ -63,8 +63,8 @@ function readCssLengthPx(name: string, fallbackRem: number): number {
 
 function readRowHeights(): { project: number; child: number } {
   return {
-    project: readCssLengthPx("--jet-project-row-height", 2.3),
-    child: readCssLengthPx("--jet-row-height", 1.85),
+    project: readCssLengthPx("--jet-project-row-height", 1.75),
+    child: readCssLengthPx("--jet-row-height", 1.5),
   }
 }
 
@@ -296,7 +296,7 @@ export function TreeView<T>({
               />
             )
             return (
-              <div key={entry.node.id} data-jet-tree-row-slot>
+              <div key={entry.node.id} className="contents" data-jet-tree-row-slot>
                 {wrapRow ? wrapRow(entry.node, row) : row}
               </div>
             )

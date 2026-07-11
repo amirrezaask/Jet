@@ -1,4 +1,4 @@
-export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetPressClass, jetInteractiveRowClass, jetFocusRingClass, jetDisabledClass, jetScrollFadeClass, jetOverlayEnterClass } from "./tokens.js"
+export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetPressClass, jetInteractiveRowClass, jetHotGlowClass, jetFocusRingClass, jetDisabledClass, jetScrollFadeClass, jetOverlayEnterClass } from "./tokens.js"
 export { useReducedMotion } from "./useReducedMotion.js"
 export { JetMotionDiv, JetTabDragGhost } from "./JetOverlayMotion.js"
 export {
@@ -10,3 +10,4 @@ export {
 export { useRadRectMorph, type RadRect } from "./useRadRectMorph.js"
 export { useJetCaretOverlay, JetCaretInput } from "./useJetCaretOverlay.jsx"
 export { UniversalCaretLayer } from "./UniversalCaretLayer.js"
+export { HotGlowTracker } from "./HotGlowTracker.js"

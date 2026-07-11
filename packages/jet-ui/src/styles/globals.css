@@ -97,8 +97,8 @@
    *                                (LocationList: search, problems, references, defs).
    * Do not merge. Trees are for navigation density; location lists are for
    * click-to-jump readability. Defined only in :root — scheme-invariant. */
-  --jet-project-row-height: calc(var(--jet-fs-base) * 2.3);
-  --jet-row-height: calc(var(--jet-fs-base) * 1.85);
+  --jet-project-row-height: calc(var(--jet-fs-base) * 1.75);
+  --jet-row-height: calc(var(--jet-fs-base) * 1.5);
   --jet-titlebar-height: calc(var(--jet-fs-base) * 2.25);
   --jet-location-row-height: calc(var(--jet-fs-base) * 2.5);
   --jet-traffic-light-inset: 7.7rem;
@@ -420,6 +420,274 @@ body,
 
 .jet-interactive-row:active {
   transition-duration: 0ms;
+}
+
+/*
+ * RAD UI_BoxFlag_DrawHotEffects — mouse-follow soft circle clipped to the widget.
+ * Tracker sets --jet-hot-x/y; :hover drives opacity ≈ hot_t; :active suppresses.
+ *
+ * Do NOT set position:relative on the shared target list — that overrides Tailwind
+ * `.absolute` on virtualized tree rows and doubles inter-row gaps.
+ * Only promote static boxes so ::before is clipped to the control.
+ */
+.jet-hot-glow,
+.jet-press,
+.jet-interactive-row,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+) {
+  --jet-hot-x: 50%;
+  --jet-hot-y: 50%;
+}
+
+.jet-hot-glow:where(:not(.absolute, .fixed, .sticky)),
+.jet-press:where(:not(.absolute, .fixed, .sticky)),
+.jet-interactive-row:where(:not(.absolute, .fixed, .sticky)),
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+):where(:not(.absolute, .fixed, .sticky)) {
+  position: relative;
+}
+
+.jet-hot-glow::before,
+.jet-press::before,
+.jet-interactive-row::before,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  /*
+   * RAD soft circle uses theme hover @ 2.5% α — but Jet --jet-hover is a dark fill
+   * color, so that mix is invisible. Use foreground tint (~RAD bright hover feel).
+   * Radius 24em; row overflow clips like RAD max(box_dim).
+   */
+  background: radial-gradient(
+    circle 24em at var(--jet-hot-x) var(--jet-hot-y),
+    color-mix(in oklab, var(--foreground) 18%, transparent),
+    transparent 70%
+  );
+  transition: opacity var(--jet-motion-hot) ease-out;
+}
+
+.jet-hot-glow:hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before,
+.jet-press:hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before,
+.jet-interactive-row:hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+):hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before {
+  opacity: 1;
+}
+
+.jet-hot-glow:active::before,
+.jet-press:active::before,
+.jet-interactive-row:active::before,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+):active::before {
+  opacity: 0;
+  transition-duration: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jet-hot-glow::before,
+  .jet-press::before,
+  .jet-interactive-row::before,
+  :is(
+    [data-slot="button"],
+    [data-slot="tabs-trigger"],
+    [data-slot="toggle"],
+    [data-slot="toggle-group-item"],
+    [data-slot="command-item"],
+    [data-slot="item"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-group-action"],
+    [data-slot="sidebar-trigger"],
+    [data-slot="dialog-trigger"],
+    [data-slot="dialog-close"],
+    [data-slot="drawer-trigger"],
+    [data-slot="drawer-close"],
+    [data-slot="popover-trigger"],
+    [data-slot="context-menu-item"],
+    [data-slot="context-menu-sub-trigger"],
+    [data-slot="context-menu-checkbox-item"],
+    [data-slot="context-menu-radio-item"],
+    [data-slot="dropdown-menu-item"],
+    [data-slot="dropdown-menu-sub-trigger"],
+    [data-slot="dropdown-menu-checkbox-item"],
+    [data-slot="dropdown-menu-radio-item"],
+    [data-slot="menubar-trigger"],
+    [data-slot="menubar-item"],
+    [data-slot="menubar-sub-trigger"],
+    [data-slot="menubar-checkbox-item"],
+    [data-slot="menubar-radio-item"],
+    [data-slot="accordion-trigger"],
+    [data-slot="collapsible-trigger"],
+    [data-slot="select-item"]
+  )::before {
+    transition-duration: 0.01ms;
+  }
 }
 
 /* Instant keyboard focus ring — RAD focus_active_t */

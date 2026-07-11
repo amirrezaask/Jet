@@ -57,8 +57,10 @@ export const jetMotion = {
   },
 }
 
-export const jetPressClass = "jet-press"
-export const jetInteractiveRowClass = "jet-interactive-row"
+export const jetPressClass = "jet-press jet-hot-glow"
+export const jetInteractiveRowClass = "jet-interactive-row jet-hot-glow"
+/** RAD DrawHotEffects mouse soft-circle; usually baked into press/row/data-slots. */
+export const jetHotGlowClass = "jet-hot-glow"
 export const jetFocusRingClass = "jet-focus-ring"
 export const jetDisabledClass = "jet-disabled"
 export const jetScrollFadeClass = "jet-scroll-fade"
