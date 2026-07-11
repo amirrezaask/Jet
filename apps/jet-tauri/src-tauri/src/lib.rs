@@ -79,17 +79,42 @@ pub fn run() {
             shell::deliver_launch(app.handle(), config);
 
             shell::install_menu(app.handle())?;
+            // Menu install + first webview layout reset traffic lights (wry/AppKit).
+            // Re-pin now and again after a couple short delays so first paint sticks.
+            if let Some(window) = app.get_webview_window("main") {
+                shell::apply_traffic_light_position(&window);
+                #[cfg(target_os = "macos")]
+                {
+                    for delay_ms in [80_u64, 250, 600] {
+                        let win = window.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                            let win2 = win.clone();
+                            let _ = win.run_on_main_thread(move || {
+                                shell::apply_traffic_light_position(&win2);
+                            });
+                        });
+                    }
+                }
+            }
             Ok(())
         })
         .on_menu_event(|app, event| shell::on_menu_event(app, event))
         .on_window_event(|window, event| {
-            if matches!(
-                event,
-                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
-            ) {
-                if let Some(host) = window.try_state::<host::HostState>() {
-                    host.terminal.dispose_for_client(window.label());
+            match event {
+                WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                    if let Some(webview) =
+                        window.app_handle().get_webview_window(window.label())
+                    {
+                        shell::apply_traffic_light_position(&webview);
+                    }
                 }
+                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                    if let Some(host) = window.try_state::<host::HostState>() {
+                        host.terminal.dispose_for_client(window.label());
+                    }
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![

@@ -121,6 +121,8 @@ pub fn deliver_launch(app: &AppHandle, config: LaunchConfig) {
 pub fn apply_cached_chrome(window: &WebviewWindow) {
     if let Some(colors) = read_chrome_cache() {
         let _ = apply_chrome_colors(window, &colors);
+    } else {
+        apply_traffic_light_position(window);
     }
 }
 
@@ -343,8 +345,83 @@ fn apply_chrome_colors(window: &WebviewWindow, colors: &NativeChromeColors) -> R
     let _ = window.set_background_color(Some(parse_color(&colors.background)?));
     #[cfg(target_os = "windows")]
     apply_windows_title_bar_overlay(window, colors)?;
+    #[cfg(target_os = "macos")]
+    apply_traffic_light_position(window);
     Ok(())
 }
+
+/// Electron `trafficLightPosition: { x: 14, y: 11 }` — keep in sync with
+/// `apps/jet-desktop/src/main/main.ts` and `tauri.conf.json`.
+#[cfg(target_os = "macos")]
+pub const TRAFFIC_LIGHT_X: f64 = 14.0;
+#[cfg(target_os = "macos")]
+pub const TRAFFIC_LIGHT_Y: f64 = 11.0;
+
+/// Pin macOS traffic lights to Electron-compatible coordinates.
+///
+/// wry's `trafficLightPosition` sets button **x** and resizes the titlebar
+/// container using **y**, but leaves each button's AppKit `origin.y` untouched.
+/// On newer macOS the buttons stay top-glued inside that container, so y never
+/// looks like Electron. Force `origin.y = 0` (bottom of the titlebar container)
+/// so button tops land at `TRAFFIC_LIGHT_Y` from the window top.
+///
+/// AppKit also resets positions after menu install / layout — call this again
+/// from those sites.
+#[cfg(target_os = "macos")]
+pub fn apply_traffic_light_position(window: &WebviewWindow) {
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    if ptr.is_null() {
+        return;
+    }
+    unsafe {
+        use objc2_app_kit::{NSView, NSWindow, NSWindowButton};
+
+        let ns_window = &*(ptr as *const NSWindow);
+        let Some(close) = ns_window.standardWindowButton(NSWindowButton::CloseButton) else {
+            return;
+        };
+        let Some(miniaturize) =
+            ns_window.standardWindowButton(NSWindowButton::MiniaturizeButton)
+        else {
+            return;
+        };
+        let zoom = ns_window.standardWindowButton(NSWindowButton::ZoomButton);
+
+        let Some(close_superview) = close.superview() else {
+            return;
+        };
+        let Some(title_bar_container) = close_superview.superview() else {
+            return;
+        };
+
+        let close_rect = NSView::frame(&close);
+        let title_bar_frame_height = close_rect.size.height + TRAFFIC_LIGHT_Y;
+        let mut title_bar_rect = NSView::frame(&title_bar_container);
+        title_bar_rect.size.height = title_bar_frame_height;
+        title_bar_rect.origin.y = ns_window.frame().size.height - title_bar_frame_height;
+        title_bar_container.setFrame(title_bar_rect);
+
+        let space_between = NSView::frame(&miniaturize).origin.x - close_rect.origin.x;
+        let mut buttons = vec![close, miniaturize];
+        if let Some(zoom) = zoom {
+            buttons.push(zoom);
+        }
+        for (i, button) in buttons.into_iter().enumerate() {
+            let mut rect = NSView::frame(&button);
+            // Electron semantics: (x, y) is the close-button top-left. With the
+            // titlebar container height = buttonHeight + y and AppKit's
+            // bottom-left origin, origin.y = 0 puts the button top at y.
+            rect.origin.x = TRAFFIC_LIGHT_X + (i as f64 * space_between);
+            rect.origin.y = 0.0;
+            button.setFrameOrigin(rect.origin);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn apply_traffic_light_position(_window: &WebviewWindow) {}
 
 fn parse_color(hex: &str) -> Result<tauri::window::Color, String> {
     let raw = hex.trim().trim_start_matches('#');
