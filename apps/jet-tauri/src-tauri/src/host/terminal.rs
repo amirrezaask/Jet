@@ -13,7 +13,7 @@ use tauri::AppHandle;
 use super::events::emit_host;
 use super::launch::uri_to_path;
 
-const MAX_TERMINAL_REPLAY: usize = 4 * 1024 * 1024;
+const MAX_TERMINAL_REPLAY: usize = 2 * 1024 * 1024;
 const MAX_WRITE_BYTES: usize = 1024 * 1024;
 
 struct ShellSpec {

@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react"
+import { memo, useEffect, useRef, useState } from "react"
 import type { PanelId } from "@jet/shared"
 import { cn } from "@/lib/utils.js"
 import type { TabStore, TabTypeRegistry } from "./registry.js"
@@ -58,13 +58,21 @@ function TabHostInner({
   store: TabStore
   registry: TabTypeRegistry
 }) {
+  const mountedTabsRef = useRef<string[]>([])
+  const mountedTabs = mountedTabsRef.current.filter(tabId => tabIds.includes(tabId))
+  const activeIndex = mountedTabs.indexOf(activeTabId)
+  if (activeIndex >= 0) mountedTabs.splice(activeIndex, 1)
+  mountedTabs.push(activeTabId)
+  while (mountedTabs.length > 3) mountedTabs.shift()
+  mountedTabsRef.current = mountedTabs
+
   return (
     <div className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
       {tabIds.map(tabId => {
         const isActive = tabId === activeTabId
         const type = store.typeOf(tabId)
         const keepMounted = type?.keepMounted !== false
-        if (!isActive && !keepMounted) return null
+        if (!isActive && (!keepMounted || !mountedTabs.includes(tabId))) return null
         return (
           <div
             key={tabId}

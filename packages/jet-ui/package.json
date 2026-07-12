@@ -12,6 +12,14 @@
       "types": "./src/primitives.ts",
       "default": "./src/primitives.ts"
     },
+    "./agents": {
+      "types": "./src/agents-entry.ts",
+      "default": "./src/agents-entry.ts"
+    },
+    "./terminal": {
+      "types": "./src/terminal-entry.ts",
+      "default": "./src/terminal-entry.ts"
+    },
     "./styles.css": "./src/styles/globals.css"
   },
   "scripts": {

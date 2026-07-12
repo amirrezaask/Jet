@@ -3,11 +3,12 @@ import { assertBudget, logBenchResult, runBench } from "./_bench.js"
 import { launchJet } from "../electron/_launch.js"
 
 test("bench palette-open", async () => {
-  const result = await runBench({
-    name: "palette-open",
-    measure: async () => {
-      const { app, page } = await launchJet()
-      try {
+  const { app, page } = await launchJet()
+  try {
+    const result = await runBench({
+      name: "palette-open",
+      rounds: 9,
+      measure: async () => {
         return await page.evaluate(async () => {
           const t0 = performance.now()
           await window.__jetAgent!.executeCommand("ui.showCommandPalette")
@@ -15,17 +16,20 @@ test("bench palette-open", async () => {
           while (performance.now() < deadline) {
             const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
             if (dialog && dialog.getBoundingClientRect().height > 0) {
-              return performance.now() - t0
+              const elapsed = performance.now() - t0
+              document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+              await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+              return elapsed
             }
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
           }
           throw new Error("palette did not become visible")
         })
-      } finally {
-        await app.close()
-      }
-    },
-  })
-  logBenchResult(result)
-  assertBudget(result)
+      },
+    })
+    logBenchResult(result)
+    assertBudget(result)
+  } finally {
+    await app.close()
+  }
 })

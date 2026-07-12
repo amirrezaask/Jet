@@ -3,26 +3,30 @@ import { assertBudget, logBenchResult, runBench } from "./_bench.js"
 import { launchJet } from "../electron/_launch.js"
 
 test("bench theme-switch", async () => {
-  const result = await runBench({
-    name: "theme-switch",
-    measure: async () => {
-      const { app, page } = await launchJet()
-      try {
+  const { app, page } = await launchJet()
+  try {
+    let dark = false
+    const result = await runBench({
+      name: "theme-switch",
+      rounds: 9,
+      measure: async () => {
+        dark = !dark
+        const themeId = dark ? "ayu-dark" : "ayu-light"
         const t0 = Date.now()
-        await page.evaluate(async () => {
-          await window.__jetAgent!.executeCommand("ui.setTheme.ayu-dark")
-        })
+        await page.evaluate(async (id: string) => {
+          await window.__jetAgent!.executeCommand(`ui.setTheme.${id}`)
+        }, themeId)
         await page.waitForFunction(
-          () => localStorage.getItem("jet-theme-id") === "ayu-dark",
-          null,
+          (id: string) => localStorage.getItem("jet-theme-id") === id,
+          themeId,
           { timeout: 10_000 },
         )
         return Date.now() - t0
-      } finally {
-        await app.close()
-      }
-    },
-  })
-  logBenchResult(result)
-  assertBudget(result)
+      },
+    })
+    logBenchResult(result)
+    assertBudget(result)
+  } finally {
+    await app.close()
+  }
 })

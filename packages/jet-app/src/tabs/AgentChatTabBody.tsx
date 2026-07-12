@@ -1,8 +1,12 @@
 import type { AgentThread } from "@jet/agents"
 import { isDarkTheme } from "@jet/codemirror"
-import { AgentChatView } from "@jet/ui"
-import { useEffect, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import type { TabContributorDeps } from "./deps.js"
+
+const AgentChatView = lazy(async () => {
+  const mod = await import("@jet/ui/agents")
+  return { default: mod.AgentChatView }
+})
 
 export function AgentChatTabBody(props: {
   rootUri: string
@@ -42,14 +46,16 @@ export function AgentChatTabBody(props: {
   }
 
   return (
-    <AgentChatView
-      thread={thread}
-      providers={deps.getAgentProviders()}
-      theme={isDarkTheme(deps.getTheme()) ? "dark" : "light"}
-      onSend={payload => deps.sendAgentMessage(rootUri, threadId, payload)}
-      onInterrupt={() => deps.interruptAgentTurn(rootUri, threadId)}
-      onSelectionChange={handleSelectionChange}
-      onProvidersRefresh={() => void deps.refreshAgentProviders()}
-    />
+    <Suspense fallback={null}>
+      <AgentChatView
+        thread={thread}
+        providers={deps.getAgentProviders()}
+        theme={isDarkTheme(deps.getTheme()) ? "dark" : "light"}
+        onSend={payload => deps.sendAgentMessage(rootUri, threadId, payload)}
+        onInterrupt={() => deps.interruptAgentTurn(rootUri, threadId)}
+        onSelectionChange={handleSelectionChange}
+        onProvidersRefresh={() => void deps.refreshAgentProviders()}
+      />
+    </Suspense>
   )
 }

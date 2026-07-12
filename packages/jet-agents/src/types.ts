@@ -58,6 +58,17 @@ export type AgentThread = {
   messages: AgentMessage[]
 }
 
+export type AgentThreadDelta = {
+  workspaceRootUri: string
+  threadId: string
+  updatedAt: string
+  status: AgentThreadStatus
+  lastError: string | null
+  messageId: string
+  text: string
+  streaming: boolean
+}
+
 export type AgentThreadSummary = {
   id: string
   title: string
@@ -177,4 +188,5 @@ export type AgentTransport = {
   listProviders(): Promise<AgentProvidersState>
   refreshProviders(): Promise<AgentProvidersState>
   onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
+  onThreadDelta?(callback: (delta: AgentThreadDelta) => void): () => void
 }

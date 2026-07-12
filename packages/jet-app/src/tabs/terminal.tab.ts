@@ -1,6 +1,5 @@
-import { createElement } from "react"
+import { createElement, lazy, Suspense } from "react"
 import type { TabType } from "@jet/ui"
-import { TerminalPanel } from "@jet/ui"
 import type { TabContributorDeps } from "./deps.js"
 import {
   clearTerminalSession,
@@ -15,6 +14,11 @@ import {
 } from "./terminal-session.js"
 
 import type { KnownTabKind } from "@jet/workspace"
+
+const TerminalPanel = lazy(async () => {
+  const mod = await import("@jet/ui/terminal")
+  return { default: mod.TerminalPanel }
+})
 
 export const TERMINAL_TAB_TYPE_ID: KnownTabKind = "terminal"
 export { registerTerminalSession, terminalCwdForTab }
@@ -33,7 +37,7 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
     },
     render: (instance, ctx) => {
       const session = terminalSessionForTab(instance.id)
-      return createElement(TerminalPanel, {
+      const terminal = createElement(TerminalPanel, {
         cwdRootUri: instance.state.cwdRootUri,
         launchCommand: terminalLaunchCommandForTab(instance.id),
         theme: deps.getTheme(),
@@ -54,6 +58,7 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         },
         onClose: () => deps.closeTerminalTab(ctx.panelId, instance.id),
       })
+      return createElement(Suspense, { fallback: null }, terminal)
     },
   }
 }

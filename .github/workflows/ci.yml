@@ -78,5 +78,5 @@ jobs:
       - run: pnpm install
       - run: pnpm test:bench
         env:
-          JET_BENCH_SLACK: "1.5"
           JET_SHELL: tauri
+      - run: pnpm --filter jet-tauri bench:startup:release

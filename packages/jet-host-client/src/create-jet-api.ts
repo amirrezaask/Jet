@@ -1,7 +1,9 @@
 import type { JetElectronAPI } from "@jet/workspace"
 import type { JetHostTransport } from "./transport.js"
 
-const MAX_BUFFERED_TERMINAL_CHARS = 4 * 1024 * 1024
+// The Rust host owns the authoritative replay. This buffer only bridges the
+// attach handshake, so keeping a second multi-megabyte copy is wasteful.
+const MAX_BUFFERED_TERMINAL_CHARS = 64 * 1024
 
 export function createJetApi(transport: JetHostTransport): JetElectronAPI {
   const terminalDataListeners = new Map<string, Set<(data: string) => void>>()
@@ -13,6 +15,10 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
   transport.on("agents:threadUpdated", (...args: unknown[]) => {
     const thread = args[0] as import("@jet/agents").AgentThread
     for (const cb of agentThreadUpdatedListeners) cb(thread)
+  })
+  transport.on("agents:threadDelta", (...args: unknown[]) => {
+    const delta = args[0] as import("@jet/agents").AgentThreadDelta
+    for (const cb of agentThreadDeltaListeners) cb(delta)
   })
   transport.on("lsp:crashed", (...args: unknown[]) => {
     const id = args[0] as string
@@ -62,6 +68,7 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
 
   const lspCrashListeners = new Set<(id: string) => void>()
   const agentThreadUpdatedListeners = new Set<(thread: import("@jet/agents").AgentThread) => void>()
+  const agentThreadDeltaListeners = new Set<(delta: import("@jet/agents").AgentThreadDelta) => void>()
   const fileChangeListeners = new Set<(uri: string) => void>()
   const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
   const searchReadyListeners = new Set<(rootUri: string) => void>()
@@ -108,6 +115,10 @@ export function createJetApi(transport: JetHostTransport): JetElectronAPI {
       onThreadUpdated: callback => {
         agentThreadUpdatedListeners.add(callback)
         return () => agentThreadUpdatedListeners.delete(callback)
+      },
+      onThreadDelta: callback => {
+        agentThreadDeltaListeners.add(callback)
+        return () => agentThreadDeltaListeners.delete(callback)
       },
     },
     search: {

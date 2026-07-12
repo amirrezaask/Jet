@@ -72,8 +72,6 @@ export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js
 export { setEditorCursor, getEditorCursor } from "./status/editor-cursor-store.js"
 export { EditorTabHost, getEditorView, getAllEditorViews, syncAllEditorThemes, destroyEditorBuffer, destroyEditorPanel } from "./tabs/EditorTabHost.js"
 export { ExplorerTab } from "./tabs/ExplorerTab.js"
-export { AgentChatView } from "./agents/AgentChatView.js"
-export { AgentExplorerTab, type AgentExplorerWorkspaceGroup } from "./agents/AgentExplorerTab.js"
 export {
   TerminalExplorerTab,
   type TerminalAgentShortcut,
@@ -81,7 +79,6 @@ export {
   type TerminalExplorerEntry,
 } from "./tabs/TerminalExplorerTab.js"
 export { OutputPanel } from "./panels/OutputPanel.js"
-export { TerminalPanel } from "./panels/TerminalPanel.js"
 export { showEditorContextMenuAt } from "./components/EditorContextMenu.js"
 export { createContextMenuHost, dispatchContextMenuAt } from "./components/ContextMenuHost.js"
 export { PromptDialog, type PromptDialogProps } from "./components/PromptDialog.js"

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Spinner } from "@/components/ui/spinner.js"
 import { Button } from "@/components/ui/button.js"
 import { FileIcon } from "@/lib/file-icon.js"
@@ -31,8 +31,8 @@ export function QuickOpenOverlay({
   const [results, setResults] = useState<string[]>([])
   const [searching, setSearching] = useState(false)
   const [workspaceId, setWorkspaceId] = useState<string | null>(defaultWorkspaceId)
-  const deferredQuery = useDeferredValue(query)
   const searchGen = useRef(0)
+  const searchQueue = useRef(Promise.resolve())
 
   useEffect(() => {
     if (!open) {
@@ -45,44 +45,34 @@ export function QuickOpenOverlay({
 
   useEffect(() => {
     if (!open || !scanReady) {
+      searchGen.current += 1
       setResults([])
+      setSearching(false)
       return
     }
 
     const gen = ++searchGen.current
-    let spinnerId: number | undefined
-    const run = () => {
-      spinnerId = window.setTimeout(() => {
-        if (gen === searchGen.current) setSearching(true)
-      }, 60)
-      void onSearch(deferredQuery, workspaceId)
-        .then(paths => {
-          if (spinnerId !== undefined) window.clearTimeout(spinnerId)
+    searchQueue.current = searchQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        // Collapse queued keystrokes to the newest request and never overlap host searches.
+        if (gen !== searchGen.current) return
+        const spinnerId = window.setTimeout(() => {
+          if (gen === searchGen.current) setSearching(true)
+        }, 60)
+        try {
+          const paths = await onSearch(query, workspaceId)
           if (gen !== searchGen.current) return
           setResults(paths)
-          setSearching(false)
-        })
-        .catch(() => {
-          if (spinnerId !== undefined) window.clearTimeout(spinnerId)
+        } catch {
           if (gen !== searchGen.current) return
           setResults([])
-          setSearching(false)
-        })
-    }
-
-    if (deferredQuery === "") {
-      run()
-      return () => {
-        if (spinnerId !== undefined) window.clearTimeout(spinnerId)
-      }
-    }
-
-    const id = window.setTimeout(run, 80)
-    return () => {
-      window.clearTimeout(id)
-      if (spinnerId !== undefined) window.clearTimeout(spinnerId)
-    }
-  }, [open, scanReady, deferredQuery, onSearch, workspaceId])
+        } finally {
+          window.clearTimeout(spinnerId)
+          if (gen === searchGen.current) setSearching(false)
+        }
+      })
+  }, [open, scanReady, query, onSearch, workspaceId])
 
   const items = useMemo<PaletteShellItem<string>[]>(
     () => results.map(path => ({ key: path, value: path, data: path })),

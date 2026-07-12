@@ -139,7 +139,7 @@ export class LanguageServerManager {
     }
   }
 
-  async stopServersForRoot(rootUri: string): Promise<void> {
+  async stopServersForRoot(rootUri: string): Promise<string[]> {
     const toStop: LspConnection[] = []
     for (const [key, conn] of this.connections) {
       if (conn.rootUri === rootUri) {
@@ -148,6 +148,7 @@ export class LanguageServerManager {
       }
     }
     await Promise.all(toStop.map(conn => this.lspApi.stop(conn.id).catch(() => {})))
+    return toStop.map(conn => conn.id)
   }
 
   private descriptorForLanguage(languageId: string): LanguageServerDescriptor | null {

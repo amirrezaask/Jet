@@ -5,10 +5,9 @@ import type { PanelId } from "@jet/shared"
 export type EditorSession = {
   fileUri: string
   fileLanguageId: string
-  lastKnownText: string
+  isDirty: boolean
   largeFile: boolean
   savedBaseline: Text
-  snapshotTimer: number | null
   view: EditorView
 }
 
@@ -16,7 +15,8 @@ class EditorSessionRegistry {
   private viewByPanel = new Map<number, EditorView>()
   private sessionsByPanel = new Map<number, Map<string, EditorSession>>()
   private sessionAccessOrder: string[] = []
-  private readonly maxCachedSessions = 32
+  private readonly maxCachedSessions = 8
+  private readonly maxCachedDocumentBytes = 64 * 1024 * 1024
   focusedPanelId: number | null = null
 
   private sessionKey(panelId: PanelId, fileUri: string): string {
@@ -37,8 +37,27 @@ class EditorSessionRegistry {
   }
 
   evictStaleSessions(destroy: (panelId: PanelId, fileUri: string) => void): void {
-    while (this.sessionAccessOrder.length > this.maxCachedSessions) {
-      const key = this.sessionAccessOrder.shift()!
+    const cachedDocumentBytes = () => {
+      let total = 0
+      this.forEachSession(session => {
+        total += session.view.state.doc.length * 2
+      })
+      return total
+    }
+
+    while (
+      this.sessionAccessOrder.length > this.maxCachedSessions ||
+      cachedDocumentBytes() > this.maxCachedDocumentBytes
+    ) {
+      const candidateIndex = this.sessionAccessOrder.findIndex(key => {
+        const sep = key.indexOf("\u0000")
+        const panelIdNum = Number(key.slice(0, sep))
+        const fileUri = key.slice(sep + 1)
+        const session = this.sessionsByPanel.get(panelIdNum)?.get(fileUri)
+        return session != null && !session.isDirty && this.viewByPanel.get(panelIdNum) !== session.view
+      })
+      if (candidateIndex < 0) break
+      const [key] = this.sessionAccessOrder.splice(candidateIndex, 1)
       const sep = key.indexOf("\u0000")
       const panelIdNum = Number(key.slice(0, sep))
       const fileUri = key.slice(sep + 1)
@@ -98,7 +117,6 @@ class EditorSessionRegistry {
     const session = sessions?.get(fileUri) ?? null
     if (!session) return null
     this.forgetSessionAccess(panelId, fileUri)
-    if (session.snapshotTimer != null) window.clearTimeout(session.snapshotTimer)
     sessions!.delete(fileUri)
     if (sessions!.size === 0) this.sessionsByPanel.delete(panelId.id)
     this.clearActiveView(panelId, session.view)
@@ -108,7 +126,12 @@ class EditorSessionRegistry {
   destroyPanel(panelId: PanelId): EditorSession[] {
     const sessions = this.sessionsByPanel.get(panelId.id)
     if (!sessions) return []
-    return [...sessions.values()]
+    const destroyed = [...sessions.values()]
+    for (const session of destroyed) this.forgetSessionAccess(panelId, session.fileUri)
+    this.sessionsByPanel.delete(panelId.id)
+    this.viewByPanel.delete(panelId.id)
+    if (this.focusedPanelId === panelId.id) this.focusedPanelId = null
+    return destroyed
   }
 }
 
@@ -116,21 +139,6 @@ export const editorSessions = new EditorSessionRegistry()
 
 export function textFromString(content: string): Text {
   return Text.of(content.split("\n"))
-}
-
-export function scheduleSessionSnapshot(session: EditorSession): void {
-  if (session.snapshotTimer != null) window.clearTimeout(session.snapshotTimer)
-  session.snapshotTimer = window.setTimeout(() => {
-    session.snapshotTimer = null
-    session.lastKnownText = session.view.state.doc.toString()
-  }, 120)
-}
-
-export function clearSessionSnapshot(session: EditorSession): void {
-  if (session.snapshotTimer != null) {
-    window.clearTimeout(session.snapshotTimer)
-    session.snapshotTimer = null
-  }
 }
 
 export function detachSessionDom(session: EditorSession, parent: HTMLElement): void {

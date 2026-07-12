@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { AgentProvidersState, AgentThread, AgentWorkspaceSnapshot } from "@jet/agents"
+import type { AgentProvidersState, AgentThread, AgentThreadDelta, AgentWorkspaceSnapshot } from "@jet/agents"
 import { pathToFileUri, fileUriToPath, Emitter } from "@jet/shared"
 import type { WorkspaceService, WorkspaceFolder } from "@jet/workspace"
 import type { TabStore } from "@jet/ui"
 import { AGENT_EXPLORER_TAB_ID } from "../tabs/agent-explorer.tab.js"
 import {
   agentChatTabId,
-  parseAgentChatTabId,
-  type AgentChatTabState,
 } from "../tabs/agent-chat.tab.js"
 
 function normalizeAbsPath(p: string): string {
@@ -33,23 +31,14 @@ function agentSnapshotFingerprint(snapshot: AgentWorkspaceSnapshot | null): stri
   return snapshot.threads.map(t => `${t.id}:${t.updatedAt}:${t.messageCount}`).join("|")
 }
 
-function agentThreadsFingerprint(
-  threads: Record<string, AgentThread | null>,
-  rootUri: string,
-): string {
-  return Object.entries(threads)
-    .filter(([key]) => key.startsWith(`${rootUri}\u0000`))
-    .map(([key, thread]) => (thread ? `${key}:${thread.updatedAt}:${thread.messages.length}` : key))
-    .join("|")
-}
-
-export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore) {
+export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore, enabled = true) {
   const [agentProviders, setAgentProviders] = useState<AgentProvidersState | null>(null)
 
   const agentSnapshotsRef = useRef<Record<string, AgentWorkspaceSnapshot | null>>({})
   const agentThreadsRef = useRef<Record<string, AgentThread | null>>({})
   const agentProvidersRef = useRef(agentProviders)
   const agentThreadEmittersRef = useRef(new Map<string, Emitter<AgentThread | null>>())
+  const agentThreadAccessRef = useRef<string[]>([])
   const sendAgentInFlightRef = useRef(false)
 
   agentProvidersRef.current = agentProviders
@@ -81,6 +70,18 @@ export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore) {
       if (!thread) return
       const key = agentThreadStateKey(thread.workspaceRootUri, thread.id)
       const nextThreads = { ...agentThreadsRef.current, [key]: thread }
+      const access = agentThreadAccessRef.current.filter(candidate => candidate !== key)
+      access.push(key)
+      while (access.length > 3) {
+        const evictIndex = access.findIndex(candidate => {
+          const cached = nextThreads[candidate]
+          return cached != null && cached.status !== "running" && candidate !== key
+        })
+        if (evictIndex < 0) break
+        const [evicted] = access.splice(evictIndex, 1)
+        delete nextThreads[evicted]
+      }
+      agentThreadAccessRef.current = access
       agentThreadsRef.current = nextThreads
       let emitter = agentThreadEmittersRef.current.get(key)
       if (!emitter) {
@@ -119,28 +120,15 @@ export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore) {
       agentSnapshotsRef.current = nextSnapshots
       const chatTabId = agentChatTabId(thread.workspaceRootUri, thread.id)
       workspace.tabRegistry.update(chatTabId, { label: thread.title })
-      const parsed = parseAgentChatTabId(chatTabId)
-      if (parsed) {
-        tabStore.update(chatTabId, prev => {
-          const state = prev as AgentChatTabState
-          return {
-            ...state,
-            rootUri: parsed.rootUri,
-            threadId: parsed.threadId,
-            rev: thread.updatedAt,
-            thread,
-          }
-        })
-      } else {
-        bumpAgentTab(chatTabId)
-      }
+      bumpAgentTab(chatTabId)
       refreshAgentExplorerTab()
     },
-    [workspace, bumpAgentTab, refreshAgentExplorerTab, tabStore],
+    [workspace, bumpAgentTab, refreshAgentExplorerTab],
   )
 
   const loadAgentSnapshot = useCallback(
     async (rootUri: string, rootPath: string): Promise<AgentWorkspaceSnapshot | null> => {
+      if (!enabled) return null
       const transport = window.jet?.agents
       if (!transport) return null
       const snapshot = await transport.listThreads(rootUri, rootPath)
@@ -149,34 +137,47 @@ export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore) {
         const nextSnapshots = { ...agentSnapshotsRef.current, [rootUri]: snapshot }
         agentSnapshotsRef.current = nextSnapshots
       }
-      const loadedThreads = await Promise.all(
-        snapshot.threads.map(thread => transport.readThread(rootUri, rootPath, thread.id)),
-      )
-      if (loadedThreads.some(Boolean)) {
-        const prevFingerprint = agentThreadsFingerprint(agentThreadsRef.current, rootUri)
-        const nextThreads = { ...agentThreadsRef.current }
-        for (const thread of loadedThreads) {
-          if (!thread) continue
-          nextThreads[agentThreadStateKey(thread.workspaceRootUri, thread.id)] = thread
-        }
-        if (agentThreadsFingerprint(nextThreads, rootUri) !== prevFingerprint) {
-          agentThreadsRef.current = nextThreads
-        }
-      }
       refreshAgentExplorerTab()
       return snapshot
     },
-    [refreshAgentExplorerTab],
+    [enabled, refreshAgentExplorerTab],
+  )
+
+  const syncAgentThreadDelta = useCallback(
+    (delta: AgentThreadDelta) => {
+      const key = agentThreadStateKey(delta.workspaceRootUri, delta.threadId)
+      const thread = agentThreadsRef.current[key]
+      if (!thread) return
+      const messages = thread.messages.map(message =>
+        message.id === delta.messageId
+          ? {
+              ...message,
+              text: delta.text,
+              updatedAt: delta.updatedAt,
+              streaming: delta.streaming,
+            }
+          : message,
+      )
+      syncAgentThread({
+        ...thread,
+        messages,
+        updatedAt: delta.updatedAt,
+        status: delta.status,
+        lastError: delta.lastError,
+      })
+    },
+    [syncAgentThread],
   )
 
   const loadAgentProviders = useCallback(async (): Promise<AgentProvidersState | null> => {
+    if (!enabled) return null
     const transport = window.jet?.agents
     if (!transport?.listProviders) return null
     const state = await transport.listProviders()
     agentProvidersRef.current = state
     setAgentProviders(state)
     return state
-  }, [])
+  }, [enabled])
 
   const refreshAgentProviders = useCallback(async (): Promise<AgentProvidersState | null> => {
     const transport = window.jet?.agents
@@ -362,6 +363,7 @@ export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore) {
       if (keep.has(rootUri)) nextThreads[key] = value
     }
     agentThreadsRef.current = nextThreads
+    agentThreadAccessRef.current = agentThreadAccessRef.current.filter(key => nextThreads[key] != null)
   }, [])
 
   const removeAgentRoot = useCallback((rootUri: string) => {
@@ -373,17 +375,27 @@ export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore) {
       if (key.startsWith(`${rootUri}\u0000`)) delete nextThreads[key]
     }
     agentThreadsRef.current = nextThreads
+    agentThreadAccessRef.current = agentThreadAccessRef.current.filter(key => nextThreads[key] != null)
   }, [])
 
   useEffect(() => {
+    if (!enabled) return
     const transport = window.jet?.agents
     if (!transport?.onThreadUpdated) return
     return transport.onThreadUpdated(thread => {
       syncAgentThread(thread)
     })
-  }, [syncAgentThread])
+  }, [enabled, syncAgentThread])
 
   useEffect(() => {
+    if (!enabled) return
+    const transport = window.jet?.agents
+    if (!transport?.onThreadDelta) return
+    return transport.onThreadDelta(syncAgentThreadDelta)
+  }, [enabled, syncAgentThreadDelta])
+
+  useEffect(() => {
+    if (!enabled) return
     const transport = window.jet?.agents
     if (!transport?.readThread || transport.onThreadUpdated) return
     let cancelled = false
@@ -410,9 +422,10 @@ export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore) {
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [syncAgentThread, workspace.folders])
+  }, [enabled, syncAgentThread, workspace.folders])
 
   useEffect(() => {
+    if (!enabled) return
     const syncAgentRoots = (folders: WorkspaceFolder[]) => {
       pruneAgentRoots(folders)
       for (const folder of folders) {
@@ -424,11 +437,12 @@ export function useAgentSync(workspace: WorkspaceService, tabStore: TabStore) {
       syncAgentRoots(folders)
     })
     return () => sub.dispose()
-  }, [workspace, loadAgentSnapshot, pruneAgentRoots])
+  }, [enabled, workspace, loadAgentSnapshot, pruneAgentRoots])
 
   useEffect(() => {
+    if (!enabled) return
     void loadAgentProviders()
-  }, [loadAgentProviders])
+  }, [enabled, loadAgentProviders])
 
   return {
     agentProviders,

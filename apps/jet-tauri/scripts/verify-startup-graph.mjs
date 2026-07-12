@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs"
 import path from "node:path"
+import { gzipSync } from "node:zlib"
 import { fileURLToPath } from "node:url"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -10,12 +11,52 @@ const html = fs.readFileSync(htmlPath, "utf8")
 const entryMatch = html.match(/<script[^>]+src="\.\/assets\/(index-[^"]+\.js)"/)
 if (!entryMatch) throw new Error("Tauri entry chunk not found")
 
-const entry = fs.readFileSync(path.join(dist, "assets", entryMatch[1]), "utf8")
-const forbidden = ["shiki-", "diffs-", "xterm-"]
-const violations = forbidden.filter(name => html.includes(name) || entry.includes(`from\"./${name}`))
+const assets = path.join(dist, "assets")
+const mandatoryChunks = new Map()
+const visitStaticImports = fileName => {
+  if (mandatoryChunks.has(fileName)) return
+  const source = fs.readFileSync(path.join(assets, fileName), "utf8")
+  mandatoryChunks.set(fileName, source)
+  for (const match of source.matchAll(/(?:from|import)\s*["']\.\/([^"']+\.js)["']/g)) {
+    visitStaticImports(match[1])
+  }
+}
+visitStaticImports(entryMatch[1])
+// bootstrap.ts intentionally awaits the renderer entry through a dynamic import
+// so transport setup can finish first. It is still mandatory startup work.
+const rendererEntries = fs.readdirSync(assets).filter(name => /^main-[^/]+\.js$/.test(name))
+if (rendererEntries.length !== 1) {
+  throw new Error(`expected one renderer main chunk, found ${rendererEntries.length}`)
+}
+visitStaticImports(rendererEntries[0])
+
+const mandatorySource = [...mandatoryChunks.values()].join("\n")
+const forbidden = ["shiki-", "diffs-", "xterm-", "agents-entry-"]
+const forbiddenMarkers = ["lexical.dev", "LegendList", "react-markdown", "rehype-raw"]
+const violations = [
+  ...forbidden.filter(name => [...mandatoryChunks.keys()].some(chunk => chunk.startsWith(name))),
+  ...forbiddenMarkers.filter(name => mandatorySource.includes(name)),
+]
 if (violations.length > 0) {
   throw new Error(`optional chunks leaked into the startup graph: ${violations.join(", ")}`)
 }
 
+const mandatoryGzipBytes = [...mandatoryChunks.values()].reduce(
+  (total, source) => total + gzipSync(source).byteLength,
+  0,
+)
+const mandatoryGzipBudget = 450 * 1024
+if (mandatoryGzipBytes > mandatoryGzipBudget) {
+  throw new Error(
+    `mandatory startup JS is ${mandatoryGzipBytes} gzip bytes; budget is ${mandatoryGzipBudget}`,
+  )
+}
+
 const preloads = [...html.matchAll(/rel="modulepreload"[^>]+href="([^"]+)"/g)].map(match => match[1])
-console.log(JSON.stringify({ entry: entryMatch[1], preloads }, null, 2))
+console.log(JSON.stringify({
+  entry: entryMatch[1],
+  mandatoryChunks: [...mandatoryChunks.keys()],
+  mandatoryGzipBytes,
+  mandatoryGzipBudget,
+  preloads,
+}, null, 2))

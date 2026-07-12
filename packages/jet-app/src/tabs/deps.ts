@@ -9,10 +9,10 @@ import type {
   WorkspaceService,
 } from "@jet/workspace"
 import type {
-  AgentExplorerWorkspaceGroup,
   TerminalAgentShortcut,
   TerminalExplorerGroup,
 } from "@jet/ui"
+import type { AgentExplorerWorkspaceGroup } from "@jet/ui/agents"
 import type { PanelId } from "@jet/shared"
 
 /**

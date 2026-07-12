@@ -72,7 +72,6 @@ import {
   formatKeyBinding,
   problemsToListItems,
   WhichKeyPanel,
-  type AgentExplorerWorkspaceGroup,
   type TerminalExplorerGroup,
   type TerminalAgentShortcut,
   type JetAppearanceSettings,
@@ -97,6 +96,7 @@ import {
   capturePanelLeafRects,
   type PanelRect,
 } from "@jet/ui"
+import type { AgentExplorerWorkspaceGroup } from "@jet/ui/agents"
 import { getJetSearchState } from "@jet/codemirror"
 import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
@@ -440,7 +440,7 @@ export function JetApp() {
     tabDndHandlers,
   } = usePanelLayout(workspace, tabStore, appStateRef as never)
 
-  const agentSync = useAgentSync(workspace, tabStore)
+  const agentSync = useAgentSync(workspace, tabStore, ENABLE_AGENT_CHAT)
   const {
     syncAgentThread,
     loadAgentThread,
@@ -707,11 +707,11 @@ export function JetApp() {
   }
 
   const {
-    lspManager,
     lspRevision,
     resolveLspClient,
     ensureLspForFile,
     handleLspAttachFailed,
+    stopLspServersForRoot,
     lspStatus,
   } = useLspLifecycle(workspace, (uri, path, line, column) => {
     handleOpenFileRef.current(uri, path)
@@ -1408,9 +1408,7 @@ export function JetApp() {
       if (window.jet?.workspace?.deactivate) {
         await window.jet.workspace.deactivate(rootUri)
       }
-      if (lspManager) {
-        await lspManager.stopServersForRoot(rootUri)
-      }
+      await stopLspServersForRoot(rootUri)
       folderSearchStateRef.current.delete(folderId)
       workspaceInitGen.current.delete(folderId)
       const removed = workspace.removeFolder(folderId)
@@ -1422,7 +1420,7 @@ export function JetApp() {
       }
       return removed
     },
-    [workspace, cloneTree, commitTree, lspManager, syncGlobalSearchState, tabStore, getTerminalExplorerGroups],
+    [workspace, cloneTree, commitTree, stopLspServersForRoot, syncGlobalSearchState, tabStore, getTerminalExplorerGroups],
   )
 
   const removeProjectByRootUri = useCallback(

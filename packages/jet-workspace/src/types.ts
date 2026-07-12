@@ -1,6 +1,7 @@
 import type { PanelId, PanelView, ProjectSearchResult } from "@jet/shared"
 import type {
   AgentThread,
+  AgentThreadDelta,
   AgentWorkspaceSnapshot,
   AgentProvidersState,
   CreateAgentThreadInput,
@@ -141,6 +142,7 @@ export type JetElectronAgents = {
   listProviders(): Promise<AgentProvidersState>
   refreshProviders(): Promise<AgentProvidersState>
   onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
+  onThreadDelta?(callback: (delta: AgentThreadDelta) => void): () => void
 }
 
 export type JetElectronAPI = {

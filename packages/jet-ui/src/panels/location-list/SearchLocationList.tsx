@@ -37,6 +37,7 @@ export function SearchLocationList({
   const initial = workspace.listStore.get(listId)!
   const doc = useListDocument(initial, workspace)
   const searchGen = useRef(0)
+  const searchQueue = useRef(Promise.resolve())
   const searchInputRef = useAutoFocus<HTMLInputElement>(autoFocus)
 
   const patchDoc = useCallback(
@@ -56,37 +57,43 @@ export function SearchLocationList({
     }
     const gen = ++searchGen.current
     patchDoc({ searchLoading: true, searchError: null })
-    try {
-      const hits = await projectSearchAcrossFolders(folders, window.jet.search, query, {
-        caseSensitive: current.searchCaseSensitive ?? false,
-        regex: current.searchRegex ?? false,
-        fuzzy: current.searchFuzzy ?? false,
+    searchQueue.current = searchQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (gen !== searchGen.current) return
+        try {
+          const hits = await projectSearchAcrossFolders(folders, window.jet!.search!, query, {
+            caseSensitive: current.searchCaseSensitive ?? false,
+            regex: current.searchRegex ?? false,
+            fuzzy: current.searchFuzzy ?? false,
+          })
+          if (gen !== searchGen.current) return
+          const multiRoot = folders.length > 1
+          const items = hits.map((h, i) =>
+            searchHitToListItem(
+              h.result,
+              i,
+              h.folder.root.path,
+              multiRoot ? h.folder.root.name : undefined,
+            ),
+          )
+          patchDoc({ items, searchLoading: false })
+        } catch (err) {
+          if (gen !== searchGen.current) return
+          patchDoc({
+            searchLoading: false,
+            searchError: err instanceof Error ? err.message : String(err),
+          })
+        }
       })
-      if (gen !== searchGen.current) return
-      const multiRoot = folders.length > 1
-      const items = hits.map((h, i) =>
-        searchHitToListItem(
-          h.result,
-          i,
-          h.folder.root.path,
-          multiRoot ? h.folder.root.name : undefined,
-        ),
-      )
-      patchDoc({ items, searchLoading: false })
-    } catch (err) {
-      if (gen !== searchGen.current) return
-      patchDoc({
-        searchLoading: false,
-        searchError: err instanceof Error ? err.message : String(err),
-      })
-    }
+    await searchQueue.current
   }, [workspace, listId, patchDoc, getSearchFolders])
+  const runSearchRef = useRef(runSearch)
+  runSearchRef.current = runSearch
 
   useEffect(() => {
-    const id = window.setTimeout(() => void runSearch(), 300)
-    return () => window.clearTimeout(id)
+    void runSearchRef.current()
   }, [
-    runSearch,
     doc.searchQuery,
     doc.searchCaseSensitive,
     doc.searchRegex,

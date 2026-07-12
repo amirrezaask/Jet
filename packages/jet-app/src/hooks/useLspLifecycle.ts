@@ -81,6 +81,15 @@ export function useLspLifecycle(
     [ensureLspForFile],
   )
 
+  const stopLspServersForRoot = useCallback(
+    async (rootUri: string) => {
+      if (!lspManager) return
+      const stoppedIds = await lspManager.stopServersForRoot(rootUri)
+      for (const id of stoppedIds) lspClientPool.releaseConnection(id)
+    },
+    [lspManager, lspClientPool],
+  )
+
   useEffect(() => {
     lspClientPool.setWorkspaceDeps({
       openFile: (uri, path, line, column) => onOpenFile(uri, path, line, column),
@@ -127,6 +136,7 @@ export function useLspLifecycle(
     resolveLspClient,
     ensureLspForFile,
     handleLspAttachFailed,
+    stopLspServersForRoot,
     lspStatus,
     lspCrashed,
     setLspCrashed,

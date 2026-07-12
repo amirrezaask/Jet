@@ -1,5 +1,4 @@
 import { createElement } from "react"
-import type { AgentThread } from "@jet/agents"
 import type { TabType } from "@jet/ui"
 import { AgentChatTabBody } from "./AgentChatTabBody.js"
 import type { TabContributorDeps } from "./deps.js"
@@ -16,10 +15,7 @@ export const AGENT_CHAT_TAB_TYPE_ID: KnownTabKind = "agent-chat"
 export { AGENT_CHAT_TAB_ID_PREFIX, agentChatTabId, parseAgentChatTabId }
 export type { AgentChatTabState }
 
-export function createAgentChatTabType(deps: TabContributorDeps): TabType<AgentChatTabState & {
-  rev?: string
-  thread?: AgentThread | null
-}> {
+export function createAgentChatTabType(deps: TabContributorDeps): TabType<AgentChatTabState> {
   return {
     id: AGENT_CHAT_TAB_TYPE_ID,
     title: state =>
@@ -32,6 +28,6 @@ export function createAgentChatTabType(deps: TabContributorDeps): TabType<AgentC
         threadId: instance.state.threadId,
         deps,
       }),
-    keepMounted: true,
+    keepMounted: false,
   }
 }

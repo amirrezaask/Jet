@@ -30,7 +30,6 @@ import {
 import { dispatchContextMenuAt } from "@/components/ContextMenuHost.js"
 import {
   editorSessions,
-  scheduleSessionSnapshot,
   textFromString,
   detachSessionDom,
   type EditorSession,
@@ -215,11 +214,11 @@ function EditorTabHostInner({
           userExtensions,
           onSelectionChange: (line, column, rangeCount) =>
             onEditorSelectionChangeRef.current?.(line, column, rangeCount),
-          onDocChange: (doc, meta) => {
+          onDocChange: doc => {
             const live = editorSessions.panelSessions(panelId).get(fileUri)
             if (!live) return
-            workspace.markDirty(fileUri, !doc.eq(live.savedBaseline))
-            if (!meta.isReload) scheduleSessionSnapshot(live)
+            live.isDirty = !doc.eq(live.savedBaseline)
+            workspace.markDirty(fileUri, live.isDirty)
           },
           onViewUpdate: () => onProblemsChangeRef.current?.(),
         })
@@ -231,10 +230,9 @@ function EditorTabHostInner({
         session = {
           fileUri,
           fileLanguageId: file.languageId,
-          lastKnownText: initialText,
+          isDirty: untitled && initialText.length > 0,
           largeFile,
           savedBaseline: textFromString(savedBaseline),
-          snapshotTimer: null,
           view,
         }
         editorSessions.panelSessions(panelId).set(fileUri, session)
@@ -244,7 +242,6 @@ function EditorTabHostInner({
         workspace.setSavedBaseline(fileUri, savedBaseline)
         if (untitled && initialText.length > 0) {
           workspace.markDirty(fileUri, true)
-          scheduleSessionSnapshot(session)
         }
 
         if (!largeFile && !untitled && resolveLspClientRef.current) {
@@ -325,8 +322,8 @@ function EditorTabHostInner({
       const session = editorSessions.panelSessions(panelId).get(fileUri)
       if (!session) return
       session.savedBaseline = textFromString(content)
-      session.lastKnownText = content
-      workspace.markDirty(uri, !session.view.state.doc.eq(session.savedBaseline))
+      session.isDirty = !session.view.state.doc.eq(session.savedBaseline)
+      workspace.markDirty(uri, session.isDirty)
     })
     return () => sub.dispose()
   }, [workspace, fileUri, panelId.id])
@@ -336,7 +333,6 @@ function EditorTabHostInner({
       if (uri !== fileUri) return
       const session = editorSessions.panelSessions(panelId).get(fileUri)
       if (!session) return
-      session.lastKnownText = content
       session.view.dispatch({
         changes: { from: 0, to: session.view.state.doc.length, insert: content },
         annotations: jetReloadAnnotation.of(true),

@@ -292,23 +292,22 @@ class UniversalCaretController {
     }
   }
 
-  /**
-   * Keep portal inputs aligned for the full overlay entrance. CSS transforms do
-   * not trigger ResizeObserver, so a single post-focus sample can retain the
-   * pre-animation position until the next key event.
-   */
+  /** CSS transforms do not trigger ResizeObserver. Sample the entrance at its
+   * start, midpoint, and end without forcing layout on every animation frame. */
   private settleAfterFocus(): void {
     this.clearSettle()
-    const startedAt = performance.now()
     const settleForMs = jetMotion.duration.overlay * 1000
-    const settle = (now: number) => {
+    this.settleRaf = requestAnimationFrame(() => {
       this.settleRaf = null
       this.schedule(true)
-      if (now - startedAt < settleForMs) {
-        this.settleRaf = requestAnimationFrame(settle)
-      }
-    }
-    this.settleRaf = requestAnimationFrame(settle)
+    })
+    this.settleTimer = window.setTimeout(() => {
+      this.schedule(true)
+      this.settleTimer = window.setTimeout(() => {
+        this.settleTimer = null
+        this.schedule(true)
+      }, settleForMs / 2)
+    }, settleForMs / 2)
   }
 
   private observeTarget(target: CaretTarget | null): void {

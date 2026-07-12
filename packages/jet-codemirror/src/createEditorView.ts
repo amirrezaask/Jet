@@ -300,7 +300,9 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
       const lintChanged = update.transactions.some(tr =>
         tr.effects.some(effect => effect.is(setDiagnosticsEffect)),
       )
-      if (update.docChanged || lintChanged) {
+      // Diagnostics updates carry an explicit effect. Scanning every live editor
+      // after every keystroke turns typing cost into O(open buffers).
+      if (lintChanged) {
         opts.onViewUpdate?.(update.view)
       }
     }),
