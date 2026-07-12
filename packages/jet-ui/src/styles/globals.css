@@ -107,7 +107,8 @@
   --jet-row-height: calc(var(--jet-fs-base) * 1.5);
   --jet-window-chrome-height: calc(var(--jet-fs-base) * 2.5);
   --jet-location-row-height: calc(var(--jet-fs-base) * 2.5);
-  --jet-traffic-light-inset: 7.7rem;
+  /* Traffic-light clearance only — not a closed-sidebar placeholder. */
+  --jet-traffic-light-inset: 5rem;
   --jet-overlay-list-max: 22rem;
   --jet-motion-fast: 120ms;
   --jet-motion-hot: 120ms;
@@ -119,6 +120,9 @@
   --jet-motion-entity: 240ms;
   --jet-motion-dnd-site: 220ms;
   --jet-motion-squish-scale: 0.9;
+  --jet-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --jet-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --jet-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --jet-cursor-color: oklch(0.145 0 0);
   --jet-press-scale: 0.98;
   --jet-press-y: 0.5px;
@@ -714,9 +718,47 @@ body,
   );
 }
 
-/* Overlay enter is fade-only. Do NOT set --tw-enter-scale here — tw-animate's
-   enter keyframe always applies scale, and a non-1 value makes dialog inputs
-   (and the universal caret) start low then jump up as scale lerps to 1. */
+@keyframes jet-dialog-enter {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes jet-dialog-exit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.97); }
+}
+
+@keyframes jet-overlay-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes jet-overlay-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.jet-dialog-motion[data-jet-dialog-motion="standard"][data-state="open"] {
+  animation: jet-dialog-enter var(--jet-motion-overlay) var(--jet-ease-out);
+}
+
+.jet-dialog-motion[data-jet-dialog-motion="standard"][data-state="closed"] {
+  animation: jet-dialog-exit var(--jet-motion-fast) var(--jet-ease-out);
+}
+
+.jet-dialog-overlay[data-jet-dialog-motion="standard"][data-state="open"] {
+  animation: jet-overlay-enter var(--jet-motion-overlay) var(--jet-ease-out);
+}
+
+.jet-dialog-overlay[data-jet-dialog-motion="standard"][data-state="closed"] {
+  animation: jet-overlay-exit var(--jet-motion-fast) var(--jet-ease-out);
+}
+
+.jet-dialog-motion[data-jet-dialog-motion="instant"],
+.jet-dialog-overlay[data-jet-dialog-motion="instant"] {
+  animation: none;
+  transition: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .jet-press:active,
@@ -776,23 +818,61 @@ body,
   filter: none;
 }
 
-:root[data-jet-reduced-motion="true"] *,
-:root[data-jet-reduced-motion="true"] *::before,
-:root[data-jet-reduced-motion="true"] *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
-  scroll-behavior: auto !important;
+:root[data-jet-reduced-motion="true"] {
+  scroll-behavior: auto;
+}
+
+:root[data-jet-reduced-motion="true"] .jet-dialog-motion[data-jet-dialog-motion="standard"][data-state="open"] {
+  transform: none;
+  animation-name: jet-overlay-enter;
+  animation-duration: var(--jet-motion-fast);
+}
+
+:root[data-jet-reduced-motion="true"] .jet-dialog-motion[data-jet-dialog-motion="standard"][data-state="closed"] {
+  transform: none;
+  animation-name: jet-overlay-exit;
+  animation-duration: var(--jet-motion-fast);
+}
+
+:root[data-jet-reduced-motion="true"] :is(.animate-spin, .animate-pulse) {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  :root { scroll-behavior: auto; }
+
+  .jet-dialog-motion[data-jet-dialog-motion="standard"][data-state="open"] {
+    transform: none;
+    animation-name: jet-overlay-enter;
+    animation-duration: var(--jet-motion-fast);
+  }
+
+  .jet-dialog-motion[data-jet-dialog-motion="standard"][data-state="closed"] {
+    transform: none;
+    animation-name: jet-overlay-exit;
+    animation-duration: var(--jet-motion-fast);
+  }
+
+  :is(.animate-spin, .animate-pulse) {
+    animation: none;
+  }
+
+  :is([class*="slide-in-from"], [class*="slide-out-to"], [class*="zoom-in"], [class*="zoom-out"]) {
+    --tw-enter-translate-x: 0;
+    --tw-enter-translate-y: 0;
+    --tw-exit-translate-x: 0;
+    --tw-exit-translate-y: 0;
+    --tw-enter-scale: 1;
+    --tw-exit-scale: 1;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .jet-hot-glow::before,
+  .jet-press::before,
+  .jet-interactive-row::before,
+  [data-jet-hot-active]::before {
+    display: none;
   }
 }
 
@@ -855,5 +935,23 @@ body,
   .chat-composer-glass,
   .chat-composer-lower-chrome {
     background: var(--card);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .chat-composer-glass,
+  .chat-composer-lower-chrome,
+  .chat-composer-shared-blur {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .chat-composer-glass,
+  .chat-composer-lower-chrome {
+    background: var(--card);
+    border-color: var(--foreground);
   }
 }

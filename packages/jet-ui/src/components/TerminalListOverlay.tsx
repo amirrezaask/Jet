@@ -46,7 +46,6 @@ export function TerminalListOverlay({
       title="Terminal list"
       description="Switch terminal…"
       placeholder="Switch terminal…"
-      maxWidth="sm"
       items={items}
       onSelect={onSelect}
       emptyLabel="No open terminals"

@@ -6,9 +6,15 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarTrigger,
 } from "@/components/ui/sidebar.js"
 import { Button } from "@/components/ui/button.js"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip.js"
 import { ExplorerTab } from "@/tabs/ExplorerTab.js"
 import {
   TerminalExplorerTab,
@@ -117,12 +123,21 @@ export function JetWorkspaceSidebar({
           />
         ) : null}
         <div
-          className="flex min-w-0 flex-1 items-center py-1 pl-1"
+          className="flex min-w-0 flex-1 items-center gap-1 py-1 pl-1"
           data-tauri-drag-region={showWindowChrome ? "false" : undefined}
           style={
             showWindowChrome ? ({ WebkitAppRegion: "no-drag" } as CSSProperties) : undefined
           }
         >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <SidebarTrigger
+                data-jet-sidebar-toggle
+                className="size-7 shrink-0 text-sidebar-foreground"
+              />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Toggle Sidebar</TooltipContent>
+          </Tooltip>
           <JetSidebarViewTabs
             activeView={activeView}
             onActiveViewChange={onActiveViewChange}

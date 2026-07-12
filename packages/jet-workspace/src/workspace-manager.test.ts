@@ -89,12 +89,14 @@ describe("WorkspaceService foreign URI contract", () => {
     await assert.rejects(() => ws.writeFile(foreign, "x"), /No workspace folder/)
   })
 
-  it("createWorkspaceFile rejects URIs outside open folders", async () => {
+  it("createWorkspaceFile allows URIs outside open folders as external buffers", async () => {
     const mgr = new WorkspaceManager(mockFs())
     const ws = new WorkspaceService(mgr)
     await ws.addFolder("/proj/a")
     const foreign = pathToFileUri("/proj/b/foo.ts")
-    assert.throws(() => ws.createWorkspaceFile(foreign, "/proj/b/foo.ts"), /No workspace folder/)
+    const file = ws.createWorkspaceFile(foreign, "/proj/b/foo.ts")
+    assert.equal(file.path, "/proj/b/foo.ts")
+    assert.equal(ws.fileForUri(foreign)?.path, "/proj/b/foo.ts")
   })
 
   it("resolveRootUriForFile returns null for foreign file URIs", async () => {

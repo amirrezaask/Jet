@@ -39,7 +39,7 @@ const DESCRIPTORS: LanguageServerDescriptor[] = [
     languageIds: ["go"],
     command: "gopls",
     args: ["serve"],
-    rootMarkers: ["go.mod"],
+    rootMarkers: ["go.work", "go.mod"],
   },
 ]
 
@@ -77,7 +77,11 @@ export class LanguageServerManager {
     const workspaceRootUri = workspaceRoot
     const filePath = fileUriToPath(file.uri)
     const startDir = parentDir(filePath)
-    const projectRoot = await findProjectRoot(startDir, descriptor.rootMarkers, window.jet?.fs)
+    const projectRoot =
+      descriptor.id === "gopls"
+        ? ((await findProjectRoot(startDir, ["go.work"], window.jet?.fs)) ??
+          (await findProjectRoot(startDir, ["go.mod"], window.jet?.fs)))
+        : await findProjectRoot(startDir, descriptor.rootMarkers, window.jet?.fs)
     if (!projectRoot) return null
 
     const projectRootUri = pathToFileUri(projectRoot)

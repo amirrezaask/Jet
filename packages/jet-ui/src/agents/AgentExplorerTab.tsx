@@ -12,7 +12,10 @@ import {
   ContextMenuTrigger,
 } from "../components/ui/context-menu.js"
 import { ListRow } from "@/components/ListRow.js"
+import { PanelEmpty } from "@/components/PanelEmpty.js"
 import { registerListPanel } from "../lib/list-registry.js"
+
+export const AGENT_EXPLORER_LIST_ID = "jet:agent-explorer"
 
 export type AgentExplorerWorkspaceGroup = {
   id: string
@@ -24,10 +27,10 @@ export type AgentExplorerWorkspaceGroup = {
 }
 
 const OVERSCAN = 8
-const GROUP_HEADER_HEIGHT = 56
-const THREAD_ROW_HEIGHT = 48
-const GROUP_EMPTY_HEIGHT = 36
-const ARCHIVED_HEADER_HEIGHT = 40
+const GROUP_HEADER_HEIGHT = 40
+const THREAD_ROW_HEIGHT = 32
+const GROUP_EMPTY_HEIGHT = 28
+const ARCHIVED_HEADER_HEIGHT = 32
 
 type VirtualRow =
   | { kind: "group-header"; group: AgentExplorerWorkspaceGroup; expanded: boolean }
@@ -82,20 +85,17 @@ function ThreadRow(props: {
       <ContextMenuTrigger asChild>
         <ListRow
           data-jet-list-item
-          className="h-full flex-row items-center gap-2 rounded-lg px-3 py-2"
+          className="h-full min-h-0 flex-row items-center gap-2 rounded-md px-2 py-1"
           onClick={onOpen}
+          title={`${thread.title} — ${formatRelativeTime(thread.updatedAt)}${thread.messageCount > 0 ? ` · ${thread.messageCount} messages` : ""}${thread.status !== "idle" ? ` · ${thread.status}` : ""}`}
         >
           <ThreadStatusIcon status={thread.status} />
-          <div className="min-w-0 flex-1">
-            <span data-slot="row-label" className="block truncate text-sm text-foreground">
-              {thread.title}
-            </span>
-            <span data-slot="row-detail" className="block truncate text-3xs text-muted-foreground">
-              {formatRelativeTime(thread.updatedAt)}
-              {thread.messageCount > 0 ? ` · ${thread.messageCount} messages` : ""}
-              {thread.status !== "idle" ? ` · ${thread.status}` : ""}
-            </span>
-          </div>
+          <span data-slot="row-label" className="min-w-0 flex-1 truncate text-xs text-foreground">
+            {thread.title}
+          </span>
+          <span data-slot="row-detail" className="shrink-0 text-3xs tabular-nums text-muted-foreground">
+            {formatRelativeTime(thread.updatedAt)}
+          </span>
         </ListRow>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -194,7 +194,7 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
   }, [groups])
 
   useEffect(() => {
-    return registerListPanel("jet:agent-explorer", scrollRef.current)
+    return registerListPanel(AGENT_EXPLORER_LIST_ID, scrollRef.current)
   }, [flatRows.length])
 
   const virtualizer = useVirtualizer({
@@ -206,11 +206,11 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
 
   return (
     <SidebarContent
-      className="flex min-h-0 flex-col p-2"
-      data-jet-list-panel="agent-explorer"
+      className="flex min-h-0 flex-col px-1 py-2"
+      data-jet-list-panel={AGENT_EXPLORER_LIST_ID}
       tabIndex={-1}
     >
-      <div className="mb-2 shrink-0 px-2 text-3xs uppercase tracking-[0.16em] text-muted-foreground">
+      <div className="mb-1 shrink-0 px-2 text-3xs uppercase tracking-[0.16em] text-muted-foreground">
         Agents
       </div>
       <div
@@ -218,7 +218,11 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
         className="min-h-0 flex-1 overflow-auto"
       >
         {flatRows.length === 0 ? (
-          <div className="rounded-lg px-3 py-2 text-xs text-muted-foreground">No workspaces open.</div>
+          <PanelEmpty
+            title="No workspaces open"
+            description="Open a workspace before starting an agent."
+            compact
+          />
         ) : (
           <div
             style={{
@@ -243,10 +247,11 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
                   }}
                 >
                   {row.kind === "group-header" ? (
-                    <div className="rounded-xl border border-border/60 bg-card/30 px-2 py-2">
-                      <div className="flex items-center gap-1">
-                        <button
-                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    <div className="h-full border-b border-sidebar-border/60 px-1">
+                      <div className="flex h-full items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          className="h-7 min-w-0 flex-1 justify-start gap-1.5 px-1 text-left font-normal"
                           onClick={() =>
                             setExpandedRoots(current => {
                               const next = new Set(current)
@@ -255,21 +260,17 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
                               return next
                             })
                           }
-                          type="button"
                         >
                           <ChevronRight
                             className={cn(
-                              "size-4 text-muted-foreground transition-transform",
+                              "size-3.5 text-muted-foreground transition-transform duration-[var(--jet-motion-fast)]",
                               row.expanded && "rotate-90",
                             )}
                           />
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium text-foreground">
-                              {row.group.name}
-                            </div>
-                            <div className="truncate text-xs text-muted-foreground">{row.group.path}</div>
-                          </div>
-                        </button>
+                          <span className="truncate text-xs font-medium text-foreground" title={row.group.path}>
+                            {row.group.name}
+                          </span>
+                        </Button>
                         <Button
                           size="icon-sm"
                           title="New agent"
@@ -282,23 +283,23 @@ export const AgentExplorerTab = memo(function AgentExplorerTab(props: {
                     </div>
                   ) : null}
                   {row.kind === "group-empty" ? (
-                    <div className="rounded-lg px-3 py-2 text-xs text-muted-foreground">No agents yet.</div>
+                    <div className="px-8 py-1 text-3xs text-muted-foreground">No agents yet.</div>
                   ) : null}
                   {row.kind === "archived-header" ? (
-                    <div className="rounded-xl border border-border/60 bg-card/20">
-                      <button
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                    <div className="h-full border-b border-sidebar-border/60 px-1">
+                      <Button
+                        variant="ghost"
+                        className="h-7 w-full justify-start gap-1.5 px-1 text-left font-normal"
                         onClick={() => setArchivedExpanded(current => !current)}
-                        type="button"
                       >
                         <ChevronRight
                           className={cn(
-                            "size-4 text-muted-foreground transition-transform",
+                            "size-3.5 text-muted-foreground transition-transform duration-[var(--jet-motion-fast)]",
                             archivedExpanded && "rotate-90",
                           )}
                         />
-                        <span className="text-sm text-muted-foreground">Archived ({row.count})</span>
-                      </button>
+                        <span className="text-xs text-muted-foreground">Archived ({row.count})</span>
+                      </Button>
                     </div>
                   ) : null}
                   {row.kind === "thread" ? (

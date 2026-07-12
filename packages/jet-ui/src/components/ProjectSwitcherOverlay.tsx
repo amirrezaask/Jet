@@ -48,7 +48,7 @@ export function ProjectSwitcherOverlay({
       title="Switch project"
       description="Filter projects…"
       placeholder="Filter projects…"
-      maxWidth="xl"
+      size="wide"
       shouldFilter={false}
       query={query}
       onQueryChange={setQuery}

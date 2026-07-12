@@ -115,6 +115,7 @@ export type BuildAppCommandsDeps = {
   focusExplorer?: () => void
   focusTerminalExplorer?: () => void
   setSidebarOpen: (open: boolean) => void
+  toggleSidebar: () => void
   setSidebarView: (view: JetSidebarView) => void
   getSidebarView: () => JetSidebarView
   openAgentExplorer: () => Promise<void>
@@ -471,6 +472,9 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.setSidebarOpen(true)
       deps.setSidebarView("explorer")
       deps.focusExplorer?.()
+    },
+    toggleSidebar: () => {
+      deps.toggleSidebar()
     },
     agents: async ctx => {
       if (!deps.workspace.manager.hasFolders()) {
@@ -848,6 +852,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "task.run", fn: "runTask", title: "Run Task", category: "Tasks" },
   { id: "task.runBuild", fn: "runBuild", title: "Run Build Task", category: "Tasks" },
   { id: "explorer.show", fn: "explorer", title: "Show Explorer", category: "View", aliases: ["files tree", "sidebar"] },
+  { id: "workbench.action.toggleSidebarVisibility", fn: "toggleSidebar", title: "Toggle Sidebar", category: "View", aliases: ["hide sidebar", "show sidebar", "cmd b"] },
   { id: "agents.show", fn: "agents", title: "Show Agents", category: "View", aliases: ["agent explorer", "chat sidebar"] },
   { id: "agent.new", fn: "newAgent", title: "New Agent", category: "Agents", aliases: ["new chat", "new assistant"] },
   { id: "agent.archive", fn: "archiveAgent", title: "Archive Agent", category: "Agents", aliases: ["archive chat"] },

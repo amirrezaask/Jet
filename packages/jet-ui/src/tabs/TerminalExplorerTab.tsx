@@ -23,6 +23,7 @@ import { Button } from "../components/ui/button.js"
 import { Input } from "../components/ui/input.js"
 import { Lister, type ListerDataSource, type ListerNode } from "../lister/index.js"
 import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
+import { PanelEmpty } from "../components/PanelEmpty.js"
 
 export type TerminalExplorerEntry = {
   tabId: string
@@ -139,14 +140,11 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
 
   if (sortedGroups.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-muted-foreground">
-        <p className="text-sm">Open a folder to manage terminals</p>
-        {onOpenFolder ? (
-          <Button size="sm" onClick={onOpenFolder} className="font-medium">
-            Open Folder
-          </Button>
-        ) : null}
-      </div>
+      <PanelEmpty
+        title="Open a folder to manage terminals"
+        description={onOpenFolder ? undefined : "Use the command palette to open a folder."}
+        action={onOpenFolder ? <Button size="sm" onClick={onOpenFolder}>Open Folder</Button> : undefined}
+      />
     )
   }
 

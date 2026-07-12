@@ -222,19 +222,63 @@ test.describe("electron LSP Go", () => {
       })
 
       await expect.poll(async () => {
+        const editorText = await page.evaluate(() => window.__jetAgent!.getEditorText() ?? "")
+        const defLine = editorText.split("\n").findIndex(l => l.includes("func greet(name string)")) + 1
         const cursor = await page.evaluate(() => window.__jetAgent!.getCursorPosition())
-        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
-        if (cursor && cursor.line > 5) {
+        if (defLine > 0 && Math.abs((cursor?.line ?? -1) - defLine) > 1) {
           await page.evaluate(async () => {
             await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
           })
         }
-        return page.evaluate(() => window.__jetAgent!.getCursorPosition())
-      }, { timeout: 15_000, intervals: [300, 500] }).toMatchObject({ line: expect.any(Number) })
+        const after = await page.evaluate(() => window.__jetAgent!.getCursorPosition())
+        return Math.abs((after?.line ?? -1) - defLine) <= 1
+      }, { timeout: 15_000, intervals: [300, 500] }).toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("go to definition on other-package SharedFlag jumps to lib/settings.go", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/example.go")
+      await waitForLspConnected(page)
+      await placeCursorOnToken(page, "SharedFlag")
 
       await expect.poll(async () => {
-        return page.evaluate(() => window.__jetAgent!.getCursorPosition()?.line ?? -1)
-      }, { timeout: 10_000 }).toBeLessThanOrEqual(6)
+        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        if (!text?.includes("var SharedFlag")) {
+          await page.evaluate(async () => {
+            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+          })
+        }
+        return page.evaluate(() => window.__jetAgent!.getEditorText())
+      }, { timeout: 20_000, intervals: [300, 500, 800] }).toContain("var SharedFlag")
+
+      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()), {
+        timeout: 5_000,
+      }).toContain("SharedFlag = 42")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("go to definition on fmt.Println opens stdlib outside workspace", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await openFixtureFile(page, "src/example.go")
+      await waitForLspConnected(page)
+      await placeCursorOnToken(page, "Println")
+
+      await expect.poll(async () => {
+        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        if (!text?.includes("func Println")) {
+          await page.evaluate(async () => {
+            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+          })
+        }
+        return page.evaluate(() => window.__jetAgent!.getEditorText())
+      }, { timeout: 25_000, intervals: [400, 600, 900] }).toContain("func Println")
     } finally {
       await app.close()
     }

@@ -102,9 +102,9 @@ export {
 } from "./theme/bundled.js"
 export { syncNativeChromeFromTheme, readThemedNativeChrome } from "./theme/native-chrome.js"
 export { defaultJetTheme, applyJetThemeCss, applyColorScheme } from "@jet/codemirror"
-export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetPressClass, jetHotGlowClass } from "./motion/tokens.js"
+export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetMenuContentClass, jetPressClass, jetHotGlowClass, type JetOverlayMotion } from "./motion/tokens.js"
 export { useReducedMotion } from "./motion/useReducedMotion.js"
-export { JetMotionDiv, JetTabDragGhost } from "./motion/JetOverlayMotion.js"
+export { JetTabDragGhost } from "./motion/JetOverlayMotion.js"
 export {
   animateLayoutMorph,
   capturePanelLeafRects,
@@ -120,5 +120,6 @@ export { ConfirmDialogHost, requestConfirm } from "./components/ConfirmDialogHos
 export { showJetToast } from "./toast.js"
 export { registerListPanel, getListPanel, getListItems, focusListPanel, focusFirstListItem, getListPanelController, type ListFocusAction, type ListPanelController } from "./lib/list-registry.js"
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
+export { PanelEmpty } from "./components/PanelEmpty.js"
 export { SettingsField } from "./components/SettingsField.js"
 export { FindReplacePopover } from "./components/FindReplacePopover.js"

@@ -1,6 +1,6 @@
 export { jetMotion, jetOverlayContentClass, jetPopoverContentClass, jetPressClass, jetInteractiveRowClass, jetHotGlowClass, jetFocusRingClass, jetDisabledClass, jetScrollFadeClass, jetOverlayEnterClass } from "./tokens.js"
 export { useReducedMotion } from "./useReducedMotion.js"
-export { JetMotionDiv, JetTabDragGhost } from "./JetOverlayMotion.js"
+export { JetTabDragGhost } from "./JetOverlayMotion.js"
 export {
   animateLayoutMorph,
   capturePanelLeafRects,

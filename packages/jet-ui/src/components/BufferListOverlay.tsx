@@ -53,7 +53,6 @@ export function BufferListOverlay({
       title="Buffer list"
       description="Switch buffer…"
       placeholder="Switch buffer…"
-      maxWidth="sm"
       items={items}
       onSelect={entry => onSelect(entry.uri)}
       emptyLabel="No open buffers"

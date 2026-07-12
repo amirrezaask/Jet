@@ -35,9 +35,10 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        "jet-dialog-overlay fixed inset-0 z-50 bg-black/50",
         className
       )}
+      data-jet-dialog-motion="standard"
       {...props}
     />
   )
@@ -54,6 +55,8 @@ function AlertDialogContent({
       <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
         <AlertDialogPrimitive.Content
           data-slot="alert-dialog-content"
+          data-jet-dialog-motion="standard"
+          data-jet-dialog-size="default"
           className={cn(
             "pointer-events-auto grid w-full max-w-[calc(100%-2rem)] gap-4 rounded-lg border bg-background p-6 shadow-lg outline-none sm:max-w-lg",
             jetOverlayContentClass,

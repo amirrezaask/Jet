@@ -36,7 +36,9 @@ Never write `text-[Npx]`. If a size is missing from the scale, add a token — d
 Fonts: `--font-sans` Geist, `--font-mono` Geist Mono.
 
 ### Motion
-`jetMotion` (from `@jet/ui`) is the single source of animation timings. CSS vars: `--jet-motion-fast/hot/menu/overlay/panel/slow-menu/scroll/entity`. Never hardcode `duration-150` / `.15s`; reference the token.
+`jetMotion` (from `@jet/ui`) is the single source of animation timings. CSS vars: `--jet-motion-fast/hot/menu/overlay/panel/slow-menu/scroll/entity`; easing vars: `--jet-ease-out/in-out/drawer`. Never hardcode `duration-150` / `.15s`; reference the token.
+
+High-frequency palette surfaces use `<DialogContent motion="instant" size="picker" />`. Standard prompts and dialogs retain restrained 180ms enter / 120ms exit motion. Dialog sizes are semantic: `prompt` (24rem), `picker` (32rem), `wide` (42rem), and `default`.
 
 Reduced motion handled globally via `prefers-reduced-motion` in `globals.css`.
 
@@ -77,7 +79,7 @@ const items: PaletteShellItem<MyItem>[] = data.map(x => ({
   title="My palette"
   description="Search my things…"
   placeholder="Filter…"
-  maxWidth="md"              // xs | sm | md | lg | xl
+  size="picker"              // picker | wide
   items={items}
   onSelect={item => run(item)}
   emptyLabel="No matches."

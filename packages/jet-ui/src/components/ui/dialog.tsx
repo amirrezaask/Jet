@@ -4,7 +4,16 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { jetOverlayContentClass } from "@/motion/tokens"
+import { jetOverlayContentClass, type JetOverlayMotion } from "@/motion/tokens"
+
+export type JetDialogSize = "default" | "prompt" | "picker" | "wide"
+
+const dialogSizeClass: Record<JetDialogSize, string> = {
+  default: "sm:max-w-lg",
+  prompt: "sm:max-w-sm",
+  picker: "sm:max-w-[32rem]",
+  wide: "sm:max-w-[42rem]",
+}
 
 function Dialog({
   ...props
@@ -32,15 +41,17 @@ function DialogClose({
 
 function DialogOverlay({
   className,
+  motion = "standard",
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+}: React.ComponentProps<typeof DialogPrimitive.Overlay> & { motion?: JetOverlayMotion }) {
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 overscroll-contain duration-[var(--jet-motion-overlay)] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        "jet-dialog-overlay fixed inset-0 z-50 bg-black/50 overscroll-contain",
         className
       )}
+      data-jet-dialog-motion={motion}
       {...props}
     />
   )
@@ -50,22 +61,29 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  motion = "standard",
+  size = "default",
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  motion?: JetOverlayMotion
+  size?: JetDialogSize
 }) {
   return (
     <DialogPortal data-slot="dialog-portal">
-      <DialogOverlay />
+      <DialogOverlay motion={motion} />
       {/* Flex center — keep translate off the animated node so zoom-in enter cannot clobber position. */}
       <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
         <DialogPrimitive.Content
           data-slot="dialog-content"
           className={cn(
-            "pointer-events-auto grid w-full max-w-[calc(100%-2rem)] gap-4 rounded-lg border bg-background p-6 shadow-lg outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:max-w-lg",
+            "pointer-events-auto grid w-full max-w-[calc(100%-2rem)] gap-4 rounded-lg border bg-background p-6 shadow-lg outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            dialogSizeClass[size],
             jetOverlayContentClass,
             className
           )}
+          data-jet-dialog-motion={motion}
+          data-jet-dialog-size={size}
           {...props}
         >
           {children}

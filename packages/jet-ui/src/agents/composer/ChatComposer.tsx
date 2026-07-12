@@ -122,12 +122,12 @@ export const ChatComposer = memo(function ChatComposer(props: {
       className="mx-auto w-full min-w-0 max-w-3xl"
       data-chat-composer-form="true"
     >
-      <div className="group rounded-[22px] p-px transition-colors duration-200">
+      <div className="group rounded-xl p-px transition-colors duration-[var(--jet-motion-menu)]">
         <div
           ref={composerSurfaceRef}
           data-chat-composer-mobile-collapsed="false"
           className={cn(
-            "chat-composer-glass rounded-[20px] border transition-colors duration-200 has-focus-visible:border-ring/45",
+            "chat-composer-glass rounded-xl border transition-colors duration-[var(--jet-motion-menu)] has-focus-visible:border-ring/45",
             isComposerFocused ? "border-ring/45" : "border-border",
           )}
           onFocusCapture={() => setIsComposerFocused(true)}

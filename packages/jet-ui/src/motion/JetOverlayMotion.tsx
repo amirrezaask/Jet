@@ -1,38 +1,5 @@
-"use client"
-
-import { motion, type HTMLMotionProps } from "motion/react"
-import { jetMotion } from "./tokens.js"
-import { useReducedMotion } from "./useReducedMotion.js"
 import { cn } from "@/lib/utils.js"
-
-export function JetMotionDiv({
-  className,
-  reducedMotion: reducedMotionProp,
-  variant = "center",
-  ...props
-}: HTMLMotionProps<"div"> & {
-  reducedMotion?: boolean
-  variant?: "center" | "top"
-}) {
-  const reducedHook = useReducedMotion()
-  const reduced = reducedMotionProp ?? reducedHook
-  const preset = variant === "top" ? jetMotion.overlayEnterTop : jetMotion.overlayEnter
-
-  if (reduced) {
-    return <div className={className} {...(props as React.ComponentProps<"div">)} />
-  }
-
-  return (
-    <motion.div
-      className={className}
-      initial={preset.initial}
-      animate={preset.animate}
-      exit={preset.exit}
-      transition={preset.transition}
-      {...props}
-    />
-  )
-}
+import { useReducedMotion } from "./useReducedMotion.js"
 
 export function JetTabDragGhost({
   label,

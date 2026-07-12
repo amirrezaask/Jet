@@ -1580,6 +1580,7 @@ export function JetApp() {
         windowChromeLeading={
           showWindowChrome && !sidebarOpen && isTopLeftPanel(panelTree, panelId)
         }
+        showSidebarToggle={!sidebarOpen && isTopLeftPanel(panelTree, panelId)}
         onActivateTab={tabId => handlePanelEvent({ type: "tabActivate", panelId, tabId })}
         onCloseTab={tabId => handlePanelEvent({ type: "tabClose", panelId, tabId })}
       />
@@ -1717,6 +1718,7 @@ export function JetApp() {
         focusExplorer: focusExplorerPanel,
         focusTerminalExplorer: focusTerminalExplorerPanel,
         setSidebarOpen,
+        toggleSidebar: () => setSidebarOpen(open => !open),
         setSidebarView: handleSidebarViewChange,
         getSidebarView: () => sidebarViewRef.current,
         openAgentExplorer: openAgentsExplorer,
@@ -1842,6 +1844,21 @@ export function JetApp() {
         "Mod-\\",
         appCommands.splitEditorRight,
         ctx => ctx.workspaceOpen && noOverlay(ctx),
+      ),
+      bind(
+        "Mod-b",
+        appCommands.toggleSidebar,
+        ctx => ctx.workspaceOpen && noOverlay(ctx),
+      ),
+      bind(
+        "F12",
+        appCommands.goToDefinition,
+        ctx => ctx.editorFocus && noOverlay(ctx),
+      ),
+      bind(
+        "Shift-F12",
+        appCommands.goToReferences,
+        ctx => ctx.editorFocus && noOverlay(ctx),
       ),
       bind(
         "Mod-Shift-\\",

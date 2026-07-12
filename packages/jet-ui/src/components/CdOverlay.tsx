@@ -345,7 +345,9 @@ export function CdOverlay({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="overflow-hidden p-0 sm:max-w-2xl"
+        className="overflow-hidden p-0"
+        motion="instant"
+        size="wide"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>

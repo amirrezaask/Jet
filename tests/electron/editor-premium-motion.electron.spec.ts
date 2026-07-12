@@ -63,6 +63,9 @@ test.describe("premium editor motion", () => {
   test("uses the shared ghost caret across palette and form inputs", async () => {
     const { app, page } = await launchJet()
     try {
+      await page.evaluate(() => {
+        document.documentElement.dataset.jetReducedMotion = "false"
+      })
       await page.evaluate(async () => window.__jetAgent!.executeCommand("ui.showCommandPalette"))
       const paletteInput = page.locator("[data-slot='command-input']")
       await expectLocatorFocused(paletteInput)
@@ -127,6 +130,43 @@ test.describe("premium editor motion", () => {
         .toBe("rgba(0, 0, 0, 0)")
       await expectSelectorVisible(page, "[data-jet-universal-cursor]")
 
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("keeps daily palettes instant while standard dialogs retain restrained motion", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await page.evaluate(() => {
+        document.documentElement.dataset.jetReducedMotion = "false"
+      })
+      await page.evaluate(async () => window.__jetAgent!.executeCommand("ui.showCommandPalette"))
+      const palette = page.locator("[data-slot='dialog-content']").first()
+      await expectLocatorVisible(palette)
+      expect(await palette.evaluate(element => element.getAttribute("data-jet-dialog-motion"))).toBe("instant")
+      expect(await palette.evaluate(element => element.getAttribute("data-jet-dialog-size"))).toBe("picker")
+      expect(await palette.evaluate(element => getComputedStyle(element).animationName)).toBe("none")
+
+      await page.keyboard.press("Escape")
+      await page.evaluate(async () => window.__jetAgent!.executeCommand("settings.show"))
+      const settings = page.locator("[data-jet-settings-overlay]")
+      await expectLocatorVisible(settings)
+      expect(await settings.evaluate(element => element.getAttribute("data-jet-dialog-motion"))).toBe("standard")
+      expect(await settings.evaluate(element => getComputedStyle(element).animationDuration)).toBe("0.18s")
+
+      await page.keyboard.press("Escape")
+      await page.evaluate(() => {
+        document.documentElement.dataset.jetReducedMotion = "true"
+      })
+      await page.evaluate(async () => window.__jetAgent!.executeCommand("settings.show"))
+      const reducedSettings = page.locator("[data-jet-settings-overlay]")
+      await expectLocatorVisible(reducedSettings)
+      expect(await reducedSettings.evaluate(element => getComputedStyle(element).animationName))
+        .toBe("jet-overlay-enter")
+      expect(await reducedSettings.evaluate(element => getComputedStyle(element).animationDuration))
+        .toBe("0.12s")
+      expect(await reducedSettings.evaluate(element => getComputedStyle(element).transform)).toBe("none")
     } finally {
       await app.close()
     }

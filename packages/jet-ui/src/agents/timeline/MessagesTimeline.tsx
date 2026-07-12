@@ -45,7 +45,7 @@ function UserTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "mes
       <div className="relative max-w-[80%] rounded-2xl border border-border bg-secondary p-3">
         <p className="whitespace-pre-wrap text-sm text-foreground">{row.message.text}</p>
       </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-[var(--jet-motion-menu)] focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
           <p className="text-muted-foreground text-xs tabular-nums">
             {formatTimelineTimestamp(row.message.createdAt)}
@@ -123,7 +123,7 @@ function AssistantTimelineRow(props: {
         </div>
       ) : null}
       {row.showAssistantMeta ? (
-        <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
+        <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-[var(--jet-motion-menu)] focus-within:opacity-100 group-hover/assistant:opacity-100">
           {assistantCopyState.visible ? (
             <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />
           ) : null}

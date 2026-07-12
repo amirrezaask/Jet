@@ -4,7 +4,9 @@ export function prefersReducedMotion(): boolean {
     matchMedia?: (query: string) => { matches: boolean; addEventListener?: (type: string, fn: () => void) => void; removeEventListener?: (type: string, fn: () => void) => void }
     document?: { documentElement: { dataset: Record<string, string | undefined> } }
   }
-  if (g.document?.documentElement.dataset.jetReducedMotion === "true") return true
+  const override = g.document?.documentElement.dataset.jetReducedMotion
+  if (override === "true") return true
+  if (override === "false") return false
   if (typeof g.matchMedia !== "function") return false
   return g.matchMedia("(prefers-reduced-motion: reduce)").matches
 }

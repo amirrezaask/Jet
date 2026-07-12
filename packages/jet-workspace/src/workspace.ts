@@ -1,5 +1,6 @@
 import {
   basename,
+  canonicalizeFileUri,
   Emitter,
   fileUriToPath,
   isUntitledUri,
@@ -53,6 +54,9 @@ export class WorkspaceService {
   confirmDiscardReload: ConfirmDiscardReloadFn | null = null
   openBuffers: string[] = []
   private untitledFiles = new Map<string, WorkspaceFile>()
+  /** Files opened outside any workspace folder (stdlib, module cache, etc.). */
+  private externalFiles = new Map<string, WorkspaceFile>()
+  private externalBaselines = new Map<string, string>()
   private untitledCounter = 1
 
   readonly jumpStack = new JumpStack()
@@ -159,7 +163,13 @@ export class WorkspaceService {
 
   fileForUri(uri: string): WorkspaceFile | undefined {
     if (isUntitledUri(uri)) return this.untitledFiles.get(uri)
-    return this.manager.folderStateForUri(uri)?.fileForUri(uri)
+    const canonical = canonicalizeFileUri(uri)
+    return (
+      this.manager.folderStateForUri(canonical)?.fileForUri(canonical) ??
+      this.manager.folderStateForUri(uri)?.fileForUri(uri) ??
+      this.externalFiles.get(canonical) ??
+      this.externalFiles.get(uri)
+    )
   }
 
   registerFile(file: WorkspaceFile): void {
@@ -169,7 +179,8 @@ export class WorkspaceService {
     }
     const state = this.manager.folderStateForUri(file.uri)
     if (!state) {
-      throw new Error(`No workspace folder contains ${file.uri}`)
+      this.externalFiles.set(canonicalizeFileUri(file.uri), file)
+      return
     }
     state.registerFile(file)
   }
@@ -182,11 +193,17 @@ export class WorkspaceService {
 
   closeBuffer(uri: string): void {
     const path = fileUriToPath(uri)
+    const canonical = isUntitledUri(uri) ? uri : canonicalizeFileUri(uri)
     this.openBuffers = this.openBuffers.filter(u => fileUriToPath(u) !== path)
     if (isUntitledUri(uri)) {
       this.untitledFiles.delete(uri)
     } else {
       this.manager.folderStateForUri(uri)?.evictFile(uri)
+      this.manager.folderStateForUri(canonical)?.evictFile(canonical)
+      this.externalFiles.delete(uri)
+      this.externalFiles.delete(canonical)
+      this.externalBaselines.delete(uri)
+      this.externalBaselines.delete(canonical)
     }
     this.onDidChangeBuffers.fire()
   }
@@ -201,17 +218,35 @@ export class WorkspaceService {
       return
     }
     const state = this.manager.folderStateForUri(uri)
-    state?.markDirty(uri, isDirty)
+    if (state) {
+      state.markDirty(uri, isDirty)
+      return
+    }
+    const file = this.externalFiles.get(canonicalizeFileUri(uri)) ?? this.externalFiles.get(uri)
+    if (!file || file.isDirty === isDirty) return
+    file.isDirty = isDirty
+    this.onDidChangeDirty.fire({ uri: file.uri, isDirty })
+    this.tabRegistry.update(file.uri, { label: file.name })
   }
 
   setSavedBaseline(uri: string, content: string): void {
     if (isUntitledUri(uri)) return
-    this.manager.folderStateForUri(uri)?.setSavedBaseline(uri, content)
+    const state = this.manager.folderStateForUri(uri)
+    if (state) {
+      state.setSavedBaseline(uri, content)
+      return
+    }
+    const canonical = canonicalizeFileUri(uri)
+    this.externalBaselines.set(canonical, content)
+    this.onDidChangeSavedBaseline.fire({ uri: canonical, content })
   }
 
   savedBaselineFor(uri: string): string | undefined {
     if (isUntitledUri(uri)) return undefined
-    return this.manager.folderStateForUri(uri)?.savedBaselineFor(uri)
+    const state = this.manager.folderStateForUri(uri)
+    if (state) return state.savedBaselineFor(uri)
+    const canonical = canonicalizeFileUri(uri)
+    return this.externalBaselines.get(canonical) ?? this.externalBaselines.get(uri)
   }
 
   syncDirtyFromDoc(uri: string, content: string): void {
@@ -225,7 +260,13 @@ export class WorkspaceService {
       if (file) file.isDirty = false
       return
     }
-    this.manager.folderStateForUri(uri)?.clearDirtyState(uri)
+    const state = this.manager.folderStateForUri(uri)
+    if (state) {
+      state.clearDirtyState(uri)
+      return
+    }
+    const file = this.externalFiles.get(canonicalizeFileUri(uri)) ?? this.externalFiles.get(uri)
+    if (file) file.isDirty = false
   }
 
   async readFile(uri: string): Promise<string> {
@@ -256,11 +297,22 @@ export class WorkspaceService {
   }
 
   createWorkspaceFile(uri: string, path: string): WorkspaceFile {
-    const state = this.manager.folderStateForUri(uri)
-    if (!state) {
-      throw new Error(`No workspace folder contains ${uri}`)
+    const canonical = canonicalizeFileUri(uri)
+    const state = this.manager.folderStateForUri(canonical) ?? this.manager.folderStateForUri(uri)
+    if (state) {
+      return state.createWorkspaceFile(canonical, path, languageIdFromPath(path))
     }
-    const file = state.createWorkspaceFile(uri, path, languageIdFromPath(path))
+    const existing = this.externalFiles.get(canonical) ?? this.externalFiles.get(uri)
+    if (existing) return existing
+    const file: WorkspaceFile = {
+      uri: canonical,
+      path,
+      name: basename(path),
+      languageId: languageIdFromPath(path),
+      isDirty: false,
+    }
+    this.externalFiles.set(canonical, file)
+    this.onDidOpenFile.fire(file)
     return file
   }
 

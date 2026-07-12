@@ -26,7 +26,7 @@ function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
 }
 
 const SELECTED_INDICATOR_CLASS =
-  "pointer-events-none absolute -right-1 top-1/2 z-10 h-5 w-0.75 -translate-y-1/2 rounded-l-full bg-primary";
+  "pointer-events-none absolute -right-1 top-0 z-10 h-5 w-0.75 rounded-l-full bg-primary";
 const BADGE_BASE_CLASS =
   "pointer-events-none absolute -right-0.5 top-0.5 z-10 flex size-3.5 items-center justify-center rounded-full bg-transparent shadow-sm ";
 const NEW_BADGE_CLASS = `${BADGE_BASE_CLASS} text-amber-600  dark:text-amber-300 `;
@@ -111,9 +111,9 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
               data-model-picker-selected-indicator="true"
               className={cn(
                 SELECTED_INDICATOR_CLASS,
-                "right-0 translate-y-0 transition-[top] duration-200 ease-out",
+                "right-0 transition-transform duration-[var(--jet-motion-menu)] ease-[var(--jet-ease-out)]",
               )}
-              style={{ top: selectedIndicatorTop }}
+              style={{ transform: `translate3d(0, ${selectedIndicatorTop}px, 0)` }}
             />
           ) : null}
           {/* Favorites section */}

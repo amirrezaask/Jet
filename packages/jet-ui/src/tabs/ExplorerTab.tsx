@@ -6,6 +6,7 @@ import { Lister, type ListerDataSource, type ListerNode } from "@/lister/index.j
 import { Button } from "@/components/ui/button.js"
 import { FileIcon } from "@/lib/file-icon.js"
 import { cn } from "@/lib/utils.js"
+import { PanelEmpty } from "@/components/PanelEmpty.js"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -104,16 +105,11 @@ export function ExplorerTab({
 
   if (!manager.hasFolders()) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-muted-foreground">
-        <p className="text-sm">Open a folder to browse files</p>
-        {onOpenFolder ? (
-          <Button size="sm" onClick={onOpenFolder} className="font-medium">
-            Open Folder
-          </Button>
-        ) : (
-          <p className="text-xs">Use the command palette.</p>
-        )}
-      </div>
+      <PanelEmpty
+        title="Open a folder to browse files"
+        description={onOpenFolder ? undefined : "Use the command palette to open a folder."}
+        action={onOpenFolder ? <Button size="sm" onClick={onOpenFolder}>Open Folder</Button> : undefined}
+      />
     )
   }
 
@@ -138,7 +134,7 @@ export function ExplorerTab({
           onOpenFile(node.data.entry.uri, toPath(node.data.entry.uri))
         }
       }}
-      emptyState={<div className="p-2 text-xs text-muted-foreground">Loading…</div>}
+      emptyState={<PanelEmpty title="Loading files…" compact />}
       wrapRow={(node, row) => {
         if (node.data.kind !== "root") return row
         const project = node.data

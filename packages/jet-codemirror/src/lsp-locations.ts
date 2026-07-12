@@ -1,6 +1,7 @@
 import type { EditorState, Text } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import { LSPPlugin } from "@codemirror/lsp-client"
+import { canonicalizeFileUri } from "@jet/shared"
 
 export type LspPosition = { line: number; character: number }
 export type LspRange = { start: LspPosition; end: LspPosition }
@@ -69,7 +70,7 @@ export function normalizeLspLocations(result: unknown): LspLocation[] {
     if (!item || typeof item !== "object") continue
     const loc = item as Record<string, unknown>
     if (typeof loc.uri === "string" && isLspRange(loc.range)) {
-      out.push({ uri: loc.uri, range: loc.range })
+      out.push({ uri: canonicalizeFileUri(loc.uri), range: loc.range })
       continue
     }
     if (typeof loc.targetUri === "string") {
@@ -78,7 +79,7 @@ export function normalizeLspLocations(result: unknown): LspLocation[] {
         : isLspRange(loc.targetRange)
           ? loc.targetRange
           : null
-      if (range) out.push({ uri: loc.targetUri, range })
+      if (range) out.push({ uri: canonicalizeFileUri(loc.targetUri), range })
     }
   }
   return out

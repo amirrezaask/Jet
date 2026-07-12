@@ -10,16 +10,6 @@ import { COMMAND_SHELL_CLASS } from "@/lib/command-shell.js"
 import { Lister, type ListerNode } from "@/lister/index.js"
 import { cn } from "@/lib/utils.js"
 
-type MaxWidth = "xs" | "sm" | "md" | "lg" | "xl"
-
-const MAX_WIDTH: Record<MaxWidth, string> = {
-  xs: "max-w-md",
-  sm: "max-w-[32rem]",
-  md: "max-w-[34rem]",
-  lg: "max-w-[40rem]",
-  xl: "max-w-[42rem]",
-}
-
 export interface PaletteShellItem<T> {
   key: string
   value: string
@@ -41,7 +31,7 @@ export interface PaletteShellProps<T> {
   emptyLabel: ReactNode
   statusRow?: ReactNode
   shouldFilter?: boolean
-  maxWidth?: MaxWidth
+  size?: "picker" | "wide"
   contentClassName?: string
   itemClassName?: string
   itemStyle?: (item: T) => CSSProperties | undefined
@@ -62,7 +52,7 @@ export function PaletteShell<T>({
   emptyLabel,
   statusRow,
   shouldFilter,
-  maxWidth = "md",
+  size = "picker",
   contentClassName,
   itemClassName,
   itemStyle,
@@ -98,8 +88,9 @@ export function PaletteShell<T>({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent
+        motion="instant"
+        size={size}
         className={[
-          MAX_WIDTH[maxWidth],
           "max-h-[calc(100dvh-2rem)] overflow-hidden border-border/70 bg-popover p-0 shadow-2xl shadow-black/25",
           contentClassName,
         ]

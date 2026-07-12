@@ -51,7 +51,7 @@ export function PromptDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm" showCloseButton={false}>
+      <DialogContent size="prompt" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}

@@ -6,9 +6,12 @@ import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin"
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin"
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin"
 import {
+  $createLineBreakNode,
   $createParagraphNode,
   $createTextNode,
   $getRoot,
+  $getSelection,
+  $isRangeSelection,
   COMMAND_PRIORITY_HIGH,
   KEY_ENTER_COMMAND,
   type EditorState,
@@ -42,8 +45,11 @@ function setEditorPlainText(text: string): void {
   const root = $getRoot()
   root.clear()
   const paragraph = $createParagraphNode()
-  if (text.length > 0) {
-    paragraph.append($createTextNode(text))
+  const parts = text.split("\n")
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!
+    if (part.length > 0) paragraph.append($createTextNode(part))
+    if (i < parts.length - 1) paragraph.append($createLineBreakNode())
   }
   root.append(paragraph)
 }
@@ -57,7 +63,15 @@ function ComposerCommandKeyPlugin(props: {
       KEY_ENTER_COMMAND,
       event => {
         if (!event) return false
-        if (event.shiftKey) return false
+        if (event.shiftKey) {
+          // WKWebView / plain-text beforeinput path is unreliable for Shift+Enter.
+          event.preventDefault()
+          editor.update(() => {
+            const selection = $getSelection()
+            if ($isRangeSelection(selection)) selection.insertLineBreak()
+          })
+          return true
+        }
         const handled = props.onCommandKeyDown?.(event)
         if (handled) {
           event.preventDefault()

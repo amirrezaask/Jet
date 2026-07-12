@@ -15,7 +15,13 @@ export class Emitter<T> {
 
 import { fileUriToPath } from "./uri.js"
 
-export { type FileUri, isFileUri, pathToFileUri, fileUriToPath } from "./uri.js"
+export {
+  type FileUri,
+  isFileUri,
+  pathToFileUri,
+  fileUriToPath,
+  canonicalizeFileUri,
+} from "./uri.js"
 
 export function basename(uriOrPath: string): string {
   const path = uriOrPath.startsWith("file://") ? fileUriToPath(uriOrPath) : uriOrPath

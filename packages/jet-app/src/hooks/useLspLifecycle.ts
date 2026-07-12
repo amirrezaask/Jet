@@ -104,6 +104,15 @@ export function useLspLifecycle(
   }, [lspClientPool, onOpenFile, workspace])
 
   useEffect(() => {
+    lspClientPool.setServerMessageHandler((message, kind) => {
+      showJetToast(message, {
+        variant: kind === "error" ? "destructive" : kind === "warning" ? "warning" : "info",
+      })
+    })
+    return () => lspClientPool.setServerMessageHandler(null)
+  }, [lspClientPool])
+
+  useEffect(() => {
     if (!window.jet?.lsp?.onCrashed) return
     return window.jet.lsp.onCrashed(id => {
       lspClientPool.releaseConnection(id)

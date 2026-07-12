@@ -137,10 +137,10 @@ function AnimatedDropPreview({
     let frame: number | null = null
     let lastFrame = performance.now()
     const current = currentRef.current ?? {
-      x: panelSize.w / 2,
-      y: panelSize.h / 2,
-      w: 0,
-      h: 0,
+      x: target.x + target.w * 0.025,
+      y: target.y + target.h * 0.025,
+      w: target.w * 0.95,
+      h: target.h * 0.95,
     }
     currentRef.current = current
 
@@ -153,11 +153,13 @@ function AnimatedDropPreview({
 
     if (prefersReducedMotion()) {
       Object.assign(current, target)
+      element.style.opacity = "1"
       paint()
       return
     }
 
     element.style.willChange = "transform"
+    element.style.opacity = "1"
     const tick = (now: number) => {
       const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000))
       lastFrame = now
@@ -192,7 +194,7 @@ function AnimatedDropPreview({
   return (
     <div
       ref={elementRef}
-      className="pointer-events-none rounded-sm border border-primary/60 bg-primary/15"
+      className="pointer-events-none rounded-sm border border-primary/60 bg-primary/15 opacity-0 transition-opacity duration-[var(--jet-motion-fast)] ease-[var(--jet-ease-out)]"
       style={{
         position: "absolute",
         left: 0,
@@ -200,7 +202,7 @@ function AnimatedDropPreview({
         width: target.w,
         height: target.h,
         transformOrigin: "0 0",
-        transform: `translate3d(${panelSize.w / 2}px, ${panelSize.h / 2}px, 0) scale(0)`,
+        transform: `translate3d(${target.x + target.w * 0.025}px, ${target.y + target.h * 0.025}px, 0) scale(0.95)`,
       }}
     />
   )

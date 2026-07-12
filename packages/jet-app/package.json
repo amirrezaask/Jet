@@ -20,7 +20,6 @@
     "@jet/shared": "workspace:*",
     "@jet/ui": "workspace:*",
     "@jet/workspace": "workspace:*",
-    "motion": "^12.16.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

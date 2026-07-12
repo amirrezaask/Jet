@@ -20,3 +20,9 @@ export function fileUriToPath(uri: string): string {
   if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1)
   return path
 }
+
+/** Decode + re-encode so LSP/host URIs match Jet `pathToFileUri` form. */
+export function canonicalizeFileUri(uri: string): FileUri {
+  if (!uri.startsWith("file://")) return uri as FileUri
+  return pathToFileUri(fileUriToPath(uri))
+}

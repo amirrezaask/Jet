@@ -35,7 +35,6 @@ export function OutlineOverlay({
       title="Document Outline"
       description="Jump to a symbol in the current file."
       placeholder="Filter symbols…"
-      maxWidth="xs"
       items={items}
       onSelect={sym => onSelect(sym.line)}
       emptyLabel="No symbols found"

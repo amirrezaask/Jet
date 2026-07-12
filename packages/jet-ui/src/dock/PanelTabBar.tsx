@@ -16,6 +16,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { XIcon } from "lucide-react"
 import type { DropAction, PanelId, PanelView } from "@jet/shared"
 import { Button } from "@/components/ui/button.js"
+import { SidebarTrigger } from "@/components/ui/sidebar.js"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
 import { usePanelDrag } from "./PanelDragContext.js"
 import { tabBarDndId, tabDndId, type TabDragData } from "./tab-dnd-types.js"
@@ -155,6 +156,40 @@ const SortableTabTrigger = memo(function SortableTabTrigger({
   )
 })
 
+function TabBarLeadingChrome({
+  windowChrome,
+  windowChromeLeading,
+  showSidebarToggle,
+}: {
+  windowChrome: boolean
+  windowChromeLeading: boolean
+  showSidebarToggle: boolean
+}) {
+  if (!windowChromeLeading && !showSidebarToggle) return null
+  return (
+    <>
+      {windowChromeLeading ? (
+        <div
+          aria-hidden
+          data-jet-traffic-light-spacer
+          data-tauri-drag-region={windowChrome ? "true" : undefined}
+          className="shrink-0 self-stretch"
+          style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
+        />
+      ) : null}
+      {showSidebarToggle ? (
+        <div
+          className="flex shrink-0 items-center self-stretch pr-1"
+          data-tauri-drag-region="false"
+          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+        >
+          <SidebarTrigger data-jet-sidebar-toggle className="size-7 text-muted-foreground" />
+        </div>
+      ) : null}
+    </>
+  )
+}
+
 export function PanelTabBar({
   panelId,
   view,
@@ -165,6 +200,7 @@ export function PanelTabBar({
   onCloseTab,
   windowChrome = false,
   windowChromeLeading = false,
+  showSidebarToggle = false,
 }: {
   panelId: PanelId
   view: PanelView
@@ -177,6 +213,8 @@ export function PanelTabBar({
   windowChrome?: boolean
   /** macOS Overlay: traffic-light clearance when this bar is top-left chrome. */
   windowChromeLeading?: boolean
+  /** Sidebar closed — compact reopen control at leading edge (no sidebar-width reserve). */
+  showSidebarToggle?: boolean
   /** @deprecated handled by TabDndRoot */
   onReorderTab?: (tabId: string, toIndex: number) => void
   /** @deprecated handled by TabDndRoot */
@@ -201,24 +239,24 @@ export function PanelTabBar({
     disabled: !drag.tabSource,
   })
 
+  const leading = (
+    <TabBarLeadingChrome
+      windowChrome={windowChrome}
+      windowChromeLeading={windowChromeLeading}
+      showSidebarToggle={showSidebarToggle}
+    />
+  )
+
   if (!hasTabs) {
     return (
       <div
         data-jet-tab-bar
         data-jet-tab-bar-drag={windowChrome ? "true" : undefined}
         data-tauri-drag-region={windowChrome ? "true" : undefined}
-        className="flex w-full min-h-[var(--jet-window-chrome-height)] shrink-0 items-stretch"
+        className="flex w-full min-h-[var(--jet-window-chrome-height)] shrink-0 items-stretch px-2"
         style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
       >
-        {windowChromeLeading ? (
-          <div
-            aria-hidden
-            data-jet-traffic-light-spacer
-            data-tauri-drag-region={windowChrome ? "true" : undefined}
-            className="shrink-0 self-stretch"
-            style={{ WebkitAppRegion: "drag" } as CSSProperties}
-          />
-        ) : null}
+        {leading}
         <div
           aria-hidden
           className="min-w-4 flex-1 self-stretch"
@@ -245,15 +283,7 @@ export function PanelTabBar({
         )}
         style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
       >
-        {windowChromeLeading ? (
-          <div
-            aria-hidden
-            data-jet-traffic-light-spacer
-            data-tauri-drag-region="true"
-            className="shrink-0 self-stretch"
-            style={{ WebkitAppRegion: "drag" } as CSSProperties}
-          />
-        ) : null}
+        {leading}
         <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
           <TabsList
             className="my-1 h-[calc(var(--jet-window-chrome-height)-0.5rem)]! w-auto max-w-full justify-start overflow-x-auto"
