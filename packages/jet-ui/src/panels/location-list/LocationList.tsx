@@ -21,6 +21,9 @@ export type LocationListProps = {
   emptyDescription?: string
   header?: React.ReactNode
   feed?: string
+  /** Show Lister local-filter input (default off; search tab enables). */
+  showInput?: boolean
+  filterPlaceholder?: string
 }
 
 export function LocationList({
@@ -32,6 +35,8 @@ export function LocationList({
   emptyDescription = "Nothing to show in this list.",
   header,
   feed,
+  showInput = false,
+  filterPlaceholder = "Filter…",
 }: LocationListProps) {
   const listerItems = useMemo<ListerNode<ListItem>[]>(
     () =>
@@ -56,7 +61,9 @@ export function LocationList({
         mode="flat"
         flatVariant="plain"
         filter="local"
-        showInput={false}
+        showInput={showInput}
+        autoFocusInput={false}
+        placeholder={filterPlaceholder}
         items={listerItems}
         estimateSize={() => readLocationRowHeight()}
         listClassName={cn(

@@ -39,6 +39,11 @@ export type ListerProps<T> = {
    * Typing always reveals the input while `query` is non-empty (all listers).
    */
   showInput?: boolean
+  /**
+   * Focus the search field on mount when visible.
+   * Defaults to `showInput || query.length > 0` when omitted.
+   */
+  autoFocusInput?: boolean
   placeholder?: string
   query?: string
   onQueryChange?: (query: string) => void

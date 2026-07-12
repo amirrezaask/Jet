@@ -169,6 +169,8 @@ export function SearchLocationList({
       emptyTitle="No results"
       emptyDescription="Try another query."
       header={header}
+      showInput
+      filterPlaceholder="Filter results…"
     />
   )
 }

@@ -159,6 +159,7 @@ export function Lister<T>({
   source,
   render,
   showInput = false,
+  autoFocusInput,
   placeholder,
   query: queryProp,
   onQueryChange,
@@ -694,7 +695,7 @@ export function Lister<T>({
           placeholder={placeholder}
           disabled={inputDisabled}
           inputRef={searchInputRef}
-          autoFocus={showInput || query.length > 0}
+          autoFocus={autoFocusInput ?? (showInput || query.length > 0)}
         />
       ) : null}
       {betweenInputAndList}

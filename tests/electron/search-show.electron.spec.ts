@@ -1,13 +1,6 @@
 import { expect, test } from "@playwright/test"
 import {
   expectContainsText,
-  expectLocatorAttached,
-  expectLocatorAttribute,
-  expectLocatorCount,
-  expectLocatorFocused,
-  expectLocatorHidden,
-  expectLocatorVisible,
-  expectSelectorHidden,
   expectSelectorVisible,
   expectNotContainsText,
 } from "../shell/assert.js"
@@ -24,12 +17,24 @@ test.describe("electron search show", () => {
       await waitForSearchReady(page)
       await execCommand(page, "search.show")
 
+      await expectSelectorVisible(
+        page,
+        `${SEARCH_LIST_PANEL} [data-jet-lister] [data-slot="command-input"]`,
+      )
+
       await page.locator('input[type="search"]').click()
       await page.keyboard.type("greet")
       await page.waitForTimeout(2500)
 
       const items = searchListItems()
       await expectNotContainsText(page, SEARCH_LIST_PANEL, "No results")
+      await expectLayout(page, { selector: items, minItems: 1, minRowHeight: 18 })
+      await expectContainsText(page, SEARCH_LIST_PANEL, "utils.ts")
+
+      const filterInput = page.locator(
+        `${SEARCH_LIST_PANEL} [data-jet-lister] [data-slot="command-input"]`,
+      )
+      await filterInput.fill("utils")
       await expectLayout(page, { selector: items, minItems: 1, minRowHeight: 18 })
       await expectContainsText(page, SEARCH_LIST_PANEL, "utils.ts")
 
@@ -41,3 +46,4 @@ test.describe("electron search show", () => {
     }
   })
 })
+
