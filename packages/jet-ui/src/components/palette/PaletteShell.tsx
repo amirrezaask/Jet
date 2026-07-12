@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react"
 import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command.js"
-import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.js"
-import { COMMAND_NO_SELECTION, COMMAND_SHELL_CLASS } from "@/lib/command-shell.js"
+import { COMMAND_SHELL_CLASS } from "@/lib/command-shell.js"
+import { Lister, type ListerNode } from "@/lister/index.js"
+import { cn } from "@/lib/utils.js"
 
 type MaxWidth = "xs" | "sm" | "md" | "lg" | "xl"
 
@@ -80,31 +75,21 @@ export function PaletteShell<T>({
     onQueryChange?.(next)
   }
 
-  const [selectedValue, setSelectedValue] = useState(COMMAND_NO_SELECTION)
-
   useEffect(() => {
-    if (!open) {
-      if (!isControlled) setUncontrolledQuery("")
-      setSelectedValue(COMMAND_NO_SELECTION)
-    }
+    if (!open && !isControlled) setUncontrolledQuery("")
   }, [open, isControlled])
 
-  useEffect(() => {
-    if (query.trim() === "") {
-      setSelectedValue(COMMAND_NO_SELECTION)
-      return
-    }
-    if (items.length === 0) return
-    if (!items.some(it => it.value === selectedValue)) {
-      setSelectedValue(items[0]!.value)
-    }
-  }, [items, query, selectedValue])
+  const filterMode = shouldFilter === false ? "external" : "local"
 
-  const valueMap = useMemo(() => {
-    const m = new Map<string, T>()
-    for (const it of items) m.set(it.value, it.data)
-    return m
-  }, [items])
+  const listerItems = useMemo<ListerNode<T>[]>(
+    () =>
+      items.map(it => ({
+        id: it.key,
+        searchText: it.value,
+        data: it.data,
+      })),
+    [items],
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -122,45 +107,37 @@ export function PaletteShell<T>({
           .join(" ")}
         showCloseButton={false}
       >
-        <Command
-          className={`${COMMAND_SHELL_CLASS} min-h-0`}
-          shouldFilter={shouldFilter}
-          value={selectedValue}
-          onValueChange={value => {
-            if (query.trim() === "") {
-              setSelectedValue(COMMAND_NO_SELECTION)
-              return
-            }
-            setSelectedValue(value)
-          }}
-        >
-          <CommandInput
+        <div className={cn(COMMAND_SHELL_CLASS, "flex min-h-0 flex-col")}>
+          <Lister
+            listId="jet:palette"
+            mode="flat"
+            flatVariant="palette"
+            showInput
             placeholder={placeholder}
-            value={query}
-            onValueChange={setQuery}
-            disabled={disabled}
+            inputDisabled={disabled}
+            query={query}
+            onQueryChange={setQuery}
+            filter={filterMode}
+            requireQueryForSelection
+            items={listerItems}
+            itemClassName={cn("px-2 py-3", itemClassName)}
+            itemStyle={node => itemStyle?.(node.data)}
+            estimateSize={() => 48}
+            betweenInputAndList={statusRow}
+            listClassName="min-h-0 max-h-[min(var(--jet-overlay-list-max),calc(100dvh-5rem))] pb-1"
+            className="min-h-0"
+            emptyState={
+              <div data-slot="command-empty" className="py-6 text-center text-sm">
+                {emptyLabel}
+              </div>
+            }
+            onActivate={node => {
+              onSelect(node.data, query)
+              onOpenChange(false)
+            }}
+            render={(node, ctx) => renderItem(node.data, ctx.query)}
           />
-          {statusRow}
-          <CommandList className="min-h-0 max-h-[min(var(--jet-overlay-list-max),calc(100dvh-5rem))] pb-1">
-            <CommandEmpty>{emptyLabel}</CommandEmpty>
-            <CommandItem value={COMMAND_NO_SELECTION} className="hidden" aria-hidden />
-            {items.map(it => (
-              <CommandItem
-                key={it.key}
-                value={it.value}
-                className={itemClassName}
-                style={itemStyle?.(it.data)}
-                onSelect={() => {
-                  const data = valueMap.get(it.value) ?? it.data
-                  onSelect(data, query)
-                  onOpenChange(false)
-                }}
-              >
-                {renderItem(it.data, query)}
-              </CommandItem>
-            ))}
-          </CommandList>
-        </Command>
+        </div>
       </DialogContent>
     </Dialog>
   )

@@ -92,7 +92,7 @@
   --jet-fs-xl: 1.85rem;
   /* Row-height contract:
    *   --jet-row-height          → tree/dense rows (file explorer, terminal explorer,
-   *                                any TreeView). Single-line label, one icon.
+   *                                any Lister tree). Single-line label, one icon.
    *   --jet-location-row-height → flat lists with two-line label+path
    *                                (LocationList: search, problems, references, defs).
    * Do not merge. Trees are for navigation density; location lists are for

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { EXPLORER_LIST_ID } from "@/explorer/focus.js"
 import { Copy, Folder, Focus, Plus, Trash2 } from "lucide-react"
 import type { WorkspaceEntry, WorkspaceManager } from "@jet/workspace"
-import { TreeView, type TreeDataSource, type TreeNode } from "@/components/TreeView.js"
+import { Lister, type ListerDataSource, type ListerNode } from "@/lister/index.js"
 import { Button } from "@/components/ui/button.js"
 import { FileIcon } from "@/lib/file-icon.js"
 import { cn } from "@/lib/utils.js"
@@ -33,7 +33,7 @@ function toPath(uri: string): string {
 }
 
 function useExplorerSource(manager: WorkspaceManager): {
-  source: TreeDataSource<ExplorerData>
+  source: ListerDataSource<ExplorerData>
   rootIds: string[]
   activeRootId: string | null
 } {
@@ -53,12 +53,13 @@ function useExplorerSource(manager: WorkspaceManager): {
     return manager.folders.map(f => f.root.uri)
   }, [rev, manager])
 
-  const source = useMemo<TreeDataSource<ExplorerData>>(() => {
+  const source = useMemo<ListerDataSource<ExplorerData>>(() => {
     return {
-      getRoots(): TreeNode<ExplorerData>[] {
+      getRoots(): ListerNode<ExplorerData>[] {
         return manager.folders.map(f => ({
           id: f.root.uri,
           isBranch: true,
+          searchText: `${f.root.name} ${f.root.path}`,
           data: {
             kind: "root",
             uri: f.root.uri,
@@ -67,16 +68,17 @@ function useExplorerSource(manager: WorkspaceManager): {
           },
         }))
       },
-      async getChildren(id): Promise<TreeNode<ExplorerData>[]> {
+      async getChildren(id): Promise<ListerNode<ExplorerData>[]> {
         const entries = sortEntries(await manager.readDir(id))
         return entries.map(entry => ({
           id: entry.uri,
           isBranch: entry.isDirectory,
+          searchText: entry.name,
           data: { kind: "entry", entry },
         }))
       },
     }
-    // rev in deps → new source instance when folders change → invalidates cache in TreeView
+    // rev in deps → new source instance when folders change → invalidates cache
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manager, rev])
 
@@ -116,15 +118,18 @@ export function ExplorerTab({
   }
 
   return (
-      <TreeView<ExplorerData>
-        listId={EXPLORER_LIST_ID}
-        source={source}
-        ariaLabel="Explorer"
-        rowAriaLabel={node =>
-          node.data.kind === "root" ? node.data.name : node.data.entry.name
-        }
-        initiallyExpanded={activeRootId ? [activeRootId] : rootIds.slice(0, 1)}
-        syncExpanded
+    <Lister<ExplorerData>
+      listId={EXPLORER_LIST_ID}
+      mode="tree"
+      source={source}
+      filter="local"
+      showInput={false}
+      aria-label="Explorer"
+      rowAriaLabel={node =>
+        node.data.kind === "root" ? node.data.name : node.data.entry.name
+      }
+      initiallyExpanded={activeRootId ? [activeRootId] : rootIds.slice(0, 1)}
+      syncExpanded
       activeId={activeRootId}
       onActivate={node => {
         if (node.data.kind === "root") {
@@ -139,7 +144,7 @@ export function ExplorerTab({
         const project = node.data
         return (
           <ContextMenu>
-            <ContextMenuTrigger asChild><div>{row}</div></ContextMenuTrigger>
+            <ContextMenuTrigger asChild><div className="h-full w-full">{row}</div></ContextMenuTrigger>
             <ContextMenuContent>
               <ContextMenuGroup>
                 <ContextMenuItem onSelect={() => onActivateProject?.(project.uri)}>
@@ -164,7 +169,7 @@ export function ExplorerTab({
           </ContextMenu>
         )
       }}
-      renderRow={(node, ctx) => {
+      render={(node, ctx) => {
         if (node.data.kind === "root") {
           return (
             <>

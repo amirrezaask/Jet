@@ -27,6 +27,17 @@ export { focusExplorerPanel } from "./explorer/focus.js"
 export { focusTerminalExplorerPanel } from "./terminal-explorer/focus.js"
 export { CommandPalette } from "./components/CommandPalette.js"
 export { PaletteShell, type PaletteShellItem, type PaletteShellProps } from "./components/palette/PaletteShell.js"
+export {
+  Lister,
+  fuzzyFilter,
+  fuzzyScore,
+  type ListerDataSource,
+  type ListerFilterMode,
+  type ListerItemContext,
+  type ListerNode,
+  type ListerNodeId,
+  type ListerProps,
+} from "./lister/index.js"
 export { GotoLineModal } from "./components/GotoLineModal.js"
 export { OutlineOverlay, type OutlineEntry } from "./components/OutlineOverlay.js"
 export { QuickOpenOverlay } from "./components/QuickOpenOverlay.js"

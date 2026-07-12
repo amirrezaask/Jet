@@ -1,5 +1,7 @@
-/** Registry of scroll-container refs for list-style panels keyed by listId. */
+/** Registry of scroll-container refs + live controllers for list-style panels. */
+
 const containers = new Map<string, HTMLElement>()
+const controllers = new Map<string, ListPanelController>()
 
 const LIST_ITEM_SELECTOR = "[data-jet-list-item]"
 
@@ -22,6 +24,18 @@ export function registerListPanel(listId: string, el: HTMLElement | null): () =>
   }
 }
 
+/** Live navigation API (preferred over DOM scan — works with virtualized lists). */
+export function registerListPanelController(
+  listId: string,
+  controller: ListPanelController | null,
+): () => void {
+  if (!controller) return () => {}
+  controllers.set(listId, controller)
+  return () => {
+    if (controllers.get(listId) === controller) controllers.delete(listId)
+  }
+}
+
 export function getListPanel(listId: string): HTMLElement | null {
   return containers.get(listId) ?? null
 }
@@ -33,6 +47,41 @@ export function getListItems(listId: string): HTMLElement[] {
 }
 
 export function focusListPanel(listId: string, action: ListFocusAction): boolean {
+  const live = controllers.get(listId)
+  if (live) {
+    switch (action) {
+      case "focusNext":
+        live.focusNext()
+        return true
+      case "focusPrev":
+        live.focusPrev()
+        return true
+      case "focusFirstItem":
+        live.focusFirstItem()
+        return true
+      case "focusLastItem":
+        live.focusLastItem()
+        return true
+      case "activate":
+        live.activate()
+        return true
+      case "focusPageUp":
+        live.focusPageUp()
+        return true
+      case "focusPageDown":
+        live.focusPageDown()
+        return true
+      case "focusFirst":
+        live.focusFirst()
+        return true
+      case "focusLast":
+        live.focusLast()
+        return true
+      default:
+        return false
+    }
+  }
+
   const el = getListPanel(listId)
   if (!el) return false
   const items = getListItems(listId)
@@ -81,6 +130,11 @@ export function focusListPanel(listId: string, action: ListFocusAction): boolean
 }
 
 export function focusFirstListItem(listId: string): boolean {
+  const live = controllers.get(listId)
+  if (live) {
+    live.focusFirstItem()
+    return true
+  }
   const el = getListPanel(listId)
   if (!el) return false
   const first = el.querySelector<HTMLElement>(LIST_ITEM_SELECTOR)
@@ -102,6 +156,8 @@ export type ListPanelController = {
 }
 
 export function getListPanelController(listId: string): ListPanelController | null {
+  const live = controllers.get(listId)
+  if (live) return live
   if (!getListPanel(listId)) return null
   return {
     focusNext: () => {

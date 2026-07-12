@@ -21,7 +21,7 @@ import {
 } from "../components/ui/dropdown-menu.js"
 import { Button } from "../components/ui/button.js"
 import { Input } from "../components/ui/input.js"
-import { TreeView, type TreeDataSource, type TreeNode } from "../components/TreeView.js"
+import { Lister, type ListerDataSource, type ListerNode } from "../lister/index.js"
 import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
 
 export type TerminalExplorerEntry = {
@@ -101,21 +101,23 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
   groupsRef.current = sortedGroups
   const subscribersRef = useRef(new Set<() => void>())
 
-  const source = useMemo<TreeDataSource<TerminalNodeData>>(() => {
+  const source = useMemo<ListerDataSource<TerminalNodeData>>(() => {
     return {
-      getRoots(): TreeNode<TerminalNodeData>[] {
+      getRoots(): ListerNode<TerminalNodeData>[] {
         return groupsRef.current.map(group => ({
           id: group.id,
           isBranch: true,
+          searchText: `${group.name} ${group.path}`,
           data: { kind: "group", group },
         }))
       },
-      getChildren(id): TreeNode<TerminalNodeData>[] {
+      getChildren(id): ListerNode<TerminalNodeData>[] {
         const group = groupsRef.current.find(g => g.id === id)
         if (!group) return []
         return group.terminals.map((entry, index) => ({
           id: entry.tabId,
           isBranch: false,
+          searchText: entry.label,
           data: { kind: "terminal", entry, index },
         }))
       },
@@ -149,9 +151,12 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
   }
 
   return (
-    <TreeView<TerminalNodeData>
+    <Lister<TerminalNodeData>
       listId={TERMINAL_EXPLORER_LIST_ID}
-      ariaLabel="Terminals"
+      mode="tree"
+      filter="local"
+      showInput={false}
+      aria-label="Terminals"
       source={source}
       rowAriaLabel={node =>
         node.data.kind === "group" ? node.data.group.name : node.data.entry.label
@@ -247,7 +252,7 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
             const group = node.data.group
             return (
               <ContextMenu>
-                <ContextMenuTrigger asChild><div>{row}</div></ContextMenuTrigger>
+                <ContextMenuTrigger asChild><div className="h-full w-full">{row}</div></ContextMenuTrigger>
                 <ContextMenuContent>
                   <ContextMenuGroup>
                     <ContextMenuItem onSelect={() => onActivateProject(group.rootUri)}>
@@ -292,7 +297,7 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
           const entry = node.data.entry
           return (
             <ContextMenu>
-              <ContextMenuTrigger asChild><div>{row}</div></ContextMenuTrigger>
+              <ContextMenuTrigger asChild><div className="h-full w-full">{row}</div></ContextMenuTrigger>
               <ContextMenuContent>
                 <ContextMenuGroup>
                   <ContextMenuItem onSelect={() => onFocusTerminal(entry.panelId, entry.tabId)}>
@@ -330,7 +335,7 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
             </ContextMenu>
           )
         }}
-        renderRow={node => {
+        render={node => {
           if (node.data.kind === "group") {
             const group = node.data.group
             const isActive = group.rootUri === activeProjectRootUri

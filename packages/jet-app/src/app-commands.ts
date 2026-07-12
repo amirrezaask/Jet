@@ -871,5 +871,6 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.action.revealDefinition", fn: "goToDefinition", title: "Go to Definition", category: "Editor" },
   { id: "editor.action.triggerParameterHints", fn: "triggerParameterHints", title: "Trigger Parameter Hints", category: "Editor", aliases: ["signature help", "parameter hints"] },
   { id: "list.focusDown", fn: "listFocusNext", title: "List Focus Down", category: "List" },
+  { id: "list.focusUp", fn: "listFocusPrev", title: "List Focus Up", category: "List" },
   { id: "list.open", fn: "listFocusActivate", title: "Open Focused List Item", category: "List" },
 ] as const

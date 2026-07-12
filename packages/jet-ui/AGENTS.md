@@ -49,7 +49,9 @@ Only `lucide-react`. Default size class: `size-4`. Do not import other icon libr
 
 Location: `src/components/palette/PaletteShell.tsx`.
 
-All "Dialog + Command list + input + result" palettes MUST use this. Adapters:
+List engine: **`Lister`** (`src/lister/`) — flat/tree virt list, fuzzy filter, search input. `showInput` = initial visibility only; typing always reveals the field while query non-empty. PaletteShell = Dialog chrome + Lister (`showInput`, `flatVariant="palette"`). Explorer / LocationList use same Lister (`showInput={false}` until type).
+
+All "Dialog + list + input + result" palettes MUST use PaletteShell. Adapters:
 - `CommandPalette`
 - `BufferListOverlay`
 - `OutlineOverlay`

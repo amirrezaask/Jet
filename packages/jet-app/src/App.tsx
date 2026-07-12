@@ -1783,6 +1783,13 @@ export function JetApp() {
     const noOverlay = (ctx: KeymapContext) => !anyOverlayOpen(ctx)
     keymaps.registerUser([
       ...createDefaultKeybindings(appCommands),
+      bind("ArrowDown", appCommands.listFocusNext, ctx => ctx.listFocus && noOverlay(ctx)),
+      bind("ArrowUp", appCommands.listFocusPrev, ctx => ctx.listFocus && noOverlay(ctx)),
+      bind("Enter", appCommands.listFocusActivate, ctx => ctx.listFocus && noOverlay(ctx)),
+      bind("PageDown", appCommands.listFocusPageDown, ctx => ctx.listFocus && noOverlay(ctx)),
+      bind("PageUp", appCommands.listFocusPageUp, ctx => ctx.listFocus && noOverlay(ctx)),
+      bind("Home", appCommands.listFocusFirst, ctx => ctx.listFocus && noOverlay(ctx)),
+      bind("End", appCommands.listFocusLast, ctx => ctx.listFocus && noOverlay(ctx)),
       bind("Cmd-Backspace", appCommands.archiveAgent, ctx => ctx.agentChatFocus && noOverlay(ctx)),
       bind(
         "Cmd-Shift-Backspace",
