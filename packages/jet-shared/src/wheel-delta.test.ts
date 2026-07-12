@@ -32,30 +32,33 @@ test("Chromium pixel deltas stay 1:1", () => {
       { deltaY: 720, deltaMode: 0 },
       16,
       800,
-      { webkitEngine: false, devicePixelRatio: 2 },
+      { webkitEngine: false },
     ),
     720,
   )
 })
 
-test("WebKit pixel deltas divide by devicePixelRatio", () => {
+test("WebKit pixel deltas stay 1:1 by default (no DPR divide)", () => {
   assert.equal(
     wheelDeltaPixels(
       { deltaY: 720, deltaMode: 0 },
       16,
       800,
-      { webkitEngine: true, devicePixelRatio: 2, webkitGain: APPLE_WEBKIT_WHEEL_GAIN },
+      { webkitEngine: true, webkitGain: APPLE_WEBKIT_WHEEL_GAIN },
+    ),
+    720,
+  )
+})
+
+test("WebKit gain scales pixel deltas", () => {
+  assert.equal(
+    wheelDeltaPixels(
+      { deltaY: 720, deltaMode: 0 },
+      16,
+      800,
+      { webkitEngine: true, webkitGain: 0.5 },
     ),
     360,
-  )
-  assert.equal(
-    wheelDeltaPixels(
-      { deltaY: 720, deltaMode: 0 },
-      16,
-      800,
-      { webkitEngine: true, devicePixelRatio: 3 },
-    ),
-    240,
   )
 })
 
@@ -83,6 +86,6 @@ test("reads deltaMode before deltaY for WebKit unit-switching quirk", () => {
       return 40
     },
   }
-  wheelDeltaPixels(event, 16, 800, { webkitEngine: true, devicePixelRatio: 2 })
+  wheelDeltaPixels(event, 16, 800, { webkitEngine: true })
   assert.deepEqual(order, ["mode", "y"])
 })

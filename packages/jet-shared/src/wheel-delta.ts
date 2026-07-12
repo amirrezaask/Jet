@@ -1,14 +1,17 @@
 /**
  * Wheel → CSS-pixel delta for Jet's RAD scroll hijack.
  *
- * Chromium (Electron) pixel deltas map ~1:1 to `scrollTop`.
+ * Chromium pixel deltas map ~1:1 to `scrollTop`.
  * Apple WebKit / WKWebView (Tauri macOS):
- * 1. Must read `deltaMode` **before** `deltaY` — WebKit changes delta units
- *    based on access order (MDN). Reading `deltaY` first then treating
- *    `deltaMode === LINE` multiplies already-pixel values by lineHeight →
- *    runaway scroll.
- * 2. Pixel-mode deltas are denser than Chromium for the same gesture on
- *    retina (`devicePixelRatio` ≥ 2), so divide by DPR.
+ * Must read `deltaMode` **before** `deltaY` — WebKit changes delta units
+ * based on access order (MDN). Reading `deltaY` first then treating
+ * `deltaMode === LINE` multiplies already-pixel values by lineHeight →
+ * runaway scroll.
+ *
+ * Do **not** divide pixel deltas by `devicePixelRatio`. An earlier retina
+ * ÷DPR pass over-damped trackpad scroll (~half speed on 2× displays). The
+ * runaway was the deltaMode order quirk, not denser CSS pixels. Tune feel
+ * with `APPLE_WEBKIT_WHEEL_GAIN` / `webkitGain` if needed.
  */
 
 export function isAppleWebKitEngine(userAgent?: string): boolean {
@@ -26,11 +29,9 @@ export type WheelDeltaLike = {
 export type WheelDeltaPixelsOptions = {
   /** Override engine detection (tests). */
   webkitEngine?: boolean
-  /** Override DPR (tests). Defaults to `window.devicePixelRatio`. */
-  devicePixelRatio?: number
   /**
-   * Extra gain after DPR normalization on WebKit only.
-   * 1 = DPR-only; lower if still too fast after DPR fix.
+   * Extra gain on WebKit pixel-mode only.
+   * 1 = raw deltaY (default). Raise/lower if trackpad still feels off.
    */
   webkitGain?: number
 }
@@ -39,7 +40,7 @@ const DOM_DELTA_PIXEL = 0
 const DOM_DELTA_LINE = 1
 const DOM_DELTA_PAGE = 2
 
-/** Default extra WebKit gain after dividing by DPR. */
+/** Default WebKit pixel-mode gain (1 = 1:1 with deltaY). */
 export const APPLE_WEBKIT_WHEEL_GAIN = 1
 
 export function wheelDeltaPixels(
@@ -63,13 +64,8 @@ export function wheelDeltaPixels(
     pixels = deltaY
     const webkit = opts.webkitEngine ?? isAppleWebKitEngine()
     if (webkit && deltaMode === DOM_DELTA_PIXEL) {
-      let dpr = opts.devicePixelRatio ?? 1
-      if (opts.devicePixelRatio == null && typeof globalThis !== "undefined") {
-        const maybe = (globalThis as unknown as { devicePixelRatio?: number }).devicePixelRatio
-        if (typeof maybe === "number" && Number.isFinite(maybe) && maybe > 0) dpr = maybe
-      }
       const gain = opts.webkitGain ?? APPLE_WEBKIT_WHEEL_GAIN
-      pixels = (deltaY / Math.max(1, dpr)) * gain
+      pixels = deltaY * gain
     }
   }
 

@@ -84,6 +84,7 @@ export type BuildAppCommandsDeps = {
   setPaletteOpen: (open: boolean) => void
   setQuickOpenOpen: (open: boolean) => void
   setBufferListOpen: (open: boolean) => void
+  setTerminalListOpen: (open: boolean) => void
   setOpenFileOpen: (open: boolean) => void
   setCdOpen: (open: boolean) => void
   setAddWorkspaceOpen: (open: boolean) => void
@@ -319,6 +320,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       syncOpenBuffersFromPanels()
       deps.setBufferListOpen(true)
     },
+    terminalList: () => deps.setTerminalListOpen(true),
     openFile: () => {
       deps.setOpenFileOpen(true)
     },
@@ -817,6 +819,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "ui.showCommandPalette", fn: "palette", title: "Show Command Palette", category: "UI", aliases: ["commands", "palette", "help"] },
   { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly"] },
   { id: "workspace.bufferList", fn: "bufferList", title: "Buffer List", category: "Workspace", aliases: ["open buffers", "switch buffer"] },
+  { id: "terminal.list", fn: "terminalList", title: "Terminal List", category: "View", aliases: ["switch terminal", "terminal lister"] },
   { id: "workspace.saveFile", fn: "save", title: "Save File", category: "Workspace", aliases: ["write"] },
   { id: "workspace.openFile", fn: "openFile", title: "Open File", category: "Workspace", aliases: ["browse file"] },
   { id: "workspace.openFolder", fn: "openFolder", title: "Open Folder", category: "Workspace", aliases: ["open workspace"] },

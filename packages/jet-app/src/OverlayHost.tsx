@@ -6,6 +6,7 @@ import {
   OutlineOverlay,
   ProjectSwitcherOverlay,
   QuickOpenOverlay,
+  TerminalListOverlay,
   SettingsOverlay,
   showJetToast,
   bundledThemeList,
@@ -14,7 +15,7 @@ import { useOverlayController } from "./hooks/OverlayController.js"
 
 export default function OverlayHost() {
   const { state, workspace, handlers } = useOverlayController()
-  const { open, outlineSymbols, appearanceSettings, projects, paletteCommands, searchSupported, searchScanReady } =
+  const { open, outlineSymbols, appearanceSettings, projects, paletteCommands, searchSupported, searchScanReady, terminalGroups } =
     state
   const workspaceFolders = workspace.folders
 
@@ -31,8 +32,19 @@ export default function OverlayHost() {
           open
           onOpenChange={v => handlers.setOverlayOpen("quickOpen", v)}
           scanReady={searchScanReady}
+          workspaces={workspaceFolders.map(folder => ({ id: folder.id, name: folder.root.name }))}
+          defaultWorkspaceId={workspace.manager.activeFolder?.id ?? null}
           onSearch={handlers.onQuickOpenSearch}
           onSelect={handlers.onQuickOpenSelect}
+        />
+      ) : null}
+
+      {open.terminalList ? (
+        <TerminalListOverlay
+          open
+          onOpenChange={v => handlers.setOverlayOpen("terminalList", v)}
+          groups={terminalGroups}
+          onSelect={handlers.onTerminalSelect}
         />
       ) : null}
 

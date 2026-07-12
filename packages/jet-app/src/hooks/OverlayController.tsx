@@ -6,13 +6,14 @@ import {
   useReducer,
   type ReactNode,
 } from "react"
-import type { JetAppearanceSettings, OutlineEntry } from "@jet/ui"
+import type { JetAppearanceSettings, OutlineEntry, TerminalExplorerGroup, TerminalListEntry } from "@jet/ui"
 import type { JetProject, WorkspaceFolder, WorkspaceService } from "@jet/workspace"
 
 export type OverlayId =
   | "gotoLine"
   | "quickOpen"
   | "bufferList"
+  | "terminalList"
   | "openFile"
   | "folderPicker"
   | "switchFolder"
@@ -38,6 +39,7 @@ type OverlayState = {
     aliases?: string[]
     recent?: boolean
   }>
+  terminalGroups: TerminalExplorerGroup[]
 }
 
 type OverlayAction =
@@ -47,6 +49,7 @@ type OverlayAction =
   | { type: "setProjects"; projects: JetProject[] }
   | { type: "setSearchState"; supported: boolean; scanReady: boolean }
   | { type: "setPaletteCommands"; commands: OverlayState["paletteCommands"] }
+  | { type: "setTerminalGroups"; groups: TerminalExplorerGroup[] }
 
 function overlayReducer(state: OverlayState, action: OverlayAction): OverlayState {
   switch (action.type) {
@@ -63,6 +66,8 @@ function overlayReducer(state: OverlayState, action: OverlayAction): OverlayStat
       return { ...state, searchSupported: action.supported, searchScanReady: action.scanReady }
     case "setPaletteCommands":
       return { ...state, paletteCommands: action.commands }
+    case "setTerminalGroups":
+      return { ...state, terminalGroups: action.groups }
     default:
       return state
   }
@@ -77,15 +82,17 @@ export type OverlayActions = {
   setProjects: (projects: JetProject[]) => void
   setSearchState: (supported: boolean, scanReady: boolean) => void
   setPaletteCommands: (commands: OverlayState["paletteCommands"]) => void
+  setTerminalGroups: (groups: TerminalExplorerGroup[]) => void
 }
 
 export type OverlayHandlers = {
   setOverlayOpen: (id: OverlayId, open: boolean) => void
   onAppearanceSettingsChange: (settings: JetAppearanceSettings) => void
   onGotoLineSubmit: (line: number, column: number) => void
-  onQuickOpenSearch: (query: string) => Promise<string[]>
-  onQuickOpenSelect: (displayPath: string, query: string) => void
+  onQuickOpenSearch: (query: string, workspaceId: string | null) => Promise<string[]>
+  onQuickOpenSelect: (displayPath: string, query: string, workspaceId: string | null) => void
   onBufferSelect: (uri: string) => void
+  onTerminalSelect: (entry: TerminalListEntry) => void
   onOpenFile: (uri: string, path: string) => void
   onRequestOpenFolder: () => void
   onFolderPickerSelect: (folder: WorkspaceFolder) => void
@@ -118,6 +125,7 @@ const DEFAULT_OPEN: Record<OverlayId, boolean> = {
   gotoLine: false,
   quickOpen: false,
   bufferList: false,
+  terminalList: false,
   openFile: false,
   folderPicker: false,
   switchFolder: false,
@@ -148,6 +156,7 @@ export function OverlayControllerProvider({
     searchSupported: false,
     searchScanReady: false,
     paletteCommands: [],
+    terminalGroups: [],
   })
 
   const setOpen = useCallback((id: OverlayId, open: boolean) => {
@@ -181,6 +190,10 @@ export function OverlayControllerProvider({
     dispatch({ type: "setPaletteCommands", commands })
   }, [])
 
+  const setTerminalGroups = useCallback((groups: TerminalExplorerGroup[]) => {
+    dispatch({ type: "setTerminalGroups", groups })
+  }, [])
+
   const actions = useMemo(
     (): OverlayActions => ({
       setOpen,
@@ -191,6 +204,7 @@ export function OverlayControllerProvider({
       setProjects,
       setSearchState,
       setPaletteCommands,
+      setTerminalGroups,
     }),
     [
       setOpen,
@@ -201,6 +215,7 @@ export function OverlayControllerProvider({
       setProjects,
       setSearchState,
       setPaletteCommands,
+      setTerminalGroups,
     ],
   )
 

@@ -185,7 +185,7 @@
   justify-content: center;
   height: 100% !important;
   min-width: 0;
-  padding: 0 0.375rem;
+  padding: 0 0.5rem;
   border: 0;
   border-radius: calc(var(--radius) - 4px);
   font-size: var(--jet-fs-xs) !important;

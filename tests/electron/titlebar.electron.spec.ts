@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 import {
   expectLocatorAttribute,
+  expectLocatorCount,
   expectLocatorVisible,
 } from "../shell/assert.js"
 
@@ -13,6 +14,8 @@ test.describe("desktop shell", () => {
   test("traffic lights live on the sidebar chrome surface", async () => {
     const { app, page } = await launchJet()
     try {
+      await expectLocatorCount(page.locator("[data-jet-workspace-sidebar]"), 0)
+      await execCommand(page, "explorer.show")
       const chrome = page.locator("[data-jet-sidebar-chrome]")
       await expectLocatorVisible(chrome, { timeout: 10_000 })
 
@@ -89,6 +92,7 @@ test.describe("desktop shell", () => {
           listHeight,
           expectedListHeight,
           labelsFit: triggers.every(trigger => trigger.scrollWidth <= trigger.clientWidth + 1),
+          minTriggerWidth: Math.min(...triggers.map(trigger => trigger.getBoundingClientRect().width)),
           allSameSize: sizes.every(size => Math.abs(size - sizes[0]!) < 0.5),
         }
       })
@@ -96,6 +100,7 @@ test.describe("desktop shell", () => {
       expect(tabFont!.sizes).toHaveLength(2)
       expect(tabFont!.allSameSize).toBe(true)
       expect(tabFont!.labelsFit).toBe(true)
+      expect(tabFont!.minTriggerWidth).toBeGreaterThanOrEqual(68)
       expect(tabFont!.sizes[0]).toBeCloseTo(tabFont!.expected, 0)
       expect(tabFont!.listHeight).toBeCloseTo(tabFont!.expectedListHeight, 0)
     } finally {
@@ -112,6 +117,7 @@ test.describe("desktop shell", () => {
 
     const { app, page } = await launchJet()
     try {
+      await execCommand(page, "explorer.show")
       const drag = page.locator("[data-jet-tab-bar-drag]")
       await expectLocatorVisible(drag, { timeout: 10_000 })
       const box = await drag.boundingBox()
@@ -156,6 +162,7 @@ test.describe("desktop shell", () => {
 
     const { app, page } = await launchJet()
     try {
+      await execCommand(page, "explorer.show")
       const drag = page.locator("[data-jet-tab-bar-drag]")
       await expectLocatorVisible(drag, { timeout: 10_000 })
       await expectLocatorAttribute(drag, "data-tauri-drag-region", "true")

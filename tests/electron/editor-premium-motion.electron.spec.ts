@@ -14,6 +14,52 @@ import {
 import { launchJet, openFixtureFile } from "./_launch.js"
 
 test.describe("premium editor motion", () => {
+  test("keeps the overlay caret inside its input throughout portal entrance", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await page.evaluate(() => {
+        const layer = document.querySelector<HTMLElement>("[data-jet-universal-caret-layer]")
+        if (!layer) throw new Error("universal caret layer missing")
+        const inspect = () => {
+          const cursor = layer.querySelector<HTMLElement>("[data-jet-universal-cursor]")
+          const input = document.activeElement
+          if (!cursor || !(input instanceof HTMLInputElement)) return
+          if (parseFloat(cursor.style.opacity || "0") < 0.1) return
+          const caret = cursor.getBoundingClientRect()
+          const field = input.getBoundingClientRect()
+          if (
+            caret.left < field.left - 2 || caret.right > field.right + 2 ||
+            caret.top < field.top - 2 || caret.bottom > field.bottom + 2
+          ) layer.dataset.jetInvalidCaretFrame = "true"
+        }
+        new MutationObserver(inspect).observe(layer, {
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["style"],
+        })
+      })
+
+      await page.evaluate(async () => window.__jetAgent!.executeCommand("ui.showCommandPalette"))
+      const input = page.getByRole("dialog").getByRole("combobox")
+      await expectLocatorFocused(input)
+      await expect.poll(() => page.evaluate(() => {
+        const cursor = document.querySelector<HTMLElement>("[data-jet-universal-cursor]")
+        const field = document.activeElement
+        if (!cursor || !(field instanceof HTMLInputElement)) return false
+        const caret = cursor.getBoundingClientRect()
+        const rect = field.getBoundingClientRect()
+        return caret.left >= rect.left - 2 && caret.right <= rect.right + 2 &&
+          caret.top >= rect.top - 2 && caret.bottom <= rect.bottom + 2
+      })).toBe(true)
+      expect(await page.evaluate(() =>
+        document.querySelector("[data-jet-universal-caret-layer]")
+          ?.getAttribute("data-jet-invalid-caret-frame") ?? null,
+      )).toBeNull()
+    } finally {
+      await app.close()
+    }
+  })
+
   test("uses the shared ghost caret across palette and form inputs", async () => {
     const { app, page } = await launchJet()
     try {

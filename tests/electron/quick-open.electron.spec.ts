@@ -13,7 +13,9 @@ import {
   expectNotContainsText,
 } from "../shell/assert.js"
 
-import { execCommand, launchJet, openQuickOpen, waitForDialog } from "./_launch.js"
+import { execCommand, launchJet, openQuickOpen, waitForDialog, REPO_ROOT } from "./_launch.js"
+import { resolve } from "node:path"
+import { expectListRows } from "../helpers/list.js"
 
 test.describe("electron quick open", () => {
   test("returns files while the workspace search index is still warming", async () => {
@@ -41,6 +43,31 @@ test.describe("electron quick open", () => {
       await page.getByRole("option").filter({ hasText: "utils.ts" }).first().click()
       await page.evaluate(() => window.__jetAgent!.waitForEditor())
       await expectContainsText(page, ".cm-editor", "export function greet")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("filters file results to one workspace", async () => {
+    const { app, page } = await launchJet()
+    try {
+      const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
+      await page.evaluate(path => window.__jetAgent!.addWorkspace(path), secondPath)
+      await openQuickOpen(page)
+
+      const scope = page.getByRole("group", { name: "Filter files by workspace" })
+      await expectLocatorContainsText(scope, "All")
+      await scope.getByRole("button", { name: "Only second-workspace" }).click()
+      const input = page.getByRole("dialog").getByRole("combobox")
+      await input.fill("marker")
+
+      await expectListRows(page, {
+        panel: "jet:palette",
+        minItems: 1,
+        needle: "src/marker.ts",
+        noResultsText: "No matching files.",
+      })
+      await expectNotContainsText(page, '[role="dialog"]', "sample-workspace/")
     } finally {
       await app.close()
     }

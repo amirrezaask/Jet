@@ -14,6 +14,7 @@ import {
 } from "../shell/assert.js"
 
 import { hasPtySpawn, launchJet, showTerminal, execCommand } from "./_launch.js"
+import { expectListRows } from "../helpers/list.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -45,9 +46,32 @@ test.describe("electron terminal explorer", () => {
     }
   })
 
+  test("terminal list labels and switches sessions without the sidebar", async () => {
+    const { app, page } = await launchJet()
+    try {
+      const workspaceName = await page.evaluate(() => window.__jetAgent!.listWorkspaces()[0]?.name ?? "")
+      await execCommand(page, "terminal.new")
+      await execCommand(page, "terminal.new")
+      await execCommand(page, "terminal.list")
+
+      await expectListRows(page, {
+        panel: "jet:palette",
+        minItems: 1,
+        needle: `${workspaceName}:`,
+        noResultsText: "No open terminals",
+      })
+      await page.getByRole("option").first().click()
+      await expectLocatorHidden(page.getByRole("dialog"))
+      await expectSelectorHidden(page, "[data-jet-workspace-sidebar]")
+    } finally {
+      await app.close()
+    }
+  })
+
   test("agent launcher selection does not collapse its project", async () => {
     const { app, page } = await launchJet()
     try {
+      await execCommand(page, "terminal.explorer.show")
       const explorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")
       const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
       await expectLocatorAttribute(projectRow, "aria-expanded", "true")
@@ -64,6 +88,7 @@ test.describe("electron terminal explorer", () => {
   test("project and terminal context menus expose scoped actions", async () => {
     const { app, page } = await launchJet()
     try {
+      await execCommand(page, "terminal.explorer.show")
       const explorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")
       const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
       await projectRow.click({ button: "right" })

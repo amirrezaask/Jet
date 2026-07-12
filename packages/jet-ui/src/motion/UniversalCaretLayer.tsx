@@ -7,6 +7,7 @@ import {
   type CaretPoint,
   type CaretGhost,
 } from "@jet/shared"
+import { jetMotion } from "./tokens.js"
 
 type CaretTarget = HTMLInputElement | HTMLTextAreaElement | HTMLElement
 type CursorStyle = "bar" | "block" | "underline"
@@ -78,6 +79,14 @@ function measureTextControl(
   if (start == null || end == null || start !== end) return null
   const style = getComputedStyle(target)
   const rect = target.getBoundingClientRect()
+  if (
+    rect.width <= 0 ||
+    rect.height <= 0 ||
+    !Number.isFinite(rect.left) ||
+    !Number.isFinite(rect.top) ||
+    style.visibility === "hidden" ||
+    style.display === "none"
+  ) return null
   const fontSize = parseFloat(style.fontSize) || 13
   const lineHeightValue = parseFloat(style.lineHeight)
   const lineHeight = Number.isFinite(lineHeightValue) ? lineHeightValue : fontSize * 1.35
@@ -283,18 +292,23 @@ class UniversalCaretController {
     }
   }
 
-  /** Snap once after focus — enough for portal layout without masking immediate typing motion. */
+  /**
+   * Keep portal inputs aligned for the full overlay entrance. CSS transforms do
+   * not trigger ResizeObserver, so a single post-focus sample can retain the
+   * pre-animation position until the next key event.
+   */
   private settleAfterFocus(): void {
     this.clearSettle()
-    const settle = () => {
-      if (this.settleRaf != null) cancelAnimationFrame(this.settleRaf)
-      if (this.settleTimer != null) window.clearTimeout(this.settleTimer)
+    const startedAt = performance.now()
+    const settleForMs = jetMotion.duration.overlay * 1000
+    const settle = (now: number) => {
       this.settleRaf = null
-      this.settleTimer = null
       this.schedule(true)
+      if (now - startedAt < settleForMs) {
+        this.settleRaf = requestAnimationFrame(settle)
+      }
     }
     this.settleRaf = requestAnimationFrame(settle)
-    this.settleTimer = window.setTimeout(settle, 32)
   }
 
   private observeTarget(target: CaretTarget | null): void {
@@ -472,13 +486,19 @@ class UniversalCaretController {
     if (event.target === this.target) this.setTarget(null)
   }
   private readonly onInput = (event: Event) => {
-    if (this.eventIsWithinTarget(event)) this.scheduleDeferred(false)
+    if (!this.eventIsWithinTarget(event)) return
+    this.clearSettle()
+    this.scheduleDeferred(false)
   }
   private readonly onKeyDown = (event: KeyboardEvent) => {
-    if (this.eventIsWithinTarget(event)) this.scheduleDeferred(false)
+    if (!this.eventIsWithinTarget(event)) return
+    this.clearSettle()
+    this.scheduleDeferred(false)
   }
   private readonly onClick = (event: MouseEvent) => {
-    if (this.eventIsWithinTarget(event)) this.scheduleDeferred(false)
+    if (!this.eventIsWithinTarget(event)) return
+    this.clearSettle()
+    this.scheduleDeferred(false)
   }
   private readonly onPointerDown = (event: PointerEvent) => {
     if (!this.eventIsWithinTarget(event)) return

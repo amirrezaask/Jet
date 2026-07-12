@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { useOverlayController, type OverlayId } from "./OverlayController.js"
-import type { JetAppearanceSettings, OutlineEntry } from "@jet/ui"
+import type { JetAppearanceSettings, OutlineEntry, TerminalExplorerGroup } from "@jet/ui"
 import type { JetProject } from "@jet/workspace"
 
 type SyncProps = {
@@ -18,6 +18,7 @@ type SyncProps = {
     aliases?: string[]
     recent?: boolean
   }>
+  terminalGroups: TerminalExplorerGroup[]
 }
 
 export function OverlayControllerSync({
@@ -28,6 +29,7 @@ export function OverlayControllerSync({
   searchSupported,
   searchScanReady,
   paletteCommands,
+  terminalGroups,
 }: SyncProps) {
   const { actions } = useOverlayController()
 
@@ -56,6 +58,10 @@ export function OverlayControllerSync({
   useEffect(() => {
     actions.setPaletteCommands(paletteCommands)
   }, [paletteCommands, actions])
+
+  useEffect(() => {
+    actions.setTerminalGroups(terminalGroups)
+  }, [terminalGroups, actions])
 
   return null
 }

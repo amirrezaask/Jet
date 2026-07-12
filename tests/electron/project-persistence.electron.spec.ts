@@ -30,6 +30,7 @@ test.describe("electron project persistence", () => {
       await expect
         .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
         .toBe(secondPath)
+      await page.evaluate(() => window.__jetAgent!.executeCommand("terminal.explorer.show"))
       const secondRow = page.getByRole("treeitem", { name: "second-workspace" })
       await secondRow.getByRole("button", { name: "New terminal" }).click()
       await expectSelectorVisible(page, "[data-jet-terminal-panel]")
@@ -48,6 +49,7 @@ test.describe("electron project persistence", () => {
       await expect
         .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
         .toBe(secondPath)
+      await page.evaluate(() => window.__jetAgent!.executeCommand("terminal.explorer.show"))
 
       const panel = page.locator(PANEL)
       await expectLocatorContainsText(panel, "sample-workspace")

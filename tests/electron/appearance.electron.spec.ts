@@ -28,6 +28,7 @@ test.describe("electron appearance and terminal-first UX", () => {
       })
       await page.evaluate(async () => {
         await window.__jetAgent!.executeCommand("terminal.show")
+        await window.__jetAgent!.executeCommand("terminal.explorer.show")
       })
       await page.waitForSelector("[data-jet-terminal-panel] .xterm", { timeout: 30_000 })
       await page.waitForSelector("[data-jet-terminal-panel] .jet-terminal-surface", {

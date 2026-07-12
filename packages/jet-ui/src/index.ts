@@ -39,8 +39,9 @@ export {
 } from "./lister/index.js"
 export { GotoLineModal } from "./components/GotoLineModal.js"
 export { OutlineOverlay, type OutlineEntry } from "./components/OutlineOverlay.js"
-export { QuickOpenOverlay } from "./components/QuickOpenOverlay.js"
+export { QuickOpenOverlay, type QuickOpenWorkspace } from "./components/QuickOpenOverlay.js"
 export { BufferListOverlay } from "./components/BufferListOverlay.js"
+export { TerminalListOverlay, type TerminalListEntry } from "./components/TerminalListOverlay.js"
 export {
   LocationList,
   SearchLocationList,

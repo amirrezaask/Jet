@@ -218,7 +218,7 @@ function loadStoredThemeId(): string {
 }
 
 const SIDEBAR_VIEW_STORAGE_KEY = "jet-sidebar-view"
-const WORKSPACE_SIDEBAR_WIDTH = "17rem"
+const WORKSPACE_SIDEBAR_WIDTH = "20rem"
 
 function loadSidebarView(): JetSidebarView {
   if (typeof localStorage === "undefined") return "terminal-explorer"
@@ -346,6 +346,7 @@ export function JetApp() {
     outlineOpen,
     quickOpenOpen,
     bufferListOpen,
+    terminalListOpen,
     openFileOpen,
     cdOpen,
     addWorkspaceOpen,
@@ -358,6 +359,7 @@ export function JetApp() {
     setOutlineOpen,
     setQuickOpenOpen,
     setBufferListOpen,
+    setTerminalListOpen,
     setOpenFileOpen,
     setCdOpen,
     setAddWorkspaceOpen,
@@ -383,7 +385,7 @@ export function JetApp() {
   const lastContextFolderRef = useRef<WorkspaceFolder | null>(null)
   const [, setFolderSearchRev] = useState(0)
   const [fileDragOver, setFileDragOver] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarView, setSidebarView] = useState<JetSidebarView>(loadSidebarView)
   const [sidebarFocused, setSidebarFocused] = useState(false)
   const showWindowChrome = useMemo(() => detectWindowChrome(), [])
@@ -1152,27 +1154,31 @@ export function JetApp() {
   onTerminalTitleChangeRef.current = onTerminalTitleChange
 
   const quickOpenSearch = useCallback(
-    async (query: string) => {
-      const folder = resolveContextFolder()
-      if (!folder || !window.jet?.search?.fileSearch) return []
+    async (query: string, workspaceId: string | null) => {
+      if (!window.jet?.search?.fileSearch) return []
+      const folders = workspaceId
+        ? workspace.folders.filter(folder => folder.id === workspaceId)
+        : workspace.folders
+      if (folders.length === 0) return []
 
       const panel = focusedPanel
       const activeUri = panel ? getActiveEditorFileUri(panelTree, panel) : null
       let currentFile: { folderId: string; relativePath: string } | undefined
       if (activeUri) {
         const abs = fileUriToPath(activeUri)
-        const rel = relativePathInFolder(folder.root.path, abs)
-        if (rel != null) {
-          currentFile = { folderId: folder.id, relativePath: rel }
+        const fileFolder = folders.find(folder => relativePathInFolder(folder.root.path, abs) != null)
+        const rel = fileFolder ? relativePathInFolder(fileFolder.root.path, abs) : undefined
+        if (fileFolder && rel != null) {
+          currentFile = { folderId: fileFolder.id, relativePath: rel }
         }
       }
 
-      return fileSearchAcrossFolders([folder], window.jet.search, query, {
+      return fileSearchAcrossFolders(folders, window.jet.search, query, {
         pageSize: 100,
         currentFile,
       })
     },
-    [resolveContextFolder, focusedPanel, panelTree],
+    [resolveContextFolder, focusedPanel, panelTree, workspace.folders],
   )
 
   const openListItem = useCallback(
@@ -1680,6 +1686,7 @@ export function JetApp() {
         setPaletteOpen,
         setQuickOpenOpen,
         setBufferListOpen,
+        setTerminalListOpen,
         setOpenFileOpen,
         setCdOpen,
         setAddWorkspaceOpen,
@@ -2267,9 +2274,10 @@ export function JetApp() {
         if (view) jumpToLine(view, line, column)
       },
       onQuickOpenSearch: quickOpenSearch,
-      onQuickOpenSelect: (displayPath, query) => {
-        const folder = resolveContextFolder()
-        const folders = folder ? [folder] : workspace.folders
+      onQuickOpenSelect: (displayPath, query, workspaceId) => {
+        const folders = workspaceId
+          ? workspace.folders.filter(folder => folder.id === workspaceId)
+          : workspace.folders
         const resolved = resolveQuickOpenDisplayPath(displayPath, folders)
         if (!resolved) return
         void window.jet?.search?.trackFileAccess?.(
@@ -2280,6 +2288,7 @@ export function JetApp() {
         handleOpenFile(resolved.fileUri, resolved.fullPath)
       },
       onBufferSelect: uri => handleOpenFile(uri, fileUriToPath(uri)),
+      onTerminalSelect: entry => focusTerminalTab(entry.panelId, entry.tabId),
       onOpenFile: handleOpenFile,
       onRequestOpenFolder: () => {
         setOpenFileOpen(false)
@@ -2326,6 +2335,7 @@ export function JetApp() {
     gotoLineOpen ||
     (quickOpenOpen && contextSearchState.supported) ||
     bufferListOpen ||
+    terminalListOpen ||
     openFileOpen ||
     folderPickerOpen ||
     switchFolderOpen ||
@@ -2350,6 +2360,7 @@ export function JetApp() {
         searchSupported={contextSearchState.supported}
         searchScanReady={contextSearchState.scanReady}
         paletteCommands={paletteCommands}
+        terminalGroups={getTerminalExplorerGroups()}
       />
     <TooltipProvider>
     <div className="h-full w-full" data-drag-over={fileDragOver || undefined}>
