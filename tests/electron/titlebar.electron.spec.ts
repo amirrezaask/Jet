@@ -1,14 +1,7 @@
 import { expect, test } from "@playwright/test"
 import {
-  expectContainsText,
-  expectLocatorAttached,
   expectLocatorAttribute,
-  expectLocatorCount,
-  expectLocatorFocused,
-  expectLocatorHidden,
   expectLocatorVisible,
-  expectSelectorHidden,
-  expectSelectorVisible,
 } from "../shell/assert.js"
 
 import { expectListRows } from "../helpers/list.js"
@@ -17,11 +10,11 @@ import { execCommand, launchJet } from "./_launch.js"
 test.describe("desktop shell", () => {
   test.skip(process.platform !== "darwin", "traffic lights are macOS-only")
 
-  test("traffic lights live on the sidebar titlebar surface", async () => {
+  test("traffic lights live on the sidebar chrome surface", async () => {
     const { app, page } = await launchJet()
     try {
-      const bar = page.locator("[data-jet-titlebar]")
-      await expectLocatorVisible(bar, { timeout: 10_000 })
+      const chrome = page.locator("[data-jet-sidebar-chrome]")
+      await expectLocatorVisible(chrome, { timeout: 10_000 })
 
       const geom = await page.evaluate(() => {
         const root = document.documentElement
@@ -32,59 +25,51 @@ test.describe("desktop shell", () => {
         const zone = probe.getBoundingClientRect().width
         probe.remove()
 
-        const bar = document.querySelector<HTMLElement>("[data-jet-titlebar]")
-        if (!bar) return null
+        const sidebarChrome = document.querySelector<HTMLElement>("[data-jet-sidebar-chrome]")
+        if (!sidebarChrome) return null
         const spacer = document.querySelector<HTMLElement>("[data-jet-traffic-light-spacer]")
-        const titlebarSidebar = document.querySelector<HTMLElement>("[data-jet-titlebar-sidebar]")
-        const titlebarMain = document.querySelector<HTMLElement>("[data-jet-titlebar-main]")
         const workspaceSidebar = document.querySelector<HTMLElement>("[data-jet-workspace-sidebar]")
-        if (!titlebarSidebar || !titlebarMain || !workspaceSidebar) return null
-        const titlebarSidebarRect = titlebarSidebar.getBoundingClientRect()
-        const titlebarMainRect = titlebarMain.getBoundingClientRect()
+        const tabBarDrag = document.querySelector<HTMLElement>("[data-jet-tab-bar-drag]")
+        if (!workspaceSidebar) return null
+        const chromeRect = sidebarChrome.getBoundingClientRect()
         const workspaceSidebarRect = workspaceSidebar.getBoundingClientRect()
         return {
-          barLeft: bar.getBoundingClientRect().left,
           spacerRight: spacer?.getBoundingClientRect().right ?? null,
-          titlebarSidebarLeft: titlebarSidebarRect.left,
-          titlebarSidebarRight: titlebarSidebarRect.right,
-          titlebarMainLeft: titlebarMainRect.left,
+          chromeLeft: chromeRect.left,
+          chromeRight: chromeRect.right,
+          chromeHeight: chromeRect.height,
           workspaceSidebarLeft: workspaceSidebarRect.left,
           workspaceSidebarRight: workspaceSidebarRect.right,
-          titlebarSidebarColor: getComputedStyle(titlebarSidebar).backgroundColor,
+          chromeColor: getComputedStyle(sidebarChrome).backgroundColor,
           workspaceSidebarColor: getComputedStyle(workspaceSidebar).backgroundColor,
-          hasMenubar: document.querySelector("[data-jet-titlebar] [role='menubar']") != null,
-          tauriDragRegion: bar.hasAttribute("data-tauri-drag-region"),
-          tauriCenterDragRegion:
-            document.querySelector("[data-jet-titlebar-main] [data-tauri-drag-region]") != null,
-          tauriSpacerDragRegion:
-            spacer?.hasAttribute("data-tauri-drag-region") === true,
-          tauriSidebarDeepDrag:
-            titlebarSidebar.getAttribute("data-tauri-drag-region") === "deep",
+          hasMenubar: document.querySelector("[data-jet-sidebar-chrome] [role='menubar']") != null,
+          hasTitlebar: document.querySelector("[data-jet-titlebar]") != null,
+          tauriChromeDeepDrag: sidebarChrome.getAttribute("data-tauri-drag-region") === "deep",
+          tauriSpacerDragRegion: spacer?.hasAttribute("data-tauri-drag-region") === true,
+          tauriTabBarDrag: tabBarDrag?.getAttribute("data-tauri-drag-region") === "true",
           spacerHeight: spacer?.getBoundingClientRect().height ?? 0,
-          titlebarHeight: bar.getBoundingClientRect().height,
           zone,
         }
       })
 
-      expect(geom, "titlebar element must exist in desktop shell").not.toBeNull()
+      expect(geom, "sidebar chrome must exist in desktop shell").not.toBeNull()
+      expect(geom!.hasTitlebar, "legacy titlebar must be removed").toBe(false)
       expect(geom!.spacerRight, "traffic-light spacer must render").not.toBeNull()
       expect(geom!.spacerRight!).toBeGreaterThanOrEqual(geom!.zone)
-      expect(geom!.titlebarSidebarLeft).toBeCloseTo(geom!.workspaceSidebarLeft, 0)
-      expect(geom!.titlebarSidebarRight).toBeCloseTo(geom!.workspaceSidebarRight, 0)
-      expect(geom!.titlebarMainLeft).toBeCloseTo(geom!.workspaceSidebarRight, 0)
-      expect(geom!.spacerRight!).toBeLessThanOrEqual(geom!.titlebarSidebarRight)
-      expect(geom!.titlebarSidebarColor).toBe(geom!.workspaceSidebarColor)
+      expect(geom!.chromeLeft).toBeCloseTo(geom!.workspaceSidebarLeft, 0)
+      // Sidebar border-r can inset chrome by 1px vs outer sidebar box.
+      expect(Math.abs(geom!.chromeRight - geom!.workspaceSidebarRight)).toBeLessThanOrEqual(2)
+      expect(geom!.spacerRight!).toBeLessThanOrEqual(geom!.chromeRight)
       expect(geom!.hasMenubar).toBe(false)
-      expect(geom!.tauriDragRegion).toBe(true)
-      expect(geom!.tauriCenterDragRegion).toBe(true)
+      expect(geom!.tauriChromeDeepDrag).toBe(true)
       expect(geom!.tauriSpacerDragRegion).toBe(true)
-      expect(geom!.tauriSidebarDeepDrag).toBe(true)
-      expect(geom!.spacerHeight).toBeGreaterThanOrEqual(geom!.titlebarHeight - 1)
+      expect(geom!.tauriTabBarDrag).toBe(true)
+      expect(geom!.spacerHeight).toBeGreaterThanOrEqual(geom!.chromeHeight - 1)
 
       const tabFont = await page.evaluate(() => {
         const triggers = Array.from(
           document.querySelectorAll<HTMLElement>(
-            '[data-jet-titlebar-tabs] [data-slot="tabs-trigger"]',
+            '[data-jet-sidebar-view-tabs] [data-slot="tabs-trigger"]',
           ),
         )
         if (triggers.length < 2) return null
@@ -93,7 +78,9 @@ test.describe("desktop shell", () => {
         const threeXs = parseFloat(root.getPropertyValue("--jet-fs-3xs"))
         const expected = rootPx * threeXs
         const sizes = triggers.map(trigger => parseFloat(getComputedStyle(trigger).fontSize))
-        const list = document.querySelector<HTMLElement>('[data-jet-titlebar-tabs] [data-slot="tabs-list"]')
+        const list = document.querySelector<HTMLElement>(
+          '[data-jet-sidebar-view-tabs] [data-slot="tabs-list"]',
+        )
         const listHeight = list ? parseFloat(getComputedStyle(list).height) : 0
         const expectedListHeight = rootPx * 1.5
         return {
@@ -104,7 +91,7 @@ test.describe("desktop shell", () => {
           allSameSize: sizes.every(size => Math.abs(size - sizes[0]!) < 0.5),
         }
       })
-      expect(tabFont, "titlebar sidebar tabs must exist").not.toBeNull()
+      expect(tabFont, "sidebar view tabs must exist").not.toBeNull()
       expect(tabFont!.sizes).toHaveLength(2)
       expect(tabFont!.allSameSize).toBe(true)
       expect(tabFont!.sizes[0]).toBeCloseTo(tabFont!.expected, 0)
@@ -114,7 +101,7 @@ test.describe("desktop shell", () => {
     }
   })
 
-  test("Tauri titlebar drag region moves the native window", async ({}, testInfo) => {
+  test("Tauri tab-bar drag region moves the native window", async ({}, testInfo) => {
     test.skip(testInfo.project.name !== "tauri-e2e", "Tauri native window behavior")
     test.skip(
       testInfo.project.name === "tauri-e2e",
@@ -123,19 +110,28 @@ test.describe("desktop shell", () => {
 
     const { app, page } = await launchJet()
     try {
-      const titlebar = page.locator("[data-jet-titlebar-main] [data-tauri-drag-region]")
-      await expectLocatorVisible(titlebar, { timeout: 10_000 })
-      const box = await titlebar.boundingBox()
+      const drag = page.locator("[data-jet-tab-bar-drag]")
+      await expectLocatorVisible(drag, { timeout: 10_000 })
+      const box = await drag.boundingBox()
       expect(box).not.toBeNull()
 
-      const getWindowPosition = () => page.evaluate(async () => {
-        const tauri = (window as Window & {
-          __TAURI__?: { window?: { getCurrentWindow?: () => { outerPosition(): Promise<{ x: number; y: number }> } } }
-        }).__TAURI__
-        const currentWindow = tauri?.window?.getCurrentWindow?.()
-        if (!currentWindow) throw new Error("Tauri global window API is unavailable")
-        return currentWindow.outerPosition()
-      })
+      const getWindowPosition = () =>
+        page.evaluate(async () => {
+          const tauri = (
+            window as Window & {
+              __TAURI__?: {
+                window?: {
+                  getCurrentWindow?: () => {
+                    outerPosition(): Promise<{ x: number; y: number }>
+                  }
+                }
+              }
+            }
+          ).__TAURI__
+          const currentWindow = tauri?.window?.getCurrentWindow?.()
+          if (!currentWindow) throw new Error("Tauri global window API is unavailable")
+          return currentWindow.outerPosition()
+        })
 
       const before = await getWindowPosition()
       const x = box!.x + box!.width / 2
@@ -153,15 +149,15 @@ test.describe("desktop shell", () => {
     }
   })
 
-  test("Tauri titlebar exposes a native drag region", async ({}, testInfo) => {
+  test("Tauri tab bar exposes a native drag region", async ({}, testInfo) => {
     test.skip(testInfo.project.name !== "tauri-e2e", "Tauri native window behavior")
 
     const { app, page } = await launchJet()
     try {
-      const titlebar = page.locator("[data-jet-titlebar-main] [data-tauri-drag-region]")
-      await expectLocatorVisible(titlebar, { timeout: 10_000 })
-      await expectLocatorAttribute(titlebar, "data-tauri-drag-region", "true")
-      const box = await titlebar.boundingBox()
+      const drag = page.locator("[data-jet-tab-bar-drag]")
+      await expectLocatorVisible(drag, { timeout: 10_000 })
+      await expectLocatorAttribute(drag, "data-tauri-drag-region", "true")
+      const box = await drag.boundingBox()
       expect(box).not.toBeNull()
       expect(box!.width).toBeGreaterThan(40)
       expect(box!.height).toBeGreaterThan(8)
@@ -174,8 +170,8 @@ test.describe("desktop shell", () => {
       expect(spacerBox!.width).toBeGreaterThan(40)
       expect(spacerBox!.height).toBeGreaterThan(8)
 
-      const sidebar = page.locator("[data-jet-titlebar-sidebar]")
-      await expectLocatorAttribute(sidebar, "data-tauri-drag-region", "deep")
+      const chrome = page.locator("[data-jet-sidebar-chrome]")
+      await expectLocatorAttribute(chrome, "data-tauri-drag-region", "deep")
     } finally {
       await app.close()
     }
@@ -190,9 +186,9 @@ test.describe("desktop shell", () => {
         minItems: 1,
         needle: "sample-workspace",
       })
-      const projectIcon = page.locator(
-        '[data-jet-list-panel="jet:explorer"] [data-jet-project-icon]',
-      ).first()
+      const projectIcon = page
+        .locator('[data-jet-list-panel="jet:explorer"] [data-jet-project-icon]')
+        .first()
       await expectLocatorVisible(projectIcon)
       const box = await projectIcon.boundingBox()
       expect(box?.width ?? 0).toBeGreaterThanOrEqual(18)

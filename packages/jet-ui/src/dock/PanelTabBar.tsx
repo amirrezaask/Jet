@@ -1,4 +1,11 @@
-import { memo, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react"
+import {
+  memo,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type CSSProperties,
+  type ReactNode,
+} from "react"
 import { useDroppable } from "@dnd-kit/core"
 import {
   SortableContext,
@@ -156,6 +163,7 @@ export function PanelTabBar({
   focused,
   onActivateTab,
   onCloseTab,
+  windowChromeLeading = false,
 }: {
   panelId: PanelId
   view: PanelView
@@ -164,6 +172,8 @@ export function PanelTabBar({
   focused: boolean
   onActivateTab: (tabId: string) => void
   onCloseTab: (tabId: string) => void
+  /** macOS Overlay: traffic-light clearance when this bar is top-left chrome. */
+  windowChromeLeading?: boolean
   /** @deprecated handled by TabDndRoot */
   onReorderTab?: (tabId: string, toIndex: number) => void
   /** @deprecated handled by TabDndRoot */
@@ -188,24 +198,65 @@ export function PanelTabBar({
     disabled: !drag.tabSource,
   })
 
-  if (!hasTabs) return null
+  if (!hasTabs) {
+    return (
+      <div
+        data-jet-tab-bar
+        data-jet-tab-bar-drag
+        data-tauri-drag-region
+        className="flex w-full min-h-[var(--jet-window-chrome-height)] shrink-0 items-stretch"
+        style={{ WebkitAppRegion: "drag" } as CSSProperties}
+      >
+        {windowChromeLeading ? (
+          <div
+            aria-hidden
+            data-jet-traffic-light-spacer
+            data-tauri-drag-region="true"
+            className="shrink-0 self-stretch"
+            style={{ WebkitAppRegion: "drag" } as CSSProperties}
+          />
+        ) : null}
+        <div
+          aria-hidden
+          className="min-w-4 flex-1 self-stretch"
+          data-tauri-drag-region="true"
+          style={{ WebkitAppRegion: "drag" } as CSSProperties}
+        />
+      </div>
+    )
+  }
 
   const isForeignDrag =
     drag.tabSource != null && drag.tabSource.panelId.id !== panelId.id
 
   return (
-    <Tabs value={activeId} onValueChange={onActivateTab} className="gap-0">
+    <Tabs value={activeId} onValueChange={onActivateTab} className="w-full gap-0">
       <div
         ref={setBarRef}
         data-panel-id={panelId.id}
         data-jet-tab-bar
+        data-tauri-drag-region
         className={cn(
-          "shrink-0 px-2 py-1.5 transition-colors duration-[var(--jet-motion-fast)]",
+          "flex w-full min-h-[var(--jet-window-chrome-height)] shrink-0 items-stretch px-2 transition-colors duration-[var(--jet-motion-fast)]",
           (barOver || isForeignDrag) && isForeignDrag && "bg-muted/30",
         )}
+        style={{ WebkitAppRegion: "drag" } as CSSProperties}
       >
+        {windowChromeLeading ? (
+          <div
+            aria-hidden
+            data-jet-traffic-light-spacer
+            data-tauri-drag-region="true"
+            className="shrink-0 self-stretch"
+            style={{ WebkitAppRegion: "drag" } as CSSProperties}
+          />
+        ) : null}
         <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
-          <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsList
+            className="my-1.5 w-auto max-w-full justify-start overflow-x-auto"
+            data-tauri-drag-region="false"
+            style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+          >
             {tabs.map((tab, i) => (
               <SortableTabTrigger
                 key={tab.id}
@@ -217,6 +268,14 @@ export function PanelTabBar({
             ))}
           </TabsList>
         </SortableContext>
+        {/* Empty remainder of the bar — drag the OS window. */}
+        <div
+          aria-hidden
+          data-jet-tab-bar-drag
+          data-tauri-drag-region="true"
+          className="min-w-4 flex-1 self-stretch"
+          style={{ WebkitAppRegion: "drag" } as CSSProperties}
+        />
       </div>
     </Tabs>
   )

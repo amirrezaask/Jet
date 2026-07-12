@@ -5,15 +5,14 @@ import { UniversalCaretLayer } from "../motion/UniversalCaretLayer.js"
 /**
  * Full-viewport app chrome. Resizable splits live in {@link WorkspaceShell} and
  * {@link PanelDock} — not here (a single-panel group caused stray edge handles).
+ * Tab bars are the top chrome; empty tab-bar space owns window drag.
  */
 export function AppShell({
   children,
   footer,
-  titleBar,
 }: {
   children: ReactNode
   footer?: ReactNode
-  titleBar?: ReactNode
 }) {
   return (
     <div
@@ -23,7 +22,6 @@ export function AppShell({
     >
       <UniversalCaretLayer />
       <HotGlowTracker />
-      {titleBar}
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       {footer}
     </div>

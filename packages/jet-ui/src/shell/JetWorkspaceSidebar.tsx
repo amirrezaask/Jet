@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react"
 import type { WorkspaceManager } from "@jet/workspace"
 import type { PanelId } from "@jet/shared"
 import { Plus } from "lucide-react"
@@ -19,6 +20,7 @@ export type JetSidebarView = "explorer" | "terminal-explorer"
 
 export type JetWorkspaceSidebarProps = {
   activeView: JetSidebarView
+  onActiveViewChange: (view: JetSidebarView) => void
   manager: WorkspaceManager
   onOpenFile: (uri: string, path: string) => void
   onOpenFolder?: () => void
@@ -36,6 +38,8 @@ export type JetWorkspaceSidebarProps = {
   onRestartTerminal: (tabId: string) => void
   onRemoveProject: (rootUri: string) => void
   onSidebarFocusChange?: (focused: boolean) => void
+  /** macOS Overlay chrome: traffic-light clearance + drag on this header. */
+  showWindowChrome?: boolean
 }
 
 export function JetSidebarViewTabs({
@@ -47,7 +51,7 @@ export function JetSidebarViewTabs({
 }) {
   return (
     <Tabs
-      data-jet-titlebar-tabs
+      data-jet-sidebar-view-tabs
       value={activeView}
       onValueChange={value => onActiveViewChange(value as JetSidebarView)}
       aria-label="Sidebar views"
@@ -63,6 +67,7 @@ export function JetSidebarViewTabs({
 
 export function JetWorkspaceSidebar({
   activeView,
+  onActiveViewChange,
   manager,
   onOpenFile,
   onOpenFolder,
@@ -80,6 +85,7 @@ export function JetWorkspaceSidebar({
   onRestartTerminal,
   onRemoveProject,
   onSidebarFocusChange,
+  showWindowChrome = false,
 }: JetWorkspaceSidebarProps) {
   return (
     <Sidebar
@@ -93,6 +99,36 @@ export function JetWorkspaceSidebar({
         onSidebarFocusChange?.(false)
       }}
     >
+      <div
+        data-jet-sidebar-chrome
+        data-tauri-drag-region={showWindowChrome ? "deep" : undefined}
+        className="flex min-h-[var(--jet-window-chrome-height)] shrink-0 items-stretch border-b border-sidebar-border px-2"
+        style={
+          showWindowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined
+        }
+      >
+        {showWindowChrome ? (
+          <div
+            aria-hidden
+            data-jet-traffic-light-spacer
+            data-tauri-drag-region="true"
+            className="shrink-0 self-stretch"
+            style={{ WebkitAppRegion: "drag" } as CSSProperties}
+          />
+        ) : null}
+        <div
+          className="flex min-w-0 flex-1 items-center py-1.5 pl-1"
+          data-tauri-drag-region={showWindowChrome ? "false" : undefined}
+          style={
+            showWindowChrome ? ({ WebkitAppRegion: "no-drag" } as CSSProperties) : undefined
+          }
+        >
+          <JetSidebarViewTabs
+            activeView={activeView}
+            onActiveViewChange={onActiveViewChange}
+          />
+        </div>
+      </div>
       <SidebarContent className="min-h-0 flex-1 overflow-hidden">
         {activeView === "explorer" ? (
           <ExplorerTab

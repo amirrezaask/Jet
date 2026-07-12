@@ -17,15 +17,15 @@ import { resolve } from "node:path"
 import { focusEditor, launchJet, openFixtureFile, REPO_ROOT } from "./_launch.js"
 
 test.describe("electron workspace chrome", () => {
-  test("shows the active project in the titlebar and updates on project switch", async () => {
+  test("shows the active project in the status bar and updates on project switch", async () => {
     const { app, page } = await launchJet()
     const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
     try {
-      const titlebar = page.locator("[data-jet-titlebar-main]")
-      await expectLocatorContainsText(titlebar, "sample-workspace")
+      const footer = page.locator("footer")
+      await expectLocatorContainsText(footer, "sample-workspace")
 
       await page.evaluate(path => window.__jetAgent!.openWorkspace(path), secondPath)
-      await expectLocatorContainsText(titlebar, "second-workspace")
+      await expectLocatorContainsText(footer, "second-workspace")
       await expectLocatorCount(page.locator("footer"), 1)
     } finally {
       await app.close()

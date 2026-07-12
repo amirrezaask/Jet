@@ -87,13 +87,11 @@ import {
   SidebarProvider,
   SidebarInset,
   JetWorkspaceSidebar,
-  JetSidebarViewTabs,
   type JetSidebarView,
   focusExplorerPanel,
   focusTerminalExplorerPanel,
   getListPanelController,
   focusFirstListItem,
-  JetTitleBar,
   FindReplacePopover,
   animateLayoutMorph,
   capturePanelLeafRects,
@@ -229,6 +227,29 @@ function loadSidebarView(): JetSidebarView {
   return "terminal-explorer"
 }
 
+/** First child recursively — visual top-left leaf in the panel tree. */
+function isTopLeftPanel(tree: JetPanelTree, panelId: PanelId): boolean {
+  let node = tree.root
+  while (node.kind !== "leaf") {
+    const first = node.split.children[0]
+    if (!first) return false
+    node = first
+  }
+  return node.panelId.id === panelId.id
+}
+
+function detectWindowChrome(): boolean {
+  if (typeof navigator === "undefined") return false
+  if (/Mac|iPad|iPhone|iPod/i.test(navigator.userAgent)) return true
+  if (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("titlebar") === "1"
+  ) {
+    return true
+  }
+  return false
+}
+
 function initialEditorLayout() {
   return JetPanelTree.editorOnlyLayout()
 }
@@ -354,6 +375,7 @@ export function JetApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarView, setSidebarView] = useState<JetSidebarView>(loadSidebarView)
   const [sidebarFocused, setSidebarFocused] = useState(false)
+  const showWindowChrome = useMemo(() => detectWindowChrome(), [])
   const [, setTerminalSessionRevision] = useState(0)
   const sidebarFocusedRef = useRef(false)
   sidebarFocusedRef.current = sidebarFocused
@@ -1539,11 +1561,14 @@ export function JetApp() {
         store={tabStore}
         registry={tabTypeRegistry}
         focused={meta.focused}
+        windowChromeLeading={
+          showWindowChrome && !sidebarOpen && isTopLeftPanel(panelTree, panelId)
+        }
         onActivateTab={tabId => handlePanelEvent({ type: "tabActivate", panelId, tabId })}
         onCloseTab={tabId => handlePanelEvent({ type: "tabClose", panelId, tabId })}
       />
     ),
-    [tabStore, tabTypeRegistry, handlePanelEvent],
+    [tabStore, tabTypeRegistry, handlePanelEvent, sidebarOpen, panelTree, showWindowChrome],
   )
 
   const renderPanelContent = useCallback(
@@ -2285,13 +2310,6 @@ export function JetApp() {
     ],
   )
 
-  const isMac =
-    typeof navigator !== "undefined" && /Mac|iPad|iPhone|iPod/i.test(navigator.userAgent)
-  const forceTitleBar =
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("titlebar") === "1"
-  const showTitleBar = forceTitleBar || isMac
-
   const showOverlayHost =
     gotoLineOpen ||
     (quickOpenOpen && contextSearchState.supported) ||
@@ -2324,25 +2342,6 @@ export function JetApp() {
     <TooltipProvider>
     <div className="h-full w-full" data-drag-over={fileDragOver || undefined}>
     <AppShell
-      titleBar={
-        showTitleBar ? (
-          <JetTitleBar
-            center={workspace.root
-              ? activeEditorFile
-                ? `${activeEditorFile.name}${activeEditorFile.isDirty ? " •" : ""} — ${workspace.root.name}`
-                : workspace.root.name
-              : "Jet"}
-            sidebarOpen={sidebarOpen}
-            sidebarWidth={WORKSPACE_SIDEBAR_WIDTH}
-            sidebarChrome={
-              <JetSidebarViewTabs
-                activeView={sidebarView}
-                onActiveViewChange={handleSidebarViewChange}
-              />
-            }
-          />
-        ) : undefined
-      }
       footer={
         <>
           {pendingChordPrefix && (
@@ -2371,6 +2370,7 @@ export function JetApp() {
         {sidebarOpen ? (
           <JetWorkspaceSidebar
             activeView={sidebarView}
+            onActiveViewChange={handleSidebarViewChange}
             manager={workspace.manager}
             onOpenFile={openFileFromSidebar}
             onOpenFolder={() => executeCommand("workspace.openFolder")}
@@ -2388,6 +2388,7 @@ export function JetApp() {
             onRestartTerminal={restartTerminal}
             onRemoveProject={removeProjectByRootUri}
             onSidebarFocusChange={setSidebarFocused}
+            showWindowChrome={showWindowChrome}
           />
         ) : null}
         <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">

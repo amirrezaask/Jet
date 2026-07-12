@@ -22,7 +22,6 @@ export {
   type JetSidebarView,
   type JetWorkspaceSidebarProps,
 } from "./shell/JetWorkspaceSidebar.js"
-export { JetTitleBar } from "./shell/JetTitleBar.js"
 export { focusExplorerPanel } from "./explorer/focus.js"
 export { focusTerminalExplorerPanel } from "./terminal-explorer/focus.js"
 export { CommandPalette } from "./components/CommandPalette.js"

@@ -99,7 +99,7 @@
    * click-to-jump readability. Defined only in :root — scheme-invariant. */
   --jet-project-row-height: calc(var(--jet-fs-base) * 1.75);
   --jet-row-height: calc(var(--jet-fs-base) * 1.5);
-  --jet-titlebar-height: calc(var(--jet-fs-base) * 2.25);
+  --jet-window-chrome-height: calc(var(--jet-fs-base) * 2.25);
   --jet-location-row-height: calc(var(--jet-fs-base) * 2.5);
   --jet-traffic-light-inset: 7.7rem;
   --jet-overlay-list-max: 22rem;
@@ -142,19 +142,7 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* macOS titlebar — plain CSS so dev/HMR never drops traffic-light inset width. */
-[data-jet-titlebar] {
-  display: flex;
-  flex-shrink: 0;
-  align-items: stretch;
-  min-height: var(--jet-titlebar-height);
-  color: var(--foreground);
-}
-
-[data-jet-titlebar-sidebar] {
-  background-color: var(--sidebar);
-}
-
+/* macOS window chrome — traffic-light spacer + sidebar/tab-bar drag. */
 [data-jet-traffic-light-spacer] {
   width: var(--jet-traffic-light-inset);
   min-width: var(--jet-traffic-light-inset);
@@ -163,8 +151,8 @@
   min-height: 100%;
 }
 
-/* Titlebar sidebar view tabs — plain CSS so compact size survives HMR / utility drops. */
-[data-jet-titlebar-tabs] {
+/* Sidebar view tabs (Files / Terminals) — compact size survives HMR. */
+[data-jet-sidebar-view-tabs] {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -172,7 +160,7 @@
   min-width: 0;
 }
 
-[data-jet-titlebar-tabs] [data-slot="tabs-list"] {
+[data-jet-sidebar-view-tabs] [data-slot="tabs-list"] {
   display: flex;
   align-items: center;
   width: 100%;
@@ -184,7 +172,7 @@
   overflow: visible;
 }
 
-[data-jet-titlebar-tabs] [data-slot="tabs-trigger"] {
+[data-jet-sidebar-view-tabs] [data-slot="tabs-trigger"] {
   flex: 1 1 0;
   display: inline-flex;
   align-items: center;
@@ -203,16 +191,16 @@
   box-shadow: none;
 }
 
-[data-jet-titlebar-tabs] [data-slot="tabs-trigger"]::after {
+[data-jet-sidebar-view-tabs] [data-slot="tabs-trigger"]::after {
   display: none;
 }
 
-[data-jet-titlebar-tabs] [data-slot="tabs-trigger"][data-state="active"] {
+[data-jet-sidebar-view-tabs] [data-slot="tabs-trigger"][data-state="active"] {
   background: var(--sidebar-accent);
   color: var(--sidebar-accent-foreground);
 }
 
-[data-jet-titlebar-tabs] [data-slot="tabs-trigger"]:hover {
+[data-jet-sidebar-view-tabs] [data-slot="tabs-trigger"]:hover {
   color: var(--sidebar-accent-foreground);
 }
 
