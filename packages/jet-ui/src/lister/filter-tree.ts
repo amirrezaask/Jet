@@ -22,25 +22,36 @@ export function filterTreeRows<T extends TreeFilterRow>(
 
   const match = rows.map(r => fuzzyScore(trimmed, r.searchText) !== null)
   const keep = match.slice()
+  const parent = new Int32Array(rows.length)
+  parent.fill(-1)
+  const depthStack: number[] = []
 
-  // Ancestors of matches
+  // Build parent links once, then propagate matches upward in one reverse pass.
+  // Scanning backward from every match is quadratic for broad directories.
   for (let i = 0; i < rows.length; i++) {
-    if (!match[i]) continue
-    let depth = rows[i]!.depth
-    for (let j = i - 1; j >= 0 && depth > 0; j--) {
-      if (rows[j]!.depth < depth) {
-        keep[j] = true
-        depth = rows[j]!.depth
-      }
-    }
+    const depth = rows[i]!.depth
+    parent[i] = depth > 0 ? (depthStack[depth - 1] ?? -1) : -1
+    depthStack[depth] = i
+    depthStack.length = depth + 1
+  }
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (!keep[i]) continue
+    const parentIndex = parent[i]!
+    if (parentIndex >= 0) keep[parentIndex] = true
   }
 
-  // Descendants of expanded matching branches (expansion must reveal children)
+  // Descendants of expanded matching branches form contiguous ranges.
+  let revealBelowDepth: number | null = null
   for (let i = 0; i < rows.length; i++) {
-    if (!match[i] || !rows[i]!.isBranch || !rows[i]!.expanded) continue
-    const base = rows[i]!.depth
-    for (let j = i + 1; j < rows.length && rows[j]!.depth > base; j++) {
-      keep[j] = true
+    const row = rows[i]!
+    if (revealBelowDepth !== null && row.depth <= revealBelowDepth) {
+      revealBelowDepth = null
+    }
+    if (revealBelowDepth !== null) keep[i] = true
+    if (match[i] && row.isBranch && row.expanded) {
+      revealBelowDepth = revealBelowDepth === null
+        ? row.depth
+        : Math.min(revealBelowDepth, row.depth)
     }
   }
 

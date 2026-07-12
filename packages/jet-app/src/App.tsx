@@ -218,7 +218,7 @@ function loadStoredThemeId(): string {
 }
 
 const SIDEBAR_VIEW_STORAGE_KEY = "jet-sidebar-view"
-const WORKSPACE_SIDEBAR_WIDTH = "15rem"
+const WORKSPACE_SIDEBAR_WIDTH = "17rem"
 
 function loadSidebarView(): JetSidebarView {
   if (typeof localStorage === "undefined") return "terminal-explorer"
@@ -236,6 +236,17 @@ function isTopLeftPanel(tree: JetPanelTree, panelId: PanelId): boolean {
     node = first
   }
   return node.panelId.id === panelId.id
+}
+
+/** A leaf touches the native window's top edge unless it follows a column split. */
+function isTopEdgePanel(tree: JetPanelTree, panelId: PanelId): boolean {
+  const visit = (node: JetPanelTree["root"], touchesTop: boolean): boolean => {
+    if (node.kind === "leaf") return node.panelId.id === panelId.id && touchesTop
+    return node.split.children.some((child, index) =>
+      visit(child, touchesTop && (node.kind !== "column" || index === 0)),
+    )
+  }
+  return visit(tree.root, true)
 }
 
 function detectWindowChrome(): boolean {
@@ -1561,6 +1572,7 @@ export function JetApp() {
         store={tabStore}
         registry={tabTypeRegistry}
         focused={meta.focused}
+        windowChrome={showWindowChrome && isTopEdgePanel(panelTree, panelId)}
         windowChromeLeading={
           showWindowChrome && !sidebarOpen && isTopLeftPanel(panelTree, panelId)
         }

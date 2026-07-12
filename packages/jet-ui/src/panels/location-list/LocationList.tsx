@@ -10,7 +10,6 @@ import {
 import { Lister, type ListerNode } from "@/lister/index.js"
 import { cn } from "@/lib/utils.js"
 import { useMemo } from "react"
-import { readLocationRowHeight } from "@/lister/measure.js"
 
 export type LocationListProps = {
   listId: string
@@ -65,7 +64,6 @@ export function LocationList({
         autoFocusInput={false}
         placeholder={filterPlaceholder}
         items={listerItems}
-        estimateSize={() => readLocationRowHeight()}
         listClassName={cn(
           "m-0 min-h-0 flex-1 list-none overflow-auto bg-background p-1",
           jetScrollFadeClass,
@@ -99,7 +97,7 @@ export function LocationList({
             </span>
             <span
               data-slot="row-detail"
-              className="truncate font-mono text-xs tabular-nums text-muted-foreground group-hover:text-muted-foreground"
+              className="truncate font-mono text-xs tabular-nums text-foreground"
             >
               {node.data.path}:{node.data.line}:{node.data.column}
               {node.data.detail ? ` · ${node.data.detail}` : ""}

@@ -162,16 +162,16 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
         node.data.kind === "group" ? node.data.group.name : node.data.entry.label
       }
       initiallyExpanded={initiallyExpanded}
-        syncExpanded
-        activeId={activeTerminalTabId}
-        onActivate={node => {
+      syncExpanded
+      activeId={activeTerminalTabId}
+      onActivate={node => {
           if (node.data.kind === "group") {
             onActivateProject(node.data.group.rootUri)
           } else {
             onFocusTerminal(node.data.entry.panelId, node.data.entry.tabId)
           }
-        }}
-        rowActions={node => {
+      }}
+      rowActions={node => {
           if (node.data.kind === "group" && node.data.group.rootUri.length > 0) {
             const rootUri = node.data.group.rootUri
             return (
@@ -246,8 +246,8 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
             )
           }
           return null
-        }}
-        wrapRow={(node, row) => {
+      }}
+      wrapRow={(node, row) => {
           if (node.data.kind === "group") {
             const group = node.data.group
             return (
@@ -334,8 +334,8 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
               </ContextMenuContent>
             </ContextMenu>
           )
-        }}
-        render={node => {
+      }}
+      render={node => {
           if (node.data.kind === "group") {
             const group = node.data.group
             const isActive = group.rootUri === activeProjectRootUri
@@ -346,7 +346,11 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
                   data-jet-project-activity={isActive ? "active" : "idle"}
                   className={isActive ? "h-4 w-0.5 rounded-full bg-primary" : "h-1.5 w-0.5 rounded-full bg-muted-foreground/35"}
                 />
-                <Folder aria-hidden className="size-4 shrink-0 text-foreground/85" />
+                <Folder
+                  aria-hidden
+                  data-jet-project-icon
+                  className="size-5! shrink-0 text-foreground/85"
+                />
                 <span
                   className="truncate font-medium text-foreground"
                   title={group.path || group.name}
@@ -396,14 +400,14 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
                 />
               </span>
               <span
-                className="truncate text-muted-foreground"
+                className="truncate text-sidebar-foreground"
                 title={entry.cwdRootUri ? entry.cwdRootUri.replace(/^file:\/\//, "") : entry.label}
               >
                 {entry.label}
               </span>
             </>
           )
-        }}
-      />
+      }}
+    />
   )
 })

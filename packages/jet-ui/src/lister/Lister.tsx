@@ -121,6 +121,7 @@ function TreeRowChrome<T>({
         aria-level={ctx.depth + 1}
         aria-expanded={ctx.isBranch ? ctx.expanded : undefined}
         data-jet-list-item
+        data-depth={ctx.depth}
         data-node-id={entry.node.id}
         onClick={event => {
           if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
@@ -135,7 +136,7 @@ function TreeRowChrome<T>({
         {ctx.isBranch ? (
           <ChevronRight
             className={cn(
-              "size-3 shrink-0 transition-transform",
+              "size-3 shrink-0 transition-transform duration-[var(--jet-motion-fast)]",
               ctx.expanded && "rotate-90",
             )}
           />
@@ -214,6 +215,7 @@ export function Lister<T>({
   }
 
   const [treeRev, setTreeRev] = useState(0)
+  const previousQueryRef = useRef(query)
   useEffect(() => {
     if (!treeState) return
     return treeState.subscribe(() => setTreeRev(r => r + 1))
@@ -290,6 +292,16 @@ export function Lister<T>({
   }, [mode, treeRows, items, filter, query])
 
   useEffect(() => {
+    const queryChanged = previousQueryRef.current !== query
+    previousQueryRef.current = query
+    if (queryChanged) {
+      setSelectedIndex(
+        visibleRows.length === 0 || (requireQueryForSelection && query.trim() === "")
+          ? -1
+          : 0,
+      )
+      return
+    }
     if (requireQueryForSelection && query.trim() === "") {
       setSelectedIndex(-1)
       return

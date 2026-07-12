@@ -22,11 +22,11 @@ Semantic: `background`, `foreground`, `card`, `popover`, `primary`, `secondary`,
 
 ### Typography
 Scale (rem, ~px):
-- `text-4xs` — 0.62rem (~10px)
-- `text-3xs` — 0.7rem (~11px)
-- `text-2xs` — 0.77rem (~12px)
-- `text-xs` — 0.85rem (~14px)
-- `text-sm` — 0.92rem (~15px)
+- `text-4xs` — 0.69rem (~9px at the 13px default; badge-only)
+- `text-3xs` — 0.77rem (~10px)
+- `text-2xs` — 0.82rem (~11px)
+- `text-xs` — 0.88rem (~11.5px)
+- `text-sm` — 0.95rem (~12.5px)
 - `text-base` — 1rem (~16px)
 - `text-lg` — 1.15rem (~18px)
 - `text-xl` — 1.85rem (~30px)

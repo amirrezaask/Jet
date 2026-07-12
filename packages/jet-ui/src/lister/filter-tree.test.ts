@@ -59,6 +59,25 @@ describe("filterTreeRows", () => {
       ["b", "a"],
     )
   })
+
+  it("scans broad sibling groups linearly", () => {
+    let depthReads = 0
+    const makeRow = (id: string, depth: number) => ({
+      searchText: `match-${id}`,
+      get depth() {
+        depthReads++
+        return depth
+      },
+      expanded: depth === 0,
+      isBranch: depth === 0,
+      id,
+    })
+    const rows = [makeRow("root", 0)]
+    for (let i = 0; i < 2_000; i++) rows.push(makeRow(String(i), 1))
+
+    assert.equal(filterTreeRows("match", rows).length, rows.length)
+    assert.ok(depthReads < rows.length * 12, `expected linear depth reads, got ${depthReads}`)
+  })
 })
 
 describe("ListerTreeState expand under filter", () => {
@@ -87,5 +106,29 @@ describe("ListerTreeState expand under filter", () => {
       filtered.map(r => r.id),
       ["src", "a", "b"],
     )
+  })
+
+  it("discards children resolved by an obsolete source", async () => {
+    let resolveOld: ((nodes: ListerNode<N>[]) => void) | undefined
+    const oldSource: ListerDataSource<N> = {
+      getRoots: () => [node("root", "root", true)],
+      getChildren: () => new Promise(resolve => {
+        resolveOld = resolve
+      }),
+    }
+    const newSource: ListerDataSource<N> = {
+      getRoots: () => [node("root", "root", true)],
+      getChildren: () => [node("new", "new.ts")],
+    }
+    const state = new ListerTreeState(oldSource, ["root"])
+    const oldLoad = state.ensureChildren("root")
+
+    state.setSource(newSource)
+    state.invalidate()
+    await state.ensureChildren("root")
+    resolveOld?.([node("old", "old.ts")])
+    await oldLoad
+
+    assert.deepEqual(state.flatten().map(entry => entry.node.id), ["root", "new"])
   })
 })

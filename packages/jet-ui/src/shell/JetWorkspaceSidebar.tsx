@@ -117,7 +117,7 @@ export function JetWorkspaceSidebar({
           />
         ) : null}
         <div
-          className="flex min-w-0 flex-1 items-center py-1.5 pl-1"
+          className="flex min-w-0 flex-1 items-center py-1 pl-1"
           data-tauri-drag-region={showWindowChrome ? "false" : undefined}
           style={
             showWindowChrome ? ({ WebkitAppRegion: "no-drag" } as CSSProperties) : undefined

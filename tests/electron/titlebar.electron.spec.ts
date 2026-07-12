@@ -5,7 +5,7 @@ import {
 } from "../shell/assert.js"
 
 import { expectListRows } from "../helpers/list.js"
-import { execCommand, launchJet } from "./_launch.js"
+import { execCommand, focusEditor, launchJet } from "./_launch.js"
 
 test.describe("desktop shell", () => {
   test.skip(process.platform !== "darwin", "traffic lights are macOS-only")
@@ -75,25 +75,27 @@ test.describe("desktop shell", () => {
         if (triggers.length < 2) return null
         const root = getComputedStyle(document.documentElement)
         const rootPx = parseFloat(root.fontSize)
-        const threeXs = parseFloat(root.getPropertyValue("--jet-fs-3xs"))
-        const expected = rootPx * threeXs
+        const xs = parseFloat(root.getPropertyValue("--jet-fs-xs"))
+        const expected = rootPx * xs
         const sizes = triggers.map(trigger => parseFloat(getComputedStyle(trigger).fontSize))
         const list = document.querySelector<HTMLElement>(
           '[data-jet-sidebar-view-tabs] [data-slot="tabs-list"]',
         )
         const listHeight = list ? parseFloat(getComputedStyle(list).height) : 0
-        const expectedListHeight = rootPx * 1.5
+        const expectedListHeight = rootPx * 2
         return {
           sizes,
           expected,
           listHeight,
           expectedListHeight,
+          labelsFit: triggers.every(trigger => trigger.scrollWidth <= trigger.clientWidth + 1),
           allSameSize: sizes.every(size => Math.abs(size - sizes[0]!) < 0.5),
         }
       })
       expect(tabFont, "sidebar view tabs must exist").not.toBeNull()
       expect(tabFont!.sizes).toHaveLength(2)
       expect(tabFont!.allSameSize).toBe(true)
+      expect(tabFont!.labelsFit).toBe(true)
       expect(tabFont!.sizes[0]).toBeCloseTo(tabFont!.expected, 0)
       expect(tabFont!.listHeight).toBeCloseTo(tabFont!.expectedListHeight, 0)
     } finally {
@@ -177,6 +179,92 @@ test.describe("desktop shell", () => {
     }
   })
 
+  test("only panel bars on the window top edge are native drag regions", async () => {
+    test.skip(process.platform !== "darwin", "native overlay chrome is macOS-only")
+    const { app, page } = await launchJet()
+    try {
+      await page.evaluate(async () => {
+        await window.__jetAgent!.openFile("src/index.ts")
+        await window.__jetAgent!.waitForEditor()
+      })
+      await focusEditor(page)
+      await page.keyboard.press("Meta+Shift+\\")
+      await page.waitForFunction(
+        () => document.querySelectorAll("[data-jet-tab-bar]").length === 2,
+        null,
+        { timeout: 10_000 },
+      )
+
+      const bars = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>("[data-jet-tab-bar]"))
+          .map(bar => ({
+            y: bar.getBoundingClientRect().y,
+            height: bar.getBoundingClientRect().height,
+            drag: bar.getAttribute("data-tauri-drag-region"),
+          }))
+          .sort((a, b) => a.y - b.y),
+      )
+      expect(bars).toHaveLength(2)
+      expect(bars[0]!.drag).toBe("true")
+      expect(bars[1]!.drag).toBeNull()
+      expect(bars[1]!.y).toBeGreaterThan(bars[0]!.y + bars[0]!.height)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Files and Terminals explorers share row and project-icon geometry", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await execCommand(page, "explorer.show")
+      await page.waitForSelector(
+        '[data-jet-list-panel="jet:explorer"] [data-depth="1"]',
+        { timeout: 10_000 },
+      )
+      const files = await page.evaluate(() => {
+        const panel = document.querySelector('[data-jet-list-panel="jet:explorer"]')!
+        const root = panel.querySelector<HTMLElement>('[data-depth="0"]')!
+        const child = panel.querySelector<HTMLElement>('[data-depth="1"]')!
+        const icon = root.querySelector<HTMLElement>("[data-jet-project-icon]")!
+        return {
+          rootHeight: root.getBoundingClientRect().height,
+          childHeight: child.getBoundingClientRect().height,
+          rootFont: parseFloat(getComputedStyle(root).fontSize),
+          childFont: parseFloat(getComputedStyle(child).fontSize),
+          iconSize: icon.getBoundingClientRect().width,
+        }
+      })
+
+      await execCommand(page, "terminal.new")
+      await execCommand(page, "terminal.explorer.show")
+      await page.waitForSelector(
+        '[data-jet-list-panel="jet:terminal-explorer"] [data-depth="1"]',
+        { timeout: 30_000 },
+      )
+      const terminals = await page.evaluate(() => {
+        const panel = document.querySelector('[data-jet-list-panel="jet:terminal-explorer"]')!
+        const root = panel.querySelector<HTMLElement>('[data-depth="0"]')!
+        const child = panel.querySelector<HTMLElement>('[data-depth="1"]')!
+        const icon = root.querySelector<HTMLElement>("[data-jet-project-icon]")!
+        return {
+          rootHeight: root.getBoundingClientRect().height,
+          childHeight: child.getBoundingClientRect().height,
+          rootFont: parseFloat(getComputedStyle(root).fontSize),
+          childFont: parseFloat(getComputedStyle(child).fontSize),
+          iconSize: icon.getBoundingClientRect().width,
+        }
+      })
+
+      expect(terminals.rootHeight).toBeCloseTo(files.rootHeight, 1)
+      expect(terminals.childHeight).toBeCloseTo(files.childHeight, 1)
+      expect(terminals.rootFont).toBeCloseTo(files.rootFont, 1)
+      expect(terminals.childFont).toBeCloseTo(files.childFont, 1)
+      expect(terminals.iconSize).toBeCloseTo(files.iconSize, 1)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("workspace roots use a prominent project icon", async () => {
     const { app, page } = await launchJet()
     try {
@@ -191,8 +279,8 @@ test.describe("desktop shell", () => {
         .first()
       await expectLocatorVisible(projectIcon)
       const box = await projectIcon.boundingBox()
-      expect(box?.width ?? 0).toBeGreaterThanOrEqual(18)
-      expect(box?.height ?? 0).toBeGreaterThanOrEqual(18)
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(15)
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(15)
     } finally {
       await app.close()
     }

@@ -5,6 +5,7 @@ import { EXPLORER_PANEL } from "../helpers/shell.js"
 import { execCommand, launchJet } from "./_launch.js"
 
 const EXPLORER_ITEMS = `${EXPLORER_PANEL} [data-jet-list-item]`
+const EXPLORER_SLOTS = `${EXPLORER_PANEL} [data-jet-tree-row-slot]`
 
 test.describe("RAD hot glow", () => {
   test("sets mouse-local CSS vars and soft-circle opacity on hovered row", async () => {
@@ -55,14 +56,15 @@ test.describe("RAD hot glow", () => {
         `::before opacity (hover=${glow.matchesHover} bg=${glow.beforeBg})`,
       ).toBeGreaterThan(0)
 
-      // Virtualized rows must stay absolutely stacked (hot-glow must not force position:relative).
+      // Virtual slots own absolute positioning; the interactive row stays relative
+      // so the soft-circle pseudo-element is clipped and positioned locally.
       const layout = await page.evaluate((sel) => {
         const els = [...document.querySelectorAll<HTMLElement>(sel)].slice(0, 3)
         return els.map((el) => {
           const r = el.getBoundingClientRect()
           return { top: r.top, height: r.height, position: getComputedStyle(el).position }
         })
-      }, EXPLORER_ITEMS)
+      }, EXPLORER_SLOTS)
       expect(layout.length).toBeGreaterThanOrEqual(2)
       for (const row of layout) {
         expect(row.position, "tree row must stay position:absolute").toBe("absolute")

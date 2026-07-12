@@ -37,4 +37,24 @@ test.describe("electron shell palette", () => {
       await app.close()
     }
   })
+
+  test("typing after keyboard navigation resets selection to the best match", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await execCommand(page, "ui.showCommandPalette")
+      await expectPaletteOpen(page)
+      const input = page.getByRole("dialog").getByRole("combobox")
+      await input.fill("show")
+      const selected = page.locator('[data-slot="command-item"][data-selected="true"]')
+      await expectLocatorVisible(selected)
+      const bestMatch = await selected.textContent()
+
+      await page.keyboard.press("ArrowDown")
+      await expect.poll(() => selected.textContent()).not.toBe(bestMatch)
+      await page.keyboard.press(" ")
+      await expect.poll(() => selected.textContent()).toBe(bestMatch)
+    } finally {
+      await app.close()
+    }
+  })
 })

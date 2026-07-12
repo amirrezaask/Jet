@@ -178,7 +178,7 @@ export function ExplorerTab({
                 data-jet-project-activity={node.data.uri === activeRootId ? "active" : "idle"}
                 className={node.data.uri === activeRootId ? "h-4 w-0.5 rounded-full bg-primary" : "h-1.5 w-0.5 rounded-full bg-muted-foreground/35"}
               />
-              <Folder data-jet-project-icon className="size-6! shrink-0 text-foreground/85" />
+              <Folder data-jet-project-icon className="size-5! shrink-0 text-foreground/85" />
               <span
                 className="truncate font-medium text-foreground"
                 title={node.data.path}

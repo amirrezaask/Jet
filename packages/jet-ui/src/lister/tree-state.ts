@@ -10,9 +10,10 @@ export type FlatEntry<T> = {
 export class ListerTreeState<T> {
   private source: ListerDataSource<T>
   private readonly childCache = new Map<ListerNodeId, ListerNode<T>[]>()
-  private readonly loading = new Set<ListerNodeId>()
+  private readonly loading = new Map<ListerNodeId, number>()
   private readonly expanded: Set<ListerNodeId>
   private readonly listeners = new Set<() => void>()
+  private generation = 0
 
   constructor(source: ListerDataSource<T>, initiallyExpanded: ListerNodeId[]) {
     this.source = source
@@ -35,7 +36,8 @@ export class ListerTreeState<T> {
   }
 
   async ensureChildren(id: ListerNodeId): Promise<void> {
-    if (this.childCache.has(id) || this.loading.has(id)) return
+    const generation = this.generation
+    if (this.childCache.has(id) || this.loading.get(id) === generation) return
     const result = this.source.getChildren(id)
     if (result === null) return
     if (Array.isArray(result)) {
@@ -43,14 +45,16 @@ export class ListerTreeState<T> {
       this.notify()
       return
     }
-    this.loading.add(id)
+    this.loading.set(id, generation)
     this.notify()
     try {
       const entries = await result
-      this.childCache.set(id, entries)
+      if (this.generation === generation) this.childCache.set(id, entries)
     } finally {
-      this.loading.delete(id)
-      this.notify()
+      if (this.loading.get(id) === generation) {
+        this.loading.delete(id)
+        this.notify()
+      }
     }
   }
 
@@ -72,7 +76,9 @@ export class ListerTreeState<T> {
   }
 
   invalidate(): void {
+    this.generation++
     this.childCache.clear()
+    this.loading.clear()
     this.notify()
   }
 
