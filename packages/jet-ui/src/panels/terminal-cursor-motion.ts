@@ -119,6 +119,16 @@ export class TerminalCursorMotionLayer {
     }
   }
 
+  private isTypingHop(point: CaretPoint): boolean {
+    const dx = point.x - this.anim.targetX
+    const dy = point.y - this.anim.targetY
+    return (
+      Math.abs(dx) <= point.charWidth * 1.5 &&
+      Math.abs(dy) < point.h * 0.15 &&
+      Math.abs(dx) > 0.01
+    )
+  }
+
   private retarget(forceSnap: boolean): void {
     const motion = this.appearance.motion
     const enabled = motion !== "off"
@@ -130,21 +140,29 @@ export class TerminalCursorMotionLayer {
     }
     const point = this.point()
     if (!point) return
-    const dx = point.x - this.anim.targetX
-    const dy = point.y - this.anim.targetY
-    const largeJump = Math.abs(dx) > point.charWidth * 8 || Math.abs(dy) > point.h * 3
-    if (!this.initialized || forceSnap || largeJump || this.reduced) {
+    const typingHop = !forceSnap && this.isTypingHop(point)
+    if (!this.initialized || forceSnap || this.reduced || !typingHop) {
+      if (typingHop && motion === "trail" && !this.reduced) {
+        this.ghosts.push(this.anim.x, this.anim.y, this.anim.h, performance.now())
+      } else if (!typingHop) {
+        this.ghosts.clear()
+      }
       this.anim.snap(point)
-      this.ghosts.clear()
       this.initialized = true
       this.lastGhostX = point.x
       this.lastGhostY = point.y
-      this.render()
-      this.stop()
+      if (this.render(performance.now())) this.start()
+      else this.stop()
       return
     }
-    this.anim.followTarget(point)
-    this.start()
+    if (motion === "trail" && !this.reduced) {
+      this.ghosts.push(this.anim.x, this.anim.y, this.anim.h, performance.now())
+    }
+    this.anim.snap(point)
+    this.lastGhostX = point.x
+    this.lastGhostY = point.y
+    if (this.render(performance.now())) this.start()
+    else this.stop()
   }
 
   private start(): void {
@@ -160,27 +178,8 @@ export class TerminalCursorMotionLayer {
 
   private tick(time: number): void {
     this.raf = null
-    const dt = Math.min(0.05, (time - this.lastFrame) / 1000)
     this.lastFrame = time
-    const previousX = this.anim.x
-    const previousY = this.anim.y
-    const moving = this.anim.step(dt)
-    const motion = this.appearance.motion
-
-    if (motion === "trail" && !this.reduced) {
-      const ghostDistance = Math.hypot(this.anim.x - this.lastGhostX, this.anim.y - this.lastGhostY)
-      if (ghostDistance >= Math.max(1.5, this.anim.charWidth * 0.35)) {
-        this.ghosts.push(previousX, previousY, this.anim.h, time)
-        this.lastGhostX = this.anim.x
-        this.lastGhostY = this.anim.y
-      }
-    } else {
-      this.ghosts.clear()
-    }
-
-    const ghostsAlive = this.ghosts.tick(time).length > 0
-    this.render()
-    if ((moving || ghostsAlive) && this.active) this.start()
+    if (this.render(time) && this.active) this.start()
   }
 
   private styleCursor(el: HTMLElement, x: number, y: number, h: number, opacity: number): void {
@@ -198,9 +197,9 @@ export class TerminalCursorMotionLayer {
     el.style.boxShadow = style === "block" ? "inset 0 0 0 1px color-mix(in srgb, var(--jet-bg) 22%, transparent)" : "none"
   }
 
-  private render(): void {
+  private render(time = performance.now()): boolean {
     this.styleCursor(this.cursor, this.anim.x, this.anim.y, this.anim.h, 0.78)
-    const ghosts = this.ghosts.tick()
+    const ghosts = this.ghosts.tick(time)
     for (let i = 0; i < this.ghostEls.length; i++) {
       const ghost = ghosts[i]
       const el = this.ghostEls[i]!
@@ -210,6 +209,7 @@ export class TerminalCursorMotionLayer {
       }
       this.styleCursor(el, ghost.x, ghost.y, ghost.h, ghost.opacity)
     }
+    return ghosts.length > 0
   }
 
   dispose(): void {

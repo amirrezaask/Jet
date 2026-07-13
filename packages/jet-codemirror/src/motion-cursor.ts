@@ -1,7 +1,6 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view"
 import type { Extension } from "@codemirror/state"
 import {
-  ANIM_EPSILON,
   CaretEndpointAnim,
   CaretGhostBuffer,
   onReducedMotionChange,
@@ -84,6 +83,7 @@ class MotionCursorPlugin {
   private raf: number | null = null
   private lastFrame = 0
   private instantNext = true
+  private typingTrail = false
   private appearance = readCursorAppearance()
   private readonly unsubscribeReduced: () => void
   private readonly rootObserver: MutationObserver
@@ -124,7 +124,9 @@ class MotionCursorPlugin {
       this.stop()
       return
     }
-    this.instantNext = this.reduced || this.appearance.motion === "off" || (update.docChanged && !typingHop(update))
+    this.typingTrail =
+      typingHop(update) && this.appearance.motion === "trail" && !this.reduced
+    this.instantNext = true
     this.measureAndRetarget()
   }
 
@@ -157,17 +159,14 @@ class MotionCursorPlugin {
           if (!point) return
           active.add(index)
           const entry = this.ensureEntry(index, point)
-          const dx = point.x - entry.anim.targetX
-          const dy = point.y - entry.anim.targetY
-          const largeJump = Math.abs(dx) > point.charWidth * 10 || Math.abs(dy) > point.h * 5
-          if (this.instantNext || largeJump) {
-            entry.anim.snap(point)
-            entry.ghosts.clear()
-            entry.lastGhostX = point.x
-            entry.lastGhostY = point.y
+          if (this.typingTrail) {
+            entry.ghosts.push(entry.anim.x, entry.anim.y, entry.anim.h, performance.now())
           } else {
-            entry.anim.followTarget(point)
+            entry.ghosts.clear()
           }
+          entry.anim.snap(point)
+          entry.lastGhostX = point.x
+          entry.lastGhostY = point.y
         })
         for (const [index, entry] of this.entries) {
           if (active.has(index)) continue
@@ -177,12 +176,11 @@ class MotionCursorPlugin {
         }
         this.render(performance.now())
         this.instantNext = false
-        const moving = [...this.entries.values()].some(entry => {
-          const dx = entry.anim.targetX - entry.anim.x
-          const dy = entry.anim.targetY - entry.anim.y
-          return dx * dx + dy * dy > ANIM_EPSILON * ANIM_EPSILON
-        })
-        if (moving) this.start()
+        this.typingTrail = false
+        const ghostsAlive = [...this.entries.values()].some(
+          entry => entry.ghosts.tick(performance.now()).length > 0,
+        )
+        if (ghostsAlive) this.start()
         else this.stop()
       },
     })
@@ -201,35 +199,13 @@ class MotionCursorPlugin {
 
   private tick(time: number): void {
     this.raf = null
-    const dt = Math.min(0.05, Math.max(0, (time - this.lastFrame) / 1000))
     this.lastFrame = time
-    let moving = false
     let ghostsAlive = false
-    const motion = this.appearance.motion
     for (const entry of this.entries.values()) {
-      const previousX = entry.anim.x
-      const previousY = entry.anim.y
-      if (motion !== "off" && !this.reduced && entry.anim.step(dt)) moving = true
-      else if (motion === "off" || this.reduced) entry.anim.snap({
-        x: entry.anim.targetX,
-        y: entry.anim.targetY,
-        h: entry.anim.targetH,
-        charWidth: entry.anim.charWidth,
-      })
-      if (motion === "trail" && !this.reduced) {
-        const distance = Math.hypot(entry.anim.x - entry.lastGhostX, entry.anim.y - entry.lastGhostY)
-        if (distance >= Math.max(1.5, entry.anim.charWidth * 0.35)) {
-          entry.ghosts.push(previousX, previousY, entry.anim.h, time)
-          entry.lastGhostX = entry.anim.x
-          entry.lastGhostY = entry.anim.y
-        }
-        if (entry.ghosts.tick(time).length > 0) ghostsAlive = true
-      } else {
-        entry.ghosts.clear()
-      }
+      if (entry.ghosts.tick(time).length > 0) ghostsAlive = true
     }
     this.render(time)
-    if (moving || ghostsAlive) this.start()
+    if (ghostsAlive) this.start()
   }
 
   private styleElement(

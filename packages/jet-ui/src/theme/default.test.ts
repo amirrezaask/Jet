@@ -9,23 +9,39 @@ import {
   themePreviewSwatches,
 } from "./default.js"
 
+const paletteThemeIds = [
+  "ayu-dark",
+  "ayu-light",
+  "everforest-dark",
+  "everforest-light",
+  "gruvbox-dark",
+  "gruvbox-light",
+  "tokyonight-dark",
+  "tokyonight-light",
+]
+
+const radThemeIds = [
+  "rad-default-dark",
+  "rad-default-light",
+  "rad-vs-dark",
+  "rad-vs-light",
+  "rad-solarized-dark",
+  "rad-solarized-light",
+  "rad-handmade-hero",
+  "rad-naysayer",
+  "rad-four-coder",
+  "rad-grove",
+  "rad-far-manager",
+]
+
 describe("bundled Jet themes", () => {
-  it("registers Ayu, Everforest, Gruvbox, and TokyoNight in dark and light variants", () => {
+  it("registers palette themes plus RAD Debugger imports", () => {
     assert.equal(defaultThemeId, "ayu-dark")
-    assert.deepEqual(
-      bundledThemeList.map(theme => theme.id),
-      [
-        "ayu-dark",
-        "ayu-light",
-        "everforest-dark",
-        "everforest-light",
-        "gruvbox-dark",
-        "gruvbox-light",
-        "tokyonight-dark",
-        "tokyonight-light",
-      ],
-    )
-    assert.equal(Object.keys(bundledThemes).length, 8)
+    assert.deepEqual(bundledThemeList.map(theme => theme.id), [
+      ...paletteThemeIds,
+      ...radThemeIds,
+    ])
+    assert.equal(Object.keys(bundledThemes).length, 19)
   })
 
   it("falls back to Ayu Dark for missing or invalid theme ids", () => {
@@ -51,5 +67,14 @@ describe("bundled Jet themes", () => {
       assert.ok(theme.terminalAnsi?.brightWhite)
       assert.ok(themePreviewSwatches(theme).length >= 4)
     }
+  })
+
+  it("imports RAD Debugger themes from raddbg.mdesk", () => {
+    const radDefaultDark = getThemeById("rad-default-dark")
+    assert.equal(radDefaultDark.family, "RAD")
+    assert.equal(radDefaultDark.name, "Default (Dark)")
+    assert.equal(radDefaultDark.colors.bg, "#1f1f1f")
+    assert.equal(radDefaultDark.highlights.keyword, "#838b8f")
+    assert.equal(getThemeById("rad-four-coder").name, "4coder")
   })
 })

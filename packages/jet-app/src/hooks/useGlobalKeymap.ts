@@ -48,13 +48,13 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       setPendingChordPrefixRef.current(null)
     }
 
-    const closeBuffer = () => {
+    const closeActiveTab = () => {
       const ctx = contextRef.current
       if (!workspaceRef.current.manager.hasFolders() || anyOverlayOpen(ctx)) return
       const now = Date.now()
       if (now - lastCloseAt < 100) return
       lastCloseAt = now
-      void executeCommandRef.current("workspace.closeBuffer")
+      void executeCommandRef.current("layout.closeTab")
     }
 
     const dispatchKeyBinding = (e: KeyboardEvent, opts?: { allowEditor?: boolean }): boolean => {
@@ -110,6 +110,13 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       }
 
       if (ctx.terminalFocus || inXterm) {
+        if (keyEventMatchesBinding(e, "Cmd-w")) {
+          if (!workspaceRef.current.manager.hasFolders() || anyOverlayOpen(ctx)) return
+          e.preventDefault()
+          e.stopPropagation()
+          closeActiveTab()
+          return
+        }
         if (dispatchKeyBinding(e)) return
         if (keyEventMatchesBinding(e, "Cmd-=") || keyEventMatchesBinding(e, "Cmd--")) {
           e.preventDefault()
@@ -132,13 +139,13 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
         if (!workspaceRef.current.manager.hasFolders()) return
         e.preventDefault()
         e.stopPropagation()
-        closeBuffer()
+        closeActiveTab()
         return
       }
       dispatchKeyBinding(e, { allowEditor: true })
     }
 
-    const onNativeCloseTab = () => closeBuffer()
+    const onNativeCloseTab = () => closeActiveTab()
 
     window.addEventListener("keydown", onKey, true)
     window.addEventListener("jet-close-tab", onNativeCloseTab)

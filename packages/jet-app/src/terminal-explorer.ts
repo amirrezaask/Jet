@@ -89,3 +89,14 @@ export function nextTerminalLabel(tree: JetPanelTree): string {
   const count = listTerminalTabs(tree).length
   return count === 0 ? "Terminal" : `Terminal ${count + 1}`
 }
+
+/** 1-based terminal index within a workspace root (terminal explorer order). */
+export function terminalAtIndex(
+  groups: TerminalExplorerGroup[],
+  rootUri: string,
+  index: number,
+): TerminalExplorerEntry | null {
+  if (index < 1) return null
+  const group = groups.find(candidate => candidate.rootUri === rootUri)
+  return group?.terminals[index - 1] ?? null
+}

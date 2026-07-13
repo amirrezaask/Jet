@@ -43,7 +43,9 @@ test.describe("electron explorer", () => {
       await expectLocatorCount(page.locator("[data-jet-sidebar-chrome] [data-jet-sidebar-toggle]"), 1)
 
       await page.locator("[data-jet-sidebar-chrome] [data-jet-sidebar-toggle]").click()
-      await expectSelectorHidden(page, "[data-jet-workspace-sidebar]")
+      await expect
+        .poll(() => page.locator("[data-slot='sidebar']").getAttribute("data-state"))
+        .toBe("collapsed")
       // Closed: reopen control lives on the tab bar — no sidebar-width gap reserved.
       await expectLocatorCount(page.locator("[data-jet-tab-bar] [data-jet-sidebar-toggle]"), 1)
 
@@ -79,7 +81,9 @@ test.describe("electron explorer", () => {
       expect(contentLeft - geom!.insetLeft).toBeLessThan(geom!.trafficInset + 48)
 
       await execCommand(page, "workbench.action.toggleSidebarVisibility")
-      await expectSelectorVisible(page, "[data-jet-workspace-sidebar]")
+      await expect
+        .poll(() => page.locator("[data-slot='sidebar']").getAttribute("data-state"))
+        .toBe("expanded")
       await expectLocatorVisible(page.locator("[data-jet-sidebar-view-tabs]"))
       await expectLocatorCount(page.locator("[data-jet-sidebar-chrome] [data-jet-sidebar-toggle]"), 1)
     } finally {

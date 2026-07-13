@@ -21,7 +21,7 @@ test.describe("electron shell settings", () => {
       await page.evaluate(async () => window.__jetAgent!.waitForReady())
       await execCommand(page, "ui.setTheme.ayu-dark")
       await openSettings(page)
-      await expectLocatorCount(page.locator("[data-jet-theme-option]"), 8)
+      await expectLocatorCount(page.locator("[data-jet-theme-option]"), 19)
 
       await page.locator("[data-jet-theme-option='gruvbox-light']").click()
       await expect

@@ -76,6 +76,13 @@ import {
 } from "./tab-routing.js"
 import { confirmCloseBuffer } from "./close-buffer.js"
 import type { JetSidebarView } from "@jet/ui"
+import {
+  anyOverlayOpen,
+  bind,
+  type JetKeyBinding,
+  type KeymapContext,
+} from "@jet/workspace"
+import { terminalAtIndex } from "./terminal-explorer.js"
 
 export type BuildAppCommandsDeps = {
   workspace: WorkspaceService
@@ -125,6 +132,10 @@ export type BuildAppCommandsDeps = {
   unarchiveActiveAgentThread: () => Promise<void>
   getSearchSupported: () => boolean
   getContextFolder: () => WorkspaceFolder | null
+  getActiveTerminalTabId: () => string | null
+  closeTerminalTab: (panelId: PanelId, tabId: string) => void
+  getTerminalExplorerGroups: () => import("./terminal-explorer.js").TerminalExplorerGroup[]
+  focusTerminalTab: (panelId: PanelId, tabId: string) => void
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -311,6 +322,34 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     deps.commitTree(tree, panelId)
   }
 
+  function activeTerminalTab(): { panelId: PanelId; tabId: string } | null {
+    const tabId = deps.getActiveTerminalTabId()
+    if (!tabId) return null
+    const panel = currentFocusedPanel()
+    if (!panel) return null
+    return { panelId: panel, tabId }
+  }
+
+  const closeTab: JetCommandFn = async () => {
+    const terminal = activeTerminalTab()
+    if (terminal) {
+      deps.closeTerminalTab(terminal.panelId, terminal.tabId)
+      return
+    }
+    const panel = activeEditorPanel()
+    const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
+    if (!fileUri || !panel) return
+    if (!(await confirmCloseBuffer(deps.workspace, fileUri))) return
+    deps.workspace.clearDirtyState(fileUri)
+    destroyEditorBuffer(panel, fileUri)
+    deps.workspace.closeBuffer(fileUri)
+    deps.workspace.disposeTab(fileUri)
+    const tree = deps.cloneTree()
+    deps.workspace.popPanelBuffer(tree, panel, fileUri)
+    closePanelIfEmpty(tree, panel)
+    deps.commitTree(tree)
+  }
+
   const named: JetCommands = {
     palette: () => deps.setPaletteOpen(true),
     quickOpen: async ctx => {
@@ -372,20 +411,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.commitTree(tree, panel)
       requestAnimationFrame(() => getEditorView(panel)?.focus())
     },
-    closeBuffer: async () => {
-      const panel = activeEditorPanel()
-      const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
-      if (!fileUri || !panel) return
-      if (!(await confirmCloseBuffer(deps.workspace, fileUri))) return
-      deps.workspace.clearDirtyState(fileUri)
-      destroyEditorBuffer(panel, fileUri)
-      deps.workspace.closeBuffer(fileUri)
-      deps.workspace.disposeTab(fileUri)
-      const tree = deps.cloneTree()
-      deps.workspace.popPanelBuffer(tree, panel, fileUri)
-      closePanelIfEmpty(tree, panel)
-      deps.commitTree(tree)
-    },
+    closeBuffer: closeTab,
+    closeTab,
     find: ctx => {
       const view = ctx.getActiveEditorView()
       const panel = currentFocusedPanel()
@@ -819,6 +846,58 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
   return named as JetCommands
 }
 
+export function isMacPlatform(): boolean {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+}
+
+/** macOS: Cmd+1..9 → Nth terminal in active workspace; Ctrl+1..9 → Nth workspace + its first terminal. */
+export function buildMacTerminalQuickSwitchBindings(opts: {
+  workspace: WorkspaceService
+  getTerminalExplorerGroups: () => import("./terminal-explorer.js").TerminalExplorerGroup[]
+  focusTerminalTab: (panelId: PanelId, tabId: string) => void
+  setMessage: (msg: string) => void
+}): JetKeyBinding[] {
+  if (!isMacPlatform()) return []
+
+  const when = (ctx: KeymapContext) => ctx.workspaceOpen && !anyOverlayOpen(ctx)
+
+  const focusActiveWorkspaceTerminal = (index: number): JetCommandFn => () => {
+    const rootUri = opts.workspace.root?.uri
+    if (!rootUri) return
+    const entry = terminalAtIndex(opts.getTerminalExplorerGroups(), rootUri, index)
+    if (!entry) {
+      opts.setMessage(`No terminal ${index} in this workspace`)
+      return
+    }
+    opts.focusTerminalTab(entry.panelId, entry.tabId)
+  }
+
+  const focusWorkspaceFolderTerminal = (index: number): JetCommandFn => () => {
+    const folder = opts.workspace.folders[index - 1]
+    if (!folder) {
+      opts.setMessage(`No workspace ${index}`)
+      return
+    }
+    const focusFirstTerminal = () => {
+      const entry = terminalAtIndex(opts.getTerminalExplorerGroups(), folder.root.uri, 1)
+      if (entry) opts.focusTerminalTab(entry.panelId, entry.tabId)
+    }
+    if (folder.root.uri !== opts.workspace.root?.uri) {
+      opts.workspace.setActiveFolder(folder.id)
+      requestAnimationFrame(() => requestAnimationFrame(focusFirstTerminal))
+    } else {
+      focusFirstTerminal()
+    }
+  }
+
+  const bindings: JetKeyBinding[] = []
+  for (let index = 1; index <= 9; index++) {
+    bindings.push(bind(`Cmd-${index}`, focusActiveWorkspaceTerminal(index), when))
+    bindings.push(bind(`Ctrl-${index}`, focusWorkspaceFolderTerminal(index), when))
+  }
+  return bindings
+}
+
 export const APP_COMMAND_REGISTRY = [
   { id: "ui.showCommandPalette", fn: "palette", title: "Show Command Palette", category: "UI", aliases: ["commands", "palette", "help"] },
   { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly"] },
@@ -836,6 +915,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "workspace.refreshProjects", fn: "refreshProjects", title: "Refresh Projects", category: "Workspace" },
   { id: "workspace.newFile", fn: "newFile", title: "New File", category: "Workspace", aliases: ["untitled"] },
   { id: "workspace.closeBuffer", fn: "closeBuffer", title: "Close Buffer", category: "Workspace", aliases: ["close file"] },
+  { id: "layout.closeTab", fn: "closeTab", title: "Close Tab", category: "Layout", aliases: ["close"] },
   { id: "navigation.jumpBack", fn: "jumpBack", title: "Jump Back", category: "Navigation", aliases: ["back"] },
   { id: "navigation.jumpForward", fn: "jumpForward", title: "Jump Forward", category: "Navigation", aliases: ["forward"] },
   { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor" },

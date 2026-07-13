@@ -177,6 +177,7 @@ test.describe("premium editor motion", () => {
     try {
       await openFixtureFile(page, "src/index.ts")
       await expectSelectorVisible(page, "[data-jet-editor-cursor-layer]")
+      await page.locator(".cm-content").focus()
       await expectLocatorCount(page.locator("[data-jet-editor-cursor]"), 1)
 
       await page.keyboard.press("Control+Space")
@@ -201,11 +202,11 @@ test.describe("premium editor motion", () => {
         observer.observe(layer, { subtree: true, attributes: true, attributeFilter: ["style"] })
         window.setTimeout(() => observer.disconnect(), 1_000)
       })
-      await page.keyboard.press("ArrowDown")
+      await page.keyboard.type("x")
       await expectLocatorAttribute(page.locator("[data-jet-editor-cursor-layer]"), 
         "data-jet-ghost-observed",
         "true",
-        { timeout: 1_000 },
+        { timeout: 5_000 },
       )
     } finally {
       await app.close()

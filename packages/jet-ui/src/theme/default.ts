@@ -1,139 +1,16 @@
-import type {
-  JetColors,
-  JetHighlightColors,
-  JetTerminalAnsiColors,
-  JetTheme,
-} from "@jet/codemirror"
+import type { JetTheme } from "@jet/codemirror"
+import {
+  makeTheme,
+  paletteAnsi,
+  paletteColors,
+  paletteHighlights,
+  type ColorScheme,
+} from "./theme-palette.js"
+import { radDebuggerThemeList, radDebuggerThemes } from "./raddebugger.js"
 
-export type ColorScheme = "dark" | "light"
+export type { ColorScheme } from "./theme-palette.js"
 
 export const defaultThemeId = "ayu-dark"
-
-type ThemeFamily = "Ayu" | "Everforest" | "Gruvbox" | "TokyoNight"
-
-type PaletteThemeInput = {
-  id: string
-  name: string
-  family: ThemeFamily
-  scheme: ColorScheme
-  sourceName: string
-  sourceUrl: string
-  license: string
-  colors: JetColors
-  highlights: JetHighlightColors
-  terminalAnsi: JetTerminalAnsiColors
-}
-
-function swatches(theme: Pick<PaletteThemeInput, "colors" | "highlights" | "terminalAnsi">): string[] {
-  return [
-    theme.colors.bg,
-    theme.colors.panel,
-    theme.colors.text,
-    theme.colors.accent,
-    theme.highlights.keyword,
-    theme.highlights.function,
-    theme.highlights.string,
-    theme.terminalAnsi.yellow,
-    theme.terminalAnsi.cyan,
-    theme.colors.error,
-  ]
-}
-
-function makeTheme(input: PaletteThemeInput): JetTheme {
-  return {
-    ...input,
-    previewSwatches: swatches(input),
-  }
-}
-
-function colors(input: {
-  bg: string
-  panel: string
-  panelRaised: string
-  text: string
-  textMuted: string
-  accent: string
-  hover: string
-  selection: string
-  border: string
-  focusBorder?: string
-  error: string
-  warning: string
-  success: string
-}): JetColors {
-  return {
-    ...input,
-    focusBorder: input.focusBorder ?? input.accent,
-    backdrop: "#00000080",
-  }
-}
-
-function highlights(input: {
-  keyword: string
-  controlKeyword?: string
-  function: string
-  type: string
-  string: string
-  number: string
-  boolean?: string
-  comment: string
-  operator: string
-  variable: string
-  attribute?: string
-  constant?: string
-  field?: string
-  module?: string
-  label?: string
-}): JetHighlightColors {
-  return {
-    keyword: input.keyword,
-    controlKeyword: input.controlKeyword ?? input.keyword,
-    function: input.function,
-    type: input.type,
-    string: input.string,
-    number: input.number,
-    boolean: input.boolean ?? input.number,
-    comment: input.comment,
-    operator: input.operator,
-    variable: input.variable,
-    attribute: input.attribute ?? input.function,
-    constant: input.constant ?? input.type,
-    field: input.field ?? input.type,
-    module: input.module ?? input.type,
-    label: input.label ?? input.keyword,
-  }
-}
-
-function ansi(input: {
-  black: string
-  red: string
-  green: string
-  yellow: string
-  blue: string
-  magenta: string
-  cyan: string
-  white: string
-  brightBlack?: string
-  brightRed?: string
-  brightGreen?: string
-  brightYellow?: string
-  brightBlue?: string
-  brightMagenta?: string
-  brightCyan?: string
-  brightWhite?: string
-}): JetTerminalAnsiColors {
-  return {
-    ...input,
-    brightBlack: input.brightBlack ?? input.black,
-    brightRed: input.brightRed ?? input.red,
-    brightGreen: input.brightGreen ?? input.green,
-    brightYellow: input.brightYellow ?? input.yellow,
-    brightBlue: input.brightBlue ?? input.blue,
-    brightMagenta: input.brightMagenta ?? input.magenta,
-    brightCyan: input.brightCyan ?? input.cyan,
-    brightWhite: input.brightWhite ?? input.white,
-  }
-}
 
 const ayuSource = "https://github.com/ayu-theme/ayu-colors"
 const everforestSource = "https://raw.githubusercontent.com/sainnhe/everforest/master/palette.md"
@@ -148,7 +25,7 @@ export const ayuDark = makeTheme({
   sourceName: "ayu-theme/ayu-colors",
   sourceUrl: ayuSource,
   license: "MIT",
-  colors: colors({
+  colors: paletteColors({
     bg: "#0a0e14",
     panel: "#0f1419",
     panelRaised: "#14191f",
@@ -162,7 +39,7 @@ export const ayuDark = makeTheme({
     warning: "#ffb454",
     success: "#aad94c",
   }),
-  highlights: highlights({
+  highlights: paletteHighlights({
     keyword: "#ff8f40",
     function: "#ffb454",
     type: "#59c2ff",
@@ -176,7 +53,7 @@ export const ayuDark = makeTheme({
     field: "#73d0ff",
     module: "#95e6cb",
   }),
-  terminalAnsi: ansi({
+  terminalAnsi: paletteAnsi({
     black: "#01060e",
     red: "#ea6c73",
     green: "#91b362",
@@ -204,7 +81,7 @@ export const ayuLight = makeTheme({
   sourceName: "ayu-theme/ayu-colors",
   sourceUrl: ayuSource,
   license: "MIT",
-  colors: colors({
+  colors: paletteColors({
     bg: "#fafafa",
     panel: "#f3f4f5",
     panelRaised: "#ffffff",
@@ -218,7 +95,7 @@ export const ayuLight = makeTheme({
     warning: "#ff9940",
     success: "#86b300",
   }),
-  highlights: highlights({
+  highlights: paletteHighlights({
     keyword: "#fa8d3e",
     function: "#f2ae49",
     type: "#55b4d4",
@@ -232,7 +109,7 @@ export const ayuLight = makeTheme({
     field: "#55b4d4",
     module: "#4cbf99",
   }),
-  terminalAnsi: ansi({
+  terminalAnsi: paletteAnsi({
     black: "#000000",
     red: "#f51818",
     green: "#86b300",
@@ -260,7 +137,7 @@ export const everforestDark = makeTheme({
   sourceName: "sainnhe/everforest medium",
   sourceUrl: everforestSource,
   license: "MIT",
-  colors: colors({
+  colors: paletteColors({
     bg: "#2d353b",
     panel: "#232a2e",
     panelRaised: "#343f44",
@@ -274,7 +151,7 @@ export const everforestDark = makeTheme({
     warning: "#dbbc7f",
     success: "#a7c080",
   }),
-  highlights: highlights({
+  highlights: paletteHighlights({
     keyword: "#e67e80",
     function: "#a7c080",
     type: "#7fbbb3",
@@ -288,7 +165,7 @@ export const everforestDark = makeTheme({
     field: "#83c092",
     module: "#7fbbb3",
   }),
-  terminalAnsi: ansi({
+  terminalAnsi: paletteAnsi({
     black: "#475258",
     red: "#e67e80",
     green: "#a7c080",
@@ -316,7 +193,7 @@ export const everforestLight = makeTheme({
   sourceName: "sainnhe/everforest medium",
   sourceUrl: everforestSource,
   license: "MIT",
-  colors: colors({
+  colors: paletteColors({
     bg: "#fdf6e3",
     panel: "#efebd4",
     panelRaised: "#fff9e8",
@@ -330,7 +207,7 @@ export const everforestLight = makeTheme({
     warning: "#dfa000",
     success: "#8da101",
   }),
-  highlights: highlights({
+  highlights: paletteHighlights({
     keyword: "#f85552",
     function: "#8da101",
     type: "#3a94c5",
@@ -344,7 +221,7 @@ export const everforestLight = makeTheme({
     field: "#35a77c",
     module: "#3a94c5",
   }),
-  terminalAnsi: ansi({
+  terminalAnsi: paletteAnsi({
     black: "#5c6a72",
     red: "#f85552",
     green: "#8da101",
@@ -372,7 +249,7 @@ export const gruvboxDark = makeTheme({
   sourceName: "morhetz/gruvbox",
   sourceUrl: gruvboxSource,
   license: "MIT",
-  colors: colors({
+  colors: paletteColors({
     bg: "#282828",
     panel: "#1d2021",
     panelRaised: "#3c3836",
@@ -386,7 +263,7 @@ export const gruvboxDark = makeTheme({
     warning: "#fabd2f",
     success: "#b8bb26",
   }),
-  highlights: highlights({
+  highlights: paletteHighlights({
     keyword: "#fb4934",
     function: "#fabd2f",
     type: "#8ec07c",
@@ -400,7 +277,7 @@ export const gruvboxDark = makeTheme({
     field: "#83a598",
     module: "#8ec07c",
   }),
-  terminalAnsi: ansi({
+  terminalAnsi: paletteAnsi({
     black: "#282828",
     red: "#cc241d",
     green: "#98971a",
@@ -428,7 +305,7 @@ export const gruvboxLight = makeTheme({
   sourceName: "morhetz/gruvbox",
   sourceUrl: gruvboxSource,
   license: "MIT",
-  colors: colors({
+  colors: paletteColors({
     bg: "#fbf1c7",
     panel: "#f2e5bc",
     panelRaised: "#f9f5d7",
@@ -442,7 +319,7 @@ export const gruvboxLight = makeTheme({
     warning: "#b57614",
     success: "#79740e",
   }),
-  highlights: highlights({
+  highlights: paletteHighlights({
     keyword: "#9d0006",
     function: "#b57614",
     type: "#427b58",
@@ -456,7 +333,7 @@ export const gruvboxLight = makeTheme({
     field: "#076678",
     module: "#427b58",
   }),
-  terminalAnsi: ansi({
+  terminalAnsi: paletteAnsi({
     black: "#fbf1c7",
     red: "#cc241d",
     green: "#98971a",
@@ -484,7 +361,7 @@ export const tokyoNightDark = makeTheme({
   sourceName: "folke/tokyonight.nvim night",
   sourceUrl: tokyoNightSource,
   license: "Apache-2.0",
-  colors: colors({
+  colors: paletteColors({
     bg: "#1a1b26",
     panel: "#16161e",
     panelRaised: "#24283b",
@@ -498,7 +375,7 @@ export const tokyoNightDark = makeTheme({
     warning: "#e0af68",
     success: "#9ece6a",
   }),
-  highlights: highlights({
+  highlights: paletteHighlights({
     keyword: "#bb9af7",
     function: "#7aa2f7",
     type: "#2ac3de",
@@ -512,7 +389,7 @@ export const tokyoNightDark = makeTheme({
     field: "#73daca",
     module: "#7dcfff",
   }),
-  terminalAnsi: ansi({
+  terminalAnsi: paletteAnsi({
     black: "#15161e",
     red: "#f7768e",
     green: "#9ece6a",
@@ -540,7 +417,7 @@ export const tokyoNightLight = makeTheme({
   sourceName: "folke/tokyonight.nvim day",
   sourceUrl: tokyoNightSource,
   license: "Apache-2.0",
-  colors: colors({
+  colors: paletteColors({
     bg: "#e1e2e7",
     panel: "#d5d6db",
     panelRaised: "#f1f2f7",
@@ -554,7 +431,7 @@ export const tokyoNightLight = makeTheme({
     warning: "#8c6c3e",
     success: "#587539",
   }),
-  highlights: highlights({
+  highlights: paletteHighlights({
     keyword: "#7847bd",
     function: "#2e7de9",
     type: "#007197",
@@ -568,7 +445,7 @@ export const tokyoNightLight = makeTheme({
     field: "#007197",
     module: "#2e7de9",
   }),
-  terminalAnsi: ansi({
+  terminalAnsi: paletteAnsi({
     black: "#e1e2e7",
     red: "#f52a65",
     green: "#587539",
@@ -588,7 +465,7 @@ export const tokyoNightLight = makeTheme({
   }),
 })
 
-export const bundledThemes: Record<string, JetTheme> = {
+const paletteThemes: Record<string, JetTheme> = {
   [ayuDark.id]: ayuDark,
   [ayuLight.id]: ayuLight,
   [everforestDark.id]: everforestDark,
@@ -599,7 +476,15 @@ export const bundledThemes: Record<string, JetTheme> = {
   [tokyoNightLight.id]: tokyoNightLight,
 }
 
-export const bundledThemeList: JetTheme[] = Object.values(bundledThemes)
+export const bundledThemes: Record<string, JetTheme> = {
+  ...paletteThemes,
+  ...radDebuggerThemes,
+}
+
+export const bundledThemeList: JetTheme[] = [
+  ...Object.values(paletteThemes),
+  ...radDebuggerThemeList,
+]
 export const defaultDark = ayuDark
 export const defaultLight = ayuLight
 

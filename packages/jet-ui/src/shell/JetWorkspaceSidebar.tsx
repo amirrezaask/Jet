@@ -7,6 +7,7 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar.js"
 import { Button } from "@/components/ui/button.js"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js"
@@ -93,10 +94,12 @@ export function JetWorkspaceSidebar({
   onSidebarFocusChange,
   showWindowChrome = false,
 }: JetWorkspaceSidebarProps) {
+  const { state } = useSidebar()
   return (
     <Sidebar
-      collapsible="none"
       data-jet-workspace-sidebar
+      data-jet-sidebar-state={state}
+      aria-hidden={state === "collapsed" ? true : undefined}
       className="h-full border-r border-sidebar-border"
       onFocusCapture={() => onSidebarFocusChange?.(true)}
       onBlurCapture={e => {

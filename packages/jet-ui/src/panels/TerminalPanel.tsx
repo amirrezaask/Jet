@@ -118,11 +118,55 @@ function readTerminalCursorBlink(): boolean {
   return raw !== "0"
 }
 
+type ScrollSnapshot = {
+  atBottom: boolean
+  line: number
+  scrollTop: number
+}
+
+function captureScrollSnapshot(term: XTerm, container: HTMLElement): ScrollSnapshot {
+  const buf = term.buffer.active
+  const viewport = container.querySelector<HTMLElement>(".xterm-viewport")
+  const scrollTop = viewport?.scrollTop ?? 0
+  const maxScroll = viewport ? Math.max(0, viewport.scrollHeight - viewport.clientHeight) : 0
+  return {
+    atBottom: maxScroll <= 1 || scrollTop >= maxScroll - 1,
+    line: buf.baseY + buf.viewportY,
+    scrollTop,
+  }
+}
+
+function restoreScrollSnapshot(
+  term: XTerm,
+  container: HTMLElement,
+  snapshot: ScrollSnapshot,
+  scrollMotion: TerminalScrollMotion,
+): void {
+  if (snapshot.atBottom) {
+    term.scrollToBottom()
+  } else {
+    term.scrollToLine(Math.max(0, snapshot.line))
+  }
+  const viewport = container.querySelector<HTMLElement>(".xterm-viewport")
+  if (viewport) {
+    const max = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+    viewport.scrollTop = Math.min(snapshot.scrollTop, max)
+  }
+  scrollMotion.sync()
+}
+
+/** Fit xterm to container. Returns true when cols/rows changed (PTY resize needed). */
 function fitWhenReady(session: TerminalSession, container: HTMLElement): boolean {
   if (container.clientWidth < 8 || container.clientHeight < 8) return false
+  const prevCols = session.term.cols
+  const prevRows = session.term.rows
+  const snapshot = captureScrollSnapshot(session.term, container)
   session.fit.fit()
   if (!cellMetricsValid(session.term)) return false
-  return session.term.cols > 0 && session.term.rows > 0
+  if (session.term.cols <= 0 || session.term.rows <= 0) return false
+  const changed = session.term.cols !== prevCols || session.term.rows !== prevRows
+  if (changed) restoreScrollSnapshot(session.term, container, snapshot, session.scrollMotion)
+  return changed
 }
 
 function resizePty(session: TerminalSession): void {
@@ -214,9 +258,10 @@ export function TerminalPanel({
     })
 
     const syncFit = () => {
-      if (cancelled || !fitWhenReady(session, container)) return false
-      resizePty(session)
-      return true
+      if (cancelled) return false
+      const changed = fitWhenReady(session, container)
+      if (changed) resizePty(session)
+      return changed
     }
 
     const syncTypography = () => {
@@ -310,8 +355,14 @@ export function TerminalPanel({
     syncFit()
     startPty()
 
+    let resizeRaf = 0
     const resizeObserver = new ResizeObserver(() => {
-      if (syncFit()) term.refresh(0, term.rows - 1)
+      if (resizeRaf) cancelAnimationFrame(resizeRaf)
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = 0
+        if (cancelled) return
+        syncFit()
+      })
     })
     resizeObserver.observe(container)
 
@@ -320,11 +371,19 @@ export function TerminalPanel({
       syncTypography()
     })
 
+    let wasVisible = false
     const visibilityObserver = new IntersectionObserver(entries => {
-      if (!entries.some(e => e.isIntersecting)) return
+      const visible = entries.some(e => e.isIntersecting)
+      if (!visible) {
+        wasVisible = false
+        return
+      }
+      if (wasVisible) return
+      wasVisible = true
       requestAnimationFrame(() => {
+        if (cancelled) return
         syncTypography()
-        if (syncFit()) term.refresh(0, term.rows - 1)
+        syncFit()
         if (focused && isActive) focusTerminalInput(tabId)
       })
     })
@@ -332,6 +391,7 @@ export function TerminalPanel({
 
     return () => {
       cancelled = true
+      if (resizeRaf) cancelAnimationFrame(resizeRaf)
       resizeObserver.disconnect()
       unsubscribeRootStyleObserver()
       visibilityObserver.disconnect()
@@ -361,14 +421,8 @@ export function TerminalPanel({
     session.cursorMotion?.setActive(focused && isActive)
 
     if (!focused || !isActive) return
-    requestAnimationFrame(() => {
-      if (fitWhenReady(session, container)) {
-        resizePty(session)
-        session.term.refresh(0, session.term.rows - 1)
-      }
-      focusTerminalInput(tabId)
-    })
-  }, [focused, isActive, theme, tabId])
+    requestAnimationFrame(() => focusTerminalInput(tabId))
+  }, [focused, isActive, theme.id, tabId])
 
   if (!window.jet?.terminal) {
     return (

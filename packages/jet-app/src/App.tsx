@@ -98,7 +98,7 @@ import {
 } from "@jet/ui"
 import type { AgentExplorerWorkspaceGroup } from "@jet/ui/agents"
 import { getJetSearchState } from "@jet/codemirror"
-import { APP_COMMAND_REGISTRY, buildAppCommands } from "./app-commands.js"
+import { APP_COMMAND_REGISTRY, buildAppCommands, buildMacTerminalQuickSwitchBindings } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
 import { agentChatTabId, parseAgentChatTabId, type AgentChatTabState } from "./tabs/agent-chat.tab.js"
 import { AGENT_EXPLORER_TAB_ID } from "./tabs/agent-explorer.tab.js"
@@ -995,12 +995,14 @@ export function JetApp() {
   const closeTerminalTab = useCallback(
     (panelId: PanelId, tabId: string) => {
       const close = () => {
+        const ptyId = terminalPtyIdForTab(tabId)
+        if (ptyId) void window.jet?.terminal?.dispose(ptyId)
         const tree = cloneTree()
         const owningPanel = findPanelWithTab(tree, tabId) ?? panelId
         const view = tree.getView(owningPanel)
         if (view?.kind !== "tabs") return
-        workspace.disposeTab(tabId)
         tabStore.dispose(tabId)
+        workspace.disposeTab(tabId)
         tree.setView(owningPanel, popPanelTab(view, tabId))
         closePanelIfEmpty(tree, owningPanel)
         commitTree(tree)
@@ -1728,6 +1730,10 @@ export function JetApp() {
         unarchiveActiveAgentThread: () => unarchiveActiveAgentThreadRef.current(),
         getSearchSupported: () => getContextSearchState().supported,
         getContextFolder: resolveContextFolder,
+        getActiveTerminalTabId,
+        closeTerminalTab,
+        getTerminalExplorerGroups,
+        focusTerminalTab,
       }),
     [
       workspace,
@@ -1752,6 +1758,10 @@ export function JetApp() {
       getContextSearchState,
       resolveContextFolder,
       pickWorkspaceFolder,
+      getActiveTerminalTabId,
+      closeTerminalTab,
+      getTerminalExplorerGroups,
+      focusTerminalTab,
     ],
   )
 
@@ -1827,6 +1837,12 @@ export function JetApp() {
     const noOverlay = (ctx: KeymapContext) => !anyOverlayOpen(ctx)
     keymaps.registerUser([
       ...createDefaultKeybindings(appCommands),
+      ...buildMacTerminalQuickSwitchBindings({
+        workspace,
+        getTerminalExplorerGroups,
+        focusTerminalTab,
+        setMessage: showJetToast,
+      }),
       bind("ArrowDown", appCommands.listFocusNext, ctx => ctx.listFocus && noOverlay(ctx)),
       bind("ArrowUp", appCommands.listFocusPrev, ctx => ctx.listFocus && noOverlay(ctx)),
       bind("Enter", appCommands.listFocusActivate, ctx => ctx.listFocus && noOverlay(ctx)),
@@ -1866,7 +1882,7 @@ export function JetApp() {
         ctx => ctx.workspaceOpen && noOverlay(ctx),
       ),
     ])
-  }, [keymaps, appCommands])
+  }, [keymaps, appCommands, workspace, getTerminalExplorerGroups, focusTerminalTab, showJetToast])
 
   useEffect(() => {
     workspaceInitCtxRef.current = {
@@ -2044,7 +2060,7 @@ export function JetApp() {
           id: "ui.showThemePicker",
           title: "Theme Picker",
           category: "UI",
-          aliases: ["themes", "colors", "ayu", "everforest", "gruvbox", "tokyonight"],
+          aliases: ["themes", "colors", "ayu", "everforest", "gruvbox", "tokyonight", "rad", "raddbg"],
         },
       ),
     )
@@ -2405,30 +2421,28 @@ export function JetApp() {
         className="h-full min-h-0 w-full"
         style={{ "--sidebar-width": WORKSPACE_SIDEBAR_WIDTH } as React.CSSProperties}
       >
-        {sidebarOpen ? (
-          <JetWorkspaceSidebar
-            activeView={sidebarView}
-            onActiveViewChange={handleSidebarViewChange}
-            manager={workspace.manager}
-            onOpenFile={openFileFromSidebar}
-            onOpenFolder={() => executeCommand("workspace.openFolder")}
-            onAddWorkspace={() => setAddWorkspaceOpen(true)}
-            terminalExplorerGroups={getTerminalExplorerGroups()}
-            activeProjectRootUri={workspace.root?.uri ?? null}
-            activeTerminalTabId={getActiveTerminalTabId()}
-            onActivateProject={activateProject}
-            onFocusTerminal={focusTerminalTab}
-            onNewTerminal={rootUri => void newTerminalInWorkspace(rootUri)}
-            onLaunchAgentTerminal={launchAgentTerminal}
-            onCloseTerminal={closeTerminalTab}
-            onRenameTerminal={renameTerminal}
-            onDuplicateTerminal={duplicateTerminal}
-            onRestartTerminal={restartTerminal}
-            onRemoveProject={removeProjectByRootUri}
-            onSidebarFocusChange={setSidebarFocused}
-            showWindowChrome={showWindowChrome}
-          />
-        ) : null}
+        <JetWorkspaceSidebar
+          activeView={sidebarView}
+          onActiveViewChange={handleSidebarViewChange}
+          manager={workspace.manager}
+          onOpenFile={openFileFromSidebar}
+          onOpenFolder={() => executeCommand("workspace.openFolder")}
+          onAddWorkspace={() => setAddWorkspaceOpen(true)}
+          terminalExplorerGroups={getTerminalExplorerGroups()}
+          activeProjectRootUri={workspace.root?.uri ?? null}
+          activeTerminalTabId={getActiveTerminalTabId()}
+          onActivateProject={activateProject}
+          onFocusTerminal={focusTerminalTab}
+          onNewTerminal={rootUri => void newTerminalInWorkspace(rootUri)}
+          onLaunchAgentTerminal={launchAgentTerminal}
+          onCloseTerminal={closeTerminalTab}
+          onRenameTerminal={renameTerminal}
+          onDuplicateTerminal={duplicateTerminal}
+          onRestartTerminal={restartTerminal}
+          onRemoveProject={removeProjectByRootUri}
+          onSidebarFocusChange={setSidebarFocused}
+          showWindowChrome={showWindowChrome}
+        />
         <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {!workspace.manager.hasFolders() ? (
           <div className="h-full w-full bg-background" />

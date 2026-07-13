@@ -360,7 +360,7 @@ class UniversalCaretController {
     if (this.target) this.target.style.caretColor = "transparent"
   }
 
-  private schedule(instant: boolean): void {
+  private schedule(instant: boolean, typingTrail = false): void {
     const target = this.target
     if (target && (!target.isConnected || document.activeElement !== target)) {
       this.setTarget(null)
@@ -378,24 +378,32 @@ class UniversalCaretController {
     this.useCustomCaret()
     const motion = this.appearance.motion
     const snap = instant || this.reduced || motion === "off" || !this.initialized
-    const dx = point.x - this.anim.targetX
-    const dy = point.y - this.anim.targetY
-    const largeJump = Math.abs(dx) > point.charWidth * 12 || Math.abs(dy) > point.h * 5
-    if (snap || largeJump) {
+    if (snap) {
+      if (typingTrail && motion === "trail" && !this.reduced) {
+        this.ghosts.push(this.anim.x, this.anim.y, this.anim.h, performance.now())
+      } else if (!typingTrail) {
+        this.ghosts.clear()
+      }
       this.anim.snap(point)
-      this.ghosts.clear()
       this.lastGhostX = point.x
       this.lastGhostY = point.y
       this.initialized = true
-      this.render(this.ghosts.tick(performance.now()))
-      this.stop()
+      const ghosts = this.ghosts.tick(performance.now())
+      this.render(ghosts)
+      if (ghosts.length > 0) this.start()
+      else this.stop()
       return
     }
-    this.anim.followTarget(point)
-    this.start()
+    this.anim.snap(point)
+    this.lastGhostX = point.x
+    this.lastGhostY = point.y
+    this.initialized = true
+    const ghosts = this.ghosts.tick(performance.now())
+    this.render(ghosts)
+    this.stop()
   }
 
-  private scheduleDeferred(instant: boolean): void {
+  private scheduleDeferred(instant: boolean, typingTrail = false): void {
     if (this.eventRaf != null) cancelAnimationFrame(this.eventRaf)
     if (this.eventTimer != null) window.clearTimeout(this.eventTimer)
     const run = () => {
@@ -403,7 +411,7 @@ class UniversalCaretController {
       if (this.eventTimer != null) window.clearTimeout(this.eventTimer)
       this.eventRaf = null
       this.eventTimer = null
-      this.schedule(instant)
+      this.schedule(instant, typingTrail)
     }
     this.eventRaf = requestAnimationFrame(run)
     this.eventTimer = window.setTimeout(run, 32)
@@ -428,25 +436,10 @@ class UniversalCaretController {
     if (this.tickTimer != null) window.clearTimeout(this.tickTimer)
     this.raf = null
     this.tickTimer = null
-    const dt = Math.min(0.05, Math.max(0, (time - this.lastFrame) / 1000))
     this.lastFrame = time
-    const previousX = this.anim.x
-    const previousY = this.anim.y
-    const moving = this.anim.step(dt)
-    if (this.appearance.motion === "trail" && !this.reduced) {
-      const distance = Math.hypot(this.anim.x - this.lastGhostX, this.anim.y - this.lastGhostY)
-      if (distance >= Math.max(1.5, this.anim.charWidth * 0.35)) {
-        this.ghosts.push(previousX, previousY, this.anim.h, time)
-        this.lastGhostX = this.anim.x
-        this.lastGhostY = this.anim.y
-      }
-    } else {
-      this.ghosts.clear()
-    }
     const ghosts = this.ghosts.tick(time)
-    const ghostsAlive = ghosts.length > 0
     this.render(ghosts)
-    if (moving || ghostsAlive) this.start()
+    if (ghosts.length > 0) this.start()
   }
 
   private styleVisual(element: HTMLElement, x: number, y: number, h: number, opacity: number): void {
@@ -487,17 +480,17 @@ class UniversalCaretController {
   private readonly onInput = (event: Event) => {
     if (!this.eventIsWithinTarget(event)) return
     this.clearSettle()
-    this.scheduleDeferred(false)
+    this.scheduleDeferred(true, true)
   }
   private readonly onKeyDown = (event: KeyboardEvent) => {
     if (!this.eventIsWithinTarget(event)) return
     this.clearSettle()
-    this.scheduleDeferred(false)
+    this.scheduleDeferred(true, false)
   }
   private readonly onClick = (event: MouseEvent) => {
     if (!this.eventIsWithinTarget(event)) return
     this.clearSettle()
-    this.scheduleDeferred(false)
+    this.scheduleDeferred(true, false)
   }
   private readonly onPointerDown = (event: PointerEvent) => {
     if (!this.eventIsWithinTarget(event)) return
@@ -510,7 +503,7 @@ class UniversalCaretController {
     this.useCustomCaret()
     this.scheduleDeferred(true)
   }
-  private readonly onSelectionChange = () => this.scheduleDeferred(false)
+  private readonly onSelectionChange = () => this.scheduleDeferred(true, false)
   private readonly onCompositionStart = (event: CompositionEvent) => {
     if (!this.eventIsWithinTarget(event)) return
     this.composing = true
