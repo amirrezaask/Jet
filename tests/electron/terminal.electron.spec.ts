@@ -314,6 +314,62 @@ test.describe("electron terminal", () => {
     }
   })
 
+  test("Shift+Enter sends LF to the PTY for multiline CLI input", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+
+      await page.locator("[data-jet-terminal-panel] .jet-terminal-surface").click()
+      await page.evaluate(() => {
+        const textarea = document.querySelector(
+          "[data-jet-terminal-panel] .xterm-helper-textarea",
+        ) as HTMLTextAreaElement | null
+        textarea?.focus()
+      })
+
+      await page.waitForFunction(
+        () => {
+          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          return text.trim().length > 0
+        },
+        null,
+        { timeout: 15_000 },
+      )
+
+      const written = await page.evaluate(async () => {
+        const terminal = window.jet?.terminal
+        if (!terminal) throw new Error("Terminal API unavailable")
+        const chunks: string[] = []
+        const original = terminal.write.bind(terminal)
+        ;(terminal as { write: typeof original }).write = async (id: string, data: string) => {
+          chunks.push(data)
+          return original(id, data)
+        }
+        ;(window as unknown as { __jetTermWriteChunks?: string[] }).__jetTermWriteChunks = chunks
+        ;(window as unknown as { __jetTermWriteRestore?: () => void }).__jetTermWriteRestore = () => {
+          terminal.write = original
+        }
+        return null
+      })
+
+      expect(written).toBeNull()
+
+      await page.keyboard.press("Shift+Enter")
+      await page.waitForTimeout(100)
+
+      const bytes = await page.evaluate(() => {
+        const chunks = (window as unknown as { __jetTermWriteChunks?: string[] }).__jetTermWriteChunks ?? []
+        ;(window as unknown as { __jetTermWriteRestore?: () => void }).__jetTermWriteRestore?.()
+        return chunks.join("")
+      })
+
+      expect(bytes).toContain("\n")
+      expect(bytes).not.toContain("\r")
+    } finally {
+      await app.close()
+    }
+  })
+
   test("uses RAD smooth scrolling for terminal scrollback", async () => {
     const { app, page } = await launchJet()
     try {

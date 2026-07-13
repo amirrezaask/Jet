@@ -31,6 +31,7 @@ const DESCRIPTORS: LanguageServerDescriptor[] = [
     id: "rust-analyzer",
     languageIds: ["rust"],
     command: "rust-analyzer",
+    // Empty on purpose: RA speaks stdio by default and rejects `--stdio`.
     args: [],
     rootMarkers: ["Cargo.toml"],
   },

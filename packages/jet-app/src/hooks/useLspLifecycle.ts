@@ -13,6 +13,11 @@ export function useLspLifecycle(
   const [lspCrashed, setLspCrashed] = useState(false)
   const lastEnsuredUriRef = useRef<string | null>(null)
   const ensureLspForFileRef = useRef<(fileUri: string) => Promise<void>>(async () => {})
+  /** Consecutive unexpected crashes; reset on successful attach. Caps respawn storm. */
+  const crashRetryCountRef = useRef(0)
+  const crashRetryTimerRef = useRef<number | null>(null)
+  const MAX_CRASH_RETRIES = 3
+  const CRASH_RETRY_BASE_MS = 500
 
   const lspManager = useMemo(
     () => (window.jet ? new LanguageServerManager(window.jet.lsp) : null),
@@ -48,6 +53,7 @@ export function useLspLifecycle(
         const conn = await lspManager.ensureServerForFile(file, rootUri)
         if (!conn) return false
         await lspClientPool.getOrCreateClient(conn)
+        crashRetryCountRef.current = 0
         setLspCrashed(false)
         bumpLspRevision()
         return true
@@ -118,13 +124,24 @@ export function useLspLifecycle(
       lspClientPool.releaseConnection(id)
       setLspCrashed(true)
       bumpLspRevision()
-      showJetToast("LSP crashed — retrying…")
       const uri = lastEnsuredUriRef.current
-      if (uri) {
-        window.setTimeout(() => {
-          void ensureLspForFileRef.current(uri)
-        }, 250)
+      if (!uri) return
+      if (crashRetryTimerRef.current != null) {
+        window.clearTimeout(crashRetryTimerRef.current)
+        crashRetryTimerRef.current = null
       }
+      const attempt = crashRetryCountRef.current
+      if (attempt >= MAX_CRASH_RETRIES) {
+        showJetToast("LSP crashed repeatedly — stopped retrying", { variant: "destructive" })
+        return
+      }
+      crashRetryCountRef.current = attempt + 1
+      const delayMs = CRASH_RETRY_BASE_MS * 2 ** attempt
+      showJetToast(`LSP crashed — retrying (${attempt + 1}/${MAX_CRASH_RETRIES})…`)
+      crashRetryTimerRef.current = window.setTimeout(() => {
+        crashRetryTimerRef.current = null
+        void ensureLspForFileRef.current(uri)
+      }, delayMs)
     })
   }, [lspClientPool, bumpLspRevision])
 

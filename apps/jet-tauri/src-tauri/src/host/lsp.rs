@@ -42,12 +42,9 @@ impl LspHost {
     ) -> Result<Value, String> {
         let cmd_name = command.unwrap_or("typescript-language-server");
         let cmd_path = resolve_command_path(cmd_name)?;
-        let mut args: Vec<String> = cmd_args
-            .map(|a| a.to_vec())
-            .unwrap_or_else(|| vec!["--stdio".to_string()]);
-        if args.is_empty() {
-            args.push("--stdio".to_string());
-        }
+        // None → default --stdio (typescript-language-server). Some([]) stays
+        // empty — rust-analyzer rejects --stdio ("unexpected flag") and exits.
+        let args: Vec<String> = resolve_lsp_args(cmd_args);
         let id = format!(
             "lsp-{}-{}",
             cmd_name,
@@ -180,6 +177,16 @@ impl LspHost {
 /// Crash toast only for unexpected process death — not host stop, not WS disconnect.
 fn should_emit_crash(explicit_stop: bool, killed_by_host: bool, process_exited: bool) -> bool {
     process_exited && !explicit_stop && !killed_by_host
+}
+
+/// `None` → default `--stdio` for the builtin tsserver path.
+/// `Some([])` stays empty so servers like rust-analyzer (stdio by default, no
+/// `--stdio` flag) are not killed by an unexpected CLI flag.
+fn resolve_lsp_args(cmd_args: Option<&[String]>) -> Vec<String> {
+    match cmd_args {
+        Some(args) => args.to_vec(),
+        None => vec!["--stdio".to_string()],
+    }
 }
 
 fn resolve_command_path(cmd: &str) -> Result<PathBuf, String> {
@@ -522,6 +529,16 @@ mod tests {
         assert!(!should_emit_crash(false, true, false));
         // Transport loss alone (no process exit) → no crash.
         assert!(!should_emit_crash(false, false, false));
+    }
+
+    #[test]
+    fn resolve_lsp_args_preserves_empty_for_rust_analyzer() {
+        assert_eq!(resolve_lsp_args(None), vec!["--stdio".to_string()]);
+        assert!(resolve_lsp_args(Some(&[])).is_empty());
+        assert_eq!(
+            resolve_lsp_args(Some(&[String::from("serve")])),
+            vec!["serve".to_string()]
+        );
     }
 
     #[test]
