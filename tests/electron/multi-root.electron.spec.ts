@@ -21,20 +21,20 @@ test.describe("electron multi-root workspace", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(async (p: string) => {
-        await window.__jetAgent!.addWorkspace(p)
+        await window.__gharargahAgent!.addWorkspace(p)
       }, SECOND)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.listWorkspaces().length))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("workspace.focusFolder")
+        await window.__gharargahAgent!.executeCommand("workspace.focusFolder")
       })
       await page.waitForTimeout(300)
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("workspace.removeFolder")
+        await window.__gharargahAgent!.executeCommand("workspace.removeFolder")
       })
       await page.waitForTimeout(300)
     } finally {

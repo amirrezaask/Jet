@@ -19,7 +19,7 @@ test("captures reviewed dark/light product states without clipping", async ({}, 
   try {
     await openFixtureFile(page, "src/index.ts")
     await execCommand(page, "explorer.show")
-    await expectSelectorVisible(page, "[data-jet-list-panel='jet:explorer']")
+    await expectSelectorVisible(page, "[data-gharargah-list-panel='gharargah:explorer']")
 
     await execCommand(page, "ui.showCommandPalette")
     await expectSelectorVisible(page, "[role='dialog']")
@@ -41,7 +41,7 @@ test("captures reviewed dark/light product states without clipping", async ({}, 
     await attachScreenshot(testInfo, page, "light-editor")
 
     await execCommand(page, "settings.show")
-    await expectSelectorVisible(page, "[data-jet-settings-overlay]")
+    await expectSelectorVisible(page, "[data-gharargah-settings-overlay]")
     await attachScreenshot(testInfo, page, "light-settings")
   } finally {
     await app.close()

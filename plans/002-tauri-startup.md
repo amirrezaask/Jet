@@ -2,7 +2,7 @@
 
 > **Executor instructions**: Measure before and after on release builds. Do not hide Vite warnings or change a budget without reviewer approval.
 >
-> **Drift check**: `git diff --stat a52fab2..HEAD -- apps/jet-tauri/vite.config.ts apps/jet-tauri/src/bootstrap.ts packages/jet-app packages/jet-codemirror package.json tests/bench`
+> **Drift check**: `git diff --stat a52fab2..HEAD -- apps/gharargah/vite.config.ts apps/gharargah/src/bootstrap.ts packages/jet-app packages/jet-codemirror package.json tests/bench`
 
 ## Status
 
@@ -16,15 +16,15 @@
 
 ## Why this matters
 
-Release startup is 595 ms cold and roughly 503 ms warm, above Jet's sub-300 ms target. The generated HTML eagerly module-preloads `shiki-*.js`, and the bootstrap itself statically imports Vite's preload helper from that chunk. This forces a 9.85 MB minified chunk into the critical path before the editor is useful.
+Release startup is 595 ms cold and roughly 503 ms warm, above Gharargah's sub-300 ms target. The generated HTML eagerly module-preloads `shiki-*.js`, and the bootstrap itself statically imports Vite's preload helper from that chunk. This forces a 9.85 MB minified chunk into the critical path before the editor is useful.
 
 ## Current state
 
-- `apps/jet-tauri/vite.config.ts:28-38` groups both `@pierre/diffs` and all Shiki modules into a manual chunk named `shiki`.
+- `apps/gharargah/vite.config.ts:28-38` groups both `@pierre/diffs` and all Shiki modules into a manual chunk named `shiki`.
 - Generated `dist/index.tauri.html` includes `<link rel="modulepreload" ... shiki-*.js>`.
 - Generated `dist/assets/index-*.js` starts with `import { _ as ... } from "./shiki-*.js"` because Rollup placed a shared preload helper in that manual chunk.
 - Bundle sizes: Shiki 9.85 MB minified/1.74 MB gzip, React 836 KB, main 832 KB, CodeMirror 790 KB.
-- `apps/jet-tauri/src/bootstrap.ts:5-8` already tries to defer the app entry with a dynamic import, but the emitted preload graph defeats the intent.
+- `apps/gharargah/src/bootstrap.ts:5-8` already tries to defer the app entry with a dynamic import, but the emitted preload graph defeats the intent.
 
 ## Scope
 
@@ -60,7 +60,7 @@ Refactor `startup-bench.mjs` to write run artifacts to an explicit temporary/out
 
 ## Done criteria
 
-- [ ] `pnpm -r typecheck` and `pnpm --filter jet-tauri build` pass.
+- [ ] `pnpm -r typecheck` and `pnpm --filter gharargah build` pass.
 - [ ] Initial HTML/bootstrap do not preload or statically import Shiki/diffs/xterm.
 - [ ] Initial compressed JS and startup metrics improve and are recorded in a before/after table.
 - [ ] Syntax, Git diff, terminal, palette, and editor-open native tests pass.

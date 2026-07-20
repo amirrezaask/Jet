@@ -7,8 +7,8 @@ test("bench project-search", async () => {
   let round = 0
   try {
     await page.evaluate(async () => {
-      await window.__jetAgent!.openFile("src/index.ts")
-      await window.__jetAgent!.waitForEditor()
+      await window.__gharargahAgent!.openFile("src/index.ts")
+      await window.__gharargahAgent!.waitForEditor()
     })
     await waitForSearchReady(page)
     const result = await runBench({
@@ -17,20 +17,20 @@ test("bench project-search", async () => {
         const { query, expected } = round++ % 2 === 0
           ? { query: "greet", expected: "utils.ts" }
           : { query: "main", expected: "index.ts" }
-        await page.evaluate(() => window.__jetAgent!.executeCommand("locationlist.showSearch"))
+        await page.evaluate(() => window.__gharargahAgent!.executeCommand("locationlist.showSearch"))
         await page.evaluate(() => {
-          performance.clearMarks("jet:bench-project-search")
-          performance.mark("jet:bench-project-search")
+          performance.clearMarks("gharargah:bench-project-search")
+          performance.mark("gharargah:bench-project-search")
         })
         await page.locator('input[aria-label="Search project"]').click()
         await page.keyboard.press("Meta+A")
         await page.keyboard.type(query)
         return page.evaluate(async expected => {
-          while (![...document.querySelectorAll('[data-jet-list-panel^="list-"] [data-jet-list-item]')]
+          while (![...document.querySelectorAll('[data-gharargah-list-panel^="list-"] [data-gharargah-list-item]')]
             .some(row => row.textContent?.includes(expected))) {
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
           }
-          const started = performance.getEntriesByName("jet:bench-project-search", "mark").at(-1)!.startTime
+          const started = performance.getEntriesByName("gharargah:bench-project-search", "mark").at(-1)!.startTime
           return performance.now() - started
         }, expected)
       },

@@ -1,0 +1,29 @@
+{
+  "name": "@gharargah/lsp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/lsp-extensions.test.ts src/project-root.test.ts"
+  },
+  "dependencies": {
+    "@gharargah/shared": "workspace:*",
+    "@gharargah/workspace": "workspace:*",
+    "@gharargah/codemirror": "workspace:*",
+    "@codemirror/autocomplete": "^6.20.0",
+    "@codemirror/lsp-client": "^6.2.5",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.37.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "typescript": "^7.0.2"
+  }
+}

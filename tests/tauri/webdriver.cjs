@@ -134,14 +134,14 @@ function createWebDriver(port = 4445) {
   }
 }
 
-/** Wait for __jetAgent mount + layout ready. */
+/** Wait for __gharargahAgent mount + layout ready. */
 async function waitForJetReady(wd) {
-  await wd.waitUntil(async () => wd.execute(() => window.__jetAgent != null), {
+  await wd.waitUntil(async () => wd.execute(() => window.__gharargahAgent != null), {
     timeout: 90_000,
-    timeoutMsg: "__jetAgent not mounted",
+    timeoutMsg: "__gharargahAgent not mounted",
   })
   const result = await wd.executeAsync(done => {
-    window.__jetAgent
+    window.__gharargahAgent
       .waitForReady()
       .then(() => done(true))
       .catch(err => done({ error: String(err) }))

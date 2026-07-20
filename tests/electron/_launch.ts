@@ -80,8 +80,8 @@ export async function launchJet(
 
 export async function openFixtureFile(page: ShellDriver, rel: string): Promise<void> {
   await page.evaluate(async (f: string) => {
-    await window.__jetAgent!.openFile(f)
-    await window.__jetAgent!.waitForEditor()
+    await window.__gharargahAgent!.openFile(f)
+    await window.__gharargahAgent!.waitForEditor()
   }, rel)
   await focusEditor(page)
 }
@@ -112,7 +112,7 @@ export async function openThemePicker(page: ShellDriver): Promise<void> {
   while (Date.now() < deadline) {
     await execCommand(page, "ui.showThemePicker")
     try {
-      await page.locator("[data-jet-settings-overlay]").waitFor({ state: "visible", timeout: 2_000 })
+      await page.locator("[data-gharargah-settings-overlay]").waitFor({ state: "visible", timeout: 2_000 })
       return
     } catch {
       await page.waitForTimeout(250)
@@ -122,10 +122,10 @@ export async function openThemePicker(page: ShellDriver): Promise<void> {
 }
 
 export async function focusTerminal(page: ShellDriver): Promise<void> {
-  await page.locator("[data-jet-terminal-panel] .jet-terminal-surface").click()
+  await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
   await page.evaluate(() => {
     const textarea = document.querySelector(
-      "[data-jet-terminal-panel] .xterm-helper-textarea",
+      "[data-gharargah-terminal-panel] .xterm-helper-textarea",
     ) as HTMLTextAreaElement | null
     textarea?.focus()
   })
@@ -136,7 +136,7 @@ export async function openSettings(page: ShellDriver): Promise<void> {
   while (Date.now() < deadline) {
     await execCommand(page, "settings.show")
     try {
-      await page.locator("[data-jet-settings-overlay]").waitFor({ state: "visible", timeout: 2_000 })
+      await page.locator("[data-gharargah-settings-overlay]").waitFor({ state: "visible", timeout: 2_000 })
       return
     } catch {
       await page.waitForTimeout(250)
@@ -181,13 +181,13 @@ export async function typeInEditor(page: ShellDriver, text: string): Promise<voi
 export async function showTerminal(page: ShellDriver): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
     await page.evaluate(async () => {
-      await window.__jetAgent!.executeCommand("terminal.show")
+      await window.__gharargahAgent!.executeCommand("terminal.show")
     })
-    await page.waitForSelector("[data-jet-terminal-panel] .xterm", { timeout: 30_000 })
+    await page.waitForSelector("[data-gharargah-terminal-panel] .xterm", { timeout: 30_000 })
     try {
       await page.waitForFunction(
         () => {
-          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
           return text.trim().length > 0
         },
         null,
@@ -202,7 +202,7 @@ export async function showTerminal(page: ShellDriver): Promise<void> {
 
 export async function readTerminalText(page: ShellDriver): Promise<string> {
   return page.evaluate(() => {
-    const rows = document.querySelector("[data-jet-terminal-panel] .xterm-rows")
+    const rows = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")
     return rows?.textContent ?? ""
   })
 }
@@ -214,11 +214,11 @@ export async function confirmOverlay(page: ShellDriver): Promise<void> {
 export async function waitForSearchReady(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
   await page.waitForFunction(
     async () => {
-      if (!window.__jetAgent?.getState().searchReady) return false
-      const path = window.__jetAgent?.getState().activeWorkspace
-      if (!path || !window.jet?.search?.isScanReady) return false
+      if (!window.__gharargahAgent?.getState().searchReady) return false
+      const path = window.__gharargahAgent?.getState().activeWorkspace
+      if (!path || !window.gharargah?.search?.isScanReady) return false
       const uri = path.startsWith("/") ? `file://${path}` : `file:///${path}`
-      return window.jet.search.isScanReady(uri)
+      return window.gharargah.search.isScanReady(uri)
     },
     null,
     { timeout: timeoutMs },
@@ -240,6 +240,6 @@ export async function waitForLspConnected(page: ShellDriver, timeoutMs = 60_000)
 
 export async function execCommand(page: ShellDriver, commandId: string): Promise<void> {
   await page.evaluate(async (cmd: string) => {
-    await window.__jetAgent!.executeCommand(cmd)
+    await window.__gharargahAgent!.executeCommand(cmd)
   }, commandId)
 }

@@ -27,7 +27,7 @@ test.describe("electron cd overlay", () => {
       await page.waitForTimeout(1000)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toContain("sample-workspace")
     } finally {
       await app.close()

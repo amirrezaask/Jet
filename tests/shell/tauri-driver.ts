@@ -402,17 +402,17 @@ function keyValue(key: string): string {
 
 async function writeTerminalInput(wd: TauriWebDriver, payload: string): Promise<boolean> {
   return wd.execute(async (text: string) => {
-    const panel = document.querySelector("[data-jet-terminal-panel][data-jet-terminal-pty-id]")
-    const id = panel?.getAttribute("data-jet-terminal-pty-id")
-    const textarea = document.querySelector("[data-jet-terminal-panel] .xterm-helper-textarea")
+    const panel = document.querySelector("[data-gharargah-terminal-panel][data-gharargah-terminal-pty-id]")
+    const id = panel?.getAttribute("data-gharargah-terminal-pty-id")
+    const textarea = document.querySelector("[data-gharargah-terminal-panel] .xterm-helper-textarea")
     const active = document.activeElement
-    if (!panel || !id || !window.jet?.terminal) return false
+    if (!panel || !id || !window.gharargah?.terminal) return false
     const inTerminal =
       active === textarea ||
       active === panel ||
-      (active instanceof Element && active.closest("[data-jet-terminal-panel]") != null)
+      (active instanceof Element && active.closest("[data-gharargah-terminal-panel]") != null)
     if (!inTerminal) return false
-    await window.jet.terminal.write(id, text)
+    await window.gharargah.terminal.write(id, text)
     return true
   }, payload) as Promise<boolean>
 }
@@ -422,7 +422,7 @@ async function ensureKeyboardFocus(wd: TauriWebDriver): Promise<void> {
     const active = document.activeElement as HTMLElement | null
     if (active && active !== document.body && active !== document.documentElement) return
     const candidates = [
-      document.querySelector<HTMLElement>("[data-jet-terminal-panel] .xterm-helper-textarea"),
+      document.querySelector<HTMLElement>("[data-gharargah-terminal-panel] .xterm-helper-textarea"),
       document.querySelector<HTMLElement>('[role="dialog"] input:not([disabled])'),
       document.querySelector<HTMLElement>(".cm-content"),
     ]
@@ -439,7 +439,7 @@ async function ensureKeyboardFocus(wd: TauriWebDriver): Promise<void> {
 function keyActions(events: Array<{ type: "keyDown" | "keyUp"; value: string }>): unknown[] {
   return [{
     type: "key",
-    id: "jet-keyboard",
+    id: "gharargah-keyboard",
     actions: events,
   }]
 }
@@ -564,7 +564,7 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
   let pointerIsDown = false
   const pointerActions = (actions: unknown[]) => [{
     type: "pointer",
-    id: "jet-pointer",
+    id: "gharargah-pointer",
     parameters: { pointerType: "mouse" },
     actions,
   }]
@@ -774,8 +774,8 @@ export function wrapTauriWebDriver(wd: TauriWebDriver): ShellDriver {
         })
         await wd.waitUntil(
           async () =>
-            !!(await wd.execute(() => document.readyState === "complete" && window.__jetAgent != null)),
-          { timeout: 60_000, timeoutMsg: "reload __jetAgent" },
+            !!(await wd.execute(() => document.readyState === "complete" && window.__gharargahAgent != null)),
+          { timeout: 60_000, timeoutMsg: "reload __gharargahAgent" },
         )
         await waitForJetReady(wd)
       })()

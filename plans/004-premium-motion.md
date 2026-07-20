@@ -16,7 +16,7 @@
 
 ## Why this matters
 
-Motion is Jet's intended differentiator, but the Tauri run fails the universal ghost-caret and hot-glow tests, and live capture showed a custom caret stranded over the editor after an overlay transition. Expensive motion also competes directly with typing: raw pointer layout work, React state on every animation frame, whole-panel DOM clones, and repeated caret measurement can turn polish into latency.
+Motion is Gharargah's intended differentiator, but the Tauri run fails the universal ghost-caret and hot-glow tests, and live capture showed a custom caret stranded over the editor after an overlay transition. Expensive motion also competes directly with typing: raw pointer layout work, React state on every animation frame, whole-panel DOM clones, and repeated caret measurement can turn polish into latency.
 
 ## Current state
 
@@ -62,7 +62,7 @@ Do not `cloneNode(true)` an editor/terminal subtree. Animate the real panel with
 
 ### 5. Finish perceptual QA without adding noise
 
-Fix palette viewport clipping, focus-ring scale, contrast/hierarchy, and empty explorer feedback using existing tokens. Preserve Jet's dense RAD character. Review dark/light, focus/hover/pressed, empty/error/loading, reduced motion, long labels, and 100/125/150% zoom. Motion must communicate continuity and focus, not mask latency.
+Fix palette viewport clipping, focus-ring scale, contrast/hierarchy, and empty explorer feedback using existing tokens. Preserve Gharargah's dense RAD character. Review dark/light, focus/hover/pressed, empty/error/loading, reduced motion, long labels, and 100/125/150% zoom. Motion must communicate continuity and focus, not mask latency.
 
 **Verify**: reviewed screenshots and sampled animation frames show no clipping, stranded effects, overlap, or contrast regression; keyboard focus remains unmistakable without dominating the surface.
 

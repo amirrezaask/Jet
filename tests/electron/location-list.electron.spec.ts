@@ -38,7 +38,7 @@ test.describe("electron location list", () => {
       await waitForSearchReady(page)
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("locationlist.showSearch")
+        await window.__gharargahAgent!.executeCommand("locationlist.showSearch")
       })
       await page.waitForTimeout(400)
 
@@ -123,7 +123,7 @@ test.describe("electron location list", () => {
         .poll(
           async () => {
             await page.evaluate(async () => {
-              await window.__jetAgent!.executeCommand("locationlist.showProblems")
+              await window.__gharargahAgent!.executeCommand("locationlist.showProblems")
             })
             return page.locator(problemsSel).count()
           },

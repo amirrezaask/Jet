@@ -14,25 +14,25 @@ test.describe("desktop shell", () => {
   test("traffic lights live on the sidebar chrome surface", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectLocatorCount(page.locator("[data-jet-workspace-sidebar]"), 0)
+      await expectLocatorCount(page.locator("[data-gharargah-workspace-sidebar]"), 0)
       await execCommand(page, "explorer.show")
-      const chrome = page.locator("[data-jet-sidebar-chrome]")
+      const chrome = page.locator("[data-gharargah-sidebar-chrome]")
       await expectLocatorVisible(chrome, { timeout: 10_000 })
 
       const geom = await page.evaluate(() => {
         const root = document.documentElement
-        const insetRaw = getComputedStyle(root).getPropertyValue("--jet-traffic-light-inset").trim()
+        const insetRaw = getComputedStyle(root).getPropertyValue("--gharargah-traffic-light-inset").trim()
         const probe = document.createElement("div")
         probe.style.width = insetRaw || "7.7rem"
         document.body.appendChild(probe)
         const zone = probe.getBoundingClientRect().width
         probe.remove()
 
-        const sidebarChrome = document.querySelector<HTMLElement>("[data-jet-sidebar-chrome]")
+        const sidebarChrome = document.querySelector<HTMLElement>("[data-gharargah-sidebar-chrome]")
         if (!sidebarChrome) return null
-        const spacer = document.querySelector<HTMLElement>("[data-jet-traffic-light-spacer]")
-        const workspaceSidebar = document.querySelector<HTMLElement>("[data-jet-workspace-sidebar]")
-        const tabBarDrag = document.querySelector<HTMLElement>("[data-jet-tab-bar-drag]")
+        const spacer = document.querySelector<HTMLElement>("[data-gharargah-traffic-light-spacer]")
+        const workspaceSidebar = document.querySelector<HTMLElement>("[data-gharargah-workspace-sidebar]")
+        const tabBarDrag = document.querySelector<HTMLElement>("[data-gharargah-tab-bar-drag]")
         if (!workspaceSidebar) return null
         const chromeRect = sidebarChrome.getBoundingClientRect()
         const workspaceSidebarRect = workspaceSidebar.getBoundingClientRect()
@@ -45,8 +45,8 @@ test.describe("desktop shell", () => {
           workspaceSidebarRight: workspaceSidebarRect.right,
           chromeColor: getComputedStyle(sidebarChrome).backgroundColor,
           workspaceSidebarColor: getComputedStyle(workspaceSidebar).backgroundColor,
-          hasMenubar: document.querySelector("[data-jet-sidebar-chrome] [role='menubar']") != null,
-          hasTitlebar: document.querySelector("[data-jet-titlebar]") != null,
+          hasMenubar: document.querySelector("[data-gharargah-sidebar-chrome] [role='menubar']") != null,
+          hasTitlebar: document.querySelector("[data-gharargah-titlebar]") != null,
           tauriChromeDeepDrag: sidebarChrome.getAttribute("data-tauri-drag-region") === "deep",
           tauriSpacerDragRegion: spacer?.hasAttribute("data-tauri-drag-region") === true,
           tauriTabBarDrag: tabBarDrag?.getAttribute("data-tauri-drag-region") === "true",
@@ -72,17 +72,17 @@ test.describe("desktop shell", () => {
       const tabFont = await page.evaluate(() => {
         const triggers = Array.from(
           document.querySelectorAll<HTMLElement>(
-            '[data-jet-sidebar-view-tabs] [data-slot="tabs-trigger"]',
+            '[data-gharargah-sidebar-view-tabs] [data-slot="tabs-trigger"]',
           ),
         )
         if (triggers.length < 2) return null
         const root = getComputedStyle(document.documentElement)
         const rootPx = parseFloat(root.fontSize)
-        const xs = parseFloat(root.getPropertyValue("--jet-fs-xs"))
+        const xs = parseFloat(root.getPropertyValue("--gharargah-fs-xs"))
         const expected = rootPx * xs
         const sizes = triggers.map(trigger => parseFloat(getComputedStyle(trigger).fontSize))
         const list = document.querySelector<HTMLElement>(
-          '[data-jet-sidebar-view-tabs] [data-slot="tabs-list"]',
+          '[data-gharargah-sidebar-view-tabs] [data-slot="tabs-list"]',
         )
         const listHeight = list ? parseFloat(getComputedStyle(list).height) : 0
         const expectedListHeight = rootPx * 2
@@ -118,7 +118,7 @@ test.describe("desktop shell", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "explorer.show")
-      const drag = page.locator("[data-jet-tab-bar-drag]")
+      const drag = page.locator("[data-gharargah-tab-bar-drag]")
       await expectLocatorVisible(drag, { timeout: 10_000 })
       const box = await drag.boundingBox()
       expect(box).not.toBeNull()
@@ -163,7 +163,7 @@ test.describe("desktop shell", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "explorer.show")
-      const drag = page.locator("[data-jet-tab-bar-drag]")
+      const drag = page.locator("[data-gharargah-tab-bar-drag]")
       await expectLocatorVisible(drag, { timeout: 10_000 })
       await expectLocatorAttribute(drag, "data-tauri-drag-region", "true")
       const box = await drag.boundingBox()
@@ -171,7 +171,7 @@ test.describe("desktop shell", () => {
       expect(box!.width).toBeGreaterThan(40)
       expect(box!.height).toBeGreaterThan(8)
 
-      const spacer = page.locator("[data-jet-traffic-light-spacer]")
+      const spacer = page.locator("[data-gharargah-traffic-light-spacer]")
       await expectLocatorVisible(spacer, { timeout: 10_000 })
       await expectLocatorAttribute(spacer, "data-tauri-drag-region", "true")
       const spacerBox = await spacer.boundingBox()
@@ -179,7 +179,7 @@ test.describe("desktop shell", () => {
       expect(spacerBox!.width).toBeGreaterThan(40)
       expect(spacerBox!.height).toBeGreaterThan(8)
 
-      const chrome = page.locator("[data-jet-sidebar-chrome]")
+      const chrome = page.locator("[data-gharargah-sidebar-chrome]")
       await expectLocatorAttribute(chrome, "data-tauri-drag-region", "deep")
     } finally {
       await app.close()
@@ -191,19 +191,19 @@ test.describe("desktop shell", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(async () => {
-        await window.__jetAgent!.openFile("src/index.ts")
-        await window.__jetAgent!.waitForEditor()
+        await window.__gharargahAgent!.openFile("src/index.ts")
+        await window.__gharargahAgent!.waitForEditor()
       })
       await focusEditor(page)
       await page.keyboard.press("Meta+Shift+\\")
       await page.waitForFunction(
-        () => document.querySelectorAll("[data-jet-tab-bar]").length === 2,
+        () => document.querySelectorAll("[data-gharargah-tab-bar]").length === 2,
         null,
         { timeout: 10_000 },
       )
 
       const bars = await page.evaluate(() =>
-        Array.from(document.querySelectorAll<HTMLElement>("[data-jet-tab-bar]"))
+        Array.from(document.querySelectorAll<HTMLElement>("[data-gharargah-tab-bar]"))
           .map(bar => ({
             y: bar.getBoundingClientRect().y,
             height: bar.getBoundingClientRect().height,
@@ -225,14 +225,14 @@ test.describe("desktop shell", () => {
     try {
       await execCommand(page, "explorer.show")
       await page.waitForSelector(
-        '[data-jet-list-panel="jet:explorer"] [data-depth="1"]',
+        '[data-gharargah-list-panel="gharargah:explorer"] [data-depth="1"]',
         { timeout: 10_000 },
       )
       const files = await page.evaluate(() => {
-        const panel = document.querySelector('[data-jet-list-panel="jet:explorer"]')!
+        const panel = document.querySelector('[data-gharargah-list-panel="gharargah:explorer"]')!
         const root = panel.querySelector<HTMLElement>('[data-depth="0"]')!
         const child = panel.querySelector<HTMLElement>('[data-depth="1"]')!
-        const icon = root.querySelector<HTMLElement>("[data-jet-project-icon]")!
+        const icon = root.querySelector<HTMLElement>("[data-gharargah-project-icon]")!
         return {
           rootHeight: root.getBoundingClientRect().height,
           childHeight: child.getBoundingClientRect().height,
@@ -245,14 +245,14 @@ test.describe("desktop shell", () => {
       await execCommand(page, "terminal.new")
       await execCommand(page, "terminal.explorer.show")
       await page.waitForSelector(
-        '[data-jet-list-panel="jet:terminal-explorer"] [data-depth="1"]',
+        '[data-gharargah-list-panel="gharargah:terminal-explorer"] [data-depth="1"]',
         { timeout: 30_000 },
       )
       const terminals = await page.evaluate(() => {
-        const panel = document.querySelector('[data-jet-list-panel="jet:terminal-explorer"]')!
+        const panel = document.querySelector('[data-gharargah-list-panel="gharargah:terminal-explorer"]')!
         const root = panel.querySelector<HTMLElement>('[data-depth="0"]')!
         const child = panel.querySelector<HTMLElement>('[data-depth="1"]')!
-        const icon = root.querySelector<HTMLElement>("[data-jet-project-icon]")!
+        const icon = root.querySelector<HTMLElement>("[data-gharargah-project-icon]")!
         return {
           rootHeight: root.getBoundingClientRect().height,
           childHeight: child.getBoundingClientRect().height,
@@ -277,12 +277,12 @@ test.describe("desktop shell", () => {
     try {
       await execCommand(page, "explorer.show")
       await expectListRows(page, {
-        panel: "jet:explorer",
+        panel: "gharargah:explorer",
         minItems: 1,
         needle: "sample-workspace",
       })
       const projectIcon = page
-        .locator('[data-jet-list-panel="jet:explorer"] [data-jet-project-icon]')
+        .locator('[data-gharargah-list-panel="gharargah:explorer"] [data-gharargah-project-icon]')
         .first()
       await expectLocatorVisible(projectIcon)
       const box = await projectIcon.boundingBox()

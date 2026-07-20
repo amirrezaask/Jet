@@ -2,7 +2,7 @@
 
 > **Executor instructions**: Follow every step and verification gate. Do not weaken assertions, increase timeouts, add sleeps, or mark failures flaky to make the suite green. Update `plans/README.md` when complete.
 >
-> **Drift check**: `git diff --stat a52fab2..HEAD -- playwright.config.ts package.json tests/tauri tests/shell tests/electron .github/workflows/ci.yml apps/jet-tauri/src-tauri/Cargo.toml apps/jet-tauri/src-tauri/src/lib.rs`
+> **Drift check**: `git diff --stat a52fab2..HEAD -- playwright.config.ts package.json tests/tauri tests/shell tests/electron .github/workflows/ci.yml apps/gharargah/src-tauri/Cargo.toml apps/gharargah/src-tauri/src/lib.rs`
 
 ## Status
 
@@ -38,13 +38,13 @@ The native suite is broad but not trustworthy enough to gate a shell migration: 
 
 ### 1. Adopt the supported embedded Tauri driver
 
-Configure `@wdio/tauri-service` with `driverProvider: "embedded"`, the release E2E binary, isolated `JET_E2E_USER_DATA`, and deterministic locale/viewport. Use `tauri-plugin-wdio-webdriver` only under the existing `e2e` Cargo feature and E2E capability. Remove `tests/tauri/webdriver.cjs` and the duplicate `run-e2e.mjs`/`run-ui-suite.mjs` after equivalent scenarios run through WDIO.
+Configure `@wdio/tauri-service` with `driverProvider: "embedded"`, the release E2E binary, isolated `GHARARGAH_E2E_USER_DATA`, and deterministic locale/viewport. Use `tauri-plugin-wdio-webdriver` only under the existing `e2e` Cargo feature and E2E capability. Remove `tests/tauri/webdriver.cjs` and the duplicate `run-e2e.mjs`/`run-ui-suite.mjs` after equivalent scenarios run through WDIO.
 
 **Verify**: a single native smoke command opens the real release Tauri binary on macOS without an external driver and exits 0.
 
 ### 2. Preserve shared scenarios without pretending WDIO is Playwright
 
-Extract shell-independent scenario functions/data from Electron specs where practical. Keep Playwright assertions for Playwright targets and WDIO assertions/actions for native Tauri. Do not emulate `page.mouse`, `keyboard`, focus, hover, or text input with `dispatchEvent`; use WebDriver actions/elements. Retain `window.__jetAgent` only for deterministic setup/state inspection, not as proof of the user interaction itself.
+Extract shell-independent scenario functions/data from Electron specs where practical. Keep Playwright assertions for Playwright targets and WDIO assertions/actions for native Tauri. Do not emulate `page.mouse`, `keyboard`, focus, hover, or text input with `dispatchEvent`; use WebDriver actions/elements. Retain `window.__gharargahAgent` only for deterministic setup/state inspection, not as proof of the user interaction itself.
 
 **Verify**: hot-glow, focus, drag, typing, Escape, and shortcuts use native WebDriver actions; `rg "dispatchEvent|execCommand\(\"insertText" tests/tauri` finds no interaction emulation.
 
@@ -69,7 +69,7 @@ Add cached Rust/pnpm jobs. Build the E2E binary once per job, then reuse it. Run
 ## Test plan and done criteria
 
 - [ ] `pnpm -r typecheck` exits 0.
-- [ ] `cargo test -q` exits 0 with no warnings in Jet-owned code.
+- [ ] `cargo test -q` exits 0 with no warnings in Gharargah-owned code.
 - [ ] Fast Playwright renderer/electron suites exit 0.
 - [ ] Native Tauri suite exits 0 with zero unexplained skips and zero retries.
 - [ ] New tests pass three consecutive local runs.

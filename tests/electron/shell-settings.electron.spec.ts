@@ -18,12 +18,12 @@ test.describe("electron shell settings", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(() => localStorage.clear())
-      await page.evaluate(async () => window.__jetAgent!.waitForReady())
+      await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
       await execCommand(page, "ui.setTheme.ayu-dark")
       await openSettings(page)
-      await expectLocatorCount(page.locator("[data-jet-theme-option]"), 19)
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 19)
 
-      await page.locator("[data-jet-theme-option='gruvbox-light']").click()
+      await page.locator("[data-gharargah-theme-option='gruvbox-light']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("gruvbox-light")

@@ -24,7 +24,7 @@ test.describe("electron workspace chrome", () => {
       const footer = page.locator("footer")
       await expectLocatorContainsText(footer, "sample-workspace")
 
-      await page.evaluate(path => window.__jetAgent!.openWorkspace(path), secondPath)
+      await page.evaluate(path => window.__gharargahAgent!.openWorkspace(path), secondPath)
       await expectLocatorContainsText(footer, "second-workspace")
       await expectLocatorCount(page.locator("footer"), 1)
     } finally {
@@ -37,9 +37,9 @@ test.describe("electron workspace chrome", () => {
     try {
       await openFixtureFile(page, "src/index.ts")
       await focusEditor(page)
-      await page.evaluate(() => window.__jetAgent!.setEditorSelection(2, 1))
+      await page.evaluate(() => window.__gharargahAgent!.setEditorSelection(2, 1))
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getCursorPosition()))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getCursorPosition()))
         .toEqual({ line: 2, column: 1 })
       await expectLocatorCount(page.locator("footer"), 1)
       await expectLocatorContainsText(page.locator("footer"), "index.ts")

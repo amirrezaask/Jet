@@ -11,7 +11,7 @@ test("bench palette-open", async () => {
       measure: async () => {
         return await page.evaluate(async () => {
           const t0 = performance.now()
-          await window.__jetAgent!.executeCommand("ui.showCommandPalette")
+          await window.__gharargahAgent!.executeCommand("ui.showCommandPalette")
           const deadline = t0 + 2_000
           while (performance.now() < deadline) {
             const dialog = document.querySelector<HTMLElement>('[role="dialog"]')

@@ -36,7 +36,7 @@ test.describe("electron editor find and goto", () => {
       await page.keyboard.press("Enter")
       await page.waitForTimeout(300)
 
-      const pos = await page.evaluate(() => window.__jetAgent!.getCursorPosition())
+      const pos = await page.evaluate(() => window.__gharargahAgent!.getCursorPosition())
       expect(pos?.line).toBe(5)
     } finally {
       await app.close()

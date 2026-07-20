@@ -1,21 +1,21 @@
 {
-  "name": "jet",
+  "name": "gharargah",
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "dev": "pnpm --filter jet-tauri dev",
-    "dev:tauri": "pnpm --filter jet-tauri dev",
+    "dev": "pnpm --filter gharargah dev",
+    "dev:tauri": "pnpm --filter gharargah dev",
     "test:tauri": "playwright test --project=tauri && PLAYWRIGHT_WORKERS=1 playwright test --project=tauri-e2e",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "test": "pnpm --filter @jet/workspace test && pnpm --filter @jet/lsp test && pnpm --filter @jet/node-host test && pnpm --filter @jet/app test",
+    "test": "pnpm --filter @gharargah/workspace test && pnpm --filter @gharargah/lsp test && pnpm --filter @gharargah/node-host test && pnpm --filter @gharargah/app test",
     "test:electron": "echo 'Electron shell removed; use pnpm test:tauri (tauri-e2e runs tests/electron specs)' && exit 1",
-    "test:bench": "JET_SHELL=tauri playwright test --project=bench",
-    "bench:startup:tauri": "pnpm --filter jet-tauri bench:startup:debug && pnpm --filter jet-tauri bench:startup:release",
+    "test:bench": "GHARARGAH_SHELL=tauri playwright test --project=bench",
+    "bench:startup:tauri": "pnpm --filter gharargah bench:startup:debug && pnpm --filter gharargah bench:startup:release",
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
-    "validate:keybindings": "node scripts/validate-jet-keybindings.mjs",
-    "release": "pnpm --filter jet-tauri release && cp -r ./apps/jet-tauri/src-tauri/target/release/bundle/macos/Jet-Tauri.app ~/Applications/",
-    "release:tauri": "pnpm --filter jet-tauri release && cp -r ./apps/jet-tauri/src-tauri/target/release/bundle/macos/Jet-Tauri.app ~/Applications/"
+    "validate:keybindings": "node scripts/validate-gharargah-keybindings.mjs",
+    "release": "pnpm --filter gharargah release && cp -r ./apps/gharargah/src-tauri/target/release/bundle/macos/Gharargah.app ~/Applications/",
+    "release:tauri": "pnpm --filter gharargah release && cp -r ./apps/gharargah/src-tauri/target/release/bundle/macos/Gharargah.app ~/Applications/"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

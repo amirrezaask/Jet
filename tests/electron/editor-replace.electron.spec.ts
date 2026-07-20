@@ -28,7 +28,7 @@ test.describe("electron editor replace", () => {
       await page.keyboard.press("Meta+Shift+Enter")
       await page.waitForTimeout(500)
 
-      const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(text).toMatch(/Hi|Hello/)
     } finally {
       await app.close()

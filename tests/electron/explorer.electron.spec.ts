@@ -15,7 +15,7 @@ import { execCommand, launchJet } from "./_launch.js"
 import { expectListRows } from "../helpers/list.js"
 import { EXPLORER_PANEL } from "../helpers/shell.js"
 
-const EXPLORER_ITEMS = `${EXPLORER_PANEL} [data-jet-list-item]`
+const EXPLORER_ITEMS = `${EXPLORER_PANEL} [data-gharargah-list-item]`
 
 test.describe("electron explorer", () => {
   test("shows file tree and opens file from explorer", async () => {
@@ -23,12 +23,12 @@ test.describe("electron explorer", () => {
     try {
       await execCommand(page, "explorer.show")
       await expectSelectorVisible(page, EXPLORER_PANEL)
-      await expectListRows(page, { panel: "jet:explorer", minItems: 1, needle: "sample-workspace" })
+      await expectListRows(page, { panel: "gharargah:explorer", minItems: 1, needle: "sample-workspace" })
 
       await page.locator(EXPLORER_ITEMS).filter({ hasText: /^src$/i }).first().click()
       await page.waitForTimeout(400)
       await page.locator(EXPLORER_ITEMS).filter({ hasText: /utils\.ts/i }).first().click()
-      await page.evaluate(() => window.__jetAgent!.waitForEditor())
+      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
       await expectContainsText(page, ".cm-editor", "export function greet")
     } finally {
       await app.close()
@@ -39,20 +39,20 @@ test.describe("electron explorer", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "explorer.show")
-      await expectSelectorVisible(page, "[data-jet-workspace-sidebar]")
-      await expectLocatorCount(page.locator("[data-jet-sidebar-chrome] [data-jet-sidebar-toggle]"), 1)
+      await expectSelectorVisible(page, "[data-gharargah-workspace-sidebar]")
+      await expectLocatorCount(page.locator("[data-gharargah-sidebar-chrome] [data-gharargah-sidebar-toggle]"), 1)
 
-      await page.locator("[data-jet-sidebar-chrome] [data-jet-sidebar-toggle]").click()
+      await page.locator("[data-gharargah-sidebar-chrome] [data-gharargah-sidebar-toggle]").click()
       await expect
         .poll(() => page.locator("[data-slot='sidebar']").getAttribute("data-state"))
         .toBe("collapsed")
       // Closed: reopen control lives on the tab bar — no sidebar-width gap reserved.
-      await expectLocatorCount(page.locator("[data-jet-tab-bar] [data-jet-sidebar-toggle]"), 1)
+      await expectLocatorCount(page.locator("[data-gharargah-tab-bar] [data-gharargah-sidebar-toggle]"), 1)
 
       const geom = await page.evaluate(() => {
-        const tabBar = document.querySelector<HTMLElement>("[data-jet-tab-bar]")
+        const tabBar = document.querySelector<HTMLElement>("[data-gharargah-tab-bar]")
         const tabsList = document.querySelector<HTMLElement>(
-          "[data-jet-tab-bar] [data-slot='tabs-list']",
+          "[data-gharargah-tab-bar] [data-slot='tabs-list']",
         )
         const inset = document.querySelector<HTMLElement>("[data-slot='sidebar-inset']")
         if (!tabBar || !inset) return null
@@ -62,7 +62,7 @@ test.describe("electron explorer", () => {
         const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize)
         const trafficInset =
           parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue("--jet-traffic-light-inset"),
+            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-traffic-light-inset"),
           ) * rootPx
         return {
           tabBarLeft: barRect.left,
@@ -84,8 +84,8 @@ test.describe("electron explorer", () => {
       await expect
         .poll(() => page.locator("[data-slot='sidebar']").getAttribute("data-state"))
         .toBe("expanded")
-      await expectLocatorVisible(page.locator("[data-jet-sidebar-view-tabs]"))
-      await expectLocatorCount(page.locator("[data-jet-sidebar-chrome] [data-jet-sidebar-toggle]"), 1)
+      await expectLocatorVisible(page.locator("[data-gharargah-sidebar-view-tabs]"))
+      await expectLocatorCount(page.locator("[data-gharargah-sidebar-chrome] [data-gharargah-sidebar-toggle]"), 1)
     } finally {
       await app.close()
     }

@@ -21,7 +21,7 @@ test.describe("electron quick open", () => {
   test("returns files while the workspace search index is still warming", async () => {
     const { app, page } = await launchJet()
     try {
-      await page.evaluate(async () => window.__jetAgent!.executeCommand("workspace.quickOpen"))
+      await page.evaluate(async () => window.__gharargahAgent!.executeCommand("workspace.quickOpen"))
       await waitForDialog(page)
       const input = page.getByRole("dialog").getByRole("combobox")
       await input.fill("utils")
@@ -41,7 +41,7 @@ test.describe("electron quick open", () => {
       await page.waitForTimeout(800)
       await expectLocatorContainsText(page.getByRole("dialog"), "utils.ts")
       await page.getByRole("option").filter({ hasText: "utils.ts" }).first().click()
-      await page.evaluate(() => window.__jetAgent!.waitForEditor())
+      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
       await expectContainsText(page, ".cm-editor", "export function greet")
     } finally {
       await app.close()
@@ -52,7 +52,7 @@ test.describe("electron quick open", () => {
     const { app, page } = await launchJet()
     try {
       const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
-      await page.evaluate(path => window.__jetAgent!.addWorkspace(path), secondPath)
+      await page.evaluate(path => window.__gharargahAgent!.addWorkspace(path), secondPath)
       await openQuickOpen(page)
 
       const scope = page.getByRole("group", { name: "Filter files by workspace" })
@@ -62,7 +62,7 @@ test.describe("electron quick open", () => {
       await input.fill("marker")
 
       await expectListRows(page, {
-        panel: "jet:palette",
+        panel: "gharargah:palette",
         minItems: 1,
         needle: "src/marker.ts",
         noResultsText: "No matching files.",

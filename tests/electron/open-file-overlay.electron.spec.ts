@@ -30,8 +30,8 @@ test.describe("electron open file overlay", () => {
       const input = page.getByRole("dialog").locator("input").first()
       await input.fill(resolve(REPO_ROOT, "fixtures/sample-workspace/src/utils.ts"))
       await page.getByRole("button", { name: /Open/ }).click()
-      await page.evaluate(() => window.__jetAgent!.waitForEditor())
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText())).toContain("export function greet")
+      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText())).toContain("export function greet")
     } finally {
       await app.close()
     }

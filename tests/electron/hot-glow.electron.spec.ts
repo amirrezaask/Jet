@@ -4,8 +4,8 @@ import { expectListRows } from "../helpers/list.js"
 import { EXPLORER_PANEL } from "../helpers/shell.js"
 import { execCommand, launchJet } from "./_launch.js"
 
-const EXPLORER_ITEMS = `${EXPLORER_PANEL} [data-jet-list-item]`
-const EXPLORER_SLOTS = `${EXPLORER_PANEL} [data-jet-tree-row-slot]`
+const EXPLORER_ITEMS = `${EXPLORER_PANEL} [data-gharargah-list-item]`
+const EXPLORER_SLOTS = `${EXPLORER_PANEL} [data-gharargah-tree-row-slot]`
 
 test.describe("RAD hot glow", () => {
   test("sets mouse-local CSS vars and soft-circle opacity on hovered row", async () => {
@@ -13,7 +13,7 @@ test.describe("RAD hot glow", () => {
     try {
       await execCommand(page, "explorer.show")
       await expectSelectorVisible(page, EXPLORER_PANEL)
-      await expectListRows(page, { panel: "jet:explorer", minItems: 1, needle: "sample-workspace" })
+      await expectListRows(page, { panel: "gharargah:explorer", minItems: 1, needle: "sample-workspace" })
 
       const row = page.locator(EXPLORER_ITEMS).first()
       const box = await row.boundingBox()
@@ -25,28 +25,28 @@ test.describe("RAD hot glow", () => {
         const style = getComputedStyle(el)
         const before = getComputedStyle(el, "::before")
         return {
-          hotX: style.getPropertyValue("--jet-hot-x").trim(),
-          hotY: style.getPropertyValue("--jet-hot-y").trim(),
+          hotX: style.getPropertyValue("--gharargah-hot-x").trim(),
+          hotY: style.getPropertyValue("--gharargah-hot-y").trim(),
           beforeOpacity: before.opacity,
           beforeContent: before.content,
           beforeBg: before.backgroundImage,
           matchesHover: el.matches(":hover"),
-          hotActive: el.hasAttribute("data-jet-hot-active"),
+          hotActive: el.hasAttribute("data-gharargah-hot-active"),
           className: el.className,
           dataSlot: el.getAttribute("data-slot"),
         }
       })
 
       expect(
-        glow.className.includes("jet-hot-glow") ||
-          glow.className.includes("jet-interactive-row") ||
+        glow.className.includes("gharargah-hot-glow") ||
+          glow.className.includes("gharargah-interactive-row") ||
           glow.dataSlot === "sidebar-menu-sub-button",
         `row must be a hot-glow target (got class=${glow.className} slot=${glow.dataSlot})`,
       ).toBe(true)
       expect(glow.beforeContent, "::before soft circle must exist").not.toBe("none")
       expect(glow.beforeBg, `::before must use radial soft circle (got ${glow.beforeBg})`).toContain("radial-gradient")
-      expect(glow.hotX, "--jet-hot-x must be set by tracker").toMatch(/px$/)
-      expect(glow.hotY, "--jet-hot-y must be set by tracker").toMatch(/px$/)
+      expect(glow.hotX, "--gharargah-hot-x must be set by tracker").toMatch(/px$/)
+      expect(glow.hotY, "--gharargah-hot-y must be set by tracker").toMatch(/px$/)
       expect(
         glow.matchesHover || glow.hotActive,
         "row must have native or driver-compatible pointer hover state",

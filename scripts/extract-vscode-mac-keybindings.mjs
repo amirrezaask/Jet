@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Extract macOS default keybindings from .vscode reference source.
- * Output: packages/jet-workspace/data/vscode-mac-keybindings.json
+ * Output: packages/gharargah-workspace/data/vscode-mac-keybindings.json
  */
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises"
 import { join, relative } from "node:path"
@@ -13,7 +13,7 @@ const SRC_DIRS = [
   join(ROOT, ".vscode/src/vs/workbench"),
 ]
 const EXTENSIONS_DIR = join(ROOT, ".vscode/extensions")
-const OUT_DIR = join(ROOT, "packages/jet-workspace/data")
+const OUT_DIR = join(ROOT, "packages/gharargah-workspace/data")
 const OUT_FILE = join(OUT_DIR, "vscode-mac-keybindings.json")
 
 const WEIGHT_MAP = {
@@ -97,7 +97,7 @@ export function parseVscodeKeyString(keyStr) {
     .join(" ")
 }
 
-/** Normalize vscode extract format to Jet key string (Cmd-p style). */
+/** Normalize vscode extract format to Gharargah key string (Cmd-p style). */
 export function vscodeKeyToJetKey(vscodeKey) {
   return vscodeKey
     .split(/\s+/)

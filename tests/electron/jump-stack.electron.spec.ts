@@ -24,11 +24,11 @@ test.describe("electron jump stack", () => {
       await execCommand(page, "navigation.jumpBack")
       await focusEditor(page)
       await page.waitForTimeout(300)
-      const backText = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const backText = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(backText).toContain("main")
 
       await execCommand(page, "navigation.jumpForward")
-      const forwardText = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const forwardText = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(forwardText).toContain("greet")
     } finally {
       await app.close()

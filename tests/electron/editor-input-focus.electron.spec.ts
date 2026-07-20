@@ -19,7 +19,7 @@ test.describe("electron editor input focus", () => {
     try {
       await openFixtureFile(page, "src/index.ts")
       await page.keyboard.type("focus-test")
-      const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(text).toContain("focus-test")
     } finally {
       await app.close()

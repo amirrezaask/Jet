@@ -18,16 +18,16 @@ test.describe("electron new file", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "workspace.newFile")
-      await page.evaluate(() => window.__jetAgent!.waitForEditor())
+      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
       await expectSelectorVisible(page, ".cm-editor")
 
-      const panels = await page.evaluate(() => window.__jetAgent!.getState().panels)
+      const panels = await page.evaluate(() => window.__gharargahAgent!.getState().panels)
       const editorPanels = panels.filter(p => p.kind === "editor")
       expect(editorPanels.length).toBeGreaterThanOrEqual(1)
 
       await typeInEditor(page, "untitled content")
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeEditorDirty))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeEditorDirty))
         .toBe(true)
     } finally {
       await app.close()

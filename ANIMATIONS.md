@@ -1,6 +1,6 @@
 # RAD Debugger — UI Animations & Interaction Effects
 
-Reference for agents implementing Jet shell polish. Source: `.raddebugger/src/ui/` (framework) + `.raddebugger/src/raddbg/` (application wiring + draw pass).
+Reference for agents implementing Gharargah shell polish. Source: `.raddebugger/src/ui/` (framework) + `.raddebugger/src/raddbg/` (application wiring + draw pass).
 
 **Design philosophy:** Actions are instant; animations are visual-only. Every transition uses **exponential smoothing** toward a target — not springs, not CSS ease curves. State changes commit immediately; the GPU catches up frame-by-frame.
 
@@ -52,13 +52,13 @@ F32 t = ui_anim(key, target, .rate = rd_state->menu_animation_rate, .initial = 0
 - `.epsilon` default 0.005 — snaps when within epsilon.
 - `.rate = 1` or at target → instant snap.
 
-**Jet equivalent:** Framer Motion `useSpring` with high stiffness is close, but RAD uses **fixed exponential decay** — map `N=60, dt≈0.016` → ~94% convergence per frame at 60fps. For CSS: `transition` with ~120–180ms and `ease-out` approximates hover; for panel morphs use ~220ms.
+**Gharargah equivalent:** Framer Motion `useSpring` with high stiffness is close, but RAD uses **fixed exponential decay** — map `N=60, dt≈0.016` → ~94% convergence per frame at 60fps. For CSS: `transition` with ~120–180ms and `ease-out` approximates hover; for panel morphs use ~220ms.
 
 ### 1.3 Repaint driver
 
 `ui_state->is_animating` stays true while any box `_t` delta > 0.01, any `ui_anim` node is mid-lerp, tooltip/ctx-menu open_t is mid-lerp, or theme colors are mid-lerp. RAD requests another frame until settled.
 
-**Jet:** keep `requestAnimationFrame` / Framer `onAnimationComplete` loops or CSS transitions that block "done" until settled.
+**Gharargah:** keep `requestAnimationFrame` / Framer `onAnimationComplete` loops or CSS transitions that block "done" until settled.
 
 ---
 
@@ -81,7 +81,7 @@ Every `UI_Box` persists these floats (`ui_core.h`):
 box->active_t = is_active ? 1.f : box->active_t + (active_rate * ((F32)is_active - box->active_t));
 ```
 
-Press feels **immediate**; release **eases out**. Jet should mirror: `active:scale-[0.98]` instant on `:active`, transition out on release.
+Press feels **immediate**; release **eases out**. Gharargah should mirror: `active:scale-[0.98]` instant on `:active`, transition out on release.
 
 **Group hot sharing:** boxes with matching `group_key` inherit `hot_t` from the group box — hover ripple stays coherent across composite widgets (e.g. toggle switch sub-boxes).
 
@@ -108,7 +108,7 @@ t = hot_t * (1 - effective_active_t)   // active suppresses hover glow
 | Mouse-follow soft circle | Theme `hover` color | Center = mouse; radius = `min(max(box dim), font_size * 24)`; `alpha = 0.025 * hot_t` (full if hot) |
 | Border brighten | Theme `hover` on border pass | `alpha = 0.01 * hot_t` (skipped if currently hot key) |
 
-**Jet mapping:**
+**Gharargah mapping:**
 
 - List/button hover: subtle background lift + optional radial highlight tracking pointer (CSS `radial-gradient` at `--mouse-x/y` or skip for simplicity).
 - Use `--sidebar-accent` / `hover:bg-sidebar-accent` for flat hover; add `box-shadow` fade for depth.
@@ -126,7 +126,7 @@ Applied to: `ui_button`, sort headers, binding buttons, icon buttons, line margi
 
 Reads as a **physical button press** — dark top/left, light bottom.
 
-**Jet mapping:** `jet-press` class or `active:brightness-95 active:shadow-inner` on clickable surfaces. Keep press instant (see §2).
+**Gharargah mapping:** `jet-press` class or `active:brightness-95 active:shadow-inner` on clickable surfaces. Keep press instant (see §2).
 
 ### 3.3 Focus overlays
 
@@ -136,7 +136,7 @@ Reads as a **physical button press** — dark top/left, light bottom.
 | `focus_active_t > 0.01` + clickable | Border ring | Theme `focus` + `border`; 1px; `alpha *= focus_active_t` |
 | `DisableFocusOverlay` / `DisableFocusBorder` | Skip | Used on ctx menu root, some chrome |
 
-**Jet mapping:** `ring-2 ring-ring` for focus-visible; `outline-none` + keyboard nav ring. RAD focus hot is instant — no fade.
+**Gharargah mapping:** `ring-2 ring-ring` for focus-visible; `outline-none` + keyboard nav ring. RAD focus hot is instant — no fade.
 
 ### 3.4 Disabled
 
@@ -173,9 +173,9 @@ blur       = max_blur * open_t        // popups/tooltips
 | Drop site chip | `ui_anim(..., "open_t")` | Same squish/transparency |
 | Floating view | `ui_anim(..., "floating_view_open_%p")` | Anchored: fast rate; free-floating: slow rate; corner radius larger when footer |
 
-**Jet mapping:** Already partially in `packages/jet-ui/src/motion/tokens.ts` (`overlayEnter`: opacity + scale 0.96 + blur). Align durations:
+**Gharargah mapping:** Already partially in `packages/jet-ui/src/motion/tokens.ts` (`overlayEnter`: opacity + scale 0.96 + blur). Align durations:
 
-| RAD (approx @60fps, N=60–70) | Jet token |
+| RAD (approx @60fps, N=60–70) | Gharargah token |
 |---|---|
 | ~150ms (catchall/hot) | `--jet-motion-fast` (150ms) |
 | ~200ms (menu/tooltip) | `--jet-motion-overlay` (200ms) |
@@ -257,9 +257,9 @@ Add **scale-from-0.9** squish (RAD uses 10% squish, not 4% zoom) for menus/toolt
 
 ---
 
-## 7. Jet implementation checklist
+## 7. Gharargah implementation checklist
 
-Use this when adding or auditing Jet UI motion.
+Use this when adding or auditing Gharargah UI motion.
 
 ### 7.1 Global tokens (extend `jet-ui/src/motion/tokens.ts` + `globals.css`)
 
@@ -284,9 +284,9 @@ Use this when adding or auditing Jet UI motion.
 | `jet-disabled` | disabled_t | `opacity-40 pointer-events-none` with 200ms fade |
 | `jet-scroll-fade` | DrawFade* | mask-image linear gradient at edges |
 
-### 7.3 Component-specific Jet targets
+### 7.3 Component-specific Gharargah targets
 
-| Jet component | Priority effects |
+| Gharargah component | Priority effects |
 |---|---|
 | **PanelDock** | Panel rect morph (`menu_rate`); drop site preview expand-from-center; tab width animation |
 | **Command palette** | Overlay squish+fade+blur (portal) |
@@ -294,13 +294,13 @@ Use this when adding or auditing Jet UI motion.
 | **Popover / Tooltip** | 500ms delay for truncated; otherwise 200ms squish enter |
 | **Sidebar rows** (explorer, location list) | Hot highlight; no active inset unless button |
 | **Tabs** | Width morph for active tab; hot underline/glow |
-| **Editor cursor** | Fleury trail already in `@jet/codemirror`; match RAD directional fade on trail |
+| **Editor cursor** | Fleury trail already in `@gharargah/codemirror`; match RAD directional fade on trail |
 | **Status zones** | Hover only (ghost button) |
 | **Split gutter** | Cursor LeftRight; **no** animation on drag (live) |
 
 ### 7.4 Reduced motion
 
-RAD gates all rates via settings → `rate = 0`. Jet: respect `prefers-reduced-motion` → snap all `_t` to target, skip squish/blur/trail, keep functional focus rings.
+RAD gates all rates via settings → `rate = 0`. Gharargah: respect `prefers-reduced-motion` → snap all `_t` to target, skip squish/blur/trail, keep functional focus rings.
 
 ---
 
@@ -319,7 +319,7 @@ RAD gates all rates via settings → `rate = 0`. Jet: respect `prefers-reduced-m
 | Thread/BP hover | `src/raddbg/raddbg_widgets.c` | 1092–1230 |
 | Toggle/slider | `src/raddbg/raddbg_widgets.c` | 3803–3958 |
 | Basic button | `src/ui/ui_basic_widgets.c` | 76–88 |
-| Jet motion tokens (existing) | `packages/jet-ui/src/motion/tokens.ts` | — |
+| Gharargah motion tokens (existing) | `packages/jet-ui/src/motion/tokens.ts` | — |
 
 ---
 
@@ -352,4 +352,4 @@ Entity/BP appear line              alive_t        entity (N=30)
 Theme color change                 current_rgba   slow (N=30)
 ```
 
-This document is the canonical agent reference for RAD-aligned motion in Jet. When implementing, prefer matching **rates and asymmetry** (instant press, smooth release) over copying exact alpha values — theme tokens differ, but the **timing identity** is what makes RAD feel responsive.
+This document is the canonical agent reference for RAD-aligned motion in Gharargah. When implementing, prefer matching **rates and asymmetry** (instant press, smooth release) over copying exact alpha values — theme tokens differ, but the **timing identity** is what makes RAD feel responsive.

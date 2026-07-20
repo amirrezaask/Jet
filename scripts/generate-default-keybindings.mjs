@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * Regenerate packages/jet-workspace/src/default-keybindings.ts from extracted VS Code macOS data.
- * Active bind() only for implemented Jet commands; rest as // TODO comments.
+ * Regenerate packages/gharargah-workspace/src/default-keybindings.ts from extracted VS Code macOS data.
+ * Active bind() only for implemented Gharargah commands; rest as // TODO comments.
  */
 import { readFile, writeFile } from "node:fs/promises"
 import { join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const ROOT = join(fileURLToPath(import.meta.url), "..", "..")
-const DATA = join(ROOT, "packages/jet-workspace/data")
+const DATA = join(ROOT, "packages/gharargah-workspace/data")
 const BINDINGS_FILE = join(DATA, "vscode-mac-keybindings.json")
 const MAP_FILE = join(DATA, "jet-vscode-command-map.json")
-const OUT_FILE = join(ROOT, "packages/jet-workspace/src/default-keybindings.ts")
+const OUT_FILE = join(ROOT, "packages/gharargah-workspace/src/default-keybindings.ts")
 
 const WHEN_BY_VSCODE = {
   "workbench.action.quickOpen": "ctx => ctx.workspaceOpen && noOverlay(ctx)",
@@ -30,7 +30,7 @@ const WHEN_BY_VSCODE = {
   "workbench.actions.view.problems": "ctx => ctx.workspaceOpen && noOverlay(ctx)",
 }
 
-const JET_COMMAND_KEY = {
+const GHARARGAH_COMMAND_KEY = {
   "workspace.quickOpen": "quickOpen",
   "ui.showCommandPalette": "palette",
   "workspace.saveFile": "save",
@@ -75,7 +75,7 @@ async function main() {
   const activeLines = [
     `  bind("Cmd-n", cmd.newFile, ctx => ctx.workspaceOpen && noOverlay(ctx)),`,
     ...map.map(row => {
-      const fn = JET_COMMAND_KEY[row.jet] ?? row.jet.split(".").pop()
+      const fn = GHARARGAH_COMMAND_KEY[row.gharargah] ?? row.gharargah.split(".").pop()
       const cmdRef = `cmd.${fn}`
       const when = WHEN_BY_VSCODE[row.vscode]
       if (when) return `  bind(${JSON.stringify(row.key)}, ${cmdRef}, ${when}),`

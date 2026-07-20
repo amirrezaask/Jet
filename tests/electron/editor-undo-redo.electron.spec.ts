@@ -18,16 +18,16 @@ test.describe("electron editor undo redo", () => {
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/utils.ts")
-      const before = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const before = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       await typeInEditor(page, "X")
       await page.keyboard.press("Meta+z")
       await page.waitForTimeout(200)
-      const afterUndo = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const afterUndo = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(afterUndo).toBe(before)
 
       await page.keyboard.press("Meta+Shift+z")
       await page.waitForTimeout(200)
-      const afterRedo = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const afterRedo = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(afterRedo).toContain("X")
     } finally {
       await app.close()

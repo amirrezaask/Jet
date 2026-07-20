@@ -17,8 +17,8 @@ import { resolve } from "node:path"
 import { expectLayout, expectNoOverlap, expectRowSpacing, expectRowTextVisible } from "../helpers/list.js"
 import { launchJet, REPO_ROOT } from "./_launch.js"
 
-const PANEL = "[data-jet-list-panel='jet:terminal-explorer']"
-const ROWS = `${PANEL} [data-jet-list-item]`
+const PANEL = "[data-gharargah-list-panel='gharargah:terminal-explorer']"
+const ROWS = `${PANEL} [data-gharargah-list-item]`
 
 test.describe("electron project persistence", () => {
   test("restores only saved projects and the last active project", async () => {
@@ -26,30 +26,30 @@ test.describe("electron project persistence", () => {
 
     const { app, page } = await launchJet()
     try {
-      await page.evaluate(path => window.__jetAgent!.openWorkspace(path), secondPath)
+      await page.evaluate(path => window.__gharargahAgent!.openWorkspace(path), secondPath)
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toBe(secondPath)
-      await page.evaluate(() => window.__jetAgent!.executeCommand("terminal.explorer.show"))
+      await page.evaluate(() => window.__gharargahAgent!.executeCommand("terminal.explorer.show"))
       const secondRow = page.getByRole("treeitem", { name: "second-workspace" })
       await secondRow.getByRole("button", { name: "New terminal" }).click()
-      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
-      await page.evaluate(() => window.__jetAgent!.openFile("src/marker.ts"))
-      await page.evaluate(() => window.__jetAgent!.waitForEditor())
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+      await page.evaluate(() => window.__gharargahAgent!.openFile("src/marker.ts"))
+      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.listWorkspaces().length))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
 
       await page.reload()
-      await page.waitForFunction(() => window.__jetAgent != null, null, { timeout: 30_000 })
-      await page.evaluate(() => window.__jetAgent!.waitForReady())
+      await page.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
+      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.listWorkspaces().length))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toBe(secondPath)
-      await page.evaluate(() => window.__jetAgent!.executeCommand("terminal.explorer.show"))
+      await page.evaluate(() => window.__gharargahAgent!.executeCommand("terminal.explorer.show"))
 
       const panel = page.locator(PANEL)
       await expectLocatorContainsText(panel, "sample-workspace")
@@ -60,7 +60,7 @@ test.describe("electron project persistence", () => {
       await expectRowSpacing(page, { selector: ROWS, minItems: 2 })
       await expectRowTextVisible(page, { selector: ROWS, minItems: 2 })
 
-      await expectLocatorCount(page.locator("[data-jet-terminal-panel]"), 0)
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-panel]"), 0)
       await expectLocatorCount(page.locator(".cm-editor"), 0)
     } finally {
       await app.close()

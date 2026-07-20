@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { RUST_HOST_CHANNELS } from "@jet/host-client"
+import { RUST_HOST_CHANNELS } from "@gharargah/host-client"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -36,8 +36,8 @@ test.describe("tauri host channel registry", () => {
       "perf:getStartupLogPath",
       "agents:listProviders",
       "agents:sendMessage",
-      "jet:getLaunchConfig",
-      "jet:getHomeDir",
+      "gharargah:getLaunchConfig",
+      "gharargah:getHomeDir",
       "ui:syncNativeChrome",
     ]
     for (const channel of required) {
@@ -53,13 +53,13 @@ test.describe("tauri host channel registry", () => {
   test("native titlebar grants drag permission and keeps centered traffic lights", () => {
     const capability = JSON.parse(
       fs.readFileSync(
-        path.join(process.cwd(), "apps/jet-tauri/src-tauri/capabilities/default.json"),
+        path.join(process.cwd(), "apps/gharargah/src-tauri/capabilities/default.json"),
         "utf8",
       ),
     ) as { permissions: string[] }
     const config = JSON.parse(
       fs.readFileSync(
-        path.join(process.cwd(), "apps/jet-tauri/src-tauri/tauri.conf.json"),
+        path.join(process.cwd(), "apps/gharargah/src-tauri/tauri.conf.json"),
         "utf8",
       ),
     ) as {
@@ -71,7 +71,7 @@ test.describe("tauri host channel registry", () => {
       }
     }
     const shellRs = fs.readFileSync(
-      path.join(process.cwd(), "apps/jet-tauri/src-tauri/src/shell.rs"),
+      path.join(process.cwd(), "apps/gharargah/src-tauri/src/shell.rs"),
       "utf8",
     )
 

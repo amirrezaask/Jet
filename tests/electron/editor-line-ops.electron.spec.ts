@@ -22,11 +22,11 @@ test.describe("electron editor line ops", () => {
       await page.keyboard.press("Home")
 
       await execCommand(page, "editor.toggleComment")
-      let text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      let text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(text).toMatch(/\/\/\s*export|export/)
 
       await execCommand(page, "editor.indentMore")
-      text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(text).toBeTruthy()
     } finally {
       await app.close()

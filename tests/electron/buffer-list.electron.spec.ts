@@ -27,7 +27,7 @@ test.describe("electron buffer list", () => {
       await expectLocatorContainsText(page.getByRole("dialog"), "utils.ts")
 
       await page.getByRole("option", { name: /index\.ts/i }).click()
-      await page.evaluate(() => window.__jetAgent!.waitForEditor())
+      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
       await expectContainsText(page, ".cm-editor", "main()")
     } finally {
       await app.close()

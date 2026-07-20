@@ -5,7 +5,7 @@ import { assertBudget, logBenchResult, runBench } from "./_bench.js"
 test("editor wheel reaches the next paint within budget", async () => {
   const { app, page } = await launchJet(".")
   try {
-    await openFixtureFile(page, "packages/jet-app/src/App.tsx")
+    await openFixtureFile(page, "packages/gharargah-app/src/App.tsx")
     const result = await runBench({
       name: "scroll-next-paint",
       rounds: 12,

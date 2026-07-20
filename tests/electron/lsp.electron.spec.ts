@@ -21,7 +21,7 @@ import {
 
 async function placeCursorOnToken(page: import("./_launch.js").ShellDriver, token: string): Promise<void> {
   const placed = await page.evaluate(needle => {
-    const agent = window.__jetAgent!
+    const agent = window.__gharargahAgent!
     const text = agent.getEditorText()
     if (!text) return false
     const index = text.indexOf(needle)
@@ -58,13 +58,13 @@ test.describe("electron LSP TypeScript", () => {
       await placeCursorOnToken(page, "greet")
 
       await expect.poll(async () => {
-        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        const text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
         if (!text?.includes("export function greet")) {
           await page.evaluate(async () => {
-            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+            await window.__gharargahAgent!.executeCommand("editor.action.revealDefinition")
           })
         }
-        return page.evaluate(() => window.__jetAgent!.getEditorText())
+        return page.evaluate(() => window.__gharargahAgent!.getEditorText())
       }, { timeout: 15_000, intervals: [200, 400, 800] }).toContain("export function greet")
     } finally {
       await app.close()
@@ -79,7 +79,7 @@ test.describe("electron LSP TypeScript", () => {
       await placeCursorOnToken(page, "greet")
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("editor.action.goToReferences")
+        await window.__gharargahAgent!.executeCommand("editor.action.goToReferences")
       })
 
       const listId = await waitForReferencesListPanel(page)
@@ -107,7 +107,7 @@ test.describe("electron LSP TypeScript", () => {
       await page.waitForTimeout(2000)
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("locationlist.showProblems")
+        await window.__gharargahAgent!.executeCommand("locationlist.showProblems")
       })
       await page.waitForTimeout(1500)
 
@@ -140,16 +140,16 @@ test.describe("electron LSP Go", () => {
       await placeCursorOnToken(page, "AppName")
 
       await expect.poll(async () => {
-        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        const text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
         if (!text?.includes('const AppName')) {
           await page.evaluate(async () => {
-            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+            await window.__gharargahAgent!.executeCommand("editor.action.revealDefinition")
           })
         }
-        return page.evaluate(() => window.__jetAgent!.getEditorText())
+        return page.evaluate(() => window.__gharargahAgent!.getEditorText())
       }, { timeout: 20_000, intervals: [300, 500, 800] }).toContain("const AppName")
 
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()), {
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText()), {
         timeout: 5_000,
       }).toContain('AppName = "jet-sample"')
     } finally {
@@ -165,13 +165,13 @@ test.describe("electron LSP Go", () => {
       await placeCursorOnToken(page, "MaxRetries")
 
       await expect.poll(async () => {
-        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        const text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
         if (!text?.includes("var MaxRetries")) {
           await page.evaluate(async () => {
-            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+            await window.__gharargahAgent!.executeCommand("editor.action.revealDefinition")
           })
         }
-        return page.evaluate(() => window.__jetAgent!.getEditorText())
+        return page.evaluate(() => window.__gharargahAgent!.getEditorText())
       }, { timeout: 20_000, intervals: [300, 500, 800] }).toContain("var MaxRetries")
     } finally {
       await app.close()
@@ -186,7 +186,7 @@ test.describe("electron LSP Go", () => {
       await placeCursorOnToken(page, "MaxRetries")
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("editor.action.goToReferences")
+        await window.__gharargahAgent!.executeCommand("editor.action.goToReferences")
       })
 
       const listId = await waitForReferencesListPanel(page)
@@ -213,24 +213,24 @@ test.describe("electron LSP Go", () => {
       await waitForLspConnected(page)
       // call site in main
       await page.evaluate(() => {
-        const text = window.__jetAgent!.getEditorText() ?? ""
+        const text = window.__gharargahAgent!.getEditorText() ?? ""
         const call = text.lastIndexOf('greet("world")')
         const before = text.slice(0, call)
         const line = before.split("\n").length
         const col = call - (before.lastIndexOf("\n") + 1) + 3
-        window.__jetAgent!.setEditorSelection(line, col)
+        window.__gharargahAgent!.setEditorSelection(line, col)
       })
 
       await expect.poll(async () => {
-        const editorText = await page.evaluate(() => window.__jetAgent!.getEditorText() ?? "")
+        const editorText = await page.evaluate(() => window.__gharargahAgent!.getEditorText() ?? "")
         const defLine = editorText.split("\n").findIndex(l => l.includes("func greet(name string)")) + 1
-        const cursor = await page.evaluate(() => window.__jetAgent!.getCursorPosition())
+        const cursor = await page.evaluate(() => window.__gharargahAgent!.getCursorPosition())
         if (defLine > 0 && Math.abs((cursor?.line ?? -1) - defLine) > 1) {
           await page.evaluate(async () => {
-            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+            await window.__gharargahAgent!.executeCommand("editor.action.revealDefinition")
           })
         }
-        const after = await page.evaluate(() => window.__jetAgent!.getCursorPosition())
+        const after = await page.evaluate(() => window.__gharargahAgent!.getCursorPosition())
         return Math.abs((after?.line ?? -1) - defLine) <= 1
       }, { timeout: 15_000, intervals: [300, 500] }).toBe(true)
     } finally {
@@ -246,16 +246,16 @@ test.describe("electron LSP Go", () => {
       await placeCursorOnToken(page, "SharedFlag")
 
       await expect.poll(async () => {
-        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        const text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
         if (!text?.includes("var SharedFlag")) {
           await page.evaluate(async () => {
-            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+            await window.__gharargahAgent!.executeCommand("editor.action.revealDefinition")
           })
         }
-        return page.evaluate(() => window.__jetAgent!.getEditorText())
+        return page.evaluate(() => window.__gharargahAgent!.getEditorText())
       }, { timeout: 20_000, intervals: [300, 500, 800] }).toContain("var SharedFlag")
 
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()), {
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText()), {
         timeout: 5_000,
       }).toContain("SharedFlag = 42")
     } finally {
@@ -271,13 +271,13 @@ test.describe("electron LSP Go", () => {
       await placeCursorOnToken(page, "Println")
 
       await expect.poll(async () => {
-        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        const text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
         if (!text?.includes("func Println")) {
           await page.evaluate(async () => {
-            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+            await window.__gharargahAgent!.executeCommand("editor.action.revealDefinition")
           })
         }
-        return page.evaluate(() => window.__jetAgent!.getEditorText())
+        return page.evaluate(() => window.__gharargahAgent!.getEditorText())
       }, { timeout: 25_000, intervals: [400, 600, 900] }).toContain("func Println")
     } finally {
       await app.close()
@@ -314,24 +314,24 @@ test.describe("electron LSP misc", () => {
       await page.keyboard.down("Meta")
       for (let attempt = 0; attempt < 40; attempt++) {
         await page.mouse.move(point.x, point.y)
-        if ((await page.locator("[data-jet-definition-link]").count()) > 0) break
+        if ((await page.locator("[data-gharargah-definition-link]").count()) > 0) break
         await page.waitForTimeout(250)
       }
-      await expectLocatorCount(page.locator("[data-jet-definition-link]"), 1, { timeout: 15_000 })
+      await expectLocatorCount(page.locator("[data-gharargah-definition-link]"), 1, { timeout: 15_000 })
       await placeCursorOnToken(page, "greet")
       await page.keyboard.up("Meta")
       await expect.poll(async () => {
-        const text = await page.evaluate(() => window.__jetAgent!.getEditorText())
+        const text = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
         if (!text?.includes("export function greet")) {
           await page.evaluate(async () => {
-            await window.__jetAgent!.executeCommand("editor.action.revealDefinition")
+            await window.__gharargahAgent!.executeCommand("editor.action.revealDefinition")
           })
         }
-        return page.evaluate(() => window.__jetAgent!.getEditorText())
+        return page.evaluate(() => window.__gharargahAgent!.getEditorText())
       }, { timeout: 8_000, intervals: [200, 300, 500] }).toContain("export function greet")
 
-      await page.evaluate(async () => window.__jetAgent!.executeCommand("navigation.jumpBack"))
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()), { timeout: 5_000 }).toContain("function main")
+      await page.evaluate(async () => window.__gharargahAgent!.executeCommand("navigation.jumpBack"))
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText()), { timeout: 5_000 }).toContain("function main")
     } finally {
       await page.keyboard.up("Meta").catch(() => {})
       await app.close()
@@ -345,7 +345,7 @@ test.describe("electron LSP misc", () => {
       await waitForLspConnected(page)
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("editor.action.quickOutline")
+        await window.__gharargahAgent!.executeCommand("editor.action.quickOutline")
       })
       await page.waitForTimeout(1500)
 
@@ -361,12 +361,12 @@ test.describe("electron LSP misc", () => {
       await openFixtureFile(page, "src/utils.ts")
       await waitForLspConnected(page)
 
-      const before = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const before = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("editor.action.formatDocument")
+        await window.__gharargahAgent!.executeCommand("editor.action.formatDocument")
       })
       await page.waitForTimeout(2000)
-      const after = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const after = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(after).toBeTruthy()
       expect(after!.length).toBeGreaterThanOrEqual(before!.length)
     } finally {
@@ -384,7 +384,7 @@ test.describe("electron LSP misc", () => {
       await page.waitForTimeout(2500)
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("locationlist.showProblems")
+        await window.__gharargahAgent!.executeCommand("locationlist.showProblems")
       })
       await page.waitForTimeout(1500)
 

@@ -1,0 +1,86 @@
+{
+  "name": "@gharargah/ui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./primitives": {
+      "types": "./src/primitives.ts",
+      "default": "./src/primitives.ts"
+    },
+    "./agents": {
+      "types": "./src/agents-entry.ts",
+      "default": "./src/agents-entry.ts"
+    },
+    "./terminal": {
+      "types": "./src/terminal-entry.ts",
+      "default": "./src/terminal-entry.ts"
+    },
+    "./styles.css": "./src/styles/globals.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/dock/panel-drop-zones.test.ts src/theme/default.test.ts src/lister/fuzzy.test.ts src/lister/filter-tree.test.ts"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.6",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.37.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
+    "@gharargah/agents": "workspace:*",
+    "@gharargah/codemirror": "workspace:*",
+    "@gharargah/lsp": "workspace:*",
+    "@gharargah/panels": "workspace:*",
+    "@gharargah/shared": "workspace:*",
+    "@gharargah/workspace": "workspace:*",
+    "@pierre/diffs": "^1.2.11",
+    "@radix-ui/react-checkbox": "^1.3.6",
+    "@radix-ui/react-context-menu": "^2.3.2",
+    "@radix-ui/react-dialog": "^1.1.14",
+    "@radix-ui/react-label": "^2.1.11",
+    "@radix-ui/react-scroll-area": "^1.2.9",
+    "@radix-ui/react-separator": "^1.1.7",
+    "@radix-ui/react-slot": "^1.3.0",
+    "@radix-ui/react-tabs": "^1.1.16",
+    "@tanstack/react-virtual": "^3.13.6",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "lexical": "^0.41.0",
+    "@lexical/react": "^0.41.0",
+    "@base-ui/react": "^1.4.1",
+    "@legendapp/list": "3.2.0",
+    "lucide-react": "^0.513.0",
+    "next-themes": "^0.4.6",
+    "radix-ui": "^1.6.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^4.12.1",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.3.0",
+    "tailwindcss-animate": "^1.0.7",
+    "tw-animate-css": "^1.4.0",
+    "vaul": "^1.1.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "tsx": "^4.19.4",
+    "typescript": "^7.0.2"
+  }
+}

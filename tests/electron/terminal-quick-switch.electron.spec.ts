@@ -21,8 +21,8 @@ test.describe("mac terminal quick switch", () => {
       await page.keyboard.press("Meta+2")
       await page.waitForTimeout(300)
 
-      const activeTab = page.locator("[data-jet-tab-slot][data-jet-tab-active]")
-      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
+      const activeTab = page.locator("[data-gharargah-tab-slot][data-gharargah-tab-active]")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expectLocatorContainsText(activeTab, "Terminal 2")
     } finally {
       await app.close()
@@ -33,14 +33,14 @@ test.describe("mac terminal quick switch", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(async (p: string) => {
-        await window.__jetAgent!.addWorkspace(p)
+        await window.__gharargahAgent!.addWorkspace(p)
       }, SECOND)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.listWorkspaces().length))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
 
-      const workspaces = await page.evaluate(() => window.__jetAgent!.listWorkspaces())
+      const workspaces = await page.evaluate(() => window.__gharargahAgent!.listWorkspaces())
       const secondName = workspaces[1]?.name ?? ""
 
       await showTerminal(page)
@@ -48,7 +48,7 @@ test.describe("mac terminal quick switch", () => {
       await page.waitForTimeout(400)
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("workspace.focusFolder")
+        await window.__gharargahAgent!.executeCommand("workspace.focusFolder")
       })
       await page.waitForTimeout(400)
       await execCommand(page, "terminal.new")
@@ -58,11 +58,11 @@ test.describe("mac terminal quick switch", () => {
       await page.waitForTimeout(500)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toContain(secondName)
 
-      const activeTab = page.locator("[data-jet-tab-slot][data-jet-tab-active]")
-      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
+      const activeTab = page.locator("[data-gharargah-tab-slot][data-gharargah-tab-active]")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expectLocatorContainsText(activeTab, "Terminal")
     } finally {
       await app.close()

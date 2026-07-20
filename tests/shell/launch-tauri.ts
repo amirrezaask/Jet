@@ -14,12 +14,12 @@ const { createWebDriver, waitForJetReady } = createRequire(__filename)("../tauri
 }
 
 export const REPO_ROOT = resolve(__dirname, "..", "..")
-const TAURI_DIR = path.join(REPO_ROOT, "apps/jet-tauri/src-tauri")
+const TAURI_DIR = path.join(REPO_ROOT, "apps/gharargah/src-tauri")
 const E2E_CONF_PATH = path.join(TAURI_DIR, "tauri.e2e.conf.json")
-const binName = process.platform === "win32" ? "jet-tauri.exe" : "jet-tauri"
+const binName = process.platform === "win32" ? "gharargah.exe" : "gharargah"
 const APP_BINARY = path.join(TAURI_DIR, "target", "release", binName)
 
-let buildDone = process.env.JET_TAURI_E2E_BUILT === "1"
+let buildDone = process.env.GHARARGAH_TAURI_E2E_BUILT === "1"
 
 function run(cmd: string, args: string[], cwd = REPO_ROOT): void {
   const result = spawnSync(cmd, args, { cwd, stdio: "inherit", env: process.env })
@@ -28,14 +28,14 @@ function run(cmd: string, args: string[], cwd = REPO_ROOT): void {
 
 export function ensureTauriE2eBuild(): void {
   if (buildDone) return
-  run("pnpm", ["--filter", "jet-tauri", "build"])
+  run("pnpm", ["--filter", "gharargah", "build"])
   run(
     "pnpm",
     ["exec", "tauri", "build", "--features", "e2e", "--config", E2E_CONF_PATH],
-    path.join(REPO_ROOT, "apps/jet-tauri"),
+    path.join(REPO_ROOT, "apps/gharargah"),
   )
   buildDone = true
-  process.env.JET_TAURI_E2E_BUILT = "1"
+  process.env.GHARARGAH_TAURI_E2E_BUILT = "1"
 }
 
 function waitForPort(port: number, timeoutMs = 60_000): Promise<void> {
@@ -74,9 +74,9 @@ export type LaunchTauriOptions = {
 }
 
 function clearConflictingTauriInstances(): void {
-  // E2E builds omit single-instance, so a user's installed Jet-Tauri.app is safe.
+  // E2E builds omit single-instance, so a user's installed Gharargah-Tauri.app is safe.
   // Only clear stale release E2E binaries that may still hold WebDriver ports.
-  spawnSync("pkill", ["-f", "target/release/jet-tauri"], { stdio: "ignore" })
+  spawnSync("pkill", ["-f", "target/release/gharargah"], { stdio: "ignore" })
   spawnSync("sleep", ["0.3"], { stdio: "ignore" })
 }
 
@@ -97,10 +97,10 @@ export async function launchTauri(
     env: {
       ...process.env,
       PATH: pathEnv,
-      JET_E2E: "1",
-      JET_E2E_USER_DATA: mkdtempSync(path.join(tmpdir(), "jet-tauri-e2e-")),
+      GHARARGAH_E2E: "1",
+      GHARARGAH_E2E_USER_DATA: mkdtempSync(path.join(tmpdir(), "gharargah-e2e-")),
       TAURI_WEBDRIVER_PORT: String(port),
-      ...(process.env.JET_HEADED ? { JET_HEADED: process.env.JET_HEADED } : {}),
+      ...(process.env.GHARARGAH_HEADED ? { GHARARGAH_HEADED: process.env.GHARARGAH_HEADED } : {}),
       ...(process.env.PWDEBUG ? { PWDEBUG: process.env.PWDEBUG } : {}),
     },
     stdio: "ignore",

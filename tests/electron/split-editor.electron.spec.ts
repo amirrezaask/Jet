@@ -21,7 +21,7 @@ test.describe("electron split editor", () => {
       await execCommand(page, "view.splitEditor")
       await page.waitForTimeout(500)
 
-      const panels = await page.evaluate(() => window.__jetAgent!.getState().panels)
+      const panels = await page.evaluate(() => window.__gharargahAgent!.getState().panels)
       expect(panels.length).toBeGreaterThanOrEqual(2)
       await expectLocatorVisible(page.locator(".cm-editor").first())
     } finally {

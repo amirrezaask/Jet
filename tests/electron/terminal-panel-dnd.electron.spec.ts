@@ -12,7 +12,7 @@ const ptyAvailable = hasPtySpawn()
 
 async function dragTabToPanelCenter(page: ShellDriver, tab: ShellLocator, panel: ShellLocator): Promise<void> {
   const tabBox = await tab.boundingBox()
-  const overlayBox = await panel.locator("[data-jet-panel-drop-overlay]").boundingBox()
+  const overlayBox = await panel.locator("[data-gharargah-panel-drop-overlay]").boundingBox()
   if (!tabBox || !overlayBox) throw new Error("Tab or panel drop target is not measurable")
 
   await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2)
@@ -24,7 +24,7 @@ async function dragTabToPanelCenter(page: ShellDriver, tab: ShellLocator, panel:
   )
   await expectLocatorVisible(panel.locator('[data-drop-site="center"]'))
   await page.mouse.up()
-  await expectSelectorHidden(page, "[data-jet-tab-drag-ghost]")
+  await expectSelectorHidden(page, "[data-gharargah-tab-drag-ghost]")
 }
 
 test.describe("electron terminal panel drag and focus", () => {
@@ -36,8 +36,8 @@ test.describe("electron terminal panel drag and focus", () => {
       await showTerminal(page)
       await execCommand(page, "view.splitEditor")
       // Site targets mount only while a tab drag is active; the overlay hosts are always present.
-      await expect.poll(async () => page.locator("[data-jet-panel-drop-overlay]").count()).toBeGreaterThanOrEqual(2)
-      await expect.poll(async () => page.locator("[data-jet-panel-dock] [data-jet-panel-leaf]").count()).toBeGreaterThanOrEqual(2)
+      await expect.poll(async () => page.locator("[data-gharargah-panel-drop-overlay]").count()).toBeGreaterThanOrEqual(2)
+      await expect.poll(async () => page.locator("[data-gharargah-panel-dock] [data-gharargah-panel-leaf]").count()).toBeGreaterThanOrEqual(2)
     } finally {
       await app.close()
     }
@@ -52,34 +52,34 @@ test.describe("electron terminal panel drag and focus", () => {
       await showTerminal(page)
       await execCommand(page, "view.splitEditor")
 
-      const livePanels = page.locator("[data-jet-panel-dock] [data-jet-panel-leaf]")
+      const livePanels = page.locator("[data-gharargah-panel-dock] [data-gharargah-panel-leaf]")
       const terminalPanel = livePanels.filter({
-        has: page.locator("[data-jet-terminal-panel]"),
+        has: page.locator("[data-gharargah-terminal-panel]"),
       })
       const emptyPanel = livePanels.filter({
-        hasNot: page.locator("[data-jet-terminal-panel]"),
+        hasNot: page.locator("[data-gharargah-terminal-panel]"),
       })
-      const targetPanelId = Number(await emptyPanel.getAttribute("data-jet-panel-leaf"))
+      const targetPanelId = Number(await emptyPanel.getAttribute("data-gharargah-panel-leaf"))
 
       await dragTabToPanelCenter(page, terminalPanel.locator("[data-tab-id]"), emptyPanel)
 
       await expectLocatorCount(livePanels, 1)
       await expectSelectorVisible(
         page,
-        `[data-jet-panel-dock] [data-jet-panel-leaf="${targetPanelId}"] [data-jet-terminal-panel]`,
+        `[data-gharargah-panel-dock] [data-gharargah-panel-leaf="${targetPanelId}"] [data-gharargah-terminal-panel]`,
       )
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getState().focusedPanel)).toBe(
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getState().focusedPanel)).toBe(
         targetPanelId,
       )
 
       await execCommand(page, "terminal.new")
       const stackedPanel = page.locator(
-        `[data-jet-panel-dock] [data-jet-panel-leaf="${targetPanelId}"]`,
+        `[data-gharargah-panel-dock] [data-gharargah-panel-leaf="${targetPanelId}"]`,
       )
       await expectLocatorCount(stackedPanel.locator("[data-tab-id]"), 2)
       await execCommand(page, "view.splitEditor")
       const secondEmptyPanel = livePanels.filter({
-        hasNot: page.locator("[data-jet-terminal-panel]"),
+        hasNot: page.locator("[data-gharargah-terminal-panel]"),
       })
       await dragTabToPanelCenter(
         page,
@@ -87,22 +87,22 @@ test.describe("electron terminal panel drag and focus", () => {
         secondEmptyPanel,
       )
 
-      await expectLocatorCount(livePanels.locator("[data-jet-terminal-panel]"), 2)
+      await expectLocatorCount(livePanels.locator("[data-gharargah-terminal-panel]"), 2)
       const terminalPanels = livePanels.filter({
-        has: page.locator("[data-jet-terminal-panel]"),
+        has: page.locator("[data-gharargah-terminal-panel]"),
       })
       const leftPanel = terminalPanels.first()
       const rightPanel = terminalPanels.last()
-      const leftPanelId = Number(await leftPanel.getAttribute("data-jet-panel-leaf"))
-      const rightPanelId = Number(await rightPanel.getAttribute("data-jet-panel-leaf"))
+      const leftPanelId = Number(await leftPanel.getAttribute("data-gharargah-panel-leaf"))
+      const rightPanelId = Number(await rightPanel.getAttribute("data-gharargah-panel-leaf"))
 
       await leftPanel.locator("[data-tab-id]").click()
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getState().focusedPanel)).toBe(
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getState().focusedPanel)).toBe(
         leftPanelId,
       )
 
-      await rightPanel.locator(".jet-terminal-surface").click()
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getState().focusedPanel)).toBe(
+      await rightPanel.locator("\.gharargah-terminal-surface").click()
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getState().focusedPanel)).toBe(
         rightPanelId,
       )
 
@@ -115,8 +115,8 @@ test.describe("electron terminal panel drag and focus", () => {
         .poll(async () => (await leftPanel.locator(".xterm-rows").textContent()) ?? "")
         .not.toContain(rightMarker)
 
-      await leftPanel.locator(".jet-terminal-surface").click()
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getState().focusedPanel)).toBe(
+      await leftPanel.locator("\.gharargah-terminal-surface").click()
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getState().focusedPanel)).toBe(
         leftPanelId,
       )
 

@@ -1,4 +1,4 @@
-# Jet — Senior PM UX Review (2026-07)
+# Gharargah — Senior PM UX Review (2026-07)
 
 Scope: unify product feel across explorers, overlays, keymap, theme. Not a redesign. Every finding is a concrete PR-sized fix.
 
@@ -46,9 +46,9 @@ All overlays use shadcn `<Dialog>`. Motion + `jet-overlay-enter` auto-applied vi
 | `GotoLineModal` | `sm:max-w-sm` (24rem) |
 
 **Fix:** introduce three width tokens on `DialogContent`:
-- `data-jet-overlay="prompt"` → 24rem (goto-line class: one-shot input).
-- `data-jet-overlay="picker"` → 32rem (buffer, quick-open, palette, outline, workspace picker).
-- `data-jet-overlay="wide"` → 42rem (project switcher, future search).
+- `data-gharargah-overlay="prompt"` → 24rem (goto-line class: one-shot input).
+- `data-gharargah-overlay="picker"` → 32rem (buffer, quick-open, palette, outline, workspace picker).
+- `data-gharargah-overlay="wide"` → 42rem (project switcher, future search).
 
 Codify in `globals.css` as `--jet-overlay-w-prompt/picker/wide`. Delete per-file widths. **Effort:** small (1 file rewrite + 10 line changes across overlays).
 
@@ -69,7 +69,7 @@ No conflicts reported. Generation source: `packages/jet-workspace/data/vscode-ma
 | Location | Purpose | Verdict |
 |---|---|---|
 | `packages/jet-app/src/App.tsx:2343` | KeymapService dispatch entry | Legit — the one true entry |
-| `packages/jet-ui/src/components/ui/sidebar.tsx:109` | shadcn Cmd-b sidebar toggle | **Vestigial.** Jet uses `PanelDock`, not shadcn `Sidebar`. This handler still binds `Cmd-b` globally on any mounted `SidebarProvider`. Risk of collision with future `Cmd-b` command. **Fix:** patch shadcn primitive to gate on `enableKeyboardShortcut` prop (default false) or delete the effect. **Effort:** small. |
+| `packages/jet-ui/src/components/ui/sidebar.tsx:109` | shadcn Cmd-b sidebar toggle | **Vestigial.** Gharargah uses `PanelDock`, not shadcn `Sidebar`. This handler still binds `Cmd-b` globally on any mounted `SidebarProvider`. Risk of collision with future `Cmd-b` command. **Fix:** patch shadcn primitive to gate on `enableKeyboardShortcut` prop (default false) or delete the effect. **Effort:** small. |
 | `packages/jet-ui/src/motion/useJetCaretOverlay.tsx:398` | Per-input caret motion | Legit — attached to specific `<input>`, released on unmount. |
 | `packages/jet-ui/src/agents/composer/ModelPickerContent.tsx:500` | Model-picker keyboard capture | Verify releases on blur / dialog close. If not, leak. |
 
@@ -100,7 +100,7 @@ No conflicts reported. Generation source: `packages/jet-workspace/data/vscode-ma
 
 2. **Overlay width chaos.**
    *Why it hurts unity:* seven widths across ten overlays for essentially three shapes (prompt, picker, wide). Users perceive the app as inconsistent even if they can't name why.
-   *Fix:* three CSS tokens + `data-jet-overlay` attribute, per Section B.
+   *Fix:* three CSS tokens + `data-gharargah-overlay` attribute, per Section B.
    *Effort:* small.
 
 3. **Vestigial shadcn `Sidebar` `Cmd-b` handler.**

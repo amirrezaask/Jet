@@ -60,7 +60,7 @@ test.describe("overlay position stability", () => {
       const input = page.locator("[data-slot='command-input']")
       await expectLocatorFocused(input)
 
-      const caret = page.locator("[data-jet-universal-cursor]").first()
+      const caret = page.locator("[data-gharargah-universal-cursor]").first()
       await expect
         .poll(async () => caret.evaluate(el => parseFloat(el.style.opacity || "0")), {
           timeout: 3_000,
@@ -72,7 +72,7 @@ test.describe("overlay position stability", () => {
         samples.push(
           await page.evaluate(() => {
             const inputEl = document.querySelector<HTMLElement>("[data-slot='command-input']")
-            const caretEl = document.querySelector<HTMLElement>("[data-jet-universal-cursor]")
+            const caretEl = document.querySelector<HTMLElement>("[data-gharargah-universal-cursor]")
             if (!inputEl || !caretEl) return { caretMid: 0, inputTop: 0, delta: 999 }
             const ir = inputEl.getBoundingClientRect()
             const cr = caretEl.getBoundingClientRect()

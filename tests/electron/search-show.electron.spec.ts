@@ -19,7 +19,7 @@ test.describe("electron search show", () => {
 
       await expectSelectorVisible(
         page,
-        `${SEARCH_LIST_PANEL} [data-jet-lister] [data-slot="command-input"]`,
+        `${SEARCH_LIST_PANEL} [data-gharargah-lister] [data-slot="command-input"]`,
       )
 
       await page.locator('input[type="search"]').click()
@@ -32,7 +32,7 @@ test.describe("electron search show", () => {
       await expectContainsText(page, SEARCH_LIST_PANEL, "utils.ts")
 
       const filterInput = page.locator(
-        `${SEARCH_LIST_PANEL} [data-jet-lister] [data-slot="command-input"]`,
+        `${SEARCH_LIST_PANEL} [data-gharargah-lister] [data-slot="command-input"]`,
       )
       await filterInput.fill("utils")
       await expectLayout(page, { selector: items, minItems: 1, minRowHeight: 18 })
@@ -40,7 +40,7 @@ test.describe("electron search show", () => {
 
       await page.locator(items).filter({ hasText: "utils.ts" }).first().click()
       await page.waitForTimeout(500)
-      await expect.poll(() => page.evaluate(() => window.__jetAgent!.getEditorText())).toContain("export function greet")
+      await expect.poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText())).toContain("export function greet")
     } finally {
       await app.close()
     }

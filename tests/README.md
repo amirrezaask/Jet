@@ -11,15 +11,15 @@ pnpm test:bench      # UX latency benchmarks in tests/bench/ (Tauri)
 
 Worker count defaults to ~half of CPU cores (see `playwright.config.ts`). Override with `PLAYWRIGHT_WORKERS=N`.
 
-Twelve flaky specs are skipped by default (`tests/electron/_flaky.ts`). Run `JET_E2E_RUN_FLAKY=1 pnpm test:tauri` to include them. List + fix notes: `AGENTS.md` § Disabled flaky E2E specs.
+Twelve flaky specs are skipped by default (`tests/electron/_flaky.ts`). Run `GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri` to include them. List + fix notes: `AGENTS.md` § Disabled flaky E2E specs.
 
 ### Headless by default
 
-`pnpm test:tauri` builds the e2e binary and sets `JET_E2E=1`. Headless parks the window
+`pnpm test:tauri` builds the e2e binary and sets `GHARARGAH_E2E=1`. Headless parks the window
 off-screen (not `hide()` — WKWebView throttles timers when fully hidden):
 
 ```bash
-JET_HEADED=1 pnpm test:tauri   # show Tauri window on-screen while debugging
+GHARARGAH_HEADED=1 pnpm test:tauri   # show Tauri window on-screen while debugging
 ```
 
 True OS-headless Tauri is not available on macOS (WebKit needs a display).

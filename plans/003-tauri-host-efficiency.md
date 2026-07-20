@@ -2,7 +2,7 @@
 
 > **Executor instructions**: Fix lifecycle and polling architecture before micro-optimizing loops. Add tests that reproduce each leak/race before changing it.
 >
-> **Drift check**: `git diff --stat a52fab2..HEAD -- apps/jet-tauri/src-tauri/src/host packages/jet-host-client/src/create-jet-api.ts tests/tauri`
+> **Drift check**: `git diff --stat a52fab2..HEAD -- apps/gharargah/src-tauri/src/host packages/jet-host-client/src/create-jet-api.ts tests/tauri`
 
 ## Status
 
@@ -16,7 +16,7 @@
 
 ## Why this matters
 
-Jet is a long-running editor. Current host code can accumulate workspace watchers, emit stale work after deactivation, wake each active LSP bridge every millisecond, and repeatedly scan/shift multi-megabyte terminal buffers. These costs directly affect battery, idle CPU, memory plateau, reload correctness, and the failing LSP/terminal E2E cases.
+Gharargah is a long-running editor. Current host code can accumulate workspace watchers, emit stale work after deactivation, wake each active LSP bridge every millisecond, and repeatedly scan/shift multi-megabyte terminal buffers. These costs directly affect battery, idle CPU, memory plateau, reload correctness, and the failing LSP/terminal E2E cases.
 
 ## Current state
 

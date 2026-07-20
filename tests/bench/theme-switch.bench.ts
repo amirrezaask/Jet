@@ -14,7 +14,7 @@ test("bench theme-switch", async () => {
         const themeId = dark ? "ayu-dark" : "ayu-light"
         const t0 = Date.now()
         await page.evaluate(async (id: string) => {
-          await window.__jetAgent!.executeCommand(`ui.setTheme.${id}`)
+          await window.__gharargahAgent!.executeCommand(`ui.setTheme.${id}`)
         }, themeId)
         await page.waitForFunction(
           (id: string) => localStorage.getItem("jet-theme-id") === id,

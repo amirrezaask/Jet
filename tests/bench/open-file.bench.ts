@@ -13,11 +13,11 @@ test("bench open-file", async () => {
         const file = files[fileIndex++ % files.length]!
         const duration = await page.evaluate(async path => {
           const started = performance.now()
-          await window.__jetAgent!.openFile(path)
-          await window.__jetAgent!.waitForEditor()
+          await window.__gharargahAgent!.openFile(path)
+          await window.__gharargahAgent!.waitForEditor()
           return performance.now() - started
         }, file)
-        await page.evaluate(() => window.__jetAgent!.executeCommand("workspace.closeBuffer"))
+        await page.evaluate(() => window.__gharargahAgent!.executeCommand("workspace.closeBuffer"))
         await page.waitForFunction(() => document.querySelector(".cm-editor") == null)
         return duration
       },

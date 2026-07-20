@@ -1,33 +1,33 @@
 import type { ShellDriver } from "../shell/driver.js"
 
 /** Problems list tab uses a stable well-known id. */
-export const PROBLEMS_PANEL = '[data-jet-list-panel="jet:problems"]'
+export const PROBLEMS_PANEL = '[data-gharargah-list-panel="gharargah:problems"]'
 
 /** Search (and other ephemeral list tabs) use allocListId() — prefix match. */
-export const SEARCH_LIST_PANEL = '[data-jet-list-panel^="list-"]'
+export const SEARCH_LIST_PANEL = '[data-gharargah-list-panel^="list-"]'
 
-export const REFERENCES_LIST_PANEL = '[data-jet-list-feed="references"]'
-export const DEFINITIONS_LIST_PANEL = '[data-jet-list-feed="definitions"]'
+export const REFERENCES_LIST_PANEL = '[data-gharargah-list-feed="references"]'
+export const DEFINITIONS_LIST_PANEL = '[data-gharargah-list-feed="definitions"]'
 
 export function searchListItems(panelSel = SEARCH_LIST_PANEL): string {
-  return `${panelSel} [data-jet-list-item]`
+  return `${panelSel} [data-gharargah-list-item]`
 }
 
 export function problemsListItems(): string {
-  return `${PROBLEMS_PANEL} [data-jet-list-item]`
+  return `${PROBLEMS_PANEL} [data-gharargah-list-item]`
 }
 
 export function referencesListItems(): string {
-  return `${REFERENCES_LIST_PANEL} [data-jet-list-item]`
+  return `${REFERENCES_LIST_PANEL} [data-gharargah-list-item]`
 }
 
 export async function waitForSearchListPanel(page: ShellDriver): Promise<string> {
   await page.locator(SEARCH_LIST_PANEL).first().waitFor({ state: "visible", timeout: 15_000 })
   const id = await page.evaluate(sel => {
     const el = document.querySelector(sel)
-    return el?.getAttribute("data-jet-list-panel") ?? ""
+    return el?.getAttribute("data-gharargah-list-panel") ?? ""
   }, SEARCH_LIST_PANEL)
-  if (!id) throw new Error("search list panel missing data-jet-list-panel")
+  if (!id) throw new Error("search list panel missing data-gharargah-list-panel")
   return id
 }
 
@@ -35,8 +35,8 @@ export async function waitForReferencesListPanel(page: ShellDriver): Promise<str
   await page.locator(REFERENCES_LIST_PANEL).first().waitFor({ state: "visible", timeout: 15_000 })
   const id = await page.evaluate(sel => {
     const el = document.querySelector(sel)
-    return el?.getAttribute("data-jet-list-panel") ?? ""
+    return el?.getAttribute("data-gharargah-list-panel") ?? ""
   }, REFERENCES_LIST_PANEL)
-  if (!id) throw new Error("references list panel missing data-jet-list-panel")
+  if (!id) throw new Error("references list panel missing data-gharargah-list-panel")
   return id
 }

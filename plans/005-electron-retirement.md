@@ -2,7 +2,7 @@
 
 > **Executor instructions**: This is a retirement gate, not permission to delete Electron immediately. Keep Electron until every gate is proven on the supported platform matrix.
 >
-> **Drift check**: `git diff --stat a52fab2..HEAD -- apps/jet-tauri apps/jet-desktop packages/jet-host packages/jet-host-client packages/jet-app/src/load-workspace-init.ts tests package.json .github/workflows/ci.yml`
+> **Drift check**: `git diff --stat a52fab2..HEAD -- apps/gharargah apps/jet-desktop packages/jet-host packages/jet-host-client packages/jet-app/src/load-workspace-init.ts tests package.json .github/workflows/ci.yml`
 
 ## Status
 
@@ -27,7 +27,7 @@ Removing Electron is a valid goal, but Tauri is not yet behaviorally equivalent.
 - `host/agents.rs:33-47,140-211,448-487` repeatedly reads/clones/rewrites the entire JSON store without per-workspace serialization or atomic replace; concurrent settings/archive/turn updates can lose data.
 - `packages/jet-app/src/load-workspace-init.ts:23-49` dynamically imports absolute `init.ts`/`init.js`/`editorrc.ts`; native Tauri support and CSP/custom-protocol behavior are not covered by tests.
 - `package.json:17-19` still makes Electron the default release and installs/rebuilds Electron on every install.
-- Tauri production config uses product name `Jet-Tauri`, version `0.0.1`, and currently has no required release/notarization/update/platform CI gate.
+- Tauri production config uses product name `Gharargah-Tauri`, version `0.0.1`, and currently has no required release/notarization/update/platform CI gate.
 
 ## Scope
 
@@ -39,19 +39,19 @@ Removing Electron is a valid goal, but Tauri is not yet behaviorally equivalent.
 
 ### 1. Define executable parity contracts
 
-List every `JetElectronAPI` method/event and every user-visible shell behavior. Run the same contract tests against Electron's `@jet/host` registry and Tauri Rust. Include success/error/cancel/reload/dispose and ordering semantics, not only channel presence. Add explicit contracts for native menu, launch/second-instance/open-file, dialogs, theme chrome, filesystem watch, search, Git, tasks, LSP, terminal, agents, telemetry, and workspace init.
+List every `GharargahHostAPI` method/event and every user-visible shell behavior. Run the same contract tests against Electron's `@gharargah/host` registry and Tauri Rust. Include success/error/cancel/reload/dispose and ordering semantics, not only channel presence. Add explicit contracts for native menu, launch/second-instance/open-file, dialogs, theme chrome, filesystem watch, search, Git, tasks, LSP, terminal, agents, telemetry, and workspace init.
 
 **Verify**: a generated parity report has no unclassified method/event; channel allowlist string tests are secondary, not the proof.
 
 ### 2. Make Tauri agents real and cancellable
 
-Implement cursor/Claude/Codex driver descriptors with model discovery and selected provider/model routing equivalent to Electron. Spawn with piped streaming output, parse incrementally, retain a kill handle, and make interrupt terminate the process promptly. Remove silent mock fallback outside `JET_AGENT_MOCK=1`. Serialize per-workspace mutations and persist with temp-file + fsync/atomic rename; remove completed turns from `active_turns`.
+Implement cursor/Claude/Codex driver descriptors with model discovery and selected provider/model routing equivalent to Electron. Spawn with piped streaming output, parse incrementally, retain a kill handle, and make interrupt terminate the process promptly. Remove silent mock fallback outside `GHARARGAH_AGENT_MOCK=1`. Serialize per-workspace mutations and persist with temp-file + fsync/atomic rename; remove completed turns from `active_turns`.
 
 **Verify**: mock agent, real available-provider smoke, streaming partial updates, interrupt latency, provider/model selection, concurrent archive/settings, crash recovery, and corrupted-store recovery tests pass.
 
 ### 3. Prove extensibility and workspace-init behavior
 
-Add fixtures for `.jet/init.js`, `.jet/init.ts`, and `.jet/editorrc.ts` that register a command, keymap, and editor extension. Decide and document the supported native execution model. Do not rely on an absolute dynamic import if the Tauri custom protocol/CSP cannot load it; choose a secure explicit compilation/loading boundary with actionable errors and safe recovery.
+Add fixtures for `.gharargah/init.js`, `.gharargah/init.ts`, and `.gharargah/editorrc.ts` that register a command, keymap, and editor extension. Decide and document the supported native execution model. Do not rely on an absolute dynamic import if the Tauri custom protocol/CSP cannot load it; choose a secure explicit compilation/loading boundary with actionable errors and safe recovery.
 
 **Verify**: production Tauri loads every promised format, reports syntax/runtime errors in-app, and never grants arbitrary remote content native command access.
 
@@ -70,7 +70,7 @@ Switch development and release defaults to Tauri while keeping Electron as a fal
 ## Electron retirement gates
 
 - [ ] Zero Tauri E2E failures and zero unexplained skips across supported platforms.
-- [ ] All `JetElectronAPI` methods/events pass shared behavioral contracts.
+- [ ] All `GharargahHostAPI` methods/events pass shared behavioral contracts.
 - [ ] Agents, workspace init, LSP reconnect, terminal persistence/replay, filesystem watch, search, save/dirty close, native launch/menu/dialogs all pass.
 - [ ] Tauri is required in CI and has completed a default-channel soak.
 - [ ] Release startup/CPU/memory budgets meet or beat the accepted Electron baseline.

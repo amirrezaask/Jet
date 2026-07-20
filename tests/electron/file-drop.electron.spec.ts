@@ -9,11 +9,11 @@ test.describe("file drag and drop", () => {
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/index.ts")
-      const workspacePath = await page.evaluate(() => window.__jetAgent!.getState().activeWorkspace!)
+      const workspacePath = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace!)
       const utilsPath = `${workspacePath}/src/utils.ts`
 
       await page.evaluate(utils => {
-        const editor = document.querySelector("[data-jet-editor-scroll-area]")
+        const editor = document.querySelector("[data-gharargah-editor-scroll-area]")
         if (!editor) throw new Error("editor surface missing")
         const dt = new DataTransfer()
         const file = new File([""], "utils.ts")
@@ -25,10 +25,10 @@ test.describe("file drag and drop", () => {
       }, utilsPath)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().openBuffers))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().openBuffers))
         .toContainEqual(expect.stringMatching(/utils\.ts$/))
 
-      const editorText = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const editorText = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(editorText).toContain("export function greet")
       expect(editorText).not.toContain("function main")
     } finally {
@@ -45,8 +45,8 @@ test.describe("file drag and drop", () => {
       await page.waitForFunction(
         () => {
           const id = document
-            .querySelector("[data-jet-terminal-panel]")
-            ?.getAttribute("data-jet-terminal-pty-id")
+            .querySelector("[data-gharargah-terminal-panel]")
+            ?.getAttribute("data-gharargah-terminal-pty-id")
           return !!id && id.length > 0
         },
         null,
@@ -54,10 +54,10 @@ test.describe("file drag and drop", () => {
       )
 
       const written = await page.evaluate(async () => {
-        const terminal = window.jet?.terminal
-        const workspacePath = window.__jetAgent?.getState().activeWorkspace
-        const panel = document.querySelector("[data-jet-terminal-panel]")
-        const ptyId = panel?.getAttribute("data-jet-terminal-pty-id")
+        const terminal = window.gharargah?.terminal
+        const workspacePath = window.__gharargahAgent?.getState().activeWorkspace
+        const panel = document.querySelector("[data-gharargah-terminal-panel]")
+        const ptyId = panel?.getAttribute("data-gharargah-terminal-pty-id")
         if (!terminal || !workspacePath || !panel || !ptyId) {
           throw new Error("terminal drop prerequisites missing")
         }

@@ -21,33 +21,33 @@ test.describe("electron dirty close confirm", () => {
       await typeInEditor(page, "// dirty-marker")
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeEditorDirty), { timeout: 10_000 })
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeEditorDirty), { timeout: 10_000 })
         .toBe(true)
 
       await execCommand(page, "workbench.action.focusFirstEditorGroup")
       await focusEditor(page)
       await page.evaluate(() => {
-        void window.__jetAgent!.executeCommand("workspace.closeBuffer")
+        void window.__gharargahAgent!.executeCommand("workspace.closeBuffer")
       })
-      await expectSelectorVisible(page, '[data-jet-confirm="accept"]', { timeout: 10_000 })
+      await expectSelectorVisible(page, '[data-gharargah-confirm="accept"]', { timeout: 10_000 })
 
-      await page.evaluate(() => window.__jetAgent!.dismissConfirm())
+      await page.evaluate(() => window.__gharargahAgent!.dismissConfirm())
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().openBuffers.length))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().openBuffers.length))
         .toBeGreaterThan(0)
 
       await focusEditor(page)
       await page.evaluate(() => {
-        void window.__jetAgent!.executeCommand("workspace.closeBuffer")
+        void window.__gharargahAgent!.executeCommand("workspace.closeBuffer")
       })
-      await expectSelectorVisible(page, '[data-jet-confirm="accept"]', { timeout: 10_000 })
-      await page.evaluate(() => window.__jetAgent!.acceptConfirm())
+      await expectSelectorVisible(page, '[data-gharargah-confirm="accept"]', { timeout: 10_000 })
+      await page.evaluate(() => window.__gharargahAgent!.acceptConfirm())
       await page.waitForTimeout(300)
     } finally {
       await page
         .evaluate(async () => {
           try {
-            await window.__jetAgent?.dismissConfirm()
+            await window.__gharargahAgent?.dismissConfirm()
           } catch {
             // dialog already closed
           }

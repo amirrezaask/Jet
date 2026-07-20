@@ -24,8 +24,8 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       const result = await page.evaluate(async () => {
-        const terminal = window.jet?.terminal
-        const workspacePath = window.__jetAgent?.getState().activeWorkspace
+        const terminal = window.gharargah?.terminal
+        const workspacePath = window.__gharargahAgent?.getState().activeWorkspace
         if (!terminal || !workspacePath) throw new Error("Terminal API or workspace unavailable")
         const cwdUri = `file://${workspacePath}`
         const first = await terminal.create(cwdUri)
@@ -72,12 +72,12 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       const output = await page.evaluate(async () => {
-        const terminal = window.jet?.terminal
-        const workspacePath = window.__jetAgent?.getState().activeWorkspace
+        const terminal = window.gharargah?.terminal
+        const workspacePath = window.__gharargahAgent?.getState().activeWorkspace
         if (!terminal || !workspacePath) throw new Error("Terminal API or workspace unavailable")
         const direct = await terminal.create(`file://${workspacePath}`, {
           command: "/bin/sh",
-          args: ["-c", "printf 'سلام🙂 jet-unicode-tail'"],
+          args: ["-c", "printf 'سلام🙂 gharargah-unicode-tail'"],
         })
         const text = await new Promise<string>((resolve, reject) => {
           let received = ""
@@ -88,7 +88,7 @@ test.describe("electron terminal", () => {
           }, 5_000)
           unsubscribe = terminal.onData(direct.id, chunk => {
             received += chunk
-            if (!received.includes("jet-unicode-tail")) return
+            if (!received.includes("gharargah-unicode-tail")) return
             window.clearTimeout(timeout)
             unsubscribe()
             resolve(received)
@@ -99,7 +99,7 @@ test.describe("electron terminal", () => {
       })
 
       expect(output).toContain("سلام🙂")
-      expect(output).toContain("jet-unicode-tail")
+      expect(output).toContain("gharargah-unicode-tail")
     } finally {
       await app.close()
     }
@@ -110,17 +110,17 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
 
-      await page.locator("[data-jet-terminal-panel] .jet-terminal-surface").click()
+      await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
       await page.evaluate(() => {
         const textarea = document.querySelector(
-          "[data-jet-terminal-panel] .xterm-helper-textarea",
+          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
         ) as HTMLTextAreaElement | null
         textarea?.focus()
       })
 
       await page.waitForFunction(
         () => {
-          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
           return text.trim().length > 0
         },
         null,
@@ -136,7 +136,7 @@ test.describe("electron terminal", () => {
 
       await page.waitForFunction(
         () => {
-          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
           return text.includes("package.json") || text.includes("src")
         },
         null,
@@ -157,7 +157,7 @@ test.describe("electron terminal", () => {
 
       await page.waitForFunction(
         () => {
-          const row = document.querySelector("[data-jet-terminal-panel] .xterm-rows > div") as HTMLElement | null
+          const row = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows > div") as HTMLElement | null
           return row != null && row.getBoundingClientRect().height >= 10
         },
         null,
@@ -165,7 +165,7 @@ test.describe("electron terminal", () => {
       )
 
       const rowHeight = await page.evaluate(() => {
-        const row = document.querySelector("[data-jet-terminal-panel] .xterm-rows > div") as HTMLElement | null
+        const row = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows > div") as HTMLElement | null
         return row?.getBoundingClientRect().height ?? 0
       })
       expect(rowHeight).toBeGreaterThanOrEqual(10)
@@ -179,17 +179,17 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
 
-      await page.locator("[data-jet-terminal-panel] .jet-terminal-surface").click()
+      await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
       await page.evaluate(() => {
         const textarea = document.querySelector(
-          "[data-jet-terminal-panel] .xterm-helper-textarea",
+          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
         ) as HTMLTextAreaElement | null
         textarea?.focus()
       })
 
       await page.waitForFunction(
         () => {
-          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
           return text.trim().length > 0
         },
         null,
@@ -199,7 +199,7 @@ test.describe("electron terminal", () => {
       await page.keyboard.type("echo -ne '\\033]0;JetTitleTest\\007'")
       await page.keyboard.press("Enter")
 
-      await expectContainsText(page, "[data-jet-tab-bar]", "JetTitleTest", {
+      await expectContainsText(page, "[data-gharargah-tab-bar]", "JetTitleTest", {
         timeout: 15_000,
       })
     } finally {
@@ -212,17 +212,17 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
 
-      await page.locator("[data-jet-terminal-panel] .jet-terminal-surface").click()
+      await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
       await page.evaluate(() => {
         const textarea = document.querySelector(
-          "[data-jet-terminal-panel] .xterm-helper-textarea",
+          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
         ) as HTMLTextAreaElement | null
         textarea?.focus()
       })
 
       await page.waitForFunction(
         () => {
-          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
           return text.trim().length > 0
         },
         null,
@@ -232,16 +232,16 @@ test.describe("electron terminal", () => {
       await page.keyboard.type("exit")
       await page.keyboard.press("Enter")
 
-      await expectLocatorAttribute(page.locator("[data-jet-terminal-panel]"), 
-        "data-jet-terminal-status",
+      await expectLocatorAttribute(page.locator("[data-gharargah-terminal-panel]"), 
+        "data-gharargah-terminal-status",
         "exited",
         { timeout: 15_000 },
       )
-      const exitBar = page.locator("[data-jet-terminal-exit-bar]")
+      const exitBar = page.locator("[data-gharargah-terminal-exit-bar]")
       await expectLocatorVisible(exitBar, { timeout: 15_000 })
       await expectLocatorContainsText(exitBar, "Process exited")
       await expectLocatorVisible(exitBar.getByRole("button", { name: "Restart" }))
-      await expectSelectorVisible(page, "[data-jet-terminal-panel] .xterm-rows")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm-rows")
     } finally {
       await app.close()
     }
@@ -254,10 +254,10 @@ test.describe("electron terminal", () => {
 
       const layout = await page.evaluate(() => {
         const surface = document.querySelector(
-          "[data-jet-terminal-panel] .jet-terminal-surface",
+          "[data-gharargah-terminal-panel] \.gharargah-terminal-surface",
         ) as HTMLElement | null
         const viewport = document.querySelector(
-          "[data-jet-terminal-panel] .xterm-viewport",
+          "[data-gharargah-terminal-panel] .xterm-viewport",
         ) as HTMLElement | null
         if (!surface || !viewport) return null
         const surfaceRect = surface.getBoundingClientRect()
@@ -283,19 +283,19 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      const panel = page.locator("[data-jet-terminal-panel]")
-      await expectLocatorAttribute(panel, "data-jet-terminal-status", "running")
+      const panel = page.locator("[data-gharargah-terminal-panel]")
+      await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
 
-      const layer = panel.locator("[data-jet-terminal-cursor-layer]")
+      const layer = panel.locator("[data-gharargah-terminal-cursor-layer]")
       await expectLocatorVisible(layer)
-      await expectLocatorCount(layer.locator("[data-jet-terminal-cursor]"), 1)
-      await expectLocatorCount(layer.locator("[data-jet-terminal-cursor-ghost]"), 5)
+      await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor]"), 1)
+      await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor-ghost]"), 5)
 
       await page.evaluate(() => {
-        const cursorLayer = document.querySelector<HTMLElement>("[data-jet-terminal-cursor-layer]")
+        const cursorLayer = document.querySelector<HTMLElement>("[data-gharargah-terminal-cursor-layer]")
         if (!cursorLayer) return
         const observer = new MutationObserver(() => {
-          const visibleGhost = [...cursorLayer.querySelectorAll<HTMLElement>("[data-jet-terminal-cursor-ghost]")]
+          const visibleGhost = [...cursorLayer.querySelectorAll<HTMLElement>("[data-gharargah-terminal-cursor-ghost]")]
             .some(ghost => Number.parseFloat(ghost.style.opacity || "0") > 0.02)
           if (visibleGhost) {
             cursorLayer.dataset.jetGhostObserved = "true"
@@ -306,9 +306,9 @@ test.describe("electron terminal", () => {
         window.setTimeout(() => observer.disconnect(), 1_000)
       })
 
-      await panel.locator(".jet-terminal-surface").click()
+      await panel.locator("\.gharargah-terminal-surface").click()
       await page.keyboard.type("cursor")
-      await expectLocatorAttribute(layer, "data-jet-ghost-observed", "true", { timeout: 5_000 })
+      await expectLocatorAttribute(layer, "data-gharargah-ghost-observed", "true", { timeout: 5_000 })
     } finally {
       await app.close()
     }
@@ -319,17 +319,17 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
 
-      await page.locator("[data-jet-terminal-panel] .jet-terminal-surface").click()
+      await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
       await page.evaluate(() => {
         const textarea = document.querySelector(
-          "[data-jet-terminal-panel] .xterm-helper-textarea",
+          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
         ) as HTMLTextAreaElement | null
         textarea?.focus()
       })
 
       await page.waitForFunction(
         () => {
-          const text = document.querySelector("[data-jet-terminal-panel] .xterm-rows")?.textContent ?? ""
+          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
           return text.trim().length > 0
         },
         null,
@@ -337,7 +337,7 @@ test.describe("electron terminal", () => {
       )
 
       const written = await page.evaluate(async () => {
-        const terminal = window.jet?.terminal
+        const terminal = window.gharargah?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
         const chunks: string[] = []
         const original = terminal.write.bind(terminal)
@@ -345,8 +345,8 @@ test.describe("electron terminal", () => {
           chunks.push(data)
           return original(id, data)
         }
-        ;(window as unknown as { __jetTermWriteChunks?: string[] }).__jetTermWriteChunks = chunks
-        ;(window as unknown as { __jetTermWriteRestore?: () => void }).__jetTermWriteRestore = () => {
+        ;(window as unknown as { __gharargahTermWriteChunks?: string[] }).__gharargahTermWriteChunks = chunks
+        ;(window as unknown as { __gharargahTermWriteRestore?: () => void }).__gharargahTermWriteRestore = () => {
           terminal.write = original
         }
         return null
@@ -358,8 +358,8 @@ test.describe("electron terminal", () => {
       await page.waitForTimeout(100)
 
       const bytes = await page.evaluate(() => {
-        const chunks = (window as unknown as { __jetTermWriteChunks?: string[] }).__jetTermWriteChunks ?? []
-        ;(window as unknown as { __jetTermWriteRestore?: () => void }).__jetTermWriteRestore?.()
+        const chunks = (window as unknown as { __gharargahTermWriteChunks?: string[] }).__gharargahTermWriteChunks ?? []
+        ;(window as unknown as { __gharargahTermWriteRestore?: () => void }).__gharargahTermWriteRestore?.()
         return chunks.join("")
       })
 
@@ -374,16 +374,16 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      const surface = page.locator("[data-jet-terminal-panel] .jet-terminal-surface")
+      const surface = page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface")
       await surface.click()
       await page.keyboard.type("seq 1 240")
       await page.keyboard.press("Enter")
       await page.waitForFunction(() => {
-        const viewport = document.querySelector<HTMLElement>("[data-jet-terminal-panel] .xterm-viewport")
+        const viewport = document.querySelector<HTMLElement>("[data-gharargah-terminal-panel] .xterm-viewport")
         return viewport != null && viewport.scrollHeight > viewport.clientHeight * 2
       }, null, { timeout: 15_000 })
 
-      const samples = await page.locator("[data-jet-terminal-panel] .xterm-viewport").evaluate(async viewport => {
+      const samples = await page.locator("[data-gharargah-terminal-panel] .xterm-viewport").evaluate(async viewport => {
         viewport.scrollTop = viewport.scrollHeight
         viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -640, bubbles: true, cancelable: true }))
         const values: number[] = []
@@ -397,7 +397,7 @@ test.describe("electron terminal", () => {
       const moving = samples.filter((value, index) => index === 0 || value !== samples[index - 1])
       expect(moving.length).toBeGreaterThanOrEqual(1)
       if (samples.at(-1) === samples[0]) {
-        const jumped = await page.locator("[data-jet-terminal-panel] .xterm-viewport").evaluate(viewport => {
+        const jumped = await page.locator("[data-gharargah-terminal-panel] .xterm-viewport").evaluate(viewport => {
           const before = viewport.scrollTop
           viewport.scrollTop = Math.max(0, before - 120)
           return viewport.scrollTop !== before

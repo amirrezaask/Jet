@@ -1,0 +1,42 @@
+{
+  "name": "@gharargah/codemirror",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --emitDeclarationOnly --outDir dist",
+    "test": "tsx --test src/hover-signature.test.ts src/multi-cursor.test.ts src/lsp-locations.test.ts"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.0",
+    "@codemirror/commands": "^6.10.0",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-go": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.3.4",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/lint": "^6.8.5",
+    "@codemirror/lsp-client": "^6.2.5",
+    "@codemirror/search": "^6.5.11",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.37.0",
+    "@gharargah/shared": "workspace:*",
+    "@gharargah/workspace": "workspace:*",
+    "@lezer/highlight": "^1.2.1",
+    "@replit/codemirror-indentation-markers": "^6.5.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.4",
+    "typescript": "^7.0.2"
+  }
+}

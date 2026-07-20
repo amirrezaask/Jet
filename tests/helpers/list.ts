@@ -12,8 +12,8 @@ export type ListRowsOpts = {
 
 export async function expectListRows(page: ShellDriver, opts: ListRowsOpts): Promise<void> {
   const { panel, minItems, minUniqueTops = minItems, minRowHeight = 18, needle, noResultsText = "No results" } = opts
-  const panelSel = `[data-jet-list-panel="${panel}"]`
-  const itemSel = `${panelSel} [data-jet-list-item]`
+  const panelSel = `[data-gharargah-list-panel="${panel}"]`
+  const itemSel = `${panelSel} [data-gharargah-list-item]`
 
   await expectSelectorVisible(page, panelSel)
   await expectNotContainsText(page, panelSel, noResultsText)
@@ -35,7 +35,7 @@ export type LayoutOpts = {
 }
 
 export async function expectLayout(page: ShellDriver, opts: LayoutOpts): Promise<void> {
-  const sel = opts.selector ?? "[data-jet-list-item]"
+  const sel = opts.selector ?? "[data-gharargah-list-item]"
   const minItems = opts.minItems ?? 2
   const minUniqueTops = opts.minUniqueTops ?? minItems
   const minRowHeight = opts.minRowHeight ?? 18
@@ -72,7 +72,7 @@ export async function expectLayout(page: ShellDriver, opts: LayoutOpts): Promise
   if (layout.minH < minRowHeight) {
     throw new Error(`expectLayout: minRowHeight=${layout.minH} expected>=${minRowHeight}`)
   }
-  const enforceShrink = /data-jet-list-item|role=["']option/.test(sel)
+  const enforceShrink = /data-gharargah-list-item|role=["']option/.test(sel)
   if (enforceShrink && layout.flexShrinks.some(s => s !== "0")) {
     throw new Error(`expectLayout: flexShrink must be 0, got ${JSON.stringify(layout.flexShrinks)}`)
   }
@@ -85,7 +85,7 @@ export type NoOverlapOpts = {
 }
 
 export async function expectNoOverlap(page: ShellDriver, opts: NoOverlapOpts = {}): Promise<void> {
-  const sel = opts.selector ?? "[data-jet-list-item]"
+  const sel = opts.selector ?? "[data-gharargah-list-item]"
   const minItems = opts.minItems ?? 2
   const tol = opts.tolerancePx ?? 0
 
@@ -129,7 +129,7 @@ export type NoClippingOpts = {
 }
 
 export async function expectNoClipping(page: ShellDriver, opts: NoClippingOpts = {}): Promise<void> {
-  const sel = opts.selector ?? "[data-jet-list-item]"
+  const sel = opts.selector ?? "[data-gharargah-list-item]"
   const containerSel = opts.containerSelector ?? null
 
   const report = await page.evaluate(
@@ -178,7 +178,7 @@ export type RowSpacingOpts = {
 }
 
 export async function expectRowSpacing(page: ShellDriver, opts: RowSpacingOpts = {}): Promise<void> {
-  const sel = opts.selector ?? "[data-jet-list-item]"
+  const sel = opts.selector ?? "[data-gharargah-list-item]"
   const minItems = opts.minItems ?? 2
   const maxGap = opts.maxGapPx ?? 2
   const tol = opts.tolerancePx ?? 0.5
@@ -231,7 +231,7 @@ export type RowTextReadableOpts = {
 }
 
 export async function expectRowTextVisible(page: ShellDriver, opts: RowTextVisibleOpts = {}): Promise<void> {
-  const sel = opts.selector ?? "[data-jet-list-item]"
+  const sel = opts.selector ?? "[data-gharargah-list-item]"
   const minItems = opts.minItems ?? 1
   const textSel = opts.textSelector ?? "span, [data-slot='row-label'], [data-slot='row-detail']"
   const minGlyphH = opts.minGlyphHeightPx ?? 8
@@ -290,7 +290,7 @@ export async function expectRowTextVisible(page: ShellDriver, opts: RowTextVisib
 
 /** Assert list row labels have visible glyphs and sufficient contrast against the row background. */
 export async function expectRowTextReadable(page: ShellDriver, opts: RowTextReadableOpts = {}): Promise<void> {
-  const sel = opts.selector ?? "[data-jet-list-item]"
+  const sel = opts.selector ?? "[data-gharargah-list-item]"
   const minItems = opts.minItems ?? 1
   const labelSel = opts.labelSelector ?? '[data-slot="row-label"], span.font-medium, span:first-of-type'
   const detailSel = opts.detailSelector ?? '[data-slot="row-detail"]'

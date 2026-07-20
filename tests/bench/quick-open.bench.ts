@@ -11,7 +11,7 @@ test("bench quick-open", async () => {
       measure: async () => {
         const duration = await page.evaluate(async () => {
           const started = performance.now()
-          await window.__jetAgent!.executeCommand("workspace.quickOpen")
+          await window.__gharargahAgent!.executeCommand("workspace.quickOpen")
           let input: HTMLInputElement | null = null
           while (!(input = document.querySelector('[role="dialog"] [role="combobox"]'))) {
             await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))

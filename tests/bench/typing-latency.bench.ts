@@ -6,8 +6,8 @@ test("bench typing-latency", async () => {
   const { app, page } = await launchJet()
   try {
     await page.evaluate(async () => {
-      await window.__jetAgent!.openFile("src/index.ts")
-      await window.__jetAgent!.waitForEditor()
+      await window.__gharargahAgent!.openFile("src/index.ts")
+      await window.__gharargahAgent!.waitForEditor()
     })
     await page.locator(".cm-content").click()
     const result = await runBench({

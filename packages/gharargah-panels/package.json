@@ -1,0 +1,24 @@
+{
+  "name": "@gharargah/panels",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --emitDeclarationOnly --outDir dist",
+    "test": "tsx --test src/tree.test.ts"
+  },
+  "dependencies": {
+    "@gharargah/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.4",
+    "typescript": "^7.0.2"
+  }
+}

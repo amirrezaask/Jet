@@ -22,38 +22,38 @@ test.describe("electron workspace tab isolation", () => {
     try {
       await openFixtureFile(page, "src/index.ts")
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText()))
         .toContain("greet")
 
       await page.evaluate(async (p: string) => {
-        await window.__jetAgent!.openWorkspace(p)
+        await window.__gharargahAgent!.openWorkspace(p)
       }, secondPath)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toContain("second-workspace")
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.openFile("src/marker.ts")
-        await window.__jetAgent!.waitForEditor()
+        await window.__gharargahAgent!.openFile("src/marker.ts")
+        await window.__gharargahAgent!.waitForEditor()
       })
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText()))
         .toContain("secondMarker")
 
       await page.evaluate(async (p: string) => {
-        await window.__jetAgent!.openWorkspace(p)
+        await window.__gharargahAgent!.openWorkspace(p)
       }, samplePath)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toContain("sample-workspace")
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getEditorText()))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText()))
         .toContain("greet")
 
-      const editorText = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const editorText = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(editorText).not.toContain("secondMarker")
     } finally {
       await app.close()
@@ -67,22 +67,22 @@ test.describe("electron workspace tab isolation", () => {
     try {
       await showTerminal(page)
       await focusTerminal(page)
-      await page.keyboard.type("printf JET_PTY_SURVIVES")
+      await page.keyboard.type("printf GHARARGAH_PTY_SURVIVES")
       await page.keyboard.press("Enter")
-      await expect.poll(() => readTerminalText(page), { timeout: 15_000 }).toContain("JET_PTY_SURVIVES")
+      await expect.poll(() => readTerminalText(page), { timeout: 15_000 }).toContain("GHARARGAH_PTY_SURVIVES")
 
-      await page.evaluate(path => window.__jetAgent!.openWorkspace(path), secondPath)
+      await page.evaluate(path => window.__gharargahAgent!.openWorkspace(path), secondPath)
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toBe(secondPath)
-      await expectLocatorCount(page.locator("[data-jet-terminal-panel]"), 0)
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-panel]"), 0)
 
-      await page.evaluate(path => window.__jetAgent!.openWorkspace(path), samplePath)
+      await page.evaluate(path => window.__gharargahAgent!.openWorkspace(path), samplePath)
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toBe(samplePath)
-      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
-      await expect.poll(() => readTerminalText(page)).toContain("JET_PTY_SURVIVES")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+      await expect.poll(() => readTerminalText(page)).toContain("GHARARGAH_PTY_SURVIVES")
     } finally {
       await app.close()
     }

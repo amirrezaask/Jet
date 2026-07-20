@@ -22,7 +22,7 @@ test.describe("electron shell palette", () => {
       await execCommand(page, "ui.showCommandPalette")
       await expectPaletteOpen(page)
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().paletteOpen))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().paletteOpen))
         .toBe(true)
 
       const input = page.getByRole("dialog").getByRole("combobox")

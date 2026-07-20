@@ -24,13 +24,13 @@ test.describe("electron buffer cycle", () => {
       await execCommand(page, "editor.nextEditor")
       await focusEditor(page)
       await page.waitForTimeout(200)
-      const afterNext = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const afterNext = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(afterNext).toContain("greet")
 
       await execCommand(page, "editor.previousEditor")
       await focusEditor(page)
       await page.waitForTimeout(200)
-      const afterPrev = await page.evaluate(() => window.__jetAgent!.getEditorText())
+      const afterPrev = await page.evaluate(() => window.__gharargahAgent!.getEditorText())
       expect(afterPrev).toContain("main")
     } finally {
       await app.close()

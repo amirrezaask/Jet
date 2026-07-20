@@ -20,11 +20,11 @@ test.describe("electron workspace open via agent", () => {
     try {
       const alt = resolve(REPO_ROOT, "fixtures/second-workspace")
       await page.evaluate(async (p: string) => {
-        await window.__jetAgent!.openWorkspace(p)
+        await window.__gharargahAgent!.openWorkspace(p)
       }, alt)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
         .toContain("second-workspace")
     } finally {
       await app.close()

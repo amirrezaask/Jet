@@ -18,11 +18,11 @@ test.describe("electron close clean buffer", () => {
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/utils.ts")
-      const before = await page.evaluate(() => window.__jetAgent!.getState().openBuffers.length)
+      const before = await page.evaluate(() => window.__gharargahAgent!.getState().openBuffers.length)
       expect(before).toBeGreaterThan(0)
 
       await execCommand(page, "workspace.closeBuffer")
-      await expectLocatorCount(page.locator('[data-jet-confirm="accept"]'), 0)
+      await expectLocatorCount(page.locator('[data-gharargah-confirm="accept"]'), 0)
       await page.waitForTimeout(300)
     } finally {
       await app.close()
@@ -33,12 +33,12 @@ test.describe("electron close clean buffer", () => {
     const { app, page } = await launchJet()
     try {
       await openFixtureFile(page, "src/utils.ts")
-      const before = await page.evaluate(() => window.__jetAgent!.getState().openBuffers.length)
+      const before = await page.evaluate(() => window.__gharargahAgent!.getState().openBuffers.length)
 
       await page.keyboard.press(process.platform === "darwin" ? "Meta+w" : "Control+w")
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().openBuffers.length))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().openBuffers.length))
         .toBe(before - 1)
     } finally {
       await app.close()

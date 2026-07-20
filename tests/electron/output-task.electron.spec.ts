@@ -18,7 +18,7 @@ test.describe("electron output and tasks", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "output.show")
-      await expectSelectorVisible(page, '[data-jet-list-panel="output"]')
+      await expectSelectorVisible(page, '[data-gharargah-list-panel="output"]')
     } finally {
       await app.close()
     }
@@ -29,8 +29,8 @@ test.describe("electron output and tasks", () => {
     try {
       await execCommand(page, "task.run")
       await page.waitForTimeout(1500)
-      const message = await page.evaluate(() => window.__jetAgent!.getState().message)
-      const hasOutput = await page.locator('[data-jet-list-panel="output"]').isVisible().catch(() => false)
+      const message = await page.evaluate(() => window.__gharargahAgent!.getState().message)
+      const hasOutput = await page.locator('[data-gharargah-list-panel="output"]').isVisible().catch(() => false)
       const hasToast = await page.locator('[data-sonner-toast]').count().then(n => n > 0).catch(() => false)
       expect(message != null || hasOutput || hasToast).toBeTruthy()
     } finally {

@@ -1,10 +1,10 @@
-# AGENTS.md — Jet Editor
+# AGENTS.md — Gharargah Editor
 
 Guide for AI agents and contributors working in this repo.
 
-## What Jet Is
+## What Gharargah Is
 
-**Jet** (Jasmin Extensible Text Editor) is a greenfield desktop code editor inspired by RAD Debugger / 4coder / Nameless Editor aesthetics, built as a modern **Tauri** app (Rust host + React/CodeMirror renderer).
+**Gharargah** is a greenfield desktop Mission Control + editor shell (Tauri + React/CodeMirror). Default surface is a **home view** of projects and terminal cards; editor is optional when working inside a project.
 
 **Core split:**
 
@@ -12,9 +12,9 @@ Guide for AI agents and contributors working in this repo.
 | Layer             | Owns                                                   |
 | ----------------- | ------------------------------------------------------ |
 | **CodeMirror 6**  | Text buffer, syntax, LSP client, keymaps inside editor |
-| **Jet Workspace** | Files, open buffers, dirty state, commands, jump stack, tasks |
-| **Jet Panels**    | Split tree — one view per panel (no tab bar)                  |
-| **Jet UI / App**  | React shell, themes, explorer, location list, output        |
+| **Gharargah Workspace** | Files, open buffers, dirty state, commands, jump stack, tasks |
+| **Gharargah Panels**    | Split tree — one view per panel (no tab bar)                  |
+| **Gharargah UI / App**  | React shell, themes, explorer, location list, output        |
 | **Tauri / Rust host** | FS, search, LSP bridge, terminal, tasks, native chrome |
 
 
@@ -28,7 +28,7 @@ Sibling / parent dirs are **design references**, not dependencies:
 - `.4coder*`, `.raddebugger/` — RAD/imui panel mental model
 - `Nameless_Editor/` — editor UX ideas
 
-Do **not** copy large chunks wholesale; match Jet’s architecture.
+Do **not** copy large chunks wholesale; match Gharargah’s architecture.
 
 ---
 
@@ -39,7 +39,7 @@ Do **not** copy large chunks wholesale; match Jet’s architecture.
 ```
 jet/
 ├── apps/
-│   └── jet-tauri/          Tauri shell (Rust host + vite frontend)
+│   └── gharargah/          Tauri shell (Rust host + vite frontend)
 ├── fixtures/
 │   └── sample-workspace/   Fixture project for E2E smoke tests
 ├── packages/
@@ -71,7 +71,7 @@ jet/
 jet-shared  ←  jet-panels, jet-workspace
 jet-workspace + jet-panels + jet-codemirror  ←  jet-ui
 jet-ui + jet-workspace + jet-lsp + jet-extension-host  ←  jet-app
-jet-app + jet-host-client  ←  jet-tauri
+jet-app + jet-host-client  ←  gharargah
 ```
 
 Keep imports acyclic. Lower layers must not import React or Tauri APIs.
@@ -86,9 +86,9 @@ Keep imports acyclic. Lower layers must not import React or Tauri APIs.
 pnpm install          # workspace install
 pnpm dev              # Tauri shell (Rust host + vite)
 pnpm typecheck        # all packages (TypeScript 7)
-pnpm test:tauri       # Tauri native + shared UI specs (headless via JET_E2E)
+pnpm test:tauri       # Tauri native + shared UI specs (headless via GHARARGAH_E2E)
 pnpm test:bench       # UX latency benchmarks (tests/bench/)
-pnpm build            # production build (jet-tauri)
+pnpm build            # production build (gharargah)
 ```
 
 Run typecheck from repo root before finishing a task:
@@ -111,7 +111,7 @@ Then validate with **`pnpm test:tauri`** (see Agent visual verification).
 
 ### Preferred: Tauri Playwright / WebDriver specs (headless)
 
-Specs live in `tests/electron/*.electron.spec.ts` (shared suite) and `tests/tauri/*.tauri.spec.ts`. `launchJet()` launches Tauri and sets `JET_E2E=1` (window off-screen) unless `JET_HEADED=1`.
+Specs live in `tests/electron/*.electron.spec.ts` (shared suite) and `tests/tauri/*.tauri.spec.ts`. `launchJet()` launches Tauri and sets `GHARARGAH_E2E=1` (window off-screen) unless `GHARARGAH_HEADED=1`.
 
 1. Run all shared UI specs (tauri-e2e): `pnpm test:tauri`
 2. Add or extend a spec under `tests/electron/` — helpers in `tests/helpers/` and `tests/electron/_launch.ts`. See `tests/README.md`.
@@ -122,8 +122,8 @@ Specs live in `tests/electron/*.electron.spec.ts` (shared suite) and `tests/taur
 **Verification preference (strict):**
 
 1. DOM/text assertions via Playwright `expect` on scoped selectors (palette open, row content, panel visibility).
-2. `window.__jetAgent.getState()` — workspace path, palette flag, panel kinds, font size.
-3. List helpers — `expectLayout`, `expectNoOverlap`, `expectRowTextVisible` on `[data-jet-list-panel="…"] [data-jet-list-item]`.
+2. `window.__gharargahAgent.getState()` — workspace path, palette flag, panel kinds, font size.
+3. List helpers — `expectLayout`, `expectNoOverlap`, `expectRowTextVisible` on `[data-gharargah-list-panel="…"] [data-gharargah-list-item]`.
 4. Benchmarks — `pnpm test:bench` for latency regressions (median vs `tests/bench/budgets.json`).
 
 **Out of scope for automation (document explicitly if touched):** native OS folder/file dialogs, unimplemented git stage/revert chords.
@@ -132,13 +132,13 @@ Specs live in `tests/electron/*.electron.spec.ts` (shared suite) and `tests/taur
 
 Query echoes are worthless as proof. Asserting `export` in `body` after typing `export` passes when the input value contains `export` — even if the result list is empty. Every list/search spec MUST include:
 
-1. **Row-count layout assertion** — `expectLayout` with `minItems >= 1` on `[data-jet-list-panel="…"] [data-jet-list-item]`.
+1. **Row-count layout assertion** — `expectLayout` with `minItems >= 1` on `[data-gharargah-list-panel="…"] [data-gharargah-list-item]`.
 2. **Positive result content** — `expect(locator).toContainText(...)` on the scoped panel with a needle that only appears in rendered rows (fixture filename, path segment, `:` line separator). Never assert the user-typed query alone.
 3. **Negative empty-state assertion** — `not.toContainText("No results")` when a hit is expected.
 4. **Spacing/overlap** — `expectNoOverlap` + `expectRowSpacing` when >=2 rows are expected.
 5. **Row text visibility** — `expectRowTextVisible` on the scoped selector.
 
-Scope every list assertion with the panel data attribute (`[data-jet-list-panel="locationlist"] [data-jet-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
+Scope every list assertion with the panel data attribute (`[data-gharargah-list-panel="locationlist"] [data-gharargah-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
 
 ### Native chrome & host IPC
 
@@ -147,7 +147,7 @@ Any change to title bar geometry, native menu, window frame, or host IPC (`fs:*`
 ### Headed debugging
 
 ```bash
-JET_HEADED=1 pnpm test:tauri   # show Tauri window on-screen
+GHARARGAH_HEADED=1 pnpm test:tauri   # show Tauri window on-screen
 ```
 
 ### Parallelism
@@ -156,10 +156,10 @@ JET_HEADED=1 pnpm test:tauri   # show Tauri window on-screen
 
 ### Disabled flaky E2E specs
 
-Twelve specs are temporarily skipped via `tests/electron/_flaky.ts` (`describeFlaky` / `skipFlakyTest`; re-enable with `JET_E2E_RUN_FLAKY=1`). Re-enable all for triage:
+Twelve specs are temporarily skipped via `tests/electron/_flaky.ts` (`describeFlaky` / `skipFlakyTest`; re-enable with `GHARARGAH_E2E_RUN_FLAKY=1`). Re-enable all for triage:
 
 ```bash
-JET_E2E_RUN_FLAKY=1 pnpm test:tauri
+GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri
 ```
 
 | Spec file | Test | Likely fix |
@@ -177,25 +177,25 @@ JET_E2E_RUN_FLAKY=1 pnpm test:tauri
 | `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
 | `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
 
-### Programmatic control (`window.__jetAgent`)
+### Programmatic control (`window.__gharargahAgent`)
 
 After `launchJet()`:
 
 ```javascript
-await window.__jetAgent.waitForReady()
-await window.__jetAgent.openWorkspace("fixtures/sample-workspace")
-await window.__jetAgent.openFile("src/index.ts")
-await window.__jetAgent.waitForEditor()
-await window.__jetAgent.executeCommand("ui.showCommandPalette")
-window.__jetAgent.getState()
-window.__jetAgent.getPerfMeasures()  // User Timing measures (jet:*)
+await window.__gharargahAgent.waitForReady()
+await window.__gharargahAgent.openWorkspace("fixtures/sample-workspace")
+await window.__gharargahAgent.openFile("src/index.ts")
+await window.__gharargahAgent.waitForEditor()
+await window.__gharargahAgent.executeCommand("ui.showCommandPalette")
+window.__gharargahAgent.getState()
+window.__gharargahAgent.getPerfMeasures()  // User Timing measures (jet:*)
 ```
 
 ### Dev gotchas (Tauri + Vite)
 
 1. **Rust toolchain** — `cargo` / `rustc` required for `pnpm dev` and `pnpm test:tauri`.
-2. **Vite frontend** — `apps/jet-tauri` builds from `packages/jet-app` via `index.tauri.html`.
-3. **Stale Tauri processes** — if WebDriver ports stick: `pkill -f target/release/jet-tauri` then retry.
+2. **Vite frontend** — `apps/gharargah` builds from `packages/jet-app` via `index.tauri.html`.
+3. **Stale Tauri processes** — if WebDriver ports stick: `pkill -f target/release/gharargah` then retry.
 4. **Tailwind v4 position utilities missing** — Vite must scan sibling packages; `@source` in `jet-ui/src/styles/globals.css`. Symptom: panels stack vertically (editor at bottom), palette full-width. After CSS changes, reload window if HMR does not pick up `@source`.
 
 ---
@@ -212,13 +212,13 @@ Tauri Rust host resolves launch target from argv / cwd:
 
 - No args → open `cwd` as workspace
 - Directory arg → open that directory
-- File arg → open file; workspace = nearest project root (`.git`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `.jet`)
+- File arg → open file; workspace = nearest project root (`.git`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `.gharargah`)
 
 Forwarded to renderer via `getLaunchConfig` / `jet:launch`; macOS open-file and single-instance reuse the same path.
 
-### Host IPC (`window.jet`)
+### Host IPC (`window.gharargah`)
 
-Wired by `@jet/host-client` `loadTauriTransport()` → `createJetApi()`; types live in `@jet/workspace` (`JetElectronAPI` name retained for API stability).
+Wired by `@gharargah/host-client` `loadTauriTransport()` → `createJetApi()`; types live in `@gharargah/workspace` (`GharargahHostAPI` name retained for API stability).
 
 
 | Channel                                                | Purpose                          |
@@ -229,16 +229,16 @@ Wired by `@jet/host-client` `loadTauriTransport()` → `createJetApi()`; types l
 | `lsp:start`, `lsp:stop`                                | Spawn language server, WS bridge |
 
 
-Rust host: `apps/jet-tauri/src-tauri/src/host/`  
-Shell chrome: `apps/jet-tauri/src-tauri/src/shell.rs`
+Rust host: `apps/gharargah/src-tauri/src/host/`  
+Shell chrome: `apps/gharargah/src-tauri/src/shell.rs`
 
-### Panel docking (`@jet/panels`)
+### Panel docking (`@gharargah/panels`)
 
 - `PanelTree` — row/column splits, tab groups, 5-way drop (edges + center)
 - `editorOnlyLayout()` / `defaultLayout()` — single full-width editor panel (no sidebar split by default)
 - `workspaceLayout()` — row split: sidebar left (~22%) + main editor right (~78%); used when splitting for explorer/git on demand
 - Serializable via `toJSON()` / `fromJSON()`; `sanitizeKnownTabs()` strips orphan tab ids when needed
-- UI: `PanelDock`, `TabRow`, `DropOverlay` in `@jet/ui`
+- UI: `PanelDock`, `TabRow`, `DropOverlay` in `@gharargah/ui`
 - `resolveEditorPanel()` in `App.tsx` — new/open editor tabs route to main editor panel (not sidebar)
 
 **Panel model:** all leaf panels are equal — no "explorer panel" vs "editor panel". Tab kind differs (`explorer`, `editor`, `git`, …). View commands can target `focusedPanel`; editor open/new file targets main editor panel.
@@ -250,7 +250,7 @@ Shell chrome: `apps/jet-tauri/src-tauri/src/shell.rs`
 
 
 
-### Workspace (`@jet/workspace`)
+### Workspace (`@gharargah/workspace`)
 
 - `WorkspaceService` — root folder, file cache, dirty tracking, open editor tabs
 - `TabRegistry` — maps `TabId` → tab kind + label + dirty flag
@@ -258,7 +258,7 @@ Shell chrome: `apps/jet-tauri/src-tauri/src/shell.rs`
 
 
 
-### Editor surface (`@jet/codemirror` + `EditorTabHost`)
+### Editor surface (`@gharargah/codemirror` + `EditorTabHost`)
 
 - `createJetEditorView()` — imperative CM6 mount; **never** put doc text in React state
 - `viewByTab` Map in `EditorTabHost.tsx`; use `getEditorView(tabId)` for active editor access
@@ -303,10 +303,10 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 `CommandRegistry.execute()` receives `getActiveEditorView: () => unknown` — cast to `EditorView` in handlers that need `view.state.doc`.
 
-### Extension host (`@jet/extension-host`)
+### Extension host (`@gharargah/extension-host`)
 
 - `createJetAPI()` — commands, keymaps, editor extensions, workspace, ui
-- `loadEditorRc(path, jet)` — dynamic import of `.jet/editorrc.ts` on folder open
+- `loadEditorRc(path, jet)` — dynamic import of `.gharargah/editorrc.ts` on folder open
 - `registerExtensions()` — CodeMirror extensions applied via `extensionCompartment` in `EditorTabHost`
 
 
@@ -319,7 +319,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 - Requires `typescript-language-server` on **PATH** (TS/JS)
 - Requires `rust-analyzer` on **PATH** for Rust (optional)
 - Project search uses ripgrep / host search on **PATH**
-- `findProjectRoot()` uses `pathToFileUri` from `@jet/shared`
+- `findProjectRoot()` uses `pathToFileUri` from `@gharargah/shared`
 
 
 
@@ -339,13 +339,13 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 
 
-### Agents (`@jet/agents` + Tauri Rust host)
+### Agents (`@gharargah/agents` + Tauri Rust host)
 
-- **Storage:** `.jet/agents/state.json` per workspace root (threads, messages, provider/model selection)
-- **Transport:** `window.jet.agents` via Tauri host invoke/events
-- **Drivers:** cursor / Claude / Codex probed from PATH in Rust host (`apps/jet-tauri/src-tauri/src/host/agents.rs`)
-- **Env:** `JET_AGENT_MOCK=1` forces mock driver
-- **Key files:** `packages/jet-agents/`, `packages/jet-ui/src/agents/`, `apps/jet-tauri/src-tauri/src/host/agents.rs`, `packages/jet-app/src/tabs/agent-*.tab.ts`
+- **Storage:** `.gharargah/agents/state.json` per workspace root (threads, messages, provider/model selection)
+- **Transport:** `window.gharargah.agents` via Tauri host invoke/events
+- **Drivers:** cursor / Claude / Codex probed from PATH in Rust host (`apps/gharargah/src-tauri/src/host/agents.rs`)
+- **Env:** `GHARARGAH_AGENT_MOCK=1` forces mock driver
+- **Key files:** `packages/jet-agents/`, `packages/jet-ui/src/agents/`, `apps/gharargah/src-tauri/src/host/agents.rs`, `packages/jet-app/src/tabs/agent-*.tab.ts`
 - **Tests:** agent specs exist under `tests/electron/` but are excluded from `tauri-e2e` for now
 
 Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop button → archive via explorer context menu or `agent.archive`.
@@ -371,7 +371,7 @@ Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop 
 
 1. **Minimal scope** — smallest correct diff; no drive-by refactors
 2. **Match existing style** — ESM `.js` extensions in TS imports, strict TS, no `@types/node` in `jet-shared`
-3. **URI discipline** — use `pathToFileUri` / `fileUriToPath` from `@jet/shared`; avoid `process.platform` in shared packages
+3. **URI discipline** — use `pathToFileUri` / `fileUriToPath` from `@gharargah/shared`; avoid `process.platform` in shared packages
 4. **Panel mutations** — clone tree → mutate → `commitTree()` pattern in App (immutable-ish updates)
 5. **Exports** — packages expose `./src/index.ts` directly (no build step for libs); Vite bundles app
 6. **Do not edit** the planning doc at `.cursor/plans/jet_editor_plan_*.plan.md`
@@ -383,7 +383,7 @@ Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop 
 
 - Each package has `"typecheck": "tsc --noEmit"`
 - Packages `extends` root `tsconfig.base.json`; no project references (composite disabled)
-- `@jet/app` depends on `@jet/shared` explicitly when importing shared types
+- `@gharargah/app` depends on `@gharargah/shared` explicitly when importing shared types
 
 ---
 
@@ -392,7 +392,7 @@ Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop 
 ## What Works Today (smoke test)
 
 1. `pnpm dev` → editor shell with workspace from cwd/CLI args
-2. **Open Folder** / `workspace.cd` / query URL / `__jetAgent.openWorkspace()` / desktop CLI (`jet .`, `jet path/to/file`) → FS + optional `.jet/editorrc.ts`
+2. **Open Folder** / `workspace.cd` / query URL / `__gharargahAgent.openWorkspace()` / desktop CLI (`jet .`, `jet path/to/file`) → FS + optional `.gharargah/editorrc.ts`
 3. Default layout on first open — **editor only** (no explorer/git until `explorer.show` / `git.showChanges`)
 4. Explorer tree — on demand via Mod-Shift-e; click file → editor tab
 5. Edit + **Mod-s** save (click editor tab first if needed)
@@ -410,7 +410,7 @@ Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop 
 
 ## Prioritized Next Work
 
-Design references (read-only): `.4coder/`, `.4coder_fleury/`, `.raddebugger/`, `Nameless_Editor/`. Jet aspires to **RAD/Nameless shell polish** + **4coder/Fleury editor identity** on CodeMirror 6 + Tauri — not a port.
+Design references (read-only): `.4coder/`, `.4coder_fleury/`, `.raddebugger/`, `Nameless_Editor/`. Gharargah aspires to **RAD/Nameless shell polish** + **4coder/Fleury editor identity** on CodeMirror 6 + Tauri — not a port.
 
 Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific) inside each phase.
 
@@ -472,14 +472,14 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 - [x] Tab bar reorder within panel (`insertIndex` + same-panel drag)
 - [x] `panelClose` handler in `App.tsx` + panel close button
-- [x] `__jetAgent.waitForEditor()` — poll until `.cm-editor` mounted
+- [x] `__gharargahAgent.waitForEditor()` — poll until `.cm-editor` mounted
 - [x] Bundled themes + theme picker commands (`ui.selectTheme.*`)
 - [x] Search tab shell + problems tab stub
 - [x] Status bar (LSP status, line/col, encoding)
 - [x] Welcome view when no folder open
 - [x] GitTab lazy import; PaletteOverlay
 - [x] Tab row overflow menu
-- [x] Playwright Tauri smoke tests wired to `pnpm test:tauri` + `__jetAgent`
+- [x] Playwright Tauri smoke tests wired to `pnpm test:tauri` + `__gharargahAgent`
 - [x] **Shell:** Vercel dark/light theme + `ui.toggleColorScheme`
 - [x] **Shell:** welcome view, status bar (L/C, LSP, message)
 - [x] Reduce main bundle — lazy Search/Problems tabs; Vite `manualChunks` for git-diff/shiki
@@ -538,7 +538,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **4coder-specific tier**
 
-- [ ] Expand `.jet/editorrc.ts` API toward Nameless-level extensibility
+- [ ] Expand `.gharargah/editorrc.ts` API toward Nameless-level extensibility
 
 
 
@@ -556,7 +556,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases above).
 
 
-| Feature                          | 4coder  | Fleury  | Nameless   | Jet today                              |
+| Feature                          | 4coder  | Fleury  | Nameless   | Gharargah today                              |
 | -------------------------------- | ------- | ------- | ---------- | -------------------------------------- |
 | Tab drag/drop + reorder          | ✓       | ✓       | ✓          | removed (no tab bar)                   |
 | Buffer list                      | —       | ✓       | ✓          | ✓ Cmd-Shift-b                          |
@@ -567,7 +567,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | Fleury chrome                    | —       | ✓       | ✓          | brace guides + token highlight         |
 | LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Tauri + rust-analyzer                |
 | Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | partial (no macros/kill ring)          |
-| Extension / custom layer         | C hooks | C++     | Rust setup | `.jet/editorrc.ts`                     |
+| Extension / custom layer         | C hooks | C++     | Rust setup | `.gharargah/editorrc.ts`                     |
 
 
 ---
@@ -584,8 +584,8 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | `packages/jet-panels/src/tree.ts`                 | Split/tab model                                     |
 | `packages/jet-ui/src/tabs/EditorTabHost.tsx`      | CM mount lifecycle                                  |
 | `packages/jet-codemirror/src/createEditorView.ts` | Editor extensions + LSP attach                      |
-| `apps/jet-tauri/vite.config.ts`                   | Tauri frontend vite paths                           |
-| `apps/jet-tauri/src-tauri/src/lib.rs`             | Tauri / Rust host bootstrap                         |
+| `apps/gharargah/vite.config.ts`                   | Tauri frontend vite paths                           |
+| `apps/gharargah/src-tauri/src/lib.rs`             | Tauri / Rust host bootstrap                         |
 | `packages/jet-extension-host/src/index.ts`        | Extension API surface                               |
 
 
@@ -596,7 +596,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 ## Adding a Feature (checklist)
 
 1. Decide layer — shared / panels / workspace / codemirror / ui / app / tauri host
-2. Add types to `@jet/shared` or `@jet/workspace` if cross-cutting
+2. Add types to `@gharargah/shared` or `@gharargah/workspace` if cross-cutting
 3. Register command + keybinding if user-facing
 4. If new tab kind: extend `TabKind`, `TabRegistry`, `TabBody`, default registration in `App.tsx`
 5. Run `pnpm -r typecheck`
@@ -610,8 +610,8 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 - Shipping UI/UX changes without **`pnpm test:tauri`** validation
 - Putting editor document text in React `useState`
-- Calling Tauri APIs from lower packages (use `window.jet` / `@jet/host-client`)
-- **Shell:** Tauri (`jet-tauri`) is the only desktop shell. Rust host under `apps/jet-tauri/src-tauri/src/host/`; renderer via `@jet/host-client` `loadTauriTransport()`. Dev: `pnpm dev`. Tests: `pnpm test:tauri` (channel suite + shared UI specs via `tauri-e2e` / WebDriver). E2E uses `JET_E2E=1` (window off-screen); `JET_HEADED=1 pnpm test:tauri` shows it.
+- Calling Tauri APIs from lower packages (use `window.gharargah` / `@gharargah/host-client`)
+- **Shell:** Tauri (`gharargah`) is the only desktop shell. Rust host under `apps/gharargah/src-tauri/src/host/`; renderer via `@gharargah/host-client` `loadTauriTransport()`. Dev: `pnpm dev`. Tests: `pnpm test:tauri` (channel suite + shared UI specs via `tauri-e2e` / WebDriver). E2E uses `GHARARGAH_E2E=1` (window off-screen); `GHARARGAH_HEADED=1 pnpm test:tauri` shows it.
 - Large shadcn default styling — keep RAD/custom theme direction
 
 ## Open Backlog (updated 2026-07-05)
@@ -648,7 +648,7 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 - **Current state:** `packages/jet-codemirror/src/completion-context-menu.ts:11-25` still DOM-patches shadcn class strings (`CONTEXT_MENU_SURFACE_CLASS`, `CONTEXT_MENU_ITEM_SURFACE_CLASS`) onto CodeMirror's native `.cm-tooltip-autocomplete` after mount via `classList.add()` + `dataset.slot = "context-menu-content"`. Fake shadcn — no Radix root, no focus scope, no `ContextMenuPortal`, no keyboard-role parity, breaks if shadcn class strings drift.
 - **Also delete:** `packages/jet-codemirror/src/menu-surface.ts` (`CONTEXT_MENU_SURFACE_CLASS`, `CONTEXT_MENU_ITEM_SURFACE_CLASS`) and its re-export in `packages/jet-codemirror/src/index.ts:45`. Class-string sharing is the anti-pattern this rule bans.
 - **Fix plan:**
-  1. Replace CodeMirror's default `autocomplete` tooltip renderer. Register a completion source that emits Jet's own state; suppress the native tooltip via `tooltips: { position: "absolute" }` or by overriding `completionConfig({ tooltipClass })` and rendering an empty tooltip.
+  1. Replace CodeMirror's default `autocomplete` tooltip renderer. Register a completion source that emits Gharargah's own state; suppress the native tooltip via `tooltips: { position: "absolute" }` or by overriding `completionConfig({ tooltipClass })` and rendering an empty tooltip.
   2. In `EditorTabHost.tsx`, mount a `<ContextMenu open={completionOpen}>` with `<ContextMenuContent>` portalled to `document.body`. Position via `EditorView.requestMeasure` → caret coords, forwarded as CSS vars.
   3. Bridge keymap: `ArrowUp`/`ArrowDown`/`Enter`/`Escape`/`Tab` — intercept in a CM keymap prec `Prec.highest`, dispatch to a React state store (or ref), so shadcn `ContextMenuItem` selection follows. Enter → `applyCompletion(view, item)` from `@codemirror/autocomplete`.
   4. Preserve `completionDetail` in a right-aligned span using existing `ContextMenuShortcut`.
@@ -656,10 +656,10 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 
 ### Explorer virtualization for large repos (Medium)
 - `packages/jet-ui/src/tabs/ExplorerTab.tsx` — renders every visible file synchronously. `@tanstack/react-virtual` is already a dep (see `packages/jet-ui/package.json`).
-- **Fix:** virtualize `SidebarMenu` children. Preserve `data-jet-list-item` on rendered rows so visual scenarios still find them by selector.
+- **Fix:** virtualize `SidebarMenu` children. Preserve `data-gharargah-list-item` on rendered rows so visual scenarios still find them by selector.
 
 ### Explorer `focusExplorerPanel` uses DOM `querySelector` (Low)
-- `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18` — imperative DOM query on `[data-jet-explorer-panel]` + `[data-sidebar="trigger"]`. Brittle to selector rename.
+- `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18` — imperative DOM query on `[data-gharargah-explorer-panel]` + `[data-sidebar="trigger"]`. Brittle to selector rename.
 - **Fix:** expose a ref-based focus API via `useSidebar()` context or a ref forwarded from `ExplorerPanel`.
 
 ### Custom decoration follow-ups (Task #4 tail)
@@ -674,7 +674,7 @@ Global rule to apply everywhere below: **no custom components**. Every interacti
 
 #### `LocationListPanel` row = raw `<button>` (High)
 - `packages/jet-ui/src/panels/LocationListPanel.tsx:190-202` — virtualized row is a raw `<button type="button">` with hand-rolled `hover:bg-sidebar-accent` classes replicating `sidebarMenuButtonVariants`. Duplicates shadcn behavior without importing it.
-- **Fix:** render row through `SidebarMenuButton asChild size="sm"` from `ui/sidebar.tsx`, or wrap it in a shared `<ListRow>` primitive that composes `SidebarMenuButton`. Keep virtualization by rendering the button inside the absolute-positioned wrapper unchanged. Preserve `data-jet-list-item` on the rendered element.
+- **Fix:** render row through `SidebarMenuButton asChild size="sm"` from `ui/sidebar.tsx`, or wrap it in a shared `<ListRow>` primitive that composes `SidebarMenuButton`. Keep virtualization by rendering the button inside the absolute-positioned wrapper unchanged. Preserve `data-gharargah-list-item` on the rendered element.
 
 #### `StatusBar` LSP trigger = raw `<button>` (Medium)
 - `packages/jet-ui/src/status/StatusBar.tsx:141-150` — `PopoverTrigger asChild` wraps a raw `<button>` with bespoke focus ring classes. Should use shadcn `Button variant="ghost" size="sm"` (or a new `variant="statusZone"`) to inherit ring/focus tokens.
@@ -688,8 +688,8 @@ Global rule to apply everywhere below: **no custom components**. Every interacti
 - Same as prior backlog. `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18`. Fix by exposing a ref or a `useSidebar()`-published handle.
 
 #### `App.tsx` list-navigation DOM `querySelector` (Medium)
-- `packages/jet-app/src/App.tsx:640-642` — `document.querySelector('[data-jet-list-panel=…]')` + `querySelectorAll('[data-jet-list-item]')` for keyboard nav. Mirrors the explorer-panel anti-pattern.
-- **Fix:** publish a list-registry from `WorkspaceService` (or a new `ListRegistry` in `@jet/workspace`) mapping panel kind → ref to focused-item state. Keyboard command reads from the registry, not the DOM.
+- `packages/jet-app/src/App.tsx:640-642` — `document.querySelector('[data-gharargah-list-panel=…]')` + `querySelectorAll('[data-gharargah-list-item]')` for keyboard nav. Mirrors the explorer-panel anti-pattern.
+- **Fix:** publish a list-registry from `WorkspaceService` (or a new `ListRegistry` in `@gharargah/workspace`) mapping panel kind → ref to focused-item state. Keyboard command reads from the registry, not the DOM.
 
 #### `main.tsx` bootstraps dark class imperatively (Low)
 - `packages/jet-app/src/main.tsx:7` — `document.documentElement.classList.add("dark")` runs unconditionally, before the theme-scheme service reads `localStorage["jet-color-scheme"]`. Race: flash of dark on light-scheme startup.

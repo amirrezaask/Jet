@@ -32,16 +32,16 @@ test.describe("electron editor save", () => {
       await typeInEditor(page, marker)
 
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeEditorDirty))
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeEditorDirty))
         .toBe(true)
 
       await focusEditor(page)
       await execCommand(page, "workspace.saveFile")
       await expect
-        .poll(() => page.evaluate(() => window.__jetAgent!.getState().activeEditorDirty), { timeout: 15_000 })
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeEditorDirty), { timeout: 15_000 })
         .toBe(false)
 
-      const disk = await page.evaluate(() => window.__jetAgent!.readFixtureFile("src/index.ts"))
+      const disk = await page.evaluate(() => window.__gharargahAgent!.readFixtureFile("src/index.ts"))
       expect(disk).toContain(marker)
     } finally {
       await app.close()

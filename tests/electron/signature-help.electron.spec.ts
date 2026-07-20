@@ -26,7 +26,7 @@ test.describe("LSP signature help", () => {
       await waitForLspConnected(page)
       await page.waitForTimeout(500)
 
-      await page.evaluate(() => window.__jetAgent!.setEditorSelection(1, 1))
+      await page.evaluate(() => window.__gharargahAgent!.setEditorSelection(1, 1))
       await page.locator(".cm-content").focus()
       await page.keyboard.press("Meta+a")
       await page.keyboard.type("function foo(x: number, y: string) {\n  return x\n}\n")
@@ -49,7 +49,7 @@ test.describe("LSP signature help", () => {
       await waitForLspConnected(page)
       await page.waitForTimeout(500)
 
-      await page.evaluate(() => window.__jetAgent!.setEditorSelection(1, 1))
+      await page.evaluate(() => window.__gharargahAgent!.setEditorSelection(1, 1))
       await page.locator(".cm-content").focus()
       await page.keyboard.press("Meta+a")
       await page.keyboard.type("function foo(x: number, y: string) {\n  return x\n}\n")

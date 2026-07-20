@@ -1,0 +1,68 @@
+import { Terminal as TerminalIcon } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card.js"
+import { cn } from "@/lib/utils.js"
+
+export type TerminalCardStatus = "starting" | "running" | "exited" | "failed"
+
+export type TerminalCardProps = {
+  label: string
+  status: TerminalCardStatus
+  exitCode?: number
+  onClick: () => void
+}
+
+function statusLabel(status: TerminalCardStatus, exitCode?: number): string {
+  switch (status) {
+    case "starting":
+      return "Starting"
+    case "running":
+      return "Running"
+    case "failed":
+      return "Failed"
+    case "exited":
+      return exitCode === undefined ? "Exited" : `Exited (${exitCode})`
+  }
+}
+
+function statusClass(status: TerminalCardStatus): string {
+  switch (status) {
+    case "running":
+    case "starting":
+      return "text-primary"
+    case "failed":
+      return "text-destructive"
+    case "exited":
+      return "text-muted-foreground"
+  }
+}
+
+export function TerminalCard(props: TerminalCardProps) {
+  const { label, status, exitCode, onClick } = props
+  return (
+    <button
+      type="button"
+      data-gharargah-terminal-card
+      data-gharargah-list-item
+      className="group text-left outline-none"
+      onClick={onClick}
+    >
+      <Card
+        className={cn(
+          "h-full min-w-[11rem] gap-3 border-border/80 bg-card/80 py-4 transition-[border-color,box-shadow,background-color]",
+          "hover:border-primary/50 hover:bg-card",
+          "group-focus-visible:border-ring group-focus-visible:ring-[3px] group-focus-visible:ring-ring/40",
+        )}
+      >
+        <CardHeader className="gap-2 px-4 [.border-b]:pb-0">
+          <div className="flex items-center gap-2">
+            <TerminalIcon className="size-4 shrink-0 text-muted-foreground" />
+            <CardTitle className="min-w-0 flex-1 truncate text-sm font-medium">{label}</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4">
+          <p className={cn("text-xs tabular-nums", statusClass(status))}>{statusLabel(status, exitCode)}</p>
+        </CardContent>
+      </Card>
+    </button>
+  )
+}

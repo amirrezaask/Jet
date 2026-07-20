@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "jet-tauri",
+      "name": "gharargah",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"]
     }

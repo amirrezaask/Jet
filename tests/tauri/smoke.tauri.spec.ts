@@ -9,7 +9,7 @@ test.describe("tauri smoke wiring", () => {
       '"--features"',
       '"e2e"',
       "sample-workspace",
-      "JET_E2E_USER_DATA",
+      "GHARARGAH_E2E_USER_DATA",
       "TAURI_WEBDRIVER_PORT",
       "wrapTauriWebDriver",
     ]) {
@@ -19,11 +19,11 @@ test.describe("tauri smoke wiring", () => {
 
   test("production capability excludes WebDriver", () => {
     const production = fs.readFileSync(
-      path.join(process.cwd(), "apps/jet-tauri/src-tauri/capabilities/default.json"),
+      path.join(process.cwd(), "apps/gharargah/src-tauri/capabilities/default.json"),
       "utf8",
     )
     const e2e = fs.readFileSync(
-      path.join(process.cwd(), "apps/jet-tauri/src-tauri/tauri.e2e.conf.json"),
+      path.join(process.cwd(), "apps/gharargah/src-tauri/tauri.e2e.conf.json"),
       "utf8",
     )
     expect(production).not.toContain("wdio-webdriver")

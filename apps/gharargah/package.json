@@ -1,0 +1,35 @@
+{
+  "name": "gharargah",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/tauri-dev.mjs",
+    "dev:frontend": "node scripts/dev-frontend.mjs",
+    "build": "vite build && node scripts/rename-tauri-index.mjs && node scripts/verify-startup-graph.mjs",
+    "release": "node scripts/release.mjs",
+    "bench:startup:debug": "node scripts/startup-bench.mjs --debug",
+    "bench:startup:release": "node scripts/startup-bench.mjs",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@gharargah/agents": "workspace:*",
+    "@gharargah/app": "workspace:*",
+    "@gharargah/host-client": "workspace:*",
+    "@gharargah/shared": "workspace:*",
+    "@gharargah/workspace": "workspace:*",
+    "@tauri-apps/api": "^2.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.8",
+    "@tauri-apps/cli": "^2.4.0",
+    "@types/node": "^22.15.29",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.5.2",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "tailwindcss": "^4.1.8",
+    "typescript": "^7.0.2",
+    "vite": "^6.3.5"
+  }
+}

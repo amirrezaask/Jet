@@ -1,0 +1,974 @@
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/geist-mono/wght.css";
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Tailwind v4 only auto-scans the Vite root (packages/gharargah-app), so utility
+ * classes used in sibling workspace packages (jet-ui, jet-panels, …) are never
+ * generated. Without this, classes like `absolute`/`relative`/`inset-0` are
+ * dropped and absolutely-positioned panels collapse into static block flow.
+ */
+@source "../../../*/src/**/*.{ts,tsx}";
+@source "../../../../apps/*/src/**/*.{ts,tsx}";
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  --text-4xs: var(--gharargah-fs-4xs);
+  --text-3xs: var(--gharargah-fs-3xs);
+  --text-2xs: var(--gharargah-fs-2xs);
+  --text-xs: var(--gharargah-fs-xs);
+  --text-sm: var(--gharargah-fs-sm);
+  --text-base: var(--gharargah-fs-base);
+  --text-lg: var(--gharargah-fs-lg);
+  --text-xl: var(--gharargah-fs-xl);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+}
+
+/* shadcn/ui default light — aligned with packages/gharargah-ui/src/theme/default.ts */
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+
+  /* Compact editor scale: dense, but never sub-10px for ordinary metadata. */
+  --gharargah-fs-4xs: 0.69rem;
+  --gharargah-fs-3xs: 0.77rem;
+  --gharargah-fs-2xs: 0.82rem;
+  --gharargah-fs-xs: 0.88rem;
+  --gharargah-fs-sm: 0.95rem;
+  --gharargah-fs-base: 1rem;
+  --gharargah-fs-lg: 1.15rem;
+  --gharargah-fs-xl: 1.85rem;
+  /* Row-height contract:
+   *   --gharargah-row-height          → tree/dense rows (file explorer, terminal explorer,
+   *                                any Lister tree). Single-line label, one icon.
+   *   --gharargah-location-row-height → flat lists with two-line label+path
+   *                                (LocationList: search, problems, references, defs).
+   * Do not merge. Trees are for navigation density; location lists are for
+   * click-to-jump readability. Defined only in :root — scheme-invariant. */
+  --gharargah-project-row-height: calc(var(--gharargah-fs-base) * 1.75);
+  --gharargah-row-height: calc(var(--gharargah-fs-base) * 1.5);
+  --gharargah-window-chrome-height: calc(var(--gharargah-fs-base) * 2.5);
+  --gharargah-location-row-height: calc(var(--gharargah-fs-base) * 2.5);
+  /* Traffic-light clearance only — not a closed-sidebar placeholder. */
+  --gharargah-traffic-light-inset: 5rem;
+  --gharargah-overlay-list-max: 22rem;
+  --gharargah-motion-fast: 120ms;
+  --gharargah-motion-hot: 120ms;
+  --gharargah-motion-menu: 160ms;
+  --gharargah-motion-overlay: 180ms;
+  --gharargah-motion-panel: 220ms;
+  --gharargah-motion-slow-menu: 240ms;
+  --gharargah-motion-scroll: 140ms;
+  --gharargah-motion-entity: 240ms;
+  --gharargah-motion-dnd-site: 220ms;
+  --gharargah-motion-squish-scale: 0.9;
+  --gharargah-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --gharargah-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --gharargah-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --gharargah-cursor-color: oklch(0.145 0 0);
+  --gharargah-press-scale: 0.98;
+  --gharargah-press-y: 0.5px;
+  --gharargah-hl-keyword: oklch(0.577 0.245 27.325);
+  --gharargah-hl-control-keyword: oklch(0.577 0.245 27.325);
+  --gharargah-hl-function: oklch(0.496 0.265 301.924);
+  --gharargah-hl-type: oklch(0.488 0.243 264.376);
+  --gharargah-hl-string: oklch(0.527 0.154 150.069);
+  --gharargah-hl-number: oklch(0.666 0.179 58.318);
+  --gharargah-hl-boolean: oklch(0.666 0.179 58.318);
+  --gharargah-hl-comment: oklch(0.556 0 0);
+  --gharargah-hl-operator: oklch(0.145 0 0);
+  --gharargah-hl-variable: oklch(0.145 0 0);
+  --gharargah-hl-attribute: oklch(0.496 0.265 301.924);
+  --gharargah-hl-constant: oklch(0.488 0.243 264.376);
+  --gharargah-hl-field: oklch(0.488 0.243 264.376);
+  --gharargah-hl-module: oklch(0.488 0.243 264.376);
+  --gharargah-hl-label: oklch(0.577 0.245 27.325);
+  --gharargah-hl-error: oklch(0.577 0.245 27.325);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* macOS window chrome — traffic-light spacer + sidebar/tab-bar drag. */
+[data-gharargah-traffic-light-spacer] {
+  width: var(--gharargah-traffic-light-inset);
+  min-width: var(--gharargah-traffic-light-inset);
+  flex: 0 0 var(--gharargah-traffic-light-inset);
+  align-self: stretch;
+  min-height: 100%;
+}
+
+/* Sidebar view tabs (Files / Terminals) share the native-chrome rhythm. */
+[data-gharargah-sidebar-view-tabs] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: calc(var(--gharargah-window-chrome-height) - 0.5rem);
+  min-width: 0;
+}
+
+[data-gharargah-sidebar-view-tabs] [data-slot="tabs-list"] {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: calc(var(--gharargah-window-chrome-height) - 0.5rem) !important;
+  gap: 0.125rem;
+  padding: 2px;
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in oklch, var(--sidebar-accent) 40%, transparent);
+  overflow: visible;
+}
+
+[data-gharargah-sidebar-view-tabs] [data-slot="tabs-trigger"] {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100% !important;
+  min-width: 0;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  font-size: var(--gharargah-fs-xs) !important;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-gharargah-sidebar-view-tabs] [data-slot="tabs-trigger"]::after {
+  display: none;
+}
+
+[data-gharargah-sidebar-view-tabs] [data-slot="tabs-trigger"][data-state="active"] {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
+[data-gharargah-sidebar-view-tabs] [data-slot="tabs-trigger"]:hover {
+  color: var(--sidebar-accent-foreground);
+}
+
+/* Panel tab bar — horizontal scroll only; no vertical thumb from trigger ::after. */
+[data-gharargah-tab-bar] [data-slot="tabs-list"] {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-gharargah-tab-bar] [data-slot="tabs-list"]::-webkit-scrollbar {
+  display: none;
+}
+
+[data-gharargah-tab-bar] [data-slot="tabs-trigger"]::after {
+  display: none;
+}
+
+/* shadcn/ui default dark */
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --gharargah-hl-keyword: oklch(0.704 0.191 22.216);
+  --gharargah-hl-control-keyword: oklch(0.704 0.191 22.216);
+  --gharargah-hl-function: oklch(0.792 0.209 303.407);
+  --gharargah-hl-type: oklch(0.623 0.214 259.815);
+  --gharargah-hl-string: oklch(0.696 0.17 162.48);
+  --gharargah-hl-number: oklch(0.828 0.189 84.429);
+  --gharargah-hl-boolean: oklch(0.828 0.189 84.429);
+  --gharargah-hl-comment: oklch(0.708 0 0);
+  --gharargah-hl-operator: oklch(0.985 0 0);
+  --gharargah-hl-variable: oklch(0.985 0 0);
+  --gharargah-hl-attribute: oklch(0.792 0.209 303.407);
+  --gharargah-hl-constant: oklch(0.623 0.214 259.815);
+  --gharargah-hl-field: oklch(0.623 0.214 259.815);
+  --gharargah-hl-module: oklch(0.623 0.214 259.815);
+  --gharargah-hl-label: oklch(0.704 0.191 22.216);
+  --gharargah-hl-error: oklch(0.704 0.191 22.216);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+html {
+  height: 100%;
+  font-size: 13px;
+}
+
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: inherit;
+}
+
+/* CodeMirror autocomplete — native tooltip hidden; Jet renders Radix ContextMenu in EditorTabHost. */
+
+/*
+ * Editor horizontal/vertical scroll — CodeMirror owns .cm-scroller (not shadcn
+ * ScrollArea: nested scroll containers break CM cursor/selection sync). Thumb
+ * styling matches scroll-area.tsx ScrollBar (bg-border, rounded-full, 10px).
+ */
+\.gharargah-editor-scroll-area .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+\.gharargah-editor-scroll-area .cm-scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+\.gharargah-editor-scroll-area .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+\.gharargah-editor-scroll-area .cm-scroller::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+
+\.gharargah-editor-scroll-area .cm-scroller::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Tactile press — buttons, tabs, menu rows, and other clickable controls */
+\.gharargah-press,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"]
+):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]) {
+  transform-origin: center;
+  transition-property: transform, filter, opacity, color, background-color, border-color, box-shadow;
+  transition-duration: var(--gharargah-motion-hot);
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+\.gharargah-press:active:not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]),
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"]
+):active:not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]) {
+  transition-duration: 0ms;
+  transform: scale(var(--gharargah-press-scale)) translateY(var(--gharargah-press-y));
+  filter: brightness(0.96);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.22);
+}
+
+/* List / sidebar row hover — RAD DrawHotEffects (flat accent, no press inset) */
+\.gharargah-interactive-row {
+  transition-property: background-color, box-shadow, color;
+  transition-duration: var(--gharargah-motion-hot);
+  transition-timing-function: ease-out;
+}
+
+\.gharargah-interactive-row:hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]) {
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
+\.gharargah-interactive-row:active {
+  transition-duration: 0ms;
+}
+
+/*
+ * RAD UI_BoxFlag_DrawHotEffects — mouse-follow soft circle clipped to the widget.
+ * Tracker sets --gharargah-hot-x/y; :hover drives opacity ≈ hot_t; :active suppresses.
+ *
+ * Do NOT set position:relative on the shared target list — that overrides Tailwind
+ * `.absolute` on virtualized tree rows and doubles inter-row gaps.
+ * Only promote static boxes so ::before is clipped to the control.
+ */
+\.gharargah-hot-glow,
+\.gharargah-press,
+\.gharargah-interactive-row,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+) {
+  --gharargah-hot-x: 50%;
+  --gharargah-hot-y: 50%;
+}
+
+\.gharargah-hot-glow:where(:not(.absolute, .fixed, .sticky)),
+\.gharargah-press:where(:not(.absolute, .fixed, .sticky)),
+\.gharargah-interactive-row:where(:not(.absolute, .fixed, .sticky)),
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+):where(:not(.absolute, .fixed, .sticky)) {
+  position: relative;
+}
+
+\.gharargah-hot-glow::before,
+\.gharargah-press::before,
+\.gharargah-interactive-row::before,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  /*
+   * RAD soft circle uses theme hover @ 2.5% α — but Jet --gharargah-hover is a dark fill
+   * color, so that mix is invisible. Use foreground tint (~RAD bright hover feel).
+   * Radius 24em; row overflow clips like RAD max(box_dim).
+   */
+  background: radial-gradient(
+    circle 24em at var(--gharargah-hot-x) var(--gharargah-hot-y),
+    color-mix(in oklab, var(--foreground) 18%, transparent),
+    transparent 70%
+  );
+  transition: opacity var(--gharargah-motion-hot) ease-out;
+}
+
+\.gharargah-hot-glow:hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before,
+\.gharargah-press:hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before,
+\.gharargah-interactive-row:hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+):hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before {
+  opacity: 1;
+}
+
+/* Embedded native WebDrivers may deliver pointermove without CSS :hover. */
+[data-gharargah-hot-active]:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"])::before {
+  opacity: 1;
+  transition-duration: 0ms;
+}
+
+\.gharargah-hot-glow:active::before,
+\.gharargah-press:active::before,
+\.gharargah-interactive-row:active::before,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"],
+  [data-slot="select-item"]
+):active::before {
+  opacity: 0;
+  transition-duration: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  \.gharargah-hot-glow::before,
+  \.gharargah-press::before,
+  \.gharargah-interactive-row::before,
+  :is(
+    [data-slot="button"],
+    [data-slot="tabs-trigger"],
+    [data-slot="toggle"],
+    [data-slot="toggle-group-item"],
+    [data-slot="command-item"],
+    [data-slot="item"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-group-action"],
+    [data-slot="sidebar-trigger"],
+    [data-slot="dialog-trigger"],
+    [data-slot="dialog-close"],
+    [data-slot="drawer-trigger"],
+    [data-slot="drawer-close"],
+    [data-slot="popover-trigger"],
+    [data-slot="context-menu-item"],
+    [data-slot="context-menu-sub-trigger"],
+    [data-slot="context-menu-checkbox-item"],
+    [data-slot="context-menu-radio-item"],
+    [data-slot="dropdown-menu-item"],
+    [data-slot="dropdown-menu-sub-trigger"],
+    [data-slot="dropdown-menu-checkbox-item"],
+    [data-slot="dropdown-menu-radio-item"],
+    [data-slot="menubar-trigger"],
+    [data-slot="menubar-item"],
+    [data-slot="menubar-sub-trigger"],
+    [data-slot="menubar-checkbox-item"],
+    [data-slot="menubar-radio-item"],
+    [data-slot="accordion-trigger"],
+    [data-slot="collapsible-trigger"],
+    [data-slot="select-item"]
+  )::before {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Instant keyboard focus ring — RAD focus_active_t */
+\.gharargah-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* Disabled wash — RAD disabled_t */
+\.gharargah-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity var(--gharargah-motion-menu) ease-out;
+}
+
+/* Scroll edge fade — RAD DrawFadeTop/Bottom */
+\.gharargah-scroll-fade {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 5%,
+    black 95%,
+    transparent
+  );
+}
+
+@keyframes gharargah-dialog-enter {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes gharargah-dialog-exit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.97); }
+}
+
+@keyframes gharargah-overlay-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes gharargah-overlay-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+\.gharargah-dialog-motion[data-gharargah-dialog-motion="standard"][data-state="open"] {
+  animation: gharargah-dialog-enter var(--gharargah-motion-overlay) var(--gharargah-ease-out);
+}
+
+\.gharargah-dialog-motion[data-gharargah-dialog-motion="standard"][data-state="closed"] {
+  animation: gharargah-dialog-exit var(--gharargah-motion-fast) var(--gharargah-ease-out);
+}
+
+\.gharargah-dialog-overlay[data-gharargah-dialog-motion="standard"][data-state="open"] {
+  animation: gharargah-overlay-enter var(--gharargah-motion-overlay) var(--gharargah-ease-out);
+}
+
+\.gharargah-dialog-overlay[data-gharargah-dialog-motion="standard"][data-state="closed"] {
+  animation: gharargah-overlay-exit var(--gharargah-motion-fast) var(--gharargah-ease-out);
+}
+
+\.gharargah-dialog-motion[data-gharargah-dialog-motion="instant"],
+\.gharargah-dialog-overlay[data-gharargah-dialog-motion="instant"] {
+  animation: none;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  \.gharargah-press:active,
+  :is(
+    [data-slot="button"],
+    [data-slot="tabs-trigger"],
+    [data-slot="toggle"],
+    [data-slot="toggle-group-item"],
+    [data-slot="command-item"],
+    [data-slot="item"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-group-action"],
+    [data-slot="sidebar-trigger"],
+    [data-slot="dialog-trigger"],
+    [data-slot="dialog-close"],
+    [data-slot="drawer-trigger"],
+    [data-slot="drawer-close"],
+    [data-slot="popover-trigger"],
+    [data-slot="context-menu-item"],
+    [data-slot="context-menu-sub-trigger"],
+    [data-slot="context-menu-checkbox-item"],
+    [data-slot="context-menu-radio-item"],
+    [data-slot="dropdown-menu-item"],
+    [data-slot="dropdown-menu-sub-trigger"],
+    [data-slot="dropdown-menu-checkbox-item"],
+    [data-slot="dropdown-menu-radio-item"],
+    [data-slot="menubar-trigger"],
+    [data-slot="menubar-item"],
+    [data-slot="menubar-sub-trigger"],
+    [data-slot="menubar-checkbox-item"],
+    [data-slot="menubar-radio-item"],
+    [data-slot="select-item"],
+    [data-slot="accordion-trigger"],
+    [data-slot="collapsible-trigger"]
+  ):active {
+    transform: none;
+    filter: none;
+  }
+}
+
+:root[data-gharargah-reduced-motion="true"] \.gharargah-press:active,
+:root[data-gharargah-reduced-motion="true"] :is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="context-menu-item"],
+  [data-slot="dropdown-menu-item"]
+):active {
+  transform: none;
+  filter: none;
+}
+
+:root[data-gharargah-reduced-motion="true"] {
+  scroll-behavior: auto;
+}
+
+:root[data-gharargah-reduced-motion="true"] \.gharargah-dialog-motion[data-gharargah-dialog-motion="standard"][data-state="open"] {
+  transform: none;
+  animation-name: gharargah-overlay-enter;
+  animation-duration: var(--gharargah-motion-fast);
+}
+
+:root[data-gharargah-reduced-motion="true"] \.gharargah-dialog-motion[data-gharargah-dialog-motion="standard"][data-state="closed"] {
+  transform: none;
+  animation-name: gharargah-overlay-exit;
+  animation-duration: var(--gharargah-motion-fast);
+}
+
+:root[data-gharargah-reduced-motion="true"] :is(.animate-spin, .animate-pulse) {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { scroll-behavior: auto; }
+
+  \.gharargah-dialog-motion[data-gharargah-dialog-motion="standard"][data-state="open"] {
+    transform: none;
+    animation-name: gharargah-overlay-enter;
+    animation-duration: var(--gharargah-motion-fast);
+  }
+
+  \.gharargah-dialog-motion[data-gharargah-dialog-motion="standard"][data-state="closed"] {
+    transform: none;
+    animation-name: gharargah-overlay-exit;
+    animation-duration: var(--gharargah-motion-fast);
+  }
+
+  :is(.animate-spin, .animate-pulse) {
+    animation: none;
+  }
+
+  :is([class*="slide-in-from"], [class*="slide-out-to"], [class*="zoom-in"], [class*="zoom-out"]) {
+    --tw-enter-translate-x: 0;
+    --tw-enter-translate-y: 0;
+    --tw-exit-translate-x: 0;
+    --tw-exit-translate-y: 0;
+    --tw-enter-scale: 1;
+    --tw-exit-scale: 1;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  \.gharargah-hot-glow::before,
+  \.gharargah-press::before,
+  \.gharargah-interactive-row::before,
+  [data-gharargah-hot-active]::before {
+    display: none;
+  }
+}
+
+/* xterm must fill the terminal tab slot; fit addon reads container clientHeight */
+[data-gharargah-terminal-panel] \.gharargah-terminal-surface,
+[data-gharargah-terminal-panel] .xterm,
+[data-gharargah-terminal-panel] .xterm-viewport {
+  height: 100%;
+  width: 100%;
+}
+
+[data-gharargah-terminal-panel] .xterm-screen {
+  position: relative;
+}
+
+[data-gharargah-terminal-panel] .xterm .xterm-rows {
+  font-family: var(--font-mono);
+}
+
+.chat-composer-horizontal-inset {
+  padding-inline-start: calc(env(safe-area-inset-left) + 0.75rem);
+  padding-inline-end: calc(env(safe-area-inset-right) + 0.75rem);
+}
+
+.chat-composer-glass,
+.chat-composer-lower-chrome {
+  background: color-mix(in srgb, var(--card) 20%, transparent);
+}
+
+.chat-composer-glass {
+  box-shadow:
+    0 18px 48px -20px rgb(0 0 0 / 28%),
+    0 4px 14px -7px rgb(0 0 0 / 22%);
+}
+
+.chat-composer-shared-blur {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.dark .chat-composer-glass,
+.dark .chat-composer-lower-chrome {
+  background: color-mix(in srgb, var(--card) 45%, transparent);
+}
+
+.dark .chat-composer-glass {
+  box-shadow:
+    0 18px 48px -20px rgb(0 0 0 / 60%),
+    0 4px 14px -7px rgb(0 0 0 / 40%);
+}
+
+@media (min-width: 40rem) {
+  .chat-composer-horizontal-inset {
+    padding-inline-start: calc(env(safe-area-inset-left) + 1.25rem);
+    padding-inline-end: calc(env(safe-area-inset-right) + 1.25rem);
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .chat-composer-glass,
+  .chat-composer-lower-chrome {
+    background: var(--card);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .chat-composer-glass,
+  .chat-composer-lower-chrome,
+  .chat-composer-shared-blur {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .chat-composer-glass,
+  .chat-composer-lower-chrome {
+    background: var(--card);
+    border-color: var(--foreground);
+  }
+}

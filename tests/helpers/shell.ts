@@ -10,4 +10,4 @@ export async function expectPaletteClosed(page: ShellDriver): Promise<void> {
   await expectDialogCount(page, 0)
 }
 
-export const EXPLORER_PANEL = '[data-jet-list-panel="jet:explorer"]'
+export const EXPLORER_PANEL = '[data-gharargah-list-panel="gharargah:explorer"]'

@@ -23,20 +23,20 @@ test.describe("electron appearance and terminal-first UX", () => {
     try {
       await page.evaluate(async () => {
         localStorage.clear()
-        await window.__jetAgent!.waitForReady()
-        await window.__jetAgent!.executeCommand("ui.setTheme.ayu-dark")
+        await window.__gharargahAgent!.waitForReady()
+        await window.__gharargahAgent!.executeCommand("ui.setTheme.ayu-dark")
       })
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("terminal.show")
-        await window.__jetAgent!.executeCommand("terminal.explorer.show")
+        await window.__gharargahAgent!.executeCommand("terminal.show")
+        await window.__gharargahAgent!.executeCommand("terminal.explorer.show")
       })
-      await page.waitForSelector("[data-jet-terminal-panel] .xterm", { timeout: 30_000 })
-      await page.waitForSelector("[data-jet-terminal-panel] .jet-terminal-surface", {
+      await page.waitForSelector("[data-gharargah-terminal-panel] .xterm", { timeout: 30_000 })
+      await page.waitForSelector("[data-gharargah-terminal-panel] \.gharargah-terminal-surface", {
         timeout: 15_000,
       })
 
-      await expectSelectorVisible(page, "[data-jet-list-panel='jet:terminal-explorer']")
-      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
+      await expectSelectorVisible(page, "[data-gharargah-list-panel='gharargah:terminal-explorer']")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
 
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
@@ -46,7 +46,7 @@ test.describe("electron appearance and terminal-first UX", () => {
         .poll(() =>
           page.evaluate(() => {
             const el = document.querySelector(
-              "[data-jet-terminal-panel] .jet-terminal-surface",
+              "[data-gharargah-terminal-panel] \.gharargah-terminal-surface",
             ) as HTMLElement | null
             return el ? getComputedStyle(el).backgroundColor : ""
           }),
@@ -54,28 +54,28 @@ test.describe("electron appearance and terminal-first UX", () => {
         .toBe("rgb(10, 14, 20)")
 
       await page.evaluate(async () => {
-        await window.__jetAgent!.executeCommand("settings.show")
+        await window.__gharargahAgent!.executeCommand("settings.show")
       })
 
-      await expectSelectorVisible(page, "[data-jet-settings-overlay]")
-      await expectLocatorCount(page.locator("[data-jet-theme-option]"), 19)
-      await expectSelectorVisible(page, "[data-jet-theme-option='ayu-dark']")
-      await expectSelectorVisible(page, "[data-jet-theme-option='everforest-dark']")
-      await expectSelectorVisible(page, "[data-jet-theme-option='gruvbox-light']")
-      await expectSelectorVisible(page, "[data-jet-theme-option='tokyonight-light']")
-      await expectSelectorVisible(page, "[data-jet-theme-option='rad-default-dark']")
-      await expectSelectorVisible(page, "[data-jet-theme-option='rad-four-coder']")
-      await expectLocatorAttribute(page.locator("[data-jet-setting='terminal-cursor-motion-trail']"), "data-state", "on")
-      await page.locator("[data-jet-setting='terminal-cursor-style-bar']").click()
-      await page.locator("[data-jet-setting='terminal-cursor-motion-off']").click()
+      await expectSelectorVisible(page, "[data-gharargah-settings-overlay]")
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 19)
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='ayu-dark']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='everforest-dark']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='gruvbox-light']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='tokyonight-light']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='rad-default-dark']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='rad-four-coder']")
+      await expectLocatorAttribute(page.locator("[data-gharargah-setting='terminal-cursor-motion-trail']"), "data-state", "on")
+      await page.locator("[data-gharargah-setting='terminal-cursor-style-bar']").click()
+      await page.locator("[data-gharargah-setting='terminal-cursor-motion-off']").click()
       await expect
-        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--jet-cursor-style").trim()))
+        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--gharargah-cursor-style").trim()))
         .toBe("bar")
       await expect
-        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--jet-cursor-motion").trim()))
+        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--gharargah-cursor-motion").trim()))
         .toBe("off")
 
-      await page.locator("[data-jet-theme-option='gruvbox-light']").click()
+      await page.locator("[data-gharargah-theme-option='gruvbox-light']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("gruvbox-light")
@@ -84,7 +84,7 @@ test.describe("electron appearance and terminal-first UX", () => {
         .poll(() =>
           page.evaluate(() => {
             const el = document.querySelector(
-              "[data-jet-terminal-panel] .jet-terminal-surface",
+              "[data-gharargah-terminal-panel] \.gharargah-terminal-surface",
             ) as HTMLElement | null
             return el ? getComputedStyle(el).backgroundColor : ""
           }),
@@ -99,7 +99,7 @@ test.describe("electron appearance and terminal-first UX", () => {
     test.skip(true, "agent UI not in tauri e2e scope")
     const { app, page } = await launchJet()
     try {
-      const terminalExplorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")
+      const terminalExplorer = page.locator("[data-gharargah-list-panel='gharargah:terminal-explorer']")
       await expectLocatorVisible(terminalExplorer)
 
       const launcher = page.getByRole("button", { name: "Launch agent" }).first()

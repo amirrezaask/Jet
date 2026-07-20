@@ -28,7 +28,7 @@ test.describe("electron terminal explorer", () => {
       await execCommand(page, "terminal.new")
       await page.waitForTimeout(500)
       await execCommand(page, "terminal.explorer.show")
-      await expectSelectorVisible(page, "[data-jet-list-panel='jet:terminal-explorer']")
+      await expectSelectorVisible(page, "[data-gharargah-list-panel='gharargah:terminal-explorer']")
     } finally {
       await app.close()
     }
@@ -38,7 +38,7 @@ test.describe("electron terminal explorer", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      await expectSelectorVisible(page, "[data-jet-terminal-panel]")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await execCommand(page, "terminal.show")
       await page.waitForTimeout(400)
     } finally {
@@ -49,20 +49,20 @@ test.describe("electron terminal explorer", () => {
   test("terminal list labels and switches sessions without the sidebar", async () => {
     const { app, page } = await launchJet()
     try {
-      const workspaceName = await page.evaluate(() => window.__jetAgent!.listWorkspaces()[0]?.name ?? "")
+      const workspaceName = await page.evaluate(() => window.__gharargahAgent!.listWorkspaces()[0]?.name ?? "")
       await execCommand(page, "terminal.new")
       await execCommand(page, "terminal.new")
       await execCommand(page, "terminal.list")
 
       await expectListRows(page, {
-        panel: "jet:palette",
+        panel: "gharargah:palette",
         minItems: 1,
         needle: `${workspaceName}:`,
         noResultsText: "No open terminals",
       })
       await page.getByRole("option").first().click()
       await expectLocatorHidden(page.getByRole("dialog"))
-      await expectSelectorHidden(page, "[data-jet-workspace-sidebar]")
+      await expectSelectorHidden(page, "[data-gharargah-workspace-sidebar]")
     } finally {
       await app.close()
     }
@@ -72,7 +72,7 @@ test.describe("electron terminal explorer", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "terminal.explorer.show")
-      const explorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")
+      const explorer = page.locator("[data-gharargah-list-panel='gharargah:terminal-explorer']")
       const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
       await expectLocatorAttribute(projectRow, "aria-expanded", "true")
 
@@ -89,7 +89,7 @@ test.describe("electron terminal explorer", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "terminal.explorer.show")
-      const explorer = page.locator("[data-jet-list-panel='jet:terminal-explorer']")
+      const explorer = page.locator("[data-gharargah-list-panel='gharargah:terminal-explorer']")
       const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
       await projectRow.click({ button: "right" })
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Activate Project" }))
