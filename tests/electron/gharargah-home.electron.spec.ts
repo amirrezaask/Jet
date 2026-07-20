@@ -161,15 +161,13 @@ test.describe("gharargah mission home", () => {
     }
   })
 
-  test("titlebar stays present without Home control or app wordmark", async () => {
+  test("home has no custom titlebar chrome", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-titlebar]")
+      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await expectLocatorCount(page.locator("[data-gharargah-titlebar]"), 0)
       await expectLocatorCount(page.locator("[data-gharargah-home-button]"), 0)
       await expectLocatorCount(page.locator("[data-gharargah-status-zone]"), 0)
-      await expect
-        .poll(async () => (await page.locator("[data-gharargah-titlebar]").textContent())?.trim() ?? "")
-        .not.toMatch(/Gharargah/i)
     } finally {
       await app.close()
     }

@@ -23,13 +23,7 @@
         "title": "Gharargah",
         "width": 1400,
         "height": 900,
-        "decorations": true,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "trafficLightPosition": {
-          "x": 14,
-          "y": 11
-        }
+        "decorations": true
       }
     ]
   },

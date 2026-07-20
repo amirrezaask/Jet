@@ -49,7 +49,6 @@ import {
   showGharargahToast,
   requestConfirm,
   AppShell,
-  GharargahTitleBar,
   GharargahHome,
   TerminalSessionModal,
 } from "@gharargah/ui"
@@ -108,17 +107,6 @@ function normalizeAbsPath(p: string): string {
   return trimmed || p
 }
 
-function detectWindowChrome(): boolean {
-  if (typeof navigator === "undefined") return false
-  if (/Mac|iPad|iPhone|iPod/i.test(navigator.userAgent)) return true
-  if (
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("titlebar") === "1"
-  ) {
-    return true
-  }
-  return false
-}
 
 function loadRecentCommands(): string[] {
   try {
@@ -189,7 +177,6 @@ export function GharargahApp() {
   const [terminalModalPanelId, setTerminalModalPanelId] = useState<PanelId | null>(null)
   const [terminalModalTitleTick, setTerminalModalTitleTick] = useState(0)
   const [terminalModalGitBranch, setTerminalModalGitBranch] = useState<string | null>(null)
-  const showWindowChrome = useMemo(() => detectWindowChrome(), [])
   const [, setTerminalSessionRevision] = useState(0)
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
   const [pendingChordPrefix, setPendingChordPrefix] = useState<string | null>(null)
@@ -1286,11 +1273,6 @@ export function GharargahApp() {
           }
         >
           <div className="flex h-full min-h-0 w-full flex-col" data-gharargah-shell="home">
-            <GharargahTitleBar
-              showWindowChrome={showWindowChrome}
-              crumb={null}
-            />
-
             <div className="min-h-0 flex-1 overflow-hidden">
               <GharargahHome
                 groups={getTerminalExplorerGroups().map(g => ({

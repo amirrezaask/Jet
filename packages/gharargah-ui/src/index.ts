@@ -15,7 +15,6 @@ export {
   type TabRenderCtx,
 } from "./tabs/registry.js"
 export { AppShell } from "./shell/AppShell.js"
-export { GharargahTitleBar, type GharargahTitleBarProps } from "./shell/GharargahTitleBar.js"
 export {
   GharargahHome,
   ProjectSection,

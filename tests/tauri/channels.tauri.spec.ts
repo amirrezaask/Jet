@@ -50,7 +50,7 @@ test.describe("tauri host channel registry", () => {
     expect(RUST_HOST_CHANNELS.size).toBeLessThanOrEqual(60)
   })
 
-  test("native titlebar grants drag permission and keeps centered traffic lights", () => {
+  test("uses native window decorations without overlay titlebar", () => {
     const capability = JSON.parse(
       fs.readFileSync(
         path.join(process.cwd(), "apps/gharargah/src-tauri/capabilities/default.json"),
@@ -65,24 +65,18 @@ test.describe("tauri host channel registry", () => {
     ) as {
       app: {
         windows: Array<{
+          decorations?: boolean
           titleBarStyle?: string
+          hiddenTitle?: boolean
           trafficLightPosition?: { x: number; y: number }
         }>
       }
     }
-    const shellRs = fs.readFileSync(
-      path.join(process.cwd(), "apps/gharargah/src-tauri/src/shell.rs"),
-      "utf8",
-    )
 
     expect(capability.permissions).toContain("core:window:allow-start-dragging")
-    expect(config.app.windows[0]?.titleBarStyle).toBe("Overlay")
-    expect(config.app.windows[0]?.trafficLightPosition).toEqual({ x: 14, y: 11 })
-    // Config alone is not enough on modern macOS — shell must force button origin.y
-    // to match trafficLightPosition (see apply_traffic_light_position).
-    expect(shellRs).toMatch(/TRAFFIC_LIGHT_X:\s*f64\s*=\s*14\.0/)
-    expect(shellRs).toMatch(/TRAFFIC_LIGHT_Y:\s*f64\s*=\s*11\.0/)
-    expect(shellRs).toContain("apply_traffic_light_position")
-    expect(shellRs).toContain("rect.origin.y = 0.0")
+    expect(config.app.windows[0]?.decorations).toBe(true)
+    expect(config.app.windows[0]?.titleBarStyle ?? "Visible").not.toBe("Overlay")
+    expect(config.app.windows[0]?.hiddenTitle).toBeFalsy()
+    expect(config.app.windows[0]?.trafficLightPosition).toBeUndefined()
   })
 })
