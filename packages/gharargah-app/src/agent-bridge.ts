@@ -3,6 +3,7 @@ import { pathToFileUri } from "@gharargah/shared"
 import type { CommandRegistry, GharargahPanelTree, WorkspaceService } from "@gharargah/workspace"
 import type { PanelNode } from "@gharargah/panels"
 import type { PanelView } from "@gharargah/shared"
+import { handleTerminalFileDropAt } from "@gharargah/ui/terminal-file-drop"
 
 export type JetAgentState = {
   /** @deprecated Use `activeWorkspace` + `workspaces` for multi-root. */
@@ -44,6 +45,8 @@ export type GharargahAgentAPI = {
   clearPerf(): void
   markPerf(name: string): void
   measurePerf(name: string, startMark: string, endMark?: string): void
+  /** Insert shell-quoted paths into the running terminal under its center (E2E / DnD path). */
+  dropFilesOnTerminal(paths: string[]): Promise<boolean>
 }
 
 export type AgentBridgeContext = {
@@ -204,6 +207,18 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
           // ignore invalid mark pairs in tests
         }
       }
+    },
+    async dropFilesOnTerminal(paths: string[]) {
+      const panel = document.querySelector<HTMLElement>(
+        '[data-gharargah-terminal-panel][data-gharargah-terminal-status="running"]',
+      )
+      if (!panel) return false
+      const rect = panel.getBoundingClientRect()
+      return handleTerminalFileDropAt(
+        paths,
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      )
     },
   }
 }

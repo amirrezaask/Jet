@@ -902,6 +902,12 @@ body,
   width: 100%;
 }
 
+[data-gharargah-terminal-panel] .gharargah-terminal-surface,
+[data-gharargah-terminal-panel] .jet-terminal-surface {
+  position: relative;
+  background: var(--gharargah-bg, var(--background));
+}
+
 [data-gharargah-terminal-panel] .xterm-screen {
   position: relative;
 }
@@ -1343,5 +1349,327 @@ body,
   [data-gharargah-home] [data-gharargah-home-empty] {
     border-color: var(--foreground);
     background: var(--card);
+  }
+}
+
+/* ── Shared optical-glass — palette lister + terminal modal ────────────────
+ * Visual-only. Same token language as Mission Control home. Accent from
+ * --primary so Glass Blue / Red / Green stay coherent.
+ */
+[data-gharargah-glass] {
+  --glass-accent: var(--primary);
+  --glass-accent-soft: color-mix(in srgb, var(--primary) 42%, transparent);
+  --glass-accent-faint: color-mix(in srgb, var(--primary) 18%, transparent);
+  --glass-accent-glow: color-mix(in srgb, var(--primary) 55%, transparent);
+  --glass-fill: color-mix(in srgb, var(--card) 48%, transparent);
+  --glass-fill-strong: color-mix(in srgb, var(--card) 62%, transparent);
+  --glass-content: color-mix(in srgb, var(--background) 82%, transparent);
+  --glass-rim: color-mix(in srgb, var(--primary) 32%, transparent);
+  --glass-rim-hot: color-mix(in srgb, var(--primary) 58%, transparent);
+  --glass-ease: var(--gharargah-ease-out);
+  --glass-motion: var(--gharargah-motion-menu);
+}
+
+/* Palette / switcher — floating glass command surface */
+[data-gharargah-palette] {
+  position: relative;
+  border-radius: calc(var(--radius) + 6px) !important;
+  border: 1px solid var(--glass-rim) !important;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 6%, transparent) 0%,
+      transparent 18%
+    ),
+    var(--glass-fill) !important;
+  -webkit-backdrop-filter: blur(22px);
+  backdrop-filter: blur(22px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 10%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent),
+    0 18px 48px -18px rgb(0 0 0 / 55%),
+    0 0 28px -8px var(--glass-accent-faint),
+    0 0 60px -20px var(--glass-accent-soft) !important;
+  overflow: hidden;
+}
+
+/* Top/bottom luminous pips on palette frame */
+[data-gharargah-palette]::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  background:
+    radial-gradient(40% 1.5px at 50% 0%, var(--glass-accent-glow), transparent 70%),
+    radial-gradient(36% 1.5px at 50% 100%, var(--glass-accent-soft), transparent 70%);
+  opacity: 0.85;
+}
+
+[data-gharargah-palette] [data-slot="command-input-wrapper"] {
+  position: relative;
+  z-index: 1;
+  height: 3rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  background: color-mix(in srgb, var(--card) 18%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
+}
+
+[data-gharargah-palette] [data-slot="command-input-wrapper"] svg {
+  color: color-mix(in srgb, var(--primary) 55%, var(--muted-foreground));
+  opacity: 0.9;
+}
+
+[data-gharargah-palette] [data-slot="command-input"] {
+  color: var(--foreground);
+  caret-color: var(--glass-accent);
+}
+
+[data-gharargah-palette] [data-slot="command-input"]::placeholder {
+  color: color-mix(in srgb, var(--primary) 28%, var(--muted-foreground));
+}
+
+[data-gharargah-palette] [data-slot="command-input"]:focus-visible {
+  outline: none;
+}
+
+[data-gharargah-palette] [data-slot="command-input-wrapper"]:focus-within {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 18%, transparent),
+    0 0 22px -10px var(--glass-accent-glow);
+}
+
+/* Result rows — embedded glass slots */
+[data-gharargah-palette] [data-slot="command-item"] {
+  z-index: 1;
+  border-radius: calc(var(--radius) + 2px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--foreground);
+  transition:
+    background-color var(--glass-motion) var(--glass-ease),
+    border-color var(--glass-motion) var(--glass-ease),
+    box-shadow var(--glass-motion) var(--glass-ease),
+    transform var(--gharargah-motion-fast) var(--glass-ease);
+}
+
+[data-gharargah-palette] [data-slot="command-item"]:hover,
+[data-gharargah-palette] [data-slot="command-item"][data-selected="true"] {
+  background: color-mix(in srgb, var(--card) 42%, transparent) !important;
+  border-color: var(--glass-rim-hot);
+  color: var(--foreground) !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 12%, transparent),
+    0 0 18px -6px var(--glass-accent-glow);
+}
+
+[data-gharargah-palette] [data-slot="command-item"][data-selected="true"] {
+  background: color-mix(in srgb, var(--card) 55%, transparent) !important;
+  border-color: color-mix(in srgb, var(--primary) 70%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent),
+    0 0 24px -4px var(--glass-accent-glow);
+}
+
+[data-gharargah-palette] [data-slot="command-item"]:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 75%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--primary) 28%, transparent),
+    0 0 28px -4px var(--glass-accent-glow);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-gharargah-palette] [data-slot="command-item"]:hover {
+    transform: translateY(-0.5px);
+  }
+}
+
+[data-gharargah-palette] [data-slot="command-empty"] {
+  color: color-mix(in srgb, var(--primary) 30%, var(--muted-foreground));
+}
+
+/* Soften default dialog overlay behind glass palette */
+.jet-dialog-overlay:has(+ * [data-gharargah-palette]),
+.jet-dialog-overlay:has(~ * [data-gharargah-palette]) {
+  background: color-mix(in srgb, var(--background) 55%, rgb(0 0 0 / 45%));
+}
+
+/* Terminal modal — optical-glass stage shell */
+[data-gharargah-terminal-modal] {
+  border: 1px solid var(--glass-rim) !important;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 5%, transparent) 0%,
+      transparent 14%
+    ),
+    var(--glass-fill) !important;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 10%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent),
+    0 24px 64px -24px rgb(0 0 0 / 65%),
+    0 0 36px -10px var(--glass-accent-faint) !important;
+}
+
+[data-gharargah-terminal-modal][data-state="open"] {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 14%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 14%, transparent),
+    0 24px 64px -24px rgb(0 0 0 / 65%),
+    0 0 40px -6px var(--glass-accent-glow) !important;
+}
+
+[data-gharargah-terminal-modal-header] {
+  position: relative;
+  z-index: 1;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  background: color-mix(in srgb, var(--card) 28%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
+}
+
+[data-gharargah-terminal-modal-header] [data-slot="dialog-title"] {
+  color: var(--foreground);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+[data-gharargah-terminal-git-branch] {
+  color: color-mix(in srgb, var(--primary) 35%, var(--muted-foreground));
+}
+
+[data-gharargah-terminal-modal-close] {
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) + 2px);
+  transition:
+    border-color var(--glass-motion) var(--glass-ease),
+    box-shadow var(--glass-motion) var(--glass-ease),
+    color var(--glass-motion) var(--glass-ease),
+    background-color var(--glass-motion) var(--glass-ease);
+}
+
+[data-gharargah-terminal-modal-close]:hover {
+  border-color: var(--glass-rim);
+  background: color-mix(in srgb, var(--card) 40%, transparent);
+  box-shadow: 0 0 16px -6px var(--glass-accent-glow);
+}
+
+[data-gharargah-terminal-modal-body] {
+  position: relative;
+  z-index: 0;
+  background: var(--glass-content);
+}
+
+/* Darker ink content well + faint scanline texture */
+[data-gharargah-terminal-modal] [data-gharargah-terminal-panel] {
+  background: transparent;
+}
+
+[data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .gharargah-terminal-surface,
+[data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .jet-terminal-surface {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary) 6%, transparent) 0%,
+      transparent 12%
+    ),
+    color-mix(in srgb, var(--background) 86%, rgb(6 10 20));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+}
+
+[data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .xterm,
+[data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .xterm-viewport,
+[data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .xterm-screen {
+  background: transparent !important;
+}
+
+[data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .gharargah-terminal-surface::after,
+[data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .jet-terminal-surface::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 2px,
+      rgb(255 255 255 / 18%) 2px,
+      rgb(255 255 255 / 18%) 3px
+    ),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: auto, 160px 160px;
+}
+
+[data-gharargah-terminal-modal] [data-gharargah-terminal-exit-bar] {
+  border-top-color: color-mix(in srgb, var(--primary) 22%, transparent);
+  background: color-mix(in srgb, var(--card) 35%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  [data-gharargah-palette],
+  [data-gharargah-terminal-modal],
+  [data-gharargah-terminal-modal-header] {
+    background: var(--card) !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-gharargah-palette],
+  [data-gharargah-terminal-modal],
+  [data-gharargah-terminal-modal-header],
+  [data-gharargah-terminal-modal-body],
+  [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .gharargah-terminal-surface,
+  [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .jet-terminal-surface {
+    background: var(--card) !important;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  [data-gharargah-palette]::before,
+  [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .gharargah-terminal-surface::after,
+  [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .jet-terminal-surface::after {
+    display: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  [data-gharargah-palette],
+  [data-gharargah-terminal-modal] {
+    border-color: var(--foreground) !important;
+    background: var(--card) !important;
+    box-shadow: none !important;
+  }
+
+  [data-gharargah-palette]::before {
+    display: none;
+  }
+
+  [data-gharargah-palette] [data-slot="command-item"][data-selected="true"],
+  [data-gharargah-palette] [data-slot="command-item"]:hover {
+    border-color: var(--foreground);
+    background: var(--accent) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gharargah-palette] [data-slot="command-item"]:hover {
+    transform: none;
   }
 }

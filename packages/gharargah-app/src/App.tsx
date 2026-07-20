@@ -80,6 +80,7 @@ import { useAppearanceSettings } from "./hooks/useAppearanceSettings.js"
 import { usePanelLayout } from "./hooks/usePanelLayout.js"
 import OverlayHost from "./OverlayHost.js"
 import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle.js"
+import { useTerminalFileDrop } from "./hooks/useTerminalFileDrop.js"
 import { useOverlayState } from "./hooks/useOverlayState.js"
 import { useGlobalKeymap } from "./hooks/useGlobalKeymap.js"
 import { createTabContributorBridge } from "./hooks/tab-contributor-bridge.js"
@@ -507,6 +508,7 @@ export function GharargahApp() {
   }
 
   useTerminalLifecycle()
+  useTerminalFileDrop()
 
   useEffect(
     () => subscribeTerminalSessions(tabId => {

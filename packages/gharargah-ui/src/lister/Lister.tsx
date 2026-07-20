@@ -624,7 +624,7 @@ export function Lister<T>({
                 data-slot="command-item"
                 data-selected={selected ? "true" : undefined}
                 className={cn(
-                  "gharargah-hot-glow absolute left-0 top-0 flex w-full shrink-0 cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                  "gharargah-hot-glow absolute left-0 top-0 flex w-full shrink-0 cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none",
                   selected && "bg-accent text-accent-foreground",
                   itemClassName,
                 )}

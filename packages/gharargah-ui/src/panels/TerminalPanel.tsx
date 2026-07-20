@@ -60,7 +60,8 @@ function themeOptions(theme: GharargahTheme): NonNullable<XTerm["options"]["them
   const c = theme.colors
   const ansi = theme.terminalAnsi
   return {
-    background: c.bg,
+    // Canvas stays transparent — CSS surface owns the fill (glass content layer).
+    background: "transparent",
     foreground: c.text,
     cursor: c.accent,
     selectionBackground: c.selection,
@@ -92,15 +93,15 @@ function liveThemeOptions(theme: GharargahTheme): NonNullable<XTerm["options"]["
   const options = themeOptions(theme)
   return {
     ...options,
-    background: readCssVar("--gharargah-bg") ?? options.background,
+    background: "transparent",
     foreground: readCssVar("--gharargah-text") ?? options.foreground,
     cursor: readCssVar("--gharargah-accent") ?? options.cursor,
     selectionBackground: readCssVar("--gharargah-selection") ?? options.selectionBackground,
   }
 }
 
-function readTerminalBackground(theme: GharargahTheme): string {
-  return readCssVar("--gharargah-bg") ?? theme.colors.bg
+function readTerminalSurfaceBackground(): string {
+  return "transparent"
 }
 
 function readTerminalLineHeight(): number {
@@ -292,7 +293,7 @@ export function TerminalPanel({
 
     const syncTheme = () => {
       term.options.theme = liveThemeOptions(themeRef.current)
-      container.style.background = readTerminalBackground(themeRef.current)
+      container.style.background = readTerminalSurfaceBackground()
       term.refresh(0, Math.max(0, term.rows - 1))
       session.cursorMotion?.refresh(false)
     }
@@ -417,7 +418,7 @@ export function TerminalPanel({
     if (!session || !container) return
 
     session.term.options.theme = liveThemeOptions(themeRef.current)
-    container.style.background = readTerminalBackground(themeRef.current)
+    container.style.background = readTerminalSurfaceBackground()
     session.cursorMotion?.setActive(focused && isActive)
 
     if (!focused || !isActive) return
@@ -443,7 +444,7 @@ export function TerminalPanel({
 
   return (
     <div
-      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background"
+      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-transparent"
       data-gharargah-terminal-panel=""
       data-gharargah-terminal-pty-id={connectedPtyId ?? ""}
       data-gharargah-terminal-status={displayStatus}
@@ -453,12 +454,12 @@ export function TerminalPanel({
     >
       <div
         ref={containerRef}
-        className="gharargah-terminal-surface jet-terminal-surface min-h-0 flex-1 overflow-hidden bg-background p-1.5"
+        className="gharargah-terminal-surface jet-terminal-surface min-h-0 flex-1 overflow-hidden p-1.5"
       />
       {displayStatus === "exited" || displayStatus === "failed" ? (
         <div
           data-gharargah-terminal-exit-bar
-          className="flex h-9 shrink-0 items-center gap-2 border-t border-border/70 bg-muted/35 px-2.5 text-xs text-muted-foreground"
+          className="flex h-9 shrink-0 items-center gap-2 border-t border-border/50 bg-muted/25 px-2.5 text-xs text-muted-foreground"
         >
           <span className="min-w-0 flex-1 truncate">
             {displayStatus === "failed"

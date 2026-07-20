@@ -20,11 +20,15 @@
       "types": "./src/terminal-entry.ts",
       "default": "./src/terminal-entry.ts"
     },
+    "./terminal-file-drop": {
+      "types": "./src/terminal-file-drop-entry.ts",
+      "default": "./src/terminal-file-drop-entry.ts"
+    },
     "./styles.css": "./src/styles/globals.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/dock/panel-drop-zones.test.ts src/theme/default.test.ts src/lister/fuzzy.test.ts src/lister/filter-tree.test.ts"
+    "test": "tsx --test src/dock/panel-drop-zones.test.ts src/theme/default.test.ts src/lister/fuzzy.test.ts src/lister/filter-tree.test.ts src/panels/terminal-file-drop.test.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.6",

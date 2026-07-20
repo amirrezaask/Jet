@@ -13,7 +13,7 @@ import {
   expectNotContainsText,
 } from "../shell/assert.js"
 
-import { hasPtySpawn, launchJet, readTerminalText, showTerminal } from "./_launch.js"
+import { focusTerminal, hasPtySpawn, launchJet, readTerminalText, showTerminal } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -406,6 +406,29 @@ test.describe("electron terminal", () => {
       } else {
         expect(samples.at(-1)).not.toBe(samples[0])
       }
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("inserts shell-quoted dropped file paths into the PTY", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+      const needle = "gharargah-drop-path-fixture"
+      const dropped = await page.evaluate(async pathNeedle => {
+        const path = `/tmp/${pathNeedle} with spaces.txt`
+        const ok = await window.__gharargahAgent!.dropFilesOnTerminal([path])
+        return { ok, path }
+      }, needle)
+      expect(dropped.ok).toBe(true)
+      await expect
+        .poll(async () => readTerminalText(page), { timeout: 10_000 })
+        .toContain(needle)
+      const text = await readTerminalText(page)
+      expect(text).toContain("'")
+      expect(text).toContain("with spaces")
     } finally {
       await app.close()
     }

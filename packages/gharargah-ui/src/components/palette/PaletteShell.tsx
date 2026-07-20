@@ -90,8 +90,10 @@ export function PaletteShell<T>({
       <DialogContent
         motion="instant"
         size={size}
+        data-gharargah-glass=""
+        data-gharargah-palette=""
         className={[
-          "max-h-[calc(100dvh-2rem)] overflow-hidden border-border/70 bg-popover p-0 shadow-2xl shadow-black/25",
+          "max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden border-0 bg-transparent p-0 shadow-none",
           contentClassName,
         ]
           .filter(Boolean)
@@ -111,14 +113,14 @@ export function PaletteShell<T>({
             filter={filterMode}
             requireQueryForSelection
             items={listerItems}
-            itemClassName={cn("px-2 py-3", itemClassName)}
+            itemClassName={cn("mx-1.5 px-2.5 py-3", itemClassName)}
             itemStyle={node => itemStyle?.(node.data)}
             estimateSize={() => 48}
             betweenInputAndList={statusRow}
-            listClassName="min-h-0 max-h-[min(var(--gharargah-overlay-list-max),calc(100dvh-5rem))] pb-1"
+            listClassName="min-h-0 max-h-[min(var(--gharargah-overlay-list-max),calc(100dvh-5rem))] px-0.5 pb-1.5"
             className="min-h-0"
             emptyState={
-              <div data-slot="command-empty" className="py-6 text-center text-sm">
+              <div data-slot="command-empty" className="py-6 text-center text-sm text-muted-foreground">
                 {emptyLabel}
               </div>
             }

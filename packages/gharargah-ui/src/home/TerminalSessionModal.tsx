@@ -24,8 +24,9 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       <DialogContent
         size="stage"
         showCloseButton={false}
+        data-gharargah-glass=""
         data-gharargah-terminal-modal
-        className="flex flex-col"
+        className="flex flex-col gap-0 overflow-hidden border-0 bg-transparent p-0 shadow-none"
         aria-describedby={undefined}
         onOpenAutoFocus={event => {
           // Prefer focusing the terminal surface, not dialog chrome.
@@ -39,15 +40,20 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           })
         }}
       >
-        <DialogHeader className="flex shrink-0 flex-row items-center gap-3 border-b border-border px-4 py-3 text-left sm:text-left">
+        <DialogHeader
+          data-gharargah-terminal-modal-header=""
+          className="flex shrink-0 flex-row items-center gap-3 px-4 py-3 text-left sm:text-left"
+        >
           <div className="min-w-0 flex-1">
-            <DialogTitle className="truncate text-sm font-medium">{title}</DialogTitle>
+            <DialogTitle className="truncate text-sm font-medium tracking-tight text-foreground">
+              {title}
+            </DialogTitle>
             {gitBranch ? (
               <p
                 data-gharargah-terminal-git-branch
                 className="mt-0.5 flex items-center gap-1 truncate font-mono text-3xs text-muted-foreground"
               >
-                <GitBranch className="size-3 shrink-0" aria-hidden />
+                <GitBranch className="size-3 shrink-0 opacity-80" aria-hidden />
                 <span className="truncate">{gitBranch}</span>
               </p>
             ) : null}
@@ -59,13 +65,18 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
               size="icon-sm"
               data-gharargah-terminal-modal-close
               aria-label="Close terminal"
-              className="shrink-0"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
             >
               <XIcon className="size-4" />
             </Button>
           </DialogClose>
         </DialogHeader>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
+        <div
+          data-gharargah-terminal-modal-body=""
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        >
+          {children}
+        </div>
       </DialogContent>
     </Dialog>
   )
