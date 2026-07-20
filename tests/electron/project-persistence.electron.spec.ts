@@ -1,44 +1,39 @@
 import { expect, test } from "@playwright/test"
 import {
-  expectContainsText,
-  expectLocatorAttached,
-  expectLocatorAttribute,
-  expectLocatorCount,
-  expectLocatorFocused,
-  expectLocatorHidden,
-  expectLocatorVisible,
-  expectSelectorHidden,
-  expectSelectorVisible,
   expectLocatorContainsText,
-  expectNotContainsText,
+  expectLocatorCount,
+  expectLocatorVisible,
+  expectSelectorVisible,
 } from "../shell/assert.js"
 
 import { resolve } from "node:path"
-import { expectLayout, expectNoOverlap, expectRowSpacing, expectRowTextVisible } from "../helpers/list.js"
 import { launchJet, REPO_ROOT } from "./_launch.js"
 
-const PANEL = "[data-gharargah-list-panel='gharargah:terminal-explorer']"
-const ROWS = `${PANEL} [data-gharargah-list-item]`
-
 test.describe("electron project persistence", () => {
-  test("restores only saved projects and the last active project", async () => {
+  test("restores saved projects on home after reload", async () => {
     const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
 
     const { app, page } = await launchJet()
     try {
-      await page.evaluate(path => window.__gharargahAgent!.openWorkspace(path), secondPath)
-      await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
-        .toBe(secondPath)
-      await page.evaluate(() => window.__gharargahAgent!.executeCommand("terminal.explorer.show"))
-      const secondRow = page.getByRole("treeitem", { name: "second-workspace" })
-      await secondRow.getByRole("button", { name: "New terminal" }).click()
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
-      await page.evaluate(() => window.__gharargahAgent!.openFile("src/marker.ts"))
-      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
+      await page.evaluate(path => window.__gharargahAgent!.addWorkspace(path), secondPath)
       await expect
         .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
+
+      const secondName = "second-workspace"
+      const section = page.locator(
+        `[data-gharargah-project-section][data-gharargah-project-name="${secondName}"]`,
+      )
+      await expectLocatorVisible(section)
+      await section.getByRole("button", { name: "New session" }).click()
+      await page
+        .locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
+          hasText: "Terminal",
+        })
+        .click()
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      await page.keyboard.press("Escape")
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await page.reload()
       await page.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
@@ -46,22 +41,13 @@ test.describe("electron project persistence", () => {
       await expect
         .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
-      await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
-        .toBe(secondPath)
-      await page.evaluate(() => window.__gharargahAgent!.executeCommand("terminal.explorer.show"))
 
-      const panel = page.locator(PANEL)
-      await expectLocatorContainsText(panel, "sample-workspace")
-      await expectLocatorContainsText(panel, "second-workspace")
-      await expect.poll(async () => !(await panel.evaluate(el => el.textContent ?? "")).includes("No results")).toBe(true)
-      await expectLayout(page, { selector: ROWS, minItems: 2, minUniqueTops: 2 })
-      await expectNoOverlap(page, { selector: ROWS, minItems: 2 })
-      await expectRowSpacing(page, { selector: ROWS, minItems: 2 })
-      await expectRowTextVisible(page, { selector: ROWS, minItems: 2 })
-
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-panel]"), 0)
+      await expectSelectorVisible(page, "[data-gharargah-home]")
+      const home = page.locator("[data-gharargah-home]")
+      await expectLocatorContainsText(home, "sample-workspace")
+      await expectLocatorContainsText(home, "second-workspace")
       await expectLocatorCount(page.locator(".cm-editor"), 0)
+      await expectLocatorCount(page.locator("[data-gharargah-workspace-sidebar]"), 0)
     } finally {
       await app.close()
     }

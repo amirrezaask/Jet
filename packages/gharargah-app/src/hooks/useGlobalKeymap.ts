@@ -1,5 +1,4 @@
 import { useEffect } from "react"
-import type { EditorView } from "@codemirror/view"
 import type { PanelId } from "@gharargah/shared"
 import {
   anyOverlayOpen,
@@ -13,7 +12,6 @@ import {
   type KeymapContext,
   type WorkspaceService,
 } from "@gharargah/workspace"
-import { getEditorView } from "@gharargah/ui"
 import { useLatest } from "./useLatest.js"
 
 export type GlobalKeymapRefs = {
@@ -23,7 +21,7 @@ export type GlobalKeymapRefs = {
   getFocusedPanel: () => PanelId | null
   getEditorPanel: () => PanelId | null
   executeCommand: (name: string) => Promise<void>
-  runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
+  runKeyBinding: (binding: JetKeyBinding) => void
   setPendingChordPrefix: (prefix: string | null) => void
 }
 
@@ -83,14 +81,7 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
         return true
       }
       if (allowEditor && result && isEditorKeyBinding(result, ctx)) {
-        const panel = getFocusedPanelRef.current() ?? getEditorPanelRef.current()
-        const view = panel ? getEditorView(panel) : null
-        if (view?.hasFocus || ctx.editorFocus) {
-          e.preventDefault()
-          e.stopPropagation()
-          runKeyBindingRef.current(result, view ?? undefined)
-          return true
-        }
+        return false
       }
       if (allowEditor && result) {
         e.preventDefault()

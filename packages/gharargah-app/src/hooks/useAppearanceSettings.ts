@@ -6,8 +6,7 @@ import {
   siblingThemeForScheme,
   type JetAppearanceSettings,
 } from "@gharargah/ui"
-import { applyColorScheme } from "@gharargah/codemirror"
-import { syncAllEditorThemes, syncNativeChromeFromTheme } from "@gharargah/ui"
+import { applyColorScheme, syncNativeChromeFromTheme } from "@gharargah/ui"
 
 type ColorScheme = "dark" | "light"
 
@@ -144,7 +143,6 @@ export function useAppearanceSettings() {
 
   useEffect(() => {
     applyColorScheme(colorScheme, activeTheme)
-    syncAllEditorThemes(activeTheme)
     syncNativeChromeFromTheme()
   }, [colorScheme, activeTheme])
 

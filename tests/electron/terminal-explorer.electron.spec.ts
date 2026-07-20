@@ -1,16 +1,9 @@
 import { expect, test } from "@playwright/test"
 import {
-  expectContainsText,
-  expectLocatorAttached,
-  expectLocatorAttribute,
   expectLocatorCount,
-  expectLocatorFocused,
-  expectLocatorHidden,
   expectLocatorVisible,
   expectSelectorHidden,
   expectSelectorVisible,
-  expectLocatorContainsText,
-  expectNotContainsText,
 } from "../shell/assert.js"
 
 import { hasPtySpawn, launchJet, showTerminal, execCommand } from "./_launch.js"
@@ -21,26 +14,35 @@ const ptyAvailable = hasPtySpawn()
 test.describe("electron terminal explorer", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
-  test("terminal.new and terminal.explorer.show list sessions", async () => {
+  test("terminal.new opens modal and home cards list sessions", async () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+      await page.keyboard.press("Escape")
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+
       await execCommand(page, "terminal.new")
-      await page.waitForTimeout(500)
-      await execCommand(page, "terminal.explorer.show")
-      await expectSelectorVisible(page, "[data-gharargah-list-panel='gharargah:terminal-explorer']")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      await page.keyboard.press("Escape")
+
+      const cards = page.locator("[data-gharargah-terminal-card]")
+      await expectLocatorVisible(cards.first())
+      await expect.poll(async () => cards.count()).toBeGreaterThanOrEqual(2)
     } finally {
       await app.close()
     }
   })
 
-  test("terminal.show toggles terminal visibility", async () => {
+  test("terminal.show toggles terminal modal", async () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await execCommand(page, "terminal.show")
-      await page.waitForTimeout(400)
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+      await expectSelectorVisible(page, "[data-gharargah-home]")
     } finally {
       await app.close()
     }
@@ -69,56 +71,20 @@ test.describe("electron terminal explorer", () => {
     }
   })
 
-  test("agent launcher selection does not collapse its project", async () => {
+  test("home New session menu launches terminal for project", async () => {
     const { app, page } = await launchJet()
     try {
-      await execCommand(page, "terminal.explorer.show")
-      const explorer = page.locator("[data-gharargah-list-panel='gharargah:terminal-explorer']")
-      const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
-      await expectLocatorAttribute(projectRow, "aria-expanded", "true")
-
-      await projectRow.getByRole("button", { name: "New session" }).click()
-      await page.locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
-        hasText: "Codex",
-      }).click()
-
-      await expectLocatorAttribute(projectRow, "aria-expanded", "true")
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("project and terminal context menus expose scoped actions", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await execCommand(page, "terminal.explorer.show")
-      const explorer = page.locator("[data-gharargah-list-panel='gharargah:terminal-explorer']")
-      const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
-      await projectRow.click({ button: "right" })
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Activate Project" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "New Terminal" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Launch Agent" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Copy Project Path" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Remove Project" }))
-      await page.keyboard.press("Escape")
-
-      await projectRow.getByRole("button", { name: "New session" }).click()
-      await page.locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
-        hasText: "Terminal",
-      }).click()
-      const terminalRow = explorer.locator("[role='treeitem'][aria-level='2']").first()
-      await expectLocatorVisible(terminalRow)
-      await terminalRow.click({ button: "right" })
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Focus" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Rename…" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Duplicate" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Copy Working Directory" }))
-      await page.getByRole("menuitem", { name: "Rename…" }).click()
-
-      const rename = explorer.getByRole("textbox", { name: /Rename/ })
-      await rename.fill("Build agent")
-      await rename.press("Enter")
-      await expectLocatorContainsText(terminalRow, "Build agent")
+      const workspaceName = await page.evaluate(() => window.__gharargahAgent!.listWorkspaces()[0]?.name ?? "")
+      const section = page.locator(
+        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
+      )
+      await expectLocatorVisible(section)
+      await section.getByRole("button", { name: "New session" }).click()
+      const menu = page.locator('[data-slot="dropdown-menu-content"]')
+      await expectLocatorVisible(menu)
+      await menu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Terminal" }).click()
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
     } finally {
       await app.close()
     }

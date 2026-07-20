@@ -1,13 +1,9 @@
 import {
-  BufferListOverlay,
-  CdOverlay,
   CommandPalette,
-  GotoLineModal,
-  OutlineOverlay,
+  CdOverlay,
   ProjectSwitcherOverlay,
-  QuickOpenOverlay,
-  TerminalListOverlay,
   SettingsOverlay,
+  TerminalListOverlay,
   showGharargahToast,
   bundledThemeList,
 } from "@gharargah/ui"
@@ -15,60 +11,17 @@ import { useOverlayController } from "./hooks/OverlayController.js"
 
 export default function OverlayHost() {
   const { state, workspace, handlers } = useOverlayController()
-  const { open, outlineSymbols, appearanceSettings, projects, paletteCommands, searchSupported, searchScanReady, terminalGroups } =
-    state
+  const { open, appearanceSettings, projects, paletteCommands, terminalGroups } = state
   const workspaceFolders = workspace.folders
 
   return (
     <>
-      <GotoLineModal
-        open={open.gotoLine}
-        onOpenChange={v => handlers.setOverlayOpen("gotoLine", v)}
-        onSubmit={handlers.onGotoLineSubmit}
-      />
-
-      {open.quickOpen && searchSupported ? (
-        <QuickOpenOverlay
-          open
-          onOpenChange={v => handlers.setOverlayOpen("quickOpen", v)}
-          scanReady={searchScanReady}
-          workspaces={workspaceFolders.map(folder => ({ id: folder.id, name: folder.root.name }))}
-          defaultWorkspaceId={workspace.manager.activeFolder?.id ?? null}
-          onSearch={handlers.onQuickOpenSearch}
-          onSelect={handlers.onQuickOpenSelect}
-        />
-      ) : null}
-
       {open.terminalList ? (
         <TerminalListOverlay
           open
           onOpenChange={v => handlers.setOverlayOpen("terminalList", v)}
           groups={terminalGroups}
           onSelect={handlers.onTerminalSelect}
-        />
-      ) : null}
-
-      {open.bufferList ? (
-        <BufferListOverlay
-          open
-          onOpenChange={v => handlers.setOverlayOpen("bufferList", v)}
-          workspace={workspace}
-          onSelect={handlers.onBufferSelect}
-        />
-      ) : null}
-
-      {open.openFile ? (
-        <CdOverlay
-          open
-          onOpenChange={v => handlers.setOverlayOpen("openFile", v)}
-          initialPath={workspace.root?.path ?? null}
-          showFiles
-          onSelectFile={(uri, path) => handlers.onOpenFile(uri, path)}
-          onSelectFolder={handlers.onSelectFolder}
-          resolveHomeDir={handlers.resolveHomeDir}
-          title="Open file or folder"
-          description="Path to file or folder"
-          primaryHint="Open"
         />
       ) : null}
 
@@ -159,15 +112,6 @@ export default function OverlayHost() {
           onOpenChange={v => handlers.setOverlayOpen("projectSwitcher", v)}
           projects={projects}
           onSelect={handlers.onSelectProject}
-        />
-      ) : null}
-
-      {open.outline ? (
-        <OutlineOverlay
-          open
-          symbols={outlineSymbols}
-          onOpenChange={v => handlers.setOverlayOpen("outline", v)}
-          onSelect={handlers.onOutlineSelect}
         />
       ) : null}
 

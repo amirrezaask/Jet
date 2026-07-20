@@ -9,7 +9,6 @@ import {
   resolveFolderForActiveTab,
 } from "./resolve-tab-workspace.js"
 import { registerTerminalSession } from "./tabs/terminal-session.js"
-import { agentChatTabId } from "./tabs/agent-chat-id.js"
 
 const folderA: WorkspaceFolder = {
   id: "a",
@@ -30,7 +29,6 @@ function mockWorkspace(folders: WorkspaceFolder[], activeId?: string) {
       kindFor(id: string) {
         if (id.startsWith("file:")) return "editor"
         if (id.startsWith("gharargah:terminal:")) return "terminal"
-        if (id.startsWith("gharargah:agent-chat:")) return "agent-chat"
         if (id === "gharargah:search") return "search"
         return undefined
       },
@@ -49,10 +47,9 @@ function mockWorkspace(folders: WorkspaceFolder[], activeId?: string) {
 }
 
 describe("isContextualTabKind", () => {
-  it("recognizes editor, terminal, and agent-chat", () => {
+  it("recognizes editor and terminal", () => {
     assert.equal(isContextualTabKind("editor"), true)
     assert.equal(isContextualTabKind("terminal"), true)
-    assert.equal(isContextualTabKind("agent-chat"), true)
     assert.equal(isContextualTabKind("search"), false)
   })
 })
@@ -70,15 +67,6 @@ describe("resolveFolderForActiveTab", () => {
   it("returns folder for active terminal cwd", () => {
     const tabId = "gharargah:terminal:1"
     registerTerminalSession(tabId, folderB.root.uri)
-    const { tree, editorPanel } = GharargahPanelTree.editorOnlyLayout()
-    tree.setView(editorPanel, buildTabsView(tabId, [tabId]))
-    const workspace = mockWorkspace([folderA, folderB], "a")
-    const folder = resolveFolderForActiveTab(tree, editorPanel, workspace.tabRegistry, workspace)
-    assert.equal(folder?.id, "b")
-  })
-
-  it("returns folder for active agent chat tab", () => {
-    const tabId = agentChatTabId(folderB.root.uri, "thread-1")
     const { tree, editorPanel } = GharargahPanelTree.editorOnlyLayout()
     tree.setView(editorPanel, buildTabsView(tabId, [tabId]))
     const workspace = mockWorkspace([folderA, folderB], "a")

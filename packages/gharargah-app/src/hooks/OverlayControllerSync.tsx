@@ -1,15 +1,12 @@
 import { useEffect } from "react"
 import { useOverlayController, type OverlayId } from "./OverlayController.js"
-import type { JetAppearanceSettings, OutlineEntry, TerminalExplorerGroup } from "@gharargah/ui"
+import type { JetAppearanceSettings, TerminalExplorerGroup } from "@gharargah/ui"
 import type { JetProject } from "@gharargah/workspace"
 
 type SyncProps = {
   open: Record<OverlayId, boolean>
   appearanceSettings: JetAppearanceSettings
   projects: JetProject[]
-  outlineSymbols: OutlineEntry[]
-  searchSupported: boolean
-  searchScanReady: boolean
   paletteCommands: Array<{
     id: string
     title: string
@@ -25,9 +22,6 @@ export function OverlayControllerSync({
   open,
   appearanceSettings,
   projects,
-  outlineSymbols,
-  searchSupported,
-  searchScanReady,
   paletteCommands,
   terminalGroups,
 }: SyncProps) {
@@ -46,14 +40,6 @@ export function OverlayControllerSync({
   useEffect(() => {
     actions.setProjects(projects)
   }, [projects, actions])
-
-  useEffect(() => {
-    actions.setOutlineSymbols(outlineSymbols)
-  }, [outlineSymbols, actions])
-
-  useEffect(() => {
-    actions.setSearchState(searchSupported, searchScanReady)
-  }, [searchSupported, searchScanReady, actions])
 
   useEffect(() => {
     actions.setPaletteCommands(paletteCommands)

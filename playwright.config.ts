@@ -23,7 +23,7 @@ export default defineConfig({
       name: "tauri-e2e",
       testDir: "./tests/electron",
       testMatch: "*.electron.spec.ts",
-      grepInvert: /agents|agent launch|Launch agent|workspace-open-via-agent/,
+      grepInvert: /workspace-open-via-agent/,
       workers: 1,
       retries: 0,
       timeout: 180_000,

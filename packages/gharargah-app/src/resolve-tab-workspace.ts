@@ -3,11 +3,10 @@ import { folderForFileUri, folderForRootUri } from "@gharargah/workspace"
 import type { PanelId } from "@gharargah/shared"
 import { isUntitledUri } from "@gharargah/shared"
 import { activeTabKind, getActiveEditorFileUri, getActiveTabId, type ActiveTabKind } from "./panel-tab-context.js"
-import { parseAgentChatTabId } from "./tabs/agent-chat-id.js"
 import { terminalCwdForTab } from "./tabs/terminal-session.js"
 
 function isContextualTabKind(kind: ActiveTabKind | undefined): kind is KnownTabKind {
-  return kind === "editor" || kind === "terminal" || kind === "agent-chat"
+  return kind === "editor" || kind === "terminal"
 }
 
 /** Workspace folder implied by the active tab in `panel`. */
@@ -25,14 +24,6 @@ export function resolveFolderForActiveTab(
   if (kind === "terminal" && tabId) {
     const folder = folderForRootUri(workspace, terminalCwdForTab(tabId))
     if (folder) return folder
-  }
-
-  if (kind === "agent-chat" && tabId) {
-    const parsed = parseAgentChatTabId(tabId)
-    if (parsed) {
-      const folder = folderForRootUri(workspace, parsed.rootUri)
-      if (folder) return folder
-    }
   }
 
   const fileUri = getActiveEditorFileUri(tree, panel)

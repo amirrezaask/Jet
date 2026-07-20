@@ -9,5 +9,3 @@ export async function expectPaletteOpen(page: ShellDriver): Promise<void> {
 export async function expectPaletteClosed(page: ShellDriver): Promise<void> {
   await expectDialogCount(page, 0)
 }
-
-export const EXPLORER_PANEL = '[data-gharargah-list-panel="gharargah:explorer"]'

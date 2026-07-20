@@ -1,17 +1,12 @@
 import { expect, test } from "@playwright/test"
 import {
-  expectContainsText,
-  expectLocatorAttached,
   expectLocatorAttribute,
   expectLocatorCount,
-  expectLocatorFocused,
-  expectLocatorHidden,
   expectLocatorVisible,
-  expectSelectorHidden,
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { hasPtySpawn, launchJet } from "./_launch.js"
+import { hasPtySpawn, launchJet, showTerminal } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -26,17 +21,14 @@ test.describe("electron appearance and terminal-first UX", () => {
         await window.__gharargahAgent!.waitForReady()
         await window.__gharargahAgent!.executeCommand("ui.setTheme.ayu-dark")
       })
-      await page.evaluate(async () => {
-        await window.__gharargahAgent!.executeCommand("terminal.show")
-        await window.__gharargahAgent!.executeCommand("terminal.explorer.show")
-      })
+      await showTerminal(page)
       await page.waitForSelector("[data-gharargah-terminal-panel] .xterm", { timeout: 30_000 })
-      await page.waitForSelector("[data-gharargah-terminal-panel] \.gharargah-terminal-surface", {
+      await page.waitForSelector("[data-gharargah-terminal-panel] .gharargah-terminal-surface", {
         timeout: 15_000,
       })
 
-      await expectSelectorVisible(page, "[data-gharargah-list-panel='gharargah:terminal-explorer']")
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+      await expectSelectorVisible(page, "[data-gharargah-home]")
 
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
@@ -46,7 +38,7 @@ test.describe("electron appearance and terminal-first UX", () => {
         .poll(() =>
           page.evaluate(() => {
             const el = document.querySelector(
-              "[data-gharargah-terminal-panel] \.gharargah-terminal-surface",
+              "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
             ) as HTMLElement | null
             return el ? getComputedStyle(el).backgroundColor : ""
           }),
@@ -65,14 +57,26 @@ test.describe("electron appearance and terminal-first UX", () => {
       await expectSelectorVisible(page, "[data-gharargah-theme-option='tokyonight-light']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='rad-default-dark']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='rad-four-coder']")
-      await expectLocatorAttribute(page.locator("[data-gharargah-setting='terminal-cursor-motion-trail']"), "data-state", "on")
+      await expectLocatorAttribute(
+        page.locator("[data-gharargah-setting='terminal-cursor-motion-trail']"),
+        "data-state",
+        "on",
+      )
       await page.locator("[data-gharargah-setting='terminal-cursor-style-bar']").click()
       await page.locator("[data-gharargah-setting='terminal-cursor-motion-off']").click()
       await expect
-        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--gharargah-cursor-style").trim()))
+        .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-cursor-style").trim(),
+          ),
+        )
         .toBe("bar")
       await expect
-        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--gharargah-cursor-motion").trim()))
+        .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-cursor-motion").trim(),
+          ),
+        )
         .toBe("off")
 
       await page.locator("[data-gharargah-theme-option='gruvbox-light']").click()
@@ -84,7 +88,7 @@ test.describe("electron appearance and terminal-first UX", () => {
         .poll(() =>
           page.evaluate(() => {
             const el = document.querySelector(
-              "[data-gharargah-terminal-panel] \.gharargah-terminal-surface",
+              "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
             ) as HTMLElement | null
             return el ? getComputedStyle(el).backgroundColor : ""
           }),
@@ -95,13 +99,9 @@ test.describe("electron appearance and terminal-first UX", () => {
     }
   })
 
-  test("shows agent launch menu from workspace chevron", async () => {
-    test.skip(true, "agent UI not in tauri e2e scope")
+  test("shows agent launch menu from home New session", async () => {
     const { app, page } = await launchJet()
     try {
-      const terminalExplorer = page.locator("[data-gharargah-list-panel='gharargah:terminal-explorer']")
-      await expectLocatorVisible(terminalExplorer)
-
       const launcher = page.getByRole("button", { name: "New session" }).first()
       await expectLocatorVisible(launcher)
       await launcher.click()

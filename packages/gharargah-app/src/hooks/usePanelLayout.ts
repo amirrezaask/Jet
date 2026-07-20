@@ -9,21 +9,12 @@ import {
   panelTabIds,
   type WorkspaceService,
 } from "@gharargah/workspace"
-import {
-  animateLayoutMorph,
-  capturePanelLeafRects,
-  destroyEditorBuffer,
-  getEditorView,
-  type PanelRect,
-  type TabStore,
-} from "@gharargah/ui"
-import { getJetSearchState } from "@gharargah/codemirror"
+import type { TabStore } from "@gharargah/ui"
 import {
   getAllLeafPanels,
   closePanelIfEmpty,
   reconcileFocusedPanel,
 } from "../panel-routing.js"
-import { stripSidebarTabsFromTree } from "../sidebar-tree.js"
 
 function initialEditorLayout() {
   return GharargahPanelTree.editorOnlyLayout()
@@ -51,14 +42,7 @@ export function usePanelLayout(
   const cloneTree = useCallback(() => appStateRef.current.panelTree.clone(), [appStateRef])
 
   const commitTree = useCallback(
-    (
-      tree: GharargahPanelTree,
-      preferFocus?: PanelId | null,
-      morph?: { animate?: boolean; beforeRects?: Map<number, PanelRect>; spawnFrom?: Map<number, PanelRect> },
-    ) => {
-      stripSidebarTabsFromTree(tree)
-      const beforeRects =
-        morph?.animate ? (morph.beforeRects ?? capturePanelLeafRects()) : null
+    (tree: GharargahPanelTree, preferFocus?: PanelId | null) => {
       const prevFocused = appStateRef.current.focusedPanel
       const preferred =
         preferFocus && getAllLeafPanels(tree).some(l => l.id === preferFocus.id)
@@ -68,19 +52,6 @@ export function usePanelLayout(
         preferred ?? reconcileFocusedPanel(tree, prevFocused, editorPanelRef.current)
       setPanelTree(tree)
       setFocusedPanel(nextFocused)
-      if (beforeRects) {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            void animateLayoutMorph(beforeRects, { spawnFrom: morph?.spawnFrom })
-          })
-        })
-      }
-      if (nextFocused && nextFocused.id !== prevFocused?.id) {
-        requestAnimationFrame(() => {
-          if (getJetSearchState()?.open) return
-          getEditorView(nextFocused)?.focus()
-        })
-      }
     },
     [appStateRef],
   )
@@ -92,20 +63,15 @@ export function usePanelLayout(
       if (event.type === "splitRatiosChanged") {
         changed = tree.setSplitRatios(event.path, event.ratios)
       } else if (event.type === "panelClose") {
-        const morphBefore = capturePanelLeafRects()
         const view = tree.getView(event.panelId)
         if (view?.kind === "tabs") {
           for (const tabId of panelTabIds(view)) {
-            const kind = workspace.tabRegistry.kindFor(tabId)
-            if (kind === "editor") {
-              destroyEditorBuffer(event.panelId, tabId)
-            }
             workspace.disposeTab(tabId)
             tabStore.dispose(tabId)
           }
         }
         tree.closePanel(event.panelId)
-        commitTree(tree, undefined, { animate: true, beforeRects: morphBefore })
+        commitTree(tree)
         changed = false
       } else if (event.type === "tabActivate") {
         const view = tree.getView(event.panelId)
@@ -120,10 +86,6 @@ export function usePanelLayout(
         if (view?.kind !== "tabs") {
           changed = false
         } else {
-          const kind = workspace.tabRegistry.kindFor(event.tabId)
-          if (kind === "editor") {
-            destroyEditorBuffer(event.panelId, event.tabId)
-          }
           workspace.disposeTab(event.tabId)
           tabStore.dispose(event.tabId)
           tree.setView(event.panelId, popPanelTab(view, event.tabId))
@@ -137,11 +99,6 @@ export function usePanelLayout(
           tree.setView(event.panelId, reorderPanelTab(view, event.tabId, event.toIndex))
         }
       } else if (event.type === "tabDrop") {
-        const kind = workspace.tabRegistry.kindFor(event.sourceTabId)
-        if (kind === "editor") {
-          destroyEditorBuffer(event.source, event.sourceTabId)
-        }
-        const morphBefore = capturePanelLeafRects()
         const result = tree.applyTabDrop(
           event.source,
           event.sourceTabId,
@@ -150,20 +107,8 @@ export function usePanelLayout(
         )
         if (!result.moved) {
           changed = false
-        }
-        if (changed) {
-          commitTree(tree, result.createdPanel ?? event.target, {
-            animate: true,
-            beforeRects: morphBefore,
-            spawnFrom: result.createdPanel
-              ? new Map([
-                  [
-                    result.createdPanel.id,
-                    morphBefore.get(event.target.id) ?? { x: 0, y: 0, w: 0, h: 0 },
-                  ],
-                ])
-              : undefined,
-          })
+        } else {
+          commitTree(tree, result.createdPanel ?? event.target)
           changed = false
         }
       }

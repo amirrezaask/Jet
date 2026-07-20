@@ -1,4 +1,4 @@
-import type { GharargahPanelTree, ListDocument, WorkspaceService } from "@gharargah/workspace"
+import type { GharargahPanelTree, WorkspaceService } from "@gharargah/workspace"
 import { normalizeAbsPath } from "@gharargah/workspace"
 import { fileUriToPath } from "@gharargah/shared"
 import {
@@ -8,59 +8,9 @@ import {
   terminalTabId,
 } from "@gharargah/workspace"
 import type { PanelId } from "@gharargah/shared"
-import { resolveAuxiliaryPanel, resolveEditorPanel, getAllLeafPanels } from "./panel-routing.js"
-import { agentChatTabId, AGENT_CHAT_TAB_TYPE_ID } from "./tabs/agent-chat.tab.js"
-import { AGENT_EXPLORER_TAB_ID, AGENT_EXPLORER_TAB_TYPE_ID } from "./tabs/agent-explorer.tab.js"
+import { resolveAuxiliaryPanel, getAllLeafPanels } from "./panel-routing.js"
 import { TERMINAL_TAB_TYPE_ID, registerTerminalSession } from "./tabs/terminal.tab.js"
 import { terminalCwdForTab } from "./tabs/terminal-session.js"
-
-export function openTabInAuxiliaryPanel(
-  workspace: WorkspaceService,
-  tree: GharargahPanelTree,
-  focused: PanelId | null,
-  doc: ListDocument,
-): { panelId: PanelId; tabId: string } {
-  const exclude = focused ? new Set([focused.id]) : undefined
-  const panel = resolveAuxiliaryPanel(tree, focused, { excludePanelIds: exclude })
-  return workspace.openOrFocusTab(tree, panel, {
-    id: doc.id,
-    kind: doc.feed,
-    label: doc.title,
-  }, doc)
-}
-
-export function openSearchTab(
-  workspace: WorkspaceService,
-  tree: GharargahPanelTree,
-  focused: PanelId | null,
-): { panelId: PanelId; tabId: string } {
-  const doc = workspace.createSearchList()
-  return openTabInAuxiliaryPanel(workspace, tree, focused, doc)
-}
-
-export function openProblemsTab(
-  workspace: WorkspaceService,
-  tree: GharargahPanelTree,
-  focused: PanelId | null,
-): { panelId: PanelId; tabId: string } {
-  const doc = workspace.ensureProblemsList()
-  const exclude = focused ? new Set([focused.id]) : undefined
-  const panel = resolveAuxiliaryPanel(tree, focused, { excludePanelIds: exclude })
-  return workspace.openOrFocusTab(tree, panel, {
-    id: doc.id,
-    kind: "problems",
-    label: doc.title,
-  }, doc)
-}
-
-export function openOutputTab(
-  workspace: WorkspaceService,
-  tree: GharargahPanelTree,
-  panelId: PanelId,
-): { panelId: PanelId; tabId: string } {
-  const tab = workspace.outputTab()
-  return workspace.openOrFocusTab(tree, panelId, tab)
-}
 
 export type OpenTerminalTabOpts = {
   sessionKey?: string
@@ -125,36 +75,5 @@ export function openTerminalTab(
     id: tabId,
     kind: TERMINAL_TAB_TYPE_ID,
     label,
-  })
-}
-
-export function openAgentExplorerTab(
-  workspace: WorkspaceService,
-  tree: GharargahPanelTree,
-  focused: PanelId | null,
-): { panelId: PanelId; tabId: string } {
-  const tab = { id: AGENT_EXPLORER_TAB_ID, kind: AGENT_EXPLORER_TAB_TYPE_ID, label: "Agents" }
-  const existingPanel = findPanelWithTab(tree, AGENT_EXPLORER_TAB_ID)
-  if (existingPanel) {
-    return workspace.openOrFocusTab(tree, existingPanel, tab)
-  }
-  const panel = resolveAuxiliaryPanel(tree, focused)
-  return workspace.openOrFocusTab(tree, panel, tab)
-}
-
-export function openAgentChatTab(
-  workspace: WorkspaceService,
-  tree: GharargahPanelTree,
-  focused: PanelId | null,
-  rootUri: string,
-  threadId: string,
-  title: string,
-): { panelId: PanelId; tabId: string } {
-  const tabId = agentChatTabId(rootUri, threadId)
-  const panel = resolveEditorPanel(tree, null, focused) ?? getAllLeafPanels(tree)[0] ?? tree.allocPanelId()
-  return workspace.openOrFocusTab(tree, panel, {
-    id: tabId,
-    kind: AGENT_CHAT_TAB_TYPE_ID,
-    label: title,
   })
 }

@@ -4,18 +4,13 @@ import type { OverlayId } from "./OverlayController.js"
 type OverlayOpenState = Record<OverlayId, boolean>
 
 const INITIAL: OverlayOpenState = {
-  gotoLine: false,
-  quickOpen: false,
-  bufferList: false,
   terminalList: false,
-  openFile: false,
   folderPicker: false,
   switchFolder: false,
   cd: false,
   addWorkspace: false,
   settings: false,
   projectSwitcher: false,
-  outline: false,
   palette: false,
 }
 
@@ -35,18 +30,13 @@ export function useOverlayState() {
 
   const setters = useMemo(
     () => ({
-      setGotoLineOpen: (v: boolean) => setOpen("gotoLine", v),
-      setQuickOpenOpen: (v: boolean) => setOpen("quickOpen", v),
-      setBufferListOpen: (v: boolean) => setOpen("bufferList", v),
       setTerminalListOpen: (v: boolean) => setOpen("terminalList", v),
-      setOpenFileOpen: (v: boolean) => setOpen("openFile", v),
       setFolderPickerOpen: (v: boolean) => setOpen("folderPicker", v),
       setSwitchFolderOpen: (v: boolean) => setOpen("switchFolder", v),
       setCdOpen: (v: boolean) => setOpen("cd", v),
       setAddWorkspaceOpen: (v: boolean) => setOpen("addWorkspace", v),
       setSettingsOpen: (v: boolean) => setOpen("settings", v),
       setProjectSwitcherOpen: (v: boolean) => setOpen("projectSwitcher", v),
-      setOutlineOpen: (v: boolean) => setOpen("outline", v),
       setPaletteOpen: (v: boolean) => setOpen("palette", v),
     }),
     [setOpen],
@@ -60,17 +50,12 @@ export function useOverlayState() {
     anyOpen,
     ...setters,
     paletteOpen: open.palette,
-    gotoLineOpen: open.gotoLine,
-    quickOpenOpen: open.quickOpen,
-    bufferListOpen: open.bufferList,
     terminalListOpen: open.terminalList,
-    openFileOpen: open.openFile,
     folderPickerOpen: open.folderPicker,
     switchFolderOpen: open.switchFolder,
     cdOpen: open.cd,
     addWorkspaceOpen: open.addWorkspace,
     settingsOpen: open.settings,
     projectSwitcherOpen: open.projectSwitcher,
-    outlineOpen: open.outline,
   }
 }

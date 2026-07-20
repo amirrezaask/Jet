@@ -1,24 +1,22 @@
-# AGENTS.md — Gharargah Editor
+# AGENTS.md — Gharargah
 
 Guide for AI agents and contributors working in this repo.
 
 ## What Gharargah Is
 
-**Gharargah** is a greenfield desktop Mission Control + editor shell (Tauri + React/CodeMirror). Default surface is a **home view** of projects and terminal cards; editor is optional when working inside a project.
+**Gharargah** is a desktop Mission Control shell (Tauri + React): a **home view** of projects and terminal session cards. Terminals open in **modal dialogs**. There is no editor workspace shell in the app today.
 
-**Core split:**
-
-
-| Layer             | Owns                                                   |
-| ----------------- | ------------------------------------------------------ |
-| **CodeMirror 6**  | Text buffer, syntax, LSP client, keymaps inside editor |
-| **Gharargah Workspace** | Files, open buffers, dirty state, commands, jump stack, tasks |
-| **Gharargah Panels**    | Split tree — one view per panel (no tab bar)                  |
-| **Gharargah UI / App**  | React shell, themes, explorer, location list, output        |
-| **Tauri / Rust host** | FS, search, LSP bridge, terminal, tasks, native chrome |
+**Core split (current product):**
 
 
-React holds **orchestration state** (panel tree, focus, palette). Editor document text lives in **CodeMirror**, not React state.
+| Layer | Owns |
+| ----- | ---- |
+| **Gharargah App** | Home, terminal modals, project catalog, slim command/overlay set |
+| **Gharargah UI** | Home UI, TerminalSessionModal, TerminalPanel, overlays, themes (library still has editor/sidebar components — unwired) |
+| **Gharargah Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
+| **Tauri / Rust host** | FS, terminal PTY, search/git/LSP IPC (host still present; app does not wire editor/LSP) |
+
+Library packages `@gharargah/codemirror`, `@gharargah/lsp`, and editor/sidebar UI components remain in the monorepo but are **not imported** by `@gharargah/app`.
 
 ## Reference Material (read-only)
 
@@ -39,25 +37,25 @@ Do **not** copy large chunks wholesale; match Gharargah’s architecture.
 ```
 jet/
 ├── apps/
-│   └── gharargah/          Tauri shell (Rust host + vite frontend)
+│   └── gharargah/              Tauri shell (Rust host + vite frontend)
 ├── fixtures/
-│   └── sample-workspace/   Fixture project for E2E smoke tests
+│   └── sample-workspace/       Fixture project for E2E smoke tests
 ├── packages/
-│   ├── jet-shared/         URIs, Emitter, git types, panel primitives
-│   ├── jet-node-host/      Shared Node FS/git helpers (tooling / unit tests)
-│   ├── jet-host-client/    Renderer transport → Tauri invoke/listen
-│   ├── jet-panels/         PanelTree — splits, tabs, resize, serde
-│   ├── jet-workspace/      WorkspaceService, TabRegistry, commands, keymaps
-│   ├── jet-codemirror/     createJetEditorView, theme, languages, LSP transport
-│   ├── jet-lsp/            LanguageServerManager (renderer-side)
-│   ├── jet-extension-host/ JetAPI + loadEditorRc
-│   ├── jet-ui/             PanelDock, tabs, CommandPalette, themes
-│   └── jet-app/            JetApp root React component + index.html
+│   ├── gharargah-shared/       URIs, Emitter, panel primitives
+│   ├── gharargah-node-host/    Shared Node FS/git helpers (tooling / unit tests)
+│   ├── gharargah-host-client/  Renderer transport → Tauri invoke/listen
+│   ├── gharargah-panels/       PanelTree — splits, tabs, resize, serde
+│   ├── gharargah-workspace/    WorkspaceService, TabRegistry, commands, keymaps
+│   ├── gharargah-codemirror/   (library; unwired from app)
+│   ├── gharargah-lsp/          (library; unwired from app)
+│   ├── gharargah-agents/       (library; agent CLI still launchable from home New session)
+│   ├── gharargah-ui/           Home, terminal modal/panel, overlays, themes (+ unused editor/sidebar)
+│   └── gharargah-app/          Root React app — home + terminal modals only
 ├── tests/
-│   ├── electron/           Shared UI E2E specs (run via tauri-e2e)
-│   ├── tauri/              Tauri-native channel / smoke specs
-│   └── bench/              UX latency benchmarks
-├── package.json            turbo scripts
+│   ├── electron/               Shared UI E2E specs (run via tauri-e2e)
+│   ├── tauri/                  Tauri-native channel / smoke specs
+│   └── bench/                  UX latency benchmarks
+├── package.json                turbo scripts
 ├── pnpm-workspace.yaml
 ├── turbo.json
 └── tsconfig.base.json
@@ -68,11 +66,12 @@ jet/
 ### Package dependency direction
 
 ```
-jet-shared  ←  jet-panels, jet-workspace
-jet-workspace + jet-panels + jet-codemirror  ←  jet-ui
-jet-ui + jet-workspace + jet-lsp + jet-extension-host  ←  jet-app
-jet-app + jet-host-client  ←  gharargah
+gharargah-shared  ←  gharargah-panels, gharargah-workspace
+gharargah-workspace + gharargah-panels + gharargah-ui  ←  gharargah-app
+gharargah-app + gharargah-host-client  ←  gharargah (Tauri)
 ```
+
+(`gharargah-codemirror` / `gharargah-lsp` stay workspace members for UI library consumers; app does not depend on them.)
 
 Keep imports acyclic. Lower layers must not import React or Tauri APIs.
 
@@ -391,18 +390,17 @@ Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop 
 
 ## What Works Today (smoke test)
 
-1. `pnpm dev` → editor shell with workspace from cwd/CLI args
-2. **Open Folder** / `workspace.cd` / query URL / `__gharargahAgent.openWorkspace()` / desktop CLI (`jet .`, `jet path/to/file`) → FS + optional `.gharargah/editorrc.ts`
-3. Default layout on first open — **editor only** (no explorer/git until `explorer.show` / `git.showChanges`)
-4. Explorer tree — on demand via Mod-Shift-e; click file → editor tab
-5. Edit + **Mod-s** save (click editor tab first if needed)
-6. **Mod-p** command palette — centered screen modal
-7. Location list (`locationlist.show`) — search + problems unified panel
-8. Output panel + `task.run` (Tauri host)
-9. Jump stack — `navigation.jumpBack` / `jumpForward` (Alt-j / Alt-Shift-j)
-10. Buffer list — `workspace.bufferList` (Cmd-Shift-b)
-11. Panel split resize — drag gutter between panels
-12. No tab bar — one file per editor panel; quick-open (Cmd-p) switches buffer
+1. `pnpm dev` → Mission Control **home** with projects from cwd/CLI / catalog
+2. Project cards + **New session** (Terminal / Codex / Claude / Cursor Agent) → `TerminalSessionModal`
+3. Click terminal card → reopen that session in the modal
+4. `terminal.new` / `terminal.show` / `terminal.list` — create, toggle modal, switch sessions
+5. **Mod-p** / **Mod-Shift-p** command palette (slim command set)
+6. `workspace.cd` / add project / switch project overlays
+7. Settings / themes / zoom / color scheme
+8. Multi-root project catalog persistence across reload
+9. Escape / `gharargah.goHome` closes terminal modal
+
+Editor, sidebar, explorer, LSP, location list, and PanelDock are **not wired** in `@gharargah/app` (library packages remain on disk).
 
 ---
 
@@ -410,7 +408,7 @@ Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop 
 
 ## Prioritized Next Work
 
-Design references (read-only): `.4coder/`, `.4coder_fleury/`, `.raddebugger/`, `Nameless_Editor/`. Gharargah aspires to **RAD/Nameless shell polish** + **4coder/Fleury editor identity** on CodeMirror 6 + Tauri — not a port.
+Historical editor-parity roadmap below is largely **deferred** while the product is home + terminal modals. Prefer home/terminal polish over re-wiring CodeMirror unless explicitly asked.
 
 Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific) inside each phase.
 
