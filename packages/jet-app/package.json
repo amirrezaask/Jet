@@ -6,7 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "test": "tsx --test src/resolve-tab-workspace.test.ts"
+      "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",
@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.8",
+    "@tauri-apps/api": "^2.4.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.2",

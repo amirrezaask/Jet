@@ -214,6 +214,23 @@
   color: var(--sidebar-accent-foreground);
 }
 
+/* Panel tab bar — horizontal scroll only; no vertical thumb from trigger ::after. */
+[data-jet-tab-bar] [data-slot="tabs-list"] {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-jet-tab-bar] [data-slot="tabs-list"]::-webkit-scrollbar {
+  display: none;
+}
+
+[data-jet-tab-bar] [data-slot="tabs-trigger"]::after {
+  display: none;
+}
+
 /* shadcn/ui default dark */
 .dark {
   color-scheme: dark;

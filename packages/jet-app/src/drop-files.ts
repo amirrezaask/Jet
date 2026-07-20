@@ -69,6 +69,35 @@ export function pathsFromDataTransfer(dt: DataTransfer): string[] {
   return paths
 }
 
+export type DropZone = "terminal" | "editor" | "other"
+
+export function resolveDropZoneFromElement(el: Element | null): DropZone {
+  if (!el) return "other"
+  if (el.closest("[data-jet-terminal-panel]")) return "terminal"
+  if (el.closest("[data-jet-editor-scroll-area], .cm-editor, .cm-content")) return "editor"
+  return "other"
+}
+
+export function resolveDropZoneAtPoint(x: number, y: number): DropZone {
+  return resolveDropZoneFromElement(document.elementFromPoint(x, y))
+}
+
+/** Shell-safe path for terminal paste (spaces/special chars quoted). */
+export function shellQuotePath(path: string): string {
+  if (/^[\w@./~+-]+$/.test(path)) return path
+  return `'${path.replace(/'/g, `'\"'\"'`)}'`
+}
+
+export function formatPathsForTerminal(paths: string[]): string {
+  return paths.map(shellQuotePath).join(" ")
+}
+
+export function terminalPtyIdFromElement(el: Element | null): string | null {
+  const panel = el?.closest("[data-jet-terminal-panel]")
+  const id = panel?.getAttribute("data-jet-terminal-pty-id")
+  return id && id.length > 0 ? id : null
+}
+
 export type ProcessDroppedPathsContext = {
   fs: FileSystemProvider
   normalizePath: (p: string) => string
@@ -149,4 +178,26 @@ export async function processDroppedPaths(
       requestAnimationFrame(() => ctx.openFile(pathToFileUri(fp), fp))
     })
   }
+}
+
+export async function handleDroppedPaths(
+  paths: string[],
+  zone: DropZone,
+  targetEl: Element | null,
+  ctx: ProcessDroppedPathsContext,
+): Promise<void> {
+  if (paths.length === 0) return
+
+  if (zone === "terminal") {
+    const ptyId = terminalPtyIdFromElement(targetEl)
+    const terminal = typeof window !== "undefined" ? window.jet?.terminal : undefined
+    if (ptyId && terminal) {
+      void terminal.write(ptyId, formatPathsForTerminal(paths))
+      return
+    }
+    ctx.setMessage("Terminal not ready for file drop")
+    return
+  }
+
+  await processDroppedPaths(paths, ctx)
 }

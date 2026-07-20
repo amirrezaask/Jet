@@ -189,7 +189,24 @@ export async function createJetEditorView(opts: CreateJetEditorViewOptions): Pro
   const largeFile = opts.largeFile ?? false
   const indent = opts.indent ?? detectIndent(opts.initialText)
 
+  /** OS file drops on the editor open the file in Jet; never insert file contents into the buffer. */
+  const blockOsFileDrop = Prec.highest(
+    EditorView.domEventHandlers({
+      dragover(event) {
+        if (!event.dataTransfer?.types.includes("Files")) return false
+        event.preventDefault()
+        return true
+      },
+      drop(event) {
+        if (!event.dataTransfer?.types.includes("Files")) return false
+        event.preventDefault()
+        return true
+      },
+    }),
+  )
+
   const extensions: Extension[] = [
+    blockOsFileDrop,
     EditorState.allowMultipleSelections.of(true),
     lineNumbers(),
     highlightActiveLine(),

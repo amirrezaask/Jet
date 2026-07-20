@@ -35,6 +35,8 @@ url = "2"
 fff-search = "0.9.6"
 sha2 = "0.10"
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+agent-client-protocol = "1.2"
+agent-client-protocol-tokio = "0.11"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }

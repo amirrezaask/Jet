@@ -286,7 +286,7 @@ export function PanelTabBar({
         {leading}
         <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
           <TabsList
-            className="my-1 h-[calc(var(--jet-window-chrome-height)-0.5rem)]! w-auto max-w-full justify-start overflow-x-auto"
+            className="my-1 h-[calc(var(--jet-window-chrome-height)-0.5rem)]! w-auto max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             data-tauri-drag-region="false"
             style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
           >
