@@ -102,10 +102,11 @@ test.describe("electron appearance and terminal-first UX", () => {
       const terminalExplorer = page.locator("[data-gharargah-list-panel='gharargah:terminal-explorer']")
       await expectLocatorVisible(terminalExplorer)
 
-      const launcher = page.getByRole("button", { name: "Launch agent" }).first()
+      const launcher = page.getByRole("button", { name: "New session" }).first()
       await expectLocatorVisible(launcher)
       await launcher.click()
 
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Terminal" }))
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Codex" }))
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Claude" }))
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Cursor Agent" }))

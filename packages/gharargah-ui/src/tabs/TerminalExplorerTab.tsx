@@ -1,5 +1,5 @@
 import type { PanelId } from "@gharargah/shared"
-import { Check, ChevronDown, Copy, CopyPlus, Focus, Folder, Pencil, Plus, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react"
+import { Check, Copy, CopyPlus, Focus, Folder, Pencil, Plus, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react"
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import {
   ContextMenu,
@@ -12,18 +12,12 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../components/ui/context-menu.js"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu.js"
 import { Button } from "../components/ui/button.js"
 import { Input } from "../components/ui/input.js"
 import { Lister, type ListerDataSource, type ListerNode } from "../lister/index.js"
 import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
 import { PanelEmpty } from "../components/PanelEmpty.js"
+import { NewSessionMenu } from "../home/NewSessionMenu.js"
 
 export type TerminalExplorerEntry = {
   tabId: string
@@ -173,55 +167,26 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
           if (node.data.kind === "group" && node.data.group.rootUri.length > 0) {
             const rootUri = node.data.group.rootUri
             return (
-              <span className="flex items-center gap-0.5">
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  title="New terminal"
-                  aria-label="New terminal"
-                  className="size-6 opacity-70 group-hover/tree-row:opacity-100"
-                  onClick={e => {
-                    e.stopPropagation()
-                    onNewTerminal(rootUri)
-                  }}
-                >
-                  <Plus className="size-3" />
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      title="Launch agent"
-                      aria-label="Launch agent"
-                      className="size-6 opacity-70 group-hover/tree-row:opacity-100"
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <ChevronDown className="size-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    side="right"
-                    collisionPadding={{ top: 42, right: 8, bottom: 8, left: 8 }}
-                    className="[WebkitAppRegion:no-drag]"
+              <NewSessionMenu
+                rootUri={rootUri}
+                onNewTerminal={onNewTerminal}
+                onLaunchAgentTerminal={onLaunchAgentTerminal}
+                align="start"
+                trigger={
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    data-gharargah-new-session
+                    title="New session"
+                    aria-label="New session"
+                    className="size-6 opacity-70 group-hover/tree-row:opacity-100"
+                    onClick={e => e.stopPropagation()}
                   >
-                    <DropdownMenuGroup>
-                      {AGENT_SHORTCUTS.map(shortcut => (
-                        <DropdownMenuItem
-                          key={shortcut.id}
-                          onSelect={() => onLaunchAgentTerminal(rootUri, shortcut)}
-                        >
-                          <shortcut.Icon className="size-4" />
-                          {shortcut.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </span>
+                    <Plus className="size-3" />
+                  </Button>
+                }
+              />
             )
           }
           if (node.data.kind === "terminal") {

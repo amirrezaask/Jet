@@ -61,7 +61,8 @@ test.describe("electron terminal explorer", () => {
         noResultsText: "No open terminals",
       })
       await page.getByRole("option").first().click()
-      await expectLocatorHidden(page.getByRole("dialog"))
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expectSelectorHidden(page, "[data-gharargah-workspace-sidebar]")
     } finally {
       await app.close()
@@ -76,8 +77,10 @@ test.describe("electron terminal explorer", () => {
       const projectRow = explorer.locator("[role='treeitem'][aria-level='1']").first()
       await expectLocatorAttribute(projectRow, "aria-expanded", "true")
 
-      await projectRow.getByRole("button", { name: "Launch agent" }).click()
-      await page.getByRole("menuitem", { name: "Codex" }).click()
+      await projectRow.getByRole("button", { name: "New session" }).click()
+      await page.locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
+        hasText: "Codex",
+      }).click()
 
       await expectLocatorAttribute(projectRow, "aria-expanded", "true")
     } finally {
@@ -99,7 +102,10 @@ test.describe("electron terminal explorer", () => {
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Remove Project" }))
       await page.keyboard.press("Escape")
 
-      await projectRow.getByRole("button", { name: "New terminal" }).click()
+      await projectRow.getByRole("button", { name: "New session" }).click()
+      await page.locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
+        hasText: "Terminal",
+      }).click()
       const terminalRow = explorer.locator("[role='treeitem'][aria-level='2']").first()
       await expectLocatorVisible(terminalRow)
       await terminalRow.click({ button: "right" })

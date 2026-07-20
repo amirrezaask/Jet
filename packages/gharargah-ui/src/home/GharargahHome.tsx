@@ -4,6 +4,7 @@ import type { PanelId } from "@gharargah/shared"
 import { Button } from "@/components/ui/button.js"
 import { Input } from "@/components/ui/input.js"
 import { formatHomeDate, timeOfDayGreeting } from "./greeting.js"
+import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
 import { ProjectSection, type HomeTerminalEntry } from "./ProjectSection.js"
 
 export type HomeProjectGroup = {
@@ -18,11 +19,12 @@ export type GharargahHomeProps = {
   groups: HomeProjectGroup[]
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
+  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   onAddProject?: () => void
 }
 
 export function GharargahHome(props: GharargahHomeProps) {
-  const { groups, onOpenTerminal, onNewTerminal, onAddProject } = props
+  const { groups, onOpenTerminal, onNewTerminal, onLaunchAgentTerminal, onAddProject } = props
   const [query, setQuery] = useState("")
   const greeting = timeOfDayGreeting()
   const dateLabel = formatHomeDate()
@@ -94,6 +96,7 @@ export function GharargahHome(props: GharargahHomeProps) {
                 terminals={group.terminals}
                 onOpenTerminal={onOpenTerminal}
                 onNewTerminal={onNewTerminal}
+                onLaunchAgentTerminal={onLaunchAgentTerminal}
               />
             ))}
           </div>

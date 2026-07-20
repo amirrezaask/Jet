@@ -46,7 +46,7 @@ export class TerminalCursorMotionLayer {
     private readonly term: Terminal,
     private readonly screen: HTMLElement,
   ) {
-    this.layer.dataset.jetTerminalCursorLayer = ""
+    this.layer.dataset.gharargahTerminalCursorLayer = ""
     Object.assign(this.layer.style, {
       position: "absolute",
       inset: "0",
@@ -54,12 +54,12 @@ export class TerminalCursorMotionLayer {
       pointerEvents: "none",
       overflow: "hidden",
     })
-    this.cursor.dataset.jetTerminalCursor = ""
+    this.cursor.dataset.gharargahTerminalCursor = ""
     this.cursor.style.position = "absolute"
     this.cursor.style.willChange = "transform,width,height,opacity"
     this.layer.appendChild(this.cursor)
     for (const ghost of this.ghostEls) {
-      ghost.dataset.jetTerminalCursorGhost = ""
+      ghost.dataset.gharargahTerminalCursorGhost = ""
       ghost.style.position = "absolute"
       ghost.style.willChange = "transform,width,height,opacity"
       this.layer.appendChild(ghost)

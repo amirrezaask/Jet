@@ -33,6 +33,7 @@ test.describe("electron terminal panel drag and focus", () => {
   test("exposes drop overlays after splitting a terminal panel", async () => {
     const { app, page } = await launchJet()
     try {
+      await execCommand(page, "explorer.show")
       await showTerminal(page)
       await execCommand(page, "view.splitEditor")
       // Site targets mount only while a tab drag is active; the overlay hosts are always present.
@@ -49,6 +50,7 @@ test.describe("electron terminal panel drag and focus", () => {
     const runtimeErrors: string[] = []
 
     try {
+      await execCommand(page, "explorer.show")
       await showTerminal(page)
       await execCommand(page, "view.splitEditor")
 

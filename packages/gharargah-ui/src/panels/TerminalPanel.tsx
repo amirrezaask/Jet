@@ -453,7 +453,7 @@ export function TerminalPanel({
     >
       <div
         ref={containerRef}
-        className="jet-terminal-surface min-h-0 flex-1 overflow-hidden bg-background p-1.5"
+        className="gharargah-terminal-surface jet-terminal-surface min-h-0 flex-1 overflow-hidden bg-background p-1.5"
       />
       {displayStatus === "exited" || displayStatus === "failed" ? (
         <div

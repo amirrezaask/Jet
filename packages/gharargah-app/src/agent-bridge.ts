@@ -17,7 +17,7 @@ export type JetAgentState = {
   fontSize: number
   activeEditorDirty: boolean
   searchReady: boolean
-  shellView: "home" | "terminal" | "workspace"
+  shellView: "home" | "workspace"
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -57,7 +57,7 @@ export type AgentBridgeContext = {
   fontSize: number
   activeEditorDirty: boolean
   searchReady: boolean
-  shellView: "home" | "terminal" | "workspace"
+  shellView: "home" | "workspace"
   executeCommand: (name: string) => Promise<void>
   openWorkspace: (folderPath: string) => Promise<void>
   addWorkspace?: (folderPath: string) => Promise<void>

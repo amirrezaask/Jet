@@ -1,7 +1,7 @@
 import type { PanelId } from "@gharargah/shared"
-import { Plus } from "lucide-react"
-import { Button } from "@/components/ui/button.js"
+import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
 import { TerminalCard, type TerminalCardStatus } from "./TerminalCard.js"
+import { NewSessionMenu } from "./NewSessionMenu.js"
 
 export type HomeTerminalEntry = {
   tabId: string
@@ -18,10 +18,19 @@ export type HomeProjectSectionProps = {
   terminals: HomeTerminalEntry[]
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
+  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
 }
 
 export function ProjectSection(props: HomeProjectSectionProps) {
-  const { name, path, rootUri, terminals, onOpenTerminal, onNewTerminal } = props
+  const {
+    name,
+    path,
+    rootUri,
+    terminals,
+    onOpenTerminal,
+    onNewTerminal,
+    onLaunchAgentTerminal,
+  } = props
   return (
     <section
       data-gharargah-project-section
@@ -37,28 +46,31 @@ export function ProjectSection(props: HomeProjectSectionProps) {
             <p className="truncate font-mono text-3xs text-muted-foreground/80">{path}</p>
           ) : null}
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="shrink-0 gap-1 text-xs"
-          onClick={() => onNewTerminal(rootUri)}
-        >
-          <Plus className="size-3.5" />
-          New terminal
-        </Button>
+        <NewSessionMenu
+          rootUri={rootUri}
+          onNewTerminal={onNewTerminal}
+          onLaunchAgentTerminal={onLaunchAgentTerminal}
+        />
       </div>
       <div className="flex flex-wrap gap-3">
         {terminals.length === 0 ? (
-          <button
-            type="button"
-            data-gharargah-terminal-card
-            data-gharargah-list-item
-            className="rounded-xl border border-dashed border-border/80 px-4 py-6 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground"
-            onClick={() => onNewTerminal(rootUri)}
-          >
-            No terminals yet — create one
-          </button>
+          <NewSessionMenu
+            rootUri={rootUri}
+            onNewTerminal={onNewTerminal}
+            onLaunchAgentTerminal={onLaunchAgentTerminal}
+            align="start"
+            trigger={
+              <button
+                type="button"
+                data-gharargah-terminal-card
+                data-gharargah-list-item
+                data-gharargah-new-session
+                className="rounded-xl border border-dashed border-border/80 px-4 py-6 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground"
+              >
+                No sessions yet — create one
+              </button>
+            }
+          />
         ) : (
           terminals.map(term => (
             <TerminalCard

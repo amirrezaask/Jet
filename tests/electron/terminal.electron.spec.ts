@@ -199,7 +199,7 @@ test.describe("electron terminal", () => {
       await page.keyboard.type("echo -ne '\\033]0;JetTitleTest\\007'")
       await page.keyboard.press("Enter")
 
-      await expectContainsText(page, "[data-gharargah-tab-bar]", "JetTitleTest", {
+      await expectContainsText(page, "[data-gharargah-terminal-modal]", "JetTitleTest", {
         timeout: 15_000,
       })
     } finally {
@@ -298,7 +298,7 @@ test.describe("electron terminal", () => {
           const visibleGhost = [...cursorLayer.querySelectorAll<HTMLElement>("[data-gharargah-terminal-cursor-ghost]")]
             .some(ghost => Number.parseFloat(ghost.style.opacity || "0") > 0.02)
           if (visibleGhost) {
-            cursorLayer.dataset.jetGhostObserved = "true"
+            cursorLayer.dataset.gharargahGhostObserved = "true"
             observer.disconnect()
           }
         })

@@ -138,7 +138,7 @@ export type BuildAppCommandsDeps = {
   focusTerminalTab: (panelId: PanelId, tabId: string) => void
   goHome: () => void
   openEditorShell: () => void
-  openTerminalShell: () => void
+  openTerminalShell: (target?: { panelId: PanelId; tabId: string }) => void
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -481,30 +481,30 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
         deps.workspace.focusTabInPanel(tree, last.panelId, last.tabId)
         deps.setFocusedPanel(last.panelId)
         deps.commitTree(tree, last.panelId)
-        deps.openTerminalShell()
+        deps.openTerminalShell({ panelId: last.panelId, tabId: last.tabId })
         return
       }
 
       const cwdRootUri = await resolveTerminalCwdRootUri()
-      const { panelId } = openTerminalTab(deps.workspace, tree, focused, {
+      const { panelId, tabId } = openTerminalTab(deps.workspace, tree, focused, {
         cwdRootUri,
       })
       deps.setFocusedPanel(panelId)
       deps.commitTree(tree, panelId)
-      deps.openTerminalShell()
+      deps.openTerminalShell({ panelId, tabId })
     },
     terminalNew: async () => {
       const tree = deps.cloneTree()
       const count = listTerminalTabs(tree).length
       const label = count === 0 ? "Terminal" : `Terminal ${count + 1}`
       const cwdRootUri = await resolveTerminalCwdRootUri()
-      const { panelId } = openTerminalTab(deps.workspace, tree, currentFocusedPanel(), {
+      const { panelId, tabId } = openTerminalTab(deps.workspace, tree, currentFocusedPanel(), {
         label,
         cwdRootUri,
       })
       deps.setFocusedPanel(panelId)
       deps.commitTree(tree, panelId)
-      deps.openTerminalShell()
+      deps.openTerminalShell({ panelId, tabId })
     },
     explorer: () => {
       deps.openEditorShell()

@@ -6,13 +6,14 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { gharargahOverlayContentClass, type GharargahOverlayMotion } from "@/motion/tokens"
 
-export type JetDialogSize = "default" | "prompt" | "picker" | "wide"
+export type JetDialogSize = "default" | "prompt" | "picker" | "wide" | "stage"
 
 const dialogSizeClass: Record<JetDialogSize, string> = {
   default: "sm:max-w-lg",
   prompt: "sm:max-w-sm",
   picker: "sm:max-w-[32rem]",
   wide: "sm:max-w-[42rem]",
+  stage: "h-[90vh] w-[90vw] max-h-none max-w-none gap-0 overflow-hidden p-0",
 }
 
 function Dialog({

@@ -20,11 +20,13 @@ export {
   GharargahHome,
   ProjectSection,
   TerminalCard,
+  TerminalSessionModal,
   timeOfDayGreeting,
   type GharargahHomeProps,
   type HomeProjectGroup,
   type HomeTerminalEntry,
   type TerminalCardStatus,
+  type TerminalSessionModalProps,
 } from "./home/index.js"
 export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
 export {

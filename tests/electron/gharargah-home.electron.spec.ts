@@ -12,7 +12,7 @@ const ptyAvailable = hasPtySpawn()
 test.describe("gharargah mission home", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
-  test("home greeting, project section, search, card opens terminal, home returns", async () => {
+  test("home greeting, project section, search, card opens terminal modal, home returns", async () => {
     const { app, page } = await launchJet()
     try {
       await expectSelectorVisible(page, "[data-gharargah-home]")
@@ -27,18 +27,27 @@ test.describe("gharargah mission home", () => {
       const section = page.locator(sectionSel)
       await expectLocatorVisible(section)
 
-      await section.getByRole("button", { name: "New terminal" }).click()
+      await section.getByRole("button", { name: "New session" }).click()
+      const sessionMenu = page.locator('[data-slot="dropdown-menu-content"]')
+      await expectLocatorVisible(sessionMenu)
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Terminal" }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Codex" }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Claude" }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Cursor Agent" }))
+      await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Terminal" }).click()
       await expect
         .poll(async () => page.evaluate(() => window.__gharargahAgent?.getState()?.shellView ?? null), {
           timeout: 20_000,
         })
-        .toBe("terminal")
-      await expectSelectorVisible(page, "[data-gharargah-shell='terminal']", { timeout: 20_000 })
+        .toBe("home")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]", { timeout: 20_000 })
+      await expectSelectorVisible(page, "[data-gharargah-home]")
       const afterNew = await page.evaluate(() => window.__gharargahAgent!.getState())
       expect(afterNew.activeWorkspace).toBeTruthy()
 
-      await page.locator("[data-gharargah-home-button]").click()
+      await page.keyboard.press("Escape")
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectSelectorVisible(page, "[data-gharargah-home]")
 
       const cards = section.locator("[data-gharargah-terminal-card]")
@@ -59,10 +68,12 @@ test.describe("gharargah mission home", () => {
         .poll(async () => page.evaluate(() => window.__gharargahAgent?.getState()?.shellView ?? null), {
           timeout: 20_000,
         })
-        .toBe("terminal")
+        .toBe("home")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
 
       await execCommand(page, "gharargah.goHome")
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectSelectorVisible(page, "[data-gharargah-home]")
       const afterHome = await page.evaluate(() => window.__gharargahAgent!.getState())
       expect(afterHome.shellView).toBe("home")

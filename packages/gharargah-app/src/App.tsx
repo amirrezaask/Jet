@@ -88,6 +88,7 @@ import {
   GharargahWorkspaceSidebar,
   GharargahTitleBar,
   GharargahHome,
+  TerminalSessionModal,
   type JetSidebarView,
   focusExplorerPanel,
   focusTerminalExplorerPanel,
@@ -390,9 +391,14 @@ export function GharargahApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarView, setSidebarView] = useState<JetSidebarView>(loadSidebarView)
   const [sidebarFocused, setSidebarFocused] = useState(false)
-  const [shellView, setShellView] = useState<"home" | "terminal" | "workspace">("home")
+  const [shellView, setShellView] = useState<"home" | "workspace">("home")
   const shellViewRef = useRef(shellView)
   shellViewRef.current = shellView
+  const [terminalModalTabId, setTerminalModalTabId] = useState<string | null>(null)
+  const terminalModalTabIdRef = useRef(terminalModalTabId)
+  terminalModalTabIdRef.current = terminalModalTabId
+  const [terminalModalPanelId, setTerminalModalPanelId] = useState<PanelId | null>(null)
+  const [terminalModalTitleTick, setTerminalModalTitleTick] = useState(0)
   const showWindowChrome = useMemo(() => detectWindowChrome(), [])
   const [, setTerminalSessionRevision] = useState(0)
   const sidebarFocusedRef = useRef(false)
@@ -583,6 +589,9 @@ export function GharargahApp() {
       const existing = workspace.tabRegistry.get(tabId)
       if (!existing || existing.label === title) return
       workspace.tabRegistry.update(tabId, { label: title })
+      if (terminalModalTabIdRef.current === tabId) {
+        setTerminalModalTitleTick(tick => tick + 1)
+      }
     },
     [workspace],
   )
@@ -938,11 +947,23 @@ export function GharargahApp() {
   )
 
   const getActiveTerminalTabId = useCallback((): string | null => {
+    const modalTabId = terminalModalTabIdRef.current
+    if (modalTabId && isTerminalTabId(modalTabId)) return modalTabId
     const focused = appStateRef.current.focusedPanel
     if (!focused) return null
     const tabId = getActiveTabId(appStateRef.current.panelTree, focused)
     if (!tabId || !isTerminalTabId(tabId)) return null
     return tabId
+  }, [])
+
+  const openTerminalModal = useCallback((panelId: PanelId, tabId: string) => {
+    setTerminalModalPanelId(panelId)
+    setTerminalModalTabId(tabId)
+  }, [])
+
+  const closeTerminalModal = useCallback(() => {
+    setTerminalModalTabId(null)
+    setTerminalModalPanelId(null)
   }, [])
 
   const focusTerminalTab = useCallback(
@@ -953,7 +974,12 @@ export function GharargahApp() {
         workspace.focusTabInPanel(tree, owningPanel, tabId)
         setFocusedPanel(owningPanel)
         commitTree(tree, owningPanel)
-        setShellView("terminal")
+        if (shellViewRef.current === "home") {
+          openTerminalModal(owningPanel, tabId)
+        } else {
+          setSidebarOpen(true)
+          setSidebarView("terminal-explorer")
+        }
       }
       const rootUri = terminalCwdForTab(tabId)
       if (rootUri && rootUri !== workspace.root?.uri) {
@@ -963,13 +989,14 @@ export function GharargahApp() {
         focus()
       }
     },
-    [workspace, cloneTree, commitTree, activateProject, setFocusedPanel],
+    [workspace, cloneTree, commitTree, activateProject, setFocusedPanel, openTerminalModal],
   )
 
   const goHome = useCallback(() => {
+    closeTerminalModal()
     workspace.clearActiveFolder()
     setShellView("home")
-  }, [workspace])
+  }, [workspace, closeTerminalModal])
 
   // Landing on home after workspace load: no forced active project.
   useEffect(() => {
@@ -979,13 +1006,43 @@ export function GharargahApp() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- once on mount after folders may already be active
 
   const openEditorShell = useCallback(() => {
+    closeTerminalModal()
     setShellView("workspace")
     setSidebarOpen(true)
-  }, [])
+  }, [closeTerminalModal])
 
-  const openTerminalShell = useCallback(() => {
-    setShellView("terminal")
-  }, [])
+  const openTerminalShell = useCallback(
+    (target?: { panelId: PanelId; tabId: string }) => {
+      const tree = appStateRef.current.panelTree
+      const focused = appStateRef.current.focusedPanel
+      const tabId =
+        target?.tabId ??
+        (focused ? getActiveTabId(tree, focused) : null) ??
+        (() => {
+          for (const panel of getAllLeafPanels(tree)) {
+            const view = tree.getView(panel)
+            if (view?.kind !== "tabs") continue
+            const terminalTab = view.tabIds.find(id => isTerminalTabId(id))
+            if (terminalTab) return terminalTab
+          }
+          return null
+        })()
+      if (!tabId || !isTerminalTabId(tabId)) return
+      const panelId = target?.panelId ?? findPanelWithTab(tree, tabId) ?? focused
+      if (!panelId) return
+      const cwd = terminalCwdForTab(tabId)
+      if (cwd && cwd !== workspace.root?.uri) {
+        activateProject(cwd)
+      }
+      if (shellViewRef.current === "home") {
+        openTerminalModal(panelId, tabId)
+      } else {
+        setSidebarOpen(true)
+        setSidebarView("terminal-explorer")
+      }
+    },
+    [openTerminalModal, activateProject, workspace],
+  )
 
   const openTerminalFromHome = useCallback(
     (panelId: PanelId, tabId: string) => {
@@ -1002,34 +1059,56 @@ export function GharargahApp() {
       }
       const tree = cloneTree()
       const label = opts?.label ?? nextTerminalLabel(tree)
-      const { panelId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
+      const { panelId, tabId } = openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
         cwdRootUri: rootUri,
         label,
         launchCommand: opts?.launchCommand,
       })
       setFocusedPanel(panelId)
       commitTree(tree, panelId)
+      return { panelId, tabId }
     },
     [workspace, activateProject, cloneTree, commitTree, setFocusedPanel],
   )
 
   const newTerminalInWorkspace = useCallback(
-    (rootUri: string) => openTerminalInWorkspace(rootUri),
+    async (rootUri: string) => {
+      await openTerminalInWorkspace(rootUri)
+    },
     [openTerminalInWorkspace],
   )
 
   const newTerminalFromHome = useCallback(
     async (rootUri: string) => {
       try {
-        setShellView("terminal")
-        await openTerminalInWorkspace(rootUri)
+        const { panelId, tabId } = await openTerminalInWorkspace(rootUri)
+        openTerminalModal(panelId, tabId)
       } catch (err) {
         console.error("[gharargah] newTerminalFromHome failed", err)
         showGharargahToast(err instanceof Error ? err.message : String(err), { variant: "destructive" })
+        closeTerminalModal()
         setShellView("home")
       }
     },
-    [openTerminalInWorkspace],
+    [openTerminalInWorkspace, openTerminalModal, closeTerminalModal, showGharargahToast],
+  )
+
+  const launchAgentFromHome = useCallback(
+    async (rootUri: string, shortcut: TerminalAgentShortcut) => {
+      try {
+        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
+          label: shortcut.label,
+          launchCommand: shortcut.command,
+        })
+        openTerminalModal(panelId, tabId)
+      } catch (err) {
+        console.error("[gharargah] launchAgentFromHome failed", err)
+        showGharargahToast(err instanceof Error ? err.message : String(err), { variant: "destructive" })
+        closeTerminalModal()
+        setShellView("home")
+      }
+    },
+    [openTerminalInWorkspace, openTerminalModal, closeTerminalModal, showGharargahToast],
   )
 
   const launchAgentTerminal = useCallback(
@@ -1045,6 +1124,10 @@ export function GharargahApp() {
   const closeTerminalTab = useCallback(
     (panelId: PanelId, tabId: string) => {
       const close = () => {
+        if (terminalModalTabIdRef.current === tabId) {
+          setTerminalModalTabId(null)
+          setTerminalModalPanelId(null)
+        }
         const ptyId = terminalPtyIdForTab(tabId)
         if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
         const tree = cloneTree()
@@ -1906,7 +1989,13 @@ export function GharargahApp() {
       bind("PageUp", appCommands.listFocusPageUp, ctx => ctx.listFocus && noOverlay(ctx)),
       bind("Home", appCommands.listFocusFirst, ctx => ctx.listFocus && noOverlay(ctx)),
       bind("End", appCommands.listFocusLast, ctx => ctx.listFocus && noOverlay(ctx)),
-      bind("Escape", appCommands.goHome, ctx => noOverlay(ctx) && !ctx.editorFocus && !ctx.paletteOpen),
+      bind("Escape", appCommands.goHome, ctx =>
+        noOverlay(ctx) &&
+        !ctx.editorFocus &&
+        !ctx.paletteOpen &&
+        !terminalModalTabIdRef.current &&
+        shellViewRef.current === "home",
+      ),
       bind("Mod-Shift-h", appCommands.goHome, ctx => noOverlay(ctx)),
       bind("Cmd-Backspace", appCommands.archiveAgent, ctx => ctx.agentChatFocus && noOverlay(ctx)),
       bind(
@@ -2474,18 +2563,7 @@ export function GharargahApp() {
         {shellView !== "workspace" ? (
           <GharargahTitleBar
             showWindowChrome={showWindowChrome}
-            crumb={
-              shellView === "terminal"
-                ? (() => {
-                    const tabId = getActiveTerminalTabId()
-                    if (!tabId) return "Terminal"
-                    const label = workspace.tabRegistry.get(tabId)?.label ?? "Terminal"
-                    const rootUri = terminalCwdForTab(tabId)
-                    const project = workspace.folders.find(f => f.root.uri === rootUri)?.root.name
-                    return project ? `${project} / ${label}` : label
-                  })()
-                : null
-            }
+            crumb={null}
             onHome={goHome}
           />
         ) : null}
@@ -2508,32 +2586,10 @@ export function GharargahApp() {
               }))}
               onOpenTerminal={openTerminalFromHome}
               onNewTerminal={rootUri => void newTerminalFromHome(rootUri)}
+              onLaunchAgentTerminal={(rootUri, shortcut) => void launchAgentFromHome(rootUri, shortcut)}
               onAddProject={() => setAddWorkspaceOpen(true)}
             />
           </div>
-        ) : shellView === "terminal" ? (
-          <SidebarProvider
-            open={false}
-            onOpenChange={() => {}}
-            className="min-h-0 flex-1"
-            style={{ "--sidebar-width": WORKSPACE_SIDEBAR_WIDTH } as React.CSSProperties}
-          >
-            <div className="min-h-0 flex-1 overflow-hidden" data-gharargah-shell="terminal">
-              {workspace.manager.hasFolders() ? (
-                <PanelDock<PanelView>
-                  tree={panelTree}
-                  focusedPanelId={focusedPanel}
-                  onFocusPanel={setFocusedPanel}
-                  onEvent={handlePanelEvent}
-                  tabDnd={tabDndHandlers}
-                  renderHeader={renderPanelHeader}
-                  renderContent={renderPanelContent}
-                />
-              ) : (
-                <div className="h-full w-full bg-background" />
-              )}
-            </div>
-          </SidebarProvider>
         ) : (
           <SidebarProvider
             open={sidebarOpen}
@@ -2580,6 +2636,34 @@ export function GharargahApp() {
             </SidebarInset>
           </SidebarProvider>
         )}
+
+        {terminalModalTabId && terminalModalPanelId ? (
+          <TerminalSessionModal
+            open
+            onOpenChange={open => {
+              if (!open) closeTerminalModal()
+            }}
+            title={(() => {
+              void terminalModalTitleTick
+              const label = workspace.tabRegistry.get(terminalModalTabId)?.label ?? "Terminal"
+              const rootUri = terminalCwdForTab(terminalModalTabId)
+              const project = workspace.folders.find(f => f.root.uri === rootUri)?.root.name
+              return project ? `${project} / ${label}` : label
+            })()}
+          >
+            <PanelBody
+              panelId={terminalModalPanelId}
+              view={{
+                kind: "tabs",
+                activeTabId: terminalModalTabId,
+                tabIds: [terminalModalTabId],
+              }}
+              store={tabStore}
+              registry={tabTypeRegistry}
+              focused
+            />
+          </TerminalSessionModal>
+        ) : null}
       </div>
 
       <Suspense fallback={null}>
