@@ -7,6 +7,7 @@ import {
   type ColorScheme,
 } from "./theme-palette.js"
 import { radDebuggerThemeList, radDebuggerThemes } from "./raddebugger.js"
+import { glassThemeList, glassThemes } from "./glass.js"
 
 export type { ColorScheme } from "./theme-palette.js"
 
@@ -479,11 +480,13 @@ const paletteThemes: Record<string, GharargahTheme> = {
 export const bundledThemes: Record<string, GharargahTheme> = {
   ...paletteThemes,
   ...radDebuggerThemes,
+  ...glassThemes,
 }
 
 export const bundledThemeList: GharargahTheme[] = [
   ...Object.values(paletteThemes),
   ...radDebuggerThemeList,
+  ...glassThemeList,
 ]
 export const defaultDark = ayuDark
 export const defaultLight = ayuLight

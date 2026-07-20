@@ -973,3 +973,375 @@ body,
     border-color: var(--foreground);
   }
 }
+
+/* ── Mission Control home — liquid-glass sci-fi surface ───────────────────
+ * Visual-only layer. Layout / IA unchanged. Accent comes from --primary so
+ * Glass Blue / Red / Green (and any themed accent) drive glow coherently.
+ */
+[data-gharargah-home] {
+  --home-accent: var(--primary);
+  --home-accent-soft: color-mix(in srgb, var(--primary) 42%, transparent);
+  --home-accent-faint: color-mix(in srgb, var(--primary) 18%, transparent);
+  --home-accent-glow: color-mix(in srgb, var(--primary) 55%, transparent);
+  --home-glass-fill: color-mix(in srgb, var(--card) 38%, transparent);
+  --home-glass-fill-strong: color-mix(in srgb, var(--card) 55%, transparent);
+  --home-rim: color-mix(in srgb, var(--primary) 38%, transparent);
+  --home-ease: var(--gharargah-ease-out);
+  --home-motion: var(--gharargah-motion-menu);
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(120% 80% at 12% -10%, var(--home-accent-faint), transparent 55%),
+    radial-gradient(90% 70% at 88% 8%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 50%),
+    radial-gradient(70% 50% at 50% 110%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 55%),
+    var(--background);
+  box-shadow: inset 0 0 0 1px var(--home-rim);
+}
+
+[data-gharargah-home]::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(
+      118deg,
+      transparent 0%,
+      color-mix(in srgb, var(--primary) 7%, transparent) 28%,
+      transparent 42%,
+      color-mix(in srgb, var(--primary) 5%, transparent) 61%,
+      transparent 78%
+    ),
+    linear-gradient(
+      155deg,
+      transparent 10%,
+      color-mix(in srgb, var(--primary) 4%, transparent) 48%,
+      transparent 70%
+    );
+  opacity: 0.9;
+  animation: gharargah-home-haze 28s var(--gharargah-ease-in-out) infinite alternate;
+}
+
+[data-gharargah-home]::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+[data-gharargah-home] > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes gharargah-home-haze {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.75;
+  }
+  to {
+    transform: translate3d(-1.5%, 1%, 0) scale(1.03);
+    opacity: 1;
+  }
+}
+
+/* Greeting — premium heading glow */
+[data-gharargah-home] h1 .text-primary,
+[data-gharargah-home] [data-gharargah-home-greeting] {
+  color: var(--home-accent);
+  text-shadow:
+    0 0 18px var(--home-accent-soft),
+    0 0 40px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+[data-gharargah-home] [data-gharargah-home-date] {
+  letter-spacing: 0.18em;
+  color: color-mix(in srgb, var(--primary) 70%, var(--muted-foreground));
+}
+
+/* Search — smoked glass field */
+[data-gharargah-home] [data-gharargah-home-search] {
+  height: 2rem;
+  border-radius: calc(var(--radius) + 2px);
+  border: 1px solid var(--home-rim);
+  background: var(--home-glass-fill);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent),
+    0 0 18px -8px var(--home-accent-glow);
+  transition:
+    border-color var(--home-motion) var(--home-ease),
+    box-shadow var(--home-motion) var(--home-ease),
+    background-color var(--home-motion) var(--home-ease);
+}
+
+[data-gharargah-home] [data-gharargah-home-search]:hover {
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    0 0 22px -6px var(--home-accent-glow);
+}
+
+[data-gharargah-home] [data-gharargah-home-search]:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 70%, transparent);
+  outline: none;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--primary) 28%, transparent),
+    0 0 28px -4px var(--home-accent-glow);
+}
+
+/* Add project — primary glass CTA */
+[data-gharargah-home] [data-gharargah-home-add-project] {
+  border: 1px solid color-mix(in srgb, var(--primary) 65%, transparent);
+  background: color-mix(in srgb, var(--primary) 88%, black 12%);
+  color: var(--primary-foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent),
+    0 0 22px -2px var(--home-accent-glow),
+    0 0 40px -12px var(--home-accent-glow);
+  transition:
+    transform var(--gharargah-motion-fast) var(--home-ease),
+    box-shadow var(--home-motion) var(--home-ease),
+    filter var(--home-motion) var(--home-ease);
+}
+
+[data-gharargah-home] [data-gharargah-home-add-project]:hover {
+  filter: brightness(1.06);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 28%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent),
+    0 0 28px 0 var(--home-accent-glow),
+    0 0 48px -8px var(--home-accent-glow);
+}
+
+[data-gharargah-home] [data-gharargah-home-add-project]:active {
+  transform: scale(var(--gharargah-press-scale));
+}
+
+/* Project labels + paths */
+[data-gharargah-home] [data-gharargah-project-row] h2 {
+  letter-spacing: 0.16em;
+  color: color-mix(in srgb, var(--primary) 55%, var(--muted-foreground));
+  text-shadow: 0 0 12px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+[data-gharargah-home] [data-gharargah-project-row] .font-mono {
+  color: color-mix(in srgb, var(--primary) 28%, var(--muted-foreground));
+}
+
+/* Plus / new-session glyph button */
+[data-gharargah-home] [data-gharargah-new-session]:not([data-gharargah-terminal-card]) {
+  border: 1px solid var(--home-rim);
+  background: var(--home-glass-fill);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--home-accent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
+    0 0 14px -6px var(--home-accent-glow);
+  transition:
+    transform var(--gharargah-motion-fast) var(--home-ease),
+    border-color var(--home-motion) var(--home-ease),
+    box-shadow var(--home-motion) var(--home-ease),
+    color var(--home-motion) var(--home-ease);
+}
+
+[data-gharargah-home] [data-gharargah-new-session]:not([data-gharargah-terminal-card]):hover {
+  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+  color: var(--home-accent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 0 20px -4px var(--home-accent-glow);
+}
+
+[data-gharargah-home] [data-gharargah-new-session]:not([data-gharargah-terminal-card]):active {
+  transform: scale(var(--gharargah-press-scale));
+}
+
+/* Empty session card — quiet dashed glass */
+[data-gharargah-home] [data-gharargah-new-session][data-gharargah-terminal-card] {
+  min-width: 11rem;
+  border-radius: calc(var(--radius) + 4px);
+  border: 1px dashed color-mix(in srgb, var(--primary) 40%, transparent);
+  background: color-mix(in srgb, var(--card) 22%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: color-mix(in srgb, var(--primary) 45%, var(--muted-foreground));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 6%, transparent),
+    0 0 16px -10px var(--home-accent-faint);
+  transition:
+    transform var(--gharargah-motion-fast) var(--home-ease),
+    border-color var(--home-motion) var(--home-ease),
+    color var(--home-motion) var(--home-ease),
+    box-shadow var(--home-motion) var(--home-ease),
+    background-color var(--home-motion) var(--home-ease);
+}
+
+[data-gharargah-home] [data-gharargah-new-session][data-gharargah-terminal-card]:hover {
+  border-color: color-mix(in srgb, var(--primary) 65%, transparent);
+  color: color-mix(in srgb, var(--primary) 75%, var(--foreground));
+  background: var(--home-glass-fill);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    0 0 22px -6px var(--home-accent-glow);
+}
+
+/* Session cards — floating glass modules */
+[data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]) {
+  transition: transform var(--gharargah-motion-fast) var(--home-ease);
+}
+
+[data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]) [data-slot="card"],
+[data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]) .gharargah-home-session-card {
+  border-radius: calc(var(--radius) + 4px);
+  border: 1px solid var(--home-rim);
+  background: var(--home-glass-fill-strong);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 6%, transparent),
+    0 8px 28px -16px rgb(0 0 0 / 55%),
+    0 0 20px -10px var(--home-accent-faint);
+  transition:
+    border-color var(--home-motion) var(--home-ease),
+    box-shadow var(--home-motion) var(--home-ease),
+    background-color var(--home-motion) var(--home-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]):hover {
+    transform: translateY(-1px);
+  }
+
+  [data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]):hover [data-slot="card"],
+  [data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]):hover .gharargah-home-session-card {
+    border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 14%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--primary) 18%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--primary) 14%, transparent),
+      0 10px 32px -14px rgb(0 0 0 / 60%),
+      0 0 28px -6px var(--home-accent-glow);
+  }
+
+  [data-gharargah-home] [data-gharargah-home-add-project]:hover {
+    transform: translateY(-1px);
+  }
+}
+
+[data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]):focus-visible [data-slot="card"],
+[data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]):focus-visible .gharargah-home-session-card {
+  border-color: color-mix(in srgb, var(--primary) 70%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 14%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--primary) 30%, transparent),
+    0 0 30px -4px var(--home-accent-glow);
+}
+
+/* Running / starting — brighter active rim */
+[data-gharargah-home] [data-gharargah-terminal-card][data-status="running"] [data-slot="card"],
+[data-gharargah-home] [data-gharargah-terminal-card][data-status="starting"] [data-slot="card"],
+[data-gharargah-home] [data-gharargah-terminal-card][data-status="running"] .gharargah-home-session-card,
+[data-gharargah-home] [data-gharargah-terminal-card][data-status="starting"] .gharargah-home-session-card {
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent),
+    0 8px 28px -14px rgb(0 0 0 / 55%),
+    0 0 26px -4px var(--home-accent-glow);
+}
+
+[data-gharargah-home] [data-gharargah-terminal-status-dot] {
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--home-accent);
+  box-shadow: 0 0 8px var(--home-accent-glow);
+  vertical-align: middle;
+  margin-inline-end: 0.4rem;
+}
+
+[data-gharargah-home] [data-gharargah-terminal-card][data-status="running"] [data-gharargah-terminal-status-dot],
+[data-gharargah-home] [data-gharargah-terminal-card][data-status="starting"] [data-gharargah-terminal-status-dot] {
+  animation: gharargah-home-pulse 2.2s var(--gharargah-ease-in-out) infinite;
+}
+
+@keyframes gharargah-home-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 8px var(--home-accent-glow);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 14px var(--home-accent-glow);
+  }
+}
+
+/* Empty projects state */
+[data-gharargah-home] [data-gharargah-home-empty] {
+  border-radius: calc(var(--radius) + 6px);
+  border: 1px dashed color-mix(in srgb, var(--primary) 35%, transparent);
+  background: color-mix(in srgb, var(--card) 18%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gharargah-home]::before,
+  [data-gharargah-home] [data-gharargah-terminal-status-dot] {
+    animation: none !important;
+  }
+
+  [data-gharargah-home] [data-gharargah-terminal-card]:not([data-gharargah-new-session]):hover,
+  [data-gharargah-home] [data-gharargah-home-add-project]:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-gharargah-home] [data-gharargah-home-search],
+  [data-gharargah-home] [data-gharargah-new-session],
+  [data-gharargah-home] [data-gharargah-terminal-card] [data-slot="card"],
+  [data-gharargah-home] [data-gharargah-terminal-card] .gharargah-home-session-card,
+  [data-gharargah-home] [data-gharargah-home-empty] {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  [data-gharargah-home] {
+    box-shadow: inset 0 0 0 2px var(--foreground);
+  }
+
+  [data-gharargah-home]::before,
+  [data-gharargah-home]::after {
+    display: none;
+  }
+
+  [data-gharargah-home] [data-gharargah-home-search],
+  [data-gharargah-home] [data-gharargah-new-session],
+  [data-gharargah-home] [data-gharargah-terminal-card] [data-slot="card"],
+  [data-gharargah-home] [data-gharargah-home-empty] {
+    border-color: var(--foreground);
+    background: var(--card);
+  }
+}

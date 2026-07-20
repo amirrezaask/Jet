@@ -34,14 +34,21 @@ const radThemeIds = [
   "rad-far-manager",
 ]
 
+const glassThemeIds = [
+  "glass-blue",
+  "glass-red",
+  "glass-green",
+]
+
 describe("bundled Gharargah themes", () => {
   it("registers palette themes plus RAD Debugger imports", () => {
     assert.equal(defaultThemeId, "ayu-dark")
     assert.deepEqual(bundledThemeList.map(theme => theme.id), [
       ...paletteThemeIds,
       ...radThemeIds,
+      ...glassThemeIds,
     ])
-    assert.equal(Object.keys(bundledThemes).length, 19)
+    assert.equal(Object.keys(bundledThemes).length, 22)
   })
 
   it("falls back to Ayu Dark for missing or invalid theme ids", () => {

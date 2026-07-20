@@ -50,13 +50,16 @@ test.describe("electron appearance and terminal-first UX", () => {
       })
 
       await expectSelectorVisible(page, "[data-gharargah-settings-overlay]")
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 19)
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 22)
       await expectSelectorVisible(page, "[data-gharargah-theme-option='ayu-dark']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='everforest-dark']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='gruvbox-light']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='tokyonight-light']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='rad-default-dark']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='rad-four-coder']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-blue']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-red']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-green']")
       await expectLocatorAttribute(
         page.locator("[data-gharargah-setting='terminal-cursor-motion-trail']"),
         "data-state",

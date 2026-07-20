@@ -43,6 +43,10 @@ function statusClass(status: TerminalCardStatus): string {
   }
 }
 
+function showStatusDot(status: TerminalCardStatus): boolean {
+  return status === "running" || status === "starting"
+}
+
 export function TerminalCard(props: TerminalCardProps) {
   const { label, status, exitCode, onClick, onKill } = props
   const card = (
@@ -50,12 +54,13 @@ export function TerminalCard(props: TerminalCardProps) {
       type="button"
       data-gharargah-terminal-card
       data-gharargah-list-item
+      data-status={status}
       className="group text-left outline-none"
       onClick={onClick}
     >
       <Card
         className={cn(
-          "h-full min-w-[11rem] gap-3 border-border/80 bg-card/80 py-4 transition-[border-color,box-shadow,background-color]",
+          "gharargah-home-session-card h-full min-w-[11rem] gap-3 border-border/80 bg-card/80 py-4 transition-[border-color,box-shadow,background-color]",
           "hover:border-primary/50 hover:bg-card",
           "group-focus-visible:border-ring group-focus-visible:ring-[3px] group-focus-visible:ring-ring/40",
         )}
@@ -67,7 +72,12 @@ export function TerminalCard(props: TerminalCardProps) {
           </div>
         </CardHeader>
         <CardContent className="px-4">
-          <p className={cn("text-xs tabular-nums", statusClass(status))}>{statusLabel(status, exitCode)}</p>
+          <p className={cn("text-xs tabular-nums", statusClass(status))}>
+            {showStatusDot(status) ? (
+              <span data-gharargah-terminal-status-dot aria-hidden="true" />
+            ) : null}
+            {statusLabel(status, exitCode)}
+          </p>
         </CardContent>
       </Card>
     </button>

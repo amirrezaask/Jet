@@ -13,6 +13,7 @@ type ThemeFamily =
   | "Gruvbox"
   | "TokyoNight"
   | "RAD"
+  | "Glass"
 
 export type PaletteThemeInput = {
   id: string
