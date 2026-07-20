@@ -12,7 +12,12 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             let args: Vec<String> = argv.into_iter().filter(|a| !a.starts_with('-')).collect();
-            let cwd = std::env::current_dir().unwrap_or_default();
+            let mut cwd = std::env::current_dir().unwrap_or_default();
+            if args.is_empty() {
+                if let Some(home) = dirs::home_dir() {
+                    cwd = home;
+                }
+            }
             let config = host::launch::resolve_launch_target(&args, &cwd);
             shell::deliver_launch(app, config);
             if let Some(window) = app.get_webview_window("main") {
@@ -72,7 +77,12 @@ pub fn run() {
                 .skip(1)
                 .filter(|a| !a.starts_with('-'))
                 .collect();
-            let cwd = std::env::current_dir().unwrap_or_default();
+            let mut cwd = std::env::current_dir().unwrap_or_default();
+            if args.is_empty() {
+                if let Some(home) = dirs::home_dir() {
+                    cwd = home;
+                }
+            }
             let mut config = host::launch::resolve_launch_target(&args, &cwd);
             if !args.is_empty() {
                 config.source = Some("explicit".to_string());

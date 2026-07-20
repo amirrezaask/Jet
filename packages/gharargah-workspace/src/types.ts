@@ -145,6 +145,10 @@ export type JetElectronAgents = {
   onThreadDelta?(callback: (delta: AgentThreadDelta) => void): () => void
 }
 
+export type JetElectronGit = {
+  branch(rootUri: string): Promise<string | null>
+}
+
 export type GharargahHostAPI = {
   fs: JetElectronFS
   search: JetElectronSearch
@@ -153,6 +157,7 @@ export type GharargahHostAPI = {
   tasks?: JetElectronTasks
   workspace?: JetElectronWorkspace
   agents?: JetElectronAgents
+  git?: JetElectronGit
   getLaunchConfig?(): Promise<LaunchConfig | null>
   getHomeDir?(): Promise<string>
   loadGlobalGharargahrcScanRoots?(): Promise<string[]>

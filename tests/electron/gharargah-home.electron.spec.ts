@@ -6,6 +6,7 @@ import {
   expectLocatorCount,
 } from "../shell/assert.js"
 import { hasPtySpawn, launchJet, execCommand } from "./_launch.js"
+import { expectListRows } from "../helpers/list.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -17,6 +18,14 @@ test.describe("gharargah mission home", () => {
     try {
       await expectSelectorVisible(page, "[data-gharargah-home]")
       await expectSelectorVisible(page, "[data-gharargah-shell='home']")
+      await expect
+        .poll(async () => {
+          return page.locator("[data-gharargah-home] > div").evaluate(el => {
+            const width = el.getBoundingClientRect().width
+            return width / window.innerWidth
+          })
+        })
+        .toBeGreaterThan(0.95)
       await expectLocatorContainsText(page.locator("[data-gharargah-home]"), /Good (morning|afternoon|evening)/)
 
       const state = await page.evaluate(() => window.__gharargahAgent!.getState())
@@ -82,11 +91,85 @@ test.describe("gharargah mission home", () => {
     }
   })
 
-  test("product rename exposes Gharargah titlebar wordmark", async () => {
+  test("project and terminal card context menus, modal close, git branch, Cmd+p terminal list", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await expectSelectorVisible(page, "[data-gharargah-home]")
+      const workspaceName = await page.evaluate(
+        () => window.__gharargahAgent!.listWorkspaces()[0]?.name ?? "sample-workspace",
+      )
+      const section = page.locator(
+        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
+      )
+      await expectLocatorVisible(section)
+
+      await section.locator("[data-gharargah-project-row]").click({ button: "right" })
+      const projectMenu = page.locator("[data-gharargah-project-menu]")
+      await expectLocatorVisible(projectMenu)
+      await expectLocatorVisible(projectMenu.getByRole("menuitem", { name: "Remove Project" }))
+      await page.keyboard.press("Escape")
+      await expectLocatorCount(projectMenu, 0)
+
+      await section.getByRole("button", { name: "New session" }).click()
+      const sessionMenu = page.locator('[data-slot="dropdown-menu-content"]')
+      await expectLocatorVisible(sessionMenu)
+      await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Terminal" }).click()
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal-close]")
+      await expect
+        .poll(async () => {
+          return page.locator("[data-gharargah-terminal-modal]").evaluate(el => {
+            const width = el.getBoundingClientRect().width
+            return Math.abs(width - window.innerWidth) < 2
+          })
+        }, { timeout: 10_000 })
+        .toBe(true)
+      await expect
+        .poll(async () => page.locator("[data-gharargah-terminal-git-branch]").textContent(), {
+          timeout: 15_000,
+        })
+        .toMatch(/main/)
+
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+
+      const cards = section.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
+      await expectLocatorVisible(cards.first())
+      await cards.first().click({ button: "right" })
+      const cardMenu = page.locator("[data-gharargah-terminal-card-menu]")
+      await expectLocatorVisible(cardMenu)
+      await cardMenu.getByRole("menuitem", { name: "Kill Terminal" }).click()
+      await expect
+        .poll(async () => cards.count(), { timeout: 10_000 })
+        .toBe(0)
+      await expectLocatorVisible(section.locator("[data-gharargah-new-session]"))
+
+      await execCommand(page, "terminal.new")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      await page.keyboard.press("Escape")
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+
+      await page.keyboard.press("Meta+p")
+      await expectListRows(page, {
+        panel: "gharargah:palette",
+        minItems: 1,
+        needle: `${workspaceName}:`,
+        noResultsText: "No open terminals",
+      })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("titlebar stays present without Home control or app wordmark", async () => {
     const { app, page } = await launchJet()
     try {
       await expectSelectorVisible(page, "[data-gharargah-titlebar]")
-      await expectLocatorContainsText(page.locator("[data-gharargah-titlebar]"), "Gharargah")
+      await expectLocatorCount(page.locator("[data-gharargah-home-button]"), 0)
+      await expectLocatorCount(page.locator("[data-gharargah-status-zone]"), 0)
+      await expect
+        .poll(async () => (await page.locator("[data-gharargah-titlebar]").textContent())?.trim() ?? "")
+        .not.toMatch(/Gharargah/i)
     } finally {
       await app.close()
     }

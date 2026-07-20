@@ -5,7 +5,7 @@ import { launchJet } from "./_launch.js"
 test.describe("desktop shell", () => {
   test.skip(process.platform !== "darwin", "traffic lights are macOS-only")
 
-  test("home titlebar clears traffic lights and shows Home control", async () => {
+  test("home titlebar clears traffic lights without Home control or wordmark", async () => {
     const { app, page } = await launchJet()
     try {
       await expectSelectorVisible(page, "[data-gharargah-home]")
@@ -29,15 +29,16 @@ test.describe("desktop shell", () => {
           zone,
           hasHome: document.querySelector("[data-gharargah-home-button]") != null,
           hasSidebar: document.querySelector("[data-gharargah-workspace-sidebar]") != null,
-          wordmark: bar.textContent ?? "",
+          wordmark: (bar.textContent ?? "").trim(),
         }
       })
 
       expect(geom, "home titlebar must exist").not.toBeNull()
-      expect(geom!.hasHome).toBe(true)
+      expect(geom!.hasHome).toBe(false)
       expect(geom!.hasSidebar).toBe(false)
       expect(geom!.paddingLeft).toBeGreaterThanOrEqual(geom!.zone - 1)
-      expect(geom!.wordmark).toMatch(/Gharargah/i)
+      expect(geom!.wordmark).not.toMatch(/Gharargah/i)
+      expect(geom!.wordmark).not.toMatch(/Home/i)
     } finally {
       await app.close()
     }

@@ -36,7 +36,6 @@ import {
   TabStore,
   TabTypeRegistry,
   PanelBody,
-  StatusBar,
   bundledThemeList,
   getThemeById,
   siblingThemeForScheme,
@@ -189,6 +188,7 @@ export function GharargahApp() {
   terminalModalTabIdRef.current = terminalModalTabId
   const [terminalModalPanelId, setTerminalModalPanelId] = useState<PanelId | null>(null)
   const [terminalModalTitleTick, setTerminalModalTitleTick] = useState(0)
+  const [terminalModalGitBranch, setTerminalModalGitBranch] = useState<string | null>(null)
   const showWindowChrome = useMemo(() => detectWindowChrome(), [])
   const [, setTerminalSessionRevision] = useState(0)
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
@@ -437,6 +437,27 @@ export function GharargahApp() {
     [workspace],
   )
 
+  useEffect(() => {
+    if (!terminalModalTabId) {
+      setTerminalModalGitBranch(null)
+      return
+    }
+    const rootUri = terminalCwdForTab(terminalModalTabId)
+    if (!rootUri || !window.gharargah?.git?.branch) {
+      setTerminalModalGitBranch(null)
+      return
+    }
+    let cancelled = false
+    void window.gharargah.git.branch(rootUri).then(branch => {
+      if (!cancelled) setTerminalModalGitBranch(branch)
+    }).catch(() => {
+      if (!cancelled) setTerminalModalGitBranch(null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [terminalModalTabId, terminalModalTitleTick])
+
   const tabContributorRef = useRef<TabContributorDeps>(null!)
   const tabContributorBridge = useMemo(
     () => createTabContributorBridge(() => tabContributorRef.current),
@@ -466,7 +487,7 @@ export function GharargahApp() {
       editorFocus: false,
       paletteOpen,
       quickOpenOpen: false,
-      bufferListOpen: false,
+      bufferListOpen: terminalListOpen,
       openFileOpen: false,
       cdOpen,
       projectSwitcherOpen,
@@ -482,6 +503,7 @@ export function GharargahApp() {
     }),
     [
       paletteOpen,
+      terminalListOpen,
       cdOpen,
       projectSwitcherOpen,
       workspace.root,
@@ -885,7 +907,7 @@ export function GharargahApp() {
     const noOverlay = (ctx: KeymapContext) => !anyOverlayOpen(ctx)
     const whenWorkspace = (ctx: KeymapContext) => ctx.workspaceOpen && noOverlay(ctx)
     keymaps.registerUser([
-      bind("Cmd-p", appCommands.palette, noOverlay),
+      bind("Cmd-p", appCommands.terminalList, noOverlay),
       bind("Cmd-Shift-p", appCommands.palette, noOverlay),
       bind("Cmd-k Cmd-o", appCommands.openFolder, noOverlay),
       bind("Cmd-w", appCommands.closeTab, whenWorkspace),
@@ -1258,24 +1280,15 @@ export function GharargahApp() {
       <TooltipProvider>
         <AppShell
           footer={
-            <>
-              {pendingChordPrefix && (
-                <WhichKeyPanel prefix={formatKeyBinding(pendingChordPrefix)} entries={whichKeyEntries} />
-              )}
-              <StatusBar
-                lspStatus="off"
-                workspaceFolderCount={workspace.folders.length}
-                workspaceFolderNames={workspace.folders.map(folder => folder.root.name)}
-                hasWorkspace={workspace.manager.hasFolders()}
-              />
-            </>
+            pendingChordPrefix ? (
+              <WhichKeyPanel prefix={formatKeyBinding(pendingChordPrefix)} entries={whichKeyEntries} />
+            ) : undefined
           }
         >
           <div className="flex h-full min-h-0 w-full flex-col" data-gharargah-shell="home">
             <GharargahTitleBar
               showWindowChrome={showWindowChrome}
               crumb={null}
-              onHome={goHome}
             />
 
             <div className="min-h-0 flex-1 overflow-hidden">
@@ -1297,6 +1310,8 @@ export function GharargahApp() {
                 onNewTerminal={rootUri => void newTerminalFromHome(rootUri)}
                 onLaunchAgentTerminal={(rootUri, shortcut) => void launchAgentFromHome(rootUri, shortcut)}
                 onAddProject={() => setAddWorkspaceOpen(true)}
+                onRemoveProject={removeProjectByRootUri}
+                onKillTerminal={closeTerminalTab}
               />
             </div>
 
@@ -1313,6 +1328,7 @@ export function GharargahApp() {
                   const project = workspace.folders.find(f => f.root.uri === rootUri)?.root.name
                   return project ? `${project} / ${label}` : label
                 })()}
+                gitBranch={terminalModalGitBranch}
               >
                 <PanelBody
                   panelId={terminalModalPanelId}

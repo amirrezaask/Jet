@@ -21,10 +21,20 @@ export type GharargahHomeProps = {
   onNewTerminal: (rootUri: string) => void
   onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   onAddProject?: () => void
+  onRemoveProject?: (rootUri: string) => void
+  onKillTerminal?: (panelId: PanelId, tabId: string) => void
 }
 
 export function GharargahHome(props: GharargahHomeProps) {
-  const { groups, onOpenTerminal, onNewTerminal, onLaunchAgentTerminal, onAddProject } = props
+  const {
+    groups,
+    onOpenTerminal,
+    onNewTerminal,
+    onLaunchAgentTerminal,
+    onAddProject,
+    onRemoveProject,
+    onKillTerminal,
+  } = props
   const [query, setQuery] = useState("")
   const greeting = timeOfDayGreeting()
   const dateLabel = formatHomeDate()
@@ -43,14 +53,14 @@ export function GharargahHome(props: GharargahHomeProps) {
       data-gharargah-shell="home"
       className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background"
     >
-      <div className="mx-auto flex w-full max-w-6xl min-h-0 flex-1 flex-col gap-8 overflow-y-auto px-8 py-8">
-        <header className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex h-full min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto px-3 py-3">
+        <header className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
             <p className="text-3xs font-medium tracking-[0.16em] text-muted-foreground">{dateLabel}</p>
-            <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+            <h1 className="mt-0.5 text-xl font-semibold tracking-tight text-foreground">
               <span className="text-primary">{greeting}</span>
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">Here&apos;s what&apos;s running today.</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">Here&apos;s what&apos;s running today.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[14rem] flex-1">
@@ -74,7 +84,7 @@ export function GharargahHome(props: GharargahHomeProps) {
         </header>
 
         {groups.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 px-6 py-16 text-center">
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 px-4 py-10 text-center">
             <p className="text-sm text-muted-foreground">No projects yet. Add a folder to get started.</p>
             {onAddProject ? (
               <Button type="button" onClick={onAddProject}>
@@ -86,7 +96,7 @@ export function GharargahHome(props: GharargahHomeProps) {
         ) : filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground">No projects match “{query.trim()}”.</p>
         ) : (
-          <div className="flex flex-col gap-10 pb-8">
+          <div className="flex flex-col gap-6 pb-3">
             {filtered.map(group => (
               <ProjectSection
                 key={group.id}
@@ -97,6 +107,8 @@ export function GharargahHome(props: GharargahHomeProps) {
                 onOpenTerminal={onOpenTerminal}
                 onNewTerminal={onNewTerminal}
                 onLaunchAgentTerminal={onLaunchAgentTerminal}
+                onRemoveProject={onRemoveProject}
+                onKillTerminal={onKillTerminal}
               />
             ))}
           </div>

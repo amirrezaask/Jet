@@ -1,5 +1,11 @@
-import { Terminal as TerminalIcon } from "lucide-react"
+import { Terminal as TerminalIcon, X } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card.js"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu.js"
 import { cn } from "@/lib/utils.js"
 
 export type TerminalCardStatus = "starting" | "running" | "exited" | "failed"
@@ -9,6 +15,7 @@ export type TerminalCardProps = {
   status: TerminalCardStatus
   exitCode?: number
   onClick: () => void
+  onKill?: () => void
 }
 
 function statusLabel(status: TerminalCardStatus, exitCode?: number): string {
@@ -37,8 +44,8 @@ function statusClass(status: TerminalCardStatus): string {
 }
 
 export function TerminalCard(props: TerminalCardProps) {
-  const { label, status, exitCode, onClick } = props
-  return (
+  const { label, status, exitCode, onClick, onKill } = props
+  const card = (
     <button
       type="button"
       data-gharargah-terminal-card
@@ -64,5 +71,22 @@ export function TerminalCard(props: TerminalCardProps) {
         </CardContent>
       </Card>
     </button>
+  )
+
+  if (!onKill) return card
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+      <ContextMenuContent data-gharargah-terminal-card-menu>
+        <ContextMenuItem
+          variant="destructive"
+          onSelect={onKill}
+        >
+          <X className="size-4" />
+          Kill Terminal
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

@@ -45,15 +45,20 @@ export async function findWorkspaceRoot(startDir: string): Promise<string> {
 export async function resolveLaunchTarget(
   userArgs: string[],
   cwd: string,
+  opts?: { defaultCwd?: string },
 ): Promise<LaunchConfig> {
-  const resolvedCwd = path.resolve(cwd)
   const positional = userArgs.filter(a => !a.startsWith("-"))
+  const processCwd = path.resolve(cwd)
+  const resolvedCwd =
+    positional.length === 0 && opts?.defaultCwd
+      ? path.resolve(opts.defaultCwd)
+      : processCwd
 
   let targetPath: string
   if (positional.length === 0) {
     targetPath = resolvedCwd
   } else {
-    targetPath = path.resolve(resolvedCwd, positional[0]!)
+    targetPath = path.resolve(processCwd, positional[0]!)
   }
 
   try {

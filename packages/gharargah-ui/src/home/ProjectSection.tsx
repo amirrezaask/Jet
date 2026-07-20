@@ -1,5 +1,12 @@
 import type { PanelId } from "@gharargah/shared"
+import { Trash2 } from "lucide-react"
 import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu.js"
 import { TerminalCard, type TerminalCardStatus } from "./TerminalCard.js"
 import { NewSessionMenu } from "./NewSessionMenu.js"
 
@@ -19,6 +26,8 @@ export type HomeProjectSectionProps = {
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
   onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
+  onRemoveProject?: (rootUri: string) => void
+  onKillTerminal?: (panelId: PanelId, tabId: string) => void
 }
 
 export function ProjectSection(props: HomeProjectSectionProps) {
@@ -30,28 +39,53 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     onOpenTerminal,
     onNewTerminal,
     onLaunchAgentTerminal,
+    onRemoveProject,
+    onKillTerminal,
   } = props
+
+  const header = (
+    <div
+      data-gharargah-project-row
+      className="flex min-w-0 flex-1 items-end justify-between gap-3"
+    >
+      <div className="min-w-0">
+        <h2 className="truncate text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+          {name}
+        </h2>
+        {path ? (
+          <p className="truncate font-mono text-3xs text-muted-foreground/80">{path}</p>
+        ) : null}
+      </div>
+      <NewSessionMenu
+        rootUri={rootUri}
+        onNewTerminal={onNewTerminal}
+        onLaunchAgentTerminal={onLaunchAgentTerminal}
+      />
+    </div>
+  )
+
   return (
     <section
       data-gharargah-project-section
       data-gharargah-project-name={name}
       className="flex flex-col gap-3"
     >
-      <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-            {name}
-          </h2>
-          {path ? (
-            <p className="truncate font-mono text-3xs text-muted-foreground/80">{path}</p>
-          ) : null}
-        </div>
-        <NewSessionMenu
-          rootUri={rootUri}
-          onNewTerminal={onNewTerminal}
-          onLaunchAgentTerminal={onLaunchAgentTerminal}
-        />
-      </div>
+      {onRemoveProject ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>{header}</ContextMenuTrigger>
+          <ContextMenuContent data-gharargah-project-menu>
+            <ContextMenuItem
+              variant="destructive"
+              onSelect={() => onRemoveProject(rootUri)}
+            >
+              <Trash2 className="size-4" />
+              Remove Project
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      ) : (
+        header
+      )}
       <div className="flex flex-wrap gap-3">
         {terminals.length === 0 ? (
           <NewSessionMenu
@@ -79,6 +113,11 @@ export function ProjectSection(props: HomeProjectSectionProps) {
               status={term.status}
               exitCode={term.exitCode}
               onClick={() => onOpenTerminal(term.panelId, term.tabId)}
+              onKill={
+                onKillTerminal
+                  ? () => onKillTerminal(term.panelId, term.tabId)
+                  : undefined
+              }
             />
           ))
         )}

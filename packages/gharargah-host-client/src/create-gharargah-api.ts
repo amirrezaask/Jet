@@ -143,6 +143,9 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     tasks: {
       spawn: req => transport.invoke("tasks:spawn", req),
     },
+    git: {
+      branch: rootUri => transport.invoke("git:branch", rootUri),
+    },
     terminal: {
       create: (cwdUri, launch) => transport.invoke("terminal:create", cwdUri, launch),
       attach: async id => {
