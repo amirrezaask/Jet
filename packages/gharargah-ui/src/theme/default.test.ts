@@ -9,62 +9,33 @@ import {
   themePreviewSwatches,
 } from "./default.js"
 
-const paletteThemeIds = [
-  "ayu-dark",
-  "ayu-light",
-  "everforest-dark",
-  "everforest-light",
-  "gruvbox-dark",
-  "gruvbox-light",
-  "tokyonight-dark",
-  "tokyonight-light",
-]
-
-const radThemeIds = [
-  "rad-default-dark",
-  "rad-default-light",
-  "rad-vs-dark",
-  "rad-vs-light",
-  "rad-solarized-dark",
-  "rad-solarized-light",
-  "rad-handmade-hero",
-  "rad-naysayer",
-  "rad-four-coder",
-  "rad-grove",
-  "rad-far-manager",
-]
-
-const glassThemeIds = [
-  "glass-blue",
-  "glass-red",
-  "glass-green",
-]
+const glassThemeIds = ["glass-blue", "glass-red", "glass-green"]
 
 describe("bundled Gharargah themes", () => {
-  it("registers palette themes plus RAD Debugger imports", () => {
-    assert.equal(defaultThemeId, "ayu-dark")
-    assert.deepEqual(bundledThemeList.map(theme => theme.id), [
-      ...paletteThemeIds,
-      ...radThemeIds,
-      ...glassThemeIds,
-    ])
-    assert.equal(Object.keys(bundledThemes).length, 22)
+  it("registers glass themes only", () => {
+    assert.equal(defaultThemeId, "glass-blue")
+    assert.deepEqual(
+      bundledThemeList.map(theme => theme.id),
+      glassThemeIds,
+    )
+    assert.equal(Object.keys(bundledThemes).length, 3)
   })
 
-  it("falls back to Ayu Dark for missing or invalid theme ids", () => {
-    assert.equal(getThemeById(null).id, "ayu-dark")
-    assert.equal(getThemeById("missing").id, "ayu-dark")
+  it("falls back to Glass Blue for missing or invalid theme ids", () => {
+    assert.equal(getThemeById(null).id, "glass-blue")
+    assert.equal(getThemeById("missing").id, "glass-blue")
+    assert.equal(getThemeById("ayu-dark").id, "glass-blue")
   })
 
-  it("maps legacy color schemes to Ayu variants", () => {
-    assert.equal(defaultThemeIdForScheme("dark"), "ayu-dark")
-    assert.equal(defaultThemeIdForScheme("light"), "ayu-light")
+  it("maps legacy color schemes to Glass Blue", () => {
+    assert.equal(defaultThemeIdForScheme("dark"), "glass-blue")
+    assert.equal(defaultThemeIdForScheme("light"), "glass-blue")
   })
 
   it("provides shell, editor, terminal, source, and swatch metadata for every theme", () => {
     for (const theme of bundledThemeList) {
-      assert.ok(theme.scheme === "dark" || theme.scheme === "light")
-      assert.ok(theme.family)
+      assert.equal(theme.scheme, "dark")
+      assert.equal(theme.family, "Glass")
       assert.ok(theme.sourceUrl?.startsWith("https://"))
       assert.ok(theme.colors.bg)
       assert.ok(theme.colors.panel)
@@ -74,14 +45,5 @@ describe("bundled Gharargah themes", () => {
       assert.ok(theme.terminalAnsi?.brightWhite)
       assert.ok(themePreviewSwatches(theme).length >= 4)
     }
-  })
-
-  it("imports RAD Debugger themes from raddbg.mdesk", () => {
-    const radDefaultDark = getThemeById("rad-default-dark")
-    assert.equal(radDefaultDark.family, "RAD")
-    assert.equal(radDefaultDark.name, "Default (Dark)")
-    assert.equal(radDefaultDark.colors.bg, "#1f1f1f")
-    assert.equal(radDefaultDark.highlights.keyword, "#838b8f")
-    assert.equal(getThemeById("rad-four-coder").name, "4coder")
   })
 })

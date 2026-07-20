@@ -77,9 +77,6 @@ export { PaletteOverlay } from "./components/PaletteOverlay.js"
 export {
   SettingsOverlay,
   type JetAppearanceSettings,
-  type JetDensity,
-  type JetCursorStyle,
-  type JetCursorMotion,
 } from "./components/SettingsOverlay.js"
 export { StatusBar } from "./status/StatusBar.js"
 export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js"
@@ -109,8 +106,6 @@ export {
   siblingThemeForScheme,
   themeFamilyForId,
   themePreviewSwatches,
-  vercelDark,
-  vercelLight,
   themeForScheme,
   type ColorScheme,
 } from "./theme/bundled.js"

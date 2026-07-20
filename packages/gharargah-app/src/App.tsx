@@ -37,8 +37,6 @@ import {
   TabTypeRegistry,
   PanelBody,
   bundledThemeList,
-  getThemeById,
-  siblingThemeForScheme,
   formatKeyBinding,
   WhichKeyPanel,
   type TerminalAgentShortcut,
@@ -90,8 +88,6 @@ import {
   OverlayControllerProvider,
   type OverlayHandlers,
 } from "./hooks/OverlayController.js"
-
-type ColorScheme = "dark" | "light"
 
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 
@@ -969,26 +965,6 @@ export function GharargahApp() {
 
     disposables.push(
       commands.register(
-        "ui.toggleColorScheme",
-        () => {
-          setAppearanceSettings(prev => {
-            const current = getThemeById(prev.themeId)
-            const nextScheme: ColorScheme = current.scheme === "light" ? "dark" : "light"
-            const next = siblingThemeForScheme(prev.themeId, nextScheme)
-            showGharargahToast(`Theme: ${next.name}`)
-            return { ...prev, themeId: next.id }
-          })
-        },
-        {
-          id: "ui.toggleColorScheme",
-          title: "Toggle Color Scheme",
-          category: "UI",
-          aliases: ["theme", "dark mode", "light mode"],
-        },
-      ),
-    )
-    disposables.push(
-      commands.register(
         "project.activate",
         () => setProjectSwitcherOpen(true),
         {
@@ -1013,39 +989,13 @@ export function GharargahApp() {
     )
     disposables.push(
       commands.register(
-        "ui.setColorScheme.dark",
-        () => {
-          setAppearanceSettings(prev => {
-            const next = siblingThemeForScheme(prev.themeId, "dark")
-            showGharargahToast(`Theme: ${next.name}`)
-            return { ...prev, themeId: next.id }
-          })
-        },
-        { id: "ui.setColorScheme.dark", title: "Color Scheme: Dark", category: "UI" },
-      ),
-    )
-    disposables.push(
-      commands.register(
-        "ui.setColorScheme.light",
-        () => {
-          setAppearanceSettings(prev => {
-            const next = siblingThemeForScheme(prev.themeId, "light")
-            showGharargahToast(`Theme: ${next.name}`)
-            return { ...prev, themeId: next.id }
-          })
-        },
-        { id: "ui.setColorScheme.light", title: "Color Scheme: Light", category: "UI" },
-      ),
-    )
-    disposables.push(
-      commands.register(
         "settings.show",
         () => setSettingsOpen(true),
         {
           id: "settings.show",
           title: "Settings",
           category: "UI",
-          aliases: ["preferences", "appearance", "font", "terminal settings"],
+          aliases: ["preferences", "appearance", "font", "theme"],
         },
       ),
     )

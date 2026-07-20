@@ -1,41 +1,8 @@
 import { expect, test } from "@playwright/test"
-import {
-  expectContainsText,
-  expectLocatorAttached,
-  expectLocatorAttribute,
-  expectLocatorCount,
-  expectLocatorFocused,
-  expectLocatorHidden,
-  expectLocatorVisible,
-  expectSelectorHidden,
-  expectSelectorVisible,
-} from "../shell/assert.js"
 
 import { execCommand, launchJet } from "./_launch.js"
 
-test.describe("electron color scheme and zoom", () => {
-  test("toggles light/dark scheme on document root", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await execCommand(page, "ui.setColorScheme.dark")
-      await expect
-        .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
-        .toBe(true)
-
-      await execCommand(page, "ui.setColorScheme.light")
-      await expect
-        .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
-        .toBe(false)
-
-      await execCommand(page, "ui.toggleColorScheme")
-      await expect
-        .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
-        .toBe(true)
-    } finally {
-      await app.close()
-    }
-  })
-
+test.describe("electron zoom", () => {
   test("zoom commands change reported font size", async () => {
     const { app, page } = await launchJet()
     try {

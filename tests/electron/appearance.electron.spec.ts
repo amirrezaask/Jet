@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test"
 import {
-  expectLocatorAttribute,
   expectLocatorCount,
   expectLocatorVisible,
   expectSelectorVisible,
@@ -19,7 +18,7 @@ test.describe("electron appearance and terminal-first UX", () => {
       await page.evaluate(async () => {
         localStorage.clear()
         await window.__gharargahAgent!.waitForReady()
-        await window.__gharargahAgent!.executeCommand("ui.setTheme.ayu-dark")
+        await window.__gharargahAgent!.executeCommand("ui.setTheme.glass-blue")
       })
       await showTerminal(page)
       await page.waitForSelector("[data-gharargah-terminal-panel] .xterm", { timeout: 30_000 })
@@ -32,7 +31,7 @@ test.describe("electron appearance and terminal-first UX", () => {
 
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
-        .toBe("ayu-dark")
+        .toBe("glass-blue")
 
       await expect
         .poll(() =>
@@ -40,7 +39,7 @@ test.describe("electron appearance and terminal-first UX", () => {
             getComputedStyle(document.documentElement).getPropertyValue("--gharargah-bg").trim(),
           ),
         )
-        .toBe("#0a0e14")
+        .toBe("#05070c")
 
       await expect
         .poll(() =>
@@ -65,42 +64,15 @@ test.describe("electron appearance and terminal-first UX", () => {
       })
 
       await expectSelectorVisible(page, "[data-gharargah-settings-overlay]")
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 22)
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='ayu-dark']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='everforest-dark']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='gruvbox-light']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='tokyonight-light']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='rad-default-dark']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='rad-four-coder']")
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 3)
       await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-blue']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-red']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-green']")
-      await expectLocatorAttribute(
-        page.locator("[data-gharargah-setting='terminal-cursor-motion-trail']"),
-        "data-state",
-        "on",
-      )
-      await page.locator("[data-gharargah-setting='terminal-cursor-style-bar']").click()
-      await page.locator("[data-gharargah-setting='terminal-cursor-motion-off']").click()
-      await expect
-        .poll(() =>
-          page.evaluate(() =>
-            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-cursor-style").trim(),
-          ),
-        )
-        .toBe("bar")
-      await expect
-        .poll(() =>
-          page.evaluate(() =>
-            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-cursor-motion").trim(),
-          ),
-        )
-        .toBe("off")
 
-      await page.locator("[data-gharargah-theme-option='gruvbox-light']").click()
+      await page.locator("[data-gharargah-theme-option='glass-red']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
-        .toBe("gruvbox-light")
+        .toBe("glass-red")
 
       await expect
         .poll(() =>
@@ -108,7 +80,7 @@ test.describe("electron appearance and terminal-first UX", () => {
             getComputedStyle(document.documentElement).getPropertyValue("--gharargah-bg").trim(),
           ),
         )
-        .toBe("#fbf1c7")
+        .toBe("#0a0506")
     } finally {
       await app.close()
     }

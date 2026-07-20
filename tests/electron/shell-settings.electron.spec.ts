@@ -1,15 +1,5 @@
 import { expect, test } from "@playwright/test"
-import {
-  expectContainsText,
-  expectLocatorAttached,
-  expectLocatorAttribute,
-  expectLocatorCount,
-  expectLocatorFocused,
-  expectLocatorHidden,
-  expectLocatorVisible,
-  expectSelectorHidden,
-  expectSelectorVisible,
-} from "../shell/assert.js"
+import { expectLocatorCount } from "../shell/assert.js"
 
 import { execCommand, launchJet, openSettings, openThemePicker } from "./_launch.js"
 
@@ -19,19 +9,19 @@ test.describe("electron shell settings", () => {
     try {
       await page.evaluate(() => localStorage.clear())
       await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
-      await execCommand(page, "ui.setTheme.ayu-dark")
+      await execCommand(page, "ui.setTheme.glass-blue")
       await openSettings(page)
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 22)
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 3)
 
-      await page.locator("[data-gharargah-theme-option='gruvbox-light']").click()
+      await page.locator("[data-gharargah-theme-option='glass-red']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
-        .toBe("gruvbox-light")
+        .toBe("glass-red")
 
       await execCommand(page, "ui.resetAppearance")
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
-        .not.toBe("gruvbox-light")
+        .toBe("glass-blue")
     } finally {
       await app.close()
     }
