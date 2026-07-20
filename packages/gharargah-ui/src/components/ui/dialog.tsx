@@ -13,7 +13,8 @@ const dialogSizeClass: Record<JetDialogSize, string> = {
   prompt: "sm:max-w-sm",
   picker: "sm:max-w-[32rem]",
   wide: "sm:max-w-[42rem]",
-  stage: "h-[90vh] w-full max-h-none max-w-none gap-0 overflow-hidden p-0 rounded-none sm:rounded-none",
+  stage:
+    "h-dvh w-screen max-h-none max-w-none gap-0 overflow-hidden p-0 rounded-none sm:max-w-none sm:rounded-none",
 }
 
 function Dialog({

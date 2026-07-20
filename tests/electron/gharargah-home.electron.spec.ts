@@ -119,11 +119,20 @@ test.describe("gharargah mission home", () => {
       await expect
         .poll(async () => {
           return page.locator("[data-gharargah-terminal-modal]").evaluate(el => {
-            const width = el.getBoundingClientRect().width
-            return Math.abs(width - window.innerWidth) < 2
+            const rect = el.getBoundingClientRect()
+            const fullW = Math.abs(rect.width - window.innerWidth) < 2
+            const fullH = Math.abs(rect.height - window.innerHeight) < 2
+            return fullW && fullH
           })
         }, { timeout: 10_000 })
         .toBe(true)
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal-sessions]")
+      await expectListRows(page, {
+        panel: "gharargah:terminal-modal-sessions",
+        minItems: 1,
+        needle: "Terminal",
+        noResultsText: "No sessions",
+      })
       await expect
         .poll(async () => page.locator("[data-gharargah-terminal-git-branch]").textContent(), {
           timeout: 15_000,

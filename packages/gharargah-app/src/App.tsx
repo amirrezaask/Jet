@@ -178,7 +178,7 @@ export function GharargahApp() {
   const [terminalModalPanelId, setTerminalModalPanelId] = useState<PanelId | null>(null)
   const [terminalModalTitleTick, setTerminalModalTitleTick] = useState(0)
   const [terminalModalGitBranch, setTerminalModalGitBranch] = useState<string | null>(null)
-  const [, setTerminalSessionRevision] = useState(0)
+  const [terminalSessionRevision, setTerminalSessionRevision] = useState(0)
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
   const [pendingChordPrefix, setPendingChordPrefix] = useState<string | null>(null)
   const fontSizeRef = useRef(fontSize)
@@ -1313,6 +1313,24 @@ export function GharargahApp() {
                   return project ? `${project} / ${label}` : label
                 })()}
                 gitBranch={terminalModalGitBranch}
+                projectRootUri={terminalCwdForTab(terminalModalTabId) || null}
+                activeTabId={terminalModalTabId}
+                sessions={(() => {
+                  void terminalModalTitleTick
+                  void terminalSessionRevision
+                  const rootUri = terminalCwdForTab(terminalModalTabId)
+                  const group = getTerminalExplorerGroups().find(g => g.rootUri === rootUri)
+                  return (group?.terminals ?? []).map(t => ({
+                    tabId: t.tabId,
+                    panelId: t.panelId,
+                    label: t.label,
+                    status: t.status,
+                    exitCode: t.exitCode,
+                  }))
+                })()}
+                onSelectSession={focusTerminalTab}
+                onNewTerminal={rootUri => void newTerminalFromHome(rootUri)}
+                onLaunchAgentTerminal={(rootUri, shortcut) => void launchAgentFromHome(rootUri, shortcut)}
               >
                 <PanelBody
                   panelId={terminalModalPanelId}

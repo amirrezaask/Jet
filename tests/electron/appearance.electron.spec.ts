@@ -36,14 +36,29 @@ test.describe("electron appearance and terminal-first UX", () => {
 
       await expect
         .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-bg").trim(),
+          ),
+        )
+        .toBe("#0a0e14")
+
+      await expect
+        .poll(() =>
           page.evaluate(() => {
-            const el = document.querySelector(
+            const readBlur = (el: Element) => {
+              const cs = getComputedStyle(el)
+              const blur = cs.backdropFilter || cs.getPropertyValue("-webkit-backdrop-filter")
+              return blur && blur !== "none" ? blur : ""
+            }
+            const surface = document.querySelector(
               "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
-            ) as HTMLElement | null
-            return el ? getComputedStyle(el).backgroundColor : ""
+            )
+            const modal = document.querySelector("[data-gharargah-terminal-modal]")
+            if (!surface || !modal) return ""
+            return `${readBlur(surface)}|${readBlur(modal)}`
           }),
         )
-        .toBe("rgb(10, 14, 20)")
+        .toMatch(/blur\(/)
 
       await page.evaluate(async () => {
         await window.__gharargahAgent!.executeCommand("settings.show")
@@ -89,14 +104,11 @@ test.describe("electron appearance and terminal-first UX", () => {
 
       await expect
         .poll(() =>
-          page.evaluate(() => {
-            const el = document.querySelector(
-              "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
-            ) as HTMLElement | null
-            return el ? getComputedStyle(el).backgroundColor : ""
-          }),
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-bg").trim(),
+          ),
         )
-        .toBe("rgb(251, 241, 199)")
+        .toBe("#fbf1c7")
     } finally {
       await app.close()
     }

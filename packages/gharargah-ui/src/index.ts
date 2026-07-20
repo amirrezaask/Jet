@@ -20,11 +20,13 @@ export {
   ProjectSection,
   TerminalCard,
   TerminalSessionModal,
+  TERMINAL_MODAL_SESSION_LIST_ID,
   timeOfDayGreeting,
   type GharargahHomeProps,
   type HomeProjectGroup,
   type HomeTerminalEntry,
   type TerminalCardStatus,
+  type TerminalModalSession,
   type TerminalSessionModalProps,
 } from "./home/index.js"
 export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
