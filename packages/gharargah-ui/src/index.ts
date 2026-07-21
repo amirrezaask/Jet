@@ -19,6 +19,9 @@ export {
   GharargahHome,
   ProjectSection,
   TerminalCard,
+  SessionCard,
+  EmptySessionCard,
+  StatusBadge,
   TerminalSessionModal,
   TERMINAL_MODAL_SESSION_LIST_ID,
   timeOfDayGreeting,
@@ -28,6 +31,9 @@ export {
   type TerminalCardStatus,
   type TerminalModalSession,
   type TerminalSessionModalProps,
+  type SessionCardModel,
+  type SessionCardStatus,
+  type SessionCardProps,
 } from "./home/index.js"
 export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
 export {

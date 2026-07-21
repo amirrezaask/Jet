@@ -7,8 +7,11 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu.js"
-import { TerminalCard, type TerminalCardStatus } from "./TerminalCard.js"
+import { EmptySessionCard } from "./EmptySessionCard.js"
 import { NewSessionMenu } from "./NewSessionMenu.js"
+import { SessionCard } from "./SessionCard.js"
+import type { SessionCardModel } from "./session-card-model.js"
+import type { TerminalCardStatus } from "./TerminalCard.js"
 
 export type HomeTerminalEntry = {
   tabId: string
@@ -16,6 +19,9 @@ export type HomeTerminalEntry = {
   label: string
   status: TerminalCardStatus
   exitCode?: number
+  launchCommand?: string
+  /** Precomputed presentation model when available. */
+  session?: SessionCardModel
 }
 
 export type HomeProjectSectionProps = {
@@ -23,6 +29,7 @@ export type HomeProjectSectionProps = {
   path: string
   rootUri: string
   terminals: HomeTerminalEntry[]
+  sessions: SessionCardModel[]
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
   onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
@@ -36,6 +43,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     path,
     rootUri,
     terminals,
+    sessions,
     onOpenTerminal,
     onNewTerminal,
     onLaunchAgentTerminal,
@@ -46,9 +54,9 @@ export function ProjectSection(props: HomeProjectSectionProps) {
   const header = (
     <div
       data-gharargah-project-row
-      className="flex min-w-0 flex-1 items-end justify-between gap-3"
+      className="flex min-w-0 flex-1 items-center justify-between gap-2"
     >
-      <div className="min-w-0">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <h2 className="truncate text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
           {name}
         </h2>
@@ -68,7 +76,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     <section
       data-gharargah-project-section
       data-gharargah-project-name={name}
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-2 border-b border-border/40 pb-3 last:border-b-0 last:pb-0"
     >
       {onRemoveProject ? (
         <ContextMenu>
@@ -86,40 +94,30 @@ export function ProjectSection(props: HomeProjectSectionProps) {
       ) : (
         header
       )}
-      <div className="flex flex-wrap gap-3">
-        {terminals.length === 0 ? (
-          <NewSessionMenu
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {sessions.length === 0 ? (
+          <EmptySessionCard
             rootUri={rootUri}
             onNewTerminal={onNewTerminal}
             onLaunchAgentTerminal={onLaunchAgentTerminal}
-            align="start"
-            trigger={
-              <button
-                type="button"
-                data-gharargah-terminal-card
-                data-gharargah-list-item
-                data-gharargah-new-session
-                className="rounded-xl border border-dashed border-border/80 px-4 py-6 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground"
-              >
-                No sessions yet — create one
-              </button>
-            }
           />
         ) : (
-          terminals.map(term => (
-            <TerminalCard
-              key={term.tabId}
-              label={term.label}
-              status={term.status}
-              exitCode={term.exitCode}
-              onClick={() => onOpenTerminal(term.panelId, term.tabId)}
-              onKill={
-                onKillTerminal
-                  ? () => onKillTerminal(term.panelId, term.tabId)
-                  : undefined
-              }
-            />
-          ))
+          sessions.map(session => {
+            const term = terminals.find(t => t.tabId === session.id)
+            if (!term) return null
+            return (
+              <SessionCard
+                key={session.id}
+                session={session}
+                onClick={() => onOpenTerminal(term.panelId, term.tabId)}
+                onKill={
+                  onKillTerminal
+                    ? () => onKillTerminal(term.panelId, term.tabId)
+                    : undefined
+                }
+              />
+            )
+          })
         )}
       </div>
     </section>

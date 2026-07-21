@@ -10,6 +10,7 @@ export type TerminalExplorerEntry = {
   cwdRootUri: string
   status: "starting" | "running" | "exited" | "failed"
   exitCode?: number
+  launchCommand?: string
 }
 
 export type TerminalExplorerGroup = {
@@ -53,6 +54,7 @@ export function buildTerminalExplorerGroups(
       cwdRootUri,
       status: session?.status ?? "starting",
       exitCode: session?.exitCode,
+      launchCommand: session?.launchCommand,
     }
 
     if (folderByRootUri.has(cwdRootUri)) {

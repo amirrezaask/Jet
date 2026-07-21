@@ -1238,6 +1238,7 @@ export function GharargahApp() {
                     label: t.label,
                     status: t.status,
                     exitCode: t.exitCode,
+                    launchCommand: t.launchCommand,
                   })),
                 }))}
                 onOpenTerminal={openTerminalFromHome}

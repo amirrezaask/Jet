@@ -18,6 +18,8 @@ test.describe("gharargah mission home", () => {
     try {
       await expectSelectorVisible(page, "[data-gharargah-home]")
       await expectSelectorVisible(page, "[data-gharargah-shell='home']")
+      await expectLocatorCount(page.locator("[data-gharargah-home-metrics]"), 0)
+      await expectLocatorContainsText(page.locator("[data-gharargah-home]"), /Here.?s what.?s running today/)
       await expect
         .poll(async () => {
           return page.locator("[data-gharargah-home] > div").evaluate(el => {
@@ -59,8 +61,10 @@ test.describe("gharargah mission home", () => {
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectSelectorVisible(page, "[data-gharargah-home]")
 
-      const cards = section.locator("[data-gharargah-terminal-card]")
+      const cards = section.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
       await expectLocatorVisible(cards.first())
+      await expectLocatorVisible(cards.first().locator("[data-gharargah-status-badge]"))
+      await expectLocatorContainsText(cards.first().locator("[data-gharargah-status-badge]"), /Running|Idle|Failed/)
       await expect
         .poll(async () => (await cards.first().textContent())?.trim().length ?? 0, { timeout: 10_000 })
         .toBeGreaterThan(0)
