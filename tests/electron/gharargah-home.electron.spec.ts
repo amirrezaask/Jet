@@ -65,7 +65,19 @@ test.describe("gharargah mission home", () => {
       await section.getByRole("button", { name: "Open project in external app" }).click()
       const openInAppMenu = page.locator("[data-gharargah-open-in-app-menu]")
       await expectLocatorVisible(openInAppMenu)
-      for (const label of ["VS Code", "Sublime Text", "Cursor", "Ghostty", "Kitty"]) {
+      for (const label of [
+        "VS Code",
+        "Cursor",
+        "Emacs",
+        "Sublime Text",
+        "Zed",
+        "Finder",
+        "Terminal",
+        "Kitty",
+        "Ghostty",
+        "Xcode",
+        "IntelliJ IDEA",
+      ]) {
         await expectLocatorVisible(openInAppMenu.getByRole("menuitem", { name: label }))
       }
       // Stub host so selecting an item closes the menu without launching apps.

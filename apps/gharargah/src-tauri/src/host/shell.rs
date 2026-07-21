@@ -15,19 +15,58 @@ pub fn open_in_app(app_id: &str, root_uri: &str) -> Result<(), String> {
 
     match app_id {
         "vscode" => {
-            try_cmds(&[
-                &["code", "-n", &path],
-                &["code.cmd", "-n", &path],
-            ])
-            .or_else(|_| open_macos_app("Visual Studio Code", &path))
+            try_cmds(&[&["code", "-n", &path], &["code.cmd", "-n", &path]])
+                .or_else(|_| open_macos_app("Visual Studio Code", &path))
+        }
+        "cursor" => {
+            try_cmds(&[&["cursor", &path], &["cursor.cmd", &path]])
+                .or_else(|_| open_macos_app("Cursor", &path))
+        }
+        "emacs" => {
+            try_cmds(&[&["emacs", &path], &["emacsclient", "-n", "-a", "", &path]])
+                .or_else(|_| open_macos_app("Emacs", &path))
         }
         "sublime" => {
             try_cmds(&[&["subl", &path], &["subl.exe", &path]])
                 .or_else(|_| open_macos_app("Sublime Text", &path))
         }
-        "cursor" => {
-            try_cmds(&[&["cursor", &path], &["cursor.cmd", &path]])
-                .or_else(|_| open_macos_app("Cursor", &path))
+        "zed" => {
+            try_cmds(&[&["zed", &path], &["zed.exe", &path]])
+                .or_else(|_| open_macos_app("Zed", &path))
+        }
+        "finder" => {
+            // `open <dir>` reveals the folder in Finder on macOS.
+            if cfg!(target_os = "macos") {
+                spawn_detached("open", &[&path])
+            } else if cfg!(target_os = "windows") {
+                spawn_detached("explorer", &[&path])
+            } else {
+                try_cmds(&[
+                    &["xdg-open", &path],
+                    &["nautilus", &path],
+                    &["dolphin", &path],
+                ])
+            }
+        }
+        "terminal" => {
+            if cfg!(target_os = "macos") {
+                open_macos_app("Terminal", &path)
+            } else if cfg!(target_os = "windows") {
+                spawn_detached("cmd", &["/c", "start", "cmd", "/k", "cd", "/d", &path])
+            } else {
+                try_cmds(&[
+                    &["x-terminal-emulator", "--working-directory", &path],
+                    &["gnome-terminal", "--working-directory", &path],
+                    &["konsole", "--workdir", &path],
+                ])
+            }
+        }
+        "kitty" => {
+            try_cmds(&[
+                &["kitty", "--directory", &path],
+                &["kitty", "--single-instance", "--directory", &path],
+            ])
+            .or_else(|_| open_macos_app("kitty", &path))
         }
         "ghostty" => {
             let working = format!("--working-directory={path}");
@@ -37,12 +76,19 @@ pub fn open_in_app(app_id: &str, root_uri: &str) -> Result<(), String> {
             ])
             .or_else(|_| open_macos_app("Ghostty", &path))
         }
-        "kitty" => {
+        "xcode" => {
+            try_cmds(&[&["xed", &path]])
+                .or_else(|_| open_macos_app("Xcode", &path))
+        }
+        "intellij" => {
             try_cmds(&[
-                &["kitty", "--directory", &path],
-                &["kitty", "--single-instance", "--directory", &path],
+                &["idea", &path],
+                &["idea64", &path],
+                &["intellij-idea-ultimate", &path],
+                &["intellij-idea-community", &path],
             ])
-            .or_else(|_| open_macos_app("kitty", &path))
+            .or_else(|_| open_macos_app("IntelliJ IDEA", &path))
+            .or_else(|_| open_macos_app("IntelliJ IDEA CE", &path))
         }
         other => Err(format!("unknown app: {other}")),
     }
@@ -58,7 +104,9 @@ fn try_cmds(attempts: &[&[&str]]) -> Result<(), String> {
         if *cmd == "open" && !cfg!(target_os = "macos") {
             continue;
         }
-        if (*cmd == "code.cmd" || *cmd == "subl.exe" || *cmd == "cursor.cmd") && !cfg!(windows) {
+        if (*cmd == "code.cmd" || *cmd == "subl.exe" || *cmd == "cursor.cmd" || *cmd == "zed.exe")
+            && !cfg!(windows)
+        {
             continue;
         }
         match spawn_detached(cmd, args) {

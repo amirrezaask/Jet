@@ -1,3 +1,3 @@
-- lsp find references does not do anything
-- lsp find defintions does not work on package level variables in Go and some other symbols ( review the lsp clicked symbol extraction)
-- name ? icon ?
+- TODO for projects
+- Git integration ( diff mostly )
+- chatgpt/claude web integration

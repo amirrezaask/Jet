@@ -149,7 +149,18 @@ export type JetElectronGit = {
   branch(rootUri: string): Promise<string | null>
 }
 
-export type OpenInAppId = "vscode" | "sublime" | "cursor" | "ghostty" | "kitty"
+export type OpenInAppId =
+  | "vscode"
+  | "cursor"
+  | "emacs"
+  | "sublime"
+  | "zed"
+  | "finder"
+  | "terminal"
+  | "kitty"
+  | "ghostty"
+  | "xcode"
+  | "intellij"
 
 export type JetElectronShell = {
   openInApp(appId: OpenInAppId, rootUri: string): Promise<{ ok: boolean }>
