@@ -207,6 +207,7 @@ export function GharargahHome(props: GharargahHomeProps) {
             {filtered.map(({ group, sessions }) => (
               <ProjectSection
                 key={group.id}
+                projectId={group.path || group.id}
                 name={group.name}
                 path={group.path}
                 rootUri={group.rootUri}

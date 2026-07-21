@@ -28,7 +28,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/dock/panel-drop-zones.test.ts src/theme/default.test.ts src/lister/fuzzy.test.ts src/lister/filter-tree.test.ts src/panels/terminal-file-drop.test.ts"
+    "test": "tsx --test src/dock/panel-drop-zones.test.ts src/theme/default.test.ts src/lister/fuzzy.test.ts src/lister/filter-tree.test.ts src/panels/terminal-file-drop.test.ts src/home/todos/project-todos-repository.test.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.6",

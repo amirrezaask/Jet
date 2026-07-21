@@ -42,6 +42,9 @@ export {
   type OpenInAppMenuProps,
   type OpenInAppTarget,
   type NewSessionMenuProps,
+  type ProjectTodo,
+  type ProjectTodosApi,
+  type ProjectTodosRepository,
 } from "./home/index.js"
 export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
 export {

@@ -34,3 +34,15 @@ export {
   type OpenInAppTarget,
 } from "./OpenInAppMenu.js"
 export { timeOfDayGreeting, formatHomeDate } from "./greeting.js"
+export {
+  projectTodosRepository,
+  createProjectTodosRepository,
+  projectTodoKey,
+  PROJECT_TODOS_STORAGE_KEY,
+  PROJECT_TODO_UI_STORAGE_KEY,
+  useProjectTodosLive,
+  useProjectTodosBundle,
+  type ProjectTodo,
+  type ProjectTodosApi,
+  type ProjectTodosRepository,
+} from "./todos/index.js"

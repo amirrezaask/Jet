@@ -13,6 +13,7 @@ import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
 import { SessionCard } from "./SessionCard.js"
 import type { SessionCardModel } from "./session-card-model.js"
 import type { TerminalCardStatus } from "./TerminalCard.js"
+import { useProjectTodosBundle } from "./todos/index.js"
 
 export type HomeTerminalEntry = {
   tabId: string
@@ -26,6 +27,8 @@ export type HomeTerminalEntry = {
 }
 
 export type HomeProjectSectionProps = {
+  /** Stable project id — prefer absolute path (folder UUID regenerates on restore). */
+  projectId: string
   name: string
   path: string
   rootUri: string
@@ -41,6 +44,7 @@ export type HomeProjectSectionProps = {
 
 export function ProjectSection(props: HomeProjectSectionProps) {
   const {
+    projectId,
     name,
     path,
     rootUri,
@@ -53,6 +57,11 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     onRemoveProject,
     onKillTerminal,
   } = props
+
+  const todos = useProjectTodosBundle({
+    projectId: projectId || path,
+    projectName: name,
+  })
 
   const titleBlock = (
     <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -67,6 +76,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
 
   const actions = (
     <div className="flex shrink-0 items-center gap-0.5">
+      {todos.summary}
       {onOpenInApp ? (
         <OpenInAppMenu rootUri={rootUri} onOpenInApp={onOpenInApp} />
       ) : null}
@@ -82,6 +92,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     <section
       data-gharargah-project-section
       data-gharargah-project-name={name}
+      data-gharargah-project-id={projectId || path}
       className="flex flex-col gap-2 border-b border-border/40 pb-3 last:border-b-0 last:pb-0"
     >
       <div
@@ -131,6 +142,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
             )
           })
         )}
+        {todos.card}
       </div>
     </section>
   )
