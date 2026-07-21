@@ -7,6 +7,7 @@ import { Kbd } from "@/components/ui/kbd.js"
 import { formatHomeDate, timeOfDayGreeting } from "./greeting.js"
 import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
 import { NewSessionMenu } from "./NewSessionMenu.js"
+import type { OpenInAppId } from "./OpenInAppMenu.js"
 import { ProjectSection, type HomeTerminalEntry } from "./ProjectSection.js"
 import {
   defaultSessionDescription,
@@ -29,6 +30,7 @@ export type GharargahHomeProps = {
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
   onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
+  onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   onAddProject?: () => void
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
@@ -57,6 +59,7 @@ export function GharargahHome(props: GharargahHomeProps) {
     onOpenTerminal,
     onNewTerminal,
     onLaunchAgentTerminal,
+    onOpenInApp,
     onAddProject,
     onRemoveProject,
     onKillTerminal,
@@ -212,6 +215,7 @@ export function GharargahHome(props: GharargahHomeProps) {
                 onOpenTerminal={onOpenTerminal}
                 onNewTerminal={onNewTerminal}
                 onLaunchAgentTerminal={onLaunchAgentTerminal}
+                onOpenInApp={onOpenInApp}
                 onRemoveProject={onRemoveProject}
                 onKillTerminal={onKillTerminal}
               />

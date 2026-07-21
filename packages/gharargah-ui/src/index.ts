@@ -24,6 +24,10 @@ export {
   StatusBadge,
   TerminalSessionModal,
   TERMINAL_MODAL_SESSION_LIST_ID,
+  NewSessionMenu,
+  OpenInAppMenu,
+  OPEN_IN_APP_TARGETS,
+  SESSION_AGENT_SHORTCUTS,
   timeOfDayGreeting,
   type GharargahHomeProps,
   type HomeProjectGroup,
@@ -34,6 +38,10 @@ export {
   type SessionCardModel,
   type SessionCardStatus,
   type SessionCardProps,
+  type OpenInAppId,
+  type OpenInAppMenuProps,
+  type OpenInAppTarget,
+  type NewSessionMenuProps,
 } from "./home/index.js"
 export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
 export {

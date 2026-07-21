@@ -15,6 +15,7 @@ import { gharargahScrollFadeClass } from "@/motion/tokens.js"
 import { cn } from "@/lib/utils.js"
 import type { TerminalCardStatus } from "./TerminalCard.js"
 import { NewSessionMenu } from "./NewSessionMenu.js"
+import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
 import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
 
 export type TerminalModalSession = {
@@ -36,6 +37,7 @@ export type TerminalSessionModalProps = {
   onSelectSession: (panelId: PanelId, tabId: string) => void
   onNewTerminal?: (rootUri: string) => void
   onLaunchAgentTerminal?: (rootUri: string, shortcut: TerminalAgentShortcut) => void
+  onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   children: ReactNode
 }
 
@@ -53,6 +55,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     onSelectSession,
     onNewTerminal,
     onLaunchAgentTerminal,
+    onOpenInApp,
     children,
   } = props
 
@@ -111,18 +114,28 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
               </p>
             ) : null}
           </div>
-          <DialogClose asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              data-gharargah-terminal-modal-close
-              aria-label="Close terminal"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-            >
-              <XIcon className="size-4" />
-            </Button>
-          </DialogClose>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {projectRootUri && onOpenInApp ? (
+              <OpenInAppMenu
+                rootUri={projectRootUri}
+                onOpenInApp={onOpenInApp}
+                data-gharargah-open-in-app="modal"
+                className="text-muted-foreground hover:text-foreground"
+              />
+            ) : null}
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                data-gharargah-terminal-modal-close
+                aria-label="Close terminal"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                <XIcon className="size-4" />
+              </Button>
+            </DialogClose>
+          </div>
         </DialogHeader>
         <div
           data-gharargah-terminal-modal-body=""

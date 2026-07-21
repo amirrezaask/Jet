@@ -10,6 +10,7 @@ pub mod launch;
 pub mod lsp;
 pub mod perf;
 pub mod search;
+pub mod shell;
 pub mod tasks;
 pub mod terminal;
 pub mod uri;
@@ -64,6 +65,9 @@ impl HostState {
         }
         if channel.starts_with("tasks:") {
             return tasks::handle(channel, args_ref);
+        }
+        if channel.starts_with("shell:") {
+            return shell::handle(channel, args_ref);
         }
         if channel.starts_with("search:") {
             return search::handle(channel, args_ref, Some(app));

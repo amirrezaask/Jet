@@ -149,6 +149,12 @@ export type JetElectronGit = {
   branch(rootUri: string): Promise<string | null>
 }
 
+export type OpenInAppId = "vscode" | "sublime" | "cursor" | "ghostty" | "kitty"
+
+export type JetElectronShell = {
+  openInApp(appId: OpenInAppId, rootUri: string): Promise<{ ok: boolean }>
+}
+
 export type GharargahHostAPI = {
   fs: JetElectronFS
   search: JetElectronSearch
@@ -158,6 +164,7 @@ export type GharargahHostAPI = {
   workspace?: JetElectronWorkspace
   agents?: JetElectronAgents
   git?: JetElectronGit
+  shell?: JetElectronShell
   getLaunchConfig?(): Promise<LaunchConfig | null>
   getHomeDir?(): Promise<string>
   loadGlobalGharargahrcScanRoots?(): Promise<string[]>

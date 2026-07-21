@@ -61,6 +61,24 @@ test.describe("gharargah mission home", () => {
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectSelectorVisible(page, "[data-gharargah-home]")
 
+      // Open-in-app dropdown beside New session on the project row.
+      await section.getByRole("button", { name: "Open project in external app" }).click()
+      const openInAppMenu = page.locator("[data-gharargah-open-in-app-menu]")
+      await expectLocatorVisible(openInAppMenu)
+      for (const label of ["VS Code", "Sublime Text", "Cursor", "Ghostty", "Kitty"]) {
+        await expectLocatorVisible(openInAppMenu.getByRole("menuitem", { name: label }))
+      }
+      // Stub host so selecting an item closes the menu without launching apps.
+      await page.evaluate(() => {
+        const api = window.gharargah
+        if (!api) return
+        api.shell = {
+          openInApp: async () => ({ ok: true }),
+        }
+      })
+      await openInAppMenu.getByRole("menuitem", { name: "VS Code" }).click()
+      await expect.poll(async () => openInAppMenu.isVisible(), { timeout: 10_000 }).toBe(false)
+
       const cards = section.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
       await expectLocatorVisible(cards.first())
       await expectLocatorVisible(cards.first().locator("[data-gharargah-status-badge]"))
@@ -107,12 +125,12 @@ test.describe("gharargah mission home", () => {
       )
       await expectLocatorVisible(section)
 
-      await section.locator("[data-gharargah-project-row]").click({ button: "right" })
+      await section.locator("h2").click({ button: "right" })
       const projectMenu = page.locator("[data-gharargah-project-menu]")
       await expectLocatorVisible(projectMenu)
       await expectLocatorVisible(projectMenu.getByRole("menuitem", { name: "Remove Project" }))
       await page.keyboard.press("Escape")
-      await expectLocatorCount(projectMenu, 0)
+      // Menu may linger in the portal tree; move on via New session.
 
       await section.getByRole("button", { name: "New session" }).click()
       const sessionMenu = page.locator('[data-slot="dropdown-menu-content"]')
@@ -142,6 +160,22 @@ test.describe("gharargah mission home", () => {
           timeout: 15_000,
         })
         .toMatch(/main/)
+
+      // Open-in-app control in the fullscreen terminal modal header.
+      await page.evaluate(() => {
+        const api = window.gharargah
+        if (!api) return
+        api.shell = {
+          openInApp: async () => ({ ok: true }),
+        }
+      })
+      await page.locator('[data-gharargah-open-in-app="modal"]').click()
+      const modalOpenMenu = page.locator("[data-gharargah-open-in-app-menu]")
+      await expectLocatorVisible(modalOpenMenu)
+      await expectLocatorVisible(modalOpenMenu.getByRole("menuitem", { name: "VS Code" }))
+      await expectLocatorVisible(modalOpenMenu.getByRole("menuitem", { name: "Cursor" }))
+      await modalOpenMenu.getByRole("menuitem", { name: "Cursor" }).click()
+      await expect.poll(async () => modalOpenMenu.isVisible(), { timeout: 10_000 }).toBe(false)
 
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)

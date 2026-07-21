@@ -26,4 +26,11 @@ export {
   SESSION_AGENT_SHORTCUTS,
   type NewSessionMenuProps,
 } from "./NewSessionMenu.js"
+export {
+  OpenInAppMenu,
+  OPEN_IN_APP_TARGETS,
+  type OpenInAppId,
+  type OpenInAppMenuProps,
+  type OpenInAppTarget,
+} from "./OpenInAppMenu.js"
 export { timeOfDayGreeting, formatHomeDate } from "./greeting.js"

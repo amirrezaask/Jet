@@ -49,6 +49,7 @@ import {
   AppShell,
   GharargahHome,
   TerminalSessionModal,
+  type OpenInAppId,
 } from "@gharargah/ui"
 import { APP_COMMAND_REGISTRY, buildAppCommands, buildMacTerminalQuickSwitchBindings } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
@@ -377,6 +378,19 @@ export function GharargahApp() {
     },
     [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
   )
+
+  const openProjectInApp = useCallback(async (rootUri: string, appId: OpenInAppId) => {
+    try {
+      const shell = window.gharargah?.shell
+      if (!shell?.openInApp) {
+        throw new Error("Open in app is not available in this host")
+      }
+      await shell.openInApp(appId, rootUri)
+    } catch (err) {
+      console.error("[gharargah] openProjectInApp failed", err)
+      showGharargahToast(err instanceof Error ? err.message : String(err), { variant: "destructive" })
+    }
+  }, [])
 
   const closeTerminalTab = useCallback(
     (panelId: PanelId, tabId: string) => {
@@ -1244,6 +1258,7 @@ export function GharargahApp() {
                 onOpenTerminal={openTerminalFromHome}
                 onNewTerminal={rootUri => void newTerminalFromHome(rootUri)}
                 onLaunchAgentTerminal={(rootUri, shortcut) => void launchAgentFromHome(rootUri, shortcut)}
+                onOpenInApp={(rootUri, appId) => void openProjectInApp(rootUri, appId)}
                 onAddProject={() => setAddWorkspaceOpen(true)}
                 onRemoveProject={removeProjectByRootUri}
                 onKillTerminal={closeTerminalTab}
@@ -1282,6 +1297,7 @@ export function GharargahApp() {
                 onSelectSession={focusTerminalTab}
                 onNewTerminal={rootUri => void newTerminalFromHome(rootUri)}
                 onLaunchAgentTerminal={(rootUri, shortcut) => void launchAgentFromHome(rootUri, shortcut)}
+                onOpenInApp={(rootUri, appId) => void openProjectInApp(rootUri, appId)}
               >
                 <PanelBody
                   panelId={terminalModalPanelId}
