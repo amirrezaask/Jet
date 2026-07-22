@@ -239,6 +239,12 @@ export class WorkspaceManager {
   }
 
   async addFolder(folderPath: string): Promise<WorkspaceFolder> {
+    try {
+      const stat = await this.fs.stat(pathToFileUri(folderPath))
+      folderPath = fileUriToPath(stat.uri)
+    } catch {
+      // Preserve the existing deferred-error behavior for unavailable folders.
+    }
     const norm = normalizeAbsPath(folderPath)
     const existing = this.entries.find(
       e => normalizeAbsPath(e.folder.root.path) === norm,

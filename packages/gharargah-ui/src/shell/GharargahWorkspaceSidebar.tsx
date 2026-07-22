@@ -110,7 +110,6 @@ export function GharargahWorkspaceSidebar({
     >
       <div
         data-gharargah-sidebar-chrome
-        data-tauri-drag-region={showWindowChrome ? "deep" : undefined}
         className="flex min-h-[var(--gharargah-window-chrome-height)] shrink-0 items-stretch border-b border-sidebar-border px-2"
         style={
           showWindowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined
@@ -120,14 +119,12 @@ export function GharargahWorkspaceSidebar({
           <div
             aria-hidden
             data-gharargah-traffic-light-spacer
-            data-tauri-drag-region="true"
             className="shrink-0 self-stretch"
             style={{ WebkitAppRegion: "drag" } as CSSProperties}
           />
         ) : null}
         <div
           className="flex min-w-0 flex-1 items-center gap-1 py-1 pl-1"
-          data-tauri-drag-region={showWindowChrome ? "false" : undefined}
           style={
             showWindowChrome ? ({ WebkitAppRegion: "no-drag" } as CSSProperties) : undefined
           }

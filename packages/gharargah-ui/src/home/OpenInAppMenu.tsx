@@ -97,7 +97,7 @@ export function OpenInAppMenu(props: OpenInAppMenuProps) {
     className,
     "data-gharargah-open-in-app": dataAttr = "true",
   } = props
-  // Controlled open so Tauri e2e synthetic `.click()` still opens the menu.
+  // Controlled open keeps programmatic and pointer activation consistent.
   const [open, setOpen] = useState(false)
   const [lastAppId, setLastAppId] = useState<OpenInAppId>(readLastAppId)
 

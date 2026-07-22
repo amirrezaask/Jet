@@ -1,6 +1,6 @@
 import { resolve } from "node:path"
 import { execSync } from "node:child_process"
-import { launchTauri } from "../shell/launch-tauri.js"
+import { launchWeb } from "../shell/launch-web.js"
 import type { LaunchShellResult, ShellDriver } from "../shell/driver.js"
 
 export type { ShellDriver }
@@ -14,7 +14,7 @@ export type LaunchJetOptions = {
 export const REPO_ROOT = resolve(__dirname, "..", "..")
 export const SAMPLE = "fixtures/sample-workspace"
 
-/** Tauri host owns PTY; assume available on Unix CI/dev machines. */
+/** The Rust server owns PTYs; assume available on Unix CI/dev machines. */
 export function hasPtySpawn(): boolean {
   return process.platform !== "win32"
 }
@@ -33,13 +33,13 @@ export function hasCursorAgent(): boolean {
   }
 }
 
-/** Shared E2E entry — Tauri shell only (Electron retired). Specs stay under tests/electron/. */
+/** Shared E2E entry. Historical specs remain under tests/electron/. */
 export async function launchJet(
   workspaceRelOrOpts: string | LaunchJetOptions = SAMPLE,
 ): Promise<LaunchShellResult> {
   const opts: LaunchJetOptions =
     typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
-  return launchTauri(opts)
+  return launchWeb(opts)
 }
 
 export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promise<void> {

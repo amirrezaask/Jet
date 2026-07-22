@@ -2,20 +2,17 @@
   "name": "gharargah",
   "private": true,
   "scripts": {
-    "build": "turbo run build",
+    "build": "node scripts/build-web-binary.mjs",
     "dev": "pnpm --filter gharargah dev",
-    "dev:tauri": "pnpm --filter gharargah dev",
-    "test:tauri": "playwright test --project=tauri && PLAYWRIGHT_WORKERS=1 playwright test --project=tauri-e2e",
+    "test:server": "cargo test --manifest-path apps/server/Cargo.toml",
+    "test:e2e": "playwright test --project=web-e2e",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "test": "pnpm --filter @gharargah/workspace test && pnpm --filter @gharargah/lsp test && pnpm --filter @gharargah/node-host test && pnpm --filter @gharargah/app test",
-    "test:electron": "echo 'Electron shell removed; use pnpm test:tauri (tauri-e2e runs tests/electron specs)' && exit 1",
-    "test:bench": "GHARARGAH_SHELL=tauri playwright test --project=bench",
-    "bench:startup:tauri": "pnpm --filter gharargah bench:startup:debug && pnpm --filter gharargah bench:startup:release",
+    "test": "pnpm --filter @gharargah/workspace test && pnpm --filter @gharargah/lsp test && pnpm --filter @gharargah/node-host test && pnpm --filter @gharargah/host-client test && pnpm --filter @gharargah/app test",
+    "test:bench": "playwright test --project=bench",
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-gharargah-keybindings.mjs",
-    "release": "pnpm --filter gharargah release && cp -r ./apps/gharargah/src-tauri/target/release/bundle/macos/Gharargah.app ~/Applications/",
-    "release:tauri": "pnpm --filter gharargah release && cp -r ./apps/gharargah/src-tauri/target/release/bundle/macos/Gharargah.app ~/Applications/"
+    "release": "pnpm build"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

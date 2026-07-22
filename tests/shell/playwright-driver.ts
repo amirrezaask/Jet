@@ -13,23 +13,23 @@ class PlaywrightLocator implements ShellLocator {
   }
 
   click(options?: { timeout?: number }): Promise<void> {
-    return this.pw.click(options)
+    return this.pw.first().click(options)
   }
 
   fill(value: string): Promise<void> {
-    return this.pw.fill(value)
+    return this.pw.first().fill(value)
   }
 
   press(key: string): Promise<void> {
-    return this.pw.press(key)
+    return this.pw.first().press(key)
   }
 
   focus(): Promise<void> {
-    return this.pw.focus()
+    return this.pw.first().focus()
   }
 
   hover(): Promise<void> {
-    return this.pw.hover()
+    return this.pw.first().hover()
   }
 
   first(): ShellLocator {
@@ -57,19 +57,19 @@ class PlaywrightLocator implements ShellLocator {
   }
 
   getAttribute(name: string): Promise<string | null> {
-    return this.pw.getAttribute(name)
+    return this.pw.first().getAttribute(name)
   }
 
   textContent(): Promise<string | null> {
-    return this.pw.textContent()
+    return this.pw.first().textContent()
   }
 
   waitFor(options?: { state?: "visible" | "attached" | "hidden"; timeout?: number }): Promise<void> {
-    return this.pw.waitFor(options)
+    return this.pw.first().waitFor(options)
   }
 
   boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> {
-    return this.pw.boundingBox()
+    return this.pw.first().boundingBox()
   }
 
   evaluate<R, Arg>(pageFunction: (arg: Arg, element: Element) => R | Promise<R>, arg: Arg): Promise<R>
@@ -79,13 +79,13 @@ class PlaywrightLocator implements ShellLocator {
     arg?: Arg,
   ): Promise<R> {
     if (arg === undefined) {
-      return this.pw.evaluate(pageFunction as (element: Element) => R | Promise<R>)
+      return this.pw.first().evaluate(pageFunction as (element: Element) => R | Promise<R>)
     }
-    return this.pw.evaluate(pageFunction as (arg: Arg, element: Element) => R | Promise<R>, arg)
+    return this.pw.first().evaluate(pageFunction as (arg: Arg, element: Element) => R | Promise<R>, arg)
   }
 
   isVisible(): Promise<boolean> {
-    return this.pw.isVisible()
+    return this.pw.first().isVisible()
   }
 
   count(): Promise<number> {
@@ -93,7 +93,10 @@ class PlaywrightLocator implements ShellLocator {
   }
 
   getByRole(role: string, options?: { name?: string | RegExp }): ShellLocator {
-    const inner = this.pw.getByRole(role as Parameters<Page["getByRole"]>[0], options)
+    const inner = this.pw.getByRole(role as Parameters<Page["getByRole"]>[0], {
+      ...options,
+      exact: typeof options?.name === "string",
+    })
     return new PlaywrightLocator(
       this.page,
       `${this.selector} >> role=${role}`,
@@ -136,7 +139,10 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
       return new PlaywrightLocator(page, selector)
     },
     getByRole(role, options) {
-      const pw = page.getByRole(role as Parameters<Page["getByRole"]>[0], options)
+      const pw = page.getByRole(role as Parameters<Page["getByRole"]>[0], {
+        ...options,
+        exact: typeof options?.name === "string",
+      })
       return new PlaywrightLocator(page, `[role="${role}"]`, pw as ReturnType<Page["locator"]>)
     },
     getByPlaceholder(text) {
@@ -148,7 +154,7 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
       return new PlaywrightLocator(page, "label", pw as ReturnType<Page["locator"]>)
     },
     async isVisible(selector) {
-      return page.locator(selector).isVisible()
+      return page.locator(selector).first().isVisible()
     },
     async count(selector) {
       return page.locator(selector).count()

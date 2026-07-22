@@ -1,4 +1,4 @@
-/** Host RPC channels implemented in the Tauri Rust shell. */
+/** Host RPC channels implemented by the Jet Rust server. */
 export const RUST_HOST_CHANNELS = new Set([
   "fs:readFile",
   "fs:writeFile",

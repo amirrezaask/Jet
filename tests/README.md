@@ -1,53 +1,13 @@
-# Playwright E2E tests
+# Browser verification
 
-Shared UI specs live under `tests/electron/` (historical path). They run against the **Tauri** shell via `tauri-e2e`.
-
-## Commands
+The historical `tests/electron/` directory contains the shared product scenarios; the name is retained to avoid a noisy move. The suite now drives Chromium against the standalone Rust server.
 
 ```bash
-pnpm test:tauri      # native Tauri channel suite + shared UI specs (tauri-e2e)
-pnpm test:bench      # UX latency benchmarks in tests/bench/ (Tauri)
+pnpm test:e2e
+GHARARGAH_HEADED=1 pnpm test:e2e
+pnpm test:bench
 ```
 
-Worker count defaults to ~half of CPU cores (see `playwright.config.ts`). Override with `PLAYWRIGHT_WORKERS=N`.
+Global setup builds the React frontend and debug Rust executable. Every scenario launches one Rust process on a free loopback port with a temporary data directory. Test projects are restricted to repository fixtures through `JET_ALLOWED_ROOTS`.
 
-Twelve flaky specs are skipped by default (`tests/electron/_flaky.ts`). Run `GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri` to include them. List + fix notes: `AGENTS.md` § Disabled flaky E2E specs.
-
-### Headless by default
-
-`pnpm test:tauri` builds the e2e binary and sets `GHARARGAH_E2E=1`. Headless parks the window
-off-screen (not `hide()` — WKWebView throttles timers when fully hidden):
-
-```bash
-GHARARGAH_HEADED=1 pnpm test:tauri   # show Tauri window on-screen while debugging
-```
-
-True OS-headless Tauri is not available on macOS (WebKit needs a display).
-
-## Layout
-
-| Path | Role |
-|------|------|
-| `tests/electron/*.electron.spec.ts` | Shared UI specs (run via `tauri-e2e`) |
-| `tests/electron/_launch.ts` | Shared launch helpers (`launchJet` → Tauri) |
-| `tests/tauri/*.tauri.spec.ts` | Tauri-native channel / smoke specs |
-| `tests/bench/*.bench.ts` | UX latency benchmarks with `budgets.json` |
-| `tests/helpers/list.ts` | List panel layout assertions |
-| `tests/helpers/location-list.ts` | Location list panel selectors |
-| `tests/helpers/shell.ts` | Palette / explorer helpers |
-
-## Fixture workspaces
-
-- `fixtures/sample-workspace` — default TypeScript project for most specs (git repo)
-- `fixtures/second-workspace` — second root for multi-root tests (git repo)
-
-## Out of scope for automation
-
-- Native OS folder/file dialogs (`showOpenFolderDialog`)
-- Unimplemented git stage/revert chord commands
-- Windows/Linux traffic-light geometry (macOS-only titlebar spec)
-- Agents E2E (excluded from `tauri-e2e` via grepInvert)
-
-## CI
-
-GitHub Actions workflow `.github/workflows/ci.yml` runs `pnpm -r typecheck`, `pnpm test:tauri`, and `pnpm test:bench`.
+Failures retain Playwright traces, screenshots, video, browser console output, and server logs. New UI or browser-visible behavior must include scoped DOM assertions and runtime verification; query echoes do not count as result-list proof.

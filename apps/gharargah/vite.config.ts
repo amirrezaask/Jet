@@ -6,22 +6,21 @@ import path from "node:path"
 const appRoot = path.resolve(__dirname, "../../packages/gharargah-app")
 const uiRoot = path.resolve(__dirname, "../../packages/gharargah-ui/src")
 
-// WKWebView on macOS 12+ ≈ Safari 15 — match Athas (instant-feel target, smaller parse cost).
-const webviewTargets = ["chrome96", "edge96", "firefox94", "safari15"]
+const browserTargets = ["chrome107", "edge107", "firefox104", "safari16"]
 
 export default defineConfig({
-  base: "./",
+  base: "/",
   define: {
     "import.meta.env.GHARARGAH_ENABLE_AGENT_CHAT": JSON.stringify(process.env.GHARARGAH_ENABLE_AGENT_CHAT ?? "0"),
   },
   build: {
-    target: webviewTargets,
-    cssTarget: webviewTargets,
+    target: browserTargets,
+    cssTarget: browserTargets,
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        index: path.resolve(appRoot, "index.tauri.html"),
+        index: path.resolve(appRoot, "index.html"),
       },
       output: {
         onlyExplicitManualChunks: true,
@@ -42,37 +41,22 @@ export default defineConfig({
       },
     }),
     tailwindcss(),
-    {
-      name: "gharargah-bootstrap-entry",
-      transformIndexHtml(html: string) {
-        return html.replace(
-          '<script type="module" src="/src/main.tsx"></script>',
-          '<script type="module" src="/@tauri-bootstrap"></script>',
-        )
-      },
-    },
   ],
   root: appRoot,
   resolve: {
     alias: {
-      "/@tauri-bootstrap": path.resolve(__dirname, "src/bootstrap.ts"),
       "@gharargah/ui/styles.css": path.resolve(uiRoot, "styles/globals.css"),
       "@": uiRoot,
     },
   },
   server: {
-    port: Number(process.env.GHARARGAH_TAURI_DEV_PORT ?? 5174),
+    port: Number(process.env.JET_WEB_PORT ?? 5174),
     strictPort: true,
-    host: process.env.TAURI_DEV_HOST ?? "127.0.0.1",
-    hmr: process.env.TAURI_DEV_HOST
-      ? {
-          protocol: "ws",
-          host: process.env.TAURI_DEV_HOST,
-          port: Number(process.env.GHARARGAH_TAURI_DEV_PORT ?? 5174) + 1,
-        }
-      : undefined,
-    watch: {
-      ignored: ["**/src-tauri/**"],
+    host: "127.0.0.1",
+    proxy: {
+      "/api": "http://127.0.0.1:4747",
+      "/health": "http://127.0.0.1:4747",
+      "/ws": { target: "ws://127.0.0.1:4747", ws: true },
     },
   },
   clearScreen: false,

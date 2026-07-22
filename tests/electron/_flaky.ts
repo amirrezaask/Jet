@@ -1,6 +1,6 @@
 import { test } from "@playwright/test"
 
-/** Re-enable skipped flaky specs: `GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri` */
+/** Re-enable skipped flaky specs: `GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:e2e` */
 export const skipFlaky = process.env.GHARARGAH_E2E_RUN_FLAKY !== "1"
 
 export function flakyReason(detail: string): string {

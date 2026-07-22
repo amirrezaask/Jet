@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Gharargah Tauri default capabilities","local":true,"windows":["main"],"permissions":["core:default","core:menu:default","core:event:default","core:window:allow-start-dragging","dialog:default","opener:default","shell:default"]}}

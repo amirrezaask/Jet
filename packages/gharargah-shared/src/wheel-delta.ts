@@ -2,7 +2,7 @@
  * Wheel → CSS-pixel delta for Gharargah's RAD scroll hijack.
  *
  * Chromium pixel deltas map ~1:1 to `scrollTop`.
- * Apple WebKit / WKWebView (Tauri macOS):
+ * Apple WebKit:
  * Must read `deltaMode` **before** `deltaY` — WebKit changes delta units
  * based on access order (MDN). Reading `deltaY` first then treating
  * `deltaMode === LINE` multiplies already-pixel values by lineHeight →

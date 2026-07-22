@@ -14,6 +14,7 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.37.0",
     "@gharargah/codemirror": "workspace:*",
+    "@gharargah/host-client": "workspace:*",
     "@gharargah/lsp": "workspace:*",
     "@gharargah/panels": "workspace:*",
     "@gharargah/shared": "workspace:*",
@@ -24,7 +25,6 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.8",
-    "@tauri-apps/api": "^2.4.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.2",

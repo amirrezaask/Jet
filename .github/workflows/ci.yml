@@ -6,8 +6,8 @@ on:
   pull_request:
 
 jobs:
-  typecheck:
-    runs-on: ubuntu-latest
+  verify:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -17,16 +17,32 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/server
+      - run: pnpm install --frozen-lockfile
+      # rust-embed validates the frontend directory while compiling the server.
+      - run: pnpm --filter gharargah build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: cargo fmt --manifest-path apps/server/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path apps/server/Cargo.toml --all-targets --all-features -- -D warnings
+      - run: cargo test --manifest-path apps/server/Cargo.toml --all-features
       - run: pnpm -r typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Single binary smoke test
+        run: |
+          test -x apps/server/target/release/jet
+          apps/server/target/release/jet --help
+      - run: pnpm test:e2e
+        env:
+          GHARARGAH_E2E_RUN_FLAKY: "1"
 
-  test-tauri:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-24.04]
-    runs-on: ${{ matrix.os }}
-    needs: typecheck
+  coverage:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -37,46 +53,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/gharargah/src-tauri
-      - name: Install Linux WebKit dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb
-      - run: pnpm install
-      - run: npm install -g typescript-language-server typescript
-      - run: cargo test --manifest-path apps/gharargah/src-tauri/Cargo.toml
-      - name: Verify Tauri startup graph (no Shiki/diffs/xterm preload)
-        run: pnpm --filter gharargah build
-      - name: Tauri native suite (macOS)
-        if: runner.os == 'macOS'
-        run: pnpm test:tauri
-        env:
-          GHARARGAH_E2E_RUN_FLAKY: "1"
-      - name: Tauri native suite (Linux/Xvfb)
-        if: runner.os == 'Linux'
-        run: xvfb-run -a pnpm test:tauri
-        env:
-          GHARARGAH_E2E_RUN_FLAKY: "1"
-
-  test-bench:
-    runs-on: macos-latest
-    needs: typecheck
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/gharargah/src-tauri
-      - run: pnpm install
-      - run: pnpm test:bench
-        env:
-          GHARARGAH_SHELL: tauri
-      - run: pnpm --filter gharargah bench:startup:release
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter gharargah build
+      # Process-heavy host paths are covered by Playwright in the verify job;
+      # this gate tracks the directly instrumented Rust unit/service baseline.
+      - run: cargo llvm-cov --manifest-path apps/server/Cargo.toml --all-features --fail-under-lines 20

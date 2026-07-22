@@ -172,7 +172,6 @@ function TabBarLeadingChrome({
         <div
           aria-hidden
           data-gharargah-traffic-light-spacer
-          data-tauri-drag-region={windowChrome ? "true" : undefined}
           className="shrink-0 self-stretch"
           style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
         />
@@ -180,7 +179,6 @@ function TabBarLeadingChrome({
       {showSidebarToggle ? (
         <div
           className="flex shrink-0 items-center self-stretch pr-1"
-          data-tauri-drag-region="false"
           style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         >
           <SidebarTrigger data-gharargah-sidebar-toggle className="size-7 text-muted-foreground" />
@@ -252,7 +250,6 @@ export function PanelTabBar({
       <div
         data-gharargah-tab-bar
         data-gharargah-tab-bar-drag={windowChrome ? "true" : undefined}
-        data-tauri-drag-region={windowChrome ? "true" : undefined}
         className="flex w-full min-h-[var(--gharargah-window-chrome-height)] shrink-0 items-stretch px-2"
         style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
       >
@@ -260,7 +257,6 @@ export function PanelTabBar({
         <div
           aria-hidden
           className="min-w-4 flex-1 self-stretch"
-          data-tauri-drag-region={windowChrome ? "true" : undefined}
           style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
         />
       </div>
@@ -276,7 +272,6 @@ export function PanelTabBar({
         ref={setBarRef}
         data-panel-id={panelId.id}
         data-gharargah-tab-bar
-        data-tauri-drag-region={windowChrome ? "true" : undefined}
         className={cn(
           "flex w-full min-h-[var(--gharargah-window-chrome-height)] shrink-0 items-stretch px-2 transition-colors duration-[var(--gharargah-motion-fast)]",
           (barOver || isForeignDrag) && isForeignDrag && "bg-muted/30",
@@ -287,7 +282,6 @@ export function PanelTabBar({
         <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
           <TabsList
             className="my-1 h-[calc(var(--gharargah-window-chrome-height)-0.5rem)]! w-auto max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-            data-tauri-drag-region="false"
             style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
           >
             {tabs.map((tab, i) => (
@@ -305,7 +299,6 @@ export function PanelTabBar({
         <div
           aria-hidden
           data-gharargah-tab-bar-drag={windowChrome ? "true" : undefined}
-          data-tauri-drag-region={windowChrome ? "true" : undefined}
           className="min-w-4 flex-1 self-stretch"
           style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
         />

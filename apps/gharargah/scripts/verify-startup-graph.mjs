@@ -6,10 +6,10 @@ import { fileURLToPath } from "node:url"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const dist = path.join(root, "dist")
-const htmlPath = path.join(dist, "index.tauri.html")
+const htmlPath = path.join(dist, "index.html")
 const html = fs.readFileSync(htmlPath, "utf8")
-const entryMatch = html.match(/<script[^>]+src="\.\/assets\/(index-[^"]+\.js)"/)
-if (!entryMatch) throw new Error("Tauri entry chunk not found")
+const entryMatch = html.match(/<script[^>]+src="\/?assets\/(index-[^"]+\.js)"/)
+if (!entryMatch) throw new Error("web entry chunk not found")
 
 const assets = path.join(dist, "assets")
 const mandatoryChunks = new Map()
@@ -22,14 +22,6 @@ const visitStaticImports = fileName => {
   }
 }
 visitStaticImports(entryMatch[1])
-// bootstrap.ts intentionally awaits the renderer entry through a dynamic import
-// so transport setup can finish first. It is still mandatory startup work.
-const rendererEntries = fs.readdirSync(assets).filter(name => /^main-[^/]+\.js$/.test(name))
-if (rendererEntries.length !== 1) {
-  throw new Error(`expected one renderer main chunk, found ${rendererEntries.length}`)
-}
-visitStaticImports(rendererEntries[0])
-
 const mandatorySource = [...mandatoryChunks.values()].join("\n")
 const forbidden = ["shiki-", "diffs-", "xterm-", "agents-entry-"]
 const forbiddenMarkers = ["lexical.dev", "LegendList", "react-markdown", "rehype-raw"]

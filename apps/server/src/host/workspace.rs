@@ -1,0 +1,336 @@
+use super::events::EventHub;
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use super::events::emit_host;
+use super::git::git_branch;
+use super::launch::uri_to_path;
+use super::search::{is_git_workspace, warm_search_index};
+
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
+
+const WATCH_IGNORE_SEGMENTS: &[&str] = &[
+    "node_modules",
+    ".git",
+    "dist",
+    "dist-electron",
+    ".turbo",
+    ".pnpm-store",
+];
+
+pub struct WorkspaceHost {
+    roots: Arc<Mutex<HashMap<String, RootState>>>,
+}
+
+struct RootState {
+    gen: u64,
+    watch_stop: Option<Arc<AtomicBool>>,
+}
+
+impl WorkspaceHost {
+    pub fn new() -> Self {
+        Self {
+            roots: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn activate(&self, app: &EventHub, root_uri: &str) -> Result<Value, String> {
+        let mut roots = self.roots.lock().map_err(|e| e.to_string())?;
+        let gen = if let Some(state) = roots.get_mut(root_uri) {
+            if let Some(stop) = state.watch_stop.take() {
+                stop.store(true, Ordering::Release);
+            }
+            state.gen += 1;
+            state.gen
+        } else {
+            let state = RootState {
+                gen: 1,
+                watch_stop: None,
+            };
+            roots.insert(root_uri.to_string(), state);
+            1
+        };
+        drop(roots);
+
+        let app_clone = app.clone();
+        let root_uri_owned = root_uri.to_string();
+        let roots = self.roots.clone();
+        thread::spawn(move || schedule_background(roots, app_clone, root_uri_owned, gen));
+        Ok(serde_json::json!({ "ok": true }))
+    }
+
+    pub fn deactivate(&self, root_uri: &str) -> Result<Value, String> {
+        let mut roots = self.roots.lock().map_err(|e| e.to_string())?;
+        if let Some(mut state) = roots.remove(root_uri) {
+            if let Some(stop) = state.watch_stop.take() {
+                stop.store(true, Ordering::Release);
+            }
+        }
+        super::search::dispose_search_index(root_uri);
+        Ok(serde_json::json!({ "ok": true }))
+    }
+
+    pub fn stop_all(&self) {
+        let uris: Vec<String> = self
+            .roots
+            .lock()
+            .map(|r| r.keys().cloned().collect())
+            .unwrap_or_default();
+        for uri in uris {
+            let _ = self.deactivate(&uri);
+        }
+    }
+
+    pub fn start_watch(&self, app: &EventHub, root_uri: &str, gen: u64) {
+        let root_path = uri_to_path(root_uri);
+        let stop = Arc::new(AtomicBool::new(false));
+        {
+            let mut roots = self.roots.lock().unwrap();
+            if let Some(state) = roots.get_mut(root_uri) {
+                if state.gen != gen {
+                    return;
+                }
+                if let Some(previous) = state.watch_stop.replace(stop.clone()) {
+                    previous.store(true, Ordering::Release);
+                }
+            } else {
+                return;
+            }
+        }
+
+        let app_handle = app.clone();
+        thread::spawn(move || {
+            // Defer watch start so cold open stays snappy (matches Electron delay).
+            thread::sleep(Duration::from_secs(10));
+            if stop.load(Ordering::Acquire) {
+                return;
+            }
+            let (tx, rx) = std::sync::mpsc::channel();
+            let mut watcher = match RecommendedWatcher::new(
+                move |res| {
+                    let _ = tx.send(res);
+                },
+                Config::default(),
+            ) {
+                Ok(w) => w,
+                Err(_) => return,
+            };
+            if watcher
+                .watch(
+                    PathBuf::from(&root_path).as_path(),
+                    RecursiveMode::Recursive,
+                )
+                .is_err()
+            {
+                return;
+            }
+
+            let mut pending: HashMap<String, Instant> = HashMap::new();
+            loop {
+                if stop.load(Ordering::Acquire) {
+                    break;
+                }
+                match rx.recv_timeout(Duration::from_millis(50)) {
+                    Ok(Ok(event)) => {
+                        for path in event.paths {
+                            if should_ignore_path(&path) {
+                                continue;
+                            }
+                            let uri = super::launch::path_to_uri(&path.to_string_lossy());
+                            pending.insert(uri, Instant::now());
+                        }
+                    }
+                    Ok(Err(_)) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+
+                let now = Instant::now();
+                let ready: Vec<String> = pending
+                    .iter()
+                    .filter(|(_, at)| now.duration_since(**at) >= WATCH_DEBOUNCE)
+                    .map(|(uri, _)| uri.clone())
+                    .collect();
+                for uri in ready {
+                    pending.remove(&uri);
+                    emit_host(&app_handle, "fs:changed", vec![Value::String(uri)]);
+                }
+            }
+        });
+    }
+}
+
+impl Default for WorkspaceHost {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn should_ignore_path(path: &Path) -> bool {
+    path.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .map(|s| WATCH_IGNORE_SEGMENTS.contains(&s))
+            .unwrap_or(false)
+    })
+}
+
+fn root_is_current(
+    roots: &Arc<Mutex<HashMap<String, RootState>>>,
+    root_uri: &str,
+    gen: u64,
+) -> bool {
+    roots
+        .lock()
+        .ok()
+        .and_then(|roots| roots.get(root_uri).map(|state| state.gen == gen))
+        .unwrap_or(false)
+}
+
+fn schedule_background(
+    roots: Arc<Mutex<HashMap<String, RootState>>>,
+    app: EventHub,
+    root_uri: String,
+    gen: u64,
+) {
+    thread::sleep(Duration::from_millis(50));
+    if !root_is_current(&roots, &root_uri, gen) {
+        return;
+    }
+    let branch = if is_git_workspace(&root_uri) {
+        git_branch(&root_uri)
+    } else {
+        None
+    };
+    // Always emit (including null) so status bar clears on non-git roots — Electron parity.
+    if root_is_current(&roots, &root_uri, gen) {
+        emit_host(
+            &app,
+            "workspace:gitBranch",
+            vec![serde_json::json!({ "rootUri": root_uri, "branch": branch })],
+        );
+    }
+
+    thread::spawn({
+        let app = app.clone();
+        let root_uri = root_uri.clone();
+        let roots = roots.clone();
+        move || {
+            if root_is_current(&roots, &root_uri, gen)
+                && warm_search_index(&root_uri)
+                && root_is_current(&roots, &root_uri, gen)
+            {
+                emit_host(
+                    &app,
+                    "workspace:searchReady",
+                    vec![serde_json::json!({ "rootUri": root_uri })],
+                );
+            }
+        }
+    });
+}
+
+pub fn handle(
+    host: &WorkspaceHost,
+    app: &EventHub,
+    channel: &str,
+    args: &[Value],
+) -> Result<Value, String> {
+    match channel {
+        "workspace:activate" => {
+            let root_uri = args
+                .first()
+                .and_then(|v| v.as_str())
+                .ok_or("missing rootUri")?;
+            let result = host.activate(app, root_uri)?;
+            let gen = host
+                .roots
+                .lock()
+                .map_err(|e| e.to_string())?
+                .get(root_uri)
+                .map(|s| s.gen)
+                .unwrap_or(1);
+            host.start_watch(app, root_uri, gen);
+            Ok(result)
+        }
+        "workspace:deactivate" => {
+            let root_uri = args
+                .first()
+                .and_then(|v| v.as_str())
+                .ok_or("missing rootUri")?;
+            host.deactivate(root_uri)
+        }
+        _ => Err(format!("unknown workspace channel: {channel}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignores_node_modules_and_git() {
+        assert!(should_ignore_path(Path::new(
+            "/proj/node_modules/pkg/index.js"
+        )));
+        assert!(should_ignore_path(Path::new("/proj/.git/HEAD")));
+        assert!(should_ignore_path(Path::new("/proj/dist/bundle.js")));
+        assert!(!should_ignore_path(Path::new("/proj/src/index.ts")));
+    }
+
+    #[test]
+    fn repeated_activation_cancels_superseded_watchers() {
+        let host = WorkspaceHost::new();
+        let uri = "file:///tmp/jet-ws-lifecycle";
+        let mut cancelled = Vec::new();
+
+        for round in 1..=20u64 {
+            let stop = Arc::new(AtomicBool::new(false));
+            let mut roots = host.roots.lock().unwrap();
+            if let Some(state) = roots.get_mut(uri) {
+                if let Some(previous) = state.watch_stop.replace(stop.clone()) {
+                    previous.store(true, Ordering::Release);
+                    cancelled.push(previous);
+                }
+                state.gen = round;
+            } else {
+                roots.insert(
+                    uri.to_string(),
+                    RootState {
+                        gen: round,
+                        watch_stop: Some(stop.clone()),
+                    },
+                );
+            }
+            drop(roots);
+            assert!(root_is_current(&host.roots, uri, round));
+            assert!(!root_is_current(&host.roots, uri, round + 1));
+        }
+
+        assert_eq!(cancelled.len(), 19);
+        for stop in &cancelled {
+            assert!(stop.load(Ordering::Acquire));
+        }
+
+        let live = host
+            .roots
+            .lock()
+            .unwrap()
+            .get(uri)
+            .and_then(|state| state.watch_stop.clone())
+            .expect("latest stop");
+        assert!(!live.load(Ordering::Acquire));
+        assert_eq!(host.roots.lock().unwrap().get(uri).unwrap().gen, 20);
+
+        host.deactivate(uri).unwrap();
+        assert!(host.roots.lock().unwrap().is_empty());
+        assert!(live.load(Ordering::Acquire));
+        assert!(!root_is_current(&host.roots, uri, 20));
+    }
+}

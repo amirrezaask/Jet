@@ -37,7 +37,7 @@ export function NewSessionMenu(props: NewSessionMenuProps) {
     align = "end",
     className,
   } = props
-  // Controlled open so Tauri e2e synthetic `.click()` still opens the menu
+  // Controlled open keeps programmatic and pointer activation consistent.
   // (Radix otherwise requires real pointerdown).
   const [open, setOpen] = useState(false)
 

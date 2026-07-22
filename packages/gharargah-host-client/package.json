@@ -10,14 +10,12 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@gharargah/agents": "workspace:*",
     "@gharargah/workspace": "workspace:*"
   },
-  "devDependencies": {
-    "@tauri-apps/api": "^2.4.0",
-    "typescript": "^7.0.2"
-  }
+  "devDependencies": { "@types/node": "^22.15.29", "tsx": "^4.23.0", "typescript": "^7.0.2" }
 }

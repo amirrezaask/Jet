@@ -95,6 +95,9 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       const ctx = contextRef.current
       if (anyOverlayOpen(ctx)) return
       const target = e.target
+      // Radix portal content owns Escape and menu navigation. Let it receive
+      // those keys before the shell-level Escape → Home binding.
+      if (target instanceof Element && target.closest('[data-slot="context-menu-content"]')) return
       const inXterm = target instanceof HTMLElement && target.closest(".xterm") != null
       if (target instanceof HTMLInputElement || (target instanceof HTMLTextAreaElement && !inXterm)) {
         return

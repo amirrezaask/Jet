@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execFileSync } from "node:child_process"
@@ -155,7 +155,7 @@ test.describe("session Git and editor workspaces", () => {
         .toBe(2)
       await expect
         .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
-        .toBe(fixture.workspace)
+        .toBe(realpathSync(fixture.workspace))
 
       await execCommand(page, "terminal.new")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })

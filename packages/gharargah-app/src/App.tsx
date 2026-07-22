@@ -90,6 +90,7 @@ import { loadGlobalJetrc } from "./load-global-gharargahrc.js"
 import { WorkspaceLayoutStore } from "./workspace-layout-store.js"
 import { swapWorkspaceLayout } from "./swap-workspace-layout.js"
 import { readProjectCatalog, writeProjectCatalog } from "./project-catalog-store.js"
+import { loadServerProjectPaths, syncServerProjectCatalog } from "./server-projects.js"
 import { useAppearanceSettings } from "./hooks/useAppearanceSettings.js"
 import { usePanelLayout } from "./hooks/usePanelLayout.js"
 import OverlayHost from "./OverlayHost.js"
@@ -202,6 +203,7 @@ export function GharargahApp() {
   const [terminalModalTitleTick, setTerminalModalTitleTick] = useState(0)
   const [terminalModalGitBranch, setTerminalModalGitBranch] = useState<string | null>(null)
   const [terminalSessionRevision, setTerminalSessionRevision] = useState(0)
+  const [, setWorkspaceRevision] = useState(0)
   const [sessionMode, setSessionMode] = useState<SessionDialogMode>("terminal")
   const sessionModeRef = useRef(sessionMode)
   sessionModeRef.current = sessionMode
@@ -220,7 +222,7 @@ export function GharargahApp() {
   const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>>(
     () => {},
   )
-  const addWorkspaceRef = useRef<(folderPath: string) => void>(() => {})
+  const addWorkspaceRef = useRef<(folderPath: string) => Promise<void>>(async () => {})
   const workspaceInitGen = useRef(new Map<string, number>())
   const workspaceRootPathRef = useRef<string | null>(null)
   const workspaceLayoutStoreRef = useRef(new WorkspaceLayoutStore())
@@ -698,6 +700,7 @@ export function GharargahApp() {
 
   useEffect(() => {
     const sub = workspace.manager.onDidChangeFolders.event(folders => {
+      setWorkspaceRevision(revision => revision + 1)
       for (const folder of folders) {
         if (!workspaceInitGen.current.has(folder.id)) {
           activateFolderBackground(folder.id, folder.root.path)
@@ -731,13 +734,11 @@ export function GharargahApp() {
   }, [workspace, cloneTree, commitTree])
 
   const addWorkspaceFolder = useCallback(
-    (folderPath: string) => {
-      void (async () => {
-        const folder = await workspace.addFolder(folderPath)
-        workspaceRootPathRef.current = folderPath
-        showGharargahToast(`Added ${folder.root.name}`)
-        activateFolderBackground(folder.id, folderPath)
-      })()
+    async (folderPath: string): Promise<void> => {
+      const folder = await workspace.addFolder(folderPath)
+      workspaceRootPathRef.current = folder.root.path
+      showGharargahToast(`Added ${folder.root.name}`)
+      activateFolderBackground(folder.id, folder.root.path)
     },
     [workspace, activateFolderBackground],
   )
@@ -749,7 +750,7 @@ export function GharargahApp() {
         folder => normalizeAbsPath(folder.root.path) === normalized,
       )
       const folder = await workspace.addFolder(folderPath)
-      workspaceRootPathRef.current = folderPath
+      workspaceRootPathRef.current = folder.root.path
       if (!opts?.silent) {
         if (existing || opts?.replace || workspace.folders.length === 1) {
           showGharargahToast(`Opened ${folderPath}`)
@@ -757,7 +758,7 @@ export function GharargahApp() {
           showGharargahToast(`Added ${folder.root.name}`)
         }
       }
-      activateFolderBackground(folder.id, folderPath)
+      activateFolderBackground(folder.id, folder.root.path)
     },
     [workspace, activateFolderBackground],
   )
@@ -833,6 +834,9 @@ export function GharargahApp() {
           workspace.manager.folders,
           workspace.manager.activeFolder?.id ?? null,
         )
+        void syncServerProjectCatalog(workspace.manager.folders).catch(() => {
+          showGharargahToast("Could not persist the project catalog", { variant: "warning" })
+        })
       }
     })
     return () => sub.dispose()
@@ -1312,7 +1316,13 @@ export function GharargahApp() {
     void (async () => {
       const cfg = window.gharargah?.getLaunchConfig ? await window.gharargah.getLaunchConfig() : null
       const catalog = readProjectCatalog()
-      const paths = catalog.projects.map(project => project.path)
+      const serverPaths = await loadServerProjectPaths().catch(() => [] as string[])
+      const paths = [...serverPaths]
+      for (const project of catalog.projects) {
+        if (!paths.some(path => normalizeAbsPath(path) === normalizeAbsPath(project.path))) {
+          paths.push(project.path)
+        }
+      }
       const explicitLaunch = cfg?.source === "explicit" || cfg?.source === "external" || !!cfg?.filePath
 
       if (cfg && (explicitLaunch || paths.length === 0)) {
@@ -1344,6 +1354,7 @@ export function GharargahApp() {
         workspace.manager.folders,
         workspace.manager.activeFolder?.id ?? null,
       )
+      await syncServerProjectCatalog(workspace.manager.folders).catch(() => {})
     })()
   }, [layoutReady, workspace])
 
@@ -1364,7 +1375,7 @@ export function GharargahApp() {
     const bootstrapAt =
       (window as Window & { __gharargahStartupBootstrapAt?: number }).__gharargahStartupBootstrapAt ?? 0
     void window.gharargah.recordStartup({
-      shell: "tauri",
+      shell: "web",
       buildMode: import.meta.env.DEV ? "debug" : "release",
       rendererBootstrapMs: bootstrapAt,
       rendererReadyMs: performance.now(),
