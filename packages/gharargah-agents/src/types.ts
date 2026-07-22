@@ -75,12 +75,14 @@ export type AgentThread = {
   title: string
   workspaceRootUri: string
   workspaceRootPath: string
-  /** Stable agent identity (codex, claude, opencode, cursor). */
+  /** Stable agent identity (codex, claude, opencode, cursor, cursor-acp). */
   agentId: string | null
   /** Selected transport implementation, such as codex:cli. */
   driverId: string | null
   /** Agent-owned ACP session id used to restore the conversation after reconnecting. */
   acpSessionId?: string | null
+  /** Live tool/status hint while a turn is running. */
+  activity?: string | null
   /** @deprecated Read-only migration field for threads created before agentId. */
   provider?: string | null
   model: string | null

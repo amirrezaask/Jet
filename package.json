@@ -5,6 +5,7 @@
     "build": "node scripts/build-web-binary.mjs",
     "dev": "pnpm --filter gharargah dev",
     "test:server": "cargo test --manifest-path apps/server/Cargo.toml",
+    "clean:rust": "cargo clean --manifest-path apps/server/Cargo.toml",
     "test:e2e": "playwright test --project=web-e2e",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",

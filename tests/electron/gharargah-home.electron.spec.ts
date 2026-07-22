@@ -48,6 +48,7 @@ test.describe("gharargah mission home", () => {
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Claude" }))
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "OpenCode" }))
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Cursor Agent" }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Cursor (ACP)" }))
       await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
       await expect
         .poll(async () => page.evaluate(() => window.__gharargahAgent?.getState()?.shellView ?? null), {
@@ -165,14 +166,14 @@ test.describe("gharargah mission home", () => {
         .toBe(true)
       await expectSelectorVisible(page, "[data-gharargah-session-mode-switch]")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal-sessions]"), 0)
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
       await expect
         .poll(async () => page.evaluate(() =>
           [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
             .map(tab => tab.textContent?.trim() ?? ""),
         ))
-        .toEqual(["Agent", "Terminal", "Editor", "Git", "TODOs"])
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"]')
+        .toEqual(["Terminal", "Editor", "Git", "TODOs"])
+      await expectLocatorCount(page.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"]')
@@ -258,7 +259,7 @@ test.describe("gharargah mission home", () => {
       })
       await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
       await expectSelectorVisible(page, "[data-gharargah-modal-editor]")
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
 
       // Open-in-app control in the fullscreen terminal modal header.
       await page.evaluate(() => {

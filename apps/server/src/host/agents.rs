@@ -47,13 +47,23 @@ const AGENTS: &[AgentSpec] = &[
         display_name: "Cursor",
         binaries: &["cursor-agent", "agent"],
     },
+    AgentSpec {
+        id: "cursor-acp",
+        display_name: "Cursor (ACP)",
+        binaries: &["cursor-agent", "agent"],
+    },
 ];
 
 fn normalize_agent_id(id: &str) -> &str {
     match id {
         "claudeAgent" => "claude",
+        "cursorAcp" => "cursor-acp",
         other => other,
     }
+}
+
+fn is_acp_driver(driver_id: &str) -> bool {
+    driver_id.ends_with(":acp")
 }
 
 fn agent_spec(id: &str) -> Option<AgentSpec> {
@@ -73,10 +83,10 @@ impl AgentsHost {
     }
 
     fn default_driver_id(agent_id: &str) -> String {
-        if normalize_agent_id(agent_id) == "cursor" {
-            "cursor:acp".to_string()
-        } else {
-            format!("{}:cli", normalize_agent_id(agent_id))
+        match normalize_agent_id(agent_id) {
+            // Cursor ACP is a separate agent; transport id stays `cursor:acp`.
+            "cursor-acp" => "cursor:acp".to_string(),
+            id => format!("{id}:cli"),
         }
     }
 
@@ -85,10 +95,9 @@ impl AgentsHost {
     }
 
     fn normalize_driver_id(agent_id: &str, driver_id: Option<&str>) -> String {
-        match (normalize_agent_id(agent_id), driver_id) {
-            ("cursor", None | Some("cursor:cli")) => "cursor:acp".to_string(),
-            (_, Some(driver_id)) => driver_id.to_string(),
-            (agent_id, None) => Self::default_driver_id(agent_id),
+        match driver_id {
+            Some(driver_id) => driver_id.to_string(),
+            None => Self::default_driver_id(agent_id),
         }
     }
 
@@ -171,9 +180,13 @@ impl AgentsHost {
         if thread.get("agentId").and_then(Value::as_str) != Some(agent_id.as_str()) {
             thread["agentId"] = json!(agent_id);
         }
-        let driver_id = thread.get("driverId").and_then(Value::as_str);
-        if driver_id.is_none() || (agent_id == "cursor" && driver_id == Some("cursor:cli")) {
+        if thread.get("driverId").and_then(Value::as_str).is_none() {
             thread["driverId"] = json!(Self::default_driver_id(&agent_id));
+        }
+        // Legacy threads stored ACP under agentId=cursor + cursor:acp.
+        if agent_id == "cursor" && thread.get("driverId").and_then(Value::as_str) == Some("cursor:acp")
+        {
+            thread["agentId"] = json!("cursor-acp");
         }
         thread
     }
@@ -417,11 +430,15 @@ impl AgentsHost {
             ActiveTurn {
                 id: turn_id,
                 stop: stop.clone(),
-                acp_cancel: (driver_id == "cursor:acp").then_some(acp_cancel),
+                acp_cancel: is_acp_driver(&driver_id).then_some(acp_cancel),
             },
         );
 
         let agent_id = agent.id.to_string();
+        let model = thread
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let active_turns = self.active_turns.clone();
         let acp_session_id = thread
             .get("acpSessionId")
@@ -436,6 +453,7 @@ impl AgentsHost {
                 text,
                 agent_id,
                 driver_id,
+                model,
                 acp_session_id,
                 acp_cancel_rx,
                 stop,
@@ -505,9 +523,7 @@ impl AgentsHost {
             if input.get("driverId").is_none() {
                 thread["driverId"] = json!(Self::default_driver_id(agent.id));
             }
-            if agent.id != "cursor" {
-                thread["acpSessionId"] = Value::Null;
-            }
+            thread["acpSessionId"] = Value::Null;
         }
         if let Some(driver_id) = input.get("driverId") {
             let requested_driver_id = driver_id.as_str().ok_or("invalid driverId")?;
@@ -576,7 +592,7 @@ impl AgentsHost {
                     "enabled": installed,
                     "status": if installed { "ready" } else { "unavailable" },
                     "message": if installed { Value::Null } else { json!(format!("{} CLI not found on PATH", agent.display_name)) },
-                    "models": if installed { json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }]) } else { json!([]) },
+                    "models": if installed { agent_models(agent) } else { json!([]) },
                 })
             })
             .collect::<Vec<_>>();
@@ -602,7 +618,11 @@ impl Default for AgentsHost {
 fn agent_snapshot(agent: &AgentSpec) -> Value {
     let installed = agent_available(agent);
     let driver_id = AgentsHost::default_driver_id(agent.id);
-    let driver_kind = if agent.id == "cursor" { "acp" } else { "cli" };
+    let kind = if is_acp_driver(&driver_id) {
+        "acp"
+    } else {
+        "cli"
+    };
     json!({
         "id": agent.id,
         "displayName": agent.display_name,
@@ -610,16 +630,99 @@ fn agent_snapshot(agent: &AgentSpec) -> Value {
         "activeDriverId": driver_id,
         "drivers": [{
             "id": driver_id,
-            "kind": driver_kind,
+            "kind": kind,
             "status": if installed { "ready" } else { "unavailable" },
             "message": if installed { Value::Null } else { json!(format!("{} CLI not found on PATH", agent.display_name)) },
         }],
         "models": if installed {
-            json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }])
+            agent_models(agent)
         } else {
             json!([])
         },
     })
+}
+
+fn agent_models(agent: &AgentSpec) -> Value {
+    if std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() == Some("1") {
+        return json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }]);
+    }
+    if agent.id == "cursor" || agent.id == "cursor-acp" {
+        return json!(list_cursor_models());
+    }
+    json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }])
+}
+
+fn list_cursor_models() -> Vec<Value> {
+    static CACHE: Mutex<Option<(std::time::Instant, Vec<Value>)>> = Mutex::new(None);
+    const TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
+    if let Ok(guard) = CACHE.lock() {
+        if let Some((fetched_at, models)) = guard.as_ref() {
+            if fetched_at.elapsed() < TTL && !models.is_empty() {
+                return models.clone();
+            }
+        }
+    }
+
+    let models = fetch_cursor_models_from_cli().unwrap_or_else(|| {
+        vec![json!({ "slug": "auto", "name": "Auto", "shortName": "Auto" })]
+    });
+    if let Ok(mut guard) = CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), models.clone()));
+    }
+    models
+}
+
+fn fetch_cursor_models_from_cli() -> Option<Vec<Value>> {
+    let binary = cursor_binary()?;
+    let output = Command::new(binary)
+        .arg("models")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let models = parse_cursor_models_output(&stdout);
+    if models.is_empty() {
+        None
+    } else {
+        Some(models)
+    }
+}
+
+fn parse_cursor_models_output(stdout: &str) -> Vec<Value> {
+    let mut models = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.eq_ignore_ascii_case("Available models") {
+            continue;
+        }
+        let Some((slug, rest)) = line.split_once(" - ") else {
+            continue;
+        };
+        let slug = slug.trim();
+        if slug.is_empty() || slug.contains(' ') {
+            continue;
+        }
+        let name = rest
+            .trim()
+            .trim_end_matches("(default)")
+            .trim()
+            .to_string();
+        if name.is_empty() {
+            continue;
+        }
+        let short_name = name.split_whitespace().take(3).collect::<Vec<_>>().join(" ");
+        models.push(json!({
+            "slug": slug,
+            "name": name,
+            "shortName": short_name,
+        }));
+    }
+    models
 }
 
 fn agent_available(agent: &AgentSpec) -> bool {
@@ -646,6 +749,7 @@ fn run_turn(
     prompt: String,
     agent_id: String,
     driver_id: String,
+    model: Option<String>,
     acp_session_id: Option<String>,
     acp_cancel: watch::Receiver<bool>,
     stop: Arc<Mutex<bool>>,
@@ -655,13 +759,14 @@ fn run_turn(
         run_mock_turn(&app, &root_path, &thread_id, &assistant_id, &prompt, &stop);
         return;
     }
-    if driver_id == "cursor:acp" && agent_id == "cursor" {
+    if is_acp_driver(&driver_id) && (agent_id == "cursor" || agent_id == "cursor-acp") {
         if let Err(error) = run_cursor_acp_turn(
             &app,
             &root_path,
             &thread_id,
             &assistant_id,
             &prompt,
+            model,
             acp_session_id,
             acp_cancel,
         ) {
@@ -776,7 +881,7 @@ fn cli_args(agent_id: &str, prompt: &str) -> Option<Vec<String>> {
         "codex" => vec!["exec", "--color", "never", prompt],
         "claude" => vec!["-p", prompt, "--output-format", "text"],
         "opencode" => vec!["run", prompt],
-        "cursor" => return None,
+        "cursor" => vec!["-p", "--output-format", "text", "-f", prompt],
         _ => return None,
     };
     Some(args.into_iter().map(str::to_string).collect())
@@ -796,12 +901,16 @@ fn run_cursor_acp_turn(
     thread_id: &str,
     assistant_id: &str,
     prompt: &str,
+    model: Option<String>,
     existing_session_id: Option<String>,
     cancel: watch::Receiver<bool>,
 ) -> Result<(), String> {
     let binary = cursor_binary().ok_or("Cursor Agent CLI not found on PATH")?;
     let transport = cursor_acp_agent(binary)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    // Multi-thread runtime: stdio child I/O + notification handlers stay responsive
+    // during long tool-heavy turns (current_thread starved mid-turn before).
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()
         .map_err(|error| error.to_string())?;
@@ -810,6 +919,7 @@ fn run_cursor_acp_turn(
         AcpTurnInput {
             cwd: PathBuf::from(root_path),
             prompt: prompt.to_string(),
+            model,
             existing_session_id,
         },
         cancel,
@@ -830,7 +940,16 @@ fn run_cursor_acp_turn(
                 emit_assistant_delta(&app, &root_path, &thread_id, &assistant_id, text);
             })
         },
+        {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            Arc::new(move |activity| {
+                persist_thread_activity(&app, &root_path, &thread_id, Some(activity));
+            })
+        },
     ))?;
+    persist_thread_activity(app, root_path, thread_id, None);
     if result.stop_reason == agent_client_protocol::schema::v1::StopReason::Cancelled {
         update_assistant(
             app,
@@ -853,6 +972,31 @@ fn run_cursor_acp_turn(
         );
     }
     Ok(())
+}
+
+fn persist_thread_activity(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    activity: Option<&str>,
+) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    let next = activity.map(str::to_string);
+    let current = thread
+        .get("activity")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    if current == next {
+        return;
+    }
+    thread["activity"] = match next {
+        Some(value) => json!(value),
+        None => Value::Null,
+    };
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
 }
 
 fn persist_acp_session_id(app: &EventHub, root_path: &str, thread_id: &str, session_id: &str) {
@@ -1018,6 +1162,9 @@ fn update_assistant(
     }
     thread["status"] = json!(status);
     thread["updatedAt"] = json!(updated_at);
+    if status != "streaming" && status != "running" {
+        thread["activity"] = Value::Null;
+    }
     if let Some(error) = error {
         thread["lastError"] = json!(error);
     } else if status == "idle" {
@@ -1095,7 +1242,7 @@ pub fn handle(
 
 #[cfg(test)]
 mod tests {
-    use super::{cli_args, AgentsHost};
+    use super::{cli_args, parse_cursor_models_output, AgentsHost};
     use serde_json::json;
     use std::fs;
 
@@ -1153,20 +1300,21 @@ mod tests {
             .iter()
             .map(|agent| agent["id"].as_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(ids, vec!["codex", "claude", "opencode", "cursor"]);
+        assert_eq!(
+            ids,
+            vec!["codex", "claude", "opencode", "cursor", "cursor-acp"]
+        );
         for agent in agents {
             let id = agent["id"].as_str().unwrap();
-            let expected_driver = if id == "cursor" {
+            let expected_driver = if id == "cursor-acp" {
                 "cursor:acp".to_string()
             } else {
                 format!("{id}:cli")
             };
+            let expected_kind = if id == "cursor-acp" { "acp" } else { "cli" };
             assert_eq!(agent["activeDriverId"], expected_driver);
             assert_eq!(agent["drivers"][0]["id"], expected_driver);
-            assert_eq!(
-                agent["drivers"][0]["kind"],
-                if id == "cursor" { "acp" } else { "cli" }
-            );
+            assert_eq!(agent["drivers"][0]["kind"], expected_kind);
         }
     }
 
@@ -1181,11 +1329,14 @@ mod tests {
             vec!["-p", "hello", "--output-format", "text"]
         );
         assert_eq!(cli_args("opencode", "hello").unwrap(), vec!["run", "hello"]);
-        assert_eq!(cli_args("cursor", "hello"), None);
+        assert_eq!(
+            cli_args("cursor", "hello").unwrap(),
+            vec!["-p", "--output-format", "text", "-f", "hello"]
+        );
     }
 
     #[test]
-    fn new_cursor_thread_defaults_to_acp_and_starts_idle() {
+    fn new_cursor_thread_defaults_to_cli_and_starts_idle() {
         let root = std::env::temp_dir().join(format!(
             "gharargah-agent-thread-{}-{}",
             std::process::id(),
@@ -1201,18 +1352,55 @@ mod tests {
             }))
             .unwrap();
         assert_eq!(thread["agentId"], "cursor");
-        assert_eq!(thread["driverId"], "cursor:acp");
+        assert_eq!(thread["driverId"], "cursor:cli");
         assert_eq!(thread["status"], "idle");
         assert!(thread.get("provider").is_none());
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn legacy_cursor_cli_threads_migrate_to_acp() {
+    fn legacy_cursor_acp_threads_move_to_cursor_acp_agent() {
         let thread = AgentsHost::normalize_thread(json!({
             "agentId": "cursor",
-            "driverId": "cursor:cli",
+            "driverId": "cursor:acp",
+            "acpSessionId": "sess-1",
         }));
+        assert_eq!(thread["agentId"], "cursor-acp");
         assert_eq!(thread["driverId"], "cursor:acp");
+        assert_eq!(thread["acpSessionId"], "sess-1");
+    }
+
+    #[test]
+    fn new_cursor_acp_thread_defaults_to_acp_driver() {
+        let root = std::env::temp_dir().join(format!(
+            "gharargah-agent-thread-acp-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let root_path = root.to_string_lossy().to_string();
+        let thread = AgentsHost::new()
+            .create_thread(&json!({
+                "workspaceRootUri": format!("file://{root_path}"),
+                "workspaceRootPath": root_path,
+                "agentId": "cursor-acp",
+            }))
+            .unwrap();
+        assert_eq!(thread["agentId"], "cursor-acp");
+        assert_eq!(thread["driverId"], "cursor:acp");
+        assert_eq!(thread["status"], "idle");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn parses_cursor_models_cli_output() {
+        let models = parse_cursor_models_output(
+            "Available models\n\nauto - Auto (default)\ncomposer-2.5 - Composer 2.5\n",
+        );
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0]["slug"], "auto");
+        assert_eq!(models[0]["name"], "Auto");
+        assert_eq!(models[1]["slug"], "composer-2.5");
+        assert_eq!(models[1]["name"], "Composer 2.5");
     }
 }

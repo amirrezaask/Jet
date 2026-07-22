@@ -17,6 +17,7 @@ export const SESSION_AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon
   { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
   { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
   { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
+  { id: "cursor-acp", label: "Cursor (ACP)", driverId: "cursor:acp", Icon: CursorIcon },
 ]
 
 export type NewSessionMenuProps = {
@@ -84,7 +85,7 @@ export function NewSessionMenu(props: NewSessionMenuProps) {
           </DropdownMenuItem>
           {SESSION_AGENT_SHORTCUTS.map(shortcut => (
             <DropdownMenuItem
-              key={shortcut.id}
+              key={`${shortcut.id}:${shortcut.driverId ?? shortcut.command ?? shortcut.label}`}
               onSelect={() => onLaunchAgentTerminal(rootUri, shortcut)}
             >
               <shortcut.Icon className="size-4" />

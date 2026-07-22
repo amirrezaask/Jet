@@ -1,24 +1,29 @@
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, ContentChunk, Implementation, InitializeRequest,
-    LoadSessionRequest, NewSessionRequest, PermissionOption, PermissionOptionKind, PromptRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionNotification, SessionUpdate, StopReason, TextContent,
+    CancelNotification, ClientCapabilities, ClientSessionCapabilities, ContentBlock, ContentChunk,
+    Implementation, InitializeRequest, LoadSessionRequest, NewSessionRequest, PermissionOption,
+    PermissionOptionKind, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigOption,
+    SessionConfigOptionCategory, SessionConfigOptionValue, SessionConfigOptionsCapabilities,
+    SessionConfigKind, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
+    StopReason, TextContent, ToolCall, ToolCallUpdate,
 };
 use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::{AcpAgent, Client, ConnectTo};
+use agent_client_protocol::{AcpAgent, Agent, Client, ConnectTo, ConnectionTo};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::watch;
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-const CANCELLATION_TIMEOUT: Duration = Duration::from_secs(10);
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(120);
+const CONFIG_TIMEOUT: Duration = Duration::from_secs(30);
+const CANCELLATION_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug)]
 pub struct AcpTurnInput {
     pub cwd: PathBuf,
     pub prompt: String,
+    pub model: Option<String>,
     pub existing_session_id: Option<String>,
 }
 
@@ -41,6 +46,13 @@ fn preferred_permission(options: &[PermissionOption]) -> RequestPermissionOutcom
             options
                 .iter()
                 .find(|option| option.kind == PermissionOptionKind::AllowAlways)
+        })
+        // Last resort: first option. Reject-only menus still cancel below.
+        .or_else(|| {
+            options
+                .iter()
+                .find(|option| option.kind != PermissionOptionKind::RejectOnce
+                    && option.kind != PermissionOptionKind::RejectAlways)
         });
     match option {
         Some(option) => RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
@@ -50,12 +62,100 @@ fn preferred_permission(options: &[PermissionOption]) -> RequestPermissionOutcom
     }
 }
 
+fn client_capabilities() -> ClientCapabilities {
+    // Advertise config-option support so agents expose model selectors and
+    // accept `session/set_config_option` for model switches.
+    ClientCapabilities::new().session(
+        ClientSessionCapabilities::new()
+            .config_options(SessionConfigOptionsCapabilities::new()),
+    )
+}
+
+fn model_config_option(options: &[SessionConfigOption]) -> Option<&SessionConfigOption> {
+    options
+        .iter()
+        .find(|option| matches!(option.category, Some(SessionConfigOptionCategory::Model)))
+        .or_else(|| {
+            options.iter().find(|option| {
+                option.id.0.as_ref().eq_ignore_ascii_case("model")
+                    || option.name.eq_ignore_ascii_case("model")
+            })
+        })
+}
+
+fn select_has_value(kind: &SessionConfigKind, value: &str) -> bool {
+    match kind {
+        SessionConfigKind::Select(select) => match &select.options {
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(options) => {
+                options.iter().any(|option| option.value.0.as_ref() == value)
+            }
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Grouped(groups) => groups
+                .iter()
+                .flat_map(|group| group.options.iter())
+                .any(|option| option.value.0.as_ref() == value),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+async fn apply_session_model(
+    connection: &ConnectionTo<Agent>,
+    session_id: &agent_client_protocol::schema::v1::SessionId,
+    config_options: Option<&[SessionConfigOption]>,
+    model: Option<&str>,
+) -> Result<(), String> {
+    let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let Some(options) = config_options.filter(|items| !items.is_empty()) else {
+        return Ok(());
+    };
+    let Some(option) = model_config_option(options) else {
+        return Ok(());
+    };
+    if matches!(&option.kind, SessionConfigKind::Select(_)) && !select_has_value(&option.kind, model)
+    {
+        // Unknown slug — skip rather than fail the turn. Catalog may be ahead of agent.
+        return Ok(());
+    }
+    let request = SetSessionConfigOptionRequest::new(
+        session_id.clone(),
+        SessionConfigId::new(option.id.0.as_ref()),
+        SessionConfigOptionValue::value_id(model.to_string()),
+    );
+    tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
+        .await
+        .map_err(|_| "ACP session/set_config_option timed out".to_string())?
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn tool_activity_label(update: &SessionUpdate) -> Option<String> {
+    match update {
+        SessionUpdate::ToolCall(ToolCall { title, kind, status, .. }) => {
+            Some(format!("{status:?}: {kind:?} — {title}"))
+        }
+        SessionUpdate::ToolCallUpdate(ToolCallUpdate { fields, .. }) => {
+            let title = fields.title.as_deref().unwrap_or("tool");
+            let status = fields
+                .status
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_else(|| "update".to_string());
+            Some(format!("Tool {status}: {title}"))
+        }
+        SessionUpdate::AgentThoughtChunk(_) => Some("Thinking…".to_string()),
+        _ => None,
+    }
+}
+
 pub async fn run_acp_turn<T>(
     transport: T,
     input: AcpTurnInput,
     mut cancel: watch::Receiver<bool>,
     on_session: Arc<dyn Fn(&str) + Send + Sync>,
     on_text: Arc<dyn Fn(&str) + Send + Sync>,
+    on_activity: Arc<dyn Fn(&str) + Send + Sync>,
 ) -> Result<AcpTurnResult, String>
 where
     T: ConnectTo<Client> + 'static,
@@ -71,9 +171,13 @@ where
                 let output = output.clone();
                 let capture_updates = capture_updates.clone();
                 let on_text = on_text.clone();
+                let on_activity = on_activity.clone();
                 async move |notification: SessionNotification, _connection| {
                     if !capture_updates.load(Ordering::Acquire) {
                         return Ok(());
+                    }
+                    if let Some(label) = tool_activity_label(&notification.update) {
+                        on_activity(&label);
                     }
                     if let SessionUpdate::AgentMessageChunk(ContentChunk {
                         content: ContentBlock::Text(text),
@@ -101,15 +205,19 @@ where
             agent_client_protocol::on_receive_request!(),
         )
         .connect_with(transport, async move |connection| {
-            let initialize = InitializeRequest::new(ProtocolVersion::V1).client_info(
-                Implementation::new("gharargah", env!("CARGO_PKG_VERSION")).title("Gharargah"),
-            );
+            let initialize = InitializeRequest::new(ProtocolVersion::V1)
+                .client_capabilities(client_capabilities())
+                .client_info(
+                    Implementation::new("gharargah", env!("CARGO_PKG_VERSION")).title("Gharargah"),
+                );
             let initialized = tokio::time::timeout(
-                REQUEST_TIMEOUT,
+                HANDSHAKE_TIMEOUT,
                 connection.send_request(initialize).block_task(),
             )
             .await
-            .map_err(|_| agent_client_protocol::util::internal_error("ACP initialize timed out"))??;
+            .map_err(|_| {
+                agent_client_protocol::util::internal_error("ACP initialize timed out")
+            })??;
             if initialized.protocol_version != ProtocolVersion::V1 {
                 return Err(agent_client_protocol::util::internal_error(format!(
                     "unsupported ACP protocol version: {:?}",
@@ -117,35 +225,37 @@ where
                 )));
             }
 
-            let session_id = if let Some(existing) = input
+            let (session_id, config_options) = if let Some(existing) = input
                 .existing_session_id
                 .filter(|_| initialized.agent_capabilities.load_session)
             {
                 let request = LoadSessionRequest::new(existing.clone(), input.cwd.clone());
                 match tokio::time::timeout(
-                    REQUEST_TIMEOUT,
+                    HANDSHAKE_TIMEOUT,
                     connection.send_request(request).block_task(),
                 )
                 .await
                 {
-                    Ok(Ok(_)) => existing.into(),
-                    _ => tokio::time::timeout(
-                        REQUEST_TIMEOUT,
-                        connection
-                            .send_request(NewSessionRequest::new(input.cwd.clone()))
-                            .block_task(),
-                    )
-                    .await
-                    .map_err(|_| {
-                        agent_client_protocol::util::internal_error(
-                            "ACP session creation timed out",
+                    Ok(Ok(response)) => (existing.into(), response.config_options),
+                    _ => {
+                        let response = tokio::time::timeout(
+                            HANDSHAKE_TIMEOUT,
+                            connection
+                                .send_request(NewSessionRequest::new(input.cwd.clone()))
+                                .block_task(),
                         )
-                    })??
-                    .session_id,
+                        .await
+                        .map_err(|_| {
+                            agent_client_protocol::util::internal_error(
+                                "ACP session creation timed out",
+                            )
+                        })??;
+                        (response.session_id, response.config_options)
+                    }
                 }
             } else {
-                tokio::time::timeout(
-                    REQUEST_TIMEOUT,
+                let response = tokio::time::timeout(
+                    HANDSHAKE_TIMEOUT,
                     connection
                         .send_request(NewSessionRequest::new(input.cwd.clone()))
                         .block_task(),
@@ -153,10 +263,24 @@ where
                 .await
                 .map_err(|_| {
                     agent_client_protocol::util::internal_error("ACP session creation timed out")
-                })??
-                .session_id
+                })??;
+                (response.session_id, response.config_options)
             };
             on_session(session_id.0.as_ref());
+
+            // Model switch via ACP session config (category=model). Soft-fail so a
+            // missing/unsupported option never kills an otherwise healthy turn.
+            if let Err(error) = apply_session_model(
+                &connection,
+                &session_id,
+                config_options.as_deref(),
+                input.model.as_deref(),
+            )
+            .await
+            {
+                on_activity(&format!("Model switch skipped: {error}"));
+            }
+
             capture_updates.store(true, Ordering::Release);
 
             if *cancel.borrow() {
@@ -179,10 +303,14 @@ where
             tokio::pin!(cancellation_deadline);
             let response = loop {
                 tokio::select! {
-                    response = &mut prompt_request => break response?,
+                    response = &mut prompt_request => break response.map_err(|error| {
+                        agent_client_protocol::util::internal_error(format!(
+                            "ACP prompt failed: {error}"
+                        ))
+                    })?,
                     changed = cancel.changed(), if !cancellation_sent => {
                         if changed.is_err() || *cancel.borrow() {
-                            connection.send_notification(CancelNotification::new(session_id.clone()))?;
+                            let _ = connection.send_notification(CancelNotification::new(session_id.clone()));
                             cancellation_sent = true;
                             cancellation_deadline.as_mut().reset(
                                 tokio::time::Instant::now() + CANCELLATION_TIMEOUT,
@@ -213,7 +341,8 @@ mod tests {
     use super::*;
     use agent_client_protocol::schema::v1::{
         AgentCapabilities, InitializeResponse, LoadSessionResponse, NewSessionResponse,
-        PermissionOptionId, PromptResponse,
+        PermissionOptionId, PromptResponse, SessionConfigSelect, SessionConfigSelectOption,
+        SessionConfigSelectOptions, SessionConfigValueId,
     };
     use agent_client_protocol::{Agent, Channel, ConnectionTo, Responder};
     use tokio::sync::Notify;
@@ -247,6 +376,31 @@ mod tests {
             preferred_permission(&[reject]),
             RequestPermissionOutcome::Cancelled
         );
+    }
+
+    #[test]
+    fn finds_model_config_by_category() {
+        let option = SessionConfigOption::select(
+            "model",
+            "Model",
+            "auto",
+            SessionConfigSelectOptions::Ungrouped(vec![SessionConfigSelectOption::new(
+                "auto",
+                "Auto",
+            )]),
+        )
+        .category(SessionConfigOptionCategory::Model);
+        assert!(model_config_option(std::slice::from_ref(&option)).is_some());
+        assert!(select_has_value(
+            &SessionConfigKind::Select(SessionConfigSelect::new(
+                SessionConfigValueId::new("auto"),
+                SessionConfigSelectOptions::Ungrouped(vec![SessionConfigSelectOption::new(
+                    "auto",
+                    "Auto",
+                )]),
+            )),
+            "auto"
+        ));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -299,6 +453,7 @@ mod tests {
             AcpTurnInput {
                 cwd: std::env::current_dir().unwrap(),
                 prompt: "hello".to_string(),
+                model: Some("auto".to_string()),
                 existing_session_id: None,
             },
             cancel_rx,
@@ -310,6 +465,7 @@ mod tests {
                 let snapshots = snapshots.clone();
                 Arc::new(move |text| snapshots.lock().unwrap().push(text.to_string()))
             },
+            Arc::new(|_| {}),
         )
         .await
         .unwrap();
@@ -374,9 +530,11 @@ mod tests {
             AcpTurnInput {
                 cwd: std::env::current_dir().unwrap(),
                 prompt: "continue".to_string(),
+                model: None,
                 existing_session_id: Some("session-existing".to_string()),
             },
             cancel_rx,
+            Arc::new(|_| {}),
             Arc::new(|_| {}),
             Arc::new(|_| {}),
         )
@@ -384,6 +542,98 @@ mod tests {
         .unwrap();
         assert_eq!(result.session_id, "session-existing");
         assert_eq!(result.text, "new output");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn sets_model_via_session_config_option() {
+        let (client_transport, agent_transport) = Channel::duplex();
+        let model_seen = Arc::new(Mutex::new(None::<String>));
+        let agent = Agent
+            .builder()
+            .on_receive_request(
+                async move |request: InitializeRequest,
+                            responder: Responder<InitializeResponse>,
+                            _connection| {
+                    responder.respond(
+                        InitializeResponse::new(request.protocol_version)
+                            .agent_capabilities(AgentCapabilities::new()),
+                    )
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |_request: NewSessionRequest,
+                            responder: Responder<NewSessionResponse>,
+                            _connection| {
+                    let option = SessionConfigOption::select(
+                        "model",
+                        "Model",
+                        "auto",
+                        vec![
+                            SessionConfigSelectOption::new("auto", "Auto"),
+                            SessionConfigSelectOption::new("composer-2.5", "Composer 2.5"),
+                        ],
+                    )
+                    .category(SessionConfigOptionCategory::Model);
+                    responder.respond(
+                        NewSessionResponse::new("session-model").config_options(vec![option]),
+                    )
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                {
+                    let model_seen = model_seen.clone();
+                    async move |request: SetSessionConfigOptionRequest,
+                                responder: Responder<
+                        agent_client_protocol::schema::v1::SetSessionConfigOptionResponse,
+                    >,
+                                _connection| {
+                        if let Some(value) = request.value.as_value_id() {
+                            *model_seen.lock().unwrap() = Some(value.0.to_string());
+                        }
+                        responder.respond(
+                            agent_client_protocol::schema::v1::SetSessionConfigOptionResponse::new(
+                                vec![],
+                            ),
+                        )
+                    }
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |_request: PromptRequest,
+                            responder: Responder<PromptResponse>,
+                            _connection| {
+                    responder.respond(PromptResponse::new(StopReason::EndTurn))
+                },
+                agent_client_protocol::on_receive_request!(),
+            );
+        tokio::spawn(async move {
+            agent.connect_to(agent_transport).await.unwrap();
+        });
+
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
+        let result = run_acp_turn(
+            client_transport,
+            AcpTurnInput {
+                cwd: std::env::current_dir().unwrap(),
+                prompt: "hi".to_string(),
+                model: Some("composer-2.5".to_string()),
+                existing_session_id: None,
+            },
+            cancel_rx,
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.session_id, "session-model");
+        assert_eq!(
+            model_seen.lock().unwrap().as_deref(),
+            Some("composer-2.5")
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -454,9 +704,11 @@ mod tests {
             AcpTurnInput {
                 cwd: std::env::current_dir().unwrap(),
                 prompt: "cancel me".to_string(),
+                model: None,
                 existing_session_id: None,
             },
             cancel_rx,
+            Arc::new(|_| {}),
             Arc::new(|_| {}),
             Arc::new(|_| {}),
         ));

@@ -93,6 +93,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              type="button"
               size="icon-xs"
               variant="ghost"
               className={cn(

@@ -8,7 +8,7 @@ export type SessionCardStatus =
   | "idle"
   | "failed"
 
-export type SessionProvider = "claude" | "cursor" | "codex" | "opencode"
+export type SessionProvider = "claude" | "cursor" | "cursor-acp" | "codex" | "opencode"
 
 export type SessionCardModel = {
   id: string
@@ -64,6 +64,8 @@ export function providerDisplayLabel(
       return "Claude"
     case "cursor":
       return "Cursor"
+    case "cursor-acp":
+      return "Cursor (ACP)"
     case "codex":
       return "Codex"
     case "opencode":

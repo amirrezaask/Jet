@@ -39,7 +39,7 @@ function ProviderGlyph({
   const IconComp: Icon | null =
     agentId === "claude"
       ? ClaudeAI
-      : agentId === "cursor"
+      : agentId === "cursor" || agentId === "cursor-acp"
         ? CursorIcon
         : agentId === "codex"
           ? OpenAI

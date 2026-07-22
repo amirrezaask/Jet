@@ -17,12 +17,20 @@ function fileUriToPath(uri: string): string {
 }
 
 export function normalizeAgentId(agentId: string | null | undefined): string {
-  return agentId === "claudeAgent" ? "claude" : agentId ?? "codex"
+  if (agentId === "claudeAgent") return "claude"
+  if (agentId === "cursorAcp") return "cursor-acp"
+  return agentId ?? "codex"
 }
 
 export function defaultAgentDriverId(agentId: string | null | undefined): string {
-  const normalized = normalizeAgentId(agentId)
-  return normalized === "cursor" ? "cursor:acp" : `${normalized}:cli`
+  const id = normalizeAgentId(agentId)
+  // Cursor (ACP) is a separate agent; transport id stays `cursor:acp`.
+  if (id === "cursor-acp") return "cursor:acp"
+  return `${id}:cli`
+}
+
+export function isAcpDriverId(driverId: string | null | undefined): boolean {
+  return typeof driverId === "string" && driverId.endsWith(":acp")
 }
 
 export function summarizeThread(thread: AgentThread): AgentThreadSummary {

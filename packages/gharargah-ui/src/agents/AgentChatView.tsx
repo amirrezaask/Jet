@@ -37,7 +37,20 @@ export const AgentChatView = memo(function AgentChatView(props: {
   const composerOverlayRef = useRef<HTMLDivElement | null>(null)
   const listRef = useRef<import("@legendapp/list/react").LegendListRef | null>(null)
 
-  const providers = useMemo(() => agentCatalogToProviderState(agents), [agents])
+  const providers = useMemo(() => {
+    const state = agentCatalogToProviderState(agents)
+    if (!state || !agents) return state
+    // Agent chat is ACP-only; hide CLI-only catalog entries from the picker.
+    const acpAgents = new Set(
+      agents.agents
+        .filter(agent => agent.drivers.some(driver => driver.kind === "acp"))
+        .map(agent => agent.id),
+    )
+    return {
+      ...state,
+      providers: state.providers.filter(provider => acpAgents.has(provider.instanceId)),
+    }
+  }, [agents])
   const instanceEntries = useMemo(() => deriveProviderInstanceEntries(providers), [providers])
   const defaultSelection = useMemo(
     () => resolveDefaultProviderSelection(instanceEntries, thread?.agentId, thread?.model),
@@ -69,14 +82,17 @@ export const AgentChatView = memo(function AgentChatView(props: {
   }, [thread?.id])
 
   async function handleSend(payload: { text: string; instanceId: string; model: string }) {
-    if (submitting) return
+    if (submitting || !thread) return
+    const fallbackDriverId = thread.driverId
     setSubmitting(true)
     try {
       await onSend({
         text: payload.text,
         agentId: payload.instanceId,
         driverId:
-          agents?.agents.find(agent => agent.id === payload.instanceId)?.activeDriverId ?? null,
+          agents?.agents.find(agent => agent.id === payload.instanceId)?.activeDriverId ??
+          fallbackDriverId ??
+          null,
         model: payload.model,
       })
     } finally {
@@ -105,10 +121,26 @@ export const AgentChatView = memo(function AgentChatView(props: {
   }
 
   const projectName = thread.workspaceRootPath.split("/").filter(Boolean).at(-1) ?? thread.workspaceRootPath
+  const selectedModelSlug = defaultSelection?.model ?? thread.model
+  const modelLabel = (() => {
+    if (!selectedModelSlug) return null
+    const models =
+      agents?.agents.find(agent => agent.id === (defaultSelection?.instanceId ?? thread.agentId))
+        ?.models ?? []
+    const match = models.find(model => model.slug === selectedModelSlug)
+    return match?.shortName ?? match?.name ?? selectedModelSlug
+  })()
+  const activityLabel =
+    thread.activity?.trim() ||
+    (thread.status === "running" ? "Agent is running…" : null)
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
-      <ChatHeader activeThreadTitle={thread.title} activeProjectName={projectName} />
+      <ChatHeader
+        activeThreadTitle={thread.title}
+        activeProjectName={projectName}
+        activeModelLabel={modelLabel}
+      />
 
       {thread.status === "error" && thread.lastError ? (
         <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
@@ -163,10 +195,14 @@ export const AgentChatView = memo(function AgentChatView(props: {
           </div>
         </div>
         <div className="chat-composer-horizontal-inset pointer-events-auto relative z-10 isolate pb-4">
-          {thread.status === "running" ? (
-            <div className="mb-2 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" />
-              Agent is running…
+          {activityLabel ? (
+            <div
+              className="mb-2 flex items-center gap-2 px-1 text-xs text-muted-foreground"
+              data-chat-activity="true"
+              title={activityLabel}
+            >
+              <Loader2 className="size-3 shrink-0 animate-spin" />
+              <span className="min-w-0 truncate">{activityLabel}</span>
             </div>
           ) : null}
           <ChatComposer

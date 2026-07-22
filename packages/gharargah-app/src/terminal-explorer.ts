@@ -11,7 +11,7 @@ export type TerminalExplorerEntry = {
   status: "starting" | "running" | "exited" | "failed"
   exitCode?: number
   launchCommand?: string
-  agentId?: "codex" | "claude" | "opencode" | "cursor"
+  agentId?: "codex" | "claude" | "opencode" | "cursor" | "cursor-acp"
 }
 
 export type TerminalExplorerGroup = {

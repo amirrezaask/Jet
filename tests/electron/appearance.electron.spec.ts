@@ -155,6 +155,7 @@ test.describe("electron appearance and terminal-first UX", () => {
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Claude" }))
       await expectLocatorVisible(page.getByRole("menuitem", { name: "OpenCode" }))
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Cursor Agent" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Cursor (ACP)" }))
     } finally {
       await app.close()
     }

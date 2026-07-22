@@ -21,6 +21,8 @@ export type TerminalSessionModalProps = {
   projectRootUri: string | null
   mode: SessionDialogMode
   onModeChange: (mode: SessionDialogMode) => void
+  /** Agent/ACP tab only for sessions launched with an ACP driver. */
+  showAgentTab?: boolean
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   agent: ReactNode
   editor: ReactNode
@@ -41,6 +43,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     projectRootUri,
     mode,
     onModeChange,
+    showAgentTab = false,
     onOpenInApp,
     agent,
     editor,
@@ -129,13 +132,15 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             onKeyDown={handleModeTabKeyDown}
             className="pointer-events-auto absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 rounded-lg bg-muted p-1 text-muted-foreground"
           >
-            <ModeTab
-              mode="agent"
-              active={mode === "agent"}
-              label="Agent"
-              icon={<Bot aria-hidden />}
-              onSelect={() => onModeChange("agent")}
-            />
+            {showAgentTab ? (
+              <ModeTab
+                mode="agent"
+                active={mode === "agent"}
+                label="Agent"
+                icon={<Bot aria-hidden />}
+                onSelect={() => onModeChange("agent")}
+              />
+            ) : null}
             <ModeTab
               mode="terminal"
               active={mode === "terminal"}
@@ -194,22 +199,24 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           data-gharargah-terminal-modal-body=""
           className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-contain"
         >
-          <div
-            id="gharargah-session-pane-agent"
-            role="tabpanel"
-            aria-labelledby="gharargah-session-tab-agent"
-            data-gharargah-terminal-modal-stage=""
-            data-gharargah-session-pane="agent"
-            data-active={mode === "agent" ? "" : undefined}
-            hidden={mode !== "agent"}
-            aria-hidden={mode !== "agent"}
-            className={cn(
-              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
-              mode === "agent" ? "z-10" : "pointer-events-none z-0",
-            )}
-          >
-            {mode === "agent" ? agent : null}
-          </div>
+          {showAgentTab ? (
+            <div
+              id="gharargah-session-pane-agent"
+              role="tabpanel"
+              aria-labelledby="gharargah-session-tab-agent"
+              data-gharargah-terminal-modal-stage=""
+              data-gharargah-session-pane="agent"
+              data-active={mode === "agent" ? "" : undefined}
+              hidden={mode !== "agent"}
+              aria-hidden={mode !== "agent"}
+              className={cn(
+                "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+                mode === "agent" ? "z-10" : "pointer-events-none z-0",
+              )}
+            >
+              {mode === "agent" ? agent : null}
+            </div>
+          ) : null}
           <div
             id="gharargah-session-pane-editor"
             role="tabpanel"

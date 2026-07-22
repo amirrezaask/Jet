@@ -37,9 +37,12 @@ export type TerminalExplorerGroup = {
 }
 
 export type TerminalAgentShortcut = {
-  id: "codex" | "claude" | "opencode" | "cursor"
+  id: "codex" | "claude" | "opencode" | "cursor" | "cursor-acp"
   label: string
-  command: string
+  /** CLI binary launched in the PTY. Omit for ACP agent-chat sessions. */
+  command?: string
+  /** ACP transport for agent-chat sessions (e.g. cursor:acp). */
+  driverId?: string
 }
 
 export const TERMINAL_EXPLORER_LIST_ID = "gharargah:terminal-explorer"
@@ -48,6 +51,7 @@ const AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
   { id: "codex", label: "Codex", command: "codex", Icon: OpenAI },
   { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
   { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
+  { id: "cursor-acp", label: "Cursor (ACP)", driverId: "cursor:acp", Icon: CursorIcon },
   { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
 ]
 
@@ -235,7 +239,7 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
                       <ContextMenuSubContent>
                         {AGENT_SHORTCUTS.map(shortcut => (
                           <ContextMenuItem
-                            key={shortcut.id}
+                            key={`${shortcut.id}:${shortcut.driverId ?? shortcut.command ?? shortcut.label}`}
                             onSelect={() => onLaunchAgentTerminal(group.rootUri, shortcut)}
                           >
                             <shortcut.Icon className="size-4" />

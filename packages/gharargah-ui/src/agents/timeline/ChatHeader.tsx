@@ -5,9 +5,10 @@ import { cn } from "../../lib/utils.js"
 export const ChatHeader = memo(function ChatHeader(props: {
   activeThreadTitle: string
   activeProjectName?: string | null
+  activeModelLabel?: string | null
   className?: string
 }) {
-  const { activeThreadTitle, activeProjectName, className } = props
+  const { activeThreadTitle, activeProjectName, activeModelLabel, className } = props
   return (
     <div
       data-chat-header="true"
@@ -28,9 +29,19 @@ export const ChatHeader = memo(function ChatHeader(props: {
           </TooltipTrigger>
           <TooltipContent side="bottom">{activeThreadTitle}</TooltipContent>
         </Tooltip>
-        {activeProjectName ? (
-          <p className="truncate text-xs text-muted-foreground">{activeProjectName}</p>
-        ) : null}
+        <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
+          {activeProjectName ? <span className="truncate">{activeProjectName}</span> : null}
+          {activeProjectName && activeModelLabel ? (
+            <span aria-hidden="true" className="text-muted-foreground/50">
+              ·
+            </span>
+          ) : null}
+          {activeModelLabel ? (
+            <span className="truncate" data-chat-header-model="true">
+              {activeModelLabel}
+            </span>
+          ) : null}
+        </div>
       </div>
     </div>
   )
