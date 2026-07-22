@@ -93,7 +93,7 @@ export function PaletteShell<T>({
         data-gharargah-glass=""
         data-gharargah-palette=""
         className={[
-          "max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden border-0 bg-transparent p-0 shadow-none",
+          "max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden border bg-popover p-0 shadow-xl",
           contentClassName,
         ]
           .filter(Boolean)

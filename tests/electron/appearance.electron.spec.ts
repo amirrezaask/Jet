@@ -18,9 +18,48 @@ test.describe("electron appearance and terminal-first UX", () => {
       await page.evaluate(async () => {
         localStorage.clear()
         await window.__gharargahAgent!.waitForReady()
-        await window.__gharargahAgent!.executeCommand("ui.setTheme.glass-blue")
+        await window.__gharargahAgent!.executeCommand("ui.setTheme.default-dark")
       })
       await showTerminal(page)
+
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.dataset.gharargahSurface))
+        .toBe("default")
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const selectors = [
+              "[data-gharargah-terminal-modal]",
+              "[data-gharargah-terminal-modal-header]",
+              "[data-gharargah-session-mode-switch]",
+            ]
+            return selectors.map(selector => {
+              const element = document.querySelector(selector)
+              if (!element) return null
+              const style = getComputedStyle(element)
+              const background = style.backgroundColor
+              const alphaMatch = background.match(/rgba\([^)]*,\s*([\d.]+)\)$/)
+              return {
+                opaque:
+                  background !== "transparent" &&
+                  background !== "rgba(0, 0, 0, 0)" &&
+                  (!alphaMatch || Number(alphaMatch[1]) === 1),
+                blurred:
+                  (style.backdropFilter || style.getPropertyValue("-webkit-backdrop-filter")) !==
+                  "none",
+              }
+            })
+          }),
+        )
+        .toEqual([
+          { opaque: true, blurred: false },
+          { opaque: true, blurred: false },
+          { opaque: true, blurred: false },
+        ])
+
+      await page.evaluate(async () => {
+        await window.__gharargahAgent!.executeCommand("ui.setTheme.glass-blue")
+      })
       await page.waitForSelector("[data-gharargah-terminal-panel] .xterm", { timeout: 30_000 })
       await page.waitForSelector("[data-gharargah-terminal-panel] .gharargah-terminal-surface", {
         timeout: 15_000,
@@ -111,9 +150,10 @@ test.describe("electron appearance and terminal-first UX", () => {
       await expectLocatorVisible(launcher)
       await launcher.click()
 
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Terminal" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Blank session" }))
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Codex" }))
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Claude" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "OpenCode" }))
       await expectLocatorVisible(page.getByRole("menuitem", { name: "Cursor Agent" }))
     } finally {
       await app.close()

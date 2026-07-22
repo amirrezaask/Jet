@@ -1,3 +1,4 @@
+use super::acp_client::{cursor_acp_agent, run_acp_turn, AcpTurnInput};
 use super::events::EventHub;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -6,23 +7,88 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use tokio::sync::watch;
 use uuid::Uuid;
 
 use super::events::emit_host;
 use super::launch::uri_to_path;
 
 struct ActiveTurn {
+    id: Uuid,
     stop: Arc<Mutex<bool>>,
+    acp_cancel: Option<watch::Sender<bool>>,
+}
+
+#[derive(Clone, Copy)]
+struct AgentSpec {
+    id: &'static str,
+    display_name: &'static str,
+    binaries: &'static [&'static str],
+}
+
+const AGENTS: &[AgentSpec] = &[
+    AgentSpec {
+        id: "codex",
+        display_name: "Codex",
+        binaries: &["codex"],
+    },
+    AgentSpec {
+        id: "claude",
+        display_name: "Claude",
+        binaries: &["claude"],
+    },
+    AgentSpec {
+        id: "opencode",
+        display_name: "OpenCode",
+        binaries: &["opencode"],
+    },
+    AgentSpec {
+        id: "cursor",
+        display_name: "Cursor",
+        binaries: &["cursor-agent", "agent"],
+    },
+];
+
+fn normalize_agent_id(id: &str) -> &str {
+    match id {
+        "claudeAgent" => "claude",
+        other => other,
+    }
+}
+
+fn agent_spec(id: &str) -> Option<AgentSpec> {
+    let id = normalize_agent_id(id);
+    AGENTS.iter().copied().find(|agent| agent.id == id)
 }
 
 pub struct AgentsHost {
-    active_turns: Mutex<HashMap<String, ActiveTurn>>,
+    active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
 }
 
 impl AgentsHost {
     pub fn new() -> Self {
         Self {
-            active_turns: Mutex::new(HashMap::new()),
+            active_turns: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn default_driver_id(agent_id: &str) -> String {
+        if normalize_agent_id(agent_id) == "cursor" {
+            "cursor:acp".to_string()
+        } else {
+            format!("{}:cli", normalize_agent_id(agent_id))
+        }
+    }
+
+    fn driver_supported(agent_id: &str, driver_id: &str) -> bool {
+        driver_id == Self::default_driver_id(agent_id)
+    }
+
+    fn normalize_driver_id(agent_id: &str, driver_id: Option<&str>) -> String {
+        match (normalize_agent_id(agent_id), driver_id) {
+            ("cursor", None | Some("cursor:cli")) => "cursor:acp".to_string(),
+            (_, Some(driver_id)) => driver_id.to_string(),
+            (agent_id, None) => Self::default_driver_id(agent_id),
         }
     }
 
@@ -87,6 +153,29 @@ impl AgentsHost {
             "latestUserMessageAt": latest_user_message_at,
             "messageCount": messages.map(|a| a.len()).unwrap_or(0),
         }))
+    }
+
+    fn normalize_thread(mut thread: Value) -> Value {
+        let legacy_agent = thread
+            .get("provider")
+            .and_then(Value::as_str)
+            .map(normalize_agent_id)
+            .unwrap_or("codex")
+            .to_string();
+        let agent_id = thread
+            .get("agentId")
+            .and_then(Value::as_str)
+            .map(normalize_agent_id)
+            .unwrap_or(&legacy_agent)
+            .to_string();
+        if thread.get("agentId").and_then(Value::as_str) != Some(agent_id.as_str()) {
+            thread["agentId"] = json!(agent_id);
+        }
+        let driver_id = thread.get("driverId").and_then(Value::as_str);
+        if driver_id.is_none() || (agent_id == "cursor" && driver_id == Some("cursor:cli")) {
+            thread["driverId"] = json!(Self::default_driver_id(&agent_id));
+        }
+        thread
     }
 
     fn ensure_migrated(root_path: &str) -> Result<(), String> {
@@ -187,6 +276,7 @@ impl AgentsHost {
         fs::read_to_string(path)
             .ok()
             .and_then(|raw| serde_json::from_str(&raw).ok())
+            .map(Self::normalize_thread)
     }
 
     pub fn read_thread(&self, root_path: &str, thread_id: &str) -> Option<Value> {
@@ -205,17 +295,30 @@ impl AgentsHost {
             .map(str::to_string)
             .unwrap_or_else(|| uri_to_path(root_uri));
         let created = Self::now_iso();
+        let requested_agent = input
+            .get("agentId")
+            .or_else(|| input.get("provider"))
+            .and_then(Value::as_str)
+            .map(normalize_agent_id)
+            .unwrap_or("codex");
+        let agent = agent_spec(requested_agent).ok_or("unknown agent")?;
+        let driver_id =
+            Self::normalize_driver_id(agent.id, input.get("driverId").and_then(Value::as_str));
+        if !Self::driver_supported(agent.id, &driver_id) {
+            return Err(format!("unsupported driver: {driver_id}"));
+        }
         let thread = json!({
             "id": Uuid::new_v4().to_string(),
             "title": input.get("title").and_then(|v| v.as_str()).unwrap_or("New agent"),
             "workspaceRootUri": root_uri,
             "workspaceRootPath": root_path,
-            "provider": input.get("provider").and_then(|v| v.as_str()).unwrap_or("cursor"),
+            "agentId": agent.id,
+            "driverId": driver_id,
             "model": input.get("model").and_then(|v| v.as_str()).unwrap_or("auto"),
             "createdAt": created,
             "updatedAt": created,
             "archivedAt": Value::Null,
-            "status": "running",
+            "status": "idle",
             "lastError": Value::Null,
             "messages": [],
         });
@@ -248,6 +351,29 @@ impl AgentsHost {
         let mut thread = self
             .read_thread(&root_path, &thread_id)
             .ok_or("unknown thread")?;
+        let requested_agent_input = input
+            .get("agentId")
+            .or_else(|| input.get("provider"))
+            .and_then(Value::as_str);
+        let requested_agent = requested_agent_input
+            .or_else(|| thread.get("agentId").and_then(Value::as_str))
+            .unwrap_or("codex");
+        let agent = agent_spec(requested_agent).ok_or("unknown agent")?;
+        let requested_driver = input.get("driverId").and_then(Value::as_str).or_else(|| {
+            requested_agent_input
+                .is_none()
+                .then(|| thread.get("driverId").and_then(Value::as_str))
+                .flatten()
+        });
+        let driver_id = Self::normalize_driver_id(agent.id, requested_driver);
+        if !Self::driver_supported(agent.id, &driver_id) {
+            return Err(format!("unsupported driver: {driver_id}"));
+        }
+        thread["agentId"] = json!(agent.id);
+        thread["driverId"] = json!(driver_id);
+        if let Some(model) = input.get("model") {
+            thread["model"] = model.clone();
+        }
         let assistant_id = Uuid::new_v4().to_string();
         let now = Self::now_iso();
         let user_message = json!({
@@ -277,17 +403,47 @@ impl AgentsHost {
 
         let app_bg = app.clone();
         let stop = Arc::new(Mutex::new(false));
+        let (acp_cancel, acp_cancel_rx) = watch::channel(false);
+        let turn_id = Uuid::new_v4();
         let key = format!("{root_path}::{thread_id}");
         if let Some(prev) = self.active_turns.lock().unwrap().remove(&key) {
             *prev.stop.lock().unwrap() = true;
+            if let Some(cancel) = prev.acp_cancel {
+                let _ = cancel.send(true);
+            }
         }
-        self.active_turns
-            .lock()
-            .unwrap()
-            .insert(key, ActiveTurn { stop: stop.clone() });
+        self.active_turns.lock().unwrap().insert(
+            key.clone(),
+            ActiveTurn {
+                id: turn_id,
+                stop: stop.clone(),
+                acp_cancel: (driver_id == "cursor:acp").then_some(acp_cancel),
+            },
+        );
 
+        let agent_id = agent.id.to_string();
+        let active_turns = self.active_turns.clone();
+        let acp_session_id = thread
+            .get("acpSessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         thread::spawn(move || {
-            run_turn(app_bg, root_path, thread_id, assistant_id, text, stop);
+            run_turn(
+                app_bg,
+                root_path,
+                thread_id,
+                assistant_id,
+                text,
+                agent_id,
+                driver_id,
+                acp_session_id,
+                acp_cancel_rx,
+                stop,
+            );
+            let mut turns = active_turns.lock().unwrap();
+            if turns.get(&key).map(|turn| turn.id) == Some(turn_id) {
+                turns.remove(&key);
+            }
         });
 
         Ok(thread)
@@ -307,6 +463,9 @@ impl AgentsHost {
         let key = format!("{root_path}::{thread_id}");
         if let Some(active) = self.active_turns.lock().unwrap().remove(&key) {
             *active.stop.lock().unwrap() = true;
+            if let Some(cancel) = active.acp_cancel {
+                let _ = cancel.send(true);
+            }
         }
         Ok(self.read_thread(&root_path, thread_id))
     }
@@ -339,8 +498,28 @@ impl AgentsHost {
         let Some(mut thread) = self.read_thread(&root_path, thread_id) else {
             return Ok(None);
         };
-        if let Some(provider) = input.get("provider") {
-            thread["provider"] = provider.clone();
+        if let Some(agent_id) = input.get("agentId").or_else(|| input.get("provider")) {
+            let requested = agent_id.as_str().ok_or("invalid agentId")?;
+            let agent = agent_spec(requested).ok_or("unknown agent")?;
+            thread["agentId"] = json!(agent.id);
+            if input.get("driverId").is_none() {
+                thread["driverId"] = json!(Self::default_driver_id(agent.id));
+            }
+            if agent.id != "cursor" {
+                thread["acpSessionId"] = Value::Null;
+            }
+        }
+        if let Some(driver_id) = input.get("driverId") {
+            let requested_driver_id = driver_id.as_str().ok_or("invalid driverId")?;
+            let agent_id = thread
+                .get("agentId")
+                .and_then(Value::as_str)
+                .ok_or("missing agentId")?;
+            let driver_id = Self::normalize_driver_id(agent_id, Some(requested_driver_id));
+            if !Self::driver_supported(agent_id, &driver_id) {
+                return Err(format!("unsupported driver: {driver_id}"));
+            }
+            thread["driverId"] = json!(driver_id);
         }
         if let Some(model) = input.get("model") {
             thread["model"] = model.clone();
@@ -377,16 +556,40 @@ impl AgentsHost {
         Ok(Some(thread))
     }
 
-    pub fn list_providers(&self) -> Value {
-        let providers = vec![
-            provider_snapshot("cursor", "Cursor", &["cursor-agent", "agent"]),
-            provider_snapshot("claudeAgent", "Claude", &["claude"]),
-            provider_snapshot("codex", "Codex", &["codex"]),
-        ];
+    pub fn list_agents(&self) -> Value {
+        let agents = AGENTS.iter().map(agent_snapshot).collect::<Vec<_>>();
         json!({
-            "providers": providers,
+            "agents": agents,
             "updatedAt": Self::now_iso(),
         })
+    }
+
+    pub fn list_providers(&self) -> Value {
+        let providers = AGENTS
+            .iter()
+            .map(|agent| {
+                let installed = agent_available(agent);
+                json!({
+                    "instanceId": agent.id,
+                    "driverKind": agent.id,
+                    "displayName": agent.display_name,
+                    "enabled": installed,
+                    "status": if installed { "ready" } else { "unavailable" },
+                    "message": if installed { Value::Null } else { json!(format!("{} CLI not found on PATH", agent.display_name)) },
+                    "models": if installed { json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }]) } else { json!([]) },
+                })
+            })
+            .collect::<Vec<_>>();
+        json!({ "providers": providers, "updatedAt": Self::now_iso() })
+    }
+
+    pub fn stop_all(&self) {
+        for (_, active) in self.active_turns.lock().unwrap().drain() {
+            *active.stop.lock().unwrap() = true;
+            if let Some(cancel) = active.acp_cancel {
+                let _ = cancel.send(true);
+            }
+        }
     }
 }
 
@@ -396,21 +599,32 @@ impl Default for AgentsHost {
     }
 }
 
-fn provider_snapshot(instance_id: &str, display_name: &str, binaries: &[&str]) -> Value {
-    let installed = binaries.iter().any(|b| which_binary(b));
+fn agent_snapshot(agent: &AgentSpec) -> Value {
+    let installed = agent_available(agent);
+    let driver_id = AgentsHost::default_driver_id(agent.id);
+    let driver_kind = if agent.id == "cursor" { "acp" } else { "cli" };
     json!({
-        "instanceId": instance_id,
-        "driverKind": instance_id,
-        "displayName": display_name,
+        "id": agent.id,
+        "displayName": agent.display_name,
         "enabled": installed,
-        "status": if installed { "ready" } else { "unavailable" },
-        "message": if installed { Value::Null } else { json!(format!("{display_name} CLI not found on PATH")) },
+        "activeDriverId": driver_id,
+        "drivers": [{
+            "id": driver_id,
+            "kind": driver_kind,
+            "status": if installed { "ready" } else { "unavailable" },
+            "message": if installed { Value::Null } else { json!(format!("{} CLI not found on PATH", agent.display_name)) },
+        }],
         "models": if installed {
             json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }])
         } else {
             json!([])
         },
     })
+}
+
+fn agent_available(agent: &AgentSpec) -> bool {
+    std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() == Some("1")
+        || agent.binaries.iter().any(|binary| which_binary(binary))
 }
 
 fn which_binary(name: &str) -> bool {
@@ -430,6 +644,10 @@ fn run_turn(
     thread_id: String,
     assistant_id: String,
     prompt: String,
+    agent_id: String,
+    driver_id: String,
+    acp_session_id: Option<String>,
+    acp_cancel: watch::Receiver<bool>,
     stop: Arc<Mutex<bool>>,
 ) {
     let use_mock = std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() == Some("1");
@@ -437,27 +655,59 @@ fn run_turn(
         run_mock_turn(&app, &root_path, &thread_id, &assistant_id, &prompt, &stop);
         return;
     }
-    if which_binary("cursor-agent") || which_binary("agent") {
-        let binary = if which_binary("cursor-agent") {
-            "cursor-agent"
-        } else {
-            "agent"
-        };
-        if run_cursor_turn(
+    if driver_id == "cursor:acp" && agent_id == "cursor" {
+        if let Err(error) = run_cursor_acp_turn(
             &app,
             &root_path,
             &thread_id,
             &assistant_id,
             &prompt,
-            binary,
-            &stop,
-        )
-        .is_ok()
-        {
-            return;
+            acp_session_id,
+            acp_cancel,
+        ) {
+            update_assistant(
+                &app,
+                &root_path,
+                &thread_id,
+                &assistant_id,
+                None,
+                "error",
+                Some(&error),
+            );
         }
+        return;
     }
-    run_mock_turn(&app, &root_path, &thread_id, &assistant_id, &prompt, &stop);
+    if driver_id == format!("{}:cli", agent_id) {
+        if let Err(error) = run_cli_turn(
+            &app,
+            &root_path,
+            &thread_id,
+            &assistant_id,
+            &prompt,
+            &agent_id,
+            &stop,
+        ) {
+            update_assistant(
+                &app,
+                &root_path,
+                &thread_id,
+                &assistant_id,
+                None,
+                "error",
+                Some(&error),
+            );
+        }
+        return;
+    }
+    update_assistant(
+        &app,
+        &root_path,
+        &thread_id,
+        &assistant_id,
+        None,
+        "error",
+        Some(&format!("Unsupported agent driver: {driver_id}")),
+    );
 }
 
 fn run_mock_turn(
@@ -520,26 +770,167 @@ fn run_mock_turn(
     );
 }
 
-fn run_cursor_turn(
+fn cli_args(agent_id: &str, prompt: &str) -> Option<Vec<String>> {
+    let agent = agent_spec(agent_id)?;
+    let args = match agent.id {
+        "codex" => vec!["exec", "--color", "never", prompt],
+        "claude" => vec!["-p", prompt, "--output-format", "text"],
+        "opencode" => vec!["run", prompt],
+        "cursor" => return None,
+        _ => return None,
+    };
+    Some(args.into_iter().map(str::to_string).collect())
+}
+
+fn cursor_binary() -> Option<String> {
+    agent_spec("cursor")?
+        .binaries
+        .iter()
+        .find(|binary| which_binary(binary))
+        .map(|binary| (*binary).to_string())
+}
+
+fn run_cursor_acp_turn(
     app: &EventHub,
     root_path: &str,
     thread_id: &str,
     assistant_id: &str,
     prompt: &str,
-    binary: &str,
+    existing_session_id: Option<String>,
+    cancel: watch::Receiver<bool>,
+) -> Result<(), String> {
+    let binary = cursor_binary().ok_or("Cursor Agent CLI not found on PATH")?;
+    let transport = cursor_acp_agent(binary)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())?;
+    let result = runtime.block_on(run_acp_turn(
+        transport,
+        AcpTurnInput {
+            cwd: PathBuf::from(root_path),
+            prompt: prompt.to_string(),
+            existing_session_id,
+        },
+        cancel,
+        {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            Arc::new(move |session_id| {
+                persist_acp_session_id(&app, &root_path, &thread_id, session_id);
+            })
+        },
+        {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            let assistant_id = assistant_id.to_string();
+            Arc::new(move |text| {
+                emit_assistant_delta(&app, &root_path, &thread_id, &assistant_id, text);
+            })
+        },
+    ))?;
+    if result.stop_reason == agent_client_protocol::schema::v1::StopReason::Cancelled {
+        update_assistant(
+            app,
+            root_path,
+            thread_id,
+            assistant_id,
+            Some(&result.text),
+            "error",
+            Some("Turn interrupted"),
+        );
+    } else {
+        update_assistant(
+            app,
+            root_path,
+            thread_id,
+            assistant_id,
+            Some(&result.text),
+            "idle",
+            None,
+        );
+    }
+    Ok(())
+}
+
+fn persist_acp_session_id(app: &EventHub, root_path: &str, thread_id: &str, session_id: &str) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    if thread.get("acpSessionId").and_then(Value::as_str) == Some(session_id) {
+        return;
+    }
+    thread["acpSessionId"] = json!(session_id);
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
+}
+
+fn emit_assistant_delta(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    assistant_id: &str,
+    text: &str,
+) {
+    let Some(thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    let is_latest_assistant = thread
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| {
+            messages
+                .iter()
+                .rev()
+                .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
+        })
+        .and_then(|message| message.get("id"))
+        .and_then(Value::as_str)
+        == Some(assistant_id);
+    if !is_latest_assistant {
+        return;
+    }
+    emit_host(
+        app,
+        "agents:threadDelta",
+        vec![json!({
+            "workspaceRootUri": thread.get("workspaceRootUri").and_then(Value::as_str).unwrap_or(""),
+            "threadId": thread_id,
+            "updatedAt": AgentsHost::now_iso(),
+            "status": "streaming",
+            "lastError": Value::Null,
+            "messageId": assistant_id,
+            "text": text,
+            "streaming": true,
+        })],
+    );
+}
+
+fn cli_command(agent_id: &str, prompt: &str) -> Option<(String, Vec<String>)> {
+    let agent = agent_spec(agent_id)?;
+    let binary = agent
+        .binaries
+        .iter()
+        .find(|binary| which_binary(binary))?
+        .to_string();
+    Some((binary, cli_args(agent.id, prompt)?))
+}
+
+fn run_cli_turn(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    assistant_id: &str,
+    prompt: &str,
+    agent_id: &str,
     stop: &Arc<Mutex<bool>>,
 ) -> Result<(), String> {
+    let (binary, args) = cli_command(agent_id, prompt)
+        .ok_or_else(|| format!("{} CLI not found on PATH", agent_id))?;
     let output = Command::new(binary)
-        .args([
-            "--print",
-            "--output-format",
-            "stream-json",
-            "--stream-partial-output",
-            "--model",
-            "auto",
-            "-f",
-            prompt,
-        ])
+        .args(args)
         .current_dir(root_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -600,7 +991,15 @@ fn update_assistant(
         return;
     };
     let updated_at = AgentsHost::now_iso();
+    let mut is_latest_assistant = false;
     if let Some(messages) = thread.get_mut("messages").and_then(|v| v.as_array_mut()) {
+        is_latest_assistant = messages
+            .iter()
+            .rev()
+            .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
+            .and_then(|message| message.get("id"))
+            .and_then(Value::as_str)
+            == Some(assistant_id);
         if let Some(msg) = messages
             .iter_mut()
             .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(assistant_id))
@@ -611,6 +1010,11 @@ fn update_assistant(
             msg["updatedAt"] = json!(updated_at);
             msg["streaming"] = json!(status == "streaming");
         }
+    }
+    if !is_latest_assistant {
+        let _ = AgentsHost::write_thread(root_path, &thread);
+        emit_host(app, "agents:threadUpdated", vec![thread]);
+        return;
     }
     thread["status"] = json!(status);
     thread["updatedAt"] = json!(updated_at);
@@ -651,6 +1055,7 @@ pub fn handle(
     args: &[Value],
 ) -> Result<Value, String> {
     match channel {
+        "agents:listAgents" | "agents:refreshAgents" => Ok(host.list_agents()),
         "agents:listProviders" | "agents:refreshProviders" => Ok(host.list_providers()),
         "agents:listThreads" => Ok(host.list_threads(
             args.first().and_then(|v| v.as_str()).unwrap_or(""),
@@ -690,7 +1095,7 @@ pub fn handle(
 
 #[cfg(test)]
 mod tests {
-    use super::AgentsHost;
+    use super::{cli_args, AgentsHost};
     use serde_json::json;
     use std::fs;
 
@@ -730,13 +1135,84 @@ mod tests {
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0]["messageCount"], 1);
         assert_eq!(summaries[0]["latestUserMessageAt"], "2026-01-01T00:00:00Z");
-        assert_eq!(
-            AgentsHost::read_thread_value(&root_path, "thread-1").unwrap()["title"],
-            "Migrated"
-        );
+        let migrated = AgentsHost::read_thread_value(&root_path, "thread-1").unwrap();
+        assert_eq!(migrated["title"], "Migrated");
+        assert_eq!(migrated["agentId"], "codex");
+        assert_eq!(migrated["driverId"], "codex:cli");
         assert!(agents_dir.join("index.json").exists());
         assert!(agents_dir.join("threads").join("thread-1.json").exists());
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn agent_catalog_separates_agents_from_cli_drivers() {
+        let catalog = AgentsHost::new().list_agents();
+        let agents = catalog["agents"].as_array().unwrap();
+        let ids = agents
+            .iter()
+            .map(|agent| agent["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["codex", "claude", "opencode", "cursor"]);
+        for agent in agents {
+            let id = agent["id"].as_str().unwrap();
+            let expected_driver = if id == "cursor" {
+                "cursor:acp".to_string()
+            } else {
+                format!("{id}:cli")
+            };
+            assert_eq!(agent["activeDriverId"], expected_driver);
+            assert_eq!(agent["drivers"][0]["id"], expected_driver);
+            assert_eq!(
+                agent["drivers"][0]["kind"],
+                if id == "cursor" { "acp" } else { "cli" }
+            );
+        }
+    }
+
+    #[test]
+    fn cli_arguments_are_agent_specific() {
+        assert_eq!(
+            cli_args("codex", "hello").unwrap(),
+            vec!["exec", "--color", "never", "hello"]
+        );
+        assert_eq!(
+            cli_args("claude", "hello").unwrap(),
+            vec!["-p", "hello", "--output-format", "text"]
+        );
+        assert_eq!(cli_args("opencode", "hello").unwrap(), vec!["run", "hello"]);
+        assert_eq!(cli_args("cursor", "hello"), None);
+    }
+
+    #[test]
+    fn new_cursor_thread_defaults_to_acp_and_starts_idle() {
+        let root = std::env::temp_dir().join(format!(
+            "gharargah-agent-thread-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let root_path = root.to_string_lossy().to_string();
+        let thread = AgentsHost::new()
+            .create_thread(&json!({
+                "workspaceRootUri": format!("file://{root_path}"),
+                "workspaceRootPath": root_path,
+                "agentId": "cursor",
+            }))
+            .unwrap();
+        assert_eq!(thread["agentId"], "cursor");
+        assert_eq!(thread["driverId"], "cursor:acp");
+        assert_eq!(thread["status"], "idle");
+        assert!(thread.get("provider").is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_cursor_cli_threads_migrate_to_acp() {
+        let thread = AgentsHost::normalize_thread(json!({
+            "agentId": "cursor",
+            "driverId": "cursor:cli",
+        }));
+        assert_eq!(thread["driverId"], "cursor:acp");
     }
 }

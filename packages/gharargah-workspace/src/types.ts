@@ -11,6 +11,7 @@ import type {
   AgentThreadDelta,
   AgentWorkspaceSnapshot,
   AgentProvidersState,
+  AgentCatalogState,
   CreateAgentThreadInput,
   InterruptAgentTurnInput,
   SendAgentMessageInput,
@@ -146,8 +147,11 @@ export type JetElectronAgents = {
   interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
   updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
-  listProviders(): Promise<AgentProvidersState>
-  refreshProviders(): Promise<AgentProvidersState>
+  listAgents(): Promise<AgentCatalogState>
+  refreshAgents(): Promise<AgentCatalogState>
+  /** @deprecated Compatibility APIs for older renderer bundles. */
+  listProviders?(): Promise<AgentProvidersState>
+  refreshProviders?(): Promise<AgentProvidersState>
   onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
   onThreadDelta?(callback: (delta: AgentThreadDelta) => void): () => void
 }

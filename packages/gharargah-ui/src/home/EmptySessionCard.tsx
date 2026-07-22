@@ -33,7 +33,7 @@ export function EmptySessionCard(props: EmptySessionCardProps) {
             No sessions yet — create one
           </span>
           <span className="text-3xs text-muted-foreground">
-            Start your first agent or terminal session in this project.
+            Start a project session with an agent, terminal, editor, and Git workspace.
           </span>
           <span className="mt-0.5 inline-flex items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-3xs font-medium text-primary">
             <Plus className="size-3" />

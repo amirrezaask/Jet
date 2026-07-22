@@ -10,6 +10,9 @@ export type TerminalSessionState = {
   signal?: number
   generation: number
   customLabel?: string
+  agentId?: string
+  agentDriverId?: string
+  agentThreadId?: string
 }
 
 const sessions = new Map<string, TerminalSessionState>()
@@ -41,6 +44,9 @@ export function registerTerminalSession(
     signal: existing?.signal,
     generation: existing?.generation ?? 0,
     customLabel: existing?.customLabel,
+    agentId: existing?.agentId,
+    agentDriverId: existing?.agentDriverId,
+    agentThreadId: existing?.agentThreadId,
   })
   notify(tabId)
 }
@@ -81,6 +87,18 @@ export function setTerminalCustomLabel(tabId: string, label: string): void {
   const session = sessions.get(tabId)
   if (!session) return
   session.customLabel = label
+  notify(tabId)
+}
+
+export function bindAgentToSession(
+  tabId: string,
+  binding: { agentId: string; driverId: string; threadId?: string },
+): void {
+  const session = sessions.get(tabId)
+  if (!session) return
+  session.agentId = binding.agentId
+  session.agentDriverId = binding.driverId
+  session.agentThreadId = binding.threadId
   notify(tabId)
 }
 
@@ -138,6 +156,9 @@ export type HydratedTerminalSession = {
   exitCode?: number
   signal?: number
   customLabel?: string
+  agentId?: string
+  agentDriverId?: string
+  agentThreadId?: string
 }
 
 /** Restore session fields after a tab has been re-opened (refresh hydrate). */
@@ -154,6 +175,9 @@ export function hydrateTerminalSession(entry: HydratedTerminalSession): void {
     signal: entry.signal,
     generation: existing?.generation ?? 0,
     customLabel: entry.customLabel,
+    agentId: entry.agentId,
+    agentDriverId: entry.agentDriverId,
+    agentThreadId: entry.agentThreadId,
   })
   if (entry.ptyId) tabByPtyId.set(entry.ptyId, entry.tabId)
   notify(entry.tabId)

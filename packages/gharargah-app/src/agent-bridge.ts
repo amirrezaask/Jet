@@ -19,7 +19,7 @@ export type JetAgentState = {
   activeEditorDirty: boolean
   searchReady: boolean
   shellView: "home" | "workspace"
-  sessionMode: "terminal" | "editor" | "git" | "todos" | null
+  sessionMode: "agent" | "terminal" | "editor" | "git" | "todos" | null
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -71,7 +71,7 @@ export type AgentBridgeContext = {
   getSelectionRangeCount?: () => number | null
   activeEditorDirty?: boolean
   searchReady?: boolean
-  sessionMode?: "terminal" | "editor" | "git" | "todos" | null
+  sessionMode?: "agent" | "terminal" | "editor" | "git" | "todos" | null
 }
 
 function toWorkspaceFileUri(workspacePath: string, relativeOrUri: string): string {

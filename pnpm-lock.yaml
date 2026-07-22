@@ -109,6 +109,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.37.0
         version: 6.43.4
+      '@gharargah/agents':
+        specifier: workspace:*
+        version: link:../gharargah-agents
       '@gharargah/codemirror':
         specifier: workspace:*
         version: link:../gharargah-codemirror

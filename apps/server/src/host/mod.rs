@@ -1,6 +1,7 @@
 use events::EventHub;
 use serde_json::Value;
 
+pub mod acp_client;
 pub mod agents;
 pub mod events;
 pub mod fff_service;
@@ -46,6 +47,7 @@ impl HostState {
     }
 
     pub fn shutdown(&self) {
+        self.agents.stop_all();
         self.lsp.stop_all();
         self.terminal.stop_all();
         self.workspace.stop_all();

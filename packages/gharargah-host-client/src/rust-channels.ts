@@ -39,6 +39,8 @@ export const RUST_HOST_CHANNELS = new Set([
   "tasks:spawn",
   "agents:listProviders",
   "agents:refreshProviders",
+  "agents:listAgents",
+  "agents:refreshAgents",
   "agents:listThreads",
   "agents:readThread",
   "agents:createThread",

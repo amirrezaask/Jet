@@ -12,7 +12,7 @@ import {
   defaultSessionDescription,
   detectSessionProvider,
   mapRuntimeStatusToCardStatus,
-  providerDisplayLabel,
+  sessionAgentLabel,
   type SessionCardModel,
 } from "./session-card-model.js"
 
@@ -38,17 +38,16 @@ export type GharargahHomeProps = {
 
 function toSessionCard(group: HomeProjectGroup, term: HomeTerminalEntry): SessionCardModel {
   if (term.session) return term.session
-  const provider = detectSessionProvider(term.launchCommand)
-  const kind = provider ? "agent" : "terminal"
+  const agentId = term.agentId ?? detectSessionProvider(term.launchCommand)
   const status = mapRuntimeStatusToCardStatus(term.status)
   return {
     id: term.tabId,
     projectId: group.id,
-    kind,
-    provider: provider ?? (kind === "terminal" ? undefined : "jet"),
-    providerLabel: providerDisplayLabel(kind, provider),
+    kind: "session",
+    agentId,
+    agentLabel: sessionAgentLabel(agentId),
     title: term.label,
-    description: defaultSessionDescription(kind, status),
+    description: defaultSessionDescription(agentId ? "agent" : "terminal", status),
     status,
   }
 }
@@ -81,9 +80,9 @@ export function GharargahHome(props: GharargahHomeProps) {
               group.name,
               group.path,
               session.title,
-              session.providerLabel,
+              session.agentLabel,
               session.description ?? "",
-              session.kind,
+              session.agentId ?? session.kind,
               session.status,
             ]
               .join(" ")

@@ -1,5 +1,5 @@
 import { cloneElement, useState, type MouseEvent, type ReactElement } from "react"
-import { Plus, SquareTerminal } from "lucide-react"
+import { Code2, Plus, SquareTerminal } from "lucide-react"
 import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
 import { Button } from "../components/ui/button.js"
 import {
@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils.js"
 export const SESSION_AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
   { id: "codex", label: "Codex", command: "codex", Icon: OpenAI },
   { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
+  { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
   { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
 ]
 
@@ -79,7 +80,7 @@ export function NewSessionMenu(props: NewSessionMenuProps) {
         <DropdownMenuGroup>
           <DropdownMenuItem onSelect={() => onNewTerminal(rootUri)}>
             <SquareTerminal className="size-4" />
-            Terminal
+            Blank session
           </DropdownMenuItem>
           {SESSION_AGENT_SHORTCUTS.map(shortcut => (
             <DropdownMenuItem

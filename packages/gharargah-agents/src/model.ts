@@ -16,6 +16,15 @@ function fileUriToPath(uri: string): string {
   return path
 }
 
+export function normalizeAgentId(agentId: string | null | undefined): string {
+  return agentId === "claudeAgent" ? "claude" : agentId ?? "codex"
+}
+
+export function defaultAgentDriverId(agentId: string | null | undefined): string {
+  const normalized = normalizeAgentId(agentId)
+  return normalized === "cursor" ? "cursor:acp" : `${normalized}:cli`
+}
+
 export function summarizeThread(thread: AgentThread): AgentThreadSummary {
   let latestUserMessageAt: string | null = null
   for (const message of thread.messages) {
@@ -52,12 +61,14 @@ export function buildWorkspaceSnapshot(
 export function newAgentThread(input: CreateAgentThreadInput): AgentThread {
   const createdAt = nowIso()
   const rootPath = input.workspaceRootPath || fileUriToPath(input.workspaceRootUri)
+  const agentId = normalizeAgentId(input.agentId ?? input.provider)
   return {
     id: crypto.randomUUID(),
     title: input.title?.trim() || "New agent",
     workspaceRootUri: input.workspaceRootUri,
     workspaceRootPath: rootPath,
-    provider: input.provider ?? "cursor",
+    agentId,
+    driverId: input.driverId ?? defaultAgentDriverId(agentId),
     model: input.model ?? "auto",
     createdAt,
     updatedAt: createdAt,

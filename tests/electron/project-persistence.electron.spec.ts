@@ -28,7 +28,7 @@ test.describe("electron project persistence", () => {
       await section.getByRole("button", { name: "New session" }).click()
       await page
         .locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
-          hasText: "Terminal",
+          hasText: "Blank session",
         })
         .click()
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })

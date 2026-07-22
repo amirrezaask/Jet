@@ -63,7 +63,7 @@ export function ProjectTodoComposer(props: ProjectTodoComposerProps) {
     <form
       data-gharargah-todo-composer
       className={cn(
-        "flex flex-col gap-2 rounded-md border border-border/70 bg-card/60 p-2.5",
+        "flex flex-col gap-2 rounded-md border bg-card p-2.5",
         className,
       )}
       onSubmit={onFormSubmit}

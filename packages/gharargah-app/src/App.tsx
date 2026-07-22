@@ -37,6 +37,7 @@ import {
   resolveQuickOpenDisplayPath,
 } from "@gharargah/workspace"
 import type { EditorView } from "@codemirror/view"
+import { defaultAgentDriverId, type AgentCatalogState, type AgentThread } from "@gharargah/agents"
 import { createAgentBridge } from "./agent-bridge.js"
 import {
   TabStore,
@@ -73,6 +74,7 @@ import { registerBuiltinTabTypes } from "./tabs/index.js"
 import {
   clearTerminalSession,
   hydrateTerminalSession,
+  bindAgentToSession,
   listTerminalSessions,
   subscribeTerminalSessions,
   terminalCwdForTab,
@@ -117,6 +119,9 @@ import {
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 
 const GitWorkspace = lazy(() => import("@gharargah/ui/git"))
+const AgentChatView = lazy(() =>
+  import("@gharargah/ui/agents").then(module => ({ default: module.AgentChatView })),
+)
 
 const FN_BY_COMMAND_ID = ((): Map<string, string> => {
   const map = new Map<string, string>()
@@ -162,6 +167,7 @@ export function GharargahApp() {
     appearanceSettings,
     setAppearanceSettings,
     activeTheme,
+    colorScheme,
     fontSize,
     handleZoom,
     setFontSize,
@@ -214,6 +220,9 @@ export function GharargahApp() {
   const [sessionMode, setSessionMode] = useState<SessionDialogMode>("terminal")
   const sessionModeRef = useRef(sessionMode)
   sessionModeRef.current = sessionMode
+  const [agentCatalog, setAgentCatalog] = useState<AgentCatalogState | null>(null)
+  const [activeAgentThread, setActiveAgentThread] = useState<AgentThread | null>(null)
+  const [agentLoading, setAgentLoading] = useState(false)
   const [editorFocus, setEditorFocus] = useState(false)
   const [searchSupported, setSearchSupported] = useState(false)
   const [searchScanReady, setSearchScanReady] = useState(false)
@@ -482,16 +491,21 @@ export function GharargahApp() {
       try {
         const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
           label: shortcut.label,
-          launchCommand: shortcut.command,
         })
-        openTerminalModal(panelId, tabId)
+        bindAgentToSession(tabId, {
+          agentId: shortcut.id,
+          driverId:
+            agentCatalog?.agents.find(agent => agent.id === shortcut.id)?.activeDriverId ??
+            defaultAgentDriverId(shortcut.id),
+        })
+        openTerminalModal(panelId, tabId, "agent")
       } catch (err) {
         console.error("[gharargah] launchAgentFromHome failed", err)
         showGharargahToast(err instanceof Error ? err.message : String(err), { variant: "destructive" })
         closeTerminalModal()
       }
     },
-    [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
+    [agentCatalog, openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
   )
 
   const openTodosFromHome = useCallback(
@@ -531,6 +545,119 @@ export function GharargahApp() {
     }
   }, [])
 
+  const loadAgentCatalog = useCallback(async (refresh = false): Promise<AgentCatalogState | null> => {
+    const agents = window.gharargah?.agents
+    if (!agents) return null
+    const catalog = refresh ? await agents.refreshAgents() : await agents.listAgents()
+    setAgentCatalog(catalog)
+    return catalog
+  }, [])
+
+  const ensureSessionAgentThread = useCallback(
+    async (tabId: string): Promise<AgentThread | null> => {
+      const agents = window.gharargah?.agents
+      const session = terminalSessionForTab(tabId)
+      if (!agents || !session) return null
+      const folder = workspace.folders.find(candidate => candidate.root.uri === session.cwdRootUri)
+      const workspaceRootPath = folder?.root.path ?? fileUriToPath(session.cwdRootUri)
+
+      setAgentLoading(true)
+      try {
+        if (session.agentThreadId) {
+          const existing = await agents.readThread(
+            session.cwdRootUri,
+            workspaceRootPath,
+            session.agentThreadId,
+          )
+          if (existing) {
+            bindAgentToSession(tabId, {
+              agentId: existing.agentId ?? session.agentId ?? "codex",
+              driverId:
+                existing.driverId ??
+                session.agentDriverId ??
+                defaultAgentDriverId(existing.agentId ?? session.agentId ?? "codex"),
+              threadId: existing.id,
+            })
+            setActiveAgentThread(existing)
+            return existing
+          }
+        }
+
+        const catalog = agentCatalog ?? (await loadAgentCatalog())
+        const selectedAgent =
+          catalog?.agents.find(agent => agent.id === session.agentId) ??
+          catalog?.agents.find(agent => agent.enabled) ??
+          catalog?.agents.find(agent => agent.id === "codex") ??
+          catalog?.agents[0]
+        const agentId = selectedAgent?.id ?? session.agentId ?? "codex"
+        const driverId =
+          session.agentDriverId ?? selectedAgent?.activeDriverId ?? defaultAgentDriverId(agentId)
+        const thread = await agents.createThread({
+          workspaceRootUri: session.cwdRootUri,
+          workspaceRootPath,
+          title: `${selectedAgent?.displayName ?? "Agent"} session`,
+          agentId,
+          driverId,
+          model: "auto",
+        })
+        bindAgentToSession(tabId, {
+          agentId: thread.agentId ?? agentId,
+          driverId: thread.driverId ?? driverId,
+          threadId: thread.id,
+        })
+        setActiveAgentThread(thread)
+        return thread
+      } finally {
+        setAgentLoading(false)
+      }
+    },
+    [agentCatalog, loadAgentCatalog, workspace],
+  )
+
+  useEffect(() => {
+    if (sessionMode !== "agent" || !terminalModalTabId) return
+    setActiveAgentThread(null)
+    void ensureSessionAgentThread(terminalModalTabId).catch(error => {
+      showGharargahToast(error instanceof Error ? error.message : String(error), {
+        variant: "destructive",
+      })
+    })
+  }, [sessionMode, terminalModalTabId, ensureSessionAgentThread])
+
+  useEffect(() => {
+    const agents = window.gharargah?.agents
+    if (!agents || !activeAgentThread) return
+    const offUpdated = agents.onThreadUpdated?.(thread => {
+      if (thread.id === activeAgentThread.id) setActiveAgentThread(thread)
+    })
+    const offDelta = agents.onThreadDelta?.(delta => {
+      if (delta.threadId !== activeAgentThread.id) return
+      setActiveAgentThread(current => {
+        if (!current || current.id !== delta.threadId) return current
+        return {
+          ...current,
+          updatedAt: delta.updatedAt,
+          status: delta.status,
+          lastError: delta.lastError,
+          messages: current.messages.map(message =>
+            message.id === delta.messageId
+              ? {
+                  ...message,
+                  text: delta.text,
+                  streaming: delta.streaming,
+                  updatedAt: delta.updatedAt,
+                }
+              : message,
+          ),
+        }
+      })
+    })
+    return () => {
+      offUpdated?.()
+      offDelta?.()
+    }
+  }, [activeAgentThread?.id])
+
   const persistSessionRoster = useCallback(() => {
     if (!sessionRosterReadyRef.current) return
     const sessions = listTerminalSessions().map(session => ({
@@ -542,10 +669,13 @@ export function GharargahApp() {
       status: session.status,
       exitCode: session.exitCode,
       customLabel: session.customLabel,
+      agentId: session.agentId,
+      agentDriverId: session.agentDriverId,
+      agentThreadId: session.agentThreadId,
     }))
     const modalTabId = terminalModalTabIdRef.current
     const roster: PersistedSessionRoster = {
-      version: 1,
+      version: 2,
       sessions,
       modal: modalTabId
         ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
@@ -645,7 +775,7 @@ export function GharargahApp() {
       terminalExplorerFocus: false,
       outputFocus: false,
       terminalFocus: sessionMode === "terminal",
-      agentChatFocus: false,
+      agentChatFocus: sessionMode === "agent",
       listFocus: false,
     }),
     [
@@ -1478,6 +1608,9 @@ export function GharargahApp() {
             status: entry.status,
             exitCode: entry.exitCode,
             customLabel: entry.customLabel,
+            agentId: entry.agentId,
+            agentDriverId: entry.agentDriverId,
+            agentThreadId: entry.agentThreadId,
           })
         }
         commitTree(tree)
@@ -1701,6 +1834,7 @@ export function GharargahApp() {
                     status: t.status,
                     exitCode: t.exitCode,
                     launchCommand: t.launchCommand,
+                    agentId: t.agentId,
                   })),
                 }))}
                 onOpenTerminal={openTerminalFromHome}
@@ -1731,6 +1865,12 @@ export function GharargahApp() {
                       : "Editor"
                     return project ? `${project} / ${fileLabel}` : fileLabel
                   }
+                  if (sessionMode === "agent") {
+                    const agentName = agentCatalog?.agents.find(
+                      agent => agent.id === activeAgentThread?.agentId,
+                    )?.displayName ?? "Agent"
+                    return project ? `${project} / ${agentName}` : agentName
+                  }
                   if (sessionMode === "git") return project ? `${project} / Git` : "Git"
                   if (sessionMode === "todos") return project ? `${project} / TODOs` : "TODOs"
                   const label = workspace.tabRegistry.get(terminalModalTabId)?.label ?? "Terminal"
@@ -1741,6 +1881,63 @@ export function GharargahApp() {
                 mode={sessionMode}
                 onModeChange={setSessionMode}
                 onOpenInApp={(rootUri, appId) => void openProjectInApp(rootUri, appId)}
+                agent={
+                  agentLoading && !activeAgentThread ? (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                      Loading agent…
+                    </div>
+                  ) : (
+                    <Suspense
+                      fallback={
+                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                          Loading conversation…
+                        </div>
+                      }
+                    >
+                      <AgentChatView
+                        thread={activeAgentThread}
+                        agents={agentCatalog}
+                        theme={colorScheme}
+                        onSend={async payload => {
+                          if (!activeAgentThread) return
+                          const next = await window.gharargah?.agents?.sendMessage({
+                            workspaceRootUri: activeAgentThread.workspaceRootUri,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            threadId: activeAgentThread.id,
+                            text: payload.text,
+                            agentId: payload.agentId,
+                            driverId: payload.driverId,
+                            model: payload.model,
+                          })
+                          if (next) setActiveAgentThread(next)
+                        }}
+                        onInterrupt={() => {
+                          if (!activeAgentThread) return
+                          void window.gharargah?.agents?.interruptTurn({
+                            workspaceRootUri: activeAgentThread.workspaceRootUri,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            threadId: activeAgentThread.id,
+                          })
+                        }}
+                        onSelectionChange={(agentId, model) => {
+                          if (!activeAgentThread) return
+                          const driverId = agentCatalog?.agents.find(
+                            agent => agent.id === agentId,
+                          )?.activeDriverId ?? defaultAgentDriverId(agentId)
+                          void window.gharargah?.agents?.updateThreadSettings({
+                            workspaceRootUri: activeAgentThread.workspaceRootUri,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            threadId: activeAgentThread.id,
+                            agentId,
+                            driverId,
+                            model,
+                          })
+                        }}
+                        onAgentsRefresh={() => void loadAgentCatalog(true)}
+                      />
+                    </Suspense>
+                  )
+                }
                 editor={
                   <ModalEditorPane
                     buffers={editorBuffers}

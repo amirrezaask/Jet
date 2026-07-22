@@ -110,6 +110,8 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       interruptTurn: input => transport.invoke("agents:interruptTurn", input),
       setArchived: input => transport.invoke("agents:setArchived", input),
       updateThreadSettings: input => transport.invoke("agents:updateThreadSettings", input),
+      listAgents: () => transport.invoke("agents:listAgents"),
+      refreshAgents: () => transport.invoke("agents:refreshAgents"),
       listProviders: () => transport.invoke("agents:listProviders"),
       refreshProviders: () => transport.invoke("agents:refreshProviders"),
       onThreadUpdated: callback => {

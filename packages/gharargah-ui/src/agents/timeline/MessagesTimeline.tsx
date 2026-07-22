@@ -67,8 +67,8 @@ function AssistantChangedFilesSection(props: {
   const summaryStat = summarizeTurnDiffStats(files)
 
   return (
-    <div className="mt-2 rounded-lg border border-border/80 bg-card/45 p-2.5">
-      <div className="sticky top-2 z-10 mb-1.5 flex items-center justify-between gap-2 bg-[color-mix(in_srgb,var(--card)_45%,var(--background))] before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-[color-mix(in_srgb,var(--card)_45%,var(--background))] before:content-['']">
+    <div className="mt-2 rounded-lg border bg-card p-2.5">
+      <div className="sticky top-2 z-10 mb-1.5 flex items-center justify-between gap-2 bg-card before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-card before:content-['']">
         <p className="text-3xs uppercase tracking-[0.12em] text-muted-foreground/65">
           <span>Changed files ({files.length})</span>
           {hasNonZeroStat(summaryStat) ? (

@@ -75,8 +75,7 @@ export function ProjectTodoDrawer(props: ProjectTodoDrawerProps) {
         data-project-id={projectId}
         data-todo-count={total}
         className={cn(
-          "flex h-[min(72vh,32rem)] w-full max-w-none flex-col rounded-none border-border/80 bg-background/95",
-          "backdrop-blur-md",
+          "flex h-[min(72vh,32rem)] w-full max-w-none flex-col rounded-none border-border bg-background",
         )}
         aria-labelledby={titleId}
         onEscapeKeyDown={event => event.preventDefault()}

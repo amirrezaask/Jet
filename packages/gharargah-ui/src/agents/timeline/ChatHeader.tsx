@@ -12,7 +12,7 @@ export const ChatHeader = memo(function ChatHeader(props: {
     <div
       data-chat-header="true"
       className={cn(
-        "@container/header-actions flex min-w-0 shrink-0 items-center gap-2 border-b border-border/60 bg-background/80 px-4 py-2.5 sm:gap-3",
+        "@container/header-actions flex min-w-0 shrink-0 items-center gap-2 border-b border-border bg-background px-4 py-2.5 sm:gap-3",
         className,
       )}
     >

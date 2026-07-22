@@ -1,4 +1,4 @@
-import type { AgentProvidersState, AgentThread } from "@gharargah/agents"
+import type { AgentCatalogState, AgentThread } from "@gharargah/agents"
 import {
   buildTurnDiffSummaryByAssistantMessageId,
   deriveTimelineEntriesFromThread,
@@ -8,6 +8,7 @@ import { memo, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ChatComposer } from "./composer/ChatComposer.js"
 import {
   deriveProviderInstanceEntries,
+  agentCatalogToProviderState,
   resolveDefaultProviderSelection,
 } from "./providerInstances.js"
 import { ChatHeader } from "./timeline/ChatHeader.js"
@@ -15,18 +16,19 @@ import { MessagesTimeline } from "./timeline/MessagesTimeline.js"
 
 export const AgentChatView = memo(function AgentChatView(props: {
   thread: AgentThread | null
-  providers: AgentProvidersState | null
+  agents: AgentCatalogState | null
   theme: "light" | "dark"
   onSend: (payload: {
     text: string
-    provider: string | null
+    agentId: string | null
+    driverId: string | null
     model: string | null
   }) => Promise<void>
   onInterrupt?: () => void
   onSelectionChange?: (instanceId: string, model: string) => void
-  onProvidersRefresh?: () => void
+  onAgentsRefresh?: () => void
 }) {
-  const { thread, providers, theme, onSend, onInterrupt, onSelectionChange, onProvidersRefresh } =
+  const { thread, agents, theme, onSend, onInterrupt, onSelectionChange, onAgentsRefresh } =
     props
   const [submitting, setSubmitting] = useState(false)
   const [expandAll, setExpandAll] = useState(true)
@@ -35,10 +37,11 @@ export const AgentChatView = memo(function AgentChatView(props: {
   const composerOverlayRef = useRef<HTMLDivElement | null>(null)
   const listRef = useRef<import("@legendapp/list/react").LegendListRef | null>(null)
 
+  const providers = useMemo(() => agentCatalogToProviderState(agents), [agents])
   const instanceEntries = useMemo(() => deriveProviderInstanceEntries(providers), [providers])
   const defaultSelection = useMemo(
-    () => resolveDefaultProviderSelection(instanceEntries, thread?.provider, thread?.model),
-    [instanceEntries, thread?.provider, thread?.model],
+    () => resolveDefaultProviderSelection(instanceEntries, thread?.agentId, thread?.model),
+    [instanceEntries, thread?.agentId, thread?.model],
   )
 
   const timelineEntries = useMemo(
@@ -71,7 +74,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
     try {
       await onSend({
         text: payload.text,
-        provider: payload.instanceId,
+        agentId: payload.instanceId,
+        driverId:
+          agents?.agents.find(agent => agent.id === payload.instanceId)?.activeDriverId ?? null,
         model: payload.model,
       })
     } finally {
@@ -166,7 +171,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
           ) : null}
           <ChatComposer
             providers={providers}
-            instanceId={defaultSelection?.instanceId ?? thread.provider}
+            instanceId={defaultSelection?.instanceId ?? thread.agentId}
             model={defaultSelection?.model ?? thread.model}
             disabled={thread.status === "running"}
             isRunning={thread.status === "running"}
@@ -174,7 +179,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
             onInstanceModelChange={(instanceId, model) => onSelectionChange?.(instanceId, model)}
             onSend={handleSend}
             onInterrupt={() => onInterrupt?.()}
-            onProvidersRefresh={onProvidersRefresh}
+            onProvidersRefresh={onAgentsRefresh}
           />
         </div>
       </div>

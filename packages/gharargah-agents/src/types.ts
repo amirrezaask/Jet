@@ -25,7 +25,35 @@ export type ProviderModel = {
   shortName?: string
 }
 
-export type ProviderSnapshotStatus = "ready" | "unavailable" | "pending"
+export type AgentDriverKind = "cli" | "acp"
+
+export type AgentDriverStatus = "ready" | "unavailable" | "pending"
+
+/** One transport implementation for an agent; each agent selects its active driver. */
+export type AgentDriverSnapshot = {
+  id: string
+  kind: AgentDriverKind
+  status: AgentDriverStatus
+  message?: string | null
+}
+
+/** An agent identity independent from the transport used to run it. */
+export type AgentSnapshot = {
+  id: string
+  displayName: string
+  enabled: boolean
+  activeDriverId: string
+  drivers: AgentDriverSnapshot[]
+  models: ProviderModel[]
+}
+
+export type AgentCatalogState = {
+  agents: AgentSnapshot[]
+  updatedAt: string
+}
+
+/** @deprecated Compatibility view for the older provider-based picker. */
+export type ProviderSnapshotStatus = AgentDriverStatus
 
 export type ProviderSnapshot = {
   instanceId: string
@@ -47,8 +75,14 @@ export type AgentThread = {
   title: string
   workspaceRootUri: string
   workspaceRootPath: string
-  /** Provider instance id (e.g. codex, claudeAgent). Legacy threads may store driver slug in provider. */
-  provider: string | null
+  /** Stable agent identity (codex, claude, opencode, cursor). */
+  agentId: string | null
+  /** Selected transport implementation, such as codex:cli. */
+  driverId: string | null
+  /** Agent-owned ACP session id used to restore the conversation after reconnecting. */
+  acpSessionId?: string | null
+  /** @deprecated Read-only migration field for threads created before agentId. */
+  provider?: string | null
   model: string | null
   createdAt: string
   updatedAt: string
@@ -91,6 +125,9 @@ export type CreateAgentThreadInput = {
   workspaceRootUri: string
   workspaceRootPath: string
   title?: string
+  agentId?: string | null
+  driverId?: string | null
+  /** @deprecated Use agentId. */
   provider?: string | null
   model?: string | null
 }
@@ -100,6 +137,9 @@ export type SendAgentMessageInput = {
   workspaceRootPath: string
   threadId: string
   text: string
+  agentId?: string | null
+  driverId?: string | null
+  /** @deprecated Use agentId. */
   provider?: string | null
   model?: string | null
 }
@@ -121,6 +161,9 @@ export type UpdateAgentThreadSettingsInput = {
   workspaceRootUri: string
   workspaceRootPath: string
   threadId: string
+  agentId?: string | null
+  driverId?: string | null
+  /** @deprecated Use agentId. */
   provider?: string | null
   model?: string | null
 }
@@ -185,8 +228,11 @@ export type AgentTransport = {
   interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
   updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
-  listProviders(): Promise<AgentProvidersState>
-  refreshProviders(): Promise<AgentProvidersState>
+  listAgents(): Promise<AgentCatalogState>
+  refreshAgents(): Promise<AgentCatalogState>
+  /** @deprecated Compatibility APIs for older clients. */
+  listProviders?(): Promise<AgentProvidersState>
+  refreshProviders?(): Promise<AgentProvidersState>
   onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
   onThreadDelta?(callback: (delta: AgentThreadDelta) => void): () => void
 }

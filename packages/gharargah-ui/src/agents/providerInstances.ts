@@ -1,4 +1,8 @@
-import type { AgentProvidersState, ProviderSnapshot } from "@gharargah/agents"
+import type {
+  AgentCatalogState,
+  AgentProvidersState,
+  ProviderSnapshot,
+} from "@gharargah/agents"
 import type { ProviderDriverKind, ProviderInstanceId } from "./t3contracts.js"
 
 export type ProviderInstanceEntry = {
@@ -38,6 +42,30 @@ export function deriveProviderInstanceEntries(
     snapshot,
     models: snapshot.models,
   }))
+}
+
+/** Keeps the imported picker implementation isolated from the product's Agent/Driver model. */
+export function agentCatalogToProviderState(
+  catalog: AgentCatalogState | null,
+): AgentProvidersState | null {
+  if (!catalog) return null
+  return {
+    updatedAt: catalog.updatedAt,
+    providers: catalog.agents.map(agent => {
+      const driver =
+        agent.drivers.find(candidate => candidate.id === agent.activeDriverId) ?? agent.drivers[0]
+      return {
+        instanceId: agent.id,
+        // The picker uses this only for agent icons/grouping. Transport kind stays on driver.
+        driverKind: agent.id,
+        displayName: agent.displayName,
+        enabled: agent.enabled,
+        status: driver?.status ?? "unavailable",
+        message: driver?.message,
+        models: agent.models,
+      }
+    }),
+  }
 }
 
 export function getCustomModelOptionsByInstance(

@@ -4,6 +4,7 @@ import {
   readSessionRoster,
   writeSessionRoster,
   SESSION_ROSTER_STORAGE_KEY,
+  LEGACY_SESSION_ROSTER_STORAGE_KEY,
   type PersistedSessionRoster,
 } from "./session-roster-store.js"
 
@@ -35,7 +36,7 @@ describe("session-roster-store", () => {
   it("round-trips sessions and modal", () => {
     const storage = memoryStorage()
     const roster: PersistedSessionRoster = {
-      version: 1,
+      version: 2,
       sessions: [
         {
           tabId: "gharargah:terminal:session-1",
@@ -45,6 +46,9 @@ describe("session-roster-store", () => {
           ptyId: "term-1",
           status: "running",
           customLabel: "Codex",
+          agentId: "codex",
+          agentDriverId: "codex:cli",
+          agentThreadId: "thread-1",
         },
       ],
       modal: { tabId: "gharargah:terminal:session-1", sessionMode: "terminal" },
@@ -74,9 +78,41 @@ describe("session-roster-store", () => {
 
   it("returns empty roster when storage empty", () => {
     assert.deepEqual(readSessionRoster(memoryStorage()), {
-      version: 1,
+      version: 2,
       sessions: [],
       modal: null,
+    })
+  })
+
+  it("migrates the version 1 terminal roster into project sessions", () => {
+    const storage = memoryStorage({
+      [LEGACY_SESSION_ROSTER_STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            tabId: "gharargah:terminal:legacy",
+            cwdRootUri: "file:///legacy",
+            label: "Claude",
+            launchCommand: "claude",
+            status: "exited",
+          },
+        ],
+        modal: { tabId: "gharargah:terminal:legacy", sessionMode: "terminal" },
+      }),
+    })
+
+    assert.deepEqual(readSessionRoster(storage), {
+      version: 2,
+      sessions: [
+        {
+          tabId: "gharargah:terminal:legacy",
+          cwdRootUri: "file:///legacy",
+          label: "Claude",
+          launchCommand: "claude",
+          status: "exited",
+        },
+      ],
+      modal: { tabId: "gharargah:terminal:legacy", sessionMode: "terminal" },
     })
   })
 })

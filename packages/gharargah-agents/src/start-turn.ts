@@ -1,4 +1,4 @@
-import { touchThread } from "./model.js"
+import { defaultAgentDriverId, normalizeAgentId, touchThread } from "./model.js"
 import type { AgentThread, SendAgentMessageInput } from "./types.js"
 
 export type PreparedTurn = {
@@ -13,13 +13,17 @@ export function prepareSendMessageTurn(
   const createdAt = new Date().toISOString()
   const userMessageId = crypto.randomUUID()
   const assistantMessageId = crypto.randomUUID()
-  const provider = input.provider ?? thread.provider ?? "cursor"
+  const agentId = normalizeAgentId(
+    input.agentId ?? input.provider ?? thread.agentId ?? thread.provider,
+  )
+  const driverId = input.driverId ?? thread.driverId ?? defaultAgentDriverId(agentId)
   const model = input.model ?? thread.model ?? "auto"
 
   const next = touchThread(thread, {
     status: "running",
     lastError: null,
-    provider,
+    agentId,
+    driverId,
     model,
     title:
       thread.messages.length === 0

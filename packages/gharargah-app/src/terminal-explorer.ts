@@ -11,6 +11,7 @@ export type TerminalExplorerEntry = {
   status: "starting" | "running" | "exited" | "failed"
   exitCode?: number
   launchCommand?: string
+  agentId?: "codex" | "claude" | "opencode" | "cursor"
 }
 
 export type TerminalExplorerGroup = {
@@ -55,6 +56,7 @@ export function buildTerminalExplorerGroups(
       status: session?.status ?? "starting",
       exitCode: session?.exitCode,
       launchCommand: session?.launchCommand,
+      agentId: session?.agentId as TerminalExplorerEntry["agentId"],
     }
 
     if (folderByRootUri.has(cwdRootUri)) {

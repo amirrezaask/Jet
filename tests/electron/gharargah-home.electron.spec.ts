@@ -43,11 +43,12 @@ test.describe("gharargah mission home", () => {
       await section.getByRole("button", { name: "New session" }).click()
       const sessionMenu = page.locator('[data-slot="dropdown-menu-content"]')
       await expectLocatorVisible(sessionMenu)
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Terminal" }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Blank session" }))
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Codex" }))
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Claude" }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "OpenCode" }))
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Cursor Agent" }))
-      await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Terminal" }).click()
+      await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
       await expect
         .poll(async () => page.evaluate(() => window.__gharargahAgent?.getState()?.shellView ?? null), {
           timeout: 20_000,
@@ -149,7 +150,7 @@ test.describe("gharargah mission home", () => {
       await section.getByRole("button", { name: "New session" }).click()
       const sessionMenu = page.locator('[data-slot="dropdown-menu-content"]')
       await expectLocatorVisible(sessionMenu)
-      await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Terminal" }).click()
+      await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal-close]")
       await expect
@@ -164,16 +165,18 @@ test.describe("gharargah mission home", () => {
         .toBe(true)
       await expectSelectorVisible(page, "[data-gharargah-session-mode-switch]")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal-sessions]"), 0)
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 3)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
       await expect
         .poll(async () => page.evaluate(() =>
           [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
             .map(tab => tab.textContent?.trim() ?? ""),
         ))
-        .toEqual(["Terminal", "Editor", "Git"])
+        .toEqual(["Agent", "Terminal", "Editor", "Git", "TODOs"])
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"]')
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="todos"]')
       await expectLocatorCount(page.locator('[data-gharargah-session-pane="terminal"][data-active]'), 1)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expect
@@ -182,7 +185,7 @@ test.describe("gharargah mission home", () => {
         })
         .toMatch(/main/)
 
-      // Git is a full workspace mode and intentionally keeps the modal to three modes only.
+      // Git is one tool inside the same five-tool project session.
       await page.evaluate(() => {
         const api = window.gharargah
         if (!api) return
@@ -255,7 +258,7 @@ test.describe("gharargah mission home", () => {
       })
       await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
       await expectSelectorVisible(page, "[data-gharargah-modal-editor]")
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 3)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
 
       // Open-in-app control in the fullscreen terminal modal header.
       await page.evaluate(() => {
@@ -281,7 +284,7 @@ test.describe("gharargah mission home", () => {
       await cards.first().click({ button: "right" })
       const cardMenu = page.locator("[data-gharargah-terminal-card-menu]")
       await expectLocatorVisible(cardMenu)
-      await cardMenu.getByRole("menuitem", { name: "Kill Terminal" }).click()
+      await cardMenu.getByRole("menuitem", { name: "End session" }).click()
       await expect
         .poll(async () => cards.count(), { timeout: 10_000 })
         .toBe(0)

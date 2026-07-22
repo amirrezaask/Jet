@@ -40,8 +40,8 @@ export function TerminalCard(props: TerminalCardProps) {
       session={{
         id: label,
         projectId: "",
-        kind,
-        providerLabel: providerLabel ?? providerDisplayLabel(kind),
+        kind: "session",
+        agentLabel: providerLabel ?? providerDisplayLabel(kind),
         title: label,
         description: description ?? defaultSessionDescription(kind, mapped),
         status: mapped,

@@ -1,5 +1,5 @@
 import type { PanelId } from "@gharargah/shared"
-import { Check, Copy, CopyPlus, Focus, Folder, Pencil, Plus, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react"
+import { Check, Code2, Copy, CopyPlus, Focus, Folder, Pencil, Plus, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react"
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import {
   ContextMenu,
@@ -37,7 +37,7 @@ export type TerminalExplorerGroup = {
 }
 
 export type TerminalAgentShortcut = {
-  id: "codex" | "claude" | "cursor"
+  id: "codex" | "claude" | "opencode" | "cursor"
   label: string
   command: string
 }
@@ -48,6 +48,7 @@ const AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
   { id: "codex", label: "Codex", command: "codex", Icon: OpenAI },
   { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
   { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
+  { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
 ]
 
 type TerminalNodeData =

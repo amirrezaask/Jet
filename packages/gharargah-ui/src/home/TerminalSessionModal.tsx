@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactNode } from "react"
-import { Columns3, GitBranch, SquareTerminal, XIcon, FileCode2 } from "lucide-react"
+import { Bot, Columns3, GitBranch, SquareTerminal, XIcon, FileCode2 } from "lucide-react"
 import {
   Dialog,
   DialogClose,
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
 
-export type SessionDialogMode = "terminal" | "editor" | "git" | "todos"
+export type SessionDialogMode = "agent" | "terminal" | "editor" | "git" | "todos"
 
 export type TerminalSessionModalProps = {
   open: boolean
@@ -22,6 +22,7 @@ export type TerminalSessionModalProps = {
   mode: SessionDialogMode
   onModeChange: (mode: SessionDialogMode) => void
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
+  agent: ReactNode
   editor: ReactNode
   terminal: ReactNode
   git: ReactNode
@@ -41,6 +42,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     mode,
     onModeChange,
     onOpenInApp,
+    agent,
     editor,
     terminal,
     git,
@@ -56,11 +58,19 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         data-gharargah-glass=""
         data-gharargah-terminal-modal
         data-gharargah-session-mode={mode}
-        className="flex flex-col gap-0 overflow-hidden border-0 bg-transparent p-0 shadow-none"
+        className="flex flex-col gap-0 overflow-hidden border bg-background p-0 shadow-xl"
         aria-describedby={undefined}
         onOpenAutoFocus={event => {
           event.preventDefault()
           requestAnimationFrame(() => {
+            if (mode === "agent") {
+              document
+                .querySelector<HTMLElement>(
+                  "[data-gharargah-session-pane='agent'] [data-testid='composer-editor']",
+                )
+                ?.focus()
+              return
+            }
             if (mode === "editor") {
               document
                 .querySelector<HTMLElement>(
@@ -95,7 +105,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       >
         <DialogHeader
           data-gharargah-terminal-modal-header=""
-          className="relative flex shrink-0 flex-row items-center gap-3 px-4 py-3 text-left sm:text-left"
+          className="relative flex shrink-0 flex-row items-center gap-3 border-b bg-background px-4 py-3 text-left sm:text-left"
         >
           <div className="z-10 min-w-0 flex-1 pr-2">
             <DialogTitle className="truncate text-sm font-medium tracking-tight text-foreground">
@@ -117,34 +127,41 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             role="tablist"
             aria-label="Session view"
             onKeyDown={handleModeTabKeyDown}
-            className="pointer-events-auto absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/50 bg-card/40 p-0.5 shadow-[inset_0_1px_0_color-mix(in_srgb,white_8%,transparent)] backdrop-blur-md"
+            className="pointer-events-auto absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 rounded-lg bg-muted p-1 text-muted-foreground"
           >
+            <ModeTab
+              mode="agent"
+              active={mode === "agent"}
+              label="Agent"
+              icon={<Bot aria-hidden />}
+              onSelect={() => onModeChange("agent")}
+            />
             <ModeTab
               mode="terminal"
               active={mode === "terminal"}
               label="Terminal"
-              icon={<SquareTerminal className="size-3.5" aria-hidden />}
+              icon={<SquareTerminal aria-hidden />}
               onSelect={() => onModeChange("terminal")}
             />
             <ModeTab
               mode="editor"
               active={mode === "editor"}
               label="Editor"
-              icon={<FileCode2 className="size-3.5" aria-hidden />}
+              icon={<FileCode2 aria-hidden />}
               onSelect={() => onModeChange("editor")}
             />
             <ModeTab
               mode="git"
               active={mode === "git"}
               label="Git"
-              icon={<GitBranch className="size-3.5" aria-hidden />}
+              icon={<GitBranch aria-hidden />}
               onSelect={() => onModeChange("git")}
             />
             <ModeTab
               mode="todos"
               active={mode === "todos"}
               label="TODOs"
-              icon={<Columns3 className="size-3.5" aria-hidden />}
+              icon={<Columns3 aria-hidden />}
               onSelect={() => onModeChange("todos")}
             />
           </div>
@@ -178,6 +195,22 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-contain"
         >
           <div
+            id="gharargah-session-pane-agent"
+            role="tabpanel"
+            aria-labelledby="gharargah-session-tab-agent"
+            data-gharargah-terminal-modal-stage=""
+            data-gharargah-session-pane="agent"
+            data-active={mode === "agent" ? "" : undefined}
+            hidden={mode !== "agent"}
+            aria-hidden={mode !== "agent"}
+            className={cn(
+              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+              mode === "agent" ? "z-10" : "pointer-events-none z-0",
+            )}
+          >
+            {mode === "agent" ? agent : null}
+          </div>
+          <div
             id="gharargah-session-pane-editor"
             role="tabpanel"
             aria-labelledby="gharargah-session-tab-editor"
@@ -187,7 +220,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             hidden={mode !== "editor"}
             aria-hidden={mode !== "editor"}
             className={cn(
-              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden",
+              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
               mode === "editor" ? "z-10" : "pointer-events-none z-0",
             )}
           >
@@ -203,7 +236,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             hidden={mode !== "terminal"}
             aria-hidden={mode !== "terminal"}
             className={cn(
-              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden",
+              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
               mode === "terminal" ? "z-10" : "pointer-events-none z-0",
             )}
           >
@@ -219,7 +252,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             hidden={mode !== "git"}
             aria-hidden={mode !== "git"}
             className={cn(
-              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden",
+              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
               mode === "git" ? "z-10" : "pointer-events-none z-0",
             )}
           >
@@ -235,7 +268,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             hidden={mode !== "todos"}
             aria-hidden={mode !== "todos"}
             className={cn(
-              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden",
+              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
               mode === "todos" ? "z-10" : "pointer-events-none z-0",
             )}
           >
@@ -269,8 +302,8 @@ function ModeTab(props: {
         "inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-2xs font-medium tracking-wide transition-[color,background-color,box-shadow]",
         "focus-visible:ring-ring outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         active
-          ? "bg-primary/20 text-foreground shadow-[0_0_16px_-4px_var(--glass-accent-glow)] ring-1 ring-primary/35"
-          : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
       )}
       onClick={onSelect}
     >

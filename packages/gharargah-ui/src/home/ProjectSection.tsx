@@ -22,6 +22,7 @@ export type HomeTerminalEntry = {
   status: TerminalCardStatus
   exitCode?: number
   launchCommand?: string
+  agentId?: import("./session-card-model.js").SessionProvider
   /** Precomputed presentation model when available. */
   session?: SessionCardModel
 }

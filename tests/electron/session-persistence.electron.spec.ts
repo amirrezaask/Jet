@@ -7,7 +7,7 @@ import {
 } from "../shell/assert.js"
 import { hasPtySpawn, launchJet } from "./_launch.js"
 
-const SESSION_ROSTER_STORAGE_KEY = "jet-session-roster-v1"
+const SESSION_ROSTER_STORAGE_KEY = "gharargah-session-roster-v2"
 const ptyAvailable = hasPtySpawn()
 
 test.describe("session refresh persistence", () => {
@@ -27,7 +27,7 @@ test.describe("session refresh persistence", () => {
       await section.getByRole("button", { name: "New session" }).click()
       await page
         .locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
-          hasText: "Terminal",
+          hasText: "Blank session",
         })
         .click()
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })

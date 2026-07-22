@@ -8,15 +8,15 @@ export type SessionCardStatus =
   | "idle"
   | "failed"
 
-export type SessionProvider = "jet" | "claude" | "cursor" | "codex"
+export type SessionProvider = "claude" | "cursor" | "codex" | "opencode"
 
 export type SessionCardModel = {
   id: string
   projectId: string
-  kind: "agent" | "terminal"
-  provider?: SessionProvider
-  /** Display name for provider/agent row (e.g. "Claude", "Terminal"). */
-  providerLabel: string
+  kind: "session"
+  agentId?: SessionProvider
+  /** Display name for the bound agent, or “Session” before one is selected. */
+  agentLabel: string
   title: string
   description?: string
   status: SessionCardStatus
@@ -47,6 +47,7 @@ export function detectSessionProvider(
   const cmd = launchCommand.trim().split(/\s+/)[0]?.toLowerCase() ?? ""
   if (cmd === "claude" || cmd.endsWith("/claude")) return "claude"
   if (cmd === "codex" || cmd.endsWith("/codex")) return "codex"
+  if (cmd === "opencode" || cmd.endsWith("/opencode")) return "opencode"
   if (cmd === "cursor-agent" || cmd.endsWith("/cursor-agent") || cmd === "cursor") {
     return "cursor"
   }
@@ -65,11 +66,15 @@ export function providerDisplayLabel(
       return "Cursor"
     case "codex":
       return "Codex"
-    case "jet":
-      return "Jet"
+    case "opencode":
+      return "OpenCode"
     default:
       return kind === "agent" ? "Agent" : "Terminal"
   }
+}
+
+export function sessionAgentLabel(agentId?: SessionProvider): string {
+  return agentId ? providerDisplayLabel("agent", agentId) : "Session"
 }
 
 export function defaultSessionDescription(
@@ -105,4 +110,3 @@ export function sessionStatusLabel(status: SessionCardStatus): string {
       return "Failed"
   }
 }
-

@@ -276,7 +276,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   return (
     <section
       data-gharargah-git-workspace=""
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background/55"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
       aria-label="Git workspace"
     >
       <GitToolbar
@@ -306,7 +306,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       {view === "history" ? (
         <HistoryList commits={history} />
       ) : (
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 bg-transparent">
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 bg-background">
           <ResizablePanel defaultSize="31%" minSize="220px" maxSize="48%">
             <FileNavigator
               rows={navigationRows}
@@ -343,7 +343,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       {view !== "history" ? (
         <form
           data-gharargah-git-commit-form=""
-          className="shrink-0 border-t border-border/70 bg-card/35 p-3 backdrop-blur-md"
+          className="shrink-0 border-t bg-card p-3"
           onSubmit={event => {
             event.preventDefault()
             void commit()
@@ -359,7 +359,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
                 value={commitSummary}
                 onChange={event => setCommitSummary(event.target.value)}
                 placeholder="Commit summary…"
-                className="h-8 bg-background/45 text-xs"
+                className="h-8 bg-background text-xs"
               />
               <label htmlFor="git-commit-body" className="sr-only">Commit description</label>
               <textarea
@@ -369,7 +369,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
                 onChange={event => setCommitBody(event.target.value)}
                 placeholder="Optional description…"
                 rows={2}
-                className="min-h-12 w-full resize-y rounded-md border border-input bg-background/45 px-3 py-2 font-mono text-2xs leading-4 text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="min-h-12 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-2xs leading-4 text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
               />
             </div>
             <div className="flex min-w-36 flex-col justify-between gap-2">
@@ -406,7 +406,7 @@ function GitToolbar(props: {
   const { repositoryName, summary, branches, pendingAction, onCheckout, onRemoteAction, onRefresh } = props
   const busy = pendingAction !== null
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-y border-border/60 bg-card/30 px-3">
+    <header className="flex h-12 shrink-0 items-center gap-2 border-y bg-card px-3">
       <div className="flex min-w-0 items-center gap-2">
         <GitBranchIcon className="text-foreground" aria-hidden />
         <span className="max-w-40 truncate text-xs font-medium">{repositoryName}</span>
@@ -418,7 +418,7 @@ function GitToolbar(props: {
             value={summary.branch ?? ""}
             disabled={busy}
             onChange={event => onCheckout(event.target.value)}
-            className="h-8 min-w-32 appearance-none rounded-md border border-input bg-background/55 py-1 pr-7 pl-2 font-mono text-2xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="h-8 min-w-32 appearance-none rounded-md border border-input bg-background py-1 pr-7 pl-2 font-mono text-2xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
           >
             {summary.branch ? <option value={summary.branch}>{summary.branch}</option> : null}
             {branches.filter(branch => branch !== summary.branch).map(branch => (
@@ -531,7 +531,7 @@ function FileNavigator(props: {
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-card/15" aria-label="Changed files">
+    <aside className="flex h-full min-h-0 flex-col bg-card" aria-label="Changed files">
       <div className="flex shrink-0 items-center gap-2 border-b border-border/50 p-2">
         <div className="relative min-w-0 flex-1">
           <label htmlFor="git-filter-files" className="sr-only">Filter changed files</label>
@@ -544,7 +544,7 @@ function FileNavigator(props: {
             value={filter}
             onChange={event => onFilterChange(event.target.value)}
             placeholder="Filter files…"
-            className="h-8 bg-background/35 pl-7 text-xs"
+            className="h-8 bg-background pl-7 text-xs"
           />
         </div>
         <Button
@@ -685,8 +685,8 @@ function DiffViewer(props: {
     return <CenteredEmpty title="Select a changed file" description="Choose a file to inspect its diff." />
   }
   return (
-    <div data-gharargah-git-diff="" className="flex h-full min-h-0 flex-col overflow-hidden bg-background/35">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card/25 px-3">
+    <div data-gharargah-git-diff="" className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-card px-3">
         <FileDiffIcon className="text-primary" aria-hidden />
         <span className="min-w-0 flex-1 truncate font-mono text-2xs">{selected.path}</span>
         <Button type="button" variant="ghost" size="xs" onClick={() => onOpenFile(selected.path)}>
@@ -697,7 +697,7 @@ function DiffViewer(props: {
             <RotateCcwIcon data-icon="inline-start" /> Discard file
           </Button>
         ) : null}
-        <div className="flex rounded-md border border-input bg-background/35 p-0.5" aria-label="Diff layout">
+        <div className="flex rounded-md border border-input bg-background p-0.5" aria-label="Diff layout">
           {(["unified", "split"] as const).map(style => (
             <button
               key={style}

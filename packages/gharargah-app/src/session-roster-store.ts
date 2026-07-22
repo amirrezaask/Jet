@@ -1,8 +1,9 @@
 import type { TerminalSessionStatus } from "./tabs/terminal-session.js"
 
-export const SESSION_ROSTER_STORAGE_KEY = "jet-session-roster-v1"
+export const SESSION_ROSTER_STORAGE_KEY = "gharargah-session-roster-v2"
+export const LEGACY_SESSION_ROSTER_STORAGE_KEY = "jet-session-roster-v1"
 
-export type PersistedSessionMode = "terminal" | "editor" | "git" | "todos"
+export type PersistedSessionMode = "agent" | "terminal" | "editor" | "git" | "todos"
 
 export type PersistedSessionEntry = {
   tabId: string
@@ -13,6 +14,9 @@ export type PersistedSessionEntry = {
   status: TerminalSessionStatus
   exitCode?: number
   customLabel?: string
+  agentId?: string
+  agentDriverId?: string
+  agentThreadId?: string
 }
 
 export type PersistedSessionModal = {
@@ -21,13 +25,13 @@ export type PersistedSessionModal = {
 }
 
 export type PersistedSessionRoster = {
-  version: 1
+  version: 2
   sessions: PersistedSessionEntry[]
   modal: PersistedSessionModal | null
 }
 
 const EMPTY_ROSTER: PersistedSessionRoster = {
-  version: 1,
+  version: 2,
   sessions: [],
   modal: null,
 }
@@ -41,6 +45,7 @@ const SESSION_STATUSES = new Set<TerminalSessionStatus>([
 
 const SESSION_MODES = new Set<PersistedSessionMode>([
   "terminal",
+  "agent",
   "editor",
   "git",
   "todos",
@@ -85,6 +90,12 @@ function parseEntry(raw: unknown): PersistedSessionEntry | null {
   if (typeof item.exitCode === "number" && Number.isFinite(item.exitCode)) {
     entry.exitCode = item.exitCode
   }
+  const agentId = asNonEmptyString(item.agentId)
+  if (agentId) entry.agentId = agentId
+  const agentDriverId = asNonEmptyString(item.agentDriverId)
+  if (agentDriverId) entry.agentDriverId = agentDriverId
+  const agentThreadId = asNonEmptyString(item.agentThreadId)
+  if (agentThreadId) entry.agentThreadId = agentThreadId
   return entry
 }
 
@@ -101,10 +112,17 @@ export function readSessionRoster(
   storage: Pick<Storage, "getItem"> = localStorage,
 ): PersistedSessionRoster {
   try {
-    const raw = storage.getItem(SESSION_ROSTER_STORAGE_KEY)
+    const raw =
+      storage.getItem(SESSION_ROSTER_STORAGE_KEY) ??
+      storage.getItem(LEGACY_SESSION_ROSTER_STORAGE_KEY)
     if (!raw) return EMPTY_ROSTER
-    const parsed = JSON.parse(raw) as Partial<PersistedSessionRoster>
-    if (parsed.version !== 1 || !Array.isArray(parsed.sessions)) return EMPTY_ROSTER
+    const parsed = JSON.parse(raw) as {
+      version?: unknown
+      sessions?: unknown
+      modal?: unknown
+    }
+    if (parsed.version !== 1 && parsed.version !== 2) return EMPTY_ROSTER
+    if (!Array.isArray(parsed.sessions)) return EMPTY_ROSTER
     const seen = new Set<string>()
     const sessions: PersistedSessionEntry[] = []
     for (const item of parsed.sessions) {
@@ -115,7 +133,7 @@ export function readSessionRoster(
     }
     const modal = parseModal(parsed.modal)
     return {
-      version: 1,
+      version: 2,
       sessions,
       modal: modal && seen.has(modal.tabId) ? modal : null,
     }

@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js"
-import { Input } from "@/components/ui/input.js"
+import { Textarea } from "@/components/ui/textarea.js"
 import { cn } from "@/lib/utils.js"
 import type { ProjectTodo } from "./project-todos-repository.js"
 
@@ -37,7 +37,7 @@ export function ProjectTodoItem(props: ProjectTodoItemProps) {
   } = props
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(todo.text)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const {
     attributes,
     listeners,
@@ -66,8 +66,8 @@ export function ProjectTodoItem(props: ProjectTodoItemProps) {
     setEditing(false)
   }
 
-  const onEditKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
+  const onEditKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       commitEdit()
     } else if (e.key === "Escape") {
@@ -119,7 +119,7 @@ export function ProjectTodoItem(props: ProjectTodoItemProps) {
       />
       <div className="min-w-0 flex-1">
         {editing ? (
-          <Input
+          <Textarea
             ref={inputRef}
             value={draft}
             onChange={e => setDraft(e.target.value)}
@@ -127,13 +127,14 @@ export function ProjectTodoItem(props: ProjectTodoItemProps) {
             onKeyDown={onEditKeyDown}
             aria-label="Edit todo"
             data-gharargah-todo-edit-input
-            className="h-7 text-xs"
+            rows={3}
+            className="min-h-20 resize-y text-xs"
           />
         ) : (
           <button
             type="button"
             className={cn(
-              "w-full truncate text-left text-xs leading-snug text-foreground outline-none",
+              "w-full whitespace-pre-wrap text-left text-xs leading-snug text-foreground outline-none",
               "focus-visible:rounded-sm focus-visible:ring-[3px] focus-visible:ring-ring/40",
               todo.completed && "text-muted-foreground line-through",
             )}

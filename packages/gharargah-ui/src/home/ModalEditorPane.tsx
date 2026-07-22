@@ -52,7 +52,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
         role="tablist"
         aria-label="Open buffers"
         onKeyDown={handleBufferTabKeyDown}
-        className="flex h-9 shrink-0 items-stretch gap-0 overflow-x-auto border-b border-border/50 bg-card/20"
+        className="flex h-9 shrink-0 items-stretch gap-0 overflow-x-auto border-b bg-muted"
       >
         {buffers.length === 0 ? (
           <p className="flex items-center px-3 text-2xs text-muted-foreground">
@@ -69,8 +69,8 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
                 className={cn(
                   "group relative flex max-w-48 min-w-0 shrink-0 items-center gap-1 border-r border-border/40 px-2",
                   active
-                    ? "bg-background/40 text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary after:shadow-[0_0_10px_var(--glass-accent-glow)]"
-                    : "text-muted-foreground hover:bg-accent/30 hover:text-foreground",
+                    ? "bg-background text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
                 onMouseDown={event => {
                   if (event.button === 1) {

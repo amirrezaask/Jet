@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -42,6 +42,24 @@ export type ProjectTodoBoardProps = {
   className?: string
 }
 
+function groupByStatus(todos: ProjectTodo[]): Record<ProjectTodoStatus, ProjectTodo[]> {
+  const map: Record<ProjectTodoStatus, ProjectTodo[]> = {
+    todo: [],
+    doing: [],
+    done: [],
+  }
+  for (const todo of todos) {
+    map[todo.status].push(todo)
+  }
+  for (const status of PROJECT_TODO_STATUSES) {
+    map[status] = [...map[status]].sort((a, b) => {
+      if (a.position !== b.position) return a.position - b.position
+      return a.createdAt.localeCompare(b.createdAt)
+    })
+  }
+  return map
+}
+
 export function ProjectTodoBoard(props: ProjectTodoBoardProps) {
   const {
     projectId,
@@ -56,84 +74,112 @@ export function ProjectTodoBoard(props: ProjectTodoBoardProps) {
   } = props
   const [composingStatus, setComposingStatus] = useState<ProjectTodoStatus | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
+  /** Local column snapshot while dragging — avoids persist-on-dragOver jank. */
+  const [draft, setDraft] = useState<Record<ProjectTodoStatus, ProjectTodo[]> | null>(null)
 
-  const byStatus = useMemo(() => {
-    const map: Record<ProjectTodoStatus, ProjectTodo[]> = {
-      todo: [],
-      doing: [],
-      done: [],
-    }
-    for (const todo of todos) {
-      map[todo.status].push(todo)
-    }
-    for (const status of PROJECT_TODO_STATUSES) {
-      map[status] = [...map[status]].sort((a, b) => {
-        if (a.position !== b.position) return a.position - b.position
-        return a.createdAt.localeCompare(b.createdAt)
-      })
-    }
-    return map
-  }, [todos])
+  const byStatus = useMemo(() => groupByStatus(todos), [todos])
+  const columns = draft ?? byStatus
+
+  useEffect(() => {
+    if (!activeId) setDraft(null)
+  }, [todos, activeId])
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const activeTodo = activeId ? todos.find(t => t.id === activeId) : null
+  const activeTodo = activeId
+    ? todos.find(t => t.id === activeId) ??
+      PROJECT_TODO_STATUSES.flatMap(s => columns[s]).find(t => t.id === activeId) ??
+      null
+    : null
   const done = todos.filter(t => t.status === "done").length
   const total = todos.length
 
-  const findContainer = (id: string): ProjectTodoStatus | null => {
+  const findContainer = (
+    id: string,
+    source: Record<ProjectTodoStatus, ProjectTodo[]>,
+  ): ProjectTodoStatus | null => {
     if (PROJECT_TODO_STATUSES.includes(id as ProjectTodoStatus)) {
       return id as ProjectTodoStatus
     }
-    const hit = todos.find(t => t.id === id)
-    return hit?.status ?? null
+    for (const status of PROJECT_TODO_STATUSES) {
+      if (source[status].some(t => t.id === id)) return status
+    }
+    return null
   }
 
   const onDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id))
+    setDraft(groupByStatus(todos))
   }
 
   const onDragOver = (event: DragOverEvent) => {
     const { active, over } = event
-    if (!over) return
-    const activeContainer = findContainer(String(active.id))
-    const overContainer = findContainer(String(over.id))
+    if (!over || !draft) return
+    const activeContainer = findContainer(String(active.id), draft)
+    const overContainer = findContainer(String(over.id), draft)
     if (!activeContainer || !overContainer || activeContainer === overContainer) return
-    const overItems = byStatus[overContainer]
-    const overIndex = overItems.findIndex(t => t.id === String(over.id))
-    const insertAt =
-      overIndex >= 0
-        ? overIndex
-        : overItems.length
-    onMove(String(active.id), overContainer, insertAt)
+
+    setDraft(prev => {
+      if (!prev) return prev
+      const activeItems = [...prev[activeContainer]]
+      const overItems = [...prev[overContainer]]
+      const activeIndex = activeItems.findIndex(t => t.id === String(active.id))
+      if (activeIndex < 0) return prev
+      const [moved] = activeItems.splice(activeIndex, 1)
+      if (!moved) return prev
+      const overIndex = overItems.findIndex(t => t.id === String(over.id))
+      const insertAt =
+        PROJECT_TODO_STATUSES.includes(String(over.id) as ProjectTodoStatus) || overIndex < 0
+          ? overItems.length
+          : overIndex
+      const nextMoved: ProjectTodo = { ...moved, status: overContainer }
+      overItems.splice(insertAt, 0, nextMoved)
+      return {
+        ...prev,
+        [activeContainer]: activeItems,
+        [overContainer]: overItems,
+      }
+    })
   }
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
+    const snapshot = draft
     setActiveId(null)
-    if (!over) return
-    const activeContainer = findContainer(String(active.id))
-    const overContainer = findContainer(String(over.id))
-    if (!activeContainer || !overContainer) return
+    setDraft(null)
+    if (!over || !snapshot) return
 
-    if (activeContainer === overContainer) {
-      const ids = byStatus[activeContainer].map(t => t.id)
-      const oldIndex = ids.indexOf(String(active.id))
-      const newIndex = PROJECT_TODO_STATUSES.includes(String(over.id) as ProjectTodoStatus)
-        ? ids.length - 1
-        : ids.indexOf(String(over.id))
-      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
-      onReorderColumn(activeContainer, arrayMove(ids, oldIndex, newIndex))
+    const activeIdStr = String(active.id)
+    const original = todos.find(t => t.id === activeIdStr)
+    if (!original) return
+
+    const finalContainer = findContainer(activeIdStr, snapshot)
+    const overContainer = findContainer(String(over.id), snapshot)
+    if (!finalContainer || !overContainer) return
+
+    // Cross-column: draft already holds the card in the target column.
+    if (original.status !== finalContainer) {
+      const toIndex = snapshot[finalContainer].findIndex(t => t.id === activeIdStr)
+      onMove(activeIdStr, finalContainer, toIndex >= 0 ? toIndex : undefined)
       return
     }
 
-    const overItems = byStatus[overContainer].map(t => t.id).filter(id => id !== String(active.id))
-    const overIndex = overItems.indexOf(String(over.id))
-    const insertAt = overIndex >= 0 ? overIndex : overItems.length
-    onMove(String(active.id), overContainer, insertAt)
+    // Same-column reorder — draft order unchanged during drag; use over target.
+    const ids = snapshot[finalContainer].map(t => t.id)
+    const oldIndex = ids.indexOf(activeIdStr)
+    const newIndex = PROJECT_TODO_STATUSES.includes(String(over.id) as ProjectTodoStatus)
+      ? ids.length - 1
+      : ids.indexOf(String(over.id))
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
+    onReorderColumn(finalContainer, arrayMove(ids, oldIndex, newIndex))
+  }
+
+  const onDragCancel = () => {
+    setActiveId(null)
+    setDraft(null)
   }
 
   return (
@@ -161,6 +207,7 @@ export function ProjectTodoBoard(props: ProjectTodoBoardProps) {
         onDragStart={onDragStart}
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
       >
         <div
           data-gharargah-todo-board-columns
@@ -170,7 +217,7 @@ export function ProjectTodoBoard(props: ProjectTodoBoardProps) {
             <TodoColumn
               key={status}
               status={status}
-              todos={byStatus[status]}
+              todos={columns[status]}
               composing={composingStatus === status}
               onCompose={() => setComposingStatus(status)}
               onCancelCompose={() => setComposingStatus(null)}
@@ -186,7 +233,10 @@ export function ProjectTodoBoard(props: ProjectTodoBoardProps) {
         </div>
         <DragOverlay dropAnimation={null}>
           {activeTodo ? (
-            <div className="rounded-md border border-primary/40 bg-card p-2 text-xs shadow-lg opacity-90">
+            <div
+              data-gharargah-todo-drag-overlay
+              className="rounded-md border border-primary/40 bg-card p-2 text-xs shadow-lg opacity-90"
+            >
               {activeTodo.text}
             </div>
           ) : null}
@@ -227,7 +277,7 @@ function TodoColumn(props: {
       data-gharargah-todo-column={status}
       data-todo-column-count={todos.length}
       className={cn(
-        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border/50 bg-muted/15",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-muted",
         isOver && "border-primary/40 bg-primary/5",
       )}
     >

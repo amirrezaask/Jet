@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from "react"
-import { MoreHorizontal, SquareTerminal, X } from "lucide-react"
+import { Code2, MoreHorizontal, SquareTerminal, X } from "lucide-react"
 import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
 import { Button } from "@/components/ui/button.js"
 import { Card, CardContent, CardHeader } from "@/components/ui/card.js"
@@ -28,24 +28,24 @@ export type SessionCardProps = {
 }
 
 function ProviderGlyph({
-  kind,
-  provider,
+  agentId,
 }: {
-  kind: "agent" | "terminal"
-  provider?: SessionProvider
+  agentId?: SessionProvider
 }) {
   const className = "size-3.5 shrink-0"
-  if (kind === "terminal" && !provider) {
+  if (!agentId) {
     return <SquareTerminal className={cn(className, "text-muted-foreground")} />
   }
   const IconComp: Icon | null =
-    provider === "claude"
+    agentId === "claude"
       ? ClaudeAI
-      : provider === "cursor"
+      : agentId === "cursor"
         ? CursorIcon
-        : provider === "codex"
+        : agentId === "codex"
           ? OpenAI
-          : null
+          : agentId === "opencode"
+            ? Code2
+            : null
   if (IconComp) return <IconComp className={className} />
   return <SquareTerminal className={cn(className, "text-muted-foreground")} />
 }
@@ -85,7 +85,7 @@ export function SessionCard(props: SessionCardProps) {
           onSelect={onKill}
         >
           <X className="size-4" />
-          Kill Terminal
+          End session
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -105,7 +105,7 @@ export function SessionCard(props: SessionCardProps) {
     >
       <Card
         className={cn(
-          "gharargah-home-session-card flex h-full min-h-[5.5rem] flex-col gap-1.5 border-border/80 bg-card/80 py-2.5",
+          "gharargah-home-session-card flex h-full min-h-[5.5rem] flex-col gap-1.5 border-border bg-card py-2.5",
           "transition-[border-color,box-shadow,background-color]",
           "hover:border-primary/50 hover:bg-card",
           "group-focus-visible:border-ring group-focus-visible:ring-[3px] group-focus-visible:ring-ring/40",
@@ -113,9 +113,9 @@ export function SessionCard(props: SessionCardProps) {
       >
         <CardHeader className="gap-0 px-3 py-0 [.border-b]:pb-0">
           <div className="flex items-center gap-1.5">
-            <ProviderGlyph kind={session.kind} provider={session.provider} />
+            <ProviderGlyph agentId={session.agentId} />
             <span className="min-w-0 flex-1 truncate text-3xs font-medium tracking-wide text-muted-foreground">
-              {session.providerLabel}
+              {session.agentLabel}
             </span>
             <StatusBadge status={session.status} />
             {overflow}
@@ -184,7 +184,7 @@ export function SessionCard(props: SessionCardProps) {
           onSelect={onKill}
         >
           <X className="size-4" />
-          Kill Terminal
+          End session
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

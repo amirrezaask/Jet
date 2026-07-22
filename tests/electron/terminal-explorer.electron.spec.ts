@@ -82,7 +82,7 @@ test.describe("electron terminal explorer", () => {
       await section.getByRole("button", { name: "New session" }).click()
       const menu = page.locator('[data-slot="dropdown-menu-content"]')
       await expectLocatorVisible(menu)
-      await menu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Terminal" }).click()
+      await menu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
     } finally {

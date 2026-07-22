@@ -923,7 +923,7 @@ body,
 
 .chat-composer-glass,
 .chat-composer-lower-chrome {
-  background: color-mix(in srgb, var(--card) 20%, transparent);
+  background: var(--card);
 }
 
 .chat-composer-glass {
@@ -933,16 +933,26 @@ body,
 }
 
 .chat-composer-shared-blur {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-gharargah-surface="glass"] .chat-composer-glass,
+:root[data-gharargah-surface="glass"] .chat-composer-lower-chrome {
+  background: color-mix(in srgb, var(--card) 20%, transparent);
+}
+
+:root[data-gharargah-surface="glass"] .chat-composer-shared-blur {
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
 }
 
-.dark .chat-composer-glass,
-.dark .chat-composer-lower-chrome {
+:root.dark[data-gharargah-surface="glass"] .chat-composer-glass,
+:root.dark[data-gharargah-surface="glass"] .chat-composer-lower-chrome {
   background: color-mix(in srgb, var(--card) 45%, transparent);
 }
 
-.dark .chat-composer-glass {
+:root.dark[data-gharargah-surface="glass"] .chat-composer-glass {
   box-shadow:
     0 18px 48px -20px rgb(0 0 0 / 60%),
     0 4px 14px -7px rgb(0 0 0 / 40%);
