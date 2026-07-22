@@ -3,6 +3,8 @@ import {
   defaultThemeId,
   defaultThemeIdForScheme,
   getThemeById,
+  DEFAULT_MONO_FONT_FAMILY,
+  DEFAULT_UI_FONT_FAMILY,
   type JetAppearanceSettings,
 } from "@gharargah/ui"
 import { applyColorScheme, syncNativeChromeFromTheme } from "@gharargah/ui"
@@ -15,12 +17,12 @@ const FONT_SIZE_STORAGE_KEY = "jet-font-size"
 const APPEARANCE_STORAGE_KEY = "jet-appearance-settings"
 const DEFAULT_FONT_SIZE = 13
 const FONT_SIZE_STEP = 2
-const DEFAULT_MONO_FONT =
-  '"Geist Mono Variable", "Geist Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, monospace'
 
 export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   themeId: defaultThemeId,
   fontSize: DEFAULT_FONT_SIZE,
+  fontFamily: DEFAULT_UI_FONT_FAMILY,
+  monoFontFamily: DEFAULT_MONO_FONT_FAMILY,
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -31,6 +33,12 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 
 function normalizeThemeId(value: unknown): string {
   return getThemeById(typeof value === "string" ? value : null).id
+}
+
+function normalizeFontFamily(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : fallback
 }
 
 function loadStoredFontSize(): number {
@@ -72,6 +80,8 @@ function loadAppearanceSettings(): JetAppearanceSettings {
     return {
       themeId: normalizeThemeId(parsed.themeId ?? base.themeId),
       fontSize: clampNumber(parsed.fontSize, base.fontSize, 10, 24),
+      fontFamily: normalizeFontFamily(parsed.fontFamily, base.fontFamily),
+      monoFontFamily: normalizeFontFamily(parsed.monoFontFamily, base.monoFontFamily),
     }
   } catch {
     return base
@@ -89,11 +99,18 @@ function persistAppearanceSettings(settings: JetAppearanceSettings): void {
   }
 }
 
-/** Fixed chrome defaults — not exposed in settings yet. */
+/** Apply persisted appearance tokens onto :root. */
 function applyAppearanceCss(settings: JetAppearanceSettings): void {
   const root = document.documentElement
   root.style.fontSize = `${settings.fontSize}px`
-  root.style.setProperty("--font-mono", DEFAULT_MONO_FONT)
+  root.style.setProperty(
+    "--font-sans",
+    normalizeFontFamily(settings.fontFamily, DEFAULT_UI_FONT_FAMILY),
+  )
+  root.style.setProperty(
+    "--font-mono",
+    normalizeFontFamily(settings.monoFontFamily, DEFAULT_MONO_FONT_FAMILY),
+  )
   root.style.setProperty("--gharargah-editor-line-height", "1.45")
   root.style.setProperty("--gharargah-terminal-line-height", "1.2")
   root.style.setProperty("--gharargah-terminal-cursor-blink", "1")

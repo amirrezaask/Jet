@@ -14,6 +14,19 @@ export function createTabContributorBridge(
       return get().workspace
     },
     getTheme: () => get().getTheme(),
+    resolveLspClient: fileUri => get().resolveLspClient(fileUri),
+    getLspRevision: () => get().getLspRevision(),
+    executeCommand: name => get().executeCommand(name),
+    runKeyBinding: (binding, view) => get().runKeyBinding(binding, view),
+    getKeymapBindings: () => get().getKeymapBindings(),
+    getUserExtensions: () => get().getUserExtensions(),
+    getKeymapRevision: () => get().getKeymapRevision(),
+    getKeymapContext: () => get().getKeymapContext(),
+    onEditorFocusChange: focused => get().onEditorFocusChange(focused),
+    onEditorSelectionChange: (line, column, rangeCount) =>
+      get().onEditorSelectionChange(line, column, rangeCount),
+    onLspAttachFailed: fileUri => get().onLspAttachFailed(fileUri),
+    onProblemsChange: () => get().onProblemsChange(),
     closeTerminalTab: (panelId, tabId) => get().closeTerminalTab(panelId, tabId),
     onTerminalTitleChange: (tabId, title) => get().onTerminalTitleChange(tabId, title),
   }

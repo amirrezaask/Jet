@@ -4,6 +4,9 @@ import {
   ProjectSwitcherOverlay,
   SettingsOverlay,
   TerminalListOverlay,
+  QuickOpenOverlay,
+  BufferListOverlay,
+  GotoLineModal,
   showGharargahToast,
   bundledThemeList,
 } from "@gharargah/ui"
@@ -16,12 +19,54 @@ export default function OverlayHost() {
 
   return (
     <>
+      <GotoLineModal
+        open={open.gotoLine}
+        onOpenChange={v => handlers.setOverlayOpen("gotoLine", v)}
+        onSubmit={handlers.onGotoLineSubmit}
+      />
+
+      {open.quickOpen && handlers.searchSupported ? (
+        <QuickOpenOverlay
+          open
+          onOpenChange={v => handlers.setOverlayOpen("quickOpen", v)}
+          scanReady={handlers.searchScanReady}
+          workspaces={workspaceFolders.map(folder => ({ id: folder.id, name: folder.root.name }))}
+          defaultWorkspaceId={workspace.manager.activeFolder?.id ?? null}
+          onSearch={handlers.onQuickOpenSearch}
+          onSelect={handlers.onQuickOpenSelect}
+        />
+      ) : null}
+
+      {open.bufferList ? (
+        <BufferListOverlay
+          open
+          onOpenChange={v => handlers.setOverlayOpen("bufferList", v)}
+          workspace={workspace}
+          onSelect={handlers.onBufferSelect}
+        />
+      ) : null}
+
       {open.terminalList ? (
         <TerminalListOverlay
           open
           onOpenChange={v => handlers.setOverlayOpen("terminalList", v)}
           groups={terminalGroups}
           onSelect={handlers.onTerminalSelect}
+        />
+      ) : null}
+
+      {open.openFile ? (
+        <CdOverlay
+          open
+          onOpenChange={v => handlers.setOverlayOpen("openFile", v)}
+          initialPath={workspace.root?.path ?? null}
+          showFiles
+          onSelectFile={(uri, path) => handlers.onOpenFile(uri, path)}
+          onSelectFolder={handlers.onSelectFolder}
+          resolveHomeDir={handlers.resolveHomeDir}
+          title="Open file or folder"
+          description="Path to file or folder"
+          primaryHint="Open"
         />
       ) : null}
 

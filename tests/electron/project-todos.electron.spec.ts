@@ -37,6 +37,7 @@ test.describe("project todos on home", () => {
       await expect
         .poll(async () => summary.getAttribute("data-todo-count"))
         .toBe("0")
+      await expectLocatorCount(section.locator("[data-gharargah-todo-card]"), 0)
 
       // Open empty drawer (auto-opens composer when total === 0).
       await section.locator("[data-gharargah-todo-summary-toggle]").click()
@@ -76,10 +77,14 @@ test.describe("project todos on home", () => {
       await expectLocatorContainsText(drawer, "Review architecture")
       await expectLocatorCount(drawer.locator("[data-gharargah-todo-item]"), 1)
 
-      // Close drawer via summary toggle, then reopen — stored todo + counter must remain.
-      await section.locator("[data-gharargah-todo-summary-toggle]").click()
+      // Escape must not dismiss the drawer — only the X button.
+      await page.keyboard.press("Escape")
+      await expectLocatorVisible(drawer)
+
+      await drawer.locator("[data-gharargah-todo-drawer-close]").click()
       await expect.poll(async () => drawer.isVisible()).toBe(false)
 
+      // Reopen — stored todo + counter must remain.
       await section.locator("[data-gharargah-todo-summary-toggle]").click()
       await expectLocatorVisible(drawer)
       await expect
@@ -91,7 +96,7 @@ test.describe("project todos on home", () => {
         .poll(async () => summary.getAttribute("data-todo-count"))
         .toBe("1")
 
-      // Add second todo, close, reopen again.
+      // Add second todo, close via X, reopen again.
       await drawer.locator("[data-gharargah-todo-drawer-add]").click()
       const composer2 = drawer.locator("[data-gharargah-todo-composer-text]")
       await expectLocatorVisible(composer2)
@@ -103,7 +108,7 @@ test.describe("project todos on home", () => {
         .toBe("2")
       await expectLocatorContainsText(drawer, "Ship todos feature")
 
-      await section.locator("[data-gharargah-todo-summary-toggle]").click()
+      await drawer.locator("[data-gharargah-todo-drawer-close]").click()
       await expect.poll(async () => drawer.isVisible()).toBe(false)
       await section.locator("[data-gharargah-todo-summary-toggle]").click()
       await expectLocatorVisible(drawer)

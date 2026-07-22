@@ -142,7 +142,6 @@ export function ProjectSection(props: HomeProjectSectionProps) {
             )
           })
         )}
-        {todos.card}
       </div>
     </section>
   )

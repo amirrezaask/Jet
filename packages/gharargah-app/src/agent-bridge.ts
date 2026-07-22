@@ -19,6 +19,7 @@ export type JetAgentState = {
   activeEditorDirty: boolean
   searchReady: boolean
   shellView: "home" | "workspace"
+  sessionMode: "editor" | "terminal" | null
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -60,9 +61,17 @@ export type AgentBridgeContext = {
   fontSize: number
   executeCommand: (name: string) => Promise<void>
   openWorkspace: (folderPath: string) => Promise<void>
-  addWorkspace?: (folderPath: string) => Promise<void>
+  addWorkspace?: (folderPath: string) => void | Promise<void>
   listWorkspaces?: () => { id: string; path: string; name: string }[]
   setFontSize: (px: number) => void
+  openFile: (uri: string, path: string) => void
+  getEditorText?: () => string | null
+  setEditorSelection?: (line: number, column: number) => void
+  getCursorPosition?: () => JetAgentCursor | null
+  getSelectionRangeCount?: () => number | null
+  activeEditorDirty?: boolean
+  searchReady?: boolean
+  sessionMode?: "editor" | "terminal" | null
 }
 
 function toWorkspaceFileUri(workspacePath: string, relativeOrUri: string): string {
@@ -84,8 +93,18 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
     listWorkspaces() {
       return ctx().listWorkspaces?.() ?? []
     },
-    async openFile(_relativeOrUri: string) {
-      throw new Error("Editor removed — home + terminal shell only")
+    async openFile(relativeOrUri: string) {
+      const current = ctx()
+      const rootPath = current.workspace.root?.path
+      if (!rootPath) {
+        throw new Error("No workspace open — call openWorkspace first")
+      }
+      if (typeof performance?.mark === "function") {
+        performance.mark("gharargah:editor-mounted:start")
+      }
+      const uri = toWorkspaceFileUri(rootPath, relativeOrUri)
+      const path = uri.replace(/^file:\/\//, "")
+      current.openFile(uri, decodeURIComponent(path))
     },
     async executeCommand(commandId: string) {
       await ctx().executeCommand(commandId)
@@ -101,12 +120,13 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
         message: current.message,
         paletteOpen: current.paletteOpen,
         focusedPanel: current.focusedPanel?.id ?? null,
-        openBuffers: [],
+        openBuffers: current.workspace.openBuffers,
         panels: collectPanels(current),
         fontSize: current.fontSize,
-        activeEditorDirty: false,
-        searchReady: false,
-        shellView: "home",
+        activeEditorDirty: current.activeEditorDirty ?? false,
+        searchReady: current.searchReady ?? false,
+        shellView: current.sessionMode != null ? "workspace" : "home",
+        sessionMode: current.sessionMode ?? null,
       }
     },
     async waitForReady() {
@@ -131,23 +151,43 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
       }
       throw new Error("Gharargah layout did not become ready in time")
     },
-    async waitForEditor(_timeoutMs = 5000) {
-      throw new Error("Editor removed — home + terminal shell only")
+    async waitForEditor(timeoutMs = 5000) {
+      const deadline = Date.now() + timeoutMs
+      while (Date.now() < deadline) {
+        const editor = document.querySelector(".cm-editor")
+        if (editor) {
+          if (typeof performance?.mark === "function") {
+            performance.mark("gharargah:editor-mounted:end")
+            try {
+              performance.measure(
+                "gharargah:editor-mounted",
+                "gharargah:editor-mounted:start",
+                "gharargah:editor-mounted:end",
+              )
+            } catch {
+              performance.measure("gharargah:editor-mounted", "gharargah:editor-mounted:end")
+            }
+          }
+          return
+        }
+        await new Promise(r => setTimeout(r, 50))
+      }
+      throw new Error("Editor did not mount in time")
     },
     setFontSize(px: number) {
       ctx().setFontSize(px)
     },
     getEditorText() {
-      return null
+      return ctx().getEditorText?.() ?? null
     },
-    setEditorSelection() {
-      throw new Error("Editor removed — home + terminal shell only")
+    setEditorSelection(line: number, column: number) {
+      ctx().setEditorSelection?.(line, column)
     },
     getCursorPosition() {
-      return null
+      return ctx().getCursorPosition?.() ?? null
     },
     getSelectionRangeCount() {
-      return null
+      return ctx().getSelectionRangeCount?.() ?? null
     },
     async acceptConfirm() {
       const btn = document.querySelector<HTMLElement>('[data-gharargah-confirm="accept"]')

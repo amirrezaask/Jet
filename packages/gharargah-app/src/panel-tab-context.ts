@@ -1,7 +1,7 @@
 import type { GharargahPanelTree } from "@gharargah/workspace"
 import type { KnownTabKind } from "@gharargah/workspace"
 import { panelTabIds } from "@gharargah/workspace"
-import type { FileUri, PanelId } from "@gharargah/shared"
+import type { PanelId } from "@gharargah/shared"
 import { isFileUri, isUntitledUri } from "@gharargah/shared"
 
 export type ActiveTabKind = KnownTabKind | "empty" | "tabs"
@@ -24,13 +24,12 @@ export function getActiveTabId(tree: GharargahPanelTree, panel: PanelId | null):
   return view.activeTabId
 }
 
-export function getActiveEditorFileUri(tree: GharargahPanelTree, panel: PanelId | null): FileUri | null {
+export function getActiveEditorFileUri(tree: GharargahPanelTree, panel: PanelId | null): string | null {
   if (!panel) return null
   const view = tree.getView(panel)
   if (view?.kind !== "tabs") return null
   const active = view.activeTabId
-  if (isFileUri(active)) return active
-  if (isUntitledUri(active)) return null
-  const editorTab = panelTabIds(view).find(id => isFileUri(id))
+  if (isFileUri(active) || isUntitledUri(active)) return active
+  const editorTab = panelTabIds(view).find(id => isFileUri(id) || isUntitledUri(id))
   return editorTab ?? null
 }

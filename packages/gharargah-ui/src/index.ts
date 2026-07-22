@@ -24,6 +24,7 @@ export {
   StatusBadge,
   TerminalSessionModal,
   TERMINAL_MODAL_SESSION_LIST_ID,
+  ModalEditorPane,
   NewSessionMenu,
   OpenInAppMenu,
   OPEN_IN_APP_TARGETS,
@@ -33,7 +34,9 @@ export {
   type HomeProjectGroup,
   type HomeTerminalEntry,
   type TerminalCardStatus,
-  type TerminalModalSession,
+  type SessionDialogMode,
+  type ModalEditorBuffer,
+  type ModalEditorPaneProps,
   type TerminalSessionModalProps,
   type SessionCardModel,
   type SessionCardStatus,
@@ -93,6 +96,8 @@ export { ProjectSwitcherOverlay } from "./components/ProjectSwitcherOverlay.js"
 export { PaletteOverlay } from "./components/PaletteOverlay.js"
 export {
   SettingsOverlay,
+  DEFAULT_UI_FONT_FAMILY,
+  DEFAULT_MONO_FONT_FAMILY,
   type JetAppearanceSettings,
 } from "./components/SettingsOverlay.js"
 export { StatusBar } from "./status/StatusBar.js"

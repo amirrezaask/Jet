@@ -4,7 +4,11 @@ import type { OverlayId } from "./OverlayController.js"
 type OverlayOpenState = Record<OverlayId, boolean>
 
 const INITIAL: OverlayOpenState = {
+  gotoLine: false,
+  quickOpen: false,
+  bufferList: false,
   terminalList: false,
+  openFile: false,
   folderPicker: false,
   switchFolder: false,
   cd: false,
@@ -30,7 +34,11 @@ export function useOverlayState() {
 
   const setters = useMemo(
     () => ({
+      setGotoLineOpen: (v: boolean) => setOpen("gotoLine", v),
+      setQuickOpenOpen: (v: boolean) => setOpen("quickOpen", v),
+      setBufferListOpen: (v: boolean) => setOpen("bufferList", v),
       setTerminalListOpen: (v: boolean) => setOpen("terminalList", v),
+      setOpenFileOpen: (v: boolean) => setOpen("openFile", v),
       setFolderPickerOpen: (v: boolean) => setOpen("folderPicker", v),
       setSwitchFolderOpen: (v: boolean) => setOpen("switchFolder", v),
       setCdOpen: (v: boolean) => setOpen("cd", v),
@@ -50,7 +58,11 @@ export function useOverlayState() {
     anyOpen,
     ...setters,
     paletteOpen: open.palette,
+    gotoLineOpen: open.gotoLine,
+    quickOpenOpen: open.quickOpen,
+    bufferListOpen: open.bufferList,
     terminalListOpen: open.terminalList,
+    openFileOpen: open.openFile,
     folderPickerOpen: open.folderPicker,
     switchFolderOpen: open.switchFolder,
     cdOpen: open.cd,

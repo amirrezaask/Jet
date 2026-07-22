@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react"
+import { X } from "lucide-react"
 import {
   Drawer,
   DrawerContent,
@@ -60,7 +61,10 @@ export function ProjectTodoDrawer(props: ProjectTodoDrawerProps) {
   return (
     <Drawer
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={next => {
+        // Esc / overlay / drag dismiss ignored — only the X button closes.
+        if (next) onOpenChange(true)
+      }}
       direction="bottom"
       shouldScaleBackground={false}
       repositionInputs={false}
@@ -75,6 +79,9 @@ export function ProjectTodoDrawer(props: ProjectTodoDrawerProps) {
           "backdrop-blur-md",
         )}
         aria-labelledby={titleId}
+        onEscapeKeyDown={event => event.preventDefault()}
+        onPointerDownOutside={event => event.preventDefault()}
+        onInteractOutside={event => event.preventDefault()}
       >
         <DrawerHeader className="gap-2 border-b border-border/50 text-left md:gap-2">
           <div className="flex items-start justify-between gap-3">
@@ -90,16 +97,28 @@ export function ProjectTodoDrawer(props: ProjectTodoDrawerProps) {
                 {total > 0 ? ` · ${done}/${total} complete` : ""}
               </DrawerDescription>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 shrink-0 px-2 text-3xs"
-              data-gharargah-todo-drawer-add
-              onClick={() => onComposingChange(true)}
-            >
-              + Add todo
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-3xs"
+                data-gharargah-todo-drawer-add
+                onClick={() => onComposingChange(true)}
+              >
+                + Add todo
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Close todos"
+                data-gharargah-todo-drawer-close
+                onClick={() => onOpenChange(false)}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
           </div>
           {total > 0 ? (
             <ProjectTodoProgress total={total} done={done} variant="linear" />
@@ -151,7 +170,7 @@ export function ProjectTodoDrawer(props: ProjectTodoDrawerProps) {
           />
           {!composing && total > 0 ? (
             <p className="px-1 text-3xs text-muted-foreground">
-              Drag to reorder · Esc closes
+              Drag to reorder
             </p>
           ) : null}
         </div>

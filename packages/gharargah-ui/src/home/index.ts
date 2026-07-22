@@ -19,8 +19,13 @@ export {
   TerminalSessionModal,
   TERMINAL_MODAL_SESSION_LIST_ID,
   type TerminalSessionModalProps,
-  type TerminalModalSession,
+  type SessionDialogMode,
 } from "./TerminalSessionModal.js"
+export {
+  ModalEditorPane,
+  type ModalEditorPaneProps,
+  type ModalEditorBuffer,
+} from "./ModalEditorPane.js"
 export {
   NewSessionMenu,
   SESSION_AGENT_SHORTCUTS,

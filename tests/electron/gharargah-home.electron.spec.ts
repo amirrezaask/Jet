@@ -160,13 +160,11 @@ test.describe("gharargah mission home", () => {
           })
         }, { timeout: 10_000 })
         .toBe(true)
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal-sessions]")
-      await expectListRows(page, {
-        panel: "gharargah:terminal-modal-sessions",
-        minItems: 1,
-        needle: "Terminal",
-        noResultsText: "No sessions",
-      })
+      await expectSelectorVisible(page, "[data-gharargah-session-mode-switch]")
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal-sessions]"), 0)
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"]')
+      await expectSelectorVisible(page, "[data-gharargah-session-pane=terminal]:not([hidden])")
       await expect
         .poll(async () => page.locator("[data-gharargah-terminal-git-branch]").textContent(), {
           timeout: 15_000,

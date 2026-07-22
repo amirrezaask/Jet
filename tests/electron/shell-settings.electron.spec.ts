@@ -18,10 +18,35 @@ test.describe("electron shell settings", () => {
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("glass-red")
 
+      await page.locator("[data-gharargah-font-preset='ui:system']").click()
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue("--font-sans").trim(),
+          ),
+        )
+        .toContain("system-ui")
+
+      await page.locator("[data-gharargah-font-preset='mono:ibm-plex-mono']").click()
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim(),
+          ),
+        )
+        .toContain("IBM Plex Mono")
+
       await execCommand(page, "ui.resetAppearance")
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("glass-blue")
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue("--font-sans").trim(),
+          ),
+        )
+        .toContain("Geist")
     } finally {
       await app.close()
     }

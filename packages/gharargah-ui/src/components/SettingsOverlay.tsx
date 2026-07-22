@@ -14,9 +14,18 @@ import { ScrollArea } from "@/components/ui/scroll-area.js"
 import { SettingsField } from "@/components/SettingsField.js"
 import { themePreviewSwatches } from "@/theme/bundled.js"
 
+export const DEFAULT_UI_FONT_FAMILY =
+  '"Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif'
+export const DEFAULT_MONO_FONT_FAMILY =
+  '"Geist Mono Variable", "Geist Mono", ui-monospace, monospace'
+
 export type JetAppearanceSettings = {
   themeId: string
   fontSize: number
+  /** CSS font-family for UI chrome (`--font-sans`). */
+  fontFamily: string
+  /** CSS font-family for terminal / editor mono (`--font-mono`). */
+  monoFontFamily: string
 }
 
 export type SettingsOverlayProps = {
@@ -27,6 +36,34 @@ export type SettingsOverlayProps = {
   onSettingsChange: (settings: JetAppearanceSettings) => void
   onReset: () => void
 }
+
+const UI_FONT_PRESETS: { id: string; label: string; value: string }[] = [
+  { id: "geist", label: "Geist", value: DEFAULT_UI_FONT_FAMILY },
+  {
+    id: "system",
+    label: "System",
+    value: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+  },
+  {
+    id: "ibm-plex",
+    label: "IBM Plex Sans",
+    value: '"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif',
+  },
+]
+
+const MONO_FONT_PRESETS: { id: string; label: string; value: string }[] = [
+  { id: "geist-mono", label: "Geist Mono", value: DEFAULT_MONO_FONT_FAMILY },
+  {
+    id: "system-mono",
+    label: "System Mono",
+    value: 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace',
+  },
+  {
+    id: "ibm-plex-mono",
+    label: "IBM Plex Mono",
+    value: '"IBM Plex Mono", ui-monospace, monospace',
+  },
+]
 
 function parseNumber(value: string, fallback: number, min: number, max: number): number {
   const n = Number.parseFloat(value)
@@ -39,6 +76,11 @@ function settingPatch(
   patch: Partial<JetAppearanceSettings>,
 ): JetAppearanceSettings {
   return { ...settings, ...patch }
+}
+
+function normalizeFontFamily(value: string, fallback: string): string {
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : fallback
 }
 
 function ThemeButton({
@@ -81,6 +123,41 @@ function ThemeButton({
   )
 }
 
+function FontPresetRow({
+  presets,
+  value,
+  onSelect,
+  dataAttr,
+}: {
+  presets: { id: string; label: string; value: string }[]
+  value: string
+  onSelect: (next: string) => void
+  dataAttr: string
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {presets.map(preset => {
+        const active = value === preset.value
+        return (
+          <Button
+            key={preset.id}
+            type="button"
+            size="sm"
+            variant={active ? "secondary" : "outline"}
+            aria-pressed={active}
+            data-gharargah-font-preset={`${dataAttr}:${preset.id}`}
+            onClick={() => onSelect(preset.value)}
+            className="h-7 px-2 text-3xs"
+            style={{ fontFamily: preset.value }}
+          >
+            {preset.label}
+          </Button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function SettingsOverlay({
   open,
   onOpenChange,
@@ -105,7 +182,7 @@ export function SettingsOverlay({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <DialogTitle className="text-base">Settings</DialogTitle>
-              <DialogDescription className="mt-1">Theme and font size.</DialogDescription>
+              <DialogDescription className="mt-1">Theme, font size, and font family.</DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <Button type="button" variant="ghost" size="sm" onClick={onReset} className="gap-2">
@@ -144,7 +221,7 @@ export function SettingsOverlay({
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Font</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  UI scale; also drives terminal cell size.
+                  Size scales UI and terminal cells; family applies via CSS variables.
                 </p>
               </div>
               <SettingsField label="UI font size">
@@ -163,6 +240,76 @@ export function SettingsOverlay({
                   }
                   className="h-8 font-mono"
                 />
+              </SettingsField>
+              <SettingsField label="UI font family" detail="Body and chrome (`--font-sans`).">
+                <div className="flex flex-col gap-2">
+                  <FontPresetRow
+                    presets={UI_FONT_PRESETS}
+                    value={settings.fontFamily}
+                    dataAttr="ui"
+                    onSelect={next =>
+                      onSettingsChange(settingPatch(settings, { fontFamily: next }))
+                    }
+                  />
+                  <Input
+                    type="text"
+                    spellCheck={false}
+                    value={settings.fontFamily}
+                    data-gharargah-font-family-input="ui"
+                    onChange={event =>
+                      onSettingsChange(
+                        settingPatch(settings, { fontFamily: event.target.value }),
+                      )
+                    }
+                    onBlur={event =>
+                      onSettingsChange(
+                        settingPatch(settings, {
+                          fontFamily: normalizeFontFamily(
+                            event.target.value,
+                            DEFAULT_UI_FONT_FAMILY,
+                          ),
+                        }),
+                      )
+                    }
+                    className="h-8 font-mono text-3xs"
+                    style={{ fontFamily: settings.fontFamily }}
+                  />
+                </div>
+              </SettingsField>
+              <SettingsField label="Mono font family" detail="Terminal and editor (`--font-mono`).">
+                <div className="flex flex-col gap-2">
+                  <FontPresetRow
+                    presets={MONO_FONT_PRESETS}
+                    value={settings.monoFontFamily}
+                    dataAttr="mono"
+                    onSelect={next =>
+                      onSettingsChange(settingPatch(settings, { monoFontFamily: next }))
+                    }
+                  />
+                  <Input
+                    type="text"
+                    spellCheck={false}
+                    value={settings.monoFontFamily}
+                    data-gharargah-font-family-input="mono"
+                    onChange={event =>
+                      onSettingsChange(
+                        settingPatch(settings, { monoFontFamily: event.target.value }),
+                      )
+                    }
+                    onBlur={event =>
+                      onSettingsChange(
+                        settingPatch(settings, {
+                          monoFontFamily: normalizeFontFamily(
+                            event.target.value,
+                            DEFAULT_MONO_FONT_FAMILY,
+                          ),
+                        }),
+                      )
+                    }
+                    className="h-8 font-mono text-3xs"
+                    style={{ fontFamily: settings.monoFontFamily }}
+                  />
+                </div>
               </SettingsField>
             </section>
           </div>

@@ -10,7 +10,11 @@ import type { JetAppearanceSettings, TerminalExplorerGroup, TerminalListEntry } 
 import type { JetProject, WorkspaceFolder, WorkspaceService } from "@gharargah/workspace"
 
 export type OverlayId =
+  | "gotoLine"
+  | "quickOpen"
+  | "bufferList"
   | "terminalList"
+  | "openFile"
   | "folderPicker"
   | "switchFolder"
   | "cd"
@@ -82,6 +86,13 @@ export type OverlayHandlers = {
   onRunCommand: (id: string) => void
   onFolderPickerOpenChange: (open: boolean) => void
   resolveHomeDir: () => Promise<string>
+  onGotoLineSubmit: (line: number, column?: number) => void
+  onQuickOpenSearch: (query: string, workspaceId: string | null) => Promise<string[]>
+  onQuickOpenSelect: (path: string, query: string, workspaceId: string | null) => void
+  onBufferSelect: (uri: string) => void
+  onOpenFile: (uri: string, path: string) => void
+  searchSupported: boolean
+  searchScanReady: boolean
 }
 
 type OverlayControllerValue = {
@@ -100,7 +111,11 @@ export function useOverlayController(): OverlayControllerValue {
 }
 
 const DEFAULT_OPEN: Record<OverlayId, boolean> = {
+  gotoLine: false,
+  quickOpen: false,
+  bufferList: false,
   terminalList: false,
+  openFile: false,
   folderPicker: false,
   switchFolder: false,
   cd: false,

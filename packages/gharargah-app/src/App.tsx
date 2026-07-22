@@ -8,7 +8,7 @@ import {
   useDeferredValue,
 } from "react"
 import type { PanelId, PanelView } from "@gharargah/shared"
-import { pathToFileUri } from "@gharargah/shared"
+import { fileUriToPath, pathToFileUri } from "@gharargah/shared"
 import {
   WorkspaceService,
   WorkspaceManager,
@@ -30,7 +30,11 @@ import {
   panelTabIds,
   findPanelWithTab,
   isTerminalTabId,
+  fileSearchAcrossFolders,
+  relativePathInFolder,
+  resolveQuickOpenDisplayPath,
 } from "@gharargah/workspace"
+import type { EditorView } from "@codemirror/view"
 import { createAgentBridge } from "./agent-bridge.js"
 import {
   TabStore,
@@ -50,7 +54,15 @@ import {
   GharargahHome,
   TerminalSessionModal,
   type OpenInAppId,
+  type SessionDialogMode,
+  ModalEditorPane,
+  getEditorView,
+  getEditorCursor,
+  setEditorCursor,
+  destroyEditorBuffer,
+  FindReplacePopover,
 } from "@gharargah/ui"
+import { setPendingEditorNavigation, jumpToLine } from "@gharargah/codemirror"
 import { APP_COMMAND_REGISTRY, buildAppCommands, buildMacTerminalQuickSwitchBindings } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
 import {
@@ -67,8 +79,10 @@ import {
   getAllLeafPanels,
   resolveEditorPanel,
   getActiveTabId,
+  getActiveEditorFileUri,
   closePanelIfEmpty,
 } from "./panel-routing.js"
+import { confirmCloseBuffer } from "./close-buffer.js"
 import { openTerminalTab } from "./tab-routing.js"
 import { buildTerminalExplorerGroups, nextTerminalLabel } from "./terminal-explorer.js"
 import { loadGlobalJetrc } from "./load-global-gharargahrc.js"
@@ -80,6 +94,7 @@ import { usePanelLayout } from "./hooks/usePanelLayout.js"
 import OverlayHost from "./OverlayHost.js"
 import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle.js"
 import { useTerminalFileDrop } from "./hooks/useTerminalFileDrop.js"
+import { useLspLifecycle } from "./hooks/useLspLifecycle.js"
 import { useOverlayState } from "./hooks/useOverlayState.js"
 import { useGlobalKeymap } from "./hooks/useGlobalKeymap.js"
 import { createTabContributorBridge } from "./hooks/tab-contributor-bridge.js"
@@ -153,6 +168,10 @@ export function GharargahApp() {
     projectSwitcherOpen,
     switchFolderOpen,
     folderPickerOpen,
+    gotoLineOpen,
+    quickOpenOpen,
+    bufferListOpen,
+    openFileOpen,
     setPaletteOpen,
     setTerminalListOpen,
     setCdOpen,
@@ -161,6 +180,10 @@ export function GharargahApp() {
     setProjectSwitcherOpen,
     setSwitchFolderOpen,
     setFolderPickerOpen,
+    setGotoLineOpen,
+    setQuickOpenOpen,
+    setBufferListOpen,
+    setOpenFileOpen,
     setOpen,
   } = overlay
 
@@ -176,6 +199,13 @@ export function GharargahApp() {
   const [terminalModalTitleTick, setTerminalModalTitleTick] = useState(0)
   const [terminalModalGitBranch, setTerminalModalGitBranch] = useState<string | null>(null)
   const [terminalSessionRevision, setTerminalSessionRevision] = useState(0)
+  const [sessionMode, setSessionMode] = useState<SessionDialogMode>("terminal")
+  const sessionModeRef = useRef(sessionMode)
+  sessionModeRef.current = sessionMode
+  const [editorFocus, setEditorFocus] = useState(false)
+  const [searchSupported, setSearchSupported] = useState(false)
+  const [searchScanReady, setSearchScanReady] = useState(false)
+  const [editorChromeTick, setEditorChromeTick] = useState(0)
   const [recentCommands, setRecentCommands] = useState<string[]>(() => loadRecentCommands())
   const [pendingChordPrefix, setPendingChordPrefix] = useState<string | null>(null)
   const fontSizeRef = useRef(fontSize)
@@ -215,7 +245,22 @@ export function GharargahApp() {
     editorPanelRef,
     cloneTree,
     commitTree,
+    handlePanelEvent,
   } = usePanelLayout(workspace, tabStore, appStateRef as never)
+
+  const openFileInEditorRef = useRef<
+    (uri: string, path: string, line?: number, column?: number) => void
+  >(() => {})
+
+  const {
+    resolveLspClient,
+    lspRevision,
+    ensureLspForFile,
+    handleLspAttachFailed,
+    lspStatus,
+  } = useLspLifecycle(workspace, (uri, path, line, column) => {
+    openFileInEditorRef.current(uri, path, line, column)
+  })
 
   const [keymapRevision, setKeymapRevision] = useState(0)
   const keymapBindings = useMemo(() => keymaps.allBindings(), [keymaps, keymapRevision])
@@ -226,13 +271,25 @@ export function GharargahApp() {
   }, [keymaps])
 
   useEffect(() => {
+    const subs = [
+      workspace.onDidChangeDirty.event(() => setEditorChromeTick(t => t + 1)),
+      workspace.onDidChangeBuffers.event(() => setEditorChromeTick(t => t + 1)),
+    ]
+    return () => {
+      for (const sub of subs) sub.dispose()
+    }
+  }, [workspace])
+
+  useEffect(() => {
     const mirror = (id: string) => {
       const desc = workspace.tabRegistry.get(id)
       if (!desc) {
         tabStore.dispose(id)
         return
       }
-      if (desc.kind === "terminal") {
+      if (desc.kind === "editor") {
+        tabStore.create<{ fileUri: string }>(desc.kind, { fileUri: desc.id }, desc.id)
+      } else if (desc.kind === "terminal") {
         tabStore.create<{ label: string; cwdRootUri: string }>(
           desc.kind,
           { label: desc.label, cwdRootUri: terminalCwdForTab(desc.id) || workspace.root?.uri || "" },
@@ -282,6 +339,7 @@ export function GharargahApp() {
   const openTerminalModal = useCallback((panelId: PanelId, tabId: string) => {
     setTerminalModalPanelId(panelId)
     setTerminalModalTabId(tabId)
+    setSessionMode("terminal")
   }, [])
 
   const closeTerminalModal = useCallback(() => {
@@ -347,6 +405,47 @@ export function GharargahApp() {
     },
     [workspace, activateProject, cloneTree, commitTree, setFocusedPanel],
   )
+
+  const ensureSessionModalOpen = useCallback(
+    (rootUri: string | null) => {
+      if (terminalModalTabIdRef.current) return
+      const targetRootUri = rootUri ?? workspace.root?.uri ?? workspace.folders[0]?.root.uri ?? null
+      if (!targetRootUri) return
+      void openTerminalInWorkspace(targetRootUri).then(({ panelId, tabId }) => {
+        openTerminalModal(panelId, tabId)
+      })
+    },
+    [workspace, openTerminalInWorkspace, openTerminalModal],
+  )
+
+  const openFileInEditor = useCallback(
+    (uri: string, path: string, line?: number, column?: number) => {
+      const tree = cloneTree()
+      const existing = tree.findEditorPanelForFile(uri)
+      const panel =
+        existing ??
+        resolveEditorPanel(tree, editorPanelRef.current, appStateRef.current.focusedPanel) ??
+        editorPanelRef.current
+      if (!panel) return
+      editorPanelRef.current = panel
+      workspace.assignEditorPanel(tree, panel, uri, path)
+      if (line != null) setPendingEditorNavigation(panel, line, column ?? 1)
+      setFocusedPanel(panel)
+      setSessionMode("editor")
+      commitTree(tree, panel)
+      ensureSessionModalOpen(workspace.resolveRootUriForFile(uri))
+      if (line != null) {
+        requestAnimationFrame(() => {
+          const view = getEditorView(panel)
+          if (view) jumpToLine(view, line, column ?? 1)
+        })
+      }
+      void ensureLspForFile(uri)
+    },
+    [cloneTree, commitTree, workspace, editorPanelRef, setFocusedPanel, ensureSessionModalOpen, ensureLspForFile],
+  )
+
+  openFileInEditorRef.current = openFileInEditor
 
   const newTerminalFromHome = useCallback(
     async (rootUri: string) => {
@@ -466,46 +565,36 @@ export function GharargahApp() {
     registerBuiltinTabTypes(tabTypeRegistry, tabContributorBridge)
   }, [tabTypeRegistry, tabContributorBridge])
 
-  tabContributorRef.current = {
-    workspace,
-    getTheme: () => activeThemeRef.current,
-    closeTerminalTab,
-    onTerminalTitleChange,
-  }
-
-  const activeTabKindName = useMemo(() => {
-    if (!focusedPanel) return undefined
-    const view = panelTree.getView(focusedPanel)
-    if (view?.kind !== "tabs") return undefined
-    return workspace.tabRegistry.kindFor(view.activeTabId)
-  }, [focusedPanel, panelTree, workspace])
-
   const keymapContext = useMemo(
     () => ({
-      editorFocus: false,
+      editorFocus: editorFocus || sessionMode === "editor",
       paletteOpen,
-      quickOpenOpen: false,
-      bufferListOpen: terminalListOpen,
-      openFileOpen: false,
+      quickOpenOpen,
+      bufferListOpen,
+      openFileOpen,
       cdOpen,
       projectSwitcherOpen,
-      gotoLineOpen: false,
+      gotoLineOpen,
       outlineOpen: false,
       workspaceOpen: workspace.manager.hasFolders(),
       explorerFocus: false,
       terminalExplorerFocus: false,
       outputFocus: false,
-      terminalFocus: activeTabKindName === "terminal" || terminalModalTabId != null,
+      terminalFocus: sessionMode === "terminal" || (terminalModalTabId != null && sessionMode !== "editor"),
       agentChatFocus: false,
       listFocus: false,
     }),
     [
+      editorFocus,
+      sessionMode,
       paletteOpen,
-      terminalListOpen,
+      quickOpenOpen,
+      bufferListOpen,
+      openFileOpen,
       cdOpen,
       projectSwitcherOpen,
+      gotoLineOpen,
       workspace.root,
-      activeTabKindName,
       terminalModalTabId,
     ],
   )
@@ -757,6 +846,45 @@ export function GharargahApp() {
     return () => sub.dispose()
   }, [workspace])
 
+  useEffect(() => {
+    const rootUri = workspace.root?.uri ?? null
+    setSearchSupported(false)
+    setSearchScanReady(false)
+    if (!rootUri || !window.gharargah?.search) return
+    const search = window.gharargah.search
+    let cancelled = false
+    let pollTimer: number | null = null
+
+    const pollScanReady = () => {
+      void search
+        .isScanReady?.(rootUri)
+        .then(ready => {
+          if (cancelled) return
+          setSearchScanReady(Boolean(ready))
+          if (!ready) pollTimer = window.setTimeout(pollScanReady, 500)
+        })
+        .catch(() => {
+          if (!cancelled) setSearchScanReady(true)
+        })
+    }
+
+    void search
+      .isSupported?.(rootUri)
+      .then(supported => {
+        if (cancelled) return
+        setSearchSupported(Boolean(supported))
+        if (supported) pollScanReady()
+      })
+      .catch(() => {
+        if (!cancelled) setSearchSupported(false)
+      })
+
+    return () => {
+      cancelled = true
+      if (pollTimer != null) window.clearTimeout(pollTimer)
+    }
+  }, [workspace, workspace.root])
+
   openWorkspaceRef.current = openWorkspaceFolder
   addWorkspaceRef.current = addWorkspaceFolder
 
@@ -770,7 +898,7 @@ export function GharargahApp() {
 
   const fnByCommandId = FN_BY_COMMAND_ID
 
-  const getCommandContext = useCallback((): JetCommandContext => {
+  const getCommandContext = useCallback((viewOverride?: EditorView): JetCommandContext => {
     return {
       workspace,
       ui: {
@@ -778,9 +906,13 @@ export function GharargahApp() {
         showCommandPalette: () => setPaletteOpen(true),
         setCommandPaletteOpen: setPaletteOpen,
       },
-      getActiveEditorView: () => null,
+      getActiveEditorView: () => {
+        if (viewOverride) return viewOverride
+        const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
+        return panel ? (getEditorView(panel) ?? null) : null
+      },
     }
-  }, [workspace, setPaletteOpen])
+  }, [workspace, setPaletteOpen, editorPanelRef])
 
   const resetAppearanceWithToast = useCallback(() => {
     resetAppearanceSettings()
@@ -794,12 +926,16 @@ export function GharargahApp() {
         getPanelTree: () => appStateRef.current.panelTree,
         getFocusedPanel: () => appStateRef.current.focusedPanel,
         setPaletteOpen,
+        setQuickOpenOpen,
+        setBufferListOpen,
         setTerminalListOpen,
+        setOpenFileOpen,
         setCdOpen,
         setAddWorkspaceOpen,
         setProjectSwitcherOpen,
         setSwitchFolderOpen,
         pickWorkspaceFolder,
+        setGotoLineOpen,
         setMessage: showGharargahToast,
         setFocusedPanel,
         cloneTree,
@@ -810,6 +946,8 @@ export function GharargahApp() {
         setActiveWorkspaceFolder: (id: string) => {
           workspace.setActiveFolder(id)
         },
+        handlePanelEvent,
+        openFileInEditor,
         editorPanelRef,
         setZoomLevel: handleZoom,
         projectRegistry,
@@ -819,6 +957,9 @@ export function GharargahApp() {
         getTerminalExplorerGroups,
         focusTerminalTab,
         openTerminalModal,
+        setSessionMode,
+        getContextFolder: () => workspace.manager.activeFolder,
+        getSearchSupported: () => searchSupported,
         goHome,
       }),
     [
@@ -838,6 +979,13 @@ export function GharargahApp() {
       getTerminalExplorerGroups,
       focusTerminalTab,
       openTerminalModal,
+      handlePanelEvent,
+      openFileInEditor,
+      searchSupported,
+      setQuickOpenOpen,
+      setBufferListOpen,
+      setOpenFileOpen,
+      setGotoLineOpen,
     ],
   )
 
@@ -894,13 +1042,33 @@ export function GharargahApp() {
   }, [keymapBindings, pendingChordPrefix, appCommands])
 
   const runKeyBinding = useCallback(
-    (binding: JetKeyBinding) => {
-      void binding.run(getCommandContext())
+    (binding: JetKeyBinding, view?: EditorView) => {
+      void binding.run(getCommandContext(view))
     },
     [getCommandContext],
   )
 
   const executeCommandRef = useRef<(name: string) => Promise<void>>(() => Promise.resolve())
+
+  tabContributorRef.current = {
+    workspace,
+    getTheme: () => activeThemeRef.current,
+    resolveLspClient,
+    getLspRevision: () => lspRevision,
+    executeCommand: name => executeCommandRef.current(name),
+    runKeyBinding,
+    getKeymapBindings: () => keymapBindings,
+    getUserExtensions: () => [],
+    getKeymapRevision: () => keymapRevision,
+    getKeymapContext: () => appStateRef.current.keymapContext,
+    onEditorFocusChange: setEditorFocus,
+    onEditorSelectionChange: (line, column, rangeCount) =>
+      setEditorCursor({ line, column, rangeCount }),
+    onLspAttachFailed: handleLspAttachFailed,
+    onProblemsChange: () => {},
+    closeTerminalTab,
+    onTerminalTitleChange,
+  }
 
   useEffect(() => {
     const noOverlay = (ctx: KeymapContext) => !anyOverlayOpen(ctx)
@@ -913,6 +1081,16 @@ export function GharargahApp() {
       bind("Ctrl-`", appCommands.terminal, whenWorkspace),
       bind("Cmd-=", appCommands.zoomIn, noOverlay),
       bind("Cmd--", appCommands.zoomOut, noOverlay),
+      bind("Cmd-o", appCommands.openFile, noOverlay),
+      bind("Cmd-Shift-o", appCommands.quickOpen, whenWorkspace),
+      bind("Cmd-s", appCommands.save, whenWorkspace),
+      bind("Cmd-n", appCommands.newFile, whenWorkspace),
+      bind("Cmd-f", appCommands.find, ctx => ctx.editorFocus && noOverlay(ctx)),
+      bind("Cmd-h", appCommands.replace, ctx => ctx.editorFocus && noOverlay(ctx)),
+      bind("Cmd-g", appCommands.gotoLine, ctx => ctx.editorFocus && noOverlay(ctx)),
+      bind("Cmd-Shift-b", appCommands.bufferList, whenWorkspace),
+      bind("Mod-Shift-e", appCommands.showEditor, whenWorkspace),
+      bind("Mod-Shift-t", appCommands.showTerminal, whenWorkspace),
       ...buildMacTerminalQuickSwitchBindings({
         workspace,
         getTerminalExplorerGroups,
@@ -1084,11 +1262,45 @@ export function GharargahApp() {
       addWorkspace: folderPath => Promise.resolve(addWorkspaceRef.current(folderPath)),
       listWorkspaces: () => workspace.manager.folders.map(f => ({ id: f.id, path: f.root.path, name: f.root.name })),
       setFontSize,
+      openFile: (uri, path) => openFileInEditor(uri, path),
+      getEditorText: () => {
+        const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
+        const view = panel ? getEditorView(panel) : null
+        return view ? view.state.doc.toString() : null
+      },
+      setEditorSelection: (line, column) => {
+        const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
+        const view = panel ? getEditorView(panel) : null
+        if (view) jumpToLine(view, line, column)
+      },
+      getCursorPosition: () => {
+        const pos = getEditorCursor()
+        return pos ? { line: pos.line, column: pos.column } : null
+      },
+      getSelectionRangeCount: () => getEditorCursor()?.rangeCount ?? null,
+      activeEditorDirty: (() => {
+        const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
+        const fileUri = panel ? getActiveEditorFileUri(appStateRef.current.panelTree, panel) : null
+        return fileUri ? (workspace.fileForUri(fileUri)?.isDirty ?? false) : false
+      })(),
+      searchReady: searchScanReady,
+      sessionMode,
     }))
     return () => {
       delete window.__gharargahAgent
     }
-  }, [workspace, commands, paletteOpen, layoutReady, executeCommand, setFontSize])
+  }, [
+    workspace,
+    commands,
+    paletteOpen,
+    layoutReady,
+    executeCommand,
+    setFontSize,
+    openFileInEditor,
+    editorPanelRef,
+    searchScanReady,
+    sessionMode,
+  ])
 
   useEffect(() => {
     if (!layoutReady || queryBootstrapDone.current) return
@@ -1194,6 +1406,48 @@ export function GharargahApp() {
         }
         return window.gharargah.getHomeDir()
       },
+      onGotoLineSubmit: (line, column) => {
+        setGotoLineOpen(false)
+        const panel = editorPanelRef.current
+        const view = panel ? getEditorView(panel) : null
+        if (view) jumpToLine(view, line, column ?? 1)
+      },
+      onQuickOpenSearch: async (query, workspaceId) => {
+        if (!window.gharargah?.search) return []
+        const folders = workspaceId
+          ? workspace.folders.filter(f => f.id === workspaceId)
+          : workspace.folders
+        const activeFileUri = editorPanelRef.current
+          ? getActiveEditorFileUri(appStateRef.current.panelTree, editorPanelRef.current)
+          : null
+        const currentFile = (() => {
+          if (!activeFileUri) return undefined
+          const folder = workspaceId
+            ? workspace.folders.find(f => f.id === workspaceId)
+            : workspace.manager.activeFolder
+          if (!folder) return undefined
+          const rel = relativePathInFolder(folder.root.path, fileUriToPath(activeFileUri))
+          return rel != null ? { folderId: folder.id, relativePath: rel } : undefined
+        })()
+        return fileSearchAcrossFolders(folders, window.gharargah.search, query, { currentFile })
+      },
+      onQuickOpenSelect: path => {
+        const resolved = resolveQuickOpenDisplayPath(path, workspace.folders)
+        if (!resolved) return
+        openFileInEditor(resolved.fileUri, resolved.fullPath)
+        setQuickOpenOpen(false)
+      },
+      onBufferSelect: uri => {
+        const file = workspace.fileForUri(uri)
+        openFileInEditor(uri, file?.path ?? fileUriToPath(uri))
+        setBufferListOpen(false)
+      },
+      onOpenFile: (uri, path) => {
+        openFileInEditor(uri, path)
+        setOpenFileOpen(false)
+      },
+      searchSupported,
+      searchScanReady,
     }),
     [
       setOpen,
@@ -1204,6 +1458,15 @@ export function GharargahApp() {
       openWorkspaceFolder,
       resetAppearanceWithToast,
       handleFolderPickerOpenChange,
+      editorPanelRef,
+      workspace,
+      openFileInEditor,
+      searchSupported,
+      searchScanReady,
+      setGotoLineOpen,
+      setQuickOpenOpen,
+      setBufferListOpen,
+      setOpenFileOpen,
     ],
   )
 
@@ -1215,7 +1478,26 @@ export function GharargahApp() {
     addWorkspaceOpen ||
     settingsOpen ||
     projectSwitcherOpen ||
-    paletteOpen
+    paletteOpen ||
+    gotoLineOpen ||
+    quickOpenOpen ||
+    bufferListOpen ||
+    openFileOpen
+
+  void editorChromeTick
+  const editorPanelId = editorPanelRef.current
+  const editorPanelView = editorPanelId ? panelTree.getView(editorPanelId) : null
+  const editorBuffers =
+    editorPanelView?.kind === "tabs"
+      ? panelTabIds(editorPanelView)
+          .filter(id => id.startsWith("file:") || id.startsWith("untitled:"))
+          .map(id => ({
+            tabId: id,
+            label: tabStore.title(id, workspace.fileForUri(id)?.name ?? id),
+            dirty: workspace.fileForUri(id)?.isDirty ?? false,
+          }))
+      : []
+  const editorActiveTabId = editorPanelView?.kind === "tabs" ? editorPanelView.activeTabId : null
 
   return (
     <OverlayControllerProvider
@@ -1273,45 +1555,82 @@ export function GharargahApp() {
                 }}
                 title={(() => {
                   void terminalModalTitleTick
-                  const label = workspace.tabRegistry.get(terminalModalTabId)?.label ?? "Terminal"
+                  void editorChromeTick
                   const rootUri = terminalCwdForTab(terminalModalTabId)
                   const project = workspace.folders.find(f => f.root.uri === rootUri)?.root.name
+                  if (sessionMode === "editor") {
+                    const fileLabel = editorActiveTabId
+                      ? workspace.fileForUri(editorActiveTabId)?.name ?? tabStore.title(editorActiveTabId)
+                      : "Editor"
+                    return project ? `${project} / ${fileLabel}` : fileLabel
+                  }
+                  const label = workspace.tabRegistry.get(terminalModalTabId)?.label ?? "Terminal"
                   return project ? `${project} / ${label}` : label
                 })()}
                 gitBranch={terminalModalGitBranch}
                 projectRootUri={terminalCwdForTab(terminalModalTabId) || null}
-                activeTabId={terminalModalTabId}
-                sessions={(() => {
-                  void terminalModalTitleTick
-                  void terminalSessionRevision
-                  const rootUri = terminalCwdForTab(terminalModalTabId)
-                  const group = getTerminalExplorerGroups().find(g => g.rootUri === rootUri)
-                  return (group?.terminals ?? []).map(t => ({
-                    tabId: t.tabId,
-                    panelId: t.panelId,
-                    label: t.label,
-                    status: t.status,
-                    exitCode: t.exitCode,
-                  }))
-                })()}
-                onSelectSession={focusTerminalTab}
-                onNewTerminal={rootUri => void newTerminalFromHome(rootUri)}
-                onLaunchAgentTerminal={(rootUri, shortcut) => void launchAgentFromHome(rootUri, shortcut)}
+                mode={sessionMode}
+                onModeChange={setSessionMode}
                 onOpenInApp={(rootUri, appId) => void openProjectInApp(rootUri, appId)}
-              >
-                <PanelBody
-                  panelId={terminalModalPanelId}
-                  view={{
-                    kind: "tabs",
-                    activeTabId: terminalModalTabId,
-                    tabIds: [terminalModalTabId],
-                  } as PanelView}
-                  store={tabStore}
-                  registry={tabTypeRegistry}
-                  focused
-                />
-              </TerminalSessionModal>
+                editor={
+                  <ModalEditorPane
+                    buffers={editorBuffers}
+                    activeTabId={editorActiveTabId}
+                    workspace={workspace}
+                    lspStatus={lspStatus}
+                    onActivateBuffer={tabId => {
+                      if (!editorPanelId) return
+                      handlePanelEvent({ type: "tabActivate", panelId: editorPanelId, tabId })
+                    }}
+                    onCloseBuffer={tabId => {
+                      void (async () => {
+                        if (!(await confirmCloseBuffer(workspace, tabId))) return
+                        const panel = editorPanelRef.current
+                        if (!panel) return
+                        workspace.clearDirtyState(tabId)
+                        destroyEditorBuffer(panel, tabId)
+                        workspace.closeBuffer(tabId)
+                        workspace.disposeTab(tabId)
+                        const tree = cloneTree()
+                        workspace.popPanelBuffer(tree, panel, tabId)
+                        closePanelIfEmpty(tree, panel)
+                        commitTree(tree)
+                      })()
+                    }}
+                    onQuickOpen={() => void executeCommand("workspace.quickOpen")}
+                    onCommandPalette={() => void executeCommand("ui.showCommandPalette")}
+                  >
+                    {editorPanelId && editorPanelView ? (
+                      <PanelBody
+                        panelId={editorPanelId}
+                        view={editorPanelView}
+                        store={tabStore}
+                        registry={tabTypeRegistry}
+                        focused={sessionMode === "editor"}
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                        Open a file to start editing
+                      </div>
+                    )}
+                  </ModalEditorPane>
+                }
+                terminal={
+                  <PanelBody
+                    panelId={terminalModalPanelId}
+                    view={{
+                      kind: "tabs",
+                      activeTabId: terminalModalTabId,
+                      tabIds: [terminalModalTabId],
+                    } as PanelView}
+                    store={tabStore}
+                    registry={tabTypeRegistry}
+                    focused={sessionMode === "terminal"}
+                  />
+                }
+              />
             ) : null}
+            {editorPanelId ? <FindReplacePopover panelId={editorPanelId} /> : null}
           </div>
 
           <Suspense fallback={null}>

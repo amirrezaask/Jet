@@ -115,9 +115,6 @@ importers:
       '@codemirror/view':
         specifier: ^6.37.0
         version: 6.43.4
-      '@gharargah/agents':
-        specifier: workspace:*
-        version: link:../gharargah-agents
       '@gharargah/codemirror':
         specifier: workspace:*
         version: link:../gharargah-codemirror
@@ -1056,7 +1053,6 @@ packages:
   '@ff-labs/fff-node@0.9.6':
     resolution: {integrity: sha512-2LbHJjwW/7vOLh1lSv0ipzA9Du5+LatUGiumQFaO9IcjMT8YgpmrCp/RRMyInsG0iBIX6A0WSxgei8qOFJLlNw==}
     engines: {node: '>=18.0.0'}
-    cpu: [x64, arm64]
     os: [darwin, linux, win32]
 
   '@floating-ui/core@1.7.5':

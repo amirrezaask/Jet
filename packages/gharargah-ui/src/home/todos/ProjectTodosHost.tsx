@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from "react"
 import { getSharedRepository } from "./project-todos-repository.js"
-import { ProjectTodoCard } from "./ProjectTodoCard.js"
 import { ProjectTodoDrawer } from "./ProjectTodoDrawer.js"
 import { ProjectTodoSummary } from "./ProjectTodoSummary.js"
 import { useProjectTodosLive } from "./useProjectTodos.js"
@@ -12,18 +11,17 @@ export type ProjectTodosBundleProps = {
 
 export type ProjectTodosBundle = {
   summary: ReactNode
-  card: ReactNode
 }
 
 /**
- * Builds summary (header) + optional card (grid) + shared bottom drawer for one project.
+ * Builds summary (header) + shared bottom drawer for one project.
+ * Full todo UI lives in the drawer; header button is the only entry point.
  */
 export function useProjectTodosBundle(props: ProjectTodosBundleProps): ProjectTodosBundle {
   const { projectId, projectName } = props
-  const { todos, expanded, total, done, projectKey, refresh } = useProjectTodosLive(projectId)
+  const { todos, total, done, projectKey, refresh } = useProjectTodosLive(projectId)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerComposing, setDrawerComposing] = useState(false)
-  const [cardComposing, setCardComposing] = useState(false)
   const liveRef = useRef<HTMLDivElement>(null)
 
   const announce = useCallback((message: string) => {
@@ -34,12 +32,6 @@ export function useProjectTodosBundle(props: ProjectTodosBundleProps): ProjectTo
       el.textContent = message
     })
   }, [])
-
-  const setExpanded = useCallback((value: boolean) => {
-    getSharedRepository().setExpanded(projectKey, value)
-    refresh()
-    if (!value) setCardComposing(false)
-  }, [projectKey, refresh])
 
   const onCreate = useCallback(
     (input: { text: string }) => {
@@ -92,10 +84,9 @@ export function useProjectTodosBundle(props: ProjectTodosBundleProps): ProjectTo
   )
 
   const openDrawer = useCallback((opts?: { compose?: boolean }) => {
-    if (!expanded) setExpanded(true)
     setDrawerOpen(true)
     if (opts?.compose) setDrawerComposing(true)
-  }, [expanded, setExpanded])
+  }, [])
 
   const toggleDrawer = useCallback(() => {
     if (drawerOpen) {
@@ -127,11 +118,7 @@ export function useProjectTodosBundle(props: ProjectTodosBundleProps): ProjectTo
         open={drawerOpen}
         onOpenChange={open => {
           setDrawerOpen(open)
-          if (!open) {
-            setDrawerComposing(false)
-          } else if (!expanded) {
-            setExpanded(true)
-          }
+          if (!open) setDrawerComposing(false)
         }}
         projectName={projectName}
         projectId={projectKey}
@@ -150,24 +137,5 @@ export function useProjectTodosBundle(props: ProjectTodosBundleProps): ProjectTo
     </>
   )
 
-  const card = expanded ? (
-    <div data-gharargah-todo-card-wrap className="min-w-0">
-      <ProjectTodoCard
-        todos={todos}
-        composing={cardComposing}
-        onComposingChange={setCardComposing}
-        onCreate={input => {
-          const created = onCreate(input)
-          if (created) setCardComposing(false)
-        }}
-        onToggle={onToggle}
-        onUpdate={onUpdate}
-        onDelete={onDelete}
-        onReorder={onReorder}
-        onViewAll={() => openDrawer()}
-      />
-    </div>
-  ) : null
-
-  return { summary, card }
+  return { summary }
 }
