@@ -32,14 +32,34 @@ function parseStatus(output: string): GitStatusEntry[] {
     }
     const code = `${index}${work}`
     let status: GitFileStatus = "modified"
-    if (code === "??") status = "untracked"
+    const conflict = code.includes("U") || code === "AA" || code === "DD"
+    if (conflict) status = "conflict"
+    else if (code === "??") status = "untracked"
     else if (code.includes("A")) status = "added"
     else if (code.includes("D")) status = "deleted"
     else if (code.includes("R")) status = "renamed"
-    else if (code.includes("U")) status = "conflict"
-    entries.push({ path: filePath, status, originalPath })
+    const staged = index !== " " && index !== "?"
+    const unstaged = work !== " " || code === "??"
+    entries.push({
+      path: filePath,
+      status,
+      originalPath,
+      staged,
+      unstaged,
+      indexStatus: staged ? statusForChar(index) : undefined,
+      worktreeStatus: unstaged ? statusForChar(work) : undefined,
+    })
   }
   return entries
+}
+
+function statusForChar(code: string): GitFileStatus {
+  if (code === "?") return "untracked"
+  if (code === "A") return "added"
+  if (code === "D") return "deleted"
+  if (code === "R") return "renamed"
+  if (code === "U") return "conflict"
+  return "modified"
 }
 
 export async function gitIsRepo(rootUri: string): Promise<boolean> {
@@ -90,6 +110,16 @@ export async function gitCommit(rootUri: string, message: string): Promise<void>
   await runGit(uriToPath(rootUri), ["commit", "-m", message])
 }
 
+export async function gitCommitWithBody(
+  rootUri: string,
+  summary: string,
+  body?: string,
+): Promise<void> {
+  const args = ["commit", "-m", summary]
+  if (body?.trim()) args.push("-m", body.trim())
+  await runGit(uriToPath(rootUri), args)
+}
+
 export async function gitBranches(rootUri: string): Promise<string[]> {
   const out = await runGit(uriToPath(rootUri), ["branch", "--format=%(refname:short)"])
   return out
@@ -100,4 +130,21 @@ export async function gitBranches(rootUri: string): Promise<string[]> {
 
 export async function gitCheckout(rootUri: string, branch: string): Promise<void> {
   await runGit(uriToPath(rootUri), ["checkout", branch])
+}
+
+export async function gitDiscard(rootUri: string, paths: string[]): Promise<void> {
+  if (paths.length === 0) return
+  await runGit(uriToPath(rootUri), ["restore", "--worktree", "--", ...paths])
+}
+
+export async function gitFetch(rootUri: string): Promise<void> {
+  await runGit(uriToPath(rootUri), ["fetch"])
+}
+
+export async function gitPull(rootUri: string): Promise<void> {
+  await runGit(uriToPath(rootUri), ["pull"])
+}
+
+export async function gitPush(rootUri: string): Promise<void> {
+  await runGit(uriToPath(rootUri), ["push"])
 }

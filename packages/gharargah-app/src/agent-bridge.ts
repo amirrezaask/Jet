@@ -19,7 +19,7 @@ export type JetAgentState = {
   activeEditorDirty: boolean
   searchReady: boolean
   shellView: "home" | "workspace"
-  sessionMode: "editor" | "terminal" | null
+  sessionMode: "terminal" | "editor" | "git" | null
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -71,7 +71,7 @@ export type AgentBridgeContext = {
   getSelectionRangeCount?: () => number | null
   activeEditorDirty?: boolean
   searchReady?: boolean
-  sessionMode?: "editor" | "terminal" | null
+  sessionMode?: "terminal" | "editor" | "git" | null
 }
 
 function toWorkspaceFileUri(workspacePath: string, relativeOrUri: string): string {
@@ -125,7 +125,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
         fontSize: current.fontSize,
         activeEditorDirty: current.activeEditorDirty ?? false,
         searchReady: current.searchReady ?? false,
-        shellView: current.sessionMode != null ? "workspace" : "home",
+        shellView: "home",
         sessionMode: current.sessionMode ?? null,
       }
     },

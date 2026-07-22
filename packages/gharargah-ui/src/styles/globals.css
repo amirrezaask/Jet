@@ -1684,7 +1684,8 @@ body,
 }
 
 [data-gharargah-terminal-modal-stage] {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 0;
   background: var(--glass-content);
   -webkit-backdrop-filter: blur(18px);

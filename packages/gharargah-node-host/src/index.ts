@@ -7,8 +7,13 @@ export {
   gitStage,
   gitUnstage,
   gitCommit,
+  gitCommitWithBody,
   gitBranches,
   gitCheckout,
+  gitDiscard,
+  gitFetch,
+  gitPull,
+  gitPush,
 } from "./git.js"
 export {
   projectSearch,

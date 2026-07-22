@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import type { KeyboardEvent, ReactNode } from "react"
 import { GitBranch, SquareTerminal, XIcon, FileCode2 } from "lucide-react"
 import {
   Dialog,
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
 
-export type SessionDialogMode = "editor" | "terminal"
+export type SessionDialogMode = "terminal" | "editor" | "git"
 
 export type TerminalSessionModalProps = {
   open: boolean
@@ -24,6 +24,7 @@ export type TerminalSessionModalProps = {
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   editor: ReactNode
   terminal: ReactNode
+  git: ReactNode
 }
 
 /** @deprecated Session list removed from dialog; keep export for test migration. */
@@ -41,6 +42,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     onOpenInApp,
     editor,
     terminal,
+    git,
   } = props
 
   return (
@@ -48,6 +50,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       <DialogContent
         size="stage"
         showCloseButton={false}
+        onInteractOutside={event => event.preventDefault()}
         data-gharargah-glass=""
         data-gharargah-terminal-modal
         data-gharargah-session-mode={mode}
@@ -60,6 +63,14 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
               document
                 .querySelector<HTMLElement>(
                   "[data-gharargah-terminal-modal] [data-gharargah-editor-scroll-area] .cm-content",
+                )
+                ?.focus()
+              return
+            }
+            if (mode === "git") {
+              document
+                .querySelector<HTMLElement>(
+                  "[data-gharargah-git-workspace] button:not([disabled]), [data-gharargah-git-workspace] select:not([disabled])",
                 )
                 ?.focus()
               return
@@ -95,8 +106,15 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             data-gharargah-session-mode-switch
             role="tablist"
             aria-label="Session view"
+            onKeyDown={handleModeTabKeyDown}
             className="pointer-events-auto absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/50 bg-card/40 p-0.5 shadow-[inset_0_1px_0_color-mix(in_srgb,white_8%,transparent)] backdrop-blur-md"
           >
+            <ModeTab
+              active={mode === "terminal"}
+              label="Terminal"
+              icon={<SquareTerminal className="size-3.5" aria-hidden />}
+              onSelect={() => onModeChange("terminal")}
+            />
             <ModeTab
               active={mode === "editor"}
               label="Editor"
@@ -104,10 +122,10 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
               onSelect={() => onModeChange("editor")}
             />
             <ModeTab
-              active={mode === "terminal"}
-              label="Terminal"
-              icon={<SquareTerminal className="size-3.5" aria-hidden />}
-              onSelect={() => onModeChange("terminal")}
+              active={mode === "git"}
+              label="Git"
+              icon={<GitBranch className="size-3.5" aria-hidden />}
+              onSelect={() => onModeChange("git")}
             />
           </div>
 
@@ -137,11 +155,15 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
 
         <div
           data-gharargah-terminal-modal-body=""
-          className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-contain"
         >
           <div
+            id="gharargah-session-pane-editor"
+            role="tabpanel"
+            aria-labelledby="gharargah-session-tab-editor"
             data-gharargah-terminal-modal-stage=""
             data-gharargah-session-pane="editor"
+            data-active={mode === "editor" ? "" : undefined}
             hidden={mode !== "editor"}
             aria-hidden={mode !== "editor"}
             className={cn(
@@ -152,8 +174,12 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             {editor}
           </div>
           <div
+            id="gharargah-session-pane-terminal"
+            role="tabpanel"
+            aria-labelledby="gharargah-session-tab-terminal"
             data-gharargah-terminal-modal-stage=""
             data-gharargah-session-pane="terminal"
+            data-active={mode === "terminal" ? "" : undefined}
             hidden={mode !== "terminal"}
             aria-hidden={mode !== "terminal"}
             className={cn(
@@ -162,6 +188,22 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             )}
           >
             {terminal}
+          </div>
+          <div
+            id="gharargah-session-pane-git"
+            role="tabpanel"
+            aria-labelledby="gharargah-session-tab-git"
+            data-gharargah-terminal-modal-stage=""
+            data-gharargah-session-pane="git"
+            data-active={mode === "git" ? "" : undefined}
+            hidden={mode !== "git"}
+            aria-hidden={mode !== "git"}
+            className={cn(
+              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden",
+              mode === "git" ? "z-10" : "pointer-events-none z-0",
+            )}
+          >
+            {mode === "git" ? git : null}
           </div>
         </div>
       </DialogContent>
@@ -181,6 +223,9 @@ function ModeTab(props: {
       type="button"
       role="tab"
       aria-selected={active}
+      aria-controls={`gharargah-session-pane-${label.toLowerCase()}`}
+      id={`gharargah-session-tab-${label.toLowerCase()}`}
+      tabIndex={active ? 0 : -1}
       data-gharargah-session-mode-tab={label.toLowerCase()}
       data-active={active ? "" : undefined}
       className={cn(
@@ -196,4 +241,19 @@ function ModeTab(props: {
       <span>{label}</span>
     </button>
   )
+}
+
+function handleModeTabKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
+  const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+  if (tabs.length === 0) return
+  const current = Math.max(0, tabs.indexOf(document.activeElement as HTMLButtonElement))
+  const next = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? tabs.length - 1
+      : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length
+  event.preventDefault()
+  tabs[next]?.focus()
+  tabs[next]?.click()
 }

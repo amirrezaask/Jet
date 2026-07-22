@@ -1,4 +1,5 @@
 import {
+  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -106,6 +107,8 @@ import {
 } from "./hooks/OverlayController.js"
 
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
+
+const GitWorkspace = lazy(() => import("@gharargah/ui/git"))
 
 const FN_BY_COMMAND_ID = ((): Map<string, string> => {
   const map = new Map<string, string>()
@@ -580,7 +583,7 @@ export function GharargahApp() {
       explorerFocus: false,
       terminalExplorerFocus: false,
       outputFocus: false,
-      terminalFocus: sessionMode === "terminal" || (terminalModalTabId != null && sessionMode !== "editor"),
+      terminalFocus: sessionMode === "terminal",
       agentChatFocus: false,
       listFocus: false,
     }),
@@ -1284,7 +1287,7 @@ export function GharargahApp() {
         return fileUri ? (workspace.fileForUri(fileUri)?.isDirty ?? false) : false
       })(),
       searchReady: searchScanReady,
-      sessionMode,
+      sessionMode: terminalModalTabId ? sessionMode : null,
     }))
     return () => {
       delete window.__gharargahAgent
@@ -1300,6 +1303,7 @@ export function GharargahApp() {
     editorPanelRef,
     searchScanReady,
     sessionMode,
+    terminalModalTabId,
   ])
 
   useEffect(() => {
@@ -1431,8 +1435,11 @@ export function GharargahApp() {
         })()
         return fileSearchAcrossFolders(folders, window.gharargah.search, query, { currentFile })
       },
-      onQuickOpenSelect: path => {
-        const resolved = resolveQuickOpenDisplayPath(path, workspace.folders)
+      onQuickOpenSelect: (path, _query, workspaceId) => {
+        const searchFolders = workspaceId
+          ? workspace.folders.filter(folder => folder.id === workspaceId)
+          : workspace.folders
+        const resolved = resolveQuickOpenDisplayPath(path, searchFolders)
         if (!resolved) return
         openFileInEditor(resolved.fileUri, resolved.fullPath)
         setQuickOpenOpen(false)
@@ -1487,17 +1494,25 @@ export function GharargahApp() {
   void editorChromeTick
   const editorPanelId = editorPanelRef.current
   const editorPanelView = editorPanelId ? panelTree.getView(editorPanelId) : null
+  const editorTabIds =
+    editorPanelView?.kind === "tabs"
+      ? panelTabIds(editorPanelView).filter(id => id.startsWith("file:") || id.startsWith("untitled:"))
+      : []
   const editorBuffers =
     editorPanelView?.kind === "tabs"
-      ? panelTabIds(editorPanelView)
-          .filter(id => id.startsWith("file:") || id.startsWith("untitled:"))
-          .map(id => ({
+      ? editorTabIds.map(id => ({
             tabId: id,
             label: tabStore.title(id, workspace.fileForUri(id)?.name ?? id),
             dirty: workspace.fileForUri(id)?.isDirty ?? false,
           }))
       : []
-  const editorActiveTabId = editorPanelView?.kind === "tabs" ? editorPanelView.activeTabId : null
+  const editorActiveTabId =
+    editorPanelView?.kind === "tabs" && editorTabIds.includes(editorPanelView.activeTabId)
+      ? editorPanelView.activeTabId
+      : editorTabIds.at(-1) ?? null
+  const modalEditorView: PanelView | null = editorPanelId && editorActiveTabId
+    ? { kind: "tabs", activeTabId: editorActiveTabId, tabIds: editorTabIds }
+    : null
 
   return (
     <OverlayControllerProvider
@@ -1564,6 +1579,7 @@ export function GharargahApp() {
                       : "Editor"
                     return project ? `${project} / ${fileLabel}` : fileLabel
                   }
+                  if (sessionMode === "git") return project ? `${project} / Git` : "Git"
                   const label = workspace.tabRegistry.get(terminalModalTabId)?.label ?? "Terminal"
                   return project ? `${project} / ${label}` : label
                 })()}
@@ -1600,10 +1616,10 @@ export function GharargahApp() {
                     onQuickOpen={() => void executeCommand("workspace.quickOpen")}
                     onCommandPalette={() => void executeCommand("ui.showCommandPalette")}
                   >
-                    {editorPanelId && editorPanelView ? (
+                    {editorPanelId && modalEditorView ? (
                       <PanelBody
                         panelId={editorPanelId}
-                        view={editorPanelView}
+                        view={modalEditorView}
                         store={tabStore}
                         registry={tabTypeRegistry}
                         focused={sessionMode === "editor"}
@@ -1627,6 +1643,32 @@ export function GharargahApp() {
                     registry={tabTypeRegistry}
                     focused={sessionMode === "terminal"}
                   />
+                }
+                git={
+                  <Suspense
+                    fallback={
+                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                        Loading Git…
+                      </div>
+                    }
+                  >
+                    <GitWorkspace
+                      rootUri={terminalCwdForTab(terminalModalTabId) || null}
+                      repositoryName={
+                        workspace.folders.find(
+                          folder => folder.root.uri === terminalCwdForTab(terminalModalTabId),
+                        )?.root.name ?? "Repository"
+                      }
+                      onBranchChange={setTerminalModalGitBranch}
+                      onOpenFile={relativePath => {
+                        const rootUri = terminalCwdForTab(terminalModalTabId)
+                        if (!rootUri) return
+                        const rootPath = fileUriToPath(rootUri).replace(/[/\\]+$/, "")
+                        const fullPath = `${rootPath}/${relativePath.replace(/^[/\\]+/, "")}`
+                        openFileInEditor(pathToFileUri(fullPath), fullPath)
+                      }}
+                    />
+                  </Suspense>
                 }
               />
             ) : null}

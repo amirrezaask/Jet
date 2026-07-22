@@ -1,4 +1,11 @@
-import type { PanelId, PanelView, ProjectSearchResult } from "@gharargah/shared"
+import type {
+  GitCommit,
+  GitRepositorySummary,
+  GitStatusEntry,
+  PanelId,
+  PanelView,
+  ProjectSearchResult,
+} from "@gharargah/shared"
 import type {
   AgentThread,
   AgentThreadDelta,
@@ -146,7 +153,21 @@ export type JetElectronAgents = {
 }
 
 export type JetElectronGit = {
+  isRepo(rootUri: string): Promise<boolean>
+  status(rootUri: string): Promise<GitStatusEntry[]>
+  diff(rootUri: string, opts?: { path?: string; staged?: boolean }): Promise<string>
   branch(rootUri: string): Promise<string | null>
+  summary(rootUri: string): Promise<GitRepositorySummary>
+  branches(rootUri: string): Promise<string[]>
+  stage(rootUri: string, paths: string[]): Promise<void>
+  unstage(rootUri: string, paths: string[]): Promise<void>
+  discard(rootUri: string, paths: string[]): Promise<void>
+  commit(rootUri: string, summary: string, body?: string): Promise<void>
+  checkout(rootUri: string, branch: string): Promise<void>
+  fetch(rootUri: string): Promise<void>
+  pull(rootUri: string): Promise<void>
+  push(rootUri: string): Promise<void>
+  history(rootUri: string, limit?: number): Promise<GitCommit[]>
 }
 
 export type OpenInAppId =

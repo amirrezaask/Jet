@@ -162,14 +162,98 @@ test.describe("gharargah mission home", () => {
         .toBe(true)
       await expectSelectorVisible(page, "[data-gharargah-session-mode-switch]")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal-sessions]"), 0)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 3)
+      await expect
+        .poll(async () => page.evaluate(() =>
+          [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
+            .map(tab => tab.textContent?.trim() ?? ""),
+        ))
+        .toEqual(["Terminal", "Editor", "Git"])
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"]')
-      await expectSelectorVisible(page, "[data-gharargah-session-pane=terminal]:not([hidden])")
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"]')
+      await expectLocatorCount(page.locator('[data-gharargah-session-pane="terminal"][data-active]'), 1)
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expect
         .poll(async () => page.locator("[data-gharargah-terminal-git-branch]").textContent(), {
           timeout: 15_000,
         })
         .toMatch(/main/)
+
+      // Git is a full workspace mode and intentionally keeps the modal to three modes only.
+      await page.evaluate(() => {
+        const api = window.gharargah
+        if (!api) return
+        ;(window as typeof window & { __gitActions?: string[] }).__gitActions = []
+        const record = (value: string) => {
+          ;(window as typeof window & { __gitActions?: string[] }).__gitActions?.push(value)
+        }
+        api.git = {
+          isRepo: async () => true,
+          status: async () => [
+            { path: "src/index.ts", status: "modified", staged: false, unstaged: true },
+            { path: "README.md", status: "added", staged: true, unstaged: false },
+          ],
+          diff: async (_root, opts) => opts?.staged
+            ? "diff --git a/README.md b/README.md\nnew file mode 100644\n--- /dev/null\n+++ b/README.md\n@@ -0,0 +1 @@\n+# Sample repository\n"
+            : "diff --git a/src/index.ts b/src/index.ts\n--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-export const value = 1\n+export const value = 2\n",
+          branch: async () => "main",
+          summary: async () => ({ branch: "main", upstream: "origin/main", ahead: 2, behind: 1 }),
+          branches: async () => ["main", "feature/git-workspace"],
+          stage: async (_root, paths) => record(`stage:${paths.join(",")}`),
+          unstage: async (_root, paths) => record(`unstage:${paths.join(",")}`),
+          discard: async (_root, paths) => record(`discard:${paths.join(",")}`),
+          commit: async (_root, summary) => record(`commit:${summary}`),
+          checkout: async (_root, branch) => record(`checkout:${branch}`),
+          fetch: async () => record("fetch"),
+          pull: async () => record("pull"),
+          push: async () => record("push"),
+          history: async () => [
+            { hash: "abc123456789", shortHash: "abc1234", author: "Jet", authoredAt: Date.now(), subject: "Add Git workspace" },
+            { hash: "def123456789", shortHash: "def1234", author: "Jet", authoredAt: Date.now() - 60_000, subject: "Restore editor" },
+          ],
+        }
+      })
+      await page.locator('[data-gharargah-session-mode-tab="git"]').click()
+      await expectSelectorVisible(page, "[data-gharargah-git-workspace]", { timeout: 20_000 })
+      await expectSelectorVisible(page, "[data-gharargah-session-pane=git]:not([hidden])")
+      await expectListRows(page, {
+        panel: "git-files",
+        minItems: 2,
+        needle: "src/index.ts",
+        noResultsText: "No matching changes",
+      })
+      await expectLocatorVisible(page.locator("[data-gharargah-git-diff]"))
+      await page.getByLabel("Filter changed files").fill("README")
+      await expectListRows(page, {
+        panel: "git-files",
+        minItems: 1,
+        needle: "README.md",
+        noResultsText: "No matching changes",
+      })
+      await page.getByLabel("Filter changed files").fill("")
+      await page.getByRole("checkbox", { name: "Stage src/index.ts" }).click()
+      await expect
+        .poll(async () => page.evaluate(() =>
+          (window as typeof window & { __gitActions?: string[] }).__gitActions ?? [],
+        ))
+        .toContain("stage:src/index.ts")
+      await page.locator("#git-commit-summary").fill("Test Git workspace")
+      await page.locator("[data-gharargah-git-commit]").click()
+      await expect
+        .poll(async () => page.evaluate(() =>
+          (window as typeof window & { __gitActions?: string[] }).__gitActions ?? [],
+        ))
+        .toContain("commit:Test Git workspace")
+      await page.getByRole("tab", { name: /History/ }).click()
+      await expectListRows(page, {
+        panel: "git-history",
+        minItems: 2,
+        needle: "Add Git workspace",
+      })
+      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
+      await expectSelectorVisible(page, "[data-gharargah-modal-editor]")
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 3)
 
       // Open-in-app control in the fullscreen terminal modal header.
       await page.evaluate(() => {

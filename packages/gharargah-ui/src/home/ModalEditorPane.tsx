@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type ReactNode } from "react"
+import { useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react"
 import { Command, FileSearch, XIcon } from "lucide-react"
 import { fileUriToPath, isUntitledUri } from "@gharargah/shared"
 import type { WorkspaceService } from "@gharargah/workspace"
@@ -49,6 +49,9 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
     >
       <div
         data-gharargah-modal-editor-tabs=""
+        role="tablist"
+        aria-label="Open buffers"
+        onKeyDown={handleBufferTabKeyDown}
         className="flex h-9 shrink-0 items-stretch gap-0 overflow-x-auto border-b border-border/50 bg-card/20"
       >
         {buffers.length === 0 ? (
@@ -78,7 +81,10 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
               >
                 <button
                   type="button"
-                  className="min-w-0 flex-1 truncate text-left text-2xs font-medium outline-none"
+                  role="tab"
+                  aria-selected={active}
+                  tabIndex={active ? 0 : -1}
+                  className="min-w-0 flex-1 truncate text-left text-2xs font-medium outline-none focus-visible:underline focus-visible:underline-offset-4"
                   onClick={() => onActivateBuffer(buffer.tabId)}
                   title={buffer.label}
                 >
@@ -138,26 +144,26 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
-              aria-label="Quick open"
-              title="Quick open"
-              className="size-6 text-muted-foreground hover:text-foreground"
+              size="xs"
+              title="Quick open (⌘⇧O)"
+              className="text-muted-foreground hover:text-foreground"
               onClick={onQuickOpen}
             >
-              <FileSearch className="size-3.5" />
+              <FileSearch data-icon="inline-start" />
+              <span className="hidden sm:inline">Quick Open</span>
             </Button>
           ) : null}
           {onCommandPalette ? (
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
-              aria-label="Command palette"
-              title="Command palette"
-              className="size-6 text-muted-foreground hover:text-foreground"
+              size="xs"
+              title="Command palette (⌘P)"
+              className="text-muted-foreground hover:text-foreground"
               onClick={onCommandPalette}
             >
-              <Command className="size-3.5" />
+              <Command data-icon="inline-start" />
+              <span className="hidden sm:inline">Commands</span>
             </Button>
           ) : null}
         </div>
@@ -189,6 +195,21 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
       </div>
     </div>
   )
+}
+
+function handleBufferTabKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
+  const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="tab"]'))
+  if (tabs.length === 0) return
+  const current = Math.max(0, tabs.indexOf(document.activeElement as HTMLButtonElement))
+  const next = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? tabs.length - 1
+      : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length
+  event.preventDefault()
+  tabs[next]?.focus()
+  tabs[next]?.click()
 }
 
 function breadcrumbSegments(tabId: string | null, path: string | null): string[] {

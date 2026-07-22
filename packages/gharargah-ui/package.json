@@ -24,6 +24,10 @@
       "types": "./src/terminal-file-drop-entry.ts",
       "default": "./src/terminal-file-drop-entry.ts"
     },
+    "./git": {
+      "types": "./src/git-entry.ts",
+      "default": "./src/git-entry.ts"
+    },
     "./styles.css": "./src/styles/globals.css"
   },
   "scripts": {
