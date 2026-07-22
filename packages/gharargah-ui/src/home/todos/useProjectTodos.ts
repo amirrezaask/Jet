@@ -5,6 +5,7 @@ import {
   getSharedRepository,
   type CreateProjectTodoInput,
   type ProjectTodo,
+  type ProjectTodoStatus,
   type ProjectTodosRepository,
   type UpdateProjectTodoPatch,
   projectTodoKey,
@@ -12,10 +13,14 @@ import {
 
 export type ProjectTodosApi = {
   list(projectId: string): ProjectTodo[]
+  listByStatus(projectId: string, status: ProjectTodoStatus): ProjectTodo[]
   create(projectId: string, input: CreateProjectTodoInput): ProjectTodo | null
   update(todoId: string, patch: UpdateProjectTodoPatch): ProjectTodo | null
+  setStatus(todoId: string, status: ProjectTodoStatus): ProjectTodo | null
+  move(todoId: string, toStatus: ProjectTodoStatus, toIndex?: number): ProjectTodo | null
   toggle(todoId: string): ProjectTodo | null
   remove(todoId: string): boolean
+  reorderColumn(projectId: string, status: ProjectTodoStatus, orderedIds: string[]): void
   reorder(projectId: string, orderedIds: string[]): void
   isExpanded(projectId: string): boolean
   setExpanded(projectId: string, expanded: boolean): void
@@ -24,10 +29,16 @@ export type ProjectTodosApi = {
 function makeApi(repo: ProjectTodosRepository): ProjectTodosApi {
   return {
     list: id => repo.listProjectTodos(id),
+    listByStatus: (id, status) => repo.listByStatus(id, status),
     create: (id, input) => repo.createProjectTodo(id, input),
     update: (todoId, patch) => repo.updateProjectTodo(todoId, patch),
+    setStatus: (todoId, status) => repo.setProjectTodoStatus(todoId, status),
+    move: (todoId, toStatus, toIndex) => repo.moveProjectTodo(todoId, toStatus, toIndex),
     toggle: todoId => repo.toggleProjectTodo(todoId),
     remove: todoId => repo.deleteProjectTodo(todoId),
+    reorderColumn: (id, status, orderedIds) => {
+      repo.reorderColumn(id, status, orderedIds)
+    },
     reorder: (id, orderedIds) => {
       repo.reorderProjectTodos(id, orderedIds)
     },

@@ -90,9 +90,9 @@ export type BuildAppCommandsDeps = {
   getActiveTerminalTabId: () => string | null
   closeTerminalTab: (panelId: PanelId, tabId: string) => void
   getTerminalExplorerGroups: () => import("./terminal-explorer.js").TerminalExplorerGroup[]
-  focusTerminalTab: (panelId: PanelId, tabId: string) => void
-  openTerminalModal: (panelId: PanelId, tabId: string) => void
-  setSessionMode: (mode: "terminal" | "editor" | "git") => void
+  focusTerminalTab: (panelId: PanelId, tabId: string, mode?: "terminal" | "editor" | "git" | "todos") => void
+  openTerminalModal: (panelId: PanelId, tabId: string, mode?: "terminal" | "editor" | "git" | "todos") => void
+  setSessionMode: (mode: "terminal" | "editor" | "git" | "todos") => void
   getContextFolder: () => import("@gharargah/workspace").WorkspaceFolder | null
   getSearchSupported: () => boolean
   goHome: () => void
@@ -345,6 +345,7 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     showEditor: () => deps.setSessionMode("editor"),
     showTerminal: () => deps.setSessionMode("terminal"),
+    showTodos: () => deps.setSessionMode("todos"),
     terminal: async () => {
       const tree = deps.cloneTree()
       const focused = currentFocusedPanel()
@@ -560,6 +561,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.gotoLine", fn: "gotoLine", title: "Go to Line…", category: "Editor" },
   { id: "dialog.showEditor", fn: "showEditor", title: "Show Editor", category: "View", aliases: ["focus editor"] },
   { id: "dialog.showTerminal", fn: "showTerminal", title: "Show Terminal", category: "View", aliases: ["focus terminal"] },
+  { id: "dialog.showTodos", fn: "showTodos", title: "Show TODOs", category: "View", aliases: ["todo board", "kanban"] },
   { id: "terminal.show", fn: "terminal", title: "Toggle Terminal", category: "View", aliases: ["shell", "integrated terminal"] },
   { id: "terminal.new", fn: "terminalNew", title: "New Terminal", category: "View" },
   { id: "gharargah.goHome", fn: "goHome", title: "Go Home", category: "View", aliases: ["mission control", "home"] },

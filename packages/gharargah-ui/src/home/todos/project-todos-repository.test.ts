@@ -53,11 +53,13 @@ describe("project-todos-store", () => {
     assert.ok(a)
     assert.equal(a.text, "Ship todos")
     assert.equal(a.completed, false)
+    assert.equal(a.status, "todo")
     assert.equal(repo.listProjectTodos("/proj/a").length, 1)
     assert.equal(repo.listProjectTodos("/proj/b").length, 0)
 
     const toggled = repo.toggleProjectTodo(a.id)
     assert.ok(toggled?.completed)
+    assert.equal(toggled?.status, "done")
     assert.ok(toggled?.completedAt)
 
     const updated = repo.updateProjectTodo(a.id, { text: "Ship feature" })
@@ -67,6 +69,27 @@ describe("project-todos-store", () => {
     assert.equal(repo.listProjectTodos("/proj/a").length, 0)
   })
 
+  it("moves cards across board columns", () => {
+    const card = repo.createProjectTodo("/proj/a", { text: "Board me" })!
+    assert.equal(card.status, "todo")
+    const doing = repo.moveProjectTodo(card.id, "doing", 0)
+    assert.equal(doing?.status, "doing")
+    assert.equal(repo.listByStatus("/proj/a", "todo").length, 0)
+    assert.equal(repo.listByStatus("/proj/a", "doing").length, 1)
+    const done = repo.setProjectTodoStatus(card.id, "done")
+    assert.equal(done?.status, "done")
+    assert.ok(done?.completed)
+  })
+
+  it("reorders within a column", () => {
+    const a = repo.createProjectTodo("/proj/a", { text: "A" })!
+    const b = repo.createProjectTodo("/proj/a", { text: "B" })!
+    const c = repo.createProjectTodo("/proj/a", { text: "C" })!
+    repo.reorderColumn("/proj/a", "todo", [c.id, a.id, b.id])
+    const texts = repo.listByStatus("/proj/a", "todo").map(t => t.text)
+    assert.deepEqual(texts, ["C", "A", "B"])
+  })
+
   it("reorders within a project", () => {
     const first = repo.createProjectTodo("/proj/a", { text: "A" })!
     const second = repo.createProjectTodo("/proj/a", { text: "B" })!
@@ -74,6 +97,30 @@ describe("project-todos-store", () => {
     repo.reorderProjectTodos("/proj/a", [third.id, first.id, second.id])
     const texts = repo.listProjectTodos("/proj/a").map(t => t.text)
     assert.deepEqual(texts, ["C", "A", "B"])
+  })
+
+  it("migrates legacy completed boolean into status", () => {
+    storage.setItem(
+      PROJECT_TODOS_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        todos: [
+          {
+            id: "legacy-done",
+            projectId: "/proj/a",
+            text: "Old done",
+            completed: true,
+            position: 0,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    )
+    const migrated = createProjectTodosRepository(storage)
+    const item = migrated.listProjectTodos("/proj/a")[0]
+    assert.equal(item?.status, "done")
+    assert.equal(item?.completed, true)
   })
 
   it("persists across repository instances", () => {

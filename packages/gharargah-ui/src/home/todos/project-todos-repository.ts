@@ -3,11 +3,28 @@ import { normalizeAbsPath } from "@gharargah/workspace"
 export const PROJECT_TODOS_STORAGE_KEY = "jet-project-todos-v1"
 export const PROJECT_TODO_UI_STORAGE_KEY = "jet-project-todo-ui-v1"
 
+/** Kanban columns — Todo / Doing / Done. */
+export type ProjectTodoStatus = "todo" | "doing" | "done"
+
+export const PROJECT_TODO_STATUSES: readonly ProjectTodoStatus[] = [
+  "todo",
+  "doing",
+  "done",
+] as const
+
+export const PROJECT_TODO_STATUS_LABEL: Record<ProjectTodoStatus, string> = {
+  todo: "Todo",
+  doing: "Doing",
+  done: "Done",
+}
+
 export type ProjectTodo = {
   id: string
   projectId: string
   /** Single todo body (no separate title/description). */
   text: string
+  status: ProjectTodoStatus
+  /** @deprecated Prefer `status === "done"`. Kept for callers during migration. */
   completed: boolean
   position: number
   createdAt: string
@@ -17,10 +34,13 @@ export type ProjectTodo = {
 
 export type CreateProjectTodoInput = {
   text: string
+  status?: ProjectTodoStatus
 }
 
 export type UpdateProjectTodoPatch = {
   text?: string
+  status?: ProjectTodoStatus
+  /** Maps to status todo/done when `status` omitted. */
   completed?: boolean
 }
 
@@ -72,8 +92,30 @@ export function projectTodoKey(pathOrId: string): string {
   }
 }
 
+function coerceStatus(
+  item: Record<string, unknown>,
+): ProjectTodoStatus {
+  if (item.status === "todo" || item.status === "doing" || item.status === "done") {
+    return item.status
+  }
+  if (typeof item.completed === "boolean") {
+    return item.completed ? "done" : "todo"
+  }
+  return "todo"
+}
+
+function withDerived(todo: Omit<ProjectTodo, "completed">): ProjectTodo {
+  return {
+    ...todo,
+    completed: todo.status === "done",
+  }
+}
+
 function sortTodos(todos: ProjectTodo[]): ProjectTodo[] {
   return [...todos].sort((a, b) => {
+    const statusOrder =
+      PROJECT_TODO_STATUSES.indexOf(a.status) - PROJECT_TODO_STATUSES.indexOf(b.status)
+    if (statusOrder !== 0) return statusOrder
     if (a.position !== b.position) return a.position - b.position
     return a.createdAt.localeCompare(b.createdAt)
   })
@@ -110,20 +152,26 @@ function readTodosDoc(
       if (typeof item.id !== "string" || typeof item.projectId !== "string") continue
       const text = coerceTodoText(item)
       if (!text) continue
-      if (typeof item.completed !== "boolean") continue
       if (typeof item.position !== "number") continue
       if (typeof item.createdAt !== "string" || typeof item.updatedAt !== "string") continue
-      todos.push({
-        id: item.id,
-        projectId: projectTodoKey(item.projectId),
-        text,
-        completed: item.completed,
-        position: item.position,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
-        completedAt:
-          typeof item.completedAt === "string" ? item.completedAt : undefined,
-      })
+      const status = coerceStatus(item)
+      todos.push(
+        withDerived({
+          id: item.id,
+          projectId: projectTodoKey(item.projectId),
+          text,
+          status,
+          position: item.position,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          completedAt:
+            typeof item.completedAt === "string"
+              ? item.completedAt
+              : status === "done"
+                ? item.updatedAt
+                : undefined,
+        }),
+      )
     }
     return { version: 1, todos }
   } catch {
@@ -175,10 +223,25 @@ function writeUiDoc(
 
 export type ProjectTodosRepository = {
   listProjectTodos(projectId: string): ProjectTodo[]
+  listByStatus(projectId: string, status: ProjectTodoStatus): ProjectTodo[]
   createProjectTodo(projectId: string, input: CreateProjectTodoInput): ProjectTodo | null
   updateProjectTodo(todoId: string, patch: UpdateProjectTodoPatch): ProjectTodo | null
+  setProjectTodoStatus(todoId: string, status: ProjectTodoStatus): ProjectTodo | null
+  /** Move card into a column at index (default: append). Reindexes that column. */
+  moveProjectTodo(
+    todoId: string,
+    toStatus: ProjectTodoStatus,
+    toIndex?: number,
+  ): ProjectTodo | null
   toggleProjectTodo(todoId: string): ProjectTodo | null
   deleteProjectTodo(todoId: string): boolean
+  /** Reorder within one column (orderedIds = that column only). */
+  reorderColumn(
+    projectId: string,
+    status: ProjectTodoStatus,
+    orderedIds: string[],
+  ): ProjectTodo[]
+  /** @deprecated Prefer reorderColumn / moveProjectTodo. Full-project id order. */
   reorderProjectTodos(projectId: string, orderedIds: string[]): ProjectTodo[]
   isExpanded(projectId: string): boolean
   setExpanded(projectId: string, expanded: boolean): void
@@ -218,10 +281,28 @@ export function createProjectTodosRepository(
 
   const findIndex = (todoId: string) => todos.findIndex(t => t.id === todoId)
 
+  const reindexColumn = (projectId: string, status: ProjectTodoStatus) => {
+    const key = projectTodoKey(projectId)
+    let pos = 0
+    todos = todos.map(t => {
+      if (t.projectId !== key || t.status !== status) return t
+      const next = withDerived({ ...t, position: pos, updatedAt: nowIso() })
+      pos += 1
+      return next
+    })
+  }
+
   return {
     listProjectTodos(projectId: string): ProjectTodo[] {
       const key = projectTodoKey(projectId)
       return sortTodos(todos.filter(t => t.projectId === key))
+    },
+
+    listByStatus(projectId: string, status: ProjectTodoStatus): ProjectTodo[] {
+      const key = projectTodoKey(projectId)
+      return sortTodos(
+        todos.filter(t => t.projectId === key && t.status === status),
+      )
     },
 
     createProjectTodo(projectId: string, input: CreateProjectTodoInput): ProjectTodo | null {
@@ -229,18 +310,20 @@ export function createProjectTodosRepository(
       if (!text) return null
       const key = projectTodoKey(projectId)
       if (!key) return null
-      const siblings = todos.filter(t => t.projectId === key)
+      const status = input.status ?? "todo"
+      const siblings = todos.filter(t => t.projectId === key && t.status === status)
       const maxPos = siblings.reduce((max, t) => Math.max(max, t.position), -1)
       const stamp = nowIso()
-      const todo: ProjectTodo = {
+      const todo = withDerived({
         id: newTodoId(),
         projectId: key,
         text,
-        completed: false,
+        status,
         position: maxPos + 1,
         createdAt: stamp,
         updatedAt: stamp,
-      }
+        completedAt: status === "done" ? stamp : undefined,
+      })
       todos = [...todos, todo]
       persistTodos()
       notify()
@@ -257,63 +340,164 @@ export function createProjectTodosRepository(
         if (!next) return null
         text = next
       }
-      let completed = current.completed
-      let completedAt = current.completedAt
-      if (patch.completed !== undefined && patch.completed !== current.completed) {
-        completed = patch.completed
-        completedAt = completed ? nowIso() : undefined
+      let status = current.status
+      if (patch.status !== undefined) {
+        status = patch.status
+      } else if (patch.completed !== undefined) {
+        if (patch.completed) status = "done"
+        else if (current.status === "done") status = "todo"
       }
-      const next: ProjectTodo = {
+      let completedAt = current.completedAt
+      if (status === "done" && current.status !== "done") {
+        completedAt = nowIso()
+      } else if (status !== "done") {
+        completedAt = undefined
+      }
+      const next = withDerived({
         ...current,
         text,
-        completed,
+        status,
         completedAt,
         updatedAt: nowIso(),
-      }
+      })
       todos = todos.map((t, i) => (i === idx ? next : t))
+      if (status !== current.status) {
+        reindexColumn(current.projectId, current.status)
+        reindexColumn(current.projectId, status)
+      }
       persistTodos()
       notify()
       return next
     },
 
+    setProjectTodoStatus(todoId: string, status: ProjectTodoStatus): ProjectTodo | null {
+      return this.updateProjectTodo(todoId, { status })
+    },
+
+    moveProjectTodo(
+      todoId: string,
+      toStatus: ProjectTodoStatus,
+      toIndex?: number,
+    ): ProjectTodo | null {
+      const current = todos.find(t => t.id === todoId)
+      if (!current) return null
+      const key = current.projectId
+      const fromStatus = current.status
+
+      // Pull card out, then rebuild target column with insert.
+      const others = todos.filter(t => t.id !== todoId)
+      const targetColumn = sortTodos(
+        others.filter(t => t.projectId === key && t.status === toStatus),
+      )
+      const insertAt =
+        toIndex == null
+          ? targetColumn.length
+          : Math.max(0, Math.min(toIndex, targetColumn.length))
+      const stamp = nowIso()
+      const moved = withDerived({
+        ...current,
+        status: toStatus,
+        completedAt: toStatus === "done" ? current.completedAt ?? stamp : undefined,
+        updatedAt: stamp,
+        position: insertAt,
+      })
+      targetColumn.splice(insertAt, 0, moved)
+      const reindexedTarget = targetColumn.map((t, position) =>
+        withDerived({ ...t, position, updatedAt: stamp }),
+      )
+
+      const rest = others.filter(
+        t => !(t.projectId === key && t.status === toStatus),
+      )
+      todos = [...rest, ...reindexedTarget]
+      if (fromStatus !== toStatus) {
+        reindexColumn(key, fromStatus)
+      }
+      persistTodos()
+      notify()
+      return todos.find(t => t.id === todoId) ?? null
+    },
+
     toggleProjectTodo(todoId: string): ProjectTodo | null {
       const current = todos.find(t => t.id === todoId)
       if (!current) return null
-      return this.updateProjectTodo(todoId, { completed: !current.completed })
+      return this.updateProjectTodo(todoId, {
+        status: current.status === "done" ? "todo" : "done",
+      })
     },
 
     deleteProjectTodo(todoId: string): boolean {
-      const before = todos.length
+      const current = todos.find(t => t.id === todoId)
+      if (!current) return false
       todos = todos.filter(t => t.id !== todoId)
-      if (todos.length === before) return false
+      reindexColumn(current.projectId, current.status)
       persistTodos()
       notify()
       return true
     },
 
+    reorderColumn(
+      projectId: string,
+      status: ProjectTodoStatus,
+      orderedIds: string[],
+    ): ProjectTodo[] {
+      const key = projectTodoKey(projectId)
+      const stamp = nowIso()
+      const byId = new Map(
+        todos
+          .filter(t => t.projectId === key && t.status === status)
+          .map(t => [t.id, t]),
+      )
+      const reordered: ProjectTodo[] = []
+      orderedIds.forEach((id, position) => {
+        const existing = byId.get(id)
+        if (!existing) return
+        reordered.push(withDerived({ ...existing, position, updatedAt: stamp }))
+        byId.delete(id)
+      })
+      for (const leftover of byId.values()) {
+        reordered.push(
+          withDerived({
+            ...leftover,
+            position: reordered.length,
+            updatedAt: stamp,
+          }),
+        )
+      }
+      const others = todos.filter(
+        t => !(t.projectId === key && t.status === status),
+      )
+      todos = [...others, ...reordered]
+      persistTodos()
+      notify()
+      return sortTodos(reordered)
+    },
+
     reorderProjectTodos(projectId: string, orderedIds: string[]): ProjectTodo[] {
       const key = projectTodoKey(projectId)
-      const idSet = new Set(orderedIds)
       const others = todos.filter(t => t.projectId !== key)
       const byId = new Map(todos.filter(t => t.projectId === key).map(t => [t.id, t]))
       const reordered: ProjectTodo[] = []
       orderedIds.forEach((id, position) => {
         const existing = byId.get(id)
         if (!existing) return
-        reordered.push({
-          ...existing,
-          position,
-          updatedAt: nowIso(),
-        })
+        reordered.push(
+          withDerived({
+            ...existing,
+            position,
+            updatedAt: nowIso(),
+          }),
+        )
         byId.delete(id)
       })
       for (const leftover of byId.values()) {
-        if (idSet.has(leftover.id)) continue
-        reordered.push({
-          ...leftover,
-          position: reordered.length,
-          updatedAt: nowIso(),
-        })
+        reordered.push(
+          withDerived({
+            ...leftover,
+            position: reordered.length,
+            updatedAt: nowIso(),
+          }),
+        )
       }
       todos = [...others, ...reordered]
       persistTodos()

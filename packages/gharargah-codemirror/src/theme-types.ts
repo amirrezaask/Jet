@@ -87,10 +87,12 @@ export type GharargahTheme = {
 
 export type ColorScheme = "dark" | "light"
 
-/** Default dark — shadcn/ui palette (see jet-ui/src/theme/default.ts). */
+/** Default dark — shadcn/ui palette (see gharargah-ui/src/theme/shadcn.ts). */
 export const defaultGharargahTheme: GharargahTheme = {
   id: "default-dark",
   name: "Default Dark",
+  family: "Default",
+  scheme: "dark",
   colors: jetColorsFromShadcn(shadcnDefaultDark, "dark"),
   shadcn: shadcnDefaultDark,
   highlights: {
@@ -193,6 +195,8 @@ export function applyJetHighlightCssVars(theme: GharargahTheme): void {
 }
 
 export function applyColorScheme(scheme: ColorScheme, theme: GharargahTheme): void {
-  document.documentElement.classList.toggle("dark", scheme === "dark")
+  const root = document.documentElement
+  root.classList.toggle("dark", scheme === "dark")
+  root.dataset.gharargahSurface = theme.family === "Glass" ? "glass" : "default"
   applyGharargahThemeCss(theme)
 }

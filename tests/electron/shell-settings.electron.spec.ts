@@ -11,7 +11,7 @@ test.describe("electron shell settings", () => {
       await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
       await execCommand(page, "ui.setTheme.glass-blue")
       await openSettings(page)
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 3)
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 5)
 
       await page.locator("[data-gharargah-theme-option='glass-red']").click()
       await expect
@@ -39,7 +39,7 @@ test.describe("electron shell settings", () => {
       await execCommand(page, "ui.resetAppearance")
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
-        .toBe("glass-blue")
+        .toBe("default-dark")
       await expect
         .poll(() =>
           page.evaluate(() =>

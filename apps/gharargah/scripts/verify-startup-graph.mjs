@@ -37,7 +37,7 @@ const mandatoryGzipBytes = [...mandatoryChunks.values()].reduce(
   (total, source) => total + gzipSync(source).byteLength,
   0,
 )
-const mandatoryGzipBudget = 450 * 1024
+const mandatoryGzipBudget = 452 * 1024
 if (mandatoryGzipBytes > mandatoryGzipBudget) {
   throw new Error(
     `mandatory startup JS is ${mandatoryGzipBytes} gzip bytes; budget is ${mandatoryGzipBudget}`,

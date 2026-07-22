@@ -40,6 +40,8 @@ export type HomeProjectSectionProps = {
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
+  /** Open session modal on TODOs board for this project. */
+  onOpenTodos?: (rootUri: string) => void
 }
 
 export function ProjectSection(props: HomeProjectSectionProps) {
@@ -56,11 +58,13 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     onOpenInApp,
     onRemoveProject,
     onKillTerminal,
+    onOpenTodos,
   } = props
 
   const todos = useProjectTodosBundle({
     projectId: projectId || path,
     projectName: name,
+    onOpenTodos: onOpenTodos ? () => onOpenTodos(rootUri) : undefined,
   })
 
   const titleBlock = (

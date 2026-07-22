@@ -46,8 +46,11 @@ export {
   type OpenInAppTarget,
   type NewSessionMenuProps,
   type ProjectTodo,
+  type ProjectTodoStatus,
   type ProjectTodosApi,
   type ProjectTodosRepository,
+  ProjectTodosPane,
+  ProjectTodoBoard,
 } from "./home/index.js"
 export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
 export {
@@ -129,6 +132,7 @@ export {
   themeFamilyForId,
   themePreviewSwatches,
   themeForScheme,
+  themeUsesGlassSurface,
   type ColorScheme,
 } from "./theme/bundled.js"
 export { syncNativeChromeFromTheme, readThemedNativeChrome } from "./theme/native-chrome.js"

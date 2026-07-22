@@ -124,3 +124,37 @@ export function clearTerminalSession(tabId: string): void {
   sessions.delete(tabId)
   notify(tabId)
 }
+
+export function listTerminalSessions(): TerminalSessionState[] {
+  return [...sessions.values()]
+}
+
+export type HydratedTerminalSession = {
+  tabId: string
+  cwdRootUri: string
+  launchCommand?: string
+  ptyId?: string
+  status: TerminalSessionStatus
+  exitCode?: number
+  signal?: number
+  customLabel?: string
+}
+
+/** Restore session fields after a tab has been re-opened (refresh hydrate). */
+export function hydrateTerminalSession(entry: HydratedTerminalSession): void {
+  const existing = sessions.get(entry.tabId)
+  if (existing?.ptyId) tabByPtyId.delete(existing.ptyId)
+  sessions.set(entry.tabId, {
+    tabId: entry.tabId,
+    cwdRootUri: entry.cwdRootUri,
+    launchCommand: entry.launchCommand,
+    ptyId: entry.ptyId,
+    status: entry.status,
+    exitCode: entry.exitCode,
+    signal: entry.signal,
+    generation: existing?.generation ?? 0,
+    customLabel: entry.customLabel,
+  })
+  if (entry.ptyId) tabByPtyId.set(entry.ptyId, entry.tabId)
+  notify(entry.tabId)
+}

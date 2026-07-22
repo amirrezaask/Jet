@@ -64,7 +64,9 @@ test.describe("electron appearance and terminal-first UX", () => {
       })
 
       await expectSelectorVisible(page, "[data-gharargah-settings-overlay]")
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 3)
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 5)
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='default-dark']")
+      await expectSelectorVisible(page, "[data-gharargah-theme-option='default-light']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-blue']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-red']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-green']")
@@ -81,6 +83,22 @@ test.describe("electron appearance and terminal-first UX", () => {
           ),
         )
         .toBe("#0a0506")
+
+      await expect
+        .poll(() =>
+          page.evaluate(() => document.documentElement.dataset.gharargahSurface),
+        )
+        .toBe("glass")
+
+      await page.locator("[data-gharargah-theme-option='default-dark']").click()
+      await expect
+        .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
+        .toBe("default-dark")
+      await expect
+        .poll(() =>
+          page.evaluate(() => document.documentElement.dataset.gharargahSurface),
+        )
+        .toBe("default")
     } finally {
       await app.close()
     }

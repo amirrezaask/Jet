@@ -31,6 +31,7 @@ import {
   panelTabIds,
   findPanelWithTab,
   isTerminalTabId,
+  TERMINAL_TAB_ID_PREFIX,
   fileSearchAcrossFolders,
   relativePathInFolder,
   resolveQuickOpenDisplayPath,
@@ -62,20 +63,27 @@ import {
   setEditorCursor,
   destroyEditorBuffer,
   FindReplacePopover,
+  ProjectTodosPane,
 } from "@gharargah/ui"
-import { setPendingEditorNavigation, jumpToLine } from "@gharargah/codemirror"
+import { setPendingEditorNavigation, setPendingInitialContent, jumpToLine } from "@gharargah/codemirror"
+import { bootstrapFromLaunch } from "./launch-bootstrap.js"
+import { useFileDrop } from "./use-file-drop.js"
 import { APP_COMMAND_REGISTRY, buildAppCommands, buildMacTerminalQuickSwitchBindings } from "./app-commands.js"
 import { registerBuiltinTabTypes } from "./tabs/index.js"
 import {
   clearTerminalSession,
-  restartTerminalSession,
+  hydrateTerminalSession,
+  listTerminalSessions,
   subscribeTerminalSessions,
   terminalCwdForTab,
-  terminalLaunchCommandForTab,
   terminalPtyIdForTab,
   terminalSessionForTab,
-  setTerminalCustomLabel,
 } from "./tabs/terminal-session.js"
+import {
+  readSessionRoster,
+  writeSessionRoster,
+  type PersistedSessionRoster,
+} from "./session-roster-store.js"
 import {
   getAllLeafPanels,
   resolveEditorPanel,
@@ -95,7 +103,6 @@ import { useAppearanceSettings } from "./hooks/useAppearanceSettings.js"
 import { usePanelLayout } from "./hooks/usePanelLayout.js"
 import OverlayHost from "./OverlayHost.js"
 import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle.js"
-import { useTerminalFileDrop } from "./hooks/useTerminalFileDrop.js"
 import { useLspLifecycle } from "./hooks/useLspLifecycle.js"
 import { useOverlayState } from "./hooks/useOverlayState.js"
 import { useGlobalKeymap } from "./hooks/useGlobalKeymap.js"
@@ -218,6 +225,7 @@ export function GharargahApp() {
   const initialized = useRef(false)
   const queryBootstrapDone = useRef(false)
   const projectCatalogReadyRef = useRef(false)
+  const sessionRosterReadyRef = useRef(false)
   const startupRecordedRef = useRef(false)
   const openWorkspaceRef = useRef<(folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>>(
     () => {},
@@ -341,11 +349,14 @@ export function GharargahApp() {
     return tabId
   }, [])
 
-  const openTerminalModal = useCallback((panelId: PanelId, tabId: string) => {
-    setTerminalModalPanelId(panelId)
-    setTerminalModalTabId(tabId)
-    setSessionMode("terminal")
-  }, [])
+  const openTerminalModal = useCallback(
+    (panelId: PanelId, tabId: string, mode: SessionDialogMode = "terminal") => {
+      setTerminalModalPanelId(panelId)
+      setTerminalModalTabId(tabId)
+      setSessionMode(mode)
+    },
+    [],
+  )
 
   const closeTerminalModal = useCallback(() => {
     setTerminalModalTabId(null)
@@ -353,14 +364,14 @@ export function GharargahApp() {
   }, [])
 
   const focusTerminalTab = useCallback(
-    (panelId: PanelId, tabId: string) => {
+    (panelId: PanelId, tabId: string, mode: SessionDialogMode = "terminal") => {
       const focus = () => {
         const tree = cloneTree()
         const owningPanel = findPanelWithTab(tree, tabId) ?? panelId
         workspace.focusTabInPanel(tree, owningPanel, tabId)
         setFocusedPanel(owningPanel)
         commitTree(tree, owningPanel)
-        openTerminalModal(owningPanel, tabId)
+        openTerminalModal(owningPanel, tabId, mode)
       }
       const rootUri = terminalCwdForTab(tabId)
       if (rootUri && rootUri !== workspace.root?.uri) {
@@ -483,6 +494,30 @@ export function GharargahApp() {
     [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
   )
 
+  const openTodosFromHome = useCallback(
+    async (rootUri: string) => {
+      try {
+        const group = getTerminalExplorerGroups().find(g => g.rootUri === rootUri)
+        const existing = group?.terminals[0]
+        if (existing) {
+          focusTerminalTab(existing.panelId, existing.tabId, "todos")
+          return
+        }
+        const { panelId, tabId } = await openTerminalInWorkspace(rootUri)
+        openTerminalModal(panelId, tabId, "todos")
+      } catch (err) {
+        console.error("[gharargah] openTodosFromHome failed", err)
+        showGharargahToast(err instanceof Error ? err.message : String(err), { variant: "destructive" })
+      }
+    },
+    [
+      getTerminalExplorerGroups,
+      focusTerminalTab,
+      openTerminalInWorkspace,
+      openTerminalModal,
+    ],
+  )
+
   const openProjectInApp = useCallback(async (rootUri: string, appId: OpenInAppId) => {
     try {
       const shell = window.gharargah?.shell
@@ -495,6 +530,29 @@ export function GharargahApp() {
       showGharargahToast(err instanceof Error ? err.message : String(err), { variant: "destructive" })
     }
   }, [])
+
+  const persistSessionRoster = useCallback(() => {
+    if (!sessionRosterReadyRef.current) return
+    const sessions = listTerminalSessions().map(session => ({
+      tabId: session.tabId,
+      cwdRootUri: session.cwdRootUri,
+      label: workspace.tabRegistry.get(session.tabId)?.label ?? session.customLabel ?? "Terminal",
+      launchCommand: session.launchCommand,
+      ptyId: session.ptyId,
+      status: session.status,
+      exitCode: session.exitCode,
+      customLabel: session.customLabel,
+    }))
+    const modalTabId = terminalModalTabIdRef.current
+    const roster: PersistedSessionRoster = {
+      version: 1,
+      sessions,
+      modal: modalTabId
+        ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
+        : null,
+    }
+    writeSessionRoster(roster)
+  }, [workspace])
 
   const closeTerminalTab = useCallback(
     (panelId: PanelId, tabId: string) => {
@@ -535,8 +593,9 @@ export function GharargahApp() {
       if (terminalModalTabIdRef.current === tabId) {
         setTerminalModalTitleTick(tick => tick + 1)
       }
+      persistSessionRoster()
     },
-    [workspace],
+    [workspace, persistSessionRoster],
   )
 
   useEffect(() => {
@@ -612,15 +671,56 @@ export function GharargahApp() {
   }
 
   useTerminalLifecycle()
-  useTerminalFileDrop()
+
+  const openUntitledFromDrop = useCallback(
+    (name: string, content: string) => {
+      const tree = cloneTree()
+      const panel =
+        resolveEditorPanel(tree, editorPanelRef.current, appStateRef.current.focusedPanel) ??
+        editorPanelRef.current
+      if (!panel) return
+      editorPanelRef.current = panel
+      workspace.openUntitledInPanel(tree, panel, { label: name })
+      setPendingInitialContent(panel, content)
+      setFocusedPanel(panel)
+      setSessionMode("editor")
+      commitTree(tree, panel)
+      ensureSessionModalOpen(workspace.root?.uri ?? null)
+    },
+    [workspace, cloneTree, commitTree, editorPanelRef, setFocusedPanel, ensureSessionModalOpen],
+  )
+
+  useFileDrop({
+    fs: jetPlatformFS(),
+    knownWorkspacePaths: workspace.folders.map(f => f.root.path),
+    normalizePath: normalizeAbsPath,
+    openWorkspace: path => void openWorkspaceRef.current(path, { replace: true, silent: true }),
+    addWorkspaceFolder: path => void addWorkspaceRef.current(path),
+    openFile: (uri, path) => openFileInEditorRef.current(uri, path),
+    bootstrapFromLaunch: config => {
+      bootstrapFromLaunch(
+        path => openWorkspaceRef.current(path, { replace: true, silent: true }),
+        (uri, path) => openFileInEditorRef.current(uri, path),
+        config,
+      )
+    },
+    openUntitledFromDrop,
+    setMessage: showGharargahToast,
+  })
 
   useEffect(
-    () => subscribeTerminalSessions(tabId => {
-      tabStore.update(tabId, previous => ({ ...(previous as object) }))
-      setTerminalSessionRevision(revision => revision + 1)
-    }),
-    [tabStore],
+    () =>
+      subscribeTerminalSessions(tabId => {
+        tabStore.update(tabId, previous => ({ ...(previous as object) }))
+        setTerminalSessionRevision(revision => revision + 1)
+        persistSessionRoster()
+      }),
+    [tabStore, persistSessionRoster],
   )
+
+  useEffect(() => {
+    persistSessionRoster()
+  }, [persistSessionRoster, terminalModalTabId, sessionMode, terminalSessionRevision])
 
   useEffect(() => {
     if (initialized.current) return
@@ -1355,8 +1455,48 @@ export function GharargahApp() {
         workspace.manager.activeFolder?.id ?? null,
       )
       await syncServerProjectCatalog(workspace.manager.folders).catch(() => {})
+
+      const roster = readSessionRoster()
+      if (roster.sessions.length > 0) {
+        const tree = cloneTree()
+        for (const entry of roster.sessions) {
+          if (findPanelWithTab(tree, entry.tabId)) continue
+          const sessionKey = entry.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
+            ? entry.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
+            : entry.tabId
+          openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
+            sessionKey,
+            label: entry.label,
+            cwdRootUri: entry.cwdRootUri,
+            launchCommand: entry.launchCommand,
+          })
+          hydrateTerminalSession({
+            tabId: entry.tabId,
+            cwdRootUri: entry.cwdRootUri,
+            launchCommand: entry.launchCommand,
+            ptyId: entry.ptyId,
+            status: entry.status,
+            exitCode: entry.exitCode,
+            customLabel: entry.customLabel,
+          })
+        }
+        commitTree(tree)
+        setTerminalSessionRevision(revision => revision + 1)
+
+        if (roster.modal) {
+          const panelId = findPanelWithTab(tree, roster.modal.tabId)
+          if (panelId) {
+            setTerminalModalPanelId(panelId)
+            setTerminalModalTabId(roster.modal.tabId)
+            setSessionMode(roster.modal.sessionMode)
+          }
+        }
+      }
+
+      sessionRosterReadyRef.current = true
+      persistSessionRoster()
     })()
-  }, [layoutReady, workspace])
+  }, [layoutReady, workspace, cloneTree, commitTree, persistSessionRoster])
 
   useEffect(() => {
     if (
@@ -1570,6 +1710,7 @@ export function GharargahApp() {
                 onAddProject={() => setAddWorkspaceOpen(true)}
                 onRemoveProject={removeProjectByRootUri}
                 onKillTerminal={closeTerminalTab}
+                onOpenTodos={rootUri => void openTodosFromHome(rootUri)}
               />
             </div>
 
@@ -1591,6 +1732,7 @@ export function GharargahApp() {
                     return project ? `${project} / ${fileLabel}` : fileLabel
                   }
                   if (sessionMode === "git") return project ? `${project} / Git` : "Git"
+                  if (sessionMode === "todos") return project ? `${project} / TODOs` : "TODOs"
                   const label = workspace.tabRegistry.get(terminalModalTabId)?.label ?? "Terminal"
                   return project ? `${project} / ${label}` : label
                 })()}
@@ -1681,6 +1823,15 @@ export function GharargahApp() {
                     />
                   </Suspense>
                 }
+                todos={(() => {
+                  const rootUri = terminalCwdForTab(terminalModalTabId)
+                  const folder = workspace.folders.find(f => f.root.uri === rootUri)
+                  const projectId = folder?.root.path ?? rootUri ?? ""
+                  const projectName = folder?.root.name ?? "Project"
+                  return (
+                    <ProjectTodosPane projectId={projectId} projectName={projectName} />
+                  )
+                })()}
               />
             ) : null}
             {editorPanelId ? <FindReplacePopover panelId={editorPanelId} /> : null}

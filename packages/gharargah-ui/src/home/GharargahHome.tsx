@@ -1,12 +1,11 @@
 import { useMemo, useState } from "react"
-import { ChevronDown, FolderPlus, Search, Sparkles } from "lucide-react"
+import { FolderPlus, Search } from "lucide-react"
 import type { PanelId } from "@gharargah/shared"
 import { Button } from "@/components/ui/button.js"
 import { Input } from "@/components/ui/input.js"
 import { Kbd } from "@/components/ui/kbd.js"
 import { formatHomeDate, timeOfDayGreeting } from "./greeting.js"
 import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
-import { NewSessionMenu } from "./NewSessionMenu.js"
 import type { OpenInAppId } from "./OpenInAppMenu.js"
 import { ProjectSection, type HomeTerminalEntry } from "./ProjectSection.js"
 import {
@@ -34,6 +33,7 @@ export type GharargahHomeProps = {
   onAddProject?: () => void
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
+  onOpenTodos?: (rootUri: string) => void
 }
 
 function toSessionCard(group: HomeProjectGroup, term: HomeTerminalEntry): SessionCardModel {
@@ -63,6 +63,7 @@ export function GharargahHome(props: GharargahHomeProps) {
     onAddProject,
     onRemoveProject,
     onKillTerminal,
+    onOpenTodos,
   } = props
   const [query, setQuery] = useState("")
   const greeting = timeOfDayGreeting()
@@ -98,8 +99,6 @@ export function GharargahHome(props: GharargahHomeProps) {
       })
       .filter((row): row is { group: HomeProjectGroup; sessions: SessionCardModel[] } => row !== null)
   }, [groups, query])
-
-  const primaryRootUri = groups[0]?.rootUri ?? ""
 
   return (
     <div
@@ -157,26 +156,6 @@ export function GharargahHome(props: GharargahHomeProps) {
                   Add project
                 </Button>
               ) : null}
-              {primaryRootUri ? (
-                <NewSessionMenu
-                  rootUri={primaryRootUri}
-                  onNewTerminal={onNewTerminal}
-                  onLaunchAgentTerminal={onLaunchAgentTerminal}
-                  align="end"
-                  trigger={
-                    <Button
-                      type="button"
-                      size="sm"
-                      data-gharargah-home-new-agent
-                      className="gap-1.5"
-                    >
-                      <Sparkles className="size-3.5" />
-                      New agent
-                      <ChevronDown className="size-3 opacity-80" />
-                    </Button>
-                  }
-                />
-              ) : null}
             </div>
           </div>
         </header>
@@ -219,6 +198,7 @@ export function GharargahHome(props: GharargahHomeProps) {
                 onOpenInApp={onOpenInApp}
                 onRemoveProject={onRemoveProject}
                 onKillTerminal={onKillTerminal}
+                onOpenTodos={onOpenTodos}
               />
             ))}
           </div>

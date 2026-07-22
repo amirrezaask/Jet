@@ -6,7 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "test": "tsx --test src/resolve-tab-workspace.test.ts"
+    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",

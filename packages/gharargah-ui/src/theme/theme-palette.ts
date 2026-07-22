@@ -8,6 +8,7 @@ import type {
 export type ColorScheme = "dark" | "light"
 
 type ThemeFamily =
+  | "Default"
   | "Ayu"
   | "Everforest"
   | "Gruvbox"

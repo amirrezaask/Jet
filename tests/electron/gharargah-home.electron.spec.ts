@@ -19,6 +19,8 @@ test.describe("gharargah mission home", () => {
       await expectSelectorVisible(page, "[data-gharargah-home]")
       await expectSelectorVisible(page, "[data-gharargah-shell='home']")
       await expectLocatorCount(page.locator("[data-gharargah-home-metrics]"), 0)
+      await expectLocatorCount(page.locator("[data-gharargah-home-new-agent]"), 0)
+      await expectLocatorCount(page.getByRole("button", { name: "New agent" }), 0)
       await expectLocatorContainsText(page.locator("[data-gharargah-home]"), /Here.?s what.?s running today/)
       await expect
         .poll(async () => {

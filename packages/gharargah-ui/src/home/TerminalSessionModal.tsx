@@ -1,5 +1,5 @@
 import type { KeyboardEvent, ReactNode } from "react"
-import { GitBranch, SquareTerminal, XIcon, FileCode2 } from "lucide-react"
+import { Columns3, GitBranch, SquareTerminal, XIcon, FileCode2 } from "lucide-react"
 import {
   Dialog,
   DialogClose,
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
 
-export type SessionDialogMode = "terminal" | "editor" | "git"
+export type SessionDialogMode = "terminal" | "editor" | "git" | "todos"
 
 export type TerminalSessionModalProps = {
   open: boolean
@@ -25,6 +25,7 @@ export type TerminalSessionModalProps = {
   editor: ReactNode
   terminal: ReactNode
   git: ReactNode
+  todos: ReactNode
 }
 
 /** @deprecated Session list removed from dialog; keep export for test migration. */
@@ -43,6 +44,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     editor,
     terminal,
     git,
+    todos,
   } = props
 
   return (
@@ -71,6 +73,14 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
               document
                 .querySelector<HTMLElement>(
                   "[data-gharargah-git-workspace] button:not([disabled]), [data-gharargah-git-workspace] select:not([disabled])",
+                )
+                ?.focus()
+              return
+            }
+            if (mode === "todos") {
+              document
+                .querySelector<HTMLElement>(
+                  "[data-gharargah-todo-board] [data-gharargah-todo-column-add], [data-gharargah-todo-board] button",
                 )
                 ?.focus()
               return
@@ -110,22 +120,32 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             className="pointer-events-auto absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/50 bg-card/40 p-0.5 shadow-[inset_0_1px_0_color-mix(in_srgb,white_8%,transparent)] backdrop-blur-md"
           >
             <ModeTab
+              mode="terminal"
               active={mode === "terminal"}
               label="Terminal"
               icon={<SquareTerminal className="size-3.5" aria-hidden />}
               onSelect={() => onModeChange("terminal")}
             />
             <ModeTab
+              mode="editor"
               active={mode === "editor"}
               label="Editor"
               icon={<FileCode2 className="size-3.5" aria-hidden />}
               onSelect={() => onModeChange("editor")}
             />
             <ModeTab
+              mode="git"
               active={mode === "git"}
               label="Git"
               icon={<GitBranch className="size-3.5" aria-hidden />}
               onSelect={() => onModeChange("git")}
+            />
+            <ModeTab
+              mode="todos"
+              active={mode === "todos"}
+              label="TODOs"
+              icon={<Columns3 className="size-3.5" aria-hidden />}
+              onSelect={() => onModeChange("todos")}
             />
           </div>
 
@@ -205,6 +225,22 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           >
             {mode === "git" ? git : null}
           </div>
+          <div
+            id="gharargah-session-pane-todos"
+            role="tabpanel"
+            aria-labelledby="gharargah-session-tab-todos"
+            data-gharargah-terminal-modal-stage=""
+            data-gharargah-session-pane="todos"
+            data-active={mode === "todos" ? "" : undefined}
+            hidden={mode !== "todos"}
+            aria-hidden={mode !== "todos"}
+            className={cn(
+              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden",
+              mode === "todos" ? "z-10" : "pointer-events-none z-0",
+            )}
+          >
+            {mode === "todos" ? todos : null}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -212,21 +248,22 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
 }
 
 function ModeTab(props: {
+  mode: SessionDialogMode
   active: boolean
   label: string
   icon: ReactNode
   onSelect: () => void
 }) {
-  const { active, label, icon, onSelect } = props
+  const { mode, active, label, icon, onSelect } = props
   return (
     <button
       type="button"
       role="tab"
       aria-selected={active}
-      aria-controls={`gharargah-session-pane-${label.toLowerCase()}`}
-      id={`gharargah-session-tab-${label.toLowerCase()}`}
+      aria-controls={`gharargah-session-pane-${mode}`}
+      id={`gharargah-session-tab-${mode}`}
       tabIndex={active ? 0 : -1}
-      data-gharargah-session-mode-tab={label.toLowerCase()}
+      data-gharargah-session-mode-tab={mode}
       data-active={active ? "" : undefined}
       className={cn(
         "inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-2xs font-medium tracking-wide transition-[color,background-color,box-shadow]",

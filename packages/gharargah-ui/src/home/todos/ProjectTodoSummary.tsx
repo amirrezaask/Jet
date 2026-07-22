@@ -6,13 +6,12 @@ export type ProjectTodoSummaryProps = {
   projectId: string
   total: number
   done: number
-  open: boolean
-  onOpenDrawer: () => void
+  onOpenTodos?: () => void
   className?: string
 }
 
 export function ProjectTodoSummary(props: ProjectTodoSummaryProps) {
-  const { projectName, projectId, total, done, open, onOpenDrawer, className } = props
+  const { projectName, projectId, total, done, onOpenTodos, className } = props
   const label =
     total === 0
       ? "0 todos"
@@ -25,6 +24,7 @@ export function ProjectTodoSummary(props: ProjectTodoSummaryProps) {
       data-gharargah-todo-summary
       data-todo-count={total}
       data-todo-done={done}
+      data-project-id={projectId}
       className={cn("flex shrink-0 items-center gap-1.5", className)}
     >
       <button
@@ -34,12 +34,11 @@ export function ProjectTodoSummary(props: ProjectTodoSummaryProps) {
           "flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-3xs text-muted-foreground",
           "outline-none transition-colors hover:bg-muted/40 hover:text-foreground",
           "focus-visible:ring-[3px] focus-visible:ring-ring/40",
-          open && "bg-muted/40 text-foreground",
+          !onOpenTodos && "pointer-events-none",
         )}
-        aria-expanded={open}
-        aria-controls={`gharargah-todo-drawer-${projectId}`}
-        aria-label={`Todos for ${projectName}: ${label}. Open todo drawer.`}
-        onClick={onOpenDrawer}
+        aria-label={`Todos for ${projectName}: ${label}. Open TODOs board.`}
+        disabled={!onOpenTodos}
+        onClick={() => onOpenTodos?.()}
       >
         <span
           className="font-mono tabular-nums tracking-wide"

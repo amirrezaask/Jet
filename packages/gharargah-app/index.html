@@ -14,13 +14,18 @@
       (function () {
         try {
           var raw = localStorage.getItem("jet-color-scheme")
-          var legacy = raw ? null : localStorage.getItem("jet-theme-id")
+          var themeId = localStorage.getItem("jet-theme-id") || ""
+          var legacy = raw ? null : themeId
           var scheme = raw === "light" || raw === "dark"
             ? raw
             : legacy && /light/i.test(legacy) ? "light" : "dark"
           if (scheme === "dark") document.documentElement.classList.add("dark")
+          document.documentElement.dataset.gharargahSurface = /^glass-/.test(themeId)
+            ? "glass"
+            : "default"
         } catch (_) {
           document.documentElement.classList.add("dark")
+          document.documentElement.dataset.gharargahSurface = "default"
         }
       })()
     </script>
