@@ -18,7 +18,7 @@ name = "gharargah-mock-acp"
 path = "src/bin/gharargah-mock_acp.rs"
 
 [dependencies]
-agent-client-protocol = "1.2"
+agent-client-protocol = "1.3"
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", features = ["serde"] }

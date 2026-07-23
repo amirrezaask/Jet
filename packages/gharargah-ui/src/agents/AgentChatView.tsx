@@ -184,7 +184,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
           expandAll={expandAll}
           onToggleAllDirectories={() => setExpandAll(value => !value)}
           onIsAtEndChange={isAtEnd => setShowScrollToBottom(!isAtEnd)}
-          onResolvePermission={(permissionId, decision) => void onResolvePermission?.({ permissionId, decision })}
+          onResolvePermission={(permissionId, decision, optionId) =>
+            void onResolvePermission?.({ permissionId, decision, optionId })
+          }
         />
 
         {showScrollToBottom ? (

@@ -43,13 +43,21 @@ export type AgentToolCall = {
   completedAt?: string | null
 }
 
+export type AgentPermissionOption = {
+  id: string
+  kind: "allow_once" | "allow_always" | "reject_once" | "reject_always" | "unknown"
+  label: string
+}
+
 export type AgentPermissionRequest = {
   id: string
   title: string
   description?: string | null
   scope?: string | null
-  options?: ReadonlyArray<"allow_once" | "allow_always" | "reject">
+  options?: ReadonlyArray<AgentPermissionOption | "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always">
   createdAt: string
+  sessionId?: string | null
+  status?: "pending" | "submitting" | "resolved" | "cancelled" | "rejected"
 }
 
 export type AgentPlanEntry = {
@@ -259,7 +267,9 @@ export type ResolveAgentPermissionInput = {
   workspaceRootPath: string
   threadId: string
   permissionId: string
-  decision: "allow_once" | "allow_always" | "reject"
+  /** Preferred: exact provider option id. */
+  optionId?: string
+  decision?: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always"
 }
 
 export type UpdateAgentThreadSettingsInput = {

@@ -160,13 +160,24 @@ function WorkingTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "
 
 function StructuredTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "structured" }>
-  onResolvePermission?: (permissionId: string, decision: "allow_once" | "allow_always" | "reject") => void
+  onResolvePermission?: (
+    permissionId: string,
+    decision: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always",
+    optionId?: string,
+  ) => void
 }) {
   const { item } = props.row
   if (item.kind === "thought") return <ThoughtBlock text={item.text} />
   if (item.kind === "tool_call") return <ToolCallCard toolCall={item.toolCall} />
   if (item.kind === "permission") {
-    return <PermissionCard permission={item.permission} onResolve={({ permissionId, decision }) => props.onResolvePermission?.(permissionId, decision)} />
+    return (
+      <PermissionCard
+        permission={item.permission}
+        onResolve={({ permissionId, decision, optionId }) =>
+          props.onResolvePermission?.(permissionId, decision ?? "reject", optionId)
+        }
+      />
+    )
   }
   if (item.kind === "plan") return <PlanCard plan={item.plan} />
   if (item.kind === "usage") return <UsageMeter usage={item.usage} />
@@ -178,7 +189,11 @@ function TimelineRowContent(props: {
   theme: "light" | "dark"
   expandAll: boolean
   onToggleAllDirectories: () => void
-  onResolvePermission?: (permissionId: string, decision: "allow_once" | "allow_always" | "reject") => void
+  onResolvePermission?: (
+    permissionId: string,
+    decision: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always",
+    optionId?: string,
+  ) => void
 }) {
   const { row, theme, expandAll, onToggleAllDirectories } = props
   return (
@@ -222,7 +237,11 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
   expandAll: boolean
   onToggleAllDirectories: () => void
   onIsAtEndChange?: (isAtEnd: boolean) => void
-  onResolvePermission?: (permissionId: string, decision: "allow_once" | "allow_always" | "reject") => void
+  onResolvePermission?: (
+    permissionId: string,
+    decision: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always",
+    optionId?: string,
+  ) => void
 }) {
   const {
     listRef: externalListRef,

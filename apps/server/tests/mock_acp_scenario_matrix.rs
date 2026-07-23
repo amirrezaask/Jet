@@ -7,6 +7,7 @@ use jet_server::host::acp::{
     mock_strict, AcpSupervisor, NormalizedEvent, SupervisorTurnRequest, TimelineItemKind,
 };
 use jet_server::mock_acp::Scenario;
+use serde_json::Value;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -84,6 +85,8 @@ async fn run_turn(
             prompt: prompt.to_string(),
             model,
             existing_session_id,
+            prefer_resume: false,
+            initial_sequence: 0,
             on_session,
             on_text,
             on_activity,
@@ -179,7 +182,23 @@ async fn matrix_tool_lifecycle() {
     .await
     .expect("tool");
     assert!(result.text.contains("Mock agent reply: tools"));
-    let tool_count = events
+    let tool_ids: HashSet<String> = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|(_, event)| match event {
+            NormalizedEvent::Timeline(item) if item.kind == TimelineItemKind::ToolCall => {
+                Some(item.id.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        tool_ids.len(),
+        1,
+        "tool lifecycle must reduce to one stable id, got {tool_ids:?}"
+    );
+    let tool_updates = events
         .lock()
         .unwrap()
         .iter()
@@ -190,7 +209,7 @@ async fn matrix_tool_lifecycle() {
             )
         })
         .count();
-    assert!(tool_count >= 2, "tool updates={tool_count}");
+    assert!(tool_updates >= 2, "tool updates={tool_updates}");
 }
 
 async fn permission_scenario(scenario: &str) {
@@ -224,8 +243,15 @@ async fn permission_scenario(scenario: &str) {
                 .or_else(|| item.payload.get("requestId"))
                 .and_then(|value| value.as_str())
                 .expect("permission id");
+            let option_id = item
+                .payload
+                .get("options")
+                .and_then(|value| value.as_array())
+                .and_then(|options| options.first())
+                .and_then(|option| option.get("id").and_then(|value| value.as_str()))
+                .unwrap_or("allow_once");
             supervisor_cb
-                .resolve_permission(id, "allow_once")
+                .resolve_permission(id, option_id)
                 .expect("resolve permission");
         }),
     )
@@ -470,6 +496,8 @@ async fn matrix_load_session() {
         .unwrap()
         .clone()
         .expect("session id from first turn");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_cb = events.clone();
     let texts = Arc::new(Mutex::new(Vec::<String>::new()));
     let texts_cb = texts.clone();
     let second = run_turn(
@@ -483,20 +511,34 @@ async fn matrix_load_session() {
         Arc::new(|_| {}),
         Arc::new(move |text| texts_cb.lock().unwrap().push(text.to_string())),
         Arc::new(|_| {}),
-        Arc::new(|_, _| {}),
+        Arc::new(move |seq, event| events_cb.lock().unwrap().push((seq, event))),
     )
     .await
     .expect("load_session second turn");
     assert!(second.text.contains("Mock agent reply: second turn"));
-    // Load replay must not paint into the live turn capture.
+    // Load replay MUST be captured before the load response returns.
+    let saw_replay = texts
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|text| text.contains("Mock replayed session message"))
+        || events.lock().unwrap().iter().any(|(_, event)| {
+            matches!(
+                event,
+                NormalizedEvent::Timeline(item)
+                    if item.kind == TimelineItemKind::Text
+                        && item
+                            .payload
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .is_some_and(|text| text.contains("Mock replayed session message"))
+            )
+        });
     assert!(
-        texts
-            .lock()
-            .unwrap()
-            .iter()
-            .all(|text| !text.contains("Mock replayed session message")),
-        "replay leaked into streamed text: {:?}",
-        texts.lock().unwrap()
+        saw_replay,
+        "expected load replay to be captured, texts={:?} events={:?}",
+        texts.lock().unwrap(),
+        events.lock().unwrap().len()
     );
 }
 
@@ -555,36 +597,58 @@ async fn matrix_terminal_roundtrip() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn matrix_multi_session() {
     install_mock_bin();
-    let supervisor = AcpSupervisor::new();
+    let supervisor = Arc::new(AcpSupervisor::new());
     let cwd = std::env::current_dir().unwrap();
     let sessions = Arc::new(Mutex::new(HashSet::<String>::new()));
+    let chunks = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+    let mut joins = Vec::new();
     for prompt in ["alpha", "beta"] {
+        let supervisor = supervisor.clone();
         let sessions_cb = sessions.clone();
-        let result = run_turn(
-            &supervisor,
-            "multi_session",
-            &format!("matrix-multi-{prompt}"),
-            prompt,
-            cwd.clone(),
-            None,
-            None,
-            Arc::new(move |session_id| {
-                sessions_cb.lock().unwrap().insert(session_id.to_string());
-            }),
-            Arc::new(|_| {}),
-            Arc::new(|_| {}),
-            Arc::new(|_, _| {}),
-        )
-        .await
-        .unwrap_or_else(|error| panic!("multi_session {prompt}: {error}"));
-        assert!(result.text.contains(&format!("Mock agent reply: {prompt}")));
+        let chunks_cb = chunks.clone();
+        let cwd = cwd.clone();
+        joins.push(tokio::spawn(async move {
+            let result = run_turn(
+                supervisor.as_ref(),
+                "multi_session",
+                &format!("matrix-multi-{prompt}"),
+                prompt,
+                cwd,
+                None,
+                None,
+                Arc::new(move |session_id| {
+                    sessions_cb.lock().unwrap().insert(session_id.to_string());
+                }),
+                Arc::new(move |text| {
+                    chunks_cb
+                        .lock()
+                        .unwrap()
+                        .push((prompt.to_string(), text.to_string()));
+                }),
+                Arc::new(|_| {}),
+                Arc::new(|_, _| {}),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("multi_session {prompt}: {error}"));
+            assert!(result.text.contains(&format!("Mock agent reply: {prompt}")));
+            result.session_id
+        }));
+    }
+    let mut ids = HashSet::new();
+    for join in joins {
+        ids.insert(join.await.expect("join"));
     }
     assert!(
-        sessions.lock().unwrap().len() >= 2,
-        "expected distinct ACP sessions, got {:?}",
+        ids.len() >= 2 && sessions.lock().unwrap().len() >= 2,
+        "expected concurrent distinct ACP sessions, got ids={ids:?} sessions={:?}",
         sessions.lock().unwrap()
+    );
+    let observed = chunks.lock().unwrap().clone();
+    assert!(
+        observed.len() >= 2,
+        "expected interleaved text callbacks from concurrent turns, got {observed:?}"
     );
 }

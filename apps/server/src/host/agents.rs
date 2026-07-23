@@ -1017,13 +1017,20 @@ fn ui_permission(payload: &Value) -> Value {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
+    let options = payload
+        .get("options")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     json!({
         "id": id,
         "title": payload.get("title").and_then(Value::as_str).unwrap_or("Permission required"),
         "description": payload.get("description").cloned().unwrap_or(Value::Null),
         "scope": payload.get("scope").cloned().unwrap_or(Value::Null),
-        "options": payload.get("options").cloned().unwrap_or(json!([])),
+        "options": options,
         "createdAt": created_at,
+        "sessionId": payload.get("sessionId").cloned().unwrap_or(Value::Null),
+        "toolCall": payload.get("toolCall").cloned().unwrap_or(Value::Null),
+        "status": "pending",
     })
 }
 
@@ -1221,6 +1228,18 @@ fn run_cursor_acp_turn(
         }
     };
     let thread_key = format!("{root_path}::{thread_id}");
+    let initial_sequence = AgentsHost::read_thread_value(root_path, thread_id)
+        .and_then(|thread| thread.get("acpSequence").and_then(Value::as_u64))
+        .unwrap_or(0);
+    let prefer_resume = AgentsHost::read_thread_value(root_path, thread_id)
+        .map(|thread| {
+            thread
+                .get("timeline")
+                .and_then(Value::as_array)
+                .map(|items| !items.is_empty())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
     let result = runtime.block_on(supervisor.run_turn(SupervisorTurnRequest {
         provider: profile,
         workspace_root: PathBuf::from(root_path),
@@ -1228,6 +1247,8 @@ fn run_cursor_acp_turn(
         prompt: prompt.to_string(),
         model,
         existing_session_id,
+        prefer_resume,
+        initial_sequence,
         on_session: {
             let app = app.clone();
             let root_path = root_path.to_string();
@@ -1304,10 +1325,21 @@ fn run_cursor_acp_turn(
                 }
 
                 let item_value = ui_timeline_item(&item);
+                let mut updated_items = Vec::new();
+                let mut created_items = Vec::new();
                 if let Some(timeline) = thread.get_mut("timeline").and_then(Value::as_array_mut) {
-                    timeline.push(item_value.clone());
+                    if let Some(existing) = timeline.iter_mut().find(|candidate| {
+                        candidate.get("id").and_then(Value::as_str) == Some(item.id.as_str())
+                    }) {
+                        *existing = item_value.clone();
+                        updated_items.push(item_value.clone());
+                    } else {
+                        timeline.push(item_value.clone());
+                        created_items.push(item_value.clone());
+                    }
                 } else {
                     thread["timeline"] = json!([item_value.clone()]);
+                    created_items.push(item_value.clone());
                 }
                 match item.kind {
                     TimelineItemKind::Permission => {
@@ -1319,10 +1351,18 @@ fn run_cursor_acp_turn(
                             .get_mut("pendingPermissions")
                             .and_then(Value::as_array_mut)
                         {
-                            pending.push(permission.clone());
+                            if let Some(existing) = pending.iter_mut().find(|candidate| {
+                                candidate.get("id").and_then(Value::as_str)
+                                    == permission.get("id").and_then(Value::as_str)
+                            }) {
+                                *existing = permission.clone();
+                            } else {
+                                pending.push(permission.clone());
+                            }
                         } else {
                             thread["pendingPermissions"] = json!([permission.clone()]);
                         }
+                        thread["status"] = json!("waiting_for_permission");
                         emit_host(
                             &app,
                             "agents:permissionRequest",
@@ -1375,17 +1415,25 @@ fn run_cursor_acp_turn(
                         "threadId": thread_id,
                         "sequence": sequence,
                         "updatedAt": updated_at,
-                        "created": [item_value],
+                        "created": created_items,
+                        "updated": updated_items,
                         "usage": thread.get("usage").cloned().unwrap_or(Value::Null),
                         "plan": thread.get("plan").cloned().unwrap_or(Value::Null),
                         "pendingPermissions": thread.get("pendingPermissions").cloned().unwrap_or(json!([])),
                         "status": thread.get("status").cloned().unwrap_or(json!("running")),
+                        "connection": thread.get("connection").cloned().unwrap_or(Value::Null),
                     })],
                 );
-                emit_host(&app, "agents:threadUpdated", vec![thread]);
             })
         },
     }))?;
+    // Persist connection snapshot onto the thread at turn boundaries only.
+    if let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) {
+        let snapshot = supervisor.connection_snapshot("cursor-acp");
+        thread["connection"] = connection_ui_from_snapshot(&snapshot);
+        let _ = AgentsHost::write_thread(root_path, &thread);
+        emit_host(app, "agents:threadUpdated", vec![thread]);
+    }
     persist_thread_activity(app, root_path, thread_id, None);
     if result.cancelled {
         update_assistant(
@@ -1394,8 +1442,8 @@ fn run_cursor_acp_turn(
             thread_id,
             assistant_id,
             Some(&result.text),
-            "error",
-            Some("Turn interrupted"),
+            "cancelled",
+            None,
         );
     } else {
         update_assistant(
@@ -1416,36 +1464,63 @@ fn map_permission_decision_to_option_id(
     decision: &str,
 ) -> Option<String> {
     let target_kinds: &[&str] = match decision {
-        "allow_once" => &["AllowOnce", "allow_once"],
-        "allow_always" => &["AllowAlways", "allow_always"],
-        "reject" | "reject_once" | "reject_always" => &[
-            "RejectOnce",
-            "RejectAlways",
-            "reject_once",
-            "reject_always",
-            "reject",
-        ],
-        _ => return None,
+        "allow_once" => &["allow_once"],
+        "allow_always" => &["allow_always"],
+        "reject_once" => &["reject_once"],
+        "reject_always" => &["reject_always"],
+        "reject" => &["reject_once", "reject_always", "reject"],
+        _ => {
+            // Exact option id passthrough.
+            return Some(decision.to_string());
+        }
     };
-    if let Some(option_ids) = pending.and_then(|value| value.get("optionIds")).and_then(Value::as_array)
-    {
-        for option in option_ids {
-            let kind = option.get("kind").and_then(Value::as_str).unwrap_or("");
-            let matches_kind = target_kinds.iter().any(|candidate| {
-                kind.eq_ignore_ascii_case(candidate) || kind.contains(candidate)
-            });
-            if matches_kind {
-                if let Some(id) = option.get("id").and_then(Value::as_str) {
-                    return Some(id.to_string());
-                }
+    let options = pending.and_then(|value| {
+        value
+            .get("options")
+            .or_else(|| value.get("optionIds"))
+            .and_then(Value::as_array)
+    })?;
+    for option in options {
+        let kind = option
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let matches_kind = target_kinds
+            .iter()
+            .any(|candidate| kind.eq_ignore_ascii_case(candidate));
+        if matches_kind {
+            if let Some(id) = option.get("id").and_then(Value::as_str) {
+                return Some(id.to_string());
             }
         }
+        // Decision may already be the option id.
+        if option.get("id").and_then(Value::as_str) == Some(decision) {
+            return Some(decision.to_string());
+        }
     }
-    // Fallback when pending option metadata is unavailable (tests / older clients).
-    Some(match decision {
-        "allow_always" => "allow_always".to_string(),
-        "reject" | "reject_once" | "reject_always" => "reject_once".to_string(),
-        _ => "allow_once".to_string(),
+    None
+}
+
+fn connection_ui_from_snapshot(snapshot: &super::acp::ProviderConnectionSnapshot) -> Value {
+    let status = match snapshot.state {
+        super::acp::ConnectionState::Ready => "connected",
+        super::acp::ConnectionState::Starting
+        | super::acp::ConnectionState::Initializing
+        | super::acp::ConnectionState::NotStarted => "connecting",
+        super::acp::ConnectionState::AuthenticationRequired
+        | super::acp::ConnectionState::Authenticating => "authenticating",
+        super::acp::ConnectionState::Restarting => "reconnecting",
+        super::acp::ConnectionState::Degraded
+        | super::acp::ConnectionState::Failed => "error",
+        super::acp::ConnectionState::Stopping
+        | super::acp::ConnectionState::Stopped => "disconnected",
+    };
+    json!({
+        "status": status,
+        "message": snapshot.detail.clone().or_else(|| snapshot.last_error.clone()),
+        "updatedAt": chrono::DateTime::from_timestamp_millis(snapshot.last_transition_at_ms as i64)
+            .unwrap_or_else(chrono::Utc::now)
+            .to_rfc3339(),
     })
 }
 
@@ -1752,6 +1827,21 @@ pub fn handle(
                     map_permission_decision_to_option_id(pending_permission.as_ref(), decision)
                 })
                 .ok_or("missing optionId")?;
+            // Validate option was advertised when pending metadata exists.
+            if let Some(pending) = pending_permission.as_ref() {
+                if let Some(options) = pending
+                    .get("options")
+                    .or_else(|| pending.get("optionIds"))
+                    .and_then(Value::as_array)
+                {
+                    let advertised = options.iter().any(|option| {
+                        option.get("id").and_then(Value::as_str) == Some(option_id.as_str())
+                    });
+                    if !options.is_empty() && !advertised {
+                        return Err("invalid_permission_option".to_string());
+                    }
+                }
+            }
             host.supervisor
                 .resolve_permission(request_id, &option_id)?;
             // Clear pending permission from thread when resolved.
@@ -1806,8 +1896,9 @@ pub fn handle(
                         })
                 })
                 .unwrap_or_else(|| "cursor-acp".to_string());
-            serde_json::to_value(host.supervisor.connection_snapshot(&provider_id))
-                .map_err(|error| error.to_string())
+            Ok(connection_ui_from_snapshot(
+                &host.supervisor.connection_snapshot(&provider_id),
+            ))
         }
         "agents:forceStopProvider" => {
             let input = args.first().cloned().unwrap_or(Value::Null);
@@ -1866,7 +1957,17 @@ pub fn handle(
                     }
                 })
                 .ok_or("missing connectionKey")?;
-            host.supervisor.list_sessions(&connection_key)
+            let cwd = input
+                .get("cwd")
+                .and_then(Value::as_str)
+                .map(PathBuf::from);
+            let cursor = input
+                .get("cursor")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let runtime = tokio::runtime::Handle::try_current()
+                .map_err(|_| "ACP requires the shared Tokio runtime".to_string())?;
+            runtime.block_on(host.supervisor.list_sessions(&connection_key, cwd, cursor))
         }
         "agents:authenticate" => {
             let input = args.first().cloned().unwrap_or(Value::Null);
@@ -1891,7 +1992,9 @@ pub fn handle(
                 })
                 .ok_or("missing connectionKey")?;
             let method_id = input.get("methodId").and_then(Value::as_str);
-            host.supervisor.authenticate(&connection_key, method_id)?;
+            let runtime = tokio::runtime::Handle::try_current()
+                .map_err(|_| "ACP requires the shared Tokio runtime".to_string())?;
+            runtime.block_on(host.supervisor.authenticate(&connection_key, method_id))?;
             Ok(Value::Null)
         }
         _ => Err(format!("unknown agents channel: {channel}")),

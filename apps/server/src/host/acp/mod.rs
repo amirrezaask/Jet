@@ -7,6 +7,7 @@ pub mod profiles;
 pub mod redaction;
 pub mod reducers;
 pub mod runtime_client;
+pub mod session_runtime;
 pub mod supervisor;
 pub mod terminal_handler;
 pub mod trace;

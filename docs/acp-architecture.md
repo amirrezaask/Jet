@@ -7,36 +7,44 @@ renderer → agents:* RPC / events → AgentsHost
          → AcpSupervisor → ConnectionPool → ACP stdio provider process
                                       ↕
                            ACP notifications / requests
+                                         ↓
+                              session_id → SessionRuntime
 ```
 
 ## Lifecycle
 
 `AcpSupervisor` rejects overlapping turns for a thread (`turn_already_running`), tracks a cancellation watch channel, keeps an in-memory connection snapshot/trace, and dispatches a `TurnJob`.
 
-`ConnectionPool` keys workers by `provider-id:workspace-path`. A worker owns one provider process and initialized JSON-RPC connection, initializes ACP v1 once, then serially receives jobs through a bounded Tokio channel (32). Sessions are created or loaded on that connection before each prompt. The host captures the application Tokio `Handle`; ACP work runs on that shared runtime even though the host starts a small blocking OS thread to bridge the synchronous host entry point.
+`ConnectionPool` keys workers by `provider-id:workspace-path`. A worker owns one provider process and initialized JSON-RPC connection (ACP v1 once). Turns for **different sessions run concurrently** on that connection; turns inside one session are exclusive (`TurnAlreadyRunning`). Every inbound notification/request is routed by ACP `session_id` into a `SessionRuntime` — there is no connection-global “current turn” handler.
 
-The client currently advertises `session.config_options`, filesystem read/write, and `terminal` capabilities. It handles ACP `terminal/create|output|wait_for_exit|kill|release` via a per-connection `TerminalHandler` (bounded 256KB output, workspace cwd containment). It sends `session/cancel` on cancellation and returns `provider_unresponsive_after_cancel` if the peer has not answered within 15 seconds. `agents:forceStopProvider` drops the connection-pool worker; `agents:listAcpSessions` / `close_session` are capability-gated stubs; `agents:authenticate` is a no-op when auth is not required.
+Session restore:
+
+- Prefer `session/resume` when advertised and local timeline already exists.
+- Else `session/load` with routing + capture registered **before** the request (replay is kept).
+- Never silently replace a missing/unloadable session with `session/new`; typed errors: `session_restore_unsupported`, `session_load_failed`, `session_resume_failed`.
+
+`agents:forceStopProvider` signals shutdown, cancels turns, settles pending permissions, drops the worker (SDK `ChildGuard` kills the process group), and bumps connection generation. Ignored cancel after the grace window marks the connection degraded and force-stops.
+
+Auth / list / close / delete / logout are capability-gated and implemented on the live connection (not stubs).
 
 ## Permission and filesystem bridge
 
-`session/request_permission` becomes a pending supervisor oneshot request and an `agents:permissionRequest` event. The host resolver accepts `{requestId, optionId}` and forwards the selected provider option. The current renderer sends `{permissionId, decision}` instead, so its permission cards do not yet resolve live ACP requests. Absent or dropped resolution cancels the request. There is no production auto-approval path.
+`session/request_permission` creates a pending oneshot, emits a sequenced timeline permission item with **full option objects** `{id, kind, label}`, and waits for `agents:resolvePermission` with an exact `optionId` (or a decision mapped only against advertised options). Unknown options cancel/reject — never invent approval IDs.
 
-`FsHandler` canonicalizes the workspace root and requested paths before every read/write, rejects relative paths and symlink escapes, and permits new files only under an already-canonicalized parent inside that root. It handles ACP `fs/read_text_file` and `fs/write_text_file`. `TerminalHandler` owns short-lived PTYs for ACP terminal methods with the same workspace-root containment.
+`FsHandler` / `TerminalHandler` resolve paths against the **session** cwd/root set.
 
 ## Events and persistence
 
-The live path streams text snapshots into legacy `messages`, writes the ACP session id, stores a transient activity label, and persists permission timeline entries. Thread JSON files under `<workspace>/.gharargah/agents/threads/` are authoritative. ACP-added fields are:
+Each `SessionRuntime` owns a monotonic `Arc<AtomicU64>` sequence allocator seeded from `thread.acpSequence` (never reset per turn). Tool calls reduce by `toolCallId`; thoughts/plans use stable stream ids. The host merges timeline items by id (`created` vs `updated` in `agents:structuredDelta`) and emits full `threadUpdated` mainly at turn boundaries.
 
-| Field | Current meaning |
+| Field | Meaning |
 |---|---|
-| `timeline` | Additive normalized-item array; currently permission items are persisted by the live supervisor callback. |
-| `pendingPermissions` | Permission payloads awaiting `agents:resolvePermission`. |
-| `usage` | Reserved persisted field; not populated by the live ACP update handler. |
-| `plan` | Reserved persisted field; not populated by the live ACP update handler. |
-| `acpSequence` | Reserved sequence field; permission callback currently writes `0`; sequenced structured deltas are not live. |
-
-`EventPipeline` provides monotonic sequence assignment and text coalescing, and `ProtocolTrace` provides bounded, redacted trace storage, but neither is currently connected to the `ConnectionPool` notification path. The supervisor inspector trace currently records only turn start/finish/error metadata.
+| `timeline` | Normalized items; tool/permission/plan/usage/thought/text |
+| `pendingPermissions` | Full option objects awaiting resolve |
+| `usage` / `plan` | Updated from ACP notifications |
+| `acpSequence` | Last applied structured sequence |
+| `connection` | UI connection status mapped from `ProviderConnectionSnapshot` |
 
 ## Test peer
 
-`gharargah-mock-acp` is a separate stdio ACP v1 binary. `GHARARGAH_AGENT_MOCK=1` routes normal agent turns through it; `GHARARGAH_AGENT_MOCK_LEGACY=1` additionally selects the old in-process fake stream. See `acp-mock-scenarios.md`.
+`gharargah-mock-acp` + `apps/server/tests/mock_acp_scenario_matrix.rs` + `acp_phase14_runtime.rs`.

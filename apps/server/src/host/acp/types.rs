@@ -52,6 +52,8 @@ pub enum StopReason {
     EndTurn,
     Cancelled,
     MaxTokens,
+    MaxTurnRequests,
+    Refusal,
     Error,
     TransportClosed,
     Unknown,

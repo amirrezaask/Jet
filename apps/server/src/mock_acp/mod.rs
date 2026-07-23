@@ -4,13 +4,18 @@ pub mod scenarios;
 pub use scenarios::Scenario;
 
 use agent_client_protocol::schema::v1::{
-    AgentCapabilities, AvailableCommand, AvailableCommandsUpdate, CancelNotification, ContentBlock,
-    ContentChunk, CreateTerminalRequest, Implementation, InitializeRequest, InitializeResponse,
-    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse, PermissionOption,
-    PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority, PlanEntryStatus, PromptRequest,
-    PromptResponse, ReadTextFileRequest, ReleaseTerminalRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionConfigSelectOptions, SessionNotification, SessionUpdate,
+    AgentAuthCapabilities, AgentCapabilities, AuthenticateRequest, AuthenticateResponse,
+    AuthMethod, AuthMethodAgent, AvailableCommand, AvailableCommandsUpdate, CancelNotification,
+    CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk, CreateTerminalRequest,
+    DeleteSessionRequest, DeleteSessionResponse, Implementation, InitializeRequest,
+    InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
+    LoadSessionResponse, LogoutCapabilities, LogoutRequest, LogoutResponse, NewSessionRequest,
+    NewSessionResponse, PermissionOption, PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority,
+    PlanEntryStatus, PromptRequest, PromptResponse, ReadTextFileRequest, ReleaseTerminalRequest,
+    RequestPermissionOutcome, RequestPermissionRequest, ResumeSessionRequest, ResumeSessionResponse,
+    SessionCapabilities, SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
+    SessionConfigSelectOption, SessionConfigSelectOptions, SessionDeleteCapabilities, SessionInfo,
+    SessionListCapabilities, SessionNotification, SessionResumeCapabilities, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, StopReason, TerminalOutputRequest,
     TextContent, ToolCall, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
     UsageUpdate, WaitForTerminalExitRequest,
@@ -97,6 +102,22 @@ impl MockState {
                 .as_deref()
                 .is_some_and(|value| value.split(',').any(|item| item.trim() == "load_session"))
     }
+
+    fn supports_resume_session(&self) -> bool {
+        self.scenario == Scenario::LoadSession
+            || self
+                .args
+                .capabilities
+                .as_deref()
+                .is_some_and(|value| value.split(',').any(|item| item.trim() == "resume"))
+    }
+
+    fn requires_auth(&self) -> bool {
+        self.args
+            .capabilities
+            .as_deref()
+            .is_some_and(|value| value.split(',').any(|item| item.trim() == "auth"))
+    }
 }
 
 pub async fn run(args: Args) -> anyhow::Result<()> {
@@ -139,15 +160,32 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
                             "gharargah-mock-acp supports ACP protocol V1 only",
                         ));
                     }
-                    let capabilities =
+                    let mut capabilities =
                         AgentCapabilities::new().load_session(state.supports_load_session());
-                    responder.respond(
-                        InitializeResponse::new(ProtocolVersion::V1)
-                            .agent_capabilities(capabilities)
-                            .agent_info(Implementation::new("gharargah-mock-acp", "0.1").title(
-                                format!("Gharargah Mock ACP ({})", state.args.provider_profile),
-                            )),
-                    )?;
+                    if state.supports_resume_session() || state.supports_load_session() {
+                        capabilities = capabilities.session_capabilities(
+                            SessionCapabilities::new()
+                                .list(SessionListCapabilities::new())
+                                .resume(SessionResumeCapabilities::new())
+                                .close(SessionCloseCapabilities::new())
+                                .delete(SessionDeleteCapabilities::new()),
+                        );
+                    }
+                    if state.requires_auth() {
+                        capabilities = capabilities
+                            .auth(AgentAuthCapabilities::new().logout(LogoutCapabilities::new()));
+                    }
+                    let mut response = InitializeResponse::new(ProtocolVersion::V1)
+                        .agent_capabilities(capabilities)
+                        .agent_info(Implementation::new("gharargah-mock-acp", "0.1").title(
+                            format!("Gharargah Mock ACP ({})", state.args.provider_profile),
+                        ));
+                    if state.requires_auth() {
+                        response = response.auth_methods(vec![AuthMethod::Agent(
+                            AuthMethodAgent::new("mock-token", "Mock token auth"),
+                        )]);
+                    }
+                    responder.respond(response)?;
                     if state.scenario == Scenario::ChaosMalformed
                         || state.args.fault.as_deref() == Some("malformed")
                     {
@@ -194,6 +232,78 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
                         )?;
                     }
                     responder.respond(LoadSessionResponse::new())
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                let state = state.clone();
+                async move |request: ResumeSessionRequest, responder, _connection| {
+                    state.session(request.session_id.0.as_ref());
+                    // Resume restores context without replaying history.
+                    responder.respond(ResumeSessionResponse::new())
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: AuthenticateRequest, responder, _connection| {
+                if request.method_id.0.as_ref() != "mock-token" {
+                    return Err(agent_client_protocol::util::internal_error(
+                        "unknown auth method",
+                    ));
+                }
+                responder.respond(AuthenticateResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |_request: LogoutRequest, responder, _connection| {
+                responder.respond(LogoutResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                let state = state.clone();
+                async move |_request: ListSessionsRequest, responder, _connection| {
+                    let sessions = state
+                        .sessions
+                        .lock()
+                        .expect("sessions")
+                        .keys()
+                        .map(|id| SessionInfo::new(id.clone(), std::env::current_dir().unwrap_or_default()))
+                        .collect();
+                    responder.respond(ListSessionsResponse::new(sessions))
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                let state = state.clone();
+                async move |request: CloseSessionRequest, responder, _connection| {
+                    state
+                        .sessions
+                        .lock()
+                        .expect("sessions")
+                        .remove(request.session_id.0.as_ref());
+                    responder.respond(CloseSessionResponse::new())
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                let state = state.clone();
+                async move |request: DeleteSessionRequest, responder, _connection| {
+                    state
+                        .sessions
+                        .lock()
+                        .expect("sessions")
+                        .remove(request.session_id.0.as_ref());
+                    responder.respond(DeleteSessionResponse::new())
                 }
             },
             agent_client_protocol::on_receive_request!(),

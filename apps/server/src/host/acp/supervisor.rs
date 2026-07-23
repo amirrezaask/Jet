@@ -1,12 +1,17 @@
-use super::connection_pool::{ConnectionPool, InitializedInfo, TurnJob};
+use super::connection_pool::{
+    map_stop_reason, ConnectionPool, InitializedInfo, TurnJob,
+};
 use super::profiles::ProviderProfile;
 use super::redaction::redact_json;
-use super::types::{ConnectionState, NormalizedEvent, ProviderConnectionSnapshot};
+use super::types::{
+    ConnectionState, NormalizedEvent, ProviderConnectionSnapshot, StopReason as LocalStopReason,
+};
 use agent_client_protocol::schema::v1::{RequestPermissionOutcome, RequestPermissionRequest};
 use futures_util::future::BoxFuture;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{oneshot, watch};
@@ -23,6 +28,8 @@ pub struct SupervisorTurnRequest {
     pub prompt: String,
     pub model: Option<String>,
     pub existing_session_id: Option<String>,
+    pub prefer_resume: bool,
+    pub initial_sequence: u64,
     pub on_session: Arc<dyn Fn(&str) + Send + Sync>,
     pub on_text: Arc<dyn Fn(&str) + Send + Sync>,
     pub on_activity: Arc<dyn Fn(&str) + Send + Sync>,
@@ -33,6 +40,7 @@ pub struct SupervisorTurnResult {
     pub session_id: String,
     pub text: String,
     pub cancelled: bool,
+    pub stop_reason: LocalStopReason,
 }
 
 struct ActiveTurn {
@@ -44,8 +52,13 @@ struct ConnectionRecord {
     snapshot: ProviderConnectionSnapshot,
     trace: Vec<Value>,
     auth_required: bool,
+    auth_method_ids: Vec<String>,
     supports_list_sessions: bool,
     supports_close_session: bool,
+    supports_delete_session: bool,
+    supports_resume_session: bool,
+    supports_load_session: bool,
+    supports_logout: bool,
 }
 
 #[derive(Clone, Default)]
@@ -91,8 +104,13 @@ impl AcpSupervisor {
                     },
                     trace: Vec::new(),
                     auth_required: false,
+                    auth_method_ids: Vec::new(),
                     supports_list_sessions: false,
                     supports_close_session: false,
+                    supports_delete_session: false,
+                    supports_resume_session: false,
+                    supports_load_session: false,
+                    supports_logout: false,
                 });
             record.snapshot.state = ConnectionState::Starting;
             record.snapshot.last_transition_at_ms = now_ms();
@@ -149,6 +167,8 @@ impl AcpSupervisor {
             user_on_event(sequence, event);
         });
         let event = on_event.clone();
+        let sequence = Arc::new(AtomicU64::new(request.initial_sequence));
+        let sequence_for_perm = sequence.clone();
         let on_permission: Arc<
             dyn Fn(RequestPermissionRequest) -> BoxFuture<'static, RequestPermissionOutcome>
                 + Send
@@ -156,25 +176,35 @@ impl AcpSupervisor {
         > = Arc::new(move |permission| {
             let request_id = Uuid::new_v4().to_string();
             let (tx, rx) = oneshot::channel();
-            pending
-                .lock()
-                .expect("ACP permission lock poisoned")
-                .insert(request_id.clone(), tx);
-            let ui_options: Vec<String> = permission
+            if let Ok(mut guard) = pending.lock() {
+                guard.insert(request_id.clone(), tx);
+            } else {
+                return Box::pin(async { RequestPermissionOutcome::Cancelled });
+            }
+            let options: Vec<Value> = permission
                 .options
                 .iter()
-                .map(|option| match option.kind {
-                    agent_client_protocol::schema::v1::PermissionOptionKind::AllowOnce => {
-                        "allow_once".to_string()
-                    }
-                    agent_client_protocol::schema::v1::PermissionOptionKind::AllowAlways => {
-                        "allow_always".to_string()
-                    }
-                    agent_client_protocol::schema::v1::PermissionOptionKind::RejectOnce
-                    | agent_client_protocol::schema::v1::PermissionOptionKind::RejectAlways => {
-                        "reject".to_string()
-                    }
-                    _ => option.option_id.0.to_string(),
+                .map(|option| {
+                    let kind = match option.kind {
+                        agent_client_protocol::schema::v1::PermissionOptionKind::AllowOnce => {
+                            "allow_once"
+                        }
+                        agent_client_protocol::schema::v1::PermissionOptionKind::AllowAlways => {
+                            "allow_always"
+                        }
+                        agent_client_protocol::schema::v1::PermissionOptionKind::RejectOnce => {
+                            "reject_once"
+                        }
+                        agent_client_protocol::schema::v1::PermissionOptionKind::RejectAlways => {
+                            "reject_always"
+                        }
+                        _ => "unknown",
+                    };
+                    json!({
+                        "id": option.option_id.0.as_ref(),
+                        "kind": kind,
+                        "label": option.name,
+                    })
                 })
                 .collect();
             let title = permission
@@ -183,20 +213,7 @@ impl AcpSupervisor {
                 .title
                 .clone()
                 .unwrap_or_else(|| "Permission required".to_string());
-            let option_ids: Vec<Value> = permission
-                .options
-                .iter()
-                .map(|option| {
-                    json!({
-                        "id": option.option_id.0.as_ref(),
-                        "kind": format!("{:?}", option.kind),
-                        "name": option.name,
-                    })
-                })
-                .collect();
-            // Use a high sequence so App.tsx's acpSequence gate does not drop
-            // this update after earlier pipeline events (tool_call, etc.).
-            let permission_sequence = now_ms().max(1);
+            let permission_sequence = sequence_for_perm.fetch_add(1, Ordering::AcqRel) + 1;
             event(
                 permission_sequence,
                 NormalizedEvent::Timeline(super::types::TimelineItem {
@@ -210,21 +227,21 @@ impl AcpSupervisor {
                         "title": title,
                         "description": null,
                         "scope": null,
-                        "options": ui_options,
-                        "optionIds": option_ids,
+                        "options": options,
                         "createdAt": chrono::Utc::now().to_rfc3339(),
                         "toolCall": permission.tool_call,
+                        "sessionId": permission.session_id.0.as_ref(),
                     }),
                 }),
             );
             Box::pin(async move {
                 match rx.await {
-                    Ok(option_id) => RequestPermissionOutcome::Selected(
+                    Ok(option_id) if !option_id.is_empty() => RequestPermissionOutcome::Selected(
                         agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(
                             option_id,
                         ),
                     ),
-                    Err(_) => RequestPermissionOutcome::Cancelled,
+                    _ => RequestPermissionOutcome::Cancelled,
                 }
             })
         });
@@ -236,8 +253,13 @@ impl AcpSupervisor {
                 if let Ok(mut connections) = connections_for_init.lock() {
                     if let Some(record) = connections.get_mut(&connection_key_for_init) {
                         record.auth_required = info.auth_required;
+                        record.auth_method_ids = info.auth_method_ids.clone();
                         record.supports_list_sessions = info.supports_list_sessions;
                         record.supports_close_session = info.supports_close_session;
+                        record.supports_delete_session = info.supports_delete_session;
+                        record.supports_resume_session = info.supports_resume_session;
+                        record.supports_load_session = info.supports_load_session;
+                        record.supports_logout = info.supports_logout;
                         record.snapshot.last_transition_at_ms = now_ms();
                         if info.auth_required {
                             record.snapshot.state = ConnectionState::AuthenticationRequired;
@@ -263,6 +285,9 @@ impl AcpSupervisor {
                     model: request.model,
                     turn_id: request.thread_key.clone(),
                     existing_session_id: request.existing_session_id,
+                    prefer_resume: request.prefer_resume,
+                    initial_sequence: request.initial_sequence,
+                    sequence,
                     cancel: cancel_rx,
                     on_session: request.on_session,
                     on_text: request.on_text,
@@ -287,6 +312,7 @@ impl AcpSupervisor {
             .get_mut(&connection_key)
             .expect("connection inserted");
         record.snapshot.last_transition_at_ms = now_ms();
+        record.snapshot.process_id = self.pool.process_id(&connection_key);
         match result {
             Ok(result) => {
                 if !record.auth_required {
@@ -295,16 +321,24 @@ impl AcpSupervisor {
                 record
                     .trace
                     .push(json!({"event":"turn_finish","sessionId":result.session_id}));
+                let stop_reason = map_stop_reason(result.stop_reason);
                 Ok(SupervisorTurnResult {
                     session_id: result.session_id,
                     text: result.text,
-                    cancelled: matches!(
-                        result.stop_reason,
-                        agent_client_protocol::schema::v1::StopReason::Cancelled
-                    ),
+                    cancelled: matches!(stop_reason, LocalStopReason::Cancelled),
+                    stop_reason,
                 })
             }
             Err(error) => {
+                if error == "provider_unresponsive_after_cancel" {
+                    record.snapshot.state = ConnectionState::Degraded;
+                    record.snapshot.last_error = Some(error.clone());
+                    record.snapshot.restart_count =
+                        record.snapshot.restart_count.saturating_add(1);
+                    drop(connections);
+                    let _ = self.force_stop_connection(&connection_key);
+                    return Err(error);
+                }
                 record.snapshot.state = ConnectionState::Degraded;
                 record.snapshot.last_error = Some(error.clone());
                 record
@@ -315,7 +349,7 @@ impl AcpSupervisor {
         }
     }
 
-    /// Drop the long-lived worker for `connection_key` so the provider process exits.
+    /// Drop the long-lived worker and kill the provider process (via SDK ChildGuard).
     pub fn force_stop_connection(&self, connection_key: &str) -> Result<(), String> {
         let thread_keys: Vec<String> = self
             .active
@@ -328,6 +362,12 @@ impl AcpSupervisor {
         for key in &thread_keys {
             self.cancel_turn(key);
         }
+        // Settle outstanding permission waiters as cancelled.
+        if let Ok(mut permissions) = self.permissions.lock() {
+            for (_, sender) in permissions.drain() {
+                let _ = sender.send(String::new());
+            }
+        }
         if let Ok(mut active) = self.active.lock() {
             for key in thread_keys {
                 active.remove(&key);
@@ -337,6 +377,7 @@ impl AcpSupervisor {
         if let Ok(mut connections) = self.connections.lock() {
             if let Some(record) = connections.get_mut(connection_key) {
                 record.snapshot.state = ConnectionState::Stopped;
+                record.snapshot.process_id = None;
                 record.snapshot.last_transition_at_ms = now_ms();
                 record
                     .trace
@@ -346,9 +387,12 @@ impl AcpSupervisor {
         Ok(())
     }
 
-    /// Capability-gated stub: returns `unsupported_capability` unless the agent
-    /// advertised `sessionCapabilities.list`.
-    pub fn list_sessions(&self, connection_key: &str) -> Result<Value, String> {
+    pub async fn list_sessions(
+        &self,
+        connection_key: &str,
+        cwd: Option<PathBuf>,
+        cursor: Option<String>,
+    ) -> Result<Value, String> {
         let supports = self
             .connections
             .lock()
@@ -366,12 +410,16 @@ impl AcpSupervisor {
         if !supports {
             return Err("unsupported_capability".to_string());
         }
-        Err("session_list_not_implemented".to_string())
+        self.pool
+            .list_sessions(connection_key, cwd, cursor)
+            .await
     }
 
-    /// Capability-gated stub: returns `unsupported_capability` unless the agent
-    /// advertised `sessionCapabilities.close`.
-    pub fn close_session(&self, connection_key: &str, _session_id: &str) -> Result<(), String> {
+    pub async fn close_session(
+        &self,
+        connection_key: &str,
+        session_id: &str,
+    ) -> Result<(), String> {
         let supports = self
             .connections
             .lock()
@@ -389,30 +437,116 @@ impl AcpSupervisor {
         if !supports {
             return Err("unsupported_capability".to_string());
         }
-        Err("session_close_not_implemented".to_string())
+        self.pool
+            .close_session(connection_key, session_id.to_string())
+            .await
     }
 
-    /// Auth stub: no-op success when auth is not required; otherwise clear error.
-    pub fn authenticate(
+    pub async fn delete_session(
         &self,
         connection_key: &str,
-        _method_id: Option<&str>,
+        session_id: &str,
     ) -> Result<(), String> {
-        let auth_required = self
+        let supports = self
             .connections
             .lock()
             .map_err(|_| "ACP connection lock poisoned")?
             .get(connection_key)
-            .map(|record| record.auth_required)
-            .or_else(|| Some(self.pool.connection_meta(connection_key).auth_required))
+            .map(|record| record.supports_delete_session)
             .unwrap_or(false);
-        if !auth_required {
+        if !supports {
+            return Err("unsupported_capability".to_string());
+        }
+        self.pool
+            .delete_session(connection_key, session_id.to_string())
+            .await
+    }
+
+    pub async fn authenticate(
+        &self,
+        connection_key: &str,
+        method_id: Option<&str>,
+    ) -> Result<(), String> {
+        let (auth_required, methods) = {
+            let connections = self
+                .connections
+                .lock()
+                .map_err(|_| "ACP connection lock poisoned")?;
+            let record = connections.get(connection_key);
+            let meta = self.pool.connection_meta(connection_key);
+            (
+                record
+                    .map(|record| record.auth_required)
+                    .unwrap_or(meta.auth_required),
+                record
+                    .map(|record| record.auth_method_ids.clone())
+                    .unwrap_or(meta.auth_method_ids),
+            )
+        };
+        if !auth_required && methods.is_empty() {
             return Ok(());
         }
-        Err("authenticate_not_implemented".to_string())
+        let method_id = method_id
+            .map(str::to_string)
+            .or_else(|| methods.first().cloned())
+            .ok_or_else(|| "authenticate_method_required".to_string())?;
+        if !methods.is_empty() && !methods.iter().any(|id| id == &method_id) {
+            return Err("authenticate_unknown_method".to_string());
+        }
+        if let Ok(mut connections) = self.connections.lock() {
+            if let Some(record) = connections.get_mut(connection_key) {
+                record.snapshot.state = ConnectionState::Authenticating;
+                record.snapshot.last_transition_at_ms = now_ms();
+            }
+        }
+        let result = self.pool.authenticate(connection_key, method_id).await;
+        if let Ok(mut connections) = self.connections.lock() {
+            if let Some(record) = connections.get_mut(connection_key) {
+                record.snapshot.last_transition_at_ms = now_ms();
+                match &result {
+                    Ok(()) => {
+                        record.auth_required = false;
+                        record.snapshot.state = ConnectionState::Ready;
+                        record.snapshot.detail = None;
+                    }
+                    Err(error) => {
+                        record.snapshot.state = ConnectionState::AuthenticationRequired;
+                        record.snapshot.last_error = Some(error.clone());
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    pub async fn logout(&self, connection_key: &str) -> Result<(), String> {
+        let supports = self
+            .connections
+            .lock()
+            .map_err(|_| "ACP connection lock poisoned")?
+            .get(connection_key)
+            .map(|record| record.supports_logout)
+            .unwrap_or(false);
+        if !supports {
+            return Err("unsupported_capability".to_string());
+        }
+        let result = self.pool.logout(connection_key).await;
+        if result.is_ok() {
+            if let Ok(mut connections) = self.connections.lock() {
+                if let Some(record) = connections.get_mut(connection_key) {
+                    record.auth_required = true;
+                    record.snapshot.state = ConnectionState::AuthenticationRequired;
+                    record.snapshot.last_transition_at_ms = now_ms();
+                }
+            }
+        }
+        result
     }
 
     pub fn resolve_permission(&self, request_id: &str, option_id: &str) -> Result<(), String> {
+        if option_id.is_empty() {
+            return Err("invalid_permission_option".to_string());
+        }
         let sender = self
             .permissions
             .lock()
@@ -433,6 +567,14 @@ impl AcpSupervisor {
         {
             let _ = turn.send(true);
         }
+        // Drop unresolved permissions for this turn by cancelling all — host
+        // clears pendingPermissions on interrupt; settle waiters so provider unblocks.
+        if let Ok(mut permissions) = self.permissions.lock() {
+            let drained: Vec<_> = permissions.drain().collect();
+            for (_, sender) in drained {
+                let _ = sender.send(String::new());
+            }
+        }
     }
 
     pub fn connection_snapshot(&self, provider_id: &str) -> ProviderConnectionSnapshot {
@@ -447,9 +589,6 @@ impl AcpSupervisor {
                 if exact.is_some() {
                     return exact;
                 }
-                // Mock runs use profile id `mock-strict` while the UI still
-                // addresses the catalog agent as `cursor-acp`. Fall back to any
-                // Ready connection, then any live connection.
                 connections
                     .values()
                     .find(|record| matches!(record.snapshot.state, ConnectionState::Ready))
@@ -482,8 +621,6 @@ impl AcpSupervisor {
                         "entries": record.trace,
                     }));
                 }
-                // Merge all connection traces when the requested provider id
-                // does not match (e.g. UI asks for cursor-acp, mock is mock-strict).
                 let mut entries = Vec::new();
                 let mut resolved_provider = provider_id.to_string();
                 for record in connections.values() {

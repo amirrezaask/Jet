@@ -2052,7 +2052,7 @@ export function GharargahApp() {
                             threadId: activeAgentThread.id,
                           })
                         }}
-                        onResolvePermission={async ({ permissionId, decision }) => {
+                        onResolvePermission={async ({ permissionId, decision, optionId }) => {
                           if (!activeAgentThread) return
                           await window.gharargah?.agents?.resolvePermission?.({
                             workspaceRootUri: activeAgentThread.workspaceRootUri,
@@ -2060,6 +2060,7 @@ export function GharargahApp() {
                             threadId: activeAgentThread.id,
                             permissionId,
                             decision,
+                            optionId,
                           })
                         }}
                         onSelectionChange={(agentId, model) => {
