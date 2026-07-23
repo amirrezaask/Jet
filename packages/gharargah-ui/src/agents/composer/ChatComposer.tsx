@@ -1,5 +1,14 @@
-import type { AgentProvidersState } from "@gharargah/agents"
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
+import type { AgentAvailableCommand, AgentProvidersState } from "@gharargah/agents"
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react"
+import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions.js"
 import {
@@ -18,6 +27,10 @@ import {
 } from "../providerInstances.js"
 import type { ProviderInstanceId } from "../t3contracts.js"
 
+function commandName(command: AgentAvailableCommand): string {
+  return command.name.startsWith("/") ? command.name : `/${command.name}`
+}
+
 export const ChatComposer = memo(function ChatComposer(props: {
   providers: AgentProvidersState | null
   instanceId: string | null
@@ -25,6 +38,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
   disabled?: boolean
   isRunning?: boolean
   isSendBusy?: boolean
+  commands?: ReadonlyArray<AgentAvailableCommand>
   onInstanceModelChange: (instanceId: string, model: string) => void
   onSend: (payload: { text: string; instanceId: string; model: string }) => Promise<void>
   onInterrupt?: () => void
@@ -33,6 +47,8 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const [draft, setDraft] = useState("")
   const [isComposerFocused, setIsComposerFocused] = useState(false)
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false)
   const promptRef = useRef("")
   const editorRef = useRef<ComposerPromptEditorHandle | null>(null)
   const composerFormRef = useRef<HTMLFormElement | null>(null)
@@ -62,6 +78,15 @@ export const ChatComposer = memo(function ChatComposer(props: {
     hasWideActions: false,
   })
 
+  const slashQueryActive = draft.startsWith("/") && !draft.includes("\n")
+  const filteredCommands = useMemo(() => {
+    if (!slashQueryActive || !props.commands?.length) return []
+    const query = draft.toLowerCase()
+    return props.commands.filter(command => commandName(command).toLowerCase().startsWith(query))
+  }, [draft, props.commands, slashQueryActive])
+
+  const showSlashMenu = slashMenuOpen && slashQueryActive && filteredCommands.length > 0
+
   const hasSendableContent = draft.trim().length > 0
   const canSend =
     hasSendableContent &&
@@ -82,10 +107,38 @@ export const ChatComposer = memo(function ChatComposer(props: {
     return () => observer.disconnect()
   }, [])
 
+  useLayoutEffect(() => {
+    if (!slashQueryActive || !props.commands?.length) {
+      setSlashMenuOpen(false)
+      setSlashIndex(0)
+      return
+    }
+    setSlashMenuOpen(true)
+    setSlashIndex(0)
+  }, [slashQueryActive, props.commands?.length, draft])
+
+  useLayoutEffect(() => {
+    if (slashIndex >= filteredCommands.length) {
+      setSlashIndex(Math.max(0, filteredCommands.length - 1))
+    }
+  }, [filteredCommands.length, slashIndex])
+
   const onPromptChange = useCallback((nextPrompt: string) => {
     promptRef.current = nextPrompt
     setDraft(nextPrompt)
   }, [])
+
+  const applySlashCommand = useCallback(
+    (command: AgentAvailableCommand) => {
+      const next = `${commandName(command)} `
+      promptRef.current = next
+      setDraft(next)
+      editorRef.current?.setText(next)
+      setSlashMenuOpen(false)
+      editorRef.current?.focus()
+    },
+    [],
+  )
 
   const submitComposer = useCallback(
     async (event?: { preventDefault?: () => void }) => {
@@ -106,13 +159,55 @@ export const ChatComposer = memo(function ChatComposer(props: {
 
   const onComposerCommandKey = useCallback(
     (event: KeyboardEvent) => {
+      if (showSlashMenu) {
+        if (event.key === "Enter" || event.key === "Tab") {
+          const command = filteredCommands[slashIndex]
+          if (command) {
+            applySlashCommand(command)
+            return true
+          }
+        }
+      }
       if (event.key === "Enter" && !event.shiftKey) {
         void submitComposer()
         return true
       }
       return false
     },
-    [submitComposer],
+    [applySlashCommand, filteredCommands, showSlashMenu, slashIndex, submitComposer],
+  )
+
+  const onSlashMenuKeyDownCapture = useCallback(
+    (event: ReactKeyboardEvent) => {
+      if (!showSlashMenu) return
+      if (event.key === "Escape") {
+        event.preventDefault()
+        event.stopPropagation()
+        setSlashMenuOpen(false)
+        return
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault()
+        event.stopPropagation()
+        setSlashIndex(index => (index + 1) % filteredCommands.length)
+        return
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault()
+        event.stopPropagation()
+        setSlashIndex(index => (index - 1 + filteredCommands.length) % filteredCommands.length)
+        return
+      }
+      if (event.key === "Tab") {
+        const command = filteredCommands[slashIndex]
+        if (command) {
+          event.preventDefault()
+          event.stopPropagation()
+          applySlashCommand(command)
+        }
+      }
+    },
+    [applySlashCommand, filteredCommands, showSlashMenu, slashIndex],
   )
 
   return (
@@ -137,7 +232,42 @@ export const ChatComposer = memo(function ChatComposer(props: {
           }}
         >
           <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
-            <div className="relative">
+            <div className="relative" onKeyDownCapture={onSlashMenuKeyDownCapture}>
+              {showSlashMenu ? (
+                <div
+                  data-testid="composer-slash-menu"
+                  role="listbox"
+                  className="absolute inset-x-0 bottom-full z-20 mb-1 max-h-48 overflow-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+                >
+                  {filteredCommands.map((command, index) => {
+                    const name = commandName(command)
+                    return (
+                      <Button
+                        key={name}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        role="option"
+                        aria-selected={index === slashIndex}
+                        data-gharargah-list-item=""
+                        className={cn(
+                          "h-auto w-full justify-start gap-2 px-2 py-1.5 font-normal",
+                          index === slashIndex && "bg-accent text-accent-foreground",
+                        )}
+                        onMouseEnter={() => setSlashIndex(index)}
+                        onClick={() => applySlashCommand(command)}
+                      >
+                        <span className="font-mono text-sm">{name}</span>
+                        {command.description ? (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {command.description}
+                          </span>
+                        ) : null}
+                      </Button>
+                    )
+                  })}
+                </div>
+              ) : null}
               <ComposerPromptEditor
                 editorRef={editorRef}
                 value={draft}

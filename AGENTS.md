@@ -343,7 +343,7 @@ Registered in `packages/jet-app/src/App.tsx`:
 - **Storage:** `.gharargah/agents/state.json` per workspace root (threads, messages, provider/model selection)
 - **Transport:** `window.gharargah.agents` via Tauri host invoke/events
 - **Drivers:** cursor / Claude / Codex probed from PATH in Rust host (`apps/gharargah/src-tauri/src/host/agents.rs`)
-- **Env:** `GHARARGAH_AGENT_MOCK=1` forces mock driver
+- **Env:** `GHARARGAH_AGENT_MOCK=1` launches the real stdio mock ACP process; `GHARARGAH_AGENT_MOCK_SCENARIO=<name>` selects scenario (default `echo`); `GHARARGAH_MOCK_ACP_BIN` overrides mock binary path; `GHARARGAH_AGENT_MOCK_LEGACY=1` uses the legacy in-process fake stream.
 - **Key files:** `packages/jet-agents/`, `packages/jet-ui/src/agents/`, `apps/gharargah/src-tauri/src/host/agents.rs`, `packages/jet-app/src/tabs/agent-*.tab.ts`
 - **Tests:** agent specs exist under `tests/electron/` but are excluded from `tauri-e2e` for now
 

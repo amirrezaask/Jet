@@ -9,11 +9,15 @@ import type {
 import type {
   AgentThread,
   AgentThreadDelta,
+  AgentStructuredDelta,
+  AgentPermissionRequest,
+  AgentConnectionState,
   AgentWorkspaceSnapshot,
   AgentProvidersState,
   AgentCatalogState,
   CreateAgentThreadInput,
   InterruptAgentTurnInput,
+  ResolveAgentPermissionInput,
   SendAgentMessageInput,
   SetAgentThreadArchivedInput,
   UpdateAgentThreadSettingsInput,
@@ -145,6 +149,7 @@ export type JetElectronAgents = {
   createThread(input: CreateAgentThreadInput): Promise<AgentThread>
   sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
   interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
+  resolvePermission?(input: ResolveAgentPermissionInput): Promise<void>
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
   updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
   listAgents(): Promise<AgentCatalogState>
@@ -154,6 +159,30 @@ export type JetElectronAgents = {
   refreshProviders?(): Promise<AgentProvidersState>
   onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
   onThreadDelta?(callback: (delta: AgentThreadDelta) => void): () => void
+  onPermissionRequest?(callback: (input: {
+    workspaceRootUri: string
+    threadId: string
+    permission: AgentPermissionRequest
+  }) => void): () => void
+  onStructuredDelta?(callback: (delta: AgentStructuredDelta) => void): () => void
+  getAcpTrace?(providerId?: string): Promise<unknown>
+  getConnectionState?(providerId?: string): Promise<AgentConnectionState | null>
+  forceStopProvider?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+  }): Promise<void>
+  listAcpSessions?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+  }): Promise<unknown>
+  authenticate?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+    methodId?: string
+  }): Promise<void>
 }
 
 export type JetElectronGit = {

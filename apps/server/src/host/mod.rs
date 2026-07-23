@@ -1,6 +1,7 @@
 use events::EventHub;
 use serde_json::Value;
 
+pub mod acp;
 pub mod acp_client;
 pub mod agents;
 pub mod events;

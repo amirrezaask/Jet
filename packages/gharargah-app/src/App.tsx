@@ -597,7 +597,17 @@ export function GharargahApp() {
                 defaultAgentDriverId(existing.agentId ?? session.agentId ?? "codex"),
               threadId: existing.id,
             })
-            setActiveAgentThread(existing)
+            // Prefer the in-memory thread when it is the same id and at least as
+            // fresh — avoids clobbering live ACP deltas with a stale read.
+            setActiveAgentThread(current => {
+              if (
+                current?.id === existing.id &&
+                (current.updatedAt ?? "") >= (existing.updatedAt ?? "")
+              ) {
+                return current
+              }
+              return existing
+            })
             return existing
           }
         }
@@ -639,7 +649,9 @@ export function GharargahApp() {
       setSessionMode("terminal")
       return
     }
-    setActiveAgentThread(null)
+    // Keep the in-memory thread across ensureSessionAgentThread identity churn so
+    // live ACP deltas are not dropped mid-turn. ensureSessionAgentThread itself
+    // reuses session.agentThreadId when present.
     void ensureSessionAgentThread(terminalModalTabId).catch(error => {
       showGharargahToast(error instanceof Error ? error.message : String(error), {
         variant: "destructive",
@@ -657,10 +669,16 @@ export function GharargahApp() {
       if (delta.threadId !== activeAgentThread.id) return
       setActiveAgentThread(current => {
         if (!current || current.id !== delta.threadId) return current
+        // Deltas may carry message-local streaming flags; do not clobber a
+        // terminal idle/error status with a transient running snapshot.
+        const nextStatus =
+          current.status === "idle" || current.status === "error" || current.status === "cancelled"
+            ? current.status
+            : delta.status
         return {
           ...current,
           updatedAt: delta.updatedAt,
-          status: delta.status,
+          status: nextStatus,
           lastError: delta.lastError,
           messages: current.messages.map(message =>
             message.id === delta.messageId
@@ -675,9 +693,49 @@ export function GharargahApp() {
         }
       })
     })
+    const offPermission = agents.onPermissionRequest?.(request => {
+      if (request.threadId !== activeAgentThread.id) return
+      setActiveAgentThread(current => {
+        if (!current || current.id !== request.threadId) return current
+        const pendingPermissions = [
+          ...(current.pendingPermissions ?? []).filter(item => item.id !== request.permission.id),
+          request.permission,
+        ]
+        return { ...current, pendingPermissions, status: "waiting_for_permission" }
+      })
+    })
+    const offStructuredDelta = agents.onStructuredDelta?.(delta => {
+      if (delta.threadId !== activeAgentThread.id) return
+      setActiveAgentThread(current => {
+        if (!current || current.id !== delta.threadId) return current
+        if ((current.acpSequence ?? -1) >= delta.sequence) return current
+        const timeline = [...(current.timeline ?? [])]
+        const replace = (item: NonNullable<typeof current.timeline>[number]) => {
+          const index = timeline.findIndex(candidate => candidate.id === item.id)
+          if (index === -1) timeline.push(item)
+          else timeline[index] = item
+        }
+        for (const item of delta.created ?? []) replace(item)
+        for (const item of delta.updated ?? []) replace(item)
+        return {
+          ...current,
+          timeline,
+          updatedAt: delta.updatedAt,
+          acpSequence: delta.sequence,
+          ...(delta.status ? { status: delta.status } : {}),
+          ...(delta.lastError !== undefined ? { lastError: delta.lastError } : {}),
+          ...(delta.pendingPermissions ? { pendingPermissions: delta.pendingPermissions } : {}),
+          ...(delta.usage !== undefined ? { usage: delta.usage } : {}),
+          ...(delta.plan !== undefined ? { plan: delta.plan } : {}),
+          ...(delta.connection !== undefined ? { connection: delta.connection } : {}),
+        }
+      })
+    })
     return () => {
       offUpdated?.()
       offDelta?.()
+      offPermission?.()
+      offStructuredDelta?.()
     }
   }, [activeAgentThread?.id])
 
@@ -1950,7 +2008,41 @@ export function GharargahApp() {
                             driverId: payload.driverId,
                             model: payload.model,
                           })
-                          if (next) setActiveAgentThread(next)
+                          if (!next) return
+                          // sendMessage returns the pre-turn snapshot. Live ACP
+                          // deltas (permissions, timeline, …) may already be on
+                          // current — do not clobber them when the RPC settles.
+                          setActiveAgentThread(current => {
+                            if (!current || current.id !== next.id) return next
+                            const pendingPermissions =
+                              (current.pendingPermissions?.length ?? 0) > 0
+                                ? current.pendingPermissions
+                                : next.pendingPermissions
+                            return {
+                              ...next,
+                              timeline:
+                                (current.timeline?.length ?? 0) > 0
+                                  ? current.timeline
+                                  : next.timeline,
+                              pendingPermissions,
+                              acpSequence: Math.max(
+                                current.acpSequence ?? -1,
+                                next.acpSequence ?? -1,
+                              ),
+                              activity: current.activity ?? next.activity,
+                              connection: current.connection ?? next.connection,
+                              usage: current.usage ?? next.usage,
+                              plan: current.plan ?? next.plan,
+                              availableCommands:
+                                current.availableCommands ?? next.availableCommands,
+                              status:
+                                (pendingPermissions?.length ?? 0) > 0
+                                  ? "waiting_for_permission"
+                                  : current.status === "waiting_for_permission"
+                                    ? current.status
+                                    : next.status,
+                            }
+                          })
                         }}
                         onInterrupt={() => {
                           if (!activeAgentThread) return
@@ -1958,6 +2050,16 @@ export function GharargahApp() {
                             workspaceRootUri: activeAgentThread.workspaceRootUri,
                             workspaceRootPath: activeAgentThread.workspaceRootPath,
                             threadId: activeAgentThread.id,
+                          })
+                        }}
+                        onResolvePermission={async ({ permissionId, decision }) => {
+                          if (!activeAgentThread) return
+                          await window.gharargah?.agents?.resolvePermission?.({
+                            workspaceRootUri: activeAgentThread.workspaceRootUri,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            threadId: activeAgentThread.id,
+                            permissionId,
+                            decision,
                           })
                         }}
                         onSelectionChange={(agentId, model) => {
@@ -1985,6 +2087,13 @@ export function GharargahApp() {
                           })
                         }}
                         onAgentsRefresh={() => void loadAgentCatalog(true)}
+                        onLoadAcpTrace={async () => {
+                          const agents = window.gharargah?.agents
+                          if (!agents?.getAcpTrace) return null
+                          // Catalog agent id is cursor-acp; mock connections use
+                          // mock-strict — supervisor export_trace falls back.
+                          return agents.getAcpTrace(activeAgentThread?.agentId ?? "cursor-acp")
+                        }}
                       />
                     </Suspense>
                   )

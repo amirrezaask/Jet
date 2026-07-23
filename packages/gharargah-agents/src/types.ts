@@ -1,6 +1,16 @@
 export type AgentMessageRole = "user" | "assistant" | "system"
 
-export type AgentThreadStatus = "idle" | "running" | "error"
+export type AgentThreadStatus =
+  | "idle"
+  | "connecting"
+  | "authenticating"
+  | "running"
+  | "waiting_for_permission"
+  | "cancelling"
+  | "cancelled"
+  | "disconnected"
+  | "reconnecting"
+  | "error"
 
 export type AgentFileChange = {
   path: string
@@ -18,6 +28,68 @@ export type AgentMessage = {
   diffPatch?: string
   changedFiles?: AgentFileChange[]
 }
+
+export type AgentToolCallStatus = "pending" | "running" | "completed" | "failed" | "cancelled"
+
+export type AgentToolCall = {
+  id: string
+  name: string
+  kind?: string
+  status: AgentToolCallStatus
+  input?: string
+  output?: string
+  error?: string | null
+  startedAt?: string | null
+  completedAt?: string | null
+}
+
+export type AgentPermissionRequest = {
+  id: string
+  title: string
+  description?: string | null
+  scope?: string | null
+  options?: ReadonlyArray<"allow_once" | "allow_always" | "reject">
+  createdAt: string
+}
+
+export type AgentPlanEntry = {
+  id: string
+  label: string
+  status: "pending" | "in_progress" | "completed" | "failed"
+}
+
+export type AgentPlan = {
+  id: string
+  entries: ReadonlyArray<AgentPlanEntry>
+  updatedAt: string
+}
+
+export type AgentUsage = {
+  used: number
+  limit?: number | null
+  unit?: string | null
+}
+
+export type AgentConnectionState = {
+  status: "connected" | "connecting" | "authenticating" | "disconnected" | "reconnecting" | "error"
+  message?: string | null
+  updatedAt: string
+}
+
+export type AgentAvailableCommand = {
+  name: string
+  description?: string
+}
+
+export type AgentTimelineItem =
+  | { id: string; kind: "user" | "assistant" | "system"; text: string; createdAt: string; updatedAt?: string; streaming?: boolean }
+  | { id: string; kind: "thought"; text: string; createdAt: string }
+  | { id: string; kind: "tool_call"; toolCall: AgentToolCall; createdAt: string }
+  | { id: string; kind: "permission"; permission: AgentPermissionRequest; createdAt: string }
+  | { id: string; kind: "plan"; plan: AgentPlan; createdAt: string }
+  | { id: string; kind: "terminal"; text: string; createdAt: string }
+  | { id: string; kind: "connection" | "auth" | "cancellation" | "error"; text: string; createdAt: string }
+  | { id: string; kind: "usage"; usage: AgentUsage; createdAt: string }
 
 export type ProviderModel = {
   slug: string
@@ -92,6 +164,13 @@ export type AgentThread = {
   status: AgentThreadStatus
   lastError: string | null
   messages: AgentMessage[]
+  timeline?: AgentTimelineItem[]
+  pendingPermissions?: AgentPermissionRequest[]
+  usage?: AgentUsage | null
+  plan?: AgentPlan | null
+  connection?: AgentConnectionState | null
+  availableCommands?: ReadonlyArray<AgentAvailableCommand>
+  acpSequence?: number
 }
 
 export type AgentThreadDelta = {
@@ -103,6 +182,22 @@ export type AgentThreadDelta = {
   messageId: string
   text: string
   streaming: boolean
+}
+
+export type AgentStructuredDelta = {
+  workspaceRootUri: string
+  threadId: string
+  sequence: number
+  updatedAt: string
+  created?: AgentTimelineItem[]
+  updated?: AgentTimelineItem[]
+  status?: AgentThreadStatus
+  turnState?: "idle" | "running" | "completed" | "failed" | "cancelled"
+  pendingPermissions?: AgentPermissionRequest[]
+  usage?: AgentUsage | null
+  plan?: AgentPlan | null
+  connection?: AgentConnectionState | null
+  lastError?: string | null
 }
 
 export type AgentThreadSummary = {
@@ -157,6 +252,14 @@ export type InterruptAgentTurnInput = {
   workspaceRootUri: string
   workspaceRootPath: string
   threadId: string
+}
+
+export type ResolveAgentPermissionInput = {
+  workspaceRootUri: string
+  workspaceRootPath: string
+  threadId: string
+  permissionId: string
+  decision: "allow_once" | "allow_always" | "reject"
 }
 
 export type UpdateAgentThreadSettingsInput = {
@@ -214,6 +317,12 @@ export type TimelineEntry =
         tone?: string
       }
     }
+  | {
+      id: string
+      kind: "structured"
+      createdAt: string
+      item: AgentTimelineItem
+    }
 
 export type AgentTransport = {
   listThreads(
@@ -228,6 +337,7 @@ export type AgentTransport = {
   createThread(input: CreateAgentThreadInput): Promise<AgentThread>
   sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
   interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
+  resolvePermission?(input: ResolveAgentPermissionInput): Promise<void>
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
   updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
   listAgents(): Promise<AgentCatalogState>
@@ -237,4 +347,28 @@ export type AgentTransport = {
   refreshProviders?(): Promise<AgentProvidersState>
   onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
   onThreadDelta?(callback: (delta: AgentThreadDelta) => void): () => void
+  onPermissionRequest?(callback: (input: {
+    workspaceRootUri: string
+    threadId: string
+    permission: AgentPermissionRequest
+  }) => void): () => void
+  onStructuredDelta?(callback: (delta: AgentStructuredDelta) => void): () => void
+  getAcpTrace?(providerId?: string): Promise<unknown>
+  getConnectionState?(providerId?: string): Promise<AgentConnectionState | null>
+  forceStopProvider?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+  }): Promise<void>
+  listAcpSessions?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+  }): Promise<unknown>
+  authenticate?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+    methodId?: string
+  }): Promise<void>
 }

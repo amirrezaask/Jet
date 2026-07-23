@@ -1,11 +1,12 @@
-import type { AgentCatalogState, AgentThread } from "@gharargah/agents"
+import type { AgentCatalogState, AgentThread, ResolveAgentPermissionInput } from "@gharargah/agents"
 import {
   buildTurnDiffSummaryByAssistantMessageId,
   deriveTimelineEntriesFromThread,
 } from "@gharargah/agents"
 import { AlertCircle, ChevronDown, Loader2 } from "lucide-react"
-import { memo, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ChatComposer } from "./composer/ChatComposer.js"
+import { AcpInspector } from "./inspector/AcpInspector.js"
 import {
   deriveProviderInstanceEntries,
   agentCatalogToProviderState,
@@ -13,6 +14,8 @@ import {
 } from "./providerInstances.js"
 import { ChatHeader } from "./timeline/ChatHeader.js"
 import { MessagesTimeline } from "./timeline/MessagesTimeline.js"
+import { ConnectionBanner } from "./timeline/ConnectionBanner.js"
+import { PermissionCard } from "./timeline/PermissionCard.js"
 
 export const AgentChatView = memo(function AgentChatView(props: {
   thread: AgentThread | null
@@ -27,9 +30,24 @@ export const AgentChatView = memo(function AgentChatView(props: {
   onInterrupt?: () => void
   onSelectionChange?: (instanceId: string, model: string) => void
   onAgentsRefresh?: () => void
+  onResolvePermission?: (input: Omit<ResolveAgentPermissionInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">) => Promise<void> | void
+  onLoadAcpTrace?: () => Promise<unknown>
 }) {
-  const { thread, agents, theme, onSend, onInterrupt, onSelectionChange, onAgentsRefresh } =
-    props
+  const {
+    thread,
+    agents,
+    theme,
+    onSend,
+    onInterrupt,
+    onSelectionChange,
+    onAgentsRefresh,
+    onResolvePermission,
+    onLoadAcpTrace,
+  } = props
+  const loadAcpTrace = useCallback(() => {
+    if (onLoadAcpTrace) return onLoadAcpTrace()
+    return Promise.resolve(null)
+  }, [onLoadAcpTrace])
   const [submitting, setSubmitting] = useState(false)
   const [expandAll, setExpandAll] = useState(true)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
@@ -66,7 +84,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
     [thread],
   )
 
-  const isWorking = thread?.status === "running" || submitting
+  const isWorking = ["connecting", "authenticating", "running", "waiting_for_permission", "cancelling", "reconnecting"].includes(thread?.status ?? "") || submitting
 
   useLayoutEffect(() => {
     const node = composerOverlayRef.current
@@ -140,7 +158,13 @@ export const AgentChatView = memo(function AgentChatView(props: {
         activeThreadTitle={thread.title}
         activeProjectName={projectName}
         activeModelLabel={modelLabel}
+        connection={thread.connection}
+        usage={thread.usage}
+        inspector={
+          <AcpInspector connection={thread.connection} onLoadTrace={loadAcpTrace} />
+        }
       />
+      <ConnectionBanner connection={thread.connection} />
 
       {thread.status === "error" && thread.lastError ? (
         <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
@@ -160,6 +184,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
           expandAll={expandAll}
           onToggleAllDirectories={() => setExpandAll(value => !value)}
           onIsAtEndChange={isAtEnd => setShowScrollToBottom(!isAtEnd)}
+          onResolvePermission={(permissionId, decision) => void onResolvePermission?.({ permissionId, decision })}
         />
 
         {showScrollToBottom ? (
@@ -205,13 +230,26 @@ export const AgentChatView = memo(function AgentChatView(props: {
               <span className="min-w-0 truncate">{activityLabel}</span>
             </div>
           ) : null}
+          {thread.pendingPermissions?.length ? (
+            <div className="mb-2 space-y-2">
+              {thread.pendingPermissions.map(permission => (
+                <PermissionCard
+                  key={permission.id}
+                  permission={permission}
+                  disabled={!onResolvePermission}
+                  onResolve={input => void onResolvePermission?.(input)}
+                />
+              ))}
+            </div>
+          ) : null}
           <ChatComposer
             providers={providers}
             instanceId={defaultSelection?.instanceId ?? thread.agentId}
             model={defaultSelection?.model ?? thread.model}
-            disabled={thread.status === "running"}
-            isRunning={thread.status === "running"}
+            disabled={isWorking}
+            isRunning={isWorking}
             isSendBusy={submitting}
+            commands={thread.availableCommands}
             onInstanceModelChange={(instanceId, model) => onSelectionChange?.(instanceId, model)}
             onSend={handleSend}
             onInterrupt={() => onInterrupt?.()}

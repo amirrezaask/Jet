@@ -81,6 +81,12 @@ export type MessagesTimelineRow =
       revertTurnCount?: number
     }
   | { kind: "working"; id: string; createdAt: string | null }
+  | {
+      kind: "structured"
+      id: string
+      createdAt: string
+      item: import("@gharargah/agents").AgentTimelineItem
+    }
 
 export interface StableMessagesTimelineRowsState {
   byId: Map<string, MessagesTimelineRow>
@@ -161,6 +167,15 @@ export function deriveMessagesTimelineRows(input: {
       : null)
 
   for (const timelineEntry of input.timelineEntries) {
+    if (timelineEntry.kind === "structured") {
+      nextRows.push({
+        kind: "structured",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        item: timelineEntry.item,
+      })
+      continue
+    }
     if (timelineEntry.kind !== "message") continue
 
     const assistantTurnStillInProgress =
@@ -211,6 +226,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
   if (a.kind !== b.kind || a.id !== b.id) return false
   if (a.kind === "working") {
     return a.createdAt === (b as typeof a).createdAt
+  }
+  if (a.kind === "structured") {
+    return a.item === (b as typeof a).item
   }
   const bm = b as Extract<MessagesTimelineRow, { kind: "message" }>
   return (

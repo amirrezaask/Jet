@@ -29,6 +29,7 @@ import { cn } from "../../lib/utils.js"
 export type ComposerPromptEditorHandle = {
   focus: () => void
   clear: () => void
+  setText: (text: string) => void
 }
 
 type ComposerPromptEditorProps = {
@@ -109,6 +110,17 @@ function ComposerPromptEditorInner({
         editor.update(() => {
           setEditorPlainText("")
         })
+      },
+      setText: (text: string) => {
+        isApplyingControlledUpdateRef.current = true
+        editor.update(() => {
+          setEditorPlainText(text)
+          const root = $getRoot()
+          const last = root.getLastChild()
+          if (last) last.selectEnd()
+        })
+        isApplyingControlledUpdateRef.current = false
+        onChangeRef.current(text)
       },
     }),
     [editor],

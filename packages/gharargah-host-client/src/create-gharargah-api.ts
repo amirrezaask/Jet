@@ -20,6 +20,25 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     const delta = args[0] as import("@gharargah/agents").AgentThreadDelta
     for (const cb of agentThreadDeltaListeners) cb(delta)
   })
+  transport.on("agents:permissionRequest", (...args: unknown[]) => {
+    const request = args[0] as {
+      workspaceRootUri?: string
+      workspaceRootPath?: string
+      threadId: string
+      request: import("@gharargah/agents").AgentPermissionRequest
+    }
+    for (const cb of agentPermissionListeners) {
+      cb({
+        workspaceRootUri: request.workspaceRootUri ?? "",
+        threadId: request.threadId,
+        permission: request.request,
+      })
+    }
+  })
+  transport.on("agents:structuredDelta", (...args: unknown[]) => {
+    const delta = args[0] as import("@gharargah/agents").AgentStructuredDelta
+    for (const cb of agentStructuredDeltaListeners) cb(delta)
+  })
   transport.on("lsp:crashed", (...args: unknown[]) => {
     const id = args[0] as string
     for (const cb of lspCrashListeners) cb(id)
@@ -69,6 +88,14 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
   const lspCrashListeners = new Set<(id: string) => void>()
   const agentThreadUpdatedListeners = new Set<(thread: import("@gharargah/agents").AgentThread) => void>()
   const agentThreadDeltaListeners = new Set<(delta: import("@gharargah/agents").AgentThreadDelta) => void>()
+  const agentPermissionListeners = new Set<(input: {
+    workspaceRootUri: string
+    threadId: string
+    permission: import("@gharargah/agents").AgentPermissionRequest
+  }) => void>()
+  const agentStructuredDeltaListeners = new Set<
+    (delta: import("@gharargah/agents").AgentStructuredDelta) => void
+  >()
   const fileChangeListeners = new Set<(uri: string) => void>()
   const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
   const searchReadyListeners = new Set<(rootUri: string) => void>()
@@ -108,6 +135,7 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       createThread: input => transport.invoke("agents:createThread", input),
       sendMessage: input => transport.invoke("agents:sendMessage", input),
       interruptTurn: input => transport.invoke("agents:interruptTurn", input),
+      resolvePermission: input => transport.invoke("agents:resolvePermission", input),
       setArchived: input => transport.invoke("agents:setArchived", input),
       updateThreadSettings: input => transport.invoke("agents:updateThreadSettings", input),
       listAgents: () => transport.invoke("agents:listAgents"),
@@ -121,6 +149,21 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       onThreadDelta: callback => {
         agentThreadDeltaListeners.add(callback)
         return () => agentThreadDeltaListeners.delete(callback)
+      },
+      onPermissionRequest: callback => {
+        agentPermissionListeners.add(callback)
+        return () => agentPermissionListeners.delete(callback)
+      },
+      getAcpTrace: (providerId?: string) =>
+        transport.invoke("agents:getAcpTrace", providerId ?? "cursor-acp"),
+      getConnectionState: (providerId?: string) =>
+        transport.invoke("agents:getConnectionState", providerId ?? "cursor-acp"),
+      forceStopProvider: input => transport.invoke("agents:forceStopProvider", input),
+      listAcpSessions: input => transport.invoke("agents:listAcpSessions", input),
+      authenticate: input => transport.invoke("agents:authenticate", input),
+      onStructuredDelta: callback => {
+        agentStructuredDeltaListeners.add(callback)
+        return () => agentStructuredDeltaListeners.delete(callback)
       },
     },
     search: {

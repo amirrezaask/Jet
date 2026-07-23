@@ -22,7 +22,10 @@ export function agentMessageToTimelineChatMessage(message: AgentMessage): Timeli
 }
 
 export function deriveTimelineEntriesFromThread(thread: AgentThread): TimelineEntry[] {
-  return [...thread.messages]
+  // Empty `timeline: []` is the server default for new threads — treat as unset so
+  // legacy `messages` remain the source of truth until structured items arrive.
+  const structured = thread.timeline ?? []
+  const fromMessages: TimelineEntry[] = [...thread.messages]
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     .map(message => ({
       id: message.id,
@@ -30,6 +33,43 @@ export function deriveTimelineEntriesFromThread(thread: AgentThread): TimelineEn
       createdAt: message.createdAt,
       message: agentMessageToTimelineChatMessage(message),
     }))
+  if (structured.length === 0) {
+    return fromMessages
+  }
+  const messageIds = new Set(
+    fromMessages.flatMap(entry => (entry.kind === "message" ? [entry.id] : [])),
+  )
+  const fromStructured: TimelineEntry[] = []
+  for (const item of [...structured].sort((left, right) =>
+    left.createdAt.localeCompare(right.createdAt),
+  )) {
+    if (item.kind === "user" || item.kind === "assistant" || item.kind === "system") {
+      if (messageIds.has(item.id)) continue
+      fromStructured.push({
+        id: item.id,
+        kind: "message",
+        createdAt: item.createdAt,
+        message: {
+          id: item.id,
+          role: item.kind,
+          text: item.text,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt ?? item.createdAt,
+          streaming: item.streaming ?? false,
+        },
+      })
+      continue
+    }
+    fromStructured.push({
+      id: item.id,
+      kind: "structured",
+      createdAt: item.createdAt,
+      item,
+    })
+  }
+  return [...fromMessages, ...fromStructured].sort((left, right) =>
+    left.createdAt.localeCompare(right.createdAt),
+  )
 }
 
 export function buildTurnDiffSummaryByAssistantMessageId(

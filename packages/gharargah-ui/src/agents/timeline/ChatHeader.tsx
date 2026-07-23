@@ -1,14 +1,27 @@
-import { memo } from "react"
+import { memo, type ReactNode } from "react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip.js"
 import { cn } from "../../lib/utils.js"
+import type { AgentConnectionState, AgentUsage } from "@gharargah/agents"
+import { UsageMeter } from "./UsageMeter.js"
 
 export const ChatHeader = memo(function ChatHeader(props: {
   activeThreadTitle: string
   activeProjectName?: string | null
   activeModelLabel?: string | null
+  connection?: AgentConnectionState | null
+  usage?: AgentUsage | null
+  inspector?: ReactNode
   className?: string
 }) {
-  const { activeThreadTitle, activeProjectName, activeModelLabel, className } = props
+  const {
+    activeThreadTitle,
+    activeProjectName,
+    activeModelLabel,
+    connection,
+    usage,
+    inspector,
+    className,
+  } = props
   return (
     <div
       data-chat-header="true"
@@ -41,7 +54,12 @@ export const ChatHeader = memo(function ChatHeader(props: {
               {activeModelLabel}
             </span>
           ) : null}
+          {connection ? <span className="capitalize">{connection.status.replaceAll("_", " ")}</span> : null}
         </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {usage ? <UsageMeter usage={usage} compact /> : null}
+        {inspector}
       </div>
     </div>
   )

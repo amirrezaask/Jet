@@ -9,6 +9,7 @@ import type { LaunchShellResult } from "./driver.js"
 
 const REPO_ROOT = path.resolve(__dirname, "../..")
 const JET_BINARY = path.join(REPO_ROOT, "apps/server/target/debug/jet")
+const MOCK_ACP_BINARY = path.join(REPO_ROOT, "apps/server/target/debug/gharargah-mock-acp")
 
 type LaunchWebOptions = {
   workspaceRel?: string
@@ -40,12 +41,22 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   const isFixture = sourceWorkspace.startsWith(path.join(REPO_ROOT, "fixtures") + path.sep)
   const workspace = isFixture ? path.join(temporaryRoot, path.basename(sourceWorkspace)) : sourceWorkspace
   if (isFixture && !fs.existsSync(workspace)) fs.cpSync(sourceWorkspace, workspace, { recursive: true })
+  if (!fs.existsSync(JET_BINARY)) {
+    throw new Error(`Jet binary missing at ${JET_BINARY}; run cargo build --manifest-path apps/server/Cargo.toml`)
+  }
+  if (!fs.existsSync(MOCK_ACP_BINARY)) {
+    throw new Error(
+      `Mock ACP binary missing at ${MOCK_ACP_BINARY}; run cargo build --manifest-path apps/server/Cargo.toml --bin gharargah-mock-acp`,
+    )
+  }
   const server = spawn(JET_BINARY, ["--host", "127.0.0.1", "--port", String(port), "--data-dir", serverData, workspace], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
       JET_ALLOWED_ROOTS: `${REPO_ROOT},${temporaryRoot},${path.dirname(sourceWorkspace)}`,
       GHARARGAH_E2E: "1",
+      // Real stdio ACP mock — never rely on PATH discovery next to jet alone.
+      GHARARGAH_MOCK_ACP_BIN: MOCK_ACP_BINARY,
       ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],

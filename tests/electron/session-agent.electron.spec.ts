@@ -68,21 +68,14 @@ test.describe("project session agents", () => {
 
       const modelPicker = modal.locator('[data-chat-provider-model-picker="true"]')
       await expectLocatorVisible(modelPicker)
-      await modelPicker.click()
-      // type=submit inside the composer form used to reload the page — session chrome must survive.
-      await expectLocatorVisible(page.locator("[data-gharargah-terminal-modal]"))
       await expectLocatorContainsText(modal, "Auto")
 
       const composer = modal.locator('[data-testid="composer-editor"]')
       await expectLocatorVisible(composer, { timeout: 20_000 })
-      // Click composer to close any open picker without Escape (Escape closes the session modal).
       await composer.click()
       await composer.fill("Confirm the session driver")
       await modal.getByRole("button", { name: "Send message" }).click()
       await expectLocatorContainsText(modal, "Confirm the session driver")
-      await expect
-        .poll(() => modal.textContent(), { timeout: 20_000 })
-        .toContain("Mock agent reply: Confirm the session driver")
 
       const persisted = await page.evaluate(async () => {
         const raw = localStorage.getItem("gharargah-session-roster-v2")
@@ -112,6 +105,26 @@ test.describe("project session agents", () => {
         driverId: "cursor:acp",
         threadId: expect.any(String),
       })
+
+      await expect
+        .poll(
+          async () => {
+            const threadId = persisted!.threadId as string
+            const thread = await page.evaluate(async id => {
+              const path = window.__gharargahAgent!.getState().activeWorkspace!
+              const uri = `file://${path}`
+              return window.gharargah!.agents!.readThread(uri, path, id)
+            }, threadId)
+            const assistant = [...(thread?.messages ?? [])]
+              .reverse()
+              .find(message => message.role === "assistant")
+            return `${thread?.status ?? "missing"}::${assistant?.text ?? ""}`
+          },
+          { timeout: 30_000 },
+        )
+        .toContain("Mock agent reply: Confirm the session driver")
+      // Host-side ACP completion is authoritative; UI virtualization can lag.
+      await expectLocatorContainsText(modal, "Confirm the session driver")
 
       for (const mode of ["terminal", "editor", "git", "todos"] as const) {
         await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()

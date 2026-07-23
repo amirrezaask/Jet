@@ -9,6 +9,11 @@ import { ChangedFilesTree } from "../ChangedFilesTree.js"
 import { DiffStatLabel, hasNonZeroStat } from "../DiffStatLabel.js"
 import { summarizeTurnDiffStats } from "../turnDiffTree.js"
 import { MessageCopyButton } from "./MessageCopyButton.js"
+import { ThoughtBlock } from "./ThoughtBlock.js"
+import { ToolCallCard } from "./ToolCallCard.js"
+import { PermissionCard } from "./PermissionCard.js"
+import { PlanCard } from "./PlanCard.js"
+import { UsageMeter } from "./UsageMeter.js"
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
@@ -153,11 +158,27 @@ function WorkingTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "
   )
 }
 
+function StructuredTimelineRow(props: {
+  row: Extract<MessagesTimelineRow, { kind: "structured" }>
+  onResolvePermission?: (permissionId: string, decision: "allow_once" | "allow_always" | "reject") => void
+}) {
+  const { item } = props.row
+  if (item.kind === "thought") return <ThoughtBlock text={item.text} />
+  if (item.kind === "tool_call") return <ToolCallCard toolCall={item.toolCall} />
+  if (item.kind === "permission") {
+    return <PermissionCard permission={item.permission} onResolve={({ permissionId, decision }) => props.onResolvePermission?.(permissionId, decision)} />
+  }
+  if (item.kind === "plan") return <PlanCard plan={item.plan} />
+  if (item.kind === "usage") return <UsageMeter usage={item.usage} />
+  return <p className={item.kind === "error" ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>{item.text}</p>
+}
+
 function TimelineRowContent(props: {
   row: MessagesTimelineRow
   theme: "light" | "dark"
   expandAll: boolean
   onToggleAllDirectories: () => void
+  onResolvePermission?: (permissionId: string, decision: "allow_once" | "allow_always" | "reject") => void
 }) {
   const { row, theme, expandAll, onToggleAllDirectories } = props
   return (
@@ -185,6 +206,7 @@ function TimelineRowContent(props: {
         />
       ) : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
+      {row.kind === "structured" ? <StructuredTimelineRow row={row} onResolvePermission={props.onResolvePermission} /> : null}
     </div>
   )
 }
@@ -200,6 +222,7 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
   expandAll: boolean
   onToggleAllDirectories: () => void
   onIsAtEndChange?: (isAtEnd: boolean) => void
+  onResolvePermission?: (permissionId: string, decision: "allow_once" | "allow_always" | "reject") => void
 }) {
   const {
     listRef: externalListRef,
@@ -212,6 +235,7 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
     expandAll,
     onToggleAllDirectories,
     onIsAtEndChange,
+    onResolvePermission,
   } = props
 
   const internalListRef = useRef<LegendListRef | null>(null)
@@ -250,10 +274,11 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
           theme={theme}
           expandAll={expandAll}
           onToggleAllDirectories={onToggleAllDirectories}
+          onResolvePermission={onResolvePermission}
         />
       </div>
     ),
-    [expandAll, onToggleAllDirectories, theme],
+    [expandAll, onResolvePermission, onToggleAllDirectories, theme],
   )
 
   if (rows.length === 0 && !isWorking) {

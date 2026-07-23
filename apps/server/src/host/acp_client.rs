@@ -1,14 +1,17 @@
 use agent_client_protocol::schema::v1::{
     CancelNotification, ClientCapabilities, ClientSessionCapabilities, ContentBlock, ContentChunk,
-    Implementation, InitializeRequest, LoadSessionRequest, NewSessionRequest, PermissionOption,
-    PermissionOptionKind, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigOption,
-    SessionConfigOptionCategory, SessionConfigOptionValue, SessionConfigOptionsCapabilities,
-    SessionConfigKind, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    StopReason, TextContent, ToolCall, ToolCallUpdate,
+    FileSystemCapabilities, Implementation, InitializeRequest, LoadSessionRequest,
+    NewSessionRequest, PermissionOption, PermissionOptionKind, PromptRequest, ReadTextFileRequest,
+    ReadTextFileResponse, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
+    SessionConfigOption, SessionConfigOptionCategory, SessionConfigOptionValue,
+    SessionConfigOptionsCapabilities, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, StopReason, TextContent, ToolCall, ToolCallUpdate,
+    WriteTextFileRequest, WriteTextFileResponse,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, Agent, Client, ConnectTo, ConnectionTo};
+use futures_util::future::BoxFuture;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -38,7 +41,9 @@ pub fn cursor_acp_agent(binary: impl Into<String>) -> Result<AcpAgent, String> {
     AcpAgent::from_args([binary.into(), "acp".to_string()]).map_err(|error| error.to_string())
 }
 
-fn preferred_permission(options: &[PermissionOption]) -> RequestPermissionOutcome {
+/// Explicit test-only policy for deterministic mock peers. Production callers
+/// must provide a user-mediated permission callback.
+pub fn auto_permission_for_tests(options: &[PermissionOption]) -> RequestPermissionOutcome {
     let option = options
         .iter()
         .find(|option| option.kind == PermissionOptionKind::AllowOnce)
@@ -49,10 +54,10 @@ fn preferred_permission(options: &[PermissionOption]) -> RequestPermissionOutcom
         })
         // Last resort: first option. Reject-only menus still cancel below.
         .or_else(|| {
-            options
-                .iter()
-                .find(|option| option.kind != PermissionOptionKind::RejectOnce
-                    && option.kind != PermissionOptionKind::RejectAlways)
+            options.iter().find(|option| {
+                option.kind != PermissionOptionKind::RejectOnce
+                    && option.kind != PermissionOptionKind::RejectAlways
+            })
         });
     match option {
         Some(option) => RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
@@ -65,10 +70,14 @@ fn preferred_permission(options: &[PermissionOption]) -> RequestPermissionOutcom
 fn client_capabilities() -> ClientCapabilities {
     // Advertise config-option support so agents expose model selectors and
     // accept `session/set_config_option` for model switches.
-    ClientCapabilities::new().session(
-        ClientSessionCapabilities::new()
-            .config_options(SessionConfigOptionsCapabilities::new()),
-    )
+    ClientCapabilities::new()
+        .session(
+            ClientSessionCapabilities::new()
+                .config_options(SessionConfigOptionsCapabilities::new()),
+        )
+        .fs(FileSystemCapabilities::new()
+            .read_text_file(true)
+            .write_text_file(true))
 }
 
 fn model_config_option(options: &[SessionConfigOption]) -> Option<&SessionConfigOption> {
@@ -87,12 +96,16 @@ fn select_has_value(kind: &SessionConfigKind, value: &str) -> bool {
     match kind {
         SessionConfigKind::Select(select) => match &select.options {
             agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(options) => {
-                options.iter().any(|option| option.value.0.as_ref() == value)
+                options
+                    .iter()
+                    .any(|option| option.value.0.as_ref() == value)
             }
-            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Grouped(groups) => groups
-                .iter()
-                .flat_map(|group| group.options.iter())
-                .any(|option| option.value.0.as_ref() == value),
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Grouped(groups) => {
+                groups
+                    .iter()
+                    .flat_map(|group| group.options.iter())
+                    .any(|option| option.value.0.as_ref() == value)
+            }
             _ => false,
         },
         _ => false,
@@ -114,7 +127,8 @@ async fn apply_session_model(
     let Some(option) = model_config_option(options) else {
         return Ok(());
     };
-    if matches!(&option.kind, SessionConfigKind::Select(_)) && !select_has_value(&option.kind, model)
+    if matches!(&option.kind, SessionConfigKind::Select(_))
+        && !select_has_value(&option.kind, model)
     {
         // Unknown slug — skip rather than fail the turn. Catalog may be ahead of agent.
         return Ok(());
@@ -124,18 +138,24 @@ async fn apply_session_model(
         SessionConfigId::new(option.id.0.as_ref()),
         SessionConfigOptionValue::value_id(model.to_string()),
     );
-    tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
-        .await
-        .map_err(|_| "ACP session/set_config_option timed out".to_string())?
-        .map_err(|error| error.to_string())?;
+    tokio::time::timeout(
+        CONFIG_TIMEOUT,
+        connection.send_request(request).block_task(),
+    )
+    .await
+    .map_err(|_| "ACP session/set_config_option timed out".to_string())?
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
 fn tool_activity_label(update: &SessionUpdate) -> Option<String> {
     match update {
-        SessionUpdate::ToolCall(ToolCall { title, kind, status, .. }) => {
-            Some(format!("{status:?}: {kind:?} — {title}"))
-        }
+        SessionUpdate::ToolCall(ToolCall {
+            title,
+            kind,
+            status,
+            ..
+        }) => Some(format!("{status:?}: {kind:?} — {title}")),
         SessionUpdate::ToolCallUpdate(ToolCallUpdate { fields, .. }) => {
             let title = fields.title.as_deref().unwrap_or("tool");
             let status = fields
@@ -156,12 +176,19 @@ pub async fn run_acp_turn<T>(
     on_session: Arc<dyn Fn(&str) + Send + Sync>,
     on_text: Arc<dyn Fn(&str) + Send + Sync>,
     on_activity: Arc<dyn Fn(&str) + Send + Sync>,
+    on_permission: Arc<
+        dyn Fn(RequestPermissionRequest) -> BoxFuture<'static, RequestPermissionOutcome>
+            + Send
+            + Sync,
+    >,
 ) -> Result<AcpTurnResult, String>
 where
     T: ConnectTo<Client> + 'static,
 {
     let output = Arc::new(Mutex::new(String::new()));
     let capture_updates = Arc::new(AtomicBool::new(false));
+    let fs_handler = crate::host::acp::fs_handler::FsHandler::new(input.cwd.clone())
+        .map_err(|error| error.to_string())?;
 
     Client
         .builder()
@@ -197,10 +224,39 @@ where
             agent_client_protocol::on_receive_notification!(),
         )
         .on_receive_request(
-            async move |request: RequestPermissionRequest, responder, _connection| {
-                responder.respond(RequestPermissionResponse::new(preferred_permission(
-                    &request.options,
-                )))
+            {
+                let on_permission = on_permission.clone();
+                async move |request: RequestPermissionRequest, responder, _connection| {
+                    let outcome = on_permission(request).await;
+                    responder.respond(RequestPermissionResponse::new(outcome))
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                let fs_handler = fs_handler.clone();
+                async move |request: ReadTextFileRequest, responder, _connection| {
+                    let mut content = fs_handler.read_text_file(&request.path)
+                        .map_err(|error| agent_client_protocol::util::internal_error(error.to_string()))?;
+                    if request.line.is_some() || request.limit.is_some() {
+                        let start = request.line.unwrap_or(1).saturating_sub(1) as usize;
+                        let limit = request.limit.unwrap_or(u32::MAX) as usize;
+                        content = content.lines().skip(start).take(limit).collect::<Vec<_>>().join("\n");
+                    }
+                    responder.respond(ReadTextFileResponse::new(content))
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                let fs_handler = fs_handler.clone();
+                async move |request: WriteTextFileRequest, responder, _connection| {
+                    fs_handler.write_text_file(&request.path, &request.content)
+                        .map_err(|error| agent_client_protocol::util::internal_error(error.to_string()))?;
+                    responder.respond(WriteTextFileResponse::new())
+                }
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -237,20 +293,15 @@ where
                 .await
                 {
                     Ok(Ok(response)) => (existing.into(), response.config_options),
-                    _ => {
-                        let response = tokio::time::timeout(
-                            HANDSHAKE_TIMEOUT,
-                            connection
-                                .send_request(NewSessionRequest::new(input.cwd.clone()))
-                                .block_task(),
-                        )
-                        .await
-                        .map_err(|_| {
-                            agent_client_protocol::util::internal_error(
-                                "ACP session creation timed out",
-                            )
-                        })??;
-                        (response.session_id, response.config_options)
+                    Ok(Err(error)) => {
+                        return Err(agent_client_protocol::util::internal_error(format!(
+                            "ACP session/load failed: {error}"
+                        )));
+                    }
+                    Err(_) => {
+                        return Err(agent_client_protocol::util::internal_error(
+                            "ACP session/load timed out",
+                        ));
                     }
                 }
             } else {
@@ -318,9 +369,9 @@ where
                         }
                     }
                     _ = &mut cancellation_deadline, if cancellation_sent => {
-                        break agent_client_protocol::schema::v1::PromptResponse::new(
-                            StopReason::Cancelled,
-                        );
+                        return Err(agent_client_protocol::util::internal_error(
+                            "provider_unresponsive_after_cancel",
+                        ));
                     }
                 }
             };
@@ -369,11 +420,11 @@ mod tests {
             PermissionOptionKind::AllowOnce,
         );
         assert!(matches!(
-            preferred_permission(&[reject.clone(), allow]),
+            auto_permission_for_tests(&[reject.clone(), allow]),
             RequestPermissionOutcome::Selected(selected) if selected.option_id.0.as_ref() == "allow"
         ));
         assert_eq!(
-            preferred_permission(&[reject]),
+            auto_permission_for_tests(&[reject]),
             RequestPermissionOutcome::Cancelled
         );
     }
@@ -385,8 +436,7 @@ mod tests {
             "Model",
             "auto",
             SessionConfigSelectOptions::Ungrouped(vec![SessionConfigSelectOption::new(
-                "auto",
-                "Auto",
+                "auto", "Auto",
             )]),
         )
         .category(SessionConfigOptionCategory::Model);
@@ -395,8 +445,7 @@ mod tests {
             &SessionConfigKind::Select(SessionConfigSelect::new(
                 SessionConfigValueId::new("auto"),
                 SessionConfigSelectOptions::Ungrouped(vec![SessionConfigSelectOption::new(
-                    "auto",
-                    "Auto",
+                    "auto", "Auto",
                 )]),
             )),
             "auto"
@@ -466,6 +515,9 @@ mod tests {
                 Arc::new(move |text| snapshots.lock().unwrap().push(text.to_string()))
             },
             Arc::new(|_| {}),
+            Arc::new(|request| {
+                Box::pin(async move { auto_permission_for_tests(&request.options) })
+            }),
         )
         .await
         .unwrap();
@@ -537,6 +589,9 @@ mod tests {
             Arc::new(|_| {}),
             Arc::new(|_| {}),
             Arc::new(|_| {}),
+            Arc::new(|request| {
+                Box::pin(async move { auto_permission_for_tests(&request.options) })
+            }),
         )
         .await
         .unwrap();
@@ -626,14 +681,14 @@ mod tests {
             Arc::new(|_| {}),
             Arc::new(|_| {}),
             Arc::new(|_| {}),
+            Arc::new(|request| {
+                Box::pin(async move { auto_permission_for_tests(&request.options) })
+            }),
         )
         .await
         .unwrap();
         assert_eq!(result.session_id, "session-model");
-        assert_eq!(
-            model_seen.lock().unwrap().as_deref(),
-            Some("composer-2.5")
-        );
+        assert_eq!(model_seen.lock().unwrap().as_deref(), Some("composer-2.5"));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -711,6 +766,9 @@ mod tests {
             Arc::new(|_| {}),
             Arc::new(|_| {}),
             Arc::new(|_| {}),
+            Arc::new(|request| {
+                Box::pin(async move { auto_permission_for_tests(&request.options) })
+            }),
         ));
         prompt_started.notified().await;
         cancel_tx.send(true).unwrap();
