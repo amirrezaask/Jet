@@ -6,8 +6,9 @@ pub use scenarios::Scenario;
 use agent_client_protocol::schema::v1::{
     AgentAuthCapabilities, AgentCapabilities, AuthenticateRequest, AuthenticateResponse,
     AuthMethod, AuthMethodAgent, AvailableCommand, AvailableCommandsUpdate, CancelNotification,
-    CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk, CreateTerminalRequest,
-    DeleteSessionRequest, DeleteSessionResponse, Implementation, InitializeRequest,
+    CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk, CreateElicitationRequest,
+    CreateTerminalRequest, DeleteSessionRequest, DeleteSessionResponse, ElicitationFormMode,
+    ElicitationSchema, ElicitationSessionScope, Implementation, InitializeRequest,
     InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
     LoadSessionResponse, LogoutCapabilities, LogoutRequest, LogoutResponse, NewSessionRequest,
     NewSessionResponse, PermissionOption, PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority,
@@ -24,6 +25,13 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo, Result, Stdio};
 use anyhow::{bail, Context};
 use cli::Args;
+use crate::host::acp::cursor_ext::{
+    CursorAskOption, CursorAskQuestion, CursorAskQuestionRequest, CursorAskQuestionResponse,
+    CursorAvailableModel, CursorCreatePlanRequest, CursorCreatePlanResponse,
+    CursorListAvailableModelsRequest, CursorListAvailableModelsResponse,
+    CursorUpdateTodosNotification,
+};
+use serde_json::json;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
@@ -113,10 +121,12 @@ impl MockState {
     }
 
     fn requires_auth(&self) -> bool {
-        self.args
-            .capabilities
-            .as_deref()
-            .is_some_and(|value| value.split(',').any(|item| item.trim() == "auth"))
+        self.scenario == Scenario::AuthRequired
+            || self
+                .args
+                .capabilities
+                .as_deref()
+                .is_some_and(|value| value.split(',').any(|item| item.trim() == "auth"))
     }
 }
 
@@ -314,6 +324,25 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
             },
             agent_client_protocol::on_receive_request!(),
         )
+        .on_receive_request(
+            async move |_request: CursorListAvailableModelsRequest, responder, _connection| {
+                responder.respond(CursorListAvailableModelsResponse {
+                    models: vec![
+                        CursorAvailableModel {
+                            value: "mock-auto".to_string(),
+                            name: "Mock Auto".to_string(),
+                            config_options: None,
+                        },
+                        CursorAvailableModel {
+                            value: "mock-fast".to_string(),
+                            name: "Mock Fast".to_string(),
+                            config_options: None,
+                        },
+                    ],
+                })
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
         .on_receive_notification(
             {
                 let state = state.clone();
@@ -401,7 +430,7 @@ async fn handle_prompt(
             )?;
             answer(&state, &connection, &request.session_id, &prompt).await?
         }
-        Scenario::PermissionAllow | Scenario::PermissionToolRace => {
+        Scenario::PermissionAllow | Scenario::PermissionToolRace | Scenario::PermissionAllowAlways => {
             let tool_id = format!("permission-tool-{prompt_number}");
             let tool = ToolCallUpdate::new(
                 tool_id,
@@ -417,31 +446,126 @@ async fn handle_prompt(
                 request.session_id.clone(),
                 SessionUpdate::ToolCallUpdate(tool.clone()),
             )?;
-            let permission = RequestPermissionRequest::new(
-                request.session_id.clone(),
-                tool,
-                vec![
+            let mut options = vec![
+                PermissionOption::new(
+                    "allow_once",
+                    "Allow once",
+                    PermissionOptionKind::AllowOnce,
+                ),
+                PermissionOption::new(
+                    "reject_once",
+                    "Reject once",
+                    PermissionOptionKind::RejectOnce,
+                ),
+            ];
+            if state.scenario == Scenario::PermissionAllowAlways {
+                options.insert(
+                    0,
                     PermissionOption::new(
-                        "allow_once",
-                        "Allow once",
-                        PermissionOptionKind::AllowOnce,
+                        "allow_always",
+                        "Always allow",
+                        PermissionOptionKind::AllowAlways,
                     ),
-                    PermissionOption::new(
-                        "reject_once",
-                        "Reject once",
-                        PermissionOptionKind::RejectOnce,
-                    ),
-                ],
-            );
+                );
+            }
+            let permission =
+                RequestPermissionRequest::new(request.session_id.clone(), tool, options);
             let response = connection.send_request(permission).block_task().await?;
             match response.outcome {
                 RequestPermissionOutcome::Selected(selected)
-                    if selected.option_id.0.as_ref() == "allow_once" =>
+                    if selected.option_id.0.as_ref() == "allow_once"
+                        || selected.option_id.0.as_ref() == "allow_always" =>
                 {
                     answer(&state, &connection, &request.session_id, &prompt).await?
                 }
                 _ => StopReason::Refusal,
             }
+        }
+        Scenario::AskQuestion => {
+            let ask = CursorAskQuestionRequest {
+                tool_call_id: format!("ask-{prompt_number}"),
+                title: Some("Mock question".to_string()),
+                questions: vec![CursorAskQuestion {
+                    id: "q1".to_string(),
+                    prompt: "Pick a color".to_string(),
+                    allow_multiple: Some(false),
+                    options: vec![
+                        CursorAskOption {
+                            label: "Red".to_string(),
+                            id: Some("red".to_string()),
+                        },
+                        CursorAskOption {
+                            label: "Blue".to_string(),
+                            id: Some("blue".to_string()),
+                        },
+                    ],
+                }],
+            };
+            let response: CursorAskQuestionResponse =
+                connection.send_request(ask).block_task().await?;
+            let picked = response
+                .answers
+                .first()
+                .and_then(|answer| answer.selected.first())
+                .cloned()
+                .unwrap_or_else(|| "none".to_string());
+            answer(
+                &state,
+                &connection,
+                &request.session_id,
+                &format!("{prompt} -> {picked}"),
+            )
+            .await?
+        }
+        Scenario::CreatePlan => {
+            let plan = CursorCreatePlanRequest {
+                tool_call_id: format!("plan-{prompt_number}"),
+                name: Some("Mock plan".to_string()),
+                overview: Some("Deterministic mock plan".to_string()),
+                plan: "# Mock plan\n\n1. Inspect\n2. Answer".to_string(),
+                todos: vec![
+                    json!({"id": "t1", "content": "Inspect prompt", "status": "completed"}),
+                    json!({"id": "t2", "content": "Return answer", "status": "pending"}),
+                ],
+            };
+            let _: CursorCreatePlanResponse = connection.send_request(plan).block_task().await?;
+            answer(&state, &connection, &request.session_id, &prompt).await?
+        }
+        Scenario::UpdateTodos => {
+            connection.send_notification(CursorUpdateTodosNotification {
+                tool_call_id: format!("todos-{prompt_number}"),
+                todos: vec![
+                    json!({"id": "t1", "content": "Mock todo A", "status": "in_progress"}),
+                    json!({"id": "t2", "content": "Mock todo B", "status": "pending"}),
+                ],
+                merge: Some(false),
+            })?;
+            answer(&state, &connection, &request.session_id, &prompt).await?
+        }
+        Scenario::Elicitation => {
+            let elicitation = CreateElicitationRequest::new(
+                ElicitationFormMode::new(
+                    ElicitationSessionScope::new(request.session_id.clone()),
+                    ElicitationSchema::new().string("note", true),
+                ),
+                "Mock elicitation: provide a note",
+            );
+            let _response = connection.send_request(elicitation).block_task().await?;
+            answer(&state, &connection, &request.session_id, &prompt).await?
+        }
+        Scenario::ImagePrompt => {
+            let images = prompt_image_count(&request);
+            answer(
+                &state,
+                &connection,
+                &request.session_id,
+                &format!("images={images} {prompt}"),
+            )
+            .await?
+        }
+        Scenario::AuthRequired => {
+            // Auth is enforced at initialize; once authenticated this is echo.
+            answer(&state, &connection, &request.session_id, &prompt).await?
         }
         Scenario::PlanUpdate => {
             send_update(
@@ -634,6 +758,14 @@ fn prompt_text(request: &PromptRequest) -> String {
         })
         .collect::<Vec<_>>()
         .join("")
+}
+
+fn prompt_image_count(request: &PromptRequest) -> usize {
+    request
+        .prompt
+        .iter()
+        .filter(|block| matches!(block, ContentBlock::Image(_)))
+        .count()
 }
 
 fn chunks(text: &str, size: usize) -> Vec<&str> {

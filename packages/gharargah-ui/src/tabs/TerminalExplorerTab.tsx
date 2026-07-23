@@ -49,10 +49,13 @@ export const TERMINAL_EXPLORER_LIST_ID = "gharargah:terminal-explorer"
 
 const AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
   { id: "codex", label: "Codex", command: "codex", Icon: OpenAI },
+  { id: "codex", label: "Codex (ACP)", driverId: "codex:acp", Icon: OpenAI },
   { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
+  { id: "claude", label: "Claude (ACP)", driverId: "claude:acp", Icon: ClaudeAI },
+  { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
+  { id: "opencode", label: "OpenCode (ACP)", driverId: "opencode:acp", Icon: Code2 },
   { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
   { id: "cursor-acp", label: "Cursor (ACP)", driverId: "cursor:acp", Icon: CursorIcon },
-  { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
 ]
 
 type TerminalNodeData =

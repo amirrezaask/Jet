@@ -1,4 +1,9 @@
-import type { AgentCatalogState, AgentThread, ResolveAgentPermissionInput } from "@gharargah/agents"
+import type {
+  AgentCatalogState,
+  AgentThread,
+  ResolveAgentPermissionInput,
+  ResolveAgentUserInputInput,
+} from "@gharargah/agents"
 import {
   buildTurnDiffSummaryByAssistantMessageId,
   deriveTimelineEntriesFromThread,
@@ -16,6 +21,7 @@ import { ChatHeader } from "./timeline/ChatHeader.js"
 import { MessagesTimeline } from "./timeline/MessagesTimeline.js"
 import { ConnectionBanner } from "./timeline/ConnectionBanner.js"
 import { PermissionCard } from "./timeline/PermissionCard.js"
+import { UserInputCard } from "./timeline/UserInputCard.js"
 
 export const AgentChatView = memo(function AgentChatView(props: {
   thread: AgentThread | null
@@ -26,12 +32,22 @@ export const AgentChatView = memo(function AgentChatView(props: {
     agentId: string | null
     driverId: string | null
     model: string | null
+    images?: ReadonlyArray<{ data: string; mimeType: string }>
   }) => Promise<void>
   onInterrupt?: () => void
   onSelectionChange?: (instanceId: string, model: string) => void
   onAgentsRefresh?: () => void
   onResolvePermission?: (input: Omit<ResolveAgentPermissionInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">) => Promise<void> | void
+  onResolveUserInput?: (
+    input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
+  ) => Promise<void> | void
+  onConfigOptionChange?: (input: { configId: string; value: string }) => Promise<void> | void
   onLoadAcpTrace?: () => Promise<unknown>
+  onAuthenticate?: (methodId: string) => Promise<void> | void
+  onForceStopProvider?: () => Promise<void> | void
+  onRuntimeModeChange?: (
+    mode: "approval-required" | "auto-accept-edits" | "full-access",
+  ) => void
 }) {
   const {
     thread,
@@ -42,7 +58,12 @@ export const AgentChatView = memo(function AgentChatView(props: {
     onSelectionChange,
     onAgentsRefresh,
     onResolvePermission,
+    onResolveUserInput,
+    onConfigOptionChange,
     onLoadAcpTrace,
+    onAuthenticate,
+    onForceStopProvider,
+    onRuntimeModeChange,
   } = props
   const loadAcpTrace = useCallback(() => {
     if (onLoadAcpTrace) return onLoadAcpTrace()
@@ -99,7 +120,20 @@ export const AgentChatView = memo(function AgentChatView(props: {
     return () => observer.disconnect()
   }, [thread?.id])
 
-  async function handleSend(payload: { text: string; instanceId: string; model: string }) {
+  const nonModelConfigOptions = useMemo(
+    () =>
+      (thread?.configOptions ?? []).filter(
+        option => option.category?.toLowerCase() !== "model" && option.id !== "model",
+      ),
+    [thread?.configOptions],
+  )
+
+  async function handleSend(payload: {
+    text: string
+    instanceId: string
+    model: string
+    images?: ReadonlyArray<{ data: string; mimeType: string }>
+  }) {
     if (submitting || !thread) return
     const fallbackDriverId = thread.driverId
     setSubmitting(true)
@@ -112,6 +146,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
           fallbackDriverId ??
           null,
         model: payload.model,
+        ...(payload.images?.length ? { images: payload.images } : {}),
       })
     } finally {
       setSubmitting(false)
@@ -161,10 +196,17 @@ export const AgentChatView = memo(function AgentChatView(props: {
         connection={thread.connection}
         usage={thread.usage}
         inspector={
-          <AcpInspector connection={thread.connection} onLoadTrace={loadAcpTrace} />
+          <AcpInspector
+            connection={thread.connection}
+            onLoadTrace={loadAcpTrace}
+            onForceStop={onForceStopProvider ? () => void onForceStopProvider() : undefined}
+          />
         }
       />
-      <ConnectionBanner connection={thread.connection} />
+      <ConnectionBanner
+        connection={thread.connection}
+        onAuthenticate={onAuthenticate ? methodId => void onAuthenticate(methodId) : undefined}
+      />
 
       {thread.status === "error" && thread.lastError ? (
         <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
@@ -187,6 +229,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
           onResolvePermission={(permissionId, decision, optionId) =>
             void onResolvePermission?.({ permissionId, decision, optionId })
           }
+          onResolveUserInput={input => void onResolveUserInput?.(input)}
         />
 
         {showScrollToBottom ? (
@@ -232,6 +275,28 @@ export const AgentChatView = memo(function AgentChatView(props: {
               <span className="min-w-0 truncate">{activityLabel}</span>
             </div>
           ) : null}
+          {onRuntimeModeChange ? (
+            <div className="mb-2 flex items-center gap-2 px-1 text-xs text-muted-foreground">
+              <label htmlFor="agent-runtime-mode" className="shrink-0">
+                Runtime
+              </label>
+              <select
+                id="agent-runtime-mode"
+                data-agent-runtime-mode="true"
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                value={thread.runtimeMode ?? "approval-required"}
+                onChange={event =>
+                  onRuntimeModeChange(
+                    event.target.value as "approval-required" | "auto-accept-edits" | "full-access",
+                  )
+                }
+              >
+                <option value="approval-required">Approval required</option>
+                <option value="auto-accept-edits">Auto-accept edits</option>
+                <option value="full-access">Full access</option>
+              </select>
+            </div>
+          ) : null}
           {thread.pendingPermissions?.length ? (
             <div className="mb-2 space-y-2">
               {thread.pendingPermissions.map(permission => (
@@ -241,6 +306,56 @@ export const AgentChatView = memo(function AgentChatView(props: {
                   disabled={!onResolvePermission}
                   onResolve={input => void onResolvePermission?.(input)}
                 />
+              ))}
+            </div>
+          ) : null}
+          {thread.pendingUserInputs?.length ? (
+            <div className="mb-2 space-y-2">
+              {thread.pendingUserInputs.map(userInput => (
+                <UserInputCard
+                  key={userInput.id}
+                  userInput={userInput}
+                  disabled={!onResolveUserInput}
+                  onResolve={input => void onResolveUserInput?.(input)}
+                />
+              ))}
+            </div>
+          ) : null}
+          {nonModelConfigOptions.length > 0 ? (
+            <div
+              data-agent-config-options="true"
+              className="mb-2 space-y-2 rounded-lg border border-border bg-card p-3"
+            >
+              {nonModelConfigOptions.map(option => (
+                <div key={option.id} className="space-y-1">
+                  <label
+                    htmlFor={`agent-config-${option.id}`}
+                    className="text-xs font-medium text-foreground"
+                  >
+                    {option.name}
+                  </label>
+                  {option.description ? (
+                    <p className="text-3xs text-muted-foreground">{option.description}</p>
+                  ) : null}
+                  <select
+                    id={`agent-config-${option.id}`}
+                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                    value={option.currentValue ?? ""}
+                    disabled={!onConfigOptionChange}
+                    onChange={event =>
+                      void onConfigOptionChange?.({
+                        configId: option.id,
+                        value: event.target.value,
+                      })
+                    }
+                  >
+                    {(option.values ?? []).map(value => (
+                      <option key={value.value} value={value.value}>
+                        {value.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               ))}
             </div>
           ) : null}

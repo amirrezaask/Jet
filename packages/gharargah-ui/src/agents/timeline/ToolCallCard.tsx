@@ -15,7 +15,11 @@ export function ToolCallCard(props: { toolCall: AgentToolCall }) {
   const Icon =
     toolCall.status === "completed" ? CheckCircle2 : toolCall.status === "failed" ? CircleAlert : toolCall.status === "running" ? Loader2 : Terminal
   return (
-    <section className="rounded-lg border border-border bg-card">
+    <section
+      className="rounded-lg border border-border bg-card"
+      data-gharargah-tool-call=""
+      data-timeline-tool=""
+    >
       <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <ChevronRight className={open ? "size-3 rotate-90" : "size-3"} />
         <Icon className={toolCall.status === "running" ? "size-3.5 animate-spin" : "size-3.5"} />

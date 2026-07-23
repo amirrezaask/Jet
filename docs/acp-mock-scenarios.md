@@ -45,6 +45,7 @@ Without `--strict`, an unknown scenario warns on stderr and falls back to `echo`
 | `tool_lifecycle` | Emits one tool call through pending, in-progress, and completed states, then answers. |
 | `permission_allow` | Sends an in-progress tool update and asks permission; answers only if `allow_once` is selected, otherwise stops with refusal. |
 | `permission_tool_race` | Same wire ordering as `permission_allow`; exists to exercise tool-update/permission-request concurrency. |
+| `permission_allow_always` | Like `permission_allow`, but also offers `allow_always` / “Always allow”. |
 | `plan_update` | Emits a two-entry plan, then answers. |
 | `cancel_coop` | Emits a thought and waits up to 60 seconds for `session/cancel`; acknowledges it with `Cancelled`. |
 | `slow_stream` | Streams the echo response in configurable chunks; stops cleanly on cancel. |
@@ -56,6 +57,12 @@ Without `--strict`, an unknown scenario warns on stderr and falls back to `echo`
 | `fs_roundtrip` | Treats prompt text as a path, requests `fs/read_text_file`, and emits the contents. |
 | `terminal_roundtrip` | Creates a client terminal (`/bin/echo hi`), waits for exit, reads output, releases, then emits `Mock terminal: …`. |
 | `multi_session` | Currently follows echo behavior; useful for exercising multiple sessions over one connection. |
+| `ask_question` | Sends `cursor/ask_question`; answers with selected option in the echo text. |
+| `create_plan` | Sends `cursor/create_plan` with markdown + todos, then answers. |
+| `update_todos` | Emits `cursor/update_todos` notification, then answers. |
+| `elicitation` | Sends `elicitation/create` (form mode); continues after accept/decline/cancel. |
+| `auth_required` | Advertises `mock-token` auth at initialize; host must authenticate before prompts succeed. |
+| `image_prompt` | Counts image content blocks in the prompt and echoes `images=N <prompt>`. |
 
 `--fault malformed` is equivalent to the malformed part of `chaos_malformed`; `--fault disconnect` makes answer generation fail. `--capabilities load_session` can advertise loading outside `load_session`.
 

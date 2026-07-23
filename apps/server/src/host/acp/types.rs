@@ -66,6 +66,7 @@ pub enum TimelineItemKind {
     Thought,
     ToolCall,
     Permission,
+    UserInput,
     Plan,
     Usage,
     Status,
@@ -111,6 +112,8 @@ pub struct ProviderConnectionSnapshot {
     pub started_at_ms: Option<u64>,
     pub last_transition_at_ms: u64,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub auth_method_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

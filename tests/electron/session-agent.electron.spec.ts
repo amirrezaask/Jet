@@ -31,10 +31,12 @@ test.describe("project session agents", () => {
             expect.objectContaining({ id: "cursor:acp", kind: "acp", status: "ready" }),
           ])
         } else {
-          const driverId = `${agent.id}:cli`
-          expect(agent.activeDriverId).toBe(driverId)
+          const cliDriverId = `${agent.id}:cli`
+          const acpDriverId = `${agent.id}:acp`
+          expect(agent.activeDriverId).toBe(cliDriverId)
           expect(agent.drivers).toEqual([
-            expect.objectContaining({ id: driverId, kind: "cli", status: "ready" }),
+            expect.objectContaining({ id: cliDriverId, kind: "cli", status: "ready" }),
+            expect.objectContaining({ id: acpDriverId, kind: "acp", status: "ready" }),
           ])
         }
         expect(agent.models.length).toBeGreaterThan(0)
@@ -53,6 +55,30 @@ test.describe("project session agents", () => {
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("terminal")
       await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 4)
       await expectLocatorCount(modal.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await expectLocatorCount(modal, 0)
+
+      // Codex (ACP) → agent tab + ACP driver.
+      await launcher.click()
+      await page.getByRole("menuitem", { name: "Codex (ACP)" }).click()
+
+      await expectLocatorVisible(modal)
+      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
+      await expectLocatorContainsText(modal, "Codex")
+
+      const codexBinding = await page.evaluate(async () => {
+        const raw = localStorage.getItem("gharargah-session-roster-v2")
+        if (!raw) return null
+        const roster = JSON.parse(raw) as {
+          sessions: Array<{ agentId?: string; agentDriverId?: string }>
+        }
+        return roster.sessions.find(item => item.agentId === "codex") ?? null
+      })
+      expect(codexBinding).toEqual(
+        expect.objectContaining({ agentId: "codex", agentDriverId: "codex:acp" }),
+      )
+
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(modal, 0)
 

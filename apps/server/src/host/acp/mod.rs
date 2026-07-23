@@ -1,12 +1,12 @@
 pub mod bounds;
 pub mod connection_pool;
+pub mod cursor_ext;
 pub mod event_pipeline;
 pub mod fs_handler;
 pub mod path_security;
 pub mod profiles;
 pub mod redaction;
 pub mod reducers;
-pub mod runtime_client;
 pub mod session_runtime;
 pub mod supervisor;
 pub mod terminal_handler;
@@ -14,8 +14,8 @@ pub mod trace;
 pub mod types;
 
 pub use profiles::{
-    all_profiles, claude_acp, codex_acp, cursor_acp, mock_chaos, mock_compat, mock_strict,
-    opencode_acp, ProviderProfile, RestartPolicy,
+    acp_profile_id_for_agent, all_profiles, claude_acp, codex_acp, cursor_acp, mock_chaos,
+    mock_compat, mock_strict, opencode_acp, profile_for_agent, ProviderProfile, RestartPolicy,
 };
 pub use supervisor::{AcpSupervisor, SupervisorTurnRequest, SupervisorTurnResult};
 pub use trace::{ProtocolTrace, TraceDirection, TraceEntry};

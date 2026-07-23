@@ -26,6 +26,8 @@ pub struct SupervisorTurnRequest {
     pub workspace_root: PathBuf,
     pub thread_key: String,
     pub prompt: String,
+    /// Optional image attachments as (base64_data, mime_type); capped at 8.
+    pub images: Vec<(String, String)>,
     pub model: Option<String>,
     pub existing_session_id: Option<String>,
     pub prefer_resume: bool,
@@ -65,6 +67,7 @@ struct ConnectionRecord {
 pub struct AcpSupervisor {
     active: Arc<Mutex<HashMap<String, ActiveTurn>>>,
     permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    user_inputs: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
     connections: Arc<Mutex<HashMap<String, ConnectionRecord>>>,
     pool: ConnectionPool,
 }
@@ -101,6 +104,7 @@ impl AcpSupervisor {
                         started_at_ms: Some(started_at_ms),
                         last_transition_at_ms: started_at_ms,
                         last_error: None,
+                        auth_method_ids: Vec::new(),
                     },
                     trace: Vec::new(),
                     auth_required: false,
@@ -145,6 +149,7 @@ impl AcpSupervisor {
         };
 
         let pending = self.permissions.clone();
+        let pending_user_inputs = self.user_inputs.clone();
         let thread_key = request.thread_key.clone();
         let connections_for_trace = self.connections.clone();
         let connection_key_for_trace = connection_key.clone();
@@ -246,6 +251,49 @@ impl AcpSupervisor {
             })
         });
 
+        let event_for_input = on_event.clone();
+        let sequence_for_input = sequence.clone();
+        let thread_key_for_input = request.thread_key.clone();
+        let on_user_input: Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync> =
+            Arc::new(move |mut payload: Value| {
+                let request_id = payload
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let request_id = if request_id.is_empty() {
+                    Uuid::new_v4().to_string()
+                } else {
+                    request_id
+                };
+                if let Some(object) = payload.as_object_mut() {
+                    object.insert("id".to_string(), json!(request_id.clone()));
+                }
+                let (tx, rx) = oneshot::channel();
+                if let Ok(mut guard) = pending_user_inputs.lock() {
+                    guard.insert(request_id.clone(), tx);
+                } else {
+                    return Box::pin(async { json!({ "cancelled": true, "action": "cancel" }) });
+                }
+                let input_sequence = sequence_for_input.fetch_add(1, Ordering::AcqRel) + 1;
+                event_for_input(
+                    input_sequence,
+                    NormalizedEvent::Timeline(super::types::TimelineItem {
+                        kind: super::types::TimelineItemKind::UserInput,
+                        id: request_id,
+                        session_id: String::new(),
+                        turn_id: Some(thread_key_for_input.clone()),
+                        payload,
+                    }),
+                );
+                Box::pin(async move {
+                    match rx.await {
+                        Ok(answer) => answer,
+                        Err(_) => json!({ "cancelled": true, "action": "cancel" }),
+                    }
+                })
+            });
+
         let connections_for_init = self.connections.clone();
         let connection_key_for_init = connection_key.clone();
         let on_initialized: Arc<dyn Fn(InitializedInfo) + Send + Sync> =
@@ -254,6 +302,7 @@ impl AcpSupervisor {
                     if let Some(record) = connections.get_mut(&connection_key_for_init) {
                         record.auth_required = info.auth_required;
                         record.auth_method_ids = info.auth_method_ids.clone();
+                        record.snapshot.auth_method_ids = info.auth_method_ids.clone();
                         record.supports_list_sessions = info.supports_list_sessions;
                         record.supports_close_session = info.supports_close_session;
                         record.supports_delete_session = info.supports_delete_session;
@@ -282,6 +331,7 @@ impl AcpSupervisor {
                 TurnJob {
                     cwd: request.workspace_root,
                     prompt: request.prompt,
+                    images: request.images,
                     model: request.model,
                     turn_id: request.thread_key.clone(),
                     existing_session_id: request.existing_session_id,
@@ -294,6 +344,7 @@ impl AcpSupervisor {
                     on_activity: request.on_activity,
                     on_event,
                     on_permission,
+                    on_user_input,
                     on_initialized,
                     respond: respond_placeholder,
                 },
@@ -337,6 +388,15 @@ impl AcpSupervisor {
                         record.snapshot.restart_count.saturating_add(1);
                     drop(connections);
                     let _ = self.force_stop_connection(&connection_key);
+                    return Err(error);
+                }
+                if error == "authentication_required" || record.auth_required {
+                    record.snapshot.state = ConnectionState::AuthenticationRequired;
+                    record.snapshot.detail = Some("authentication_required".to_string());
+                    record.snapshot.last_error = Some(error.clone());
+                    record
+                        .trace
+                        .push(json!({"event":"turn_error","error":error}));
                     return Err(error);
                 }
                 record.snapshot.state = ConnectionState::Degraded;
@@ -558,6 +618,30 @@ impl AcpSupervisor {
             .map_err(|_| "permission_request_closed".to_string())
     }
 
+    pub fn resolve_user_input(&self, request_id: &str, answer: Value) -> Result<(), String> {
+        let sender = self
+            .user_inputs
+            .lock()
+            .map_err(|_| "ACP user input lock poisoned")?
+            .remove(request_id)
+            .ok_or("unknown_user_input_request")?;
+        sender
+            .send(answer)
+            .map_err(|_| "user_input_request_closed".to_string())
+    }
+
+    pub async fn set_session_config_option(
+        &self,
+        connection_key: &str,
+        session_id: &str,
+        config_id: &str,
+        value: &str,
+    ) -> Result<(), String> {
+        self.pool
+            .set_session_config_option(connection_key, session_id, config_id, value)
+            .await
+    }
+
     pub fn cancel_turn(&self, thread_key: &str) {
         if let Some(turn) = self
             .active
@@ -575,6 +659,12 @@ impl AcpSupervisor {
                 let _ = sender.send(String::new());
             }
         }
+        if let Ok(mut inputs) = self.user_inputs.lock() {
+            let drained: Vec<_> = inputs.drain().collect();
+            for (_, sender) in drained {
+                let _ = sender.send(json!({ "cancelled": true, "action": "cancel" }));
+            }
+        }
     }
 
     pub fn connection_snapshot(&self, provider_id: &str) -> ProviderConnectionSnapshot {
@@ -585,7 +675,13 @@ impl AcpSupervisor {
                 let exact = connections
                     .values()
                     .find(|record| record.snapshot.provider_id == provider_id)
-                    .map(|record| record.snapshot.clone());
+                    .map(|record| {
+                        let mut snapshot = record.snapshot.clone();
+                        if snapshot.auth_method_ids.is_empty() {
+                            snapshot.auth_method_ids = record.auth_method_ids.clone();
+                        }
+                        snapshot
+                    });
                 if exact.is_some() {
                     return exact;
                 }
@@ -593,7 +689,13 @@ impl AcpSupervisor {
                     .values()
                     .find(|record| matches!(record.snapshot.state, ConnectionState::Ready))
                     .or_else(|| connections.values().next())
-                    .map(|record| record.snapshot.clone())
+                    .map(|record| {
+                        let mut snapshot = record.snapshot.clone();
+                        if snapshot.auth_method_ids.is_empty() {
+                            snapshot.auth_method_ids = record.auth_method_ids.clone();
+                        }
+                        snapshot
+                    })
             })
             .unwrap_or(ProviderConnectionSnapshot {
                 provider_id: provider_id.to_string(),
@@ -604,6 +706,7 @@ impl AcpSupervisor {
                 started_at_ms: None,
                 last_transition_at_ms: now_ms(),
                 last_error: None,
+                auth_method_ids: Vec::new(),
             })
     }
 

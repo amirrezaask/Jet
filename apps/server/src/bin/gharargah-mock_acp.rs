@@ -1,7 +1,5 @@
 use clap::Parser;
-
-#[path = "../mock_acp/mod.rs"]
-mod mock_acp;
+use jet_server::mock_acp;
 
 #[tokio::main]
 async fn main() {

@@ -11,6 +11,7 @@ async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>[
   await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
   const composer = modal.locator('[data-testid="composer-editor"]')
   await expectLocatorVisible(composer, { timeout: 20_000 })
+  await expectLocatorVisible(modal.locator("[data-composer-attach-image]"))
   return { modal, composer }
 }
 
@@ -80,10 +81,9 @@ test.describe("ACP structured timeline", () => {
         })
         .toBeGreaterThan(0)
 
-      // Prefer the last Allow — sticky composer card. The timeline copy can be
-      // earlier in DOM order and briefly not hittable under virtualization.
-      const allow = modal.getByRole("button", { name: "Allow" }).last()
-      await expectLocatorVisible(allow, { timeout: 10_000 })
+      // Prefer sticky composer card; labels may be "Allow" or "Allow once".
+      const allow = modal.getByRole("button", { name: /Allow/i }).last()
+      await expectLocatorVisible(allow, { timeout: 15_000 })
       await allow.click()
 
       await expect
@@ -157,6 +157,59 @@ test.describe("ACP structured timeline", () => {
         .toContain("Mock agent reply: think then answer")
     } finally {
       await app.close()
+    }
+  })
+
+  test("tool_lifecycle plan_update usage_meter expose structured UI", async () => {
+    for (const scenario of ["tool_lifecycle", "plan_update", "usage_meter"] as const) {
+      const { app, page } = await launchJet({
+        env: {
+          GHARARGAH_AGENT_MOCK: "1",
+          GHARARGAH_AGENT_MOCK_SCENARIO: scenario,
+        },
+      })
+      try {
+        const { modal, composer } = await openCursorAcpSession(page)
+        await composer.click()
+        await composer.fill(`scenario ${scenario}`)
+        await modal.getByRole("button", { name: "Send message" }).click()
+
+        await expect
+          .poll(
+            async () => {
+              const thread = await readActiveThread(page)
+              const kinds = (thread?.timeline ?? []).map(item => item.kind)
+              if (scenario === "tool_lifecycle") return kinds.includes("tool_call") ? "ok" : kinds.join(",")
+              if (scenario === "plan_update") {
+                return kinds.includes("plan") || thread?.plan ? "ok" : kinds.join(",")
+              }
+              return kinds.includes("usage") || thread?.usage ? "ok" : kinds.join(",")
+            },
+            { timeout: 30_000 },
+          )
+          .toBe("ok")
+
+        // DOM markers (virtualized list may need a beat after thread JSON updates).
+        if (scenario === "tool_lifecycle") {
+          await expect
+            .poll(async () => modal.locator("[data-gharargah-tool-call], [data-timeline-tool]").count(), {
+              timeout: 15_000,
+            })
+            .toBeGreaterThan(0)
+        }
+        if (scenario === "plan_update") {
+          await expect
+            .poll(async () => modal.locator("[data-gharargah-plan]").count(), { timeout: 15_000 })
+            .toBeGreaterThan(0)
+        }
+        if (scenario === "usage_meter") {
+          await expect
+            .poll(async () => modal.locator("[data-gharargah-usage]").count(), { timeout: 15_000 })
+            .toBeGreaterThan(0)
+        }
+      } finally {
+        await app.close()
+      }
     }
   })
 })

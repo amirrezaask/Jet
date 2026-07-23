@@ -33,6 +33,12 @@ export function isAcpDriverId(driverId: string | null | undefined): boolean {
   return typeof driverId === "string" && driverId.endsWith(":acp")
 }
 
+export function acpDriverIdForAgent(agentId: string | null | undefined): string {
+  const id = normalizeAgentId(agentId)
+  if (id === "cursor-acp") return "cursor:acp"
+  return `${id}:acp`
+}
+
 export function summarizeThread(thread: AgentThread): AgentThreadSummary {
   let latestUserMessageAt: string | null = null
   for (const message of thread.messages) {

@@ -6,8 +6,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react"
+import { ImagePlus, X } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions.js"
@@ -27,6 +29,10 @@ import {
 } from "../providerInstances.js"
 import type { ProviderInstanceId } from "../t3contracts.js"
 
+const MAX_COMPOSER_IMAGES = 8
+
+type ComposerImageAttachment = { data: string; mimeType: string; previewUrl: string }
+
 function commandName(command: AgentAvailableCommand): string {
   return command.name.startsWith("/") ? command.name : `/${command.name}`
 }
@@ -40,7 +46,12 @@ export const ChatComposer = memo(function ChatComposer(props: {
   isSendBusy?: boolean
   commands?: ReadonlyArray<AgentAvailableCommand>
   onInstanceModelChange: (instanceId: string, model: string) => void
-  onSend: (payload: { text: string; instanceId: string; model: string }) => Promise<void>
+  onSend: (payload: {
+    text: string
+    instanceId: string
+    model: string
+    images?: ReadonlyArray<{ data: string; mimeType: string }>
+  }) => Promise<void>
   onInterrupt?: () => void
   onProvidersRefresh?: () => void
 }) {
@@ -49,10 +60,12 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashMenuOpen, setSlashMenuOpen] = useState(false)
+  const [images, setImages] = useState<ComposerImageAttachment[]>([])
   const promptRef = useRef("")
   const editorRef = useRef<ComposerPromptEditorHandle | null>(null)
   const composerFormRef = useRef<HTMLFormElement | null>(null)
   const composerSurfaceRef = useRef<HTMLDivElement | null>(null)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [footerWidth, setFooterWidth] = useState<number | null>(null)
 
   const instanceEntries = useMemo(
@@ -87,7 +100,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
 
   const showSlashMenu = slashMenuOpen && slashQueryActive && filteredCommands.length > 0
 
-  const hasSendableContent = draft.trim().length > 0
+  const hasSendableContent = draft.trim().length > 0 || images.length > 0
   const canSend =
     hasSendableContent &&
     !props.disabled &&
@@ -144,18 +157,63 @@ export const ChatComposer = memo(function ChatComposer(props: {
     async (event?: { preventDefault?: () => void }) => {
       event?.preventDefault?.()
       const text = promptRef.current.trim()
-      if (!text || !canSend) return
+      if ((!text && images.length === 0) || !canSend) return
+      const outgoingImages = images.map(({ data, mimeType }) => ({ data, mimeType }))
       await props.onSend({
         text,
         instanceId: selection.instanceId,
         model: selection.model,
+        ...(outgoingImages.length > 0 ? { images: outgoingImages } : {}),
       })
+      for (const image of images) URL.revokeObjectURL(image.previewUrl)
+      setImages([])
       promptRef.current = ""
       setDraft("")
       editorRef.current?.clear()
     },
-    [canSend, props, selection.instanceId, selection.model],
+    [canSend, images, props, selection.instanceId, selection.model],
   )
+
+  const onAttachImages = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ""
+    if (files.length === 0) return
+    const remaining = Math.max(0, MAX_COMPOSER_IMAGES - images.length)
+    const nextFiles = files.slice(0, remaining)
+    const nextImages = await Promise.all(
+      nextFiles.map(
+        file =>
+          new Promise<ComposerImageAttachment>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => {
+              const result = reader.result
+              if (typeof result !== "string") {
+                reject(new Error("Failed to read image"))
+                return
+              }
+              const comma = result.indexOf(",")
+              resolve({
+                data: comma >= 0 ? result.slice(comma + 1) : result,
+                mimeType: file.type || "application/octet-stream",
+                previewUrl: URL.createObjectURL(file),
+              })
+            }
+            reader.onerror = () => reject(reader.error ?? new Error("Failed to read image"))
+            reader.readAsDataURL(file)
+          }),
+      ),
+    )
+    setImages(current => [...current, ...nextImages].slice(0, MAX_COMPOSER_IMAGES))
+  }, [images.length])
+
+  const removeImage = useCallback((index: number) => {
+    setImages(current => {
+      const next = [...current]
+      const [removed] = next.splice(index, 1)
+      if (removed) URL.revokeObjectURL(removed.previewUrl)
+      return next
+    })
+  }, [])
 
   const onComposerCommandKey = useCallback(
     (event: KeyboardEvent) => {
@@ -232,6 +290,32 @@ export const ChatComposer = memo(function ChatComposer(props: {
           }}
         >
           <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
+            {images.length > 0 ? (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {images.map((image, index) => (
+                  <div
+                    key={`${image.previewUrl}-${index}`}
+                    className="relative overflow-hidden rounded-md border border-border"
+                  >
+                    <img
+                      src={image.previewUrl}
+                      alt=""
+                      className="size-14 object-cover"
+                    />
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="secondary"
+                      className="absolute top-0.5 right-0.5"
+                      aria-label="Remove image"
+                      onClick={() => removeImage(index)}
+                    >
+                      <X className="size-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="relative" onKeyDownCapture={onSlashMenuKeyDownCapture}>
               {showSlashMenu ? (
                 <div
@@ -288,6 +372,25 @@ export const ChatComposer = memo(function ChatComposer(props: {
             )}
           >
             <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="sr-only"
+                onChange={event => void onAttachImages(event)}
+              />
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                data-composer-attach-image="true"
+                disabled={props.disabled || props.isSendBusy || images.length >= MAX_COMPOSER_IMAGES}
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <ImagePlus className="size-3.5" />
+                Attach
+              </Button>
               <ProviderModelPicker
                 compact={isComposerFooterCompact}
                 activeInstanceId={selection.instanceId}

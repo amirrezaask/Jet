@@ -150,6 +150,8 @@ export type JetElectronAgents = {
   sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
   interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
   resolvePermission?(input: ResolveAgentPermissionInput): Promise<void>
+  resolveUserInput?(input: import("@gharargah/agents").ResolveAgentUserInputInput): Promise<void>
+  setSessionConfigOption?(input: import("@gharargah/agents").SetAgentSessionConfigOptionInput): Promise<void>
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
   updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
   listAgents(): Promise<AgentCatalogState>
@@ -182,6 +184,23 @@ export type JetElectronAgents = {
     providerId?: string
     workspaceRootPath?: string
     methodId?: string
+  }): Promise<void>
+  closeAcpSession?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+    sessionId: string
+  }): Promise<void>
+  deleteAcpSession?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+    sessionId: string
+  }): Promise<void>
+  logoutProvider?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
   }): Promise<void>
 }
 

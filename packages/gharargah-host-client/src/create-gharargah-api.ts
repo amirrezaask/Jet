@@ -136,6 +136,8 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       sendMessage: input => transport.invoke("agents:sendMessage", input),
       interruptTurn: input => transport.invoke("agents:interruptTurn", input),
       resolvePermission: input => transport.invoke("agents:resolvePermission", input),
+      resolveUserInput: input => transport.invoke("agents:resolveUserInput", input),
+      setSessionConfigOption: input => transport.invoke("agents:setSessionConfigOption", input),
       setArchived: input => transport.invoke("agents:setArchived", input),
       updateThreadSettings: input => transport.invoke("agents:updateThreadSettings", input),
       listAgents: () => transport.invoke("agents:listAgents"),
@@ -161,6 +163,9 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       forceStopProvider: input => transport.invoke("agents:forceStopProvider", input),
       listAcpSessions: input => transport.invoke("agents:listAcpSessions", input),
       authenticate: input => transport.invoke("agents:authenticate", input),
+      closeAcpSession: input => transport.invoke("agents:closeAcpSession", input),
+      deleteAcpSession: input => transport.invoke("agents:deleteAcpSession", input),
+      logoutProvider: input => transport.invoke("agents:logoutProvider", input),
       onStructuredDelta: callback => {
         agentStructuredDeltaListeners.add(callback)
         return () => agentStructuredDeltaListeners.delete(callback)

@@ -5,6 +5,7 @@ pub enum Scenario {
     ToolLifecycle,
     PermissionAllow,
     PermissionToolRace,
+    PermissionAllowAlways,
     PlanUpdate,
     CancelCoop,
     SlowStream,
@@ -16,6 +17,12 @@ pub enum Scenario {
     FsRoundtrip,
     TerminalRoundtrip,
     MultiSession,
+    AskQuestion,
+    CreatePlan,
+    UpdateTodos,
+    Elicitation,
+    AuthRequired,
+    ImagePrompt,
 }
 
 impl Scenario {
@@ -25,6 +32,7 @@ impl Scenario {
         ("tool_lifecycle", Self::ToolLifecycle),
         ("permission_allow", Self::PermissionAllow),
         ("permission_tool_race", Self::PermissionToolRace),
+        ("permission_allow_always", Self::PermissionAllowAlways),
         ("plan_update", Self::PlanUpdate),
         ("cancel_coop", Self::CancelCoop),
         ("slow_stream", Self::SlowStream),
@@ -36,6 +44,12 @@ impl Scenario {
         ("fs_roundtrip", Self::FsRoundtrip),
         ("terminal_roundtrip", Self::TerminalRoundtrip),
         ("multi_session", Self::MultiSession),
+        ("ask_question", Self::AskQuestion),
+        ("create_plan", Self::CreatePlan),
+        ("update_todos", Self::UpdateTodos),
+        ("elicitation", Self::Elicitation),
+        ("auth_required", Self::AuthRequired),
+        ("image_prompt", Self::ImagePrompt),
     ];
 
     pub fn parse(name: &str) -> Option<Self> {

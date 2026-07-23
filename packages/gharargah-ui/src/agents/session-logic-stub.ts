@@ -30,7 +30,7 @@ export const PROVIDER_OPTIONS: Array<{
   {
     value: ProviderDriverKind.make("grok"),
     label: "Grok",
-    available: true,
-    pickerSidebarBadge: "new",
+    available: false,
+    pickerSidebarBadge: "soon",
   },
 ]

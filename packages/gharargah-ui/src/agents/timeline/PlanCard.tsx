@@ -10,7 +10,7 @@ const statusIcon = {
 
 export function PlanCard(props: { plan: AgentPlan }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-3">
+    <section className="rounded-lg border border-border bg-card p-3" data-gharargah-plan="">
       <h3 className="mb-2 text-xs font-medium text-muted-foreground">Plan</h3>
       <ol className="space-y-1.5">
         {props.plan.entries.map(entry => {

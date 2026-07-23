@@ -1,6 +1,6 @@
 # ACP v1 support matrix
 
-Status reflects the live `ConnectionPool` + `AcpSupervisor` path (2026-07-23).
+Status reflects the live `ConnectionPool` + `AcpSupervisor` path (2026-07-24).
 
 | Method / update / capability | Supported | Capability-gated | Tested | UI | Persistence | Mock scenarios | Notes |
 |---|---|---|---|---|---|---|---|
@@ -17,19 +17,44 @@ Status reflects the live `ConnectionPool` + `AcpSupervisor` path (2026-07-23).
 | `Plan` | Yes | — | Unit/e2e-indirect | PlanCard | `plan` + timeline | `plan_update` | Stable plan id. |
 | `UsageUpdate` | Yes | — | Unit | UsageMeter | `usage` + timeline | `usage_meter` | Mapped to `AgentUsage`. |
 | `AvailableCommandsUpdate` | Yes | — | Unit | Slash menu | `availableCommands` | `slash_commands` | Composer `/` menu. |
-| `session/request_permission` | Yes | — | Integration + e2e | PermissionCard | `timeline`, `pendingPermissions` | `permission_allow`, `permission_tool_race` | Exact option ids + kinds preserved. |
+| `session/request_permission` | Yes | — | Integration + e2e | PermissionCard | `timeline`, `pendingPermissions` | `permission_allow`, `permission_tool_race`, `permission_allow_always` | Exact option ids + kinds preserved; allow-always memory on host. |
 | `fs/read_text_file` | Yes | Client FS | Unit | No direct UI | Disk | `fs_roundtrip` | Session-root contained. |
 | `fs/write_text_file` | Yes | Client FS | Unit | No direct UI | Disk | — | No unsaved-buffer bridge yet. |
 | Client terminal methods | Yes | Advertised | Unit + mock | Indirect | Ephemeral | `terminal_roundtrip` | create/output/wait/kill/release; 256KB bound. |
-| Authentication methods | Yes | Initialize `auth_methods` | Unit | Connection state | Snapshot | — | Blocks turns until `agents:authenticate`. |
+| Authentication methods | Yes | Initialize `auth_methods` | Unit + e2e | Connection state + auth banner | Snapshot | `auth_required` | Blocks turns until `agents:authenticate`. |
 | Session list/close/delete | Yes | Capability-gated | Unit/RPC | No | No | — | Live RPCs on connection. |
 | Logout | Yes | `agentCapabilities.auth.logout` | Unit/RPC | No | Snapshot | — | Capability-gated. |
-| Images/audio/resources in prompt | No | Not advertised | No | No | No | No | Prompt is text-only. |
+| Images/audio/resources in prompt | Partial | — | Unit + e2e | Composer attach | Prompt blocks | `image_prompt` | Text + optional image blocks (max 8); audio/resources still no. |
 | Structured sequenced deltas | Yes | — | Integration + e2e | Yes | Timeline + `acpSequence` | thought/tool/plan/usage | Per-thread monotonic allocator; permissions included. |
 | Protocol trace | Yes | — | Unit | AcpInspector | In-memory (bounded) | — | Redacted/bounded; inspector RPC. |
-| Force-stop provider | Yes | — | Unit/RPC | Inspector affordance (RPC) | — | — | Cancels turns, settles perms, kills process via ChildGuard. |
+| Force-stop provider | Yes | — | Unit/RPC | Inspector | — | — | Cancels turns, settles perms, kills process via ChildGuard. |
+| `cursor/ask_question` | Yes | Capability / Cursor | Unit + e2e | UserInputCard | pendingUserInputs | `ask_question` | Extension method; answers via `agents:resolveUserInput`. |
+| `cursor/create_plan` | Yes | Capability / Cursor | Unit + e2e | PlanCard | plan + timeline | `create_plan` | Extension method → plan timeline. |
+| `cursor/update_todos` | Yes | Capability / Cursor | Unit + e2e | PlanCard | plan + timeline | `update_todos` | Extension notification → plan timeline. |
+| `cursor/list_available_models` | Yes | Capability / Cursor | Soft | Model picker | discoveredModels | mock handler | Best-effort after session open; failures ignored. |
+| `elicitation/create` | Yes | Client elicitation | Unit + e2e | UserInputCard | pendingUserInputs | `elicitation` | Unstable feature; form+url advertised. |
 
 Provider profiles are launch configuration. See `acp-provider-compatibility.md` for real-provider opt-in smokes.
+
+## t3code ACP parity checklist
+
+Parity target = t3code `AcpSessionRuntime` path (Cursor/Grok ACP), not Codex app-server / Claude SDK.
+
+| Area | Product | UX | Robustness | Notes |
+|---|---|---|---|---|
+| Multi-provider ACP (cursor/codex/claude/opencode) | Yes | Same chat UI | Pool keyed by provider+workspace | CLI drivers remain as fallback |
+| Auth discovery + `authenticate` | Yes | Auth banner + method picker | Blocks prompt until authenticated | |
+| Connection lifecycle | Yes | Live banner + inspector force-stop | Restart policy + generation bump | |
+| Permissions | Yes | PermissionCard + composer stack | Exact option ids; allow-always memory | |
+| Tools / thoughts / plans / usage / slash | Yes | Timeline cards + meter + `/` menu | Stable ids + sequence allocator | |
+| Session load/resume | Yes | Indirect | Replay capture; resume preferred | Replay-idle gate |
+| Runtime modes | Yes | Composer mode control | full-access auto-approves | |
+| Images in prompt | Yes | Composer attach | Max 8 images | |
+| Cursor extensions | Yes | Ask/plan/todos + model discovery | Capability-gated | Mock: ask_question, create_plan, update_todos |
+| Elicitation | Yes | UserInputCard | Unstable feature advertised | |
+| Terminal timeline rows | Yes | Terminal tool rows | Client terminal handlers | |
+| Continuation key | Yes | Switch blocked mid-thread | Persist `acpProvider` | |
+| Sequence-gap heal | Yes | Refetch thread on hole | `acpSequence` guard | |
 
 ## Mock scenario coverage (required)
 
@@ -40,6 +65,7 @@ Provider profiles are launch configuration. See `acp-provider-compatibility.md` 
 | `tool_lifecycle` | `matrix_tool_lifecycle` | `scenario:tool_lifecycle` |
 | `permission_allow` | `matrix_permission_allow` | `scenario:permission_allow` |
 | `permission_tool_race` | `matrix_permission_tool_race` | `scenario:permission_tool_race` |
+| `permission_allow_always` | `matrix_permission_allow_always` | `scenario:permission_allow_always` |
 | `plan_update` | `matrix_plan_update` | `scenario:plan_update` |
 | `cancel_coop` | `matrix_cancel_coop` | `scenario:cancel_coop` |
 | `slow_stream` | `matrix_slow_stream` | `scenario:slow_stream` |
@@ -51,5 +77,11 @@ Provider profiles are launch configuration. See `acp-provider-compatibility.md` 
 | `fs_roundtrip` | `matrix_fs_roundtrip` | `scenario:fs_roundtrip` |
 | `terminal_roundtrip` | `matrix_terminal_roundtrip` | `scenario:terminal_roundtrip` |
 | `multi_session` | `matrix_multi_session` (concurrent interleaved turns) | `scenario:multi_session` (host turn under flag) |
+| `ask_question` | `matrix_ask_question` | `scenario:ask_question` |
+| `create_plan` | `matrix_create_plan` | `scenario:create_plan` |
+| `update_todos` | `matrix_update_todos` | `scenario:update_todos` |
+| `elicitation` | `matrix_elicitation` | `scenario:elicitation` |
+| `auth_required` | `matrix_auth_required` | `scenario:auth_required` |
+| `image_prompt` | `matrix_image_prompt` | `scenario:image_prompt` |
 
 Drift guards: `every_mock_scenario_has_a_matrix_entry` (Rust) + `matrix covers every documented mock scenario name` (e2e).

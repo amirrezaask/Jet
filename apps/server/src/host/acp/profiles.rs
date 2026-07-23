@@ -198,6 +198,22 @@ pub fn all_profiles() -> Vec<ProviderProfile> {
     ]
 }
 
+/// Resolve the ACP launch profile for a catalog agent id.
+/// `cursor-acp` and `cursor` both map to the Cursor ACP profile.
+pub fn profile_for_agent(agent_id: &str) -> Option<ProviderProfile> {
+    match agent_id {
+        "cursor" | "cursor-acp" | "cursorAcp" => Some(cursor_acp()),
+        "codex" | "codex-acp" => Some(codex_acp()),
+        "claude" | "claude-acp" | "claudeAgent" => Some(claude_acp()),
+        "opencode" | "opencode-acp" => Some(opencode_acp()),
+        _ => None,
+    }
+}
+
+pub fn acp_profile_id_for_agent(agent_id: &str) -> Option<&'static str> {
+    profile_for_agent(agent_id).map(|profile| profile.id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +265,15 @@ mod tests {
         );
         let err = profile.resolve_executable().unwrap_err().to_string();
         assert!(err.contains("not found on PATH"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn profile_for_agent_maps_catalog_ids() {
+        assert_eq!(profile_for_agent("cursor").unwrap().id, "cursor-acp");
+        assert_eq!(profile_for_agent("cursor-acp").unwrap().id, "cursor-acp");
+        assert_eq!(profile_for_agent("codex").unwrap().id, "codex-acp");
+        assert_eq!(profile_for_agent("claude").unwrap().id, "claude-acp");
+        assert_eq!(profile_for_agent("opencode").unwrap().id, "opencode-acp");
+        assert!(profile_for_agent("unknown").is_none());
     }
 }

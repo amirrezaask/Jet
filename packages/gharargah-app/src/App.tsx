@@ -709,6 +709,14 @@ export function GharargahApp() {
       setActiveAgentThread(current => {
         if (!current || current.id !== delta.threadId) return current
         if ((current.acpSequence ?? -1) >= delta.sequence) return current
+        // Sequence hole: keep applying this delta, then heal from disk.
+        if (delta.sequence > (current.acpSequence ?? 0) + 1) {
+          void agents
+            .readThread(current.workspaceRootUri, current.workspaceRootPath, current.id)
+            .then(thread => {
+              if (thread) setActiveAgentThread(thread)
+            })
+        }
         const timeline = [...(current.timeline ?? [])]
         const replace = (item: NonNullable<typeof current.timeline>[number]) => {
           const index = timeline.findIndex(candidate => candidate.id === item.id)
@@ -725,9 +733,14 @@ export function GharargahApp() {
           ...(delta.status ? { status: delta.status } : {}),
           ...(delta.lastError !== undefined ? { lastError: delta.lastError } : {}),
           ...(delta.pendingPermissions ? { pendingPermissions: delta.pendingPermissions } : {}),
+          ...(delta.pendingUserInputs ? { pendingUserInputs: delta.pendingUserInputs } : {}),
           ...(delta.usage !== undefined ? { usage: delta.usage } : {}),
           ...(delta.plan !== undefined ? { plan: delta.plan } : {}),
           ...(delta.connection !== undefined ? { connection: delta.connection } : {}),
+          ...(delta.configOptions !== undefined ? { configOptions: delta.configOptions } : {}),
+          ...(delta.discoveredModels !== undefined
+            ? { discoveredModels: delta.discoveredModels }
+            : {}),
         }
       })
     })
@@ -2007,6 +2020,7 @@ export function GharargahApp() {
                             agentId: payload.agentId,
                             driverId: payload.driverId,
                             model: payload.model,
+                            ...(payload.images?.length ? { images: payload.images } : {}),
                           })
                           if (!next) return
                           // sendMessage returns the pre-turn snapshot. Live ACP
@@ -2018,6 +2032,10 @@ export function GharargahApp() {
                               (current.pendingPermissions?.length ?? 0) > 0
                                 ? current.pendingPermissions
                                 : next.pendingPermissions
+                            const pendingUserInputs =
+                              (current.pendingUserInputs?.length ?? 0) > 0
+                                ? current.pendingUserInputs
+                                : next.pendingUserInputs
                             return {
                               ...next,
                               timeline:
@@ -2025,6 +2043,9 @@ export function GharargahApp() {
                                   ? current.timeline
                                   : next.timeline,
                               pendingPermissions,
+                              pendingUserInputs,
+                              configOptions: current.configOptions ?? next.configOptions,
+                              discoveredModels: current.discoveredModels ?? next.discoveredModels,
                               acpSequence: Math.max(
                                 current.acpSequence ?? -1,
                                 next.acpSequence ?? -1,
@@ -2063,6 +2084,25 @@ export function GharargahApp() {
                             optionId,
                           })
                         }}
+                        onResolveUserInput={async input => {
+                          if (!activeAgentThread) return
+                          await window.gharargah?.agents?.resolveUserInput?.({
+                            workspaceRootUri: activeAgentThread.workspaceRootUri,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            threadId: activeAgentThread.id,
+                            ...input,
+                          })
+                        }}
+                        onConfigOptionChange={async ({ configId, value }) => {
+                          if (!activeAgentThread) return
+                          await window.gharargah?.agents?.setSessionConfigOption?.({
+                            workspaceRootUri: activeAgentThread.workspaceRootUri,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            threadId: activeAgentThread.id,
+                            configId,
+                            value,
+                          })
+                        }}
                         onSelectionChange={(agentId, model) => {
                           if (!activeAgentThread) return
                           const driverId = agentCatalog?.agents.find(
@@ -2091,9 +2131,57 @@ export function GharargahApp() {
                         onLoadAcpTrace={async () => {
                           const agents = window.gharargah?.agents
                           if (!agents?.getAcpTrace) return null
-                          // Catalog agent id is cursor-acp; mock connections use
-                          // mock-strict — supervisor export_trace falls back.
-                          return agents.getAcpTrace(activeAgentThread?.agentId ?? "cursor-acp")
+                          const providerId =
+                            activeAgentThread?.acpProvider ??
+                            activeAgentThread?.connection?.providerId ??
+                            activeAgentThread?.agentId ??
+                            "cursor-acp"
+                          return agents.getAcpTrace(providerId)
+                        }}
+                        onAuthenticate={async methodId => {
+                          if (!activeAgentThread) return
+                          const providerId =
+                            activeAgentThread.acpProvider ??
+                            activeAgentThread.connection?.providerId ??
+                            activeAgentThread.agentId ??
+                            "cursor-acp"
+                          await window.gharargah?.agents?.authenticate?.({
+                            providerId,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            methodId: methodId || undefined,
+                          })
+                          const state = await window.gharargah?.agents?.getConnectionState?.(
+                            providerId,
+                          )
+                          if (state) {
+                            setActiveAgentThread(current =>
+                              current ? { ...current, connection: state } : current,
+                            )
+                          }
+                        }}
+                        onForceStopProvider={async () => {
+                          if (!activeAgentThread) return
+                          const providerId =
+                            activeAgentThread.acpProvider ??
+                            activeAgentThread.connection?.providerId ??
+                            activeAgentThread.agentId ??
+                            "cursor-acp"
+                          await window.gharargah?.agents?.forceStopProvider?.({
+                            providerId,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                          })
+                        }}
+                        onRuntimeModeChange={mode => {
+                          if (!activeAgentThread) return
+                          setActiveAgentThread(current =>
+                            current ? { ...current, runtimeMode: mode } : current,
+                          )
+                          void window.gharargah?.agents?.updateThreadSettings({
+                            workspaceRootUri: activeAgentThread.workspaceRootUri,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            threadId: activeAgentThread.id,
+                            runtimeMode: mode,
+                          })
                         }}
                       />
                     </Suspense>

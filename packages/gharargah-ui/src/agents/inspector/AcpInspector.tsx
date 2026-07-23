@@ -22,6 +22,7 @@ export function AcpInspector(props: {
   connection: AgentConnectionState | null | undefined
   trace?: unknown
   onLoadTrace?: () => Promise<unknown>
+  onForceStop?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [trace, setTrace] = useState<unknown>(props.trace)
@@ -68,7 +69,14 @@ export function AcpInspector(props: {
       </Button>
       <DialogContent size="wide">
         <DialogHeader>
-          <DialogTitle>ACP inspector</DialogTitle>
+          <DialogTitle className="flex items-center justify-between gap-2">
+            <span>ACP inspector</span>
+            {props.onForceStop ? (
+              <Button type="button" size="xs" variant="destructive" onClick={() => props.onForceStop?.()}>
+                Force stop
+              </Button>
+            ) : null}
+          </DialogTitle>
           <DialogDescription>
             {props.connection?.status ?? "No connection state"}
             {loading ? " · loading…" : null}

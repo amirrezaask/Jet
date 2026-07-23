@@ -1,5 +1,6 @@
 use super::acp::{
-    mock_strict, AcpSupervisor, SupervisorTurnRequest, TimelineItem, TimelineItemKind,
+    acp_profile_id_for_agent, mock_strict, profile_for_agent, AcpSupervisor, SupervisorTurnRequest,
+    TimelineItem, TimelineItemKind,
 };
 use super::events::EventHub;
 use serde_json::{json, Value};
@@ -94,8 +95,33 @@ impl AgentsHost {
         }
     }
 
+    fn acp_driver_id(agent_id: &str) -> Option<String> {
+        let id = normalize_agent_id(agent_id);
+        match id {
+            "cursor-acp" => Some("cursor:acp".to_string()),
+            "cursor" | "codex" | "claude" | "opencode" => Some(format!("{id}:acp")),
+            _ => None,
+        }
+    }
+
+    fn cli_driver_id(agent_id: &str) -> Option<String> {
+        let id = normalize_agent_id(agent_id);
+        match id {
+            "cursor-acp" => None,
+            "cursor" | "codex" | "claude" | "opencode" => Some(format!("{id}:cli")),
+            _ => None,
+        }
+    }
+
     fn driver_supported(agent_id: &str, driver_id: &str) -> bool {
-        driver_id == Self::default_driver_id(agent_id)
+        let id = normalize_agent_id(agent_id);
+        if Some(driver_id) == Self::acp_driver_id(id).as_deref() {
+            return true;
+        }
+        if Some(driver_id) == Self::cli_driver_id(id).as_deref() {
+            return true;
+        }
+        driver_id == Self::default_driver_id(id)
     }
 
     fn normalize_driver_id(agent_id: &str, driver_id: Option<&str>) -> String {
@@ -333,6 +359,10 @@ impl AgentsHost {
             "agentId": agent.id,
             "driverId": driver_id,
             "model": input.get("model").and_then(|v| v.as_str()).unwrap_or("auto"),
+            "runtimeMode": input
+                .get("runtimeMode")
+                .and_then(Value::as_str)
+                .unwrap_or("approval-required"),
             "createdAt": created,
             "updatedAt": created,
             "archivedAt": Value::Null,
@@ -340,9 +370,14 @@ impl AgentsHost {
             "lastError": Value::Null,
             "timeline": [],
             "pendingPermissions": [],
+            "pendingUserInputs": [],
+            "permissionRules": [],
+            "configOptions": [],
+            "discoveredModels": [],
             "usage": Value::Null,
             "plan": Value::Null,
             "acpSequence": 0,
+            "acpProvider": Value::Null,
             "messages": [],
         });
         Self::write_thread(&root_path, &thread)?;
@@ -448,6 +483,24 @@ impl AgentsHost {
             .get("model")
             .and_then(Value::as_str)
             .map(str::to_string);
+        let images: Vec<(String, String)> = input
+            .get("images")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        let data = item.get("data").and_then(Value::as_str)?;
+                        let mime = item
+                            .get("mimeType")
+                            .or_else(|| item.get("mime_type"))
+                            .and_then(Value::as_str)?;
+                        Some((data.to_string(), mime.to_string()))
+                    })
+                    .take(8)
+                    .collect()
+            })
+            .unwrap_or_default();
         let active_turns = self.active_turns.clone();
         let acp_session_id = thread
             .get("acpSessionId")
@@ -466,6 +519,7 @@ impl AgentsHost {
                 agent_id,
                 driver_id,
                 model,
+                images,
                 acp_session_id,
                 acp_cancel_rx,
                 stop,
@@ -555,6 +609,31 @@ impl AgentsHost {
         if let Some(model) = input.get("model") {
             thread["model"] = model.clone();
         }
+        if let Some(runtime_mode) = input.get("runtimeMode") {
+            let mode = runtime_mode.as_str().ok_or("invalid runtimeMode")?;
+            if !matches!(
+                mode,
+                "approval-required" | "auto-accept-edits" | "full-access"
+            ) {
+                return Err(format!("unsupported runtimeMode: {mode}"));
+            }
+            thread["runtimeMode"] = json!(mode);
+        }
+        // Continuation: clearing session when agent/provider changes.
+        if input.get("agentId").is_some() || input.get("driverId").is_some() {
+            if let Some(existing) = thread.get("acpProvider").and_then(Value::as_str) {
+                let next_agent = thread
+                    .get("agentId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if let Some(next_provider) = acp_profile_id_for_agent(next_agent) {
+                    if existing != next_provider {
+                        thread["acpSessionId"] = Value::Null;
+                        thread["acpProvider"] = Value::Null;
+                    }
+                }
+            }
+        }
         thread["updatedAt"] = json!(Self::now_iso());
         Self::write_thread(&root_path, &thread)?;
         emit_host(app, "agents:threadUpdated", vec![thread.clone()]);
@@ -633,23 +712,44 @@ impl Default for AgentsHost {
 
 fn agent_snapshot(agent: &AgentSpec) -> Value {
     let installed = agent_available(agent);
-    let driver_id = AgentsHost::default_driver_id(agent.id);
-    let kind = if is_acp_driver(&driver_id) {
-        "acp"
+    let active_driver_id = AgentsHost::default_driver_id(agent.id);
+    let status = if installed { "ready" } else { "unavailable" };
+    let unavailable_msg = if installed {
+        Value::Null
     } else {
-        "cli"
+        json!(format!("{} CLI not found on PATH", agent.display_name))
     };
+    let mut drivers = Vec::new();
+    if let Some(cli_id) = AgentsHost::cli_driver_id(agent.id) {
+        drivers.push(json!({
+            "id": cli_id,
+            "kind": "cli",
+            "status": status,
+            "message": unavailable_msg.clone(),
+        }));
+    }
+    if let Some(acp_id) = AgentsHost::acp_driver_id(agent.id) {
+        drivers.push(json!({
+            "id": acp_id,
+            "kind": "acp",
+            "status": status,
+            "message": unavailable_msg.clone(),
+        }));
+    }
+    if drivers.is_empty() {
+        drivers.push(json!({
+            "id": active_driver_id,
+            "kind": if is_acp_driver(&active_driver_id) { "acp" } else { "cli" },
+            "status": status,
+            "message": unavailable_msg,
+        }));
+    }
     json!({
         "id": agent.id,
         "displayName": agent.display_name,
         "enabled": installed,
-        "activeDriverId": driver_id,
-        "drivers": [{
-            "id": driver_id,
-            "kind": kind,
-            "status": if installed { "ready" } else { "unavailable" },
-            "message": if installed { Value::Null } else { json!(format!("{} CLI not found on PATH", agent.display_name)) },
-        }],
+        "activeDriverId": active_driver_id,
+        "drivers": drivers,
         "models": if installed {
             agent_models(agent)
         } else {
@@ -765,6 +865,7 @@ fn run_turn(
     agent_id: String,
     driver_id: String,
     model: Option<String>,
+    images: Vec<(String, String)>,
     acp_session_id: Option<String>,
     acp_cancel: watch::Receiver<bool>,
     stop: Arc<Mutex<bool>>,
@@ -777,15 +878,16 @@ fn run_turn(
         run_mock_turn(&app, &root_path, &thread_id, &assistant_id, &prompt, &stop);
         return;
     }
-    if use_mock || (is_acp_driver(&driver_id) && (agent_id == "cursor" || agent_id == "cursor-acp"))
-    {
-        if let Err(error) = run_cursor_acp_turn(
+    if use_mock || is_acp_driver(&driver_id) {
+        if let Err(error) = run_acp_turn(
             &app,
             &root_path,
             &thread_id,
             &assistant_id,
             &prompt,
+            &agent_id,
             model,
+            images,
             acp_session_id,
             acp_cancel,
             supervisor,
@@ -1131,18 +1233,51 @@ fn ui_timeline_item(item: &TimelineItem) -> Value {
             "text": payload_text(&item.payload),
             "createdAt": created_at,
         }),
-        TimelineItemKind::ToolCall => json!({
-            "id": item.id,
-            "kind": "tool_call",
-            "toolCall": ui_tool_call(&item.payload, &item.id),
-            "createdAt": created_at,
-        }),
+        TimelineItemKind::ToolCall => {
+            let tool = ui_tool_call(&item.payload, &item.id);
+            let kind = tool
+                .get("kind")
+                .or_else(|| tool.get("toolKind"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if kind.contains("terminal") {
+                let text = tool
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .or_else(|| tool.get("output").and_then(Value::as_str))
+                    .or_else(|| tool.get("name").and_then(Value::as_str))
+                    .unwrap_or("terminal");
+                json!({
+                    "id": item.id,
+                    "kind": "terminal",
+                    "text": text,
+                    "createdAt": created_at,
+                })
+            } else {
+                json!({
+                    "id": item.id,
+                    "kind": "tool_call",
+                    "toolCall": tool,
+                    "createdAt": created_at,
+                })
+            }
+        }
         TimelineItemKind::Permission => {
             let permission = ui_permission(&item.payload);
             json!({
                 "id": item.id,
                 "kind": "permission",
                 "permission": permission,
+                "createdAt": created_at,
+            })
+        }
+        TimelineItemKind::UserInput => {
+            let user_input = ui_user_input(&item.payload);
+            json!({
+                "id": item.id,
+                "kind": "user_input",
+                "userInput": user_input,
                 "createdAt": created_at,
             })
         }
@@ -1174,7 +1309,8 @@ fn ui_timeline_item(item: &TimelineItem) -> Value {
             let status_type = item.payload.get("type").and_then(Value::as_str).unwrap_or("");
             let text = match status_type {
                 "commands" => "Commands updated".to_string(),
-                "config" => "Config updated".to_string(),
+                "config" | "config_options" => "Config updated".to_string(),
+                "discovered_models" => "Models updated".to_string(),
                 _ => {
                     let from_payload = payload_text(&item.payload);
                     if from_payload.is_empty() {
@@ -1194,13 +1330,35 @@ fn ui_timeline_item(item: &TimelineItem) -> Value {
     }
 }
 
-fn run_cursor_acp_turn(
+fn ui_user_input(payload: &Value) -> Value {
+    let mut input = payload.clone();
+    if input.get("id").is_none() {
+        input["id"] = json!(uuid::Uuid::new_v4().to_string());
+    }
+    if input.get("kind").is_none() {
+        input["kind"] = json!("ask_question");
+    }
+    if input.get("title").is_none() {
+        input["title"] = json!("Input required");
+    }
+    if input.get("createdAt").is_none() {
+        input["createdAt"] = json!(AgentsHost::now_iso());
+    }
+    if input.get("status").is_none() {
+        input["status"] = json!("pending");
+    }
+    input
+}
+
+fn run_acp_turn(
     app: &EventHub,
     root_path: &str,
     thread_id: &str,
     assistant_id: &str,
     prompt: &str,
+    agent_id: &str,
     model: Option<String>,
+    images: Vec<(String, String)>,
     existing_session_id: Option<String>,
     _cancel: watch::Receiver<bool>,
     supervisor: Arc<AcpSupervisor>,
@@ -1212,21 +1370,22 @@ fn run_cursor_acp_turn(
         let scenario =
             std::env::var("GHARARGAH_AGENT_MOCK_SCENARIO").unwrap_or_else(|_| "echo".to_string());
         profile.spawn_args = vec!["--scenario".to_string(), scenario, "--strict".to_string()];
+        // Keep mock profile id aligned with the product provider so connection
+        // snapshots / force-stop keys match the thread's acpProvider.
+        if let Some(id) = acp_profile_id_for_agent(agent_id) {
+            profile.id = id;
+        }
         profile
     } else {
-        let binary = cursor_binary().ok_or("Cursor Agent CLI not found on PATH")?;
-        super::acp::ProviderProfile {
-            id: "cursor-acp",
-            executable: Box::leak(binary.into_boxed_str()),
-            spawn_args: vec!["acp".to_string()],
-            initialize_timeout: std::time::Duration::from_secs(120),
-            turn_timeout: std::time::Duration::from_secs(15 * 60),
-            stop_timeout: std::time::Duration::from_secs(15),
-            restart_policy: super::acp::RestartPolicy::OnFailure { max_restarts: 1 },
-            quirks: vec![],
-            is_mock: false,
-        }
+        let mut profile = profile_for_agent(agent_id)
+            .ok_or_else(|| format!("No ACP profile for agent {agent_id}"))?;
+        let resolved = profile
+            .resolve_executable()
+            .map_err(|error| error.to_string())?;
+        profile.executable = Box::leak(resolved.to_string_lossy().into_owned().into_boxed_str());
+        profile
     };
+    let provider_id = profile.id.to_string();
     let thread_key = format!("{root_path}::{thread_id}");
     let initial_sequence = AgentsHost::read_thread_value(root_path, thread_id)
         .and_then(|thread| thread.get("acpSequence").and_then(Value::as_u64))
@@ -1240,11 +1399,22 @@ fn run_cursor_acp_turn(
                 .unwrap_or(false)
         })
         .unwrap_or(false);
-    let result = runtime.block_on(supervisor.run_turn(SupervisorTurnRequest {
+    // Continuation key: refuse mid-thread provider switch.
+    if let Some(thread) = AgentsHost::read_thread_value(root_path, thread_id) {
+        if let Some(existing) = thread.get("acpProvider").and_then(Value::as_str) {
+            if !existing.is_empty() && existing != provider_id {
+                return Err(format!(
+                    "continuation_key_mismatch: thread bound to {existing}, got {provider_id}"
+                ));
+            }
+        }
+    }
+    let turn_result = runtime.block_on(supervisor.run_turn(SupervisorTurnRequest {
         provider: profile,
         workspace_root: PathBuf::from(root_path),
         thread_key,
         prompt: prompt.to_string(),
+        images,
         model,
         existing_session_id,
         prefer_resume,
@@ -1253,8 +1423,10 @@ fn run_cursor_acp_turn(
             let app = app.clone();
             let root_path = root_path.to_string();
             let thread_id = thread_id.to_string();
+            let provider_id = provider_id.clone();
             Arc::new(move |session_id| {
                 persist_acp_session_id(&app, &root_path, &thread_id, session_id);
+                persist_acp_provider(&app, &root_path, &thread_id, &provider_id);
             })
         },
         on_text: {
@@ -1278,6 +1450,8 @@ fn run_cursor_acp_turn(
             let app = app.clone();
             let root_path = root_path.to_string();
             let thread_id = thread_id.to_string();
+            let provider_id = provider_id.clone();
+            let supervisor = supervisor.clone();
             Arc::new(move |sequence, event| {
                 let super::acp::NormalizedEvent::Timeline(item) = event else {
                     return;
@@ -1286,17 +1460,54 @@ fn run_cursor_acp_turn(
                     return;
                 };
                 thread["acpSequence"] = json!(sequence);
+                thread["acpProvider"] = json!(provider_id);
+                // Live connection snapshot during turn.
+                let snapshot = supervisor.connection_snapshot(&provider_id);
+                thread["connection"] = connection_ui_from_snapshot(&snapshot);
 
-                let is_commands_status = item.kind == TimelineItemKind::Status
-                    && item.payload.get("type").and_then(Value::as_str) == Some("commands");
-                if is_commands_status {
-                    if let Some(commands) = item
-                        .payload
-                        .get("availableCommands")
-                        .cloned()
-                        .or_else(|| item.payload.get("available_commands").cloned())
-                    {
-                        thread["availableCommands"] = commands;
+                let status_type = item
+                    .payload
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if item.kind == TimelineItemKind::Status
+                    && matches!(
+                        status_type,
+                        "commands" | "config_options" | "discovered_models" | "config"
+                    )
+                {
+                    match status_type {
+                        "commands" => {
+                            if let Some(commands) = item
+                                .payload
+                                .get("availableCommands")
+                                .cloned()
+                                .or_else(|| item.payload.get("available_commands").cloned())
+                            {
+                                thread["availableCommands"] = commands;
+                            }
+                        }
+                        "config_options" => {
+                            if let Some(options) = item.payload.get("options").cloned() {
+                                thread["configOptions"] = options;
+                            }
+                        }
+                        "config" => {
+                            if let Some(options) = item
+                                .payload
+                                .get("configOptions")
+                                .cloned()
+                                .or_else(|| item.payload.get("options").cloned())
+                            {
+                                thread["configOptions"] = options;
+                            }
+                        }
+                        "discovered_models" => {
+                            if let Some(models) = item.payload.get("models").cloned() {
+                                thread["discoveredModels"] = models;
+                            }
+                        }
+                        _ => {}
                     }
                     let workspace_root_uri = thread
                         .get("workspaceRootUri")
@@ -1317,7 +1528,11 @@ fn run_cursor_acp_turn(
                             "usage": thread.get("usage").cloned().unwrap_or(Value::Null),
                             "plan": thread.get("plan").cloned().unwrap_or(Value::Null),
                             "pendingPermissions": thread.get("pendingPermissions").cloned().unwrap_or(json!([])),
+                            "pendingUserInputs": thread.get("pendingUserInputs").cloned().unwrap_or(json!([])),
+                            "configOptions": thread.get("configOptions").cloned().unwrap_or(json!([])),
+                            "discoveredModels": thread.get("discoveredModels").cloned().unwrap_or(json!([])),
                             "status": thread.get("status").cloned().unwrap_or(json!("running")),
+                            "connection": thread.get("connection").cloned().unwrap_or(Value::Null),
                         })],
                     );
                     emit_host(&app, "agents:threadUpdated", vec![thread]);
@@ -1347,6 +1562,36 @@ fn run_cursor_acp_turn(
                             .get("permission")
                             .cloned()
                             .unwrap_or_else(|| ui_permission(&item.payload));
+                        // Runtime mode full-access: auto-approve allow_* options.
+                        let runtime_mode = thread
+                            .get("runtimeMode")
+                            .and_then(Value::as_str)
+                            .unwrap_or("approval-required");
+                        if runtime_mode == "full-access" {
+                            if let Some(option_id) = auto_approve_permission_option(&permission) {
+                                let _ = supervisor.resolve_permission(
+                                    permission
+                                        .get("id")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or(""),
+                                    &option_id,
+                                );
+                                return;
+                            }
+                        }
+                        // Allow-always memory: auto-resolve matching remembered rules.
+                        if let Some(option_id) =
+                            remembered_permission_option(&thread, &permission)
+                        {
+                            let _ = supervisor.resolve_permission(
+                                permission
+                                    .get("id")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or(""),
+                                &option_id,
+                            );
+                            return;
+                        }
                         if let Some(pending) = thread
                             .get_mut("pendingPermissions")
                             .and_then(Value::as_array_mut)
@@ -1373,6 +1618,29 @@ fn run_cursor_acp_turn(
                                 "request": permission,
                             })],
                         );
+                    }
+                    TimelineItemKind::UserInput => {
+                        let user_input = item_value
+                            .get("userInput")
+                            .cloned()
+                            .unwrap_or_else(|| ui_user_input(&item.payload));
+                        if let Some(pending) = thread
+                            .get_mut("pendingUserInputs")
+                            .and_then(Value::as_array_mut)
+                        {
+                            if let Some(existing) = pending.iter_mut().find(|candidate| {
+                                candidate.get("id").and_then(Value::as_str)
+                                    == user_input.get("id").and_then(Value::as_str)
+                            }) {
+                                *existing = user_input.clone();
+                            } else {
+                                pending.push(user_input.clone());
+                            }
+                        } else {
+                            thread["pendingUserInputs"] = json!([user_input.clone()]);
+                        }
+                        thread["status"] = json!("waiting_for_permission");
+                        thread["activity"] = json!("Waiting for input…");
                     }
                     TimelineItemKind::Plan => {
                         thread["plan"] = item_value
@@ -1420,20 +1688,25 @@ fn run_cursor_acp_turn(
                         "usage": thread.get("usage").cloned().unwrap_or(Value::Null),
                         "plan": thread.get("plan").cloned().unwrap_or(Value::Null),
                         "pendingPermissions": thread.get("pendingPermissions").cloned().unwrap_or(json!([])),
+                        "pendingUserInputs": thread.get("pendingUserInputs").cloned().unwrap_or(json!([])),
+                        "configOptions": thread.get("configOptions").cloned().unwrap_or(json!([])),
+                        "discoveredModels": thread.get("discoveredModels").cloned().unwrap_or(json!([])),
                         "status": thread.get("status").cloned().unwrap_or(json!("running")),
                         "connection": thread.get("connection").cloned().unwrap_or(Value::Null),
                     })],
                 );
             })
         },
-    }))?;
-    // Persist connection snapshot onto the thread at turn boundaries only.
+    }));
+    // Persist connection snapshot onto the thread at turn boundaries (including auth failures).
     if let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) {
-        let snapshot = supervisor.connection_snapshot("cursor-acp");
+        let snapshot = supervisor.connection_snapshot(&provider_id);
         thread["connection"] = connection_ui_from_snapshot(&snapshot);
+        thread["acpProvider"] = json!(provider_id);
         let _ = AgentsHost::write_thread(root_path, &thread);
         emit_host(app, "agents:threadUpdated", vec![thread]);
     }
+    let result = turn_result?;
     persist_thread_activity(app, root_path, thread_id, None);
     if result.cancelled {
         update_assistant(
@@ -1457,6 +1730,59 @@ fn run_cursor_acp_turn(
         );
     }
     Ok(())
+}
+
+fn auto_approve_permission_option(permission: &Value) -> Option<String> {
+    let options = permission
+        .get("options")
+        .or_else(|| permission.get("optionIds"))
+        .and_then(Value::as_array)?;
+    for preferred in ["allow_always", "allow_once", "allow"] {
+        for option in options {
+            let kind = option
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if kind == preferred || kind.replace('-', "_") == preferred {
+                return option
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+            }
+        }
+    }
+    None
+}
+
+fn remembered_permission_option(thread: &Value, permission: &Value) -> Option<String> {
+    let rules = thread
+        .get("permissionRules")
+        .and_then(Value::as_array)?;
+    let tool_name = permission
+        .get("toolName")
+        .or_else(|| permission.pointer("/toolCall/name"))
+        .or_else(|| permission.get("title"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    for rule in rules {
+        let scope = rule.get("scope").and_then(Value::as_str).unwrap_or("");
+        let option_id = rule.get("optionId").and_then(Value::as_str)?;
+        if scope == "*" || (!tool_name.is_empty() && scope == tool_name) {
+            // Only apply if option still advertised.
+            let options = permission
+                .get("options")
+                .or_else(|| permission.get("optionIds"))
+                .and_then(Value::as_array)?;
+            if options
+                .iter()
+                .any(|option| option.get("id").and_then(Value::as_str) == Some(option_id))
+            {
+                return Some(option_id.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn map_permission_decision_to_option_id(
@@ -1521,6 +1847,8 @@ fn connection_ui_from_snapshot(snapshot: &super::acp::ProviderConnectionSnapshot
         "updatedAt": chrono::DateTime::from_timestamp_millis(snapshot.last_transition_at_ms as i64)
             .unwrap_or_else(chrono::Utc::now)
             .to_rfc3339(),
+        "providerId": snapshot.provider_id,
+        "authMethods": snapshot.auth_method_ids,
     })
 }
 
@@ -1557,6 +1885,18 @@ fn persist_acp_session_id(app: &EventHub, root_path: &str, thread_id: &str, sess
         return;
     }
     thread["acpSessionId"] = json!(session_id);
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
+}
+
+fn persist_acp_provider(app: &EventHub, root_path: &str, thread_id: &str, provider_id: &str) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    if thread.get("acpProvider").and_then(Value::as_str) == Some(provider_id) {
+        return;
+    }
+    thread["acpProvider"] = json!(provider_id);
     let _ = AgentsHost::write_thread(root_path, &thread);
     emit_host(app, "agents:threadUpdated", vec![thread]);
 }
@@ -1844,9 +2184,60 @@ pub fn handle(
             }
             host.supervisor
                 .resolve_permission(request_id, &option_id)?;
-            // Clear pending permission from thread when resolved.
+            // Clear pending permission from thread when resolved; remember allow_always.
             if let (Some(root_path), Some(thread_id)) = (root_path, thread_id) {
                 if let Some(mut thread) = host.read_thread(root_path, thread_id) {
+                    let decision_kind = pending_permission
+                        .as_ref()
+                        .and_then(|pending| {
+                            pending
+                                .get("options")
+                                .or_else(|| pending.get("optionIds"))
+                                .and_then(Value::as_array)
+                                .and_then(|options| {
+                                    options.iter().find_map(|option| {
+                                        (option.get("id").and_then(Value::as_str)
+                                            == Some(option_id.as_str()))
+                                        .then(|| {
+                                            option
+                                                .get("kind")
+                                                .and_then(Value::as_str)
+                                                .unwrap_or("")
+                                                .to_ascii_lowercase()
+                                        })
+                                    })
+                                })
+                        })
+                        .unwrap_or_default();
+                    if decision_kind.contains("allow_always")
+                        || input.get("decision").and_then(Value::as_str) == Some("allow_always")
+                    {
+                        let scope = pending_permission
+                            .as_ref()
+                            .and_then(|pending| {
+                                pending
+                                    .get("toolName")
+                                    .or_else(|| pending.pointer("/toolCall/name"))
+                                    .or_else(|| pending.get("title"))
+                                    .and_then(Value::as_str)
+                            })
+                            .unwrap_or("*")
+                            .to_string();
+                        let rule = json!({ "scope": scope, "optionId": option_id });
+                        if let Some(rules) =
+                            thread.get_mut("permissionRules").and_then(Value::as_array_mut)
+                        {
+                            if !rules.iter().any(|existing| {
+                                existing.get("scope").and_then(Value::as_str) == Some(scope.as_str())
+                                    && existing.get("optionId").and_then(Value::as_str)
+                                        == Some(option_id.as_str())
+                            }) {
+                                rules.push(rule);
+                            }
+                        } else {
+                            thread["permissionRules"] = json!([rule]);
+                        }
+                    }
                     if let Some(pending) = thread
                         .get_mut("pendingPermissions")
                         .and_then(Value::as_array_mut)
@@ -1861,6 +2252,105 @@ pub fn handle(
                     let _ = AgentsHost::write_thread(root_path, &thread);
                     emit_host(app, "agents:threadUpdated", vec![thread]);
                 }
+            }
+            Ok(Value::Null)
+        }
+        "agents:resolveUserInput" => {
+            let input = args.first().ok_or("missing input")?;
+            let request_id = input
+                .get("requestId")
+                .and_then(Value::as_str)
+                .ok_or("missing requestId")?;
+            let root_path = input.get("workspaceRootPath").and_then(Value::as_str);
+            let thread_id = input.get("threadId").and_then(Value::as_str);
+            let mut answer = json!({});
+            if let Some(answers) = input.get("answers") {
+                answer["answers"] = answers.clone();
+            }
+            if let Some(action) = input.get("action").and_then(Value::as_str) {
+                answer["action"] = json!(action);
+            }
+            if let Some(content) = input.get("content") {
+                answer["content"] = content.clone();
+            }
+            if let Some(text) = input.get("text").and_then(Value::as_str) {
+                answer["text"] = json!(text);
+            }
+            if answer.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+                answer = json!({ "action": "cancel", "cancelled": true });
+            }
+            host.supervisor
+                .resolve_user_input(request_id, answer)?;
+            if let (Some(root_path), Some(thread_id)) = (root_path, thread_id) {
+                if let Some(mut thread) = host.read_thread(root_path, thread_id) {
+                    if let Some(pending) = thread
+                        .get_mut("pendingUserInputs")
+                        .and_then(Value::as_array_mut)
+                    {
+                        pending.retain(|item| {
+                            item.get("id").and_then(Value::as_str) != Some(request_id)
+                        });
+                    }
+                    let _ = AgentsHost::write_thread(root_path, &thread);
+                    emit_host(app, "agents:threadUpdated", vec![thread]);
+                }
+            }
+            Ok(Value::Null)
+        }
+        "agents:setSessionConfigOption" => {
+            let input = args.first().ok_or("missing input")?;
+            let root_path = input
+                .get("workspaceRootPath")
+                .and_then(Value::as_str)
+                .ok_or("missing workspaceRootPath")?;
+            let thread_id = input
+                .get("threadId")
+                .and_then(Value::as_str)
+                .ok_or("missing threadId")?;
+            let config_id = input
+                .get("configId")
+                .and_then(Value::as_str)
+                .ok_or("missing configId")?;
+            let value = input
+                .get("value")
+                .and_then(Value::as_str)
+                .ok_or("missing value")?;
+            let thread = host
+                .read_thread(root_path, thread_id)
+                .ok_or("thread_not_found")?;
+            let provider_id = thread
+                .get("acpProvider")
+                .and_then(Value::as_str)
+                .unwrap_or("cursor-acp");
+            let session_id = thread
+                .get("acpSessionId")
+                .and_then(Value::as_str)
+                .ok_or("missing_acp_session")?;
+            let connection_key = format!("{provider_id}:{root_path}");
+            let runtime = tokio::runtime::Handle::try_current()
+                .map_err(|_| "no tokio runtime".to_string())?;
+            runtime.block_on(host.supervisor.set_session_config_option(
+                &connection_key,
+                session_id,
+                config_id,
+                value,
+            ))?;
+            if let Some(mut thread) = host.read_thread(root_path, thread_id) {
+                if let Some(options) = thread
+                    .get_mut("configOptions")
+                    .and_then(Value::as_array_mut)
+                {
+                    for option in options.iter_mut() {
+                        if option.get("id").and_then(Value::as_str) == Some(config_id) {
+                            option["currentValue"] = json!(value);
+                        }
+                    }
+                }
+                if config_id.eq_ignore_ascii_case("model") {
+                    thread["model"] = json!(value);
+                }
+                let _ = AgentsHost::write_thread(root_path, &thread);
+                emit_host(app, "agents:threadUpdated", vec![thread]);
             }
             Ok(Value::Null)
         }
@@ -1991,14 +2481,78 @@ pub fn handle(
                     }
                 })
                 .ok_or("missing connectionKey")?;
-            let method_id = input.get("methodId").and_then(Value::as_str);
+            let method_id = input.get("methodId").and_then(Value::as_str).map(str::to_string);
             let runtime = tokio::runtime::Handle::try_current()
                 .map_err(|_| "ACP requires the shared Tokio runtime".to_string())?;
-            runtime.block_on(host.supervisor.authenticate(&connection_key, method_id))?;
+            let supervisor = host.supervisor.clone();
+            // RPC runs on the Tokio runtime; block_on must leave the async context first.
+            tokio::task::block_in_place(|| {
+                runtime.block_on(supervisor.authenticate(&connection_key, method_id.as_deref()))
+            })?;
+            Ok(Value::Null)
+        }
+        "agents:closeAcpSession" => {
+            let input = args.first().cloned().unwrap_or(Value::Null);
+            let connection_key = connection_key_from_input(&input)?;
+            let session_id = input
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .ok_or("missing sessionId")?;
+            let runtime = tokio::runtime::Handle::try_current()
+                .map_err(|_| "ACP requires the shared Tokio runtime".to_string())?;
+            runtime.block_on(host.supervisor.close_session(&connection_key, session_id))?;
+            Ok(Value::Null)
+        }
+        "agents:deleteAcpSession" => {
+            let input = args.first().cloned().unwrap_or(Value::Null);
+            let connection_key = connection_key_from_input(&input)?;
+            let session_id = input
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .ok_or("missing sessionId")?;
+            let runtime = tokio::runtime::Handle::try_current()
+                .map_err(|_| "ACP requires the shared Tokio runtime".to_string())?;
+            runtime.block_on(host.supervisor.delete_session(&connection_key, session_id))?;
+            Ok(Value::Null)
+        }
+        "agents:logoutProvider" => {
+            let input = args.first().cloned().unwrap_or(Value::Null);
+            let connection_key = connection_key_from_input(&input)?;
+            let runtime = tokio::runtime::Handle::try_current()
+                .map_err(|_| "ACP requires the shared Tokio runtime".to_string())?;
+            runtime.block_on(host.supervisor.logout(&connection_key))?;
             Ok(Value::Null)
         }
         _ => Err(format!("unknown agents channel: {channel}")),
     }
+}
+
+fn connection_key_from_input(input: &Value) -> Result<String, String> {
+    input
+        .as_str()
+        .map(str::to_string)
+        .or_else(|| {
+            input
+                .get("connectionKey")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            let provider = input
+                .get("providerId")
+                .and_then(Value::as_str)
+                .unwrap_or("cursor-acp");
+            let workspace = input
+                .get("workspaceRootPath")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if workspace.is_empty() {
+                None
+            } else {
+                Some(format!("{provider}:{workspace}"))
+            }
+        })
+        .ok_or_else(|| "missing connectionKey".to_string())
 }
 
 #[cfg(test)]
@@ -2124,7 +2678,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_catalog_separates_agents_from_cli_drivers() {
+    fn agent_catalog_exposes_cli_and_acp_drivers() {
         let catalog = AgentsHost::new().list_agents();
         let agents = catalog["agents"].as_array().unwrap();
         let ids = agents
@@ -2137,15 +2691,27 @@ mod tests {
         );
         for agent in agents {
             let id = agent["id"].as_str().unwrap();
-            let expected_driver = if id == "cursor-acp" {
-                "cursor:acp".to_string()
+            let drivers = agent["drivers"].as_array().unwrap();
+            if id == "cursor-acp" {
+                assert_eq!(agent["activeDriverId"], "cursor:acp");
+                assert_eq!(drivers.len(), 1);
+                assert_eq!(drivers[0]["id"], "cursor:acp");
+                assert_eq!(drivers[0]["kind"], "acp");
             } else {
-                format!("{id}:cli")
-            };
-            let expected_kind = if id == "cursor-acp" { "acp" } else { "cli" };
-            assert_eq!(agent["activeDriverId"], expected_driver);
-            assert_eq!(agent["drivers"][0]["id"], expected_driver);
-            assert_eq!(agent["drivers"][0]["kind"], expected_kind);
+                assert_eq!(agent["activeDriverId"], format!("{id}:cli"));
+                assert!(
+                    drivers
+                        .iter()
+                        .any(|driver| driver["id"] == format!("{id}:cli") && driver["kind"] == "cli"),
+                    "missing cli driver for {id}"
+                );
+                assert!(
+                    drivers
+                        .iter()
+                        .any(|driver| driver["id"] == format!("{id}:acp") && driver["kind"] == "acp"),
+                    "missing acp driver for {id}"
+                );
+            }
         }
     }
 

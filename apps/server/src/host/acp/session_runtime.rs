@@ -19,6 +19,9 @@ pub type EventCb = Arc<dyn Fn(u64, NormalizedEvent) + Send + Sync>;
 pub type PermissionCb = Arc<
     dyn Fn(RequestPermissionRequest) -> BoxFuture<'static, RequestPermissionOutcome> + Send + Sync,
 >;
+/// Generic user-input waiter (cursor ask_question / elicitation). Returns JSON answer payload.
+pub type UserInputCb =
+    Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync>;
 
 pub struct SessionRuntime {
     pub session_id: String,
@@ -35,10 +38,13 @@ pub struct SessionRuntime {
     pub on_activity: Mutex<Option<ActivityCb>>,
     pub on_event: Mutex<Option<EventCb>>,
     pub on_permission: Mutex<Option<PermissionCb>>,
+    pub on_user_input: Mutex<Option<UserInputCb>>,
     pub pipeline: Mutex<Option<EventPipeline>>,
     pub tools: Mutex<ToolCalls>,
     pub thought_stream_id: Mutex<Option<String>>,
     pub active_plan_id: Mutex<Option<String>>,
+    /// Monotonic millis of last inbound update (for session-load replay idle gate).
+    pub last_update_at_ms: AtomicU64,
 }
 
 impl SessionRuntime {
@@ -61,11 +67,21 @@ impl SessionRuntime {
             on_activity: Mutex::new(None),
             on_event: Mutex::new(None),
             on_permission: Mutex::new(None),
+            on_user_input: Mutex::new(None),
             pipeline: Mutex::new(None),
             tools: Mutex::new(ToolCalls::default()),
             thought_stream_id: Mutex::new(None),
             active_plan_id: Mutex::new(None),
+            last_update_at_ms: AtomicU64::new(0),
         }
+    }
+
+    pub fn touch_update(&self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        self.last_update_at_ms.store(now, Ordering::Release);
     }
 
     pub fn set_cwd(&self, cwd: PathBuf) {
@@ -92,6 +108,7 @@ impl SessionRuntime {
         on_activity: ActivityCb,
         on_event: EventCb,
         on_permission: PermissionCb,
+        on_user_input: UserInputCb,
     ) {
         if let Ok(mut slot) = self.on_text.lock() {
             *slot = Some(on_text);
@@ -104,6 +121,39 @@ impl SessionRuntime {
         }
         if let Ok(mut slot) = self.on_permission.lock() {
             *slot = Some(on_permission);
+        }
+        if let Ok(mut slot) = self.on_user_input.lock() {
+            *slot = Some(on_user_input);
+        }
+    }
+
+    pub fn clear_turn_callbacks(&self) {
+        if let Ok(mut slot) = self.on_permission.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.on_user_input.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.on_text.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.on_activity.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = self.on_event.lock() {
+            *slot = None;
+        }
+    }
+
+    /// Emit a plan from an extension (e.g. cursor/create_plan) into the timeline pipeline.
+    pub fn emit_extension_plan(&self, plan_id: String, payload: Value) {
+        if let Ok(mut guard) = self.active_plan_id.lock() {
+            *guard = Some(plan_id.clone());
+        }
+        if let Ok(mut pipeline) = self.pipeline.lock() {
+            if let Some(pipeline) = pipeline.as_mut() {
+                pipeline.timeline_with_id(TimelineItemKind::Plan, plan_id, payload);
+            }
         }
     }
 
@@ -151,6 +201,7 @@ impl SessionRuntime {
     }
 
     pub fn handle_update(&self, update: SessionUpdate) {
+        self.touch_update();
         if !self.capture.load(Ordering::Acquire) {
             return;
         }

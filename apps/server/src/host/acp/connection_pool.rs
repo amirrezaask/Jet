@@ -3,14 +3,20 @@
 //! One OS process + initialized JSON-RPC connection per `(provider, workspace)`.
 //! Sessions are multiplexed concurrently; turns within one session are exclusive.
 
+use crate::host::acp::cursor_ext::{
+    CursorAskQuestionRequest, CursorAskQuestionResponse, CursorCreatePlanRequest,
+    CursorCreatePlanResponse, CursorListAvailableModelsRequest, CursorUpdateTodosNotification,
+};
 use crate::host::acp::fs_handler::FsHandler;
 use crate::host::acp::session_runtime::SessionRuntime;
 use crate::host::acp::terminal_handler::TerminalHandler;
 use crate::host::acp::types::{NormalizedEvent, StopReason as LocalStopReason};
 use agent_client_protocol::schema::v1::{
     AuthenticateRequest, CancelNotification, ClientCapabilities, ClientSessionCapabilities,
-    CloseSessionRequest, ContentBlock, CreateTerminalRequest, DeleteSessionRequest,
-    FileSystemCapabilities, Implementation, InitializeRequest, KillTerminalRequest,
+    CloseSessionRequest, ContentBlock, CreateElicitationRequest, CreateElicitationResponse,
+    CreateTerminalRequest, DeleteSessionRequest, ElicitationAction, ElicitationAcceptAction,
+    ElicitationCapabilities, ElicitationFormCapabilities, ElicitationUrlCapabilities,
+    FileSystemCapabilities, ImageContent, Implementation, InitializeRequest, KillTerminalRequest,
     ListSessionsRequest, LoadSessionRequest, LogoutRequest, NewSessionRequest, PromptRequest,
     ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest, SessionConfigId,
@@ -33,6 +39,9 @@ use tokio::sync::{mpsc, oneshot, watch};
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(120);
 const CONFIG_TIMEOUT: Duration = Duration::from_secs(30);
 const CANCELLATION_TIMEOUT: Duration = Duration::from_secs(15);
+/// Match t3code: wait for session/load replay to go idle before prompting.
+const REPLAY_IDLE_GAP: Duration = Duration::from_secs(2);
+const REPLAY_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 pub struct AcpTurnResult {
     pub session_id: String,
@@ -56,6 +65,8 @@ pub struct InitializedInfo {
 pub struct TurnJob {
     pub cwd: PathBuf,
     pub prompt: String,
+    /// Optional image attachments (data, mime_type); capped at 8.
+    pub images: Vec<(String, String)>,
     pub model: Option<String>,
     pub turn_id: String,
     pub existing_session_id: Option<String>,
@@ -75,6 +86,7 @@ pub struct TurnJob {
             + Send
             + Sync,
     >,
+    pub on_user_input: Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync>,
     pub on_initialized: Arc<dyn Fn(InitializedInfo) + Send + Sync>,
     pub respond: oneshot::Sender<Result<AcpTurnResult, String>>,
 }
@@ -99,6 +111,12 @@ enum WorkerCmd {
         respond: oneshot::Sender<Result<(), String>>,
     },
     Logout {
+        respond: oneshot::Sender<Result<(), String>>,
+    },
+    SetConfigOption {
+        session_id: String,
+        config_id: String,
+        value: String,
         respond: oneshot::Sender<Result<(), String>>,
     },
     Shutdown,
@@ -139,13 +157,21 @@ impl ConnShared {
         }
     }
 
+    fn busy_session(&self) -> Option<Arc<SessionRuntime>> {
+        self.sessions.lock().ok().and_then(|guard| {
+            guard
+                .values()
+                .find(|runtime| runtime.turn_busy.load(Ordering::Acquire))
+                .cloned()
+                .or_else(|| guard.values().next().cloned())
+        })
+    }
+
     fn settle_all_permissions_cancelled(&self) {
-        // Permission waiters live in the supervisor; session runtimes clear callbacks.
+        // Permission / user-input waiters live in the supervisor; clear session callbacks.
         if let Ok(guard) = self.sessions.lock() {
             for runtime in guard.values() {
-                if let Ok(mut slot) = runtime.on_permission.lock() {
-                    *slot = None;
-                }
+                runtime.clear_turn_callbacks();
                 runtime.capture.store(false, Ordering::Release);
                 runtime.turn_busy.store(false, Ordering::Release);
             }
@@ -304,6 +330,34 @@ impl ConnectionPool {
             .map_err(|_| "ACP logout dropped".to_string())?
     }
 
+    pub async fn set_session_config_option(
+        &self,
+        connection_key: &str,
+        session_id: &str,
+        config_id: &str,
+        value: &str,
+    ) -> Result<(), String> {
+        let tx = self
+            .workers
+            .lock()
+            .map_err(|_| "ACP connection pool lock poisoned")?
+            .get(connection_key)
+            .map(|handle| handle.tx.clone())
+            .ok_or_else(|| "ACP connection not started".to_string())?;
+        let (respond_tx, respond_rx) = oneshot::channel();
+        tx.send(WorkerCmd::SetConfigOption {
+            session_id: session_id.to_string(),
+            config_id: config_id.to_string(),
+            value: value.to_string(),
+            respond: respond_tx,
+        })
+        .await
+        .map_err(|_| "ACP connection worker stopped".to_string())?;
+        respond_rx
+            .await
+            .map_err(|_| "ACP set_session_config_option dropped".to_string())?
+    }
+
     fn ensure_worker(
         &self,
         connection_key: String,
@@ -450,7 +504,11 @@ async fn run_worker(
     });
 
     let shared_notify = shared.clone();
+    let shared_todos = shared.clone();
     let shared_perm = shared.clone();
+    let shared_ask = shared.clone();
+    let shared_plan = shared.clone();
+    let shared_elicit = shared.clone();
     let shared_fs_read = shared.clone();
     let shared_fs_write = shared.clone();
     let shared_term_create = shared.clone();
@@ -480,6 +538,19 @@ async fn run_worker(
             },
             agent_client_protocol::on_receive_notification!(),
         )
+        .on_receive_notification(
+            {
+                async move |notification: CursorUpdateTodosNotification, _connection| {
+                    if let Some(runtime) = shared_todos.busy_session() {
+                        let plan_id = notification.tool_call_id.clone();
+                        let payload = notification.to_plan_payload();
+                        runtime.emit_extension_plan(plan_id, payload);
+                    }
+                    Ok(())
+                }
+            },
+            agent_client_protocol::on_receive_notification!(),
+        )
         .on_receive_request(
             {
                 async move |request: RequestPermissionRequest, responder, _connection| {
@@ -498,6 +569,88 @@ async fn run_worker(
                         None => RequestPermissionOutcome::Cancelled,
                     };
                     responder.respond(RequestPermissionResponse::new(outcome))
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                async move |request: CursorAskQuestionRequest, responder, _connection| {
+                    let runtime = shared_ask.busy_session();
+                    let callback = runtime.as_ref().and_then(|runtime| {
+                        runtime
+                            .on_user_input
+                            .lock()
+                            .ok()
+                            .and_then(|guard| guard.clone())
+                    });
+                    let request_id = uuid::Uuid::new_v4().to_string();
+                    let payload = request.to_user_input_payload(&request_id);
+                    let answers = match callback {
+                        Some(callback) => callback(payload).await,
+                        None => json!({ "cancelled": true }),
+                    };
+                    let response = if answers.get("cancelled").and_then(Value::as_bool) == Some(true)
+                    {
+                        CursorAskQuestionResponse { answers: vec![] }
+                    } else {
+                        let parsed: Vec<crate::host::acp::cursor_ext::CursorAskAnswer> = answers
+                            .get("answers")
+                            .cloned()
+                            .and_then(|value| serde_json::from_value(value).ok())
+                            .unwrap_or_default();
+                        CursorAskQuestionResponse { answers: parsed }
+                    };
+                    responder.respond(response)
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                async move |request: CursorCreatePlanRequest, responder, _connection| {
+                    if let Some(runtime) = shared_plan.busy_session() {
+                        let plan_id = request.tool_call_id.clone();
+                        let payload = request.to_plan_payload();
+                        runtime.emit_extension_plan(plan_id, payload);
+                    }
+                    responder.respond(CursorCreatePlanResponse { accepted: true })
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                async move |request: CreateElicitationRequest, responder, _connection| {
+                    let runtime = shared_elicit.busy_session();
+                    let callback = runtime.as_ref().and_then(|runtime| {
+                        runtime
+                            .on_user_input
+                            .lock()
+                            .ok()
+                            .and_then(|guard| guard.clone())
+                    });
+                    let request_id = uuid::Uuid::new_v4().to_string();
+                    let message = request.message.clone();
+                    let payload = json!({
+                        "id": request_id,
+                        "kind": "elicitation",
+                        "source": "elicitation/create",
+                        "title": "Input required",
+                        "message": message,
+                        "createdAt": chrono::Utc::now().to_rfc3339(),
+                    });
+                    let answer = match callback {
+                        Some(callback) => callback(payload).await,
+                        None => json!({ "action": "cancel" }),
+                    };
+                    let action = match answer.get("action").and_then(Value::as_str).unwrap_or("cancel")
+                    {
+                        "accept" => ElicitationAction::Accept(ElicitationAcceptAction::new()),
+                        "decline" => ElicitationAction::Decline,
+                        _ => ElicitationAction::Cancel,
+                    };
+                    responder.respond(CreateElicitationResponse::new(action))
                 }
             },
             agent_client_protocol::on_receive_request!(),
@@ -637,7 +790,12 @@ async fn run_worker(
                                 .read_text_file(true)
                                 .write_text_file(true),
                         )
-                        .terminal(true),
+                        .terminal(true)
+                        .elicitation(
+                            ElicitationCapabilities::new()
+                                .form(ElicitationFormCapabilities::new())
+                                .url(ElicitationUrlCapabilities::new()),
+                        ),
                 )
                 .client_info(
                     Implementation::new("gharargah", env!("CARGO_PKG_VERSION")).title("Gharargah"),
@@ -657,7 +815,8 @@ async fn run_worker(
 
             let session_caps = &initialized.agent_capabilities.session_capabilities;
             let info = InitializedInfo {
-                auth_required: !initialized.auth_methods.is_empty(),
+                auth_required: !initialized.auth_methods.is_empty()
+                    || initialized.agent_capabilities.auth.logout.is_some(),
                 auth_method_ids: initialized
                     .auth_methods
                     .iter()
@@ -838,6 +997,29 @@ async fn run_worker(
                         };
                         let _ = respond.send(mapped);
                     }
+                    WorkerCmd::SetConfigOption {
+                        session_id,
+                        config_id,
+                        value,
+                        respond,
+                    } => {
+                        let request = SetSessionConfigOptionRequest::new(
+                            SessionId::new(session_id),
+                            SessionConfigId::new(config_id),
+                            SessionConfigOptionValue::value_id(value),
+                        );
+                        let result = tokio::time::timeout(
+                            CONFIG_TIMEOUT,
+                            connection.send_request(request).block_task(),
+                        )
+                        .await;
+                        let mapped = match result {
+                            Ok(Ok(_)) => Ok(()),
+                            Ok(Err(error)) => Err(format!("set_config_option failed: {error}")),
+                            Err(_) => Err("set_config_option timed out".to_string()),
+                        };
+                        let _ = respond.send(mapped);
+                    }
                 }
             }
             while inflight.join_next().await.is_some() {}
@@ -863,6 +1045,9 @@ fn reject_cmd_without_connection(cmd: WorkerCmd) {
         WorkerCmd::Logout { respond } => {
             let _ = respond.send(Err("ACP connection not ready".to_string()));
         }
+        WorkerCmd::SetConfigOption { respond, .. } => {
+            let _ = respond.send(Err("ACP connection not ready".to_string()));
+        }
         WorkerCmd::Turn(job) => {
             let _ = job
                 .respond
@@ -881,6 +1066,7 @@ async fn execute_turn_on_connection(
     let TurnJob {
         cwd,
         prompt,
+        images,
         model,
         turn_id,
         existing_session_id,
@@ -893,6 +1079,7 @@ async fn execute_turn_on_connection(
         on_activity,
         on_event,
         on_permission,
+        on_user_input,
         respond,
         ..
     } = job;
@@ -908,6 +1095,7 @@ async fn execute_turn_on_connection(
         shared,
         cwd,
         prompt,
+        images,
         model,
         turn_id,
         existing_session_id,
@@ -919,6 +1107,7 @@ async fn execute_turn_on_connection(
         on_activity,
         on_event,
         on_permission,
+        on_user_input,
         caps,
     )
     .await;
@@ -930,6 +1119,7 @@ async fn run_prompt(
     shared: &Arc<ConnShared>,
     cwd: PathBuf,
     prompt: String,
+    images: Vec<(String, String)>,
     model: Option<String>,
     turn_id: String,
     existing_session_id: Option<String>,
@@ -945,6 +1135,7 @@ async fn run_prompt(
             + Send
             + Sync,
     >,
+    on_user_input: Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync>,
     caps: &InitializedInfo,
 ) -> Result<AcpTurnResult, String> {
     shared.terminal.set_workspace_root(cwd.clone());
@@ -964,6 +1155,7 @@ async fn run_prompt(
             on_activity.clone(),
             on_event.clone(),
             on_permission.clone(),
+            on_user_input.clone(),
         )
         .await?
     } else {
@@ -988,6 +1180,7 @@ async fn run_prompt(
             on_activity.clone(),
             on_event.clone(),
             on_permission.clone(),
+            on_user_input.clone(),
         );
         shared.insert_session(runtime);
         (session_id, response.config_options)
@@ -1010,13 +1203,54 @@ async fn run_prompt(
 
     on_session(session_id.0.as_ref());
     runtime.clear_output();
-    runtime.install_turn_callbacks(on_text, on_activity, on_event, on_permission);
+    runtime.install_turn_callbacks(
+        on_text,
+        on_activity,
+        on_event.clone(),
+        on_permission,
+        on_user_input,
+    );
     if let Ok(mut thought) = runtime.thought_stream_id.lock() {
         *thought = None;
     }
     runtime.begin_pipeline(turn_id);
     runtime.replaying.store(false, Ordering::Release);
     runtime.capture.store(true, Ordering::Release);
+
+    if let Some(options) = config.as_ref() {
+        emit_config_options(&on_event, &runtime, options);
+    }
+
+    // Best-effort Cursor model discovery (extension method; ignore failures).
+    if let Ok(Ok(models)) = tokio::time::timeout(
+        Duration::from_secs(5),
+        connection
+            .send_request(CursorListAvailableModelsRequest {})
+            .block_task(),
+    )
+    .await
+    {
+        if !models.models.is_empty() {
+            let seq = runtime.sequence.fetch_add(1, Ordering::AcqRel) + 1;
+            on_event(
+                seq,
+                NormalizedEvent::Timeline(crate::host::acp::types::TimelineItem {
+                    kind: crate::host::acp::types::TimelineItemKind::Status,
+                    id: format!("{}:discovered-models", session_id.0),
+                    session_id: session_id.0.to_string(),
+                    turn_id: None,
+                    payload: json!({
+                        "type": "discovered_models",
+                        "models": models.models.iter().map(|m| json!({
+                            "slug": m.value,
+                            "name": m.name,
+                            "shortName": m.name,
+                        })).collect::<Vec<_>>(),
+                    }),
+                }),
+            );
+        }
+    }
 
     if let Err(error) =
         apply_session_model(connection, &session_id, config.as_deref(), model.as_deref()).await
@@ -1037,10 +1271,11 @@ async fn run_prompt(
             });
         }
 
-        let prompt_req = PromptRequest::new(
-            session_id.clone(),
-            vec![ContentBlock::Text(TextContent::new(prompt))],
-        );
+        let mut content: Vec<ContentBlock> = vec![ContentBlock::Text(TextContent::new(prompt))];
+        for (data, mime) in images.into_iter().take(8) {
+            content.push(ContentBlock::Image(ImageContent::new(data, mime)));
+        }
+        let prompt_req = PromptRequest::new(session_id.clone(), content);
         let prompt_request = connection.send_request(prompt_req).block_task();
         tokio::pin!(prompt_request);
         let mut cancellation_sent = false;
@@ -1094,6 +1329,7 @@ async fn restore_session(
             + Send
             + Sync,
     >,
+    on_user_input: Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync>,
 ) -> Result<(SessionId, Option<Vec<SessionConfigOption>>), String> {
     let runtime = shared.session(&existing).unwrap_or_else(|| {
         let runtime = Arc::new(SessionRuntime::new(
@@ -1106,7 +1342,7 @@ async fn restore_session(
         runtime
     });
     runtime.set_cwd(cwd.clone());
-    runtime.install_turn_callbacks(on_text, on_activity, on_event, on_permission);
+    runtime.install_turn_callbacks(on_text, on_activity, on_event, on_permission, on_user_input);
 
     let use_resume = prefer_resume && caps.supports_resume_session;
     if use_resume {
@@ -1152,7 +1388,8 @@ async fn restore_session(
         .await
     {
         Ok(Ok(response)) => {
-            // Flush replay into the event stream before the prompt turn starts.
+            // Wait for replay traffic to settle (t3code: 90s / 2s idle gap).
+            wait_for_session_load_replay_idle(&runtime).await;
             runtime.flush_and_clear_pipeline();
             runtime.replaying.store(false, Ordering::Release);
             Ok((SessionId::new(existing), response.config_options))
@@ -1202,6 +1439,103 @@ fn apply_session_model<'a>(
             .map_err(|error| error.to_string())?;
         Ok(())
     }
+}
+
+fn wait_for_session_load_replay_idle(
+    runtime: &SessionRuntime,
+) -> impl std::future::Future<Output = ()> + '_ {
+    async move {
+        let started = std::time::Instant::now();
+        // Seed so an empty replay can still exit after REPLAY_IDLE_GAP.
+        runtime.touch_update();
+        loop {
+            if started.elapsed() >= REPLAY_IDLE_TIMEOUT {
+                break;
+            }
+            let last = runtime.last_update_at_ms.load(Ordering::Acquire);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            if last > 0 && now.saturating_sub(last) >= REPLAY_IDLE_GAP.as_millis() as u64 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+}
+
+fn emit_config_options(
+    on_event: &Arc<dyn Fn(u64, NormalizedEvent) + Send + Sync>,
+    runtime: &SessionRuntime,
+    options: &[SessionConfigOption],
+) {
+    let seq = runtime.sequence.fetch_add(1, Ordering::AcqRel) + 1;
+    let mapped: Vec<Value> = options
+        .iter()
+        .map(|option| {
+            let (current_value, values) = match &option.kind {
+                SessionConfigKind::Select(select) => {
+                    let current = select.current_value.0.to_string();
+                    let values = match &select.options {
+                        agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(
+                            options,
+                        ) => options
+                            .iter()
+                            .map(|entry| {
+                                json!({
+                                    "value": entry.value.0.as_ref(),
+                                    "name": entry.name,
+                                })
+                            })
+                            .collect::<Vec<_>>(),
+                        agent_client_protocol::schema::v1::SessionConfigSelectOptions::Grouped(
+                            groups,
+                        ) => groups
+                            .iter()
+                            .flat_map(|group| group.options.iter())
+                            .map(|entry| {
+                                json!({
+                                    "value": entry.value.0.as_ref(),
+                                    "name": entry.name,
+                                })
+                            })
+                            .collect::<Vec<_>>(),
+                        _ => Vec::new(),
+                    };
+                    (Some(current), values)
+                }
+                _ => (None, Vec::new()),
+            };
+            let category = option.category.as_ref().map(|category| match category {
+                SessionConfigOptionCategory::Mode => "mode",
+                SessionConfigOptionCategory::Model => "model",
+                SessionConfigOptionCategory::ThoughtLevel => "thought_level",
+                _ => "other",
+            });
+            json!({
+                "id": option.id.0.as_ref(),
+                "name": option.name,
+                "description": option.description,
+                "category": category,
+                "currentValue": current_value,
+                "values": values,
+            })
+        })
+        .collect();
+    on_event(
+        seq,
+        NormalizedEvent::Timeline(crate::host::acp::types::TimelineItem {
+            kind: crate::host::acp::types::TimelineItemKind::Status,
+            id: format!("{}:config-options", runtime.session_id),
+            session_id: runtime.session_id.clone(),
+            turn_id: None,
+            payload: json!({
+                "type": "config_options",
+                "options": mapped,
+            }),
+        }),
+    );
 }
 
 fn model_config_option(options: &[SessionConfigOption]) -> Option<&SessionConfigOption> {

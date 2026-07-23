@@ -10,11 +10,15 @@ import fs from "node:fs"
 import path from "node:path"
 
 const ALL_SCENARIOS = [
+  // auth_required first: later user-input scenarios have left wedged Jet/mock
+  // processes in this worker when app.close raced a hung turn.
+  "auth_required",
   "echo",
   "thought_then_answer",
   "tool_lifecycle",
   "permission_allow",
   "permission_tool_race",
+  "permission_allow_always",
   "plan_update",
   "cancel_coop",
   "slow_stream",
@@ -26,6 +30,11 @@ const ALL_SCENARIOS = [
   "fs_roundtrip",
   "terminal_roundtrip",
   "multi_session",
+  "ask_question",
+  "create_plan",
+  "update_todos",
+  "elicitation",
+  "image_prompt",
 ] as const
 
 async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
@@ -91,11 +100,13 @@ test.describe("ACP mock scenario matrix (host path)", () => {
   test("matrix covers every documented mock scenario name", () => {
     // Keep in sync with apps/server/src/mock_acp/scenarios.rs Scenario::ALL
     expect(ALL_SCENARIOS).toEqual([
+      "auth_required",
       "echo",
       "thought_then_answer",
       "tool_lifecycle",
       "permission_allow",
       "permission_tool_race",
+      "permission_allow_always",
       "plan_update",
       "cancel_coop",
       "slow_stream",
@@ -107,6 +118,11 @@ test.describe("ACP mock scenario matrix (host path)", () => {
       "fs_roundtrip",
       "terminal_roundtrip",
       "multi_session",
+      "ask_question",
+      "create_plan",
+      "update_todos",
+      "elicitation",
+      "image_prompt",
     ])
   })
 
@@ -121,17 +137,131 @@ test.describe("ACP mock scenario matrix (host path)", () => {
       try {
         const { modal, composer } = await openCursorAcpSession(page)
 
-        if (scenario === "permission_allow" || scenario === "permission_tool_race") {
+        if (
+          scenario === "permission_allow" ||
+          scenario === "permission_tool_race" ||
+          scenario === "permission_allow_always"
+        ) {
           await sendPrompt(page, modal, composer, "need permission")
           await expect
             .poll(async () => (await readActiveThread(page))?.pendingPermissions?.length ?? 0, {
               timeout: 30_000,
             })
             .toBeGreaterThan(0)
-          const allow = modal.getByRole("button", { name: "Allow" }).last()
+          const allow = modal
+            .getByRole("button", {
+              name: scenario === "permission_allow_always" ? /Always allow/i : /Allow/i,
+            })
+            .last()
           await expectLocatorVisible(allow, { timeout: 10_000 })
           await allow.click()
           await waitForAssistantContaining(page, "Mock agent reply")
+          return
+        }
+
+        if (scenario === "ask_question") {
+          await sendPrompt(page, modal, composer, "choose")
+          await expect
+            .poll(async () => (await readActiveThread(page))?.pendingUserInputs?.length ?? 0, {
+              timeout: 30_000,
+            })
+            .toBeGreaterThan(0)
+          await expectLocatorVisible(modal.locator('[data-testid="user-input-card"]'), {
+            timeout: 10_000,
+          })
+          await page.getByLabel(/Red/i).click()
+          await modal.getByRole("button", { name: /Submit answers/i }).click()
+          await waitForAssistantContaining(page, "Mock agent reply: choose ->")
+          return
+        }
+
+        if (scenario === "elicitation") {
+          await sendPrompt(page, modal, composer, "need note")
+          await expect
+            .poll(async () => (await readActiveThread(page))?.pendingUserInputs?.length ?? 0, {
+              timeout: 30_000,
+            })
+            .toBeGreaterThan(0)
+          await expectLocatorVisible(modal.locator('[data-testid="user-input-card"]'), {
+            timeout: 10_000,
+          })
+          await modal.getByRole("button", { name: /Accept/i }).click()
+          await waitForAssistantContaining(page, "Mock agent reply: need note")
+          return
+        }
+
+        if (scenario === "create_plan" || scenario === "update_todos") {
+          await sendPrompt(page, modal, composer, `${scenario} e2e`)
+          await expect
+            .poll(async () => {
+              const thread = await readActiveThread(page)
+              return Boolean(thread?.plan) || (thread?.timeline ?? []).some(item => item.kind === "plan")
+            }, { timeout: 30_000 })
+            .toBe(true)
+          await waitForAssistantContaining(page, `Mock agent reply: ${scenario} e2e`)
+          return
+        }
+
+        if (scenario === "auth_required") {
+          test.setTimeout(60_000)
+          await sendPrompt(page, modal, composer, "blocked")
+          await expect
+            .poll(
+              async () => {
+                const thread = await Promise.race([
+                  readActiveThread(page),
+                  page.waitForTimeout(2_000).then(() => null),
+                ])
+                if (!thread) return "read-timeout"
+                return `${thread.status ?? ""}::${thread.lastError ?? ""}::${thread.connection?.status ?? ""}`
+              },
+              { timeout: 20_000 },
+            )
+            .toMatch(/auth|authenticat/i)
+          const authButton = modal.getByRole("button", { name: /mock-token/i })
+          if (await authButton.isVisible().catch(() => false)) {
+            await authButton.click()
+          } else {
+            await page.evaluate(async () => {
+              const workspace = window.__gharargahAgent!.getState().activeWorkspace!
+              const uri = `file://${workspace}`
+              const agents = window.gharargah!.agents!
+              const list = await agents.listThreads(uri, workspace)
+              const current = list.threads[0]
+              if (!current) throw new Error("missing thread")
+              const providerId = current.acpProvider || current.agentId || "cursor-acp"
+              await agents.authenticate!({
+                providerId,
+                workspaceRootPath: current.workspaceRootPath || workspace,
+                methodId: "mock-token",
+              })
+            })
+          }
+          await sendPrompt(page, modal, composer, "after auth")
+          await waitForAssistantContaining(page, "Mock agent reply: after auth", 20_000)
+          return
+        }
+
+        if (scenario === "image_prompt") {
+          // Composer file picker is OS-native; exercise host image path via sendMessage.
+          await page.evaluate(async () => {
+            const workspace = window.__gharargahAgent!.getState().activeWorkspace!
+            const uri = `file://${workspace}`
+            const agents = window.gharargah!.agents!
+            const list = await agents.listThreads(uri, workspace)
+            const thread = list.threads[0]
+            if (!thread) throw new Error("missing thread")
+            const png =
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+            await agents.sendMessage({
+              workspaceRootUri: uri,
+              workspaceRootPath: workspace,
+              threadId: thread.id,
+              text: "see image",
+              images: [{ data: png, mimeType: "image/png" }],
+            })
+          })
+          await waitForAssistantContaining(page, "images=1")
           return
         }
 

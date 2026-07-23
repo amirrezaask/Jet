@@ -60,6 +60,33 @@ export type AgentPermissionRequest = {
   status?: "pending" | "submitting" | "resolved" | "cancelled" | "rejected"
 }
 
+export type AgentUserInputQuestion = {
+  id: string
+  prompt: string
+  allowMultiple?: boolean
+  options?: ReadonlyArray<{ id: string; label: string }>
+}
+
+export type AgentUserInputRequest = {
+  id: string
+  kind: "ask_question" | "elicitation"
+  source?: string
+  title: string
+  message?: string | null
+  questions?: ReadonlyArray<AgentUserInputQuestion>
+  createdAt: string
+  status?: "pending" | "submitting" | "resolved" | "cancelled"
+}
+
+export type AgentSessionConfigOption = {
+  id: string
+  name: string
+  description?: string
+  category?: string
+  currentValue?: string
+  values?: Array<{ value: string; name: string }>
+}
+
 export type AgentPlanEntry = {
   id: string
   label: string
@@ -81,6 +108,8 @@ export type AgentUsage = {
 export type AgentConnectionState = {
   status: "connected" | "connecting" | "authenticating" | "disconnected" | "reconnecting" | "error"
   message?: string | null
+  authMethods?: string[] | null
+  providerId?: string | null
   updatedAt: string
 }
 
@@ -98,6 +127,7 @@ export type AgentTimelineItem =
   | { id: string; kind: "terminal"; text: string; createdAt: string }
   | { id: string; kind: "connection" | "auth" | "cancellation" | "error"; text: string; createdAt: string }
   | { id: string; kind: "usage"; usage: AgentUsage; createdAt: string }
+  | { id: string; kind: "user_input"; userInput: AgentUserInputRequest; createdAt: string }
 
 export type ProviderModel = {
   slug: string
@@ -161,6 +191,10 @@ export type AgentThread = {
   driverId: string | null
   /** Agent-owned ACP session id used to restore the conversation after reconnecting. */
   acpSessionId?: string | null
+  /** ACP provider id bound to this thread (may differ from catalog agentId). */
+  acpProvider?: string | null
+  runtimeMode?: "approval-required" | "auto-accept-edits" | "full-access" | null
+  permissionRules?: Array<{ scope: string; optionId: string }> | null
   /** Live tool/status hint while a turn is running. */
   activity?: string | null
   /** @deprecated Read-only migration field for threads created before agentId. */
@@ -174,10 +208,13 @@ export type AgentThread = {
   messages: AgentMessage[]
   timeline?: AgentTimelineItem[]
   pendingPermissions?: AgentPermissionRequest[]
+  pendingUserInputs?: AgentUserInputRequest[]
   usage?: AgentUsage | null
   plan?: AgentPlan | null
   connection?: AgentConnectionState | null
   availableCommands?: ReadonlyArray<AgentAvailableCommand>
+  configOptions?: Array<AgentSessionConfigOption> | null
+  discoveredModels?: ProviderModel[] | null
   acpSequence?: number
 }
 
@@ -202,10 +239,13 @@ export type AgentStructuredDelta = {
   status?: AgentThreadStatus
   turnState?: "idle" | "running" | "completed" | "failed" | "cancelled"
   pendingPermissions?: AgentPermissionRequest[]
+  pendingUserInputs?: AgentUserInputRequest[]
   usage?: AgentUsage | null
   plan?: AgentPlan | null
   connection?: AgentConnectionState | null
   lastError?: string | null
+  configOptions?: Array<AgentSessionConfigOption> | null
+  discoveredModels?: ProviderModel[] | null
 }
 
 export type AgentThreadSummary = {
@@ -247,6 +287,8 @@ export type SendAgentMessageInput = {
   /** @deprecated Use agentId. */
   provider?: string | null
   model?: string | null
+  /** Optional image attachments (max 8). */
+  images?: ReadonlyArray<{ data: string; mimeType: string }> | null
 }
 
 export type SetAgentThreadArchivedInput = {
@@ -272,6 +314,24 @@ export type ResolveAgentPermissionInput = {
   decision?: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always"
 }
 
+export type ResolveAgentUserInputInput = {
+  workspaceRootUri: string
+  workspaceRootPath: string
+  threadId: string
+  requestId: string
+  answers?: ReadonlyArray<{ questionId: string; selected: string[] }>
+  action?: "accept" | "decline" | "cancel"
+  content?: Record<string, unknown>
+}
+
+export type SetAgentSessionConfigOptionInput = {
+  workspaceRootUri: string
+  workspaceRootPath: string
+  threadId: string
+  configId: string
+  value: string
+}
+
 export type UpdateAgentThreadSettingsInput = {
   workspaceRootUri: string
   workspaceRootPath: string
@@ -281,6 +341,7 @@ export type UpdateAgentThreadSettingsInput = {
   /** @deprecated Use agentId. */
   provider?: string | null
   model?: string | null
+  runtimeMode?: "approval-required" | "auto-accept-edits" | "full-access" | null
 }
 
 /** View-model message shape consumed by MessagesTimeline. */
@@ -348,6 +409,8 @@ export type AgentTransport = {
   sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
   interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
   resolvePermission?(input: ResolveAgentPermissionInput): Promise<void>
+  resolveUserInput?(input: ResolveAgentUserInputInput): Promise<void>
+  setSessionConfigOption?(input: SetAgentSessionConfigOptionInput): Promise<void>
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
   updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
   listAgents(): Promise<AgentCatalogState>
@@ -380,5 +443,22 @@ export type AgentTransport = {
     providerId?: string
     workspaceRootPath?: string
     methodId?: string
+  }): Promise<void>
+  closeAcpSession?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+    sessionId: string
+  }): Promise<void>
+  deleteAcpSession?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
+    sessionId: string
+  }): Promise<void>
+  logoutProvider?(input: {
+    connectionKey?: string
+    providerId?: string
+    workspaceRootPath?: string
   }): Promise<void>
 }

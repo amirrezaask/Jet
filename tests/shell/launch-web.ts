@@ -96,18 +96,22 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     page: wrapPlaywrightPage(browserPage),
     app: {
       async close() {
-        await context.close()
-        if (server.exitCode === null) server.kill("SIGTERM")
-        await new Promise<void>(resolve => {
-          if (server.exitCode !== null) return resolve()
-          const force = setTimeout(() => {
-            if (server.exitCode === null) server.kill("SIGKILL")
-          }, 2_000)
-          server.once("exit", () => {
-            clearTimeout(force)
-            resolve()
+        await context.close().catch(() => {})
+        if (server.exitCode === null) {
+          server.kill("SIGTERM")
+          await new Promise<void>(resolve => {
+            const force = setTimeout(() => {
+              if (server.exitCode === null) server.kill("SIGKILL")
+            }, 1_000)
+            server.once("exit", () => {
+              clearTimeout(force)
+              resolve()
+            })
+            // Hard cap so a wedged Jet cannot strand the Playwright worker.
+            setTimeout(resolve, 2_500)
           })
-        })
+          if (server.exitCode === null) server.kill("SIGKILL")
+        }
         if (errors.length) process.stderr.write(`Browser console errors:\n${errors.join("\n")}\n`)
       },
     },

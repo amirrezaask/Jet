@@ -21,6 +21,7 @@ const MATRIX_SCENARIOS: &[&str] = &[
     "tool_lifecycle",
     "permission_allow",
     "permission_tool_race",
+    "permission_allow_always",
     "plan_update",
     "cancel_coop",
     "slow_stream",
@@ -32,6 +33,12 @@ const MATRIX_SCENARIOS: &[&str] = &[
     "fs_roundtrip",
     "terminal_roundtrip",
     "multi_session",
+    "ask_question",
+    "create_plan",
+    "update_todos",
+    "elicitation",
+    "auth_required",
+    "image_prompt",
 ];
 
 fn mock_bin() -> String {
@@ -76,6 +83,37 @@ async fn run_turn(
     on_activity: Arc<dyn Fn(&str) + Send + Sync>,
     on_event: Arc<dyn Fn(u64, NormalizedEvent) + Send + Sync>,
 ) -> Result<jet_server::host::acp::SupervisorTurnResult, String> {
+    run_turn_with_images(
+        supervisor,
+        scenario,
+        thread_key,
+        prompt,
+        cwd,
+        model,
+        existing_session_id,
+        vec![],
+        on_session,
+        on_text,
+        on_activity,
+        on_event,
+    )
+    .await
+}
+
+async fn run_turn_with_images(
+    supervisor: &AcpSupervisor,
+    scenario: &str,
+    thread_key: &str,
+    prompt: &str,
+    cwd: PathBuf,
+    model: Option<String>,
+    existing_session_id: Option<String>,
+    images: Vec<(String, String)>,
+    on_session: Arc<dyn Fn(&str) + Send + Sync>,
+    on_text: Arc<dyn Fn(&str) + Send + Sync>,
+    on_activity: Arc<dyn Fn(&str) + Send + Sync>,
+    on_event: Arc<dyn Fn(u64, NormalizedEvent) + Send + Sync>,
+) -> Result<jet_server::host::acp::SupervisorTurnResult, String> {
     tokio::time::timeout(
         Duration::from_secs(30),
         supervisor.run_turn(SupervisorTurnRequest {
@@ -83,6 +121,7 @@ async fn run_turn(
             workspace_root: cwd,
             thread_key: thread_key.to_string(),
             prompt: prompt.to_string(),
+            images,
             model,
             existing_session_id,
             prefer_resume: false,
@@ -247,7 +286,14 @@ async fn permission_scenario(scenario: &str) {
                 .payload
                 .get("options")
                 .and_then(|value| value.as_array())
-                .and_then(|options| options.first())
+                .and_then(|options| {
+                    options
+                        .iter()
+                        .find(|option| {
+                            option.get("id").and_then(|value| value.as_str()) == Some("allow_always")
+                        })
+                        .or_else(|| options.first())
+                })
                 .and_then(|option| option.get("id").and_then(|value| value.as_str()))
                 .unwrap_or("allow_once");
             supervisor_cb
@@ -276,6 +322,11 @@ async fn matrix_permission_allow() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn matrix_permission_tool_race() {
     permission_scenario("permission_tool_race").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_permission_allow_always() {
+    permission_scenario("permission_allow_always").await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -650,5 +701,232 @@ async fn matrix_multi_session() {
     assert!(
         observed.len() >= 2,
         "expected interleaved text callbacks from concurrent turns, got {observed:?}"
+    );
+}
+
+fn auto_resolve_user_input(
+    supervisor: Arc<AcpSupervisor>,
+) -> Arc<dyn Fn(u64, NormalizedEvent) + Send + Sync> {
+    Arc::new(move |_seq, event| {
+        let NormalizedEvent::Timeline(item) = event else {
+            return;
+        };
+        if item.kind != TimelineItemKind::UserInput {
+            return;
+        }
+        let id = item
+            .payload
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() {
+            return;
+        }
+        let kind = item
+            .payload
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let answer = if kind == "elicitation" {
+            serde_json::json!({ "action": "accept", "text": "mock-note" })
+        } else {
+            let question_id = item
+                .payload
+                .get("questions")
+                .and_then(Value::as_array)
+                .and_then(|questions| questions.first())
+                .and_then(|question| question.get("id").and_then(Value::as_str))
+                .unwrap_or("q1");
+            let selected = item
+                .payload
+                .get("questions")
+                .and_then(Value::as_array)
+                .and_then(|questions| questions.first())
+                .and_then(|question| question.get("options").and_then(Value::as_array))
+                .and_then(|options| options.first())
+                .and_then(|option| option.get("label").and_then(Value::as_str))
+                .unwrap_or("Red");
+            serde_json::json!({
+                "answers": [{ "questionId": question_id, "selected": [selected] }]
+            })
+        };
+        let _ = supervisor.resolve_user_input(&id, answer);
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_ask_question() {
+    install_mock_bin();
+    let supervisor = Arc::new(AcpSupervisor::new());
+    let on_event = auto_resolve_user_input(supervisor.clone());
+    let result = run_turn(
+        supervisor.as_ref(),
+        "ask_question",
+        "matrix-ask",
+        "choose",
+        std::env::current_dir().unwrap(),
+        None,
+        None,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        on_event,
+    )
+    .await
+    .expect("ask_question");
+    assert!(
+        result.text.contains("Mock agent reply: choose ->"),
+        "unexpected text: {}",
+        result.text
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_create_plan() {
+    install_mock_bin();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_cb = events.clone();
+    let supervisor = AcpSupervisor::new();
+    let result = run_turn(
+        &supervisor,
+        "create_plan",
+        "matrix-create-plan",
+        "plan via ext",
+        std::env::current_dir().unwrap(),
+        None,
+        None,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(move |seq, event| events_cb.lock().unwrap().push((seq, event))),
+    )
+    .await
+    .expect("create_plan");
+    assert!(result.text.contains("Mock agent reply: plan via ext"));
+    assert!(timeline_kinds(&events.lock().unwrap()).contains(&TimelineItemKind::Plan));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_update_todos() {
+    install_mock_bin();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_cb = events.clone();
+    let supervisor = AcpSupervisor::new();
+    let result = run_turn(
+        &supervisor,
+        "update_todos",
+        "matrix-todos",
+        "todos",
+        std::env::current_dir().unwrap(),
+        None,
+        None,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(move |seq, event| events_cb.lock().unwrap().push((seq, event))),
+    )
+    .await
+    .expect("update_todos");
+    assert!(result.text.contains("Mock agent reply: todos"));
+    assert!(timeline_kinds(&events.lock().unwrap()).contains(&TimelineItemKind::Plan));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_elicitation() {
+    install_mock_bin();
+    let supervisor = Arc::new(AcpSupervisor::new());
+    let on_event = auto_resolve_user_input(supervisor.clone());
+    let result = run_turn(
+        supervisor.as_ref(),
+        "elicitation",
+        "matrix-elicit",
+        "need note",
+        std::env::current_dir().unwrap(),
+        None,
+        None,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        on_event,
+    )
+    .await
+    .expect("elicitation");
+    assert!(result.text.contains("Mock agent reply: need note"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_auth_required() {
+    install_mock_bin();
+    let supervisor = AcpSupervisor::new();
+    let cwd = std::env::current_dir().unwrap();
+    let first = run_turn(
+        &supervisor,
+        "auth_required",
+        "matrix-auth-1",
+        "blocked",
+        cwd.clone(),
+        None,
+        None,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_, _| {}),
+    )
+    .await;
+    let first_err = first.as_ref().err().map(String::as_str).unwrap_or("");
+    assert!(
+        first_err.contains("authentication_required"),
+        "expected auth block, got Ok/err={first_err}"
+    );
+    let connection_key = format!("mock-strict:{}", cwd.display());
+    supervisor
+        .authenticate(&connection_key, Some("mock-token"))
+        .await
+        .expect("authenticate");
+    let second = run_turn(
+        &supervisor,
+        "auth_required",
+        "matrix-auth-2",
+        "after auth",
+        cwd,
+        None,
+        None,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_, _| {}),
+    )
+    .await
+    .expect("authenticated turn");
+    assert!(second.text.contains("Mock agent reply: after auth"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_image_prompt() {
+    install_mock_bin();
+    let supervisor = AcpSupervisor::new();
+    // Tiny 1x1 PNG base64.
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    let result = run_turn_with_images(
+        &supervisor,
+        "image_prompt",
+        "matrix-image",
+        "see image",
+        std::env::current_dir().unwrap(),
+        None,
+        None,
+        vec![(png.to_string(), "image/png".to_string())],
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_, _| {}),
+    )
+    .await
+    .expect("image_prompt");
+    assert!(
+        result.text.contains("images=1") && result.text.contains("see image"),
+        "unexpected text: {}",
+        result.text
     );
 }
