@@ -412,7 +412,9 @@ export function GharargahApp() {
 
   const openTerminalFromHome = useCallback(
     (panelId: PanelId, tabId: string) => {
-      focusTerminalTab(panelId, tabId)
+      const session = terminalSessionForTab(tabId)
+      const mode = isAgentInterfaceDriverId(session?.agentDriverId) ? "agent" : "terminal"
+      focusTerminalTab(panelId, tabId, mode)
     },
     [focusTerminalTab],
   )
@@ -647,13 +649,19 @@ export function GharargahApp() {
 
   useEffect(() => {
     if (sessionMode !== "agent" || !terminalModalTabId) return
-    if (!isAgentInterfaceDriverId(terminalSessionForTab(terminalModalTabId)?.agentDriverId)) {
+    const session = terminalSessionForTab(terminalModalTabId)
+    if (!isAgentInterfaceDriverId(session?.agentDriverId)) {
       setSessionMode("terminal")
       return
     }
-    // Keep the in-memory thread across ensureSessionAgentThread identity churn so
-    // live ACP deltas are not dropped mid-turn. ensureSessionAgentThread itself
-    // reuses session.agentThreadId when present.
+    // Drop a previous session's thread so the title/composer don't keep showing
+    // the wrong agent while the new tab's thread loads. Same-thread identity is
+    // preserved so live ACP deltas survive ensureSessionAgentThread churn.
+    setActiveAgentThread(current => {
+      if (!current) return null
+      if (session?.agentThreadId && current.id === session.agentThreadId) return current
+      return null
+    })
     void ensureSessionAgentThread(terminalModalTabId).catch(error => {
       showGharargahToast(error instanceof Error ? error.message : String(error), {
         variant: "destructive",

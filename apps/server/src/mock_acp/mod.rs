@@ -27,7 +27,7 @@ use agent_client_protocol::schema::v1::{
     SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
     SetSessionModeRequest, SetSessionModeResponse, StopReason, TerminalOutputRequest, TextContent,
     ToolCall, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
-    WaitForTerminalExitRequest,
+    WaitForTerminalExitRequest, WriteTextFileRequest,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo, Result, Stdio};
@@ -36,7 +36,7 @@ use cli::Args;
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -691,17 +691,67 @@ async fn handle_prompt(
             answer(&state, &connection, &request.session_id, &prompt).await?
         }
         Scenario::FsRoundtrip => {
-            let path = PathBuf::from(&prompt);
-            let content = connection
-                .send_request(ReadTextFileRequest::new(request.session_id.clone(), path))
+            // Prompt may be an absolute read path (legacy) or a write basename.
+            // Always perform a write+read under the session cwd when the prompt
+            // is not an existing absolute file — proves host FS write works.
+            let prompt_path = PathBuf::from(&prompt);
+            let (write_path, expected_content, also_read_prompt) = if prompt_path.is_absolute()
+                && prompt_path.exists()
+            {
+                let write_path = prompt_path
+                    .parent()
+                    .unwrap_or(Path::new("."))
+                    .join("acp-write-probe.txt");
+                (
+                    write_path,
+                    format!("mock-write:{prompt_number}"),
+                    Some(prompt_path),
+                )
+            } else {
+                (
+                    PathBuf::from("acp-write-probe.txt"),
+                    format!("mock-write:{prompt}"),
+                    None,
+                )
+            };
+            connection
+                .send_request(WriteTextFileRequest::new(
+                    request.session_id.clone(),
+                    write_path.clone(),
+                    expected_content.clone(),
+                ))
+                .block_task()
+                .await?;
+            let written = connection
+                .send_request(ReadTextFileRequest::new(
+                    request.session_id.clone(),
+                    write_path.clone(),
+                ))
                 .block_task()
                 .await?
                 .content;
+            let mut message = format!("Mock write+read: {written}");
+            if let Some(read_path) = also_read_prompt {
+                let original = connection
+                    .send_request(ReadTextFileRequest::new(
+                        request.session_id.clone(),
+                        read_path,
+                    ))
+                    .block_task()
+                    .await?
+                    .content;
+                message = format!("Mock read: {original}\n{message}");
+            }
             send_update(
                 &connection,
                 request.session_id.clone(),
-                SessionUpdate::AgentMessageChunk(text_chunk(format!("Mock read: {content}"))),
+                SessionUpdate::AgentMessageChunk(text_chunk(message)),
             )?;
+            if written != expected_content {
+                return Err(agent_client_protocol::util::internal_error(format!(
+                    "fs_roundtrip: wrote {expected_content:?} but read back {written:?}"
+                )));
+            }
             StopReason::EndTurn
         }
         Scenario::TerminalRoundtrip => {

@@ -73,7 +73,9 @@ pub fn resolve_requested_mode_id(
             });
     }
 
-    if runtime_mode == Some("approval-required") {
+    // Explicit Build/Implement must not be forced into Ask just because runtime
+    // is supervised — approvals still gate tools; session mode stays implement.
+    if runtime_mode == Some("approval-required") && interaction_mode.is_none() {
         return find_mode_by_aliases(&mode_state.available_modes, APPROVAL_ALIASES)
             .map(|mode| mode.id.0.to_string())
             .or_else(|| {
@@ -164,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn approval_runtime_prefers_ask() {
+    fn approval_runtime_prefers_ask_when_interaction_unspecified() {
         let state = SessionModeState::new(
             SessionModeId::new("agent"),
             vec![mode("agent", "Agent"), mode("ask", "Ask")],
@@ -172,6 +174,19 @@ mod tests {
         assert_eq!(
             resolve_requested_mode_id(None, Some("approval-required"), &state).as_deref(),
             Some("ask")
+        );
+    }
+
+    #[test]
+    fn implement_interaction_keeps_agent_under_approval_runtime() {
+        let state = SessionModeState::new(
+            SessionModeId::new("agent"),
+            vec![mode("agent", "Agent"), mode("ask", "Ask")],
+        );
+        assert_eq!(
+            resolve_requested_mode_id(Some("implement"), Some("approval-required"), &state)
+                .as_deref(),
+            Some("agent")
         );
     }
 

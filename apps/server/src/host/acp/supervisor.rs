@@ -437,6 +437,38 @@ impl AcpSupervisor {
         }
     }
 
+    /// Push interaction/runtime mode onto a live ACP session (best-effort).
+    pub fn set_session_interaction_mode(
+        &self,
+        connection_key: &str,
+        session_id: &str,
+        interaction_mode: Option<&str>,
+        runtime_mode: Option<&str>,
+        mode_state: &agent_client_protocol::schema::v1::SessionModeState,
+    ) -> Result<(), String> {
+        let Some(mode_id) =
+            super::mode_resolve::resolve_requested_mode_id(interaction_mode, runtime_mode, mode_state)
+        else {
+            return Ok(());
+        };
+        if mode_id == mode_state.current_mode_id.0.as_ref() {
+            return Ok(());
+        }
+        let pool = self.pool.clone();
+        let connection_key = connection_key.to_string();
+        let session_id = session_id.to_string();
+        let handle = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| e.to_string())?;
+            runtime.block_on(pool.set_session_mode(&connection_key, &session_id, &mode_id))
+        });
+        handle
+            .join()
+            .map_err(|_| "set_session_mode worker panicked".to_string())?
+    }
+
     /// Drop the long-lived worker and kill the provider process (via SDK ChildGuard).
     pub fn force_stop_connection(&self, connection_key: &str) -> Result<(), String> {
         let thread_keys: Vec<String> = self

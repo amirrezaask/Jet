@@ -665,6 +665,21 @@ async fn matrix_fs_roundtrip() {
         "unexpected fs text: {}",
         result.text
     );
+    assert!(
+        result.text.contains("Mock write+read: mock-write:"),
+        "expected write+read confirmation: {}",
+        result.text
+    );
+    let probe = dir.path().join("acp-write-probe.txt");
+    assert!(
+        probe.is_file(),
+        "fs_roundtrip must write probe file on disk"
+    );
+    let probe_content = std::fs::read_to_string(&probe).expect("read probe");
+    assert!(
+        probe_content.starts_with("mock-write:"),
+        "unexpected probe content: {probe_content}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

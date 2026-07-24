@@ -1,5 +1,6 @@
 import type {
   AgentAvailableCommand,
+  AgentComposerCapabilities,
   AgentProvidersState,
   AgentSessionConfigOption,
 } from "@gharargah/agents"
@@ -76,6 +77,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
   lockedContinuationGroupKey?: string | null
   showPlanFollowUpPrompt?: boolean
   onImplementPlan?: () => void
+  capabilities?: AgentComposerCapabilities | null
 }) {
   const [draft, setDraft] = useState("")
   const [isComposerFocused, setIsComposerFocused] = useState(false)
@@ -118,6 +120,11 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const hasModeControls = Boolean(
     props.onRuntimeModeChange || props.onInteractionModeChange || nonModelConfigOptions.length > 0,
   )
+  const capabilities = props.capabilities
+  const showRuntime = Boolean(props.onRuntimeModeChange) && (capabilities?.showRuntime ?? true)
+  const showInteraction =
+    Boolean(props.onInteractionModeChange) && (capabilities?.showInteraction ?? true)
+  const showAttach = capabilities?.showAttachments ?? true
   const isComposerFooterCompact = shouldUseCompactComposerFooter(footerWidth)
   const isComposerPrimaryActionsCompact = shouldUseCompactComposerPrimaryActions(footerWidth, {
     hasWideActions: hasModeControls,
@@ -390,7 +397,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 editorRef={editorRef}
                 value={draft}
                 disabled={props.disabled || props.isSendBusy}
-                placeholder="Ask anything, @tag files/folders, $use skills, or / for commands"
+                placeholder="Ask Jet or type / for commands"
                 onChange={onPromptChange}
                 onCommandKeyDown={onComposerCommandKey}
               />
@@ -419,7 +426,12 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 size="xs"
                 variant="ghost"
                 data-composer-attach-image="true"
-                disabled={props.disabled || props.isSendBusy || images.length >= MAX_COMPOSER_IMAGES}
+                disabled={
+                  !showAttach ||
+                  props.disabled ||
+                  props.isSendBusy ||
+                  images.length >= MAX_COMPOSER_IMAGES
+                }
                 onClick={() => imageInputRef.current?.click()}
               >
                 <ImagePlus className="size-3.5" />
@@ -450,8 +462,8 @@ export const ChatComposer = memo(function ChatComposer(props: {
                   availableInteractionModes={props.availableInteractionModes}
                   configOptions={nonModelConfigOptions}
                   disabled={false}
-                  showRuntime={Boolean(props.onRuntimeModeChange)}
-                  showInteraction={Boolean(props.onInteractionModeChange)}
+                  showRuntime={showRuntime}
+                  showInteraction={showInteraction}
                   onRuntimeModeChange={props.onRuntimeModeChange}
                   onInteractionModeChange={props.onInteractionModeChange}
                   onConfigOptionChange={props.onConfigOptionChange}
@@ -468,8 +480,8 @@ export const ChatComposer = memo(function ChatComposer(props: {
                     interactionMode={interactionMode}
                     availableInteractionModes={props.availableInteractionModes}
                     disabled={false}
-                    showRuntime={Boolean(props.onRuntimeModeChange)}
-                    showInteraction={Boolean(props.onInteractionModeChange)}
+                    showRuntime={showRuntime}
+                    showInteraction={showInteraction}
                     onRuntimeModeChange={props.onRuntimeModeChange}
                     onInteractionModeChange={props.onInteractionModeChange}
                   />

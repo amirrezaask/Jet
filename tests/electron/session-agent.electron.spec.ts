@@ -64,6 +64,16 @@ test.describe("project session agents", () => {
             expect.objectContaining({ id: "opencode:cli", kind: "cli", status: "ready" }),
             expect.objectContaining({ id: "opencode:acp", kind: "acp", status: "ready" }),
           ])
+        } else if (agent.id === "cursor") {
+          expect(agent.activeDriverId).toBe("cursor:acp")
+          expect(agent.drivers).toEqual([
+            expect.objectContaining({
+              id: "cursor:cli",
+              kind: "cli",
+              degraded: true,
+            }),
+            expect.objectContaining({ id: "cursor:acp", kind: "acp" }),
+          ])
         } else {
           const cliDriverId = `${agent.id}:cli`
           const acpDriverId = `${agent.id}:acp`
@@ -172,7 +182,8 @@ test.describe("project session agents", () => {
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
       await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 5)
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
-      await expectLocatorContainsText(modal, "Cursor (ACP)")
+      // Catalog displayName for cursor-acp is "Cursor" (home card label stays "Cursor (ACP)").
+      await expectLocatorContainsText(modal, "Cursor")
 
       const modelPicker = modal.locator('[data-chat-provider-model-picker="true"]')
       await expectLocatorVisible(modelPicker)
@@ -240,6 +251,12 @@ test.describe("project session agents", () => {
       await expectLocatorVisible(footer.locator("[data-agent-runtime-mode]"))
       await expectLocatorCount(modal.locator("select[data-agent-runtime-mode]"), 0)
       await expectLocatorCount(modal.locator("select[data-agent-interaction-mode]"), 0)
+      await expect
+        .poll(async () => {
+          return modal.locator('[data-chat-composer-overlay] [data-slot="permission-card"]').count()
+        })
+        .toBe(0)
+      await expectLocatorContainsText(modal.locator("[data-chat-composer-overlay]"), "Ask Jet")
 
       for (const mode of ["terminal", "editor", "git", "todos"] as const) {
         await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()
@@ -249,6 +266,19 @@ test.describe("project session agents", () => {
         )
         await expectLocatorCount(modal.locator(`[data-gharargah-session-pane="${mode}"][data-active]`), 1)
       }
+
+      // Reopen agent card from home → agent tab (not terminal).
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await expectLocatorCount(modal, 0)
+      const agentCard = page
+        .locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
+        .filter({ hasText: "Cursor (ACP)" })
+        .first()
+      await expectLocatorVisible(agentCard)
+      await agentCard.click()
+      await expectLocatorVisible(modal)
+      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
     } finally {
       await app.close()
     }

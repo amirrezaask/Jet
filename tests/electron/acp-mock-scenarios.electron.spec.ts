@@ -325,6 +325,13 @@ test.describe("ACP mock scenario matrix (host path)", () => {
           fs.writeFileSync(filePath, "fixture-bytes-e2e")
           await sendPrompt(page, modal, composer, filePath)
           await waitForAssistantContaining(page, "Mock read: fixture-bytes-e2e")
+          await waitForAssistantContaining(page, "Mock write+read:")
+          const probePath = path.join(workspace, "acp-write-probe.txt")
+          await expect
+            .poll(() => (fs.existsSync(probePath) ? fs.readFileSync(probePath, "utf8") : ""), {
+              timeout: 15_000,
+            })
+            .toMatch(/^mock-write:/)
           return
         }
 

@@ -1,3 +1,21 @@
+//! Agent host: catalog, turns, persistence, and transport dispatch.
+//!
+//! Submodules carve domain boundaries ahead of full adapter extraction.
+
+mod adapter;
+mod permissions;
+mod store_sqlite;
+
+pub use adapter::{
+    adapter_for_driver, capabilities_json, AcpAdapter, AgentAdapter, AgentCapabilities,
+    CliFallbackAdapter, ProviderSession, SendTurnRequest,
+};
+pub use permissions::{
+    auto_approve_permission_option, mark_permission_denied_in_thread, permission_is_file_mutation,
+    permission_tool_kind,
+};
+pub use store_sqlite::AgentEventStore;
+
 use super::acp::{
     acp_profile_id_for_agent, mock_strict, profile_for_agent, AcpSupervisor, SupervisorTurnRequest,
     TimelineItem, TimelineItemKind,
@@ -24,6 +42,24 @@ use uuid::Uuid;
 
 use super::events::emit_host;
 use super::launch::uri_to_path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
+
+/// Counts full-thread JSON rewrites (write amplification signal for agent benches).
+static WRITE_THREAD_COUNT: AtomicU64 = AtomicU64::new(0);
+static WRITE_THREAD_BYTES: AtomicU64 = AtomicU64::new(0);
+
+pub fn reset_write_thread_metrics() {
+    WRITE_THREAD_COUNT.store(0, Ordering::Relaxed);
+    WRITE_THREAD_BYTES.store(0, Ordering::Relaxed);
+}
+
+pub fn write_thread_metrics() -> (u64, u64) {
+    (
+        WRITE_THREAD_COUNT.load(Ordering::Relaxed),
+        WRITE_THREAD_BYTES.load(Ordering::Relaxed),
+    )
+}
 
 struct ActiveTurn {
     id: Uuid,
@@ -61,7 +97,7 @@ const AGENTS: &[AgentSpec] = &[
     },
     AgentSpec {
         id: "cursor-acp",
-        display_name: "Cursor (ACP)",
+        display_name: "Cursor",
         binaries: &["cursor-agent", "agent"],
     },
     AgentSpec {
@@ -114,8 +150,8 @@ impl AgentsHost {
             "codex" => "codex:app-server".to_string(),
             "claude" => "claude:sdk".to_string(),
             "opencode" => "opencode:acp".to_string(),
-            // Cursor ACP is a separate agent; transport id stays `cursor:acp`.
-            "cursor-acp" => "cursor:acp".to_string(),
+            // Prefer ACP so edits go through the host FS bridge (CLI is degraded chat-only).
+            "cursor" | "cursor-acp" => "cursor:acp".to_string(),
             "grok" => "grok:acp".to_string(),
             id => format!("{id}:cli"),
         }
@@ -213,15 +249,16 @@ impl AgentsHost {
     }
 
     fn write_json_atomic(path: &PathBuf, payload: &Value) -> Result<(), String> {
+        let bytes = serde_json::to_vec(payload).map_err(|e| e.to_string())?;
+        Self::write_bytes_atomic(path, &bytes)
+    }
+
+    fn write_bytes_atomic(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let tmp = path.with_extension("tmp");
-        fs::write(
-            &tmp,
-            serde_json::to_vec(payload).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
+        fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
         fs::rename(tmp, path).map_err(|e| e.to_string())
     }
 
@@ -321,7 +358,14 @@ impl AgentsHost {
             .and_then(|v| v.as_str())
             .ok_or("missing thread id")?;
         let path = Self::thread_path(root_path, id).ok_or("invalid thread id")?;
-        Self::write_json_atomic(&path, thread)?;
+        let encoded = serde_json::to_vec(thread).map_err(|e| e.to_string())?;
+        WRITE_THREAD_COUNT.fetch_add(1, Ordering::Relaxed);
+        WRITE_THREAD_BYTES.fetch_add(encoded.len() as u64, Ordering::Relaxed);
+        Self::write_bytes_atomic(&path, &encoded)?;
+        // Dual-write snapshot into SQLite event store (best-effort; JSON remains source of truth).
+        if let Ok(store) = AgentEventStore::open(AgentEventStore::default_path(root_path)) {
+            let _ = store.upsert_thread_snapshot(thread);
+        }
 
         let mut index = Self::read_index(root_path);
         let summaries = index
@@ -418,6 +462,10 @@ impl AgentsHost {
                 .get("runtimeMode")
                 .and_then(Value::as_str)
                 .unwrap_or("approval-required"),
+            "interactionMode": input
+                .get("interactionMode")
+                .and_then(Value::as_str)
+                .unwrap_or("implement"),
             "createdAt": created,
             "updatedAt": created,
             "archivedAt": Value::Null,
@@ -442,6 +490,7 @@ impl AgentsHost {
     }
 
     pub fn send_message(&self, app: &EventHub, input: &Value) -> Result<Value, String> {
+        let started = Instant::now();
         let root_uri = input
             .get("workspaceRootUri")
             .and_then(|v| v.as_str())
@@ -457,6 +506,13 @@ impl AgentsHost {
             .and_then(|v| v.as_str())
             .ok_or("missing threadId")?
             .to_string();
+        tracing::info!(
+            target: "jet_agent",
+            event = "user_submit",
+            thread_id = %thread_id,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "agent send_message accepted"
+        );
         let text = input
             .get("text")
             .and_then(|v| v.as_str())
@@ -689,6 +745,62 @@ impl AgentsHost {
                 return Err(format!("unsupported interactionMode: {mode}"));
             }
             thread["interactionMode"] = json!(mode);
+            // Best-effort: push mode onto live ACP session so Ask→Build takes effect
+            // immediately (not only on the next prompt).
+            if let (Some(session_id), Some(provider_id), Some(modes_value)) = (
+                thread.get("acpSessionId").and_then(Value::as_str),
+                thread
+                    .get("acpProvider")
+                    .or_else(|| thread.get("connection").and_then(|c| c.get("providerId")))
+                    .and_then(Value::as_str),
+                thread.get("sessionModes"),
+            ) {
+                if let Ok(mode_state) = serde_json::from_value::<
+                    agent_client_protocol::schema::v1::SessionModeState,
+                >(modes_value.clone())
+                {
+                    let connection_key = format!("{provider_id}:{root_path}");
+                    let runtime_mode = thread.get("runtimeMode").and_then(Value::as_str);
+                    match self.supervisor.set_session_interaction_mode(
+                        &connection_key,
+                        session_id,
+                        Some(mode),
+                        runtime_mode,
+                        &mode_state,
+                    ) {
+                        Ok(()) => {
+                            if let Some(resolved) =
+                                crate::host::acp::mode_resolve::resolve_requested_mode_id(
+                                    Some(mode),
+                                    runtime_mode,
+                                    &mode_state,
+                                )
+                            {
+                                if let Some(object) =
+                                    thread.get_mut("sessionModes").and_then(Value::as_object_mut)
+                                {
+                                    object.insert(
+                                        "currentModeId".to_string(),
+                                        json!(resolved),
+                                    );
+                                    // Protocol serde may use snake_case too.
+                                    object.insert(
+                                        "current_mode_id".to_string(),
+                                        json!(resolved),
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                target: "jet_agent",
+                                error = %error,
+                                "live set_session_mode failed; mode applies on next turn"
+                            );
+                        }
+                    }
+                }
+            }
         }
         // Continuation: clearing session when agent/provider changes.
         if input.get("agentId").is_some() || input.get("driverId").is_some() {
@@ -793,11 +905,19 @@ fn agent_snapshot(agent: &AgentSpec) -> Value {
     };
     let mut drivers = Vec::new();
     if let Some(cli_id) = AgentsHost::cli_driver_id(agent.id) {
+        let cli_message = if !installed {
+            unavailable_msg.clone()
+        } else if normalize_agent_id(agent.id) == "cursor" {
+            json!("Degraded: text-only CLI; cannot write project files via Jet")
+        } else {
+            unavailable_msg.clone()
+        };
         drivers.push(json!({
             "id": cli_id,
             "kind": "cli",
             "status": status,
-            "message": unavailable_msg.clone(),
+            "message": cli_message,
+            "degraded": normalize_agent_id(agent.id) == "cursor",
         }));
     }
     if let Some(native_id) = AgentsHost::native_driver_id(agent.id) {
@@ -2313,12 +2433,19 @@ fn run_acp_turn(
                             .get("permission")
                             .cloned()
                             .unwrap_or_else(|| ui_permission(&item.payload));
-                        // Runtime mode full-access: auto-approve allow_* options.
+                        // Runtime modes:
+                        // - full-access: auto-approve all allow_* options
+                        // - auto-accept-edits: auto-approve file edit/write/delete/move only
                         let runtime_mode = thread
                             .get("runtimeMode")
                             .and_then(Value::as_str)
                             .unwrap_or("approval-required");
-                        if runtime_mode == "full-access" {
+                        let should_auto_approve = match runtime_mode {
+                            "full-access" => true,
+                            "auto-accept-edits" => permission_is_file_mutation(&permission),
+                            _ => false,
+                        };
+                        if should_auto_approve {
                             if let Some(option_id) = auto_approve_permission_option(&permission) {
                                 let _ = supervisor.resolve_permission(
                                     permission
@@ -2481,26 +2608,6 @@ fn run_acp_turn(
         );
     }
     Ok(())
-}
-
-fn auto_approve_permission_option(permission: &Value) -> Option<String> {
-    let options = permission
-        .get("options")
-        .or_else(|| permission.get("optionIds"))
-        .and_then(Value::as_array)?;
-    for preferred in ["allow_always", "allow_once", "allow"] {
-        for option in options {
-            let kind = option
-                .get("kind")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if kind == preferred || kind.replace('-', "_") == preferred {
-                return option.get("id").and_then(Value::as_str).map(str::to_string);
-            }
-        }
-    }
-    None
 }
 
 fn remembered_permission_option(thread: &Value, permission: &Value) -> Option<String> {
@@ -3010,6 +3117,14 @@ pub fn handle(
                                 && item.get("permissionId").and_then(Value::as_str)
                                     != Some(request_id)
                         });
+                    }
+                    let rejected = decision_kind.contains("reject")
+                        || matches!(
+                            input.get("decision").and_then(Value::as_str),
+                            Some("reject" | "reject_once" | "reject_always")
+                        );
+                    if rejected {
+                        mark_permission_denied_in_thread(&mut thread, request_id, &pending_permission);
                     }
                     let _ = AgentsHost::write_thread(root_path, &thread);
                     emit_host(app, "agents:threadUpdated", vec![thread]);
@@ -3529,21 +3644,63 @@ mod tests {
                     );
                 } else if id == "opencode" {
                     assert_eq!(agent["activeDriverId"], "opencode:acp");
+                    assert!(
+                        drivers.iter().any(
+                            |driver| driver["id"] == "opencode:cli" && driver["kind"] == "cli"
+                        ),
+                        "missing cli driver for opencode"
+                    );
+                    assert!(
+                        drivers.iter().any(
+                            |driver| driver["id"] == "opencode:acp" && driver["kind"] == "acp"
+                        ),
+                        "missing acp driver for opencode"
+                    );
+                } else if id == "cursor" {
+                    assert_eq!(agent["activeDriverId"], "cursor:acp");
+                    assert!(
+                        drivers.iter().any(|driver| {
+                            driver["id"] == "cursor:cli"
+                                && driver["kind"] == "cli"
+                                && driver["degraded"] == true
+                        }),
+                        "missing degraded cli driver for cursor"
+                    );
+                    assert!(
+                        drivers.iter().any(
+                            |driver| driver["id"] == "cursor:acp" && driver["kind"] == "acp"
+                        ),
+                        "missing acp driver for cursor"
+                    );
                 } else {
                     assert_eq!(agent["activeDriverId"], format!("{id}:cli"));
+                    assert!(
+                        drivers.iter().any(
+                            |driver| driver["id"] == format!("{id}:cli") && driver["kind"] == "cli"
+                        ),
+                        "missing cli driver for {id}"
+                    );
+                    assert!(
+                        drivers.iter().any(
+                            |driver| driver["id"] == format!("{id}:acp") && driver["kind"] == "acp"
+                        ),
+                        "missing acp driver for {id}"
+                    );
                 }
-                assert!(
-                    drivers.iter().any(
-                        |driver| driver["id"] == format!("{id}:cli") && driver["kind"] == "cli"
-                    ),
-                    "missing cli driver for {id}"
-                );
-                assert!(
-                    drivers.iter().any(
-                        |driver| driver["id"] == format!("{id}:acp") && driver["kind"] == "acp"
-                    ),
-                    "missing acp driver for {id}"
-                );
+                if id == "codex" || id == "claude" {
+                    assert!(
+                        drivers.iter().any(
+                            |driver| driver["id"] == format!("{id}:cli") && driver["kind"] == "cli"
+                        ),
+                        "missing cli driver for {id}"
+                    );
+                    assert!(
+                        drivers.iter().any(
+                            |driver| driver["id"] == format!("{id}:acp") && driver["kind"] == "acp"
+                        ),
+                        "missing acp driver for {id}"
+                    );
+                }
             }
         }
     }
@@ -3576,7 +3733,7 @@ mod tests {
     }
 
     #[test]
-    fn new_cursor_thread_defaults_to_cli_and_starts_idle() {
+    fn new_cursor_thread_defaults_to_acp_and_starts_idle() {
         let root = std::env::temp_dir().join(format!(
             "gharargah-agent-thread-{}-{}",
             std::process::id(),
@@ -3592,7 +3749,7 @@ mod tests {
             }))
             .unwrap();
         assert_eq!(thread["agentId"], "cursor");
-        assert_eq!(thread["driverId"], "cursor:cli");
+        assert_eq!(thread["driverId"], "cursor:acp");
         assert_eq!(thread["status"], "idle");
         assert!(thread.get("provider").is_none());
         let _ = fs::remove_dir_all(root);
@@ -3642,5 +3799,36 @@ mod tests {
         assert_eq!(models[0]["name"], "Auto");
         assert_eq!(models[1]["slug"], "composer-2.5");
         assert_eq!(models[1]["name"], "Composer 2.5");
+    }
+
+    #[test]
+    fn file_mutation_permissions_are_detected_for_auto_accept() {
+        let edit = json!({
+            "title": "Edit file",
+            "toolCall": { "fields": { "kind": "edit" } },
+            "options": [{ "id": "allow_once", "kind": "allow_once" }],
+        });
+        assert!(super::permission_is_file_mutation(&edit));
+        assert_eq!(
+            super::auto_approve_permission_option(&edit).as_deref(),
+            Some("allow_once")
+        );
+
+        let execute = json!({
+            "title": "Run shell",
+            "toolCall": { "fields": { "kind": "execute" } },
+            "options": [{ "id": "allow_once", "kind": "allow_once" }],
+        });
+        assert!(!super::permission_is_file_mutation(&execute));
+    }
+
+    #[test]
+    fn adapter_marks_cli_degraded() {
+        let caps = super::adapter_for_driver("cursor:cli").capabilities();
+        assert!(caps.degraded);
+        assert!(!caps.write_capable);
+        let acp = super::adapter_for_driver("cursor:acp").capabilities();
+        assert!(acp.write_capable);
+        assert!(!acp.degraded);
     }
 }

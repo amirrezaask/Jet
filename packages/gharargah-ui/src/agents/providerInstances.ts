@@ -50,20 +50,27 @@ export function agentCatalogToProviderState(
   catalog: AgentCatalogState | null,
 ): AgentProvidersState | null {
   if (!catalog) return null
+  // Merge Cursor (ACP) into Cursor so the picker shows one product identity.
+  const agents = catalog.agents.filter(agent => agent.id !== "cursor-acp")
+  const cursorAcp = catalog.agents.find(agent => agent.id === "cursor-acp")
   return {
     updatedAt: catalog.updatedAt,
-    providers: catalog.agents.map(agent => {
-      const driver =
-        agent.drivers.find(candidate => candidate.id === agent.activeDriverId) ?? agent.drivers[0]
+    providers: agents.map(agent => {
+      const preferred =
+        agent.id === "cursor" && cursorAcp
+          ? cursorAcp.drivers.find(d => d.id === "cursor:acp") ??
+            agent.drivers.find(d => d.id === agent.activeDriverId) ??
+            agent.drivers[0]
+          : agent.drivers.find(d => d.id === agent.activeDriverId) ?? agent.drivers[0]
       return {
         instanceId: agent.id,
         // The picker uses this only for agent icons/grouping. Transport kind stays on driver.
-        driverKind: agent.id,
-        displayName: agent.displayName,
+        driverKind: agent.id === "cursor-acp" ? "cursor" : agent.id,
+        displayName: agent.id === "cursor" || agent.id === "cursor-acp" ? "Cursor" : agent.displayName,
         enabled: agent.enabled,
-        status: driver?.status ?? "unavailable",
-        message: driver?.message,
-        models: agent.models,
+        status: preferred?.status ?? "unavailable",
+        message: preferred?.message,
+        models: agent.models.length ? agent.models : (cursorAcp?.models ?? []),
       }
     }),
   }

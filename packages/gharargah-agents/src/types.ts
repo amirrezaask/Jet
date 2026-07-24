@@ -287,6 +287,8 @@ export type CreateAgentThreadInput = {
   /** @deprecated Use agentId. */
   provider?: string | null
   model?: string | null
+  runtimeMode?: "approval-required" | "auto-accept-edits" | "full-access" | null
+  interactionMode?: "implement" | "plan" | "ask" | null
 }
 
 export type SendAgentMessageInput = {

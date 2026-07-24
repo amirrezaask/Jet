@@ -6,6 +6,7 @@ import type {
 } from "@gharargah/agents"
 import {
   buildTurnDiffSummaryByAssistantMessageId,
+  deriveComposerCapabilities,
   deriveTimelineEntriesFromThread,
 } from "@gharargah/agents"
 import { AlertCircle, ChevronDown, Loader2 } from "lucide-react"
@@ -15,6 +16,7 @@ import type {
   ComposerInteractionMode,
   ComposerRuntimeMode,
 } from "./composer/ComposerModeControls.js"
+import { interactionModeFromSessionModeId } from "./composer/ComposerModeControls.js"
 import { AcpInspector } from "./inspector/AcpInspector.js"
 import {
   deriveProviderInstanceEntries,
@@ -24,8 +26,6 @@ import {
 import { ChatHeader } from "./timeline/ChatHeader.js"
 import { MessagesTimeline } from "./timeline/MessagesTimeline.js"
 import { ConnectionBanner } from "./timeline/ConnectionBanner.js"
-import { PermissionCard } from "./timeline/PermissionCard.js"
-import { UserInputCard } from "./timeline/UserInputCard.js"
 import type { TimelineScrollMode } from "./timeline/timelineScrollAnchoring.js"
 
 import type { ProviderDriverKind } from "./t3contracts.js"
@@ -319,14 +319,32 @@ export const AgentChatView = memo(function AgentChatView(props: {
     timelineEntries.some(entry => entry.kind === "proposed-plan") ||
     (thread.timeline ?? []).some(item => item.kind === "plan")
 
+  const isEmptyThread =
+    timelineEntries.length === 0 &&
+    (thread.messages?.length ?? 0) === 0 &&
+    !isWorking
+  const pendingActionCount =
+    (thread.pendingPermissions?.length ?? 0) + (thread.pendingUserInputs?.length ?? 0)
+
+  const selectedAgent =
+    agents?.agents.find(agent => agent.id === (defaultSelection?.instanceId ?? thread.agentId)) ??
+    agents?.agents.find(agent => agent.id === "cursor") ??
+    null
+  const composerCapabilities = deriveComposerCapabilities({
+    thread,
+    agent: selectedAgent,
+  })
+
   const runtimeMode: ComposerRuntimeMode =
     thread.runtimeMode === "auto-accept-edits" || thread.runtimeMode === "full-access"
       ? thread.runtimeMode
       : "approval-required"
   const interactionMode: ComposerInteractionMode =
-    thread.interactionMode === "plan" || thread.interactionMode === "ask"
+    thread.interactionMode === "plan" ||
+    thread.interactionMode === "ask" ||
+    thread.interactionMode === "implement"
       ? thread.interactionMode
-      : "implement"
+      : (interactionModeFromSessionModeId(thread.sessionModes?.currentModeId) ?? "implement")
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
@@ -399,7 +417,12 @@ export const AgentChatView = memo(function AgentChatView(props: {
       <div
         ref={composerOverlayRef}
         data-chat-composer-overlay="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+        data-chat-composer-empty={isEmptyThread ? "true" : "false"}
+        className={
+          isEmptyThread
+            ? "pointer-events-none absolute inset-x-0 top-[42%] z-20 -translate-y-1/2 pt-1.5 sm:pt-2"
+            : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+        }
       >
         <div
           aria-hidden="true"
@@ -420,28 +443,14 @@ export const AgentChatView = memo(function AgentChatView(props: {
               <span className="min-w-0 truncate">{activityLabel}</span>
             </div>
           ) : null}
-          {thread.pendingPermissions?.length ? (
-            <div className="mb-2 space-y-2">
-              {thread.pendingPermissions.map(permission => (
-                <PermissionCard
-                  key={permission.id}
-                  permission={permission}
-                  disabled={!onResolvePermission}
-                  onResolve={input => void onResolvePermission?.(input)}
-                />
-              ))}
-            </div>
-          ) : null}
-          {thread.pendingUserInputs?.length ? (
-            <div className="mb-2 space-y-2">
-              {thread.pendingUserInputs.map(userInput => (
-                <UserInputCard
-                  key={userInput.id}
-                  userInput={userInput}
-                  disabled={!onResolveUserInput}
-                  onResolve={input => void onResolveUserInput?.(input)}
-                />
-              ))}
+          {pendingActionCount > 0 ? (
+            <div
+              className="mb-2 px-1 text-xs text-amber-600 dark:text-amber-400"
+              data-chat-pending-actions="true"
+            >
+              {pendingActionCount === 1
+                ? "1 pending action in the timeline — respond there to continue."
+                : `${pendingActionCount} pending actions in the timeline — respond there to continue.`}
             </div>
           ) : null}
           <ChatComposer
@@ -456,6 +465,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
             interactionMode={interactionMode}
             availableInteractionModes={thread.sessionModes?.availableModes}
             configOptions={nonModelConfigOptions}
+            capabilities={composerCapabilities}
             onRuntimeModeChange={onRuntimeModeChange}
             onInteractionModeChange={onInteractionModeChange}
             onConfigOptionChange={

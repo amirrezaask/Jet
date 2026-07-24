@@ -54,7 +54,7 @@ Without `--strict`, an unknown scenario warns on stderr and falls back to `echo`
 | `slash_commands` | Emits `/mock` and `/reset` available commands, then answers. |
 | `chaos_malformed` | Writes intentionally malformed JSON after init, then fails the prompt (`internal_error`). |
 | `load_session` | Advertises load support and emits a replay message during `session/load`, then answers. |
-| `fs_roundtrip` | Treats prompt text as a path, requests `fs/read_text_file`, and emits the contents. |
+| `fs_roundtrip` | Writes `acp-write-probe.txt` via `fs/write_text_file`, reads it back, and (when prompt is an existing absolute path) also reads that path. Emits `Mock read: …` + `Mock write+read: …`. |
 | `terminal_roundtrip` | Creates a client terminal (`/bin/echo hi`), waits for exit, reads output, releases, then emits `Mock terminal: …`. |
 | `multi_session` | Currently follows echo behavior; useful for exercising multiple sessions over one connection. |
 | `ask_question` | Sends `cursor/ask_question`; answers with selected option in the echo text. |
