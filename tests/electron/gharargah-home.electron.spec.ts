@@ -49,6 +49,7 @@ test.describe("gharargah mission home", () => {
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "OpenCode" }))
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Cursor Agent" }))
       await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Cursor (ACP)" }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Grok (ACP)" }))
       await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
       await expect
         .poll(async () => page.evaluate(() => window.__gharargahAgent?.getState()?.shellView ?? null), {

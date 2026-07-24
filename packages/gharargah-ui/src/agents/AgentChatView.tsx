@@ -23,6 +23,30 @@ import { ConnectionBanner } from "./timeline/ConnectionBanner.js"
 import { PermissionCard } from "./timeline/PermissionCard.js"
 import { UserInputCard } from "./timeline/UserInputCard.js"
 
+import type { ProviderDriverKind } from "./t3contracts.js"
+
+const INTERACTION_MODES = [
+  { value: "implement" as const, label: "Implement", aliases: ["agent", "code", "default", "chat", "implement"] },
+  { value: "plan" as const, label: "Plan", aliases: ["plan", "architect"] },
+  { value: "ask" as const, label: "Ask", aliases: ["ask"] },
+]
+
+function interactionModeLabel(
+  mode: "implement" | "plan" | "ask",
+  availableModes?: ReadonlyArray<{ id: string; name: string }>,
+): string {
+  const option = INTERACTION_MODES.find(candidate => candidate.value === mode)
+  if (!availableModes?.length) return option?.label ?? mode
+  const aliases = option?.aliases ?? []
+  const match = availableModes.find(candidate =>
+    aliases.some(
+      alias =>
+        candidate.id.toLowerCase() === alias || candidate.name.toLowerCase() === alias,
+    ),
+  )
+  return match?.name ?? option?.label ?? mode
+}
+
 export const AgentChatView = memo(function AgentChatView(props: {
   thread: AgentThread | null
   agents: AgentCatalogState | null
@@ -48,6 +72,10 @@ export const AgentChatView = memo(function AgentChatView(props: {
   onRuntimeModeChange?: (
     mode: "approval-required" | "auto-accept-edits" | "full-access",
   ) => void
+  onInteractionModeChange?: (mode: "implement" | "plan" | "ask") => void
+  onListSessions?: () => Promise<unknown>
+  onLogout?: () => Promise<void>
+  onCloseSession?: () => Promise<void>
 }) {
   const {
     thread,
@@ -64,6 +92,10 @@ export const AgentChatView = memo(function AgentChatView(props: {
     onAuthenticate,
     onForceStopProvider,
     onRuntimeModeChange,
+    onInteractionModeChange,
+    onListSessions,
+    onLogout,
+    onCloseSession,
   } = props
   const loadAcpTrace = useCallback(() => {
     if (onLoadAcpTrace) return onLoadAcpTrace()
@@ -187,6 +219,19 @@ export const AgentChatView = memo(function AgentChatView(props: {
     thread.activity?.trim() ||
     (thread.status === "running" ? "Agent is running…" : null)
 
+  const lockedProvider: ProviderDriverKind | null =
+    thread.acpProvider || (thread.timeline?.length ?? 0) > 0 || (thread.messages?.length ?? 0) > 1
+      ? ((thread.agentId ?? null) as ProviderDriverKind | null)
+      : null
+  const lockedContinuationGroupKey = thread.agentId
+    ? `${thread.agentId}:instance:${thread.agentId}`
+    : null
+
+  const showPlanFollowUpPrompt =
+    Boolean(thread.plan?.entries?.length) ||
+    timelineEntries.some(entry => entry.kind === "proposed-plan") ||
+    (thread.timeline ?? []).some(item => item.kind === "plan")
+
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
       <ChatHeader
@@ -200,6 +245,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
             connection={thread.connection}
             onLoadTrace={loadAcpTrace}
             onForceStop={onForceStopProvider ? () => void onForceStopProvider() : undefined}
+            onListSessions={onListSessions}
+            onLogout={onLogout}
+            onCloseSession={onCloseSession}
           />
         }
       />
@@ -297,6 +345,30 @@ export const AgentChatView = memo(function AgentChatView(props: {
               </select>
             </div>
           ) : null}
+          {onInteractionModeChange ? (
+            <div className="mb-2 flex items-center gap-2 px-1 text-xs text-muted-foreground">
+              <label htmlFor="agent-interaction-mode" className="shrink-0">
+                Interaction
+              </label>
+              <select
+                id="agent-interaction-mode"
+                data-agent-interaction-mode="true"
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                value={thread.interactionMode ?? "implement"}
+                onChange={event =>
+                  onInteractionModeChange(
+                    event.target.value as "implement" | "plan" | "ask",
+                  )
+                }
+              >
+                {INTERACTION_MODES.map(mode => (
+                  <option key={mode.value} value={mode.value}>
+                    {interactionModeLabel(mode.value, thread.sessionModes?.availableModes)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           {thread.pendingPermissions?.length ? (
             <div className="mb-2 space-y-2">
               {thread.pendingPermissions.map(permission => (
@@ -367,6 +439,17 @@ export const AgentChatView = memo(function AgentChatView(props: {
             isRunning={isWorking}
             isSendBusy={submitting}
             commands={thread.availableCommands}
+            lockedProvider={lockedProvider}
+            lockedContinuationGroupKey={lockedContinuationGroupKey}
+            showPlanFollowUpPrompt={showPlanFollowUpPrompt}
+            onImplementPlan={() => {
+              if (!defaultSelection) return
+              void handleSend({
+                text: "Implement the plan.",
+                instanceId: defaultSelection.instanceId,
+                model: defaultSelection.model,
+              })
+            }}
             onInstanceModelChange={(instanceId, model) => onSelectionChange?.(instanceId, model)}
             onSend={handleSend}
             onInterrupt={() => onInterrupt?.()}

@@ -39,6 +39,8 @@ const MATRIX_SCENARIOS: &[&str] = &[
     "elicitation",
     "auth_required",
     "image_prompt",
+    "set_mode_plan",
+    "mcp_servers_inject",
 ];
 
 fn mock_bin() -> String {
@@ -124,6 +126,45 @@ async fn run_turn_with_images(
             images,
             model,
             existing_session_id,
+            runtime_mode: None,
+            interaction_mode: None,
+            prefer_resume: false,
+            initial_sequence: 0,
+            on_session,
+            on_text,
+            on_activity,
+            on_event,
+        }),
+    )
+    .await
+    .map_err(|_| format!("{scenario}: timed out"))?
+}
+
+async fn run_turn_with_modes(
+    supervisor: &AcpSupervisor,
+    scenario: &str,
+    thread_key: &str,
+    prompt: &str,
+    cwd: PathBuf,
+    interaction_mode: Option<String>,
+    runtime_mode: Option<String>,
+    on_session: Arc<dyn Fn(&str) + Send + Sync>,
+    on_text: Arc<dyn Fn(&str) + Send + Sync>,
+    on_activity: Arc<dyn Fn(&str) + Send + Sync>,
+    on_event: Arc<dyn Fn(u64, NormalizedEvent) + Send + Sync>,
+) -> Result<jet_server::host::acp::SupervisorTurnResult, String> {
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        supervisor.run_turn(SupervisorTurnRequest {
+            provider: profile_for(scenario),
+            workspace_root: cwd,
+            thread_key: thread_key.to_string(),
+            prompt: prompt.to_string(),
+            images: vec![],
+            model: None,
+            existing_session_id: None,
+            runtime_mode,
+            interaction_mode,
             prefer_resume: false,
             initial_sequence: 0,
             on_session,
@@ -927,6 +968,63 @@ async fn matrix_image_prompt() {
     assert!(
         result.text.contains("images=1") && result.text.contains("see image"),
         "unexpected text: {}",
+        result.text
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_set_mode_plan() {
+    install_mock_bin();
+    let supervisor = AcpSupervisor::new();
+    let result = run_turn_with_modes(
+        &supervisor,
+        "set_mode_plan",
+        "matrix-set-mode",
+        "plan mode",
+        std::env::current_dir().unwrap(),
+        Some("plan".to_string()),
+        Some("full-access".to_string()),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_, _| {}),
+    )
+    .await
+    .expect("set_mode_plan");
+    assert!(
+        result.text.contains("mode:plan"),
+        "expected last set mode in reply, got: {}",
+        result.text
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_mcp_servers_inject() {
+    install_mock_bin();
+    let supervisor = AcpSupervisor::new();
+    let result = run_turn(
+        &supervisor,
+        "mcp_servers_inject",
+        "matrix-mcp",
+        "inject check",
+        std::env::current_dir().unwrap(),
+        None,
+        None,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_, _| {}),
+    )
+    .await
+    .expect("mcp_servers_inject");
+    assert!(
+        result.text.contains("mcp_servers="),
+        "expected mcp server count in reply, got: {}",
+        result.text
+    );
+    assert!(
+        !result.text.contains("mcp_servers=0"),
+        "expected at least one injected mcp server, got: {}",
         result.text
     );
 }

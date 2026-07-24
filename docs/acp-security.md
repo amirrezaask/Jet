@@ -32,6 +32,17 @@ Defined defensive limits are:
 | Pending permissions | 128 | Constant exists; live pending map is not capped. |
 | Allowed roots | 32 | Enforced by generic root canonicalization. |
 
+## Host MCP bridge
+
+Gharargah injects a loopback HTTP MCP server (`name: gharargah`) into ACP `session/new` and `session/load` via `mcpServers`, matching t3code’s host-tool bridge pattern.
+
+- Bind: `127.0.0.1` only (ephemeral port).
+- Auth: random per-process Bearer token in `Authorization` header.
+- Tools (minimal): `gharargah_ping`, `gharargah_workspace_root`.
+- Path policy: workspace root is set from the ACP session cwd; tools do not accept arbitrary filesystem paths.
+
+Do not expose this endpoint beyond localhost. Tokens are process-local and never persisted.
+
 ## Unsaved editor buffers
 
 The current ACP FS bridge reads and writes disk only; it has no connection to editor buffers. The intended policy, retained from the ACP audit, is:

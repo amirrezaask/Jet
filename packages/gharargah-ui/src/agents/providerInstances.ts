@@ -35,6 +35,7 @@ export function deriveProviderInstanceEntries(
     instanceId: snapshot.instanceId as ProviderInstanceId,
     driverKind: snapshot.driverKind as ProviderDriverKind,
     displayName: snapshot.displayName,
+    continuationGroupKey: `${snapshot.instanceId}:instance:${snapshot.instanceId}`,
     enabled: snapshot.enabled,
     status: snapshot.status,
     message: snapshot.message,

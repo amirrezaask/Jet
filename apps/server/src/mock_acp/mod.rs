@@ -16,8 +16,10 @@ use agent_client_protocol::schema::v1::{
     RequestPermissionOutcome, RequestPermissionRequest, ResumeSessionRequest, ResumeSessionResponse,
     SessionCapabilities, SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOption, SessionConfigSelectOptions, SessionDeleteCapabilities, SessionInfo,
-    SessionListCapabilities, SessionNotification, SessionResumeCapabilities, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, StopReason, TerminalOutputRequest,
+    SessionListCapabilities, SessionMode, SessionModeId, SessionModeState, SessionNotification,
+    SessionResumeCapabilities, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
+    TerminalOutputRequest,
     TextContent, ToolCall, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
     UsageUpdate, WaitForTerminalExitRequest,
 };
@@ -53,6 +55,8 @@ struct MockState {
     next_session: AtomicU64,
     prompt_count: AtomicU64,
     random: Mutex<u64>,
+    last_set_mode: Mutex<Option<String>>,
+    last_mcp_server_count: Mutex<usize>,
 }
 
 impl MockState {
@@ -64,6 +68,8 @@ impl MockState {
             sessions: Mutex::new(HashMap::new()),
             next_session: AtomicU64::new(1),
             prompt_count: AtomicU64::new(0),
+            last_set_mode: Mutex::new(None),
+            last_mcp_server_count: Mutex::new(0),
         }
     }
 
@@ -213,13 +219,23 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         .on_receive_request(
             {
                 let state = state.clone();
-                async move |_request: NewSessionRequest, responder, _connection| {
+                async move |request: NewSessionRequest, responder, _connection| {
+                    *state.last_mcp_server_count.lock().unwrap() = request.mcp_servers.len();
                     let session_id = state.new_session();
-                    let response = if state.scenario == Scenario::ConfigModel {
-                        NewSessionResponse::new(session_id).config_options(model_options())
-                    } else {
-                        NewSessionResponse::new(session_id)
-                    };
+                    let mut response = NewSessionResponse::new(session_id);
+                    if state.scenario == Scenario::ConfigModel {
+                        response = response.config_options(model_options());
+                    }
+                    if state.scenario == Scenario::SetModePlan {
+                        response = response.modes(SessionModeState::new(
+                            SessionModeId::new("agent"),
+                            vec![
+                                SessionMode::new(SessionModeId::new("agent"), "Agent"),
+                                SessionMode::new(SessionModeId::new("plan"), "Plan"),
+                                SessionMode::new(SessionModeId::new("ask"), "Ask"),
+                            ],
+                        ));
+                    }
                     responder.respond(response)
                 }
             },
@@ -321,6 +337,17 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         .on_receive_request(
             async move |_request: SetSessionConfigOptionRequest, responder, _connection| {
                 responder.respond(SetSessionConfigOptionResponse::new(Vec::new()))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                let state = state.clone();
+                async move |request: SetSessionModeRequest, responder, _connection| {
+                    *state.last_set_mode.lock().unwrap() =
+                        Some(request.mode_id.0.to_string());
+                    responder.respond(SetSessionModeResponse::new())
+                }
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -527,6 +554,8 @@ async fn handle_prompt(
                     json!({"id": "t1", "content": "Inspect prompt", "status": "completed"}),
                     json!({"id": "t2", "content": "Return answer", "status": "pending"}),
                 ],
+                is_project: Some(false),
+                phases: vec![],
             };
             let _: CursorCreatePlanResponse = connection.send_request(plan).block_task().await?;
             answer(&state, &connection, &request.session_id, &prompt).await?
@@ -696,6 +725,31 @@ async fn handle_prompt(
             return Err(agent_client_protocol::util::internal_error(
                 "chaos_malformed: intentional protocol/prompt failure",
             ));
+        }
+        Scenario::SetModePlan => {
+            let mode = state
+                .last_set_mode
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| "unset".to_string());
+            answer(
+                &state,
+                &connection,
+                &request.session_id,
+                &format!("mode:{mode} {prompt}"),
+            )
+            .await?
+        }
+        Scenario::McpServersInject => {
+            let count = *state.last_mcp_server_count.lock().unwrap();
+            answer(
+                &state,
+                &connection,
+                &request.session_id,
+                &format!("mcp_servers={count}"),
+            )
+            .await?
         }
         Scenario::Echo
         | Scenario::ConfigModel

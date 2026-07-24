@@ -4,10 +4,11 @@ Profiles in `apps/server/src/host/acp/profiles.rs` define executable name, argum
 
 | Profile | Command | Product status | Profile note |
 |---|---|---|---|
-| `cursor-acp` | `cursor-agent acp` | Wired (default ACP for Cursor) | Permission requests can arrive during a tool update. |
+| `cursor-acp` | `cursor-agent acp` | Wired (default ACP for Cursor) | Permission requests can arrive during a tool update; initialize advertises parameterized model picker. |
 | `codex-acp` | `codex acp` | Wired (ACP driver on Codex agent) | Tool updates can omit a title. |
 | `claude-acp` | `claude --acp` | Wired (ACP driver on Claude agent) | Authentication may require interactive completion; use in-app auth banner. |
 | `opencode-acp` | `opencode acp` | Wired (ACP driver on OpenCode agent) | Session configuration can be unavailable. |
+| `grok-acp` | `grok agent stdio` | Wired (Grok ACP-only agent) | Matches t3code spawn (`grok agent stdio`); auth via Grok CLI / `XAI_API_KEY`. |
 | `mock-strict` | `gharargah-mock-acp --scenario echo --strict` | Verified in automated ACP tests | Rejects malformed protocol messages. |
 | `mock-compat` | `gharargah-mock-acp --scenario echo` | Mock launch profile | Compatibility-shaped updates. |
 | `mock-chaos` | `gharargah-mock-acp --scenario chaos_malformed --strict` | Mock fault profile | Malformed traffic; `--fault disconnect` optional. |
@@ -28,3 +29,15 @@ Do not put real provider credentials in normal test runs. With a provider CLI in
 6. Force-stop from ACP inspector kills the provider process and bumps connection generation.
 
 Acceptance for smoke: (1)–(4). Auth, terminal timeline rows, plans/usage/commands, and image attach are covered by mock matrix + E2E, not required on every real CLI.
+
+### Real Cursor ACP (opt-in)
+
+```bash
+# Probe initialize + session/new (+ optional prompt)
+python3 scripts/cursor_acp_probe.py --cwd fixtures/sample-workspace
+
+# Host integration smoke (two turns + session reuse)
+GHARARGAH_ACP_REAL_CURSOR=1 cargo test --manifest-path apps/server/Cargo.toml --test acp_real_cursor -- --nocapture
+```
+
+Expect: non-empty `sessionId`, `modes`/`configOptions` when advertised, second turn reuses session id.

@@ -2,7 +2,7 @@
 
 use agent_client_protocol::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
 #[request(method = "cursor/ask_question", response = CursorAskQuestionResponse)]
@@ -58,6 +58,10 @@ pub struct CursorCreatePlanRequest {
     pub plan: String,
     #[serde(default)]
     pub todos: Vec<Value>,
+    #[serde(default, rename = "isProject")]
+    pub is_project: Option<bool>,
+    #[serde(default)]
+    pub phases: Vec<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
@@ -122,13 +126,22 @@ impl CursorAskQuestionRequest {
 
 impl CursorCreatePlanRequest {
     pub fn to_plan_payload(&self) -> Value {
-        todos_to_plan_payload(
+        let mut payload = todos_to_plan_payload(
             &self.tool_call_id,
             &self.plan,
             self.name.as_deref(),
             self.overview.as_deref(),
             &self.todos,
-        )
+        );
+        if let Some(obj) = payload.as_object_mut() {
+            if let Some(is_project) = self.is_project {
+                obj.insert("isProject".into(), json!(is_project));
+            }
+            if !self.phases.is_empty() {
+                obj.insert("phases".into(), json!(self.phases.clone()));
+            }
+        }
+        payload
     }
 }
 

@@ -29,6 +29,8 @@ pub struct SupervisorTurnRequest {
     /// Optional image attachments as (base64_data, mime_type); capped at 8.
     pub images: Vec<(String, String)>,
     pub model: Option<String>,
+    pub runtime_mode: Option<String>,
+    pub interaction_mode: Option<String>,
     pub existing_session_id: Option<String>,
     pub prefer_resume: bool,
     pub initial_sequence: u64,
@@ -333,6 +335,8 @@ impl AcpSupervisor {
                     prompt: request.prompt,
                     images: request.images,
                     model: request.model,
+                    runtime_mode: request.runtime_mode,
+                    interaction_mode: request.interaction_mode,
                     turn_id: request.thread_key.clone(),
                     existing_session_id: request.existing_session_id,
                     prefer_resume: request.prefer_resume,

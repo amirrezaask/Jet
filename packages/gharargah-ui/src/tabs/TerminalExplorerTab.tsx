@@ -15,7 +15,7 @@ import {
 import { Button } from "../components/ui/button.js"
 import { Input } from "../components/ui/input.js"
 import { Lister, type ListerDataSource, type ListerNode } from "../lister/index.js"
-import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
+import { ClaudeAI, CursorIcon, GrokIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
 import { PanelEmpty } from "../components/PanelEmpty.js"
 import { NewSessionMenu } from "../home/NewSessionMenu.js"
 
@@ -37,7 +37,7 @@ export type TerminalExplorerGroup = {
 }
 
 export type TerminalAgentShortcut = {
-  id: "codex" | "claude" | "opencode" | "cursor" | "cursor-acp"
+  id: "codex" | "claude" | "opencode" | "cursor" | "cursor-acp" | "grok"
   label: string
   /** CLI binary launched in the PTY. Omit for ACP agent-chat sessions. */
   command?: string
@@ -56,6 +56,7 @@ const AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
   { id: "opencode", label: "OpenCode (ACP)", driverId: "opencode:acp", Icon: Code2 },
   { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
   { id: "cursor-acp", label: "Cursor (ACP)", driverId: "cursor:acp", Icon: CursorIcon },
+  { id: "grok", label: "Grok (ACP)", driverId: "grok:acp", Icon: GrokIcon },
 ]
 
 type TerminalNodeData =

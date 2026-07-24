@@ -55,6 +55,11 @@ const AGENTS: &[AgentSpec] = &[
         display_name: "Cursor (ACP)",
         binaries: &["cursor-agent", "agent"],
     },
+    AgentSpec {
+        id: "grok",
+        display_name: "Grok",
+        binaries: &["grok"],
+    },
 ];
 
 fn normalize_agent_id(id: &str) -> &str {
@@ -91,6 +96,7 @@ impl AgentsHost {
         match normalize_agent_id(agent_id) {
             // Cursor ACP is a separate agent; transport id stays `cursor:acp`.
             "cursor-acp" => "cursor:acp".to_string(),
+            "grok" => "grok:acp".to_string(),
             id => format!("{id}:cli"),
         }
     }
@@ -99,6 +105,7 @@ impl AgentsHost {
         let id = normalize_agent_id(agent_id);
         match id {
             "cursor-acp" => Some("cursor:acp".to_string()),
+            "grok" => Some("grok:acp".to_string()),
             "cursor" | "codex" | "claude" | "opencode" => Some(format!("{id}:acp")),
             _ => None,
         }
@@ -107,7 +114,7 @@ impl AgentsHost {
     fn cli_driver_id(agent_id: &str) -> Option<String> {
         let id = normalize_agent_id(agent_id);
         match id {
-            "cursor-acp" => None,
+            "cursor-acp" | "grok" => None,
             "cursor" | "codex" | "claude" | "opencode" => Some(format!("{id}:cli")),
             _ => None,
         }
@@ -618,6 +625,13 @@ impl AgentsHost {
                 return Err(format!("unsupported runtimeMode: {mode}"));
             }
             thread["runtimeMode"] = json!(mode);
+        }
+        if let Some(interaction_mode) = input.get("interactionMode") {
+            let mode = interaction_mode.as_str().ok_or("invalid interactionMode")?;
+            if !matches!(mode, "implement" | "plan" | "ask") {
+                return Err(format!("unsupported interactionMode: {mode}"));
+            }
+            thread["interactionMode"] = json!(mode);
         }
         // Continuation: clearing session when agent/provider changes.
         if input.get("agentId").is_some() || input.get("driverId").is_some() {
@@ -1400,7 +1414,9 @@ fn run_acp_turn(
         })
         .unwrap_or(false);
     // Continuation key: refuse mid-thread provider switch.
-    if let Some(thread) = AgentsHost::read_thread_value(root_path, thread_id) {
+    let (runtime_mode, interaction_mode) = if let Some(thread) =
+        AgentsHost::read_thread_value(root_path, thread_id)
+    {
         if let Some(existing) = thread.get("acpProvider").and_then(Value::as_str) {
             if !existing.is_empty() && existing != provider_id {
                 return Err(format!(
@@ -1408,7 +1424,19 @@ fn run_acp_turn(
                 ));
             }
         }
-    }
+        (
+            thread
+                .get("runtimeMode")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            thread
+                .get("interactionMode")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        )
+    } else {
+        (None, None)
+    };
     let turn_result = runtime.block_on(supervisor.run_turn(SupervisorTurnRequest {
         provider: profile,
         workspace_root: PathBuf::from(root_path),
@@ -1417,6 +1445,8 @@ fn run_acp_turn(
         images,
         model,
         existing_session_id,
+        runtime_mode,
+        interaction_mode,
         prefer_resume,
         initial_sequence,
         on_session: {
@@ -1473,7 +1503,11 @@ fn run_acp_turn(
                 if item.kind == TimelineItemKind::Status
                     && matches!(
                         status_type,
-                        "commands" | "config_options" | "discovered_models" | "config"
+                        "commands"
+                            | "config_options"
+                            | "discovered_models"
+                            | "config"
+                            | "session_modes"
                     )
                 {
                     match status_type {
@@ -1485,6 +1519,11 @@ fn run_acp_turn(
                                 .or_else(|| item.payload.get("available_commands").cloned())
                             {
                                 thread["availableCommands"] = commands;
+                            }
+                        }
+                        "session_modes" => {
+                            if let Some(modes) = item.payload.get("modes").cloned() {
+                                thread["sessionModes"] = modes;
                             }
                         }
                         "config_options" => {
@@ -2687,7 +2726,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             ids,
-            vec!["codex", "claude", "opencode", "cursor", "cursor-acp"]
+            vec!["codex", "claude", "opencode", "cursor", "cursor-acp", "grok"]
         );
         for agent in agents {
             let id = agent["id"].as_str().unwrap();
@@ -2696,6 +2735,11 @@ mod tests {
                 assert_eq!(agent["activeDriverId"], "cursor:acp");
                 assert_eq!(drivers.len(), 1);
                 assert_eq!(drivers[0]["id"], "cursor:acp");
+                assert_eq!(drivers[0]["kind"], "acp");
+            } else if id == "grok" {
+                assert_eq!(agent["activeDriverId"], "grok:acp");
+                assert_eq!(drivers.len(), 1);
+                assert_eq!(drivers[0]["id"], "grok:acp");
                 assert_eq!(drivers[0]["kind"], "acp");
             } else {
                 assert_eq!(agent["activeDriverId"], format!("{id}:cli"));

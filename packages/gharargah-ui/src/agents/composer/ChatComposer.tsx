@@ -27,7 +27,7 @@ import {
   getCustomModelOptionsByInstance,
   resolveDefaultProviderSelection,
 } from "../providerInstances.js"
-import type { ProviderInstanceId } from "../t3contracts.js"
+import type { ProviderInstanceId, ProviderDriverKind } from "../t3contracts.js"
 
 const MAX_COMPOSER_IMAGES = 8
 
@@ -54,6 +54,10 @@ export const ChatComposer = memo(function ChatComposer(props: {
   }) => Promise<void>
   onInterrupt?: () => void
   onProvidersRefresh?: () => void
+  lockedProvider?: ProviderDriverKind | null
+  lockedContinuationGroupKey?: string | null
+  showPlanFollowUpPrompt?: boolean
+  onImplementPlan?: () => void
 }) {
   const [draft, setDraft] = useState("")
   const [isComposerFocused, setIsComposerFocused] = useState(false)
@@ -395,7 +399,8 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 compact={isComposerFooterCompact}
                 activeInstanceId={selection.instanceId}
                 model={selection.model}
-                lockedProvider={null}
+                lockedProvider={props.lockedProvider ?? null}
+                lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
                 instanceEntries={instanceEntries}
                 modelOptionsByInstance={modelOptionsByInstance}
                 open={isModelPickerOpen}
@@ -421,7 +426,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 compact={isComposerPrimaryActionsCompact}
                 pendingAction={null}
                 isRunning={props.isRunning ?? false}
-                showPlanFollowUpPrompt={false}
+                showPlanFollowUpPrompt={props.showPlanFollowUpPrompt ?? false}
                 promptHasText={draft.trim().length > 0}
                 isSendBusy={props.isSendBusy ?? false}
                 isConnecting={false}
@@ -430,7 +435,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 hasSendableContent={canSend}
                 onPreviousPendingQuestion={() => {}}
                 onInterrupt={() => props.onInterrupt?.()}
-                onImplementPlanInNewThread={() => {}}
+                onImplementPlanInNewThread={() => props.onImplementPlan?.()}
               />
             </div>
           </div>

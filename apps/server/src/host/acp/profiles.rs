@@ -156,6 +156,16 @@ pub fn opencode_acp() -> ProviderProfile {
     )
 }
 
+pub fn grok_acp() -> ProviderProfile {
+    profile(
+        "grok-acp",
+        "grok",
+        &["agent", "stdio"],
+        &["uses grok agent stdio ACP transport"],
+        false,
+    )
+}
+
 pub fn mock_strict() -> ProviderProfile {
     profile(
         "mock-strict",
@@ -192,6 +202,7 @@ pub fn all_profiles() -> Vec<ProviderProfile> {
         codex_acp(),
         claude_acp(),
         opencode_acp(),
+        grok_acp(),
         mock_strict(),
         mock_compat(),
         mock_chaos(),
@@ -206,6 +217,7 @@ pub fn profile_for_agent(agent_id: &str) -> Option<ProviderProfile> {
         "codex" | "codex-acp" => Some(codex_acp()),
         "claude" | "claude-acp" | "claudeAgent" => Some(claude_acp()),
         "opencode" | "opencode-acp" => Some(opencode_acp()),
+        "grok" | "grok-acp" => Some(grok_acp()),
         _ => None,
     }
 }

@@ -8,7 +8,13 @@ export type SessionCardStatus =
   | "idle"
   | "failed"
 
-export type SessionProvider = "claude" | "cursor" | "cursor-acp" | "codex" | "opencode"
+export type SessionProvider =
+  | "claude"
+  | "cursor"
+  | "cursor-acp"
+  | "codex"
+  | "opencode"
+  | "grok"
 
 export type SessionCardModel = {
   id: string
@@ -70,6 +76,8 @@ export function providerDisplayLabel(
       return "Codex"
     case "opencode":
       return "OpenCode"
+    case "grok":
+      return "Grok"
     default:
       return kind === "agent" ? "Agent" : "Terminal"
   }

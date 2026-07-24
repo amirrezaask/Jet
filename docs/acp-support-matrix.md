@@ -42,19 +42,22 @@ Parity target = t3code `AcpSessionRuntime` path (Cursor/Grok ACP), not Codex app
 
 | Area | Product | UX | Robustness | Notes |
 |---|---|---|---|---|
-| Multi-provider ACP (cursor/codex/claude/opencode) | Yes | Same chat UI | Pool keyed by provider+workspace | CLI drivers remain as fallback |
+| Multi-provider ACP (cursor/codex/claude/opencode/grok) | Yes | Same chat UI | Pool keyed by provider+workspace | CLI drivers remain as fallback where applicable |
 | Auth discovery + `authenticate` | Yes | Auth banner + method picker | Blocks prompt until authenticated | |
 | Connection lifecycle | Yes | Live banner + inspector force-stop | Restart policy + generation bump | |
 | Permissions | Yes | PermissionCard + composer stack | Exact option ids; allow-always memory | |
 | Tools / thoughts / plans / usage / slash | Yes | Timeline cards + meter + `/` menu | Stable ids + sequence allocator | |
 | Session load/resume | Yes | Indirect | Replay capture; resume preferred | Replay-idle gate |
-| Runtime modes | Yes | Composer mode control | full-access auto-approves | |
+| Runtime modes + `session/set_mode` | Yes | Runtime select + interaction mode | Maps plan/ask/implement aliases like t3 | Mock: `set_mode_plan` |
+| Interaction mode (plan/ask/implement) | Yes | Composer interaction select | Persisted `interactionMode` | |
 | Images in prompt | Yes | Composer attach | Max 8 images | |
-| Cursor extensions | Yes | Ask/plan/todos + model discovery | Capability-gated | Mock: ask_question, create_plan, update_todos |
-| Elicitation | Yes | UserInputCard | Unstable feature advertised | |
-| Terminal timeline rows | Yes | Terminal tool rows | Client terminal handlers | |
-| Continuation key | Yes | Switch blocked mid-thread | Persist `acpProvider` | |
+| Cursor extensions | Yes | Ask/plan/todos + model discovery | `create_plan` keeps `isProject`/`phases` | |
+| Parameterized model picker meta | Yes | Advertised on initialize | Base model + bracket config batch | |
+| Continuation key | Yes | Picker locked mid-thread | Host + UI `lockedProvider` | |
 | Sequence-gap heal | Yes | Refetch thread on hole | `acpSequence` guard | |
+| Host MCP (`mcpServers`) | Yes | Indirect | Loopback HTTP + Bearer | Mock: `mcp_servers_inject` |
+| Session list/close/delete/logout UI | Yes | ACP inspector actions | Host RPCs | |
+| Plan implement follow-up | Yes | Composer primary actions | Sends implement prompt | |
 
 ## Mock scenario coverage (required)
 
@@ -83,5 +86,7 @@ Parity target = t3code `AcpSessionRuntime` path (Cursor/Grok ACP), not Codex app
 | `elicitation` | `matrix_elicitation` | `scenario:elicitation` |
 | `auth_required` | `matrix_auth_required` | `scenario:auth_required` |
 | `image_prompt` | `matrix_image_prompt` | `scenario:image_prompt` |
+| `set_mode_plan` | `matrix_set_mode_plan` | `scenario:set_mode_plan` |
+| `mcp_servers_inject` | `matrix_mcp_servers_inject` | `scenario:mcp_servers_inject` |
 
 Drift guards: `every_mock_scenario_has_a_matrix_entry` (Rust) + `matrix covers every documented mock scenario name` (e2e).

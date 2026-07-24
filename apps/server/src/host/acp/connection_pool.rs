@@ -8,6 +8,10 @@ use crate::host::acp::cursor_ext::{
     CursorCreatePlanResponse, CursorListAvailableModelsRequest, CursorUpdateTodosNotification,
 };
 use crate::host::acp::fs_handler::FsHandler;
+use crate::host::acp::mcp_bridge::ensure_mcp_servers;
+use crate::host::acp::mode_resolve::{
+    parse_parameterized_model, resolve_cursor_base_model_id, resolve_requested_mode_id,
+};
 use crate::host::acp::session_runtime::SessionRuntime;
 use crate::host::acp::terminal_handler::TerminalHandler;
 use crate::host::acp::types::{NormalizedEvent, StopReason as LocalStopReason};
@@ -17,12 +21,13 @@ use agent_client_protocol::schema::v1::{
     CreateTerminalRequest, DeleteSessionRequest, ElicitationAction, ElicitationAcceptAction,
     ElicitationCapabilities, ElicitationFormCapabilities, ElicitationUrlCapabilities,
     FileSystemCapabilities, ImageContent, Implementation, InitializeRequest, KillTerminalRequest,
-    ListSessionsRequest, LoadSessionRequest, LogoutRequest, NewSessionRequest, PromptRequest,
+    ListSessionsRequest, LoadSessionRequest, LogoutRequest, Meta, NewSessionRequest, PromptRequest,
     ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest, SessionConfigId,
     SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigOptionValue,
-    SessionConfigOptionsCapabilities, SessionId, SessionNotification, SetSessionConfigOptionRequest,
-    StopReason, TerminalOutputRequest, TextContent, WaitForTerminalExitRequest, WriteTextFileRequest,
+    SessionConfigOptionsCapabilities, SessionId, SessionModeId, SessionModeState,
+    SessionNotification, SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason,
+    TerminalOutputRequest, TextContent, WaitForTerminalExitRequest, WriteTextFileRequest,
     WriteTextFileResponse,
 };
 use agent_client_protocol::schema::ProtocolVersion;
@@ -42,6 +47,12 @@ const CANCELLATION_TIMEOUT: Duration = Duration::from_secs(15);
 /// Match t3code: wait for session/load replay to go idle before prompting.
 const REPLAY_IDLE_GAP: Duration = Duration::from_secs(2);
 const REPLAY_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+
+type SessionOpen = (
+    SessionId,
+    Option<Vec<SessionConfigOption>>,
+    Option<SessionModeState>,
+);
 
 pub struct AcpTurnResult {
     pub session_id: String,
@@ -68,6 +79,8 @@ pub struct TurnJob {
     /// Optional image attachments (data, mime_type); capped at 8.
     pub images: Vec<(String, String)>,
     pub model: Option<String>,
+    pub runtime_mode: Option<String>,
+    pub interaction_mode: Option<String>,
     pub turn_id: String,
     pub existing_session_id: Option<String>,
     /// Prefer resume over load when local timeline already exists.
@@ -117,6 +130,11 @@ enum WorkerCmd {
         session_id: String,
         config_id: String,
         value: String,
+        respond: oneshot::Sender<Result<(), String>>,
+    },
+    SetMode {
+        session_id: String,
+        mode_id: String,
         respond: oneshot::Sender<Result<(), String>>,
     },
     Shutdown,
@@ -356,6 +374,32 @@ impl ConnectionPool {
         respond_rx
             .await
             .map_err(|_| "ACP set_session_config_option dropped".to_string())?
+    }
+
+    pub async fn set_session_mode(
+        &self,
+        connection_key: &str,
+        session_id: &str,
+        mode_id: &str,
+    ) -> Result<(), String> {
+        let tx = self
+            .workers
+            .lock()
+            .map_err(|_| "ACP connection pool lock poisoned")?
+            .get(connection_key)
+            .map(|handle| handle.tx.clone())
+            .ok_or_else(|| "ACP connection not started".to_string())?;
+        let (respond_tx, respond_rx) = oneshot::channel();
+        tx.send(WorkerCmd::SetMode {
+            session_id: session_id.to_string(),
+            mode_id: mode_id.to_string(),
+            respond: respond_tx,
+        })
+        .await
+        .map_err(|_| "ACP connection worker stopped".to_string())?;
+        respond_rx
+            .await
+            .map_err(|_| "ACP set_session_mode dropped".to_string())?
     }
 
     fn ensure_worker(
@@ -779,8 +823,11 @@ async fn run_worker(
         .connect_with(transport, async move |connection| {
             tracing::info!(%connection_key, "ACP provider process connected");
             let initialize = InitializeRequest::new(ProtocolVersion::V1)
-                .client_capabilities(
+                .client_capabilities({
+                    let mut meta = Meta::new();
+                    meta.insert("parameterizedModelPicker".into(), json!(true));
                     ClientCapabilities::new()
+                        .meta(meta)
                         .session(
                             ClientSessionCapabilities::new()
                                 .config_options(SessionConfigOptionsCapabilities::new()),
@@ -795,8 +842,8 @@ async fn run_worker(
                             ElicitationCapabilities::new()
                                 .form(ElicitationFormCapabilities::new())
                                 .url(ElicitationUrlCapabilities::new()),
-                        ),
-                )
+                        )
+                })
                 .client_info(
                     Implementation::new("gharargah", env!("CARGO_PKG_VERSION")).title("Gharargah"),
                 );
@@ -1020,6 +1067,27 @@ async fn run_worker(
                         };
                         let _ = respond.send(mapped);
                     }
+                    WorkerCmd::SetMode {
+                        session_id,
+                        mode_id,
+                        respond,
+                    } => {
+                        let request = SetSessionModeRequest::new(
+                            SessionId::new(session_id),
+                            SessionModeId::new(mode_id),
+                        );
+                        let result = tokio::time::timeout(
+                            CONFIG_TIMEOUT,
+                            connection.send_request(request).block_task(),
+                        )
+                        .await;
+                        let mapped = match result {
+                            Ok(Ok(_)) => Ok(()),
+                            Ok(Err(error)) => Err(format!("set_session_mode failed: {error}")),
+                            Err(_) => Err("set_session_mode timed out".to_string()),
+                        };
+                        let _ = respond.send(mapped);
+                    }
                 }
             }
             while inflight.join_next().await.is_some() {}
@@ -1048,6 +1116,9 @@ fn reject_cmd_without_connection(cmd: WorkerCmd) {
         WorkerCmd::SetConfigOption { respond, .. } => {
             let _ = respond.send(Err("ACP connection not ready".to_string()));
         }
+        WorkerCmd::SetMode { respond, .. } => {
+            let _ = respond.send(Err("ACP connection not ready".to_string()));
+        }
         WorkerCmd::Turn(job) => {
             let _ = job
                 .respond
@@ -1068,6 +1139,8 @@ async fn execute_turn_on_connection(
         prompt,
         images,
         model,
+        runtime_mode,
+        interaction_mode,
         turn_id,
         existing_session_id,
         prefer_resume,
@@ -1097,6 +1170,8 @@ async fn execute_turn_on_connection(
         prompt,
         images,
         model,
+        runtime_mode,
+        interaction_mode,
         turn_id,
         existing_session_id,
         prefer_resume,
@@ -1121,6 +1196,8 @@ async fn run_prompt(
     prompt: String,
     images: Vec<(String, String)>,
     model: Option<String>,
+    runtime_mode: Option<String>,
+    interaction_mode: Option<String>,
     turn_id: String,
     existing_session_id: Option<String>,
     prefer_resume: bool,
@@ -1141,7 +1218,7 @@ async fn run_prompt(
     shared.terminal.set_workspace_root(cwd.clone());
     let generation = shared.generation.load(Ordering::Acquire);
 
-    let (session_id, config) = if let Some(existing) = existing_session_id.clone() {
+    let (session_id, config, modes) = if let Some(existing) = existing_session_id.clone() {
         restore_session(
             connection,
             shared,
@@ -1159,11 +1236,14 @@ async fn run_prompt(
         )
         .await?
     } else {
+        let mcp_servers = ensure_mcp_servers(Some(cwd.to_string_lossy().as_ref()));
+        let mut req = NewSessionRequest::new(cwd.clone());
+        if !mcp_servers.is_empty() {
+            req = req.mcp_servers(mcp_servers);
+        }
         let response = tokio::time::timeout(
             HANDSHAKE_TIMEOUT,
-            connection
-                .send_request(NewSessionRequest::new(cwd.clone()))
-                .block_task(),
+            connection.send_request(req).block_task(),
         )
         .await
         .map_err(|_| "ACP session creation timed out".to_string())?
@@ -1183,7 +1263,7 @@ async fn run_prompt(
             on_user_input.clone(),
         );
         shared.insert_session(runtime);
-        (session_id, response.config_options)
+        (session_id, response.config_options, response.modes)
     };
 
     let runtime = shared
@@ -1219,6 +1299,10 @@ async fn run_prompt(
 
     if let Some(options) = config.as_ref() {
         emit_config_options(&on_event, &runtime, options);
+    }
+
+    if let Some(modes) = modes.as_ref() {
+        emit_session_modes(&on_event, &runtime, modes);
     }
 
     // Best-effort Cursor model discovery (extension method; ignore failures).
@@ -1258,6 +1342,20 @@ async fn run_prompt(
         // Soft-fail model switch.
         if let Some(on_activity) = runtime.on_activity.lock().ok().and_then(|g| g.clone()) {
             on_activity(&format!("Model switch skipped: {error}"));
+        }
+    }
+
+    if let Err(error) = apply_session_mode(
+        connection,
+        &session_id,
+        modes.as_ref(),
+        interaction_mode.as_deref(),
+        runtime_mode.as_deref(),
+    )
+    .await
+    {
+        if let Some(on_activity) = runtime.on_activity.lock().ok().and_then(|g| g.clone()) {
+            on_activity(&format!("Mode switch skipped: {error}"));
         }
     }
 
@@ -1330,7 +1428,7 @@ async fn restore_session(
             + Sync,
     >,
     on_user_input: Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync>,
-) -> Result<(SessionId, Option<Vec<SessionConfigOption>>), String> {
+) -> Result<SessionOpen, String> {
     let runtime = shared.session(&existing).unwrap_or_else(|| {
         let runtime = Arc::new(SessionRuntime::new(
             existing.clone(),
@@ -1344,16 +1442,20 @@ async fn restore_session(
     runtime.set_cwd(cwd.clone());
     runtime.install_turn_callbacks(on_text, on_activity, on_event, on_permission, on_user_input);
 
+    let mcp_servers = ensure_mcp_servers(Some(cwd.to_string_lossy().as_ref()));
     let use_resume = prefer_resume && caps.supports_resume_session;
     if use_resume {
         runtime.replaying.store(false, Ordering::Release);
         runtime.capture.store(true, Ordering::Release);
-        let request = ResumeSessionRequest::new(existing.clone(), cwd.clone());
+        let mut request = ResumeSessionRequest::new(existing.clone(), cwd.clone());
+        if !mcp_servers.is_empty() {
+            request = request.mcp_servers(mcp_servers.clone());
+        }
         match tokio::time::timeout(HANDSHAKE_TIMEOUT, connection.send_request(request).block_task())
             .await
         {
             Ok(Ok(response)) => {
-                return Ok((SessionId::new(existing), response.config_options));
+                return Ok((SessionId::new(existing), response.config_options, response.modes));
             }
             Ok(Err(error)) => return Err(format!("session_resume_failed: {error}")),
             Err(_) => return Err("session_resume_failed: timed out".to_string()),
@@ -1364,14 +1466,21 @@ async fn restore_session(
         if caps.supports_resume_session {
             runtime.replaying.store(false, Ordering::Release);
             runtime.capture.store(true, Ordering::Release);
-            let request = ResumeSessionRequest::new(existing.clone(), cwd.clone());
+            let mut request = ResumeSessionRequest::new(existing.clone(), cwd.clone());
+            if !mcp_servers.is_empty() {
+                request = request.mcp_servers(mcp_servers);
+            }
             return match tokio::time::timeout(
                 HANDSHAKE_TIMEOUT,
                 connection.send_request(request).block_task(),
             )
             .await
             {
-                Ok(Ok(response)) => Ok((SessionId::new(existing), response.config_options)),
+                Ok(Ok(response)) => Ok((
+                    SessionId::new(existing),
+                    response.config_options,
+                    response.modes,
+                )),
                 Ok(Err(error)) => Err(format!("session_resume_failed: {error}")),
                 Err(_) => Err("session_resume_failed: timed out".to_string()),
             };
@@ -1383,7 +1492,10 @@ async fn restore_session(
     runtime.begin_pipeline(format!("{existing}:load"));
     runtime.replaying.store(true, Ordering::Release);
     runtime.capture.store(true, Ordering::Release);
-    let request = LoadSessionRequest::new(existing.clone(), cwd);
+    let mut request = LoadSessionRequest::new(existing.clone(), cwd);
+    if !mcp_servers.is_empty() {
+        request = request.mcp_servers(mcp_servers);
+    }
     match tokio::time::timeout(HANDSHAKE_TIMEOUT, connection.send_request(request).block_task())
         .await
     {
@@ -1392,7 +1504,11 @@ async fn restore_session(
             wait_for_session_load_replay_idle(&runtime).await;
             runtime.flush_and_clear_pipeline();
             runtime.replaying.store(false, Ordering::Release);
-            Ok((SessionId::new(existing), response.config_options))
+            Ok((
+                SessionId::new(existing),
+                response.config_options,
+                response.modes,
+            ))
         }
         Ok(Err(error)) => {
             runtime.capture.store(false, Ordering::Release);
@@ -1420,25 +1536,76 @@ fn apply_session_model<'a>(
         let Some(options) = config else {
             return Ok(());
         };
-        let Some(option) = model_config_option(options) else {
-            return Ok(());
-        };
-        if matches!(&option.kind, SessionConfigKind::Select(_))
-            && !select_has_value(&option.kind, model)
-        {
-            return Err(format!("model {model} not in session config options"));
+        let (base_model, selections) = parse_parameterized_model(model);
+        let base_model = resolve_cursor_base_model_id(&base_model).to_string();
+        if let Some(option) = model_config_option(options) {
+            if matches!(&option.kind, SessionConfigKind::Select(_))
+                && !select_has_value(&option.kind, &base_model)
+            {
+                return Err(format!("model {base_model} not in session config options"));
+            }
+            let request = SetSessionConfigOptionRequest::new(
+                session_id.clone(),
+                option.id.clone(),
+                SessionConfigOptionValue::value_id(base_model),
+            );
+            tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
+                .await
+                .map_err(|_| "session config timed out".to_string())?
+                .map_err(|error| error.to_string())?;
         }
-        let request = SetSessionConfigOptionRequest::new(
-            session_id.clone(),
-            option.id.clone(),
-            SessionConfigOptionValue::value_id(model.to_string()),
-        );
-        tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
-            .await
-            .map_err(|_| "session config timed out".to_string())?
-            .map_err(|error| error.to_string())?;
+        for (key, value) in selections {
+            let Some(option) = options.iter().find(|option| {
+                !matches!(option.category, Some(SessionConfigOptionCategory::Model))
+                    && (option.id.0.as_ref().eq_ignore_ascii_case(&key)
+                        || option.name.eq_ignore_ascii_case(&key))
+            }) else {
+                continue;
+            };
+            if matches!(&option.kind, SessionConfigKind::Select(_))
+                && !select_has_value(&option.kind, &value)
+            {
+                continue;
+            }
+            let request = SetSessionConfigOptionRequest::new(
+                session_id.clone(),
+                option.id.clone(),
+                SessionConfigOptionValue::value_id(value),
+            );
+            tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
+                .await
+                .map_err(|_| "session config timed out".to_string())?
+                .map_err(|error| error.to_string())?;
+        }
         Ok(())
     }
+}
+
+async fn apply_session_mode(
+    connection: &ConnectionTo<Agent>,
+    session_id: &SessionId,
+    modes: Option<&SessionModeState>,
+    interaction_mode: Option<&str>,
+    runtime_mode: Option<&str>,
+) -> Result<(), String> {
+    let Some(mode_state) = modes else {
+        return Ok(());
+    };
+    let Some(mode_id) =
+        resolve_requested_mode_id(interaction_mode, runtime_mode, mode_state)
+    else {
+        return Ok(());
+    };
+    if mode_id == mode_state.current_mode_id.0.as_ref() {
+        return Ok(());
+    }
+    let request =
+        SetSessionModeRequest::new(session_id.clone(), SessionModeId::new(mode_id));
+    tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
+        .await
+        .map_err(|_| "set_session_mode timed out".to_string())?
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn wait_for_session_load_replay_idle(
@@ -1533,6 +1700,28 @@ fn emit_config_options(
             payload: json!({
                 "type": "config_options",
                 "options": mapped,
+            }),
+        }),
+    );
+}
+
+fn emit_session_modes(
+    on_event: &Arc<dyn Fn(u64, NormalizedEvent) + Send + Sync>,
+    runtime: &SessionRuntime,
+    modes: &SessionModeState,
+) {
+    let seq = runtime.sequence.fetch_add(1, Ordering::AcqRel) + 1;
+    let modes_value = serde_json::to_value(modes).unwrap_or(Value::Null);
+    on_event(
+        seq,
+        NormalizedEvent::Timeline(crate::host::acp::types::TimelineItem {
+            kind: crate::host::acp::types::TimelineItemKind::Status,
+            id: format!("{}:session-modes", runtime.session_id),
+            session_id: runtime.session_id.clone(),
+            turn_id: None,
+            payload: json!({
+                "type": "session_modes",
+                "modes": modes_value,
             }),
         }),
     );

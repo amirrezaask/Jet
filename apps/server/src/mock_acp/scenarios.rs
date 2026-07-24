@@ -23,6 +23,8 @@ pub enum Scenario {
     Elicitation,
     AuthRequired,
     ImagePrompt,
+    SetModePlan,
+    McpServersInject,
 }
 
 impl Scenario {
@@ -50,6 +52,8 @@ impl Scenario {
         ("elicitation", Self::Elicitation),
         ("auth_required", Self::AuthRequired),
         ("image_prompt", Self::ImagePrompt),
+        ("set_mode_plan", Self::SetModePlan),
+        ("mcp_servers_inject", Self::McpServersInject),
     ];
 
     pub fn parse(name: &str) -> Option<Self> {

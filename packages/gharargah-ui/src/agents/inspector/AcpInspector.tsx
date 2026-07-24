@@ -23,6 +23,9 @@ export function AcpInspector(props: {
   trace?: unknown
   onLoadTrace?: () => Promise<unknown>
   onForceStop?: () => void
+  onListSessions?: () => Promise<unknown>
+  onLogout?: () => Promise<void>
+  onCloseSession?: () => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [trace, setTrace] = useState<unknown>(props.trace)
@@ -71,11 +74,38 @@ export function AcpInspector(props: {
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2">
             <span>ACP inspector</span>
-            {props.onForceStop ? (
-              <Button type="button" size="xs" variant="destructive" onClick={() => props.onForceStop?.()}>
-                Force stop
-              </Button>
-            ) : null}
+            <div className="flex items-center gap-1">
+              {props.onListSessions ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => void props.onListSessions?.()}
+                >
+                  List sessions
+                </Button>
+              ) : null}
+              {props.onLogout ? (
+                <Button type="button" size="xs" variant="outline" onClick={() => void props.onLogout?.()}>
+                  Logout
+                </Button>
+              ) : null}
+              {props.onCloseSession ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => void props.onCloseSession?.()}
+                >
+                  Close session
+                </Button>
+              ) : null}
+              {props.onForceStop ? (
+                <Button type="button" size="xs" variant="destructive" onClick={() => props.onForceStop?.()}>
+                  Force stop
+                </Button>
+              ) : null}
+            </div>
           </DialogTitle>
           <DialogDescription>
             {props.connection?.status ?? "No connection state"}

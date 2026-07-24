@@ -194,6 +194,13 @@ export type AgentThread = {
   /** ACP provider id bound to this thread (may differ from catalog agentId). */
   acpProvider?: string | null
   runtimeMode?: "approval-required" | "auto-accept-edits" | "full-access" | null
+  /** Cursor-style interaction mode mapped to ACP session/set_mode. */
+  interactionMode?: "implement" | "plan" | "ask" | null
+  /** Available ACP session modes from session/new|load|resume. */
+  sessionModes?: {
+    currentModeId: string
+    availableModes: Array<{ id: string; name: string; description?: string | null }>
+  } | null
   permissionRules?: Array<{ scope: string; optionId: string }> | null
   /** Live tool/status hint while a turn is running. */
   activity?: string | null
@@ -246,6 +253,7 @@ export type AgentStructuredDelta = {
   lastError?: string | null
   configOptions?: Array<AgentSessionConfigOption> | null
   discoveredModels?: ProviderModel[] | null
+  sessionModes?: AgentThread["sessionModes"]
 }
 
 export type AgentThreadSummary = {
@@ -342,6 +350,7 @@ export type UpdateAgentThreadSettingsInput = {
   provider?: string | null
   model?: string | null
   runtimeMode?: "approval-required" | "auto-accept-edits" | "full-access" | null
+  interactionMode?: "implement" | "plan" | "ask" | null
 }
 
 /** View-model message shape consumed by MessagesTimeline. */

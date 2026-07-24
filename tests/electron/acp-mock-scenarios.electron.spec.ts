@@ -35,6 +35,8 @@ const ALL_SCENARIOS = [
   "update_todos",
   "elicitation",
   "image_prompt",
+  "set_mode_plan",
+  "mcp_servers_inject",
 ] as const
 
 async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
@@ -123,6 +125,8 @@ test.describe("ACP mock scenario matrix (host path)", () => {
       "update_todos",
       "elicitation",
       "image_prompt",
+      "set_mode_plan",
+      "mcp_servers_inject",
     ])
   })
 
@@ -388,6 +392,42 @@ test.describe("ACP mock scenario matrix (host path)", () => {
             }, { timeout: 30_000 })
             .toBeGreaterThan(0)
           await waitForAssistantContaining(page, "Mock agent reply: slash e2e")
+          return
+        }
+
+        if (scenario === "set_mode_plan") {
+          await page.evaluate(async () => {
+            const workspace = window.__gharargahAgent!.getState().activeWorkspace!
+            const uri = `file://${workspace}`
+            const agents = window.gharargah!.agents!
+            const list = await agents.listThreads(uri, workspace)
+            const thread = list.threads[0]
+            if (!thread) throw new Error("missing thread")
+            await agents.updateThreadSettings!({
+              workspaceRootUri: uri,
+              workspaceRootPath: workspace,
+              threadId: thread.id,
+              interactionMode: "plan",
+              runtimeMode: "full-access",
+            })
+          })
+          await sendPrompt(page, modal, composer, "plan mode e2e")
+          await waitForAssistantContaining(page, "mode:plan")
+          return
+        }
+
+        if (scenario === "mcp_servers_inject") {
+          await sendPrompt(page, modal, composer, "mcp inject e2e")
+          await waitForAssistantContaining(page, "mcp_servers=")
+          await expect
+            .poll(async () => {
+              const thread = await readActiveThread(page)
+              const assistant = [...(thread?.messages ?? [])]
+                .reverse()
+                .find(message => message.role === "assistant")
+              return assistant?.text ?? ""
+            }, { timeout: 30_000 })
+            .not.toContain("mcp_servers=0")
           return
         }
 

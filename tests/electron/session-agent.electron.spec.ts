@@ -22,6 +22,7 @@ test.describe("project session agents", () => {
         "opencode",
         "cursor",
         "cursor-acp",
+        "grok",
       ])
       for (const agent of catalog.agents) {
         expect(agent.enabled).toBe(true)
@@ -29,6 +30,11 @@ test.describe("project session agents", () => {
           expect(agent.activeDriverId).toBe("cursor:acp")
           expect(agent.drivers).toEqual([
             expect.objectContaining({ id: "cursor:acp", kind: "acp", status: "ready" }),
+          ])
+        } else if (agent.id === "grok") {
+          expect(agent.activeDriverId).toBe("grok:acp")
+          expect(agent.drivers).toEqual([
+            expect.objectContaining({ id: "grok:acp", kind: "acp", status: "ready" }),
           ])
         } else {
           const cliDriverId = `${agent.id}:cli`
@@ -151,6 +157,10 @@ test.describe("project session agents", () => {
         .toContain("Mock agent reply: Confirm the session driver")
       // Host-side ACP completion is authoritative; UI virtualization can lag.
       await expectLocatorContainsText(modal, "Confirm the session driver")
+
+      // Interaction mode control present for ACP sessions.
+      await expectLocatorVisible(modal.locator("[data-agent-interaction-mode]"))
+      await expectLocatorVisible(modal.locator("[data-agent-runtime-mode]"))
 
       for (const mode of ["terminal", "editor", "git", "todos"] as const) {
         await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()

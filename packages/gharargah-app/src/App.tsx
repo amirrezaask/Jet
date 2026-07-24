@@ -741,6 +741,7 @@ export function GharargahApp() {
           ...(delta.discoveredModels !== undefined
             ? { discoveredModels: delta.discoveredModels }
             : {}),
+          ...(delta.sessionModes !== undefined ? { sessionModes: delta.sessionModes } : {}),
         }
       })
     })
@@ -2181,6 +2182,55 @@ export function GharargahApp() {
                             workspaceRootPath: activeAgentThread.workspaceRootPath,
                             threadId: activeAgentThread.id,
                             runtimeMode: mode,
+                          })
+                        }}
+                        onInteractionModeChange={mode => {
+                          if (!activeAgentThread) return
+                          setActiveAgentThread(current =>
+                            current ? { ...current, interactionMode: mode } : current,
+                          )
+                          void window.gharargah?.agents?.updateThreadSettings({
+                            workspaceRootUri: activeAgentThread.workspaceRootUri,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            threadId: activeAgentThread.id,
+                            interactionMode: mode,
+                          })
+                        }}
+                        onListSessions={async () => {
+                          if (!activeAgentThread) return null
+                          const providerId =
+                            activeAgentThread.acpProvider ??
+                            activeAgentThread.connection?.providerId ??
+                            activeAgentThread.agentId ??
+                            "cursor-acp"
+                          return window.gharargah?.agents?.listAcpSessions?.({
+                            providerId,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                          })
+                        }}
+                        onLogout={async () => {
+                          if (!activeAgentThread) return
+                          const providerId =
+                            activeAgentThread.acpProvider ??
+                            activeAgentThread.connection?.providerId ??
+                            activeAgentThread.agentId ??
+                            "cursor-acp"
+                          await window.gharargah?.agents?.logoutProvider?.({
+                            providerId,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                          })
+                        }}
+                        onCloseSession={async () => {
+                          if (!activeAgentThread?.acpSessionId) return
+                          const providerId =
+                            activeAgentThread.acpProvider ??
+                            activeAgentThread.connection?.providerId ??
+                            activeAgentThread.agentId ??
+                            "cursor-acp"
+                          await window.gharargah?.agents?.closeAcpSession?.({
+                            providerId,
+                            workspaceRootPath: activeAgentThread.workspaceRootPath,
+                            sessionId: activeAgentThread.acpSessionId,
                           })
                         }}
                       />

@@ -63,6 +63,8 @@ Without `--strict`, an unknown scenario warns on stderr and falls back to `echo`
 | `elicitation` | Sends `elicitation/create` (form mode); continues after accept/decline/cancel. |
 | `auth_required` | Advertises `mock-token` auth at initialize; host must authenticate before prompts succeed. |
 | `image_prompt` | Counts image content blocks in the prompt and echoes `images=N <prompt>`. |
+| `set_mode_plan` | Returns agent/plan/ask modes from `session/new`; records `session/set_mode` and echoes `mode:<id> <prompt>`. |
+| `mcp_servers_inject` | Records `mcpServers` count from `session/new` and echoes `mcp_servers=N`. |
 
 `--fault malformed` is equivalent to the malformed part of `chaos_malformed`; `--fault disconnect` makes answer generation fail. `--capabilities load_session` can advertise loading outside `load_session`.
 

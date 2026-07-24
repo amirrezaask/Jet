@@ -1,6 +1,6 @@
 import { cloneElement, useState, type MouseEvent, type ReactElement } from "react"
 import { Code2, Plus, SquareTerminal } from "lucide-react"
-import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
+import { ClaudeAI, CursorIcon, GrokIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
 import { Button } from "../components/ui/button.js"
 import {
   DropdownMenu,
@@ -21,6 +21,7 @@ export const SESSION_AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon
   { id: "opencode", label: "OpenCode (ACP)", driverId: "opencode:acp", Icon: Code2 },
   { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
   { id: "cursor-acp", label: "Cursor (ACP)", driverId: "cursor:acp", Icon: CursorIcon },
+  { id: "grok", label: "Grok (ACP)", driverId: "grok:acp", Icon: GrokIcon },
 ]
 
 export type NewSessionMenuProps = {
