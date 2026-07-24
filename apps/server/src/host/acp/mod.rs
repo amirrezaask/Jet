@@ -16,8 +16,9 @@ pub mod trace;
 pub mod types;
 
 pub use profiles::{
-    acp_profile_id_for_agent, all_profiles, claude_acp, codex_acp, cursor_acp, grok_acp, mock_chaos,
-    mock_compat, mock_strict, opencode_acp, profile_for_agent, ProviderProfile, RestartPolicy,
+    acp_profile_id_for_agent, all_profiles, claude_acp, codex_acp, cursor_acp, grok_acp,
+    mock_chaos, mock_compat, mock_strict, opencode_acp, profile_for_agent, ProviderProfile,
+    RestartPolicy,
 };
 pub use supervisor::{AcpSupervisor, SupervisorTurnRequest, SupervisorTurnResult};
 pub use trace::{ProtocolTrace, TraceDirection, TraceEntry};

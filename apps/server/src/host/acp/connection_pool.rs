@@ -18,8 +18,8 @@ use crate::host::acp::types::{NormalizedEvent, StopReason as LocalStopReason};
 use agent_client_protocol::schema::v1::{
     AuthenticateRequest, CancelNotification, ClientCapabilities, ClientSessionCapabilities,
     CloseSessionRequest, ContentBlock, CreateElicitationRequest, CreateElicitationResponse,
-    CreateTerminalRequest, DeleteSessionRequest, ElicitationAction, ElicitationAcceptAction,
-    ElicitationCapabilities, ElicitationFormCapabilities, ElicitationUrlCapabilities,
+    CreateTerminalRequest, DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
+    ElicitationCapabilities, ElicitationFormCapabilities, ElicitationUrlCapabilities, ErrorCode,
     FileSystemCapabilities, ImageContent, Implementation, InitializeRequest, KillTerminalRequest,
     ListSessionsRequest, LoadSessionRequest, LogoutRequest, Meta, NewSessionRequest, PromptRequest,
     ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest, RequestPermissionOutcome,
@@ -417,7 +417,8 @@ impl ConnectionPool {
                 return Ok(existing.tx.clone());
             }
         }
-        let handle = spawn_long_lived_worker(connection_key.clone(), command, args, self.meta.clone());
+        let handle =
+            spawn_long_lived_worker(connection_key.clone(), command, args, self.meta.clone());
         let tx = handle.tx.clone();
         guard.insert(connection_key, handle);
         Ok(tx)
@@ -445,7 +446,11 @@ impl ConnectionPool {
         self.meta
             .lock()
             .ok()
-            .and_then(|guard| guard.get(connection_key).map(|meta| meta.initialized.clone()))
+            .and_then(|guard| {
+                guard
+                    .get(connection_key)
+                    .map(|meta| meta.initialized.clone())
+            })
             .unwrap_or_default()
     }
 
@@ -599,15 +604,13 @@ async fn run_worker(
             {
                 async move |request: RequestPermissionRequest, responder, _connection| {
                     let session_id = request.session_id.0.to_string();
-                    let callback = shared_perm
-                        .session(&session_id)
-                        .and_then(|runtime| {
-                            runtime
-                                .on_permission
-                                .lock()
-                                .ok()
-                                .and_then(|guard| guard.clone())
-                        });
+                    let callback = shared_perm.session(&session_id).and_then(|runtime| {
+                        runtime
+                            .on_permission
+                            .lock()
+                            .ok()
+                            .and_then(|guard| guard.clone())
+                    });
                     let outcome = match callback {
                         Some(callback) => callback(request).await,
                         None => RequestPermissionOutcome::Cancelled,
@@ -634,7 +637,8 @@ async fn run_worker(
                         Some(callback) => callback(payload).await,
                         None => json!({ "cancelled": true }),
                     };
-                    let response = if answers.get("cancelled").and_then(Value::as_bool) == Some(true)
+                    let response = if answers.get("cancelled").and_then(Value::as_bool)
+                        == Some(true)
                     {
                         CursorAskQuestionResponse { answers: vec![] }
                     } else {
@@ -688,7 +692,10 @@ async fn run_worker(
                         Some(callback) => callback(payload).await,
                         None => json!({ "action": "cancel" }),
                     };
-                    let action = match answer.get("action").and_then(Value::as_str).unwrap_or("cancel")
+                    let action = match answer
+                        .get("action")
+                        .and_then(Value::as_str)
+                        .unwrap_or("cancel")
                     {
                         "accept" => ElicitationAction::Accept(ElicitationAcceptAction::new()),
                         "decline" => ElicitationAction::Decline,
@@ -760,9 +767,13 @@ async fn run_worker(
                             .terminal
                             .set_workspace_root(runtime.cwd());
                     }
-                    let response = shared_term_create.terminal.create(request).map_err(|error| {
-                        agent_client_protocol::util::internal_error(error.to_string())
-                    })?;
+                    let response =
+                        shared_term_create
+                            .terminal
+                            .create(request)
+                            .map_err(|error| {
+                                agent_client_protocol::util::internal_error(error.to_string())
+                            })?;
                     responder.respond(response)
                 }
             },
@@ -771,9 +782,13 @@ async fn run_worker(
         .on_receive_request(
             {
                 async move |request: TerminalOutputRequest, responder, _connection| {
-                    let response = shared_term_output.terminal.output(request).map_err(|error| {
-                        agent_client_protocol::util::internal_error(error.to_string())
-                    })?;
+                    let response =
+                        shared_term_output
+                            .terminal
+                            .output(request)
+                            .map_err(|error| {
+                                agent_client_protocol::util::internal_error(error.to_string())
+                            })?;
                     responder.respond(response)
                 }
             },
@@ -832,11 +847,9 @@ async fn run_worker(
                             ClientSessionCapabilities::new()
                                 .config_options(SessionConfigOptionsCapabilities::new()),
                         )
-                        .fs(
-                            FileSystemCapabilities::new()
-                                .read_text_file(true)
-                                .write_text_file(true),
-                        )
+                        .fs(FileSystemCapabilities::new()
+                            .read_text_file(true)
+                            .write_text_file(true))
                         .terminal(true)
                         .elicitation(
                             ElicitationCapabilities::new()
@@ -852,7 +865,9 @@ async fn run_worker(
                 connection.send_request(initialize).block_task(),
             )
             .await
-            .map_err(|_| agent_client_protocol::util::internal_error("ACP initialize timed out"))??;
+            .map_err(|_| {
+                agent_client_protocol::util::internal_error("ACP initialize timed out")
+            })??;
             if initialized.protocol_version != ProtocolVersion::V1 {
                 return Err(agent_client_protocol::util::internal_error(format!(
                     "unsupported ACP protocol version: {:?}",
@@ -862,8 +877,9 @@ async fn run_worker(
 
             let session_caps = &initialized.agent_capabilities.session_capabilities;
             let info = InitializedInfo {
-                auth_required: !initialized.auth_methods.is_empty()
-                    || initialized.agent_capabilities.auth.logout.is_some(),
+                // auth_methods advertises supported login mechanisms. It does not
+                // indicate current auth state; ACP reports that with AuthRequired.
+                auth_required: false,
                 auth_method_ids: initialized
                     .auth_methods
                     .iter()
@@ -877,7 +893,9 @@ async fn run_worker(
                 supports_logout: initialized.agent_capabilities.auth.logout.is_some(),
                 supports_additional_directories: session_caps.additional_directories.is_some(),
             };
-            shared.auth_required.store(info.auth_required, Ordering::Release);
+            shared
+                .auth_required
+                .store(info.auth_required, Ordering::Release);
             if let Ok(mut caps) = shared.caps.lock() {
                 *caps = info.clone();
             }
@@ -967,8 +985,9 @@ async fn run_worker(
                         )
                         .await;
                         let mapped = match result {
-                            Ok(Ok(response)) => Ok(serde_json::to_value(response)
-                                .unwrap_or(json!({"sessions":[]}))),
+                            Ok(Ok(response)) => Ok(
+                                serde_json::to_value(response).unwrap_or(json!({"sessions":[]}))
+                            ),
                             Ok(Err(error)) => Err(format!("session/list failed: {error}")),
                             Err(_) => Err("session/list timed out".to_string()),
                         };
@@ -1241,13 +1260,11 @@ async fn run_prompt(
         if !mcp_servers.is_empty() {
             req = req.mcp_servers(mcp_servers);
         }
-        let response = tokio::time::timeout(
-            HANDSHAKE_TIMEOUT,
-            connection.send_request(req).block_task(),
-        )
-        .await
-        .map_err(|_| "ACP session creation timed out".to_string())?
-        .map_err(|error| error.to_string())?;
+        let response =
+            tokio::time::timeout(HANDSHAKE_TIMEOUT, connection.send_request(req).block_task())
+                .await
+                .map_err(|_| "ACP session creation timed out".to_string())?
+                .map_err(|error| map_acp_error(shared, "ACP session creation failed", error))?;
         let session_id = response.session_id;
         let runtime = Arc::new(SessionRuntime::new(
             session_id.0.to_string(),
@@ -1275,10 +1292,7 @@ async fn run_prompt(
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
     {
-        return Err(format!(
-            "turn already running for session {}",
-            session_id.0
-        ));
+        return Err(format!("turn already running for session {}", session_id.0));
     }
 
     on_session(session_id.0.as_ref());
@@ -1381,7 +1395,10 @@ async fn run_prompt(
         tokio::pin!(cancellation_deadline);
         let response = loop {
             tokio::select! {
-                response = &mut prompt_request => break response.map_err(|error| format!("ACP prompt failed: {error}"))?,
+                response = &mut prompt_request => {
+                    break response
+                        .map_err(|error| map_acp_error(shared, "ACP prompt failed", error))?
+                },
                 changed = cancel.changed(), if !cancellation_sent => {
                     if changed.is_err() || *cancel.borrow() {
                         let _ = connection.send_notification(CancelNotification::new(session_id.clone()));
@@ -1451,13 +1468,20 @@ async fn restore_session(
         if !mcp_servers.is_empty() {
             request = request.mcp_servers(mcp_servers.clone());
         }
-        match tokio::time::timeout(HANDSHAKE_TIMEOUT, connection.send_request(request).block_task())
-            .await
+        match tokio::time::timeout(
+            HANDSHAKE_TIMEOUT,
+            connection.send_request(request).block_task(),
+        )
+        .await
         {
             Ok(Ok(response)) => {
-                return Ok((SessionId::new(existing), response.config_options, response.modes));
+                return Ok((
+                    SessionId::new(existing),
+                    response.config_options,
+                    response.modes,
+                ));
             }
-            Ok(Err(error)) => return Err(format!("session_resume_failed: {error}")),
+            Ok(Err(error)) => return Err(map_acp_error(shared, "session_resume_failed", error)),
             Err(_) => return Err("session_resume_failed: timed out".to_string()),
         }
     }
@@ -1481,7 +1505,7 @@ async fn restore_session(
                     response.config_options,
                     response.modes,
                 )),
-                Ok(Err(error)) => Err(format!("session_resume_failed: {error}")),
+                Ok(Err(error)) => Err(map_acp_error(shared, "session_resume_failed", error)),
                 Err(_) => Err("session_resume_failed: timed out".to_string()),
             };
         }
@@ -1496,8 +1520,11 @@ async fn restore_session(
     if !mcp_servers.is_empty() {
         request = request.mcp_servers(mcp_servers);
     }
-    match tokio::time::timeout(HANDSHAKE_TIMEOUT, connection.send_request(request).block_task())
-        .await
+    match tokio::time::timeout(
+        HANDSHAKE_TIMEOUT,
+        connection.send_request(request).block_task(),
+    )
+    .await
     {
         Ok(Ok(response)) => {
             // Wait for replay traffic to settle (t3code: 90s / 2s idle gap).
@@ -1513,13 +1540,26 @@ async fn restore_session(
         Ok(Err(error)) => {
             runtime.capture.store(false, Ordering::Release);
             runtime.flush_and_clear_pipeline();
-            Err(format!("session_load_failed: {error}"))
+            Err(map_acp_error(shared, "session_load_failed", error))
         }
         Err(_) => {
             runtime.capture.store(false, Ordering::Release);
             runtime.flush_and_clear_pipeline();
             Err("session_load_failed: timed out".to_string())
         }
+    }
+}
+
+fn map_acp_error(
+    shared: &ConnShared,
+    context: &str,
+    error: agent_client_protocol::Error,
+) -> String {
+    if error.code == ErrorCode::AuthRequired {
+        shared.auth_required.store(true, Ordering::Release);
+        "authentication_required".to_string()
+    } else {
+        format!("{context}: {error}")
     }
 }
 
@@ -1549,10 +1589,13 @@ fn apply_session_model<'a>(
                 option.id.clone(),
                 SessionConfigOptionValue::value_id(base_model),
             );
-            tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
-                .await
-                .map_err(|_| "session config timed out".to_string())?
-                .map_err(|error| error.to_string())?;
+            tokio::time::timeout(
+                CONFIG_TIMEOUT,
+                connection.send_request(request).block_task(),
+            )
+            .await
+            .map_err(|_| "session config timed out".to_string())?
+            .map_err(|error| error.to_string())?;
         }
         for (key, value) in selections {
             let Some(option) = options.iter().find(|option| {
@@ -1572,10 +1615,13 @@ fn apply_session_model<'a>(
                 option.id.clone(),
                 SessionConfigOptionValue::value_id(value),
             );
-            tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
-                .await
-                .map_err(|_| "session config timed out".to_string())?
-                .map_err(|error| error.to_string())?;
+            tokio::time::timeout(
+                CONFIG_TIMEOUT,
+                connection.send_request(request).block_task(),
+            )
+            .await
+            .map_err(|_| "session config timed out".to_string())?
+            .map_err(|error| error.to_string())?;
         }
         Ok(())
     }
@@ -1591,20 +1637,21 @@ async fn apply_session_mode(
     let Some(mode_state) = modes else {
         return Ok(());
     };
-    let Some(mode_id) =
-        resolve_requested_mode_id(interaction_mode, runtime_mode, mode_state)
+    let Some(mode_id) = resolve_requested_mode_id(interaction_mode, runtime_mode, mode_state)
     else {
         return Ok(());
     };
     if mode_id == mode_state.current_mode_id.0.as_ref() {
         return Ok(());
     }
-    let request =
-        SetSessionModeRequest::new(session_id.clone(), SessionModeId::new(mode_id));
-    tokio::time::timeout(CONFIG_TIMEOUT, connection.send_request(request).block_task())
-        .await
-        .map_err(|_| "set_session_mode timed out".to_string())?
-        .map_err(|error| error.to_string())?;
+    let request = SetSessionModeRequest::new(session_id.clone(), SessionModeId::new(mode_id));
+    tokio::time::timeout(
+        CONFIG_TIMEOUT,
+        connection.send_request(request).block_task(),
+    )
+    .await
+    .map_err(|_| "set_session_mode timed out".to_string())?
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 

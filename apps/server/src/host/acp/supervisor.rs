@@ -1,6 +1,5 @@
-use super::connection_pool::{
-    map_stop_reason, ConnectionPool, InitializedInfo, TurnJob,
-};
+use super::bounds::{MAX_PENDING_PERMISSIONS, MAX_PENDING_USER_INPUTS};
+use super::connection_pool::{map_stop_reason, ConnectionPool, InitializedInfo, TurnJob};
 use super::profiles::ProviderProfile;
 use super::redaction::redact_json;
 use super::types::{
@@ -52,6 +51,11 @@ struct ActiveTurn {
     connection_key: String,
 }
 
+struct PendingInteraction<T> {
+    thread_key: String,
+    respond: oneshot::Sender<T>,
+}
+
 struct ConnectionRecord {
     snapshot: ProviderConnectionSnapshot,
     trace: Vec<Value>,
@@ -68,8 +72,8 @@ struct ConnectionRecord {
 #[derive(Clone, Default)]
 pub struct AcpSupervisor {
     active: Arc<Mutex<HashMap<String, ActiveTurn>>>,
-    permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
-    user_inputs: Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>,
+    permissions: Arc<Mutex<HashMap<String, PendingInteraction<String>>>>,
+    user_inputs: Arc<Mutex<HashMap<String, PendingInteraction<Value>>>>,
     connections: Arc<Mutex<HashMap<String, ConnectionRecord>>>,
     pool: ConnectionPool,
 }
@@ -176,6 +180,7 @@ impl AcpSupervisor {
         let event = on_event.clone();
         let sequence = Arc::new(AtomicU64::new(request.initial_sequence));
         let sequence_for_perm = sequence.clone();
+        let permission_thread_key = request.thread_key.clone();
         let on_permission: Arc<
             dyn Fn(RequestPermissionRequest) -> BoxFuture<'static, RequestPermissionOutcome>
                 + Send
@@ -184,7 +189,16 @@ impl AcpSupervisor {
             let request_id = Uuid::new_v4().to_string();
             let (tx, rx) = oneshot::channel();
             if let Ok(mut guard) = pending.lock() {
-                guard.insert(request_id.clone(), tx);
+                if guard.len() >= MAX_PENDING_PERMISSIONS {
+                    return Box::pin(async { RequestPermissionOutcome::Cancelled });
+                }
+                guard.insert(
+                    request_id.clone(),
+                    PendingInteraction {
+                        thread_key: permission_thread_key.clone(),
+                        respond: tx,
+                    },
+                );
             } else {
                 return Box::pin(async { RequestPermissionOutcome::Cancelled });
             }
@@ -273,7 +287,18 @@ impl AcpSupervisor {
                 }
                 let (tx, rx) = oneshot::channel();
                 if let Ok(mut guard) = pending_user_inputs.lock() {
-                    guard.insert(request_id.clone(), tx);
+                    if guard.len() >= MAX_PENDING_USER_INPUTS {
+                        return Box::pin(async {
+                            json!({ "cancelled": true, "action": "cancel" })
+                        });
+                    }
+                    guard.insert(
+                        request_id.clone(),
+                        PendingInteraction {
+                            thread_key: thread_key_for_input.clone(),
+                            respond: tx,
+                        },
+                    );
                 } else {
                     return Box::pin(async { json!({ "cancelled": true, "action": "cancel" }) });
                 }
@@ -314,8 +339,7 @@ impl AcpSupervisor {
                         record.snapshot.last_transition_at_ms = now_ms();
                         if info.auth_required {
                             record.snapshot.state = ConnectionState::AuthenticationRequired;
-                            record.snapshot.detail =
-                                Some("authentication_required".to_string());
+                            record.snapshot.detail = Some("authentication_required".to_string());
                         } else {
                             record.snapshot.state = ConnectionState::Ready;
                         }
@@ -359,6 +383,7 @@ impl AcpSupervisor {
             .lock()
             .ok()
             .and_then(|mut active| active.remove(&request.thread_key));
+        self.cancel_pending_for_thread(&request.thread_key);
         let mut connections = self
             .connections
             .lock()
@@ -388,8 +413,7 @@ impl AcpSupervisor {
                 if error == "provider_unresponsive_after_cancel" {
                     record.snapshot.state = ConnectionState::Degraded;
                     record.snapshot.last_error = Some(error.clone());
-                    record.snapshot.restart_count =
-                        record.snapshot.restart_count.saturating_add(1);
+                    record.snapshot.restart_count = record.snapshot.restart_count.saturating_add(1);
                     drop(connections);
                     let _ = self.force_stop_connection(&connection_key);
                     return Err(error);
@@ -425,12 +449,6 @@ impl AcpSupervisor {
             .collect();
         for key in &thread_keys {
             self.cancel_turn(key);
-        }
-        // Settle outstanding permission waiters as cancelled.
-        if let Ok(mut permissions) = self.permissions.lock() {
-            for (_, sender) in permissions.drain() {
-                let _ = sender.send(String::new());
-            }
         }
         if let Ok(mut active) = self.active.lock() {
             for key in thread_keys {
@@ -474,9 +492,7 @@ impl AcpSupervisor {
         if !supports {
             return Err("unsupported_capability".to_string());
         }
-        self.pool
-            .list_sessions(connection_key, cwd, cursor)
-            .await
+        self.pool.list_sessions(connection_key, cwd, cursor).await
     }
 
     pub async fn close_session(
@@ -618,6 +634,7 @@ impl AcpSupervisor {
             .remove(request_id)
             .ok_or("unknown_permission_request")?;
         sender
+            .respond
             .send(option_id.to_string())
             .map_err(|_| "permission_request_closed".to_string())
     }
@@ -630,6 +647,7 @@ impl AcpSupervisor {
             .remove(request_id)
             .ok_or("unknown_user_input_request")?;
         sender
+            .respond
             .send(answer)
             .map_err(|_| "user_input_request_closed".to_string())
     }
@@ -655,18 +673,34 @@ impl AcpSupervisor {
         {
             let _ = turn.send(true);
         }
-        // Drop unresolved permissions for this turn by cancelling all — host
-        // clears pendingPermissions on interrupt; settle waiters so provider unblocks.
+        self.cancel_pending_for_thread(thread_key);
+    }
+
+    fn cancel_pending_for_thread(&self, thread_key: &str) {
         if let Ok(mut permissions) = self.permissions.lock() {
-            let drained: Vec<_> = permissions.drain().collect();
-            for (_, sender) in drained {
-                let _ = sender.send(String::new());
+            let request_ids: Vec<String> = permissions
+                .iter()
+                .filter(|(_, pending)| pending.thread_key == thread_key)
+                .map(|(request_id, _)| request_id.clone())
+                .collect();
+            for request_id in request_ids {
+                if let Some(pending) = permissions.remove(&request_id) {
+                    let _ = pending.respond.send(String::new());
+                }
             }
         }
         if let Ok(mut inputs) = self.user_inputs.lock() {
-            let drained: Vec<_> = inputs.drain().collect();
-            for (_, sender) in drained {
-                let _ = sender.send(json!({ "cancelled": true, "action": "cancel" }));
+            let request_ids: Vec<String> = inputs
+                .iter()
+                .filter(|(_, pending)| pending.thread_key == thread_key)
+                .map(|(request_id, _)| request_id.clone())
+                .collect();
+            for request_id in request_ids {
+                if let Some(pending) = inputs.remove(&request_id) {
+                    let _ = pending
+                        .respond
+                        .send(json!({ "cancelled": true, "action": "cancel" }));
+                }
             }
         }
     }

@@ -7,7 +7,7 @@ export function ConnectionBanner(props: {
   onAuthenticate?: (methodId: string) => void
 }) {
   const { connection, onAuthenticate } = props
-  if (!connection || connection.status === "connected") return null
+  if (!connection || !connection.status || connection.status === "connected") return null
   const isError = connection.status === "error" || connection.status === "disconnected"
   const Icon = isError ? CircleAlert : connection.status === "authenticating" ? PlugZap : Loader2
   const authMethods =

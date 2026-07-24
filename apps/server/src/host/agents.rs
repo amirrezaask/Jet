@@ -2,6 +2,15 @@ use super::acp::{
     acp_profile_id_for_agent, mock_strict, profile_for_agent, AcpSupervisor, SupervisorTurnRequest,
     TimelineItem, TimelineItemKind,
 };
+use super::claude_sdk::{
+    ClaudeInteraction, ClaudeInteractionKind, ClaudePermissionMode, ClaudeSupervisor,
+    ClaudeSupervisorTurnRequest, ClaudeTimelineUpdate,
+};
+use super::codex_app_server::{
+    normalize_notification as normalize_codex_notification, CodexInteraction, CodexInteractionKind,
+    CodexSupervisor, CodexSupervisorTurnRequest, CodexTimelineUpdate,
+    RuntimeMode as CodexRuntimeMode,
+};
 use super::events::EventHub;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -19,7 +28,7 @@ use super::launch::uri_to_path;
 struct ActiveTurn {
     id: Uuid,
     stop: Arc<Mutex<bool>>,
-    acp_cancel: Option<watch::Sender<bool>>,
+    provider_cancel: Option<watch::Sender<bool>>,
 }
 
 #[derive(Clone, Copy)]
@@ -74,6 +83,10 @@ fn is_acp_driver(driver_id: &str) -> bool {
     driver_id.ends_with(":acp")
 }
 
+fn is_native_driver(driver_id: &str) -> bool {
+    driver_id.ends_with(":app-server") || driver_id.ends_with(":sdk")
+}
+
 fn agent_spec(id: &str) -> Option<AgentSpec> {
     let id = normalize_agent_id(id);
     AGENTS.iter().copied().find(|agent| agent.id == id)
@@ -82,6 +95,8 @@ fn agent_spec(id: &str) -> Option<AgentSpec> {
 pub struct AgentsHost {
     active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
     supervisor: Arc<AcpSupervisor>,
+    codex_supervisor: Arc<CodexSupervisor>,
+    claude_supervisor: Arc<ClaudeSupervisor>,
 }
 
 impl AgentsHost {
@@ -89,15 +104,28 @@ impl AgentsHost {
         Self {
             active_turns: Arc::new(Mutex::new(HashMap::new())),
             supervisor: Arc::new(AcpSupervisor::new()),
+            codex_supervisor: Arc::new(CodexSupervisor::new()),
+            claude_supervisor: Arc::new(ClaudeSupervisor::new()),
         }
     }
 
     fn default_driver_id(agent_id: &str) -> String {
         match normalize_agent_id(agent_id) {
+            "codex" => "codex:app-server".to_string(),
+            "claude" => "claude:sdk".to_string(),
+            "opencode" => "opencode:acp".to_string(),
             // Cursor ACP is a separate agent; transport id stays `cursor:acp`.
             "cursor-acp" => "cursor:acp".to_string(),
             "grok" => "grok:acp".to_string(),
             id => format!("{id}:cli"),
+        }
+    }
+
+    fn native_driver_id(agent_id: &str) -> Option<String> {
+        match normalize_agent_id(agent_id) {
+            "codex" => Some("codex:app-server".to_string()),
+            "claude" => Some("claude:sdk".to_string()),
+            _ => None,
         }
     }
 
@@ -128,7 +156,26 @@ impl AgentsHost {
         if Some(driver_id) == Self::cli_driver_id(id).as_deref() {
             return true;
         }
+        if Some(driver_id) == Self::native_driver_id(id).as_deref() {
+            return true;
+        }
         driver_id == Self::default_driver_id(id)
+    }
+
+    fn ensure_driver_available(agent_id: &str, driver_id: &str) -> Result<(), String> {
+        if std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() == Some("1") {
+            return Ok(());
+        }
+        let agent = agent_spec(agent_id).ok_or_else(|| format!("unknown agent: {agent_id}"))?;
+        if !agent_available(&agent) {
+            return Err(format!("{} CLI not found on PATH", agent.display_name));
+        }
+        if is_acp_driver(driver_id) {
+            if let Some(reason) = unavailable_acp_reason(agent.id) {
+                return Err(format!("provider_transport_unavailable: {reason}"));
+            }
+        }
+        Ok(())
     }
 
     fn normalize_driver_id(agent_id: &str, driver_id: Option<&str>) -> String {
@@ -358,6 +405,7 @@ impl AgentsHost {
         if !Self::driver_supported(agent.id, &driver_id) {
             return Err(format!("unsupported driver: {driver_id}"));
         }
+        Self::ensure_driver_available(agent.id, &driver_id)?;
         let thread = json!({
             "id": Uuid::new_v4().to_string(),
             "title": input.get("title").and_then(|v| v.as_str()).unwrap_or("New agent"),
@@ -385,6 +433,8 @@ impl AgentsHost {
             "plan": Value::Null,
             "acpSequence": 0,
             "acpProvider": Value::Null,
+            "providerSessionId": Value::Null,
+            "providerTransport": Value::Null,
             "messages": [],
         });
         Self::write_thread(&root_path, &thread)?;
@@ -440,6 +490,7 @@ impl AgentsHost {
         if !Self::driver_supported(agent.id, &driver_id) {
             return Err(format!("unsupported driver: {driver_id}"));
         }
+        Self::ensure_driver_available(agent.id, &driver_id)?;
         thread["agentId"] = json!(agent.id);
         thread["driverId"] = json!(driver_id);
         if let Some(model) = input.get("model") {
@@ -474,14 +525,15 @@ impl AgentsHost {
 
         let app_bg = app.clone();
         let stop = Arc::new(Mutex::new(false));
-        let (acp_cancel, acp_cancel_rx) = watch::channel(false);
+        let (provider_cancel, provider_cancel_rx) = watch::channel(false);
         let turn_id = Uuid::new_v4();
         self.active_turns.lock().unwrap().insert(
             key.clone(),
             ActiveTurn {
                 id: turn_id,
                 stop: stop.clone(),
-                acp_cancel: is_acp_driver(&driver_id).then_some(acp_cancel),
+                provider_cancel: (is_acp_driver(&driver_id) || is_native_driver(&driver_id))
+                    .then_some(provider_cancel),
             },
         );
 
@@ -514,6 +566,8 @@ impl AgentsHost {
             .and_then(Value::as_str)
             .map(str::to_string);
         let supervisor = self.supervisor.clone();
+        let codex_supervisor = self.codex_supervisor.clone();
+        let claude_supervisor = self.claude_supervisor.clone();
         let runtime = tokio::runtime::Handle::try_current()
             .map_err(|_| "ACP requires the shared Tokio runtime".to_string())?;
         thread::spawn(move || {
@@ -528,9 +582,11 @@ impl AgentsHost {
                 model,
                 images,
                 acp_session_id,
-                acp_cancel_rx,
+                provider_cancel_rx,
                 stop,
                 supervisor,
+                codex_supervisor,
+                claude_supervisor,
                 runtime,
             );
             let mut turns = active_turns.lock().unwrap();
@@ -556,7 +612,7 @@ impl AgentsHost {
         let key = format!("{root_path}::{thread_id}");
         if let Some(active) = self.active_turns.lock().unwrap().remove(&key) {
             *active.stop.lock().unwrap() = true;
-            if let Some(cancel) = active.acp_cancel {
+            if let Some(cancel) = active.provider_cancel {
                 let _ = cancel.send(true);
             }
         }
@@ -611,6 +667,7 @@ impl AgentsHost {
             if !Self::driver_supported(agent_id, &driver_id) {
                 return Err(format!("unsupported driver: {driver_id}"));
             }
+            Self::ensure_driver_available(agent_id, &driver_id)?;
             thread["driverId"] = json!(driver_id);
         }
         if let Some(model) = input.get("model") {
@@ -636,14 +693,13 @@ impl AgentsHost {
         // Continuation: clearing session when agent/provider changes.
         if input.get("agentId").is_some() || input.get("driverId").is_some() {
             if let Some(existing) = thread.get("acpProvider").and_then(Value::as_str) {
-                let next_agent = thread
-                    .get("agentId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let next_agent = thread.get("agentId").and_then(Value::as_str).unwrap_or("");
                 if let Some(next_provider) = acp_profile_id_for_agent(next_agent) {
                     if existing != next_provider {
                         thread["acpSessionId"] = Value::Null;
                         thread["acpProvider"] = Value::Null;
+                        thread["providerSessionId"] = Value::Null;
+                        thread["providerTransport"] = Value::Null;
                     }
                 }
             }
@@ -710,11 +766,13 @@ impl AgentsHost {
     pub fn stop_all(&self) {
         for (_, active) in self.active_turns.lock().unwrap().drain() {
             *active.stop.lock().unwrap() = true;
-            if let Some(cancel) = active.acp_cancel {
+            if let Some(cancel) = active.provider_cancel {
                 let _ = cancel.send(true);
             }
         }
         self.supervisor.shutdown();
+        self.codex_supervisor.shutdown();
+        self.claude_supervisor.shutdown();
     }
 }
 
@@ -742,18 +800,43 @@ fn agent_snapshot(agent: &AgentSpec) -> Value {
             "message": unavailable_msg.clone(),
         }));
     }
-    if let Some(acp_id) = AgentsHost::acp_driver_id(agent.id) {
+    if let Some(native_id) = AgentsHost::native_driver_id(agent.id) {
         drivers.push(json!({
-            "id": acp_id,
-            "kind": "acp",
+            "id": native_id,
+            "kind": "native",
             "status": status,
             "message": unavailable_msg.clone(),
         }));
     }
+    if let Some(acp_id) = AgentsHost::acp_driver_id(agent.id) {
+        let acp_reason = (std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() != Some("1"))
+            .then(|| unavailable_acp_reason(agent.id))
+            .flatten();
+        let acp_ready = installed && acp_reason.is_none();
+        drivers.push(json!({
+            "id": acp_id,
+            "kind": "acp",
+            "status": if acp_ready { "ready" } else { "unavailable" },
+            "message": if !installed {
+                unavailable_msg.clone()
+            } else if let Some(reason) = acp_reason {
+                json!(reason)
+            } else {
+                Value::Null
+            },
+        }));
+    }
     if drivers.is_empty() {
+        let active_kind = if is_acp_driver(&active_driver_id) {
+            "acp"
+        } else if active_driver_id.ends_with(":app-server") || active_driver_id.ends_with(":sdk") {
+            "native"
+        } else {
+            "cli"
+        };
         drivers.push(json!({
             "id": active_driver_id,
-            "kind": if is_acp_driver(&active_driver_id) { "acp" } else { "cli" },
+            "kind": active_kind,
             "status": status,
             "message": unavailable_msg,
         }));
@@ -770,6 +853,18 @@ fn agent_snapshot(agent: &AgentSpec) -> Value {
             json!([])
         },
     })
+}
+
+fn unavailable_acp_reason(agent_id: &str) -> Option<&'static str> {
+    match normalize_agent_id(agent_id) {
+        "codex" => {
+            Some("Codex does not expose ACP; its production adapter must use `codex app-server`")
+        }
+        "claude" => Some(
+            "Claude Code does not expose ACP; its production adapter must use the Claude Agent SDK",
+        ),
+        _ => None,
+    }
 }
 
 fn agent_models(agent: &AgentSpec) -> Value {
@@ -881,15 +976,68 @@ fn run_turn(
     model: Option<String>,
     images: Vec<(String, String)>,
     acp_session_id: Option<String>,
-    acp_cancel: watch::Receiver<bool>,
+    provider_cancel: watch::Receiver<bool>,
     stop: Arc<Mutex<bool>>,
     supervisor: Arc<AcpSupervisor>,
+    codex_supervisor: Arc<CodexSupervisor>,
+    claude_supervisor: Arc<ClaudeSupervisor>,
     runtime: tokio::runtime::Handle,
 ) {
     let use_mock = std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() == Some("1");
     let legacy_mock = std::env::var("GHARARGAH_AGENT_MOCK_LEGACY").ok().as_deref() == Some("1");
     if use_mock && legacy_mock {
         run_mock_turn(&app, &root_path, &thread_id, &assistant_id, &prompt, &stop);
+        return;
+    }
+    if !use_mock && driver_id == "codex:app-server" {
+        if let Err(error) = run_codex_turn(
+            &app,
+            &root_path,
+            &thread_id,
+            &assistant_id,
+            &prompt,
+            model,
+            images,
+            provider_cancel,
+            codex_supervisor,
+            runtime,
+        ) {
+            update_assistant(
+                &app,
+                &root_path,
+                &thread_id,
+                &assistant_id,
+                None,
+                "error",
+                Some(&error),
+            );
+        }
+        return;
+    }
+    let claude_mock_bin = std::env::var_os("GHARARGAH_MOCK_CLAUDE_SDK_BIN");
+    if driver_id == "claude:sdk" && (!use_mock || claude_mock_bin.is_some()) {
+        if let Err(error) = run_claude_turn(
+            &app,
+            &root_path,
+            &thread_id,
+            &assistant_id,
+            &prompt,
+            model,
+            images,
+            provider_cancel,
+            claude_supervisor,
+            runtime,
+        ) {
+            update_assistant(
+                &app,
+                &root_path,
+                &thread_id,
+                &assistant_id,
+                None,
+                "error",
+                Some(&error),
+            );
+        }
         return;
     }
     if use_mock || is_acp_driver(&driver_id) {
@@ -903,7 +1051,7 @@ fn run_turn(
             model,
             images,
             acp_session_id,
-            acp_cancel,
+            provider_cancel,
             supervisor,
             runtime,
             use_mock,
@@ -1086,12 +1234,20 @@ fn ui_tool_call(payload: &Value, fallback_id: &str) -> Value {
     let status_raw = payload
         .get("status")
         .or_else(|| payload.pointer("/fields/status"))
-        .and_then(|v| v.as_str().map(str::to_string).or_else(|| Some(v.to_string())))
+        .and_then(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .or_else(|| Some(v.to_string()))
+        })
         .unwrap_or_else(|| "pending".to_string());
     let kind = payload
         .get("kind")
         .or_else(|| payload.pointer("/fields/kind"))
-        .and_then(|v| v.as_str().map(str::to_string).or_else(|| Some(v.to_string())));
+        .and_then(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .or_else(|| Some(v.to_string()))
+        });
     let input = value_as_string(
         payload
             .get("rawInput")
@@ -1133,10 +1289,7 @@ fn ui_permission(payload: &Value) -> Value {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let options = payload
-        .get("options")
-        .cloned()
-        .unwrap_or_else(|| json!([]));
+    let options = payload.get("options").cloned().unwrap_or_else(|| json!([]));
     json!({
         "id": id,
         "title": payload.get("title").and_then(Value::as_str).unwrap_or("Permission required"),
@@ -1320,7 +1473,11 @@ fn ui_timeline_item(item: &TimelineItem) -> Value {
             "createdAt": created_at,
         }),
         TimelineItemKind::Status => {
-            let status_type = item.payload.get("type").and_then(Value::as_str).unwrap_or("");
+            let status_type = item
+                .payload
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let text = match status_type {
                 "commands" => "Commands updated".to_string(),
                 "config" | "config_options" => "Config updated".to_string(),
@@ -1362,6 +1519,562 @@ fn ui_user_input(payload: &Value) -> Value {
         input["status"] = json!("pending");
     }
     input
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_codex_turn(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    assistant_id: &str,
+    prompt: &str,
+    model: Option<String>,
+    images: Vec<(String, String)>,
+    cancel: watch::Receiver<bool>,
+    supervisor: Arc<CodexSupervisor>,
+    runtime: tokio::runtime::Handle,
+) -> Result<(), String> {
+    let thread = AgentsHost::read_thread_value(root_path, thread_id)
+        .ok_or_else(|| "thread_not_found".to_string())?;
+    let runtime_mode =
+        CodexRuntimeMode::from_product_value(thread.get("runtimeMode").and_then(Value::as_str));
+    let existing_provider_thread_id = thread
+        .get("providerSessionId")
+        .or_else(|| thread.get("codexThreadId"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let model = model.filter(|model| !model.is_empty() && model != "auto");
+    let thread_key = format!("{root_path}::{thread_id}");
+    let streamed_text = Arc::new(Mutex::new(String::new()));
+
+    let result = runtime.block_on(supervisor.run_turn(CodexSupervisorTurnRequest {
+        executable: PathBuf::from("codex"),
+        extra_args: Vec::new(),
+        env: Vec::new(),
+        workspace_root: PathBuf::from(root_path),
+        thread_key,
+        existing_provider_thread_id,
+        prompt: prompt.to_string(),
+        images,
+        runtime_mode,
+        model,
+        service_tier: None,
+        effort: None,
+        cancel,
+        on_session: {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            Arc::new(move |provider_thread_id| {
+                persist_native_session(
+                    &app,
+                    &root_path,
+                    &thread_id,
+                    "codex-app-server",
+                    provider_thread_id,
+                );
+            })
+        },
+        on_text_delta: {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            let assistant_id = assistant_id.to_string();
+            let streamed_text = streamed_text.clone();
+            Arc::new(move |delta| {
+                let snapshot = {
+                    let mut text = streamed_text.lock().expect("Codex text lock poisoned");
+                    text.push_str(delta);
+                    text.clone()
+                };
+                emit_assistant_delta(&app, &root_path, &thread_id, &assistant_id, &snapshot);
+            })
+        },
+        on_notification: {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            Arc::new(move |notification| {
+                let provider_session_id = AgentsHost::read_thread_value(&root_path, &thread_id)
+                    .and_then(|thread| {
+                        thread
+                            .get("providerSessionId")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    })
+                    .unwrap_or_else(|| thread_id.clone());
+                if let Some(update) =
+                    normalize_codex_notification(notification, &provider_session_id)
+                {
+                    persist_codex_timeline_update(&app, &root_path, &thread_id, update);
+                }
+            })
+        },
+        on_interaction: {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            Arc::new(move |interaction| {
+                persist_codex_interaction(&app, &root_path, &thread_id, interaction);
+            })
+        },
+    }));
+
+    clear_native_pending_interactions(app, root_path, thread_id);
+    let result = result.map_err(|error| error.to_string())?;
+    persist_thread_activity(app, root_path, thread_id, None);
+    if result.cancelled || result.status == "interrupted" {
+        update_assistant(
+            app,
+            root_path,
+            thread_id,
+            assistant_id,
+            Some(&result.text),
+            "cancelled",
+            None,
+        );
+    } else if result.status == "completed" {
+        update_assistant(
+            app,
+            root_path,
+            thread_id,
+            assistant_id,
+            Some(&result.text),
+            "idle",
+            None,
+        );
+    } else {
+        let error = result
+            .error
+            .as_ref()
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("Codex turn ended with status {}", result.status));
+        update_assistant(
+            app,
+            root_path,
+            thread_id,
+            assistant_id,
+            Some(&result.text),
+            "error",
+            Some(&error),
+        );
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_claude_turn(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    assistant_id: &str,
+    prompt: &str,
+    model: Option<String>,
+    images: Vec<(String, String)>,
+    cancel: watch::Receiver<bool>,
+    supervisor: Arc<ClaudeSupervisor>,
+    runtime: tokio::runtime::Handle,
+) -> Result<(), String> {
+    let thread = AgentsHost::read_thread_value(root_path, thread_id)
+        .ok_or_else(|| "thread_not_found".to_string())?;
+    let permission_mode =
+        ClaudePermissionMode::from_product_value(thread.get("runtimeMode").and_then(Value::as_str));
+    let existing_provider_session_id = thread
+        .get("providerSessionId")
+        .or_else(|| thread.get("claudeSessionId"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let model = model.filter(|model| !model.is_empty() && model != "auto");
+    let thread_key = format!("{root_path}::{thread_id}");
+    let streamed_text = Arc::new(Mutex::new(String::new()));
+    let executable = std::env::var("GHARARGAH_MOCK_CLAUDE_SDK_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("claude"));
+
+    let result = runtime.block_on(supervisor.run_turn(ClaudeSupervisorTurnRequest {
+        executable,
+        extra_args: Vec::new(),
+        env: Vec::new(),
+        workspace_root: PathBuf::from(root_path),
+        thread_key,
+        existing_provider_session_id,
+        prompt: prompt.to_string(),
+        images,
+        permission_mode,
+        model,
+        effort: None,
+        cancel,
+        on_session: {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            Arc::new(move |provider_session_id| {
+                persist_native_session(
+                    &app,
+                    &root_path,
+                    &thread_id,
+                    "claude-sdk",
+                    provider_session_id,
+                );
+            })
+        },
+        on_text_delta: {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            let assistant_id = assistant_id.to_string();
+            let streamed_text = streamed_text.clone();
+            Arc::new(move |delta| {
+                let snapshot = {
+                    let mut text = streamed_text.lock().expect("Claude text lock poisoned");
+                    text.push_str(delta);
+                    text.clone()
+                };
+                emit_assistant_delta(&app, &root_path, &thread_id, &assistant_id, &snapshot);
+            })
+        },
+        on_message: Arc::new(|_| {}),
+        on_timeline: {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            Arc::new(move |update| {
+                persist_claude_timeline_update(&app, &root_path, &thread_id, update);
+            })
+        },
+        on_interaction: {
+            let app = app.clone();
+            let root_path = root_path.to_string();
+            let thread_id = thread_id.to_string();
+            Arc::new(move |interaction| {
+                persist_claude_interaction(&app, &root_path, &thread_id, interaction);
+            })
+        },
+    }));
+
+    clear_native_pending_interactions(app, root_path, thread_id);
+    let result = result.map_err(|error| error.to_string())?;
+    persist_thread_activity(app, root_path, thread_id, None);
+    if result.cancelled || result.status == "interrupted" {
+        update_assistant(
+            app,
+            root_path,
+            thread_id,
+            assistant_id,
+            Some(&result.text),
+            "cancelled",
+            None,
+        );
+    } else if result.status == "completed" {
+        update_assistant(
+            app,
+            root_path,
+            thread_id,
+            assistant_id,
+            Some(&result.text),
+            "idle",
+            None,
+        );
+    } else {
+        let error = result
+            .error
+            .clone()
+            .unwrap_or_else(|| format!("Claude turn ended with status {}", result.status));
+        update_assistant(
+            app,
+            root_path,
+            thread_id,
+            assistant_id,
+            Some(&result.text),
+            "error",
+            Some(&error),
+        );
+    }
+    Ok(())
+}
+
+fn persist_native_session(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    transport: &str,
+    provider_thread_id: &str,
+) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    thread["providerTransport"] = json!(transport);
+    thread["providerSessionId"] = json!(provider_thread_id);
+    thread["connection"] = json!({
+        "status": "connected",
+        "message": Value::Null,
+        "updatedAt": AgentsHost::now_iso(),
+        "providerId": Value::Null,
+        "authMethods": [],
+    });
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
+}
+
+fn persist_codex_interaction(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    interaction: CodexInteraction,
+) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    let now = AgentsHost::now_iso();
+    match interaction.kind {
+        CodexInteractionKind::Permission => {
+            let permission = ui_permission(&interaction.payload);
+            upsert_by_id(
+                &mut thread["pendingPermissions"],
+                permission.clone(),
+                &interaction.request_id,
+            );
+            upsert_by_id(
+                &mut thread["timeline"],
+                json!({
+                    "id": interaction.request_id,
+                    "kind": "permission",
+                    "permission": permission,
+                    "createdAt": now,
+                }),
+                &interaction.request_id,
+            );
+            thread["status"] = json!("waiting_for_permission");
+            emit_host(
+                app,
+                "agents:permissionRequest",
+                vec![json!({
+                    "workspaceRootPath": root_path,
+                    "workspaceRootUri": thread.get("workspaceRootUri").and_then(Value::as_str).unwrap_or(""),
+                    "threadId": thread_id,
+                    "request": interaction.payload,
+                })],
+            );
+        }
+        CodexInteractionKind::UserInput => {
+            let user_input = ui_user_input(&interaction.payload);
+            upsert_by_id(
+                &mut thread["pendingUserInputs"],
+                user_input.clone(),
+                &interaction.request_id,
+            );
+            upsert_by_id(
+                &mut thread["timeline"],
+                json!({
+                    "id": interaction.request_id,
+                    "kind": "user_input",
+                    "userInput": user_input,
+                    "createdAt": now,
+                }),
+                &interaction.request_id,
+            );
+            thread["status"] = json!("waiting_for_permission");
+            thread["activity"] = json!("Waiting for input…");
+        }
+    }
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
+}
+
+fn persist_codex_timeline_update(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    update: CodexTimelineUpdate,
+) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    if update.append_text {
+        if let Some(timeline) = thread.get_mut("timeline").and_then(Value::as_array_mut) {
+            if let Some(existing) = timeline.iter_mut().find(|candidate| {
+                candidate.get("id").and_then(Value::as_str) == Some(update.item.id.as_str())
+            }) {
+                let delta = payload_text(&update.item.payload);
+                let current = existing.get("text").and_then(Value::as_str).unwrap_or("");
+                existing["text"] = json!(format!("{current}{delta}"));
+                let _ = AgentsHost::write_thread(root_path, &thread);
+                emit_host(app, "agents:threadUpdated", vec![thread]);
+                return;
+            }
+        }
+    }
+    let id = update.item.id.clone();
+    match update.item.kind {
+        TimelineItemKind::Plan => {
+            thread["plan"] = ui_plan(&update.item.payload, &id);
+        }
+        TimelineItemKind::Usage => {
+            thread["usage"] = ui_usage(&update.item.payload);
+        }
+        TimelineItemKind::ToolCall => {
+            thread["activity"] = json!(format!(
+                "Tool: {}",
+                update
+                    .item
+                    .payload
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Codex tool")
+            ));
+        }
+        TimelineItemKind::Thought => {
+            thread["activity"] = json!("Thinking…");
+        }
+        _ => {}
+    }
+    upsert_by_id(&mut thread["timeline"], ui_timeline_item(&update.item), &id);
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
+}
+
+fn persist_claude_interaction(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    interaction: ClaudeInteraction,
+) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    let now = AgentsHost::now_iso();
+    match interaction.kind {
+        ClaudeInteractionKind::Permission => {
+            let permission = ui_permission(&interaction.payload);
+            upsert_by_id(
+                &mut thread["pendingPermissions"],
+                permission.clone(),
+                &interaction.request_id,
+            );
+            upsert_by_id(
+                &mut thread["timeline"],
+                json!({
+                    "id": interaction.request_id,
+                    "kind": "permission",
+                    "permission": permission,
+                    "createdAt": now,
+                }),
+                &interaction.request_id,
+            );
+            thread["status"] = json!("waiting_for_permission");
+            emit_host(
+                app,
+                "agents:permissionRequest",
+                vec![json!({
+                    "workspaceRootPath": root_path,
+                    "workspaceRootUri": thread.get("workspaceRootUri").and_then(Value::as_str).unwrap_or(""),
+                    "threadId": thread_id,
+                    "request": interaction.payload,
+                })],
+            );
+        }
+        ClaudeInteractionKind::UserInput => {
+            let user_input = ui_user_input(&interaction.payload);
+            upsert_by_id(
+                &mut thread["pendingUserInputs"],
+                user_input.clone(),
+                &interaction.request_id,
+            );
+            upsert_by_id(
+                &mut thread["timeline"],
+                json!({
+                    "id": interaction.request_id,
+                    "kind": "user_input",
+                    "userInput": user_input,
+                    "createdAt": now,
+                }),
+                &interaction.request_id,
+            );
+            thread["status"] = json!("waiting_for_permission");
+            thread["activity"] = json!("Waiting for input…");
+        }
+    }
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
+}
+
+fn persist_claude_timeline_update(
+    app: &EventHub,
+    root_path: &str,
+    thread_id: &str,
+    update: ClaudeTimelineUpdate,
+) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    if update.append_text {
+        if let Some(timeline) = thread.get_mut("timeline").and_then(Value::as_array_mut) {
+            if let Some(existing) = timeline.iter_mut().find(|candidate| {
+                candidate.get("id").and_then(Value::as_str) == Some(update.item.id.as_str())
+            }) {
+                let delta = payload_text(&update.item.payload);
+                let current = existing.get("text").and_then(Value::as_str).unwrap_or("");
+                existing["text"] = json!(format!("{current}{delta}"));
+                let _ = AgentsHost::write_thread(root_path, &thread);
+                emit_host(app, "agents:threadUpdated", vec![thread]);
+                return;
+            }
+        }
+    }
+    let id = update.item.id.clone();
+    match update.item.kind {
+        TimelineItemKind::Plan => {
+            thread["plan"] = ui_plan(&update.item.payload, &id);
+        }
+        TimelineItemKind::Usage => {
+            thread["usage"] = ui_usage(&update.item.payload);
+        }
+        TimelineItemKind::ToolCall => {
+            thread["activity"] = json!(format!(
+                "Tool: {}",
+                update
+                    .item
+                    .payload
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Claude tool")
+            ));
+        }
+        TimelineItemKind::Thought => {
+            thread["activity"] = json!("Thinking…");
+        }
+        _ => {}
+    }
+    upsert_by_id(&mut thread["timeline"], ui_timeline_item(&update.item), &id);
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
+}
+
+fn upsert_by_id(target: &mut Value, value: Value, id: &str) {
+    if !target.is_array() {
+        *target = json!([]);
+    }
+    let items = target.as_array_mut().expect("initialized as array");
+    if let Some(existing) = items
+        .iter_mut()
+        .find(|item| item.get("id").and_then(Value::as_str) == Some(id))
+    {
+        *existing = value;
+    } else {
+        items.push(value);
+    }
+}
+
+fn clear_native_pending_interactions(app: &EventHub, root_path: &str, thread_id: &str) {
+    let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
+        return;
+    };
+    thread["pendingPermissions"] = json!([]);
+    thread["pendingUserInputs"] = json!([]);
+    let _ = AgentsHost::write_thread(root_path, &thread);
+    emit_host(app, "agents:threadUpdated", vec![thread]);
 }
 
 fn run_acp_turn(
@@ -1414,29 +2127,28 @@ fn run_acp_turn(
         })
         .unwrap_or(false);
     // Continuation key: refuse mid-thread provider switch.
-    let (runtime_mode, interaction_mode) = if let Some(thread) =
-        AgentsHost::read_thread_value(root_path, thread_id)
-    {
-        if let Some(existing) = thread.get("acpProvider").and_then(Value::as_str) {
-            if !existing.is_empty() && existing != provider_id {
-                return Err(format!(
-                    "continuation_key_mismatch: thread bound to {existing}, got {provider_id}"
-                ));
+    let (runtime_mode, interaction_mode) =
+        if let Some(thread) = AgentsHost::read_thread_value(root_path, thread_id) {
+            if let Some(existing) = thread.get("acpProvider").and_then(Value::as_str) {
+                if !existing.is_empty() && existing != provider_id {
+                    return Err(format!(
+                        "continuation_key_mismatch: thread bound to {existing}, got {provider_id}"
+                    ));
+                }
             }
-        }
-        (
-            thread
-                .get("runtimeMode")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            thread
-                .get("interactionMode")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        )
-    } else {
-        (None, None)
-    };
+            (
+                thread
+                    .get("runtimeMode")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                thread
+                    .get("interactionMode")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            )
+        } else {
+            (None, None)
+        };
     let turn_result = runtime.block_on(supervisor.run_turn(SupervisorTurnRequest {
         provider: profile,
         workspace_root: PathBuf::from(root_path),
@@ -1784,10 +2496,7 @@ fn auto_approve_permission_option(permission: &Value) -> Option<String> {
                 .unwrap_or("")
                 .to_ascii_lowercase();
             if kind == preferred || kind.replace('-', "_") == preferred {
-                return option
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
+                return option.get("id").and_then(Value::as_str).map(str::to_string);
             }
         }
     }
@@ -1795,9 +2504,7 @@ fn auto_approve_permission_option(permission: &Value) -> Option<String> {
 }
 
 fn remembered_permission_option(thread: &Value, permission: &Value) -> Option<String> {
-    let rules = thread
-        .get("permissionRules")
-        .and_then(Value::as_array)?;
+    let rules = thread.get("permissionRules").and_then(Value::as_array)?;
     let tool_name = permission
         .get("toolName")
         .or_else(|| permission.pointer("/toolCall/name"))
@@ -1824,10 +2531,7 @@ fn remembered_permission_option(thread: &Value, permission: &Value) -> Option<St
     None
 }
 
-fn map_permission_decision_to_option_id(
-    pending: Option<&Value>,
-    decision: &str,
-) -> Option<String> {
+fn map_permission_decision_to_option_id(pending: Option<&Value>, decision: &str) -> Option<String> {
     let target_kinds: &[&str] = match decision {
         "allow_once" => &["allow_once"],
         "allow_always" => &["allow_always"],
@@ -1846,10 +2550,7 @@ fn map_permission_decision_to_option_id(
             .and_then(Value::as_array)
     })?;
     for option in options {
-        let kind = option
-            .get("kind")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let kind = option.get("kind").and_then(Value::as_str).unwrap_or("");
         let matches_kind = target_kinds
             .iter()
             .any(|candidate| kind.eq_ignore_ascii_case(candidate));
@@ -1875,10 +2576,10 @@ fn connection_ui_from_snapshot(snapshot: &super::acp::ProviderConnectionSnapshot
         super::acp::ConnectionState::AuthenticationRequired
         | super::acp::ConnectionState::Authenticating => "authenticating",
         super::acp::ConnectionState::Restarting => "reconnecting",
-        super::acp::ConnectionState::Degraded
-        | super::acp::ConnectionState::Failed => "error",
-        super::acp::ConnectionState::Stopping
-        | super::acp::ConnectionState::Stopped => "disconnected",
+        super::acp::ConnectionState::Degraded | super::acp::ConnectionState::Failed => "error",
+        super::acp::ConnectionState::Stopping | super::acp::ConnectionState::Stopped => {
+            "disconnected"
+        }
     };
     json!({
         "status": status,
@@ -2176,9 +2877,8 @@ pub fn handle(
             let root_path = input.get("workspaceRootPath").and_then(Value::as_str);
             let thread_id = input.get("threadId").and_then(Value::as_str);
             let pending_permission = match (root_path, thread_id) {
-                (Some(root_path), Some(thread_id)) => host
-                    .read_thread(root_path, thread_id)
-                    .and_then(|thread| {
+                (Some(root_path), Some(thread_id)) => {
+                    host.read_thread(root_path, thread_id).and_then(|thread| {
                         thread
                             .get("pendingPermissions")
                             .and_then(Value::as_array)
@@ -2194,7 +2894,8 @@ pub fn handle(
                                     })
                                     .cloned()
                             })
-                    }),
+                    })
+                }
                 _ => None,
             };
             let option_id = input
@@ -2221,8 +2922,28 @@ pub fn handle(
                     }
                 }
             }
-            host.supervisor
-                .resolve_permission(request_id, &option_id)?;
+            let provider_transport = root_path
+                .zip(thread_id)
+                .and_then(|(root_path, thread_id)| host.read_thread(root_path, thread_id))
+                .and_then(|thread| {
+                    thread
+                        .get("providerTransport")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                });
+            match provider_transport.as_deref() {
+                Some("codex-app-server") => {
+                    host.codex_supervisor
+                        .resolve_permission(request_id, &option_id)?;
+                }
+                Some("claude-sdk") => {
+                    host.claude_supervisor
+                        .resolve_permission(request_id, &option_id)?;
+                }
+                _ => {
+                    host.supervisor.resolve_permission(request_id, &option_id)?;
+                }
+            }
             // Clear pending permission from thread when resolved; remember allow_always.
             if let (Some(root_path), Some(thread_id)) = (root_path, thread_id) {
                 if let Some(mut thread) = host.read_thread(root_path, thread_id) {
@@ -2263,11 +2984,13 @@ pub fn handle(
                             .unwrap_or("*")
                             .to_string();
                         let rule = json!({ "scope": scope, "optionId": option_id });
-                        if let Some(rules) =
-                            thread.get_mut("permissionRules").and_then(Value::as_array_mut)
+                        if let Some(rules) = thread
+                            .get_mut("permissionRules")
+                            .and_then(Value::as_array_mut)
                         {
                             if !rules.iter().any(|existing| {
-                                existing.get("scope").and_then(Value::as_str) == Some(scope.as_str())
+                                existing.get("scope").and_then(Value::as_str)
+                                    == Some(scope.as_str())
                                     && existing.get("optionId").and_then(Value::as_str)
                                         == Some(option_id.as_str())
                             }) {
@@ -2318,8 +3041,28 @@ pub fn handle(
             if answer.as_object().map(|o| o.is_empty()).unwrap_or(true) {
                 answer = json!({ "action": "cancel", "cancelled": true });
             }
-            host.supervisor
-                .resolve_user_input(request_id, answer)?;
+            let provider_transport = root_path
+                .zip(thread_id)
+                .and_then(|(root_path, thread_id)| host.read_thread(root_path, thread_id))
+                .and_then(|thread| {
+                    thread
+                        .get("providerTransport")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                });
+            match provider_transport.as_deref() {
+                Some("codex-app-server") => {
+                    host.codex_supervisor
+                        .resolve_user_input(request_id, answer)?;
+                }
+                Some("claude-sdk") => {
+                    host.claude_supervisor
+                        .resolve_user_input(request_id, answer)?;
+                }
+                _ => {
+                    host.supervisor.resolve_user_input(request_id, answer)?;
+                }
+            }
             if let (Some(root_path), Some(thread_id)) = (root_path, thread_id) {
                 if let Some(mut thread) = host.read_thread(root_path, thread_id) {
                     if let Some(pending) = thread
@@ -2397,15 +3140,12 @@ pub fn handle(
             let provider_id = args
                 .first()
                 .and_then(|value| {
-                    value
-                        .as_str()
-                        .map(str::to_string)
-                        .or_else(|| {
-                            value
-                                .get("providerId")
-                                .and_then(Value::as_str)
-                                .map(str::to_string)
-                        })
+                    value.as_str().map(str::to_string).or_else(|| {
+                        value
+                            .get("providerId")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    })
                 })
                 .unwrap_or_else(|| "cursor-acp".to_string());
             Ok(host.supervisor.export_trace(&provider_id))
@@ -2414,15 +3154,12 @@ pub fn handle(
             let provider_id = args
                 .first()
                 .and_then(|value| {
-                    value
-                        .as_str()
-                        .map(str::to_string)
-                        .or_else(|| {
-                            value
-                                .get("providerId")
-                                .and_then(Value::as_str)
-                                .map(str::to_string)
-                        })
+                    value.as_str().map(str::to_string).or_else(|| {
+                        value
+                            .get("providerId")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    })
                 })
                 .unwrap_or_else(|| "cursor-acp".to_string());
             Ok(connection_ui_from_snapshot(
@@ -2431,6 +3168,31 @@ pub fn handle(
         }
         "agents:forceStopProvider" => {
             let input = args.first().cloned().unwrap_or(Value::Null);
+            if let (Some(root_path), Some(thread_id)) = (
+                input.get("workspaceRootPath").and_then(Value::as_str),
+                input.get("threadId").and_then(Value::as_str),
+            ) {
+                let thread_key = format!("{root_path}::{thread_id}");
+                let transport = host
+                    .read_thread(root_path, thread_id)
+                    .and_then(|thread| {
+                        thread
+                            .get("providerTransport")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    });
+                match transport.as_deref() {
+                    Some("codex-app-server") => {
+                        host.codex_supervisor.force_stop(&thread_key);
+                        return Ok(Value::Null);
+                    }
+                    Some("claude-sdk") => {
+                        host.claude_supervisor.force_stop(&thread_key);
+                        return Ok(Value::Null);
+                    }
+                    _ => {}
+                }
+            }
             let connection_key = input
                 .as_str()
                 .map(str::to_string)
@@ -2486,10 +3248,7 @@ pub fn handle(
                     }
                 })
                 .ok_or("missing connectionKey")?;
-            let cwd = input
-                .get("cwd")
-                .and_then(Value::as_str)
-                .map(PathBuf::from);
+            let cwd = input.get("cwd").and_then(Value::as_str).map(PathBuf::from);
             let cursor = input
                 .get("cursor")
                 .and_then(Value::as_str)
@@ -2520,7 +3279,10 @@ pub fn handle(
                     }
                 })
                 .ok_or("missing connectionKey")?;
-            let method_id = input.get("methodId").and_then(Value::as_str).map(str::to_string);
+            let method_id = input
+                .get("methodId")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             let runtime = tokio::runtime::Handle::try_current()
                 .map_err(|_| "ACP requires the shared Tokio runtime".to_string())?;
             let supervisor = host.supervisor.clone();
@@ -2597,7 +3359,7 @@ fn connection_key_from_input(input: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cli_args, parse_cursor_models_output, ui_timeline_item, AgentsHost,
+        cli_args, parse_cursor_models_output, ui_timeline_item, unavailable_acp_reason, AgentsHost,
     };
     use crate::host::acp::{TimelineItem, TimelineItemKind};
     use serde_json::{json, Value};
@@ -2709,7 +3471,7 @@ mod tests {
         let migrated = AgentsHost::read_thread_value(&root_path, "thread-1").unwrap();
         assert_eq!(migrated["title"], "Migrated");
         assert_eq!(migrated["agentId"], "codex");
-        assert_eq!(migrated["driverId"], "codex:cli");
+        assert_eq!(migrated["driverId"], "codex:app-server");
         assert!(agents_dir.join("index.json").exists());
         assert!(agents_dir.join("threads").join("thread-1.json").exists());
 
@@ -2717,7 +3479,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_catalog_exposes_cli_and_acp_drivers() {
+    fn agent_catalog_exposes_cli_acp_and_native_drivers() {
         let catalog = AgentsHost::new().list_agents();
         let agents = catalog["agents"].as_array().unwrap();
         let ids = agents
@@ -2726,7 +3488,14 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             ids,
-            vec!["codex", "claude", "opencode", "cursor", "cursor-acp", "grok"]
+            vec![
+                "codex",
+                "claude",
+                "opencode",
+                "cursor",
+                "cursor-acp",
+                "grok"
+            ]
         );
         for agent in agents {
             let id = agent["id"].as_str().unwrap();
@@ -2742,21 +3511,51 @@ mod tests {
                 assert_eq!(drivers[0]["id"], "grok:acp");
                 assert_eq!(drivers[0]["kind"], "acp");
             } else {
-                assert_eq!(agent["activeDriverId"], format!("{id}:cli"));
+                if id == "codex" {
+                    assert_eq!(agent["activeDriverId"], "codex:app-server");
+                    assert!(
+                        drivers.iter().any(|driver| {
+                            driver["id"] == "codex:app-server" && driver["kind"] == "native"
+                        }),
+                        "missing native app-server driver for Codex"
+                    );
+                } else if id == "claude" {
+                    assert_eq!(agent["activeDriverId"], "claude:sdk");
+                    assert!(
+                        drivers.iter().any(|driver| {
+                            driver["id"] == "claude:sdk" && driver["kind"] == "native"
+                        }),
+                        "missing native Claude SDK driver"
+                    );
+                } else if id == "opencode" {
+                    assert_eq!(agent["activeDriverId"], "opencode:acp");
+                } else {
+                    assert_eq!(agent["activeDriverId"], format!("{id}:cli"));
+                }
                 assert!(
-                    drivers
-                        .iter()
-                        .any(|driver| driver["id"] == format!("{id}:cli") && driver["kind"] == "cli"),
+                    drivers.iter().any(
+                        |driver| driver["id"] == format!("{id}:cli") && driver["kind"] == "cli"
+                    ),
                     "missing cli driver for {id}"
                 );
                 assert!(
-                    drivers
-                        .iter()
-                        .any(|driver| driver["id"] == format!("{id}:acp") && driver["kind"] == "acp"),
+                    drivers.iter().any(
+                        |driver| driver["id"] == format!("{id}:acp") && driver["kind"] == "acp"
+                    ),
                     "missing acp driver for {id}"
                 );
             }
         }
+    }
+
+    #[test]
+    fn native_provider_adapters_are_not_misreported_as_acp() {
+        assert!(unavailable_acp_reason("codex")
+            .is_some_and(|reason| reason.contains("codex app-server")));
+        assert!(unavailable_acp_reason("claude")
+            .is_some_and(|reason| reason.contains("Claude Agent SDK")));
+        assert_eq!(unavailable_acp_reason("cursor"), None);
+        assert_eq!(unavailable_acp_reason("opencode"), None);
     }
 
     #[test]

@@ -331,7 +331,8 @@ async fn permission_scenario(scenario: &str) {
                     options
                         .iter()
                         .find(|option| {
-                            option.get("id").and_then(|value| value.as_str()) == Some("allow_always")
+                            option.get("id").and_then(|value| value.as_str())
+                                == Some("allow_always")
                         })
                         .or_else(|| options.first())
                 })
@@ -530,7 +531,10 @@ async fn matrix_slash_commands() {
                     && item.payload.get("type").and_then(|v| v.as_str()) == Some("commands")
         )
     });
-    assert!(command_status, "expected AvailableCommandsUpdate status event");
+    assert!(
+        command_status,
+        "expected AvailableCommandsUpdate status event"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

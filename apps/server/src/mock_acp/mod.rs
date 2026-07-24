@@ -3,36 +3,36 @@ pub mod scenarios;
 
 pub use scenarios::Scenario;
 
-use agent_client_protocol::schema::v1::{
-    AgentAuthCapabilities, AgentCapabilities, AuthenticateRequest, AuthenticateResponse,
-    AuthMethod, AuthMethodAgent, AvailableCommand, AvailableCommandsUpdate, CancelNotification,
-    CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk, CreateElicitationRequest,
-    CreateTerminalRequest, DeleteSessionRequest, DeleteSessionResponse, ElicitationFormMode,
-    ElicitationSchema, ElicitationSessionScope, Implementation, InitializeRequest,
-    InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
-    LoadSessionResponse, LogoutCapabilities, LogoutRequest, LogoutResponse, NewSessionRequest,
-    NewSessionResponse, PermissionOption, PermissionOptionKind, Plan, PlanEntry, PlanEntryPriority,
-    PlanEntryStatus, PromptRequest, PromptResponse, ReadTextFileRequest, ReleaseTerminalRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, ResumeSessionRequest, ResumeSessionResponse,
-    SessionCapabilities, SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOption, SessionConfigSelectOptions, SessionDeleteCapabilities, SessionInfo,
-    SessionListCapabilities, SessionMode, SessionModeId, SessionModeState, SessionNotification,
-    SessionResumeCapabilities, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
-    TerminalOutputRequest,
-    TextContent, ToolCall, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
-    UsageUpdate, WaitForTerminalExitRequest,
-};
-use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::{Agent, Client, ConnectionTo, Result, Stdio};
-use anyhow::{bail, Context};
-use cli::Args;
 use crate::host::acp::cursor_ext::{
     CursorAskOption, CursorAskQuestion, CursorAskQuestionRequest, CursorAskQuestionResponse,
     CursorAvailableModel, CursorCreatePlanRequest, CursorCreatePlanResponse,
     CursorListAvailableModelsRequest, CursorListAvailableModelsResponse,
     CursorUpdateTodosNotification,
 };
+use agent_client_protocol::schema::v1::{
+    AgentAuthCapabilities, AgentCapabilities, AuthMethod, AuthMethodAgent, AuthenticateRequest,
+    AuthenticateResponse, AvailableCommand, AvailableCommandsUpdate, CancelNotification,
+    CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk,
+    CreateElicitationRequest, CreateTerminalRequest, DeleteSessionRequest, DeleteSessionResponse,
+    ElicitationFormMode, ElicitationSchema, ElicitationSessionScope, Implementation,
+    InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, LoadSessionResponse, LogoutCapabilities, LogoutRequest, LogoutResponse,
+    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, Plan, PlanEntry,
+    PlanEntryPriority, PlanEntryStatus, PromptRequest, PromptResponse, ReadTextFileRequest,
+    ReleaseTerminalRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    ResumeSessionRequest, ResumeSessionResponse, SessionCapabilities, SessionCloseCapabilities,
+    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
+    SessionConfigSelectOptions, SessionDeleteCapabilities, SessionInfo, SessionListCapabilities,
+    SessionMode, SessionModeId, SessionModeState, SessionNotification, SessionResumeCapabilities,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+    SetSessionModeRequest, SetSessionModeResponse, StopReason, TerminalOutputRequest, TextContent,
+    ToolCall, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
+    WaitForTerminalExitRequest,
+};
+use agent_client_protocol::schema::ProtocolVersion;
+use agent_client_protocol::{Agent, Client, ConnectionTo, Result, Stdio};
+use anyhow::{bail, Context};
+use cli::Args;
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::Write;
@@ -57,6 +57,7 @@ struct MockState {
     random: Mutex<u64>,
     last_set_mode: Mutex<Option<String>>,
     last_mcp_server_count: Mutex<usize>,
+    authenticated: AtomicBool,
 }
 
 impl MockState {
@@ -70,6 +71,7 @@ impl MockState {
             prompt_count: AtomicU64::new(0),
             last_set_mode: Mutex::new(None),
             last_mcp_server_count: Mutex::new(0),
+            authenticated: AtomicBool::new(false),
         }
     }
 
@@ -134,6 +136,15 @@ impl MockState {
                 .as_deref()
                 .is_some_and(|value| value.split(',').any(|item| item.trim() == "auth"))
     }
+
+    fn advertises_auth(&self) -> bool {
+        self.requires_auth()
+            || self
+                .args
+                .capabilities
+                .as_deref()
+                .is_some_and(|value| value.split(',').any(|item| item.trim() == "auth_methods"))
+    }
 }
 
 pub async fn run(args: Args) -> anyhow::Result<()> {
@@ -187,7 +198,7 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
                                 .delete(SessionDeleteCapabilities::new()),
                         );
                     }
-                    if state.requires_auth() {
+                    if state.advertises_auth() {
                         capabilities = capabilities
                             .auth(AgentAuthCapabilities::new().logout(LogoutCapabilities::new()));
                     }
@@ -196,7 +207,7 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
                         .agent_info(Implementation::new("gharargah-mock-acp", "0.1").title(
                             format!("Gharargah Mock ACP ({})", state.args.provider_profile),
                         ));
-                    if state.requires_auth() {
+                    if state.advertises_auth() {
                         response = response.auth_methods(vec![AuthMethod::Agent(
                             AuthMethodAgent::new("mock-token", "Mock token auth"),
                         )]);
@@ -220,6 +231,9 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
             {
                 let state = state.clone();
                 async move |request: NewSessionRequest, responder, _connection| {
+                    if state.requires_auth() && !state.authenticated.load(Ordering::Acquire) {
+                        return Err(agent_client_protocol::Error::auth_required());
+                    }
                     *state.last_mcp_server_count.lock().unwrap() = request.mcp_servers.len();
                     let session_id = state.new_session();
                     let mut response = NewSessionResponse::new(session_id);
@@ -274,19 +288,27 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |request: AuthenticateRequest, responder, _connection| {
-                if request.method_id.0.as_ref() != "mock-token" {
-                    return Err(agent_client_protocol::util::internal_error(
-                        "unknown auth method",
-                    ));
+            {
+                let state = state.clone();
+                async move |request: AuthenticateRequest, responder, _connection| {
+                    if request.method_id.0.as_ref() != "mock-token" {
+                        return Err(agent_client_protocol::util::internal_error(
+                            "unknown auth method",
+                        ));
+                    }
+                    state.authenticated.store(true, Ordering::Release);
+                    responder.respond(AuthenticateResponse::new())
                 }
-                responder.respond(AuthenticateResponse::new())
             },
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |_request: LogoutRequest, responder, _connection| {
-                responder.respond(LogoutResponse::new())
+            {
+                let state = state.clone();
+                async move |_request: LogoutRequest, responder, _connection| {
+                    state.authenticated.store(false, Ordering::Release);
+                    responder.respond(LogoutResponse::new())
+                }
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -299,7 +321,12 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
                         .lock()
                         .expect("sessions")
                         .keys()
-                        .map(|id| SessionInfo::new(id.clone(), std::env::current_dir().unwrap_or_default()))
+                        .map(|id| {
+                            SessionInfo::new(
+                                id.clone(),
+                                std::env::current_dir().unwrap_or_default(),
+                            )
+                        })
                         .collect();
                     responder.respond(ListSessionsResponse::new(sessions))
                 }
@@ -344,8 +371,7 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
             {
                 let state = state.clone();
                 async move |request: SetSessionModeRequest, responder, _connection| {
-                    *state.last_set_mode.lock().unwrap() =
-                        Some(request.mode_id.0.to_string());
+                    *state.last_set_mode.lock().unwrap() = Some(request.mode_id.0.to_string());
                     responder.respond(SetSessionModeResponse::new())
                 }
             },
@@ -457,7 +483,9 @@ async fn handle_prompt(
             )?;
             answer(&state, &connection, &request.session_id, &prompt).await?
         }
-        Scenario::PermissionAllow | Scenario::PermissionToolRace | Scenario::PermissionAllowAlways => {
+        Scenario::PermissionAllow
+        | Scenario::PermissionToolRace
+        | Scenario::PermissionAllowAlways => {
             let tool_id = format!("permission-tool-{prompt_number}");
             let tool = ToolCallUpdate::new(
                 tool_id,
@@ -474,11 +502,7 @@ async fn handle_prompt(
                 SessionUpdate::ToolCallUpdate(tool.clone()),
             )?;
             let mut options = vec![
-                PermissionOption::new(
-                    "allow_once",
-                    "Allow once",
-                    PermissionOptionKind::AllowOnce,
-                ),
+                PermissionOption::new("allow_once", "Allow once", PermissionOptionKind::AllowOnce),
                 PermissionOption::new(
                     "reject_once",
                     "Reject once",
@@ -751,10 +775,7 @@ async fn handle_prompt(
             )
             .await?
         }
-        Scenario::Echo
-        | Scenario::ConfigModel
-        | Scenario::LoadSession
-        | Scenario::MultiSession => {
+        Scenario::Echo | Scenario::ConfigModel | Scenario::LoadSession | Scenario::MultiSession => {
             answer(&state, &connection, &request.session_id, &prompt).await?
         }
     };

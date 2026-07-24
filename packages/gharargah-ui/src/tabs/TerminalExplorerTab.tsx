@@ -41,7 +41,7 @@ export type TerminalAgentShortcut = {
   label: string
   /** CLI binary launched in the PTY. Omit for ACP agent-chat sessions. */
   command?: string
-  /** ACP transport for agent-chat sessions (e.g. cursor:acp). */
+  /** Structured provider transport for agent-chat sessions (ACP or native). */
   driverId?: string
 }
 
@@ -49,11 +49,11 @@ export const TERMINAL_EXPLORER_LIST_ID = "gharargah:terminal-explorer"
 
 const AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
   { id: "codex", label: "Codex", command: "codex", Icon: OpenAI },
-  { id: "codex", label: "Codex (ACP)", driverId: "codex:acp", Icon: OpenAI },
+  { id: "codex", label: "Codex Agent", driverId: "codex:app-server", Icon: OpenAI },
   { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
-  { id: "claude", label: "Claude (ACP)", driverId: "claude:acp", Icon: ClaudeAI },
+  { id: "claude", label: "Claude Agent", driverId: "claude:sdk", Icon: ClaudeAI },
   { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
-  { id: "opencode", label: "OpenCode (ACP)", driverId: "opencode:acp", Icon: Code2 },
+  { id: "opencode", label: "OpenCode Agent", driverId: "opencode:acp", Icon: Code2 },
   { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
   { id: "cursor-acp", label: "Cursor (ACP)", driverId: "cursor:acp", Icon: CursorIcon },
   { id: "grok", label: "Grok (ACP)", driverId: "grok:acp", Icon: GrokIcon },

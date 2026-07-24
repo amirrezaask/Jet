@@ -10,6 +10,10 @@ import type { LaunchShellResult } from "./driver.js"
 const REPO_ROOT = path.resolve(__dirname, "../..")
 const JET_BINARY = path.join(REPO_ROOT, "apps/server/target/debug/jet")
 const MOCK_ACP_BINARY = path.join(REPO_ROOT, "apps/server/target/debug/gharargah-mock-acp")
+const MOCK_CLAUDE_SDK_BINARY = path.join(
+  REPO_ROOT,
+  "apps/server/target/debug/gharargah-mock-claude-sdk",
+)
 
 type LaunchWebOptions = {
   workspaceRel?: string
@@ -49,6 +53,11 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
       `Mock ACP binary missing at ${MOCK_ACP_BINARY}; run cargo build --manifest-path apps/server/Cargo.toml --bin gharargah-mock-acp`,
     )
   }
+  if (!fs.existsSync(MOCK_CLAUDE_SDK_BINARY)) {
+    throw new Error(
+      `Mock Claude SDK binary missing at ${MOCK_CLAUDE_SDK_BINARY}; run cargo build --manifest-path apps/server/Cargo.toml --bin gharargah-mock-claude-sdk`,
+    )
+  }
   const server = spawn(JET_BINARY, ["--host", "127.0.0.1", "--port", String(port), "--data-dir", serverData, workspace], {
     cwd: REPO_ROOT,
     env: {
@@ -57,6 +66,7 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
       GHARARGAH_E2E: "1",
       // Real stdio ACP mock — never rely on PATH discovery next to jet alone.
       GHARARGAH_MOCK_ACP_BIN: MOCK_ACP_BINARY,
+      GHARARGAH_MOCK_CLAUDE_SDK_BIN: MOCK_CLAUDE_SDK_BINARY,
       ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],

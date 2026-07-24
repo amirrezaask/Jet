@@ -79,8 +79,8 @@ async fn supervisor_reuses_connection_for_second_turn() {
                 model: None,
                 existing_session_id: None,
                 runtime_mode: None,
-            interaction_mode: None,
-            prefer_resume: false,
+                interaction_mode: None,
+                prefer_resume: false,
                 initial_sequence: 0,
                 on_session: Arc::new(|_| {}),
                 on_text: Arc::new(|_| {}),
@@ -152,14 +152,16 @@ async fn supervisor_emits_thought_and_text_timeline_for_thought_then_answer() {
         kinds.contains(&TimelineItemKind::Text),
         "expected Text timeline item, got {kinds:?}"
     );
-    let thought = events.lock().unwrap().iter().find_map(|(_, event)| {
-        match event {
+    let thought = events
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|(_, event)| match event {
             NormalizedEvent::Timeline(item) if item.kind == TimelineItemKind::Thought => {
                 Some(item.payload.clone())
             }
             _ => None,
-        }
-    });
+        });
     let thought = thought.expect("thought payload");
     assert!(
         thought
@@ -233,7 +235,9 @@ async fn supervisor_emits_tool_call_timeline_for_tool_lifecycle() {
     );
     let activities = activities.lock().unwrap().clone();
     assert!(
-        activities.iter().any(|activity| activity.starts_with("Tool:")),
+        activities
+            .iter()
+            .any(|activity| activity.starts_with("Tool:")),
         "expected Tool activity updates, got {activities:?}"
     );
 }
@@ -269,8 +273,8 @@ async fn supervisor_emits_plan_and_usage_timeline() {
                 model: None,
                 existing_session_id: None,
                 runtime_mode: None,
-            interaction_mode: None,
-            prefer_resume: false,
+                interaction_mode: None,
+                prefer_resume: false,
                 initial_sequence: 0,
                 on_session: Arc::new(|_| {}),
                 on_text: Arc::new(|_| {}),

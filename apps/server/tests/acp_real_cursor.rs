@@ -31,10 +31,7 @@ async fn real_cursor_acp_initialize_and_prompt() {
     };
     eprintln!("using cursor binary {}", exe.display());
 
-    let cwd = env::temp_dir().join(format!(
-        "gharargah-cursor-acp-smoke-{}",
-        std::process::id()
-    ));
+    let cwd = env::temp_dir().join(format!("gharargah-cursor-acp-smoke-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&cwd);
     std::fs::create_dir_all(&cwd).expect("temp cwd");
     std::fs::write(cwd.join("README.md"), "# smoke\n").expect("fixture");
@@ -121,7 +118,10 @@ async fn real_cursor_acp_initialize_and_prompt() {
         "expected acp session id from cursor-agent"
     );
     assert!(
-        result.text.to_lowercase().contains("gharargah-cursor-acp-ok")
+        result
+            .text
+            .to_lowercase()
+            .contains("gharargah-cursor-acp-ok")
             || !result.text.trim().is_empty(),
         "expected non-empty cursor reply, got: {}",
         result.text

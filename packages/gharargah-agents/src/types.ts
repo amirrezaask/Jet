@@ -135,7 +135,7 @@ export type ProviderModel = {
   shortName?: string
 }
 
-export type AgentDriverKind = "cli" | "acp"
+export type AgentDriverKind = "cli" | "acp" | "native"
 
 export type AgentDriverStatus = "ready" | "unavailable" | "pending"
 
@@ -187,13 +187,17 @@ export type AgentThread = {
   workspaceRootPath: string
   /** Stable agent identity (codex, claude, opencode, cursor, cursor-acp). */
   agentId: string | null
-  /** Selected transport implementation, such as codex:cli. */
+  /** Selected transport implementation, such as codex:app-server or cursor:acp. */
   driverId: string | null
   /** Agent-owned ACP session id used to restore the conversation after reconnecting. */
   acpSessionId?: string | null
   /** ACP provider id bound to this thread (may differ from catalog agentId). */
   acpProvider?: string | null
-  runtimeMode?: "approval-required" | "auto-accept-edits" | "full-access" | null
+  /** Native provider conversation/session id used for resume. */
+  providerSessionId?: string | null
+  /** Native structured transport bound to this thread. */
+  providerTransport?: "codex-app-server" | "claude-sdk" | string | null
+  runtimeMode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access" | null
   /** Cursor-style interaction mode mapped to ACP session/set_mode. */
   interactionMode?: "implement" | "plan" | "ask" | null
   /** Available ACP session modes from session/new|load|resume. */

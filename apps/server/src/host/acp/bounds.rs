@@ -4,5 +4,6 @@ pub const MAX_TRACE_ENTRY_BYTES: usize = 64 * 1024;
 pub const MAX_TIMELINE_ITEMS_PER_TURN: usize = 10_000;
 pub const MAX_TEXT_CHUNK_BYTES: usize = 256 * 1024;
 pub const MAX_PENDING_PERMISSIONS: usize = 128;
+pub const MAX_PENDING_USER_INPUTS: usize = 128;
 pub const MAX_RESTARTS: u32 = 3;
 pub const MAX_ALLOWED_ROOTS: usize = 32;

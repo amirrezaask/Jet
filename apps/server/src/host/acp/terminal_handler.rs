@@ -52,7 +52,10 @@ impl TerminalHandler {
         }
     }
 
-    pub fn create(&self, request: CreateTerminalRequest) -> Result<CreateTerminalResponse, AcpError> {
+    pub fn create(
+        &self,
+        request: CreateTerminalRequest,
+    ) -> Result<CreateTerminalResponse, AcpError> {
         let root = self
             .workspace_root
             .lock()
@@ -94,15 +97,21 @@ impl TerminalHandler {
         }
         cmd.cwd(&cwd);
 
-        let mut child = pair.slave.spawn_command(cmd).map_err(|error| AcpError::Io {
-            operation: "spawn terminal command",
-            message: error.to_string(),
-        })?;
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|error| AcpError::Io {
+                operation: "spawn terminal command",
+                message: error.to_string(),
+            })?;
         let killer = Some(child.clone_killer());
-        let mut reader = pair.master.try_clone_reader().map_err(|error| AcpError::Io {
-            operation: "clone pty reader",
-            message: error.to_string(),
-        })?;
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|error| AcpError::Io {
+                operation: "clone pty reader",
+                message: error.to_string(),
+            })?;
         // Keep the master PTY open until the entry is released.
         let _master = Arc::new(Mutex::new(pair.master));
 
@@ -134,9 +143,7 @@ impl TerminalHandler {
                         if let Ok(mut guard) = reader_entry.lock() {
                             let limit = guard.output_byte_limit;
                             let TerminalEntry {
-                                output,
-                                truncated,
-                                ..
+                                output, truncated, ..
                             } = &mut *guard;
                             append_bounded(output, truncated, limit, &chunk);
                         }
@@ -152,9 +159,8 @@ impl TerminalHandler {
             let status = child.wait().ok();
             let exit_code = status.map(|s| s.exit_code());
             if let Ok(mut guard) = wait_entry.lock() {
-                guard.exit_status = Some(
-                    TerminalExitStatus::new().exit_code(exit_code.map(|code| code as u32)),
-                );
+                guard.exit_status =
+                    Some(TerminalExitStatus::new().exit_code(exit_code.map(|code| code as u32)));
                 guard.killer = None;
                 guard.exit_notify.notify_waiters();
             }
@@ -175,20 +181,28 @@ impl TerminalHandler {
         &self,
         request: TerminalOutputRequest,
     ) -> Result<TerminalOutputResponse, AcpError> {
-        let entry = self.get_entry(request.terminal_id.0.as_ref(), request.session_id.0.as_ref())?;
+        let entry = self.get_entry(
+            request.terminal_id.0.as_ref(),
+            request.session_id.0.as_ref(),
+        )?;
         let guard = entry.lock().map_err(|_| AcpError::Io {
             operation: "lock terminal",
             message: "poisoned".to_string(),
         })?;
-        Ok(TerminalOutputResponse::new(guard.output.clone(), guard.truncated)
-            .exit_status(guard.exit_status.clone()))
+        Ok(
+            TerminalOutputResponse::new(guard.output.clone(), guard.truncated)
+                .exit_status(guard.exit_status.clone()),
+        )
     }
 
     pub async fn wait_for_exit(
         &self,
         request: WaitForTerminalExitRequest,
     ) -> Result<WaitForTerminalExitResponse, AcpError> {
-        let entry = self.get_entry(request.terminal_id.0.as_ref(), request.session_id.0.as_ref())?;
+        let entry = self.get_entry(
+            request.terminal_id.0.as_ref(),
+            request.session_id.0.as_ref(),
+        )?;
         loop {
             let notify = {
                 let guard = entry.lock().map_err(|_| AcpError::Io {
@@ -205,7 +219,10 @@ impl TerminalHandler {
     }
 
     pub fn kill(&self, request: KillTerminalRequest) -> Result<KillTerminalResponse, AcpError> {
-        let entry = self.get_entry(request.terminal_id.0.as_ref(), request.session_id.0.as_ref())?;
+        let entry = self.get_entry(
+            request.terminal_id.0.as_ref(),
+            request.session_id.0.as_ref(),
+        )?;
         let mut guard = entry.lock().map_err(|_| AcpError::Io {
             operation: "lock terminal",
             message: "poisoned".to_string(),
@@ -221,7 +238,10 @@ impl TerminalHandler {
         request: ReleaseTerminalRequest,
     ) -> Result<ReleaseTerminalResponse, AcpError> {
         // Validate session ownership before removing.
-        let _ = self.get_entry(request.terminal_id.0.as_ref(), request.session_id.0.as_ref())?;
+        let _ = self.get_entry(
+            request.terminal_id.0.as_ref(),
+            request.session_id.0.as_ref(),
+        )?;
         let removed = self
             .terminals
             .lock()
@@ -359,10 +379,7 @@ mod tests {
         );
 
         handler
-            .release(ReleaseTerminalRequest::new(
-                session,
-                created.terminal_id,
-            ))
+            .release(ReleaseTerminalRequest::new(session, created.terminal_id))
             .expect("release");
     }
 

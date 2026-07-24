@@ -24,6 +24,9 @@ export function normalizeAgentId(agentId: string | null | undefined): string {
 
 export function defaultAgentDriverId(agentId: string | null | undefined): string {
   const id = normalizeAgentId(agentId)
+  if (id === "codex") return "codex:app-server"
+  if (id === "claude") return "claude:sdk"
+  if (id === "opencode") return "opencode:acp"
   // Cursor (ACP) is a separate agent; transport id stays `cursor:acp`.
   if (id === "cursor-acp") return "cursor:acp"
   return `${id}:cli`
@@ -31,6 +34,14 @@ export function defaultAgentDriverId(agentId: string | null | undefined): string
 
 export function isAcpDriverId(driverId: string | null | undefined): boolean {
   return typeof driverId === "string" && driverId.endsWith(":acp")
+}
+
+export function isAgentInterfaceDriverId(driverId: string | null | undefined): boolean {
+  return (
+    isAcpDriverId(driverId) ||
+    (typeof driverId === "string" &&
+      (driverId.endsWith(":app-server") || driverId.endsWith(":sdk")))
+  )
 }
 
 export function acpDriverIdForAgent(agentId: string | null | undefined): string {

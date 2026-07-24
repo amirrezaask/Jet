@@ -111,15 +111,15 @@ export const AgentChatView = memo(function AgentChatView(props: {
   const providers = useMemo(() => {
     const state = agentCatalogToProviderState(agents)
     if (!state || !agents) return state
-    // Agent chat is ACP-only; hide CLI-only catalog entries from the picker.
-    const acpAgents = new Set(
+    // Agent chat uses structured transports (ACP or native); hide terminal-only CLI entries.
+    const structuredAgents = new Set(
       agents.agents
-        .filter(agent => agent.drivers.some(driver => driver.kind === "acp"))
+        .filter(agent => agent.drivers.some(driver => driver.kind !== "cli"))
         .map(agent => agent.id),
     )
     return {
       ...state,
-      providers: state.providers.filter(provider => acpAgents.has(provider.instanceId)),
+      providers: state.providers.filter(provider => structuredAgents.has(provider.instanceId)),
     }
   }, [agents])
   const instanceEntries = useMemo(() => deriveProviderInstanceEntries(providers), [providers])

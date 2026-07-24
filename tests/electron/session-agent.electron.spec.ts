@@ -36,6 +36,34 @@ test.describe("project session agents", () => {
           expect(agent.drivers).toEqual([
             expect.objectContaining({ id: "grok:acp", kind: "acp", status: "ready" }),
           ])
+        } else if (agent.id === "codex") {
+          expect(agent.activeDriverId).toBe("codex:app-server")
+          expect(agent.drivers).toEqual([
+            expect.objectContaining({ id: "codex:cli", kind: "cli", status: "ready" }),
+            expect.objectContaining({
+              id: "codex:app-server",
+              kind: "native",
+              status: "ready",
+            }),
+            expect.objectContaining({ id: "codex:acp", kind: "acp", status: "ready" }),
+          ])
+        } else if (agent.id === "claude") {
+          expect(agent.activeDriverId).toBe("claude:sdk")
+          expect(agent.drivers).toEqual([
+            expect.objectContaining({ id: "claude:cli", kind: "cli", status: "ready" }),
+            expect.objectContaining({
+              id: "claude:sdk",
+              kind: "native",
+              status: "ready",
+            }),
+            expect.objectContaining({ id: "claude:acp", kind: "acp", status: "ready" }),
+          ])
+        } else if (agent.id === "opencode") {
+          expect(agent.activeDriverId).toBe("opencode:acp")
+          expect(agent.drivers).toEqual([
+            expect.objectContaining({ id: "opencode:cli", kind: "cli", status: "ready" }),
+            expect.objectContaining({ id: "opencode:acp", kind: "acp", status: "ready" }),
+          ])
         } else {
           const cliDriverId = `${agent.id}:cli`
           const acpDriverId = `${agent.id}:acp`
@@ -64,9 +92,9 @@ test.describe("project session agents", () => {
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(modal, 0)
 
-      // Codex (ACP) → agent tab + ACP driver.
+      // Codex Agent → shared agent tab + native app-server driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: "Codex (ACP)" }).click()
+      await page.getByRole("menuitem", { name: "Codex Agent" }).click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -82,7 +110,55 @@ test.describe("project session agents", () => {
         return roster.sessions.find(item => item.agentId === "codex") ?? null
       })
       expect(codexBinding).toEqual(
-        expect.objectContaining({ agentId: "codex", agentDriverId: "codex:acp" }),
+        expect.objectContaining({ agentId: "codex", agentDriverId: "codex:app-server" }),
+      )
+
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await expectLocatorCount(modal, 0)
+
+      // Claude Agent → shared agent tab + native Claude SDK driver.
+      await launcher.click()
+      await page.getByRole("menuitem", { name: "Claude Agent" }).click()
+
+      await expectLocatorVisible(modal)
+      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
+      await expectLocatorContainsText(modal, "Claude")
+
+      const claudeBinding = await page.evaluate(async () => {
+        const raw = localStorage.getItem("gharargah-session-roster-v2")
+        if (!raw) return null
+        const roster = JSON.parse(raw) as {
+          sessions: Array<{ agentId?: string; agentDriverId?: string }>
+        }
+        return roster.sessions.find(item => item.agentId === "claude") ?? null
+      })
+      expect(claudeBinding).toEqual(
+        expect.objectContaining({ agentId: "claude", agentDriverId: "claude:sdk" }),
+      )
+
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await expectLocatorCount(modal, 0)
+
+      // OpenCode Agent → shared agent tab + ACP driver.
+      await launcher.click()
+      await page.getByRole("menuitem", { name: "OpenCode Agent" }).click()
+
+      await expectLocatorVisible(modal)
+      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
+      await expectLocatorContainsText(modal, "OpenCode")
+
+      const opencodeBinding = await page.evaluate(async () => {
+        const raw = localStorage.getItem("gharargah-session-roster-v2")
+        if (!raw) return null
+        const roster = JSON.parse(raw) as {
+          sessions: Array<{ agentId?: string; agentDriverId?: string }>
+        }
+        return roster.sessions.find(item => item.agentId === "opencode") ?? null
+      })
+      expect(opencodeBinding).toEqual(
+        expect.objectContaining({ agentId: "opencode", agentDriverId: "opencode:acp" }),
       )
 
       await page.locator("[data-gharargah-terminal-modal-close]").click()

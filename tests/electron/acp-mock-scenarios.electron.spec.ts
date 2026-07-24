@@ -58,7 +58,17 @@ async function readActiveThread(page: Awaited<ReturnType<typeof launchJet>>["pag
     async ({ uri, workspace }) => {
       const agents = window.gharargah!.agents!
       const list = await agents.listThreads(uri, workspace)
-      const id = list.threads[0]?.id
+      const rosterRaw = localStorage.getItem("gharargah-session-roster-v2")
+      const roster = rosterRaw
+        ? (JSON.parse(rosterRaw) as {
+            modal?: { tabId?: string }
+            sessions?: Array<{ tabId?: string; agentThreadId?: string }>
+          })
+        : null
+      const activeTabId = roster?.modal?.tabId
+      const id =
+        roster?.sessions?.find(session => session.tabId === activeTabId)?.agentThreadId ??
+        list.threads[0]?.id
       if (!id) return null
       return agents.readThread(uri, workspace, id)
     },
@@ -253,7 +263,19 @@ test.describe("ACP mock scenario matrix (host path)", () => {
             const uri = `file://${workspace}`
             const agents = window.gharargah!.agents!
             const list = await agents.listThreads(uri, workspace)
-            const thread = list.threads[0]
+            const rosterRaw = localStorage.getItem("gharargah-session-roster-v2")
+            const roster = rosterRaw
+              ? (JSON.parse(rosterRaw) as {
+                  modal?: { tabId?: string }
+                  sessions?: Array<{ tabId?: string; agentThreadId?: string }>
+                })
+              : null
+            const activeTabId = roster?.modal?.tabId
+            const activeThreadId = roster?.sessions?.find(
+              session => session.tabId === activeTabId,
+            )?.agentThreadId
+            const thread =
+              list.threads.find(candidate => candidate.id === activeThreadId) ?? list.threads[0]
             if (!thread) throw new Error("missing thread")
             const png =
               "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="

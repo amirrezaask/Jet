@@ -20,8 +20,7 @@ pub type PermissionCb = Arc<
     dyn Fn(RequestPermissionRequest) -> BoxFuture<'static, RequestPermissionOutcome> + Send + Sync,
 >;
 /// Generic user-input waiter (cursor ask_question / elicitation). Returns JSON answer payload.
-pub type UserInputCb =
-    Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync>;
+pub type UserInputCb = Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync>;
 
 pub struct SessionRuntime {
     pub session_id: String,
@@ -388,11 +387,7 @@ impl SessionRuntime {
         });
         if let Ok(mut pipeline) = self.pipeline.lock() {
             if let Some(pipeline) = pipeline.as_mut() {
-                pipeline.timeline_with_id(
-                    TimelineItemKind::ToolCall,
-                    state.id.clone(),
-                    payload,
-                );
+                pipeline.timeline_with_id(TimelineItemKind::ToolCall, state.id.clone(), payload);
             }
         }
     }

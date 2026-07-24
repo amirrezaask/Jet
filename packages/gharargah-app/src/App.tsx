@@ -39,7 +39,7 @@ import {
 import type { EditorView } from "@codemirror/view"
 import {
   defaultAgentDriverId,
-  isAcpDriverId,
+  isAgentInterfaceDriverId,
   type AgentCatalogState,
   type AgentThread,
 } from "@gharargah/agents"
@@ -498,10 +498,11 @@ export function GharargahApp() {
           shortcut.driverId ??
           agentCatalog?.agents.find(agent => agent.id === shortcut.id)?.activeDriverId ??
           defaultAgentDriverId(shortcut.id)
-        const isAcpSession = isAcpDriverId(driverId) || shortcut.id === "cursor-acp"
+        const isAgentSession =
+          isAgentInterfaceDriverId(driverId) || shortcut.id === "cursor-acp"
 
-        // CLI agents open a terminal and launch the program. Only ACP gets the agent tab.
-        if (!isAcpSession) {
+        // CLI agents open a terminal; structured provider drivers use the shared agent tab.
+        if (!isAgentSession) {
           const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
             label: shortcut.label,
             launchCommand: shortcut.command,
@@ -515,7 +516,7 @@ export function GharargahApp() {
         })
         bindAgentToSession(tabId, {
           agentId: shortcut.id,
-          driverId: isAcpDriverId(driverId) ? driverId : "cursor:acp",
+          driverId,
         })
         openTerminalModal(panelId, tabId, "agent")
       } catch (err) {
@@ -645,7 +646,7 @@ export function GharargahApp() {
 
   useEffect(() => {
     if (sessionMode !== "agent" || !terminalModalTabId) return
-    if (!isAcpDriverId(terminalSessionForTab(terminalModalTabId)?.agentDriverId)) {
+    if (!isAgentInterfaceDriverId(terminalSessionForTab(terminalModalTabId)?.agentDriverId)) {
       setSessionMode("terminal")
       return
     }
@@ -1720,7 +1721,7 @@ export function GharargahApp() {
               entry => entry.tabId === roster.modal?.tabId,
             )?.agentDriverId
             const restoredMode =
-              roster.modal.sessionMode === "agent" && !isAcpDriverId(restoredDriver)
+              roster.modal.sessionMode === "agent" && !isAgentInterfaceDriverId(restoredDriver)
                 ? "terminal"
                 : roster.modal.sessionMode
             setSessionMode(restoredMode)
@@ -1981,13 +1982,15 @@ export function GharargahApp() {
                 gitBranch={terminalModalGitBranch}
                 projectRootUri={terminalCwdForTab(terminalModalTabId) || null}
                 mode={sessionMode}
-                showAgentTab={isAcpDriverId(
+                showAgentTab={isAgentInterfaceDriverId(
                   terminalSessionForTab(terminalModalTabId)?.agentDriverId,
                 )}
                 onModeChange={mode => {
                   if (
                     mode === "agent" &&
-                    !isAcpDriverId(terminalSessionForTab(terminalModalTabId)?.agentDriverId)
+                    !isAgentInterfaceDriverId(
+                      terminalSessionForTab(terminalModalTabId)?.agentDriverId,
+                    )
                   ) {
                     return
                   }

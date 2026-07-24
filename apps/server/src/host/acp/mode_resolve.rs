@@ -25,10 +25,7 @@ fn normalize_mode_search_text(mode: &SessionMode) -> String {
         .join(" ")
 }
 
-fn find_mode_by_aliases<'a>(
-    modes: &'a [SessionMode],
-    aliases: &[&str],
-) -> Option<&'a SessionMode> {
+fn find_mode_by_aliases<'a>(modes: &'a [SessionMode], aliases: &[&str]) -> Option<&'a SessionMode> {
     let normalized_aliases: Vec<String> = aliases.iter().map(|a| a.to_lowercase()).collect();
     for alias in &normalized_aliases {
         if let Some(exact) = modes.iter().find(|mode| {

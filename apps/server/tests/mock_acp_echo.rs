@@ -47,7 +47,9 @@ async fn mock_acp_echo_streams_the_prompt_response() {
     .await
     .expect("turn timed out")
     .expect("turn failed");
-    assert!(result.text.contains("Mock agent reply: hello from integration test"));
+    assert!(result
+        .text
+        .contains("Mock agent reply: hello from integration test"));
     assert!(!texts.lock().unwrap().is_empty());
 }
 
@@ -131,8 +133,8 @@ async fn mock_acp_cancel_coop_returns_cancelled() {
                 model: None,
                 existing_session_id: None,
                 runtime_mode: None,
-            interaction_mode: None,
-            prefer_resume: false,
+                interaction_mode: None,
+                prefer_resume: false,
                 initial_sequence: 0,
                 on_session: Arc::new(|_| {}),
                 on_text: Arc::new(|_| {}),

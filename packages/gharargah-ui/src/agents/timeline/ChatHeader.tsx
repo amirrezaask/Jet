@@ -54,7 +54,9 @@ export const ChatHeader = memo(function ChatHeader(props: {
               {activeModelLabel}
             </span>
           ) : null}
-          {connection ? <span className="capitalize">{connection.status.replaceAll("_", " ")}</span> : null}
+          {connection?.status ? (
+            <span className="capitalize">{connection.status.replaceAll("_", " ")}</span>
+          ) : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
