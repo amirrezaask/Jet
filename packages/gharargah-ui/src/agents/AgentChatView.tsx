@@ -9,8 +9,12 @@ import {
   deriveTimelineEntriesFromThread,
 } from "@gharargah/agents"
 import { AlertCircle, ChevronDown, Loader2 } from "lucide-react"
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ChatComposer } from "./composer/ChatComposer.js"
+import type {
+  ComposerInteractionMode,
+  ComposerRuntimeMode,
+} from "./composer/ComposerModeControls.js"
 import { AcpInspector } from "./inspector/AcpInspector.js"
 import {
   deriveProviderInstanceEntries,
@@ -22,30 +26,9 @@ import { MessagesTimeline } from "./timeline/MessagesTimeline.js"
 import { ConnectionBanner } from "./timeline/ConnectionBanner.js"
 import { PermissionCard } from "./timeline/PermissionCard.js"
 import { UserInputCard } from "./timeline/UserInputCard.js"
+import type { TimelineScrollMode } from "./timeline/timelineScrollAnchoring.js"
 
 import type { ProviderDriverKind } from "./t3contracts.js"
-
-const INTERACTION_MODES = [
-  { value: "implement" as const, label: "Implement", aliases: ["agent", "code", "default", "chat", "implement"] },
-  { value: "plan" as const, label: "Plan", aliases: ["plan", "architect"] },
-  { value: "ask" as const, label: "Ask", aliases: ["ask"] },
-]
-
-function interactionModeLabel(
-  mode: "implement" | "plan" | "ask",
-  availableModes?: ReadonlyArray<{ id: string; name: string }>,
-): string {
-  const option = INTERACTION_MODES.find(candidate => candidate.value === mode)
-  if (!availableModes?.length) return option?.label ?? mode
-  const aliases = option?.aliases ?? []
-  const match = availableModes.find(candidate =>
-    aliases.some(
-      alias =>
-        candidate.id.toLowerCase() === alias || candidate.name.toLowerCase() === alias,
-    ),
-  )
-  return match?.name ?? option?.label ?? mode
-}
 
 export const AgentChatView = memo(function AgentChatView(props: {
   thread: AgentThread | null
@@ -69,10 +52,8 @@ export const AgentChatView = memo(function AgentChatView(props: {
   onLoadAcpTrace?: () => Promise<unknown>
   onAuthenticate?: (methodId: string) => Promise<void> | void
   onForceStopProvider?: () => Promise<void> | void
-  onRuntimeModeChange?: (
-    mode: "approval-required" | "auto-accept-edits" | "full-access",
-  ) => void
-  onInteractionModeChange?: (mode: "implement" | "plan" | "ask") => void
+  onRuntimeModeChange?: (mode: ComposerRuntimeMode) => void
+  onInteractionModeChange?: (mode: ComposerInteractionMode) => void
   onListSessions?: () => Promise<unknown>
   onLogout?: () => Promise<void>
   onCloseSession?: () => Promise<void>
@@ -105,8 +86,13 @@ export const AgentChatView = memo(function AgentChatView(props: {
   const [expandAll, setExpandAll] = useState(true)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(120)
+  const [scrollFollowEnabled, setScrollFollowEnabled] = useState(true)
   const composerOverlayRef = useRef<HTMLDivElement | null>(null)
   const listRef = useRef<import("@legendapp/list/react").LegendListRef | null>(null)
+  const timelineScrollModeRef = useRef<TimelineScrollMode>("following-end")
+  const userScrollGenerationRef = useRef(0)
+  const liveFollowGenerationRef = useRef(0)
+  const timelineEntriesLengthRef = useRef(0)
 
   const providers = useMemo(() => {
     const state = agentCatalogToProviderState(agents)
@@ -132,12 +118,21 @@ export const AgentChatView = memo(function AgentChatView(props: {
     () => (thread ? deriveTimelineEntriesFromThread(thread) : []),
     [thread],
   )
+  timelineEntriesLengthRef.current = timelineEntries.length
   const turnDiffSummaryByAssistantMessageId = useMemo(
     () => (thread ? buildTurnDiffSummaryByAssistantMessageId(thread) : new Map()),
     [thread],
   )
 
   const isWorking = ["connecting", "authenticating", "running", "waiting_for_permission", "cancelling", "reconnecting"].includes(thread?.status ?? "") || submitting
+
+  const nonModelConfigOptions = useMemo(
+    () =>
+      (thread?.configOptions ?? []).filter(
+        option => option.category?.toLowerCase() !== "model" && option.id !== "model",
+      ),
+    [thread?.configOptions],
+  )
 
   useLayoutEffect(() => {
     const node = composerOverlayRef.current
@@ -152,13 +147,113 @@ export const AgentChatView = memo(function AgentChatView(props: {
     return () => observer.disconnect()
   }, [thread?.id])
 
-  const nonModelConfigOptions = useMemo(
-    () =>
-      (thread?.configOptions ?? []).filter(
-        option => option.category?.toLowerCase() !== "model" && option.id !== "model",
-      ),
-    [thread?.configOptions],
+  const cancelTimelineLiveFollowForUserNavigation = useCallback(() => {
+    userScrollGenerationRef.current += 1
+    timelineScrollModeRef.current = "free-scrolling"
+    liveFollowGenerationRef.current = -1
+    setScrollFollowEnabled(false)
+  }, [])
+
+  const scrollToEnd = useCallback((animated = true) => {
+    timelineScrollModeRef.current = "following-end"
+    liveFollowGenerationRef.current = userScrollGenerationRef.current
+    setScrollFollowEnabled(true)
+    setShowScrollToBottom(false)
+    const list = listRef.current
+    if (!list) return
+    if (typeof list.scrollToEnd === "function") {
+      void list.scrollToEnd({ animated })
+      return
+    }
+    void list.scrollToIndex({
+      index: Math.max(0, timelineEntriesLengthRef.current - 1),
+      animated,
+    })
+  }, [])
+
+  const onIsAtEndChange = useCallback(
+    (isAtEnd: boolean) => {
+      if (
+        !isAtEnd &&
+        liveFollowGenerationRef.current === userScrollGenerationRef.current &&
+        timelineScrollModeRef.current !== "free-scrolling"
+      ) {
+        // Transient not-at-end while live-following (content growth) — ignore.
+        return
+      }
+      if (isAtEnd) {
+        timelineScrollModeRef.current = "following-end"
+        liveFollowGenerationRef.current = userScrollGenerationRef.current
+        setScrollFollowEnabled(true)
+        setShowScrollToBottom(false)
+        return
+      }
+      timelineScrollModeRef.current = "free-scrolling"
+      liveFollowGenerationRef.current = -1
+      setScrollFollowEnabled(false)
+      setShowScrollToBottom(true)
+    },
+    [],
   )
+
+  useEffect(() => {
+    let disposed = false
+    let cleanup: (() => void) | undefined
+    const frame = requestAnimationFrame(() => {
+      if (disposed) return
+      const list = listRef.current
+      const scrollNode =
+        (list?.getScrollableNode?.() as HTMLElement | null | undefined) ??
+        (list?.getNativeScrollRef?.() as HTMLElement | null | undefined) ??
+        null
+      if (!scrollNode || typeof scrollNode.addEventListener !== "function") return
+
+      const handleManualNavigation = () => {
+        cancelTimelineLiveFollowForUserNavigation()
+      }
+      scrollNode.addEventListener("wheel", handleManualNavigation, { passive: true })
+      scrollNode.addEventListener("touchmove", handleManualNavigation, { passive: true })
+      scrollNode.addEventListener("pointerdown", handleManualNavigation, { passive: true })
+      cleanup = () => {
+        scrollNode.removeEventListener("wheel", handleManualNavigation)
+        scrollNode.removeEventListener("touchmove", handleManualNavigation)
+        scrollNode.removeEventListener("pointerdown", handleManualNavigation)
+      }
+    })
+    return () => {
+      disposed = true
+      cancelAnimationFrame(frame)
+      cleanup?.()
+    }
+  }, [cancelTimelineLiveFollowForUserNavigation, thread?.id, timelineEntries.length])
+
+  useEffect(() => {
+    if (!thread?.id) return
+    if (liveFollowGenerationRef.current !== userScrollGenerationRef.current) return
+    if (timelineScrollModeRef.current === "free-scrolling") return
+    if (
+      timelineScrollModeRef.current !== "following-end" &&
+      timelineScrollModeRef.current !== "anchoring-new-turn"
+    ) {
+      return
+    }
+    const frame = requestAnimationFrame(() => {
+      if (liveFollowGenerationRef.current !== userScrollGenerationRef.current) return
+      if (timelineScrollModeRef.current === "free-scrolling") return
+      scrollToEnd(false)
+      if (timelineScrollModeRef.current === "anchoring-new-turn") {
+        timelineScrollModeRef.current = "following-end"
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [scrollToEnd, thread?.id, thread?.messages.length, thread?.updatedAt, timelineEntries.length])
+
+  useEffect(() => {
+    timelineScrollModeRef.current = "following-end"
+    liveFollowGenerationRef.current = userScrollGenerationRef.current
+    setScrollFollowEnabled(true)
+    setShowScrollToBottom(false)
+  }, [thread?.id])
 
   async function handleSend(payload: {
     text: string
@@ -169,6 +264,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
     if (submitting || !thread) return
     const fallbackDriverId = thread.driverId
     setSubmitting(true)
+    timelineScrollModeRef.current = "anchoring-new-turn"
+    liveFollowGenerationRef.current = userScrollGenerationRef.current
+    setScrollFollowEnabled(true)
     try {
       await onSend({
         text: payload.text,
@@ -184,17 +282,6 @@ export const AgentChatView = memo(function AgentChatView(props: {
       setSubmitting(false)
       scrollToEnd(true)
     }
-  }
-
-  useLayoutEffect(() => {
-    scrollToEnd(false)
-  }, [thread?.messages.length, thread?.updatedAt, thread?.id])
-
-  function scrollToEnd(animated = true) {
-    void listRef.current?.scrollToIndex({
-      index: Math.max(0, timelineEntries.length - 1),
-      animated,
-    })
   }
 
   if (!thread) {
@@ -231,6 +318,15 @@ export const AgentChatView = memo(function AgentChatView(props: {
     Boolean(thread.plan?.entries?.length) ||
     timelineEntries.some(entry => entry.kind === "proposed-plan") ||
     (thread.timeline ?? []).some(item => item.kind === "plan")
+
+  const runtimeMode: ComposerRuntimeMode =
+    thread.runtimeMode === "auto-accept-edits" || thread.runtimeMode === "full-access"
+      ? thread.runtimeMode
+      : "approval-required"
+  const interactionMode: ComposerInteractionMode =
+    thread.interactionMode === "plan" || thread.interactionMode === "ask"
+      ? thread.interactionMode
+      : "implement"
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
@@ -272,8 +368,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
           theme={theme}
           contentInsetEndAdjustment={composerOverlayHeight}
           expandAll={expandAll}
+          maintainScrollAtEndEnabled={scrollFollowEnabled}
           onToggleAllDirectories={() => setExpandAll(value => !value)}
-          onIsAtEndChange={isAtEnd => setShowScrollToBottom(!isAtEnd)}
+          onIsAtEndChange={onIsAtEndChange}
           onResolvePermission={(permissionId, decision, optionId) =>
             void onResolvePermission?.({ permissionId, decision, optionId })
           }
@@ -323,52 +420,6 @@ export const AgentChatView = memo(function AgentChatView(props: {
               <span className="min-w-0 truncate">{activityLabel}</span>
             </div>
           ) : null}
-          {onRuntimeModeChange ? (
-            <div className="mb-2 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-              <label htmlFor="agent-runtime-mode" className="shrink-0">
-                Runtime
-              </label>
-              <select
-                id="agent-runtime-mode"
-                data-agent-runtime-mode="true"
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
-                value={thread.runtimeMode ?? "approval-required"}
-                onChange={event =>
-                  onRuntimeModeChange(
-                    event.target.value as "approval-required" | "auto-accept-edits" | "full-access",
-                  )
-                }
-              >
-                <option value="approval-required">Approval required</option>
-                <option value="auto-accept-edits">Auto-accept edits</option>
-                <option value="full-access">Full access</option>
-              </select>
-            </div>
-          ) : null}
-          {onInteractionModeChange ? (
-            <div className="mb-2 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-              <label htmlFor="agent-interaction-mode" className="shrink-0">
-                Interaction
-              </label>
-              <select
-                id="agent-interaction-mode"
-                data-agent-interaction-mode="true"
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
-                value={thread.interactionMode ?? "implement"}
-                onChange={event =>
-                  onInteractionModeChange(
-                    event.target.value as "implement" | "plan" | "ask",
-                  )
-                }
-              >
-                {INTERACTION_MODES.map(mode => (
-                  <option key={mode.value} value={mode.value}>
-                    {interactionModeLabel(mode.value, thread.sessionModes?.availableModes)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
           {thread.pendingPermissions?.length ? (
             <div className="mb-2 space-y-2">
               {thread.pendingPermissions.map(permission => (
@@ -393,44 +444,6 @@ export const AgentChatView = memo(function AgentChatView(props: {
               ))}
             </div>
           ) : null}
-          {nonModelConfigOptions.length > 0 ? (
-            <div
-              data-agent-config-options="true"
-              className="mb-2 space-y-2 rounded-lg border border-border bg-card p-3"
-            >
-              {nonModelConfigOptions.map(option => (
-                <div key={option.id} className="space-y-1">
-                  <label
-                    htmlFor={`agent-config-${option.id}`}
-                    className="text-xs font-medium text-foreground"
-                  >
-                    {option.name}
-                  </label>
-                  {option.description ? (
-                    <p className="text-3xs text-muted-foreground">{option.description}</p>
-                  ) : null}
-                  <select
-                    id={`agent-config-${option.id}`}
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
-                    value={option.currentValue ?? ""}
-                    disabled={!onConfigOptionChange}
-                    onChange={event =>
-                      void onConfigOptionChange?.({
-                        configId: option.id,
-                        value: event.target.value,
-                      })
-                    }
-                  >
-                    {(option.values ?? []).map(value => (
-                      <option key={value.value} value={value.value}>
-                        {value.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-          ) : null}
           <ChatComposer
             providers={providers}
             instanceId={defaultSelection?.instanceId ?? thread.agentId}
@@ -439,6 +452,19 @@ export const AgentChatView = memo(function AgentChatView(props: {
             isRunning={isWorking}
             isSendBusy={submitting}
             commands={thread.availableCommands}
+            runtimeMode={runtimeMode}
+            interactionMode={interactionMode}
+            availableInteractionModes={thread.sessionModes?.availableModes}
+            configOptions={nonModelConfigOptions}
+            onRuntimeModeChange={onRuntimeModeChange}
+            onInteractionModeChange={onInteractionModeChange}
+            onConfigOptionChange={
+              onConfigOptionChange
+                ? input => {
+                    void onConfigOptionChange(input)
+                  }
+                : undefined
+            }
             lockedProvider={lockedProvider}
             lockedContinuationGroupKey={lockedContinuationGroupKey}
             showPlanFollowUpPrompt={showPlanFollowUpPrompt}

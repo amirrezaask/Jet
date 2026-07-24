@@ -1,4 +1,8 @@
-import type { AgentAvailableCommand, AgentProvidersState } from "@gharargah/agents"
+import type {
+  AgentAvailableCommand,
+  AgentProvidersState,
+  AgentSessionConfigOption,
+} from "@gharargah/agents"
 import {
   memo,
   useCallback,
@@ -12,11 +16,18 @@ import {
 import { ImagePlus, X } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
+import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu.js"
+import {
+  ComposerModeControls,
+  type ComposerInteractionMode,
+  type ComposerRuntimeMode,
+} from "./ComposerModeControls.js"
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions.js"
 import {
   ComposerPromptEditor,
   type ComposerPromptEditorHandle,
 } from "./ComposerPromptEditor.js"
+import { ComposerTraitsPicker } from "./ComposerTraitsPicker.js"
 import { ProviderModelPicker } from "./ProviderModelPicker.js"
 import {
   shouldUseCompactComposerFooter,
@@ -45,6 +56,13 @@ export const ChatComposer = memo(function ChatComposer(props: {
   isRunning?: boolean
   isSendBusy?: boolean
   commands?: ReadonlyArray<AgentAvailableCommand>
+  runtimeMode?: ComposerRuntimeMode
+  interactionMode?: ComposerInteractionMode
+  availableInteractionModes?: ReadonlyArray<{ id: string; name: string }>
+  configOptions?: ReadonlyArray<AgentSessionConfigOption>
+  onRuntimeModeChange?: (mode: ComposerRuntimeMode) => void
+  onInteractionModeChange?: (mode: ComposerInteractionMode) => void
+  onConfigOptionChange?: (input: { configId: string; value: string }) => void
   onInstanceModelChange: (instanceId: string, model: string) => void
   onSend: (payload: {
     text: string
@@ -90,10 +108,22 @@ export const ChatComposer = memo(function ChatComposer(props: {
     [instanceEntries, props.instanceId, props.model],
   )
 
+  const nonModelConfigOptions = useMemo(
+    () =>
+      (props.configOptions ?? []).filter(
+        option => option.category?.toLowerCase() !== "model" && option.id !== "model",
+      ),
+    [props.configOptions],
+  )
+  const hasModeControls = Boolean(
+    props.onRuntimeModeChange || props.onInteractionModeChange || nonModelConfigOptions.length > 0,
+  )
   const isComposerFooterCompact = shouldUseCompactComposerFooter(footerWidth)
   const isComposerPrimaryActionsCompact = shouldUseCompactComposerPrimaryActions(footerWidth, {
-    hasWideActions: false,
+    hasWideActions: hasModeControls,
   })
+  const runtimeMode = props.runtimeMode ?? "approval-required"
+  const interactionMode = props.interactionMode ?? "implement"
 
   const slashQueryActive = draft.startsWith("/") && !draft.includes("\n")
   const filteredCommands = useMemo(() => {
@@ -413,6 +443,38 @@ export const ChatComposer = memo(function ChatComposer(props: {
                   props.onInstanceModelChange(instanceId, model)
                 }
               />
+              {isComposerFooterCompact ? (
+                <CompactComposerControlsMenu
+                  runtimeMode={runtimeMode}
+                  interactionMode={interactionMode}
+                  availableInteractionModes={props.availableInteractionModes}
+                  configOptions={nonModelConfigOptions}
+                  disabled={false}
+                  showRuntime={Boolean(props.onRuntimeModeChange)}
+                  showInteraction={Boolean(props.onInteractionModeChange)}
+                  onRuntimeModeChange={props.onRuntimeModeChange}
+                  onInteractionModeChange={props.onInteractionModeChange}
+                  onConfigOptionChange={props.onConfigOptionChange}
+                />
+              ) : (
+                <>
+                  <ComposerTraitsPicker
+                    options={nonModelConfigOptions}
+                    disabled={!props.onConfigOptionChange}
+                    onConfigOptionChange={props.onConfigOptionChange}
+                  />
+                  <ComposerModeControls
+                    runtimeMode={runtimeMode}
+                    interactionMode={interactionMode}
+                    availableInteractionModes={props.availableInteractionModes}
+                    disabled={false}
+                    showRuntime={Boolean(props.onRuntimeModeChange)}
+                    showInteraction={Boolean(props.onInteractionModeChange)}
+                    onRuntimeModeChange={props.onRuntimeModeChange}
+                    onInteractionModeChange={props.onInteractionModeChange}
+                  />
+                </>
+              )}
             </div>
 
             <div

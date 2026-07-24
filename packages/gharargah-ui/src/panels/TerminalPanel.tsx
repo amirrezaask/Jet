@@ -333,6 +333,12 @@ export function TerminalPanel({
         })
         return
       }
+      // Hydrate marked this session dead (no PTY). Wait for Restart — do not auto-spawn.
+      if (status === "failed" || status === "exited") {
+        setDisplayStatus(status)
+        setDisplayExitCode(exitCode)
+        return
+      }
       void terminalApi
         .create(cwdRootUri, launchCommand ? { command: launchCommand } : undefined)
         .then(({ id, title }) => {

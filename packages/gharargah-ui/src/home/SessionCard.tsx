@@ -92,16 +92,23 @@ export function SessionCard(props: SessionCardProps) {
   ) : null
 
   const card = (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       data-gharargah-terminal-card
       data-gharargah-session-card
       data-gharargah-list-item
       data-status={session.status}
       data-kind={session.kind}
       data-approval={showApprovalActions ? "true" : undefined}
-      className="group w-full text-left outline-none"
+      className="group w-full cursor-pointer text-left outline-none"
       onClick={onClick}
+      onKeyDown={event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          onClick()
+        }
+      }}
     >
       <Card
         className={cn(
@@ -170,7 +177,7 @@ export function SessionCard(props: SessionCardProps) {
           ) : null}
         </CardContent>
       </Card>
-    </button>
+    </div>
   )
 
   if (!onKill) return card

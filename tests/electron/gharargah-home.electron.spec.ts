@@ -320,4 +320,62 @@ test.describe("gharargah mission home", () => {
       await app.close()
     }
   })
+
+  test("restored session with missing PTY stays on home as Failed card", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await expectSelectorVisible(page, "[data-gharargah-home]")
+      const workspace = await page.evaluate(() => {
+        const state = window.__gharargahAgent!.getState()
+        const path = state.workspaces[0]?.path ?? state.activeWorkspace
+        if (!path) throw new Error("no workspace")
+        return {
+          path,
+          name: state.workspaces[0]?.name ?? "sample-workspace",
+          uri: `file://${path}`,
+        }
+      })
+
+      await page.evaluate(ws => {
+        localStorage.setItem(
+          "gharargah-session-roster-v2",
+          JSON.stringify({
+            version: 2,
+            sessions: [
+              {
+                tabId: "gharargah:terminal:missing-pty-e2e",
+                cwdRootUri: ws.uri,
+                label: "Missing PTY session",
+                ptyId: "term-does-not-exist-e2e",
+                status: "running",
+              },
+            ],
+            modal: null,
+          }),
+        )
+      }, workspace)
+
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await page.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
+      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await expectSelectorVisible(page, "[data-gharargah-home]", { timeout: 30_000 })
+
+      const section = page.locator(
+        `[data-gharargah-project-section][data-gharargah-project-name="${workspace.name}"]`,
+      )
+      await expectLocatorVisible(section)
+      const card = section.locator(
+        '[data-gharargah-terminal-card][data-status="failed"]:not([data-gharargah-new-session])',
+      )
+      await expectLocatorVisible(card.first(), { timeout: 20_000 })
+      await expectLocatorContainsText(card.first(), "Missing PTY session")
+      await expectLocatorContainsText(
+        card.first().locator("[data-gharargah-status-badge]"),
+        "Failed",
+      )
+      await expectLocatorContainsText(card.first(), "Process unavailable")
+    } finally {
+      await app.close()
+    }
+  })
 })

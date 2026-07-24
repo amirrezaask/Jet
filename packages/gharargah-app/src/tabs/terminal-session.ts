@@ -120,8 +120,17 @@ export function markTerminalExited(ptyId: string, exitCode: number, signal?: num
 export function markTerminalFailed(tabId: string): void {
   const session = sessions.get(tabId)
   if (!session) return
+  if (session.ptyId) tabByPtyId.delete(session.ptyId)
+  session.ptyId = undefined
   session.status = "failed"
+  session.exitCode = undefined
+  session.signal = undefined
   notify(tabId)
+}
+
+/** Alias for hydrate / attach-miss paths — same as {@link markTerminalFailed}. */
+export function markTerminalUnavailable(tabId: string): void {
+  markTerminalFailed(tabId)
 }
 
 export function restartTerminalSession(tabId: string): void {

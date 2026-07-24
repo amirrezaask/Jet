@@ -91,7 +91,9 @@ export function defaultSessionDescription(
   kind: "agent" | "terminal",
   status: SessionCardStatus,
 ): string {
-  if (status === "failed") return "Session failed."
+  if (status === "failed") {
+    return kind === "terminal" ? "Process unavailable." : "Session failed."
+  }
   if (status === "approval") return "Changes require review before continuing."
   if (status === "queued") return "Waiting in queue."
   if (status === "planning") return "Planning next steps."

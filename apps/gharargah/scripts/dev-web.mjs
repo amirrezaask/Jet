@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const repoRoot = path.resolve(appDir, "../..")
 const children = [
-  spawn("cargo", ["run", "--manifest-path", "apps/server/Cargo.toml", "--", "--port", "4747"], { cwd: repoRoot, stdio: "inherit" }),
+  spawn("cargo", ["run", "--manifest-path", "apps/server/Cargo.toml", "--bin", "jet", "--", "--port", "4747"], { cwd: repoRoot, stdio: "inherit" }),
   spawn(path.resolve(appDir, "node_modules/.bin/vite"), [], { cwd: appDir, stdio: "inherit", env: process.env }),
 ]
 

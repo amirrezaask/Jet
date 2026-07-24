@@ -234,9 +234,12 @@ test.describe("project session agents", () => {
       // Host-side ACP completion is authoritative; UI virtualization can lag.
       await expectLocatorContainsText(modal, "Confirm the session driver")
 
-      // Interaction mode control present for ACP sessions.
-      await expectLocatorVisible(modal.locator("[data-agent-interaction-mode]"))
-      await expectLocatorVisible(modal.locator("[data-agent-runtime-mode]"))
+      // Interaction / runtime controls live in the composer footer (not stacked above it).
+      const footer = modal.locator("[data-chat-composer-footer]")
+      await expectLocatorVisible(footer.locator("[data-agent-interaction-mode]"))
+      await expectLocatorVisible(footer.locator("[data-agent-runtime-mode]"))
+      await expectLocatorCount(modal.locator("select[data-agent-runtime-mode]"), 0)
+      await expectLocatorCount(modal.locator("select[data-agent-interaction-mode]"), 0)
 
       for (const mode of ["terminal", "editor", "git", "todos"] as const) {
         await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()

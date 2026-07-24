@@ -91,6 +91,7 @@ import {
   writeSessionRoster,
   type PersistedSessionRoster,
 } from "./session-roster-store.js"
+import { reconcileHydratedTerminalPtys } from "./probe-terminal-sessions.js"
 import {
   getAllLeafPanels,
   resolveEditorPanel,
@@ -1727,6 +1728,9 @@ export function GharargahApp() {
             setSessionMode(restoredMode)
           }
         }
+
+        await reconcileHydratedTerminalPtys(window.gharargah?.terminal)
+        setTerminalSessionRevision(revision => revision + 1)
       }
 
       sessionRosterReadyRef.current = true

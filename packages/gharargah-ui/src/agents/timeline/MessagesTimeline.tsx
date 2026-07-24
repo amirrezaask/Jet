@@ -266,6 +266,7 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
   theme: "light" | "dark"
   contentInsetEndAdjustment: number
   expandAll: boolean
+  maintainScrollAtEndEnabled?: boolean
   onToggleAllDirectories: () => void
   onIsAtEndChange?: (isAtEnd: boolean) => void
   onResolvePermission?: (
@@ -286,6 +287,7 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
     theme,
     contentInsetEndAdjustment,
     expandAll,
+    maintainScrollAtEndEnabled = true,
     onToggleAllDirectories,
     onIsAtEndChange,
     onResolvePermission,
@@ -362,14 +364,18 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
         estimatedItemSize={90}
         initialScrollAtEnd
         contentInsetEndAdjustment={contentInsetEndAdjustment}
-        maintainScrollAtEnd={{
-          animated: false,
-          on: {
-            dataChange: true,
-            itemLayout: true,
-            layout: true,
-          },
-        }}
+        maintainScrollAtEnd={
+          maintainScrollAtEndEnabled
+            ? {
+                animated: false,
+                on: {
+                  dataChange: true,
+                  itemLayout: true,
+                  layout: true,
+                },
+              }
+            : false
+        }
         maintainVisibleContentPosition={{
           data: true,
           size: false,
