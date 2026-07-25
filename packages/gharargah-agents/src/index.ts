@@ -1,5 +1,6 @@
 export * from "./types.js"
 export * from "./model.js"
+export * from "./feature-flags.js"
 export * from "./timeline.js"
 export * from "./turn-events.js"
 export * from "./apply-turn-event.js"

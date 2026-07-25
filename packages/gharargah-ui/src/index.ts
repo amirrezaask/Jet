@@ -29,6 +29,7 @@ export {
   OpenInAppMenu,
   OPEN_IN_APP_TARGETS,
   SESSION_AGENT_SHORTCUTS,
+  visibleSessionShortcuts,
   timeOfDayGreeting,
   type GharargahHomeProps,
   type HomeProjectGroup,

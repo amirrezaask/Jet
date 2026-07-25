@@ -2,10 +2,12 @@ import { expect, test } from "@playwright/test"
 import { expectLocatorVisible } from "../shell/assert.js"
 import { hasPtySpawn, launchJet } from "./_launch.js"
 
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+
 async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
   await page.evaluate(() => window.gharargah!.agents!.listAgents())
   await page.getByRole("button", { name: "New session" }).first().click()
-  await page.getByRole("menuitem", { name: "Cursor (ACP)" }).click()
+  await page.getByRole("menuitem", { name: /Cursor \(ACP\)/ }).click()
   const modal = page.locator("[data-gharargah-terminal-modal]")
   await expectLocatorVisible(modal)
   await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -32,6 +34,10 @@ async function readActiveThread(page: Awaited<ReturnType<typeof launchJet>>["pag
 
 test.describe("ACP structured timeline", () => {
   test.skip(!hasPtySpawn(), "node-pty cannot spawn a shell on this machine")
+  test.skip(
+    !agentChatE2e,
+    "requires GHARARGAH_ENABLE_AGENT_CHAT=1 (rebuild frontend dist with the same env)",
+  )
 
   test("mock ACP streams a simple reply", async () => {
     const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })

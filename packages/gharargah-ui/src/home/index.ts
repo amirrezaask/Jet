@@ -29,6 +29,7 @@ export {
 export {
   NewSessionMenu,
   SESSION_AGENT_SHORTCUTS,
+  visibleSessionShortcuts,
   type NewSessionMenuProps,
 } from "./NewSessionMenu.js"
 export {

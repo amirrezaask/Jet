@@ -20,6 +20,8 @@ export type JetAgentState = {
   searchReady: boolean
   shellView: "home" | "workspace"
   sessionMode: "agent" | "terminal" | "editor" | "git" | "todos" | null
+  /** Vite-baked; true when GHARARGAH_ENABLE_AGENT_CHAT=1 at frontend build. */
+  agentChatEnabled: boolean
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -72,6 +74,7 @@ export type AgentBridgeContext = {
   activeEditorDirty?: boolean
   searchReady?: boolean
   sessionMode?: "agent" | "terminal" | "editor" | "git" | "todos" | null
+  agentChatEnabled?: boolean
 }
 
 function toWorkspaceFileUri(workspacePath: string, relativeOrUri: string): string {
@@ -127,6 +130,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
         searchReady: current.searchReady ?? false,
         shellView: "home",
         sessionMode: current.sessionMode ?? null,
+        agentChatEnabled: current.agentChatEnabled ?? false,
       }
     },
     async waitForReady() {

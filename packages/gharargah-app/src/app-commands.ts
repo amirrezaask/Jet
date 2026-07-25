@@ -37,6 +37,7 @@ import {
   skipNextOccurrence,
 } from "@gharargah/codemirror"
 import { getEditorView, destroyEditorBuffer } from "@gharargah/ui"
+import { isAgentChatEnabled } from "@gharargah/agents"
 import {
   getActiveEditorFileUri,
   getAllLeafPanels,
@@ -344,7 +345,10 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.setGotoLineOpen(true)
     },
     showEditor: () => deps.setSessionMode("editor"),
-    showAgent: () => deps.setSessionMode("agent"),
+    showAgent: () => {
+      if (!isAgentChatEnabled()) return
+      deps.setSessionMode("agent")
+    },
     showTerminal: () => deps.setSessionMode("terminal"),
     showTodos: () => deps.setSessionMode("todos"),
     terminal: async () => {

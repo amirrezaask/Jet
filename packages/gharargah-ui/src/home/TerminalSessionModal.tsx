@@ -17,6 +17,8 @@ export type TerminalSessionModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
+  /** CLI binary running in the PTY (shown under title). */
+  launchCommand?: string | null
   gitBranch?: string | null
   projectRootUri: string | null
   mode: SessionDialogMode
@@ -39,6 +41,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     open,
     onOpenChange,
     title,
+    launchCommand,
     gitBranch,
     projectRootUri,
     mode,
@@ -108,19 +111,33 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       >
         <DialogHeader
           data-gharargah-terminal-modal-header=""
-          className="relative flex shrink-0 flex-row items-center gap-3 border-b bg-background px-4 py-3 text-left sm:text-left"
+          className="relative flex shrink-0 flex-row items-center gap-2 border-b bg-background px-3 py-2 text-left sm:text-left"
         >
           <div className="z-10 min-w-0 flex-1 pr-2">
             <DialogTitle className="truncate text-sm font-medium tracking-tight text-foreground">
               {title}
             </DialogTitle>
-            {gitBranch ? (
-              <p
-                data-gharargah-terminal-git-branch
-                className="mt-0.5 flex items-center gap-1 truncate font-mono text-3xs text-muted-foreground"
-              >
-                <GitBranch className="size-3 shrink-0 opacity-80" aria-hidden />
-                <span className="truncate">{gitBranch}</span>
+            {launchCommand || gitBranch ? (
+              <p className="mt-0.5 flex min-w-0 items-center gap-2 truncate font-mono text-3xs text-muted-foreground">
+                {launchCommand ? (
+                  <span data-gharargah-terminal-launch-command className="truncate">
+                    {launchCommand}
+                  </span>
+                ) : null}
+                {launchCommand && gitBranch ? (
+                  <span className="text-muted-foreground/50" aria-hidden>
+                    ·
+                  </span>
+                ) : null}
+                {gitBranch ? (
+                  <span
+                    data-gharargah-terminal-git-branch
+                    className="flex min-w-0 items-center gap-1 truncate"
+                  >
+                    <GitBranch className="size-3 shrink-0 opacity-80" aria-hidden />
+                    <span className="truncate">{gitBranch}</span>
+                  </span>
+                ) : null}
               </p>
             ) : null}
           </div>
@@ -130,7 +147,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             role="tablist"
             aria-label="Session view"
             onKeyDown={handleModeTabKeyDown}
-            className="pointer-events-auto absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 rounded-lg bg-muted p-1 text-muted-foreground"
+            className="pointer-events-auto absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 rounded-lg bg-muted p-0.5 text-muted-foreground"
           >
             {showAgentTab ? (
               <ModeTab
@@ -300,13 +317,15 @@ function ModeTab(props: {
       type="button"
       role="tab"
       aria-selected={active}
+      aria-label={label}
+      title={label}
       aria-controls={`gharargah-session-pane-${mode}`}
       id={`gharargah-session-tab-${mode}`}
       tabIndex={active ? 0 : -1}
       data-gharargah-session-mode-tab={mode}
       data-active={active ? "" : undefined}
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-2xs font-medium tracking-wide transition-[color,background-color,box-shadow]",
+        "inline-flex size-7 items-center justify-center rounded-sm transition-[color,background-color,box-shadow]",
         "focus-visible:ring-ring outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         active
           ? "bg-background text-foreground shadow-sm"
@@ -314,8 +333,7 @@ function ModeTab(props: {
       )}
       onClick={onSelect}
     >
-      {icon}
-      <span>{label}</span>
+      <span className="[&_svg]:size-3.5">{icon}</span>
     </button>
   )
 }

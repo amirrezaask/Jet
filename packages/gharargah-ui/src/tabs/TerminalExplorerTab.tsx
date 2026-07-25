@@ -1,5 +1,5 @@
 import type { PanelId } from "@gharargah/shared"
-import { Check, Code2, Copy, CopyPlus, Focus, Folder, Pencil, Plus, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react"
+import { Check, Copy, CopyPlus, Focus, Folder, Pencil, Plus, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react"
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import {
   ContextMenu,
@@ -15,9 +15,9 @@ import {
 import { Button } from "../components/ui/button.js"
 import { Input } from "../components/ui/input.js"
 import { Lister, type ListerDataSource, type ListerNode } from "../lister/index.js"
-import { ClaudeAI, CursorIcon, GrokIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
+import { CursorIcon } from "../agents/composer/Icons.js"
 import { PanelEmpty } from "../components/PanelEmpty.js"
-import { NewSessionMenu } from "../home/NewSessionMenu.js"
+import { NewSessionMenu, visibleSessionShortcuts } from "../home/NewSessionMenu.js"
 
 export type TerminalExplorerEntry = {
   tabId: string
@@ -46,18 +46,6 @@ export type TerminalAgentShortcut = {
 }
 
 export const TERMINAL_EXPLORER_LIST_ID = "gharargah:terminal-explorer"
-
-const AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
-  { id: "codex", label: "Codex", command: "codex", Icon: OpenAI },
-  { id: "codex", label: "Codex Agent", driverId: "codex:app-server", Icon: OpenAI },
-  { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
-  { id: "claude", label: "Claude Agent", driverId: "claude:sdk", Icon: ClaudeAI },
-  { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
-  { id: "opencode", label: "OpenCode Agent", driverId: "opencode:acp", Icon: Code2 },
-  { id: "cursor", label: "Cursor Agent", command: "cursor-agent", Icon: CursorIcon },
-  { id: "cursor-acp", label: "Cursor (ACP)", driverId: "cursor:acp", Icon: CursorIcon },
-  { id: "grok", label: "Grok (ACP)", driverId: "grok:acp", Icon: GrokIcon },
-]
 
 type TerminalNodeData =
   | { kind: "group"; group: TerminalExplorerGroup }
@@ -238,16 +226,23 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
                     <ContextMenuSub>
                       <ContextMenuSubTrigger>
                         <CursorIcon className="mr-2 size-4" />
-                        Launch Agent
+                        Launch CLI
                       </ContextMenuSubTrigger>
                       <ContextMenuSubContent>
-                        {AGENT_SHORTCUTS.map(shortcut => (
+                        {visibleSessionShortcuts().map(shortcut => (
                           <ContextMenuItem
                             key={`${shortcut.id}:${shortcut.driverId ?? shortcut.command ?? shortcut.label}`}
                             onSelect={() => onLaunchAgentTerminal(group.rootUri, shortcut)}
                           >
                             <shortcut.Icon className="size-4" />
-                            {shortcut.label}
+                            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                              <span>{shortcut.label}</span>
+                              {shortcut.command ? (
+                                <span className="font-mono text-3xs text-muted-foreground">
+                                  {shortcut.command}
+                                </span>
+                              ) : null}
+                            </span>
                           </ContextMenuItem>
                         ))}
                       </ContextMenuSubContent>

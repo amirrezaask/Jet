@@ -43,13 +43,16 @@ test.describe("gharargah mission home", () => {
       await section.getByRole("button", { name: "New session" }).click()
       const sessionMenu = page.locator('[data-slot="dropdown-menu-content"]')
       await expectLocatorVisible(sessionMenu)
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Blank session" }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Codex" }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Claude" }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "OpenCode" }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Cursor Agent" }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Cursor (ACP)" }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: "Grok (ACP)" }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /Blank session/ }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /Codex/ }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /Claude/ }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /OpenCode/ }))
+      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /Cursor/ }))
+      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /Cursor \(ACP\)/ }), 0)
+      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /Grok \(ACP\)/ }), 0)
+      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /Codex Agent/ }), 0)
+      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /Claude Agent/ }), 0)
+      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /OpenCode Agent/ }), 0)
       await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
       await expect
         .poll(async () => page.evaluate(() => window.__gharargahAgent?.getState()?.shellView ?? null), {
@@ -171,7 +174,7 @@ test.describe("gharargah mission home", () => {
       await expect
         .poll(async () => page.evaluate(() =>
           [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
-            .map(tab => tab.textContent?.trim() ?? ""),
+            .map(tab => tab.getAttribute("aria-label") ?? ""),
         ))
         .toEqual(["Terminal", "Editor", "Git", "TODOs"])
       await expectLocatorCount(page.locator('[data-gharargah-session-mode-tab="agent"]'), 0)

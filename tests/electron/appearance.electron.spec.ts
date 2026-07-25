@@ -143,20 +143,20 @@ test.describe("electron appearance and terminal-first UX", () => {
     }
   })
 
-  test("shows agent launch menu from home New session", async () => {
+  test("shows CLI launch menu from home New session", async () => {
     const { app, page } = await launchJet()
     try {
       const launcher = page.getByRole("button", { name: "New session" }).first()
       await expectLocatorVisible(launcher)
       await launcher.click()
 
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Blank session" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Codex" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Claude" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "OpenCode" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Cursor Agent" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Cursor (ACP)" }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: "Grok (ACP)" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: /Blank session/ }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: /Codex/ }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: /Claude/ }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: /OpenCode/ }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: /Cursor/ }))
+      await expectLocatorCount(page.getByRole("menuitem", { name: /Cursor \(ACP\)/ }), 0)
+      await expectLocatorCount(page.getByRole("menuitem", { name: /Grok \(ACP\)/ }), 0)
     } finally {
       await app.close()
     }

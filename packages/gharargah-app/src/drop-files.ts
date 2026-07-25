@@ -66,7 +66,7 @@ export function pathsFromDataTransfer(dt: DataTransfer): string[] {
   const paths: string[] = []
   for (const file of Array.from(dt.files)) {
     const p = (file as File & { path?: string }).path
-    if (p) paths.push(p)
+    if (typeof p === "string" && p.length > 0) paths.push(p)
   }
   if (paths.length > 0) return paths
 
@@ -76,8 +76,12 @@ export function pathsFromDataTransfer(dt: DataTransfer): string[] {
   } catch {
     uriList = ""
   }
-  if (!uriList) return paths
+  return parseUriListText(uriList)
+}
 
+function parseUriListText(uriList: string): string[] {
+  const paths: string[] = []
+  if (!uriList) return paths
   for (const line of uriList.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith("#")) continue
@@ -90,6 +94,112 @@ export function pathsFromDataTransfer(dt: DataTransfer): string[] {
     }
   }
   return paths
+}
+
+/** Async path harvest — string items may only resolve via getAsString. */
+export async function pathsFromDataTransferAsync(dt: DataTransfer): Promise<string[]> {
+  const sync = pathsFromDataTransfer(dt)
+  if (sync.length > 0) return sync
+
+  const chunks: string[] = []
+  const items = Array.from(dt.items ?? [])
+  await Promise.all(
+    items.map(
+      item =>
+        new Promise<void>(resolve => {
+          if (item.kind !== "string") {
+            resolve()
+            return
+          }
+          try {
+            item.getAsString(value => {
+              if (value) chunks.push(value)
+              resolve()
+            })
+          } catch {
+            resolve()
+          }
+        }),
+    ),
+  )
+  const fromItems = chunks.flatMap(parseUriListText)
+  if (fromItems.length > 0) return [...new Set(fromItems)]
+  return []
+}
+
+/**
+ * Browsers on http(s) strip absolute paths from Finder drops.
+ * Match dropped File names against open workspace indexes when possible.
+ */
+export async function resolveDroppedFilesAgainstWorkspaces(
+  files: File[],
+  workspaceRoots: string[],
+  opts?: {
+    listFiles?: (rootUri: string) => Promise<string[]>
+    statSize?: (absPath: string) => Promise<number | null>
+    activeRoot?: string | null
+  },
+): Promise<string[]> {
+  if (files.length === 0 || workspaceRoots.length === 0) return []
+  const listFiles =
+    opts?.listFiles ??
+    (typeof window !== "undefined" ? window.gharargah?.search?.listFiles?.bind(window.gharargah.search) : undefined)
+  if (!listFiles) return []
+
+  const statSize =
+    opts?.statSize ??
+    (async (absPath: string) => {
+      try {
+        const st = await window.gharargah?.fs?.stat?.(pathToFileUri(absPath))
+        return typeof st?.size === "number" ? st.size : null
+      } catch {
+        return null
+      }
+    })
+
+  const rootFiles = new Map<string, string[]>()
+  for (const root of workspaceRoots) {
+    try {
+      rootFiles.set(root, await listFiles(pathToFileUri(root)))
+    } catch {
+      rootFiles.set(root, [])
+    }
+  }
+
+  const resolved: string[] = []
+  for (const file of files) {
+    const name = file.name
+    if (!name) continue
+    const candidates: string[] = []
+    for (const root of workspaceRoots) {
+      const rels = rootFiles.get(root) ?? []
+      const rootNorm = root.replace(/\/+$/, "")
+      for (const rel of rels) {
+        const base = rel.split(/[/\\]/).pop()
+        if (base !== name) continue
+        const abs = `${rootNorm}/${rel.replace(/^[/\\]+/, "")}`
+        candidates.push(abs)
+      }
+    }
+    if (candidates.length === 0) continue
+    if (candidates.length === 1) {
+      resolved.push(candidates[0]!)
+      continue
+    }
+
+    const sized: string[] = []
+    for (const abs of candidates) {
+      const size = await statSize(abs)
+      if (size !== null && size === file.size) sized.push(abs)
+    }
+    const pool = sized.length > 0 ? sized : candidates
+    const active = opts?.activeRoot?.replace(/\/+$/, "")
+    const preferred = active
+      ? pool.find(p => p === active || p.startsWith(`${active}/`))
+      : undefined
+    resolved.push(preferred ?? pool.sort((a, b) => a.length - b.length)[0]!)
+  }
+  return resolved
 }
 
 export type DropZone = "terminal" | "editor" | "other"

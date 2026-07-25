@@ -9,6 +9,8 @@ import { hasPtySpawn, launchJet } from "./_launch.js"
 import fs from "node:fs"
 import path from "node:path"
 
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+
 const ALL_SCENARIOS = [
   // auth_required first: later user-input scenarios have left wedged Jet/mock
   // processes in this worker when app.close raced a hung turn.
@@ -42,7 +44,7 @@ const ALL_SCENARIOS = [
 async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
   await page.evaluate(() => window.gharargah!.agents!.listAgents())
   await page.getByRole("button", { name: "New session" }).first().click()
-  await page.getByRole("menuitem", { name: "Cursor (ACP)" }).click()
+  await page.getByRole("menuitem", { name: /Cursor \(ACP\)/ }).click()
   const modal = page.locator("[data-gharargah-terminal-modal]")
   await expectLocatorVisible(modal)
   await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -106,39 +108,43 @@ async function waitForAssistantContaining(
     .toContain(needle)
 }
 
+test("ACP mock matrix covers every documented mock scenario name", () => {
+  // Keep in sync with apps/server/src/mock_acp/scenarios.rs Scenario::ALL
+  expect(ALL_SCENARIOS).toEqual([
+    "auth_required",
+    "echo",
+    "thought_then_answer",
+    "tool_lifecycle",
+    "permission_allow",
+    "permission_tool_race",
+    "permission_allow_always",
+    "plan_update",
+    "cancel_coop",
+    "slow_stream",
+    "usage_meter",
+    "config_model",
+    "slash_commands",
+    "chaos_malformed",
+    "load_session",
+    "fs_roundtrip",
+    "terminal_roundtrip",
+    "multi_session",
+    "ask_question",
+    "create_plan",
+    "update_todos",
+    "elicitation",
+    "image_prompt",
+    "set_mode_plan",
+    "mcp_servers_inject",
+  ])
+})
+
 test.describe("ACP mock scenario matrix (host path)", () => {
   test.skip(!hasPtySpawn(), "node-pty cannot spawn a shell on this machine")
-
-  test("matrix covers every documented mock scenario name", () => {
-    // Keep in sync with apps/server/src/mock_acp/scenarios.rs Scenario::ALL
-    expect(ALL_SCENARIOS).toEqual([
-      "auth_required",
-      "echo",
-      "thought_then_answer",
-      "tool_lifecycle",
-      "permission_allow",
-      "permission_tool_race",
-      "permission_allow_always",
-      "plan_update",
-      "cancel_coop",
-      "slow_stream",
-      "usage_meter",
-      "config_model",
-      "slash_commands",
-      "chaos_malformed",
-      "load_session",
-      "fs_roundtrip",
-      "terminal_roundtrip",
-      "multi_session",
-      "ask_question",
-      "create_plan",
-      "update_todos",
-      "elicitation",
-      "image_prompt",
-      "set_mode_plan",
-      "mcp_servers_inject",
-    ])
-  })
+  test.skip(
+    !agentChatE2e,
+    "requires GHARARGAH_ENABLE_AGENT_CHAT=1 (rebuild frontend dist with the same env)",
+  )
 
   for (const scenario of ALL_SCENARIOS) {
     test(`scenario:${scenario}`, async () => {

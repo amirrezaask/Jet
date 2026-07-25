@@ -161,8 +161,11 @@ test.describe("session Git and editor workspaces", () => {
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
       await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
       await expectSelectorVisible(page, "[data-gharargah-modal-editor]")
-      await expect.poll(async () => page.locator("[data-gharargah-session-mode-tab]").evaluate(el => el.parentElement?.textContent ?? ""))
-        .toContain("TerminalEditorGitTODOs")
+      await expect.poll(async () => page.evaluate(() =>
+        [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
+          .map(tab => tab.getAttribute("aria-label") ?? "")
+          .join(""),
+      )).toContain("TerminalEditorGitTODOs")
 
       await openQuickFile(page, "index", "src/index.ts")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")

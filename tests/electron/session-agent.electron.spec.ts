@@ -8,9 +8,72 @@ import {
 import { hasPtySpawn, launchJet } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
+/** Frontend bake-time flag; rebuild dist with GHARARGAH_ENABLE_AGENT_CHAT=1 to enable. */
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
 
-test.describe("project session agents", () => {
+test.describe("project session CLIs", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
+
+  test("CLI Cursor stays in terminal without Agent tab", async () => {
+    const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
+    try {
+      const state = await page.evaluate(() => window.__gharargahAgent!.getState())
+      expect(state.agentChatEnabled).toBe(false)
+
+      const launcher = page.getByRole("button", { name: "New session" }).first()
+      await launcher.click()
+      await page.getByRole("menuitem", { name: /cursor-agent/ }).click()
+
+      const modal = page.locator("[data-gharargah-terminal-modal]")
+      await expectLocatorVisible(modal)
+      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("terminal")
+      await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 4)
+      await expectLocatorCount(modal.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
+
+      for (const mode of ["terminal", "editor", "git", "todos"] as const) {
+        await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()
+        await expectSelectorVisible(
+          page,
+          `[data-gharargah-session-mode-tab="${mode}"][data-active]`,
+        )
+      }
+    } finally {
+      await app.close()
+    }
+  })
+  test("CLI Codex / Claude / OpenCode open terminal when agent chat is off", async () => {
+    const { app, page } = await launchJet()
+    try {
+      const launcher = page.getByRole("button", { name: "New session" }).first()
+      for (const { name, command } of [
+        { name: /Codex/, command: "codex" },
+        { name: /Claude/, command: "claude" },
+        { name: /OpenCode/, command: "opencode" },
+      ] as const) {
+        await launcher.click()
+        await page.getByRole("menuitem", { name }).click()
+        const modal = page.locator("[data-gharargah-terminal-modal]")
+        await expectLocatorVisible(modal)
+        await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("terminal")
+        await expectLocatorCount(modal.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
+        await expect
+          .poll(() => page.locator("[data-gharargah-terminal-launch-command]").textContent())
+          .toBe(command)
+        await page.locator("[data-gharargah-terminal-modal-close]").click()
+        await expectLocatorCount(modal, 0)
+      }
+    } finally {
+      await app.close()
+    }
+  })
+})
+
+test.describe("project session agent chat", () => {
+  test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
+  test.skip(
+    !agentChatE2e,
+    "requires GHARARGAH_ENABLE_AGENT_CHAT=1 (rebuild frontend dist with the same env)",
+  )
 
   test("Cursor (ACP) opens the agent tab; CLI agents stay in terminal", async () => {
     const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
@@ -89,10 +152,10 @@ test.describe("project session agents", () => {
         )
       }
 
-      // CLI Cursor Agent → terminal only, launches cursor-agent, no Agent tab.
+      // CLI Cursor → terminal only, launches cursor-agent, no Agent tab.
       const launcher = page.getByRole("button", { name: "New session" }).first()
       await launcher.click()
-      await page.getByRole("menuitem", { name: "Cursor Agent" }).click()
+      await page.getByRole("menuitem", { name: /cursor-agent/ }).click()
 
       const modal = page.locator("[data-gharargah-terminal-modal]")
       await expectLocatorVisible(modal)
@@ -104,7 +167,7 @@ test.describe("project session agents", () => {
 
       // Codex Agent → shared agent tab + native app-server driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: "Codex Agent" }).click()
+      await page.getByRole("menuitem", { name: /Codex Agent/ }).click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -128,7 +191,7 @@ test.describe("project session agents", () => {
 
       // Claude Agent → shared agent tab + native Claude SDK driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: "Claude Agent" }).click()
+      await page.getByRole("menuitem", { name: /Claude Agent/ }).click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -152,7 +215,7 @@ test.describe("project session agents", () => {
 
       // OpenCode Agent → shared agent tab + ACP driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: "OpenCode Agent" }).click()
+      await page.getByRole("menuitem", { name: /OpenCode Agent/ }).click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -176,7 +239,7 @@ test.describe("project session agents", () => {
 
       // Cursor (ACP) → agent tab + ACP driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: "Cursor (ACP)" }).click()
+      await page.getByRole("menuitem", { name: /Cursor \(ACP\)/ }).click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")

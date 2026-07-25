@@ -39,6 +39,7 @@ import {
 import type { EditorView } from "@codemirror/view"
 import {
   defaultAgentDriverId,
+  isAgentChatEnabled,
   isAgentInterfaceDriverId,
   type AgentCatalogState,
   type AgentThread,
@@ -366,9 +367,11 @@ export function GharargahApp() {
 
   const openTerminalModal = useCallback(
     (panelId: PanelId, tabId: string, mode: SessionDialogMode = "terminal") => {
+      const resolvedMode =
+        mode === "agent" && !isAgentChatEnabled() ? "terminal" : mode
       setTerminalModalPanelId(panelId)
       setTerminalModalTabId(tabId)
-      setSessionMode(mode)
+      setSessionMode(resolvedMode)
     },
     [],
   )
@@ -413,7 +416,10 @@ export function GharargahApp() {
   const openTerminalFromHome = useCallback(
     (panelId: PanelId, tabId: string) => {
       const session = terminalSessionForTab(tabId)
-      const mode = isAgentInterfaceDriverId(session?.agentDriverId) ? "agent" : "terminal"
+      const mode =
+        isAgentChatEnabled() && isAgentInterfaceDriverId(session?.agentDriverId)
+          ? "agent"
+          : "terminal"
       focusTerminalTab(panelId, tabId, mode)
     },
     [focusTerminalTab],
@@ -497,20 +503,31 @@ export function GharargahApp() {
   const launchAgentFromHome = useCallback(
     async (rootUri: string, shortcut: TerminalAgentShortcut) => {
       try {
-        const driverId =
-          shortcut.driverId ??
-          agentCatalog?.agents.find(agent => agent.id === shortcut.id)?.activeDriverId ??
-          defaultAgentDriverId(shortcut.id)
-        const isAgentSession =
-          isAgentInterfaceDriverId(driverId) || shortcut.id === "cursor-acp"
-
-        // CLI agents open a terminal; structured provider drivers use the shared agent tab.
-        if (!isAgentSession) {
+        // CLI rows always have `command` — open a PTY. Do not consult catalog /
+        // defaultAgentDriverId here: those resolve to ACP/SDK drivers and would
+        // misclassify Codex/Claude/OpenCode as in-app agent chat.
+        if (shortcut.command) {
           const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
             label: shortcut.label,
             launchCommand: shortcut.command,
           })
           openTerminalModal(panelId, tabId, "terminal")
+          return
+        }
+
+        if (!isAgentChatEnabled()) {
+          showGharargahToast("In-app agent chat is temporarily disabled. Launch a CLI session instead.", {
+            variant: "warning",
+          })
+          return
+        }
+
+        const driverId =
+          shortcut.driverId ??
+          agentCatalog?.agents.find(agent => agent.id === shortcut.id)?.activeDriverId ??
+          defaultAgentDriverId(shortcut.id)
+        if (!isAgentInterfaceDriverId(driverId) && shortcut.id !== "cursor-acp") {
+          showGharargahToast(`No agent driver for ${shortcut.label}`, { variant: "destructive" })
           return
         }
 
@@ -648,6 +665,10 @@ export function GharargahApp() {
   )
 
   useEffect(() => {
+    if (!isAgentChatEnabled()) {
+      if (sessionMode === "agent") setSessionMode("terminal")
+      return
+    }
     if (sessionMode !== "agent" || !terminalModalTabId) return
     const session = terminalSessionForTab(terminalModalTabId)
     if (!isAgentInterfaceDriverId(session?.agentDriverId)) {
@@ -928,6 +949,7 @@ export function GharargahApp() {
   useFileDrop({
     fs: jetPlatformFS(),
     knownWorkspacePaths: workspace.folders.map(f => f.root.path),
+    activeWorkspacePath: workspace.manager.activeFolder?.root.path ?? workspace.root?.path ?? null,
     normalizePath: normalizeAbsPath,
     openWorkspace: path => void openWorkspaceRef.current(path, { replace: true, silent: true }),
     addWorkspaceFolder: path => void addWorkspaceRef.current(path),
@@ -1487,6 +1509,7 @@ export function GharargahApp() {
 
   useEffect(() => {
     const disposables = APP_COMMAND_REGISTRY.map(entry => {
+      if (entry.id === "dialog.showAgent" && !isAgentChatEnabled()) return null
       const run = appCommands[entry.fn]
       if (!run) return null
       return commands.register(entry.id, run, {
@@ -1627,6 +1650,7 @@ export function GharargahApp() {
       })(),
       searchReady: searchScanReady,
       sessionMode: terminalModalTabId ? sessionMode : null,
+      agentChatEnabled: isAgentChatEnabled(),
     }))
     return () => {
       delete window.__gharargahAgent
@@ -1729,10 +1753,13 @@ export function GharargahApp() {
             const restoredDriver = roster.sessions.find(
               entry => entry.tabId === roster.modal?.tabId,
             )?.agentDriverId
-            const restoredMode =
-              roster.modal.sessionMode === "agent" && !isAgentInterfaceDriverId(restoredDriver)
-                ? "terminal"
-                : roster.modal.sessionMode
+            let restoredMode = roster.modal.sessionMode
+            if (
+              restoredMode === "agent" &&
+              (!isAgentChatEnabled() || !isAgentInterfaceDriverId(restoredDriver))
+            ) {
+              restoredMode = "terminal"
+            }
             setSessionMode(restoredMode)
           }
         }
@@ -1993,16 +2020,21 @@ export function GharargahApp() {
                 })()}
                 gitBranch={terminalModalGitBranch}
                 projectRootUri={terminalCwdForTab(terminalModalTabId) || null}
+                launchCommand={terminalSessionForTab(terminalModalTabId)?.launchCommand ?? null}
                 mode={sessionMode}
-                showAgentTab={isAgentInterfaceDriverId(
-                  terminalSessionForTab(terminalModalTabId)?.agentDriverId,
-                )}
+                showAgentTab={
+                  isAgentChatEnabled() &&
+                  isAgentInterfaceDriverId(
+                    terminalSessionForTab(terminalModalTabId)?.agentDriverId,
+                  )
+                }
                 onModeChange={mode => {
                   if (
                     mode === "agent" &&
-                    !isAgentInterfaceDriverId(
-                      terminalSessionForTab(terminalModalTabId)?.agentDriverId,
-                    )
+                    (!isAgentChatEnabled() ||
+                      !isAgentInterfaceDriverId(
+                        terminalSessionForTab(terminalModalTabId)?.agentDriverId,
+                      ))
                   ) {
                     return
                   }

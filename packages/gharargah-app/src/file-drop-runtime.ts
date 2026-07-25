@@ -1,8 +1,11 @@
 import type { FileSystemProvider, LaunchConfig } from "@gharargah/workspace"
 import {
   handleDroppedPaths,
-  pathsFromDataTransfer,
+  pathsFromDataTransferAsync,
+  resolveDroppedFilesAgainstWorkspaces,
+  resolveDropZoneAtPoint,
   resolveDropZoneFromElement,
+  terminalPtyIdFromElement,
   type ProcessDroppedPathsContext,
 } from "./drop-files.js"
 
@@ -26,6 +29,8 @@ export type FileDropOptions = {
   openUntitledFromDrop: (name: string, content: string) => void
   setMessage: (msg: string) => void
   onDragOverChange?: (active: boolean) => void
+  /** Prefer matching drops under this project root when basenames collide. */
+  activeWorkspacePath?: string | null
 }
 
 /** Install HTML5 OS file-drop listeners. Returns disposer. */
@@ -74,30 +79,50 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
     dragDepth = 0
     setDragActive(false)
 
-    const target = e.target instanceof Element ? e.target : null
-    const zone = resolveDropZoneFromElement(target)
-    const paths = pathsFromDataTransfer(e.dataTransfer)
-
-    if (paths.length > 0) {
-      void handleDroppedPaths(paths, zone, target, dropContext())
-      return
-    }
-
-    const files = [...e.dataTransfer.files]
-    if (files.length === 0) return
-
-    const ctx = getOpts()
-    if (zone === "terminal") {
-      ctx.setMessage("Drop a file from disk (path required for terminal)")
-      return
-    }
-
-    if (ctx.knownWorkspacePaths.length === 0) {
-      ctx.setMessage("Drop files after opening a folder")
-      return
-    }
+    const dataTransfer = e.dataTransfer
+    const pointEl = document.elementFromPoint(e.clientX, e.clientY)
+    const target = pointEl instanceof Element ? pointEl : e.target instanceof Element ? e.target : null
+    const zoneFromPoint = resolveDropZoneAtPoint(e.clientX, e.clientY)
+    const zone =
+      zoneFromPoint !== "other" ? zoneFromPoint : resolveDropZoneFromElement(target)
 
     void (async () => {
+      let paths = await pathsFromDataTransferAsync(dataTransfer)
+      const files = [...dataTransfer.files]
+      if (paths.length === 0 && files.length > 0) {
+        const ctx = getOpts()
+        paths = await resolveDroppedFilesAgainstWorkspaces(files, ctx.knownWorkspacePaths, {
+          activeRoot: ctx.activeWorkspacePath ?? null,
+        })
+      }
+
+      if (paths.length > 0) {
+        // Prefer the terminal panel under the cursor for PTY id lookup.
+        const terminalEl =
+          zone === "terminal"
+            ? (pointEl?.closest("[data-gharargah-terminal-panel]") ??
+              document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-gharargah-terminal-panel]") ??
+              target)
+            : target
+        await handleDroppedPaths(paths, zone, terminalEl instanceof Element ? terminalEl : target, dropContext())
+        return
+      }
+
+      if (files.length === 0) return
+
+      const ctx = getOpts()
+      if (zone === "terminal") {
+        ctx.setMessage(
+          "Could not resolve file path for terminal. Drop a file from an open project, or paste its path.",
+        )
+        return
+      }
+
+      if (ctx.knownWorkspacePaths.length === 0) {
+        ctx.setMessage("Drop files after opening a folder")
+        return
+      }
+
       for (const file of files) {
         try {
           const content = await readFileAsText(file)
@@ -120,3 +145,6 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
     window.removeEventListener("drop", onDrop, true)
   }
 }
+
+// Re-export for tests / callers that need PTY probing helpers.
+export { terminalPtyIdFromElement }

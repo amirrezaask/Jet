@@ -72,6 +72,54 @@ test.describe("file drag and drop", () => {
     }
   })
 
+  test("drops a pathless File matched via workspace index into the terminal", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+      const workspace = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace)
+      expect(workspace).toBeTruthy()
+      const dropPath = join(workspace!, "src/index.ts")
+      const needle = "index.ts"
+      const ok = await page.evaluate(
+        ({ sel, name, body }) => {
+          const el = document.querySelector(sel)
+          if (!el) return false
+          const rect = el.getBoundingClientRect()
+          // Browser Finder drops: File with no .path and empty uri-list.
+          const file = new File([body], name, { type: "text/plain" })
+          const dt = new DataTransfer()
+          dt.items.add(file)
+          const opts: DragEventInit = {
+            bubbles: true,
+            cancelable: true,
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top + rect.height / 2,
+            dataTransfer: dt,
+          }
+          el.dispatchEvent(new DragEvent("dragenter", opts))
+          el.dispatchEvent(new DragEvent("dragover", opts))
+          el.dispatchEvent(new DragEvent("drop", opts))
+          return true
+        },
+        {
+          sel: "[data-gharargah-terminal-panel] .gharargah-terminal-surface, [data-gharargah-terminal-panel] .xterm",
+          name: needle,
+          body: "ignored-body\n",
+        },
+      )
+      expect(ok).toBe(true)
+      await expect
+        .poll(async () => readTerminalText(page), { timeout: 15_000 })
+        .toContain(needle)
+      const text = await readTerminalText(page)
+      expect(text).toContain("src/index.ts")
+      expect(dropPath.endsWith("src/index.ts")).toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("drops a workspace file onto the editor and opens it", async () => {
     const { app, page } = await launchJet()
     try {

@@ -48,7 +48,7 @@ jet/
 │   ├── gharargah-workspace/    WorkspaceService, TabRegistry, commands, keymaps
 │   ├── gharargah-codemirror/   (library; unwired from app)
 │   ├── gharargah-lsp/          (library; unwired from app)
-│   ├── gharargah-agents/       (library; agent CLI still launchable from home New session)
+│   ├── gharargah-agents/       (library; in-app ACP chat temporarily gated off — CLI launch from New session)
 │   ├── gharargah-ui/           Home, terminal modal/panel, overlays, themes (+ unused editor/sidebar)
 │   └── gharargah-app/          Root React app — home + terminal modals only
 ├── tests/
@@ -163,8 +163,6 @@ GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri
 
 | Spec file | Test | Likely fix |
 | --------- | ---- | ---------- |
-| `agents-mock.electron.spec.ts` | mock agent turn | Stabilize composer tab activation before submit |
-| `agents.electron.spec.ts` | real cursor-agent turn | Longer turn timeout; poll thread status after stream ends |
 | `dirty-close-confirm.electron.spec.ts` | dismiss/accept close | Ensure `workspace.closeBuffer` targets focused dirty buffer |
 | `editor-save.electron.spec.ts` | save persists to disk | Per-test temp copy of fixture file (avoid shared `index.ts` races) |
 | `locationlist-commands.electron.spec.ts` | both | Use `getByLabel("Search project")`; wait for scan-ready |
@@ -175,6 +173,8 @@ GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri
 | `terminal.electron.spec.ts` | xterm row height | Wait for PTY output before measuring `.xterm-row` |
 | `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
 | `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
+
+**ACP / in-app agent chat specs** (`session-agent`, `acp-mock-scenarios`, `acp-structured`) require `GHARARGAH_ENABLE_AGENT_CHAT=1` (default off). See Agents section below.
 
 ### Programmatic control (`window.__gharargahAgent`)
 
@@ -294,10 +294,10 @@ Registered in `packages/jet-app/src/App.tsx`:
 | `search.show`           | Mod-Shift-f           |
 | `problems.show`         | —                     |
 | `terminal.show`         | —                     |
-| `agents.show`           | — (palette: Show Agents) |
-| `agent.new`             | — (palette: New Agent) |
-| `agent.archive`         | Cmd-Backspace (agent chat focused) |
-| `agent.unarchive`       | Cmd-Shift-Backspace (agent chat focused) |
+| `dialog.showTerminal`   | — (palette: Show Terminal) |
+| `dialog.showEditor`     | — (palette: Show Editor) |
+| `dialog.showTodos`      | — (palette: Show TODOs) |
+| `dialog.showAgent`      | — (gated; requires `GHARARGAH_ENABLE_AGENT_CHAT=1`) |
 
 
 `CommandRegistry.execute()` receives `getActiveEditorView: () => unknown` — cast to `EditorView` in handlers that need `view.state.doc`.
@@ -332,22 +332,37 @@ Registered in `packages/jet-app/src/App.tsx`:
 | Editor   | CodeMirror host + in-buffer find                           |
 | Search   | Project ripgrep search + in-buffer find                    |
 | Problems | LSP/CM lint diagnostics list + jump                        |
-| Terminal | xterm + Rust PTY (Tauri host)                              |
-| Agent explorer | Sidebar thread list per workspace root; archive section |
-| Agent chat | T3-style composer, streaming timeline, provider/model picker |
+| Terminal | xterm + Rust PTY (host) — primary ADE surface via session modal |
+| Agent explorer | Library only (unwired); was sidebar thread list |
+| Agent chat | Library kept; **temporarily disabled** in product (see Agents) |
 
 
 
-### Agents (`@gharargah/agents` + Tauri Rust host)
+### Agents (`@gharargah/agents` + Rust host) — temporarily disabled in UI
+
+**Status (2026-07):** In-app ACP/SDK/app-server **agent chat is soft-disabled**. Product path is CLI-first ADE: New session → Blank / CLI (`codex`, `claude`, `opencode`, `cursor-agent`) → PTY in `TerminalSessionModal` (Terminal / Editor / Git / TODOs). Agent/ACP code is **not removed**.
+
+**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"0"`). Set `GHARARGAH_ENABLE_AGENT_CHAT=1` for `pnpm dev` / builds / E2E to re-enable Agent menu rows, Agent mode tab, `dialog.showAgent`, and `AgentChatView`.
+
+When disabled:
+
+- New session menu shows **Shell** + **CLIs** only (no `* Agent` / `(ACP)` rows)
+- `showAgentTab` forced off; roster restore with `sessionMode=agent` falls back to `terminal`
+- Host `agents:*` IPC remains available for tests / future re-enable
+
+**Supported ADE path:** Mission Control → New session → CLI provider → terminal PTY in session modal.
+
+**When re-enabled:**
 
 - **Storage:** `.gharargah/agents/state.json` per workspace root (threads, messages, provider/model selection)
-- **Transport:** `window.gharargah.agents` via Tauri host invoke/events
-- **Drivers:** cursor / Claude / Codex probed from PATH in Rust host (`apps/gharargah/src-tauri/src/host/agents.rs`)
-- **Env:** `GHARARGAH_AGENT_MOCK=1` launches the real stdio mock ACP process; `GHARARGAH_AGENT_MOCK_SCENARIO=<name>` selects scenario (default `echo`); `GHARARGAH_MOCK_ACP_BIN` overrides mock binary path; `GHARARGAH_AGENT_MOCK_LEGACY=1` uses the legacy in-process fake stream.
-- **Key files:** `packages/jet-agents/`, `packages/jet-ui/src/agents/`, `apps/gharargah/src-tauri/src/host/agents.rs`, `packages/jet-app/src/tabs/agent-*.tab.ts`
-- **Tests:** agent specs exist under `tests/electron/` but are excluded from `tauri-e2e` for now
+- **Transport:** `window.gharargah.agents` via host invoke/events
+- **Drivers:** cursor / Claude / Codex / OpenCode / Grok via `apps/server/src/host/agents/` + `apps/server/src/host/acp/`
+- **Mock env:** `GHARARGAH_AGENT_MOCK=1` (stdio mock ACP); `GHARARGAH_AGENT_MOCK_SCENARIO=<name>` (default `echo`); `GHARARGAH_MOCK_ACP_BIN`; `GHARARGAH_AGENT_MOCK_LEGACY=1` (in-process fake stream)
+- **Key files:** `packages/gharargah-agents/`, `packages/gharargah-ui/src/agents/`, `packages/gharargah-ui/src/home/NewSessionMenu.tsx`, `packages/gharargah-app/src/App.tsx`, `apps/server/src/host/agents/`, `apps/server/src/host/acp/`
+- **E2E:** `tests/electron/session-agent.electron.spec.ts`, `acp-mock-scenarios.electron.spec.ts`, `acp-structured.electron.spec.ts` — run with `GHARARGAH_ENABLE_AGENT_CHAT=1`
 
-Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop button → archive via explorer context menu or `agent.archive`.
+Manual smoke (CLI path): `pnpm dev` → New session → Codex / Claude / Blank → terminal pane.  
+Manual smoke (agent chat, when re-enabled): `GHARARGAH_ENABLE_AGENT_CHAT=1 pnpm dev` → New session → Cursor (ACP) → Agent tab.
 
 
 
@@ -391,7 +406,7 @@ Manual smoke: `pnpm dev` → `agent.new` → send prompt → interrupt via stop 
 ## What Works Today (smoke test)
 
 1. `pnpm dev` → Mission Control **home** with projects from cwd/CLI / catalog
-2. Project cards + **New session** (Terminal / Codex / Claude / Cursor Agent) → `TerminalSessionModal`
+2. Project cards + **New session** (Blank / Codex / Claude / OpenCode / Cursor CLIs) → `TerminalSessionModal`
 3. Click terminal card → reopen that session in the modal
 4. `terminal.new` / `terminal.show` / `terminal.list` — create, toggle modal, switch sessions
 5. **Mod-p** / **Mod-Shift-p** command palette (slim command set)
