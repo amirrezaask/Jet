@@ -2,6 +2,7 @@
 export const RUST_HOST_CHANNELS = new Set([
   "fs:readFile",
   "fs:writeFile",
+  "fs:writeTempDrop",
   "fs:readDir",
   "fs:stat",
   "fs:showOpenFolderDialog",

@@ -105,6 +105,8 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     fs: {
       readFile: uri => transport.invoke("fs:readFile", uri),
       writeFile: (uri, content) => transport.invoke("fs:writeFile", uri, content),
+      writeTempDrop: (name, contentBase64) =>
+        transport.invoke("fs:writeTempDrop", name, contentBase64),
       readDir: uri => transport.invoke("fs:readDir", uri),
       stat: uri => transport.invoke("fs:stat", uri),
       showOpenFolderDialog: () => transport.invoke("fs:showOpenFolderDialog"),

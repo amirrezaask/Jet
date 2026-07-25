@@ -1686,6 +1686,7 @@ dependencies = [
  "agent-client-protocol",
  "anyhow",
  "axum",
+ "base64",
  "chrono",
  "clap",
  "dirs 6.0.0",

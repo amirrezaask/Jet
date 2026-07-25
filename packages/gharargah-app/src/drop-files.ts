@@ -136,6 +136,7 @@ export async function resolveDroppedFilesAgainstWorkspaces(
   workspaceRoots: string[],
   opts?: {
     listFiles?: (rootUri: string) => Promise<string[]>
+    fileSearch?: (rootUri: string, query: string) => Promise<string[]>
     statSize?: (absPath: string) => Promise<number | null>
     activeRoot?: string | null
   },
@@ -144,7 +145,12 @@ export async function resolveDroppedFilesAgainstWorkspaces(
   const listFiles =
     opts?.listFiles ??
     (typeof window !== "undefined" ? window.gharargah?.search?.listFiles?.bind(window.gharargah.search) : undefined)
-  if (!listFiles) return []
+  const fileSearch =
+    opts?.fileSearch ??
+    (typeof window !== "undefined"
+      ? window.gharargah?.search?.fileSearch?.bind(window.gharargah.search)
+      : undefined)
+  if (!listFiles && !fileSearch) return []
 
   const statSize =
     opts?.statSize ??
@@ -159,28 +165,52 @@ export async function resolveDroppedFilesAgainstWorkspaces(
 
   const rootFiles = new Map<string, string[]>()
   for (const root of workspaceRoots) {
+    const rootUri = pathToFileUri(root)
+    let rels: string[] = []
     try {
-      rootFiles.set(root, await listFiles(pathToFileUri(root)))
+      if (listFiles) rels = await listFiles(rootUri)
     } catch {
-      rootFiles.set(root, [])
+      rels = []
     }
+    rootFiles.set(root, rels)
   }
 
   const resolved: string[] = []
   for (const file of files) {
     const name = file.name
     if (!name) continue
-    const candidates: string[] = []
+    let candidates: string[] = []
     for (const root of workspaceRoots) {
       const rels = rootFiles.get(root) ?? []
       const rootNorm = root.replace(/\/+$/, "")
       for (const rel of rels) {
         const base = rel.split(/[/\\]/).pop()
         if (base !== name) continue
-        const abs = `${rootNorm}/${rel.replace(/^[/\\]+/, "")}`
-        candidates.push(abs)
+        candidates.push(`${rootNorm}/${rel.replace(/^[/\\]+/, "")}`)
       }
     }
+
+    // Index miss / scan not ready — try fuzzy file search by basename.
+    if (candidates.length === 0 && fileSearch) {
+      for (const root of workspaceRoots) {
+        const rootNorm = root.replace(/\/+$/, "")
+        try {
+          const hits = await fileSearch(pathToFileUri(root), name)
+          for (const hit of hits) {
+            const base = hit.split(/[/\\]/).pop()
+            if (base !== name) continue
+            const abs = hit.startsWith("/") || /^[A-Za-z]:[\\/]/.test(hit)
+              ? hit
+              : `${rootNorm}/${hit.replace(/^[/\\]+/, "")}`
+            candidates.push(abs)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      candidates = [...new Set(candidates)]
+    }
+
     if (candidates.length === 0) continue
     if (candidates.length === 1) {
       resolved.push(candidates[0]!)
@@ -200,6 +230,32 @@ export async function resolveDroppedFilesAgainstWorkspaces(
     resolved.push(preferred ?? pool.sort((a, b) => a.length - b.length)[0]!)
   }
   return resolved
+}
+
+/** Write pathless browser Files to OS temp via host; return absolute paths for PTY paste. */
+export async function materializeDroppedFilesToTemp(files: File[]): Promise<string[]> {
+  const writeTemp = window.gharargah?.fs?.writeTempDrop
+  if (!writeTemp || files.length === 0) return []
+  const paths: string[] = []
+  for (const file of files) {
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const dataUrl = String(reader.result ?? "")
+          const comma = dataUrl.indexOf(",")
+          resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl)
+        }
+        reader.onerror = () => reject(reader.error ?? new Error("read failed"))
+        reader.readAsDataURL(file)
+      })
+      const path = await writeTemp(file.name || "drop.bin", base64)
+      if (path) paths.push(path)
+    } catch {
+      /* skip failed file */
+    }
+  }
+  return paths
 }
 
 export type DropZone = "terminal" | "editor" | "other"

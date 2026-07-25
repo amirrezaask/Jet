@@ -1,6 +1,8 @@
 import type { FileSystemProvider, LaunchConfig } from "@gharargah/workspace"
 import {
   handleDroppedPaths,
+  materializeDroppedFilesToTemp,
+  pathsFromDataTransfer,
   pathsFromDataTransferAsync,
   resolveDroppedFilesAgainstWorkspaces,
   resolveDropZoneAtPoint,
@@ -80,6 +82,11 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
     setDragActive(false)
 
     const dataTransfer = e.dataTransfer
+    // DataTransfer is only valid synchronously during the drop event. Snapshot
+    // before any await or the browser clears files/uri-list.
+    const files = [...dataTransfer.files]
+    const syncPaths = pathsFromDataTransfer(dataTransfer)
+
     const pointEl = document.elementFromPoint(e.clientX, e.clientY)
     const target = pointEl instanceof Element ? pointEl : e.target instanceof Element ? e.target : null
     const zoneFromPoint = resolveDropZoneAtPoint(e.clientX, e.clientY)
@@ -87,24 +94,33 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
       zoneFromPoint !== "other" ? zoneFromPoint : resolveDropZoneFromElement(target)
 
     void (async () => {
-      let paths = await pathsFromDataTransferAsync(dataTransfer)
-      const files = [...dataTransfer.files]
+      let paths =
+        syncPaths.length > 0 ? syncPaths : await pathsFromDataTransferAsync(dataTransfer)
+      // Prefer the File snapshot taken synchronously — async dt.files is often empty.
       if (paths.length === 0 && files.length > 0) {
         const ctx = getOpts()
         paths = await resolveDroppedFilesAgainstWorkspaces(files, ctx.knownWorkspacePaths, {
           activeRoot: ctx.activeWorkspacePath ?? null,
         })
       }
+      // Browser Finder drops have no absolute path — materialize into OS temp for PTY paste.
+      if (paths.length === 0 && files.length > 0 && zone === "terminal") {
+        paths = await materializeDroppedFilesToTemp(files)
+      }
 
       if (paths.length > 0) {
-        // Prefer the terminal panel under the cursor for PTY id lookup.
         const terminalEl =
           zone === "terminal"
             ? (pointEl?.closest("[data-gharargah-terminal-panel]") ??
               document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-gharargah-terminal-panel]") ??
               target)
             : target
-        await handleDroppedPaths(paths, zone, terminalEl instanceof Element ? terminalEl : target, dropContext())
+        await handleDroppedPaths(
+          paths,
+          zone,
+          terminalEl instanceof Element ? terminalEl : target,
+          dropContext(),
+        )
         return
       }
 
@@ -112,9 +128,7 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
 
       const ctx = getOpts()
       if (zone === "terminal") {
-        ctx.setMessage(
-          "Could not resolve file path for terminal. Drop a file from an open project, or paste its path.",
-        )
+        ctx.setMessage("Terminal file drop failed. Try again, or paste the path.")
         return
       }
 

@@ -120,6 +120,44 @@ test.describe("file drag and drop", () => {
     }
   })
 
+  test("pathless Finder-style drop materializes via writeTempDrop into terminal", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+      const needle = "finder-drop-materialize.txt"
+      const ok = await page.evaluate(async name => {
+        const el = document.querySelector(
+          "[data-gharargah-terminal-panel] .gharargah-terminal-surface, [data-gharargah-terminal-panel] .xterm",
+        )
+        if (!el) return false
+        const rect = el.getBoundingClientRect()
+        const file = new File(["materialize-body\n"], name, { type: "text/plain" })
+        const dt = new DataTransfer()
+        dt.items.add(file)
+        const opts: DragEventInit = {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+          dataTransfer: dt,
+        }
+        el.dispatchEvent(new DragEvent("dragenter", opts))
+        el.dispatchEvent(new DragEvent("dragover", opts))
+        el.dispatchEvent(new DragEvent("drop", opts))
+        return true
+      }, needle)
+      expect(ok).toBe(true)
+      await expect
+        .poll(async () => readTerminalText(page), { timeout: 15_000 })
+        .toContain(needle)
+      const text = await readTerminalText(page)
+      expect(text).toMatch(/gharargah-drops/)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("drops a workspace file onto the editor and opens it", async () => {
     const { app, page } = await launchJet()
     try {

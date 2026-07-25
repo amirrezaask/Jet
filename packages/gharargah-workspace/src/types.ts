@@ -59,6 +59,8 @@ export interface FileSystemProvider {
 export type JetElectronFS = FileSystemProvider & {
   showOpenFolderDialog(): Promise<string | null>
   showSaveFileDialog(defaultPath?: string): Promise<string | null>
+  /** Persist a browser File blob under OS temp; returns absolute path for PTY paste. */
+  writeTempDrop?(name: string, contentBase64: string): Promise<string>
   watchWorkspace?(rootUri: string): Promise<void>
   onFileChanged?(callback: (uri: string) => void): () => void
 }

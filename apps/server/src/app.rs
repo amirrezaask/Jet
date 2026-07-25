@@ -180,7 +180,12 @@ fn validate_rpc_paths(config: &Config, channel: &str, args: &[Value]) -> Result<
     }
     let path_value = match channel.split(':').next().unwrap_or_default() {
         "fs" | "git" | "search" | "workspace" | "lsp" | "terminal" => {
-            args.first().and_then(Value::as_str)
+            // writeTempDrop's first arg is a basename, not a workspace path.
+            if channel == "fs:writeTempDrop" {
+                None
+            } else {
+                args.first().and_then(Value::as_str)
+            }
         }
         _ => None,
     };
