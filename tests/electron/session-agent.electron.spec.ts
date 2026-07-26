@@ -5,65 +5,11 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 /** Agent chat is enabled by default; 0 builds the recovery-only terminal surface. */
 const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
-
-test.describe("project session CLIs", () => {
-  test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
-
-  test("CLI Cursor stays in terminal without Agent tab", async () => {
-    const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
-    try {
-      const launcher = page.getByRole("button", { name: "New session" }).first()
-      await launcher.click()
-      await page.locator('[data-gharargah-cli-shortcut="cursor"]').click()
-
-      const modal = page.locator("[data-gharargah-terminal-modal]")
-      await expectLocatorVisible(modal)
-      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("terminal")
-      await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 4)
-      await expectLocatorCount(modal.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
-
-      for (const mode of ["terminal", "editor", "git", "todos"] as const) {
-        await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()
-        await expectSelectorVisible(
-          page,
-          `[data-gharargah-session-mode-tab="${mode}"][data-active]`,
-        )
-      }
-    } finally {
-      await app.close()
-    }
-  })
-  test("CLI Codex / Claude / OpenCode stay in their provider-neutral terminal flow", async () => {
-    const { app, page } = await launchJet()
-    try {
-      const launcher = page.getByRole("button", { name: "New session" }).first()
-      for (const { id, command } of [
-        { id: "codex", command: "codex" },
-        { id: "claude", command: "claude" },
-        { id: "opencode", command: "opencode" },
-      ] as const) {
-        await launcher.click()
-        await page.locator(`[data-gharargah-cli-shortcut="${id}"]`).click()
-        const modal = page.locator("[data-gharargah-terminal-modal]")
-        await expectLocatorVisible(modal)
-        await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("terminal")
-        await expectLocatorCount(modal.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
-        await expect
-          .poll(() => page.locator("[data-gharargah-terminal-launch-command]").textContent())
-          .toBe(command)
-        await page.locator("[data-gharargah-terminal-modal-close]").click()
-        await expectLocatorCount(modal, 0)
-      }
-    } finally {
-      await app.close()
-    }
-  })
-})
 
 test.describe("project session agent chat", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
@@ -72,7 +18,7 @@ test.describe("project session agent chat", () => {
     "disabled in GHARARGAH_ENABLE_AGENT_CHAT=0 recovery builds",
   )
 
-  test("Cursor opens the unified agent tab; CLI agents stay in terminal", async () => {
+  test("New session opens agent chat; providers bind via model picker", async () => {
     const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
     try {
       const catalog = await page.evaluate(() => window.gharargah!.agents!.listAgents())
@@ -143,89 +89,30 @@ test.describe("project session agent chat", () => {
         )
       }
 
-      // CLI Cursor → terminal only, launches cursor-agent, no Agent tab.
-      const launcher = page.getByRole("button", { name: "New session" }).first()
-      await launcher.click()
-      await page.locator('[data-gharargah-cli-shortcut="cursor"]').click()
-
       const modal = page.locator("[data-gharargah-terminal-modal]")
-      await expectLocatorVisible(modal)
-      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("terminal")
-      await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 4)
-      await expectLocatorCount(modal.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
-      await expectLocatorCount(modal, 0)
 
-      // Codex Agent → shared agent tab + native app-server driver.
-      await launcher.click()
-      await page.locator('[data-gharargah-agent-shortcut="codex"]').click()
+      for (const provider of ["codex", "claude", "opencode"] as const) {
+        await openNewAgentSession(page, provider)
+        await expectLocatorVisible(modal)
+        await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
+        await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
+        await expectLocatorContainsText(modal, provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "OpenCode")
 
-      await expectLocatorVisible(modal)
-      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
-      await expectLocatorContainsText(modal, "Codex")
+        const binding = await page.evaluate(async providerId => {
+          const raw = localStorage.getItem("gharargah-session-roster-v2")
+          if (!raw) return null
+          const roster = JSON.parse(raw) as {
+            sessions: Array<{ agentId?: string; agentDriverId?: string }>
+          }
+          return roster.sessions.find(item => item.agentId === providerId) ?? null
+        }, provider)
+        expect(binding).toBeNull()
 
-      const codexBinding = await page.evaluate(async () => {
-        const raw = localStorage.getItem("gharargah-session-roster-v2")
-        if (!raw) return null
-        const roster = JSON.parse(raw) as {
-          sessions: Array<{ agentId?: string; agentDriverId?: string }>
-        }
-        return roster.sessions.find(item => item.agentId === "codex") ?? null
-      })
-      expect(codexBinding).toBeNull()
+        await page.locator("[data-gharargah-terminal-modal-close]").click()
+        await expectLocatorCount(modal, 0)
+      }
 
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
-      await expectLocatorCount(modal, 0)
-
-      // Claude Agent → shared agent tab + native Claude SDK driver.
-      await launcher.click()
-      await page.locator('[data-gharargah-agent-shortcut="claude"]').click()
-
-      await expectLocatorVisible(modal)
-      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
-      await expectLocatorContainsText(modal, "Claude")
-
-      const claudeBinding = await page.evaluate(async () => {
-        const raw = localStorage.getItem("gharargah-session-roster-v2")
-        if (!raw) return null
-        const roster = JSON.parse(raw) as {
-          sessions: Array<{ agentId?: string; agentDriverId?: string }>
-        }
-        return roster.sessions.find(item => item.agentId === "claude") ?? null
-      })
-      expect(claudeBinding).toBeNull()
-
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
-      await expectLocatorCount(modal, 0)
-
-      // OpenCode Agent → shared agent tab + ACP driver.
-      await launcher.click()
-      await page.locator('[data-gharargah-agent-shortcut="opencode"]').click()
-
-      await expectLocatorVisible(modal)
-      await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
-      await expectLocatorContainsText(modal, "OpenCode")
-
-      const opencodeBinding = await page.evaluate(async () => {
-        const raw = localStorage.getItem("gharargah-session-roster-v2")
-        if (!raw) return null
-        const roster = JSON.parse(raw) as {
-          sessions: Array<{ agentId?: string; agentDriverId?: string }>
-        }
-        return roster.sessions.find(item => item.agentId === "opencode") ?? null
-      })
-      expect(opencodeBinding).toBeNull()
-
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
-      await expectLocatorCount(modal, 0)
-
-      // Cursor → agent tab + ACP driver.
-      await launcher.click()
-      await page.locator('[data-gharargah-agent-shortcut="cursor"]').click()
-
+      await openNewAgentSession(page, "cursor")
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
       await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 5)
@@ -289,10 +176,8 @@ test.describe("project session agent chat", () => {
           { timeout: 30_000 },
         )
         .toContain("Mock agent reply: Confirm the session driver")
-      // Host-side ACP completion is authoritative; UI virtualization can lag.
       await expectLocatorContainsText(modal, "Confirm the session driver")
 
-      // Provider, model, mode, reasoning, speed, and access share one composer surface.
       const footer = modal.locator("[data-chat-composer-footer]")
       await expectLocatorCount(footer.locator("[data-agent-interaction-mode]"), 0)
       await expectLocatorCount(footer.locator("[data-agent-runtime-mode]"), 0)
@@ -302,8 +187,6 @@ test.describe("project session agent chat", () => {
       await expectLocatorVisible(setupPicker)
       await expectLocatorContainsText(setupPicker, "Cursor settings")
       await expectLocatorVisible(setupPicker.locator('[data-agent-setting-group="access"]'))
-      // The generic echo ACP scenario does not advertise provider modes.
-      // Unsupported provider controls must stay hidden.
       await expectLocatorCount(setupPicker.locator('[data-agent-setting-group="mode"]'), 0)
       await expectLocatorCount(modal.locator("select[data-agent-runtime-mode]"), 0)
       await expectLocatorCount(modal.locator("select[data-agent-interaction-mode]"), 0)
@@ -327,7 +210,6 @@ test.describe("project session agent chat", () => {
         await expectLocatorCount(modal.locator(`[data-gharargah-session-pane="${mode}"][data-active]`), 1)
       }
 
-      // Reopen agent card from home → agent tab (not terminal).
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(modal, 0)
       const agentCard = page

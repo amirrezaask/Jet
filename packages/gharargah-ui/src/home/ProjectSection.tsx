@@ -1,6 +1,5 @@
 import type { PanelId } from "@gharargah/shared"
 import { Trash2 } from "lucide-react"
-import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -8,7 +7,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu.js"
 import { EmptySessionCard } from "./EmptySessionCard.js"
-import { NewSessionMenu } from "./NewSessionMenu.js"
+import { NewSessionButton } from "./NewSessionButton.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
 import { SessionCard } from "./SessionCard.js"
 import type { SessionCardModel } from "./session-card-model.js"
@@ -36,8 +35,7 @@ export type HomeProjectSectionProps = {
   terminals: HomeTerminalEntry[]
   sessions: SessionCardModel[]
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
-  onNewTerminal: (rootUri: string) => void
-  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
+  onNewSession: (rootUri: string) => void
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
@@ -54,8 +52,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     terminals,
     sessions,
     onOpenTerminal,
-    onNewTerminal,
-    onLaunchAgentTerminal,
+    onNewSession,
     onOpenInApp,
     onRemoveProject,
     onKillTerminal,
@@ -85,11 +82,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
       {onOpenInApp ? (
         <OpenInAppMenu rootUri={rootUri} onOpenInApp={onOpenInApp} />
       ) : null}
-      <NewSessionMenu
-        rootUri={rootUri}
-        onNewTerminal={onNewTerminal}
-        onLaunchAgentTerminal={onLaunchAgentTerminal}
-      />
+      <NewSessionButton rootUri={rootUri} onNewSession={onNewSession} />
     </div>
   )
 
@@ -124,11 +117,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {sessions.length === 0 ? (
-          <EmptySessionCard
-            rootUri={rootUri}
-            onNewTerminal={onNewTerminal}
-            onLaunchAgentTerminal={onLaunchAgentTerminal}
-          />
+          <EmptySessionCard rootUri={rootUri} onNewSession={onNewSession} />
         ) : (
           sessions.map(session => {
             const term = terminals.find(t => t.tabId === session.id)

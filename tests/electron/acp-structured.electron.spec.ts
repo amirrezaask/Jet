@@ -4,21 +4,14 @@ import {
   expectLocatorCount,
   expectLocatorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
 
 const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
 
 async function openCursorAcpSession(
   page: Awaited<ReturnType<typeof launchJet>>["page"],
 ) {
-  await page.evaluate(() => window.gharargah!.agents!.listAgents())
-  await page.getByRole("button", { name: "New session" }).first().click()
-  await page.locator('[data-gharargah-agent-shortcut="cursor"]').click()
-  const modal = page.locator("[data-gharargah-terminal-modal]")
-  await expectLocatorVisible(modal)
-  await expect
-    .poll(() => modal.getAttribute("data-gharargah-session-mode"))
-    .toBe("agent")
+  const modal = await openNewAgentSession(page, "cursor")
   const composer = modal.locator('[data-testid="composer-editor"]')
   await expectLocatorVisible(composer, { timeout: 20_000 })
   await expectLocatorVisible(modal.locator("[data-composer-attach-image]"))

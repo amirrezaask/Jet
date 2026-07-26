@@ -5,7 +5,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { hasPtySpawn, launchJet, showTerminal } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession, showTerminal } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -143,20 +143,14 @@ test.describe("electron appearance and terminal-first UX", () => {
     }
   })
 
-  test("shows CLI launch menu from home New session", async () => {
+  test("New session opens agent chat without a launcher menu", async () => {
     const { app, page } = await launchJet()
     try {
       const launcher = page.getByRole("button", { name: "New session" }).first()
       await expectLocatorVisible(launcher)
-      await launcher.click()
-
-      await expectLocatorVisible(page.getByRole("menuitem", { name: /Blank session/ }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: /Codex/ }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: /Claude/ }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: /OpenCode/ }))
-      await expectLocatorVisible(page.getByRole("menuitem", { name: /Cursor/ }))
-      await expectLocatorCount(page.getByRole("menuitem", { name: /Cursor \(ACP\)/ }), 0)
-      await expectLocatorCount(page.getByRole("menuitem", { name: /Grok \(ACP\)/ }), 0)
+      const modal = await openNewAgentSession(page)
+      await expectLocatorVisible(modal)
+      await expectLocatorCount(page.locator('[data-slot="dropdown-menu-content"]'), 0)
     } finally {
       await app.close()
     }

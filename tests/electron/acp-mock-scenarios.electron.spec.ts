@@ -9,7 +9,7 @@ import {
   expectLocatorCount,
   expectLocatorVisible,
 } from "../shell/assert.js";
-import { hasPtySpawn, launchJet } from "./_launch.js";
+import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -49,14 +49,7 @@ const ALL_SCENARIOS = [
 async function openCursorAcpSession(
   page: Awaited<ReturnType<typeof launchJet>>["page"],
 ) {
-  await page.evaluate(() => window.gharargah!.agents!.listAgents());
-  await page.getByRole("button", { name: "New session" }).first().click();
-  await page.locator('[data-gharargah-agent-shortcut="cursor"]').click();
-  const modal = page.locator("[data-gharargah-terminal-modal]");
-  await expectLocatorVisible(modal);
-  await expect
-    .poll(() => modal.getAttribute("data-gharargah-session-mode"))
-    .toBe("agent");
+  const modal = await openNewAgentSession(page, "cursor");
   const composer = modal.locator('[data-testid="composer-editor"]');
   await expectLocatorVisible(composer, { timeout: 20_000 });
   return { modal, composer };

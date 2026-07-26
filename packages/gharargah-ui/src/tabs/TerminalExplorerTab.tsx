@@ -7,17 +7,12 @@ import {
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../components/ui/context-menu.js"
 import { Button } from "../components/ui/button.js"
 import { Input } from "../components/ui/input.js"
 import { Lister, type ListerDataSource, type ListerNode } from "../lister/index.js"
-import { CursorIcon } from "../agents/composer/Icons.js"
 import { PanelEmpty } from "../components/PanelEmpty.js"
-import { NewSessionMenu, visibleSessionShortcuts } from "../home/NewSessionMenu.js"
 
 export type TerminalExplorerEntry = {
   tabId: string
@@ -58,7 +53,6 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
   onActivateProject: (rootUri: string) => void
   onFocusTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
-  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   onCloseTerminal: (panelId: PanelId, tabId: string) => void
   onRenameTerminal: (tabId: string, label: string) => void
   onDuplicateTerminal: (tabId: string) => void
@@ -73,7 +67,6 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
     onActivateProject,
     onFocusTerminal,
     onNewTerminal,
-    onLaunchAgentTerminal,
     onCloseTerminal,
     onRenameTerminal,
     onDuplicateTerminal,
@@ -164,26 +157,21 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
           if (node.data.kind === "group" && node.data.group.rootUri.length > 0) {
             const rootUri = node.data.group.rootUri
             return (
-              <NewSessionMenu
-                rootUri={rootUri}
-                onNewTerminal={onNewTerminal}
-                onLaunchAgentTerminal={onLaunchAgentTerminal}
-                align="start"
-                trigger={
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    data-gharargah-new-session
-                    title="New session"
-                    aria-label="New session"
-                    className="size-6 opacity-70 group-hover/tree-row:opacity-100"
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <Plus className="size-3" />
-                  </Button>
-                }
-              />
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                data-gharargah-new-session
+                title="New session"
+                aria-label="New session"
+                className="size-6 opacity-70 group-hover/tree-row:opacity-100"
+                onClick={e => {
+                  e.stopPropagation()
+                  onNewTerminal(rootUri)
+                }}
+              >
+                <Plus className="size-3" />
+              </Button>
             )
           }
           if (node.data.kind === "terminal") {
@@ -223,30 +211,6 @@ export const TerminalExplorerTab = memo(function TerminalExplorerTab(props: {
                       <Plus className="size-4" />
                       New Terminal
                     </ContextMenuItem>
-                    <ContextMenuSub>
-                      <ContextMenuSubTrigger>
-                        <CursorIcon className="mr-2 size-4" />
-                        Launch CLI
-                      </ContextMenuSubTrigger>
-                      <ContextMenuSubContent>
-                        {visibleSessionShortcuts().map(shortcut => (
-                          <ContextMenuItem
-                            key={`${shortcut.id}:${shortcut.driverId ?? shortcut.command ?? shortcut.label}`}
-                            onSelect={() => onLaunchAgentTerminal(group.rootUri, shortcut)}
-                          >
-                            <shortcut.Icon className="size-4" />
-                            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                              <span>{shortcut.label}</span>
-                              {shortcut.command ? (
-                                <span className="font-mono text-3xs text-muted-foreground">
-                                  {shortcut.command}
-                                </span>
-                              ) : null}
-                            </span>
-                          </ContextMenuItem>
-                        ))}
-                      </ContextMenuSubContent>
-                    </ContextMenuSub>
                     <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(group.path)}>
                       <Copy className="size-4" />
                       Copy Project Path

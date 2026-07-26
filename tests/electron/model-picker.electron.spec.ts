@@ -3,7 +3,7 @@ import {
   expectLocatorCount,
   expectLocatorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
@@ -48,15 +48,7 @@ test.describe("composer model picker", () => {
         }
       })
 
-      const launcher = page.getByRole("button", { name: "New session" }).first()
-      await launcher.click()
-      await page.locator('[data-gharargah-agent-shortcut="codex"]').click()
-
-      const modal = page.locator("[data-gharargah-terminal-modal]")
-      await expectLocatorVisible(modal)
-      await expect
-        .poll(() => modal.getAttribute("data-gharargah-session-mode"))
-        .toBe("agent")
+      const modal = await openNewAgentSession(page, "codex")
 
       const modelPicker = modal.locator('[data-chat-provider-model-picker="true"]')
       await expectLocatorVisible(modelPicker)

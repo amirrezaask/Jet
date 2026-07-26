@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button.js"
 import { Input } from "@/components/ui/input.js"
 import { Kbd } from "@/components/ui/kbd.js"
 import { formatHomeDate, timeOfDayGreeting } from "./greeting.js"
-import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
 import type { OpenInAppId } from "./OpenInAppMenu.js"
 import { ProjectSection, type HomeTerminalEntry } from "./ProjectSection.js"
 import {
@@ -27,8 +26,7 @@ export type HomeProjectGroup = {
 export type GharargahHomeProps = {
   groups: HomeProjectGroup[]
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
-  onNewTerminal: (rootUri: string) => void
-  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
+  onNewSession: (rootUri: string) => void
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   onAddProject?: () => void
   onRemoveProject?: (rootUri: string) => void
@@ -56,8 +54,7 @@ export function GharargahHome(props: GharargahHomeProps) {
   const {
     groups,
     onOpenTerminal,
-    onNewTerminal,
-    onLaunchAgentTerminal,
+    onNewSession,
     onOpenInApp,
     onAddProject,
     onRemoveProject,
@@ -192,8 +189,7 @@ export function GharargahHome(props: GharargahHomeProps) {
                 terminals={group.terminals}
                 sessions={sessions}
                 onOpenTerminal={onOpenTerminal}
-                onNewTerminal={onNewTerminal}
-                onLaunchAgentTerminal={onLaunchAgentTerminal}
+                onNewSession={onNewSession}
                 onOpenInApp={onOpenInApp}
                 onRemoveProject={onRemoveProject}
                 onKillTerminal={onKillTerminal}

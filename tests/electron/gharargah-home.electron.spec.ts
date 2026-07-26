@@ -5,7 +5,7 @@ import {
   expectLocatorContainsText,
   expectLocatorCount,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, execCommand } from "./_launch.js"
+import { hasPtySpawn, launchJet, execCommand, openNewAgentSession } from "./_launch.js"
 import { expectListRows } from "../helpers/list.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -40,20 +40,7 @@ test.describe("gharargah mission home", () => {
       const section = page.locator(sectionSel)
       await expectLocatorVisible(section)
 
-      await section.getByRole("button", { name: "New session" }).click()
-      const sessionMenu = page.locator('[data-slot="dropdown-menu-content"]')
-      await expectLocatorVisible(sessionMenu)
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /Blank session/ }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /Codex/ }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /Claude/ }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /OpenCode/ }))
-      await expectLocatorVisible(sessionMenu.getByRole("menuitem", { name: /Cursor/ }))
-      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /Cursor \(ACP\)/ }), 0)
-      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /Grok \(ACP\)/ }), 0)
-      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /Codex Agent/ }), 0)
-      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /Claude Agent/ }), 0)
-      await expectLocatorCount(sessionMenu.getByRole("menuitem", { name: /OpenCode Agent/ }), 0)
-      await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
+      await openNewAgentSession(page)
       await expect
         .poll(async () => page.evaluate(() => window.__gharargahAgent?.getState()?.shellView ?? null), {
           timeout: 20_000,
@@ -152,10 +139,7 @@ test.describe("gharargah mission home", () => {
       await page.keyboard.press("Escape")
       // Menu may linger in the portal tree; move on via New session.
 
-      await section.getByRole("button", { name: "New session" }).click()
-      const sessionMenu = page.locator('[data-slot="dropdown-menu-content"]')
-      await expectLocatorVisible(sessionMenu)
-      await sessionMenu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
+      await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal-close]")
       await expect
@@ -178,10 +162,13 @@ test.describe("gharargah mission home", () => {
         ))
         .toEqual(["Agent", "Terminal", "Editor", "Git", "TODOs"])
       await expectLocatorCount(page.locator('[data-gharargah-session-mode-tab="agent"]'), 1)
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="todos"]')
+      await expectLocatorCount(page.locator('[data-gharargah-session-pane="agent"][data-active]'), 1)
+      await page.locator('[data-gharargah-session-mode-tab="terminal"]').click()
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
       await expectLocatorCount(page.locator('[data-gharargah-session-pane="terminal"][data-active]'), 1)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expect

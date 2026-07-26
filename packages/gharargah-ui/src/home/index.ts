@@ -33,11 +33,9 @@ export {
   type ModalEditorBuffer,
 } from "./ModalEditorPane.js"
 export {
-  NewSessionMenu,
-  SESSION_AGENT_SHORTCUTS,
-  visibleSessionShortcuts,
-  type NewSessionMenuProps,
-} from "./NewSessionMenu.js"
+  NewSessionButton,
+  type NewSessionButtonProps,
+} from "./NewSessionButton.js"
 export {
   OpenInAppMenu,
   OPEN_IN_APP_TARGETS,

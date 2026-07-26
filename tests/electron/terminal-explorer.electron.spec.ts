@@ -6,7 +6,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { hasPtySpawn, launchJet, showTerminal, execCommand } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession, showTerminal, execCommand } from "./_launch.js"
 import { expectListRows } from "../helpers/list.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -71,7 +71,7 @@ test.describe("electron terminal explorer", () => {
     }
   })
 
-  test("home New session menu launches terminal for project", async () => {
+  test("home New session opens session modal for project", async () => {
     const { app, page } = await launchJet()
     try {
       const workspaceName = await page.evaluate(() => window.__gharargahAgent!.listWorkspaces()[0]?.name ?? "")
@@ -79,11 +79,8 @@ test.describe("electron terminal explorer", () => {
         `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
       )
       await expectLocatorVisible(section)
-      await section.getByRole("button", { name: "New session" }).click()
-      const menu = page.locator('[data-slot="dropdown-menu-content"]')
-      await expectLocatorVisible(menu)
-      await menu.locator('[data-slot="dropdown-menu-item"]', { hasText: "Blank session" }).click()
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      const modal = await openNewAgentSession(page)
+      await expectLocatorVisible(modal)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
     } finally {
       await app.close()

@@ -55,7 +55,6 @@ import {
   bundledThemeList,
   formatKeyBinding,
   WhichKeyPanel,
-  type TerminalAgentShortcut,
   type WhichKeyEntry,
   TooltipProvider,
   ConfirmDialogHost,
@@ -622,22 +621,6 @@ export function GharargahApp() {
 
   openFileInEditorRef.current = openFileInEditor
 
-  const newTerminalFromHome = useCallback(
-    async (rootUri: string) => {
-      try {
-        const { panelId, tabId } = await openTerminalInWorkspace(rootUri)
-        openTerminalModal(panelId, tabId)
-      } catch (err) {
-        console.error("[gharargah] newTerminalFromHome failed", err)
-        showGharargahToast(err instanceof Error ? err.message : String(err), {
-          variant: "destructive",
-        })
-        closeTerminalModal()
-      }
-    },
-    [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
-  )
-
   const newAgentTabFromHome = useCallback(
     async (rootUri: string) => {
       try {
@@ -649,53 +632,6 @@ export function GharargahApp() {
         openTerminalModal(panelId, tabId, "agent")
       } catch (err) {
         console.error("[gharargah] newAgentTabFromHome failed", err)
-        showGharargahToast(err instanceof Error ? err.message : String(err), {
-          variant: "destructive",
-        })
-        closeTerminalModal()
-      }
-    },
-    [
-      openTerminalInWorkspace,
-      draftAgentThreadForTab,
-      openTerminalModal,
-      closeTerminalModal,
-    ],
-  )
-
-  const launchAgentFromHome = useCallback(
-    async (rootUri: string, shortcut: TerminalAgentShortcut) => {
-      try {
-        // CLI rows always have `command` — open a PTY. Do not consult catalog /
-        // defaultAgentDriverId here: those resolve to ACP/SDK drivers and would
-        // misclassify Codex/Claude/OpenCode as in-app agent chat.
-        if (shortcut.command) {
-          const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-            label: shortcut.label,
-            launchCommand: shortcut.command,
-          })
-          openTerminalModal(panelId, tabId, "terminal")
-          return
-        }
-
-        if (!isAgentChatEnabled()) {
-          showGharargahToast(
-            "This recovery build only supports CLI sessions.",
-            {
-            variant: "warning",
-            },
-          )
-          return
-        }
-
-        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-          label: "New agent",
-        })
-        const draft = draftAgentThreadForTab(tabId, shortcut.id)
-        if (draft) setActiveAgentThread(draft)
-        openTerminalModal(panelId, tabId, "agent")
-      } catch (err) {
-        console.error("[gharargah] launchAgentFromHome failed", err)
         showGharargahToast(err instanceof Error ? err.message : String(err), {
           variant: "destructive",
         })
@@ -2381,10 +2317,7 @@ export function GharargahApp() {
                   })),
                 }))}
                 onOpenTerminal={openTerminalFromHome}
-                onNewTerminal={rootUri => void newTerminalFromHome(rootUri)}
-                  onLaunchAgentTerminal={(rootUri, shortcut) =>
-                    void launchAgentFromHome(rootUri, shortcut)
-                  }
+                onNewSession={rootUri => void newAgentTabFromHome(rootUri)}
                   onOpenInApp={(rootUri, appId) =>
                     void openProjectInApp(rootUri, appId)
                   }

@@ -5,7 +5,7 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
 
 const SESSION_ROSTER_STORAGE_KEY = "gharargah-session-roster-v2"
 const ptyAvailable = hasPtySpawn()
@@ -24,12 +24,7 @@ test.describe("session refresh persistence", () => {
       )
       await expectLocatorVisible(section)
 
-      await section.getByRole("button", { name: "New session" }).click()
-      await page
-        .locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
-          hasText: "Blank session",
-        })
-        .click()
+      await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]", { timeout: 20_000 })
 

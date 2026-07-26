@@ -38,7 +38,6 @@ export type GharargahWorkspaceSidebarProps = {
   onActivateProject: (rootUri: string) => void
   onFocusTerminal: (panelId: PanelId, tabId: string) => void
   onNewTerminal: (rootUri: string) => void
-  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
   onCloseTerminal: (panelId: PanelId, tabId: string) => void
   onRenameTerminal: (tabId: string, label: string) => void
   onDuplicateTerminal: (tabId: string) => void
@@ -85,7 +84,6 @@ export function GharargahWorkspaceSidebar({
   onActivateProject,
   onFocusTerminal,
   onNewTerminal,
-  onLaunchAgentTerminal,
   onCloseTerminal,
   onRenameTerminal,
   onDuplicateTerminal,
@@ -162,7 +160,6 @@ export function GharargahWorkspaceSidebar({
             onActivateProject={onActivateProject}
             onFocusTerminal={onFocusTerminal}
             onNewTerminal={onNewTerminal}
-            onLaunchAgentTerminal={onLaunchAgentTerminal}
             onCloseTerminal={onCloseTerminal}
             onRenameTerminal={onRenameTerminal}
             onDuplicateTerminal={onDuplicateTerminal}

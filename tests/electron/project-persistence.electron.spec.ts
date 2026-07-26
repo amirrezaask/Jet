@@ -7,7 +7,7 @@ import {
 } from "../shell/assert.js"
 
 import { resolve } from "node:path"
-import { launchJet, REPO_ROOT } from "./_launch.js"
+import { launchJet, openNewAgentSession, REPO_ROOT } from "./_launch.js"
 
 test.describe("electron project persistence", () => {
   test("restores saved projects on home after reload", async () => {
@@ -25,12 +25,7 @@ test.describe("electron project persistence", () => {
         `[data-gharargah-project-section][data-gharargah-project-name="${secondName}"]`,
       )
       await expectLocatorVisible(section)
-      await section.getByRole("button", { name: "New session" }).click()
-      await page
-        .locator('[data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"]', {
-          hasText: "Blank session",
-        })
-        .click()
+      await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
       await page.keyboard.press("Escape")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)

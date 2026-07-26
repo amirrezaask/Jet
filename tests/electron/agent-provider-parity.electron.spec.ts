@@ -6,7 +6,7 @@ import {
   expectLocatorVisible,
 } from "../shell/assert.js"
 import type { ShellDriver } from "../shell/driver.js"
-import { hasPtySpawn, launchJet } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
 
 const providers = [
   {
@@ -138,12 +138,7 @@ test.describe("unified agent provider UI", () => {
       })
       try {
         const threadsBefore = new Set(await listThreadIds(page))
-        const launcher = page.getByRole("button", { name: "New session" }).first()
-        await launcher.click()
-        await page.locator(`[data-gharargah-agent-shortcut="${provider.id}"]`).click()
-
-        const modal = page.locator("[data-gharargah-terminal-modal]")
-        await expectLocatorVisible(modal)
+        const modal = await openNewAgentSession(page, provider.id)
         await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
         await expectLocatorVisible(modal.locator("[data-chat-header]"))
         await expectLocatorVisible(modal.locator("[data-messages-timeline]"))
@@ -257,11 +252,7 @@ test.describe("unified agent provider UI", () => {
     test(`${provider.label} permission, cancellation, draft, and recovery lifecycle`, async () => {
       const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
       try {
-        const launcher = page.getByRole("button", { name: "New session" }).first()
-        await launcher.click()
-        await page.locator(`[data-gharargah-agent-shortcut="${provider.id}"]`).click()
-        const modal = page.locator("[data-gharargah-terminal-modal]")
-        await expectLocatorVisible(modal)
+        const modal = await openNewAgentSession(page, provider.id)
 
         await sendMessage(
           page,

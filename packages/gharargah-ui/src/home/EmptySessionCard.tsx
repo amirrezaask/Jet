@@ -1,22 +1,18 @@
 import { Plus } from "lucide-react"
-import type { TerminalAgentShortcut } from "../tabs/TerminalExplorerTab.js"
-import { NewSessionMenu } from "./NewSessionMenu.js"
+import { NewSessionButton } from "./NewSessionButton.js"
 
 export type EmptySessionCardProps = {
   rootUri: string
-  onNewTerminal: (rootUri: string) => void
-  onLaunchAgentTerminal: (rootUri: string, shortcut: TerminalAgentShortcut) => void
+  onNewSession: (rootUri: string) => void
 }
 
 export function EmptySessionCard(props: EmptySessionCardProps) {
-  const { rootUri, onNewTerminal, onLaunchAgentTerminal } = props
+  const { rootUri, onNewSession } = props
 
   return (
-    <NewSessionMenu
+    <NewSessionButton
       rootUri={rootUri}
-      onNewTerminal={onNewTerminal}
-      onLaunchAgentTerminal={onLaunchAgentTerminal}
-      align="start"
+      onNewSession={onNewSession}
       trigger={
         <button
           type="button"
@@ -32,7 +28,7 @@ export function EmptySessionCard(props: EmptySessionCardProps) {
             </span>
             <span className="text-xs font-medium text-foreground/90">New session</span>
           </span>
-          <span className="pl-7 text-3xs text-muted-foreground">Terminal or CLI</span>
+          <span className="pl-7 text-3xs text-muted-foreground">Pick a model in chat</span>
         </button>
       }
     />

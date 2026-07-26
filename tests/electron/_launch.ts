@@ -134,3 +134,31 @@ export async function execCommand(page: ShellDriver, commandId: string): Promise
     await window.__gharargahAgent!.executeCommand(cmd)
   }, commandId)
 }
+
+export async function clickNewSession(page: ShellDriver): Promise<void> {
+  await page.getByRole("button", { name: "New session" }).first().click()
+}
+
+export async function openNewAgentSession(
+  page: ShellDriver,
+  providerId?: string,
+): Promise<ReturnType<ShellDriver["locator"]>> {
+  await clickNewSession(page)
+  const modal = page.locator("[data-gharargah-terminal-modal]")
+  await modal.waitFor({ state: "visible", timeout: 20_000 })
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("[data-gharargah-terminal-modal]")
+        ?.getAttribute("data-gharargah-session-mode") === "agent",
+    null,
+    { timeout: 20_000 },
+  )
+  if (providerId) {
+    await modal.locator("[data-chat-provider-model-picker]").click()
+    const picker = page.locator("[data-agent-setup-picker]")
+    await picker.waitFor({ state: "visible" })
+    await picker.locator(`[data-model-picker-provider="${providerId}"]`).click()
+  }
+  return modal
+}
