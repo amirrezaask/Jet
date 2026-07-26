@@ -1,8 +1,18 @@
 import type { ResolveAgentUserInputInput, TimelineEntry, TurnDiffSummary } from "@gharargah/agents"
 import { LegendList, type LegendListRef } from "@legendapp/list/react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { FileText, Image as ImageIcon } from "lucide-react"
+import {
+  Attachment,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "../../components/ui/attachment.js"
 import { cn } from "../../lib/utils.js"
 import { Button } from "../../components/ui/button.js"
+import { Spinner } from "../../components/ui/spinner.js"
 import { AgentMarkdown } from "../AgentMarkdown.js"
 import { AgentPatchView } from "../AgentPatchView.js"
 import { ChangedFilesTree } from "../ChangedFilesTree.js"
@@ -50,6 +60,31 @@ function UserTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "mes
     <div className="group flex flex-col items-end gap-1">
       <div className="relative max-w-[80%] rounded-2xl border border-border bg-secondary p-3">
         <p className="whitespace-pre-wrap text-sm text-foreground">{row.message.text}</p>
+        {row.message.attachments?.length ? (
+          <AttachmentGroup className="mt-2">
+            {row.message.attachments.map((attachment, index) => (
+              <Attachment
+                key={`${attachment.kind}-${attachment.path ?? attachment.name}-${index}`}
+                size="xs"
+                data-message-attachment={attachment.kind}
+              >
+                <AttachmentMedia>
+                  {attachment.kind === "image" ? (
+                    <ImageIcon aria-hidden="true" />
+                  ) : (
+                    <FileText aria-hidden="true" />
+                  )}
+                </AttachmentMedia>
+                <AttachmentContent>
+                  <AttachmentTitle>{attachment.name}</AttachmentTitle>
+                  <AttachmentDescription>
+                    {attachment.kind === "image" ? "Image" : "File"}
+                  </AttachmentDescription>
+                </AttachmentContent>
+              </Attachment>
+            ))}
+          </AttachmentGroup>
+        ) : null}
       </div>
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-[var(--gharargah-motion-menu)] focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
@@ -147,13 +182,14 @@ function AssistantTimelineRow(props: {
 function WorkingTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "working" }> }) {
   return (
     <div className="py-0.5 pl-1.5">
-      <div className="flex items-center gap-2 pt-1 text-3xs text-muted-foreground/70 tabular-nums">
-        <span className="inline-flex items-center gap-[3px]">
-          <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse" />
-          <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:200ms]" />
-          <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:400ms]" />
-        </span>
-        <span>Working...</span>
+      <div
+        className="flex items-center gap-2 pt-1 text-3xs text-muted-foreground/70 tabular-nums"
+        data-chat-activity="true"
+        role="status"
+        title={props.row.label}
+      >
+        <Spinner className="size-3" aria-hidden="true" />
+        <span className="min-w-0 truncate">{props.row.label}</span>
       </div>
     </div>
   )
@@ -262,6 +298,7 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
   timelineEntries: ReadonlyArray<TimelineEntry>
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<string, TurnDiffSummary>
   isWorking: boolean
+  workingLabel: string
   activeTurnStartedAt?: string | null
   theme: "light" | "dark"
   contentInsetEndAdjustment: number
@@ -283,6 +320,7 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
     timelineEntries,
     turnDiffSummaryByAssistantMessageId,
     isWorking,
+    workingLabel,
     activeTurnStartedAt = null,
     theme,
     contentInsetEndAdjustment,
@@ -302,10 +340,17 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
       deriveMessagesTimelineRows({
         timelineEntries,
         isWorking,
+        workingLabel,
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
       }),
-    [timelineEntries, isWorking, activeTurnStartedAt, turnDiffSummaryByAssistantMessageId],
+    [
+      timelineEntries,
+      isWorking,
+      workingLabel,
+      activeTurnStartedAt,
+      turnDiffSummaryByAssistantMessageId,
+    ],
   )
   const rows = useStableRows(rawRows)
 
@@ -345,7 +390,7 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
         className="flex h-full items-center justify-center"
       >
         <p className="text-sm text-muted-foreground/30">
-          Ask Jet to get started.
+          Describe the task you want the agent to handle.
         </p>
       </div>
     )

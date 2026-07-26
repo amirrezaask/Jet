@@ -88,6 +88,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onRequestClose?: () => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  embedded?: boolean;
 }) {
   const {
     keybindings: providedKeybindings,
@@ -104,20 +105,20 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const highlightedModelKeyRef = useRef<string | null>(null);
   const favorites = useClientSettings((s) => s.favorites ?? []);
   const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId | "favorites">(
-    () => {
-      if (props.lockedProvider !== null) {
-        // When locked, prime the sidebar to the currently-active instance
-        // so jumping into the picker keeps the focused instance visible.
-        return props.activeInstanceId;
-      }
-      return favorites.length > 0 ? "favorites" : props.activeInstanceId;
-    },
+    () => props.activeInstanceId,
   );
   const keybindings = useMemo<ResolvedKeybindingsConfig>(
     () => providedKeybindings ?? {},
     [providedKeybindings],
   );
   const updateSettings = useUpdateClientSettings();
+
+  useEffect(() => {
+    // Opening the picker should explain the currently active provider first.
+    // Favorites remain one click away in the rail, but must not hide the
+    // active provider's models merely because an unrelated favorite exists.
+    setSelectedInstanceId(props.activeInstanceId);
+  }, [props.activeInstanceId]);
 
   const focusSearchInput = useCallback(() => {
     searchInputRef.current?.focus({ preventScroll: true });
@@ -521,7 +522,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   return (
     <TooltipProvider delayDuration={0}>
       <div
-        className="relative flex h-screen max-h-96 w-screen max-w-100 flex-row overflow-hidden rounded-lg border bg-popover not-dark:bg-clip-padding text-popover-foreground shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]"
+        className={cn(
+          "relative flex h-screen max-h-96 w-screen max-w-100 flex-row overflow-hidden bg-popover text-popover-foreground",
+          !props.embedded &&
+            "rounded-lg border not-dark:bg-clip-padding shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+        )}
         data-model-picker-content="true"
       >
         {/* Sidebar */}

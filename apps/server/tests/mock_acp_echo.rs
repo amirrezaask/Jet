@@ -54,6 +54,54 @@ async fn mock_acp_echo_streams_the_prompt_response() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mock_acp_continues_a_live_session_without_restore_capabilities() {
+    let supervisor = AcpSupervisor::new();
+    let workspace = std::env::current_dir().expect("cwd");
+    let first = supervisor
+        .run_turn(SupervisorTurnRequest {
+            provider: mock_profile("echo"),
+            workspace_root: workspace.clone(),
+            thread_key: "durable-thread".to_string(),
+            prompt: "first".to_string(),
+            images: vec![],
+            model: None,
+            existing_session_id: None,
+            runtime_mode: None,
+            interaction_mode: None,
+            prefer_resume: false,
+            initial_sequence: 0,
+            on_session: Arc::new(|_| {}),
+            on_text: Arc::new(|_| {}),
+            on_activity: Arc::new(|_| {}),
+            on_event: Arc::new(|_, _| {}),
+        })
+        .await
+        .expect("first turn");
+    let second = supervisor
+        .run_turn(SupervisorTurnRequest {
+            provider: mock_profile("echo"),
+            workspace_root: workspace,
+            thread_key: "durable-thread".to_string(),
+            prompt: "second".to_string(),
+            images: vec![],
+            model: None,
+            existing_session_id: Some(first.session_id.clone()),
+            runtime_mode: None,
+            interaction_mode: None,
+            prefer_resume: false,
+            initial_sequence: 0,
+            on_session: Arc::new(|_| {}),
+            on_text: Arc::new(|_| {}),
+            on_activity: Arc::new(|_| {}),
+            on_event: Arc::new(|_, _| {}),
+        })
+        .await
+        .expect("second turn");
+    assert_eq!(second.session_id, first.session_id);
+    assert!(second.text.contains("Mock agent reply: second"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mock_acp_permission_tool_race_keeps_the_tool_update() {
     let supervisor = Arc::new(AcpSupervisor::new());
     let activity = Arc::new(Mutex::new(Vec::<String>::new()));

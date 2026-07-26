@@ -4,12 +4,16 @@
  * this file verifies the host/UI path still observes each scenario.
  */
 import { expect, test } from "@playwright/test"
-import { expectLocatorVisible } from "../shell/assert.js"
+import {
+  expectLocatorContainsText,
+  expectLocatorCount,
+  expectLocatorVisible,
+} from "../shell/assert.js"
 import { hasPtySpawn, launchJet } from "./_launch.js"
 import fs from "node:fs"
 import path from "node:path"
 
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
 
 const ALL_SCENARIOS = [
   // auth_required first: later user-input scenarios have left wedged Jet/mock
@@ -44,7 +48,7 @@ const ALL_SCENARIOS = [
 async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
   await page.evaluate(() => window.gharargah!.agents!.listAgents())
   await page.getByRole("button", { name: "New session" }).first().click()
-  await page.getByRole("menuitem", { name: /Cursor \(ACP\)/ }).click()
+  await page.locator('[data-gharargah-agent-shortcut="cursor"]').click()
   const modal = page.locator("[data-gharargah-terminal-modal]")
   await expectLocatorVisible(modal)
   await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -143,7 +147,7 @@ test.describe("ACP mock scenario matrix (host path)", () => {
   test.skip(!hasPtySpawn(), "node-pty cannot spawn a shell on this machine")
   test.skip(
     !agentChatE2e,
-    "requires GHARARGAH_ENABLE_AGENT_CHAT=1 (rebuild frontend dist with the same env)",
+    "disabled in GHARARGAH_ENABLE_AGENT_CHAT=0 recovery builds",
   )
 
   for (const scenario of ALL_SCENARIOS) {
@@ -302,6 +306,11 @@ test.describe("ACP mock scenario matrix (host path)", () => {
           await expect
             .poll(async () => (await readActiveThread(page))?.status ?? "", { timeout: 20_000 })
             .toMatch(/running|waiting_for_permission|cancelling/)
+          const activity = modal.locator('[data-chat-activity="true"]')
+          await expectLocatorCount(activity, 1)
+          await expectLocatorVisible(activity)
+          await expectLocatorContainsText(activity, /Working|Agent is running|Thinking/)
+          await expectLocatorCount(modal.locator('[data-timeline-row-kind="working"]'), 1)
           await modal.getByRole("button", { name: "Stop generation" }).click()
           await expect
             .poll(async () => {

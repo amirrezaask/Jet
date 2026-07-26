@@ -24,6 +24,7 @@ pub type UserInputCb = Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + S
 
 pub struct SessionRuntime {
     pub session_id: String,
+    owner_thread_key: Mutex<Option<String>>,
     /// First entry is primary cwd; rest are additionalDirectories.
     pub roots: Mutex<Vec<PathBuf>>,
     /// Last emitted sequence for this session stream (persisted on the thread).
@@ -55,6 +56,7 @@ impl SessionRuntime {
     ) -> Self {
         Self {
             session_id,
+            owner_thread_key: Mutex::new(None),
             roots: Mutex::new(vec![cwd]),
             sequence,
             turn_busy: AtomicBool::new(false),
@@ -72,6 +74,21 @@ impl SessionRuntime {
             thought_stream_id: Mutex::new(None),
             active_plan_id: Mutex::new(None),
             last_update_at_ms: AtomicU64::new(0),
+        }
+    }
+
+    pub fn belongs_to_thread(&self, thread_key: &str) -> bool {
+        self.owner_thread_key
+            .lock()
+            .ok()
+            .and_then(|owner| owner.clone())
+            .as_deref()
+            == Some(thread_key)
+    }
+
+    pub fn set_owner_thread(&self, thread_key: &str) {
+        if let Ok(mut owner) = self.owner_thread_key.lock() {
+            *owner = Some(thread_key.to_string());
         }
     }
 

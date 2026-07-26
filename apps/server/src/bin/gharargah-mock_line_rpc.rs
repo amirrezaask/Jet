@@ -7,13 +7,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut lines = BufReader::new(stdin).lines();
     let mut stdout = tokio::io::stdout();
     let mut held_response: Option<(Value, Value)> = None;
-    let mut pending_codex_turn: Option<(String, String)> = None;
+    let mut pending_codex_turn: Option<(String, String, &'static str)> = None;
+    let mut turn_count = 0_u64;
 
     while let Some(line) = lines.next_line().await? {
         let message: Value = serde_json::from_str(&line)?;
         let Some(method) = message.get("method").and_then(Value::as_str) else {
             if message.get("id").and_then(Value::as_str) == Some("mock-codex-permission") {
-                if let Some((thread_id, turn_id)) = pending_codex_turn.take() {
+                if let Some((thread_id, turn_id, "permission")) = pending_codex_turn.take() {
                     let decision = message
                         .pointer("/result/decision")
                         .and_then(Value::as_str)
@@ -104,11 +105,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "turn/start" => {
                 if let Some(id) = id {
+                    turn_count += 1;
                     let thread_id = params
                         .get("threadId")
                         .and_then(Value::as_str)
                         .unwrap_or("mock-codex-thread");
-                    let turn_id = "mock-codex-turn";
+                    let turn_id = format!("mock-codex-turn-{turn_count}");
                     write_message(
                         &mut stdout,
                         &json!({
@@ -122,16 +124,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }),
                     )
                     .await?;
-                    let requests_permission = params
+                    let prompt = params
                         .get("input")
                         .and_then(Value::as_array)
                         .into_iter()
                         .flatten()
-                        .any(|input| {
-                            input.get("text").and_then(Value::as_str) == Some("request permission")
-                        });
-                    if requests_permission {
-                        pending_codex_turn = Some((thread_id.to_string(), turn_id.to_string()));
+                        .find_map(|input| input.get("text").and_then(Value::as_str))
+                        .unwrap_or("");
+                    if prompt == "request permission" {
+                        pending_codex_turn =
+                            Some((thread_id.to_string(), turn_id.to_string(), "permission"));
                         write_message(
                             &mut stdout,
                             &json!({
@@ -148,6 +150,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await?;
                         continue;
                     }
+                    if prompt == "wait" {
+                        pending_codex_turn =
+                            Some((thread_id.to_string(), turn_id.to_string(), "wait"));
+                        continue;
+                    }
+                    if prompt == "tool" {
+                        write_message(
+                            &mut stdout,
+                            &json!({
+                                "method": "item/started",
+                                "params": {
+                                    "threadId": thread_id,
+                                    "turnId": turn_id,
+                                    "item": {
+                                        "id": "mock-command",
+                                        "type": "commandExecution",
+                                        "command": ["/bin/echo", "hello"],
+                                        "status": "inProgress"
+                                    }
+                                }
+                            }),
+                        )
+                        .await?;
+                        write_message(
+                            &mut stdout,
+                            &json!({
+                                "method": "item/completed",
+                                "params": {
+                                    "threadId": thread_id,
+                                    "turnId": turn_id,
+                                    "item": {
+                                        "id": "mock-command",
+                                        "type": "commandExecution",
+                                        "command": ["/bin/echo", "hello"],
+                                        "status": "completed",
+                                        "aggregatedOutput": "hello"
+                                    }
+                                }
+                            }),
+                        )
+                        .await?;
+                    }
+                    let response_text = if prompt == "process-count" {
+                        format!("process-turn:{turn_count}")
+                    } else {
+                        format!("mock:{prompt}")
+                    };
                     write_message(
                         &mut stdout,
                         &json!({
@@ -156,7 +205,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "threadId": thread_id,
                                 "turnId": turn_id,
                                 "itemId": "mock-message",
-                                "delta": "mock codex reply"
+                                "delta": response_text
+                            }
+                        }),
+                    )
+                    .await?;
+                    write_message(
+                        &mut stdout,
+                        &json!({
+                            "method": "thread/tokenUsage/updated",
+                            "params": {
+                                "threadId": thread_id,
+                                "turnId": turn_id,
+                                "tokenUsage": {
+                                    "last": { "totalTokens": 3 },
+                                    "total": { "totalTokens": turn_count * 3 },
+                                    "modelContextWindow": 200000
+                                }
                             }
                         }),
                     )
@@ -180,6 +245,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "turn/interrupt" => {
                 if let Some(id) = id {
                     write_message(&mut stdout, &json!({ "id": id, "result": {} })).await?;
+                }
+                if let Some((thread_id, turn_id, _)) = pending_codex_turn.take() {
+                    write_message(
+                        &mut stdout,
+                        &json!({
+                            "method": "turn/completed",
+                            "params": {
+                                "threadId": thread_id,
+                                "turn": {
+                                    "id": turn_id,
+                                    "status": "interrupted"
+                                }
+                            }
+                        }),
+                    )
+                    .await?;
                 }
             }
             "echo" => {

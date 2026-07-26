@@ -38,6 +38,9 @@ export type FileDropOptions = {
 /** Install HTML5 OS file-drop listeners. Returns disposer. */
 export function installFileDrop(getOpts: () => FileDropOptions): () => void {
   let dragDepth = 0
+  const isAgentDrop = (target: EventTarget | null) =>
+    target instanceof Element &&
+    Boolean(target.closest("[data-gharargah-agent-drop-zone]"))
 
   const dropContext = (): ProcessDroppedPathsContext => {
     const ctx = getOpts()
@@ -59,6 +62,11 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
 
   const onDragEnter = (e: DragEvent) => {
     if (!e.dataTransfer?.types.includes("Files")) return
+    if (isAgentDrop(e.target)) {
+      dragDepth = 0
+      setDragActive(false)
+      return
+    }
     dragDepth++
     setDragActive(true)
   }
@@ -70,12 +78,14 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
 
   const onDragOver = (e: DragEvent) => {
     if (!e.dataTransfer?.types.includes("Files")) return
+    if (isAgentDrop(e.target)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = "copy"
   }
 
   const onDrop = (e: DragEvent) => {
     if (!e.dataTransfer?.types.includes("Files")) return
+    if (isAgentDrop(e.target)) return
     e.preventDefault()
     e.stopPropagation()
     dragDepth = 0

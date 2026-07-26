@@ -51,7 +51,10 @@ export function PermissionCard(props: {
   const allowAlways = options.find(option => option.kind === "allow_always")
 
   return (
-    <section className="rounded-lg border border-border bg-card p-3">
+    <section
+      className="rounded-lg border border-border bg-card p-3"
+      data-slot="permission-card"
+    >
       <div className="flex items-start gap-2">
         <ShieldAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">

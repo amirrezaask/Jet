@@ -11,7 +11,7 @@ export type TerminalExplorerEntry = {
   status: "starting" | "running" | "exited" | "failed"
   exitCode?: number
   launchCommand?: string
-  agentId?: "codex" | "claude" | "opencode" | "cursor" | "cursor-acp"
+  agentId?: "codex" | "claude" | "opencode" | "cursor"
 }
 
 export type TerminalExplorerGroup = {
@@ -45,9 +45,11 @@ export function buildTerminalExplorerGroups(
   )
 
   for (const { panelId, tabId } of terminals) {
+    const session = terminalSessionForTab(tabId)
+    // Failed / unloadable sessions must not appear as home cards.
+    if (session?.status === "failed") continue
     const cwdRootUri = terminalCwdForTab(tabId) || workspace.root?.uri || ""
     const label = workspace.tabRegistry.get(tabId)?.label ?? "Terminal"
-    const session = terminalSessionForTab(tabId)
     const entry: TerminalExplorerEntry = {
       tabId,
       panelId,

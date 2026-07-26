@@ -11,7 +11,6 @@ export type SessionCardStatus =
 export type SessionProvider =
   | "claude"
   | "cursor"
-  | "cursor-acp"
   | "codex"
   | "opencode"
   | "grok"
@@ -70,8 +69,6 @@ export function providerDisplayLabel(
       return "Claude"
     case "cursor":
       return "Cursor"
-    case "cursor-acp":
-      return "Cursor (ACP)"
     case "codex":
       return "Codex"
     case "opencode":

@@ -594,7 +594,7 @@ export function Lister<T>({
             // sit between the positioned layer and the virtualizer container.
             return (
               <div
-                key={entry.node.id}
+                key={`${v.index}:${entry.node.id}`}
                 data-gharargah-tree-row-slot
                 className="absolute left-0 top-0 w-full"
                 style={{
@@ -621,6 +621,8 @@ export function Lister<T>({
                 role="option"
                 aria-selected={selected}
                 data-gharargah-list-item
+                data-gharargah-list-index={v.index}
+                data-node-id={entry.node.id}
                 data-slot="command-item"
                 data-selected={selected ? "true" : undefined}
                 className={cn(
@@ -653,7 +655,7 @@ export function Lister<T>({
               </div>
             )
           return (
-            <div key={entry.node.id} className="contents">
+            <div key={`${v.index}:${entry.node.id}`} className="contents">
               {wrapRow ? wrapRow(entry.node, flatRow as ReactElement) : flatRow}
             </div>
           )

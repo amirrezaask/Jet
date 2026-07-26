@@ -56,14 +56,20 @@ async fn initializes_opens_resumes_prompts_and_interrupts() {
         })
         .await
         .expect("start turn");
-    assert_eq!(turn.turn.id, "mock-codex-turn");
+    assert_eq!(turn.turn.id, "mock-codex-turn-1");
 
     let delta = tokio::time::timeout(Duration::from_secs(2), notifications.recv())
         .await
         .expect("delta timeout")
         .expect("notification channel closed");
     assert_eq!(delta.method, "item/agentMessage/delta");
-    assert_eq!(delta.params["delta"], "mock codex reply");
+    assert_eq!(delta.params["delta"], "mock:hello");
+
+    let usage = tokio::time::timeout(Duration::from_secs(2), notifications.recv())
+        .await
+        .expect("usage timeout")
+        .expect("notification channel closed");
+    assert_eq!(usage.method, "thread/tokenUsage/updated");
 
     let completed = tokio::time::timeout(Duration::from_secs(2), notifications.recv())
         .await
@@ -148,13 +154,13 @@ async fn session_runtime_collects_streaming_text_and_completion() {
         .expect("run Codex turn");
 
     assert_eq!(result.status, "completed");
-    assert_eq!(result.text, "mock codex reply");
+    assert_eq!(result.text, "mock:hello");
     assert_eq!(
         streamed
             .lock()
             .expect("streamed text lock poisoned")
             .as_str(),
-        "mock codex reply"
+        "mock:hello"
     );
     assert!(!result.cancelled);
     session.stop().await;
@@ -237,7 +243,7 @@ async fn supervisor_reuses_one_session_across_turns() {
     let supervisor = CodexSupervisor::new();
     let provider_thread_ids = Arc::new(Mutex::new(Vec::<String>::new()));
 
-    for prompt in ["first", "second"] {
+    for expected in ["process-turn:1", "process-turn:2"] {
         let provider_thread_ids = provider_thread_ids.clone();
         let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         let result = supervisor
@@ -248,7 +254,7 @@ async fn supervisor_reuses_one_session_across_turns() {
                 workspace_root: workspace.path().to_path_buf(),
                 thread_key: "workspace::product-thread".to_string(),
                 existing_provider_thread_id: None,
-                prompt: prompt.to_string(),
+                prompt: "process-count".to_string(),
                 images: Vec::new(),
                 runtime_mode: RuntimeMode::ApprovalRequired,
                 model: None,
@@ -268,6 +274,7 @@ async fn supervisor_reuses_one_session_across_turns() {
             .await
             .expect("run supervised turn");
         assert_eq!(result.status, "completed");
+        assert_eq!(result.text, expected);
     }
 
     assert_eq!(supervisor.session_count(), 1);
@@ -278,5 +285,71 @@ async fn supervisor_reuses_one_session_across_turns() {
             .as_slice(),
         ["mock-codex-thread", "mock-codex-thread"]
     );
+    supervisor.shutdown();
+}
+
+#[tokio::test]
+async fn interrupted_turn_completes_before_the_session_accepts_recovery_work() {
+    let workspace = tempfile::tempdir().expect("create temporary workspace");
+    let supervisor = Arc::new(CodexSupervisor::new());
+    let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let turn_supervisor = supervisor.clone();
+    let workspace_path = workspace.path().to_path_buf();
+    let turn = tokio::spawn(async move {
+        turn_supervisor
+            .run_turn(CodexSupervisorTurnRequest {
+                executable: executable().into(),
+                extra_args: Vec::new(),
+                env: Vec::new(),
+                workspace_root: workspace_path,
+                thread_key: "workspace::cancel-thread".to_string(),
+                existing_provider_thread_id: None,
+                prompt: "wait".to_string(),
+                images: Vec::new(),
+                runtime_mode: RuntimeMode::ApprovalRequired,
+                model: None,
+                service_tier: None,
+                effort: None,
+                cancel: cancel_rx,
+                on_session: Arc::new(|_| {}),
+                on_text_delta: Arc::new(|_| {}),
+                on_notification: Arc::new(|_| {}),
+                on_interaction: Arc::new(|_| {}),
+            })
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    cancel_tx.send(true).expect("cancel turn");
+    let cancelled = turn
+        .await
+        .expect("turn task panicked")
+        .expect("cancel turn failed");
+    assert!(cancelled.cancelled);
+    assert_eq!(cancelled.status, "interrupted");
+
+    let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let recovered = supervisor
+        .run_turn(CodexSupervisorTurnRequest {
+            executable: executable().into(),
+            extra_args: Vec::new(),
+            env: Vec::new(),
+            workspace_root: workspace.path().to_path_buf(),
+            thread_key: "workspace::cancel-thread".to_string(),
+            existing_provider_thread_id: None,
+            prompt: "recovered".to_string(),
+            images: Vec::new(),
+            runtime_mode: RuntimeMode::ApprovalRequired,
+            model: None,
+            service_tier: None,
+            effort: None,
+            cancel: cancel_rx,
+            on_session: Arc::new(|_| {}),
+            on_text_delta: Arc::new(|_| {}),
+            on_notification: Arc::new(|_| {}),
+            on_interaction: Arc::new(|_| {}),
+        })
+        .await
+        .expect("recovery turn");
+    assert_eq!(recovered.text, "mock:recovered");
     supervisor.shutdown();
 }

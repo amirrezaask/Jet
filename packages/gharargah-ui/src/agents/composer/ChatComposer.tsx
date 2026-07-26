@@ -7,6 +7,7 @@ import type {
 import {
   memo,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -14,12 +15,19 @@ import {
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react"
-import { ImagePlus, X } from "lucide-react"
+import { FileText, Paperclip, X } from "lucide-react"
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "@/components/ui/attachment.js"
 import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
-import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu.js"
 import {
-  ComposerModeControls,
   type ComposerInteractionMode,
   type ComposerRuntimeMode,
 } from "./ComposerModeControls.js"
@@ -28,7 +36,6 @@ import {
   ComposerPromptEditor,
   type ComposerPromptEditorHandle,
 } from "./ComposerPromptEditor.js"
-import { ComposerTraitsPicker } from "./ComposerTraitsPicker.js"
 import { ProviderModelPicker } from "./ProviderModelPicker.js"
 import {
   shouldUseCompactComposerFooter,
@@ -41,12 +48,48 @@ import {
 } from "../providerInstances.js"
 import type { ProviderInstanceId, ProviderDriverKind } from "../t3contracts.js"
 
-const MAX_COMPOSER_IMAGES = 8
+const MAX_COMPOSER_ATTACHMENTS = 8
+const MAX_INLINE_FILE_BYTES = 512 * 1024
 
-type ComposerImageAttachment = { data: string; mimeType: string; previewUrl: string }
+type ComposerImageAttachment = {
+  data: string
+  mimeType: string
+  name: string
+  previewUrl: string
+}
+
+type ComposerFileAttachment = {
+  name: string
+  mimeType: string
+  path?: string
+  data?: string
+  size: number
+}
 
 function commandName(command: AgentAvailableCommand): string {
   return command.name.startsWith("/") ? command.name : `/${command.name}`
+}
+
+function normalizedOptionKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_-]+/g, "")
+}
+
+function isInteractionConfigOption(option: AgentSessionConfigOption): boolean {
+  const key = normalizedOptionKey(`${option.id} ${option.name} ${option.category ?? ""}`)
+  if (!key.includes("mode")) return false
+  const values = option.values?.map(value => normalizedOptionKey(value.value)) ?? []
+  return values.some(value => ["agent", "build", "implement", "plan", "ask"].includes(value))
+}
+
+function configValueForInteraction(
+  option: AgentSessionConfigOption,
+  mode: ComposerInteractionMode,
+): string | null {
+  const aliases =
+    mode === "implement" ? ["implement", "build", "agent", "default", "chat", "code"] : [mode]
+  return (
+    option.values?.find(value => aliases.includes(normalizedOptionKey(value.value)))?.value ?? null
+  )
 }
 
 export const ChatComposer = memo(function ChatComposer(props: {
@@ -69,15 +112,22 @@ export const ChatComposer = memo(function ChatComposer(props: {
     text: string
     instanceId: string
     model: string
-    images?: ReadonlyArray<{ data: string; mimeType: string }>
+    images?: ReadonlyArray<{ data: string; mimeType: string; name?: string }>
+    files?: ReadonlyArray<{
+      name: string
+      mimeType?: string
+      path?: string
+      data?: string
+    }>
   }) => Promise<void>
   onInterrupt?: () => void
-  onProvidersRefresh?: () => void
+  onProvidersRefresh?: (providerId?: string) => void
   lockedProvider?: ProviderDriverKind | null
   lockedContinuationGroupKey?: string | null
   showPlanFollowUpPrompt?: boolean
   onImplementPlan?: () => void
   capabilities?: AgentComposerCapabilities | null
+  droppedFileBatch?: { id: number; files: File[] } | null
 }) {
   const [draft, setDraft] = useState("")
   const [isComposerFocused, setIsComposerFocused] = useState(false)
@@ -85,7 +135,11 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashMenuOpen, setSlashMenuOpen] = useState(false)
   const [images, setImages] = useState<ComposerImageAttachment[]>([])
+  const [files, setFiles] = useState<ComposerFileAttachment[]>([])
+  const [sendError, setSendError] = useState<string | null>(null)
   const promptRef = useRef("")
+  const imagesRef = useRef<ComposerImageAttachment[]>([])
+  const lastDroppedFileBatchIdRef = useRef<number | null>(null)
   const editorRef = useRef<ComposerPromptEditorHandle | null>(null)
   const composerFormRef = useRef<HTMLFormElement | null>(null)
   const composerSurfaceRef = useRef<HTMLDivElement | null>(null)
@@ -110,15 +164,33 @@ export const ChatComposer = memo(function ChatComposer(props: {
     [instanceEntries, props.instanceId, props.model],
   )
 
+  const effectiveConfigOptions = useMemo(() => {
+    const catalogOptions =
+      instanceEntries
+        .find(entry => entry.instanceId === selection.instanceId)
+        ?.models.find(model => model.slug === selection.model)
+        ?.configOptions ?? []
+    const liveById = new Map((props.configOptions ?? []).map(option => [option.id, option]))
+    const merged = catalogOptions.map(option => liveById.get(option.id) ?? option)
+    for (const option of props.configOptions ?? []) {
+      if (!merged.some(candidate => candidate.id === option.id)) merged.push(option)
+    }
+    return merged
+  }, [instanceEntries, props.configOptions, selection.instanceId, selection.model])
+
+  const interactionConfigOption = useMemo(
+    () => effectiveConfigOptions.find(isInteractionConfigOption) ?? null,
+    [effectiveConfigOptions],
+  )
   const nonModelConfigOptions = useMemo(
     () =>
-      (props.configOptions ?? []).filter(
-        option => option.category?.toLowerCase() !== "model" && option.id !== "model",
+      effectiveConfigOptions.filter(
+        option =>
+          option.category?.toLowerCase() !== "model" &&
+          option.id !== "model" &&
+          !isInteractionConfigOption(option),
       ),
-    [props.configOptions],
-  )
-  const hasModeControls = Boolean(
-    props.onRuntimeModeChange || props.onInteractionModeChange || nonModelConfigOptions.length > 0,
+    [effectiveConfigOptions],
   )
   const capabilities = props.capabilities
   const showRuntime = Boolean(props.onRuntimeModeChange) && (capabilities?.showRuntime ?? true)
@@ -127,10 +199,21 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const showAttach = capabilities?.showAttachments ?? true
   const isComposerFooterCompact = shouldUseCompactComposerFooter(footerWidth)
   const isComposerPrimaryActionsCompact = shouldUseCompactComposerPrimaryActions(footerWidth, {
-    hasWideActions: hasModeControls,
+    hasWideActions: false,
   })
   const runtimeMode = props.runtimeMode ?? "approval-required"
   const interactionMode = props.interactionMode ?? "implement"
+  const handleInteractionModeChange = useCallback(
+    (mode: ComposerInteractionMode) => {
+      props.onInteractionModeChange?.(mode)
+      if (!interactionConfigOption || !props.onConfigOptionChange) return
+      const value = configValueForInteraction(interactionConfigOption, mode)
+      if (value) {
+        props.onConfigOptionChange({ configId: interactionConfigOption.id, value })
+      }
+    },
+    [interactionConfigOption, props.onConfigOptionChange, props.onInteractionModeChange],
+  )
 
   const slashQueryActive = draft.startsWith("/") && !draft.includes("\n")
   const filteredCommands = useMemo(() => {
@@ -141,10 +224,12 @@ export const ChatComposer = memo(function ChatComposer(props: {
 
   const showSlashMenu = slashMenuOpen && slashQueryActive && filteredCommands.length > 0
 
-  const hasSendableContent = draft.trim().length > 0 || images.length > 0
+  const attachmentCount = images.length + files.length
+  const hasSendableContent = draft.trim().length > 0 || attachmentCount > 0
   const canSend =
     hasSendableContent &&
     !props.disabled &&
+    !props.isRunning &&
     !props.isSendBusy &&
     Boolean(selection.instanceId && selection.model)
 
@@ -160,6 +245,14 @@ export const ChatComposer = memo(function ChatComposer(props: {
     observer.observe(node)
     return () => observer.disconnect()
   }, [])
+
+  imagesRef.current = images
+  useEffect(
+    () => () => {
+      for (const image of imagesRef.current) URL.revokeObjectURL(image.previewUrl)
+    },
+    [],
+  )
 
   useLayoutEffect(() => {
     if (!slashQueryActive || !props.commands?.length) {
@@ -198,54 +291,156 @@ export const ChatComposer = memo(function ChatComposer(props: {
     async (event?: { preventDefault?: () => void }) => {
       event?.preventDefault?.()
       const text = promptRef.current.trim()
-      if ((!text && images.length === 0) || !canSend) return
-      const outgoingImages = images.map(({ data, mimeType }) => ({ data, mimeType }))
-      await props.onSend({
-        text,
-        instanceId: selection.instanceId,
-        model: selection.model,
-        ...(outgoingImages.length > 0 ? { images: outgoingImages } : {}),
-      })
-      for (const image of images) URL.revokeObjectURL(image.previewUrl)
-      setImages([])
-      promptRef.current = ""
-      setDraft("")
-      editorRef.current?.clear()
+      if ((!text && attachmentCount === 0) || !canSend) return
+      const outgoingImages = images.map(({ data, mimeType, name }) => ({ data, mimeType, name }))
+      const outgoingFiles = files.map(({ name, mimeType, path, data }) => ({
+        name,
+        mimeType,
+        ...(path ? { path } : {}),
+        ...(data ? { data } : {}),
+      }))
+      setSendError(null)
+      try {
+        await props.onSend({
+          text,
+          instanceId: selection.instanceId,
+          model: selection.model,
+          ...(outgoingImages.length > 0 ? { images: outgoingImages } : {}),
+          ...(outgoingFiles.length > 0 ? { files: outgoingFiles } : {}),
+        })
+        for (const image of images) URL.revokeObjectURL(image.previewUrl)
+        setImages([])
+        setFiles([])
+        promptRef.current = ""
+        setDraft("")
+        editorRef.current?.clear()
+      } catch (error) {
+        setSendError(error instanceof Error ? error.message : String(error))
+        editorRef.current?.focus()
+      }
     },
-    [canSend, images, props, selection.instanceId, selection.model],
+    [
+      attachmentCount,
+      canSend,
+      files,
+      images,
+      props,
+      selection.instanceId,
+      selection.model,
+    ],
   )
 
-  const onAttachImages = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? [])
-    event.target.value = ""
-    if (files.length === 0) return
-    const remaining = Math.max(0, MAX_COMPOSER_IMAGES - images.length)
-    const nextFiles = files.slice(0, remaining)
-    const nextImages = await Promise.all(
-      nextFiles.map(
-        file =>
-          new Promise<ComposerImageAttachment>((resolve, reject) => {
+  const attachFiles = useCallback(
+    async (pickedFiles: File[]) => {
+      if (pickedFiles.length === 0) return
+      const remaining = Math.max(0, MAX_COMPOSER_ATTACHMENTS - attachmentCount)
+      const nextFiles = pickedFiles.slice(0, remaining)
+      const nextImages: ComposerImageAttachment[] = []
+      const nextDocuments: ComposerFileAttachment[] = []
+      setSendError(null)
+
+      for (const file of nextFiles) {
+        const path = (file as File & { path?: string }).path
+        const isImage =
+          file.type.startsWith("image/") ||
+          /\.(?:gif|jpe?g|png|webp)$/i.test(file.name)
+        if (isImage) {
+          const result = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader()
-            reader.onload = () => {
-              const result = reader.result
-              if (typeof result !== "string") {
-                reject(new Error("Failed to read image"))
-                return
-              }
-              const comma = result.indexOf(",")
-              resolve({
-                data: comma >= 0 ? result.slice(comma + 1) : result,
-                mimeType: file.type || "application/octet-stream",
-                previewUrl: URL.createObjectURL(file),
-              })
-            }
-            reader.onerror = () => reject(reader.error ?? new Error("Failed to read image"))
+            reader.onload = () =>
+              typeof reader.result === "string"
+                ? resolve(reader.result)
+                : reject(new Error(`Could not read ${file.name}`))
+            reader.onerror = () =>
+              reject(reader.error ?? new Error(`Could not read ${file.name}`))
             reader.readAsDataURL(file)
-          }),
-      ),
-    )
-    setImages(current => [...current, ...nextImages].slice(0, MAX_COMPOSER_IMAGES))
-  }, [images.length])
+          })
+          const comma = result.indexOf(",")
+          nextImages.push({
+            data: comma >= 0 ? result.slice(comma + 1) : result,
+            mimeType: file.type || "image/png",
+            name: file.name || "Image",
+            previewUrl: URL.createObjectURL(file),
+          })
+          continue
+        }
+
+        if (path) {
+          nextDocuments.push({
+            name: file.name || path.split(/[/\\]/).pop() || "File",
+            mimeType: file.type || "application/octet-stream",
+            path,
+            size: file.size,
+          })
+          continue
+        }
+
+        const isInlineText =
+          file.type.startsWith("text/") ||
+          /(?:json|javascript|typescript|xml|yaml|toml|graphql)/i.test(file.type) ||
+          /\.(?:c|cc|cpp|css|go|h|hpp|html|java|js|jsx|json|md|py|rs|sh|sql|svelte|toml|ts|tsx|txt|vue|xml|ya?ml)$/i.test(
+            file.name,
+          )
+        if (!isInlineText) {
+          setSendError(`Attach ${file.name} from its local path; inline binary files aren’t supported`)
+          continue
+        }
+        if (file.size > MAX_INLINE_FILE_BYTES) {
+          setSendError(`${file.name} is larger than the 512 KB inline attachment limit`)
+          continue
+        }
+        const result = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () =>
+            typeof reader.result === "string"
+              ? resolve(reader.result)
+              : reject(new Error(`Could not read ${file.name}`))
+          reader.onerror = () =>
+            reject(reader.error ?? new Error(`Could not read ${file.name}`))
+          reader.readAsDataURL(file)
+        })
+        const comma = result.indexOf(",")
+        nextDocuments.push({
+          name: file.name || "File",
+          mimeType: file.type || "text/plain",
+          data: comma >= 0 ? result.slice(comma + 1) : result,
+          size: file.size,
+        })
+      }
+
+      if (nextImages.length > 0) {
+        setImages(current =>
+          [...current, ...nextImages].slice(0, MAX_COMPOSER_ATTACHMENTS),
+        )
+      }
+      if (nextDocuments.length > 0) {
+        setFiles(current =>
+          [...current, ...nextDocuments].slice(
+            0,
+            Math.max(0, MAX_COMPOSER_ATTACHMENTS - images.length - nextImages.length),
+          ),
+        )
+      }
+      editorRef.current?.focus()
+    },
+    [attachmentCount, images.length],
+  )
+
+  const onAttachFiles = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const pickedFiles = Array.from(event.target.files ?? [])
+      event.target.value = ""
+      await attachFiles(pickedFiles)
+    },
+    [attachFiles],
+  )
+
+  useEffect(() => {
+    const batch = props.droppedFileBatch
+    if (!batch || lastDroppedFileBatchIdRef.current === batch.id) return
+    lastDroppedFileBatchIdRef.current = batch.id
+    void attachFiles(batch.files)
+  }, [attachFiles, props.droppedFileBatch])
 
   const removeImage = useCallback((index: number) => {
     setImages(current => {
@@ -254,6 +449,10 @@ export const ChatComposer = memo(function ChatComposer(props: {
       if (removed) URL.revokeObjectURL(removed.previewUrl)
       return next
     })
+  }, [])
+
+  const removeFile = useCallback((index: number) => {
+    setFiles(current => current.filter((_, candidateIndex) => candidateIndex !== index))
   }, [])
 
   const onComposerCommandKey = useCallback(
@@ -331,31 +530,59 @@ export const ChatComposer = memo(function ChatComposer(props: {
           }}
         >
           <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
-            {images.length > 0 ? (
-              <div className="mb-2 flex flex-wrap gap-2">
+            {attachmentCount > 0 ? (
+              <AttachmentGroup
+                className="mb-2"
+                data-composer-attachments="true"
+                data-composer-attachment-count={attachmentCount}
+              >
                 {images.map((image, index) => (
-                  <div
+                  <Attachment
                     key={`${image.previewUrl}-${index}`}
-                    className="relative overflow-hidden rounded-md border border-border"
+                    size="xs"
+                    data-composer-attachment="image"
                   >
-                    <img
-                      src={image.previewUrl}
-                      alt=""
-                      className="size-14 object-cover"
-                    />
-                    <Button
+                    <AttachmentMedia>
+                      <img src={image.previewUrl} alt="" />
+                    </AttachmentMedia>
+                    <AttachmentContent>
+                      <AttachmentTitle>{image.name}</AttachmentTitle>
+                      <AttachmentDescription>Image</AttachmentDescription>
+                    </AttachmentContent>
+                    <AttachmentAction
                       type="button"
-                      size="icon-xs"
-                      variant="secondary"
-                      className="absolute top-0.5 right-0.5"
-                      aria-label="Remove image"
+                      aria-label={`Remove ${image.name}`}
                       onClick={() => removeImage(index)}
                     >
-                      <X className="size-3" />
-                    </Button>
-                  </div>
+                      <X data-icon="inline-start" />
+                    </AttachmentAction>
+                  </Attachment>
                 ))}
-              </div>
+                {files.map((file, index) => (
+                  <Attachment
+                    key={`${file.path ?? file.name}-${index}`}
+                    size="xs"
+                    data-composer-attachment="file"
+                  >
+                    <AttachmentMedia>
+                      <FileText aria-hidden="true" />
+                    </AttachmentMedia>
+                    <AttachmentContent>
+                      <AttachmentTitle>{file.name}</AttachmentTitle>
+                      <AttachmentDescription>
+                        {file.path ? "Local file" : "Attached text"}
+                      </AttachmentDescription>
+                    </AttachmentContent>
+                    <AttachmentAction
+                      type="button"
+                      aria-label={`Remove ${file.name}`}
+                      onClick={() => removeFile(index)}
+                    >
+                      <X data-icon="inline-start" />
+                    </AttachmentAction>
+                  </Attachment>
+                ))}
+              </AttachmentGroup>
             ) : null}
             <div className="relative" onKeyDownCapture={onSlashMenuKeyDownCapture}>
               {showSlashMenu ? (
@@ -396,11 +623,16 @@ export const ChatComposer = memo(function ChatComposer(props: {
               <ComposerPromptEditor
                 editorRef={editorRef}
                 value={draft}
-                disabled={props.disabled || props.isSendBusy}
-                placeholder="Ask Jet or type / for commands"
+                disabled={props.disabled}
+                placeholder="Message agent or type / for commands"
                 onChange={onPromptChange}
                 onCommandKeyDown={onComposerCommandKey}
               />
+              {sendError ? (
+                <p className="mt-2 text-xs text-destructive" role="alert">
+                  Message wasn&apos;t sent: {sendError}. Your draft is still here.
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -416,25 +648,24 @@ export const ChatComposer = memo(function ChatComposer(props: {
               <input
                 ref={imageInputRef}
                 type="file"
-                accept="image/*"
                 multiple
                 className="sr-only"
-                onChange={event => void onAttachImages(event)}
+                onChange={event => void onAttachFiles(event)}
               />
               <Button
                 type="button"
                 size="xs"
                 variant="ghost"
                 data-composer-attach-image="true"
+                data-composer-attach-file="true"
                 disabled={
                   !showAttach ||
                   props.disabled ||
-                  props.isSendBusy ||
-                  images.length >= MAX_COMPOSER_IMAGES
+                  attachmentCount >= MAX_COMPOSER_ATTACHMENTS
                 }
                 onClick={() => imageInputRef.current?.click()}
               >
-                <ImagePlus className="size-3.5" />
+                <Paperclip data-icon="inline-start" />
                 Attach
               </Button>
               <ProviderModelPicker
@@ -448,45 +679,22 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 open={isModelPickerOpen}
                 onOpenChange={open => {
                   setIsModelPickerOpen(open)
-                  if (open) props.onProvidersRefresh?.()
+                  if (open) props.onProvidersRefresh?.(selection.instanceId)
                 }}
-                disabled={props.disabled || props.isSendBusy}
+                disabled={props.disabled}
                 onInstanceModelChange={(instanceId, model) =>
                   props.onInstanceModelChange(instanceId, model)
                 }
+                runtimeMode={runtimeMode}
+                interactionMode={interactionMode}
+                availableInteractionModes={props.availableInteractionModes}
+                configOptions={nonModelConfigOptions}
+                showRuntime={showRuntime}
+                showInteraction={showInteraction}
+                onRuntimeModeChange={props.onRuntimeModeChange}
+                onInteractionModeChange={handleInteractionModeChange}
+                onConfigOptionChange={props.onConfigOptionChange}
               />
-              {isComposerFooterCompact ? (
-                <CompactComposerControlsMenu
-                  runtimeMode={runtimeMode}
-                  interactionMode={interactionMode}
-                  availableInteractionModes={props.availableInteractionModes}
-                  configOptions={nonModelConfigOptions}
-                  disabled={false}
-                  showRuntime={showRuntime}
-                  showInteraction={showInteraction}
-                  onRuntimeModeChange={props.onRuntimeModeChange}
-                  onInteractionModeChange={props.onInteractionModeChange}
-                  onConfigOptionChange={props.onConfigOptionChange}
-                />
-              ) : (
-                <>
-                  <ComposerTraitsPicker
-                    options={nonModelConfigOptions}
-                    disabled={!props.onConfigOptionChange}
-                    onConfigOptionChange={props.onConfigOptionChange}
-                  />
-                  <ComposerModeControls
-                    runtimeMode={runtimeMode}
-                    interactionMode={interactionMode}
-                    availableInteractionModes={props.availableInteractionModes}
-                    disabled={false}
-                    showRuntime={showRuntime}
-                    showInteraction={showInteraction}
-                    onRuntimeModeChange={props.onRuntimeModeChange}
-                    onInteractionModeChange={props.onInteractionModeChange}
-                  />
-                </>
-              )}
             </div>
 
             <div

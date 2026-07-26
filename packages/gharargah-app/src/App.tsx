@@ -38,9 +38,12 @@ import {
 } from "@gharargah/workspace"
 import type { EditorView } from "@codemirror/view"
 import {
+  applyAgentStructuredDelta,
+  applyAgentThreadDelta,
   defaultAgentDriverId,
   isAgentChatEnabled,
   isAgentInterfaceDriverId,
+  mergeAgentThreadSnapshot,
   type AgentCatalogState,
   type AgentThread,
 } from "@gharargah/agents"
@@ -230,6 +233,9 @@ export function GharargahApp() {
   const [agentCatalog, setAgentCatalog] = useState<AgentCatalogState | null>(null)
   const [activeAgentThread, setActiveAgentThread] = useState<AgentThread | null>(null)
   const [agentLoading, setAgentLoading] = useState(false)
+  const agentThreadRequestByTabRef = useRef(
+    new Map<string, Promise<AgentThread | null>>(),
+  )
   const [editorFocus, setEditorFocus] = useState(false)
   const [searchSupported, setSearchSupported] = useState(false)
   const [searchScanReady, setSearchScanReady] = useState(false)
@@ -516,7 +522,7 @@ export function GharargahApp() {
         }
 
         if (!isAgentChatEnabled()) {
-          showGharargahToast("In-app agent chat is temporarily disabled. Launch a CLI session instead.", {
+          showGharargahToast("This recovery build only supports CLI sessions.", {
             variant: "warning",
           })
           return
@@ -526,7 +532,7 @@ export function GharargahApp() {
           shortcut.driverId ??
           agentCatalog?.agents.find(agent => agent.id === shortcut.id)?.activeDriverId ??
           defaultAgentDriverId(shortcut.id)
-        if (!isAgentInterfaceDriverId(driverId) && shortcut.id !== "cursor-acp") {
+        if (!isAgentInterfaceDriverId(driverId)) {
           showGharargahToast(`No agent driver for ${shortcut.label}`, { variant: "destructive" })
           return
         }
@@ -585,80 +591,92 @@ export function GharargahApp() {
     }
   }, [])
 
-  const loadAgentCatalog = useCallback(async (refresh = false): Promise<AgentCatalogState | null> => {
+  const loadAgentCatalog = useCallback(async (
+    refresh = false,
+    providerId?: string,
+  ): Promise<AgentCatalogState | null> => {
     const agents = window.gharargah?.agents
     if (!agents) return null
-    const catalog = refresh ? await agents.refreshAgents() : await agents.listAgents()
+    const catalog = refresh
+      ? await agents.refreshAgents(providerId)
+      : await agents.listAgents()
     setAgentCatalog(catalog)
     return catalog
   }, [])
 
   const ensureSessionAgentThread = useCallback(
     async (tabId: string): Promise<AgentThread | null> => {
-      const agents = window.gharargah?.agents
-      const session = terminalSessionForTab(tabId)
-      if (!agents || !session) return null
-      const folder = workspace.folders.find(candidate => candidate.root.uri === session.cwdRootUri)
-      const workspaceRootPath = folder?.root.path ?? fileUriToPath(session.cwdRootUri)
+      const pending = agentThreadRequestByTabRef.current.get(tabId)
+      if (pending) return pending
 
-      setAgentLoading(true)
-      try {
-        if (session.agentThreadId) {
-          const existing = await agents.readThread(
-            session.cwdRootUri,
-            workspaceRootPath,
-            session.agentThreadId,
-          )
-          if (existing) {
-            bindAgentToSession(tabId, {
-              agentId: existing.agentId ?? session.agentId ?? "codex",
-              driverId:
-                existing.driverId ??
-                session.agentDriverId ??
-                defaultAgentDriverId(existing.agentId ?? session.agentId ?? "codex"),
-              threadId: existing.id,
-            })
-            // Prefer the in-memory thread when it is the same id and at least as
-            // fresh — avoids clobbering live ACP deltas with a stale read.
-            setActiveAgentThread(current => {
-              if (
-                current?.id === existing.id &&
-                (current.updatedAt ?? "") >= (existing.updatedAt ?? "")
-              ) {
-                return current
-              }
+      const request = (async () => {
+        const agents = window.gharargah?.agents
+        const session = terminalSessionForTab(tabId)
+        if (!agents || !session) return null
+        const folder = workspace.folders.find(candidate => candidate.root.uri === session.cwdRootUri)
+        const workspaceRootPath = folder?.root.path ?? fileUriToPath(session.cwdRootUri)
+
+        setAgentLoading(true)
+        try {
+          if (session.agentThreadId) {
+            const existing = await agents.readThread(
+              session.cwdRootUri,
+              workspaceRootPath,
+              session.agentThreadId,
+            )
+            if (existing) {
+              bindAgentToSession(tabId, {
+                agentId: existing.agentId ?? session.agentId ?? "codex",
+                driverId:
+                  existing.driverId ??
+                  session.agentDriverId ??
+                  defaultAgentDriverId(existing.agentId ?? session.agentId ?? "codex"),
+                threadId: existing.id,
+              })
+              // Prefer the in-memory thread when it is the same id and at least as
+              // fresh — avoids clobbering live ACP deltas with a stale read.
+              setActiveAgentThread(current =>
+                mergeAgentThreadSnapshot(current, existing),
+              )
               return existing
-            })
-            return existing
+            }
           }
-        }
 
-        const catalog = agentCatalog ?? (await loadAgentCatalog())
-        const selectedAgent =
-          catalog?.agents.find(agent => agent.id === session.agentId) ??
-          catalog?.agents.find(agent => agent.enabled) ??
-          catalog?.agents.find(agent => agent.id === "codex") ??
-          catalog?.agents[0]
-        const agentId = selectedAgent?.id ?? session.agentId ?? "codex"
-        const driverId =
-          session.agentDriverId ?? selectedAgent?.activeDriverId ?? defaultAgentDriverId(agentId)
-        const thread = await agents.createThread({
-          workspaceRootUri: session.cwdRootUri,
-          workspaceRootPath,
-          title: `${selectedAgent?.displayName ?? "Agent"} session`,
-          agentId,
-          driverId,
-          model: "auto",
-        })
-        bindAgentToSession(tabId, {
-          agentId: thread.agentId ?? agentId,
-          driverId: thread.driverId ?? driverId,
-          threadId: thread.id,
-        })
-        setActiveAgentThread(thread)
-        return thread
+          const catalog = agentCatalog ?? (await loadAgentCatalog())
+          const selectedAgent =
+            catalog?.agents.find(agent => agent.id === session.agentId) ??
+            catalog?.agents.find(agent => agent.enabled) ??
+            catalog?.agents.find(agent => agent.id === "codex") ??
+            catalog?.agents[0]
+          const agentId = selectedAgent?.id ?? session.agentId ?? "codex"
+          const driverId =
+            session.agentDriverId ?? selectedAgent?.activeDriverId ?? defaultAgentDriverId(agentId)
+          const thread = await agents.createThread({
+            workspaceRootUri: session.cwdRootUri,
+            workspaceRootPath,
+            title: `${selectedAgent?.displayName ?? "Agent"} session`,
+            agentId,
+            driverId,
+            model: "auto",
+          })
+          bindAgentToSession(tabId, {
+            agentId: thread.agentId ?? agentId,
+            driverId: thread.driverId ?? driverId,
+            threadId: thread.id,
+          })
+          setActiveAgentThread(thread)
+          return thread
+        } finally {
+          setAgentLoading(false)
+        }
+      })()
+      agentThreadRequestByTabRef.current.set(tabId, request)
+      try {
+        return await request
       } finally {
-        setAgentLoading(false)
+        if (agentThreadRequestByTabRef.current.get(tabId) === request) {
+          agentThreadRequestByTabRef.current.delete(tabId)
+        }
       }
     },
     [agentCatalog, loadAgentCatalog, workspace],
@@ -694,35 +712,13 @@ export function GharargahApp() {
     const agents = window.gharargah?.agents
     if (!agents || !activeAgentThread) return
     const offUpdated = agents.onThreadUpdated?.(thread => {
-      if (thread.id === activeAgentThread.id) setActiveAgentThread(thread)
+      if (thread.id === activeAgentThread.id) {
+        setActiveAgentThread(current => mergeAgentThreadSnapshot(current, thread))
+      }
     })
     const offDelta = agents.onThreadDelta?.(delta => {
       if (delta.threadId !== activeAgentThread.id) return
-      setActiveAgentThread(current => {
-        if (!current || current.id !== delta.threadId) return current
-        // Deltas may carry message-local streaming flags; do not clobber a
-        // terminal idle/error status with a transient running snapshot.
-        const nextStatus =
-          current.status === "idle" || current.status === "error" || current.status === "cancelled"
-            ? current.status
-            : delta.status
-        return {
-          ...current,
-          updatedAt: delta.updatedAt,
-          status: nextStatus,
-          lastError: delta.lastError,
-          messages: current.messages.map(message =>
-            message.id === delta.messageId
-              ? {
-                  ...message,
-                  text: delta.text,
-                  streaming: delta.streaming,
-                  updatedAt: delta.updatedAt,
-                }
-              : message,
-          ),
-        }
-      })
+      setActiveAgentThread(current => applyAgentThreadDelta(current, delta))
     })
     const offPermission = agents.onPermissionRequest?.(request => {
       if (request.threadId !== activeAgentThread.id) return
@@ -748,32 +744,7 @@ export function GharargahApp() {
               if (thread) setActiveAgentThread(thread)
             })
         }
-        const timeline = [...(current.timeline ?? [])]
-        const replace = (item: NonNullable<typeof current.timeline>[number]) => {
-          const index = timeline.findIndex(candidate => candidate.id === item.id)
-          if (index === -1) timeline.push(item)
-          else timeline[index] = item
-        }
-        for (const item of delta.created ?? []) replace(item)
-        for (const item of delta.updated ?? []) replace(item)
-        return {
-          ...current,
-          timeline,
-          updatedAt: delta.updatedAt,
-          acpSequence: delta.sequence,
-          ...(delta.status ? { status: delta.status } : {}),
-          ...(delta.lastError !== undefined ? { lastError: delta.lastError } : {}),
-          ...(delta.pendingPermissions ? { pendingPermissions: delta.pendingPermissions } : {}),
-          ...(delta.pendingUserInputs ? { pendingUserInputs: delta.pendingUserInputs } : {}),
-          ...(delta.usage !== undefined ? { usage: delta.usage } : {}),
-          ...(delta.plan !== undefined ? { plan: delta.plan } : {}),
-          ...(delta.connection !== undefined ? { connection: delta.connection } : {}),
-          ...(delta.configOptions !== undefined ? { configOptions: delta.configOptions } : {}),
-          ...(delta.discoveredModels !== undefined
-            ? { discoveredModels: delta.discoveredModels }
-            : {}),
-          ...(delta.sessionModes !== undefined ? { sessionModes: delta.sessionModes } : {}),
-        }
+        return applyAgentStructuredDelta(current, delta)
       })
     })
     return () => {
@@ -1718,7 +1689,10 @@ export function GharargahApp() {
       const roster = readSessionRoster()
       if (roster.sessions.length > 0) {
         const tree = cloneTree()
+        // Skip clearly unloadable roster rows (no PTY / already failed) so they
+        // never flash as home cards before the attach probe runs.
         for (const entry of roster.sessions) {
+          if (entry.status === "failed" || !entry.ptyId) continue
           if (findPanelWithTab(tree, entry.tabId)) continue
           const sessionKey = entry.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
             ? entry.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
@@ -1745,9 +1719,39 @@ export function GharargahApp() {
         commitTree(tree)
         setTerminalSessionRevision(revision => revision + 1)
 
+        const deadTabIds = await reconcileHydratedTerminalPtys(window.gharargah?.terminal)
+        let treeAfterPrune = tree
+        if (deadTabIds.length > 0) {
+          const pruneTree = cloneTree()
+          for (const tabId of deadTabIds) {
+            if (terminalModalTabIdRef.current === tabId) {
+              setTerminalModalTabId(null)
+              setTerminalModalPanelId(null)
+            }
+            const ptyId = terminalPtyIdForTab(tabId)
+            if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
+            const owningPanel = findPanelWithTab(pruneTree, tabId)
+            if (owningPanel) {
+              const view = pruneTree.getView(owningPanel)
+              if (view?.kind === "tabs") {
+                tabStore.dispose(tabId)
+                workspace.disposeTab(tabId)
+                pruneTree.setView(owningPanel, popPanelTab(view, tabId))
+                closePanelIfEmpty(pruneTree, owningPanel)
+                continue
+              }
+            }
+            clearTerminalSession(tabId)
+            tabStore.dispose(tabId)
+            workspace.disposeTab(tabId)
+          }
+          commitTree(pruneTree)
+          treeAfterPrune = pruneTree
+        }
+
         if (roster.modal) {
-          const panelId = findPanelWithTab(tree, roster.modal.tabId)
-          if (panelId) {
+          const panelId = findPanelWithTab(treeAfterPrune, roster.modal.tabId)
+          if (panelId && !deadTabIds.includes(roster.modal.tabId)) {
             setTerminalModalPanelId(panelId)
             setTerminalModalTabId(roster.modal.tabId)
             const restoredDriver = roster.sessions.find(
@@ -1764,14 +1768,13 @@ export function GharargahApp() {
           }
         }
 
-        await reconcileHydratedTerminalPtys(window.gharargah?.terminal)
         setTerminalSessionRevision(revision => revision + 1)
       }
 
       sessionRosterReadyRef.current = true
       persistSessionRoster()
     })()
-  }, [layoutReady, workspace, cloneTree, commitTree, persistSessionRoster])
+  }, [layoutReady, workspace, cloneTree, commitTree, persistSessionRoster, tabStore])
 
   useEffect(() => {
     if (
@@ -2069,49 +2072,15 @@ export function GharargahApp() {
                             driverId: payload.driverId,
                             model: payload.model,
                             ...(payload.images?.length ? { images: payload.images } : {}),
+                            ...(payload.files?.length ? { files: payload.files } : {}),
                           })
                           if (!next) return
-                          // sendMessage returns the pre-turn snapshot. Live ACP
-                          // deltas (permissions, timeline, …) may already be on
-                          // current — do not clobber them when the RPC settles.
-                          setActiveAgentThread(current => {
-                            if (!current || current.id !== next.id) return next
-                            const pendingPermissions =
-                              (current.pendingPermissions?.length ?? 0) > 0
-                                ? current.pendingPermissions
-                                : next.pendingPermissions
-                            const pendingUserInputs =
-                              (current.pendingUserInputs?.length ?? 0) > 0
-                                ? current.pendingUserInputs
-                                : next.pendingUserInputs
-                            return {
-                              ...next,
-                              timeline:
-                                (current.timeline?.length ?? 0) > 0
-                                  ? current.timeline
-                                  : next.timeline,
-                              pendingPermissions,
-                              pendingUserInputs,
-                              configOptions: current.configOptions ?? next.configOptions,
-                              discoveredModels: current.discoveredModels ?? next.discoveredModels,
-                              acpSequence: Math.max(
-                                current.acpSequence ?? -1,
-                                next.acpSequence ?? -1,
-                              ),
-                              activity: current.activity ?? next.activity,
-                              connection: current.connection ?? next.connection,
-                              usage: current.usage ?? next.usage,
-                              plan: current.plan ?? next.plan,
-                              availableCommands:
-                                current.availableCommands ?? next.availableCommands,
-                              status:
-                                (pendingPermissions?.length ?? 0) > 0
-                                  ? "waiting_for_permission"
-                                  : current.status === "waiting_for_permission"
-                                    ? current.status
-                                    : next.status,
-                            }
-                          })
+                          // The RPC result is the pre-turn snapshot. A fast provider
+                          // can finish before this promise settles, so merge it with
+                          // the same monotonic reducer used for host events.
+                          setActiveAgentThread(current =>
+                            mergeAgentThreadSnapshot(current, next),
+                          )
                         }}
                         onInterrupt={() => {
                           if (!activeAgentThread) return
@@ -2163,6 +2132,9 @@ export function GharargahApp() {
                                   agentId,
                                   driverId,
                                   model,
+                                  configOptions: [],
+                                  discoveredModels: [],
+                                  sessionModes: null,
                                 }
                               : current,
                           )
@@ -2175,24 +2147,14 @@ export function GharargahApp() {
                             model,
                           })
                         }}
-                        onAgentsRefresh={() => void loadAgentCatalog(true)}
-                        onLoadAcpTrace={async () => {
-                          const agents = window.gharargah?.agents
-                          if (!agents?.getAcpTrace) return null
-                          const providerId =
-                            activeAgentThread?.acpProvider ??
-                            activeAgentThread?.connection?.providerId ??
-                            activeAgentThread?.agentId ??
-                            "cursor-acp"
-                          return agents.getAcpTrace(providerId)
-                        }}
+                        onAgentsRefresh={providerId => void loadAgentCatalog(true, providerId)}
                         onAuthenticate={async methodId => {
                           if (!activeAgentThread) return
                           const providerId =
                             activeAgentThread.acpProvider ??
                             activeAgentThread.connection?.providerId ??
                             activeAgentThread.agentId ??
-                            "cursor-acp"
+                            "cursor"
                           await window.gharargah?.agents?.authenticate?.({
                             providerId,
                             workspaceRootPath: activeAgentThread.workspaceRootPath,
@@ -2206,18 +2168,6 @@ export function GharargahApp() {
                               current ? { ...current, connection: state } : current,
                             )
                           }
-                        }}
-                        onForceStopProvider={async () => {
-                          if (!activeAgentThread) return
-                          const providerId =
-                            activeAgentThread.acpProvider ??
-                            activeAgentThread.connection?.providerId ??
-                            activeAgentThread.agentId ??
-                            "cursor-acp"
-                          await window.gharargah?.agents?.forceStopProvider?.({
-                            providerId,
-                            workspaceRootPath: activeAgentThread.workspaceRootPath,
-                          })
                         }}
                         onRuntimeModeChange={mode => {
                           if (!activeAgentThread) return
@@ -2241,43 +2191,6 @@ export function GharargahApp() {
                             workspaceRootPath: activeAgentThread.workspaceRootPath,
                             threadId: activeAgentThread.id,
                             interactionMode: mode,
-                          })
-                        }}
-                        onListSessions={async () => {
-                          if (!activeAgentThread) return null
-                          const providerId =
-                            activeAgentThread.acpProvider ??
-                            activeAgentThread.connection?.providerId ??
-                            activeAgentThread.agentId ??
-                            "cursor-acp"
-                          return window.gharargah?.agents?.listAcpSessions?.({
-                            providerId,
-                            workspaceRootPath: activeAgentThread.workspaceRootPath,
-                          })
-                        }}
-                        onLogout={async () => {
-                          if (!activeAgentThread) return
-                          const providerId =
-                            activeAgentThread.acpProvider ??
-                            activeAgentThread.connection?.providerId ??
-                            activeAgentThread.agentId ??
-                            "cursor-acp"
-                          await window.gharargah?.agents?.logoutProvider?.({
-                            providerId,
-                            workspaceRootPath: activeAgentThread.workspaceRootPath,
-                          })
-                        }}
-                        onCloseSession={async () => {
-                          if (!activeAgentThread?.acpSessionId) return
-                          const providerId =
-                            activeAgentThread.acpProvider ??
-                            activeAgentThread.connection?.providerId ??
-                            activeAgentThread.agentId ??
-                            "cursor-acp"
-                          await window.gharargah?.agents?.closeAcpSession?.({
-                            providerId,
-                            workspaceRootPath: activeAgentThread.workspaceRootPath,
-                            sessionId: activeAgentThread.acpSessionId,
                           })
                         }}
                       />

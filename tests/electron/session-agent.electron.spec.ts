@@ -8,8 +8,8 @@ import {
 import { hasPtySpawn, launchJet } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
-/** Frontend bake-time flag; rebuild dist with GHARARGAH_ENABLE_AGENT_CHAT=1 to enable. */
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+/** Agent chat is enabled by default; 0 builds the recovery-only terminal surface. */
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
 
 test.describe("project session CLIs", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
@@ -17,12 +17,9 @@ test.describe("project session CLIs", () => {
   test("CLI Cursor stays in terminal without Agent tab", async () => {
     const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
     try {
-      const state = await page.evaluate(() => window.__gharargahAgent!.getState())
-      expect(state.agentChatEnabled).toBe(false)
-
       const launcher = page.getByRole("button", { name: "New session" }).first()
       await launcher.click()
-      await page.getByRole("menuitem", { name: /cursor-agent/ }).click()
+      await page.locator('[data-gharargah-cli-shortcut="cursor"]').click()
 
       const modal = page.locator("[data-gharargah-terminal-modal]")
       await expectLocatorVisible(modal)
@@ -41,17 +38,17 @@ test.describe("project session CLIs", () => {
       await app.close()
     }
   })
-  test("CLI Codex / Claude / OpenCode open terminal when agent chat is off", async () => {
+  test("CLI Codex / Claude / OpenCode stay in their provider-neutral terminal flow", async () => {
     const { app, page } = await launchJet()
     try {
       const launcher = page.getByRole("button", { name: "New session" }).first()
-      for (const { name, command } of [
-        { name: /Codex/, command: "codex" },
-        { name: /Claude/, command: "claude" },
-        { name: /OpenCode/, command: "opencode" },
+      for (const { id, command } of [
+        { id: "codex", command: "codex" },
+        { id: "claude", command: "claude" },
+        { id: "opencode", command: "opencode" },
       ] as const) {
         await launcher.click()
-        await page.getByRole("menuitem", { name }).click()
+        await page.locator(`[data-gharargah-cli-shortcut="${id}"]`).click()
         const modal = page.locator("[data-gharargah-terminal-modal]")
         await expectLocatorVisible(modal)
         await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("terminal")
@@ -72,10 +69,10 @@ test.describe("project session agent chat", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
   test.skip(
     !agentChatE2e,
-    "requires GHARARGAH_ENABLE_AGENT_CHAT=1 (rebuild frontend dist with the same env)",
+    "disabled in GHARARGAH_ENABLE_AGENT_CHAT=0 recovery builds",
   )
 
-  test("Cursor (ACP) opens the agent tab; CLI agents stay in terminal", async () => {
+  test("Cursor opens the unified agent tab; CLI agents stay in terminal", async () => {
     const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
     try {
       const catalog = await page.evaluate(() => window.gharargah!.agents!.listAgents())
@@ -84,17 +81,11 @@ test.describe("project session agent chat", () => {
         "claude",
         "opencode",
         "cursor",
-        "cursor-acp",
         "grok",
       ])
       for (const agent of catalog.agents) {
         expect(agent.enabled).toBe(true)
-        if (agent.id === "cursor-acp") {
-          expect(agent.activeDriverId).toBe("cursor:acp")
-          expect(agent.drivers).toEqual([
-            expect.objectContaining({ id: "cursor:acp", kind: "acp", status: "ready" }),
-          ])
-        } else if (agent.id === "grok") {
+        if (agent.id === "grok") {
           expect(agent.activeDriverId).toBe("grok:acp")
           expect(agent.drivers).toEqual([
             expect.objectContaining({ id: "grok:acp", kind: "acp", status: "ready" }),
@@ -155,7 +146,7 @@ test.describe("project session agent chat", () => {
       // CLI Cursor → terminal only, launches cursor-agent, no Agent tab.
       const launcher = page.getByRole("button", { name: "New session" }).first()
       await launcher.click()
-      await page.getByRole("menuitem", { name: /cursor-agent/ }).click()
+      await page.locator('[data-gharargah-cli-shortcut="cursor"]').click()
 
       const modal = page.locator("[data-gharargah-terminal-modal]")
       await expectLocatorVisible(modal)
@@ -167,7 +158,7 @@ test.describe("project session agent chat", () => {
 
       // Codex Agent → shared agent tab + native app-server driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: /Codex Agent/ }).click()
+      await page.locator('[data-gharargah-agent-shortcut="codex"]').click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -191,7 +182,7 @@ test.describe("project session agent chat", () => {
 
       // Claude Agent → shared agent tab + native Claude SDK driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: /Claude Agent/ }).click()
+      await page.locator('[data-gharargah-agent-shortcut="claude"]').click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -215,7 +206,7 @@ test.describe("project session agent chat", () => {
 
       // OpenCode Agent → shared agent tab + ACP driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: /OpenCode Agent/ }).click()
+      await page.locator('[data-gharargah-agent-shortcut="opencode"]').click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -237,15 +228,14 @@ test.describe("project session agent chat", () => {
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(modal, 0)
 
-      // Cursor (ACP) → agent tab + ACP driver.
+      // Cursor → agent tab + ACP driver.
       await launcher.click()
-      await page.getByRole("menuitem", { name: /Cursor \(ACP\)/ }).click()
+      await page.locator('[data-gharargah-agent-shortcut="cursor"]').click()
 
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
       await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 5)
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
-      // Catalog displayName for cursor-acp is "Cursor" (home card label stays "Cursor (ACP)").
       await expectLocatorContainsText(modal, "Cursor")
 
       const modelPicker = modal.locator('[data-chat-provider-model-picker="true"]')
@@ -271,7 +261,7 @@ test.describe("project session agent chat", () => {
           }>
           modal?: { sessionMode?: string }
         }
-        const session = roster.sessions.find(item => item.agentId === "cursor-acp") ?? roster.sessions[0]
+        const session = roster.sessions.find(item => item.agentId === "cursor") ?? roster.sessions[0]
         return {
           version: roster.version,
           mode: roster.modal?.sessionMode,
@@ -283,7 +273,7 @@ test.describe("project session agent chat", () => {
       expect(persisted).toEqual({
         version: 2,
         mode: "agent",
-        agentId: "cursor-acp",
+        agentId: "cursor",
         driverId: "cursor:acp",
         threadId: expect.any(String),
       })
@@ -308,18 +298,31 @@ test.describe("project session agent chat", () => {
       // Host-side ACP completion is authoritative; UI virtualization can lag.
       await expectLocatorContainsText(modal, "Confirm the session driver")
 
-      // Interaction / runtime controls live in the composer footer (not stacked above it).
+      // Provider, model, mode, reasoning, speed, and access share one composer surface.
       const footer = modal.locator("[data-chat-composer-footer]")
-      await expectLocatorVisible(footer.locator("[data-agent-interaction-mode]"))
-      await expectLocatorVisible(footer.locator("[data-agent-runtime-mode]"))
+      await expectLocatorCount(footer.locator("[data-agent-interaction-mode]"), 0)
+      await expectLocatorCount(footer.locator("[data-agent-runtime-mode]"), 0)
+      await modelPicker.click()
+      const setupPicker = page.locator("[data-agent-setup-picker]")
+      await expectLocatorCount(setupPicker, 1)
+      await expectLocatorVisible(setupPicker)
+      await expectLocatorContainsText(setupPicker, "Cursor settings")
+      await expectLocatorVisible(setupPicker.locator('[data-agent-setting-group="access"]'))
+      // The generic echo ACP scenario does not advertise provider modes.
+      // Unsupported provider controls must stay hidden.
+      await expectLocatorCount(setupPicker.locator('[data-agent-setting-group="mode"]'), 0)
       await expectLocatorCount(modal.locator("select[data-agent-runtime-mode]"), 0)
       await expectLocatorCount(modal.locator("select[data-agent-interaction-mode]"), 0)
+      await page.keyboard.press("Escape")
       await expect
         .poll(async () => {
           return modal.locator('[data-chat-composer-overlay] [data-slot="permission-card"]').count()
         })
         .toBe(0)
-      await expectLocatorContainsText(modal.locator("[data-chat-composer-overlay]"), "Ask Jet")
+      await expectLocatorContainsText(
+        modal.locator("[data-chat-composer-overlay]"),
+        "Message agent",
+      )
 
       for (const mode of ["terminal", "editor", "git", "todos"] as const) {
         await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()
@@ -335,8 +338,8 @@ test.describe("project session agent chat", () => {
       await expectLocatorCount(modal, 0)
       const agentCard = page
         .locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
-        .filter({ hasText: "Cursor (ACP)" })
-        .first()
+        .filter({ hasText: "Cursor" })
+        .last()
       await expectLocatorVisible(agentCard)
       await agentCard.click()
       await expectLocatorVisible(modal)

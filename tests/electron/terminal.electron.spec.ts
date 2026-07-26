@@ -314,6 +314,69 @@ test.describe("electron terminal", () => {
     }
   })
 
+  test("cursor stays inside xterm screen after modal close and reopen", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      const panel = page.locator("[data-gharargah-terminal-panel]")
+      await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
+      await expectLocatorVisible(panel.locator("[data-gharargah-terminal-cursor]"))
+
+      // Dialog Escape closes modal only (goHome is gated off while modal open).
+      await page.keyboard.press("Escape")
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+      await expectSelectorVisible(page, "[data-gharargah-home]")
+
+      await page.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])").first().click()
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
+
+      await page.waitForFunction(() => {
+        const screen = document.querySelector<HTMLElement>(
+          "[data-gharargah-terminal-panel] .xterm-screen",
+        )
+        const cursor = document.querySelector<HTMLElement>(
+          "[data-gharargah-terminal-panel] [data-gharargah-terminal-cursor]",
+        )
+        if (!screen || !cursor) return false
+        const opacity = Number.parseFloat(cursor.style.opacity || "0")
+        if (opacity < 0.1) return false
+        const screenRect = screen.getBoundingClientRect()
+        const cursorRect = cursor.getBoundingClientRect()
+        if (screenRect.width < 8 || screenRect.height < 8 || cursorRect.width < 1) return false
+        return (
+          cursorRect.left >= screenRect.left - 1 &&
+          cursorRect.top >= screenRect.top - 1 &&
+          cursorRect.right <= screenRect.right + 1 &&
+          cursorRect.bottom <= screenRect.bottom + 1
+        )
+      })
+
+      const box = await page.evaluate(() => {
+        const screen = document.querySelector<HTMLElement>(
+          "[data-gharargah-terminal-panel] .xterm-screen",
+        )!
+        const cursor = document.querySelector<HTMLElement>(
+          "[data-gharargah-terminal-panel] [data-gharargah-terminal-cursor]",
+        )!
+        const screenRect = screen.getBoundingClientRect()
+        const cursorRect = cursor.getBoundingClientRect()
+        return {
+          cursorTop: cursorRect.top - screenRect.top,
+          cursorLeft: cursorRect.left - screenRect.left,
+          screenHeight: screenRect.height,
+          screenWidth: screenRect.width,
+        }
+      })
+      expect(box.cursorTop).toBeGreaterThanOrEqual(0)
+      expect(box.cursorTop).toBeLessThan(box.screenHeight)
+      expect(box.cursorLeft).toBeGreaterThanOrEqual(0)
+      expect(box.cursorLeft).toBeLessThan(box.screenWidth)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("Shift+Enter sends LF to the PTY for multiline CLI input", async () => {
     const { app, page } = await launchJet()
     try {

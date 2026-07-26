@@ -5,7 +5,7 @@ import path from "node:path"
 
 export default defineConfig({
   define: {
-    "import.meta.env.GHARARGAH_ENABLE_AGENT_CHAT": JSON.stringify(process.env.GHARARGAH_ENABLE_AGENT_CHAT ?? "0"),
+    "import.meta.env.GHARARGAH_ENABLE_AGENT_CHAT": JSON.stringify(process.env.GHARARGAH_ENABLE_AGENT_CHAT ?? "1"),
   },
   plugins: [react(), tailwindcss()],
   resolve: {

@@ -17,14 +17,14 @@ import { cn } from "@/lib/utils.js"
 
 export const SESSION_AGENT_SHORTCUTS: Array<TerminalAgentShortcut & { Icon: Icon }> = [
   { id: "codex", label: "Codex", command: "codex", Icon: OpenAI },
-  { id: "codex", label: "Codex Agent", driverId: "codex:app-server", Icon: OpenAI },
+  { id: "codex", label: "Codex", driverId: "codex:app-server", Icon: OpenAI },
   { id: "claude", label: "Claude", command: "claude", Icon: ClaudeAI },
-  { id: "claude", label: "Claude Agent", driverId: "claude:sdk", Icon: ClaudeAI },
+  { id: "claude", label: "Claude", driverId: "claude:sdk", Icon: ClaudeAI },
   { id: "opencode", label: "OpenCode", command: "opencode", Icon: Code2 },
-  { id: "opencode", label: "OpenCode Agent", driverId: "opencode:acp", Icon: Code2 },
+  { id: "opencode", label: "OpenCode", driverId: "opencode:acp", Icon: Code2 },
   { id: "cursor", label: "Cursor", command: "cursor-agent", Icon: CursorIcon },
-  { id: "cursor-acp", label: "Cursor (ACP)", driverId: "cursor:acp", Icon: CursorIcon },
-  { id: "grok", label: "Grok (ACP)", driverId: "grok:acp", Icon: GrokIcon },
+  { id: "cursor", label: "Cursor", driverId: "cursor:acp", Icon: CursorIcon },
+  { id: "grok", label: "Grok", driverId: "grok:acp", Icon: GrokIcon },
 ]
 
 function isCliShortcut(shortcut: TerminalAgentShortcut): boolean {
@@ -129,6 +129,7 @@ export function NewSessionMenu(props: NewSessionMenuProps) {
               {cliShortcuts.map(shortcut => (
                 <DropdownMenuItem
                   key={`${shortcut.id}:${shortcut.command ?? shortcut.label}`}
+                  data-gharargah-cli-shortcut={shortcut.id}
                   onSelect={() => onLaunchAgentTerminal(rootUri, shortcut)}
                 >
                   <shortcut.Icon className="size-4" />
@@ -148,11 +149,13 @@ export function NewSessionMenu(props: NewSessionMenuProps) {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuLabel className="text-3xs font-medium text-muted-foreground">
-                Agent chat
+                Agents
               </DropdownMenuLabel>
               {agentShortcuts.map(shortcut => (
                 <DropdownMenuItem
                   key={`${shortcut.id}:${shortcut.driverId ?? shortcut.label}`}
+                  data-gharargah-agent-shortcut={shortcut.id}
+                  data-gharargah-agent-driver={shortcut.driverId}
                   onSelect={() => onLaunchAgentTerminal(rootUri, shortcut)}
                 >
                   <shortcut.Icon className="size-4" />

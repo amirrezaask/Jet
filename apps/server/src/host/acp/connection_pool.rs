@@ -1243,6 +1243,7 @@ async fn run_prompt(
             shared,
             existing,
             cwd.clone(),
+            &turn_id,
             prefer_resume,
             sequence.clone(),
             generation,
@@ -1286,6 +1287,7 @@ async fn run_prompt(
     let runtime = shared
         .session(session_id.0.as_ref())
         .ok_or_else(|| "session runtime missing after create/restore".to_string())?;
+    runtime.set_owner_thread(&turn_id);
 
     if runtime
         .turn_busy
@@ -1432,6 +1434,7 @@ async fn restore_session(
     shared: &Arc<ConnShared>,
     existing: String,
     cwd: PathBuf,
+    thread_key: &str,
     prefer_resume: bool,
     sequence: Arc<AtomicU64>,
     generation: u64,
@@ -1446,6 +1449,24 @@ async fn restore_session(
     >,
     on_user_input: Arc<dyn Fn(Value) -> BoxFuture<'static, Value> + Send + Sync>,
 ) -> Result<SessionOpen, String> {
+    // A pooled process keeps live ACP sessions in ConnShared. Continuing one of
+    // those sessions must prompt it directly; session/load and session/resume are
+    // only recovery mechanisms for a fresh provider process.
+    if let Some(runtime) = shared
+        .session(&existing)
+        .filter(|runtime| runtime.belongs_to_thread(thread_key))
+    {
+        runtime.set_cwd(cwd);
+        runtime.install_turn_callbacks(
+            on_text,
+            on_activity,
+            on_event,
+            on_permission,
+            on_user_input,
+        );
+        return Ok((SessionId::new(existing), None, None));
+    }
+
     let runtime = shared.session(&existing).unwrap_or_else(|| {
         let runtime = Arc::new(SessionRuntime::new(
             existing.clone(),

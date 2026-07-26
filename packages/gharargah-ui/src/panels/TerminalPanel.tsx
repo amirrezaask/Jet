@@ -262,6 +262,8 @@ export function TerminalPanel({
       if (cancelled) return false
       const changed = fitWhenReady(session, container)
       if (changed) resizePty(session)
+      // Fit can change cols/rows without resizing .xterm-screen — force cursor re-measure.
+      if (cellMetricsValid(session.term)) session.cursorMotion?.refresh(true)
       return changed
     }
 

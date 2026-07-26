@@ -18,7 +18,7 @@ function fileUriToPath(uri: string): string {
 
 export function normalizeAgentId(agentId: string | null | undefined): string {
   if (agentId === "claudeAgent") return "claude"
-  if (agentId === "cursorAcp") return "cursor-acp"
+  if (agentId === "cursorAcp" || agentId === "cursor-acp") return "cursor"
   return agentId ?? "codex"
 }
 
@@ -27,8 +27,7 @@ export function defaultAgentDriverId(agentId: string | null | undefined): string
   if (id === "codex") return "codex:app-server"
   if (id === "claude") return "claude:sdk"
   if (id === "opencode") return "opencode:acp"
-  // Cursor (ACP) is a separate agent; transport id stays `cursor:acp`.
-  if (id === "cursor-acp") return "cursor:acp"
+  if (id === "cursor") return "cursor:acp"
   return `${id}:cli`
 }
 
@@ -46,7 +45,7 @@ export function isAgentInterfaceDriverId(driverId: string | null | undefined): b
 
 export function acpDriverIdForAgent(agentId: string | null | undefined): string {
   const id = normalizeAgentId(agentId)
-  if (id === "cursor-acp") return "cursor:acp"
+  if (id === "cursor") return "cursor:acp"
   return `${id}:acp`
 }
 

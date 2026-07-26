@@ -8,7 +8,6 @@ import {
   terminalLaunchCommandForTab,
   terminalPtyIdForTab,
   terminalSessionForTab,
-  markTerminalFailed,
   restartTerminalSession,
   trackTerminalPtyId,
 } from "./terminal-session.js"
@@ -50,7 +49,8 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         sessionGeneration: session?.generation,
         onPtyId: trackTerminalPtyId,
         onTitleChange: deps.onTerminalTitleChange,
-        onFailed: () => markTerminalFailed(instance.id),
+        // Unloadable PTY → drop home card (same path as Kill).
+        onFailed: () => deps.closeTerminalTab(ctx.panelId, instance.id),
         onRestart: () => {
           const ptyId = terminalPtyIdForTab(instance.id)
           if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)

@@ -18,6 +18,13 @@ export type AgentFileChange = {
   deletions: number
 }
 
+export type AgentMessageAttachment = {
+  name: string
+  mimeType?: string | null
+  path?: string | null
+  kind: "file" | "image"
+}
+
 export type AgentMessage = {
   id: string
   role: AgentMessageRole
@@ -25,6 +32,7 @@ export type AgentMessage = {
   createdAt: string
   updatedAt: string
   streaming: boolean
+  attachments?: AgentMessageAttachment[]
   diffPatch?: string
   changedFiles?: AgentFileChange[]
 }
@@ -133,6 +141,7 @@ export type ProviderModel = {
   slug: string
   name: string
   shortName?: string
+  configOptions?: AgentSessionConfigOption[]
 }
 
 export type AgentDriverKind = "cli" | "acp" | "native"
@@ -185,7 +194,7 @@ export type AgentThread = {
   title: string
   workspaceRootUri: string
   workspaceRootPath: string
-  /** Stable agent identity (codex, claude, opencode, cursor, cursor-acp). */
+  /** Stable agent identity (codex, claude, opencode, cursor, grok). */
   agentId: string | null
   /** Selected transport implementation, such as codex:app-server or cursor:acp. */
   driverId: string | null
@@ -301,8 +310,15 @@ export type SendAgentMessageInput = {
   /** @deprecated Use agentId. */
   provider?: string | null
   model?: string | null
-  /** Optional image attachments (max 8). */
-  images?: ReadonlyArray<{ data: string; mimeType: string }> | null
+  /** Optional image attachments (max 8 attachments total). */
+  images?: ReadonlyArray<{ data: string; mimeType: string; name?: string }> | null
+  /** Local-path or inline text file attachments (max 8 attachments total). */
+  files?: ReadonlyArray<{
+    name: string
+    mimeType?: string
+    path?: string
+    data?: string
+  }> | null
 }
 
 export type SetAgentThreadArchivedInput = {
@@ -367,6 +383,7 @@ export type TimelineChatMessage = {
   createdAt: string
   updatedAt: string
   streaming: boolean
+  attachments?: ReadonlyArray<AgentMessageAttachment>
   turnId?: string | null
   diffPatch?: string
   changedFiles?: AgentFileChange[]

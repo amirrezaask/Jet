@@ -27,6 +27,11 @@ function driverIsDegraded(driverId: string | null | undefined): boolean {
   return Boolean(driverId?.endsWith(":cli"))
 }
 
+function isInteractionConfigOption(id: string, name: string): boolean {
+  const normalized = `${id} ${name}`.toLowerCase().replace(/[\s_-]+/g, "")
+  return normalized.includes("mode")
+}
+
 /** Normalized composer capability view — UI should not branch on transport names. */
 export function deriveComposerCapabilities(input: {
   thread: AgentThread | null
@@ -40,13 +45,18 @@ export function deriveComposerCapabilities(input: {
   const configOptionIds = (thread?.configOptions ?? [])
     .filter(option => option.category?.toLowerCase() !== "model" && option.id !== "model")
     .map(option => option.id)
+  const hasProviderInteractionMode =
+    (thread?.sessionModes?.availableModes?.length ?? 0) > 0 ||
+    (thread?.configOptions ?? []).some(option =>
+      isInteractionConfigOption(option.id, option.name),
+    )
   const models = agent?.models ?? []
   const supportsModelListing =
     models.length > 0 && !(models.length === 1 && models[0]?.slug === "auto")
 
   return {
-    showRuntime: true,
-    showInteraction: true,
+    showRuntime: driverIsWriteCapable(driverId),
+    showInteraction: hasProviderInteractionMode,
     showAttachments: driverIsWriteCapable(driverId) || !driverIsDegraded(driverId),
     supportsModelListing,
     writeCapable: driverIsWriteCapable(driverId),

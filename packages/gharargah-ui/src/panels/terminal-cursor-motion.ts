@@ -10,6 +10,11 @@ import {
 type CursorStyle = "block" | "bar" | "underline"
 type CursorMotion = "trail" | "smooth" | "off"
 
+type TerminalCellMetrics = {
+  width: number
+  height: number
+}
+
 function readSetting<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim() as T
   return allowed.includes(value) ? value : fallback
@@ -17,8 +22,49 @@ function readSetting<T extends string>(name: string, allowed: readonly T[], fall
 
 function readCursorAppearance(): { style: CursorStyle; motion: CursorMotion } {
   return {
-    style: readSetting("--gharargah-cursor-style", ["block", "bar", "underline"], "bar"),
-    motion: readSetting("--gharargah-cursor-motion", ["trail", "smooth", "off"], "trail"),
+    // Prefer terminal-specific tokens; fall back to shared editor/UI cursor tokens.
+    style: readSetting(
+      "--gharargah-terminal-cursor-style",
+      ["block", "bar", "underline"],
+      readSetting("--gharargah-cursor-style", ["block", "bar", "underline"], "bar"),
+    ),
+    motion: readSetting(
+      "--gharargah-terminal-cursor-motion",
+      ["trail", "smooth", "off"],
+      readSetting("--gharargah-cursor-motion", ["trail", "smooth", "off"], "trail"),
+    ),
+  }
+}
+
+/** Read xterm's measured cell size (same source FitAddon / cellMetricsValid use). */
+export function readTerminalCellMetrics(term: Terminal): TerminalCellMetrics | null {
+  const dims = (
+    term as Terminal & {
+      _core?: { _renderService?: { dimensions?: { css?: { cell?: { width?: number; height?: number } } } } }
+    }
+  )._core?._renderService?.dimensions?.css?.cell
+  const width = dims?.width ?? 0
+  const height = dims?.height ?? 0
+  if (width < 4 || height < 4) return null
+  return { width, height }
+}
+
+/** Pure caret placement from buffer cursor + measured cell metrics. */
+export function terminalCaretPoint(input: {
+  cols: number
+  rows: number
+  cursorX: number
+  cursorY: number
+  cellWidth: number
+  cellHeight: number
+}): CaretPoint | null {
+  const { cols, rows, cursorX, cursorY, cellWidth, cellHeight } = input
+  if (cols <= 0 || rows <= 0 || cellWidth < 4 || cellHeight < 4) return null
+  return {
+    x: Math.max(0, Math.min(cols - 1, cursorX)) * cellWidth,
+    y: Math.max(0, Math.min(rows - 1, cursorY)) * cellHeight,
+    h: cellHeight,
+    charWidth: cellWidth,
   }
 }
 
@@ -40,6 +86,7 @@ export class TerminalCursorMotionLayer {
   private active = true
   private lastGhostX = 0
   private lastGhostY = 0
+  private lastGeometryKey = ""
   private appearance = readCursorAppearance()
 
   constructor(
@@ -55,13 +102,23 @@ export class TerminalCursorMotionLayer {
       overflow: "hidden",
     })
     this.cursor.dataset.gharargahTerminalCursor = ""
-    this.cursor.style.position = "absolute"
-    this.cursor.style.willChange = "transform,width,height,opacity"
+    Object.assign(this.cursor.style, {
+      position: "absolute",
+      top: "0",
+      left: "0",
+      willChange: "transform,width,height,opacity",
+      opacity: "0",
+    })
     this.layer.appendChild(this.cursor)
     for (const ghost of this.ghostEls) {
       ghost.dataset.gharargahTerminalCursorGhost = ""
-      ghost.style.position = "absolute"
-      ghost.style.willChange = "transform,width,height,opacity"
+      Object.assign(ghost.style, {
+        position: "absolute",
+        top: "0",
+        left: "0",
+        willChange: "transform,width,height,opacity",
+        opacity: "0",
+      })
       this.layer.appendChild(ghost)
     }
     this.screen.appendChild(this.layer)
@@ -71,7 +128,10 @@ export class TerminalCursorMotionLayer {
       term.onCursorMove(() => this.retarget(false)),
       term.onScroll(() => this.retarget(true)),
       term.onRender(() => {
-        if (!this.initialized) this.retarget(true)
+        // Fit/attach often changes cols/rows without resizing .xterm-screen pixels.
+        // ResizeObserver misses that — re-snap whenever geometry fingerprint changes.
+        const key = this.geometryKey()
+        if (!this.initialized || key !== this.lastGeometryKey) this.retarget(true)
       }),
     )
     this.resizeObserver = new ResizeObserver(() => this.retarget(true))
@@ -96,27 +156,46 @@ export class TerminalCursorMotionLayer {
     this.active = active
     this.layer.style.visibility = active ? "visible" : "hidden"
     if (active) this.retarget(true)
-    else this.stop()
+    else {
+      this.hideCursor()
+      this.stop()
+    }
   }
 
   refresh(snap = true): void {
     this.retarget(snap)
   }
 
+  private geometryKey(): string {
+    const cell = readTerminalCellMetrics(this.term)
+    return [
+      this.term.cols,
+      this.term.rows,
+      cell?.width ?? 0,
+      cell?.height ?? 0,
+      this.screen.clientWidth,
+      this.screen.clientHeight,
+    ].join(":")
+  }
+
   private point(): CaretPoint | null {
-    if (this.term.cols <= 0 || this.term.rows <= 0) return null
-    const width = this.screen.clientWidth
-    const height = this.screen.clientHeight
-    if (width <= 0 || height <= 0) return null
-    const charWidth = width / this.term.cols
-    const cellHeight = height / this.term.rows
+    if (this.screen.clientWidth <= 0 || this.screen.clientHeight <= 0) return null
+    const cell = readTerminalCellMetrics(this.term)
+    if (!cell) return null
     const buffer = this.term.buffer.active
-    return {
-      x: Math.max(0, Math.min(this.term.cols - 1, buffer.cursorX)) * charWidth,
-      y: Math.max(0, Math.min(this.term.rows - 1, buffer.cursorY)) * cellHeight,
-      h: cellHeight,
-      charWidth,
-    }
+    return terminalCaretPoint({
+      cols: this.term.cols,
+      rows: this.term.rows,
+      cursorX: buffer.cursorX,
+      cursorY: buffer.cursorY,
+      cellWidth: cell.width,
+      cellHeight: cell.height,
+    })
+  }
+
+  private hideCursor(): void {
+    this.cursor.style.opacity = "0"
+    for (const ghost of this.ghostEls) ghost.style.opacity = "0"
   }
 
   private isTypingHop(point: CaretPoint): boolean {
@@ -135,11 +214,17 @@ export class TerminalCursorMotionLayer {
     this.layer.style.display = enabled ? "block" : "none"
     if (this.nativeCursorLayer) this.nativeCursorLayer.style.opacity = enabled ? "0" : "1"
     if (!enabled || !this.active) {
+      this.hideCursor()
       this.stop()
       return
     }
     const point = this.point()
-    if (!point) return
+    if (!point) {
+      // Layout not ready (modal animating / hidden) — do not leave a stale (0,0) block.
+      this.hideCursor()
+      return
+    }
+    this.lastGeometryKey = this.geometryKey()
     const typingHop = !forceSnap && this.isTypingHop(point)
     if (!this.initialized || forceSnap || this.reduced || !typingHop) {
       if (typingHop && motion === "trail" && !this.reduced) {
@@ -194,7 +279,10 @@ export class TerminalCursorMotionLayer {
     el.style.opacity = String(opacity)
     el.style.borderRadius = style === "block" ? "2px" : "1px"
     el.style.background = "var(--gharargah-accent)"
-    el.style.boxShadow = style === "block" ? "inset 0 0 0 1px color-mix(in srgb, var(--gharargah-bg) 22%, transparent)" : "none"
+    el.style.boxShadow =
+      style === "block"
+        ? "inset 0 0 0 1px color-mix(in srgb, var(--gharargah-bg) 22%, transparent)"
+        : "none"
   }
 
   private render(time = performance.now()): boolean {

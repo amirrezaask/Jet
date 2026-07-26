@@ -9,7 +9,7 @@
     "test:e2e": "playwright test --project=web-e2e",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "test": "pnpm --filter @gharargah/workspace test && pnpm --filter @gharargah/lsp test && pnpm --filter @gharargah/node-host test && pnpm --filter @gharargah/host-client test && pnpm --filter @gharargah/app test",
+    "test": "pnpm --filter @gharargah/agents test && pnpm --filter @gharargah/ui test && pnpm --filter @gharargah/workspace test && pnpm --filter @gharargah/lsp test && pnpm --filter @gharargah/node-host test && pnpm --filter @gharargah/host-client test && pnpm --filter @gharargah/app test",
     "test:bench": "playwright test --project=bench",
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-gharargah-keybindings.mjs",

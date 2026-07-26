@@ -14,6 +14,7 @@ use uuid::Uuid;
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(15);
 const THREAD_TIMEOUT: Duration = Duration::from_secs(30);
 const TURN_TIMEOUT: Duration = Duration::from_secs(30);
+const MODEL_LIST_TIMEOUT: Duration = Duration::from_secs(10);
 const TURN_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const MAX_PENDING_INTERACTIONS: usize = 128;
 
@@ -297,6 +298,19 @@ impl CodexAppServer {
 
     pub fn initialize_response(&self) -> &CodexInitializeResponse {
         &self.initialize
+    }
+
+    pub async fn list_models(&self) -> Result<Value, LineRpcError> {
+        self.client
+            .request(
+                "model/list",
+                json!({
+                    "includeHidden": false,
+                    "limit": 100,
+                }),
+                MODEL_LIST_TIMEOUT,
+            )
+            .await
     }
 
     pub fn subscribe_notifications(&self) -> broadcast::Receiver<LineRpcNotification> {

@@ -1,13 +1,17 @@
 import { expect, test } from "@playwright/test"
-import { expectLocatorVisible } from "../shell/assert.js"
+import {
+  expectLocatorContainsText,
+  expectLocatorCount,
+  expectLocatorVisible,
+} from "../shell/assert.js"
 import { hasPtySpawn, launchJet } from "./_launch.js"
 
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
 
 async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
   await page.evaluate(() => window.gharargah!.agents!.listAgents())
   await page.getByRole("button", { name: "New session" }).first().click()
-  await page.getByRole("menuitem", { name: /Cursor \(ACP\)/ }).click()
+  await page.locator('[data-gharargah-agent-shortcut="cursor"]').click()
   const modal = page.locator("[data-gharargah-terminal-modal]")
   await expectLocatorVisible(modal)
   await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
@@ -36,7 +40,7 @@ test.describe("ACP structured timeline", () => {
   test.skip(!hasPtySpawn(), "node-pty cannot spawn a shell on this machine")
   test.skip(
     !agentChatE2e,
-    "requires GHARARGAH_ENABLE_AGENT_CHAT=1 (rebuild frontend dist with the same env)",
+    "disabled in GHARARGAH_ENABLE_AGENT_CHAT=0 recovery builds",
   )
 
   test("mock ACP streams a simple reply", async () => {
@@ -63,6 +67,56 @@ test.describe("ACP structured timeline", () => {
       await expect
         .poll(() => modal.textContent(), { timeout: 10_000 })
         .toContain("Mock agent reply: ACP structured smoke")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("dropping a file anywhere in the Agent tab attaches it to the composer", async () => {
+    const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
+    try {
+      const { modal, composer } = await openCursorAcpSession(page)
+      const dropped = await page.evaluate(() => {
+        const target = document.querySelector("[data-messages-timeline]")
+        if (!target) return false
+        const file = new File(
+          ["drag-drop-context-marker-42\n"],
+          "agent-context.md",
+          { type: "text/markdown" },
+        )
+        const transfer = new DataTransfer()
+        transfer.items.add(file)
+        const event = new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        })
+        return target.dispatchEvent(event)
+      })
+      expect(dropped).toBe(false)
+
+      const attachments = modal.locator("[data-composer-attachments]")
+      await expectLocatorVisible(attachments)
+      await expect
+        .poll(() => attachments.getAttribute("data-composer-attachment-count"))
+        .toBe("1")
+      await expectLocatorContainsText(attachments, "agent-context.md")
+
+      await composer.fill("Review the attached file")
+      await modal.getByRole("button", { name: "Send message" }).click()
+      await expect
+        .poll(
+          async () => {
+            const thread = await readActiveThread(page)
+            const assistant = [...(thread?.messages ?? [])]
+              .reverse()
+              .find(message => message.role === "assistant")
+            return assistant?.text ?? ""
+          },
+          { timeout: 30_000 },
+        )
+        .toContain("drag-drop-context-marker-42")
+      await expectLocatorCount(modal.locator('[data-message-attachment="file"]'), 1)
     } finally {
       await app.close()
     }
@@ -161,6 +215,13 @@ test.describe("ACP structured timeline", () => {
           { timeout: 30_000 },
         )
         .toContain("Mock agent reply: think then answer")
+
+      const visibleReplies = modal
+        .locator('[data-timeline-row-kind="message"]')
+        .filter({ hasText: "Mock agent reply: think then answer" })
+      await expect
+        .poll(() => visibleReplies.count(), { timeout: 10_000 })
+        .toBe(1)
     } finally {
       await app.close()
     }

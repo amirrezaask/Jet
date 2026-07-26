@@ -9,15 +9,23 @@ import {
   deriveComposerCapabilities,
   deriveTimelineEntriesFromThread,
 } from "@gharargah/agents"
-import { AlertCircle, ChevronDown, Loader2 } from "lucide-react"
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { AlertCircle, ChevronDown } from "lucide-react"
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+} from "react"
 import { ChatComposer } from "./composer/ChatComposer.js"
 import type {
   ComposerInteractionMode,
   ComposerRuntimeMode,
 } from "./composer/ComposerModeControls.js"
 import { interactionModeFromSessionModeId } from "./composer/ComposerModeControls.js"
-import { AcpInspector } from "./inspector/AcpInspector.js"
 import {
   deriveProviderInstanceEntries,
   agentCatalogToProviderState,
@@ -29,6 +37,7 @@ import { ConnectionBanner } from "./timeline/ConnectionBanner.js"
 import type { TimelineScrollMode } from "./timeline/timelineScrollAnchoring.js"
 
 import type { ProviderDriverKind } from "./t3contracts.js"
+import { Button } from "../components/ui/button.js"
 
 export const AgentChatView = memo(function AgentChatView(props: {
   thread: AgentThread | null
@@ -39,24 +48,25 @@ export const AgentChatView = memo(function AgentChatView(props: {
     agentId: string | null
     driverId: string | null
     model: string | null
-    images?: ReadonlyArray<{ data: string; mimeType: string }>
+    images?: ReadonlyArray<{ data: string; mimeType: string; name?: string }>
+    files?: ReadonlyArray<{
+      name: string
+      mimeType?: string
+      path?: string
+      data?: string
+    }>
   }) => Promise<void>
   onInterrupt?: () => void
   onSelectionChange?: (instanceId: string, model: string) => void
-  onAgentsRefresh?: () => void
+  onAgentsRefresh?: (providerId?: string) => void
   onResolvePermission?: (input: Omit<ResolveAgentPermissionInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">) => Promise<void> | void
   onResolveUserInput?: (
     input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
   ) => Promise<void> | void
   onConfigOptionChange?: (input: { configId: string; value: string }) => Promise<void> | void
-  onLoadAcpTrace?: () => Promise<unknown>
   onAuthenticate?: (methodId: string) => Promise<void> | void
-  onForceStopProvider?: () => Promise<void> | void
   onRuntimeModeChange?: (mode: ComposerRuntimeMode) => void
   onInteractionModeChange?: (mode: ComposerInteractionMode) => void
-  onListSessions?: () => Promise<unknown>
-  onLogout?: () => Promise<void>
-  onCloseSession?: () => Promise<void>
 }) {
   const {
     thread,
@@ -69,24 +79,20 @@ export const AgentChatView = memo(function AgentChatView(props: {
     onResolvePermission,
     onResolveUserInput,
     onConfigOptionChange,
-    onLoadAcpTrace,
     onAuthenticate,
-    onForceStopProvider,
     onRuntimeModeChange,
     onInteractionModeChange,
-    onListSessions,
-    onLogout,
-    onCloseSession,
   } = props
-  const loadAcpTrace = useCallback(() => {
-    if (onLoadAcpTrace) return onLoadAcpTrace()
-    return Promise.resolve(null)
-  }, [onLoadAcpTrace])
   const [submitting, setSubmitting] = useState(false)
   const [expandAll, setExpandAll] = useState(true)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(120)
   const [scrollFollowEnabled, setScrollFollowEnabled] = useState(true)
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false)
+  const [droppedFileBatch, setDroppedFileBatch] = useState<{
+    id: number
+    files: File[]
+  } | null>(null)
   const composerOverlayRef = useRef<HTMLDivElement | null>(null)
   const listRef = useRef<import("@legendapp/list/react").LegendListRef | null>(null)
   const timelineScrollModeRef = useRef<TimelineScrollMode>("following-end")
@@ -105,9 +111,15 @@ export const AgentChatView = memo(function AgentChatView(props: {
     )
     return {
       ...state,
-      providers: state.providers.filter(provider => structuredAgents.has(provider.instanceId)),
+      providers: state.providers
+        .filter(provider => structuredAgents.has(provider.instanceId))
+        .map(provider =>
+          provider.instanceId === thread?.agentId && thread.discoveredModels?.length
+            ? { ...provider, models: thread.discoveredModels }
+            : provider,
+        ),
     }
-  }, [agents])
+  }, [agents, thread?.agentId, thread?.discoveredModels])
   const instanceEntries = useMemo(() => deriveProviderInstanceEntries(providers), [providers])
   const defaultSelection = useMemo(
     () => resolveDefaultProviderSelection(instanceEntries, thread?.agentId, thread?.model),
@@ -259,7 +271,13 @@ export const AgentChatView = memo(function AgentChatView(props: {
     text: string
     instanceId: string
     model: string
-    images?: ReadonlyArray<{ data: string; mimeType: string }>
+    images?: ReadonlyArray<{ data: string; mimeType: string; name?: string }>
+    files?: ReadonlyArray<{
+      name: string
+      mimeType?: string
+      path?: string
+      data?: string
+    }>
   }) {
     if (submitting || !thread) return
     const fallbackDriverId = thread.driverId
@@ -277,6 +295,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
           null,
         model: payload.model,
         ...(payload.images?.length ? { images: payload.images } : {}),
+        ...(payload.files?.length ? { files: payload.files } : {}),
       })
     } finally {
       setSubmitting(false)
@@ -346,29 +365,62 @@ export const AgentChatView = memo(function AgentChatView(props: {
       ? thread.interactionMode
       : (interactionModeFromSessionModeId(thread.sessionModes?.currentModeId) ?? "implement")
 
+  const handleAgentFileDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes("Files")) return
+    event.preventDefault()
+    event.stopPropagation()
+    const files = Array.from(event.dataTransfer.files)
+    setIsDraggingFiles(false)
+    if (files.length > 0) {
+      setDroppedFileBatch({ id: Date.now(), files })
+    }
+  }
+
   return (
-    <div className="relative flex h-full min-h-0 flex-col bg-background">
+    <div
+      className="relative flex h-full min-h-0 flex-col bg-background"
+      data-chat-provider={thread.agentId ?? "unknown"}
+      data-chat-driver={thread.driverId ?? "unknown"}
+      data-gharargah-agent-drop-zone="true"
+      data-agent-file-drag-active={isDraggingFiles ? "true" : "false"}
+      onDragEnter={event => {
+        if (!event.dataTransfer.types.includes("Files")) return
+        event.preventDefault()
+        setIsDraggingFiles(true)
+      }}
+      onDragOver={event => {
+        if (!event.dataTransfer.types.includes("Files")) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = "copy"
+        setIsDraggingFiles(true)
+      }}
+      onDragLeave={event => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+        setIsDraggingFiles(false)
+      }}
+      onDrop={handleAgentFileDrop}
+    >
       <ChatHeader
         activeThreadTitle={thread.title}
         activeProjectName={projectName}
+        activeProviderName={selectedAgent?.displayName ?? thread.agentId}
         activeModelLabel={modelLabel}
         connection={thread.connection}
         usage={thread.usage}
-        inspector={
-          <AcpInspector
-            connection={thread.connection}
-            onLoadTrace={loadAcpTrace}
-            onForceStop={onForceStopProvider ? () => void onForceStopProvider() : undefined}
-            onListSessions={onListSessions}
-            onLogout={onLogout}
-            onCloseSession={onCloseSession}
-          />
-        }
       />
       <ConnectionBanner
         connection={thread.connection}
         onAuthenticate={onAuthenticate ? methodId => void onAuthenticate(methodId) : undefined}
       />
+
+      {isDraggingFiles ? (
+        <div
+          className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center rounded-xl border border-dashed border-primary/50 bg-background/85 text-sm font-medium text-foreground backdrop-blur-sm"
+          role="status"
+        >
+          Drop files to attach
+        </div>
+      ) : null}
 
       {thread.status === "error" && thread.lastError ? (
         <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
@@ -383,6 +435,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
           timelineEntries={timelineEntries}
           turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
           isWorking={isWorking}
+          workingLabel={activityLabel ?? "Working…"}
           theme={theme}
           contentInsetEndAdjustment={composerOverlayHeight}
           expandAll={expandAll}
@@ -400,16 +453,18 @@ export const AgentChatView = memo(function AgentChatView(props: {
             className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
             style={{ bottom: composerOverlayHeight + 4 }}
           >
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="outline"
               aria-label="Scroll to end"
               title="Scroll to end"
               onClick={() => scrollToEnd(true)}
-              className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:border-border hover:text-foreground hover:cursor-pointer"
+              className="pointer-events-auto rounded-full text-muted-foreground"
             >
               <ChevronDown className="size-3.5" />
               Scroll to end
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
@@ -433,19 +488,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
           </div>
         </div>
         <div className="chat-composer-horizontal-inset pointer-events-auto relative z-10 isolate pb-4">
-          {activityLabel ? (
-            <div
-              className="mb-2 flex items-center gap-2 px-1 text-xs text-muted-foreground"
-              data-chat-activity="true"
-              title={activityLabel}
-            >
-              <Loader2 className="size-3 shrink-0 animate-spin" />
-              <span className="min-w-0 truncate">{activityLabel}</span>
-            </div>
-          ) : null}
           {pendingActionCount > 0 ? (
             <div
-              className="mb-2 px-1 text-xs text-amber-600 dark:text-amber-400"
+              className="mb-2 px-1 text-xs text-muted-foreground"
               data-chat-pending-actions="true"
             >
               {pendingActionCount === 1
@@ -457,7 +502,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
             providers={providers}
             instanceId={defaultSelection?.instanceId ?? thread.agentId}
             model={defaultSelection?.model ?? thread.model}
-            disabled={isWorking}
+            disabled={!defaultSelection}
             isRunning={isWorking}
             isSendBusy={submitting}
             commands={thread.availableCommands}
@@ -466,6 +511,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
             availableInteractionModes={thread.sessionModes?.availableModes}
             configOptions={nonModelConfigOptions}
             capabilities={composerCapabilities}
+            droppedFileBatch={droppedFileBatch}
             onRuntimeModeChange={onRuntimeModeChange}
             onInteractionModeChange={onInteractionModeChange}
             onConfigOptionChange={

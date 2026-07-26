@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from "react"
+import { memo } from "react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip.js"
 import { cn } from "../../lib/utils.js"
 import type { AgentConnectionState, AgentUsage } from "@gharargah/agents"
@@ -7,19 +7,19 @@ import { UsageMeter } from "./UsageMeter.js"
 export const ChatHeader = memo(function ChatHeader(props: {
   activeThreadTitle: string
   activeProjectName?: string | null
+  activeProviderName?: string | null
   activeModelLabel?: string | null
   connection?: AgentConnectionState | null
   usage?: AgentUsage | null
-  inspector?: ReactNode
   className?: string
 }) {
   const {
     activeThreadTitle,
     activeProjectName,
+    activeProviderName,
     activeModelLabel,
     connection,
     usage,
-    inspector,
     className,
   } = props
   return (
@@ -44,7 +44,17 @@ export const ChatHeader = memo(function ChatHeader(props: {
         </Tooltip>
         <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
           {activeProjectName ? <span className="truncate">{activeProjectName}</span> : null}
-          {activeProjectName && activeModelLabel ? (
+          {activeProjectName && activeProviderName ? (
+            <span aria-hidden="true" className="text-muted-foreground/50">
+              ·
+            </span>
+          ) : null}
+          {activeProviderName ? (
+            <span className="truncate" data-chat-header-provider="true">
+              {activeProviderName}
+            </span>
+          ) : null}
+          {(activeProjectName || activeProviderName) && activeModelLabel ? (
             <span aria-hidden="true" className="text-muted-foreground/50">
               ·
             </span>
@@ -61,7 +71,6 @@ export const ChatHeader = memo(function ChatHeader(props: {
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {usage ? <UsageMeter usage={usage} compact /> : null}
-        {inspector}
       </div>
     </div>
   )

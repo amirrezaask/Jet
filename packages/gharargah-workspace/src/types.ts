@@ -157,7 +157,7 @@ export type JetElectronAgents = {
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
   updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
   listAgents(): Promise<AgentCatalogState>
-  refreshAgents(): Promise<AgentCatalogState>
+  refreshAgents(providerId?: string): Promise<AgentCatalogState>
   /** @deprecated Compatibility APIs for older renderer bundles. */
   listProviders?(): Promise<AgentProvidersState>
   refreshProviders?(): Promise<AgentProvidersState>

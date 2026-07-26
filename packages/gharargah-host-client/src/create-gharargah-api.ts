@@ -143,7 +143,7 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       setArchived: input => transport.invoke("agents:setArchived", input),
       updateThreadSettings: input => transport.invoke("agents:updateThreadSettings", input),
       listAgents: () => transport.invoke("agents:listAgents"),
-      refreshAgents: () => transport.invoke("agents:refreshAgents"),
+      refreshAgents: providerId => transport.invoke("agents:refreshAgents", providerId),
       listProviders: () => transport.invoke("agents:listProviders"),
       refreshProviders: () => transport.invoke("agents:refreshProviders"),
       onThreadUpdated: callback => {
@@ -159,9 +159,9 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
         return () => agentPermissionListeners.delete(callback)
       },
       getAcpTrace: (providerId?: string) =>
-        transport.invoke("agents:getAcpTrace", providerId ?? "cursor-acp"),
+        transport.invoke("agents:getAcpTrace", providerId ?? "cursor"),
       getConnectionState: (providerId?: string) =>
-        transport.invoke("agents:getConnectionState", providerId ?? "cursor-acp"),
+        transport.invoke("agents:getConnectionState", providerId ?? "cursor"),
       forceStopProvider: input => transport.invoke("agents:forceStopProvider", input),
       listAcpSessions: input => transport.invoke("agents:listAcpSessions", input),
       authenticate: input => transport.invoke("agents:authenticate", input),

@@ -3,6 +3,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "../t3contracts.js";
+import type { AgentSessionConfigOption } from "@gharargah/agents";
 import { memo, useEffect, useMemo, useState } from "react";
 import type { VariantProps } from "class-variance-authority";
 import { ChevronDownIcon } from "lucide-react";
@@ -18,6 +19,11 @@ import {
   getTriggerDisplayModelName,
 } from "./providerIconUtils";
 import type { ProviderInstanceEntry } from "../providerInstances.js";
+import { ComposerProviderSettings } from "./ComposerProviderSettings.js";
+import type {
+  ComposerInteractionMode,
+  ComposerRuntimeMode,
+} from "./ComposerModeControls.js";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -42,6 +48,15 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   onOpenChange?: (open: boolean) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  runtimeMode: ComposerRuntimeMode;
+  interactionMode: ComposerInteractionMode;
+  availableInteractionModes?: ReadonlyArray<{ id: string; name: string }>;
+  configOptions: ReadonlyArray<AgentSessionConfigOption>;
+  showRuntime: boolean;
+  showInteraction: boolean;
+  onRuntimeModeChange?: (mode: ComposerRuntimeMode) => void;
+  onInteractionModeChange?: (mode: ComposerInteractionMode) => void;
+  onConfigOptionChange?: (input: { configId: string; value: string }) => void;
 }) {
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
@@ -66,6 +81,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     selectedInstanceOptions[0];
   const triggerTitle = selectedModel ? getTriggerDisplayModelName(selectedModel) : props.model;
   const triggerLabel = selectedModel ? getTriggerDisplayModelLabel(selectedModel) : props.model;
+  const providerLabel = activeEntry?.displayName ?? "Agent";
   const duplicateDriverCount = props.instanceEntries.filter(
     (entry) => activeEntry !== null && entry.driverKind === activeEntry.driverKind,
   ).length;
@@ -175,9 +191,15 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             ) : null}
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="min-w-0 flex-1 overflow-hidden truncate">{triggerTitle}</span>
+                <span className="min-w-0 flex-1 truncate text-left">
+                  <span className="text-foreground/80">{providerLabel}</span>
+                  <span className="px-1 text-muted-foreground/45">·</span>
+                  <span>{triggerTitle}</span>
+                </span>
               </TooltipTrigger>
-              <TooltipContent side="top">{triggerLabel}</TooltipContent>
+              <TooltipContent side="top">
+                {providerLabel} · {triggerLabel}
+              </TooltipContent>
             </Tooltip>
           </span>
           <span aria-hidden="true" className="flex items-center">
@@ -187,23 +209,42 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="z-[200] w-auto border-0 bg-transparent p-0 shadow-none"
+        className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
-        <ModelPickerContent
-          activeInstanceId={activeInstanceId}
-          model={props.model}
-          lockedProvider={props.lockedProvider}
-          lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
-          instanceEntries={props.instanceEntries}
-          {...(props.keybindings ? { keybindings: props.keybindings } : {})}
-          modelOptionsByInstance={props.modelOptionsByInstance}
-          terminalOpen={props.terminalOpen ?? false}
-          onRequestClose={() => setIsMenuOpen(false)}
-          {...(props.getModelDisabledReason
-            ? { getModelDisabledReason: props.getModelDisabledReason }
-            : {})}
-          onInstanceModelChange={handleInstanceModelChange}
-        />
+        <div
+          className="flex max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg/5"
+          data-agent-setup-picker="true"
+        >
+          <ModelPickerContent
+            embedded
+            activeInstanceId={activeInstanceId}
+            model={props.model}
+            lockedProvider={props.lockedProvider}
+            lockedContinuationGroupKey={props.lockedContinuationGroupKey ?? null}
+            instanceEntries={props.instanceEntries}
+            {...(props.keybindings ? { keybindings: props.keybindings } : {})}
+            modelOptionsByInstance={props.modelOptionsByInstance}
+            terminalOpen={props.terminalOpen ?? false}
+            onRequestClose={() => setIsMenuOpen(false)}
+            {...(props.getModelDisabledReason
+              ? { getModelDisabledReason: props.getModelDisabledReason }
+              : {})}
+            onInstanceModelChange={handleInstanceModelChange}
+          />
+          <ComposerProviderSettings
+            providerName={providerLabel}
+            runtimeMode={props.runtimeMode}
+            interactionMode={props.interactionMode}
+            availableInteractionModes={props.availableInteractionModes}
+            configOptions={props.configOptions}
+            showRuntime={props.showRuntime}
+            showInteraction={props.showInteraction}
+            disabled={props.disabled}
+            onRuntimeModeChange={props.onRuntimeModeChange}
+            onInteractionModeChange={props.onInteractionModeChange}
+            onConfigOptionChange={props.onConfigOptionChange}
+          />
+        </div>
       </PopoverContent>
     </Popover>
   );

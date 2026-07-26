@@ -334,35 +334,35 @@ Registered in `packages/jet-app/src/App.tsx`:
 | Problems | LSP/CM lint diagnostics list + jump                        |
 | Terminal | xterm + Rust PTY (host) — primary ADE surface via session modal |
 | Agent explorer | Library only (unwired); was sidebar thread list |
-| Agent chat | Library kept; **temporarily disabled** in product (see Agents) |
+| Agent chat | Unified in-app surface for Codex, Claude, OpenCode, and Cursor |
 
 
 
-### Agents (`@gharargah/agents` + Rust host) — temporarily disabled in UI
+### Agents (`@gharargah/agents` + Rust host)
 
-**Status (2026-07):** In-app ACP/SDK/app-server **agent chat is soft-disabled**. Product path is CLI-first ADE: New session → Blank / CLI (`codex`, `claude`, `opencode`, `cursor-agent`) → PTY in `TerminalSessionModal` (Terminal / Editor / Git / TODOs). Agent/ACP code is **not removed**.
+**Status (2026-07):** In-app agent chat is a primary ADE surface. New session offers the same minimal Agent UI for Codex (app-server), Claude (SDK), OpenCode (ACP), and Cursor (ACP), alongside direct CLI/PTTY sessions.
 
-**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"0"`). Set `GHARARGAH_ENABLE_AGENT_CHAT=1` for `pnpm dev` / builds / E2E to re-enable Agent menu rows, Agent mode tab, `dialog.showAgent`, and `AgentChatView`.
+**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"1"`). Set it to `0` only for a recovery build that removes Agent menu rows and the Agent mode tab while leaving host IPC available.
 
 When disabled:
 
 - New session menu shows **Shell** + **CLIs** only (no `* Agent` / `(ACP)` rows)
 - `showAgentTab` forced off; roster restore with `sessionMode=agent` falls back to `terminal`
-- Host `agents:*` IPC remains available for tests / future re-enable
+- Host `agents:*` IPC remains available for diagnostics and recovery
 
-**Supported ADE path:** Mission Control → New session → CLI provider → terminal PTY in session modal.
+**Supported ADE paths:** Mission Control → New session → Agent provider → unified Agent tab, or CLI provider → terminal PTY.
 
-**When re-enabled:**
+**Implementation:**
 
 - **Storage:** `.gharargah/agents/state.json` per workspace root (threads, messages, provider/model selection)
 - **Transport:** `window.gharargah.agents` via host invoke/events
 - **Drivers:** cursor / Claude / Codex / OpenCode / Grok via `apps/server/src/host/agents/` + `apps/server/src/host/acp/`
 - **Mock env:** `GHARARGAH_AGENT_MOCK=1` (stdio mock ACP); `GHARARGAH_AGENT_MOCK_SCENARIO=<name>` (default `echo`); `GHARARGAH_MOCK_ACP_BIN`; `GHARARGAH_AGENT_MOCK_LEGACY=1` (in-process fake stream)
 - **Key files:** `packages/gharargah-agents/`, `packages/gharargah-ui/src/agents/`, `packages/gharargah-ui/src/home/NewSessionMenu.tsx`, `packages/gharargah-app/src/App.tsx`, `apps/server/src/host/agents/`, `apps/server/src/host/acp/`
-- **E2E:** `tests/electron/session-agent.electron.spec.ts`, `acp-mock-scenarios.electron.spec.ts`, `acp-structured.electron.spec.ts` — run with `GHARARGAH_ENABLE_AGENT_CHAT=1`
+- **E2E:** `tests/electron/agent-provider-parity.electron.spec.ts`, `session-agent.electron.spec.ts`, `acp-mock-scenarios.electron.spec.ts`, `acp-structured.electron.spec.ts`
 
 Manual smoke (CLI path): `pnpm dev` → New session → Codex / Claude / Blank → terminal pane.  
-Manual smoke (agent chat, when re-enabled): `GHARARGAH_ENABLE_AGENT_CHAT=1 pnpm dev` → New session → Cursor (ACP) → Agent tab.
+Manual smoke (agent chat): `pnpm dev` → New session → Codex / Claude / OpenCode / Cursor under Agents → Agent tab.
 
 
 
@@ -716,4 +716,3 @@ Global rule to apply everywhere below: **no custom components**. Every interacti
 
 #### Shared `<ListRow>` primitive (Medium — enables above fixes)
 - LocationList, Search results, Problems, Explorer files, Git changes all render a similar row: label + subtitle + optional shortcut/kbd. Right now each panel spells out its own classes. Extract one shared component in `packages/jet-ui/src/components/ListRow.tsx` that wraps `SidebarMenuButton asChild` with a `label`/`subtitle`/`trailing` slot. Feeds all above high/medium items with a single fix.
-

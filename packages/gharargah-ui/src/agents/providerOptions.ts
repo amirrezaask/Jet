@@ -22,12 +22,6 @@ export const PROVIDER_OPTIONS: Array<{
     available: true,
     pickerSidebarBadge: "new",
   },
-  // Legacy id still maps to Cursor branding (ACP is the default transport).
-  {
-    value: ProviderDriverKind.make("cursor-acp"),
-    label: "Cursor",
-    available: true,
-  },
   {
     value: ProviderDriverKind.make("grok"),
     label: "Grok",

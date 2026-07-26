@@ -12,12 +12,14 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.json --noEmit false"
+    "build": "tsc -p tsconfig.json --noEmit false",
+    "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@gharargah/shared": "workspace:*"
   },
   "devDependencies": {
+    "tsx": "^4.23.0",
     "typescript": "^7.0.2"
   }
 }

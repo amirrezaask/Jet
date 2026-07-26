@@ -1538,8 +1538,7 @@ body,
     transition:
       background-color var(--glass-motion) var(--glass-ease),
       border-color var(--glass-motion) var(--glass-ease),
-      box-shadow var(--glass-motion) var(--glass-ease),
-      transform var(--gharargah-motion-fast) var(--glass-ease);
+      box-shadow var(--glass-motion) var(--glass-ease);
   }
 
   [data-gharargah-palette] [data-slot="command-item"]:hover,
@@ -1569,12 +1568,6 @@ body,
       inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
       0 0 0 2px color-mix(in srgb, var(--primary) 28%, transparent),
       0 0 28px -4px var(--glass-accent-glow);
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    [data-gharargah-palette] [data-slot="command-item"]:hover {
-      transform: translateY(-0.5px);
-    }
   }
 
   [data-gharargah-palette] [data-slot="command-empty"] {

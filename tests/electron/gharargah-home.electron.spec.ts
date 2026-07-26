@@ -324,7 +324,7 @@ test.describe("gharargah mission home", () => {
     }
   })
 
-  test("restored session with missing PTY stays on home as Failed card", async () => {
+  test("restored session with missing PTY is dropped from home", async () => {
     const { app, page } = await launchJet()
     try {
       await expectSelectorVisible(page, "[data-gharargah-home]")
@@ -367,16 +367,19 @@ test.describe("gharargah mission home", () => {
         `[data-gharargah-project-section][data-gharargah-project-name="${workspace.name}"]`,
       )
       await expectLocatorVisible(section)
-      const card = section.locator(
-        '[data-gharargah-terminal-card][data-status="failed"]:not([data-gharargah-new-session])',
+      const deadCard = section.locator(
+        '[data-gharargah-terminal-card]:not([data-gharargah-new-session])',
       )
-      await expectLocatorVisible(card.first(), { timeout: 20_000 })
-      await expectLocatorContainsText(card.first(), "Missing PTY session")
-      await expectLocatorContainsText(
-        card.first().locator("[data-gharargah-status-badge]"),
-        "Failed",
-      )
-      await expectLocatorContainsText(card.first(), "Process unavailable")
+      await expectLocatorCount(deadCard, 0, { timeout: 20_000 })
+      await expect
+        .poll(
+          async () =>
+            page.evaluate(() =>
+              document.body?.innerText?.includes("Missing PTY session") ?? false,
+            ),
+          { timeout: 5_000 },
+        )
+        .toBe(false)
     } finally {
       await app.close()
     }

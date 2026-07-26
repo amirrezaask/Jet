@@ -80,7 +80,7 @@ export type MessagesTimelineRow =
       assistantTurnDiffSummary?: import("@gharargah/agents").TurnDiffSummary
       revertTurnCount?: number
     }
-  | { kind: "working"; id: string; createdAt: string | null }
+  | { kind: "working"; id: string; createdAt: string | null; label: string }
   | {
       kind: "structured"
       id: string
@@ -150,6 +150,7 @@ export function deriveMessagesTimelineRows(input: {
   latestTurn?: TimelineLatestTurn | null
   runningTurnId?: string | null
   isWorking: boolean
+  workingLabel: string
   activeTurnStartedAt: string | null
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<string, import("@gharargah/agents").TurnDiffSummary>
   revertTurnCountByUserMessageId?: ReadonlyMap<string, number>
@@ -216,6 +217,7 @@ export function deriveMessagesTimelineRows(input: {
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
+      label: input.workingLabel,
     })
   }
 
@@ -225,7 +227,8 @@ export function deriveMessagesTimelineRows(input: {
 function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean {
   if (a.kind !== b.kind || a.id !== b.id) return false
   if (a.kind === "working") {
-    return a.createdAt === (b as typeof a).createdAt
+    const next = b as typeof a
+    return a.createdAt === next.createdAt && a.label === next.label
   }
   if (a.kind === "structured") {
     return a.item === (b as typeof a).item

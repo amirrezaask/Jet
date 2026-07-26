@@ -25,11 +25,12 @@ use super::claude_sdk::{
     ClaudeSupervisorTurnRequest, ClaudeTimelineUpdate,
 };
 use super::codex_app_server::{
-    normalize_notification as normalize_codex_notification, CodexInteraction, CodexInteractionKind,
-    CodexSupervisor, CodexSupervisorTurnRequest, CodexTimelineUpdate,
+    normalize_notification as normalize_codex_notification, CodexAppServer, CodexInteraction,
+    CodexInteractionKind, CodexSupervisor, CodexSupervisorTurnRequest, CodexTimelineUpdate,
     RuntimeMode as CodexRuntimeMode,
 };
 use super::events::EventHub;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
@@ -48,6 +49,11 @@ use std::time::Instant;
 /// Counts full-thread JSON rewrites (write amplification signal for agent benches).
 static WRITE_THREAD_COUNT: AtomicU64 = AtomicU64::new(0);
 static WRITE_THREAD_BYTES: AtomicU64 = AtomicU64::new(0);
+const MAX_INLINE_ATTACHMENT_BYTES: usize = 512 * 1024;
+const PROVIDER_MODELS_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+static CODEX_MODELS_CACHE: Mutex<Option<(std::time::Instant, Vec<Value>)>> = Mutex::new(None);
+static CURSOR_MODELS_CACHE: Mutex<Option<(std::time::Instant, Vec<Value>)>> = Mutex::new(None);
+static OPENCODE_MODELS_CACHE: Mutex<Option<(std::time::Instant, Vec<Value>)>> = Mutex::new(None);
 
 pub fn reset_write_thread_metrics() {
     WRITE_THREAD_COUNT.store(0, Ordering::Relaxed);
@@ -65,6 +71,76 @@ struct ActiveTurn {
     id: Uuid,
     stop: Arc<Mutex<bool>>,
     provider_cancel: Option<watch::Sender<bool>>,
+}
+
+fn attachment_prompt_context(input: &Value) -> Result<(String, Vec<Value>), String> {
+    let mut sections = Vec::new();
+    let mut metadata = Vec::new();
+    for item in input
+        .get("files")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(8)
+    {
+        let name = item
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("attachment");
+        let mime_type = item
+            .get("mimeType")
+            .or_else(|| item.get("mime_type"))
+            .and_then(Value::as_str);
+        let path = item
+            .get("path")
+            .and_then(Value::as_str)
+            .filter(|path| !path.is_empty());
+        let data = item
+            .get("data")
+            .and_then(Value::as_str)
+            .filter(|data| !data.is_empty());
+
+        let mut attachment = json!({
+            "name": name,
+            "kind": "file",
+            "mimeType": mime_type,
+        });
+        if let Some(path) = path {
+            attachment["path"] = json!(path);
+            sections.push(format!("- Local file `{name}`: {path}"));
+        } else if let Some(data) = data {
+            let decoded = BASE64_STANDARD
+                .decode(data)
+                .map_err(|_| format!("Could not decode attached file: {name}"))?;
+            if decoded.len() > MAX_INLINE_ATTACHMENT_BYTES {
+                return Err(format!("Attached file is larger than 512 KB: {name}"));
+            }
+            let content = String::from_utf8(decoded)
+                .map_err(|_| format!("Attach binary files from a local path: {name}"))?;
+            sections.push(format!(
+                "- Inline file `{name}` ({})\n<file_contents name={:?}>\n{content}\n</file_contents>",
+                mime_type.unwrap_or("text/plain"),
+                name,
+            ));
+        } else {
+            return Err(format!(
+                "Attached file has no readable path or contents: {name}"
+            ));
+        }
+        metadata.push(attachment);
+    }
+    if sections.is_empty() {
+        Ok((String::new(), metadata))
+    } else {
+        Ok((
+            format!(
+                "\n\nThe user attached these files. Treat their contents as project context:\n{}",
+                sections.join("\n"),
+            ),
+            metadata,
+        ))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -96,11 +172,6 @@ const AGENTS: &[AgentSpec] = &[
         binaries: &["cursor-agent", "agent"],
     },
     AgentSpec {
-        id: "cursor-acp",
-        display_name: "Cursor",
-        binaries: &["cursor-agent", "agent"],
-    },
-    AgentSpec {
         id: "grok",
         display_name: "Grok",
         binaries: &["grok"],
@@ -110,7 +181,7 @@ const AGENTS: &[AgentSpec] = &[
 fn normalize_agent_id(id: &str) -> &str {
     match id {
         "claudeAgent" => "claude",
-        "cursorAcp" => "cursor-acp",
+        "cursorAcp" | "cursor-acp" => "cursor",
         other => other,
     }
 }
@@ -151,7 +222,7 @@ impl AgentsHost {
             "claude" => "claude:sdk".to_string(),
             "opencode" => "opencode:acp".to_string(),
             // Prefer ACP so edits go through the host FS bridge (CLI is degraded chat-only).
-            "cursor" | "cursor-acp" => "cursor:acp".to_string(),
+            "cursor" => "cursor:acp".to_string(),
             "grok" => "grok:acp".to_string(),
             id => format!("{id}:cli"),
         }
@@ -168,7 +239,6 @@ impl AgentsHost {
     fn acp_driver_id(agent_id: &str) -> Option<String> {
         let id = normalize_agent_id(agent_id);
         match id {
-            "cursor-acp" => Some("cursor:acp".to_string()),
             "grok" => Some("grok:acp".to_string()),
             "cursor" | "codex" | "claude" | "opencode" => Some(format!("{id}:acp")),
             _ => None,
@@ -178,7 +248,7 @@ impl AgentsHost {
     fn cli_driver_id(agent_id: &str) -> Option<String> {
         let id = normalize_agent_id(agent_id);
         match id {
-            "cursor-acp" | "grok" => None,
+            "grok" => None,
             "cursor" | "codex" | "claude" | "opencode" => Some(format!("{id}:cli")),
             _ => None,
         }
@@ -303,12 +373,6 @@ impl AgentsHost {
         }
         if thread.get("driverId").and_then(Value::as_str).is_none() {
             thread["driverId"] = json!(Self::default_driver_id(&agent_id));
-        }
-        // Legacy threads stored ACP under agentId=cursor + cursor:acp.
-        if agent_id == "cursor"
-            && thread.get("driverId").and_then(Value::as_str) == Some("cursor:acp")
-        {
-            thread["agentId"] = json!("cursor-acp");
         }
         thread
     }
@@ -450,6 +514,8 @@ impl AgentsHost {
             return Err(format!("unsupported driver: {driver_id}"));
         }
         Self::ensure_driver_available(agent.id, &driver_id)?;
+        let model = input.get("model").and_then(Value::as_str).unwrap_or("auto");
+        let config_options = model_config_options(agent.id, Some(model));
         let thread = json!({
             "id": Uuid::new_v4().to_string(),
             "title": input.get("title").and_then(|v| v.as_str()).unwrap_or("New agent"),
@@ -457,7 +523,7 @@ impl AgentsHost {
             "workspaceRootPath": root_path,
             "agentId": agent.id,
             "driverId": driver_id,
-            "model": input.get("model").and_then(|v| v.as_str()).unwrap_or("auto"),
+            "model": model,
             "runtimeMode": input
                 .get("runtimeMode")
                 .and_then(Value::as_str)
@@ -475,7 +541,7 @@ impl AgentsHost {
             "pendingPermissions": [],
             "pendingUserInputs": [],
             "permissionRules": [],
-            "configOptions": [],
+            "configOptions": config_options,
             "discoveredModels": [],
             "usage": Value::Null,
             "plan": Value::Null,
@@ -518,16 +584,47 @@ impl AgentsHost {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-
-        let key = format!("{root_path}::{thread_id}");
-        // Reject before mutating transcript — second prompt while turn runs is a typed error.
-        if self.active_turns.lock().unwrap().contains_key(&key) {
-            return Err("turn_already_running".to_string());
+        let (attachment_context, mut message_attachments) = attachment_prompt_context(input)?;
+        let provider_prompt = format!("{text}{attachment_context}");
+        if let Some(images) = input.get("images").and_then(Value::as_array) {
+            message_attachments.extend(images.iter().take(8).map(|image| {
+                json!({
+                    "name": image
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Image"),
+                    "kind": "image",
+                    "mimeType": image
+                        .get("mimeType")
+                        .or_else(|| image.get("mime_type"))
+                        .and_then(Value::as_str),
+                })
+            }));
         }
 
+        let key = format!("{root_path}::{thread_id}");
         let mut thread = self
             .read_thread(&root_path, &thread_id)
             .ok_or("unknown thread")?;
+        // Reject before mutating transcript — second prompt while turn runs is a typed error.
+        // Provider completion is persisted just before the worker drops its bookkeeping
+        // slot. Once the durable status is terminal, the provider turn lock is already
+        // released and this narrow stale slot can be reclaimed safely.
+        {
+            let mut turns = self.active_turns.lock().unwrap();
+            if turns.contains_key(&key) {
+                let terminal = matches!(
+                    thread.get("status").and_then(Value::as_str),
+                    Some("idle" | "cancelled" | "disconnected" | "error")
+                );
+                if terminal {
+                    turns.remove(&key);
+                } else {
+                    return Err("turn_already_running".to_string());
+                }
+            }
+        }
+
         let requested_agent_input = input
             .get("agentId")
             .or_else(|| input.get("provider"))
@@ -561,6 +658,7 @@ impl AgentsHost {
             "createdAt": now,
             "updatedAt": now,
             "streaming": false,
+            "attachments": message_attachments,
         });
         let assistant_message = json!({
             "id": assistant_id,
@@ -632,7 +730,7 @@ impl AgentsHost {
                 root_path,
                 thread_id,
                 assistant_id,
-                text,
+                provider_prompt,
                 agent_id,
                 driver_id,
                 model,
@@ -654,7 +752,7 @@ impl AgentsHost {
         Ok(thread)
     }
 
-    pub fn interrupt_turn(&self, input: &Value) -> Result<Option<Value>, String> {
+    pub fn interrupt_turn(&self, app: &EventHub, input: &Value) -> Result<Option<Value>, String> {
         let root_path = input
             .get("workspaceRootPath")
             .and_then(|v| v.as_str())
@@ -666,10 +764,36 @@ impl AgentsHost {
             .and_then(|v| v.as_str())
             .ok_or("missing threadId")?;
         let key = format!("{root_path}::{thread_id}");
-        if let Some(active) = self.active_turns.lock().unwrap().remove(&key) {
-            *active.stop.lock().unwrap() = true;
-            if let Some(cancel) = active.provider_cancel {
-                let _ = cancel.send(true);
+        let interrupted = {
+            let turns = self.active_turns.lock().unwrap();
+            if let Some(active) = turns.get(&key) {
+                *active.stop.lock().unwrap() = true;
+                if let Some(cancel) = &active.provider_cancel {
+                    let _ = cancel.send(true);
+                }
+                true
+            } else {
+                false
+            }
+        };
+        if interrupted {
+            if let Some(mut thread) = self.read_thread(&root_path, thread_id) {
+                if matches!(
+                    thread.get("status").and_then(Value::as_str),
+                    Some(
+                        "connecting"
+                            | "authenticating"
+                            | "running"
+                            | "waiting_for_permission"
+                            | "reconnecting"
+                    )
+                ) {
+                    thread["status"] = json!("cancelling");
+                    thread["activity"] = json!("Stopping…");
+                    thread["updatedAt"] = json!(Self::now_iso());
+                    Self::write_thread(&root_path, &thread)?;
+                    emit_host(app, "agents:threadUpdated", vec![thread]);
+                }
             }
         }
         self.supervisor.cancel_turn(&key);
@@ -704,6 +828,9 @@ impl AgentsHost {
         let Some(mut thread) = self.read_thread(&root_path, thread_id) else {
             return Ok(None);
         };
+        let refresh_model_options = input.get("agentId").is_some()
+            || input.get("provider").is_some()
+            || input.get("model").is_some();
         if let Some(agent_id) = input.get("agentId").or_else(|| input.get("provider")) {
             let requested = agent_id.as_str().ok_or("invalid agentId")?;
             let agent = agent_spec(requested).ok_or("unknown agent")?;
@@ -712,6 +839,10 @@ impl AgentsHost {
                 thread["driverId"] = json!(Self::default_driver_id(agent.id));
             }
             thread["acpSessionId"] = Value::Null;
+            thread["configOptions"] = json!([]);
+            thread["discoveredModels"] = json!([]);
+            thread["sessionModes"] = Value::Null;
+            thread["interactionMode"] = json!("implement");
         }
         if let Some(driver_id) = input.get("driverId") {
             let requested_driver_id = driver_id.as_str().ok_or("invalid driverId")?;
@@ -728,6 +859,14 @@ impl AgentsHost {
         }
         if let Some(model) = input.get("model") {
             thread["model"] = model.clone();
+        }
+        if refresh_model_options {
+            let agent_id = thread
+                .get("agentId")
+                .and_then(Value::as_str)
+                .unwrap_or("codex");
+            let model = thread.get("model").and_then(Value::as_str);
+            thread["configOptions"] = json!(model_config_options(agent_id, model));
         }
         if let Some(runtime_mode) = input.get("runtimeMode") {
             let mode = runtime_mode.as_str().ok_or("invalid runtimeMode")?;
@@ -776,18 +915,13 @@ impl AgentsHost {
                                     &mode_state,
                                 )
                             {
-                                if let Some(object) =
-                                    thread.get_mut("sessionModes").and_then(Value::as_object_mut)
+                                if let Some(object) = thread
+                                    .get_mut("sessionModes")
+                                    .and_then(Value::as_object_mut)
                                 {
-                                    object.insert(
-                                        "currentModeId".to_string(),
-                                        json!(resolved),
-                                    );
+                                    object.insert("currentModeId".to_string(), json!(resolved));
                                     // Protocol serde may use snake_case too.
-                                    object.insert(
-                                        "current_mode_id".to_string(),
-                                        json!(resolved),
-                                    );
+                                    object.insert("current_mode_id".to_string(), json!(resolved));
                                 }
                             }
                         }
@@ -854,6 +988,19 @@ impl AgentsHost {
             "agents": agents,
             "updatedAt": Self::now_iso(),
         })
+    }
+
+    pub fn refresh_agents(&self, provider_id: Option<&str>) -> Value {
+        if std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() != Some("1") {
+            match provider_id.map(normalize_agent_id) {
+                Some("codex") => refresh_codex_models(),
+                Some("cursor") => refresh_cursor_models(),
+                Some("opencode") => refresh_opencode_models(),
+                Some("claude") => {}
+                _ => {}
+            }
+        }
+        self.list_agents()
     }
 
     pub fn list_providers(&self) -> Value {
@@ -989,32 +1136,277 @@ fn unavailable_acp_reason(agent_id: &str) -> Option<&'static str> {
 
 fn agent_models(agent: &AgentSpec) -> Value {
     if std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() == Some("1") {
-        return json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }]);
+        return match agent.id {
+            "codex" => json!([
+                { "slug": "auto", "name": "Auto", "shortName": "Auto" },
+                {
+                    "slug": "mock-codex",
+                    "name": "Mock Codex",
+                    "shortName": "Mock Codex",
+                    "configOptions": [{
+                        "id": "reasoning_effort",
+                        "name": "Reasoning",
+                        "category": "reasoning",
+                        "currentValue": "high",
+                        "values": [
+                            { "value": "low", "name": "Low" },
+                            { "value": "high", "name": "High" },
+                        ],
+                    }],
+                },
+            ]),
+            "claude" => json!([
+                { "slug": "auto", "name": "Auto", "shortName": "Auto" },
+                {
+                    "slug": "sonnet",
+                    "name": "Claude Sonnet",
+                    "shortName": "Sonnet",
+                    "configOptions": [{
+                        "id": "effort",
+                        "name": "Reasoning",
+                        "category": "reasoning",
+                        "currentValue": "high",
+                        "values": [
+                            { "value": "low", "name": "Low" },
+                            { "value": "high", "name": "High" },
+                        ],
+                    }],
+                },
+            ]),
+            "cursor" => json!([
+                { "slug": "auto", "name": "Auto", "shortName": "Auto" },
+                { "slug": "mock-composer", "name": "Mock Composer", "shortName": "Composer" },
+            ]),
+            "opencode" => json!([
+                { "slug": "auto", "name": "Auto", "shortName": "Auto" },
+                { "slug": "mock/opencode", "name": "Mock OpenCode", "shortName": "OpenCode" },
+            ]),
+            _ => json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }]),
+        };
     }
-    if agent.id == "cursor" || agent.id == "cursor-acp" {
+    if agent.id == "cursor" {
         return json!(list_cursor_models());
+    }
+    if agent.id == "codex" {
+        return json!(list_codex_models());
+    }
+    if agent.id == "claude" {
+        let effort = json!({
+            "id": "effort",
+            "name": "Reasoning",
+            "description": "How much reasoning Claude uses for this response.",
+            "category": "reasoning",
+            "currentValue": "high",
+            "values": [
+                { "value": "low", "name": "Low" },
+                { "value": "medium", "name": "Medium" },
+                { "value": "high", "name": "High" },
+                { "value": "xhigh", "name": "Extra high" },
+                { "value": "max", "name": "Max" },
+            ],
+        });
+        return json!([
+            { "slug": "auto", "name": "Auto", "shortName": "Auto", "configOptions": [effort.clone()] },
+            { "slug": "sonnet", "name": "Claude Sonnet", "shortName": "Sonnet", "configOptions": [effort.clone()] },
+            { "slug": "opus", "name": "Claude Opus", "shortName": "Opus", "configOptions": [effort.clone()] },
+            { "slug": "haiku", "name": "Claude Haiku", "shortName": "Haiku", "configOptions": [effort] },
+        ]);
+    }
+    if agent.id == "opencode" {
+        return json!(list_opencode_models());
     }
     json!([{ "slug": "auto", "name": "Auto", "shortName": "Auto" }])
 }
 
-fn list_cursor_models() -> Vec<Value> {
-    static CACHE: Mutex<Option<(std::time::Instant, Vec<Value>)>> = Mutex::new(None);
-    const TTL: std::time::Duration = std::time::Duration::from_secs(60);
+fn model_config_options(agent_id: &str, model: Option<&str>) -> Vec<Value> {
+    let Some(agent) = agent_spec(agent_id) else {
+        return Vec::new();
+    };
+    let models = agent_models(&agent);
+    let Some(models) = models.as_array() else {
+        return Vec::new();
+    };
+    let selected = model
+        .and_then(|slug| {
+            models
+                .iter()
+                .find(|candidate| candidate.get("slug").and_then(Value::as_str) == Some(slug))
+        })
+        .or_else(|| models.first());
+    selected
+        .and_then(|model| model.get("configOptions"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
 
-    if let Ok(guard) = CACHE.lock() {
+fn list_codex_models() -> Vec<Value> {
+    if let Ok(guard) = CODEX_MODELS_CACHE.lock() {
         if let Some((fetched_at, models)) = guard.as_ref() {
-            if fetched_at.elapsed() < TTL && !models.is_empty() {
+            if fetched_at.elapsed() < PROVIDER_MODELS_TTL && !models.is_empty() {
                 return models.clone();
             }
         }
     }
 
-    let models = fetch_cursor_models_from_cli()
-        .unwrap_or_else(|| vec![json!({ "slug": "auto", "name": "Auto", "shortName": "Auto" })]);
-    if let Ok(mut guard) = CACHE.lock() {
+    vec![json!({ "slug": "auto", "name": "Auto", "shortName": "Auto" })]
+}
+
+fn refresh_codex_models() {
+    if let Ok(guard) = CODEX_MODELS_CACHE.lock() {
+        if guard.as_ref().is_some_and(|(fetched_at, models)| {
+            fetched_at.elapsed() < PROVIDER_MODELS_TTL && !models.is_empty()
+        }) {
+            return;
+        }
+    }
+
+    let mut models = list_codex_models();
+    if let Some(discovered) = fetch_codex_models_from_app_server() {
+        models.extend(discovered);
+    }
+    if let Ok(mut guard) = CODEX_MODELS_CACHE.lock() {
         *guard = Some((std::time::Instant::now(), models.clone()));
     }
-    models
+}
+
+fn fetch_codex_models_from_app_server() -> Option<Vec<Value>> {
+    let cwd = std::env::current_dir().ok()?;
+    let result = thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()?;
+        runtime.block_on(async move {
+            let server = CodexAppServer::start("codex", &[], cwd, &[]).await.ok()?;
+            server.list_models().await.ok()
+        })
+    })
+    .join()
+    .ok()
+    .flatten()?;
+
+    let mut models = Vec::new();
+    for item in result.get("data").and_then(Value::as_array)?.iter() {
+        if item.get("hidden").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let slug = item
+            .get("model")
+            .or_else(|| item.get("id"))
+            .and_then(Value::as_str)?;
+        if slug.is_empty() || models.iter().any(|model: &Value| model["slug"] == slug) {
+            continue;
+        }
+        let name = item
+            .get("displayName")
+            .and_then(Value::as_str)
+            .unwrap_or(slug);
+        let mut config_options = Vec::new();
+        if let Some(efforts) = item
+            .get("supportedReasoningEfforts")
+            .and_then(Value::as_array)
+            .filter(|efforts| !efforts.is_empty())
+        {
+            let values = efforts
+                .iter()
+                .filter_map(|effort| {
+                    let value = effort.get("reasoningEffort").and_then(Value::as_str)?;
+                    let label = value
+                        .split(['-', '_'])
+                        .map(|part| {
+                            let mut chars = part.chars();
+                            chars
+                                .next()
+                                .map(|first| {
+                                    first.to_uppercase().collect::<String>() + chars.as_str()
+                                })
+                                .unwrap_or_default()
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    Some(json!({ "value": value, "name": label }))
+                })
+                .collect::<Vec<_>>();
+            config_options.push(json!({
+                "id": "reasoning_effort",
+                "name": "Reasoning",
+                "description": "How much reasoning Codex uses for this response.",
+                "category": "reasoning",
+                "currentValue": item
+                    .get("defaultReasoningEffort")
+                    .and_then(Value::as_str)
+                    .unwrap_or("high"),
+                "values": values,
+            }));
+        }
+        if let Some(tiers) = item
+            .get("serviceTiers")
+            .and_then(Value::as_array)
+            .filter(|tiers| tiers.len() > 1)
+        {
+            let values = tiers
+                .iter()
+                .filter_map(|tier| {
+                    Some(json!({
+                        "value": tier.get("id").and_then(Value::as_str)?,
+                        "name": tier.get("name").and_then(Value::as_str)?,
+                    }))
+                })
+                .collect::<Vec<_>>();
+            config_options.push(json!({
+                "id": "service_tier",
+                "name": "Speed",
+                "description": "Choose the Codex service tier.",
+                "category": "speed",
+                "currentValue": item
+                    .get("defaultServiceTier")
+                    .and_then(Value::as_str)
+                    .or_else(|| {
+                        tiers
+                            .first()
+                            .and_then(|tier| tier.get("id"))
+                            .and_then(Value::as_str)
+                    })
+                    .unwrap_or("default"),
+                "values": values,
+            }));
+        }
+        models.push(json!({
+            "slug": slug,
+            "name": name,
+            "shortName": name,
+            "configOptions": config_options,
+        }));
+    }
+    (!models.is_empty()).then_some(models)
+}
+
+fn list_cursor_models() -> Vec<Value> {
+    if let Ok(guard) = CURSOR_MODELS_CACHE.lock() {
+        if let Some((fetched_at, models)) = guard.as_ref() {
+            if fetched_at.elapsed() < PROVIDER_MODELS_TTL && !models.is_empty() {
+                return models.clone();
+            }
+        }
+    }
+
+    vec![json!({ "slug": "auto", "name": "Auto", "shortName": "Auto" })]
+}
+
+fn refresh_cursor_models() {
+    if let Ok(guard) = CURSOR_MODELS_CACHE.lock() {
+        if guard.as_ref().is_some_and(|(fetched_at, models)| {
+            fetched_at.elapsed() < PROVIDER_MODELS_TTL && !models.is_empty()
+        }) {
+            return;
+        }
+    }
+    let models = fetch_cursor_models_from_cli()
+        .unwrap_or_else(|| vec![json!({ "slug": "auto", "name": "Auto", "shortName": "Auto" })]);
+    if let Ok(mut guard) = CURSOR_MODELS_CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), models.clone()));
+    }
 }
 
 fn fetch_cursor_models_from_cli() -> Option<Vec<Value>> {
@@ -1069,6 +1461,75 @@ fn parse_cursor_models_output(stdout: &str) -> Vec<Value> {
     models
 }
 
+fn list_opencode_models() -> Vec<Value> {
+    if let Ok(guard) = OPENCODE_MODELS_CACHE.lock() {
+        if let Some((fetched_at, models)) = guard.as_ref() {
+            if fetched_at.elapsed() < PROVIDER_MODELS_TTL && !models.is_empty() {
+                return models.clone();
+            }
+        }
+    }
+
+    vec![json!({ "slug": "auto", "name": "Auto", "shortName": "Auto" })]
+}
+
+fn refresh_opencode_models() {
+    if let Ok(guard) = OPENCODE_MODELS_CACHE.lock() {
+        if guard.as_ref().is_some_and(|(fetched_at, models)| {
+            fetched_at.elapsed() < PROVIDER_MODELS_TTL && !models.is_empty()
+        }) {
+            return;
+        }
+    }
+    let mut models = vec![json!({ "slug": "auto", "name": "Auto", "shortName": "Auto" })];
+    if let Some(discovered) = fetch_opencode_models_from_cli() {
+        models.extend(discovered);
+    }
+    if let Ok(mut guard) = OPENCODE_MODELS_CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), models.clone()));
+    }
+}
+
+fn fetch_opencode_models_from_cli() -> Option<Vec<Value>> {
+    let output = Command::new("opencode")
+        .arg("models")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let models = parse_opencode_models_output(&String::from_utf8_lossy(&output.stdout));
+    (!models.is_empty()).then_some(models)
+}
+
+fn parse_opencode_models_output(stdout: &str) -> Vec<Value> {
+    let mut slugs = Vec::<String>::new();
+    for line in stdout.lines() {
+        let slug = line.trim();
+        if slug.is_empty()
+            || slug == "auto"
+            || slug.chars().any(char::is_whitespace)
+            || slugs.iter().any(|existing| existing == slug)
+        {
+            continue;
+        }
+        slugs.push(slug.to_string());
+    }
+    slugs
+        .into_iter()
+        .map(|slug| {
+            let short_name = slug.rsplit('/').next().unwrap_or(&slug).to_string();
+            json!({
+                "slug": slug,
+                "name": short_name,
+                "shortName": short_name,
+            })
+        })
+        .collect()
+}
+
 fn agent_available(agent: &AgentSpec) -> bool {
     std::env::var("GHARARGAH_AGENT_MOCK").ok().as_deref() == Some("1")
         || agent.binaries.iter().any(|binary| which_binary(binary))
@@ -1109,7 +1570,8 @@ fn run_turn(
         run_mock_turn(&app, &root_path, &thread_id, &assistant_id, &prompt, &stop);
         return;
     }
-    if !use_mock && driver_id == "codex:app-server" {
+    let codex_mock_bin = std::env::var_os("GHARARGAH_MOCK_CODEX_APP_SERVER_BIN");
+    if driver_id == "codex:app-server" && (!use_mock || codex_mock_bin.is_some()) {
         if let Err(error) = run_codex_turn(
             &app,
             &root_path,
@@ -1317,6 +1779,20 @@ fn value_as_string(value: Option<&Value>) -> Option<String> {
         Value::Null => None,
         other => Some(other.to_string()),
     }
+}
+
+fn thread_config_value(thread: &Value, config_id: &str) -> Option<String> {
+    thread
+        .get("configOptions")
+        .and_then(Value::as_array)
+        .and_then(|options| {
+            options
+                .iter()
+                .find(|option| option.get("id").and_then(Value::as_str) == Some(config_id))
+        })
+        .and_then(|option| option.get("currentValue"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 fn map_tool_status(raw: &str) -> &'static str {
@@ -1658,6 +2134,9 @@ fn run_codex_turn(
         .ok_or_else(|| "thread_not_found".to_string())?;
     let runtime_mode =
         CodexRuntimeMode::from_product_value(thread.get("runtimeMode").and_then(Value::as_str));
+    let effort = thread_config_value(&thread, "reasoning_effort")
+        .or_else(|| thread_config_value(&thread, "effort"));
+    let service_tier = thread_config_value(&thread, "service_tier");
     let existing_provider_thread_id = thread
         .get("providerSessionId")
         .or_else(|| thread.get("codexThreadId"))
@@ -1667,78 +2146,82 @@ fn run_codex_turn(
     let thread_key = format!("{root_path}::{thread_id}");
     let streamed_text = Arc::new(Mutex::new(String::new()));
 
-    let result = runtime.block_on(supervisor.run_turn(CodexSupervisorTurnRequest {
-        executable: PathBuf::from("codex"),
-        extra_args: Vec::new(),
-        env: Vec::new(),
-        workspace_root: PathBuf::from(root_path),
-        thread_key,
-        existing_provider_thread_id,
-        prompt: prompt.to_string(),
-        images,
-        runtime_mode,
-        model,
-        service_tier: None,
-        effort: None,
-        cancel,
-        on_session: {
-            let app = app.clone();
-            let root_path = root_path.to_string();
-            let thread_id = thread_id.to_string();
-            Arc::new(move |provider_thread_id| {
-                persist_native_session(
-                    &app,
-                    &root_path,
-                    &thread_id,
-                    "codex-app-server",
-                    provider_thread_id,
-                );
-            })
-        },
-        on_text_delta: {
-            let app = app.clone();
-            let root_path = root_path.to_string();
-            let thread_id = thread_id.to_string();
-            let assistant_id = assistant_id.to_string();
-            let streamed_text = streamed_text.clone();
-            Arc::new(move |delta| {
-                let snapshot = {
-                    let mut text = streamed_text.lock().expect("Codex text lock poisoned");
-                    text.push_str(delta);
-                    text.clone()
-                };
-                emit_assistant_delta(&app, &root_path, &thread_id, &assistant_id, &snapshot);
-            })
-        },
-        on_notification: {
-            let app = app.clone();
-            let root_path = root_path.to_string();
-            let thread_id = thread_id.to_string();
-            Arc::new(move |notification| {
-                let provider_session_id = AgentsHost::read_thread_value(&root_path, &thread_id)
-                    .and_then(|thread| {
-                        thread
-                            .get("providerSessionId")
-                            .and_then(Value::as_str)
-                            .map(str::to_string)
-                    })
-                    .unwrap_or_else(|| thread_id.clone());
-                if let Some(update) =
-                    normalize_codex_notification(notification, &provider_session_id)
-                {
-                    persist_codex_timeline_update(&app, &root_path, &thread_id, update);
-                }
-            })
-        },
-        on_interaction: {
-            let app = app.clone();
-            let root_path = root_path.to_string();
-            let thread_id = thread_id.to_string();
-            Arc::new(move |interaction| {
-                persist_codex_interaction(&app, &root_path, &thread_id, interaction);
-            })
-        },
-    }));
+    let result = runtime.block_on(
+        supervisor.run_turn(CodexSupervisorTurnRequest {
+            executable: std::env::var("GHARARGAH_MOCK_CODEX_APP_SERVER_BIN")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("codex")),
+            extra_args: Vec::new(),
+            env: Vec::new(),
+            workspace_root: PathBuf::from(root_path),
+            thread_key,
+            existing_provider_thread_id,
+            prompt: prompt.to_string(),
+            images,
+            runtime_mode,
+            model,
+            service_tier,
+            effort,
+            cancel,
+            on_session: {
+                let app = app.clone();
+                let root_path = root_path.to_string();
+                let thread_id = thread_id.to_string();
+                Arc::new(move |provider_thread_id| {
+                    persist_native_session(
+                        &app,
+                        &root_path,
+                        &thread_id,
+                        "codex-app-server",
+                        provider_thread_id,
+                    );
+                })
+            },
+            on_text_delta: {
+                let app = app.clone();
+                let root_path = root_path.to_string();
+                let thread_id = thread_id.to_string();
+                let assistant_id = assistant_id.to_string();
+                let streamed_text = streamed_text.clone();
+                Arc::new(move |delta| {
+                    let snapshot = {
+                        let mut text = streamed_text.lock().expect("Codex text lock poisoned");
+                        text.push_str(delta);
+                        text.clone()
+                    };
+                    emit_assistant_delta(&app, &root_path, &thread_id, &assistant_id, &snapshot);
+                })
+            },
+            on_notification: {
+                let app = app.clone();
+                let root_path = root_path.to_string();
+                let thread_id = thread_id.to_string();
+                Arc::new(move |notification| {
+                    let provider_session_id = AgentsHost::read_thread_value(&root_path, &thread_id)
+                        .and_then(|thread| {
+                            thread
+                                .get("providerSessionId")
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
+                        })
+                        .unwrap_or_else(|| thread_id.clone());
+                    if let Some(update) =
+                        normalize_codex_notification(notification, &provider_session_id)
+                    {
+                        persist_codex_timeline_update(&app, &root_path, &thread_id, update);
+                    }
+                })
+            },
+            on_interaction: {
+                let app = app.clone();
+                let root_path = root_path.to_string();
+                let thread_id = thread_id.to_string();
+                Arc::new(move |interaction| {
+                    persist_codex_interaction(&app, &root_path, &thread_id, interaction);
+                })
+            },
+        }),
+    );
 
     clear_native_pending_interactions(app, root_path, thread_id);
     let result = result.map_err(|error| error.to_string())?;
@@ -1801,6 +2284,7 @@ fn run_claude_turn(
         .ok_or_else(|| "thread_not_found".to_string())?;
     let permission_mode =
         ClaudePermissionMode::from_product_value(thread.get("runtimeMode").and_then(Value::as_str));
+    let effort = thread_config_value(&thread, "effort");
     let existing_provider_session_id = thread
         .get("providerSessionId")
         .or_else(|| thread.get("claudeSessionId"))
@@ -1824,7 +2308,7 @@ fn run_claude_turn(
         images,
         permission_mode,
         model,
-        effort: None,
+        effort,
         cancel,
         on_session: {
             let app = app.clone();
@@ -1927,6 +2411,7 @@ fn persist_native_session(
     };
     thread["providerTransport"] = json!(transport);
     thread["providerSessionId"] = json!(provider_thread_id);
+    thread["updatedAt"] = json!(AgentsHost::now_iso());
     thread["connection"] = json!({
         "status": "connected",
         "message": Value::Null,
@@ -1948,6 +2433,7 @@ fn persist_codex_interaction(
         return;
     };
     let now = AgentsHost::now_iso();
+    thread["updatedAt"] = json!(now);
     match interaction.kind {
         CodexInteractionKind::Permission => {
             let permission = ui_permission(&interaction.payload);
@@ -2012,6 +2498,7 @@ fn persist_codex_timeline_update(
     let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
         return;
     };
+    thread["updatedAt"] = json!(AgentsHost::now_iso());
     if update.append_text {
         if let Some(timeline) = thread.get_mut("timeline").and_then(Value::as_array_mut) {
             if let Some(existing) = timeline.iter_mut().find(|candidate| {
@@ -2065,6 +2552,7 @@ fn persist_claude_interaction(
         return;
     };
     let now = AgentsHost::now_iso();
+    thread["updatedAt"] = json!(now);
     match interaction.kind {
         ClaudeInteractionKind::Permission => {
             let permission = ui_permission(&interaction.payload);
@@ -2129,6 +2617,7 @@ fn persist_claude_timeline_update(
     let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) else {
         return;
     };
+    thread["updatedAt"] = json!(AgentsHost::now_iso());
     if update.append_text {
         if let Some(timeline) = thread.get_mut("timeline").and_then(Value::as_array_mut) {
             if let Some(existing) = timeline.iter_mut().find(|candidate| {
@@ -2406,6 +2895,16 @@ fn run_acp_turn(
                             "connection": thread.get("connection").cloned().unwrap_or(Value::Null),
                         })],
                     );
+                    emit_host(&app, "agents:threadUpdated", vec![thread]);
+                    return;
+                }
+
+                // AgentMessageChunk already owns the canonical assistant message
+                // through `on_text`. Persisting the pipeline's Text item as a
+                // second timeline assistant produces duplicate replies with a
+                // different transport id.
+                if item.kind == TimelineItemKind::Text {
+                    let _ = AgentsHost::write_thread(&root_path, &thread);
                     emit_host(&app, "agents:threadUpdated", vec![thread]);
                     return;
                 }
@@ -2720,6 +3219,7 @@ fn persist_thread_activity(
         Some(value) => json!(value),
         None => Value::Null,
     };
+    thread["updatedAt"] = json!(AgentsHost::now_iso());
     let _ = AgentsHost::write_thread(root_path, &thread);
     emit_host(app, "agents:threadUpdated", vec![thread]);
 }
@@ -2732,6 +3232,7 @@ fn persist_acp_session_id(app: &EventHub, root_path: &str, thread_id: &str, sess
         return;
     }
     thread["acpSessionId"] = json!(session_id);
+    thread["updatedAt"] = json!(AgentsHost::now_iso());
     let _ = AgentsHost::write_thread(root_path, &thread);
     emit_host(app, "agents:threadUpdated", vec![thread]);
 }
@@ -2744,6 +3245,7 @@ fn persist_acp_provider(app: &EventHub, root_path: &str, thread_id: &str, provid
         return;
     }
     thread["acpProvider"] = json!(provider_id);
+    thread["updatedAt"] = json!(AgentsHost::now_iso());
     let _ = AgentsHost::write_thread(root_path, &thread);
     emit_host(app, "agents:threadUpdated", vec![thread]);
 }
@@ -2920,7 +3422,7 @@ fn update_assistant(
                 "workspaceRootUri": root_uri,
                 "threadId": thread_id,
                 "updatedAt": updated_at,
-                "status": status,
+                "status": "running",
                 "lastError": thread.get("lastError").cloned().unwrap_or(Value::Null),
                 "messageId": assistant_id,
                 "text": text.unwrap_or(""),
@@ -2940,7 +3442,8 @@ pub fn handle(
     args: &[Value],
 ) -> Result<Value, String> {
     match channel {
-        "agents:listAgents" | "agents:refreshAgents" => Ok(host.list_agents()),
+        "agents:listAgents" => Ok(host.list_agents()),
+        "agents:refreshAgents" => Ok(host.refresh_agents(args.first().and_then(Value::as_str))),
         "agents:listProviders" | "agents:refreshProviders" => Ok(host.list_providers()),
         "agents:listThreads" => Ok(host.list_threads(
             args.first().and_then(|v| v.as_str()).unwrap_or(""),
@@ -2966,7 +3469,7 @@ pub fn handle(
         "agents:createThread" => host.create_thread(args.first().ok_or("missing input")?),
         "agents:sendMessage" => host.send_message(app, args.first().ok_or("missing input")?),
         "agents:interruptTurn" => Ok(host
-            .interrupt_turn(args.first().ok_or("missing input")?)?
+            .interrupt_turn(app, args.first().ok_or("missing input")?)?
             .unwrap_or(Value::Null)),
         "agents:setArchived" => Ok(host
             .set_archived(app, args.first().ok_or("missing input")?)?
@@ -3124,7 +3627,11 @@ pub fn handle(
                             Some("reject" | "reject_once" | "reject_always")
                         );
                     if rejected {
-                        mark_permission_denied_in_thread(&mut thread, request_id, &pending_permission);
+                        mark_permission_denied_in_thread(
+                            &mut thread,
+                            request_id,
+                            &pending_permission,
+                        );
                     }
                     let _ = AgentsHost::write_thread(root_path, &thread);
                     emit_host(app, "agents:threadUpdated", vec![thread]);
@@ -3212,43 +3719,55 @@ pub fn handle(
                 .get("value")
                 .and_then(Value::as_str)
                 .ok_or("missing value")?;
-            let thread = host
+            let mut thread = host
                 .read_thread(root_path, thread_id)
                 .ok_or("thread_not_found")?;
-            let provider_id = thread
-                .get("acpProvider")
-                .and_then(Value::as_str)
-                .unwrap_or("cursor-acp");
-            let session_id = thread
-                .get("acpSessionId")
-                .and_then(Value::as_str)
-                .ok_or("missing_acp_session")?;
-            let connection_key = format!("{provider_id}:{root_path}");
-            let runtime = tokio::runtime::Handle::try_current()
-                .map_err(|_| "no tokio runtime".to_string())?;
-            runtime.block_on(host.supervisor.set_session_config_option(
-                &connection_key,
-                session_id,
-                config_id,
-                value,
-            ))?;
-            if let Some(mut thread) = host.read_thread(root_path, thread_id) {
-                if let Some(options) = thread
-                    .get_mut("configOptions")
-                    .and_then(Value::as_array_mut)
-                {
-                    for option in options.iter_mut() {
-                        if option.get("id").and_then(Value::as_str) == Some(config_id) {
-                            option["currentValue"] = json!(value);
+            if let (Some(provider_id), Some(session_id)) = (
+                thread.get("acpProvider").and_then(Value::as_str),
+                thread.get("acpSessionId").and_then(Value::as_str),
+            ) {
+                let connection_key = format!("{provider_id}:{root_path}");
+                let runtime = tokio::runtime::Handle::try_current()
+                    .map_err(|_| "no tokio runtime".to_string())?;
+                runtime.block_on(host.supervisor.set_session_config_option(
+                    &connection_key,
+                    session_id,
+                    config_id,
+                    value,
+                ))?;
+            }
+            let mut matched = false;
+            if let Some(options) = thread
+                .get_mut("configOptions")
+                .and_then(Value::as_array_mut)
+            {
+                for option in options.iter_mut() {
+                    if option.get("id").and_then(Value::as_str) == Some(config_id) {
+                        let advertised = option
+                            .get("values")
+                            .and_then(Value::as_array)
+                            .map(|values| {
+                                values.iter().any(|candidate| {
+                                    candidate.get("value").and_then(Value::as_str) == Some(value)
+                                })
+                            })
+                            .unwrap_or(true);
+                        if !advertised {
+                            return Err("invalid_config_option_value".to_string());
                         }
+                        option["currentValue"] = json!(value);
+                        matched = true;
                     }
                 }
-                if config_id.eq_ignore_ascii_case("model") {
-                    thread["model"] = json!(value);
-                }
-                let _ = AgentsHost::write_thread(root_path, &thread);
-                emit_host(app, "agents:threadUpdated", vec![thread]);
             }
+            if !matched {
+                return Err("unknown_config_option".to_string());
+            }
+            if config_id.eq_ignore_ascii_case("model") {
+                thread["model"] = json!(value);
+            }
+            let _ = AgentsHost::write_thread(root_path, &thread);
+            emit_host(app, "agents:threadUpdated", vec![thread]);
             Ok(Value::Null)
         }
         "agents:getAcpTrace" => {
@@ -3288,14 +3807,12 @@ pub fn handle(
                 input.get("threadId").and_then(Value::as_str),
             ) {
                 let thread_key = format!("{root_path}::{thread_id}");
-                let transport = host
-                    .read_thread(root_path, thread_id)
-                    .and_then(|thread| {
-                        thread
-                            .get("providerTransport")
-                            .and_then(Value::as_str)
-                            .map(str::to_string)
-                    });
+                let transport = host.read_thread(root_path, thread_id).and_then(|thread| {
+                    thread
+                        .get("providerTransport")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                });
                 match transport.as_deref() {
                     Some("codex-app-server") => {
                         host.codex_supervisor.force_stop(&thread_key);
@@ -3474,7 +3991,8 @@ fn connection_key_from_input(input: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cli_args, parse_cursor_models_output, ui_timeline_item, unavailable_acp_reason, AgentsHost,
+        attachment_prompt_context, cli_args, model_config_options, parse_cursor_models_output,
+        parse_opencode_models_output, ui_timeline_item, unavailable_acp_reason, AgentsHost,
     };
     use crate::host::acp::{TimelineItem, TimelineItemKind};
     use serde_json::{json, Value};
@@ -3548,6 +4066,55 @@ mod tests {
     }
 
     #[test]
+    fn attachments_become_provider_context_without_polluting_display_text() {
+        let (context, metadata) = attachment_prompt_context(&json!({
+            "files": [
+                {
+                    "name": "notes.md",
+                    "mimeType": "text/markdown",
+                    "data": "aGVsbG8gYWdlbnQ="
+                },
+                {
+                    "name": "local.ts",
+                    "path": "/tmp/local.ts"
+                }
+            ]
+        }))
+        .unwrap();
+
+        assert!(context.contains("hello agent"));
+        assert!(context.contains("/tmp/local.ts"));
+        assert_eq!(metadata.len(), 2);
+        assert_eq!(metadata[0]["name"], "notes.md");
+        assert_eq!(metadata[0]["kind"], "file");
+        assert_eq!(metadata[1]["path"], "/tmp/local.ts");
+        assert!(metadata[0].get("data").is_none());
+    }
+
+    #[test]
+    fn rejects_unreadable_inline_binary_attachments() {
+        let error = attachment_prompt_context(&json!({
+            "files": [{
+                "name": "binary.bin",
+                "data": "/w=="
+            }]
+        }))
+        .unwrap_err();
+        assert!(error.contains("local path"));
+    }
+
+    #[test]
+    fn claude_models_expose_only_claude_reasoning_settings() {
+        let options = model_config_options("claude", Some("sonnet"));
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0]["id"], "effort");
+        assert_eq!(options[0]["name"], "Reasoning");
+        assert!(options[0]["values"]
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value["value"] == "max")));
+    }
+
+    #[test]
     fn migrates_legacy_store_to_index_and_thread_files() {
         let root = std::env::temp_dir().join(format!(
             "gharargah-agent-store-{}-{}",
@@ -3601,26 +4168,11 @@ mod tests {
             .iter()
             .map(|agent| agent["id"].as_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(
-            ids,
-            vec![
-                "codex",
-                "claude",
-                "opencode",
-                "cursor",
-                "cursor-acp",
-                "grok"
-            ]
-        );
+        assert_eq!(ids, vec!["codex", "claude", "opencode", "cursor", "grok"]);
         for agent in agents {
             let id = agent["id"].as_str().unwrap();
             let drivers = agent["drivers"].as_array().unwrap();
-            if id == "cursor-acp" {
-                assert_eq!(agent["activeDriverId"], "cursor:acp");
-                assert_eq!(drivers.len(), 1);
-                assert_eq!(drivers[0]["id"], "cursor:acp");
-                assert_eq!(drivers[0]["kind"], "acp");
-            } else if id == "grok" {
+            if id == "grok" {
                 assert_eq!(agent["activeDriverId"], "grok:acp");
                 assert_eq!(drivers.len(), 1);
                 assert_eq!(drivers[0]["id"], "grok:acp");
@@ -3667,37 +4219,41 @@ mod tests {
                         "missing degraded cli driver for cursor"
                     );
                     assert!(
-                        drivers.iter().any(
-                            |driver| driver["id"] == "cursor:acp" && driver["kind"] == "acp"
-                        ),
+                        drivers
+                            .iter()
+                            .any(|driver| driver["id"] == "cursor:acp" && driver["kind"] == "acp"),
                         "missing acp driver for cursor"
                     );
                 } else {
                     assert_eq!(agent["activeDriverId"], format!("{id}:cli"));
                     assert!(
-                        drivers.iter().any(
-                            |driver| driver["id"] == format!("{id}:cli") && driver["kind"] == "cli"
-                        ),
+                        drivers
+                            .iter()
+                            .any(|driver| driver["id"] == format!("{id}:cli")
+                                && driver["kind"] == "cli"),
                         "missing cli driver for {id}"
                     );
                     assert!(
-                        drivers.iter().any(
-                            |driver| driver["id"] == format!("{id}:acp") && driver["kind"] == "acp"
-                        ),
+                        drivers
+                            .iter()
+                            .any(|driver| driver["id"] == format!("{id}:acp")
+                                && driver["kind"] == "acp"),
                         "missing acp driver for {id}"
                     );
                 }
                 if id == "codex" || id == "claude" {
                     assert!(
-                        drivers.iter().any(
-                            |driver| driver["id"] == format!("{id}:cli") && driver["kind"] == "cli"
-                        ),
+                        drivers
+                            .iter()
+                            .any(|driver| driver["id"] == format!("{id}:cli")
+                                && driver["kind"] == "cli"),
                         "missing cli driver for {id}"
                     );
                     assert!(
-                        drivers.iter().any(
-                            |driver| driver["id"] == format!("{id}:acp") && driver["kind"] == "acp"
-                        ),
+                        drivers
+                            .iter()
+                            .any(|driver| driver["id"] == format!("{id}:acp")
+                                && driver["kind"] == "acp"),
                         "missing acp driver for {id}"
                     );
                 }
@@ -3733,6 +4289,19 @@ mod tests {
     }
 
     #[test]
+    fn parses_opencode_models_for_the_shared_picker() {
+        let models = parse_opencode_models_output(
+            "\nopenrouter/openai/gpt-mini\nsnapp/xiaomi/mimo-v2.5-pro\n\
+             openrouter/openai/gpt-mini\ninvalid model\n",
+        );
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0]["slug"], "openrouter/openai/gpt-mini");
+        assert_eq!(models[0]["name"], "gpt-mini");
+        assert_eq!(models[1]["slug"], "snapp/xiaomi/mimo-v2.5-pro");
+        assert_eq!(models[1]["shortName"], "mimo-v2.5-pro");
+    }
+
+    #[test]
     fn new_cursor_thread_defaults_to_acp_and_starts_idle() {
         let root = std::env::temp_dir().join(format!(
             "gharargah-agent-thread-{}-{}",
@@ -3756,19 +4325,19 @@ mod tests {
     }
 
     #[test]
-    fn legacy_cursor_acp_threads_move_to_cursor_acp_agent() {
+    fn cursor_acp_threads_keep_the_canonical_cursor_agent() {
         let thread = AgentsHost::normalize_thread(json!({
             "agentId": "cursor",
             "driverId": "cursor:acp",
             "acpSessionId": "sess-1",
         }));
-        assert_eq!(thread["agentId"], "cursor-acp");
+        assert_eq!(thread["agentId"], "cursor");
         assert_eq!(thread["driverId"], "cursor:acp");
         assert_eq!(thread["acpSessionId"], "sess-1");
     }
 
     #[test]
-    fn new_cursor_acp_thread_defaults_to_acp_driver() {
+    fn legacy_cursor_acp_alias_creates_a_canonical_cursor_thread() {
         let root = std::env::temp_dir().join(format!(
             "gharargah-agent-thread-acp-{}-{}",
             std::process::id(),
@@ -3783,7 +4352,7 @@ mod tests {
                 "agentId": "cursor-acp",
             }))
             .unwrap();
-        assert_eq!(thread["agentId"], "cursor-acp");
+        assert_eq!(thread["agentId"], "cursor");
         assert_eq!(thread["driverId"], "cursor:acp");
         assert_eq!(thread["status"], "idle");
         let _ = fs::remove_dir_all(root);

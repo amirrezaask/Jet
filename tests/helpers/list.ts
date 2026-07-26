@@ -94,9 +94,33 @@ export async function expectNoOverlap(page: ShellDriver, opts: NoOverlapOpts = {
       const items = [...document.querySelectorAll<HTMLElement>(sel)]
       const rects = items.map((el, i) => {
         const r = el.getBoundingClientRect()
-        return { i, top: r.top, bottom: r.bottom, left: r.left, right: r.right, text: (el.textContent ?? "").trim().slice(0, 40) }
+        return {
+          i,
+          top: r.top,
+          bottom: r.bottom,
+          left: r.left,
+          right: r.right,
+          text: (el.textContent ?? "").trim().slice(0, 40),
+          transform: getComputedStyle(el).transform,
+          virtualIndex: el.dataset.gharargahListIndex,
+          nodeId: el.dataset.nodeId,
+        }
       })
-      const overlaps: Array<{ a: number; b: number; aText: string; bText: string; overlapY: number }> = []
+      const overlaps: Array<{
+        a: number
+        b: number
+        aText: string
+        bText: string
+        aTop: number
+        bTop: number
+        aTransform: string
+        bTransform: string
+        aVirtualIndex?: string
+        bVirtualIndex?: string
+        aNodeId?: string
+        bNodeId?: string
+        overlapY: number
+      }> = []
       for (let i = 0; i < rects.length; i++) {
         for (let j = i + 1; j < rects.length; j++) {
           const a = rects[i]!
@@ -104,7 +128,21 @@ export async function expectNoOverlap(page: ShellDriver, opts: NoOverlapOpts = {
           const yOverlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
           const xOverlap = Math.min(a.right, b.right) - Math.max(a.left, b.left)
           if (yOverlap > tol && xOverlap > tol) {
-            overlaps.push({ a: a.i, b: b.i, aText: a.text, bText: b.text, overlapY: yOverlap })
+            overlaps.push({
+              a: a.i,
+              b: b.i,
+              aText: a.text,
+              bText: b.text,
+              aTop: a.top,
+              bTop: b.top,
+              aTransform: a.transform,
+              bTransform: b.transform,
+              aVirtualIndex: a.virtualIndex,
+              bVirtualIndex: b.virtualIndex,
+              aNodeId: a.nodeId,
+              bNodeId: b.nodeId,
+              overlapY: yOverlap,
+            })
           }
         }
       }

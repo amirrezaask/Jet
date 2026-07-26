@@ -37,7 +37,7 @@ export type TerminalExplorerGroup = {
 }
 
 export type TerminalAgentShortcut = {
-  id: "codex" | "claude" | "opencode" | "cursor" | "cursor-acp" | "grok"
+  id: "codex" | "claude" | "opencode" | "cursor" | "grok"
   label: string
   /** CLI binary launched in the PTY. Omit for ACP agent-chat sessions. */
   command?: string
