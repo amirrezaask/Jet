@@ -23,6 +23,7 @@ export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   fontSize: DEFAULT_FONT_SIZE,
   fontFamily: DEFAULT_UI_FONT_FAMILY,
   monoFontFamily: DEFAULT_MONO_FONT_FAMILY,
+  sessionLayout: "cards",
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -39,6 +40,10 @@ function normalizeFontFamily(value: unknown, fallback: string): string {
   if (typeof value !== "string") return fallback
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : fallback
+}
+
+function normalizeSessionLayout(value: unknown): JetAppearanceSettings["sessionLayout"] {
+  return value === "tabs" ? "tabs" : "cards"
 }
 
 function loadStoredFontSize(): number {
@@ -82,6 +87,7 @@ function loadAppearanceSettings(): JetAppearanceSettings {
       fontSize: clampNumber(parsed.fontSize, base.fontSize, 10, 24),
       fontFamily: normalizeFontFamily(parsed.fontFamily, base.fontFamily),
       monoFontFamily: normalizeFontFamily(parsed.monoFontFamily, base.monoFontFamily),
+      sessionLayout: normalizeSessionLayout(parsed.sessionLayout),
     }
   } catch {
     return base
@@ -120,6 +126,7 @@ function applyAppearanceCss(settings: JetAppearanceSettings): void {
   root.style.setProperty("--gharargah-terminal-cursor-motion", "trail")
   root.dataset.jetDensity = "compact"
   root.dataset.jetReducedMotion = "false"
+  root.dataset.gharargahSessionLayout = settings.sessionLayout
 }
 
 export function useAppearanceSettings() {

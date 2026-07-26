@@ -170,14 +170,14 @@ test.describe("gharargah mission home", () => {
         .toBe(true)
       await expectSelectorVisible(page, "[data-gharargah-session-mode-switch]")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal-sessions]"), 0)
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
       await expect
         .poll(async () => page.evaluate(() =>
           [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
             .map(tab => tab.getAttribute("aria-label") ?? ""),
         ))
-        .toEqual(["Terminal", "Editor", "Git", "TODOs"])
-      await expectLocatorCount(page.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
+        .toEqual(["Agent", "Terminal", "Editor", "Git", "TODOs"])
+      await expectLocatorCount(page.locator('[data-gharargah-session-mode-tab="agent"]'), 1)
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"]')
@@ -263,7 +263,7 @@ test.describe("gharargah mission home", () => {
       })
       await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
       await expectSelectorVisible(page, "[data-gharargah-modal-editor]")
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
 
       // Open-in-app control in the fullscreen terminal modal header.
       await page.evaluate(() => {

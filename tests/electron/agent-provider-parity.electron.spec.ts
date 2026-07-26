@@ -161,9 +161,27 @@ test.describe("unified agent provider UI", () => {
           .toBe(provider.id)
         await expect
           .poll(() => modal.locator("[data-chat-driver]").getAttribute("data-chat-driver"))
-          .toBe(provider.driverId)
+          .toBe("unknown")
         const createdThreads = (await listThreadIds(page)).filter(id => !threadsBefore.has(id))
-        expect(createdThreads).toHaveLength(1)
+        expect(createdThreads).toHaveLength(0)
+        const unboundRoster = await page.evaluate(() => {
+          const raw = localStorage.getItem("gharargah-session-roster-v2")
+          if (!raw) return null
+          const roster = JSON.parse(raw) as {
+            sessions: Array<{
+              agentId?: string
+              agentDriverId?: string
+              agentThreadId?: string
+            }>
+          }
+          return roster.sessions.at(-1) ?? null
+        })
+        expect(unboundRoster).not.toEqual(
+          expect.objectContaining({
+            agentDriverId: expect.any(String),
+            agentThreadId: expect.any(String),
+          }),
+        )
 
         await modelPicker.click()
         const setupPicker = page.locator("[data-agent-setup-picker]")
@@ -179,12 +197,7 @@ test.describe("unified agent provider UI", () => {
           await expect
             .poll(() => page.locator("[data-agent-setup-picker]").count())
             .toBe(0)
-          await expect
-            .poll(async () => {
-              const thread = await readProviderThread(page, provider.id)
-              return thread?.configOptions?.length ?? 0
-            })
-            .toBeGreaterThan(0)
+          expect(await readProviderThread(page, provider.id)).toBeNull()
           await modelPicker.click()
           await expectLocatorVisible(
             page
@@ -200,6 +213,10 @@ test.describe("unified agent provider UI", () => {
 
         await sendMessage(page, modal, provider.id, `hello ${provider.id}`)
         await waitForAssistant(page, provider.id, provider.firstReply)
+        const createdAfterFirstMessage = (await listThreadIds(page)).filter(
+          id => !threadsBefore.has(id),
+        )
+        expect(createdAfterFirstMessage).toHaveLength(1)
 
         await sendMessage(page, modal, provider.id, "process-count")
         await waitForAssistant(page, provider.id, provider.secondReply)

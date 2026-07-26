@@ -168,6 +168,9 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
     async fillSelector(selector, value) {
       await page.locator(selector).fill(value)
     },
+    setViewportSize(size) {
+      return page.setViewportSize(size)
+    },
     async screenshot() {
       return (await page.screenshot({ type: "png" })).toString("base64")
     },

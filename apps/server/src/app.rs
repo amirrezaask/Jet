@@ -113,10 +113,25 @@ async fn rpc(State(state): State<Arc<AppState>>, Json(request): Json<RpcRequest>
         .first()
         .and_then(Value::as_str)
         .map(str::to_string);
-    match state
-        .host
-        .invoke(&request.channel, request.args, &request.client_id)
-    {
+    let invoke_result = if channel.starts_with("agents:") {
+        let invoke_state = state.clone();
+        let invoke_channel = channel.clone();
+        let runtime = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            let _runtime_guard = runtime.enter();
+            invoke_state
+                .host
+                .invoke(&invoke_channel, request.args, &request.client_id)
+        })
+        .await
+        .map_err(|error| format!("agent RPC task failed: {error}"))
+        .and_then(|result| result)
+    } else {
+        state
+            .host
+            .invoke(&request.channel, request.args, &request.client_id)
+    };
+    match invoke_result {
         Ok(value) => {
             if channel == "terminal:create" {
                 if let Some(id) = value.get("id").and_then(Value::as_str) {
@@ -609,5 +624,29 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn agent_rpc_can_block_on_the_shared_runtime() {
+        let root = tempfile::tempdir().unwrap();
+        let app = router(state(root.path()));
+        let body = serde_json::json!({
+            "channel": "agents:listAcpSessions",
+            "args": [{
+                "connectionKey": format!("cursor-acp:{}", root.path().display())
+            }]
+        })
+        .to_string();
+        let response = app
+            .oneshot(
+                Request::post("/api/v1/rpc")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }

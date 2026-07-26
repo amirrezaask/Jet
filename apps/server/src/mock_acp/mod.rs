@@ -26,8 +26,8 @@ use agent_client_protocol::schema::v1::{
     SessionMode, SessionModeId, SessionModeState, SessionNotification, SessionResumeCapabilities,
     SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
     SetSessionModeRequest, SetSessionModeResponse, StopReason, TerminalOutputRequest, TextContent,
-    ToolCall, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
-    WaitForTerminalExitRequest, WriteTextFileRequest,
+    ToolCall, ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
+    UsageUpdate, WaitForTerminalExitRequest, WriteTextFileRequest,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo, Result, Stdio};
@@ -447,20 +447,26 @@ async fn handle_prompt(
             send_update(
                 &connection,
                 request.session_id.clone(),
-                SessionUpdate::AgentThoughtChunk(text_chunk(
-                    "Mock thought: considering the prompt.",
-                )),
+                SessionUpdate::AgentThoughtChunk(text_chunk("Mock thought: ")),
+            )?;
+            send_update(
+                &connection,
+                request.session_id.clone(),
+                SessionUpdate::AgentThoughtChunk(text_chunk("considering the prompt.")),
             )?;
             answer(&state, &connection, &request.session_id, &prompt).await?
         }
         Scenario::ToolLifecycle => {
             let tool_id = format!("tool-{prompt_number}");
+            let fixture_path = PathBuf::from("/workspace/src/mock-tool.ts");
             send_update(
                 &connection,
                 request.session_id.clone(),
                 SessionUpdate::ToolCall(
-                    ToolCall::new(tool_id.clone(), "Mock tool")
-                        .kind(ToolKind::Execute)
+                    ToolCall::new(tool_id.clone(), "Read File")
+                        .kind(ToolKind::Read)
+                        .raw_input(json!({ "path": fixture_path.clone() }))
+                        .locations(vec![ToolCallLocation::new(fixture_path)])
                         .status(ToolCallStatus::Pending),
                 ),
             )?;
@@ -478,7 +484,9 @@ async fn handle_prompt(
                 request.session_id.clone(),
                 SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
                     tool_id,
-                    ToolCallUpdateFields::new().status(ToolCallStatus::Completed),
+                    ToolCallUpdateFields::new()
+                        .raw_output("export const mock = true")
+                        .status(ToolCallStatus::Completed),
                 )),
             )?;
             answer(&state, &connection, &request.session_id, &prompt).await?
@@ -695,25 +703,24 @@ async fn handle_prompt(
             // Always perform a write+read under the session cwd when the prompt
             // is not an existing absolute file — proves host FS write works.
             let prompt_path = PathBuf::from(&prompt);
-            let (write_path, expected_content, also_read_prompt) = if prompt_path.is_absolute()
-                && prompt_path.exists()
-            {
-                let write_path = prompt_path
-                    .parent()
-                    .unwrap_or(Path::new("."))
-                    .join("acp-write-probe.txt");
-                (
-                    write_path,
-                    format!("mock-write:{prompt_number}"),
-                    Some(prompt_path),
-                )
-            } else {
-                (
-                    PathBuf::from("acp-write-probe.txt"),
-                    format!("mock-write:{prompt}"),
-                    None,
-                )
-            };
+            let (write_path, expected_content, also_read_prompt) =
+                if prompt_path.is_absolute() && prompt_path.exists() {
+                    let write_path = prompt_path
+                        .parent()
+                        .unwrap_or(Path::new("."))
+                        .join("acp-write-probe.txt");
+                    (
+                        write_path,
+                        format!("mock-write:{prompt_number}"),
+                        Some(prompt_path),
+                    )
+                } else {
+                    (
+                        PathBuf::from("acp-write-probe.txt"),
+                        format!("mock-write:{prompt}"),
+                        None,
+                    )
+                };
             connection
                 .send_request(WriteTextFileRequest::new(
                     request.session_id.clone(),
@@ -795,9 +802,22 @@ async fn handle_prompt(
         }
         Scenario::ChaosMalformed => {
             // Initialize already injected a malformed JSON line; fail the prompt so
-            // clients observe a hard transport/protocol error rather than a silent echo.
+            // clients observe a hard transport/protocol error.
             return Err(agent_client_protocol::util::internal_error(
                 "chaos_malformed: intentional protocol/prompt failure",
+            ));
+        }
+        Scenario::PartialThenError => {
+            send_update(
+                &connection,
+                request.session_id.clone(),
+                SessionUpdate::AgentMessageChunk(text_chunk(
+                    "Partial output before transport failure.",
+                )),
+            )?;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            return Err(agent_client_protocol::util::internal_error(
+                "partial_then_error: intentional prompt failure",
             ));
         }
         Scenario::SetModePlan => {

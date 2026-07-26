@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build-web-binary.mjs",
-    "dev": "pnpm --filter gharargah dev",
+    "dev": "pnpm dev:web",
+    "dev:web": "node apps/gharargah/scripts/dev-web.mjs",
     "test:server": "cargo test --manifest-path apps/server/Cargo.toml",
     "clean:rust": "cargo clean --manifest-path apps/server/Cargo.toml",
     "test:e2e": "playwright test --project=web-e2e",

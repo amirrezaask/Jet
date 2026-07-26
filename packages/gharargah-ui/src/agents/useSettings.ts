@@ -6,31 +6,60 @@ export type ClientSettings = {
 }
 
 const STORAGE_KEY = "jet-agent-client-settings"
-
 const defaultSettings: ClientSettings = { favorites: [] }
 
 let settings: ClientSettings = defaultSettings
+let hydrated = false
 
-function readSettings(): ClientSettings {
-  if (typeof localStorage === "undefined") return settings
+function parseSettings(raw: string): ClientSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return settings
     const parsed = JSON.parse(raw) as Partial<ClientSettings>
-    settings = {
+    return {
       favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
     }
   } catch {
+    return defaultSettings
+  }
+}
+
+function hydrateFromStorage(): void {
+  if (hydrated || typeof localStorage === "undefined") return
+  hydrated = true
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    settings = parseSettings(raw)
+  } catch {
     settings = defaultSettings
   }
+}
+
+/** Stable getSnapshot for useSyncExternalStore (re-parse → React #185). */
+export function getClientSettingsSnapshot(): ClientSettings {
+  hydrateFromStorage()
   return settings
+}
+
+export function getClientSettingsServerSnapshot(): ClientSettings {
+  return defaultSettings
+}
+
+/** Test-only reset. */
+export function resetClientSettingsForTests(): void {
+  settings = defaultSettings
+  hydrated = false
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem(STORAGE_KEY)
+  }
 }
 
 const listeners = new Set<() => void>()
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
-  return () => listeners.delete(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
 function emit() {
@@ -38,7 +67,11 @@ function emit() {
 }
 
 function useClientSettingsValue(): ClientSettings {
-  return useSyncExternalStore(subscribe, readSettings, readSettings)
+  return useSyncExternalStore(
+    subscribe,
+    getClientSettingsSnapshot,
+    getClientSettingsServerSnapshot,
+  )
 }
 
 export function useClientSettings<T = ClientSettings>(
@@ -51,12 +84,17 @@ export function useClientSettings<T = ClientSettings>(
   )
 }
 
+export function updateClientSettings(patch: Partial<ClientSettings>): void {
+  hydrateFromStorage()
+  settings = { ...settings, ...patch }
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+  }
+  emit()
+}
+
 export function useUpdateClientSettings() {
   return useCallback((patch: Partial<ClientSettings>) => {
-    settings = { ...readSettings(), ...patch }
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
-    }
-    emit()
+    updateClientSettings(patch)
   }, [])
 }

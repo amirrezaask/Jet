@@ -67,6 +67,8 @@ export const AgentChatView = memo(function AgentChatView(props: {
   onAuthenticate?: (methodId: string) => Promise<void> | void
   onRuntimeModeChange?: (mode: ComposerRuntimeMode) => void
   onInteractionModeChange?: (mode: ComposerInteractionMode) => void
+  /** Hide the in-pane header when session chrome owns it. */
+  hideHeader?: boolean
 }) {
   const {
     thread,
@@ -82,6 +84,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
     onAuthenticate,
     onRuntimeModeChange,
     onInteractionModeChange,
+    hideHeader = false,
   } = props
   const [submitting, setSubmitting] = useState(false)
   const [expandAll, setExpandAll] = useState(true)
@@ -99,6 +102,10 @@ export const AgentChatView = memo(function AgentChatView(props: {
   const userScrollGenerationRef = useRef(0)
   const liveFollowGenerationRef = useRef(0)
   const timelineEntriesLengthRef = useRef(0)
+  const scrollFollowEnabledRef = useRef(scrollFollowEnabled)
+  const showScrollToBottomRef = useRef(showScrollToBottom)
+  scrollFollowEnabledRef.current = scrollFollowEnabled
+  showScrollToBottomRef.current = showScrollToBottom
 
   const providers = useMemo(() => {
     const state = agentCatalogToProviderState(agents)
@@ -194,10 +201,24 @@ export const AgentChatView = memo(function AgentChatView(props: {
         return
       }
       if (isAtEnd) {
+        if (
+          timelineScrollModeRef.current === "following-end" &&
+          scrollFollowEnabledRef.current &&
+          !showScrollToBottomRef.current
+        ) {
+          return
+        }
         timelineScrollModeRef.current = "following-end"
         liveFollowGenerationRef.current = userScrollGenerationRef.current
         setScrollFollowEnabled(true)
         setShowScrollToBottom(false)
+        return
+      }
+      if (
+        timelineScrollModeRef.current === "free-scrolling" &&
+        !scrollFollowEnabledRef.current &&
+        showScrollToBottomRef.current
+      ) {
         return
       }
       timelineScrollModeRef.current = "free-scrolling"
@@ -400,14 +421,16 @@ export const AgentChatView = memo(function AgentChatView(props: {
       }}
       onDrop={handleAgentFileDrop}
     >
-      <ChatHeader
-        activeThreadTitle={thread.title}
-        activeProjectName={projectName}
-        activeProviderName={selectedAgent?.displayName ?? thread.agentId}
-        activeModelLabel={modelLabel}
-        connection={thread.connection}
-        usage={thread.usage}
-      />
+      {hideHeader ? null : (
+        <ChatHeader
+          activeThreadTitle={thread.title}
+          activeProjectName={projectName}
+          activeProviderName={selectedAgent?.displayName ?? thread.agentId}
+          activeModelLabel={modelLabel}
+          connection={thread.connection}
+          usage={thread.usage}
+        />
+      )}
       <ConnectionBanner
         connection={thread.connection}
         onAuthenticate={onAuthenticate ? methodId => void onAuthenticate(methodId) : undefined}

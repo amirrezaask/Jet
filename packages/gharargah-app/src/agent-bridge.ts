@@ -19,6 +19,7 @@ export type JetAgentState = {
   activeEditorDirty: boolean
   searchReady: boolean
   shellView: "home" | "workspace"
+  sessionLayout: "cards" | "tabs"
   sessionMode: "agent" | "terminal" | "editor" | "git" | "todos" | null
   /** Vite-baked; true when GHARARGAH_ENABLE_AGENT_CHAT=1 at frontend build. */
   agentChatEnabled: boolean
@@ -74,6 +75,7 @@ export type AgentBridgeContext = {
   activeEditorDirty?: boolean
   searchReady?: boolean
   sessionMode?: "agent" | "terminal" | "editor" | "git" | "todos" | null
+  sessionLayout?: "cards" | "tabs"
   agentChatEnabled?: boolean
 }
 
@@ -129,6 +131,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
         activeEditorDirty: current.activeEditorDirty ?? false,
         searchReady: current.searchReady ?? false,
         shellView: "home",
+        sessionLayout: current.sessionLayout ?? "cards",
         sessionMode: current.sessionMode ?? null,
         agentChatEnabled: current.agentChatEnabled ?? false,
       }

@@ -446,9 +446,11 @@ impl AcpSupervisor {
         runtime_mode: Option<&str>,
         mode_state: &agent_client_protocol::schema::v1::SessionModeState,
     ) -> Result<(), String> {
-        let Some(mode_id) =
-            super::mode_resolve::resolve_requested_mode_id(interaction_mode, runtime_mode, mode_state)
-        else {
+        let Some(mode_id) = super::mode_resolve::resolve_requested_mode_id(
+            interaction_mode,
+            runtime_mode,
+            mode_state,
+        ) else {
             return Ok(());
         };
         if mode_id == mode_state.current_mode_id.0.as_ref() {
@@ -737,11 +739,37 @@ impl AcpSupervisor {
         }
     }
 
+    pub fn connection_snapshot_for_workspace(
+        &self,
+        provider_id: &str,
+        workspace_root: &std::path::Path,
+    ) -> ProviderConnectionSnapshot {
+        let connection_key = format!("{provider_id}:{}", workspace_root.display());
+        self.connection_snapshot_inner(provider_id, Some(&connection_key))
+    }
+
     pub fn connection_snapshot(&self, provider_id: &str) -> ProviderConnectionSnapshot {
+        self.connection_snapshot_inner(provider_id, None)
+    }
+
+    fn connection_snapshot_inner(
+        &self,
+        provider_id: &str,
+        connection_key: Option<&str>,
+    ) -> ProviderConnectionSnapshot {
         self.connections
             .lock()
             .ok()
             .and_then(|connections| {
+                if let Some(connection_key) = connection_key {
+                    if let Some(record) = connections.get(connection_key) {
+                        let mut snapshot = record.snapshot.clone();
+                        if snapshot.auth_method_ids.is_empty() {
+                            snapshot.auth_method_ids = record.auth_method_ids.clone();
+                        }
+                        return Some(snapshot);
+                    }
+                }
                 let exact = connections
                     .values()
                     .find(|record| record.snapshot.provider_id == provider_id)

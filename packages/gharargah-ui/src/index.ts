@@ -22,6 +22,7 @@ export {
   SessionCard,
   EmptySessionCard,
   StatusBadge,
+  SessionTabBar,
   TerminalSessionModal,
   TERMINAL_MODAL_SESSION_LIST_ID,
   ModalEditorPane,
@@ -39,9 +40,12 @@ export {
   type ModalEditorBuffer,
   type ModalEditorPaneProps,
   type TerminalSessionModalProps,
+  type AgentSessionHeaderMeta,
   type SessionCardModel,
   type SessionCardStatus,
   type SessionCardProps,
+  type SessionTabBarProps,
+  type SessionTabItem,
   type OpenInAppId,
   type OpenInAppMenuProps,
   type OpenInAppTarget,
@@ -103,6 +107,7 @@ export {
   DEFAULT_UI_FONT_FAMILY,
   DEFAULT_MONO_FONT_FAMILY,
   type JetAppearanceSettings,
+  type SessionLayout,
 } from "./components/SettingsOverlay.js"
 export { StatusBar } from "./status/StatusBar.js"
 export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js"

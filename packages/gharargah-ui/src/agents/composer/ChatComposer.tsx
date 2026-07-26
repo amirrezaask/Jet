@@ -679,7 +679,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 open={isModelPickerOpen}
                 onOpenChange={open => {
                   setIsModelPickerOpen(open)
-                  if (open) props.onProvidersRefresh?.(selection.instanceId)
+                  if (open) props.onProvidersRefresh?.()
                 }}
                 disabled={props.disabled}
                 onInstanceModelChange={(instanceId, model) =>

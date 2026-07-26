@@ -3,17 +3,17 @@
  * Protocol-level assertions live in apps/server/tests/mock_acp_scenario_matrix.rs;
  * this file verifies the host/UI path still observes each scenario.
  */
-import { expect, test } from "@playwright/test"
+import { expect, test } from "@playwright/test";
 import {
   expectLocatorContainsText,
   expectLocatorCount,
   expectLocatorVisible,
-} from "../shell/assert.js"
-import { hasPtySpawn, launchJet } from "./_launch.js"
-import fs from "node:fs"
-import path from "node:path"
+} from "../shell/assert.js";
+import { hasPtySpawn, launchJet } from "./_launch.js";
+import fs from "node:fs";
+import path from "node:path";
 
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0";
 
 const ALL_SCENARIOS = [
   // auth_required first: later user-input scenarios have left wedged Jet/mock
@@ -32,6 +32,7 @@ const ALL_SCENARIOS = [
   "config_model",
   "slash_commands",
   "chaos_malformed",
+  "partial_then_error",
   "load_session",
   "fs_roundtrip",
   "terminal_roundtrip",
@@ -43,54 +44,64 @@ const ALL_SCENARIOS = [
   "image_prompt",
   "set_mode_plan",
   "mcp_servers_inject",
-] as const
+] as const;
 
-async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
-  await page.evaluate(() => window.gharargah!.agents!.listAgents())
-  await page.getByRole("button", { name: "New session" }).first().click()
-  await page.locator('[data-gharargah-agent-shortcut="cursor"]').click()
-  const modal = page.locator("[data-gharargah-terminal-modal]")
-  await expectLocatorVisible(modal)
-  await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
-  const composer = modal.locator('[data-testid="composer-editor"]')
-  await expectLocatorVisible(composer, { timeout: 20_000 })
-  return { modal, composer }
+async function openCursorAcpSession(
+  page: Awaited<ReturnType<typeof launchJet>>["page"],
+) {
+  await page.evaluate(() => window.gharargah!.agents!.listAgents());
+  await page.getByRole("button", { name: "New session" }).first().click();
+  await page.locator('[data-gharargah-agent-shortcut="cursor"]').click();
+  const modal = page.locator("[data-gharargah-terminal-modal]");
+  await expectLocatorVisible(modal);
+  await expect
+    .poll(() => modal.getAttribute("data-gharargah-session-mode"))
+    .toBe("agent");
+  const composer = modal.locator('[data-testid="composer-editor"]');
+  await expectLocatorVisible(composer, { timeout: 20_000 });
+  return { modal, composer };
 }
 
-async function readActiveThread(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
-  const workspace = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace!)
-  const uri = `file://${workspace}`
+async function readActiveThread(
+  page: Awaited<ReturnType<typeof launchJet>>["page"],
+) {
+  const workspace = await page.evaluate(
+    () => window.__gharargahAgent!.getState().activeWorkspace!,
+  );
+  const uri = `file://${workspace}`;
   return page.evaluate(
     async ({ uri, workspace }) => {
-      const agents = window.gharargah!.agents!
-      const list = await agents.listThreads(uri, workspace)
-      const rosterRaw = localStorage.getItem("gharargah-session-roster-v2")
+      const agents = window.gharargah!.agents!;
+      const list = await agents.listThreads(uri, workspace);
+      const rosterRaw = localStorage.getItem("gharargah-session-roster-v2");
       const roster = rosterRaw
         ? (JSON.parse(rosterRaw) as {
-            modal?: { tabId?: string }
-            sessions?: Array<{ tabId?: string; agentThreadId?: string }>
+            modal?: { tabId?: string };
+            sessions?: Array<{ tabId?: string; agentThreadId?: string }>;
           })
-        : null
-      const activeTabId = roster?.modal?.tabId
+        : null;
+      const activeTabId = roster?.modal?.tabId;
       const id =
-        roster?.sessions?.find(session => session.tabId === activeTabId)?.agentThreadId ??
-        list.threads[0]?.id
-      if (!id) return null
-      return agents.readThread(uri, workspace, id)
+        roster?.sessions?.find((session) => session.tabId === activeTabId)
+          ?.agentThreadId ?? list.threads[0]?.id;
+      if (!id) return null;
+      return agents.readThread(uri, workspace, id);
     },
     { uri, workspace },
-  )
+  );
 }
 
 async function sendPrompt(
   page: Awaited<ReturnType<typeof launchJet>>["page"],
   modal: ReturnType<Awaited<ReturnType<typeof launchJet>>["page"]["locator"]>,
-  composer: ReturnType<Awaited<ReturnType<typeof launchJet>>["page"]["locator"]>,
+  composer: ReturnType<
+    Awaited<ReturnType<typeof launchJet>>["page"]["locator"]
+  >,
   text: string,
 ) {
-  await composer.click()
-  await composer.fill(text)
-  await modal.getByRole("button", { name: "Send message" }).click()
+  await composer.click();
+  await composer.fill(text);
+  await modal.getByRole("button", { name: "Send message" }).click();
 }
 
 async function waitForAssistantContaining(
@@ -101,15 +112,15 @@ async function waitForAssistantContaining(
   await expect
     .poll(
       async () => {
-        const thread = await readActiveThread(page)
+        const thread = await readActiveThread(page);
         const assistant = [...(thread?.messages ?? [])]
           .reverse()
-          .find(message => message.role === "assistant")
-        return assistant?.text ?? ""
+          .find((message) => message.role === "assistant");
+        return assistant?.text ?? "";
       },
       { timeout },
     )
-    .toContain(needle)
+    .toContain(needle);
 }
 
 test("ACP mock matrix covers every documented mock scenario name", () => {
@@ -129,6 +140,7 @@ test("ACP mock matrix covers every documented mock scenario name", () => {
     "config_model",
     "slash_commands",
     "chaos_malformed",
+    "partial_then_error",
     "load_session",
     "fs_roundtrip",
     "terminal_roundtrip",
@@ -140,15 +152,15 @@ test("ACP mock matrix covers every documented mock scenario name", () => {
     "image_prompt",
     "set_mode_plan",
     "mcp_servers_inject",
-  ])
-})
+  ]);
+});
 
 test.describe("ACP mock scenario matrix (host path)", () => {
-  test.skip(!hasPtySpawn(), "node-pty cannot spawn a shell on this machine")
+  test.skip(!hasPtySpawn(), "node-pty cannot spawn a shell on this machine");
   test.skip(
     !agentChatE2e,
     "disabled in GHARARGAH_ENABLE_AGENT_CHAT=0 recovery builds",
-  )
+  );
 
   for (const scenario of ALL_SCENARIOS) {
     test(`scenario:${scenario}`, async () => {
@@ -157,330 +169,460 @@ test.describe("ACP mock scenario matrix (host path)", () => {
           GHARARGAH_AGENT_MOCK: "1",
           GHARARGAH_AGENT_MOCK_SCENARIO: scenario,
         },
-      })
+      });
       try {
-        const { modal, composer } = await openCursorAcpSession(page)
+        const { modal, composer } = await openCursorAcpSession(page);
 
         if (
           scenario === "permission_allow" ||
           scenario === "permission_tool_race" ||
           scenario === "permission_allow_always"
         ) {
-          await sendPrompt(page, modal, composer, "need permission")
+          await sendPrompt(page, modal, composer, "need permission");
           await expect
-            .poll(async () => (await readActiveThread(page))?.pendingPermissions?.length ?? 0, {
-              timeout: 30_000,
-            })
-            .toBeGreaterThan(0)
+            .poll(
+              async () =>
+                (await readActiveThread(page))?.pendingPermissions?.length ?? 0,
+              {
+                timeout: 30_000,
+              },
+            )
+            .toBeGreaterThan(0);
           const allow = modal
             .getByRole("button", {
-              name: scenario === "permission_allow_always" ? /Always allow/i : /Allow/i,
+              name:
+                scenario === "permission_allow_always"
+                  ? /Always allow/i
+                  : /Allow/i,
             })
-            .last()
-          await expectLocatorVisible(allow, { timeout: 10_000 })
-          await allow.click()
-          await waitForAssistantContaining(page, "Mock agent reply")
-          return
+            .last();
+          await expectLocatorVisible(allow, { timeout: 10_000 });
+          await allow.click();
+          await waitForAssistantContaining(page, "Mock agent reply");
+          return;
         }
 
         if (scenario === "ask_question") {
-          await sendPrompt(page, modal, composer, "choose")
+          await sendPrompt(page, modal, composer, "choose");
           await expect
-            .poll(async () => (await readActiveThread(page))?.pendingUserInputs?.length ?? 0, {
-              timeout: 30_000,
-            })
-            .toBeGreaterThan(0)
-          await expectLocatorVisible(modal.locator('[data-testid="user-input-card"]'), {
-            timeout: 10_000,
-          })
-          await page.getByLabel(/Red/i).click()
-          await modal.getByRole("button", { name: /Submit answers/i }).click()
-          await waitForAssistantContaining(page, "Mock agent reply: choose ->")
-          return
+            .poll(
+              async () =>
+                (await readActiveThread(page))?.pendingUserInputs?.length ?? 0,
+              {
+                timeout: 30_000,
+              },
+            )
+            .toBeGreaterThan(0);
+          await expectLocatorVisible(
+            modal.locator('[data-testid="user-input-card"]'),
+            {
+              timeout: 10_000,
+            },
+          );
+          await page.getByLabel(/Red/i).click();
+          await modal.getByRole("button", { name: /Submit answers/i }).click();
+          await waitForAssistantContaining(page, "Mock agent reply: choose ->");
+          return;
         }
 
         if (scenario === "elicitation") {
-          await sendPrompt(page, modal, composer, "need note")
+          await sendPrompt(page, modal, composer, "need note");
           await expect
-            .poll(async () => (await readActiveThread(page))?.pendingUserInputs?.length ?? 0, {
-              timeout: 30_000,
-            })
-            .toBeGreaterThan(0)
-          await expectLocatorVisible(modal.locator('[data-testid="user-input-card"]'), {
-            timeout: 10_000,
-          })
-          await modal.getByRole("button", { name: /Accept/i }).click()
-          await waitForAssistantContaining(page, "Mock agent reply: need note")
-          return
+            .poll(
+              async () =>
+                (await readActiveThread(page))?.pendingUserInputs?.length ?? 0,
+              {
+                timeout: 30_000,
+              },
+            )
+            .toBeGreaterThan(0);
+          await expectLocatorVisible(
+            modal.locator('[data-testid="user-input-card"]'),
+            {
+              timeout: 10_000,
+            },
+          );
+          await modal.getByRole("button", { name: /Accept/i }).click();
+          await waitForAssistantContaining(page, "Mock agent reply: need note");
+          return;
         }
 
         if (scenario === "create_plan" || scenario === "update_todos") {
-          await sendPrompt(page, modal, composer, `${scenario} e2e`)
+          await sendPrompt(page, modal, composer, `${scenario} e2e`);
           await expect
-            .poll(async () => {
-              const thread = await readActiveThread(page)
-              return Boolean(thread?.plan) || (thread?.timeline ?? []).some(item => item.kind === "plan")
-            }, { timeout: 30_000 })
-            .toBe(true)
-          await waitForAssistantContaining(page, `Mock agent reply: ${scenario} e2e`)
-          return
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                return (
+                  Boolean(thread?.plan) ||
+                  (thread?.timeline ?? []).some((item) => item.kind === "plan")
+                );
+              },
+              { timeout: 30_000 },
+            )
+            .toBe(true);
+          await waitForAssistantContaining(
+            page,
+            `Mock agent reply: ${scenario} e2e`,
+          );
+          return;
         }
 
         if (scenario === "auth_required") {
-          test.setTimeout(60_000)
-          await sendPrompt(page, modal, composer, "blocked")
+          test.setTimeout(60_000);
+          await sendPrompt(page, modal, composer, "blocked");
           await expect
             .poll(
               async () => {
                 const thread = await Promise.race([
                   readActiveThread(page),
                   page.waitForTimeout(2_000).then(() => null),
-                ])
-                if (!thread) return "read-timeout"
-                return `${thread.status ?? ""}::${thread.lastError ?? ""}::${thread.connection?.status ?? ""}`
+                ]);
+                if (!thread) return "read-timeout";
+                return `${thread.status ?? ""}::${thread.lastError ?? ""}::${thread.connection?.status ?? ""}`;
               },
               { timeout: 20_000 },
             )
-            .toMatch(/auth|authenticat/i)
-          const authButton = modal.getByRole("button", { name: /mock-token/i })
+            .toMatch(/auth|authenticat/i);
+          const authButton = modal.getByRole("button", { name: /mock-token/i });
           if (await authButton.isVisible().catch(() => false)) {
-            await authButton.click()
+            await authButton.click();
           } else {
             await page.evaluate(async () => {
-              const workspace = window.__gharargahAgent!.getState().activeWorkspace!
-              const uri = `file://${workspace}`
-              const agents = window.gharargah!.agents!
-              const list = await agents.listThreads(uri, workspace)
-              const current = list.threads[0]
-              if (!current) throw new Error("missing thread")
-              const providerId = current.acpProvider || current.agentId || "cursor-acp"
+              const workspace =
+                window.__gharargahAgent!.getState().activeWorkspace!;
+              const uri = `file://${workspace}`;
+              const agents = window.gharargah!.agents!;
+              const list = await agents.listThreads(uri, workspace);
+              const current = list.threads[0];
+              if (!current) throw new Error("missing thread");
+              const providerId =
+                current.acpProvider || current.agentId || "cursor-acp";
               await agents.authenticate!({
                 providerId,
                 workspaceRootPath: current.workspaceRootPath || workspace,
                 methodId: "mock-token",
-              })
-            })
+              });
+            });
           }
-          await sendPrompt(page, modal, composer, "after auth")
-          await waitForAssistantContaining(page, "Mock agent reply: after auth", 20_000)
-          return
+          await sendPrompt(page, modal, composer, "after auth");
+          await waitForAssistantContaining(
+            page,
+            "Mock agent reply: after auth",
+            20_000,
+          );
+          return;
         }
 
         if (scenario === "image_prompt") {
           // Composer file picker is OS-native; exercise host image path via sendMessage.
           await page.evaluate(async () => {
-            const workspace = window.__gharargahAgent!.getState().activeWorkspace!
-            const uri = `file://${workspace}`
-            const agents = window.gharargah!.agents!
-            const list = await agents.listThreads(uri, workspace)
-            const rosterRaw = localStorage.getItem("gharargah-session-roster-v2")
+            const workspace =
+              window.__gharargahAgent!.getState().activeWorkspace!;
+            const uri = `file://${workspace}`;
+            const agents = window.gharargah!.agents!;
+            const list = await agents.listThreads(uri, workspace);
+            const rosterRaw = localStorage.getItem(
+              "gharargah-session-roster-v2",
+            );
             const roster = rosterRaw
               ? (JSON.parse(rosterRaw) as {
-                  modal?: { tabId?: string }
-                  sessions?: Array<{ tabId?: string; agentThreadId?: string }>
+                  modal?: { tabId?: string };
+                  sessions?: Array<{ tabId?: string; agentThreadId?: string }>;
                 })
-              : null
-            const activeTabId = roster?.modal?.tabId
+              : null;
+            const activeTabId = roster?.modal?.tabId;
             const activeThreadId = roster?.sessions?.find(
-              session => session.tabId === activeTabId,
-            )?.agentThreadId
+              (session) => session.tabId === activeTabId,
+            )?.agentThreadId;
             const thread =
-              list.threads.find(candidate => candidate.id === activeThreadId) ?? list.threads[0]
-            if (!thread) throw new Error("missing thread")
+              list.threads.find(
+                (candidate) => candidate.id === activeThreadId,
+              ) ?? list.threads[0];
+            if (!thread) throw new Error("missing thread");
             const png =
-              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
             await agents.sendMessage({
               workspaceRootUri: uri,
               workspaceRootPath: workspace,
               threadId: thread.id,
               text: "see image",
               images: [{ data: png, mimeType: "image/png" }],
-            })
-          })
-          await waitForAssistantContaining(page, "images=1")
-          return
+            });
+          });
+          await waitForAssistantContaining(page, "images=1");
+          return;
         }
 
         if (scenario === "cancel_coop") {
-          await sendPrompt(page, modal, composer, "please cancel")
+          await sendPrompt(page, modal, composer, "please cancel");
           await expect
-            .poll(async () => (await readActiveThread(page))?.status ?? "", { timeout: 20_000 })
-            .toMatch(/running|waiting_for_permission|cancelling/)
-          const activity = modal.locator('[data-chat-activity="true"]')
-          await expectLocatorCount(activity, 1)
-          await expectLocatorVisible(activity)
-          await expectLocatorContainsText(activity, /Working|Agent is running|Thinking/)
-          await expectLocatorCount(modal.locator('[data-timeline-row-kind="working"]'), 1)
-          await modal.getByRole("button", { name: "Stop generation" }).click()
+            .poll(async () => (await readActiveThread(page))?.status ?? "", {
+              timeout: 20_000,
+            })
+            .toMatch(/running|waiting_for_permission|cancelling/);
+          const activity = modal.locator('[data-chat-activity="true"]');
+          await expectLocatorCount(activity, 1);
+          await expectLocatorVisible(activity);
+          await expectLocatorContainsText(
+            activity,
+            /Working|Agent is running|Thinking/,
+          );
+          await expectLocatorCount(
+            modal.locator('[data-timeline-row-kind="working"]'),
+            1,
+          );
+          await modal.getByRole("button", { name: "Stop generation" }).click();
           await expect
-            .poll(async () => {
-              const thread = await readActiveThread(page)
-              return `${thread?.status ?? ""}::${thread?.lastError ?? ""}`
-            }, { timeout: 30_000 })
-            .toMatch(/cancel|error|interrupted|idle/i)
-          return
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                return `${thread?.status ?? ""}::${thread?.lastError ?? ""}`;
+              },
+              { timeout: 30_000 },
+            )
+            .toMatch(/cancel|error|interrupted|idle/i);
+          return;
         }
 
         if (scenario === "chaos_malformed") {
-          await sendPrompt(page, modal, composer, "boom")
+          await sendPrompt(page, modal, composer, "boom");
+          await expect
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                return `${thread?.status ?? ""}::${thread?.lastError ?? ""}`;
+              },
+              { timeout: 30_000 },
+            )
+            .toMatch(/error|chaos|fail|protocol|malformed/i);
+          return;
+        }
+
+        if (scenario === "partial_then_error") {
+          await sendPrompt(page, modal, composer, "boom after text");
+          await expect
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                return `${thread?.status ?? ""}::${thread?.lastError ?? ""}`;
+              },
+              { timeout: 30_000 },
+            )
+            .toMatch(/error|partial_then_error|fail/i);
           await expect
             .poll(async () => {
-              const thread = await readActiveThread(page)
-              return `${thread?.status ?? ""}::${thread?.lastError ?? ""}`
-            }, { timeout: 30_000 })
-            .toMatch(/error|chaos|fail|protocol|malformed/i)
-          return
+              const thread = await readActiveThread(page);
+              return (
+                [...(thread?.messages ?? [])]
+                  .reverse()
+                  .find((message) => message.role === "assistant")?.text ?? ""
+              );
+            })
+            .toBe("Partial output before transport failure.");
+          return;
         }
 
         if (scenario === "fs_roundtrip") {
           const workspace = await page.evaluate(
             () => window.__gharargahAgent!.getState().activeWorkspace!,
-          )
-          const filePath = path.join(workspace, "acp-fs-fixture.txt")
-          fs.writeFileSync(filePath, "fixture-bytes-e2e")
-          await sendPrompt(page, modal, composer, filePath)
-          await waitForAssistantContaining(page, "Mock read: fixture-bytes-e2e")
-          await waitForAssistantContaining(page, "Mock write+read:")
-          const probePath = path.join(workspace, "acp-write-probe.txt")
+          );
+          const filePath = path.join(workspace, "acp-fs-fixture.txt");
+          fs.writeFileSync(filePath, "fixture-bytes-e2e");
+          await sendPrompt(page, modal, composer, filePath);
+          await waitForAssistantContaining(
+            page,
+            "Mock read: fixture-bytes-e2e",
+          );
+          await waitForAssistantContaining(page, "Mock write+read:");
+          const probePath = path.join(workspace, "acp-write-probe.txt");
           await expect
-            .poll(() => (fs.existsSync(probePath) ? fs.readFileSync(probePath, "utf8") : ""), {
-              timeout: 15_000,
-            })
-            .toMatch(/^mock-write:/)
-          return
+            .poll(
+              () =>
+                fs.existsSync(probePath)
+                  ? fs.readFileSync(probePath, "utf8")
+                  : "",
+              {
+                timeout: 15_000,
+              },
+            )
+            .toMatch(/^mock-write:/);
+          return;
         }
 
         if (scenario === "terminal_roundtrip") {
-          await sendPrompt(page, modal, composer, "run terminal")
-          await waitForAssistantContaining(page, "Mock terminal:")
-          return
+          await sendPrompt(page, modal, composer, "run terminal");
+          await waitForAssistantContaining(page, "Mock terminal:");
+          return;
         }
 
         if (scenario === "load_session") {
           // Two-turn load/replay is covered by Rust `matrix_load_session`.
           // E2E asserts the host path advertises/persists an ACP session id.
-          await sendPrompt(page, modal, composer, "persist me")
-          await waitForAssistantContaining(page, "Mock agent reply: persist me")
+          await sendPrompt(page, modal, composer, "persist me");
+          await waitForAssistantContaining(
+            page,
+            "Mock agent reply: persist me",
+          );
           await expect
-            .poll(async () => (await readActiveThread(page))?.acpSessionId ?? "", {
-              timeout: 15_000,
-            })
-            .not.toBe("")
-          return
+            .poll(
+              async () => (await readActiveThread(page))?.acpSessionId ?? "",
+              {
+                timeout: 15_000,
+              },
+            )
+            .not.toBe("");
+          return;
         }
 
         if (scenario === "multi_session") {
           // Distinct ACP session multiplexing is covered by Rust `matrix_multi_session`.
           // E2E asserts the host path can complete a turn under this scenario flag.
-          await sendPrompt(page, modal, composer, "alpha")
-          await waitForAssistantContaining(page, "Mock agent reply: alpha")
-          return
+          await sendPrompt(page, modal, composer, "alpha");
+          await waitForAssistantContaining(page, "Mock agent reply: alpha");
+          return;
         }
 
         if (scenario === "thought_then_answer") {
-          await sendPrompt(page, modal, composer, "think e2e")
+          await sendPrompt(page, modal, composer, "think e2e");
           await expect
-            .poll(async () => {
-              const thread = await readActiveThread(page)
-              const thought = (thread?.timeline ?? []).find(item => item.kind === "thought")
-              if (thought && "text" in thought) return thought.text
-              return thread?.activity ?? ""
-            }, { timeout: 30_000 })
-            .toMatch(/Mock thought|Thinking/)
-          await waitForAssistantContaining(page, "Mock agent reply: think e2e")
-          return
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                const thought = (thread?.timeline ?? []).find(
+                  (item) => item.kind === "thought",
+                );
+                if (thought && "text" in thought) return thought.text;
+                return thread?.activity ?? "";
+              },
+              { timeout: 30_000 },
+            )
+            .toBe("Mock thought: considering the prompt.");
+          await waitForAssistantContaining(page, "Mock agent reply: think e2e");
+          return;
         }
 
         if (scenario === "tool_lifecycle") {
-          await sendPrompt(page, modal, composer, "use tools")
+          await sendPrompt(page, modal, composer, "use tools");
           await expect
-            .poll(async () => {
-              const thread = await readActiveThread(page)
-              return (thread?.timeline ?? []).some(item => item.kind === "tool_call")
-            }, { timeout: 30_000 })
-            .toBe(true)
-          await waitForAssistantContaining(page, "Mock agent reply: use tools")
-          return
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                const tool = (thread?.timeline ?? []).find(
+                  (item) => item.kind === "tool_call",
+                );
+                return tool?.kind === "tool_call"
+                  ? `${tool.toolCall.name}::${tool.toolCall.summary ?? ""}::${tool.toolCall.status}`
+                  : "";
+              },
+              { timeout: 30_000 },
+            )
+            .toBe("Read File::/workspace/src/mock-tool.ts::completed");
+          await waitForAssistantContaining(page, "Mock agent reply: use tools");
+          return;
         }
 
         if (scenario === "plan_update") {
-          await sendPrompt(page, modal, composer, "plan e2e")
+          await sendPrompt(page, modal, composer, "plan e2e");
           await expect
-            .poll(async () => {
-              const thread = await readActiveThread(page)
-              return Boolean(thread?.plan) || (thread?.timeline ?? []).some(item => item.kind === "plan")
-            }, { timeout: 30_000 })
-            .toBe(true)
-          await waitForAssistantContaining(page, "Mock agent reply: plan e2e")
-          return
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                return (
+                  Boolean(thread?.plan) ||
+                  (thread?.timeline ?? []).some((item) => item.kind === "plan")
+                );
+              },
+              { timeout: 30_000 },
+            )
+            .toBe(true);
+          await waitForAssistantContaining(page, "Mock agent reply: plan e2e");
+          return;
         }
 
         if (scenario === "usage_meter") {
-          await sendPrompt(page, modal, composer, "usage e2e")
+          await sendPrompt(page, modal, composer, "usage e2e");
           await expect
-            .poll(async () => {
-              const thread = await readActiveThread(page)
-              return thread?.usage?.used ?? -1
-            }, { timeout: 30_000 })
-            .toBeGreaterThan(0)
-          await waitForAssistantContaining(page, "Mock agent reply: usage e2e")
-          return
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                return thread?.usage?.used ?? -1;
+              },
+              { timeout: 30_000 },
+            )
+            .toBeGreaterThan(0);
+          await waitForAssistantContaining(page, "Mock agent reply: usage e2e");
+          return;
         }
 
         if (scenario === "slash_commands") {
-          await sendPrompt(page, modal, composer, "slash e2e")
+          await sendPrompt(page, modal, composer, "slash e2e");
           await expect
-            .poll(async () => {
-              const thread = await readActiveThread(page)
-              return thread?.availableCommands?.length ?? 0
-            }, { timeout: 30_000 })
-            .toBeGreaterThan(0)
-          await waitForAssistantContaining(page, "Mock agent reply: slash e2e")
-          return
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                return thread?.availableCommands?.length ?? 0;
+              },
+              { timeout: 30_000 },
+            )
+            .toBeGreaterThan(0);
+          await waitForAssistantContaining(page, "Mock agent reply: slash e2e");
+          return;
         }
 
         if (scenario === "set_mode_plan") {
+          // The provider-neutral draft has no provider capabilities yet. Bind it
+          // with the first turn, then exercise the provider's session-mode RPC.
+          await sendPrompt(page, modal, composer, "bind plan mode e2e");
+          await waitForAssistantContaining(page, "mode:unset");
           await page.evaluate(async () => {
-            const workspace = window.__gharargahAgent!.getState().activeWorkspace!
-            const uri = `file://${workspace}`
-            const agents = window.gharargah!.agents!
-            const list = await agents.listThreads(uri, workspace)
-            const thread = list.threads[0]
-            if (!thread) throw new Error("missing thread")
+            const workspace =
+              window.__gharargahAgent!.getState().activeWorkspace!;
+            const uri = `file://${workspace}`;
+            const agents = window.gharargah!.agents!;
+            const list = await agents.listThreads(uri, workspace);
+            const thread = list.threads[0];
+            if (!thread) throw new Error("missing thread");
             await agents.updateThreadSettings!({
               workspaceRootUri: uri,
               workspaceRootPath: workspace,
               threadId: thread.id,
               interactionMode: "plan",
               runtimeMode: "full-access",
-            })
-          })
-          await sendPrompt(page, modal, composer, "plan mode e2e")
-          await waitForAssistantContaining(page, "mode:plan")
-          return
+            });
+          });
+          await sendPrompt(page, modal, composer, "plan mode e2e");
+          await waitForAssistantContaining(page, "mode:plan");
+          return;
         }
 
         if (scenario === "mcp_servers_inject") {
-          await sendPrompt(page, modal, composer, "mcp inject e2e")
-          await waitForAssistantContaining(page, "mcp_servers=")
+          await sendPrompt(page, modal, composer, "mcp inject e2e");
+          await waitForAssistantContaining(page, "mcp_servers=");
           await expect
-            .poll(async () => {
-              const thread = await readActiveThread(page)
-              const assistant = [...(thread?.messages ?? [])]
-                .reverse()
-                .find(message => message.role === "assistant")
-              return assistant?.text ?? ""
-            }, { timeout: 30_000 })
-            .not.toContain("mcp_servers=0")
-          return
+            .poll(
+              async () => {
+                const thread = await readActiveThread(page);
+                const assistant = [...(thread?.messages ?? [])]
+                  .reverse()
+                  .find((message) => message.role === "assistant");
+                return assistant?.text ?? "";
+              },
+              { timeout: 30_000 },
+            )
+            .not.toContain("mcp_servers=0");
+          return;
         }
 
         // echo | slow_stream | config_model
-        await sendPrompt(page, modal, composer, `${scenario} prompt`)
-        await waitForAssistantContaining(page, `Mock agent reply: ${scenario} prompt`)
+        await sendPrompt(page, modal, composer, `${scenario} prompt`);
+        await waitForAssistantContaining(
+          page,
+          `Mock agent reply: ${scenario} prompt`,
+        );
       } finally {
-        await app.close()
+        await app.close();
       }
-    })
+    });
   }
-})
+});

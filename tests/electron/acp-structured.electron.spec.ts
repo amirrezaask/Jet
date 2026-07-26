@@ -8,21 +8,29 @@ import { hasPtySpawn, launchJet } from "./_launch.js"
 
 const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
 
-async function openCursorAcpSession(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
+async function openCursorAcpSession(
+  page: Awaited<ReturnType<typeof launchJet>>["page"],
+) {
   await page.evaluate(() => window.gharargah!.agents!.listAgents())
   await page.getByRole("button", { name: "New session" }).first().click()
   await page.locator('[data-gharargah-agent-shortcut="cursor"]').click()
   const modal = page.locator("[data-gharargah-terminal-modal]")
   await expectLocatorVisible(modal)
-  await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
+  await expect
+    .poll(() => modal.getAttribute("data-gharargah-session-mode"))
+    .toBe("agent")
   const composer = modal.locator('[data-testid="composer-editor"]')
   await expectLocatorVisible(composer, { timeout: 20_000 })
   await expectLocatorVisible(modal.locator("[data-composer-attach-image]"))
   return { modal, composer }
 }
 
-async function readActiveThread(page: Awaited<ReturnType<typeof launchJet>>["page"]) {
-  const path = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace!)
+async function readActiveThread(
+  page: Awaited<ReturnType<typeof launchJet>>["page"],
+) {
+  const path = await page.evaluate(
+    () => window.__gharargahAgent!.getState().activeWorkspace!,
+  )
   const uri = `file://${path}`
   return page.evaluate(
     async ({ uri, path }) => {
@@ -44,7 +52,9 @@ test.describe("ACP structured timeline", () => {
   )
 
   test("mock ACP streams a simple reply", async () => {
-    const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
+    const { app, page } = await launchJet({
+      env: { GHARARGAH_AGENT_MOCK: "1" },
+    })
     try {
       const { modal, composer } = await openCursorAcpSession(page)
       await composer.click()
@@ -73,7 +83,9 @@ test.describe("ACP structured timeline", () => {
   })
 
   test("dropping a file anywhere in the Agent tab attaches it to the composer", async () => {
-    const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
+    const { app, page } = await launchJet({
+      env: { GHARARGAH_AGENT_MOCK: "1" },
+    })
     try {
       const { modal, composer } = await openCursorAcpSession(page)
       const dropped = await page.evaluate(() => {
@@ -116,7 +128,10 @@ test.describe("ACP structured timeline", () => {
           { timeout: 30_000 },
         )
         .toContain("drag-drop-context-marker-42")
-      await expectLocatorCount(modal.locator('[data-message-attachment="file"]'), 1)
+      await expectLocatorCount(
+        modal.locator('[data-message-attachment="file"]'),
+        1,
+      )
     } finally {
       await app.close()
     }
@@ -136,9 +151,13 @@ test.describe("ACP structured timeline", () => {
       await modal.getByRole("button", { name: "Send message" }).click()
 
       await expect
-        .poll(async () => (await readActiveThread(page))?.pendingPermissions?.length ?? 0, {
-          timeout: 30_000,
-        })
+        .poll(
+          async () =>
+            (await readActiveThread(page))?.pendingPermissions?.length ?? 0,
+          {
+            timeout: 30_000,
+          },
+        )
         .toBeGreaterThan(0)
 
       // Prefer sticky composer card; labels may be "Allow" or "Allow once".
@@ -187,21 +206,31 @@ test.describe("ACP structured timeline", () => {
         .poll(
           async () => {
             const thread = await readActiveThread(page)
-            const thought = (thread?.timeline ?? []).find(item => item.kind === "thought")
+            const thought = (thread?.timeline ?? []).find(
+              item => item.kind === "thought",
+            )
             if (thought && "text" in thought) return thought.text
             return thread?.activity ?? ""
           },
           { timeout: 30_000 },
         )
-        .toMatch(/Mock thought|Thinking/)
+        .toBe("Mock thought: considering the prompt.")
 
-      // Timeline ThoughtBlock may be virtualized; data attr is best-effort UI signal.
+      // Timeline ThoughtBlock is virtualized — expand and assert visible body text.
       const thoughtNode = modal.locator("[data-gharargah-thought]").first()
-      if ((await thoughtNode.count()) > 0) {
-        await expect
-          .poll(async () => (await thoughtNode.getAttribute("data-gharargah-thought-text")) ?? "")
-          .toContain("Mock thought")
-      }
+      await expectLocatorVisible(thoughtNode, { timeout: 15_000 })
+      await expect
+        .poll(
+          async () =>
+            (await thoughtNode.getAttribute("data-gharargah-thought-text")) ??
+            "",
+        )
+        .toBe("Mock thought: considering the prompt.")
+      await thoughtNode.getByRole("button", { name: "Thought" }).click()
+      await expectLocatorContainsText(
+        thoughtNode,
+        "Mock thought: considering the prompt.",
+      )
 
       await expect
         .poll(
@@ -228,7 +257,11 @@ test.describe("ACP structured timeline", () => {
   })
 
   test("tool_lifecycle plan_update usage_meter expose structured UI", async () => {
-    for (const scenario of ["tool_lifecycle", "plan_update", "usage_meter"] as const) {
+    for (const scenario of [
+      "tool_lifecycle",
+      "plan_update",
+      "usage_meter",
+    ] as const) {
       const { app, page } = await launchJet({
         env: {
           GHARARGAH_AGENT_MOCK: "1",
@@ -246,11 +279,16 @@ test.describe("ACP structured timeline", () => {
             async () => {
               const thread = await readActiveThread(page)
               const kinds = (thread?.timeline ?? []).map(item => item.kind)
-              if (scenario === "tool_lifecycle") return kinds.includes("tool_call") ? "ok" : kinds.join(",")
+              if (scenario === "tool_lifecycle")
+                return kinds.includes("tool_call") ? "ok" : kinds.join(",")
               if (scenario === "plan_update") {
-                return kinds.includes("plan") || thread?.plan ? "ok" : kinds.join(",")
+                return kinds.includes("plan") || thread?.plan
+                  ? "ok"
+                  : kinds.join(",")
               }
-              return kinds.includes("usage") || thread?.usage ? "ok" : kinds.join(",")
+              return kinds.includes("usage") || thread?.usage
+                ? "ok"
+                : kinds.join(",")
             },
             { timeout: 30_000 },
           )
@@ -258,20 +296,28 @@ test.describe("ACP structured timeline", () => {
 
         // DOM markers (virtualized list may need a beat after thread JSON updates).
         if (scenario === "tool_lifecycle") {
+          const tool = modal
+            .locator('[data-gharargah-tool-call][data-tool-name="Read File"]')
+            .first()
+          await expectLocatorVisible(tool, { timeout: 15_000 })
           await expect
-            .poll(async () => modal.locator("[data-gharargah-tool-call], [data-timeline-tool]").count(), {
+            .poll(() => tool.getAttribute("data-tool-summary"))
+            .toBe("/workspace/src/mock-tool.ts")
+          await tool.getByRole("button").first().click()
+          await expectLocatorContainsText(tool, "export const mock = true")
+        }
+        if (scenario === "plan_update") {
+          await expect
+            .poll(async () => modal.locator("[data-gharargah-plan]").count(), {
               timeout: 15_000,
             })
             .toBeGreaterThan(0)
         }
-        if (scenario === "plan_update") {
-          await expect
-            .poll(async () => modal.locator("[data-gharargah-plan]").count(), { timeout: 15_000 })
-            .toBeGreaterThan(0)
-        }
         if (scenario === "usage_meter") {
           await expect
-            .poll(async () => modal.locator("[data-gharargah-usage]").count(), { timeout: 15_000 })
+            .poll(async () => modal.locator("[data-gharargah-usage]").count(), {
+              timeout: 15_000,
+            })
             .toBeGreaterThan(0)
         }
       } finally {

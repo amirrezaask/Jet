@@ -1,5 +1,5 @@
 import type { GharargahTheme } from "@gharargah/codemirror"
-import { RotateCcw, X } from "lucide-react"
+import { LayoutGrid, PanelsTopLeft, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import {
   Dialog,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog.js"
 import { Input } from "@/components/ui/input.js"
 import { ScrollArea } from "@/components/ui/scroll-area.js"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { SettingsField } from "@/components/SettingsField.js"
 import { themePreviewSwatches } from "@/theme/bundled.js"
 
@@ -19,6 +20,8 @@ export const DEFAULT_UI_FONT_FAMILY =
 export const DEFAULT_MONO_FONT_FAMILY =
   '"Geist Mono Variable", "Geist Mono", ui-monospace, monospace'
 
+export type SessionLayout = "cards" | "tabs"
+
 export type JetAppearanceSettings = {
   themeId: string
   fontSize: number
@@ -26,6 +29,8 @@ export type JetAppearanceSettings = {
   fontFamily: string
   /** CSS font-family for terminal / editor mono (`--font-mono`). */
   monoFontFamily: string
+  /** Mission Control cards or browser-style session tabs. */
+  sessionLayout: SessionLayout
 }
 
 export type SettingsOverlayProps = {
@@ -182,7 +187,9 @@ export function SettingsOverlay({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <DialogTitle className="text-base">Settings</DialogTitle>
-              <DialogDescription className="mt-1">Theme, font size, and font family.</DialogDescription>
+              <DialogDescription className="mt-1">
+                Session layout, theme, and typography.
+              </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <Button type="button" variant="ghost" size="sm" onClick={onReset} className="gap-2">
@@ -199,7 +206,45 @@ export function SettingsOverlay({
         </DialogHeader>
 
         <ScrollArea className="min-h-0">
-          <div className="max-h-[calc(min(36rem,100vh-3rem)-4.5rem)] space-y-6 p-4">
+          <div className="flex max-h-[calc(min(36rem,100vh-3rem)-4.5rem)] flex-col gap-6 p-4">
+            <section className="flex flex-col gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Session layout</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Choose Mission Control cards or a compact browser-style tab strip.
+                </p>
+              </div>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                value={settings.sessionLayout}
+                onValueChange={value => {
+                  if (value === "cards" || value === "tabs") {
+                    onSettingsChange(settingPatch(settings, { sessionLayout: value }))
+                  }
+                }}
+                aria-label="Session layout"
+                className="w-full gap-0"
+              >
+                <ToggleGroupItem
+                  value="cards"
+                  data-gharargah-session-layout-option="cards"
+                  className="h-9 flex-1 gap-2"
+                >
+                  <LayoutGrid aria-hidden />
+                  Cards
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="tabs"
+                  data-gharargah-session-layout-option="tabs"
+                  className="h-9 flex-1 gap-2"
+                >
+                  <PanelsTopLeft aria-hidden />
+                  Tabs
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </section>
+
             <section className="flex flex-col gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Theme</h3>

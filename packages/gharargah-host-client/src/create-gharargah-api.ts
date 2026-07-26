@@ -160,8 +160,9 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       },
       getAcpTrace: (providerId?: string) =>
         transport.invoke("agents:getAcpTrace", providerId ?? "cursor"),
-      getConnectionState: (providerId?: string) =>
-        transport.invoke("agents:getConnectionState", providerId ?? "cursor"),
+      getConnectionState: (
+        provider?: string | { providerId?: string; workspaceRootPath?: string },
+      ) => transport.invoke("agents:getConnectionState", provider ?? "cursor"),
       forceStopProvider: input => transport.invoke("agents:forceStopProvider", input),
       listAcpSessions: input => transport.invoke("agents:listAcpSessions", input),
       authenticate: input => transport.invoke("agents:authenticate", input),

@@ -170,7 +170,9 @@ export type JetElectronAgents = {
   }) => void): () => void
   onStructuredDelta?(callback: (delta: AgentStructuredDelta) => void): () => void
   getAcpTrace?(providerId?: string): Promise<unknown>
-  getConnectionState?(providerId?: string): Promise<AgentConnectionState | null>
+  getConnectionState?(
+    provider?: string | { providerId?: string; workspaceRootPath?: string },
+  ): Promise<AgentConnectionState | null>
   forceStopProvider?(input: {
     connectionKey?: string
     providerId?: string

@@ -15,6 +15,8 @@ test-results
 .synara
 .pnpm-store
 **/target
+apps/gharargah/src-tauri/binaries
+apps/gharargah/src-tauri/generated
 apps/jet-tauri/src-tauri/capabilities/e2e.json
 .gharargah
 .gharargah/**

@@ -5,6 +5,11 @@ export { SessionCard, type SessionCardProps } from "./SessionCard.js"
 export { EmptySessionCard, type EmptySessionCardProps } from "./EmptySessionCard.js"
 export { StatusBadge, type StatusBadgeProps } from "./StatusBadge.js"
 export {
+  SessionTabBar,
+  type SessionTabBarProps,
+  type SessionTabItem,
+} from "./SessionTabBar.js"
+export {
   defaultSessionDescription,
   detectSessionProvider,
   mapRuntimeStatusToCardStatus,
@@ -19,6 +24,7 @@ export {
   TerminalSessionModal,
   TERMINAL_MODAL_SESSION_LIST_ID,
   type TerminalSessionModalProps,
+  type AgentSessionHeaderMeta,
   type SessionDialogMode,
 } from "./TerminalSessionModal.js"
 export {

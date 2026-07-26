@@ -29,6 +29,7 @@ const MATRIX_SCENARIOS: &[&str] = &[
     "config_model",
     "slash_commands",
     "chaos_malformed",
+    "partial_then_error",
     "load_session",
     "fs_roundtrip",
     "terminal_roundtrip",
@@ -559,6 +560,40 @@ async fn matrix_chaos_malformed() {
         result.is_err(),
         "chaos_malformed must fail the transport, got {:?}",
         result.map(|value| value.text)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn matrix_partial_then_error_preserves_streamed_text() {
+    install_mock_bin();
+    let streamed = Arc::new(Mutex::new(String::new()));
+    let streamed_cb = streamed.clone();
+    let supervisor = AcpSupervisor::new();
+    let result = run_turn(
+        &supervisor,
+        "partial_then_error",
+        "matrix-partial-error",
+        "boom after text",
+        std::env::current_dir().unwrap(),
+        None,
+        None,
+        Arc::new(|_| {}),
+        Arc::new(move |chunk| streamed_cb.lock().unwrap().push_str(chunk)),
+        Arc::new(|_| {}),
+        Arc::new(|_, _| {}),
+    )
+    .await;
+    let error = match result {
+        Ok(value) => panic!(
+            "partial_then_error unexpectedly completed with {:?}",
+            value.text
+        ),
+        Err(error) => error,
+    };
+    assert!(!error.is_empty(), "failure must carry a diagnostic");
+    assert_eq!(
+        streamed.lock().unwrap().as_str(),
+        "Partial output before transport failure."
     );
 }
 

@@ -231,7 +231,12 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     return a.createdAt === next.createdAt && a.label === next.label
   }
   if (a.kind === "structured") {
-    return a.item === (b as typeof a).item
+    const next = b as Extract<MessagesTimelineRow, { kind: "structured" }>
+    if (a.item.id !== next.item.id || a.item.kind !== next.item.kind) return false
+    if (a.item.kind === "thought" && next.item.kind === "thought") {
+      return a.item.text === next.item.text
+    }
+    return a.item === next.item
   }
   const bm = b as Extract<MessagesTimelineRow, { kind: "message" }>
   return (

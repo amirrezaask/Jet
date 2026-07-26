@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gharargah",
+  "version": "0.0.1",
+  "identifier": "com.gharargah.desktop",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": [
+      "binaries/jet"
+    ],
+    "icon": [
+      "../app-icon.png"
+    ]
+  }
+}

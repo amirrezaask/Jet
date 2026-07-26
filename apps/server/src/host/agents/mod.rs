@@ -673,6 +673,14 @@ impl AgentsHost {
             messages.push(assistant_message);
         }
         thread["status"] = json!("running");
+        if is_acp_driver(&driver_id) {
+            thread["connection"] = json!({
+                "status": "connecting",
+                "message": "Connecting to agent…",
+                "providerId": acp_profile_id_for_agent(agent.id).unwrap_or(agent.id),
+                "updatedAt": now,
+            });
+        }
         thread["updatedAt"] = json!(now);
         Self::write_thread(&root_path, &thread)?;
         emit_host(app, "agents:threadUpdated", vec![thread.clone()]);
@@ -997,7 +1005,12 @@ impl AgentsHost {
                 Some("cursor") => refresh_cursor_models(),
                 Some("opencode") => refresh_opencode_models(),
                 Some("claude") => {}
-                _ => {}
+                Some(_) => {}
+                None => {
+                    refresh_codex_models();
+                    refresh_cursor_models();
+                    refresh_opencode_models();
+                }
             }
         }
         self.list_agents()
@@ -1781,6 +1794,75 @@ fn value_as_string(value: Option<&Value>) -> Option<String> {
     }
 }
 
+fn tool_field<'a>(payload: &'a Value, key: &str) -> Option<&'a Value> {
+    payload
+        .get(key)
+        .or_else(|| payload.get("fields").and_then(|fields| fields.get(key)))
+        .or_else(|| payload.get("detail").and_then(|detail| detail.get(key)))
+        .or_else(|| {
+            payload
+                .pointer("/detail/fields")
+                .and_then(|fields| fields.get(key))
+        })
+}
+
+fn tool_value_summary(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => (!value.trim().is_empty()).then(|| value.clone()),
+        Value::Array(values) => values.iter().find_map(tool_value_summary),
+        Value::Object(values) => {
+            for key in [
+                "path",
+                "filePath",
+                "file_path",
+                "command",
+                "cmd",
+                "query",
+                "pattern",
+                "url",
+                "uri",
+                "name",
+            ] {
+                if let Some(summary) = values.get(key).and_then(tool_value_summary) {
+                    return Some(summary);
+                }
+            }
+            values.values().find_map(tool_value_summary)
+        }
+        _ => None,
+    }
+}
+
+fn tool_content_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => (!value.is_empty()).then(|| value.clone()),
+        Value::Array(values) => {
+            let parts = values
+                .iter()
+                .filter_map(tool_content_text)
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>();
+            (!parts.is_empty()).then(|| parts.join("\n"))
+        }
+        Value::Object(values) => {
+            if let Some(text) = values.get("text").and_then(Value::as_str) {
+                return Some(text.to_string());
+            }
+            if values.get("type").and_then(Value::as_str) == Some("diff") {
+                return values
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(|path| format!("Updated {path}"));
+            }
+            values
+                .get("content")
+                .and_then(tool_content_text)
+                .or_else(|| values.get("output").and_then(tool_content_text))
+        }
+        _ => None,
+    }
+}
+
 fn thread_config_value(thread: &Value, config_id: &str) -> Option<String> {
     thread
         .get("configOptions")
@@ -1816,51 +1898,51 @@ fn map_plan_entry_status(raw: &str) -> &'static str {
 }
 
 fn ui_tool_call(payload: &Value, fallback_id: &str) -> Value {
-    let id = payload
-        .get("toolCallId")
-        .or_else(|| payload.get("id"))
+    let id = tool_field(payload, "toolCallId")
+        .or_else(|| tool_field(payload, "id"))
         .and_then(Value::as_str)
         .unwrap_or(fallback_id);
-    let name = payload
-        .get("title")
-        .or_else(|| payload.pointer("/fields/title"))
-        .or_else(|| payload.get("name"))
+    let name = tool_field(payload, "title")
+        .or_else(|| tool_field(payload, "name"))
         .and_then(Value::as_str)
         .unwrap_or("tool");
-    let status_raw = payload
-        .get("status")
-        .or_else(|| payload.pointer("/fields/status"))
+    let status_raw = tool_field(payload, "status")
         .and_then(|v| {
             v.as_str()
                 .map(str::to_string)
                 .or_else(|| Some(v.to_string()))
         })
         .unwrap_or_else(|| "pending".to_string());
-    let kind = payload
-        .get("kind")
-        .or_else(|| payload.pointer("/fields/kind"))
-        .and_then(|v| {
-            v.as_str()
-                .map(str::to_string)
-                .or_else(|| Some(v.to_string()))
-        });
-    let input = value_as_string(
-        payload
-            .get("rawInput")
-            .or_else(|| payload.pointer("/fields/rawInput"))
-            .or_else(|| payload.get("input")),
-    );
+    let kind = tool_field(payload, "kind").and_then(|v| {
+        v.as_str()
+            .map(str::to_string)
+            .or_else(|| Some(v.to_string()))
+    });
+    let raw_input = tool_field(payload, "rawInput")
+        .or_else(|| tool_field(payload, "raw_input"))
+        .or_else(|| tool_field(payload, "input"));
+    let locations = tool_field(payload, "locations");
+    let summary = raw_input
+        .and_then(tool_value_summary)
+        .or_else(|| locations.and_then(tool_value_summary));
+    let input = value_as_string(raw_input);
     let output = value_as_string(
-        payload
-            .get("rawOutput")
-            .or_else(|| payload.pointer("/fields/rawOutput"))
-            .or_else(|| payload.get("output")),
-    );
+        tool_field(payload, "rawOutput")
+            .or_else(|| tool_field(payload, "raw_output"))
+            .or_else(|| tool_field(payload, "output")),
+    )
+    .or_else(|| tool_field(payload, "content").and_then(tool_content_text));
+    let error = tool_field(payload, "error")
+        .and_then(tool_content_text)
+        .filter(|value| !value.is_empty());
     let mut tool = json!({
         "id": id,
         "name": name,
         "status": map_tool_status(&status_raw),
     });
+    if let Some(summary) = summary {
+        tool["summary"] = json!(summary);
+    }
     if let Some(kind) = kind {
         tool["kind"] = json!(kind);
     }
@@ -1869,6 +1951,9 @@ fn ui_tool_call(payload: &Value, fallback_id: &str) -> Value {
     }
     if let Some(output) = output {
         tool["output"] = json!(output);
+    }
+    if let Some(error) = error {
+        tool["error"] = json!(error);
     }
     tool
 }
@@ -2224,7 +2309,26 @@ fn run_codex_turn(
     );
 
     clear_native_pending_interactions(app, root_path, thread_id);
-    let result = result.map_err(|error| error.to_string())?;
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => {
+            persist_thread_activity(app, root_path, thread_id, None);
+            let partial = streamed_text
+                .lock()
+                .map(|text| text.clone())
+                .unwrap_or_default();
+            update_assistant(
+                app,
+                root_path,
+                thread_id,
+                assistant_id,
+                (!partial.is_empty()).then_some(partial.as_str()),
+                "error",
+                Some(&error.to_string()),
+            );
+            return Ok(());
+        }
+    };
     persist_thread_activity(app, root_path, thread_id, None);
     if result.cancelled || result.status == "interrupted" {
         update_assistant(
@@ -2359,7 +2463,26 @@ fn run_claude_turn(
     }));
 
     clear_native_pending_interactions(app, root_path, thread_id);
-    let result = result.map_err(|error| error.to_string())?;
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => {
+            persist_thread_activity(app, root_path, thread_id, None);
+            let partial = streamed_text
+                .lock()
+                .map(|text| text.clone())
+                .unwrap_or_default();
+            update_assistant(
+                app,
+                root_path,
+                thread_id,
+                assistant_id,
+                (!partial.is_empty()).then_some(partial.as_str()),
+                "error",
+                Some(&error.to_string()),
+            );
+            return Ok(());
+        }
+    };
     persist_thread_activity(app, root_path, thread_id, None);
     if result.cancelled || result.status == "interrupted" {
         update_assistant(
@@ -2723,6 +2846,7 @@ fn run_acp_turn(
     };
     let provider_id = profile.id.to_string();
     let thread_key = format!("{root_path}::{thread_id}");
+    let streamed_text = Arc::new(Mutex::new(String::new()));
     let initial_sequence = AgentsHost::read_thread_value(root_path, thread_id)
         .and_then(|thread| thread.get("acpSequence").and_then(Value::as_u64))
         .unwrap_or(0);
@@ -2785,7 +2909,12 @@ fn run_acp_turn(
             let root_path = root_path.to_string();
             let thread_id = thread_id.to_string();
             let assistant_id = assistant_id.to_string();
+            let streamed_text = streamed_text.clone();
             Arc::new(move |text| {
+                if let Ok(mut snapshot) = streamed_text.lock() {
+                    snapshot.clear();
+                    snapshot.push_str(text);
+                }
                 emit_assistant_delta(&app, &root_path, &thread_id, &assistant_id, text);
             })
         },
@@ -2813,7 +2942,10 @@ fn run_acp_turn(
                 thread["acpSequence"] = json!(sequence);
                 thread["acpProvider"] = json!(provider_id);
                 // Live connection snapshot during turn.
-                let snapshot = supervisor.connection_snapshot(&provider_id);
+                let snapshot = supervisor.connection_snapshot_for_workspace(
+                    &provider_id,
+                    std::path::Path::new(&root_path),
+                );
                 thread["connection"] = connection_ui_from_snapshot(&snapshot);
 
                 let status_type = item
@@ -3077,13 +3209,33 @@ fn run_acp_turn(
     }));
     // Persist connection snapshot onto the thread at turn boundaries (including auth failures).
     if let Some(mut thread) = AgentsHost::read_thread_value(root_path, thread_id) {
-        let snapshot = supervisor.connection_snapshot(&provider_id);
+        let snapshot = supervisor
+            .connection_snapshot_for_workspace(&provider_id, std::path::Path::new(root_path));
         thread["connection"] = connection_ui_from_snapshot(&snapshot);
         thread["acpProvider"] = json!(provider_id);
         let _ = AgentsHost::write_thread(root_path, &thread);
         emit_host(app, "agents:threadUpdated", vec![thread]);
     }
-    let result = turn_result?;
+    let result = match turn_result {
+        Ok(result) => result,
+        Err(error) => {
+            persist_thread_activity(app, root_path, thread_id, None);
+            let partial = streamed_text
+                .lock()
+                .map(|text| text.clone())
+                .unwrap_or_default();
+            update_assistant(
+                app,
+                root_path,
+                thread_id,
+                assistant_id,
+                (!partial.is_empty()).then_some(partial.as_str()),
+                "error",
+                Some(&error),
+            );
+            return Ok(());
+        }
+    };
     persist_thread_activity(app, root_path, thread_id, None);
     if result.cancelled {
         update_assistant(
@@ -3785,20 +3937,27 @@ pub fn handle(
             Ok(host.supervisor.export_trace(&provider_id))
         }
         "agents:getConnectionState" => {
-            let provider_id = args
-                .first()
-                .and_then(|value| {
-                    value.as_str().map(str::to_string).or_else(|| {
-                        value
-                            .get("providerId")
-                            .and_then(Value::as_str)
-                            .map(str::to_string)
-                    })
+            let input = args.first().cloned().unwrap_or(Value::Null);
+            let provider_id = input
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| {
+                    input
+                        .get("providerId")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
                 })
                 .unwrap_or_else(|| "cursor-acp".to_string());
-            Ok(connection_ui_from_snapshot(
-                &host.supervisor.connection_snapshot(&provider_id),
-            ))
+            let snapshot = input
+                .get("workspaceRootPath")
+                .and_then(Value::as_str)
+                .filter(|path| !path.is_empty())
+                .map(|path| {
+                    host.supervisor
+                        .connection_snapshot_for_workspace(&provider_id, std::path::Path::new(path))
+                })
+                .unwrap_or_else(|| host.supervisor.connection_snapshot(&provider_id));
+            Ok(connection_ui_from_snapshot(&snapshot))
         }
         "agents:forceStopProvider" => {
             let input = args.first().cloned().unwrap_or(Value::Null);
@@ -4009,14 +4168,24 @@ mod tests {
                 "toolCallId": "tool-1",
                 "title": "Read file",
                 "status": "in_progress",
-                "kind": "read",
-                "rawOutput": {"ok": true},
+                "detail": {
+                    "kind": "read",
+                    "rawInput": {"path": "/workspace/src/main.rs"},
+                    "locations": [{"path": "/workspace/src/main.rs"}],
+                    "content": [{
+                        "type": "content",
+                        "content": {"type": "text", "text": "fn main() {}"}
+                    }]
+                },
             }),
         });
         assert_eq!(tool["kind"], "tool_call");
         assert_eq!(tool["toolCall"]["id"], "tool-1");
         assert_eq!(tool["toolCall"]["name"], "Read file");
         assert_eq!(tool["toolCall"]["status"], "running");
+        assert_eq!(tool["toolCall"]["kind"], "read");
+        assert_eq!(tool["toolCall"]["summary"], "/workspace/src/main.rs");
+        assert_eq!(tool["toolCall"]["output"], "fn main() {}");
         assert!(tool.get("createdAt").and_then(Value::as_str).is_some());
 
         let plan = ui_timeline_item(&TimelineItem {

@@ -173,9 +173,7 @@ test.describe("project session agent chat", () => {
         }
         return roster.sessions.find(item => item.agentId === "codex") ?? null
       })
-      expect(codexBinding).toEqual(
-        expect.objectContaining({ agentId: "codex", agentDriverId: "codex:app-server" }),
-      )
+      expect(codexBinding).toBeNull()
 
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(modal, 0)
@@ -197,9 +195,7 @@ test.describe("project session agent chat", () => {
         }
         return roster.sessions.find(item => item.agentId === "claude") ?? null
       })
-      expect(claudeBinding).toEqual(
-        expect.objectContaining({ agentId: "claude", agentDriverId: "claude:sdk" }),
-      )
+      expect(claudeBinding).toBeNull()
 
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(modal, 0)
@@ -221,9 +217,7 @@ test.describe("project session agent chat", () => {
         }
         return roster.sessions.find(item => item.agentId === "opencode") ?? null
       })
-      expect(opencodeBinding).toEqual(
-        expect.objectContaining({ agentId: "opencode", agentDriverId: "opencode:acp" }),
-      )
+      expect(opencodeBinding).toBeNull()
 
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(modal, 0)

@@ -42,6 +42,7 @@ pub struct SessionRuntime {
     pub pipeline: Mutex<Option<EventPipeline>>,
     pub tools: Mutex<ToolCalls>,
     pub thought_stream_id: Mutex<Option<String>>,
+    pub thought_output: Mutex<String>,
     pub active_plan_id: Mutex<Option<String>>,
     /// Monotonic millis of last inbound update (for session-load replay idle gate).
     pub last_update_at_ms: AtomicU64,
@@ -72,6 +73,7 @@ impl SessionRuntime {
             pipeline: Mutex::new(None),
             tools: Mutex::new(ToolCalls::default()),
             thought_stream_id: Mutex::new(None),
+            thought_output: Mutex::new(String::new()),
             active_plan_id: Mutex::new(None),
             last_update_at_ms: AtomicU64::new(0),
         }
@@ -244,9 +246,20 @@ impl SessionRuntime {
                 if let Some(on_activity) = self.on_activity.lock().ok().and_then(|g| g.clone()) {
                     on_activity("Thinking…");
                 }
-                let thought_text = match &chunk.content {
+                let thought_delta = match &chunk.content {
                     ContentBlock::Text(text) => text.text.clone(),
                     _ => String::new(),
+                };
+                if thought_delta.is_empty() {
+                    return;
+                }
+                let thought_text = {
+                    let mut output = match self.thought_output.lock() {
+                        Ok(output) => output,
+                        Err(_) => return,
+                    };
+                    output.push_str(&thought_delta);
+                    output.clone()
                 };
                 let stream_id = {
                     let mut guard = match self.thought_stream_id.lock() {
@@ -366,14 +379,15 @@ impl SessionRuntime {
                 on_activity(&format!("Tool: {title}"));
             }
         }
-        let status = update
-            .fields
-            .status
-            .as_ref()
-            .map(map_tool_status)
-            .unwrap_or(ToolCallStatus::Pending);
         let detail = serde_json::to_value(update).unwrap_or(Value::Null);
         if let Ok(mut tools) = self.tools.lock() {
+            let status = update
+                .fields
+                .status
+                .as_ref()
+                .map(map_tool_status)
+                .or_else(|| tools.calls.get(&tool_id).map(|tool| tool.status))
+                .unwrap_or(ToolCallStatus::Pending);
             tool_call::reduce(
                 &mut tools,
                 ToolCallState {

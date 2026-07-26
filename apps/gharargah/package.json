@@ -6,6 +6,8 @@
     "dev": "node scripts/dev-web.mjs",
     "dev:frontend": "node scripts/dev-frontend.mjs",
     "build": "vite build && node scripts/verify-startup-graph.mjs",
+    "tauri": "tauri",
+    "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +19,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.8",
+    "@tauri-apps/cli": "^2.4.0",
     "@types/node": "^22.15.29",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

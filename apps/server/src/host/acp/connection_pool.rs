@@ -1309,6 +1309,9 @@ async fn run_prompt(
     if let Ok(mut thought) = runtime.thought_stream_id.lock() {
         *thought = None;
     }
+    if let Ok(mut thought_output) = runtime.thought_output.lock() {
+        thought_output.clear();
+    }
     runtime.begin_pipeline(turn_id);
     runtime.replaying.store(false, Ordering::Release);
     runtime.capture.store(true, Ordering::Release);

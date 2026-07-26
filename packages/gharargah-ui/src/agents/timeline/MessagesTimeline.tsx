@@ -402,9 +402,11 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
         ref={listRef}
         data={rows}
         keyExtractor={item => item.id}
-        getItemType={item =>
-          item.kind === "message" ? `message:${item.message.role}` : item.kind
-        }
+        getItemType={item => {
+          if (item.kind === "message") return `message:${item.message.role}`
+          if (item.kind === "structured") return `structured:${item.item.kind}`
+          return item.kind
+        }}
         renderItem={renderItem}
         estimatedItemSize={90}
         initialScrollAtEnd

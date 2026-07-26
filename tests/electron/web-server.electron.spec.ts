@@ -102,4 +102,36 @@ test.describe("single-binary web server", () => {
       await app.close()
     }
   })
+
+  test("ACP RPC bridges async operations without aborting the server runtime", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForHome(page)
+      const result = await page.evaluate(async () => {
+        const path = window.__gharargahAgent!.getState().activeWorkspace!
+        const response = await fetch("/api/v1/rpc", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            channel: "agents:listAcpSessions",
+            args: [{ connectionKey: `cursor-acp:${path}` }],
+          }),
+        })
+        const health = await fetch("/health")
+        return {
+          rpcStatus: response.status,
+          errorCode: (await response.json()).error?.code,
+          healthStatus: health.status,
+        }
+      })
+
+      expect(result).toEqual({
+        rpcStatus: 400,
+        errorCode: "OPERATION_FAILED",
+        healthStatus: 200,
+      })
+    } finally {
+      await app.close()
+    }
+  })
 })

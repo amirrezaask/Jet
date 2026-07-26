@@ -443,8 +443,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       return;
     }
     const maxScrollOffset = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
-    setShowTopScrollFade(scrollElement.scrollTop > 1);
-    setShowBottomScrollFade(maxScrollOffset - scrollElement.scrollTop > 1);
+    const nextTop = scrollElement.scrollTop > 1;
+    const nextBottom = maxScrollOffset - scrollElement.scrollTop > 1;
+    setShowTopScrollFade(current => (current === nextTop ? current : nextTop));
+    setShowBottomScrollFade(current => (current === nextBottom ? current : nextBottom));
   }, []);
   const modelJumpShortcutContext = useMemo(
     () =>

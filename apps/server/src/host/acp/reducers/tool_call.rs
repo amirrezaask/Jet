@@ -25,14 +25,29 @@ pub struct ToolCalls {
     pub calls: BTreeMap<String, ToolCallState>,
 }
 
+fn merge_detail(current: &mut Value, update: Value) {
+    match (current, update) {
+        (Value::Object(current), Value::Object(update)) => {
+            for (key, value) in update {
+                current.insert(key, value);
+            }
+        }
+        (current, update) => *current = update,
+    }
+}
+
 pub fn reduce(state: &mut ToolCalls, update: ToolCallState) {
     let current = state.calls.entry(update.id.clone()).or_default();
     current.id = update.id;
     if update.title.is_some() {
         current.title = update.title;
     }
-    if update.detail.is_some() {
-        current.detail = update.detail;
+    if let Some(detail) = update.detail {
+        if let Some(current_detail) = current.detail.as_mut() {
+            merge_detail(current_detail, detail);
+        } else {
+            current.detail = Some(detail);
+        }
     }
     current.status = update.status;
 }
@@ -82,5 +97,40 @@ mod tests {
             },
         );
         assert_eq!(calls.calls.keys().next().map(String::as_str), Some("a"));
+    }
+
+    #[test]
+    fn partial_update_keeps_tool_input_kind_and_location() {
+        let mut calls = ToolCalls::default();
+        reduce(
+            &mut calls,
+            ToolCallState {
+                id: "read-1".into(),
+                title: Some("Read File".into()),
+                status: ToolCallStatus::InProgress,
+                detail: Some(serde_json::json!({
+                    "kind": "read",
+                    "rawInput": { "path": "/workspace/src/main.rs" },
+                    "locations": [{ "path": "/workspace/src/main.rs" }],
+                })),
+            },
+        );
+        reduce(
+            &mut calls,
+            ToolCallState {
+                id: "read-1".into(),
+                title: None,
+                status: ToolCallStatus::Completed,
+                detail: Some(serde_json::json!({
+                    "status": "completed",
+                    "rawOutput": "fn main() {}",
+                })),
+            },
+        );
+
+        let detail = calls.calls["read-1"].detail.as_ref().unwrap();
+        assert_eq!(detail["kind"], "read");
+        assert_eq!(detail["rawInput"]["path"], "/workspace/src/main.rs");
+        assert_eq!(detail["rawOutput"], "fn main() {}");
     }
 }
