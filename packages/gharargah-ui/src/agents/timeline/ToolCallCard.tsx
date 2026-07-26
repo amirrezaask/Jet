@@ -95,8 +95,8 @@ function ToolIcon(props: { kind?: string }) {
   return <Terminal aria-hidden />
 }
 
-export function ToolCallCard(props: { toolCall: AgentToolCall }) {
-  const { toolCall } = props
+export function ToolCallCard(props: { toolCall: AgentToolCall; flat?: boolean }) {
+  const { toolCall, flat = false } = props
   const [open, setOpen] = useRecyclingState(false)
   // open toggles already call triggerLayout via useRecyclingState.
   useTimelineItemLayoutSync([
@@ -118,7 +118,7 @@ export function ToolCallCard(props: { toolCall: AgentToolCall }) {
     <Collapsible
       open={open}
       onOpenChange={setOpen}
-      className="rounded-lg border border-border bg-card"
+      className={flat ? "rounded-md" : "rounded-lg border border-border/50 bg-transparent"}
       data-gharargah-tool-call=""
       data-timeline-tool=""
       data-tool-name={toolCall.name}
@@ -129,7 +129,7 @@ export function ToolCallCard(props: { toolCall: AgentToolCall }) {
           type="button"
           variant="ghost"
           size="sm"
-          className="w-full min-w-0 justify-start gap-1.5 px-2.5"
+          className="w-full min-w-0 justify-start gap-1.5 px-2 text-agent-feed-muted"
           aria-label={`${open ? "Collapse" : "Expand"} ${toolCall.name}${summary ? `, ${summary}` : ""}`}
         >
           <ChevronRight
@@ -138,7 +138,7 @@ export function ToolCallCard(props: { toolCall: AgentToolCall }) {
           <span className="shrink-0 text-muted-foreground [&_svg]:size-3.5">
             <ToolIcon kind={toolCall.kind} />
           </span>
-          <span className="min-w-0 shrink-0 truncate text-left text-xs font-medium">
+          <span className="min-w-0 shrink-0 truncate text-left text-xs font-medium text-agent-feed-primary">
             {toolCall.name}
           </span>
           {summary ? (
@@ -147,7 +147,7 @@ export function ToolCallCard(props: { toolCall: AgentToolCall }) {
                 ·
               </span>
               <span
-                className="min-w-0 flex-1 truncate text-left font-mono text-xs text-muted-foreground"
+                className="min-w-0 flex-1 truncate text-left font-mono text-xs text-agent-feed-muted"
                 title={summary}
               >
                 {summary}
@@ -168,13 +168,13 @@ export function ToolCallCard(props: { toolCall: AgentToolCall }) {
               aria-hidden
             />
           ) : null}
-          <span className="shrink-0 text-3xs text-muted-foreground">
+          <span className="shrink-0 text-3xs text-agent-feed-muted">
             {elapsed(toolCall) ?? toolCall.status}
           </span>
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="overflow-visible data-[state=closed]:hidden">
-        <div className="space-y-3 border-t border-border px-3 py-2.5">
+        <div className={flat ? "space-y-3 px-2 py-2" : "space-y-3 border-t border-border/40 px-3 py-2.5"}>
           {toolCall.input ? (
             <ToolDetail label="Input" value={toolCall.input} />
           ) : null}

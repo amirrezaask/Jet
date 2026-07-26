@@ -52,7 +52,7 @@ export function PermissionCard(props: {
 
   return (
     <section
-      className="rounded-lg border border-border bg-card p-3"
+      className="rounded-xl border border-border/40 bg-muted/15 p-3"
       data-slot="permission-card"
     >
       <div className="flex items-start gap-2">

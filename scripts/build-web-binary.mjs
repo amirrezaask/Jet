@@ -16,7 +16,14 @@ function run(command, args, cwd = repoRoot) {
 }
 
 run("pnpm", ["--filter", "gharargah", "build"])
-run("cargo", ["build", "--release", "--manifest-path", "apps/server/Cargo.toml"])
+// release-max: full LTO for the shipped sidecar; day-to-day --release stays fast.
+run("cargo", [
+  "build",
+  "--profile",
+  "release-max",
+  "--manifest-path",
+  "apps/server/Cargo.toml",
+])
 
 const hostTriple = execFileSync("rustc", ["-vV"], {
   cwd: repoRoot,
@@ -31,7 +38,7 @@ if (!hostTriple) {
 
 const serverBinary = path.join(
   repoRoot,
-  "apps/server/target/release",
+  "apps/server/target/release-max",
   process.platform === "win32" ? "jet.exe" : "jet",
 )
 const sidecarDir = path.join(repoRoot, "apps/gharargah/src-tauri/binaries")
@@ -91,5 +98,5 @@ if (process.platform === "darwin") {
 }
 run("pnpm", tauriArgs)
 
-console.log("Jet server executable: apps/server/target/release/jet")
+console.log("Jet server executable: apps/server/target/release-max/jet")
 console.log("Desktop bundles: apps/gharargah/src-tauri/target/release/bundle")

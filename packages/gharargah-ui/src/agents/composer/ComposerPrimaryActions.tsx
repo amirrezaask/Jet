@@ -133,13 +133,14 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <Button
         type="button"
         size="icon-sm"
-        variant="destructive"
-        className="rounded-full"
+        variant="secondary"
+        className="size-8 rounded-full bg-foreground text-background hover:bg-foreground/90"
         {...pointerFocusProps}
         onClick={onInterrupt}
         aria-label="Stop generation"
+        data-composer-stop="true"
       >
-        <Square className="size-3 fill-current" />
+        <Square className="size-2.5 fill-current" />
       </Button>
     );
   }
@@ -201,7 +202,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       type="submit"
       size="icon-sm"
       variant="default"
-      className="rounded-full sm:size-8"
+      className="size-8 rounded-full"
       {...pointerFocusProps}
       disabled={isSendBusy || isConnecting || isEnvironmentUnavailable || !hasSendableContent}
       aria-label={
@@ -215,6 +216,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 ? "Sending"
                 : "Send message"
       }
+      data-composer-send="true"
     >
       {isConnecting || isSendBusy ? (
         <Spinner className="size-3.5" aria-hidden="true" />

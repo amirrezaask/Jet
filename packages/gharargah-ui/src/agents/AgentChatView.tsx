@@ -9,7 +9,7 @@ import {
   deriveComposerCapabilities,
   deriveTimelineEntriesFromThread,
 } from "@gharargah/agents"
-import { AlertCircle, ChevronDown } from "lucide-react"
+import { AlertCircle, ChevronDown, Monitor } from "lucide-react"
 import {
   memo,
   useCallback,
@@ -69,6 +69,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
   onInteractionModeChange?: (mode: ComposerInteractionMode) => void
   /** Hide the in-pane header when session chrome owns it. */
   hideHeader?: boolean
+  /** Show Cursor-style terminal chip above composer. */
+  terminalCount?: number
+  onOpenTerminal?: () => void
 }) {
   const {
     thread,
@@ -85,6 +88,8 @@ export const AgentChatView = memo(function AgentChatView(props: {
     onRuntimeModeChange,
     onInteractionModeChange,
     hideHeader = false,
+    terminalCount = 1,
+    onOpenTerminal,
   } = props
   const [submitting, setSubmitting] = useState(false)
   const [expandAll, setExpandAll] = useState(true)
@@ -403,7 +408,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
   return (
     <div
       className="relative flex h-full min-h-0 flex-col bg-background"
-      data-chat-provider={thread.agentId ?? "unknown"}
+      data-chat-provider={defaultSelection?.instanceId ?? thread.agentId ?? "unknown"}
       data-chat-driver={thread.driverId ?? "unknown"}
       data-gharargah-agent-drop-zone="true"
       data-agent-file-drag-active={isDraggingFiles ? "true" : "false"}
@@ -424,7 +429,17 @@ export const AgentChatView = memo(function AgentChatView(props: {
       }}
       onDrop={handleAgentFileDrop}
     >
-      {hideHeader ? null : (
+      {hideHeader ? (
+        <div
+          className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3 sm:px-5"
+          data-chat-slim-title=""
+        >
+          <p className="min-w-0 truncate text-xs text-agent-feed-muted">
+            {thread.title?.trim() || "Agent"}
+          </p>
+          <Monitor className="size-3.5 shrink-0 text-agent-feed-muted/70" aria-hidden />
+        </div>
+      ) : (
         <ChatHeader
           activeThreadTitle={thread.title}
           activeProjectName={projectName}
@@ -514,6 +529,20 @@ export const AgentChatView = memo(function AgentChatView(props: {
           </div>
         </div>
         <div className="chat-composer-horizontal-inset pointer-events-auto relative z-10 isolate pb-4">
+          {terminalCount > 0 && !isEmptyThread ? (
+            <div className="mb-2 flex justify-start px-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 rounded-full border border-border/40 bg-muted/40 px-3 text-xs font-normal text-agent-feed-muted hover:text-agent-feed-primary"
+                data-chat-terminal-pill=""
+                onClick={() => onOpenTerminal?.()}
+              >
+                {terminalCount} Terminal{terminalCount === 1 ? "" : "s"}
+              </Button>
+            </div>
+          ) : null}
           {pendingActionCount > 0 ? (
             <div
               className="mb-2 px-1 text-xs text-muted-foreground"

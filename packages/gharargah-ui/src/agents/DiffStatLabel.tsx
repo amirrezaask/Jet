@@ -38,8 +38,8 @@ export const DiffStatLabel = memo(function DiffStatLabel(props: {
           className,
         )}
       >
-        <span className="font-mono text-emerald-500">+{formatCompactDiffCount(additions)}</span>
-        <span className="font-mono text-red-500">-{formatCompactDiffCount(deletions)}</span>
+        <span className="font-mono text-agent-diff-add">+{formatCompactDiffCount(additions)}</span>
+        <span className="font-mono text-agent-diff-del">-{formatCompactDiffCount(deletions)}</span>
       </span>
       {showParentheses ? <span className="text-muted-foreground/70">)</span> : null}
     </>

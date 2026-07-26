@@ -35,8 +35,8 @@ jobs:
       - run: pnpm build
       - name: Single binary smoke test
         run: |
-          test -x apps/server/target/release/jet
-          apps/server/target/release/jet --help
+          test -x apps/server/target/release-max/jet
+          apps/server/target/release-max/jet --help
       - run: pnpm test:e2e
         env:
           GHARARGAH_E2E_RUN_FLAKY: "1"

@@ -45,7 +45,7 @@ const markdownComponents: Components = {
       <code
         className={
           className ??
-          "rounded bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-foreground"
+          "rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[0.9em] text-agent-feed-primary"
         }
       >
         {code}

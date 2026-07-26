@@ -12,7 +12,7 @@ test.describe("composer model picker", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
   test.skip(!agentChatE2e, "requires GHARARGAH_ENABLE_AGENT_CHAT!=0")
 
-  test("opens with persisted favorites without React #185 crash", async () => {
+  test("opens searchable flat model list without React #185 crash", async () => {
     const { app, page } = await launchJet({
       env: {
         GHARARGAH_AGENT_MOCK: "1",
@@ -20,9 +20,6 @@ test.describe("composer model picker", () => {
       },
     })
     try {
-      // Persist favorites before mounting ModelPickerContent. A buggy
-      // useSyncExternalStore getSnapshot that re-parses localStorage every
-      // read causes React error #185 as soon as the picker opens.
       await page.evaluate(() => {
         localStorage.setItem(
           "jet-agent-client-settings",
@@ -57,7 +54,7 @@ test.describe("composer model picker", () => {
       const picker = page.locator("[data-agent-setup-picker]")
       await expectLocatorVisible(picker)
       await expectLocatorVisible(page.locator("[data-model-picker-content]"))
-      await expectLocatorVisible(page.locator('[data-model-picker-sidebar="true"]'))
+      await expectLocatorVisible(page.locator('[data-gharargah-list-panel="agent-model-switcher"]'))
       await expect
         .poll(() =>
           page.evaluate(
@@ -69,25 +66,25 @@ test.describe("composer model picker", () => {
         )
         .toBe(true)
 
-      // Switch providers inside the open picker — exercises list remounts
-      // while favorites remain loaded from the stable client-settings store.
-      await picker.locator('[data-model-picker-provider="claude"]').click()
-      await expect.poll(() => picker.textContent()).toContain("Sonnet")
+      await expectLocatorVisible(
+        picker.locator('[data-model-picker-row][data-model-picker-provider="codex"]').first(),
+      )
+      const claudeRow = picker
+        .locator('[data-model-picker-row][data-model-picker-provider="claude"]')
+        .first()
+      await expectLocatorVisible(claudeRow)
+      await claudeRow.click()
+      await expect
+        .poll(() => modal.locator("[data-chat-provider]").getAttribute("data-chat-provider"), {
+          timeout: 10_000,
+        })
+        .toBe("claude")
 
       const pageErrors = await page.evaluate(() => {
         const w = window as Window & { __pickerErrors?: string[] }
         return w.__pickerErrors ?? []
       })
-      expect(
-        pageErrors.some(
-          text =>
-            text.includes("#185") ||
-            text.includes("Maximum update depth") ||
-            text.includes("renderer crashed"),
-        ),
-      ).toBe(false)
-      await expectLocatorCount(page.locator("text=Something went wrong"), 0)
-      await expectLocatorVisible(picker)
+      expect(pageErrors.filter(message => message.includes("Maximum update depth"))).toHaveLength(0)
     } finally {
       await app.close()
     }

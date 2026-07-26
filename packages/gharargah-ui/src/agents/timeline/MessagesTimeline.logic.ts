@@ -1,5 +1,7 @@
 export * from "./timelineScrollAnchoring.js"
 
+import { aggregateToolCalls } from "./activityAggregation.js"
+
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2
 export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)"
@@ -81,6 +83,22 @@ export type MessagesTimelineRow =
       revertTurnCount?: number
     }
   | { kind: "working"; id: string; createdAt: string | null; label: string }
+  | {
+      kind: "turn_status"
+      id: string
+      createdAt: string
+      status: "completed" | "failed"
+      label: string
+    }
+  | {
+      kind: "activity_group"
+      id: string
+      createdAt: string
+      label: string
+      toolCalls: ReadonlyArray<import("@gharargah/agents").AgentToolCall>
+      diffStat: { additions: number; deletions: number } | null
+      editFileCount: number
+    }
   | {
       kind: "structured"
       id: string
@@ -167,17 +185,70 @@ export function deriveMessagesTimelineRows(input: {
       ? input.latestTurn.turnId
       : null)
 
+  type ToolBuffer = {
+    tools: import("@gharargah/agents").AgentToolCall[]
+    firstId: string
+    createdAt: string
+  }
+  let toolBuffer: ToolBuffer | null = null
+  let pendingTurnDiff: import("@gharargah/agents").TurnDiffSummary | null = null
+  let lastUserMessageId: string | null = null
+  let segmentHasPostUserContent = false
+  let segmentEmittedEdit = false
+  let turnStatusEmittedForUser: string | null = null
+
+  const flushTools = () => {
+    if (!toolBuffer || toolBuffer.tools.length === 0) {
+      toolBuffer = null
+      return
+    }
+    const aggregated = aggregateToolCalls({
+      id: `activity:${toolBuffer.firstId}`,
+      createdAt: toolBuffer.createdAt,
+      toolCalls: toolBuffer.tools,
+      turnDiffSummary: pendingTurnDiff,
+    })
+    toolBuffer = null
+    if (!aggregated) return
+    nextRows.push({
+      kind: "activity_group",
+      id: aggregated.id,
+      createdAt: aggregated.createdAt,
+      label: aggregated.label,
+      toolCalls: aggregated.toolCalls,
+      diffStat: aggregated.diffStat,
+      editFileCount: aggregated.editFileCount,
+    })
+    if (aggregated.editFileCount > 0) segmentEmittedEdit = true
+    segmentHasPostUserContent = true
+  }
+
   for (const timelineEntry of input.timelineEntries) {
     if (timelineEntry.kind === "structured") {
+      if (timelineEntry.item.kind === "tool_call") {
+        if (!toolBuffer) {
+          toolBuffer = {
+            tools: [],
+            firstId: timelineEntry.id,
+            createdAt: timelineEntry.createdAt,
+          }
+        }
+        toolBuffer.tools.push(timelineEntry.item.toolCall)
+        continue
+      }
+      flushTools()
       nextRows.push({
         kind: "structured",
         id: timelineEntry.id,
         createdAt: timelineEntry.createdAt,
         item: timelineEntry.item,
       })
+      segmentHasPostUserContent = true
       continue
     }
     if (timelineEntry.kind !== "message") continue
+
+    flushTools()
 
     const assistantTurnStillInProgress =
       timelineEntry.message.role === "assistant" &&
@@ -192,6 +263,22 @@ export function deriveMessagesTimelineRows(input: {
       terminalAssistantMessageIds.has(timelineEntry.message.id) &&
       !assistantTurnStillInProgress
 
+    if (timelineEntry.message.role === "user") {
+      lastUserMessageId = timelineEntry.message.id
+      segmentHasPostUserContent = false
+      segmentEmittedEdit = false
+      turnStatusEmittedForUser = null
+      pendingTurnDiff = null
+    }
+
+    const assistantTurnDiff =
+      timelineEntry.message.role === "assistant"
+        ? input.turnDiffSummaryByAssistantMessageId.get(timelineEntry.message.id)
+        : undefined
+    if (assistantTurnDiff) {
+      pendingTurnDiff = assistantTurnDiff
+    }
+
     nextRows.push({
       kind: "message",
       id: timelineEntry.id,
@@ -201,16 +288,66 @@ export function deriveMessagesTimelineRows(input: {
       showAssistantMeta,
       showAssistantCopyButton: showAssistantMeta,
       assistantCopyStreaming: timelineEntry.message.streaming || assistantTurnStillInProgress,
-      assistantTurnDiffSummary:
-        timelineEntry.message.role === "assistant"
-          ? input.turnDiffSummaryByAssistantMessageId.get(timelineEntry.message.id)
-          : undefined,
+      assistantTurnDiffSummary: undefined,
       revertTurnCount:
         timelineEntry.message.role === "user"
           ? input.revertTurnCountByUserMessageId?.get(timelineEntry.message.id)
           : undefined,
     })
+
+    if (timelineEntry.message.role === "assistant") {
+      segmentHasPostUserContent = true
+      if (assistantTurnDiff && assistantTurnDiff.files.length > 0) {
+        const files = assistantTurnDiff.files
+        const diffStat = files.reduce(
+          (acc, file) => ({
+            additions: acc.additions + file.additions,
+            deletions: acc.deletions + file.deletions,
+          }),
+          { additions: 0, deletions: 0 },
+        )
+        const lastActivityIndex = (() => {
+          for (let i = nextRows.length - 1; i >= 0; i -= 1) {
+            const row = nextRows[i]
+            if (row?.kind === "activity_group") return i
+            if (row?.kind === "message" && row.message.role === "user") break
+          }
+          return -1
+        })()
+        if (lastActivityIndex >= 0) {
+          const existing = nextRows[lastActivityIndex]
+          if (existing?.kind === "activity_group") {
+            nextRows[lastActivityIndex] = {
+              ...existing,
+              editFileCount: Math.max(existing.editFileCount, files.length),
+              diffStat:
+                diffStat.additions > 0 || diffStat.deletions > 0
+                  ? diffStat
+                  : existing.diffStat,
+              label:
+                existing.editFileCount > 0 || existing.label.toLowerCase().includes("edit")
+                  ? existing.label
+                  : `${existing.label}, edited ${files.length} ${files.length === 1 ? "file" : "files"}`,
+            }
+            segmentEmittedEdit = true
+          }
+        } else if (!segmentEmittedEdit) {
+          nextRows.push({
+            kind: "activity_group",
+            id: `activity:diff:${timelineEntry.id}`,
+            createdAt: timelineEntry.createdAt,
+            label: `Edited ${files.length} ${files.length === 1 ? "file" : "files"}`,
+            toolCalls: [],
+            diffStat: diffStat.additions > 0 || diffStat.deletions > 0 ? diffStat : null,
+            editFileCount: files.length,
+          })
+          segmentEmittedEdit = true
+        }
+      }
+    }
   }
+
+  flushTools()
 
   if (input.isWorking) {
     nextRows.push({
@@ -219,6 +356,21 @@ export function deriveMessagesTimelineRows(input: {
       createdAt: input.activeTurnStartedAt,
       label: input.workingLabel,
     })
+  } else if (lastUserMessageId && segmentHasPostUserContent) {
+    const userIndex = nextRows.findIndex(
+      row => row.kind === "message" && row.message.id === lastUserMessageId,
+    )
+    if (userIndex >= 0 && turnStatusEmittedForUser !== lastUserMessageId) {
+      const failed =
+        input.latestTurn?.state === "failed" || input.latestTurn?.state === "cancelled"
+      nextRows.splice(userIndex + 1, 0, {
+        kind: "turn_status",
+        id: `turn-status:${lastUserMessageId}`,
+        createdAt: input.activeTurnStartedAt ?? new Date().toISOString(),
+        status: failed ? "failed" : "completed",
+        label: failed ? "Failed" : "Completed",
+      })
+    }
   }
 
   return nextRows
@@ -229,6 +381,21 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
   if (a.kind === "working") {
     const next = b as typeof a
     return a.createdAt === next.createdAt && a.label === next.label
+  }
+  if (a.kind === "turn_status") {
+    const next = b as typeof a
+    return a.status === next.status && a.label === next.label && a.createdAt === next.createdAt
+  }
+  if (a.kind === "activity_group") {
+    const next = b as typeof a
+    return (
+      a.label === next.label &&
+      a.createdAt === next.createdAt &&
+      a.editFileCount === next.editFileCount &&
+      a.diffStat?.additions === next.diffStat?.additions &&
+      a.diffStat?.deletions === next.diffStat?.deletions &&
+      a.toolCalls === next.toolCalls
+    )
   }
   if (a.kind === "structured") {
     const next = b as Extract<MessagesTimelineRow, { kind: "structured" }>

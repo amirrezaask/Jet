@@ -9,7 +9,7 @@ Requirements for building are Rust, Node.js, and pnpm. Production does not requi
 ```bash
 pnpm install
 pnpm build
-./apps/server/target/release/jet
+./apps/server/target/release-max/jet
 ```
 
 The server prints its address, normally `http://127.0.0.1:4747`. The release executable contains the compiled frontend; there is no adjacent asset directory or production Node process.

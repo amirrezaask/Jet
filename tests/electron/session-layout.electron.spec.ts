@@ -73,18 +73,22 @@ test.describe("session layout", () => {
         ["opencode", "OpenCode"],
         ["cursor", "Composer"],
       ] as const) {
-        await picker.locator(`[data-model-picker-provider="${provider}"]`).click()
+        await expectLocatorVisible(
+          picker.locator(`[data-model-picker-row][data-model-picker-provider="${provider}"]`).first(),
+        )
         await expect
           .poll(() => picker.textContent())
           .toContain(model)
       }
 
-      await picker.locator('[data-model-picker-provider="claude"]').click()
       await picker
-        .locator('[data-slot="combobox-item"]')
+        .locator('[data-model-picker-row][data-model-picker-provider="claude"]')
         .filter({ hasText: "Sonnet" })
+        .first()
         .click()
-
+      await expect
+        .poll(() => page.locator("[data-agent-setup-picker]").count())
+        .toBe(0)
       const stillUnbound = await page.evaluate(async () => {
         const workspacePath =
           window.__gharargahAgent!.getState().activeWorkspace!

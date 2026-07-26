@@ -48,7 +48,7 @@ export function UserInputCard(props: {
   return (
     <section
       data-testid="user-input-card"
-      className="rounded-lg border border-border bg-card p-3"
+      className="rounded-xl border border-border/40 bg-muted/15 p-3"
     >
       <div className="flex items-start gap-2">
         <MessageCircleQuestion className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

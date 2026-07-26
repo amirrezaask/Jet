@@ -15,7 +15,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react"
-import { FileText, Paperclip, X } from "lucide-react"
+import { FileText, Mic, Plus, X } from "lucide-react"
 import {
   Attachment,
   AttachmentAction,
@@ -517,13 +517,13 @@ export const ChatComposer = memo(function ChatComposer(props: {
       className="mx-auto w-full min-w-0 max-w-3xl"
       data-chat-composer-form="true"
     >
-      <div className="group rounded-xl p-px transition-colors duration-[var(--gharargah-motion-menu)]">
+      <div className="group rounded-[var(--agent-composer-radius)] p-px transition-colors duration-[var(--gharargah-motion-menu)]">
         <div
           ref={composerSurfaceRef}
           data-chat-composer-mobile-collapsed="false"
           className={cn(
-            "chat-composer-glass rounded-xl border transition-colors duration-[var(--gharargah-motion-menu)] has-focus-visible:border-ring/45",
-            isComposerFocused ? "border-ring/45" : "border-border",
+            "chat-composer-glass border transition-colors duration-[var(--gharargah-motion-menu)] has-focus-visible:border-ring/40",
+            isComposerFocused ? "border-ring/40" : "border-border/60",
           )}
           onFocusCapture={() => setIsComposerFocused(true)}
           onBlurCapture={event => {
@@ -531,10 +531,10 @@ export const ChatComposer = memo(function ChatComposer(props: {
             setIsComposerFocused(false)
           }}
         >
-          <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
-            {attachmentCount > 0 ? (
+          {attachmentCount > 0 ? (
+            <div className="px-3 pt-3 sm:px-4">
               <AttachmentGroup
-                className="mb-2"
+                className="mb-1"
                 data-composer-attachments="true"
                 data-composer-attachment-count={attachmentCount}
               >
@@ -585,8 +585,43 @@ export const ChatComposer = memo(function ChatComposer(props: {
                   </Attachment>
                 ))}
               </AttachmentGroup>
-            ) : null}
-            <div className="relative" onKeyDownCapture={onSlashMenuKeyDownCapture}>
+            </div>
+          ) : null}
+
+          <div
+            data-chat-composer-footer="true"
+            data-chat-composer-footer-compact={isComposerFooterCompact ? "true" : "false"}
+            className="flex min-w-0 items-end gap-1.5 px-2 py-2 sm:gap-2 sm:px-2.5 sm:py-2"
+          >
+            <input
+              ref={imageInputRef}
+              type="file"
+              multiple
+              className="sr-only"
+              onChange={event => void onAttachFiles(event)}
+            />
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="mb-0.5 size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+              data-composer-attach-image="true"
+              data-composer-attach-file="true"
+              disabled={
+                !showAttach ||
+                props.disabled ||
+                attachmentCount >= MAX_COMPOSER_ATTACHMENTS
+              }
+              aria-label="Add attachment"
+              onClick={() => imageInputRef.current?.click()}
+            >
+              <Plus className="size-4" />
+            </Button>
+
+            <div
+              className="relative min-w-0 flex-1 self-center"
+              onKeyDownCapture={onSlashMenuKeyDownCapture}
+            >
               {showSlashMenu ? (
                 <div
                   data-testid="composer-slash-menu"
@@ -626,50 +661,24 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 editorRef={editorRef}
                 value={draft}
                 disabled={props.disabled}
-                placeholder="Message agent or type / for commands"
+                placeholder="Send follow-up"
                 onChange={onPromptChange}
                 onCommandKeyDown={onComposerCommandKey}
               />
               {sendError ? (
-                <p className="mt-2 text-xs text-destructive" role="alert">
+                <p className="mt-1 text-xs text-destructive" role="alert">
                   Message wasn&apos;t sent: {sendError}. Your draft is still here.
                 </p>
               ) : null}
             </div>
-          </div>
 
-          <div
-            data-chat-composer-footer="true"
-            data-chat-composer-footer-compact={isComposerFooterCompact ? "true" : "false"}
-            className={cn(
-              "flex min-w-0 flex-nowrap items-center justify-between gap-2 overflow-visible px-2.5 pb-2.5 sm:px-3 sm:pb-3",
-              isComposerFooterCompact ? "gap-1.5" : "gap-2 sm:gap-0",
-            )}
-          >
-            <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <input
-                ref={imageInputRef}
-                type="file"
-                multiple
-                className="sr-only"
-                onChange={event => void onAttachFiles(event)}
-              />
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                data-composer-attach-image="true"
-                data-composer-attach-file="true"
-                disabled={
-                  !showAttach ||
-                  props.disabled ||
-                  attachmentCount >= MAX_COMPOSER_ATTACHMENTS
-                }
-                onClick={() => imageInputRef.current?.click()}
-              >
-                <Paperclip data-icon="inline-start" />
-                Attach
-              </Button>
+            <div
+              data-chat-composer-actions="right"
+              data-chat-composer-primary-actions-compact={
+                isComposerPrimaryActionsCompact ? "true" : "false"
+              }
+              className="mb-0.5 flex shrink-0 flex-nowrap items-center justify-end gap-0.5 sm:gap-1"
+            >
               <ProviderModelPicker
                 compact={isComposerFooterCompact}
                 activeInstanceId={selection.instanceId}
@@ -685,6 +694,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 }}
                 disabled={props.disabled}
                 shellEnvLoading={props.shellEnvLoading}
+                triggerClassName="max-w-40 px-1.5 text-xs text-muted-foreground/80 sm:max-w-52"
                 onInstanceModelChange={(instanceId, model) =>
                   props.onInstanceModelChange(instanceId, model)
                 }
@@ -697,16 +707,20 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 onRuntimeModeChange={props.onRuntimeModeChange}
                 onInteractionModeChange={handleInteractionModeChange}
                 onConfigOptionChange={props.onConfigOptionChange}
+                onProvidersRefresh={props.onProvidersRefresh}
               />
-            </div>
-
-            <div
-              data-chat-composer-actions="right"
-              data-chat-composer-primary-actions-compact={
-                isComposerPrimaryActionsCompact ? "true" : "false"
-              }
-              className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
-            >
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                className="size-8 rounded-full text-muted-foreground/50"
+                disabled
+                aria-label="Voice input unavailable"
+                title="Voice input unavailable"
+                data-composer-mic-stub="true"
+              >
+                <Mic className="size-4" />
+              </Button>
               <ComposerPrimaryActions
                 compact={isComposerPrimaryActionsCompact}
                 pendingAction={null}

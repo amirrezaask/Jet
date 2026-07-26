@@ -11,13 +11,10 @@ import {
   AttachmentTitle,
 } from "../../components/ui/attachment.js"
 import { cn } from "../../lib/utils.js"
-import { Button } from "../../components/ui/button.js"
 import { Spinner } from "../../components/ui/spinner.js"
 import { AgentMarkdown } from "../AgentMarkdown.js"
 import { AgentPatchView } from "../AgentPatchView.js"
-import { ChangedFilesTree } from "../ChangedFilesTree.js"
 import { DiffStatLabel, hasNonZeroStat } from "../DiffStatLabel.js"
-import { summarizeTurnDiffStats } from "../turnDiffTree.js"
 import { MessageCopyButton } from "./MessageCopyButton.js"
 import { ThoughtBlock } from "./ThoughtBlock.js"
 import { ToolCallCard } from "./ToolCallCard.js"
@@ -57,9 +54,11 @@ function UserTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "mes
   const { row } = props
   const copyText = row.message.text.trim()
   return (
-    <div className="group flex flex-col items-end gap-1">
-      <div className="relative max-w-[80%] rounded-2xl border border-border bg-secondary p-3">
-        <p className="whitespace-pre-wrap text-sm text-foreground">{row.message.text}</p>
+    <div className="group flex flex-col items-start gap-1.5" data-chat-user-bubble="">
+      <div className="relative max-w-[85%] rounded-[1.25rem] bg-agent-user-bubble px-4 py-2.5">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-agent-feed-primary">
+          {row.message.text}
+        </p>
         {row.message.attachments?.length ? (
           <AttachmentGroup className="mt-2">
             {row.message.attachments.map((attachment, index) => (
@@ -86,9 +85,9 @@ function UserTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "mes
           </AttachmentGroup>
         ) : null}
       </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-[var(--gharargah-motion-menu)] focus-within:opacity-100 group-hover:opacity-100">
+      <div className="flex w-full max-w-[85%] items-center justify-start pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-[var(--gharargah-motion-menu)] focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
-          <p className="text-muted-foreground text-xs tabular-nums">
+          <p className="text-agent-feed-muted text-xs tabular-nums">
             {formatTimelineTimestamp(row.message.createdAt)}
           </p>
           {copyText ? <MessageCopyButton text={copyText} variant="ghost" /> : null}
@@ -98,38 +97,59 @@ function UserTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "mes
   )
 }
 
-function AssistantChangedFilesSection(props: {
-  turnSummary: TurnDiffSummary
-  allDirectoriesExpanded: boolean
-  onToggleAllDirectories: () => void
+function TurnStatusTimelineRow(props: {
+  row: Extract<MessagesTimelineRow, { kind: "turn_status" }>
 }) {
-  const { turnSummary, allDirectoriesExpanded, onToggleAllDirectories } = props
-  const files = [...turnSummary.files]
-  const summaryStat = summarizeTurnDiffStats(files)
-
   return (
-    <div className="mt-2 rounded-lg border bg-card p-2.5">
-      <div className="sticky top-2 z-10 mb-1.5 flex items-center justify-between gap-2 bg-card before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-card before:content-['']">
-        <p className="text-3xs uppercase tracking-[0.12em] text-muted-foreground/65">
-          <span>Changed files ({files.length})</span>
-          {hasNonZeroStat(summaryStat) ? (
-            <>
-              <span className="mx-1">•</span>
-              <DiffStatLabel additions={summaryStat.additions} deletions={summaryStat.deletions} />
-            </>
-          ) : null}
-        </p>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          data-scroll-anchor-ignore
-          onClick={onToggleAllDirectories}
-        >
-          {allDirectoriesExpanded ? "Collapse all" : "Expand all"}
-        </Button>
-      </div>
-      <ChangedFilesTree files={files} allDirectoriesExpanded={allDirectoriesExpanded} />
+    <p
+      className={cn(
+        "py-1 text-sm font-medium",
+        props.row.status === "failed" ? "text-destructive" : "text-agent-feed-muted",
+      )}
+      data-chat-turn-status={props.row.status}
+    >
+      {props.row.label}
+    </p>
+  )
+}
+
+function ActivityGroupTimelineRow(props: {
+  row: Extract<MessagesTimelineRow, { kind: "activity_group" }>
+}) {
+  const { row } = props
+  const [open, setOpen] = useState(false)
+  const canExpand = row.toolCalls.length > 0
+  return (
+    <div className="py-0.5" data-chat-activity-group="" data-chat-activity-label={row.label}>
+      <button
+        type="button"
+        className={cn(
+          "flex max-w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 text-left text-sm text-agent-feed-muted",
+          canExpand && "hover:text-agent-feed-primary",
+        )}
+        disabled={!canExpand}
+        aria-expanded={canExpand ? open : undefined}
+        onClick={() => {
+          if (canExpand) setOpen(value => !value)
+        }}
+      >
+        <span>{row.label}</span>
+        {row.diffStat && hasNonZeroStat(row.diffStat) ? (
+          <DiffStatLabel
+            additions={row.diffStat.additions}
+            deletions={row.diffStat.deletions}
+            layout="inline"
+            className="text-xs"
+          />
+        ) : null}
+      </button>
+      {open && canExpand ? (
+        <div className="mt-2 space-y-1 border-s border-border/40 ps-3">
+          {row.toolCalls.map(toolCall => (
+            <ToolCallCard key={toolCall.id} toolCall={toolCall} flat />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -137,10 +157,8 @@ function AssistantChangedFilesSection(props: {
 function AssistantTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "message" }>
   theme: "light" | "dark"
-  expandAll: boolean
-  onToggleAllDirectories: () => void
 }) {
-  const { row, theme, expandAll, onToggleAllDirectories } = props
+  const { row, theme } = props
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)")
   const assistantCopyState = resolveAssistantMessageCopyState({
     text: row.message.text ?? null,
@@ -149,17 +167,12 @@ function AssistantTimelineRow(props: {
   })
 
   return (
-    <div className="relative min-w-0 px-1 py-0.5">
-      <AgentMarkdown text={messageText} theme={theme} />
-      {row.assistantTurnDiffSummary ? (
-        <AssistantChangedFilesSection
-          turnSummary={row.assistantTurnDiffSummary}
-          allDirectoriesExpanded={expandAll}
-          onToggleAllDirectories={onToggleAllDirectories}
-        />
-      ) : null}
+    <div className="relative min-w-0 px-0.5 py-0.5">
+      <div className="prose-agent text-sm leading-relaxed text-agent-feed-primary">
+        <AgentMarkdown text={messageText} theme={theme} />
+      </div>
       {row.message.diffPatch ? (
-        <div className="mt-4 overflow-hidden rounded-xl border border-input bg-card">
+        <div className="mt-3 overflow-hidden rounded-xl border border-border/50 bg-muted/20">
           <AgentPatchView patch={row.message.diffPatch} theme={theme} />
         </div>
       ) : null}
@@ -169,7 +182,7 @@ function AssistantTimelineRow(props: {
             <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />
           ) : null}
           {!row.message.streaming ? (
-            <p className="text-muted-foreground text-xs tabular-nums">
+            <p className="text-agent-feed-muted text-xs tabular-nums">
               {formatTimelineTimestamp(row.message.updatedAt)}
             </p>
           ) : null}
@@ -181,14 +194,14 @@ function AssistantTimelineRow(props: {
 
 function WorkingTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "working" }> }) {
   return (
-    <div className="py-0.5 pl-1.5">
+    <div className="py-1 pl-0.5">
       <div
-        className="flex items-center gap-2 pt-1 text-3xs text-muted-foreground/70 tabular-nums"
+        className="flex items-center gap-2 text-sm text-agent-feed-muted tabular-nums"
         data-chat-activity="true"
         role="status"
         title={props.row.label}
       >
-        <Spinner className="size-3" aria-hidden="true" />
+        <Spinner className="size-3 opacity-60" aria-hidden="true" />
         <span className="min-w-0 truncate">{props.row.label}</span>
       </div>
     </div>
@@ -213,7 +226,7 @@ function StructuredTimelineRow(props: {
     return (
       <pre
         data-timeline-terminal="true"
-        className="overflow-x-auto rounded-md border border-border bg-muted/30 p-2 font-mono text-xs text-muted-foreground"
+        className="overflow-x-auto rounded-md bg-muted/25 px-2 py-1.5 font-mono text-xs text-agent-feed-muted"
       >
         {item.text}
       </pre>
@@ -245,8 +258,6 @@ function StructuredTimelineRow(props: {
 function TimelineRowContent(props: {
   row: MessagesTimelineRow
   theme: "light" | "dark"
-  expandAll: boolean
-  onToggleAllDirectories: () => void
   onResolvePermission?: (
     permissionId: string,
     decision: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always",
@@ -256,13 +267,13 @@ function TimelineRowContent(props: {
     input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
   ) => void
 }) {
-  const { row, theme, expandAll, onToggleAllDirectories } = props
+  const { row, theme } = props
   return (
     <div
       className={cn(
         row.kind === "message" && row.message.role === "assistant" && !row.showAssistantMeta
           ? "pb-2"
-          : "pb-4",
+          : "pb-3",
         row.kind === "message" && row.message.role === "assistant" ? "group/assistant" : null,
       )}
       data-timeline-row-id={row.id}
@@ -274,13 +285,10 @@ function TimelineRowContent(props: {
         <UserTimelineRow row={row} />
       ) : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
-        <AssistantTimelineRow
-          row={row}
-          theme={theme}
-          expandAll={expandAll}
-          onToggleAllDirectories={onToggleAllDirectories}
-        />
+        <AssistantTimelineRow row={row} theme={theme} />
       ) : null}
+      {row.kind === "turn_status" ? <TurnStatusTimelineRow row={row} /> : null}
+      {row.kind === "activity_group" ? <ActivityGroupTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "structured" ? (
         <StructuredTimelineRow
@@ -324,9 +332,7 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
     activeTurnStartedAt = null,
     theme,
     contentInsetEndAdjustment,
-    expandAll,
     maintainScrollAtEndEnabled = true,
-    onToggleAllDirectories,
     onIsAtEndChange,
     onResolvePermission,
     onResolveUserInput,
@@ -373,14 +379,12 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
         <TimelineRowContent
           row={item}
           theme={theme}
-          expandAll={expandAll}
-          onToggleAllDirectories={onToggleAllDirectories}
           onResolvePermission={onResolvePermission}
           onResolveUserInput={onResolveUserInput}
         />
       </div>
     ),
-    [expandAll, onResolvePermission, onResolveUserInput, onToggleAllDirectories, theme],
+    [onResolvePermission, onResolveUserInput, theme],
   )
 
   if (rows.length === 0 && !isWorking) {

@@ -17,7 +17,7 @@ export function ThoughtBlock(props: { text: string }) {
     <Collapsible
       open={open}
       onOpenChange={setOpen}
-      className="rounded-lg border border-border bg-muted/30 text-sm"
+      className="text-sm"
       data-gharargah-thought=""
       data-gharargah-thought-text={props.text}
     >
@@ -26,15 +26,17 @@ export function ThoughtBlock(props: { text: string }) {
           type="button"
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-muted-foreground"
+          className="h-auto w-full justify-start gap-1.5 px-1 py-1 text-agent-feed-muted hover:text-agent-feed-primary"
         >
           <ChevronRight className={open ? "size-3 rotate-90" : "size-3"} />
-          <Brain className="size-3.5" />
+          <Brain className="size-3.5 opacity-70" />
           Thought
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="overflow-visible data-[state=closed]:hidden">
-        <p className="whitespace-pre-wrap px-3 pb-3 text-muted-foreground">{props.text}</p>
+        <p className="whitespace-pre-wrap px-1 pb-2 ps-6 text-sm leading-relaxed text-agent-feed-muted">
+          {props.text}
+        </p>
       </CollapsibleContent>
     </Collapsible>
   )

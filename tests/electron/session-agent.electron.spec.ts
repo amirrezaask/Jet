@@ -185,9 +185,11 @@ test.describe("project session agent chat", () => {
       const setupPicker = page.locator("[data-agent-setup-picker]")
       await expectLocatorCount(setupPicker, 1)
       await expectLocatorVisible(setupPicker)
-      await expectLocatorContainsText(setupPicker, "Cursor settings")
-      await expectLocatorVisible(setupPicker.locator('[data-agent-setting-group="access"]'))
-      await expectLocatorCount(setupPicker.locator('[data-agent-setting-group="mode"]'), 0)
+      await expectLocatorVisible(setupPicker.locator("[data-model-picker-content]"))
+      await expectLocatorVisible(setupPicker.locator("[data-model-picker-auto]"))
+      await expectLocatorVisible(
+        setupPicker.locator('[data-model-picker-row][data-model-picker-provider="cursor"]').first(),
+      )
       await expectLocatorCount(modal.locator("select[data-agent-runtime-mode]"), 0)
       await expectLocatorCount(modal.locator("select[data-agent-interaction-mode]"), 0)
       await page.keyboard.press("Escape")
@@ -196,10 +198,11 @@ test.describe("project session agent chat", () => {
           return modal.locator('[data-chat-composer-overlay] [data-slot="permission-card"]').count()
         })
         .toBe(0)
-      await expectLocatorContainsText(
-        modal.locator("[data-chat-composer-overlay]"),
-        "Message agent",
-      )
+      await expect
+        .poll(() =>
+          modal.locator('[data-testid="composer-editor"]').getAttribute("aria-placeholder"),
+        )
+        .toBe("Send follow-up")
 
       for (const mode of ["terminal", "editor", "git", "todos"] as const) {
         await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()

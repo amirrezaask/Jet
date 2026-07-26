@@ -2480,6 +2480,8 @@ export function GharargahApp() {
                         agents={agentCatalog}
                         theme={colorScheme}
                         hideHeader
+                        terminalCount={1}
+                        onOpenTerminal={() => setSessionMode("terminal")}
                         onSend={async payload => {
                           if (!activeAgentThread) return
                           const agents = window.gharargah?.agents

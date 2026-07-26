@@ -92,7 +92,7 @@ test.describe("agent shell env loading", () => {
       await modelPicker.click()
       await expectLocatorVisible(page.locator("[data-agent-setup-picker]"))
       await expectLocatorVisible(
-        page.locator('[data-model-picker-provider="codex"]'),
+        page.locator('[data-model-picker-row][data-model-picker-provider="codex"]').first(),
       )
     } finally {
       await app.close()

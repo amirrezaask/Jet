@@ -172,7 +172,24 @@ export async function openNewAgentSession(
     await modelPicker.click()
     const picker = page.locator("[data-agent-setup-picker]")
     await picker.waitFor({ state: "visible" })
-    await picker.locator(`[data-model-picker-provider="${providerId}"]`).click()
+    const providerRow = picker
+      .locator(`[data-model-picker-row][data-model-picker-provider="${providerId}"]`)
+      .first()
+    await providerRow.waitFor({ state: "visible", timeout: 10_000 })
+    await providerRow.click()
+    await page.waitForFunction(
+      () => document.querySelector("[data-agent-setup-picker]") == null,
+      null,
+      { timeout: 10_000 },
+    )
+    await page.waitForFunction(
+      id =>
+        document
+          .querySelector("[data-chat-provider]")
+          ?.getAttribute("data-chat-provider") === id,
+      providerId,
+      { timeout: 10_000 },
+    )
   }
   return modal
 }

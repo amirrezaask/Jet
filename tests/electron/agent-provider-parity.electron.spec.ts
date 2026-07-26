@@ -140,16 +140,19 @@ test.describe("unified agent provider UI", () => {
         const threadsBefore = new Set(await listThreadIds(page))
         const modal = await openNewAgentSession(page, provider.id)
         await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
-        await expectLocatorVisible(modal.locator("[data-chat-header]"))
+        await expectLocatorVisible(modal.locator("[data-chat-slim-title]"))
         await expectLocatorVisible(modal.locator("[data-messages-timeline]"))
         await expectLocatorVisible(modal.locator("[data-chat-composer-form]"))
         await expectLocatorVisible(modal.locator("[data-chat-provider-model-picker]"))
+        await expectLocatorVisible(modal.locator('[data-composer-attach-file="true"]'))
+        await expectLocatorVisible(modal.locator("[data-composer-mic-stub]"))
+        await expect
+          .poll(() =>
+            modal.locator('[data-testid="composer-editor"]').getAttribute("aria-placeholder"),
+          )
+          .toBe("Send follow-up")
         const modelPicker = modal.locator("[data-chat-provider-model-picker]")
         await expectLocatorContainsText(modelPicker, provider.label)
-        await expectLocatorContainsText(
-          modal.locator("[data-chat-header-provider]"),
-          provider.label,
-        )
         await expectLocatorCount(modal.getByRole("button", { name: "Inspect ACP session" }), 0)
         await expect
           .poll(() => modal.locator("[data-chat-provider]").getAttribute("data-chat-provider"))
@@ -181,33 +184,40 @@ test.describe("unified agent provider UI", () => {
         await modelPicker.click()
         const setupPicker = page.locator("[data-agent-setup-picker]")
         await expectLocatorCount(setupPicker, 1)
-        await expectLocatorContainsText(setupPicker, provider.listedModel)
-        await expectLocatorContainsText(setupPicker, `${provider.label} settings`)
-        await expectLocatorVisible(setupPicker.locator('[data-agent-setting-group="access"]'))
+        await expectLocatorVisible(
+          setupPicker.locator(`[data-model-picker-row][data-model-picker-provider="${provider.id}"]`).first(),
+        )
+        await expectLocatorContainsText(setupPicker, `${provider.label}:`)
+        await expectLocatorVisible(setupPicker.locator("[data-model-picker-auto]"))
+        await expectLocatorVisible(setupPicker.locator("[data-model-picker-add-models]"))
         if (provider.id === "codex" || provider.id === "claude") {
           await setupPicker
-            .locator('[data-slot="combobox-item"]')
+            .locator(`[data-model-picker-row][data-model-picker-provider="${provider.id}"]`)
             .filter({ hasText: provider.listedModel })
+            .first()
             .click()
           await expect
             .poll(() => page.locator("[data-agent-setup-picker]").count())
             .toBe(0)
           expect(await readProviderThread(page, provider.id)).toBeNull()
-          await modelPicker.click()
-          await expectLocatorVisible(
-            page
-              .locator("[data-agent-setup-picker]")
-              .locator('[data-agent-setting-group="reasoning_effort"], [data-agent-setting-group="effort"]'),
-          )
-          await expectLocatorCount(
-            page.locator('[data-agent-setup-picker] [data-agent-setting-group="mode"]'),
-            0,
-          )
+        } else {
+          await page.keyboard.press("Escape")
+          await expect
+            .poll(() => page.locator("[data-agent-setup-picker]").count())
+            .toBe(0)
         }
-        await page.keyboard.press("Escape")
 
         await sendMessage(page, modal, provider.id, `hello ${provider.id}`)
         await waitForAssistant(page, provider.id, provider.firstReply)
+        await expectLocatorVisible(modal.locator("[data-chat-user-bubble]").first())
+        await expectLocatorVisible(modal.locator("[data-chat-terminal-pill]"))
+        await expect
+          .poll(
+            async () =>
+              (await modal.locator("[data-chat-turn-status]").first().textContent()) ?? "",
+            { timeout: 15_000 },
+          )
+          .toContain("Completed")
         const createdAfterFirstMessage = (await listThreadIds(page)).filter(
           id => !threadsBefore.has(id),
         )

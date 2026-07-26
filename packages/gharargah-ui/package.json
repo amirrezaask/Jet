@@ -36,7 +36,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/dock/panel-drop-zones.test.ts src/theme/default.test.ts src/lister/fuzzy.test.ts src/lister/filter-tree.test.ts src/panels/terminal-file-drop.test.ts src/panels/terminal-cursor-motion.test.ts src/home/todos/project-todos-repository.test.ts src/agents/useSettings.test.ts src/agents/providerInstances.test.ts src/agents/composer/modelPickerSearch.test.ts src/agents/composer/composerFooterLayout.test.ts src/agents/timeline/ToolCallCard.test.ts src/agents/timeline/MessagesTimeline.logic.test.ts"
+    "test": "tsx --test src/dock/panel-drop-zones.test.ts src/theme/default.test.ts src/lister/fuzzy.test.ts src/lister/filter-tree.test.ts src/panels/terminal-file-drop.test.ts src/panels/terminal-cursor-motion.test.ts src/home/todos/project-todos-repository.test.ts src/agents/useSettings.test.ts src/agents/providerInstances.test.ts src/agents/composer/modelPickerSearch.test.ts src/agents/composer/composerFooterLayout.test.ts src/agents/timeline/ToolCallCard.test.ts src/agents/timeline/MessagesTimeline.logic.test.ts src/agents/timeline/activityAggregation.test.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.6",
