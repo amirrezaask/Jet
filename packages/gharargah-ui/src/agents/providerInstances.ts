@@ -24,7 +24,8 @@ export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boo
 }
 
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {
-  return entry.enabled
+  // Show unavailable agents too (CLI missing) so the rail explains why.
+  return entry.enabled || entry.status === "unavailable"
 }
 
 export function deriveProviderInstanceEntries(

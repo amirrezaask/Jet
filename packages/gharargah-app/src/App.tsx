@@ -813,6 +813,37 @@ export function GharargahApp() {
   }, [sessionMode, terminalModalTabId, ensureSessionAgentThread])
 
   useEffect(() => {
+    if (!isAgentChatEnabled()) return
+    const agentsApi = window.gharargah?.agents
+    if (!agentsApi) return
+
+    let cancelled = false
+    let pollTimer: ReturnType<typeof setTimeout> | undefined
+
+    const refresh = () => {
+      if (!cancelled) void loadAgentCatalog(true)
+    }
+    const offReady = agentsApi.onShellEnvReady?.(refresh)
+
+    const pollUntilReady = async () => {
+      const catalog = await loadAgentCatalog(false)
+      if (cancelled) return
+      if (catalog?.shellEnvStatus === "loading") {
+        pollTimer = setTimeout(() => {
+          void pollUntilReady()
+        }, 400)
+      }
+    }
+    void pollUntilReady()
+
+    return () => {
+      cancelled = true
+      offReady?.()
+      if (pollTimer) clearTimeout(pollTimer)
+    }
+  }, [loadAgentCatalog])
+
+  useEffect(() => {
     const agents = window.gharargah?.agents
     if (!agents || !activeAgentThread || isAgentDraftThread(activeAgentThread))
       return

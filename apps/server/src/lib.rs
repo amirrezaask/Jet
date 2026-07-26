@@ -2,6 +2,7 @@ pub mod app;
 pub mod config;
 pub mod host;
 pub mod mock_acp;
+pub mod path_env;
 pub mod persistence;
 pub mod static_files;
 

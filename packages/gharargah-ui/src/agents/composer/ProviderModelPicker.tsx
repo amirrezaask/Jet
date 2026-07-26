@@ -41,6 +41,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   activeProviderIconClassName?: string;
   compact?: boolean;
   disabled?: boolean;
+  /** Login-shell PATH still resolving — show loading, keep trigger disabled. */
+  shellEnvLoading?: boolean;
   terminalOpen?: boolean;
   open?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
@@ -60,6 +62,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
 }) {
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
+  const shellEnvLoading = props.shellEnvLoading ?? false;
+  const pickerDisabled = Boolean(props.disabled) || shellEnvLoading;
 
   // Resolve the active instance entry by exact routing key. The composer
   // resolves fallbacks before rendering this component; if the selected
@@ -79,15 +83,26 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const selectedModel =
     selectedInstanceOptions.find((option) => option.slug === props.model) ??
     selectedInstanceOptions[0];
-  const triggerTitle = selectedModel ? getTriggerDisplayModelName(selectedModel) : props.model;
-  const triggerLabel = selectedModel ? getTriggerDisplayModelLabel(selectedModel) : props.model;
-  const providerLabel = activeEntry?.displayName ?? "Agent";
+  const triggerTitle = shellEnvLoading
+    ? "Loading…"
+    : selectedModel
+      ? getTriggerDisplayModelName(selectedModel)
+      : props.model;
+  const triggerLabel = shellEnvLoading
+    ? "Loading environment"
+    : selectedModel
+      ? getTriggerDisplayModelLabel(selectedModel)
+      : props.model;
+  const providerLabel = shellEnvLoading
+    ? "Agent"
+    : (activeEntry?.displayName ?? "Agent");
   const duplicateDriverCount = props.instanceEntries.filter(
     (entry) => activeEntry !== null && entry.driverKind === activeEntry.driverKind,
   ).length;
   const showInstanceBadge = Boolean(activeEntry?.accentColor) || duplicateDriverCount > 1;
 
   const setIsMenuOpen = (open: boolean) => {
+    if (shellEnvLoading && open) return;
     props.onOpenChange?.(open);
     if (props.open === undefined) {
       setUncontrolledIsMenuOpen(open);
@@ -166,12 +181,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           size="sm"
           variant={props.triggerVariant ?? "ghost"}
           data-chat-provider-model-picker="true"
+          data-shell-env-loading={shellEnvLoading ? "true" : undefined}
           className={cn(
             "min-w-0 justify-between whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80",
             props.compact ? "max-w-42 shrink-0" : "max-w-48 shrink sm:max-w-56 sm:px-3",
             props.triggerClassName,
           )}
-          disabled={props.disabled}
+          disabled={pickerDisabled}
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
             {activeEntry ? (
@@ -239,7 +255,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             configOptions={props.configOptions}
             showRuntime={props.showRuntime}
             showInteraction={props.showInteraction}
-            disabled={props.disabled}
+            disabled={pickerDisabled}
             onRuntimeModeChange={props.onRuntimeModeChange}
             onInteractionModeChange={props.onInteractionModeChange}
             onConfigOptionChange={props.onConfigOptionChange}

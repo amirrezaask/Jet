@@ -169,6 +169,8 @@ export type JetElectronAgents = {
     permission: AgentPermissionRequest
   }) => void): () => void
   onStructuredDelta?(callback: (delta: AgentStructuredDelta) => void): () => void
+  /** Fires once login-shell PATH is applied (or skipped / timed out). */
+  onShellEnvReady?(callback: () => void): () => void
   getAcpTrace?(providerId?: string): Promise<unknown>
   getConnectionState?(
     provider?: string | { providerId?: string; workspaceRootPath?: string },

@@ -97,6 +97,8 @@ export const ChatComposer = memo(function ChatComposer(props: {
   instanceId: string | null
   model: string | null
   disabled?: boolean
+  /** Login-shell PATH still resolving — agent switcher stays loading. */
+  shellEnvLoading?: boolean
   isRunning?: boolean
   isSendBusy?: boolean
   commands?: ReadonlyArray<AgentAvailableCommand>
@@ -682,6 +684,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
                   if (open) props.onProvidersRefresh?.()
                 }}
                 disabled={props.disabled}
+                shellEnvLoading={props.shellEnvLoading}
                 onInstanceModelChange={(instanceId, model) =>
                   props.onInstanceModelChange(instanceId, model)
                 }

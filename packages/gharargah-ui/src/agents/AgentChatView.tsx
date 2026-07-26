@@ -137,6 +137,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
     () => (thread ? deriveTimelineEntriesFromThread(thread) : []),
     [thread],
   )
+  const shellEnvLoading = agents?.shellEnvStatus === "loading"
+  // `agents == null` is initial fetch — treat as loading for the switcher only.
+  const shellEnvPending = shellEnvLoading || agents == null
   timelineEntriesLengthRef.current = timelineEntries.length
   const turnDiffSummaryByAssistantMessageId = useMemo(
     () => (thread ? buildTurnDiffSummaryByAssistantMessageId(thread) : new Map()),
@@ -525,7 +528,11 @@ export const AgentChatView = memo(function AgentChatView(props: {
             providers={providers}
             instanceId={defaultSelection?.instanceId ?? thread.agentId}
             model={defaultSelection?.model ?? thread.model}
-            disabled={!defaultSelection}
+            // Only lock the switcher while login-shell PATH resolves.
+            // After ready, keep it clickable even if no CLI is installed yet
+            // (Tauri GUI PATH miss used to leave !defaultSelection → forever disabled).
+            disabled={shellEnvPending}
+            shellEnvLoading={shellEnvPending}
             isRunning={isWorking}
             isSendBusy={submitting}
             commands={thread.availableCommands}

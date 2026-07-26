@@ -39,6 +39,9 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     const delta = args[0] as import("@gharargah/agents").AgentStructuredDelta
     for (const cb of agentStructuredDeltaListeners) cb(delta)
   })
+  transport.on("agents:shellEnvReady", () => {
+    for (const cb of agentShellEnvReadyListeners) cb()
+  })
   transport.on("lsp:crashed", (...args: unknown[]) => {
     const id = args[0] as string
     for (const cb of lspCrashListeners) cb(id)
@@ -96,6 +99,7 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
   const agentStructuredDeltaListeners = new Set<
     (delta: import("@gharargah/agents").AgentStructuredDelta) => void
   >()
+  const agentShellEnvReadyListeners = new Set<() => void>()
   const fileChangeListeners = new Set<(uri: string) => void>()
   const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
   const searchReadyListeners = new Set<(rootUri: string) => void>()
@@ -172,6 +176,10 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       onStructuredDelta: callback => {
         agentStructuredDeltaListeners.add(callback)
         return () => agentStructuredDeltaListeners.delete(callback)
+      },
+      onShellEnvReady: callback => {
+        agentShellEnvReadyListeners.add(callback)
+        return () => agentShellEnvReadyListeners.delete(callback)
       },
     },
     search: {

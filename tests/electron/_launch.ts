@@ -154,8 +154,22 @@ export async function openNewAgentSession(
     null,
     { timeout: 20_000 },
   )
+  const modelPicker = modal.locator("[data-chat-provider-model-picker]")
+  await modelPicker.waitFor({ state: "visible", timeout: 20_000 })
+  // Login-shell PATH may still be resolving — wait before opening the switcher.
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector(
+        "[data-chat-provider-model-picker]",
+      ) as HTMLButtonElement | null
+      if (!el) return false
+      return el.getAttribute("data-shell-env-loading") !== "true" && !el.disabled
+    },
+    null,
+    { timeout: 30_000 },
+  )
   if (providerId) {
-    await modal.locator("[data-chat-provider-model-picker]").click()
+    await modelPicker.click()
     const picker = page.locator("[data-agent-setup-picker]")
     await picker.waitFor({ state: "visible" })
     await picker.locator(`[data-model-picker-provider="${providerId}"]`).click()

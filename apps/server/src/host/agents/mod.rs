@@ -991,10 +991,17 @@ impl AgentsHost {
     }
 
     pub fn list_agents(&self) -> Value {
-        let agents = AGENTS.iter().map(agent_snapshot).collect::<Vec<_>>();
+        let shell_status = crate::path_env::shell_env_status();
+        let agents = if shell_status == crate::path_env::ShellEnvStatus::Ready {
+            AGENTS.iter().map(agent_snapshot).collect::<Vec<_>>()
+        } else {
+            // Avoid flashing every CLI as "not found on PATH" while login shell loads.
+            Vec::new()
+        };
         json!({
             "agents": agents,
             "updatedAt": Self::now_iso(),
+            "shellEnvStatus": shell_status.as_str(),
         })
     }
 
@@ -1017,22 +1024,31 @@ impl AgentsHost {
     }
 
     pub fn list_providers(&self) -> Value {
-        let providers = AGENTS
-            .iter()
-            .map(|agent| {
-                let installed = agent_available(agent);
-                json!({
-                    "instanceId": agent.id,
-                    "driverKind": agent.id,
-                    "displayName": agent.display_name,
-                    "enabled": installed,
-                    "status": if installed { "ready" } else { "unavailable" },
-                    "message": if installed { Value::Null } else { json!(format!("{} CLI not found on PATH", agent.display_name)) },
-                    "models": if installed { agent_models(agent) } else { json!([]) },
+        let shell_status = crate::path_env::shell_env_status();
+        let providers = if shell_status == crate::path_env::ShellEnvStatus::Ready {
+            AGENTS
+                .iter()
+                .map(|agent| {
+                    let installed = agent_available(agent);
+                    json!({
+                        "instanceId": agent.id,
+                        "driverKind": agent.id,
+                        "displayName": agent.display_name,
+                        "enabled": installed,
+                        "status": if installed { "ready" } else { "unavailable" },
+                        "message": if installed { Value::Null } else { json!(format!("{} CLI not found on PATH", agent.display_name)) },
+                        "models": if installed { agent_models(agent) } else { json!([]) },
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
-        json!({ "providers": providers, "updatedAt": Self::now_iso() })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        json!({
+            "providers": providers,
+            "updatedAt": Self::now_iso(),
+            "shellEnvStatus": shell_status.as_str(),
+        })
     }
 
     pub fn stop_all(&self) {
@@ -1549,7 +1565,12 @@ fn agent_available(agent: &AgentSpec) -> bool {
 }
 
 fn which_binary(name: &str) -> bool {
-    let checker = if cfg!(windows) { "where" } else { "which" };
+    // Absolute checker so discovery still works while PATH is mid-restore.
+    let checker = if cfg!(windows) {
+        "where"
+    } else {
+        "/usr/bin/which"
+    };
     Command::new(checker)
         .arg(name)
         .stdout(Stdio::null())
@@ -3594,9 +3615,18 @@ pub fn handle(
     args: &[Value],
 ) -> Result<Value, String> {
     match channel {
-        "agents:listAgents" => Ok(host.list_agents()),
-        "agents:refreshAgents" => Ok(host.refresh_agents(args.first().and_then(Value::as_str))),
-        "agents:listProviders" | "agents:refreshProviders" => Ok(host.list_providers()),
+        "agents:listAgents" => {
+            crate::path_env::begin_shell_env_load(app.clone());
+            Ok(host.list_agents())
+        }
+        "agents:refreshAgents" => {
+            crate::path_env::begin_shell_env_load(app.clone());
+            Ok(host.refresh_agents(args.first().and_then(Value::as_str)))
+        }
+        "agents:listProviders" | "agents:refreshProviders" => {
+            crate::path_env::begin_shell_env_load(app.clone());
+            Ok(host.list_providers())
+        }
         "agents:listThreads" => Ok(host.list_threads(
             args.first().and_then(|v| v.as_str()).unwrap_or(""),
             args.get(1).and_then(|v| v.as_str()).unwrap_or(""),
