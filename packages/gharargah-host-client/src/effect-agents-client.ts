@@ -27,10 +27,8 @@ export function createEffectAgentsClient(options?: {
     } catch {
       /* ignore */
     }
-    const host =
-      (typeof process !== "undefined" && process.env?.GHARARGAH_AGENT_HOST) || "127.0.0.1"
-    const port =
-      (typeof process !== "undefined" && process.env?.GHARARGAH_AGENT_PORT) || "4751"
+    const host = "127.0.0.1"
+    const port = "4751"
     return `ws://${host}:${port}/agents`
   }
 

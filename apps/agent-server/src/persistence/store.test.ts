@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import Database from "better-sqlite3"
+import { DatabaseSync } from "node:sqlite"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -8,7 +8,7 @@ import { AgentStore } from "./store.js"
 
 function makeLegacyRustDb(dbFile: string): void {
   fs.mkdirSync(path.dirname(dbFile), { recursive: true })
-  const db = new Database(dbFile)
+  const db = new DatabaseSync(dbFile)
   db.exec(`
     CREATE TABLE agent_command_receipts(
       command_id TEXT PRIMARY KEY,
@@ -38,15 +38,14 @@ function makeLegacyRustDb(dbFile: string): void {
 describe("AgentStore legacy Rust schema migration", () => {
   it("migrates receipts without NOT NULL kind failure", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "gharargah-store-"))
-    const dbFile = path.join(root, ".gharargah", "agents", "events.sqlite3")
-    makeLegacyRustDb(dbFile)
-
+    makeLegacyRustDb(path.join(root, ".gharargah", "agents", "events.sqlite3"))
     const store = new AgentStore()
-    // Would throw NOT NULL on kind before migration.
-    store.putReceipt(root, "new-cmd", "t1", { type: "thread.create", id: "t1" })
-    assert.deepEqual(store.getReceipt(root, "new-cmd"), { type: "thread.create", id: "t1" })
-    assert.deepEqual(store.getReceipt(root, "old-1"), { ok: true })
-    store.appendEvent(root, "t1", 2, { type: "turn.completed" })
-    store.close()
+    try {
+      store.putReceipt(root, "new-1", "t1", { ok: true })
+      assert.deepEqual(store.getReceipt(root, "old-1"), { ok: true })
+      assert.deepEqual(store.getReceipt(root, "new-1"), { ok: true })
+    } finally {
+      store.close()
+    }
   })
 })

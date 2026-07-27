@@ -4,7 +4,9 @@ Guide for AI agents and contributors working in this repo.
 
 ## What Gharargah Is
 
-**Gharargah** is a desktop Mission Control shell (Tauri + React): a **home view** of projects and terminal session cards. Terminals open in **modal dialogs**. There is no editor workspace shell in the app today.
+**Gharargah** is a **web Mission Control** app (React + Vite): a **home view** of projects and terminal session cards. Terminals open in **modal dialogs**. There is no editor workspace shell in the app today.
+
+**Hard policy: no Rust / no Tauri.** Host IPC is TypeScript (`apps/host-server` + `@gharargah/node-host`). Do not add `.rs`, `Cargo.toml`, or Tauri crates.
 
 **Core split (current product):**
 
@@ -14,7 +16,7 @@ Guide for AI agents and contributors working in this repo.
 | **Gharargah App** | Home, terminal modals, project catalog, slim command/overlay set |
 | **Gharargah UI** | Home UI, TerminalSessionModal, TerminalPanel, overlays, themes (library still has editor/sidebar components — unwired) |
 | **Gharargah Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
-| **Tauri / Rust host** | FS, terminal PTY, search/git/LSP IPC (host still present; app does not wire editor/LSP) |
+| **Host server (TS)** | FS, terminal PTY (`node-pty`), search/git/LSP over HTTP `/api/v1/rpc` + `/ws` |
 
 Library packages `@gharargah/codemirror`, `@gharargah/lsp`, and editor/sidebar UI components remain in the monorepo but are **not imported** by `@gharargah/app`.
 
@@ -37,23 +39,25 @@ Do **not** copy large chunks wholesale; match Gharargah’s architecture.
 ```
 jet/
 ├── apps/
-│   └── gharargah/              Tauri shell (Rust host + vite frontend)
+│   ├── gharargah/              Vite frontend shell (proxies to host)
+│   ├── host-server/            TypeScript host (HTTP/WS RPC + PTY)
+│   └── agent-server/           Effect agent control plane (WS :4751)
 ├── fixtures/
 │   └── sample-workspace/       Fixture project for E2E smoke tests
 ├── packages/
 │   ├── gharargah-shared/       URIs, Emitter, panel primitives
-│   ├── gharargah-node-host/    Shared Node FS/git helpers (tooling / unit tests)
-│   ├── gharargah-host-client/  Renderer transport → Tauri invoke/listen
+│   ├── gharargah-node-host/    Node FS/git/search/PTY helpers
+│   ├── gharargah-host-client/  Browser transport → HTTP/WS
 │   ├── gharargah-panels/       PanelTree — splits, tabs, resize, serde
 │   ├── gharargah-workspace/    WorkspaceService, TabRegistry, commands, keymaps
 │   ├── gharargah-codemirror/   (library; unwired from app)
 │   ├── gharargah-lsp/          (library; unwired from app)
-│   ├── gharargah-agents/       (library; in-app ACP chat temporarily gated off — CLI launch from New session)
+│   ├── gharargah-agents/       (library; in-app ACP chat)
 │   ├── gharargah-ui/           Home, terminal modal/panel, overlays, themes (+ unused editor/sidebar)
 │   └── gharargah-app/          Root React app — home + terminal modals only
 ├── tests/
-│   ├── electron/               Shared UI E2E specs (run via tauri-e2e)
-│   ├── tauri/                  Tauri-native channel / smoke specs
+│   ├── electron/               Shared UI E2E specs (Playwright web-e2e)
+│   ├── shell/                  launchWeb() against TS host
 │   └── bench/                  UX latency benchmarks
 ├── package.json                turbo scripts
 ├── pnpm-workspace.yaml
@@ -66,14 +70,13 @@ jet/
 ### Package dependency direction
 
 ```
-gharargah-shared  ←  gharargah-panels, gharargah-workspace
+gharargah-shared  ←  gharargah-panels, gharargah-workspace, gharargah-node-host
 gharargah-workspace + gharargah-panels + gharargah-ui  ←  gharargah-app
-gharargah-app + gharargah-host-client  ←  gharargah (Tauri)
+gharargah-app + gharargah-host-client  ←  apps/gharargah (Vite)
+gharargah-node-host  ←  apps/host-server
 ```
 
-(`gharargah-codemirror` / `gharargah-lsp` stay workspace members for UI library consumers; app does not depend on them.)
-
-Keep imports acyclic. Lower layers must not import React or Tauri APIs.
+Keep imports acyclic. Lower layers must not import React.
 
 ---
 
@@ -83,11 +86,11 @@ Keep imports acyclic. Lower layers must not import React or Tauri APIs.
 
 ```bash
 pnpm install          # workspace install
-pnpm dev              # Tauri shell (Rust host + vite)
+pnpm dev              # host-server + agent-server + Vite
 pnpm typecheck        # all packages (TypeScript 7)
-pnpm test:tauri       # Tauri native + shared UI specs (headless via GHARARGAH_E2E)
+pnpm test:e2e         # Playwright web E2E (headless Chromium)
 pnpm test:bench       # UX latency benchmarks (tests/bench/)
-pnpm build            # production build (gharargah)
+pnpm build            # production frontend build (host serves dist)
 ```
 
 Run typecheck from repo root before finishing a task:
@@ -98,7 +101,7 @@ pnpm -r typecheck
 
 Monorepo uses **TypeScript 7** (`^7.0.2` at root; `pnpm.overrides` in `pnpm-workspace.yaml` pins one version).
 
-Then validate with **`pnpm test:tauri`** (see Agent visual verification).
+Then validate with **`pnpm test:e2e`** (see Agent visual verification).
 
 ---
 
@@ -106,17 +109,17 @@ Then validate with **`pnpm test:tauri`** (see Agent visual verification).
 
 ## Agent visual verification (MANDATORY)
 
-**Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, explorer views, error/status messages — MUST be verified with Playwright Tauri specs before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient.
+**Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, explorer views, error/status messages — MUST be verified with Playwright web specs before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient.
 
-### Preferred: Tauri Playwright / WebDriver specs (headless)
+### Preferred: Playwright against TS host (headless)
 
-Specs live in `tests/electron/*.electron.spec.ts` (shared suite) and `tests/tauri/*.tauri.spec.ts`. `launchJet()` launches Tauri and sets `GHARARGAH_E2E=1` (window off-screen) unless `GHARARGAH_HEADED=1`.
+Specs live in `tests/electron/*.electron.spec.ts` (shared suite). `launchJet()` → `launchWeb()` starts `@gharargah/host-server` + agent-server + Chromium. `GHARARGAH_E2E=1` unless `GHARARGAH_HEADED=1`.
 
-1. Run all shared UI specs (tauri-e2e): `pnpm test:tauri`
+1. Run shared UI specs: `pnpm test:e2e`
 2. Add or extend a spec under `tests/electron/` — helpers in `tests/helpers/` and `tests/electron/_launch.ts`. See `tests/README.md`.
 3. Perf-sensitive changes (startup, editor mount, palette, search, theme) → also `pnpm test:bench`
 4. New feature → new spec with structural assertions (`expect`, `expectLayout`, scoped panel selectors). Do not rely on unrelated specs to cover new paths.
-5. Run `pnpm test:tauri` before declaring a broad UI change complete.
+5. Run `pnpm test:e2e` before declaring a broad UI change complete.
 
 **Verification preference (strict):**
 
@@ -141,12 +144,12 @@ Scope every list assertion with the panel data attribute (`[data-gharargah-list-
 
 ### Native chrome & host IPC
 
-Any change to title bar geometry, native menu, window frame, or host IPC (`fs:*`, `git:*`, `lsp:*`, `search:*`, `agents:*`) MUST have a sibling spec in `tests/electron/` (run via `tauri-e2e`) or `tests/tauri/`. Run `pnpm test:tauri`. Canonical example: `tests/electron/titlebar.electron.spec.ts` (macOS traffic-light clearance).
+Any change to host IPC (`fs:*`, `git:*`, `lsp:*`, `search:*`, `agents:*`, terminal PTY) MUST have a sibling spec in `tests/electron/` (run via `web-e2e`). Run `pnpm test:e2e`.
 
 ### Headed debugging
 
 ```bash
-GHARARGAH_HEADED=1 pnpm test:tauri   # show Tauri window on-screen
+GHARARGAH_HEADED=1 pnpm test:e2e   # show Chromium on-screen
 ```
 
 ### Parallelism
@@ -158,7 +161,7 @@ GHARARGAH_HEADED=1 pnpm test:tauri   # show Tauri window on-screen
 Twelve specs are temporarily skipped via `tests/electron/_flaky.ts` (`describeFlaky` / `skipFlakyTest`; re-enable with `GHARARGAH_E2E_RUN_FLAKY=1`). Re-enable all for triage:
 
 ```bash
-GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri
+GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:e2e
 ```
 
 | Spec file | Test | Likely fix |
@@ -190,12 +193,12 @@ window.__gharargahAgent.getState()
 window.__gharargahAgent.getPerfMeasures()  // User Timing measures (jet:*)
 ```
 
-### Dev gotchas (Tauri + Vite)
+### Dev gotchas (Vite + TS host)
 
-1. **Rust toolchain** — `cargo` / `rustc` required for `pnpm dev` and `pnpm test:tauri`.
-2. **Vite frontend** — `apps/gharargah` builds from `packages/jet-app` via `index.tauri.html`.
-3. **Stale Tauri processes** — if WebDriver ports stick: `pkill -f target/release/gharargah` then retry.
-4. **Tailwind v4 position utilities missing** — Vite must scan sibling packages; `@source` in `jet-ui/src/styles/globals.css`. Symptom: panels stack vertically (editor at bottom), palette full-width. After CSS changes, reload window if HMR does not pick up `@source`.
+1. **Node** — `pnpm dev` / `pnpm test:e2e` need Node + pnpm (no Rust toolchain).
+2. **Vite frontend** — `apps/gharargah` builds from `packages/gharargah-app`.
+3. **Host** — `@gharargah/host-server` on `:4747`; rebuild `better-sqlite3` if Node ABI changes.
+4. **Tailwind v4 position utilities missing** — Vite must scan sibling packages; `@source` in UI globals CSS.
 
 ---
 
@@ -217,7 +220,7 @@ Forwarded to renderer via `getLaunchConfig` / `jet:launch`; macOS open-file and 
 
 ### Host IPC (`window.gharargah`)
 
-Wired by `@gharargah/host-client` `loadTauriTransport()` → `createJetApi()`; types live in `@gharargah/workspace` (`GharargahHostAPI` name retained for API stability).
+Wired by `@gharargah/host-client` `createWebTransport()` → `createGharargahApi()`; types live in `@gharargah/workspace` (`GharargahHostAPI` name retained for API stability).
 
 
 | Channel                                                | Purpose                          |
@@ -228,8 +231,8 @@ Wired by `@gharargah/host-client` `loadTauriTransport()` → `createJetApi()`; t
 | `lsp:start`, `lsp:stop`                                | Spawn language server, WS bridge |
 
 
-Rust host: `apps/gharargah/src-tauri/src/host/`  
-Shell chrome: `apps/gharargah/src-tauri/src/shell.rs`
+TS host: `apps/host-server/src/`  
+Node helpers: `packages/gharargah-node-host/src/`
 
 ### Panel docking (`@gharargah/panels`)
 
@@ -590,9 +593,9 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | `packages/jet-panels/src/tree.ts`                 | Split/tab model                                     |
 | `packages/jet-ui/src/tabs/EditorTabHost.tsx`      | CM mount lifecycle                                  |
 | `packages/jet-codemirror/src/createEditorView.ts` | Editor extensions + LSP attach                      |
-| `apps/gharargah/vite.config.ts`                   | Tauri frontend vite paths                           |
-| `apps/gharargah/src-tauri/src/lib.rs`             | Tauri / Rust host bootstrap                         |
-| `packages/jet-extension-host/src/index.ts`        | Extension API surface                               |
+| `apps/host-server/src/bin.ts`                     | TS host bootstrap                                   |
+| `apps/gharargah/vite.config.ts`                   | Vite frontend + API proxy                           |
+| `packages/gharargah-app/src/main.tsx`             | `createWebTransport` → `window.gharargah`           |
 
 
 ---
@@ -601,12 +604,12 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 ## Adding a Feature (checklist)
 
-1. Decide layer — shared / panels / workspace / codemirror / ui / app / tauri host
+1. Decide layer — shared / panels / workspace / ui / app / host-server
 2. Add types to `@gharargah/shared` or `@gharargah/workspace` if cross-cutting
 3. Register command + keybinding if user-facing
 4. If new tab kind: extend `TabKind`, `TabRegistry`, `TabBody`, default registration in `App.tsx`
 5. Run `pnpm -r typecheck`
-6. **Tauri Playwright** — `pnpm test:tauri` (+ `pnpm test:bench` when perf-sensitive); cover changed behavior
+6. **Playwright** — `pnpm test:e2e` (+ `pnpm test:bench` when perf-sensitive); cover changed behavior
 
 ---
 
@@ -614,10 +617,11 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 ## Agent Anti-patterns
 
-- Shipping UI/UX changes without **`pnpm test:tauri`** validation
+- Shipping UI/UX changes without **`pnpm test:e2e`** validation
 - Putting editor document text in React `useState`
-- Calling Tauri APIs from lower packages (use `window.gharargah` / `@gharargah/host-client`)
-- **Shell:** Tauri (`gharargah`) is the only desktop shell. Rust host under `apps/gharargah/src-tauri/src/host/`; renderer via `@gharargah/host-client` `loadTauriTransport()`. Dev: `pnpm dev`. Tests: `pnpm test:tauri` (channel suite + shared UI specs via `tauri-e2e` / WebDriver). E2E uses `GHARARGAH_E2E=1` (window off-screen); `GHARARGAH_HEADED=1 pnpm test:tauri` shows it.
+- Calling Node/Tauri APIs from lower packages (use `window.gharargah` / `@gharargah/host-client`)
+- **Shell:** Web SPA + TS `host-server` only. No Rust/Tauri. Renderer via `createWebTransport()`. Dev: `pnpm dev`. Tests: `pnpm test:e2e`.
+- Adding Rust / Cargo / Tauri back into the repo
 - Large shadcn default styling — keep RAD/custom theme direction
 
 ## Open Backlog (updated 2026-07-05)

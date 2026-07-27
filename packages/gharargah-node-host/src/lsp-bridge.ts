@@ -63,7 +63,7 @@ function bridgeStdioToWs(proc: ChildProcess, ws: WebSocket) {
   })
 
   proc.on("exit", code => {
-    ws.close()
+    if (ws.readyState === ws.OPEN) ws.close()
     if (code && code !== 0) {
       for (const [id, session] of sessions) {
         if (session.process === proc) {
@@ -74,7 +74,7 @@ function bridgeStdioToWs(proc: ChildProcess, ws: WebSocket) {
     }
   })
 
-  ws.on("close", () => proc.kill())
+  // Keep LS alive across browser reconnects (matches prior Rust host).
 }
 
 export type StartLspSessionOptions = {

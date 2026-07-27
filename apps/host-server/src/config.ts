@@ -1,0 +1,77 @@
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+import { resolveLaunchTarget, type LaunchConfig } from "@gharargah/node-host"
+
+export type HostConfig = {
+  host: string
+  port: number
+  dataDir: string
+  allowedRoots: string[]
+  openBrowser: boolean
+  launchPath: string
+  launchConfig: LaunchConfig
+  staticDir: string | null
+}
+
+function parseArgs(argv: string[]): Record<string, string | boolean> {
+  const out: Record<string, string | boolean> = {}
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!
+    if (arg === "--open" || arg === "-o") {
+      out.open = true
+      continue
+    }
+    if (arg.startsWith("--")) {
+      const key = arg.slice(2)
+      const next = argv[i + 1]
+      if (next && !next.startsWith("--")) {
+        out[key] = next
+        i++
+      } else {
+        out[key] = true
+      }
+      continue
+    }
+    if (!out.path) out.path = arg
+  }
+  return out
+}
+
+export async function loadConfig(argv = process.argv.slice(2)): Promise<HostConfig> {
+  const args = parseArgs(argv)
+  const home = os.homedir()
+  const host = String(args.host ?? process.env.JET_HOST ?? "127.0.0.1")
+  const port = Number(args.port ?? process.env.JET_PORT ?? 4747)
+  const dataDir = path.resolve(
+    String(args["data-dir"] ?? process.env.JET_DATA_DIR ?? path.join(home, ".local", "share", "jet")),
+  )
+  const allowedFromEnv = (process.env.JET_ALLOWED_ROOTS ?? "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
+  const allowedArg = typeof args["allowed-roots"] === "string" ? args["allowed-roots"].split(",") : []
+  const allowedRoots = [...allowedArg, ...allowedFromEnv].map(p => path.resolve(p.trim())).filter(Boolean)
+  if (allowedRoots.length === 0) allowedRoots.push(path.resolve(home))
+
+  const launchPath = path.resolve(String(args.path ?? process.cwd()))
+  const launchConfig = await resolveLaunchTarget([launchPath], process.cwd())
+
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const repoDist = path.resolve(here, "../../gharargah/dist")
+  const staticDir = fs.existsSync(repoDist) ? repoDist : null
+
+  fs.mkdirSync(dataDir, { recursive: true })
+
+  return {
+    host,
+    port,
+    dataDir,
+    allowedRoots,
+    openBrowser: Boolean(args.open ?? process.env.JET_OPEN_BROWSER === "1"),
+    launchPath,
+    launchConfig,
+    staticDir,
+  }
+}

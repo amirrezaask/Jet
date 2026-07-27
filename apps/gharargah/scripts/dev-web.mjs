@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const repoRoot = path.resolve(appDir, "../..")
 const agentServerEntry = path.resolve(repoRoot, "apps/agent-server/src/bin.ts")
+const hostServerEntry = path.resolve(repoRoot, "apps/host-server/src/bin.ts")
 
 function resolveTsxCli() {
   const candidates = [
@@ -28,13 +29,15 @@ function resolveTsxCli() {
 }
 
 const tsxCli = resolveTsxCli()
-// Pin agent-server to the same node that launched this script (avoids better-sqlite3 ABI mismatch).
 const nodeBin = process.execPath
 
 const children = [
-  spawn("cargo", ["run", "--manifest-path", "apps/server/Cargo.toml", "--bin", "jet", "--", "--port", "4747"], {
+  spawn(nodeBin, [tsxCli, hostServerEntry, "--port", "4747"], {
     cwd: repoRoot,
     stdio: "inherit",
+    env: {
+      ...process.env,
+    },
   }),
   spawn(nodeBin, [tsxCli, agentServerEntry], {
     cwd: repoRoot,

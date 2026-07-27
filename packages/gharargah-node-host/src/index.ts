@@ -1,9 +1,11 @@
-export { uriToPath, pathToUri, readFile, writeFile, readDir, stat } from "./fs.js"
+export { uriToPath, pathToUri, readFile, writeFile, writeTempDrop, readDir, stat } from "./fs.js"
 export {
   gitIsRepo,
   gitStatus,
   gitDiff,
   gitBranch,
+  gitSummary,
+  gitHistory,
   gitStage,
   gitUnstage,
   gitCommit,
@@ -15,6 +17,10 @@ export {
   gitPull,
   gitPush,
 } from "./git.js"
+export { TerminalHost, type TerminalLaunch, type TerminalAttachSnapshot } from "./terminal.js"
+export { openInApp } from "./shell.js"
+export { spawnTask, type TaskSpawnRequest, type TaskSpawnResult } from "./tasks.js"
+export { PerfHost } from "./perf.js"
 export {
   projectSearch,
   listProjectFiles,
@@ -40,6 +46,7 @@ export {
   stopLspSession,
   stopAllLspSessions,
   setLspCrashHandler,
+  getLspSession,
   type LspSession,
   type StartLspSessionOptions,
 } from "./lsp-bridge.js"

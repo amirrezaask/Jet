@@ -8,15 +8,15 @@ import { wrapPlaywrightPage } from "./playwright-driver.js"
 import type { LaunchShellResult } from "./driver.js"
 
 const REPO_ROOT = path.resolve(__dirname, "../..")
-const JET_BINARY = path.join(REPO_ROOT, "apps/server/target/debug/jet")
-const MOCK_ACP_BINARY = path.join(REPO_ROOT, "apps/server/target/debug/gharargah-mock-acp")
+const HOST_SERVER_ENTRY = path.join(REPO_ROOT, "apps/host-server/src/bin.ts")
+const MOCK_ACP_BINARY = path.join(REPO_ROOT, "apps/host-server/mocks/bin/gharargah-mock-acp")
 const MOCK_CODEX_APP_SERVER_BINARY = path.join(
   REPO_ROOT,
-  "apps/server/target/debug/gharargah-mock-line-rpc",
+  "apps/host-server/mocks/bin/gharargah-mock-line-rpc",
 )
 const MOCK_CLAUDE_SDK_BINARY = path.join(
   REPO_ROOT,
-  "apps/server/target/debug/gharargah-mock-claude-sdk",
+  "apps/host-server/mocks/bin/gharargah-mock-claude-sdk",
 )
 const AGENT_SERVER_ENTRY = path.join(REPO_ROOT, "apps/agent-server/src/bin.ts")
 
@@ -114,25 +114,17 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     ? path.join(temporaryRoot, path.basename(sourceWorkspace))
     : sourceWorkspace
   if (isFixture && !fs.existsSync(workspace)) fs.cpSync(sourceWorkspace, workspace, { recursive: true })
-  if (!fs.existsSync(JET_BINARY)) {
-    throw new Error(
-      `Jet binary missing at ${JET_BINARY}; run cargo build --manifest-path apps/server/Cargo.toml`,
-    )
+  if (!fs.existsSync(HOST_SERVER_ENTRY)) {
+    throw new Error(`Host server entry missing at ${HOST_SERVER_ENTRY}`)
   }
   if (!fs.existsSync(MOCK_ACP_BINARY)) {
-    throw new Error(
-      `Mock ACP binary missing at ${MOCK_ACP_BINARY}; run cargo build --manifest-path apps/server/Cargo.toml --bin gharargah-mock-acp`,
-    )
+    throw new Error(`Mock ACP missing at ${MOCK_ACP_BINARY}`)
   }
   if (!fs.existsSync(MOCK_CLAUDE_SDK_BINARY)) {
-    throw new Error(
-      `Mock Claude SDK binary missing at ${MOCK_CLAUDE_SDK_BINARY}; run cargo build --manifest-path apps/server/Cargo.toml --bin gharargah-mock-claude-sdk`,
-    )
+    throw new Error(`Mock Claude SDK missing at ${MOCK_CLAUDE_SDK_BINARY}`)
   }
   if (!fs.existsSync(MOCK_CODEX_APP_SERVER_BINARY)) {
-    throw new Error(
-      `Mock Codex app-server binary missing at ${MOCK_CODEX_APP_SERVER_BINARY}; run cargo build --manifest-path apps/server/Cargo.toml --bin gharargah-mock-line-rpc`,
-    )
+    throw new Error(`Mock Codex app-server missing at ${MOCK_CODEX_APP_SERVER_BINARY}`)
   }
   if (!fs.existsSync(AGENT_SERVER_ENTRY)) {
     throw new Error(`agent-server entry missing; run pnpm install from repo root`)
@@ -153,7 +145,6 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     ...options.env,
   }
 
-  // Pin agent-server to same node as this launcher (avoids better-sqlite3 ABI mismatch).
   const agentServer = spawn(process.execPath, [tsxCli, AGENT_SERVER_ENTRY], {
     cwd: REPO_ROOT,
     env: sharedEnv,
@@ -163,14 +154,24 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   await waitForHttpOk(`http://127.0.0.1:${agentPort}/health`, agentServer, agentLogs)
 
   const server = spawn(
-    JET_BINARY,
-    ["--host", "127.0.0.1", "--port", String(port), "--data-dir", serverData, workspace],
+    process.execPath,
+    [
+      tsxCli,
+      HOST_SERVER_ENTRY,
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+      "--data-dir",
+      serverData,
+      workspace,
+    ],
     {
       cwd: REPO_ROOT,
       env: sharedEnv,
       stdio: ["ignore", "pipe", "pipe"],
     },
-  )
+  ) as ChildProcessWithoutNullStreams
   const jetLogs = attachLogs(server)
   const url = `http://127.0.0.1:${port}`
   await waitForHttpOk(`${url}/health`, server, () => `${jetLogs()}\n--- agent ---\n${agentLogs()}`)
@@ -193,7 +194,6 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   await browserPage.goto(url, { waitUntil: "domcontentloaded" })
   await browserPage.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
   await browserPage.evaluate(() => window.__gharargahAgent!.waitForReady())
-  // Prove Effect agent-server is reachable from the page context.
   const agentOk = await browserPage.evaluate(async (wsUrl: string) => {
     return await new Promise<boolean>(resolve => {
       try {
@@ -235,7 +235,6 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
       `Effect agent-server not reachable at ${agentWsUrl}\n${jetLogs()}\n--- agent ---\n${agentLogs()}`,
     )
   }
-  // Guard against vite-baked ws://127.0.0.1:4751 stealing traffic from the E2E sidecar.
   const appAgentUrl = await browserPage.evaluate(async () => {
     const injected =
       (window as Window & { __GHARARGAH_AGENT_WS_URL__?: string }).__GHARARGAH_AGENT_WS_URL__ ?? null

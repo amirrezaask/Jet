@@ -14,7 +14,10 @@ export type LaunchJetOptions = {
 export const REPO_ROOT = resolve(__dirname, "..", "..")
 export const SAMPLE = "fixtures/sample-workspace"
 
-/** The Rust server owns PTYs; assume available on Unix CI/dev machines. */
+/**
+ * PTY availability. On macOS ensure node-pty spawn-helper is +x
+ * (`packages/gharargah-node-host/scripts/fix-node-pty-perms.mjs`).
+ */
 export function hasPtySpawn(): boolean {
   return process.platform !== "win32"
 }

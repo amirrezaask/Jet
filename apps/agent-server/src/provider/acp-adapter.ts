@@ -21,8 +21,7 @@ const ACP_PROFILES: Record<string, { command: string; args: string[] }> = {
 function resolveMockBin(): string | null {
   if (process.env.GHARARGAH_MOCK_ACP_BIN) return process.env.GHARARGAH_MOCK_ACP_BIN
   const candidates = [
-    path.resolve(process.cwd(), "apps/server/target/debug/gharargah-mock-acp"),
-    path.resolve(process.cwd(), "apps/server/target/release/gharargah-mock-acp"),
+    path.resolve(process.cwd(), "apps/host-server/mocks/bin/gharargah-mock-acp"),
   ]
   for (const c of candidates) if (fs.existsSync(c)) return c
   return null

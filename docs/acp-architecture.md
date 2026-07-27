@@ -9,7 +9,7 @@ renderer → window.gharargah.agents (host-client)
         → AcpProviderAdapter → AcpClientPool → @gharargah/effect-acp (stdio JSON-RPC)
 ```
 
-Rust `jet` still owns FS / PTY / git / LSP / search. Any `agents:*` invoke on jet returns:
+FS / PTY / git / LSP / search live in TypeScript `apps/host-server`. Any `agents:*` invoke on the host returns:
 
 `agents:* moved to Effect agent-server …`
 
@@ -25,13 +25,12 @@ Rust `jet` still owns FS / PTY / git / LSP / search. Any `agents:*` invoke on je
 | ACP client | `packages/gharargah-effect-acp/src/client.ts` |
 | Shared types | `packages/gharargah-agents/` |
 
-## Desktop lifecycle
+## Process lifecycle
 
-Tauri (`apps/gharargah/src-tauri/src/main.rs`) spawns:
+`pnpm dev` (`apps/gharargah/scripts/dev-web.mjs`) starts:
 
-1. **agent-server** — `node apps/agent-server/scripts/run.mjs` with login-shell PATH
-2. **jet** sidecar — HTTP UI host
-
-Dev (`pnpm dev` / `dev-web.mjs`) also starts agent-server via tsx.
+1. **host-server** — TS HTTP/WS host on `:4747`
+2. **agent-server** — Effect control plane on `:4751`
+3. **Vite** — SPA (proxies API to host)
 
 See [`agents-effect-architecture.md`](./agents-effect-architecture.md) and [`acp-support-matrix.md`](./acp-support-matrix.md).

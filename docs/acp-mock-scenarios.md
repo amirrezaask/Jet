@@ -1,12 +1,12 @@
 # Mock ACP scenarios
 
-`gharargah-mock-acp` is a deterministic ACP v1 stdio peer. Run it directly after building the server package:
+`gharargah-mock-acp` is a deterministic ACP v1 stdio peer (TypeScript):
 
 ```sh
-cargo run -p jet --bin gharargah-mock-acp -- --scenario echo --strict --trace
+./apps/host-server/mocks/bin/gharargah-mock-acp --scenario echo --strict --trace
 ```
 
-The host normally locates the sibling mock binary. Set `GHARARGAH_MOCK_ACP_BIN=/absolute/path/to/gharargah-mock-acp` to override it.
+Set `GHARARGAH_MOCK_ACP_BIN=/absolute/path/to/gharargah-mock-acp` to override discovery.
 
 ## Host environment
 
@@ -70,14 +70,12 @@ Without `--strict`, an unknown scenario warns on stderr and falls back to `echo`
 
 ## Required test coverage
 
-Every `Scenario::ALL` entry MUST have:
+Critical scenarios (echo / permission / cancel / tool_lifecycle) MUST have:
 
-1. **Supervisor/protocol** — `apps/server/tests/mock_acp_scenario_matrix.rs` (`matrix_<scenario>` + `every_mock_scenario_has_a_matrix_entry` drift guard).
-2. **Host/UI e2e** — `tests/electron/acp-mock-scenarios.electron.spec.ts` (`scenario:<name>` + name-list guard).
-
-Adding a scenario without both tests fails CI. Run:
+1. **Agent-server matrix** — `apps/agent-server/src/provider/acp-matrix.test.ts`
+2. **Host/UI e2e** — `tests/electron/acp-mock-scenarios.electron.spec.ts`
 
 ```sh
-cargo test --manifest-path apps/server/Cargo.toml --test mock_acp_scenario_matrix
+pnpm --filter @gharargah/agent-server test
 pnpm exec playwright test tests/electron/acp-mock-scenarios.electron.spec.ts --project=web-e2e
 ```

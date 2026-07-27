@@ -29,11 +29,11 @@ Choose a mock agent thread and send a prompt. Permission cards use `{ permission
 Standalone mock peer:
 
 ```sh
-cargo run -p jet --bin gharargah-mock-acp -- \
+./apps/host-server/mocks/bin/gharargah-mock-acp \
   --scenario slow_stream --latency-ms 50 --chunk-size 8 --strict --trace
 ```
 
-See `acp-mock-scenarios.md`. Use `GHARARGAH_MOCK_ACP_BIN` to point at a built binary.
+See `acp-mock-scenarios.md`. Use `GHARARGAH_MOCK_ACP_BIN` to override the mock path.
 
 ## Cancellation and stop behavior
 

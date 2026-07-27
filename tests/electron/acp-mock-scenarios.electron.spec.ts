@@ -1,6 +1,6 @@
 /**
  * E2E matrix: every gharargah-mock-acp scenario must be covered here.
- * Protocol-level assertions live in apps/server/tests/mock_acp_scenario_matrix.rs;
+ * Protocol-level assertions live in apps/agent-server ACP matrix tests;
  * this file verifies the host/UI path still observes each scenario.
  */
 import { expect, test } from "@playwright/test";
@@ -117,7 +117,7 @@ async function waitForAssistantContaining(
 }
 
 test("ACP mock matrix covers every documented mock scenario name", () => {
-  // Keep in sync with apps/server/src/mock_acp/scenarios.rs Scenario::ALL
+  // Keep in sync with apps/host-server/mocks/mock-acp.ts scenarios
   expect(ALL_SCENARIOS).toEqual([
     "auth_required",
     "echo",

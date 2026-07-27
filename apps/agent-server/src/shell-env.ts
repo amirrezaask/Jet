@@ -1,6 +1,6 @@
 /**
  * Enrich PATH for GUI-spawned agent-server processes (Tauri / DMG).
- * Mirrors apps/gharargah/src-tauri login-shell PATH injection.
+ * Mirrors login-shell PATH injection previously done in the desktop shell.
  */
 import { execFileSync } from "node:child_process"
 import fs from "node:fs"

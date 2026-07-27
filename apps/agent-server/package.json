@@ -24,12 +24,10 @@
     "@gharargah/agents": "workspace:*",
     "@gharargah/effect-acp": "workspace:*",
     "@opencode-ai/sdk": "^1.18.5",
-    "better-sqlite3": "^11.8.1",
     "effect": "^3.22.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.15.29",
     "@types/ws": "^8.5.13",
     "tsx": "^4.23.0",

@@ -1,4 +1,4 @@
-import Database from "better-sqlite3"
+import { DatabaseSync } from "node:sqlite"
 import fs from "node:fs"
 import path from "node:path"
 import type { AgentThread, AgentThreadSummary } from "@gharargah/agents"
@@ -20,12 +20,12 @@ function dbPath(rootPath: string): string {
   return path.join(agentsDir(rootPath), "events.sqlite3")
 }
 
-function tableColumns(db: Database.Database, table: string): Set<string> {
+function tableColumns(db: DatabaseSync, table: string): Set<string> {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
   return new Set(rows.map(r => r.name))
 }
 
-function tableExists(db: Database.Database, table: string): boolean {
+function tableExists(db: DatabaseSync, table: string): boolean {
   const row = db
     .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
     .get(table) as { name: string } | undefined
@@ -38,7 +38,7 @@ function tableExists(db: Database.Database, table: string): boolean {
  * previously ran the Rust agents path keeps `kind`/`status` NOT NULL and breaks
  * Effect inserts (`NOT NULL constraint failed: agent_command_receipts.kind`).
  */
-function migrateLegacySchema(db: Database.Database): void {
+function migrateLegacySchema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY);
   `)
@@ -100,15 +100,15 @@ function migrateLegacySchema(db: Database.Database): void {
 }
 
 export class AgentStore {
-  private dbs = new Map<string, Database.Database>()
+  private dbs = new Map<string, DatabaseSync>()
 
-  private db(rootPath: string): Database.Database {
+  private db(rootPath: string): DatabaseSync {
     const key = path.resolve(rootPath)
     let db = this.dbs.get(key)
     if (db) return db
     ensureDirs(key)
-    db = new Database(dbPath(key))
-    db.pragma("journal_mode = WAL")
+    db = new DatabaseSync(dbPath(key))
+    db.exec("PRAGMA journal_mode = WAL")
     // Migrate legacy Rust tables BEFORE CREATE IF NOT EXISTS so we don't leave
     // incompatible NOT NULL columns in place.
     migrateLegacySchema(db)

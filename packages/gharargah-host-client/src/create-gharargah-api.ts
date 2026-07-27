@@ -9,14 +9,11 @@ function agentRuntimeMode(): "effect" | "rust" {
   } catch {
     /* no import.meta.env */
   }
-  if (typeof process !== "undefined" && process.env?.GHARARGAH_AGENT_RUNTIME === "rust") {
-    return "rust"
-  }
-  // Default: Effect agent-server (Rust agents path removed).
+  // Default: Effect agent-server (legacy Rust agents path removed).
   return "effect"
 }
 
-// The Rust host owns the authoritative replay. This buffer only bridges the
+// Host owns the authoritative terminal replay. This buffer only bridges the
 // attach handshake, so keeping a second multi-megabyte copy is wasteful.
 const MAX_BUFFERED_TERMINAL_CHARS = 64 * 1024
 

@@ -148,3 +148,72 @@ export async function gitPull(rootUri: string): Promise<void> {
 export async function gitPush(rootUri: string): Promise<void> {
   await runGit(uriToPath(rootUri), ["push"])
 }
+
+export type GitSummary = {
+  branch: string | null
+  upstream: string | null
+  ahead: number
+  behind: number
+}
+
+export async function gitSummary(rootUri: string): Promise<GitSummary> {
+  const cwd = uriToPath(rootUri)
+  const branch = await gitBranch(rootUri)
+  let upstream: string | null = null
+  try {
+    const out = await runGit(cwd, [
+      "rev-parse",
+      "--abbrev-ref",
+      "--symbolic-full-name",
+      "@{upstream}",
+    ])
+    const trimmed = out.trim()
+    upstream = trimmed || null
+  } catch {
+    upstream = null
+  }
+  let ahead = 0
+  let behind = 0
+  if (upstream) {
+    try {
+      const counts = await runGit(cwd, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+      const parts = counts.trim().split(/\s+/)
+      behind = Number.parseInt(parts[0] ?? "0", 10) || 0
+      ahead = Number.parseInt(parts[1] ?? "0", 10) || 0
+    } catch {
+      /* ignore */
+    }
+  }
+  return { branch, upstream, ahead, behind }
+}
+
+export type GitHistoryCommit = {
+  hash: string
+  shortHash: string
+  author: string
+  authoredAt: number
+  subject: string
+}
+
+export async function gitHistory(rootUri: string, limit = 50): Promise<GitHistoryCommit[]> {
+  const capped = Math.min(Math.max(limit, 1), 200)
+  const out = await runGit(uriToPath(rootUri), [
+    "log",
+    `-n${capped}`,
+    "--format=%H%x1f%h%x1f%an%x1f%at%x1f%s%x1e",
+  ])
+  const commits: GitHistoryCommit[] = []
+  for (const record of out.split("\u001e")) {
+    const trimmed = record.trim()
+    if (!trimmed) continue
+    const fields = trimmed.split("\u001f")
+    const hash = fields[0]
+    const shortHash = fields[1]
+    const author = fields[2]
+    if (!hash || !shortHash || !author) continue
+    const authoredAt = (Number.parseInt(fields[3] ?? "0", 10) || 0) * 1000
+    const subject = fields[4] ?? ""
+    commits.push({ hash, shortHash, author, authoredAt, subject })
+  }
+  return commits
+}

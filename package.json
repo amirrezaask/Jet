@@ -6,8 +6,7 @@
     "dev": "pnpm dev:web",
     "dev:web": "node apps/gharargah/scripts/dev-web.mjs",
     "dev:agent-server": "pnpm --filter @gharargah/agent-server start",
-    "test:server": "cargo test --manifest-path apps/server/Cargo.toml",
-    "clean:rust": "cargo clean --manifest-path apps/server/Cargo.toml",
+    "dev:host-server": "pnpm --filter @gharargah/host-server start",
     "test:e2e": "playwright test --project=web-e2e",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
@@ -15,7 +14,9 @@
     "test:bench": "playwright test --project=bench",
     "extract:vscode-keybindings": "node scripts/extract-vscode-mac-keybindings.mjs && node scripts/generate-default-keybindings.mjs",
     "validate:keybindings": "node scripts/validate-gharargah-keybindings.mjs",
-    "release": "pnpm build"
+    "release": "pnpm build",
+    "postinstall": "node packages/gharargah-node-host/scripts/fix-node-pty-perms.mjs",
+    "rebuild:native": "node packages/gharargah-node-host/scripts/fix-node-pty-perms.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

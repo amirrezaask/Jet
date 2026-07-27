@@ -1,0 +1,25 @@
+{
+  "name": "@gharargah/host-server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "gharargah-host-server": "./src/bin.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/bin.ts",
+    "start": "tsx src/bin.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@gharargah/node-host": "workspace:*",
+    "@gharargah/shared": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2"
+  }
+}

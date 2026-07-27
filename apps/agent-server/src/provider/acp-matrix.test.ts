@@ -12,7 +12,7 @@ import { OrchestrationEngine } from "../orchestration/engine.js"
 import type { AgentThread } from "@gharargah/agents"
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..")
-const MOCK_ACP = path.join(REPO_ROOT, "apps/server/target/debug/gharargah-mock-acp")
+const MOCK_ACP = path.join(REPO_ROOT, "apps/host-server/mocks/bin/gharargah-mock-acp")
 
 function sink() {
   const events: string[] = []
@@ -44,7 +44,7 @@ async function withEngine(
   fn: (engine: OrchestrationEngine, root: string) => Promise<void>,
 ): Promise<void> {
   if (!fs.existsSync(MOCK_ACP)) {
-    throw new Error(`missing mock-acp at ${MOCK_ACP}; build gharargah-mock-acp first`)
+    throw new Error(`missing mock-acp at ${MOCK_ACP}`)
   }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "gharargah-matrix-"))
   const prev = {
