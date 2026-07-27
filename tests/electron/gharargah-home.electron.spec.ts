@@ -154,21 +154,18 @@ test.describe("gharargah mission home", () => {
         .toBe(true)
       await expectSelectorVisible(page, "[data-gharargah-session-mode-switch]")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal-sessions]"), 0)
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
       await expect
         .poll(async () => page.evaluate(() =>
           [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
             .map(tab => tab.getAttribute("aria-label") ?? ""),
         ))
-        .toEqual(["Agent", "Terminal", "Editor", "Git", "TODOs"])
-      await expectLocatorCount(page.locator('[data-gharargah-session-mode-tab="agent"]'), 1)
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
+        .toEqual(["Terminal", "Editor", "Git", "TODOs"])
+      await expectLocatorCount(page.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="todos"]')
-      await expectLocatorCount(page.locator('[data-gharargah-session-pane="agent"][data-active]'), 1)
-      await page.locator('[data-gharargah-session-mode-tab="terminal"]').click()
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
       await expectLocatorCount(page.locator('[data-gharargah-session-pane="terminal"][data-active]'), 1)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expect
@@ -177,7 +174,7 @@ test.describe("gharargah mission home", () => {
         })
         .toMatch(/main/)
 
-      // Git is one tool inside the same five-tool project session.
+      // Git is one tool inside the same project session.
       await page.evaluate(() => {
         const api = window.gharargah
         if (!api) return
@@ -250,7 +247,7 @@ test.describe("gharargah mission home", () => {
       })
       await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
       await expectSelectorVisible(page, "[data-gharargah-modal-editor]")
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
 
       // Open-in-app control in the fullscreen terminal modal header.
       await page.evaluate(() => {

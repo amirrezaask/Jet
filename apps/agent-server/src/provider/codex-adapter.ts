@@ -324,6 +324,10 @@ export class CodexAppServerAdapter implements ProviderAdapter {
         // Stash for turn/completed; if turn never completes, fail soft later via idle timer.
         ;(ctx as unknown as { __codexLastError?: string }).__codexLastError = message
       }
+    } catch {
+      /* ignore malformed lines */
+    }
+  }
 
   private async handleServerRequest(
     session: CodexSession,

@@ -56,6 +56,7 @@ export function detectSessionProvider(
   if (cmd === "cursor-agent" || cmd.endsWith("/cursor-agent") || cmd === "cursor") {
     return "cursor"
   }
+  if (cmd === "grok" || cmd.endsWith("/grok")) return "grok"
   return undefined
 }
 

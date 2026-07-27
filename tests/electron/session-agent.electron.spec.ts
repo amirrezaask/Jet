@@ -9,7 +9,7 @@ import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 /** Agent chat is enabled by default; 0 builds the recovery-only terminal surface. */
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
 
 test.describe("project session agent chat", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")

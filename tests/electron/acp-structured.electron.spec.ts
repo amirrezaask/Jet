@@ -6,7 +6,7 @@ import {
 } from "../shell/assert.js"
 import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
 
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
 
 async function openCursorAcpSession(
   page: Awaited<ReturnType<typeof launchJet>>["page"],

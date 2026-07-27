@@ -174,7 +174,7 @@ GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri
 | `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
 | `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
 
-**ACP / in-app agent chat specs** (`session-agent`, `acp-mock-scenarios`, `acp-structured`) require `GHARARGAH_ENABLE_AGENT_CHAT=1` (default on). Set `GHARARGAH_ENABLE_AGENT_CHAT=0` only for recovery builds. See Agents section below.
+**ACP / in-app agent chat specs** (`session-agent`, `acp-mock-scenarios`, `acp-structured`) require `GHARARGAH_ENABLE_AGENT_CHAT=1` (opt-in; default off — ADE uses agent CLIs). See Agents section below.
 
 ### Programmatic control (`window.__gharargahAgent`)
 
@@ -342,9 +342,9 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 **Status (2026-07):** In-app agent chat is a primary ADE surface. Control plane is the **Node Effect-inspired runtime** in `apps/agent-server` (orchestration + providers + SQLite). Rust host no longer handles `agents:*` — only FS/PTY/git/LSP/terminal. See [`docs/agents-effect-architecture.md`](docs/agents-effect-architecture.md).
 
-**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"1"`). `GHARARGAH_AGENT_RUNTIME` defaults to `effect`.
+**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"0"` — ADE uses agent CLIs in PTYs). Set `GHARARGAH_ENABLE_AGENT_CHAT=1` only to opt back into in-app ACP/SDK chat. `GHARARGAH_AGENT_RUNTIME` defaults to `effect`.
 
-**Supported ADE paths:** Mission Control → New session → Agent provider → unified Agent tab, or CLI provider → terminal PTY.
+**Supported ADE paths:** Mission Control → New session → choose agent CLI (lister) → terminal PTY running that CLI, plus editor/git for the project.
 
 **Implementation:**
 

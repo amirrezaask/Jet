@@ -1,5 +1,6 @@
 import type { GharargahPanelTree, WorkspaceService } from "@gharargah/workspace"
 import type { PanelId } from "@gharargah/shared"
+import { detectSessionProvider } from "@gharargah/ui"
 import { listTerminalTabs } from "./tab-routing.js"
 import { terminalCwdForTab, terminalSessionForTab } from "./tabs/terminal-session.js"
 
@@ -11,7 +12,7 @@ export type TerminalExplorerEntry = {
   status: "starting" | "running" | "exited" | "failed"
   exitCode?: number
   launchCommand?: string
-  agentId?: "codex" | "claude" | "opencode" | "cursor"
+  agentId?: "codex" | "claude" | "opencode" | "cursor" | "grok"
 }
 
 export type TerminalExplorerGroup = {
@@ -58,7 +59,9 @@ export function buildTerminalExplorerGroups(
       status: session?.status ?? "starting",
       exitCode: session?.exitCode,
       launchCommand: session?.launchCommand,
-      agentId: session?.agentId as TerminalExplorerEntry["agentId"],
+      agentId:
+        (session?.agentId as TerminalExplorerEntry["agentId"] | undefined) ??
+        detectSessionProvider(session?.launchCommand),
     }
 
     if (folderByRootUri.has(cwdRootUri)) {

@@ -7,9 +7,14 @@ import {
 import { execCommand, hasPtySpawn, launchJet, openSettings } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
 
 test.describe("session layout", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
+  test.skip(
+    !agentChatE2e,
+    "in-app agent chat layout tests require GHARARGAH_ENABLE_AGENT_CHAT=1",
+  )
 
   test("new tabs stay provider-neutral until the first message", async () => {
     const { app, page } = await launchJet({

@@ -13,7 +13,7 @@ import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js";
 import fs from "node:fs";
 import path from "node:path";
 
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0";
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1";
 
 const ALL_SCENARIOS = [
   // auth_required first: later user-input scenarios have left wedged Jet/mock

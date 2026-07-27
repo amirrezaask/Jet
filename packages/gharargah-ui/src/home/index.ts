@@ -45,6 +45,15 @@ export {
 } from "./OpenInAppMenu.js"
 export { timeOfDayGreeting, formatHomeDate } from "./greeting.js"
 export {
+  AGENT_CLI_DRIVERS,
+  agentCliDriverById,
+  type AgentCliDriver,
+} from "./agent-cli-drivers.js"
+export {
+  AgentCliPickerOverlay,
+  type AgentCliPickerOverlayProps,
+} from "./AgentCliPickerOverlay.js"
+export {
   projectTodosRepository,
   createProjectTodosRepository,
   projectTodoKey,

@@ -135,7 +135,7 @@ test.describe("session Git and editor workspaces", () => {
         needle: "Cover Git workspace",
       })
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
     } finally {
       await app.close()
       fixture.remove()
@@ -231,7 +231,7 @@ test.describe("session Git and editor workspaces", () => {
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"][data-active]')
       await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"][data-active]')
-      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
+      await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
       await expectLocatorCount(page.locator("[data-gharargah-workspace-sidebar]"), 0)
     } finally {
       await app.close()
@@ -292,7 +292,7 @@ async function openSessionMode(page: ShellDriver, mode: "terminal" | "editor" | 
   await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
   await page.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()
   await expectSelectorVisible(page, `[data-gharargah-session-mode-tab="${mode}"][data-active]`)
-  await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 5)
+  await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
   await expectLocatorCount(page.locator("[data-gharargah-workspace-sidebar]"), 0)
   if (mode === "git") await expectSelectorVisible(page, "[data-gharargah-git-workspace]", { timeout: 20_000 })
 }

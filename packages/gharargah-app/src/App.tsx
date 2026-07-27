@@ -64,6 +64,8 @@ import {
   AppShell,
   GharargahHome,
   TerminalSessionModal,
+  AgentCliPickerOverlay,
+  type AgentCliDriver,
   type OpenInAppId,
   type JetAppearanceSettings,
   type SessionDialogMode,
@@ -264,6 +266,9 @@ export function GharargahApp() {
   const [sessionMode, setSessionMode] = useState<SessionDialogMode>("terminal")
   const sessionModeRef = useRef(sessionMode)
   sessionModeRef.current = sessionMode
+  const [agentCliPickerRootUri, setAgentCliPickerRootUri] = useState<
+    string | null
+  >(null)
   const [agentCatalog, setAgentCatalog] = useState<AgentCatalogState | null>(
     null,
   )
@@ -621,29 +626,35 @@ export function GharargahApp() {
 
   openFileInEditorRef.current = openFileInEditor
 
-  const newAgentTabFromHome = useCallback(
-    async (rootUri: string) => {
+  const newAgentTabFromHome = useCallback((rootUri: string) => {
+    setAgentCliPickerRootUri(rootUri)
+  }, [])
+
+  const createSessionWithAgentCli = useCallback(
+    async (rootUri: string, driver: AgentCliDriver) => {
       try {
+        const label =
+          driver.id === "shell" ? undefined : driver.label
         const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-          label: "New agent",
+          label,
+          launchCommand: driver.command,
         })
-        const draft = draftAgentThreadForTab(tabId)
-        if (draft) setActiveAgentThread(draft)
-        openTerminalModal(panelId, tabId, "agent")
+        if (driver.id !== "shell") {
+          bindAgentToSession(tabId, {
+            agentId: driver.id,
+            driverId: `${driver.id}:cli`,
+          })
+        }
+        openTerminalModal(panelId, tabId, "terminal")
       } catch (err) {
-        console.error("[gharargah] newAgentTabFromHome failed", err)
+        console.error("[gharargah] createSessionWithAgentCli failed", err)
         showGharargahToast(err instanceof Error ? err.message : String(err), {
           variant: "destructive",
         })
         closeTerminalModal()
       }
     },
-    [
-      openTerminalInWorkspace,
-      draftAgentThreadForTab,
-      openTerminalModal,
-      closeTerminalModal,
-    ],
+    [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
   )
 
   const openTodosFromHome = useCallback(
@@ -2903,6 +2914,18 @@ export function GharargahApp() {
           <Suspense fallback={null}>
             {showOverlayHost && <OverlayHost />}
           </Suspense>
+          <AgentCliPickerOverlay
+            open={agentCliPickerRootUri != null}
+            onOpenChange={open => {
+              if (!open) setAgentCliPickerRootUri(null)
+            }}
+            onSelect={driver => {
+              const rootUri = agentCliPickerRootUri
+              setAgentCliPickerRootUri(null)
+              if (!rootUri) return
+              void createSessionWithAgentCli(rootUri, driver)
+            }}
+          />
           <ConfirmDialogHost />
           <Toaster position="bottom-right" />
         </AppShell>

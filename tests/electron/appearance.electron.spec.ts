@@ -5,7 +5,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { hasPtySpawn, launchJet, openNewAgentSession, showTerminal } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewCliSession, showTerminal } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -143,13 +143,14 @@ test.describe("electron appearance and terminal-first UX", () => {
     }
   })
 
-  test("New session opens agent chat without a launcher menu", async () => {
+  test("New session opens agent CLI picker then terminal", async () => {
     const { app, page } = await launchJet()
     try {
       const launcher = page.getByRole("button", { name: "New session" }).first()
       await expectLocatorVisible(launcher)
-      const modal = await openNewAgentSession(page)
+      const modal = await openNewCliSession(page, "shell")
       await expectLocatorVisible(modal)
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expectLocatorCount(page.locator('[data-slot="dropdown-menu-content"]'), 0)
     } finally {
       await app.close()

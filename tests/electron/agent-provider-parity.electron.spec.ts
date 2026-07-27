@@ -143,6 +143,10 @@ async function waitForAssistant(
 
 test.describe("unified agent provider UI", () => {
   test.skip(!hasPtySpawn(), "the session modal requires a PTY-capable host")
+  test.skip(
+    process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "1",
+    "in-app agent chat requires GHARARGAH_ENABLE_AGENT_CHAT=1",
+  )
 
   for (const provider of providers) {
     test(`${provider.label} uses the same durable multi-turn agent surface`, async () => {

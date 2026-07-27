@@ -9,11 +9,11 @@ import {
 } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
 
 test.describe("agent shell env loading", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
-  test.skip(!agentChatE2e, "requires GHARARGAH_ENABLE_AGENT_CHAT!=0")
+  test.skip(!agentChatE2e, "requires GHARARGAH_ENABLE_AGENT_CHAT=1")
 
   test("switcher stays loading until login-shell PATH is ready", async () => {
     const { app, page } = await launchJet({

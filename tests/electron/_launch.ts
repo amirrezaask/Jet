@@ -139,57 +139,43 @@ export async function clickNewSession(page: ShellDriver): Promise<void> {
   await page.getByRole("button", { name: "New session" }).first().click()
 }
 
-export async function openNewAgentSession(
+/** Pick an agent CLI from the new-session lister (default: Shell). */
+export async function pickAgentCli(
   page: ShellDriver,
-  providerId?: string,
+  agentId: string = "shell",
+): Promise<void> {
+  const option = page.locator(`[data-gharargah-agent-cli-option="${agentId}"]`)
+  await option.waitFor({ state: "visible", timeout: 20_000 })
+  await option.click()
+}
+
+/** Open a CLI-driven ADE session (picker → terminal modal). */
+export async function openNewCliSession(
+  page: ShellDriver,
+  agentId: string = "shell",
 ): Promise<ReturnType<ShellDriver["locator"]>> {
   await clickNewSession(page)
+  await pickAgentCli(page, agentId)
   const modal = page.locator("[data-gharargah-terminal-modal]")
   await modal.waitFor({ state: "visible", timeout: 20_000 })
   await page.waitForFunction(
     () =>
       document
         .querySelector("[data-gharargah-terminal-modal]")
-        ?.getAttribute("data-gharargah-session-mode") === "agent",
+        ?.getAttribute("data-gharargah-session-mode") === "terminal",
     null,
     { timeout: 20_000 },
   )
-  const modelPicker = modal.locator("[data-chat-provider-model-picker]")
-  await modelPicker.waitFor({ state: "visible", timeout: 20_000 })
-  // Login-shell PATH may still be resolving — wait before opening the switcher.
-  await page.waitForFunction(
-    () => {
-      const el = document.querySelector(
-        "[data-chat-provider-model-picker]",
-      ) as HTMLButtonElement | null
-      if (!el) return false
-      return el.getAttribute("data-shell-env-loading") !== "true" && !el.disabled
-    },
-    null,
-    { timeout: 30_000 },
-  )
-  if (providerId) {
-    await modelPicker.click()
-    const picker = page.locator("[data-agent-setup-picker]")
-    await picker.waitFor({ state: "visible" })
-    const providerRow = picker
-      .locator(`[data-model-picker-row][data-model-picker-provider="${providerId}"]`)
-      .first()
-    await providerRow.waitFor({ state: "visible", timeout: 10_000 })
-    await providerRow.click()
-    await page.waitForFunction(
-      () => document.querySelector("[data-agent-setup-picker]") == null,
-      null,
-      { timeout: 10_000 },
-    )
-    await page.waitForFunction(
-      id =>
-        document
-          .querySelector("[data-chat-provider]")
-          ?.getAttribute("data-chat-provider") === id,
-      providerId,
-      { timeout: 10_000 },
-    )
-  }
   return modal
+}
+
+/**
+ * @deprecated Prefer {@link openNewCliSession}. Kept for older agent-chat specs;
+ * product new-session path is always the agent CLI picker.
+ */
+export async function openNewAgentSession(
+  page: ShellDriver,
+  providerId?: string,
+): Promise<ReturnType<ShellDriver["locator"]>> {
+  return openNewCliSession(page, providerId ?? "shell")
 }

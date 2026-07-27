@@ -28,7 +28,7 @@ export function EmptySessionCard(props: EmptySessionCardProps) {
             </span>
             <span className="text-xs font-medium text-foreground/90">New session</span>
           </span>
-          <span className="pl-7 text-3xs text-muted-foreground">Pick a model in chat</span>
+          <span className="pl-7 text-3xs text-muted-foreground">Pick an agent CLI</span>
         </button>
       }
     />
