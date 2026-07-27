@@ -23,8 +23,16 @@ const visitStaticImports = fileName => {
 }
 visitStaticImports(entryMatch[1])
 const mandatorySource = [...mandatoryChunks.values()].join("\n")
-const forbidden = ["shiki-", "diffs-", "xterm-", "agents-entry-"]
-const forbiddenMarkers = ["lexical.dev", "LegendList", "react-markdown", "rehype-raw"]
+const forbidden = ["shiki-", "diffs-", "xterm-", "agents-entry-", "monaco-"]
+const forbiddenMarkers = [
+  "lexical.dev",
+  "LegendList",
+  "react-markdown",
+  "rehype-raw",
+  'from"monaco-editor',
+  "from'monaco-editor",
+  "node_modules/monaco-editor",
+]
 const violations = [
   ...forbidden.filter(name => [...mandatoryChunks.keys()].some(chunk => chunk.startsWith(name))),
   ...forbiddenMarkers.filter(name => mandatorySource.includes(name)),

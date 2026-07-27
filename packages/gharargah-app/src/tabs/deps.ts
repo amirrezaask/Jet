@@ -1,6 +1,6 @@
-import type { Extension } from "@codemirror/state"
-import type { EditorView } from "@codemirror/view"
-import type { LSPClient, GharargahTheme } from "@gharargah/codemirror"
+import type { GharargahTheme } from "@gharargah/shared"
+import type { LspClientHandle } from "@gharargah/lsp"
+import type { MonacoEditorHandle } from "@gharargah/monaco"
 import type {
   JetKeyBinding,
   KeymapContext,
@@ -15,12 +15,12 @@ import type { PanelId } from "@gharargah/shared"
 export type TabContributorDeps = {
   workspace: WorkspaceService
   getTheme: () => GharargahTheme
-  resolveLspClient: (fileUri: string) => Promise<LSPClient | null>
+  resolveLspClient: (fileUri: string) => Promise<LspClientHandle | null>
   getLspRevision: () => number
   executeCommand: (name: string) => Promise<void>
-  runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
+  runKeyBinding: (binding: JetKeyBinding, view?: MonacoEditorHandle) => void
   getKeymapBindings: () => JetKeyBinding[]
-  getUserExtensions: () => Extension[]
+  getUserExtensions: () => unknown[]
   getKeymapRevision: () => number
   getKeymapContext: () => KeymapContext | undefined
   onEditorFocusChange: (focused: boolean) => void
@@ -29,4 +29,5 @@ export type TabContributorDeps = {
   onProblemsChange: () => void
   closeTerminalTab: (panelId: PanelId, tabId: string) => void
   onTerminalTitleChange: (tabId: string, title: string) => void
+  onOpenPath?: (cwdRootUri: string, path: string, line?: number, column?: number) => void
 }

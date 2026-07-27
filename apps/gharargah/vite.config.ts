@@ -29,6 +29,16 @@ export default defineConfig({
       output: {
         onlyExplicitManualChunks: true,
         manualChunks(id) {
+          const isPending =
+            id.includes("pending-editor") || id.includes("/monaco/pending")
+          if (
+            !isPending &&
+            (id.includes("monaco-editor") ||
+              id.includes("gharargah-monaco") ||
+              id.includes("@gharargah/monaco"))
+          ) {
+            return "monaco"
+          }
           if (id.includes("node_modules")) {
             if (id.includes("@pierre/diffs")) return "diffs"
             if (id.includes("shiki") || id.includes("@shikijs")) return "shiki"

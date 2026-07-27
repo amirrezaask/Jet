@@ -6,14 +6,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts src/probe-terminal-sessions.test.ts src/agent-draft.test.ts"
+    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts src/probe-terminal-sessions.test.ts src/agent-draft.test.ts src/editor/code-editor-service.test.ts"
   },
   "dependencies": {
-    "@codemirror/commands": "^6.8.1",
-    "@codemirror/search": "^6.5.10",
-    "@codemirror/state": "^6.5.2",
-    "@codemirror/view": "^6.37.0",
-    "@gharargah/codemirror": "workspace:*",
     "@gharargah/agents": "workspace:*",
     "@gharargah/host-client": "workspace:*",
     "@gharargah/lsp": "workspace:*",
@@ -22,7 +17,9 @@
     "@gharargah/ui": "workspace:*",
     "@gharargah/workspace": "workspace:*",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "@gharargah/monaco": "workspace:*",
+    "monaco-editor": "^0.52.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.8",

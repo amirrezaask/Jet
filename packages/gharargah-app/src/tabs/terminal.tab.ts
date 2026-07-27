@@ -57,6 +57,10 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
           restartTerminalSession(instance.id)
         },
         onClose: () => deps.closeTerminalTab(ctx.panelId, instance.id),
+        onOpenPath: deps.onOpenPath
+          ? (path, line, column) =>
+              deps.onOpenPath?.(instance.state.cwdRootUri, path, line, column)
+          : undefined,
       })
       return createElement(Suspense, { fallback: null }, terminal)
     },

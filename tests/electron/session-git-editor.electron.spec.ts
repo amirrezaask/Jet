@@ -154,7 +154,10 @@ test.describe("session Git and editor workspaces", () => {
         .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
+        .poll(async () => {
+          const active = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace)
+          return active ? realpathSync(active) : null
+        })
         .toBe(realpathSync(fixture.workspace))
 
       await execCommand(page, "terminal.new")
@@ -170,22 +173,14 @@ test.describe("session Git and editor workspaces", () => {
       await openQuickFile(page, "index", "src/index.ts")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"][data-active]')
-      await expectSelectorVisible(page, ".cm-editor", { timeout: 20_000 })
+      await expectSelectorVisible(page, "[data-gharargah-monaco-editor]", { timeout: 20_000 })
       await expectLocatorContainsText(page.locator("[data-gharargah-modal-editor-tabs]"), "index.ts")
       await expectLocatorContainsText(page.locator("[data-gharargah-modal-editor-breadcrumbs]"), "src/index.ts")
       const marker = "// editor-playwright-save"
-      const editor = page.locator(".cm-content")
-      await editor.focus()
-      await editor.evaluate((element, text) => {
-        ;(element as HTMLElement).focus()
-        const selection = window.getSelection()
-        const range = document.createRange()
-        range.selectNodeContents(element)
-        range.collapse(false)
-        selection?.removeAllRanges()
-        selection?.addRange(range)
-        document.execCommand("insertText", false, `\n${text}`)
-      }, marker)
+      const editor = page.locator("[data-gharargah-monaco-editor] .monaco-editor")
+      await editor.click()
+      await page.keyboard.press("End")
+      await page.keyboard.type(`\n${marker}`)
       await expectSelectorVisible(page, "[data-gharargah-buffer-dirty]")
       await expectLocatorContainsText(page.locator("[data-gharargah-modal-editor-status]"), "dirty")
       await execCommand(page, "workspace.saveFile")
@@ -212,11 +207,9 @@ test.describe("session Git and editor workspaces", () => {
       await expectLocatorCount(page.locator("[data-gharargah-palette]"), 0, { timeout: 20_000 })
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
 
-      await editor.focus()
-      await editor.evaluate(element => {
-        ;(element as HTMLElement).focus()
-        document.execCommand("insertText", false, "x")
-      })
+      await editor.click()
+      await page.keyboard.press("End")
+      await page.keyboard.type("x")
       await expectSelectorVisible(page, "[data-gharargah-buffer-dirty]")
       await page.getByRole("button", { name: "Close index.ts" }).click()
       await expectLocatorVisible(page.getByRole("alertdialog"))

@@ -1,49 +1,52 @@
+/**
+ * Find/replace UI for Monaco — uses Monaco's built-in find controller.
+ * Panel popover triggers Monaco find widget via actions.
+ */
 import { useEffect, useState } from "react"
 import type { PanelId } from "@gharargah/shared"
-import {
-  closeJetSearch,
-  findNext,
-  findPrevious,
-  getSearchQuery,
-  patchJetSearchQuery,
-  replaceAll,
-  replaceNext,
-  subscribeSearch,
-  type JetSearchState,
-} from "@gharargah/codemirror"
 import { Button } from "@/components/ui/button.js"
-import { GharargahCaretInput } from "@/motion/useGharargahCaretOverlay.js"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { PanelFloatingPopover } from "@/dock/PanelFloatingPopover.js"
-import { useAutoFocus } from "@/lib/use-auto-focus.js"
-import { getEditorView } from "@/tabs/EditorTabHost.js"
+import { getEditorView } from "@/tabs/editor-view-registry.js"
+import {
+  getActiveMonacoEditor,
+  triggerFind,
+  triggerReplace,
+  type MonacoEditorHandle,
+} from "@gharargah/monaco"
+
+type FindMode = "find" | "replace" | null
+
+let findModeState: FindMode = null
+const listeners = new Set<(mode: FindMode) => void>()
+
+export function openMonacoFind(mode: "find" | "replace"): void {
+  findModeState = mode
+  for (const l of listeners) l(mode)
+  const editor = getActiveMonacoEditor()
+  if (!editor) return
+  if (mode === "replace") triggerReplace(editor)
+  else triggerFind(editor)
+}
+
+export function closeMonacoFind(): void {
+  findModeState = null
+  for (const l of listeners) l(null)
+}
 
 export function FindReplacePopover({ panelId }: { panelId: PanelId }) {
-  const [state, setState] = useState<JetSearchState | null>(null)
+  const [mode, setMode] = useState<FindMode>(findModeState)
 
-  useEffect(() => subscribeSearch(setState), [])
+  useEffect(() => {
+    listeners.add(setMode)
+    return () => {
+      listeners.delete(setMode)
+    }
+  }, [])
 
-  const view = state?.view ?? null
-  const mode = state?.mode ?? "find"
-  const ownsPanel =
-    state?.panelId != null
-      ? state.panelId === panelId.id
-      : Boolean(view && getEditorView(panelId) === view)
-  const open = Boolean(state?.open && view && ownsPanel)
+  const editor = getEditorView(panelId) as MonacoEditorHandle | undefined
+  const open = Boolean(mode && editor && getActiveMonacoEditor() === editor)
 
-  const query = view && state ? getSearchQuery(view.state) : null
-  void state?.version
-
-  const findRef = useAutoFocus<HTMLInputElement>(open && mode === "find")
-  const replaceRef = useAutoFocus<HTMLInputElement>(open && mode === "replace")
-
-  if (!open || !view) return null
-
-  const toggleValues = [
-    ...(query?.caseSensitive ? ["case"] : []),
-    ...(query?.regexp ? ["regex"] : []),
-    ...(query?.wholeWord ? ["word"] : []),
-  ]
+  if (!open || !editor) return null
 
   return (
     <PanelFloatingPopover
@@ -51,86 +54,37 @@ export function FindReplacePopover({ panelId }: { panelId: PanelId }) {
       open={open}
       corner="top-right"
       onOpenChange={next => {
-        if (!next) closeJetSearch(view)
+        if (!next) closeMonacoFind()
       }}
     >
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <GharargahCaretInput
-            id="gharargah-find-input"
-            ref={findRef}
-            className="h-8 min-w-[10rem] flex-1"
-            placeholder="Find"
-            value={query?.search ?? ""}
-            onChange={e => patchJetSearchQuery(view, { search: e.target.value })}
-            onKeyDown={e => {
-              if (e.key === "Enter" && e.shiftKey) {
-                e.preventDefault()
-                findPrevious(view)
-                return
-              }
-              if (e.key === "Enter") {
-                e.preventDefault()
-                findNext(view)
-              }
-            }}
-            spellCheck={false}
-            autoComplete="off"
-          />
-          {mode === "replace" ? (
-            <GharargahCaretInput
-              id="gharargah-replace-input"
-              ref={replaceRef}
-              className="h-8 min-w-[10rem] flex-1"
-              placeholder="Replace"
-              value={query?.replace ?? ""}
-              onChange={e => patchJetSearchQuery(view, { replace: e.target.value })}
-              spellCheck={false}
-              autoComplete="off"
-            />
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-1">
-          <ToggleGroup
-            type="multiple"
-            variant="outline"
+      <div className="flex flex-col gap-2 p-1">
+        <p className="text-muted-foreground text-xs">
+          {mode === "replace" ? "Replace" : "Find"} — use Monaco find widget (Cmd/Ctrl+F)
+        </p>
+        <div className="flex gap-1.5">
+          <Button
+            type="button"
             size="sm"
-            value={toggleValues}
-            onValueChange={values => {
-              patchJetSearchQuery(view, {
-                caseSensitive: values.includes("case"),
-                regexp: values.includes("regex"),
-                wholeWord: values.includes("word"),
-              })
+            variant="secondary"
+            onClick={() => {
+              triggerFind(editor)
+              openMonacoFind("find")
             }}
           >
-            <ToggleGroupItem value="case" className="h-7 px-2 text-xs">
-              Aa
-            </ToggleGroupItem>
-            <ToggleGroupItem value="regex" className="h-7 px-2 text-xs">
-              .*
-            </ToggleGroupItem>
-            <ToggleGroupItem value="word" className="h-7 px-2 text-xs">
-              W
-            </ToggleGroupItem>
-          </ToggleGroup>
-          <Button type="button" variant="secondary" size="sm" className="h-7" onClick={() => findPrevious(view)}>
-            Previous
+            Find
           </Button>
-          <Button type="button" variant="secondary" size="sm" className="h-7" onClick={() => findNext(view)}>
-            Next
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              triggerReplace(editor)
+              openMonacoFind("replace")
+            }}
+          >
+            Replace
           </Button>
-          {mode === "replace" ? (
-            <>
-              <Button type="button" variant="secondary" size="sm" className="h-7" onClick={() => replaceNext(view)}>
-                Replace
-              </Button>
-              <Button type="button" variant="secondary" size="sm" className="h-7" onClick={() => replaceAll(view)}>
-                All
-              </Button>
-            </>
-          ) : null}
-          <Button type="button" variant="ghost" size="sm" className="h-7" onClick={() => closeJetSearch(view)}>
+          <Button type="button" size="sm" variant="ghost" onClick={() => closeMonacoFind()}>
             Close
           </Button>
         </div>

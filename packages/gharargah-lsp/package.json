@@ -7,23 +7,28 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./status": {
+      "types": "./src/lsp-status.ts",
+      "default": "./src/lsp-status.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lsp-extensions.test.ts src/project-root.test.ts"
+    "test": "tsx --test src/client-pool.test.ts src/project-root.test.ts"
   },
   "dependencies": {
+    "@gharargah/monaco": "workspace:*",
     "@gharargah/shared": "workspace:*",
     "@gharargah/workspace": "workspace:*",
-    "@gharargah/codemirror": "workspace:*",
-    "@codemirror/autocomplete": "^6.20.0",
-    "@codemirror/lsp-client": "^6.2.5",
-    "@codemirror/state": "^6.5.2",
-    "@codemirror/view": "^6.37.0"
+    "monaco-editor": "^0.52.2",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-ws-jsonrpc": "^3.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
+    "tsx": "^4.19.4",
     "typescript": "^7.0.2"
   }
 }

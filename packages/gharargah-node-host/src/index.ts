@@ -16,6 +16,8 @@ export {
   gitFetch,
   gitPull,
   gitPush,
+  gitShow,
+  type GitShowRef,
 } from "./git.js"
 export { TerminalHost, type TerminalLaunch, type TerminalAttachSnapshot } from "./terminal.js"
 export { openInApp } from "./shell.js"
@@ -47,6 +49,21 @@ export {
   stopAllLspSessions,
   setLspCrashHandler,
   getLspSession,
+  createLspRestartHelper,
+  LspFramingDecoder,
+  encodeLspMessage,
   type LspSession,
   type StartLspSessionOptions,
+  type StartLspSessionResult,
+  type LspRestartPolicy,
+  type LspRestartHelper,
 } from "./lsp-bridge.js"
+export {
+  getLanguageServerDefinition,
+  resolveLanguageServerCommand,
+  serverIdForLanguage,
+  listLanguageServerDefinitions,
+  findExecutableOnPath,
+  resetLanguageServerRegistryForTests,
+  type LanguageServerDefinition,
+} from "./lsp-registry.js"

@@ -1,4 +1,5 @@
 import type {
+  AgentFileReference,
   ResolveAgentPermissionInput,
   ResolveAgentUserInputInput,
   TimelineEntry,
@@ -19,6 +20,7 @@ import { cn } from "../../lib/utils.js"
 import { Spinner } from "../../components/ui/spinner.js"
 import { AgentMarkdown } from "../AgentMarkdown.js"
 import { AgentPatchView } from "../AgentPatchView.js"
+import { ChangedFilesCard } from "../ChangedFilesTree.js"
 import { DiffStatLabel, hasNonZeroStat } from "../DiffStatLabel.js"
 import { MessageCopyButton } from "./MessageCopyButton.js"
 import { ThoughtBlock } from "./ThoughtBlock.js"
@@ -122,10 +124,14 @@ function TurnStatusTimelineRow(props: {
 
 function ActivityGroupTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "activity_group" }>
+  expandAll: boolean
+  onToggleAllDirectories: () => void
+  onOpenFile?: (ref: AgentFileReference) => void
+  onOpenDiff?: (ref: AgentFileReference) => void
 }) {
-  const { row } = props
+  const { row, expandAll, onToggleAllDirectories, onOpenFile, onOpenDiff } = props
   const [open, setOpen] = useState(false)
-  const canExpand = row.toolCalls.length > 0
+  const canExpand = row.toolCalls.length > 0 || row.changedFiles.length > 0
   return (
     <div className="py-0.5" data-chat-activity-group="" data-chat-activity-label={row.label}>
       <button
@@ -151,9 +157,23 @@ function ActivityGroupTimelineRow(props: {
         ) : null}
       </button>
       {open && canExpand ? (
-        <div className="mt-2 space-y-1 border-s border-border/40 ps-3">
+        <div className="mt-2 space-y-2 border-s border-border/40 ps-3">
+          {row.changedFiles.length > 0 ? (
+            <ChangedFilesCard
+              files={row.changedFiles}
+              allDirectoriesExpanded={expandAll}
+              onToggleAllDirectories={onToggleAllDirectories}
+              onOpenFile={onOpenFile}
+              onOpenDiff={onOpenDiff}
+            />
+          ) : null}
           {row.toolCalls.map(toolCall => (
-            <ToolCallCard key={toolCall.id} toolCall={toolCall} flat />
+            <ToolCallCard
+              key={toolCall.id}
+              toolCall={toolCall}
+              flat
+              onOpenFile={onOpenFile}
+            />
           ))}
         </div>
       ) : null}
@@ -164,8 +184,9 @@ function ActivityGroupTimelineRow(props: {
 function AssistantTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "message" }>
   theme: "light" | "dark"
+  onOpenFile?: (ref: AgentFileReference) => void
 }) {
-  const { row, theme } = props
+  const { row, theme, onOpenFile } = props
   const rawText = coerceMessageText(row.message.text)
   const messageText = rawText || (row.message.streaming ? "" : "(empty response)")
   const assistantCopyState = resolveAssistantMessageCopyState({
@@ -177,7 +198,7 @@ function AssistantTimelineRow(props: {
   return (
     <div className="relative min-w-0 px-0.5 py-0.5">
       <div className="prose-agent text-sm leading-relaxed text-agent-feed-primary">
-        <AgentMarkdown text={messageText} theme={theme} />
+        <AgentMarkdown text={messageText} theme={theme} onOpenFile={onOpenFile} />
       </div>
       {row.message.diffPatch ? (
         <div className="mt-3 overflow-hidden rounded-xl border border-border/50 bg-muted/20">
@@ -218,6 +239,7 @@ function WorkingTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "
 
 function StructuredTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "structured" }>
+  onOpenFile?: (ref: AgentFileReference) => void
   onResolvePermission?: (
     input: Pick<
       ResolveAgentPermissionInput,
@@ -230,7 +252,9 @@ function StructuredTimelineRow(props: {
 }) {
   const { item } = props.row
   if (item.kind === "thought") return <ThoughtBlock text={item.text} />
-  if (item.kind === "tool_call") return <ToolCallCard toolCall={item.toolCall} />
+  if (item.kind === "tool_call") {
+    return <ToolCallCard toolCall={item.toolCall} onOpenFile={props.onOpenFile} />
+  }
   if (item.kind === "terminal") {
     return (
       <pre
@@ -265,6 +289,10 @@ function StructuredTimelineRow(props: {
 function TimelineRowContent(props: {
   row: MessagesTimelineRow
   theme: "light" | "dark"
+  expandAll: boolean
+  onToggleAllDirectories: () => void
+  onOpenFile?: (ref: AgentFileReference) => void
+  onOpenDiff?: (ref: AgentFileReference) => void
   onResolvePermission?: (
     input: Pick<
       ResolveAgentPermissionInput,
@@ -275,7 +303,7 @@ function TimelineRowContent(props: {
     input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
   ) => void
 }) {
-  const { row, theme } = props
+  const { row, theme, expandAll, onToggleAllDirectories, onOpenFile, onOpenDiff } = props
   return (
     <div
       className={cn(
@@ -293,14 +321,23 @@ function TimelineRowContent(props: {
         <UserTimelineRow row={row} />
       ) : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
-        <AssistantTimelineRow row={row} theme={theme} />
+        <AssistantTimelineRow row={row} theme={theme} onOpenFile={onOpenFile} />
       ) : null}
       {row.kind === "turn_status" ? <TurnStatusTimelineRow row={row} /> : null}
-      {row.kind === "activity_group" ? <ActivityGroupTimelineRow row={row} /> : null}
+      {row.kind === "activity_group" ? (
+        <ActivityGroupTimelineRow
+          row={row}
+          expandAll={expandAll}
+          onToggleAllDirectories={onToggleAllDirectories}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
+        />
+      ) : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "structured" ? (
         <StructuredTimelineRow
           row={row}
+          onOpenFile={onOpenFile}
           onResolvePermission={props.onResolvePermission}
           onResolveUserInput={props.onResolveUserInput}
         />
@@ -321,6 +358,8 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
   expandAll: boolean
   maintainScrollAtEndEnabled?: boolean
   onToggleAllDirectories: () => void
+  onOpenFile?: (ref: AgentFileReference) => void
+  onOpenDiff?: (ref: AgentFileReference) => void
   onIsAtEndChange?: (isAtEnd: boolean) => void
   onResolvePermission?: (
     input: Pick<
@@ -342,6 +381,10 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
     theme,
     contentInsetEndAdjustment,
     maintainScrollAtEndEnabled = true,
+    expandAll,
+    onToggleAllDirectories,
+    onOpenFile,
+    onOpenDiff,
     onIsAtEndChange,
     onResolvePermission,
     onResolveUserInput,
@@ -388,12 +431,16 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
         <TimelineRowContent
           row={item}
           theme={theme}
+          expandAll={expandAll}
+          onToggleAllDirectories={onToggleAllDirectories}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
           onResolvePermission={onResolvePermission}
           onResolveUserInput={onResolveUserInput}
         />
       </div>
     ),
-    [onResolvePermission, onResolveUserInput, theme],
+    [expandAll, onToggleAllDirectories, onOpenFile, onOpenDiff, onResolvePermission, onResolveUserInput, theme],
   )
 
   if (rows.length === 0 && !isWorking) {

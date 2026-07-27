@@ -19,6 +19,15 @@ export type AgentFileChange = {
   deletions: number
 }
 
+export type AgentFileReference = {
+  projectId?: string
+  path: string
+  line?: number
+  column?: number
+  endLine?: number
+  endColumn?: number
+}
+
 export type AgentMessageAttachment = {
   name: string
   mimeType?: string | null

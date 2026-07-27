@@ -1,5 +1,9 @@
-import type { EditorView } from "@codemirror/view"
-import { LSPPlugin } from "@codemirror/lsp-client"
+import type { MonacoEditorHandle } from "@gharargah/monaco"
+import { applyWorkspaceEdit, monacoModels, monacoRangeToLspRange } from "@gharargah/monaco"
+import { canonicalizeFileUri } from "@gharargah/shared"
+import type { MonacoLspClient } from "./client-pool.js"
+import type { JetLspWorkspaceDeps } from "./gharargah-workspace.js"
+import { bumpDocumentVersion, getDocumentVersion } from "./gharargah-workspace.js"
 
 export type LspCodeAction = {
   title: string
@@ -22,36 +26,37 @@ type CodeActionResult = LspCodeAction[] | { items: LspCodeAction[] } | null
 
 const inFlight = new Map<string, Promise<LspCodeAction[]>>()
 
-function rangeKey(uri: string, from: number, to: number): string {
-  return `${uri}:${from}:${to}`
+function rangeKey(
+  uri: string,
+  range: { start: { line: number; character: number }; end: { line: number; character: number } },
+): string {
+  return `${uri}:${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`
 }
 
 export async function scheduleCodeActions(
-  view: EditorView,
+  client: MonacoLspClient,
+  uri: string,
+  editor: MonacoEditorHandle,
   onlyQuickFix = true,
 ): Promise<LspCodeAction[]> {
-  const plugin = LSPPlugin.get(view)
-  if (!plugin) return []
+  const model = editor.getModel()
+  const selection = editor.getSelection()
+  if (!model || !selection) return []
 
-  const from = view.state.selection.main.from
-  const to = view.state.selection.main.to
-  const key = rangeKey(plugin.uri, from, to)
+  const canonical = canonicalizeFileUri(uri)
+  const content = model.getValue()
+  const range = monacoRangeToLspRange(content, selection)
+  const key = rangeKey(canonical, range)
   const existing = inFlight.get(key)
   if (existing) return existing
 
   const promise = (async () => {
-    plugin.client.sync()
-    const start = plugin.toPosition(from)
-    const end = plugin.toPosition(to)
     const params: CodeActionParams = {
-      textDocument: { uri: plugin.uri },
-      range: { start, end },
+      textDocument: { uri: canonical },
+      range,
       context: { only: onlyQuickFix ? ["quickfix"] : undefined },
     }
-    const result = await plugin.client.request<CodeActionParams, CodeActionResult>(
-      "textDocument/codeAction",
-      params,
-    )
+    const result = await client.sendRequest<CodeActionResult>("textDocument/codeAction", params)
     if (!result) return []
     if (Array.isArray(result)) return result
     return result.items ?? []
@@ -65,12 +70,15 @@ export async function scheduleCodeActions(
   return promise
 }
 
-export async function applyCodeAction(view: EditorView, action: LspCodeAction): Promise<boolean> {
-  const plugin = LSPPlugin.get(view)
-  if (!plugin) return false
-
+export async function applyCodeAction(
+  client: MonacoLspClient,
+  uri: string,
+  editor: MonacoEditorHandle,
+  action: LspCodeAction,
+  deps: JetLspWorkspaceDeps,
+): Promise<boolean> {
   if (action.command) {
-    await plugin.client.request("workspace/executeCommand", {
+    await client.sendRequest("workspace/executeCommand", {
       command: action.command.command,
       arguments: action.command.arguments ?? [],
     })
@@ -82,21 +90,41 @@ export async function applyCodeAction(view: EditorView, action: LspCodeAction): 
     | undefined
   if (!edit?.changes) return false
 
-  const uriChanges = edit.changes[plugin.uri]
+  const canonical = canonicalizeFileUri(uri)
+  const uriChanges = edit.changes[canonical] ?? edit.changes[uri]
   if (!uriChanges?.length) return false
 
-  const changes = uriChanges.map(c => {
-    const range = c.range as {
-      start: { line: number; character: number }
-      end: { line: number; character: number }
-    }
-    return {
-      from: plugin.fromPosition(range.start),
-      to: plugin.fromPosition(range.end),
-      insert: c.newText,
-    }
-  })
+  const result = applyWorkspaceEdit(
+    {
+      changes: {
+        [canonical]: uriChanges.map(change => ({
+          range: change.range as {
+            start: { line: number; character: number }
+            end: { line: number; character: number }
+          },
+          newText: change.newText,
+        })),
+      },
+    },
+    {
+      registry: monacoModels,
+      isDirty: deps.isDirty,
+      getContent: deps.getContent,
+      getVersion: getDocumentVersion,
+      defaultLanguageId: "plaintext",
+    },
+  )
 
-  view.dispatch({ changes })
+  if (!result.applied.includes(canonical)) return false
+
+  const content = deps.getContent(canonical) ?? monacoModels.getContent(canonical)
+  if (content != null) {
+    deps.updateContent(canonical, content)
+    bumpDocumentVersion(canonical)
+    editor.setValue(content)
+    if (!deps.isDirty(canonical)) {
+      await deps.writeFile(canonical, content)
+    }
+  }
   return true
 }

@@ -1,4 +1,4 @@
-import type { GharargahTheme } from "@gharargah/codemirror"
+import type { GharargahTheme } from "@gharargah/shared"
 import { LayoutGrid, PanelsTopLeft, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import {

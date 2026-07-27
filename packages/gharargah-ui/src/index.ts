@@ -114,8 +114,15 @@ export {
 } from "./components/SettingsOverlay.js"
 export { StatusBar } from "./status/StatusBar.js"
 export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js"
-export { setEditorCursor, getEditorCursor } from "./status/editor-cursor-store.js"
-export { EditorTabHost, getEditorView, getAllEditorViews, syncAllEditorThemes, destroyEditorBuffer, destroyEditorPanel } from "./tabs/EditorTabHost.js"
+export { setEditorCursor as setEditorCursorStore, getEditorCursor as getEditorCursorStore, subscribeEditorCursor } from "./status/editor-cursor-store.js"
+export {
+  getEditorView,
+  getEditorCursor,
+  setEditorCursor,
+  destroyEditorBuffer,
+  destroyEditorPanel,
+  type EditorViewHandle,
+} from "./tabs/editor-view-registry.js"
 export { ExplorerTab } from "./tabs/ExplorerTab.js"
 export {
   TerminalExplorerTab,
@@ -145,7 +152,7 @@ export {
   type ColorScheme,
 } from "./theme/bundled.js"
 export { syncNativeChromeFromTheme, readThemedNativeChrome } from "./theme/native-chrome.js"
-export { defaultGharargahTheme, applyGharargahThemeCss, applyColorScheme } from "@gharargah/codemirror"
+export { defaultGharargahTheme, applyGharargahThemeCss, applyColorScheme } from "@gharargah/shared"
 export { gharargahMotion, gharargahOverlayContentClass, gharargahPopoverContentClass, gharargahMenuContentClass, gharargahPressClass, gharargahHotGlowClass, type GharargahOverlayMotion } from "./motion/tokens.js"
 export { useReducedMotion } from "./motion/useReducedMotion.js"
 export { GharargahTabDragGhost } from "./motion/GharargahOverlayMotion.js"
@@ -166,4 +173,3 @@ export { registerListPanel, getListPanel, getListItems, focusListPanel, focusFir
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
 export { PanelEmpty } from "./components/PanelEmpty.js"
 export { SettingsField } from "./components/SettingsField.js"
-export { FindReplacePopover } from "./components/FindReplacePopover.js"

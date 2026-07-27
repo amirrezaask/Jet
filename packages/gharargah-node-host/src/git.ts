@@ -86,6 +86,22 @@ export async function gitDiff(
   return runGit(uriToPath(rootUri), args)
 }
 
+export type GitShowRef = "HEAD" | "INDEX"
+
+/** Read file content at HEAD or the index (`:`) for diff viewers. */
+export async function gitShow(
+  rootUri: string,
+  path: string,
+  ref: GitShowRef,
+): Promise<string> {
+  const spec = ref === "INDEX" ? `:${path}` : `HEAD:${path}`
+  try {
+    return await runGit(uriToPath(rootUri), ["show", spec])
+  } catch {
+    return ""
+  }
+}
+
 export async function gitBranch(rootUri: string): Promise<string | null> {
   try {
     const out = await runGit(uriToPath(rootUri), ["rev-parse", "--abbrev-ref", "HEAD"])

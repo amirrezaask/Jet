@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
-import { PatchDiff } from "@pierre/diffs/react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import type { GitCommit, GitRepositorySummary, GitStatusEntry } from "@gharargah/shared"
+import type { GitCommit, GitRepositorySummary, GitStatusEntry, GharargahTheme } from "@gharargah/shared"
+import { fileUriToPath, languageIdFromPath, pathToFileUri } from "@gharargah/shared"
+import { MonacoDiffEditorHost, monacoLanguageId } from "@gharargah/monaco"
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -50,8 +51,16 @@ import { showGharargahToast } from "@/toast.js"
 type GitWorkspaceProps = {
   rootUri: string | null
   repositoryName: string
+  theme: GharargahTheme
   onOpenFile: (path: string) => void
   onBranchChange?: (branch: string | null) => void
+  /** When set, select this path in Changes (agent openDiff / deep-link). */
+  focusPath?: string | null
+}
+
+type DiffContents = {
+  original: string
+  modified: string
 }
 
 type GitView = "changes" | "staged" | "history"
@@ -74,8 +83,9 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 export function GitWorkspace(props: GitWorkspaceProps) {
-  const { rootUri, repositoryName, onOpenFile, onBranchChange } = props
+  const { rootUri, repositoryName, theme, onOpenFile, onBranchChange, focusPath } = props
   const api = window.gharargah?.git
+  const fsApi = window.gharargah?.fs
   const [isRepo, setIsRepo] = useState<boolean | null>(null)
   const [entries, setEntries] = useState<GitStatusEntry[]>([])
   const [summary, setSummary] = useState<GitRepositorySummary>(EMPTY_SUMMARY)
@@ -84,7 +94,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const [view, setView] = useState<GitView>("changes")
   const [selected, setSelected] = useState<SelectedChange | null>(null)
   const [filter, setFilter] = useState("")
-  const [patch, setPatch] = useState("")
+  const [diffContents, setDiffContents] = useState<DiffContents | null>(null)
   const [diffStyle, setDiffStyle] = useState<DiffStyle>(() =>
     localStorage.getItem("gharargah:git-diff-style") === "split" ? "split" : "unified",
   )
@@ -145,20 +155,20 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   }, [refresh])
 
   useEffect(() => {
-    if (!rootUri || !api || !selected) {
-      setPatch("")
+    if (!rootUri || !api || !fsApi || !selected) {
+      setDiffContents(null)
       return
     }
+    const entry = entries.find(item => item.path === selected.path)
     const request = ++diffRequest.current
     setDiffLoading(true)
-    void api
-      .diff(rootUri, { path: selected.path, staged: selected.staged })
-      .then(nextPatch => {
-        if (request === diffRequest.current) setPatch(nextPatch)
+    void loadGitDiffContents(rootUri, selected, entry, api, fsApi)
+      .then(contents => {
+        if (request === diffRequest.current) setDiffContents(contents)
       })
       .catch(error => {
         if (request !== diffRequest.current) return
-        setPatch("")
+        setDiffContents(null)
         showGharargahToast("Could not load diff", {
           variant: "destructive",
           description: errorMessage(error),
@@ -167,7 +177,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       .finally(() => {
         if (request === diffRequest.current) setDiffLoading(false)
       })
-  }, [api, rootUri, selected])
+  }, [api, fsApi, rootUri, selected, entries])
 
   const filteredEntries = useMemo(() => {
     const needle = filter.trim().toLocaleLowerCase()
@@ -190,6 +200,18 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     const first = files[0]
     setSelected(first ? { path: first.entry.path, staged: first.staged } : null)
   }, [navigationRows, selected, view])
+
+  useEffect(() => {
+    if (!focusPath) return
+    const needle = focusPath.replace(/\\/g, "/").replace(/^\/+/, "")
+    const match = entries.find(entry => {
+      const path = entry.path.replace(/\\/g, "/")
+      return path === needle || path.endsWith(`/${needle}`) || needle.endsWith(`/${path}`)
+    })
+    if (!match) return
+    setView(match.staged && !match.unstaged ? "staged" : "changes")
+    setSelected({ path: match.path, staged: Boolean(match.staged && !match.unstaged) })
+  }, [focusPath, entries])
 
   const runAction = useCallback(
     async (label: string, task: () => Promise<void>, success?: string): Promise<boolean> => {
@@ -327,9 +349,10 @@ export function GitWorkspace(props: GitWorkspaceProps) {
             <DiffViewer
               selected={selected}
               selectedEntry={selectedEntry}
-              patch={patch}
+              diffContents={diffContents}
               loading={diffLoading}
               diffStyle={diffStyle}
+              theme={theme}
               pending={pendingAction !== null}
               onDiffStyleChange={setAndPersistDiffStyle}
               onOpenFile={onOpenFile}
@@ -671,19 +694,38 @@ function GitFileRow(props: {
 function DiffViewer(props: {
   selected: SelectedChange | null
   selectedEntry?: GitStatusEntry
-  patch: string
+  diffContents: DiffContents | null
   loading: boolean
   diffStyle: DiffStyle
+  theme: GharargahTheme
   pending: boolean
   onDiffStyleChange: (style: DiffStyle) => void
   onOpenFile: (path: string) => void
   onToggleStage: (selected: SelectedChange) => void
   onDiscard: (entry: GitStatusEntry) => void
 }) {
-  const { selected, selectedEntry, patch, loading, diffStyle, pending, onDiffStyleChange, onOpenFile, onToggleStage, onDiscard } = props
+  const {
+    selected,
+    selectedEntry,
+    diffContents,
+    loading,
+    diffStyle,
+    theme,
+    pending,
+    onDiffStyleChange,
+    onOpenFile,
+    onToggleStage,
+    onDiscard,
+  } = props
   if (!selected) {
     return <CenteredEmpty title="Select a changed file" description="Choose a file to inspect its diff." />
   }
+  const languageId = monacoLanguageId(languageIdFromPath(selected.path))
+  const originalUri = `git-diff://${selected.path}?side=original&staged=${selected.staged ? "1" : "0"}`
+  const modifiedUri = `git-diff://${selected.path}?side=modified&staged=${selected.staged ? "1" : "0"}`
+  const hasDiff =
+    diffContents != null &&
+    (diffContents.original.length > 0 || diffContents.modified.length > 0)
   return (
     <div data-gharargah-git-diff="" className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-card px-3">
@@ -712,23 +754,77 @@ function DiffViewer(props: {
           {selected.staged ? "Unstage file" : "Stage file"}
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {loading ? (
           <CenteredStatus label="Loading diff…" />
-        ) : patch ? (
-          <PatchDiff
-            patch={patch}
-            options={{ diffStyle, disableFileHeader: true, lineHoverHighlight: "line" }}
+        ) : hasDiff && diffContents ? (
+          <MonacoDiffEditorHost
+            originalUri={originalUri}
+            modifiedUri={modifiedUri}
+            originalContent={diffContents.original}
+            modifiedContent={diffContents.modified}
+            languageId={languageId}
+            theme={theme}
+            readOnly
+            renderSideBySide={diffStyle === "split"}
+            className="h-full min-h-0"
           />
         ) : (
           <CenteredEmpty
             title={selectedEntry?.status === "untracked" ? "Untracked file" : "No textual diff"}
-            description={selectedEntry?.status === "untracked" ? "Stage this file to inspect its complete patch." : "This file may be binary or unchanged in this Git area."}
+            description={
+              selectedEntry?.status === "untracked"
+                ? "New file contents appear after the working tree is readable."
+                : "This file may be binary or unchanged in this Git area."
+            }
           />
         )}
       </div>
     </div>
   )
+}
+
+async function loadGitDiffContents(
+  rootUri: string,
+  selected: SelectedChange,
+  entry: GitStatusEntry | undefined,
+  api: NonNullable<NonNullable<typeof window.gharargah>["git"]>,
+  fsApi: NonNullable<NonNullable<typeof window.gharargah>["fs"]>,
+): Promise<DiffContents> {
+  const rootPath = fileUriToPath(rootUri).replace(/[/\\]+$/, "")
+  const fullPath = `${rootPath}/${selected.path.replace(/^[/\\]+/, "")}`
+  const fileUri = pathToFileUri(fullPath)
+
+  if (entry?.status === "untracked") {
+    try {
+      return { original: "", modified: await fsApi.readFile(fileUri) }
+    } catch {
+      return { original: "", modified: "" }
+    }
+  }
+
+  if (entry?.status === "deleted") {
+    const original = selected.staged
+      ? await api.show(rootUri, selected.path, "HEAD")
+      : await api.show(rootUri, selected.path, "INDEX")
+    return { original, modified: "" }
+  }
+
+  if (selected.staged) {
+    const [original, modified] = await Promise.all([
+      api.show(rootUri, selected.path, "HEAD"),
+      api.show(rootUri, selected.path, "INDEX"),
+    ])
+    return { original, modified }
+  }
+
+  const [original, modified] = await Promise.all([
+    api.show(rootUri, selected.path, "INDEX").then(
+      value => value || api.show(rootUri, selected.path, "HEAD"),
+    ),
+    fsApi.readFile(fileUri).catch(() => ""),
+  ])
+  return { original, modified }
 }
 
 function HistoryList({ commits }: { commits: GitCommit[] }) {

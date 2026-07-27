@@ -265,7 +265,7 @@ export function resolveDropZoneFromElement(el: Element | null): DropZone {
   if (el.closest("[data-gharargah-terminal-panel]")) return "terminal"
   if (
     el.closest(
-      "[data-gharargah-modal-editor], [data-gharargah-editor-scroll-area], .cm-editor, .cm-content",
+      "[data-gharargah-modal-editor], [data-gharargah-editor-scroll-area], [data-gharargah-monaco-editor], .monaco-editor",
     )
   ) {
     return "editor"

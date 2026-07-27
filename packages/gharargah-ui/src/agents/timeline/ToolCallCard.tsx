@@ -1,4 +1,4 @@
-import type { AgentToolCall } from "@gharargah/agents"
+import type { AgentFileReference, AgentToolCall } from "@gharargah/agents"
 import { useRecyclingState } from "@legendapp/list/react"
 import {
   Brain,
@@ -95,8 +95,57 @@ function ToolIcon(props: { kind?: string }) {
   return <Terminal aria-hidden />
 }
 
-export function ToolCallCard(props: { toolCall: AgentToolCall; flat?: boolean }) {
-  const { toolCall, flat = false } = props
+function pathFromToolValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    if (
+      trimmed.startsWith("file://") ||
+      trimmed.startsWith("/") ||
+      /^[A-Za-z]:[\\/]/.test(trimmed) ||
+      /^[.]{1,2}[\\/]/.test(trimmed) ||
+      /\.[A-Za-z0-9]{1,12}$/.test(trimmed.split(/[:\s]/)[0] ?? "")
+    ) {
+      return trimmed.split(/[:\s]/)[0] ?? trimmed
+    }
+    return null
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const path = pathFromToolValue(item)
+      if (path) return path
+    }
+    return null
+  }
+  if (!value || typeof value !== "object") return null
+  const record = value as Record<string, unknown>
+  for (const key of ["path", "filePath", "file_path", "uri", "target", "file"]) {
+    const path = pathFromToolValue(record[key])
+    if (path) return path
+  }
+  return null
+}
+
+export function fileRefFromToolCall(toolCall: AgentToolCall): AgentFileReference | null {
+  let path: string | null = null
+  if (toolCall.input) {
+    try {
+      path = pathFromToolValue(JSON.parse(toolCall.input))
+    } catch {
+      path = pathFromToolValue(toolCall.input)
+    }
+  }
+  if (!path) path = pathFromToolValue(toolCall.summary)
+  if (!path) return null
+  return { path }
+}
+
+export function ToolCallCard(props: {
+  toolCall: AgentToolCall
+  flat?: boolean
+  onOpenFile?: (ref: AgentFileReference) => void
+}) {
+  const { toolCall, flat = false, onOpenFile } = props
   const [open, setOpen] = useRecyclingState(false)
   // open toggles already call triggerLayout via useRecyclingState.
   useTimelineItemLayoutSync([
@@ -106,6 +155,7 @@ export function ToolCallCard(props: { toolCall: AgentToolCall; flat?: boolean })
     toolCall.error,
   ])
   const summary = summarizeToolCall(toolCall)
+  const fileRef = onOpenFile ? fileRefFromToolCall(toolCall) : null
   const StatusIcon =
     toolCall.status === "completed"
       ? CheckCircle2
@@ -146,12 +196,28 @@ export function ToolCallCard(props: { toolCall: AgentToolCall; flat?: boolean })
               <span className="shrink-0 text-muted-foreground/45" aria-hidden>
                 ·
               </span>
-              <span
-                className="min-w-0 flex-1 truncate text-left font-mono text-xs text-agent-feed-muted"
-                title={summary}
-              >
-                {summary}
-              </span>
+              {fileRef && onOpenFile ? (
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 truncate text-left font-mono text-xs text-agent-feed-muted underline-offset-2 hover:underline"
+                  title={summary}
+                  data-gharargah-tool-path=""
+                  onClick={event => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onOpenFile(fileRef)
+                  }}
+                >
+                  {summary}
+                </button>
+              ) : (
+                <span
+                  className="min-w-0 flex-1 truncate text-left font-mono text-xs text-agent-feed-muted"
+                  title={summary}
+                >
+                  {summary}
+                </span>
+              )}
             </>
           ) : (
             <span className="min-w-0 flex-1" />

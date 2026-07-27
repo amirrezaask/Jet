@@ -1,16 +1,6 @@
-import type { EditorView } from "@codemirror/view"
-import type { TransactionSpec } from "@codemirror/state"
-import {
-  toggleComment,
-  copyLineDown,
-  moveLineDown,
-  indentMore,
-  undo,
-  redo,
-  addCursorBelow,
-} from "@codemirror/commands"
-import { selectNextOccurrence, selectSelectionMatches } from "@codemirror/search"
-import type { GharargahPanelTree } from "@gharargah/workspace"
+import type {
+  GharargahPanelTree,
+} from "@gharargah/workspace"
 import type { PanelEvent } from "@gharargah/panels"
 import type { PanelId } from "@gharargah/shared"
 import { basename, fileUriToPath, isUntitledUri, pathToFileUri } from "@gharargah/shared"
@@ -22,20 +12,7 @@ import type {
   WorkspaceService,
 } from "@gharargah/workspace"
 import { panelTabIds } from "@gharargah/workspace"
-import { openJetSearch } from "@gharargah/codemirror"
-import {
-  requestFindReferences,
-  runFormatDocument,
-  runParameterHints,
-  runRenameSymbol,
-  requestGoToDefinition,
-  runGoToDeclaration,
-  runGoToTypeDefinition,
-  runGoToImplementation,
-  runTriggerSuggest,
-  runShowHover,
-  skipNextOccurrence,
-} from "@gharargah/codemirror"
+import type { MonacoEditorHandle } from "@gharargah/monaco"
 import { getEditorView, destroyEditorBuffer } from "@gharargah/ui"
 import { isAgentChatEnabled } from "@gharargah/agents"
 import {
@@ -58,6 +35,26 @@ import {
   type KeymapContext,
 } from "@gharargah/workspace"
 import { terminalAtIndex } from "./terminal-explorer.js"
+
+function asMonaco(view: unknown): MonacoEditorHandle | null {
+  if (view && typeof view === "object" && "getModel" in view) {
+    return view as MonacoEditorHandle
+  }
+  return null
+}
+
+function runMonacoAction(ctx: JetCommandContext, actionId: string): void {
+  const editor = asMonaco(ctx.getActiveEditorView())
+  if (!editor) return
+  void editor.getAction(actionId)?.run()
+}
+
+async function withMonacoApi<T>(
+  run: (api: typeof import("@gharargah/monaco")) => T | Promise<T>,
+): Promise<T | undefined> {
+  const api = await import("@gharargah/monaco")
+  return run(api)
+}
 
 export type BuildAppCommandsDeps = {
   workspace: WorkspaceService
@@ -154,24 +151,8 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     return terminalCwdRootUri()
   }
 
-  function runCmCmd(ctx: JetCommandContext, fn: (v: EditorView) => boolean): void {
-    const view = ctx.getActiveEditorView()
-    if (view) fn(view)
-  }
-
-  function runCmStateCmd(
-    ctx: JetCommandContext,
-    fn: (target: { state: EditorView["state"]; dispatch: (tr: TransactionSpec) => void }) => boolean,
-  ): void {
-    const view = ctx.getActiveEditorView()
-    if (view) {
-      fn({
-        state: view.state,
-        dispatch: spec => {
-          view.dispatch(spec)
-        },
-      })
-    }
+  function runEditorAction(ctx: JetCommandContext, actionId: string): void {
+    runMonacoAction(ctx, actionId)
   }
 
   async function gitSearchUnavailable(ctx: JetCommandContext): Promise<boolean> {
@@ -294,12 +275,13 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       ctx.ui.showMessage(count === 0 ? "No git projects found" : `Found ${count} projects`)
     },
     save: async ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
+      const editor = asMonaco(ctx.getActiveEditorView())
+      if (!editor) return
       const panel = activeEditorPanel()
       const fileUri = panel && getActiveEditorFileUri(currentPanelTree(), panel)
       if (!fileUri) return
-      const content = view.state.doc.toString()
+      const { getEditorContent } = await import("@gharargah/monaco")
+      const content = getEditorContent(editor) ?? ""
       if (isUntitledUri(fileUri)) {
         const savePath = (await window.gharargah?.fs.showSaveFileDialog()) ?? null
         if (!savePath) return
@@ -331,14 +313,26 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     closeBuffer: closeTab,
     closeTab,
     find: ctx => {
-      const view = ctx.getActiveEditorView()
-      const panel = activeEditorPanel()
-      if (view) openJetSearch(view, "find", panel?.id)
+      const editor = asMonaco(ctx.getActiveEditorView())
+      if (!editor) return
+      void Promise.all([
+        import("@gharargah/monaco"),
+        import("@gharargah/ui/editor"),
+      ]).then(([monacoApi, editorUi]) => {
+        monacoApi.triggerFind(editor)
+        editorUi.openMonacoFind("find")
+      })
     },
     replace: ctx => {
-      const view = ctx.getActiveEditorView()
-      const panel = activeEditorPanel()
-      if (view) openJetSearch(view, "replace", panel?.id)
+      const editor = asMonaco(ctx.getActiveEditorView())
+      if (!editor) return
+      void Promise.all([
+        import("@gharargah/monaco"),
+        import("@gharargah/ui/editor"),
+      ]).then(([monacoApi, editorUi]) => {
+        monacoApi.triggerReplace(editor)
+        editorUi.openMonacoFind("replace")
+      })
     },
     gotoLine: () => {
       deps.setSessionMode("editor")
@@ -403,19 +397,22 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.setPaletteOpen(false)
       deps.setQuickOpenOpen(false)
     },
-    toggleComment: ctx => runCmCmd(ctx, toggleComment),
-    copyLineDown: ctx => runCmCmd(ctx, copyLineDown),
-    moveLineDown: ctx => runCmCmd(ctx, moveLineDown),
-    indentMore: ctx => runCmCmd(ctx, indentMore),
-    undo: ctx => runCmCmd(ctx, undo),
-    redo: ctx => runCmCmd(ctx, redo),
-    addCursorBelow: ctx => runCmCmd(ctx, addCursorBelow),
-    selectNextOccurrence: ctx => runCmStateCmd(ctx, selectNextOccurrence),
-    selectAllOccurrences: ctx => runCmStateCmd(ctx, selectSelectionMatches),
-    skipNextOccurrence: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (view) skipNextOccurrence(view)
+    toggleComment: ctx => runEditorAction(ctx, "editor.action.commentLine"),
+    copyLineDown: ctx => runEditorAction(ctx, "editor.action.copyLinesDownAction"),
+    moveLineDown: ctx => runEditorAction(ctx, "editor.action.moveLinesDownAction"),
+    indentMore: ctx => runEditorAction(ctx, "editor.action.indentLines"),
+    undo: ctx => {
+      const editor = asMonaco(ctx.getActiveEditorView())
+      if (editor) void withMonacoApi(api => api.undoEditor(editor))
     },
+    redo: ctx => {
+      const editor = asMonaco(ctx.getActiveEditorView())
+      if (editor) void withMonacoApi(api => api.redoEditor(editor))
+    },
+    addCursorBelow: ctx => runEditorAction(ctx, "editor.action.insertCursorBelow"),
+    selectNextOccurrence: ctx => runEditorAction(ctx, "editor.action.addSelectionToNextFindMatch"),
+    selectAllOccurrences: ctx => runEditorAction(ctx, "editor.action.selectHighlights"),
+    skipNextOccurrence: ctx => runEditorAction(ctx, "editor.action.moveSelectionToNextFindMatch"),
     nextBuffer: () => {
       deps.setSessionMode("editor")
       cycleEditorBuffer(1)
@@ -425,67 +422,18 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       cycleEditorBuffer(-1)
     },
     formatDocument: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      if (!runFormatDocument(view)) ctx.ui.showMessage("Format not available for this file")
+      const editor = asMonaco(ctx.getActiveEditorView())
+      if (editor) void withMonacoApi(api => api.formatDocument(editor))
     },
-    rename: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      if (!runRenameSymbol(view)) ctx.ui.showMessage("Rename not available for this symbol")
-    },
-    goToReferences: async ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      const locs = await requestFindReferences(view)
-      if (!locs?.length) ctx.ui.showMessage("No references found")
-    },
-    parameterHints: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      if (!runParameterHints(view)) ctx.ui.showMessage("Parameter hints not available")
-    },
-    goToDefinition: async ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      const locs = await requestGoToDefinition(view)
-      if (!locs.length) {
-        ctx.ui.showMessage("No definition found")
-        return
-      }
-      const loc = locs[0]!
-      deps.openFileInEditor(
-        loc.uri,
-        fileUriToPath(loc.uri),
-        loc.range.start.line + 1,
-        loc.range.start.character + 1,
-      )
-    },
-    goToDeclaration: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      if (!runGoToDeclaration(view)) ctx.ui.showMessage("Go to declaration not available")
-    },
-    goToTypeDefinition: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      if (!runGoToTypeDefinition(view)) ctx.ui.showMessage("Go to type definition not available")
-    },
-    goToImplementation: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      if (!runGoToImplementation(view)) ctx.ui.showMessage("Go to implementation not available")
-    },
-    triggerSuggest: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      runTriggerSuggest(view)
-    },
-    showHover: ctx => {
-      const view = ctx.getActiveEditorView()
-      if (!view) return
-      if (!runShowHover(view)) ctx.ui.showMessage("Hover not available")
-    },
+    rename: ctx => runEditorAction(ctx, "editor.action.rename"),
+    goToReferences: ctx => runEditorAction(ctx, "editor.action.goToReferences"),
+    parameterHints: ctx => runEditorAction(ctx, "editor.action.triggerParameterHints"),
+    goToDefinition: ctx => runEditorAction(ctx, "editor.action.revealDefinition"),
+    goToDeclaration: ctx => runEditorAction(ctx, "editor.action.revealDeclaration"),
+    goToTypeDefinition: ctx => runEditorAction(ctx, "editor.action.goToTypeDefinition"),
+    goToImplementation: ctx => runEditorAction(ctx, "editor.action.goToImplementation"),
+    triggerSuggest: ctx => runEditorAction(ctx, "editor.action.triggerSuggest"),
+    showHover: ctx => runEditorAction(ctx, "editor.action.showHover"),
   }
 
   return named as JetCommands

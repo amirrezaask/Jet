@@ -16,7 +16,7 @@ type CursorMotion = "trail" | "smooth" | "off"
 const TEXT_INPUT_TYPES = new Set(["", "text", "search", "email", "url", "tel", "password", "number"])
 
 function isCaretTarget(value: EventTarget | null): value is CaretTarget {
-  if (value instanceof HTMLElement && value.closest(".cm-editor, .xterm")) return false
+  if (value instanceof HTMLElement && value.closest(".monaco-editor, [data-gharargah-monaco-editor], .xterm")) return false
   if (value instanceof HTMLTextAreaElement) return !value.disabled && !value.readOnly
   if (value instanceof HTMLInputElement) {
     return !value.disabled && !value.readOnly && TEXT_INPUT_TYPES.has(value.type.toLowerCase())

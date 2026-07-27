@@ -1,9 +1,9 @@
-import type { GharargahTheme } from "@gharargah/codemirror"
+import type { GharargahTheme } from "@gharargah/shared"
 import {
   jetColorsFromShadcn,
   shadcnDefaultDark,
   shadcnDefaultLight,
-} from "@gharargah/codemirror"
+} from "@gharargah/shared"
 import {
   makeTheme,
   paletteAnsi,

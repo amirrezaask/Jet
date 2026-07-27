@@ -1,6 +1,21 @@
-import { describe, it } from "node:test"
+import { afterEach, describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { LspFramingDecoder, encodeLspMessage } from "./lsp-bridge.js"
+import os from "node:os"
+import path from "node:path"
+import { pathToFileUri } from "@gharargah/shared"
+import {
+  LspFramingDecoder,
+  encodeLspMessage,
+  startLspSession,
+  stopAllLspSessions,
+  createLspRestartHelper,
+} from "./lsp-bridge.js"
+import { resetLanguageServerRegistryForTests } from "./lsp-registry.js"
+
+afterEach(() => {
+  stopAllLspSessions()
+  resetLanguageServerRegistryForTests()
+})
 
 describe("LspFramingDecoder", () => {
   it("decodes messages when UTF-8 is split across chunks", () => {
@@ -33,5 +48,73 @@ describe("LspFramingDecoder", () => {
 
     assert.equal(messages.length, 1)
     assert.equal(JSON.parse(messages[0]!).x.length, 10)
+  })
+})
+
+describe("startLspSession", () => {
+  it("rejects unknown server ids without spawning", async () => {
+    const rootUri = pathToFileUri(os.tmpdir())
+    const result = await startLspSession({
+      rootUri,
+      serverId: "not-a-real-server",
+    })
+    assert.match(result.error ?? "", /Unknown language server/)
+    assert.equal(result.id, "")
+    assert.equal(result.transportUrl, "")
+  })
+
+  it("rejects paths outside allowed roots", async () => {
+    const rootUri = pathToFileUri("/definitely-not-allowed-root")
+    const result = await startLspSession({
+      rootUri,
+      serverId: "typescript-language-server",
+      allowedRoots: [path.join(os.tmpdir(), "gharargah-lsp-allowed")],
+    })
+    assert.match(result.error ?? "", /not allowed/i)
+  })
+
+  it("starts mock server when GHARARGAH_LSP_MOCK=1", async () => {
+    const mockScript = path.join(os.tmpdir(), `gharargah-mock-lsp-${Date.now()}.sh`)
+    const { writeFileSync } = await import("node:fs")
+    writeFileSync(
+      mockScript,
+      '#!/bin/sh\nwhile IFS= read -r line; do :; done\n',
+      { mode: 0o755 },
+    )
+
+    const prevMock = process.env.GHARARGAH_LSP_MOCK
+    const prevBin = process.env.GHARARGAH_LSP_MOCK_BIN
+    process.env.GHARARGAH_LSP_MOCK = "1"
+    process.env.GHARARGAH_LSP_MOCK_BIN = mockScript
+    resetLanguageServerRegistryForTests()
+
+    try {
+      const rootUri = pathToFileUri(os.tmpdir())
+      const result = await startLspSession({
+        rootUri,
+        serverId: "mock-language-server",
+        allowedRoots: [os.tmpdir()],
+      })
+      assert.equal(result.error, undefined, result.error)
+      assert.ok(result.id.startsWith("lsp-mock-language-server-"))
+      assert.match(result.transportUrl, /^ws:\/\/127\.0\.0\.1:\d+$/)
+    } finally {
+      if (prevMock === undefined) delete process.env.GHARARGAH_LSP_MOCK
+      else process.env.GHARARGAH_LSP_MOCK = prevMock
+      if (prevBin === undefined) delete process.env.GHARARGAH_LSP_MOCK_BIN
+      else process.env.GHARARGAH_LSP_MOCK_BIN = prevBin
+      resetLanguageServerRegistryForTests()
+    }
+  })
+})
+
+describe("createLspRestartHelper", () => {
+  it("caps restart attempts", () => {
+    const helper = createLspRestartHelper({ maxAttempts: 2, delayMs: 100 })
+    assert.equal(helper.shouldRestart("s1"), true)
+    assert.equal(helper.shouldRestart("s1"), true)
+    assert.equal(helper.shouldRestart("s1"), false)
+    helper.reset("s1")
+    assert.equal(helper.shouldRestart("s1"), true)
   })
 })

@@ -1,7 +1,6 @@
-import { createElement } from "react"
+import { createElement, lazy, Suspense } from "react"
 import { basename } from "@gharargah/shared"
 import type { TabType } from "@gharargah/ui"
-import { EditorTabHost } from "@gharargah/ui"
 import type { TabContributorDeps } from "./deps.js"
 
 import type { KnownTabKind } from "@gharargah/workspace"
@@ -9,6 +8,10 @@ import type { KnownTabKind } from "@gharargah/workspace"
 export const EDITOR_TAB_TYPE_ID: KnownTabKind = "editor"
 
 export type EditorTabState = { fileUri: string }
+
+const EditorTabHost = lazy(() =>
+  import("@gharargah/ui/editor").then(module => ({ default: module.EditorTabHost })),
+)
 
 export function createEditorTabType(deps: TabContributorDeps): TabType<EditorTabState> {
   const { workspace } = deps
@@ -21,24 +24,34 @@ export function createEditorTabType(deps: TabContributorDeps): TabType<EditorTab
     },
     dirty: state => workspace.fileForUri(state.fileUri)?.isDirty ?? false,
     render: (instance, ctx) =>
-      createElement(EditorTabHost, {
-        panelId: ctx.panelId,
-        fileUri: instance.state.fileUri,
-        workspace,
-        theme: deps.getTheme(),
-        resolveLspClient: deps.resolveLspClient,
-        lspRevision: deps.getLspRevision(),
-        executeCommand: deps.executeCommand,
-        runKeyBinding: deps.runKeyBinding,
-        keymapBindings: deps.getKeymapBindings(),
-        userExtensions: deps.getUserExtensions(),
-        keymapRevision: deps.getKeymapRevision(),
-        keymapContext: deps.getKeymapContext(),
-        onEditorFocusChange: deps.onEditorFocusChange,
-        onEditorSelectionChange: deps.onEditorSelectionChange,
-        onLspAttachFailed: deps.onLspAttachFailed,
-        onProblemsChange: deps.onProblemsChange,
-        autoFocus: ctx.focused && ctx.isActive,
-      }),
+      createElement(
+        Suspense,
+        {
+          fallback: createElement(
+            "div",
+            { className: "flex h-full items-center justify-center text-xs text-muted-foreground" },
+            "Loading editor…",
+          ),
+        },
+        createElement(EditorTabHost, {
+          panelId: ctx.panelId,
+          fileUri: instance.state.fileUri,
+          workspace,
+          theme: deps.getTheme(),
+          resolveLspClient: deps.resolveLspClient,
+          lspRevision: deps.getLspRevision(),
+          executeCommand: deps.executeCommand,
+          runKeyBinding: deps.runKeyBinding,
+          keymapBindings: deps.getKeymapBindings(),
+          userExtensions: deps.getUserExtensions(),
+          keymapRevision: deps.getKeymapRevision(),
+          keymapContext: deps.getKeymapContext(),
+          onEditorFocusChange: deps.onEditorFocusChange,
+          onEditorSelectionChange: deps.onEditorSelectionChange,
+          onLspAttachFailed: deps.onLspAttachFailed,
+          onProblemsChange: deps.onProblemsChange,
+          autoFocus: ctx.focused && ctx.isActive,
+        }),
+      ),
   }
 }

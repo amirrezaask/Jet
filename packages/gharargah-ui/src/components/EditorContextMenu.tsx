@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
-import type { EditorView } from "@codemirror/view"
-import { scheduleCodeActions, applyCodeAction, type LspCodeAction } from "@gharargah/lsp"
+import type { MonacoEditorHandle } from "@gharargah/monaco"
 import {
   ContextMenuContent,
   ContextMenuGroup,
@@ -17,33 +16,18 @@ export const registerEditorContextMenuHandler = editorContextMenu.register
 export const showEditorContextMenuAt = editorContextMenu.showAt
 
 export function EditorContextMenu({
-  open,
+  open: _open,
   view,
   lspAvailable,
   hasLspPlugin,
   executeCommand,
 }: {
   open: boolean
-  view: EditorView | null
+  view: MonacoEditorHandle | null
   lspAvailable: boolean
   hasLspPlugin: boolean
   executeCommand: (name: string) => Promise<void>
 }) {
-  const [codeActions, setCodeActions] = useState<LspCodeAction[]>([])
-  const [loadingActions, setLoadingActions] = useState(false)
-
-  useEffect(() => {
-    if (!open || !view || !lspAvailable) {
-      setCodeActions([])
-      return
-    }
-    setLoadingActions(true)
-    void scheduleCodeActions(view, true).then(actions => {
-      setCodeActions(actions)
-      setLoadingActions(false)
-    })
-  }, [open, view, lspAvailable])
-
   const hasLsp = lspAvailable && hasLspPlugin && view
 
   return (
@@ -81,32 +65,20 @@ export function EditorContextMenu({
           onSelect={() => void executeCommand("editor.action.formatDocument")}
         >
           Format Document
-          <KeyBindingKbd binding={formatKeyBinding("Shift-Alt-f")} className="ml-auto" />
+          <KeyBindingKbd binding={formatKeyBinding("Shift-Alt-F")} className="ml-auto" />
         </ContextMenuItem>
       </ContextMenuGroup>
-      {hasLsp ? (
-        <>
-          <ContextMenuSeparator />
-          <ContextMenuGroup>
-            {loadingActions ? (
-              <ContextMenuItem disabled>Quick Fix… (loading)</ContextMenuItem>
-            ) : codeActions.length === 0 ? (
-              <ContextMenuItem disabled>Quick Fix…</ContextMenuItem>
-            ) : (
-              codeActions.map(action => (
-                <ContextMenuItem
-                  key={action.title}
-                  onSelect={() => {
-                    if (view) void applyCodeAction(view, action)
-                  }}
-                >
-                  {action.title}
-                </ContextMenuItem>
-              ))
-            )}
-          </ContextMenuGroup>
-        </>
-      ) : null}
+      <ContextMenuSeparator />
+      <ContextMenuGroup>
+        <ContextMenuItem onSelect={() => void executeCommand("editor.find")}>
+          Find
+          <KeyBindingKbd binding={formatKeyBinding("Mod-f")} className="ml-auto" />
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => void executeCommand("workspace.saveFile")}>
+          Save
+          <KeyBindingKbd binding={formatKeyBinding("Mod-s")} className="ml-auto" />
+        </ContextMenuItem>
+      </ContextMenuGroup>
     </ContextMenuContent>
   )
 }

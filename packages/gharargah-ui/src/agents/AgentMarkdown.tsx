@@ -5,6 +5,8 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize"
 import remarkBreaks from "remark-breaks"
 import remarkGfm from "remark-gfm"
 import type { Components } from "react-markdown"
+import type { AgentFileReference } from "@gharargah/agents"
+import { fileUriToPath } from "@gharargah/shared"
 import { AgentPatchView } from "./AgentPatchView.js"
 
 const AGENT_MARKDOWN_SANITIZE_SCHEMA = {
@@ -18,11 +20,28 @@ const AGENT_MARKDOWN_SANITIZE_SCHEMA = {
 type AgentMarkdownProps = {
   text: string
   theme: "light" | "dark"
+  onOpenFile?: (ref: AgentFileReference) => void
 }
 
 function extractLanguage(className: string | undefined): string {
   const match = className?.match(/language-([^\s]+)/)
   return match?.[1] ?? "text"
+}
+
+function parseFileHref(href: string): AgentFileReference | null {
+  if (!href.startsWith("file://")) return null
+  const withoutScheme = href.slice("file://".length)
+  const hashIndex = withoutScheme.indexOf("#")
+  const pathPart = hashIndex >= 0 ? withoutScheme.slice(0, hashIndex) : withoutScheme
+  const fragment = hashIndex >= 0 ? withoutScheme.slice(hashIndex + 1) : ""
+  const path = fileUriToPath(`file://${pathPart}`)
+  const ref: AgentFileReference = { path }
+  const lineMatch = fragment.match(/^L(\d+)(?:C(\d+))?$/i)
+  if (lineMatch) {
+    ref.line = Number.parseInt(lineMatch[1] ?? "0", 10)
+    if (lineMatch[2]) ref.column = Number.parseInt(lineMatch[2], 10)
+  }
+  return ref
 }
 
 function maybeRenderPatch(code: string, language: string, theme: "light" | "dark"): ReactNode | null {
@@ -54,7 +73,7 @@ const markdownComponents: Components = {
   },
 }
 
-export function AgentMarkdown({ text, theme }: AgentMarkdownProps) {
+export function AgentMarkdown({ text, theme, onOpenFile }: AgentMarkdownProps) {
   const components: Components = {
     ...markdownComponents,
     pre(props) {
@@ -80,6 +99,21 @@ export function AgentMarkdown({ text, theme }: AgentMarkdownProps) {
       )
     },
     a(props) {
+      const href = props.href ?? ""
+      const fileRef = onOpenFile ? parseFileHref(href) : null
+      if (fileRef && onOpenFile) {
+        return (
+          <a
+            {...props}
+            href="#"
+            className="text-blue-400 underline underline-offset-4 hover:text-blue-300"
+            onClick={event => {
+              event.preventDefault()
+              onOpenFile(fileRef)
+            }}
+          />
+        )
+      }
       return (
         <a
           {...props}

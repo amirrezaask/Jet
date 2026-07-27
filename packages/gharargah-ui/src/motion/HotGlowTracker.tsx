@@ -39,7 +39,7 @@ const HOT_GLOW_SELECTOR = [
   '[data-slot="select-item"]',
 ].join(", ")
 
-const SKIP_SELECTOR = ".cm-content, .cm-editor, .xterm"
+const SKIP_SELECTOR = ".monaco-editor, [data-gharargah-monaco-editor], .xterm"
 
 function findHotGlowTarget(node: EventTarget | null): HTMLElement | null {
   if (!(node instanceof Element)) return null

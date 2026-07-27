@@ -5,8 +5,6 @@ import { findProjectRoot, parentDir } from "./project-root.js"
 export type LanguageServerDescriptor = {
   id: string
   languageIds: string[]
-  command: string
-  args?: string[]
   rootMarkers: string[]
 }
 
@@ -23,24 +21,37 @@ const DESCRIPTORS: LanguageServerDescriptor[] = [
   {
     id: "typescript-language-server",
     languageIds: ["typescript", "javascript", "tsx", "jsx", "mts", "cts"],
-    command: "typescript-language-server",
-    args: ["--stdio"],
     rootMarkers: ["package.json", "tsconfig.json"],
   },
   {
     id: "rust-analyzer",
     languageIds: ["rust"],
-    command: "rust-analyzer",
-    // Empty on purpose: RA speaks stdio by default and rejects `--stdio`.
-    args: [],
     rootMarkers: ["Cargo.toml"],
   },
   {
     id: "gopls",
     languageIds: ["go"],
-    command: "gopls",
-    args: ["serve"],
     rootMarkers: ["go.work", "go.mod"],
+  },
+  {
+    id: "pyright",
+    languageIds: ["python"],
+    rootMarkers: ["pyproject.toml", "requirements.txt"],
+  },
+  {
+    id: "vscode-json-language-server",
+    languageIds: ["json", "jsonc"],
+    rootMarkers: ["package.json", "tsconfig.json"],
+  },
+  {
+    id: "vscode-html-language-server",
+    languageIds: ["html"],
+    rootMarkers: ["package.json", "index.html"],
+  },
+  {
+    id: "vscode-css-language-server",
+    languageIds: ["css"],
+    rootMarkers: ["package.json"],
   },
 ]
 
@@ -53,10 +64,8 @@ export class LanguageServerManager {
     private lspApi: {
       start(
         rootUri: string,
-        languageId: string,
-        command?: string,
-        args?: string[],
-      ): Promise<{ transportUrl: string; id: string }>
+        serverId: string,
+      ): Promise<{ transportUrl: string; id: string; error?: string }>
       stop(id: string): Promise<void>
       onCrashed?(cb: (id: string) => void): () => void
     },
@@ -91,12 +100,11 @@ export class LanguageServerManager {
     if (existing) return existing
 
     try {
-      const conn = await this.lspApi.start(
-        projectRootUri,
-        file.languageId,
-        descriptor.command,
-        descriptor.args,
-      )
+      const conn = await this.lspApi.start(projectRootUri, descriptor.id)
+      if (conn.error) {
+        this.lastSpawnError = conn.error
+        return null
+      }
       const connection: LspConnection = {
         id: conn.id,
         rootUri: workspaceRootUri,
@@ -166,5 +174,5 @@ export function getLanguageServerDescriptors(): LanguageServerDescriptor[] {
 }
 
 export function languageServerCommandFor(languageId: string): string | null {
-  return DESCRIPTORS.find(d => d.languageIds.includes(languageId))?.command ?? null
+  return DESCRIPTORS.find(d => d.languageIds.includes(languageId))?.id ?? null
 }

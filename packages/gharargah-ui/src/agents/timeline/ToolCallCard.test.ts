@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import type { AgentToolCall } from "@gharargah/agents"
-import { summarizeToolCall } from "./ToolCallCard.js"
+import { fileRefFromToolCall, summarizeToolCall } from "./ToolCallCard.js"
 
 function toolCall(partial: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "name">): AgentToolCall {
   return {
@@ -46,5 +46,18 @@ test("summarizeToolCall falls back to raw input text", () => {
       }),
     ),
     "rg useSyncExternalStore packages",
+  )
+})
+
+test("fileRefFromToolCall extracts path from JSON input", () => {
+  assert.deepEqual(
+    fileRefFromToolCall(
+      toolCall({
+        id: "4",
+        name: "Read",
+        input: JSON.stringify({ path: "src/index.ts" }),
+      }),
+    ),
+    { path: "src/index.ts" },
   )
 })

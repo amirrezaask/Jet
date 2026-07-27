@@ -98,6 +98,7 @@ export type MessagesTimelineRow =
       toolCalls: ReadonlyArray<import("@gharargah/agents").AgentToolCall>
       diffStat: { additions: number; deletions: number } | null
       editFileCount: number
+      changedFiles: ReadonlyArray<import("@gharargah/agents").AgentFileChange>
     }
   | {
       kind: "structured"
@@ -234,6 +235,7 @@ export function deriveMessagesTimelineRows(input: {
       toolCalls: aggregated.toolCalls,
       diffStat: aggregated.diffStat,
       editFileCount: aggregated.editFileCount,
+      changedFiles: aggregated.changedFiles,
     })
     if (aggregated.editFileCount > 0) segmentEmittedEdit = true
     segmentHasPostUserContent = true
@@ -340,6 +342,8 @@ export function deriveMessagesTimelineRows(input: {
                 diffStat.additions > 0 || diffStat.deletions > 0
                   ? diffStat
                   : existing.diffStat,
+              changedFiles:
+                existing.changedFiles.length > 0 ? existing.changedFiles : files,
               label:
                 existing.editFileCount > 0 || existing.label.toLowerCase().includes("edit")
                   ? existing.label
@@ -356,6 +360,7 @@ export function deriveMessagesTimelineRows(input: {
             toolCalls: [],
             diffStat: diffStat.additions > 0 || diffStat.deletions > 0 ? diffStat : null,
             editFileCount: files.length,
+            changedFiles: files,
           })
           segmentEmittedEdit = true
         }
@@ -408,6 +413,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       a.label === next.label &&
       a.createdAt === next.createdAt &&
       a.editFileCount === next.editFileCount &&
+      a.changedFiles === next.changedFiles &&
       a.diffStat?.additions === next.diffStat?.additions &&
       a.diffStat?.deletions === next.diffStat?.deletions &&
       a.toolCalls === next.toolCalls

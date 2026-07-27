@@ -3,7 +3,7 @@ import type {
   JetHighlightColors,
   JetTerminalAnsiColors,
   GharargahTheme,
-} from "@gharargah/codemirror"
+} from "@gharargah/shared"
 
 export type ColorScheme = "dark" | "light"
 

@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react"
 import { RotateCcw, Terminal as TerminalIcon, X } from "lucide-react"
 import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
-import type { GharargahTheme } from "@gharargah/codemirror"
+import type { GharargahTheme } from "@gharargah/shared"
 import "@xterm/xterm/css/xterm.css"
 import { subscribeRootStyle } from "./root-style-observer.js"
 import { Button } from "../components/ui/button.js"
 import { TerminalCursorMotionLayer } from "./terminal-cursor-motion.js"
 import { TerminalScrollMotion } from "./terminal-scroll-motion.js"
+import { registerTerminalPathLinks } from "./terminal-links.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
@@ -25,6 +26,7 @@ export type TerminalPanelProps = {
   onRestart?: () => void
   onClose?: () => void
   onFailed?: () => void
+  onOpenPath?: (path: string, line?: number, column?: number) => void
 }
 
 type TerminalSession = {
@@ -198,6 +200,7 @@ export function TerminalPanel({
   onRestart,
   onClose,
   onFailed,
+  onOpenPath,
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionRef = useRef<TerminalSession | null>(null)
@@ -210,6 +213,8 @@ export function TerminalPanel({
   onTitleChangeRef.current = onTitleChange
   const onFailedRef = useRef(onFailed)
   onFailedRef.current = onFailed
+  const onOpenPathRef = useRef(onOpenPath)
+  onOpenPathRef.current = onOpenPath
 
   useEffect(() => {
     const terminalApi = window.gharargah?.terminal
@@ -228,6 +233,13 @@ export function TerminalPanel({
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(container)
+
+    const pathLinks =
+      onOpenPathRef.current != null
+        ? registerTerminalPathLinks(term, (path, line, column) => {
+            onOpenPathRef.current?.(path, line, column)
+          })
+        : null
 
     const screen = container.querySelector<HTMLElement>(".xterm-screen")
     const session: TerminalSession = {
@@ -408,6 +420,7 @@ export function TerminalPanel({
       exitUnsubscribe()
       dataDispose?.dispose()
       unsub?.()
+      pathLinks?.dispose()
       session.cursorMotion?.dispose()
       session.scrollMotion.dispose()
       term.dispose()

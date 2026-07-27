@@ -96,10 +96,8 @@ export type JetElectronTasks = {
 export type JetElectronLSP = {
   start(
     rootUri: string,
-    languageId: string,
-    command?: string,
-    args?: string[],
-  ): Promise<{ transportUrl: string; id: string }>
+    serverId: string,
+  ): Promise<{ transportUrl: string; id: string; error?: string }>
   stop(id: string): Promise<void>
   onCrashed(cb: (id: string) => void): () => void
 }
@@ -227,6 +225,7 @@ export type JetElectronGit = {
   isRepo(rootUri: string): Promise<boolean>
   status(rootUri: string): Promise<GitStatusEntry[]>
   diff(rootUri: string, opts?: { path?: string; staged?: boolean }): Promise<string>
+  show(rootUri: string, path: string, ref: "HEAD" | "INDEX"): Promise<string>
   branch(rootUri: string): Promise<string | null>
   summary(rootUri: string): Promise<GitRepositorySummary>
   branches(rootUri: string): Promise<string[]>

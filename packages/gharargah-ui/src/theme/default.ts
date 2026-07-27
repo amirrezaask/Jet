@@ -1,4 +1,4 @@
-import type { GharargahTheme } from "@gharargah/codemirror"
+import type { GharargahTheme } from "@gharargah/shared"
 import type { ColorScheme } from "./theme-palette.js"
 import { glassThemeList, glassThemes } from "./glass.js"
 import {

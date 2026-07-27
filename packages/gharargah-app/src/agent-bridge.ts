@@ -161,7 +161,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
     async waitForEditor(timeoutMs = 5000) {
       const deadline = Date.now() + timeoutMs
       while (Date.now() < deadline) {
-        const editor = document.querySelector(".cm-editor")
+        const editor = document.querySelector("[data-gharargah-monaco-editor], .monaco-editor")
         if (editor) {
           if (typeof performance?.mark === "function") {
             performance.mark("gharargah:editor-mounted:end")

@@ -1,39 +1,45 @@
-import { memo, useEffect, useRef, useState } from "react"
-import type { Extension } from "@codemirror/state"
-import type { EditorView } from "@codemirror/view"
-import type { LSPClient } from "@gharargah/codemirror"
-import {
-  createGharargahEditorView,
-  applyTheme,
-  applyUserExtensions,
-  applyUserKeymaps,
-  consumePendingEditorNavigation,
-  consumePendingInitialContent,
-  detachLsp,
-  detectIndent,
-  isLargeFile,
-  jetReloadAnnotation,
-  jumpToLine,
-  lspPluginForView,
-  reconfigureLsp,
-  closeJetSearchForView,
-} from "@gharargah/codemirror"
-import type { GharargahTheme } from "@gharargah/codemirror"
+import { memo, useCallback, useEffect, useRef, useState } from "react"
+import type { GharargahTheme } from "@gharargah/shared"
+import { fileUriToPath, isUntitledUri } from "@gharargah/shared"
 import type { KeymapContext, JetKeyBinding, WorkspaceService } from "@gharargah/workspace"
 import type { PanelId } from "@gharargah/shared"
-import { fileUriToPath, isUntitledUri } from "@gharargah/shared"
+import {
+  MonacoEditorHost,
+  isLargeFile,
+  monacoModels,
+  setPendingInitialContent,
+  consumePendingInitialContent,
+  consumePendingEditorNavigation,
+  applyPendingNavigation,
+  setActiveMonacoEditor,
+  type MonacoEditorHandle,
+} from "@gharargah/monaco"
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu.js"
 import {
   EditorContextMenu,
   registerEditorContextMenuHandler,
 } from "@/components/EditorContextMenu.js"
 import { dispatchContextMenuAt } from "@/components/ContextMenuHost.js"
+import { editorSessions, type EditorSession } from "./editor-session-registry.js"
 import {
-  editorSessions,
-  textFromString,
-  detachSessionDom,
-  type EditorSession,
-} from "./editor-session-registry.js"
+  destroyEditorBuffer as destroyEditorBufferPublic,
+  onDestroyEditorBuffer,
+  onDestroyEditorPanel,
+  registerEditorView,
+} from "./editor-view-registry.js"
+
+export {
+  getEditorView,
+  destroyEditorBuffer,
+  destroyEditorPanel,
+} from "./editor-view-registry.js"
+
+onDestroyEditorBuffer((panelId, fileUri) => {
+  editorSessions.destroyBuffer(panelId, fileUri)
+})
+onDestroyEditorPanel(panelId => {
+  editorSessions.destroyPanel(panelId)
+})
 
 function useLatest<T>(value: T): React.MutableRefObject<T> {
   const ref = useRef(value)
@@ -41,40 +47,35 @@ function useLatest<T>(value: T): React.MutableRefObject<T> {
   return ref
 }
 
-export function destroyEditorBuffer(panelId: PanelId, fileUri: string): void {
-  const session = editorSessions.destroyBuffer(panelId, fileUri)
-  if (!session) return
-  detachLsp(session.view)
-  closeJetSearchForView(session.view)
-  session.view.destroy()
+export function getEditorCursor(panelId: PanelId): { line: number; column: number } | null {
+  const editor = editorSessions.getEditor(panelId)
+  if (!editor) return null
+  const pos = editor.getPosition()
+  if (!pos) return null
+  return { line: pos.lineNumber, column: pos.column }
 }
 
-export function destroyEditorPanel(panelId: PanelId): void {
-  for (const session of editorSessions.destroyPanel(panelId)) {
-    detachLsp(session.view)
-    closeJetSearchForView(session.view)
-    session.view.destroy()
-  }
+export function setEditorCursor(panelId: PanelId, line: number, column: number): void {
+  const editor = editorSessions.getEditor(panelId)
+  if (!editor) return
+  editor.setPosition({ lineNumber: line, column })
+  editor.revealPositionInCenter({ lineNumber: line, column })
 }
 
-export function getEditorView(panelId: PanelId): EditorView | undefined {
-  return editorSessions.getView(panelId)
-}
-
-export function syncAllEditorThemes(theme: GharargahTheme): void {
-  editorSessions.forEachSession(session => {
-    applyTheme(session.view, theme)
-  })
+export function syncAllEditorThemes(_theme: GharargahTheme): void {
+  // Theme applied via MonacoEditorHost prop / applyGharargahMonacoTheme
 }
 
 export function forEachEditorView(
-  fn: (entry: { panelId: PanelId; uri: string; view: EditorView }) => void,
+  fn: (entry: { panelId: PanelId; uri: string }) => void,
 ): void {
-  editorSessions.forEachView(fn)
+  editorSessions.forEachUri(fn)
 }
 
-export function getAllEditorViews(): { panelId: PanelId; uri: string; view: EditorView }[] {
-  return editorSessions.getAllViews()
+export function getAllEditorViews(): { panelId: PanelId; uri: string }[] {
+  const result: { panelId: PanelId; uri: string }[] = []
+  editorSessions.forEachUri(entry => result.push(entry))
+  return result
 }
 
 function EditorTabHostInner({
@@ -85,11 +86,11 @@ function EditorTabHostInner({
   resolveLspClient,
   lspRevision,
   executeCommand,
-  runKeyBinding,
-  keymapBindings,
-  userExtensions,
-  keymapRevision,
-  keymapContext,
+  runKeyBinding: _runKeyBinding,
+  keymapBindings: _keymapBindings,
+  userExtensions: _userExtensions,
+  keymapRevision: _keymapRevision,
+  keymapContext: _keymapContext,
   onEditorFocusChange,
   onEditorSelectionChange,
   onLspAttachFailed,
@@ -100,12 +101,12 @@ function EditorTabHostInner({
   fileUri: string
   workspace: WorkspaceService
   theme: GharargahTheme
-  resolveLspClient?: (fileUri: string) => Promise<LSPClient | null>
+  resolveLspClient?: (fileUri: string) => Promise<unknown>
   lspRevision?: number
   executeCommand: (name: string) => Promise<void>
-  runKeyBinding: (binding: JetKeyBinding, view?: EditorView) => void
+  runKeyBinding: (binding: JetKeyBinding, view?: MonacoEditorHandle) => void
   keymapBindings: JetKeyBinding[]
-  userExtensions: Extension[]
+  userExtensions: unknown[]
   keymapRevision: number
   keymapContext?: KeymapContext
   onEditorFocusChange?: (focused: boolean) => void
@@ -115,22 +116,23 @@ function EditorTabHostInner({
   autoFocus?: boolean
 }) {
   const executeCommandRef = useLatest(executeCommand)
-  const runKeyBindingRef = useLatest(runKeyBinding)
-  const keymapBindingsRef = useLatest(keymapBindings)
-  const keymapContextRef = useLatest(keymapContext)
   const onEditorFocusChangeRef = useLatest(onEditorFocusChange)
   const onEditorSelectionChangeRef = useLatest(onEditorSelectionChange)
   const resolveLspClientRef = useLatest(resolveLspClient)
   const onLspAttachFailedRef = useLatest(onLspAttachFailed)
   const onProblemsChangeRef = useLatest(onProblemsChange)
 
-  const hostRef = useRef<HTMLDivElement>(null)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
+  const [ready, setReady] = useState(false)
+  const [content, setContent] = useState<string | null>(null)
+  const [languageId, setLanguageId] = useState("plaintext")
+  const hostRef = useRef<HTMLDivElement>(null)
+  const editorRef = useRef<MonacoEditorHandle | null>(null)
 
-  const runCommand = useRef((name: string) => executeCommandRef.current(name)).current
-  const runBinding = useRef((binding: JetKeyBinding, view: EditorView) =>
-    runKeyBindingRef.current(binding, view),
-  ).current
+  const runCommand = useCallback(
+    (name: string) => executeCommandRef.current(name),
+    [executeCommandRef],
+  )
 
   useEffect(() => {
     return registerEditorContextMenuHandler((x, y) => {
@@ -140,161 +142,74 @@ function EditorTabHostInner({
   }, [panelId.id])
 
   useEffect(() => {
-    const parent = hostRef.current
-    if (!parent) return
     let cancelled = false
-    let session = editorSessions.panelSessions(panelId).get(fileUri) ?? null
-    let onFocus: (() => void) | null = null
-    let onBlur: (() => void) | null = null
-
-    const attachView = (live: EditorSession) => {
-      editorSessions.touchSessionAccess(panelId, fileUri)
-      for (const other of editorSessions.panelSessions(panelId).values()) {
-        if (other !== live) detachSessionDom(other, parent)
-      }
-      if (live.view.dom.parentElement !== parent) parent.appendChild(live.view.dom)
-      editorSessions.setActiveView(panelId, live.view)
-      applyTheme(live.view, theme)
-      applyUserKeymaps(live.view, keymapBindingsRef.current, runBinding, keymapContextRef.current)
-      applyUserExtensions(live.view, userExtensions)
-      const nav = consumePendingEditorNavigation(panelId)
-      if (nav) jumpToLine(live.view, nav.line, nav.column)
-      const focusHandler = () => {
-        editorSessions.focusedPanelId = panelId.id
-        onEditorFocusChangeRef.current?.(true)
-      }
-      const blurHandler = () => onEditorFocusChangeRef.current?.(false)
-      onFocus = focusHandler
-      onBlur = blurHandler
-      live.view.dom.addEventListener("focus", focusHandler)
-      live.view.dom.addEventListener("blur", blurHandler)
-      onProblemsChangeRef.current?.()
-    }
-
-    if (session) {
-      attachView(session)
-    }
-
     void (async () => {
-      if (!session) {
-        const untitled = isUntitledUri(fileUri)
-        const path = untitled ? "" : fileUriToPath(fileUri)
-        let file = workspace.fileForUri(fileUri)
-        if (!file) file = workspace.createWorkspaceFile(fileUri, path)
+      const untitled = isUntitledUri(fileUri)
+      const path = untitled ? "" : fileUriToPath(fileUri)
+      let file = workspace.fileForUri(fileUri)
+      if (!file) file = workspace.createWorkspaceFile(fileUri, path)
 
-        let initialText = ""
-        let savedBaseline = workspace.savedBaselineFor(fileUri) ?? (untitled ? "" : "")
-        let largeFile = false
+      let initialText = ""
+      let savedBaseline = workspace.savedBaselineFor(fileUri) ?? ""
+      let largeFile = false
 
-        if (!untitled) {
-          const diskText = await workspace.readFile(fileUri)
-          if (cancelled) return
-          initialText = diskText
-          savedBaseline = workspace.savedBaselineFor(fileUri) ?? diskText
-          largeFile = isLargeFile(diskText)
-        } else {
-          const pending = consumePendingInitialContent(panelId)
-          if (pending != null) {
-            initialText = pending
-            largeFile = isLargeFile(pending)
-          }
-        }
-
-        const mount = document.createElement("div")
-        const view = await createGharargahEditorView({
-          parent: mount,
-          workspace,
-          file,
-          initialText,
-          largeFile,
-          indent: detectIndent(initialText),
-          theme,
-          lspClient: null,
-          executeCommand: runCommand,
-          userExtensions,
-          onSelectionChange: (line, column, rangeCount) =>
-            onEditorSelectionChangeRef.current?.(line, column, rangeCount),
-          onDocChange: doc => {
-            const live = editorSessions.panelSessions(panelId).get(fileUri)
-            if (!live) return
-            live.isDirty = !doc.eq(live.savedBaseline)
-            workspace.markDirty(fileUri, live.isDirty)
-          },
-          onViewUpdate: () => onProblemsChangeRef.current?.(),
-        })
-        if (cancelled) {
-          view.destroy()
-          return
-        }
-
-        session = {
-          fileUri,
-          fileLanguageId: file.languageId,
-          isDirty: untitled && initialText.length > 0,
-          largeFile,
-          savedBaseline: textFromString(savedBaseline),
-          view,
-        }
-        editorSessions.panelSessions(panelId).set(fileUri, session)
-        editorSessions.touchSessionAccess(panelId, fileUri)
-        editorSessions.evictStaleSessions(destroyEditorBuffer)
-
-        workspace.setSavedBaseline(fileUri, savedBaseline)
-        if (untitled && initialText.length > 0) {
-          workspace.markDirty(fileUri, true)
-        }
-
-        if (!largeFile && !untitled && resolveLspClientRef.current) {
-          void (async () => {
-            const client = await resolveLspClientRef.current!(fileUri)
-            if (cancelled) return
-            if (!client) {
-              onLspAttachFailedRef.current?.(fileUri)
-              return
-            }
-            const live = editorSessions.panelSessions(panelId).get(fileUri)
-            if (!live) return
-            await reconfigureLsp(live.view, fileUri, live.fileLanguageId, client)
-            onProblemsChangeRef.current?.()
-          })()
+      const existing = monacoModels.get(fileUri)
+      if (existing) {
+        initialText = existing.getValue()
+        savedBaseline = workspace.savedBaselineFor(fileUri) ?? initialText
+        largeFile = isLargeFile(initialText)
+      } else if (!untitled) {
+        const diskText = await workspace.readFile(fileUri)
+        if (cancelled) return
+        initialText = diskText
+        savedBaseline = workspace.savedBaselineFor(fileUri) ?? diskText
+        largeFile = isLargeFile(diskText)
+      } else {
+        const pending = consumePendingInitialContent(fileUri)
+        if (pending != null) {
+          initialText = pending
+          largeFile = isLargeFile(pending)
         }
       }
 
-      if (!session || cancelled) return
-      attachView(session)
-    })()
+      if (cancelled) return
 
+      const session: EditorSession = {
+        fileUri,
+        fileLanguageId: file.languageId,
+        isDirty: untitled && initialText.length > 0,
+        largeFile,
+        savedBaseline,
+      }
+      editorSessions.panelSessions(panelId).set(fileUri, session)
+      editorSessions.touchSessionAccess(panelId, fileUri)
+      editorSessions.evictStaleSessions(destroyEditorBufferPublic)
+
+      workspace.setSavedBaseline(fileUri, savedBaseline)
+      if (untitled && initialText.length > 0) {
+        workspace.markDirty(fileUri, true)
+      }
+
+      setLanguageId(file.languageId)
+      setContent(initialText)
+      setReady(true)
+
+      if (!largeFile && !untitled && resolveLspClientRef.current) {
+        void (async () => {
+          const client = await resolveLspClientRef.current!(fileUri)
+          if (cancelled) return
+          if (!client) {
+            onLspAttachFailedRef.current?.(fileUri)
+            return
+          }
+          onProblemsChangeRef.current?.()
+        })()
+      }
+    })()
     return () => {
       cancelled = true
-      const live = editorSessions.panelSessions(panelId).get(fileUri)
-      if (live && onFocus && onBlur) {
-        live.view.dom.removeEventListener("focus", onFocus)
-        live.view.dom.removeEventListener("blur", onBlur)
-      }
-      if (live) detachSessionDom(live, parent)
     }
-  }, [fileUri, panelId.id, workspace, runCommand, runBinding])
-
-  useEffect(() => {
-    for (const session of editorSessions.panelSessions(panelId).values()) {
-      applyTheme(session.view, theme)
-    }
-  }, [panelId.id, theme])
-
-  useEffect(() => {
-    const view = editorSessions.getView(panelId)
-    if (view) applyUserKeymaps(view, keymapBindingsRef.current, runBinding, keymapContext)
-  }, [panelId.id, keymapRevision, keymapContext, runBinding])
-
-  useEffect(() => {
-    const view = editorSessions.getView(panelId)
-    if (view) applyUserExtensions(view, userExtensions)
-  }, [panelId.id, userExtensions])
-
-  useEffect(() => {
-    if (!autoFocus) return
-    editorSessions.getView(panelId)?.focus()
-  }, [panelId.id, autoFocus, fileUri])
+  }, [fileUri, panelId, workspace, resolveLspClientRef, onLspAttachFailedRef, onProblemsChangeRef])
 
   useEffect(() => {
     if (lspRevision == null || lspRevision === 0 || !resolveLspClient) return
@@ -308,41 +223,92 @@ function EditorTabHostInner({
         onLspAttachFailedRef.current?.(fileUri)
         return
       }
-      await reconfigureLsp(session.view, fileUri, session.fileLanguageId, client)
       onProblemsChangeRef.current?.()
     })()
     return () => {
       cancelled = true
     }
-  }, [lspRevision, resolveLspClient, fileUri, panelId.id])
+  }, [lspRevision, resolveLspClient, fileUri, panelId])
 
   useEffect(() => {
-    const sub = workspace.onDidChangeSavedBaseline.event(({ uri, content }) => {
+    const sub = workspace.onDidChangeSavedBaseline.event(({ uri, content: baseline }) => {
       if (uri !== fileUri) return
       const session = editorSessions.panelSessions(panelId).get(fileUri)
       if (!session) return
-      session.savedBaseline = textFromString(content)
-      session.isDirty = !session.view.state.doc.eq(session.savedBaseline)
+      session.savedBaseline = baseline
+      const current = monacoModels.getContent(fileUri) ?? ""
+      session.isDirty = current !== baseline
       workspace.markDirty(uri, session.isDirty)
     })
     return () => sub.dispose()
-  }, [workspace, fileUri, panelId.id])
+  }, [workspace, fileUri, panelId])
 
   useEffect(() => {
-    const sub = workspace.onFileReload.event(({ uri, content }) => {
+    const sub = workspace.onFileReload.event(({ uri, content: next }) => {
       if (uri !== fileUri) return
-      const session = editorSessions.panelSessions(panelId).get(fileUri)
-      if (!session) return
-      session.view.dispatch({
-        changes: { from: 0, to: session.view.state.doc.length, insert: content },
-        annotations: jetReloadAnnotation.of(true),
-      })
+      monacoModels.updateContent(uri, next, { preserveCursor: true })
       onProblemsChangeRef.current?.()
     })
     return () => sub.dispose()
-  }, [workspace, fileUri, panelId.id])
+  }, [workspace, fileUri])
 
-  const activeView = editorSessions.getView(panelId) ?? null
+  const handleReady = useCallback(
+    (editor: MonacoEditorHandle) => {
+      editorRef.current = editor
+      editorSessions.setActiveEditor(panelId, editor)
+      registerEditorView(panelId, editor)
+      setActiveMonacoEditor(editor)
+      applyPendingNavigation(editor, fileUri)
+      const nav = consumePendingEditorNavigation(fileUri)
+      if (nav) {
+        editor.setPosition({ lineNumber: nav.line, column: nav.column ?? 1 })
+        editor.revealPositionInCenter({ lineNumber: nav.line, column: nav.column ?? 1 })
+      }
+      onProblemsChangeRef.current?.()
+    },
+    [panelId, fileUri, onProblemsChangeRef],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (editorRef.current) registerEditorView(panelId, null)
+    }
+  }, [panelId])
+
+  const handleContentChange = useCallback(
+    (value: string) => {
+      const session = editorSessions.panelSessions(panelId).get(fileUri)
+      if (!session) return
+      session.isDirty = value !== session.savedBaseline
+      workspace.markDirty(fileUri, session.isDirty)
+      onProblemsChangeRef.current?.()
+    },
+    [panelId, fileUri, workspace, onProblemsChangeRef],
+  )
+
+  const handleFocusChange = useCallback(
+    (focused: boolean) => {
+      if (focused) {
+        editorSessions.focusedPanelId = panelId.id
+        if (editorRef.current) {
+          editorSessions.setActiveEditor(panelId, editorRef.current)
+          registerEditorView(panelId, editorRef.current)
+          setActiveMonacoEditor(editorRef.current)
+        }
+      }
+      onEditorFocusChangeRef.current?.(focused)
+    },
+    [panelId, onEditorFocusChangeRef],
+  )
+
+  const handleCursorChange = useCallback(
+    (line: number, column: number) => {
+      onEditorSelectionChangeRef.current?.(line, column, 1)
+    },
+    [onEditorSelectionChangeRef],
+  )
+
+  const activeEditor = editorSessions.getEditor(panelId) ?? null
 
   return (
     <ContextMenu
@@ -356,13 +322,27 @@ function EditorTabHostInner({
           ref={hostRef}
           className="jet-editor-scroll-area h-full min-h-0 w-full min-w-0 overflow-hidden"
           data-gharargah-editor-scroll-area=""
-        />
+        >
+          {ready && content != null ? (
+            <MonacoEditorHost
+              uri={fileUri}
+              content={content}
+              languageId={languageId}
+              theme={theme}
+              autoFocus={autoFocus}
+              onReady={handleReady}
+              onContentChange={handleContentChange}
+              onFocusChange={handleFocusChange}
+              onCursorChange={handleCursorChange}
+            />
+          ) : null}
+        </div>
       </ContextMenuTrigger>
       <EditorContextMenu
         open={contextMenuOpen}
-        view={activeView}
+        view={activeEditor as never}
         lspAvailable={Boolean(typeof window !== "undefined" && window.gharargah?.lsp)}
-        hasLspPlugin={activeView != null && lspPluginForView(activeView) != null}
+        hasLspPlugin={Boolean(resolveLspClient)}
         executeCommand={runCommand}
       />
     </ContextMenu>
@@ -370,3 +350,6 @@ function EditorTabHostInner({
 }
 
 export const EditorTabHost = memo(EditorTabHostInner)
+
+/** Re-export for callers that previously set pending content via CM helpers. */
+export { setPendingInitialContent }

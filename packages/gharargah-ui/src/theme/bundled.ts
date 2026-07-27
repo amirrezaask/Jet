@@ -13,4 +13,4 @@ export {
   themeUsesGlassSurface,
   type ColorScheme,
 } from "./default.js"
-export { defaultGharargahTheme, applyGharargahThemeCss, applyColorScheme } from "@gharargah/codemirror"
+export { defaultGharargahTheme, applyGharargahThemeCss, applyColorScheme } from "@gharargah/shared"

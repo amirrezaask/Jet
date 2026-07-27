@@ -1,4 +1,3 @@
-import type { Extension } from "@codemirror/state"
 import { pathToFileUri } from "@gharargah/shared"
 import type {
   CommandRegistry,
@@ -15,7 +14,8 @@ export type JetInitContext = {
   appCommands: JetCommands
   getCommandContext: () => JetCommandContext
   addKeybindings(bindings: JetKeyBinding[]): void
-  addEditorExtensions(extensions: Extension[]): void
+  /** Monaco does not use CodeMirror extensions; kept for init script API stability. */
+  addEditorExtensions(extensions: unknown[]): void
   openFile(uri: string): Promise<void>
   showMessage(message: string): void
 }

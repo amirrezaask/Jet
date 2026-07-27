@@ -29,6 +29,8 @@ export function createTabContributorBridge(
     onProblemsChange: () => get().onProblemsChange(),
     closeTerminalTab: (panelId, tabId) => get().closeTerminalTab(panelId, tabId),
     onTerminalTitleChange: (tabId, title) => get().onTerminalTitleChange(tabId, title),
+    onOpenPath: (cwdRootUri, path, line, column) =>
+      get().onOpenPath?.(cwdRootUri, path, line, column),
   }
 }
 

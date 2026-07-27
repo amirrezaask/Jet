@@ -1,19 +1,32 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { createServer, type Server as HttpServer } from "node:http"
 import { WebSocketServer, type WebSocket } from "ws"
+import { assertAllowedPath } from "./sandbox.js"
+import { getLanguageServerDefinition, resolveLanguageServerCommand } from "./lsp-registry.js"
 import { uriToPath } from "./paths.js"
 
-export type LspSession = {
-  id: string
-  process: ChildProcess
-  server: HttpServer
-  wss: WebSocketServer
-  port: number
-  command: string
-}
+const MAX_WS_MESSAGE_BYTES = 10 * 1024 * 1024
+const MAX_STDERR_BYTES = 32 * 1024
+const MAX_PENDING_SERVER_MESSAGES = 256
 
-const sessions = new Map<string, LspSession>()
-let crashCallback: ((id: string) => void) | null = null
+class StderrRingBuffer {
+  private chunks: Buffer[] = []
+  private size = 0
+
+  append(chunk: Buffer): void {
+    this.chunks.push(chunk)
+    this.size += chunk.length
+    while (this.size > MAX_STDERR_BYTES && this.chunks.length > 0) {
+      const removed = this.chunks.shift()!
+      this.size -= removed.length
+    }
+  }
+
+  snippet(): string {
+    if (this.chunks.length === 0) return ""
+    return Buffer.concat(this.chunks).toString("utf8")
+  }
+}
 
 /** Decode LSP stdio Content-Length framing into raw JSON strings. */
 export class LspFramingDecoder {
@@ -47,64 +60,146 @@ export function encodeLspMessage(json: string): string {
   return `Content-Length: ${bytes}\r\n\r\n${json}`
 }
 
-function bridgeStdioToWs(proc: ChildProcess, ws: WebSocket) {
-  const decoder = new LspFramingDecoder()
-
-  proc.stdout?.on("data", chunk => {
-    if (ws.readyState !== ws.OPEN) return
-    for (const msg of decoder.feed(chunk)) {
-      ws.send(msg)
-    }
-  })
-
-  ws.on("message", (data: WebSocket.RawData) => {
-    const json = typeof data === "string" ? data : Buffer.from(data as ArrayBuffer).toString("utf8")
-    proc.stdin?.write(encodeLspMessage(json))
-  })
-
-  proc.on("exit", code => {
-    if (ws.readyState === ws.OPEN) ws.close()
-    if (code && code !== 0) {
-      for (const [id, session] of sessions) {
-        if (session.process === proc) {
-          crashCallback?.(id)
-          break
-        }
-      }
-    }
-  })
-
-  // Keep LS alive across browser reconnects (matches prior Rust host).
+export type LspSession = {
+  id: string
+  serverId: string
+  process: ChildProcess
+  server: HttpServer
+  wss: WebSocketServer
+  port: number
+  command: string
+  getStderrSnippet: () => string
 }
 
 export type StartLspSessionOptions = {
   rootUri: string
-  command?: string
-  args?: string[]
+  serverId: string
+  allowedRoots?: string[]
   onSpawnError?: (id: string) => void
 }
 
-export async function startLspSession(opts: StartLspSessionOptions): Promise<{ id: string; transportUrl: string }> {
-  const cmd = opts.command ?? "typescript-language-server"
-  const cmdArgs = opts.args ?? ["--stdio"]
-  const id = `lsp-${cmd}-${Date.now()}`
-  const cwd = uriToPath(opts.rootUri)
+export type StartLspSessionResult = {
+  id: string
+  transportUrl: string
+  error?: string
+}
 
-  const proc = spawn(cmd, cmdArgs, {
-    cwd,
-    stdio: ["pipe", "pipe", "pipe"],
-    env: process.env,
+export type LspRestartPolicy = {
+  maxAttempts: number
+  delayMs: number
+}
+
+export type LspRestartHelper = {
+  shouldRestart: (sessionId: string) => boolean
+  reset: (sessionId: string) => void
+  delayMs: number
+}
+
+const sessions = new Map<string, LspSession>()
+let crashCallback: ((id: string, stderrSnippet?: string) => void) | null = null
+
+function attachSessionBridge(
+  session: LspSession,
+  proc: ChildProcess,
+  stderrBuffer: StderrRingBuffer,
+  onSpawnError?: (id: string) => void,
+): void {
+  const decoder = new LspFramingDecoder()
+  let activeWs: WebSocket | null = null
+  const pendingServerMessages: string[] = []
+
+  proc.stdout?.on("data", (chunk: Buffer) => {
+    for (const msg of decoder.feed(chunk)) {
+      if (activeWs && activeWs.readyState === activeWs.OPEN) {
+        activeWs.send(msg)
+      } else {
+        if (pendingServerMessages.length >= MAX_PENDING_SERVER_MESSAGES) {
+          pendingServerMessages.shift()
+        }
+        pendingServerMessages.push(msg)
+      }
+    }
+  })
+
+  proc.stderr?.on("data", (chunk: Buffer) => {
+    stderrBuffer.append(chunk)
+  })
+
+  session.wss.on("connection", (ws: WebSocket) => {
+    if (activeWs && activeWs.readyState === activeWs.OPEN) {
+      activeWs.close()
+    }
+    activeWs = ws
+
+    for (const msg of pendingServerMessages) {
+      if (ws.readyState === ws.OPEN) ws.send(msg)
+    }
+    pendingServerMessages.length = 0
+
+    ws.on("message", (data: WebSocket.RawData) => {
+      const buf =
+        typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data as ArrayBuffer)
+      if (buf.byteLength > MAX_WS_MESSAGE_BYTES) {
+        ws.close(1009, "message too large")
+        return
+      }
+      const json = buf.toString("utf8")
+      proc.stdin?.write(encodeLspMessage(json))
+    })
+
+    ws.on("close", () => {
+      if (activeWs === ws) activeWs = null
+    })
+  })
+
+  proc.on("exit", code => {
+    if (activeWs && activeWs.readyState === activeWs.OPEN) activeWs.close()
+    if (code && code !== 0) {
+      crashCallback?.(session.id, stderrBuffer.snippet())
+    }
   })
 
   proc.on("error", err => {
     console.error("LSP spawn error:", err)
-    crashCallback?.(id)
-    opts.onSpawnError?.(id)
+    crashCallback?.(session.id, stderrBuffer.snippet())
+    onSpawnError?.(session.id)
+  })
+}
+
+export async function startLspSession(opts: StartLspSessionOptions): Promise<StartLspSessionResult> {
+  const def = getLanguageServerDefinition(opts.serverId)
+  if (!def) {
+    return { id: "", transportUrl: "", error: `Unknown language server: ${opts.serverId}` }
+  }
+
+  const resolved = resolveLanguageServerCommand(def)
+  if ("error" in resolved) {
+    return { id: "", transportUrl: "", error: resolved.error }
+  }
+
+  let cwd: string
+  try {
+    cwd = uriToPath(opts.rootUri)
+    if (opts.allowedRoots?.length) {
+      cwd = await assertAllowedPath(cwd, opts.allowedRoots)
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { id: "", transportUrl: "", error: message }
+  }
+
+  const id = `lsp-${opts.serverId}-${Date.now()}`
+  const stderrBuffer = new StderrRingBuffer()
+
+  const proc = spawn(resolved.command, resolved.args, {
+    cwd,
+    stdio: ["pipe", "pipe", "pipe"],
+    shell: false,
+    env: process.env,
   })
 
   const server = createServer()
   const wss = new WebSocketServer({ server })
-  let activeWs: WebSocket | null = null
 
   await new Promise<void>((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => resolve())
@@ -114,15 +209,18 @@ export async function startLspSession(opts: StartLspSessionOptions): Promise<{ i
   const addr = server.address()
   const port = typeof addr === "object" && addr ? addr.port : 0
 
-  wss.on("connection", (ws: WebSocket) => {
-    if (activeWs) {
-      activeWs.close()
-    }
-    activeWs = ws
-    bridgeStdioToWs(proc, ws)
-  })
+  const session: LspSession = {
+    id,
+    serverId: opts.serverId,
+    process: proc,
+    server,
+    wss,
+    port,
+    command: resolved.command,
+    getStderrSnippet: () => stderrBuffer.snippet(),
+  }
 
-  const session: LspSession = { id, process: proc, server, wss, port, command: cmd }
+  attachSessionBridge(session, proc, stderrBuffer, opts.onSpawnError)
   sessions.set(id, session)
 
   return { id, transportUrl: `ws://127.0.0.1:${port}` }
@@ -146,10 +244,25 @@ export function stopAllLspSessions(): void {
   sessions.clear()
 }
 
-export function setLspCrashHandler(cb: (id: string) => void): void {
+export function setLspCrashHandler(cb: (id: string, stderrSnippet?: string) => void): void {
   crashCallback = cb
 }
 
 export function getLspSession(id: string): LspSession | undefined {
   return sessions.get(id)
+}
+
+export function createLspRestartHelper(policy: LspRestartPolicy): LspRestartHelper {
+  const attempts = new Map<string, number>()
+  return {
+    shouldRestart(sessionId: string): boolean {
+      const next = (attempts.get(sessionId) ?? 0) + 1
+      attempts.set(sessionId, next)
+      return next <= policy.maxAttempts
+    },
+    reset(sessionId: string): void {
+      attempts.delete(sessionId)
+    },
+    delayMs: policy.delayMs,
+  }
 }

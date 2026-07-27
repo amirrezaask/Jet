@@ -17,47 +17,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/server
       - run: pnpm install --frozen-lockfile
-      # rust-embed validates the frontend directory while compiling the server.
       - run: pnpm --filter gharargah build
       - run: pnpm exec playwright install --with-deps chromium
-      - run: cargo fmt --manifest-path apps/server/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path apps/server/Cargo.toml --all-targets --all-features -- -D warnings
-      - run: cargo test --manifest-path apps/server/Cargo.toml --all-features
       - run: pnpm -r typecheck
       - run: pnpm test
       - run: pnpm build
-      - name: Single binary smoke test
-        run: |
-          test -x apps/server/target/release-max/jet
-          apps/server/target/release-max/jet --help
       - run: pnpm test:e2e
         env:
           GHARARGAH_E2E_RUN_FLAKY: "1"
-
-  coverage:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter gharargah build
-      # Process-heavy host paths are covered by Playwright in the verify job;
-      # this gate tracks the directly instrumented Rust unit/service baseline.
-      - run: cargo llvm-cov --manifest-path apps/server/Cargo.toml --all-features --fail-under-lines 20

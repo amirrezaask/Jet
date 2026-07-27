@@ -72,6 +72,8 @@ export const AgentChatView = memo(function AgentChatView(props: {
   /** Show Cursor-style terminal chip above composer. */
   terminalCount?: number
   onOpenTerminal?: () => void
+  onOpenFile?: (ref: import("@gharargah/agents").AgentFileReference) => void
+  onOpenDiff?: (ref: import("@gharargah/agents").AgentFileReference) => void
 }) {
   const {
     thread,
@@ -90,6 +92,8 @@ export const AgentChatView = memo(function AgentChatView(props: {
     hideHeader = false,
     terminalCount = 1,
     onOpenTerminal,
+    onOpenFile,
+    onOpenDiff,
   } = props
   const [submitting, setSubmitting] = useState(false)
   const [expandAll, setExpandAll] = useState(true)
@@ -484,6 +488,8 @@ export const AgentChatView = memo(function AgentChatView(props: {
           expandAll={expandAll}
           maintainScrollAtEndEnabled={scrollFollowEnabled}
           onToggleAllDirectories={() => setExpandAll(value => !value)}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
           onIsAtEndChange={onIsAtEndChange}
           onResolvePermission={input => void onResolvePermission?.(input)}
           onResolveUserInput={input => void onResolveUserInput?.(input)}

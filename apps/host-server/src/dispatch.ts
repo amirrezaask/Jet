@@ -15,6 +15,7 @@ import {
   gitStatus,
   gitSummary,
   gitUnstage,
+  gitShow,
   isSearchScanReady,
   listProjectFiles,
   loadGlobalGharargahrcScanRoots,
@@ -136,6 +137,12 @@ async function handleGit(channel: string, args: unknown[]): Promise<unknown> {
       const opts = (args[1] as { path?: string; staged?: boolean } | undefined) ?? undefined
       return gitDiff(rootUri, opts)
     }
+    case "git:show": {
+      const opts = args[1] as { path?: string; ref?: "HEAD" | "INDEX" } | undefined
+      const path = typeof opts?.path === "string" ? opts.path : ""
+      const ref = opts?.ref === "INDEX" ? "INDEX" : "HEAD"
+      return gitShow(rootUri, path, ref)
+    }
     case "git:branch":
       return gitBranch(rootUri)
     case "git:summary":
@@ -222,14 +229,17 @@ function handleWorkspace(runtime: HostRuntime, channel: string, args: unknown[])
 async function handleLsp(runtime: HostRuntime, channel: string, args: unknown[]): Promise<unknown> {
   if (channel === "lsp:start") {
     const rootUri = str(args[0], "rootUri")
-    const command = typeof args[2] === "string" ? args[2] : undefined
-    const cmdArgs = Array.isArray(args[3]) ? (args[3] as string[]) : undefined
+    const serverId =
+      typeof args[2] === "string" ? str(args[2], "serverId") : str(args[1], "serverId")
     const started = await startLspSession({
       rootUri,
-      command,
-      args: cmdArgs,
+      serverId,
+      allowedRoots: runtime.config.allowedRoots,
       onSpawnError: id => runtime.events.emit("lsp:crashed", [id]),
     })
+    if (started.error) {
+      return { id: started.id, transportUrl: "", error: started.error }
+    }
     return { id: started.id, transportUrl: `/ws/lsp/${started.id}` }
   }
   if (channel === "lsp:stop") {

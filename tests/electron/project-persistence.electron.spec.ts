@@ -41,7 +41,7 @@ test.describe("electron project persistence", () => {
       const home = page.locator("[data-gharargah-home]")
       await expectLocatorContainsText(home, "sample-workspace")
       await expectLocatorContainsText(home, "second-workspace")
-      await expectLocatorCount(page.locator(".cm-editor"), 0)
+      await expectLocatorCount(page.locator("[data-gharargah-monaco-editor], .monaco-editor"), 0)
       await expectLocatorCount(page.locator("[data-gharargah-workspace-sidebar]"), 0)
     } finally {
       await app.close()

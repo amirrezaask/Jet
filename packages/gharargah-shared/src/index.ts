@@ -90,3 +90,21 @@ export * from "./caret-motion.js"
 export * from "./rad-motion.js"
 export * from "./rad-scroll.js"
 export * from "./wheel-delta.js"
+export {
+  defaultGharargahTheme,
+  applyGharargahThemeCss,
+  applyColorScheme,
+  applyJetHighlightCssVars,
+  isDarkTheme,
+  type GharargahTheme,
+  type JetColors,
+  type JetHighlightColors,
+  type JetTerminalAnsiColors,
+  type JetShadcnTokens,
+  type JetSemanticColors,
+  type ColorScheme,
+  shadcnDefaultDark,
+  shadcnDefaultLight,
+  jetColorsFromShadcn,
+  applyShadcnTokens,
+} from "./theme/theme-types.js"

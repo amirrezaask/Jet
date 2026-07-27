@@ -218,8 +218,7 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       isSupported: rootUri => transport.invoke("search:isSupported", rootUri),
     },
     lsp: {
-      start: (rootUri, languageId, command, args) =>
-        transport.invoke("lsp:start", rootUri, languageId, command, args),
+      start: (rootUri, serverId) => transport.invoke("lsp:start", rootUri, serverId),
       stop: id => transport.invoke("lsp:stop", id),
       onCrashed: cb => {
         lspCrashListeners.add(cb)
@@ -233,6 +232,7 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       isRepo: rootUri => transport.invoke("git:isRepo", rootUri),
       status: rootUri => transport.invoke("git:status", rootUri),
       diff: (rootUri, opts) => transport.invoke("git:diff", rootUri, opts),
+      show: (rootUri, path, ref) => transport.invoke("git:show", rootUri, { path, ref }),
       branch: rootUri => transport.invoke("git:branch", rootUri),
       summary: rootUri => transport.invoke("git:summary", rootUri),
       branches: rootUri => transport.invoke("git:branches", rootUri),

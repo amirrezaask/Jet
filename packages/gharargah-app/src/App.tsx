@@ -36,7 +36,7 @@ import {
   relativePathInFolder,
   resolveQuickOpenDisplayPath,
 } from "@gharargah/workspace"
-import type { EditorView } from "@codemirror/view"
+import type { MonacoEditorHandle } from "@gharargah/monaco"
 import {
   applyAgentStructuredDelta,
   applyAgentThreadDelta,
@@ -73,15 +73,21 @@ import {
   getEditorView,
   getEditorCursor,
   setEditorCursor,
+  setEditorCursorStore,
   destroyEditorBuffer,
-  FindReplacePopover,
   ProjectTodosPane,
 } from "@gharargah/ui"
 import {
   setPendingEditorNavigation,
   setPendingInitialContent,
-  jumpToLine,
-} from "@gharargah/codemirror"
+} from "@gharargah/monaco/pending"
+import {
+  openAgentFileReference,
+  openDiff,
+  openPathFromTerminal,
+  resolvePathUnderRoot,
+} from "./editor/code-editor-service.js"
+import { ensureMonacoWorkersConfigured } from "./editor/monaco-workers.js"
 import { bootstrapFromLaunch } from "./launch-bootstrap.js"
 import { useFileDrop } from "./use-file-drop.js"
 import {
@@ -160,6 +166,11 @@ const SessionTabBar = lazy(() =>
 const AgentChatView = lazy(() =>
   import("@gharargah/ui/agents").then(module => ({
     default: module.AgentChatView,
+  })),
+)
+const FindReplacePopover = lazy(() =>
+  import("@gharargah/ui/editor").then(module => ({
+    default: module.FindReplacePopover,
   })),
 )
 
@@ -266,6 +277,7 @@ export function GharargahApp() {
   const [sessionMode, setSessionMode] = useState<SessionDialogMode>("terminal")
   const sessionModeRef = useRef(sessionMode)
   sessionModeRef.current = sessionMode
+  const [gitFocusPath, setGitFocusPath] = useState<string | null>(null)
   const [agentCliPickerRootUri, setAgentCliPickerRootUri] = useState<
     string | null
   >(null)
@@ -342,7 +354,14 @@ export function GharargahApp() {
   } = usePanelLayout(workspace, tabStore, appStateRef as never)
 
   const openFileInEditorRef = useRef<
-    (uri: string, path: string, line?: number, column?: number) => void
+    (
+      uri: string,
+      path: string,
+      line?: number,
+      column?: number,
+      endLine?: number,
+      endColumn?: number,
+    ) => void
   >(() => {})
 
   const {
@@ -586,7 +605,15 @@ export function GharargahApp() {
   )
 
   const openFileInEditor = useCallback(
-    (uri: string, path: string, line?: number, column?: number) => {
+    (
+      uri: string,
+      path: string,
+      line?: number,
+      column?: number,
+      endLine?: number,
+      endColumn?: number,
+    ) => {
+      void ensureMonacoWorkersConfigured()
       const tree = cloneTree()
       const existing = tree.findEditorPanelForFile(uri)
       const panel =
@@ -600,7 +627,14 @@ export function GharargahApp() {
       if (!panel) return
       editorPanelRef.current = panel
       workspace.assignEditorPanel(tree, panel, uri, path)
-      if (line != null) setPendingEditorNavigation(panel, line, column ?? 1)
+      if (line != null) {
+        setPendingEditorNavigation(uri, {
+          line,
+          column: column ?? 1,
+          endLine,
+          endColumn,
+        })
+      }
       setFocusedPanel(panel)
       setSessionMode("editor")
       commitTree(tree, panel)
@@ -608,7 +642,20 @@ export function GharargahApp() {
       if (line != null) {
         requestAnimationFrame(() => {
           const view = getEditorView(panel)
-          if (view) jumpToLine(view, line, column ?? 1)
+          if (!view) return
+          void import("@gharargah/monaco").then(
+            ({ revealPosition, highlightRangeTemporarily }) => {
+              revealPosition(view as MonacoEditorHandle, line, column ?? 1)
+              if (endLine != null && endColumn != null) {
+                highlightRangeTemporarily(view as MonacoEditorHandle, {
+                  startLineNumber: line,
+                  startColumn: column ?? 1,
+                  endLineNumber: endLine,
+                  endColumn: endColumn,
+                })
+              }
+            },
+          )
         })
       }
       void ensureLspForFile(uri)
@@ -1086,8 +1133,8 @@ export function GharargahApp() {
         ) ?? editorPanelRef.current
       if (!panel) return
       editorPanelRef.current = panel
-      workspace.openUntitledInPanel(tree, panel, { label: name })
-      setPendingInitialContent(panel, content)
+      const untitledUri = workspace.openUntitledInPanel(tree, panel, { label: name })
+      setPendingInitialContent(untitledUri, content)
       setFocusedPanel(panel)
       setSessionMode("editor")
       commitTree(tree, panel)
@@ -1442,7 +1489,7 @@ export function GharargahApp() {
   const fnByCommandId = FN_BY_COMMAND_ID
 
   const getCommandContext = useCallback(
-    (viewOverride?: EditorView): JetCommandContext => {
+    (viewOverride?: MonacoEditorHandle): JetCommandContext => {
     return {
       workspace,
       ui: {
@@ -1603,7 +1650,7 @@ export function GharargahApp() {
   }, [keymapBindings, pendingChordPrefix, appCommands])
 
   const runKeyBinding = useCallback(
-    (binding: JetKeyBinding, view?: EditorView) => {
+    (binding: JetKeyBinding, view?: MonacoEditorHandle) => {
       void binding.run(getCommandContext(view))
     },
     [getCommandContext],
@@ -1626,11 +1673,18 @@ export function GharargahApp() {
     getKeymapContext: () => appStateRef.current.keymapContext,
     onEditorFocusChange: setEditorFocus,
     onEditorSelectionChange: (line, column, rangeCount) =>
-      setEditorCursor({ line, column, rangeCount }),
+      setEditorCursorStore({ line, column, rangeCount }),
     onLspAttachFailed: handleLspAttachFailed,
     onProblemsChange: () => {},
     closeTerminalTab,
     onTerminalTitleChange,
+    onOpenPath: (cwdRootUri, rawPath, line, column) => {
+      const cwdPath = fileUriToPath(cwdRootUri)
+      const fullPath = resolvePathUnderRoot(cwdPath, rawPath)
+      const fileUri = pathToFileUri(fullPath)
+      if (!workspace.resolveRootUriForFile(fileUri)) return
+      openPathFromTerminal(openFileInEditorRef.current, cwdPath, rawPath, line, column)
+    },
   }
 
   useEffect(() => {
@@ -1868,18 +1922,27 @@ export function GharargahApp() {
       getEditorText: () => {
         const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
         const view = panel ? getEditorView(panel) : null
-        return view ? view.state.doc.toString() : null
+        return view?.getModel()?.getValue() ?? null
       },
       setEditorSelection: (line, column) => {
         const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
         const view = panel ? getEditorView(panel) : null
-        if (view) jumpToLine(view, line, column)
+        if (view) {
+          void import("@gharargah/monaco").then(({ revealPosition }) => {
+            revealPosition(view as MonacoEditorHandle, line, column)
+          })
+        }
       },
       getCursorPosition: () => {
-        const pos = getEditorCursor()
+        const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
+        const pos = panel ? getEditorCursor(panel) : null
         return pos ? { line: pos.line, column: pos.column } : null
       },
-      getSelectionRangeCount: () => getEditorCursor()?.rangeCount ?? null,
+      getSelectionRangeCount: () => {
+        const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
+        const editor = panel ? getEditorView(panel) : null
+        return editor?.getSelections?.()?.length ?? null
+      },
       activeEditorDirty: (() => {
         const panel = editorPanelRef.current ?? appStateRef.current.focusedPanel
         const fileUri = panel
@@ -2159,7 +2222,11 @@ export function GharargahApp() {
         setGotoLineOpen(false)
         const panel = editorPanelRef.current
         const view = panel ? getEditorView(panel) : null
-        if (view) jumpToLine(view, line, column ?? 1)
+        if (view) {
+          void import("@gharargah/monaco").then(({ revealPosition }) => {
+            revealPosition(view as MonacoEditorHandle, line, column ?? 1)
+          })
+        }
       },
       onQuickOpenSearch: async (query, workspaceId) => {
         if (!window.gharargah?.search) return []
@@ -2273,7 +2340,7 @@ export function GharargahApp() {
     editorTabIds.includes(editorPanelView.activeTabId)
       ? editorPanelView.activeTabId
       : (editorTabIds.at(-1) ?? null)
-  const modalEditorView: PanelView | null =
+  const modalMonacoEditorHandle: PanelView | null =
     editorPanelId && editorActiveTabId
     ? { kind: "tabs", activeTabId: editorActiveTabId, tabIds: editorTabIds }
     : null
@@ -2493,6 +2560,27 @@ export function GharargahApp() {
                         hideHeader
                         terminalCount={1}
                         onOpenTerminal={() => setSessionMode("terminal")}
+                        onOpenFile={ref => {
+                          const rootUri = terminalCwdForTab(terminalModalTabId)
+                          const folder = workspace.folders.find(
+                            f => f.root.uri === rootUri,
+                          )
+                          const rootPath =
+                            folder?.root.path ??
+                            (rootUri ? fileUriToPath(rootUri) : "")
+                          if (!rootPath) return
+                          openAgentFileReference(
+                            openFileInEditor,
+                            rootPath,
+                            ref,
+                          )
+                        }}
+                        onOpenDiff={ref => {
+                          openDiff(path => {
+                            setGitFocusPath(path)
+                            setSessionMode("git")
+                          }, ref.path)
+                        }}
                         onSend={async payload => {
                           if (!activeAgentThread) return
                           const agents = window.gharargah?.agents
@@ -2828,10 +2916,10 @@ export function GharargahApp() {
                         void executeCommand("ui.showCommandPalette")
                       }
                   >
-                    {editorPanelId && modalEditorView ? (
+                    {editorPanelId && modalMonacoEditorHandle ? (
                       <PanelBody
                         panelId={editorPanelId}
-                        view={modalEditorView}
+                        view={modalMonacoEditorHandle}
                         store={tabStore}
                         registry={tabTypeRegistry}
                         focused={sessionMode === "editor"}
@@ -2868,6 +2956,8 @@ export function GharargahApp() {
                   >
                     <GitWorkspace
                       rootUri={terminalCwdForTab(terminalModalTabId) || null}
+                      theme={activeTheme}
+                      focusPath={gitFocusPath}
                       repositoryName={
                         workspace.folders.find(
                             folder =>
@@ -2907,7 +2997,9 @@ export function GharargahApp() {
             ) : null}
             </div>
             {editorPanelId ? (
-              <FindReplacePopover panelId={editorPanelId} />
+              <Suspense fallback={null}>
+                <FindReplacePopover panelId={editorPanelId} />
+              </Suspense>
             ) : null}
           </div>
 

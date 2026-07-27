@@ -23,6 +23,7 @@ export type AggregatedActivity = {
   counts: ActivityCounts
   diffStat: ActivityDiffStat | null
   editFileCount: number
+  changedFiles: ReadonlyArray<import("@gharargah/agents").AgentFileChange>
 }
 
 const EMPTY_COUNTS: ActivityCounts = {
@@ -167,5 +168,6 @@ export function aggregateToolCalls(input: {
     diffStat:
       diffStat && (diffStat.additions > 0 || diffStat.deletions > 0) ? diffStat : null,
     editFileCount,
+    changedFiles: input.turnDiffSummary?.files ?? [],
   }
 }

@@ -18,7 +18,7 @@ Guide for AI agents and contributors working in this repo.
 | **Gharargah Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
 | **Host server (TS)** | FS, terminal PTY (`node-pty`), search/git/LSP over HTTP `/api/v1/rpc` + `/ws` |
 
-Library packages `@gharargah/codemirror`, `@gharargah/lsp`, and editor/sidebar UI components remain in the monorepo but are **not imported** by `@gharargah/app`.
+Library packages `@gharargah/monaco`, `@gharargah/lsp`, and editor/sidebar UI components remain in the monorepo; the app uses Monaco inside the session-modal editor.
 
 ## Reference Material (read-only)
 
@@ -260,16 +260,12 @@ Node helpers: `packages/gharargah-node-host/src/`
 
 
 
-### Editor surface (`@gharargah/codemirror` + `EditorTabHost`)
+### Editor surface (`@gharargah/monaco` + `EditorTabHost`)
 
-- `createJetEditorView()` — imperative CM6 mount; **never** put doc text in React state
-- `viewByTab` Map in `EditorTabHost.tsx`; use `getEditorView(tabId)` for active editor access
-- `executeCommand` passed via ref — layout/tab events must not remount editor
-- Autofocus on active editor tab in focused panel; `tabSelect` on editor tabs calls `view.focus()`
-- `applyUserKeymaps()` — Compartment-based bridge from `KeymapService` → CM keymap
-- `motionCursor` — Fleury bracket cursor + exp-smooth animation; reduced-motion snap
-- `isLargeFile()` — skips LSP for huge files
-- Languages loaded lazily via Shiki/lang packages in `languages.ts`
+- Monaco editor host — imperative mount; **never** put doc text in React state
+- URI-keyed models via `MonacoModelRegistry`; shared across editors
+- `revealPosition` / pending navigation for agent + terminal path opens
+- Languages via Monaco built-in IDs; LSP via `@gharargah/lsp` over `/ws/lsp/{id}`
 
 
 

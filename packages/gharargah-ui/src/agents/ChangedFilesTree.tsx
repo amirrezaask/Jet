@@ -1,4 +1,4 @@
-import type { AgentFileChange } from "@gharargah/agents"
+import type { AgentFileChange, AgentFileReference } from "@gharargah/agents"
 import { memo, useCallback, useMemo, useState } from "react"
 import { ChevronRightIcon, FolderClosedIcon, FolderIcon } from "lucide-react"
 import { cn } from "../lib/utils.js"
@@ -21,9 +21,13 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   files: ReadonlyArray<AgentFileChange>
   allDirectoriesExpanded: boolean
   onToggleAllDirectories: () => void
+  onOpenFile?: (ref: AgentFileReference) => void
+  /** Prefer DiffEditor review when provided (agent openDiff). */
+  onOpenDiff?: (ref: AgentFileReference) => void
 }) {
-  const { files, allDirectoriesExpanded, onToggleAllDirectories } = props
+  const { files, allDirectoriesExpanded, onToggleAllDirectories, onOpenFile, onOpenDiff } = props
   const summaryStat = useMemo(() => summarizeTurnDiffStats(files), [files])
+  const open = onOpenDiff ?? onOpenFile
 
   return (
     <div className="relative mt-4 rounded-2xl bg-card shadow-xs/5 after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-2xl after:border after:border-input">
@@ -53,6 +57,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
         <ChangedFilesTree
           files={files}
           allDirectoriesExpanded={allDirectoriesExpanded}
+          onOpenFile={open}
         />
       </div>
     </div>
@@ -62,8 +67,9 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
 export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
   files: ReadonlyArray<AgentFileChange>
   allDirectoriesExpanded: boolean
+  onOpenFile?: (ref: AgentFileReference) => void
 }) {
-  const { files, allDirectoriesExpanded } = props
+  const { files, allDirectoriesExpanded, onOpenFile } = props
   const treeNodes = useMemo(() => buildTurnDiffTree(files), [files])
   const directoryPathsKey = useMemo(() => collectDirectoryPaths(treeNodes).join("\u0000"), [treeNodes])
   const hasDirectoryNodes = directoryPathsKey.length > 0
@@ -143,10 +149,12 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
     }
 
     return (
-      <div
+      <button
         key={`file:${node.path}`}
+        type="button"
         className="group flex w-full items-center gap-1.5 rounded-xl py-1 pr-3 text-left transition-colors hover:bg-accent/60"
         style={{ paddingLeft: `${leftPadding}px` }}
+        onClick={() => onOpenFile?.({ path: node.path })}
       >
         {hasDirectoryNodes || depth > 0 ? (
           <span aria-hidden="true" className="size-3.5 shrink-0" />
@@ -160,7 +168,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
             <DiffStatLabel additions={node.stat.additions} deletions={node.stat.deletions} />
           </span>
         ) : null}
-      </div>
+      </button>
     )
   }
 

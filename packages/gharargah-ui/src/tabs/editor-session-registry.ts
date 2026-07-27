@@ -1,18 +1,17 @@
-import { Text, type Extension } from "@codemirror/state"
-import type { EditorView } from "@codemirror/view"
 import type { PanelId } from "@gharargah/shared"
+import type { MonacoEditorHandle } from "@gharargah/monaco"
+import { monacoModels } from "@gharargah/monaco"
 
 export type EditorSession = {
   fileUri: string
   fileLanguageId: string
   isDirty: boolean
   largeFile: boolean
-  savedBaseline: Text
-  view: EditorView
+  savedBaseline: string
 }
 
 class EditorSessionRegistry {
-  private viewByPanel = new Map<number, EditorView>()
+  private editorByPanel = new Map<number, MonacoEditorHandle>()
   private sessionsByPanel = new Map<number, Map<string, EditorSession>>()
   private sessionAccessOrder: string[] = []
   private readonly maxCachedSessions = 8
@@ -40,7 +39,8 @@ class EditorSessionRegistry {
     const cachedDocumentBytes = () => {
       let total = 0
       this.forEachSession(session => {
-        total += session.view.state.doc.length * 2
+        const content = monacoModels.getContent(session.fileUri) ?? ""
+        total += content.length * 2
       })
       return total
     }
@@ -54,7 +54,13 @@ class EditorSessionRegistry {
         const panelIdNum = Number(key.slice(0, sep))
         const fileUri = key.slice(sep + 1)
         const session = this.sessionsByPanel.get(panelIdNum)?.get(fileUri)
-        return session != null && !session.isDirty && this.viewByPanel.get(panelIdNum) !== session.view
+        const active = this.editorByPanel.get(panelIdNum)
+        const activeUri = active ? monacoModels.canonicalKey(active.getModel()?.uri.toString() ?? "") : ""
+        return (
+          session != null &&
+          !session.isDirty &&
+          activeUri !== monacoModels.canonicalKey(fileUri)
+        )
       })
       if (candidateIndex < 0) break
       const [key] = this.sessionAccessOrder.splice(candidateIndex, 1)
@@ -74,40 +80,39 @@ class EditorSessionRegistry {
     return sessions
   }
 
-  getView(panelId: PanelId): EditorView | undefined {
-    return this.viewByPanel.get(panelId.id)
+  getEditor(panelId: PanelId): MonacoEditorHandle | undefined {
+    return this.editorByPanel.get(panelId.id)
   }
 
-  setActiveView(panelId: PanelId, view: EditorView): void {
-    this.viewByPanel.set(panelId.id, view)
+  /** @deprecated Use getEditor — kept for gradual migration of call sites. */
+  getView(panelId: PanelId): MonacoEditorHandle | undefined {
+    return this.getEditor(panelId)
   }
 
-  clearActiveView(panelId: PanelId, view: EditorView): void {
-    if (this.viewByPanel.get(panelId.id) === view) this.viewByPanel.delete(panelId.id)
-    if (this.focusedPanelId === panelId.id && this.viewByPanel.get(panelId.id) == null) {
+  setActiveEditor(panelId: PanelId, editor: MonacoEditorHandle): void {
+    this.editorByPanel.set(panelId.id, editor)
+  }
+
+  clearActiveEditor(panelId: PanelId, editor: MonacoEditorHandle): void {
+    if (this.editorByPanel.get(panelId.id) === editor) this.editorByPanel.delete(panelId.id)
+    if (this.focusedPanelId === panelId.id && this.editorByPanel.get(panelId.id) == null) {
       this.focusedPanelId = null
     }
-  }
-
-  forEachView(fn: (entry: { panelId: PanelId; uri: string; view: EditorView }) => void): void {
-    for (const [panelIdNum, sessions] of this.sessionsByPanel) {
-      const panelId: PanelId = { id: panelIdNum }
-      for (const [uri, session] of sessions) {
-        fn({ panelId, uri, view: session.view })
-      }
-    }
-  }
-
-  getAllViews(): { panelId: PanelId; uri: string; view: EditorView }[] {
-    const result: { panelId: PanelId; uri: string; view: EditorView }[] = []
-    this.forEachView(entry => result.push(entry))
-    return result
   }
 
   forEachSession(fn: (session: EditorSession) => void): void {
     for (const sessions of this.sessionsByPanel.values()) {
       for (const session of sessions.values()) {
         fn(session)
+      }
+    }
+  }
+
+  forEachUri(fn: (entry: { panelId: PanelId; uri: string }) => void): void {
+    for (const [panelIdNum, sessions] of this.sessionsByPanel) {
+      const panelId: PanelId = { id: panelIdNum }
+      for (const uri of sessions.keys()) {
+        fn({ panelId, uri })
       }
     }
   }
@@ -119,7 +124,8 @@ class EditorSessionRegistry {
     this.forgetSessionAccess(panelId, fileUri)
     sessions!.delete(fileUri)
     if (sessions!.size === 0) this.sessionsByPanel.delete(panelId.id)
-    this.clearActiveView(panelId, session.view)
+    monacoModels.release(fileUri)
+    monacoModels.disposeIfUnreferenced(fileUri, () => !session.isDirty)
     return session
   }
 
@@ -127,23 +133,16 @@ class EditorSessionRegistry {
     const sessions = this.sessionsByPanel.get(panelId.id)
     if (!sessions) return []
     const destroyed = [...sessions.values()]
-    for (const session of destroyed) this.forgetSessionAccess(panelId, session.fileUri)
+    for (const session of destroyed) {
+      this.forgetSessionAccess(panelId, session.fileUri)
+      monacoModels.release(session.fileUri)
+      monacoModels.disposeIfUnreferenced(session.fileUri, () => !session.isDirty)
+    }
     this.sessionsByPanel.delete(panelId.id)
-    this.viewByPanel.delete(panelId.id)
+    this.editorByPanel.delete(panelId.id)
     if (this.focusedPanelId === panelId.id) this.focusedPanelId = null
     return destroyed
   }
 }
 
 export const editorSessions = new EditorSessionRegistry()
-
-export function textFromString(content: string): Text {
-  return Text.of(content.split("\n"))
-}
-
-export function detachSessionDom(session: EditorSession, parent: HTMLElement): void {
-  if (session.view.dom.parentElement === parent) parent.removeChild(session.view.dom)
-}
-
-/** Re-export for callers that need the type without importing @codemirror/state. */
-export type { Extension }

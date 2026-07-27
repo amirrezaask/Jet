@@ -1,6 +1,8 @@
 import { useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react"
 import { Command, FileSearch, XIcon } from "lucide-react"
 import { fileUriToPath, isUntitledUri } from "@gharargah/shared"
+import type { LspStatus } from "@gharargah/lsp"
+import { lspStatusIsActive, lspStatusShortLabel } from "@gharargah/lsp/status"
 import type { WorkspaceService } from "@gharargah/workspace"
 import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
@@ -16,7 +18,7 @@ export type ModalEditorPaneProps = {
   buffers: ModalEditorBuffer[]
   activeTabId: string | null
   workspace: WorkspaceService
-  lspStatus: "connected" | "off" | "unavailable"
+  lspStatus: LspStatus
   onActivateBuffer: (tabId: string) => void
   onCloseBuffer: (tabId: string) => void
   onQuickOpen?: () => void
@@ -184,13 +186,9 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
         </span>
         <span
           data-gharargah-editor-lsp={lspStatus}
-          className={
-            lspStatus === "connected"
-              ? "text-primary"
-              : "text-muted-foreground"
-          }
+          className={lspStatusIsActive(lspStatus) ? "text-primary" : "text-muted-foreground"}
         >
-          LSP {lspStatus === "connected" ? "on" : lspStatus === "off" ? "off" : "n/a"}
+          LSP {lspStatusShortLabel(lspStatus)}
         </span>
       </div>
     </div>
