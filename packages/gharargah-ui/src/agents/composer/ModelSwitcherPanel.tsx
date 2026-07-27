@@ -1,4 +1,4 @@
-import type { ProviderInstanceId, ProviderDriverKind } from "../t3contracts.js"
+import type { ProviderInstanceId, ProviderDriverKind } from "@gharargah/agents"
 import { memo, useMemo, useState } from "react"
 import { CheckIcon } from "lucide-react"
 import { Lister, type ListerNode } from "../../lister/index.js"

@@ -1,8 +1,12 @@
 import type {
   AgentAvailableCommand,
   AgentComposerCapabilities,
+  AgentPermissionRequest,
   AgentProvidersState,
   AgentSessionConfigOption,
+  AgentUserInputRequest,
+  ResolveAgentPermissionInput,
+  ResolveAgentUserInputInput,
 } from "@gharargah/agents"
 import {
   memo,
@@ -31,7 +35,15 @@ import {
   type ComposerInteractionMode,
   type ComposerRuntimeMode,
 } from "./ComposerModeControls.js"
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions.js"
+import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel.js"
+import {
+  ComposerPendingUserInputPanel,
+  type ComposerPendingUserInputPanelHandle,
+} from "./ComposerPendingUserInputPanel.js"
+import {
+  ComposerPrimaryActions,
+  type PendingActionState,
+} from "./ComposerPrimaryActions.js"
 import {
   ComposerPromptEditor,
   type ComposerPromptEditorHandle,
@@ -46,7 +58,7 @@ import {
   getCustomModelOptionsByInstance,
   resolveDefaultProviderSelection,
 } from "../providerInstances.js"
-import type { ProviderInstanceId, ProviderDriverKind } from "../t3contracts.js"
+import type { ProviderInstanceId, ProviderDriverKind } from "@gharargah/agents"
 
 const MAX_COMPOSER_ATTACHMENTS = 8
 const MAX_INLINE_FILE_BYTES = 512 * 1024
@@ -130,6 +142,19 @@ export const ChatComposer = memo(function ChatComposer(props: {
   onImplementPlan?: () => void
   capabilities?: AgentComposerCapabilities | null
   droppedFileBatch?: { id: number; files: File[] } | null
+  pendingPermission?: AgentPermissionRequest | null
+  pendingUserInput?: AgentUserInputRequest | null
+  pendingActionCount?: number
+  onResolvePermission?: (
+    input: Pick<
+      ResolveAgentPermissionInput,
+      "permissionId" | "decision" | "optionId" | "approvalDecision"
+    >,
+  ) => void
+  onResolveUserInput?: (
+    input: Pick<ResolveAgentUserInputInput, "requestId" | "answers" | "action" | "content">,
+  ) => void
+  onCancelTurn?: () => void
 }) {
   const [draft, setDraft] = useState("")
   const [isComposerFocused, setIsComposerFocused] = useState(false)
@@ -139,6 +164,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const [images, setImages] = useState<ComposerImageAttachment[]>([])
   const [files, setFiles] = useState<ComposerFileAttachment[]>([])
   const [sendError, setSendError] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<PendingActionState | null>(null)
   const promptRef = useRef("")
   const imagesRef = useRef<ComposerImageAttachment[]>([])
   const lastDroppedFileBatchIdRef = useRef<number | null>(null)
@@ -146,6 +172,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const composerFormRef = useRef<HTMLFormElement | null>(null)
   const composerSurfaceRef = useRef<HTMLDivElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const userInputPanelRef = useRef<ComposerPendingUserInputPanelHandle | null>(null)
   const [footerWidth, setFooterWidth] = useState<number | null>(null)
 
   const instanceEntries = useMemo(
@@ -292,6 +319,10 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const submitComposer = useCallback(
     async (event?: { preventDefault?: () => void }) => {
       event?.preventDefault?.()
+      if (props.pendingUserInput && !props.pendingPermission) {
+        userInputPanelRef.current?.goNext()
+        return
+      }
       const text = promptRef.current.trim()
       if ((!text && attachmentCount === 0) || !canSend) return
       const outgoingImages = images.map(({ data, mimeType, name }) => ({ data, mimeType, name }))
@@ -517,6 +548,26 @@ export const ChatComposer = memo(function ChatComposer(props: {
       className="mx-auto w-full min-w-0 max-w-3xl"
       data-chat-composer-form="true"
     >
+      {props.pendingPermission ? (
+        <ComposerPendingApprovalPanel
+          permission={props.pendingPermission}
+          pendingCount={props.pendingActionCount ?? 1}
+          isResponding={props.isSendBusy}
+          onResolve={input => props.onResolvePermission?.(input)}
+          onCancelTurn={props.onCancelTurn}
+        />
+      ) : props.pendingUserInput ? (
+        <ComposerPendingUserInputPanel
+          ref={userInputPanelRef}
+          userInput={props.pendingUserInput}
+          pendingCount={props.pendingActionCount ?? 1}
+          isResponding={props.isSendBusy}
+          onResolve={input => props.onResolveUserInput?.(input)}
+          onCancelTurn={props.onCancelTurn}
+          onPendingActionChange={setPendingAction}
+        />
+      ) : null}
+
       <div className="group rounded-[var(--agent-composer-radius)] p-px transition-colors duration-[var(--gharargah-motion-menu)]">
         <div
           ref={composerSurfaceRef}
@@ -723,7 +774,9 @@ export const ChatComposer = memo(function ChatComposer(props: {
               </Button>
               <ComposerPrimaryActions
                 compact={isComposerPrimaryActionsCompact}
-                pendingAction={null}
+                pendingAction={
+                  props.pendingUserInput && !props.pendingPermission ? pendingAction : null
+                }
                 isRunning={props.isRunning ?? false}
                 showPlanFollowUpPrompt={props.showPlanFollowUpPrompt ?? false}
                 promptHasText={draft.trim().length > 0}
@@ -732,7 +785,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
                 isEnvironmentUnavailable={false}
                 isPreparingWorktree={false}
                 hasSendableContent={canSend}
-                onPreviousPendingQuestion={() => {}}
+                onPreviousPendingQuestion={() => userInputPanelRef.current?.goPrevious()}
                 onInterrupt={() => props.onInterrupt?.()}
                 onImplementPlanInNewThread={() => props.onImplementPlan?.()}
               />

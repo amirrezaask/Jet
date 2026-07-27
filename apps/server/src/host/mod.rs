@@ -1,17 +1,11 @@
 use events::EventHub;
 use serde_json::Value;
 
-pub mod acp;
-pub mod acp_client;
-pub mod agents;
-pub mod codex_app_server;
-pub mod claude_sdk;
 pub mod events;
 pub mod fff_service;
 pub mod fs;
 pub mod git;
 pub mod launch;
-pub mod line_rpc;
 pub mod lsp;
 pub mod perf;
 pub mod search;
@@ -21,7 +15,9 @@ pub mod terminal;
 pub mod uri;
 pub mod workspace;
 
-use agents::AgentsHost;
+// Agent control plane lives in Node (`apps/agent-server`). Keep mock_acp bins for Effect tests.
+// Legacy modules (agents/acp/claude_sdk/codex_app_server) removed.
+
 use lsp::LspHost;
 use perf::PerfHost;
 use terminal::TerminalHost;
@@ -31,7 +27,6 @@ pub struct HostState {
     pub workspace: WorkspaceHost,
     pub lsp: LspHost,
     pub terminal: TerminalHost,
-    pub agents: AgentsHost,
     pub perf: PerfHost,
     pub home_dir: String,
     pub events: EventHub,
@@ -43,7 +38,6 @@ impl HostState {
             workspace: WorkspaceHost::new(),
             lsp: LspHost::new(),
             terminal: TerminalHost::new(),
-            agents: AgentsHost::new(),
             perf: PerfHost::new(&home_dir, process_started),
             home_dir,
             events: EventHub::new(1_024),
@@ -51,7 +45,6 @@ impl HostState {
     }
 
     pub fn shutdown(&self) {
-        self.agents.stop_all();
         self.lsp.stop_all();
         self.terminal.stop_all();
         self.workspace.stop_all();
@@ -89,7 +82,10 @@ impl HostState {
             return terminal::handle(&self.terminal, &self.events, client_id, channel, args_ref);
         }
         if channel.starts_with("agents:") {
-            return agents::handle(&self.agents, &self.events, channel, args_ref);
+            return Err(
+                "agents:* moved to Effect agent-server (ws://127.0.0.1:4751/agents); Rust host no longer handles agents"
+                    .into(),
+            );
         }
         if channel.starts_with("perf:") {
             return perf::handle(&self.perf, channel, args_ref);

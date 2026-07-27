@@ -272,7 +272,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn catalog_stays_loading_until_mock_shell_path_applied() {
+    fn shell_env_emits_ready_after_mock_path_applied() {
         let _guard = TEST_LOCK.lock().unwrap();
         reset_shell_env_for_tests();
 
@@ -294,7 +294,6 @@ mod tests {
         let previous_force = env::var_os("JET_SHELL_ENV_FORCE");
         let previous_delay = env::var_os("JET_SHELL_ENV_DELAY_MS");
         let previous_mock = env::var_os("JET_SHELL_ENV_MOCK_PATH");
-        let previous_agent_mock = env::var_os("GHARARGAH_AGENT_MOCK");
 
         #[allow(deprecated)]
         {
@@ -302,31 +301,11 @@ mod tests {
             env::set_var("JET_SHELL_ENV_FORCE", "1");
             env::set_var("JET_SHELL_ENV_DELAY_MS", "250");
             env::set_var("JET_SHELL_ENV_MOCK_PATH", &mock_path);
-            env::remove_var("GHARARGAH_AGENT_MOCK");
         }
 
         let events = EventHub::new(32);
         let mut rx = events.subscribe();
-        let host = crate::host::agents::AgentsHost::new();
-        let loading = crate::host::agents::handle(
-            &host,
-            &events,
-            "agents:listAgents",
-            &[],
-        )
-        .expect("listAgents");
-        assert_eq!(
-            loading["shellEnvStatus"].as_str(),
-            Some("loading"),
-            "catalog must report loading while shell env resolves"
-        );
-        assert!(
-            loading["agents"]
-                .as_array()
-                .map(|agents| agents.is_empty())
-                .unwrap_or(false),
-            "agents must be empty while loading (no false CLI-missing flash)"
-        );
+        crate::path_env::begin_shell_env_load(events.clone());
 
         let deadline = Instant::now() + Duration::from_secs(3);
         let mut saw_ready_event = false;
@@ -341,25 +320,6 @@ mod tests {
         }
         assert!(saw_ready_event, "must emit agents:shellEnvReady");
         assert_eq!(shell_env_status(), ShellEnvStatus::Ready);
-
-        let ready = crate::host::agents::handle(
-            &host,
-            &events,
-            "agents:listAgents",
-            &[],
-        )
-        .expect("listAgents ready");
-        assert_eq!(ready["shellEnvStatus"].as_str(), Some("ready"));
-        let agents = ready["agents"].as_array().expect("agents array");
-        assert!(!agents.is_empty(), "ready catalog must list agents");
-        let enabled = agents
-            .iter()
-            .filter(|agent| agent["enabled"].as_bool() == Some(true))
-            .count();
-        assert!(
-            enabled >= 1,
-            "after mock login PATH apply, at least one agent CLI must resolve; catalog={ready}"
-        );
 
         #[allow(deprecated)]
         {
@@ -378,10 +338,6 @@ mod tests {
             match previous_mock {
                 Some(v) => env::set_var("JET_SHELL_ENV_MOCK_PATH", v),
                 None => env::remove_var("JET_SHELL_ENV_MOCK_PATH"),
-            }
-            match previous_agent_mock {
-                Some(v) => env::set_var("GHARARGAH_AGENT_MOCK", v),
-                None => env::remove_var("GHARARGAH_AGENT_MOCK"),
             }
         }
         reset_shell_env_for_tests();

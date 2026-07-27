@@ -36,7 +36,7 @@ import { MessagesTimeline } from "./timeline/MessagesTimeline.js"
 import { ConnectionBanner } from "./timeline/ConnectionBanner.js"
 import type { TimelineScrollMode } from "./timeline/timelineScrollAnchoring.js"
 
-import type { ProviderDriverKind } from "./t3contracts.js"
+import type { ProviderDriverKind } from "@gharargah/agents"
 import { Button } from "../components/ui/button.js"
 
 export const AgentChatView = memo(function AgentChatView(props: {
@@ -352,7 +352,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
   })()
   const activityLabel =
     thread.activity?.trim() ||
-    (thread.status === "running" ? "Agent is running…" : null)
+    (thread.status === "running" && thread.connection?.status !== "error"
+      ? "Agent is running…"
+      : null)
 
   const lockedProvider: ProviderDriverKind | null =
     thread.acpProvider || (thread.timeline?.length ?? 0) > 0 || (thread.messages?.length ?? 0) > 1
@@ -483,9 +485,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
           maintainScrollAtEndEnabled={scrollFollowEnabled}
           onToggleAllDirectories={() => setExpandAll(value => !value)}
           onIsAtEndChange={onIsAtEndChange}
-          onResolvePermission={(permissionId, decision, optionId) =>
-            void onResolvePermission?.({ permissionId, decision, optionId })
-          }
+          onResolvePermission={input => void onResolvePermission?.(input)}
           onResolveUserInput={input => void onResolveUserInput?.(input)}
         />
 
@@ -543,16 +543,6 @@ export const AgentChatView = memo(function AgentChatView(props: {
               </Button>
             </div>
           ) : null}
-          {pendingActionCount > 0 ? (
-            <div
-              className="mb-2 px-1 text-xs text-muted-foreground"
-              data-chat-pending-actions="true"
-            >
-              {pendingActionCount === 1
-                ? "1 pending action in the timeline — respond there to continue."
-                : `${pendingActionCount} pending actions in the timeline — respond there to continue.`}
-            </div>
-          ) : null}
           <ChatComposer
             providers={providers}
             instanceId={defaultSelection?.instanceId ?? thread.agentId}
@@ -571,6 +561,14 @@ export const AgentChatView = memo(function AgentChatView(props: {
             configOptions={nonModelConfigOptions}
             capabilities={composerCapabilities}
             droppedFileBatch={droppedFileBatch}
+            pendingPermission={thread.pendingPermissions?.[0] ?? null}
+            pendingUserInput={
+              thread.pendingPermissions?.[0] ? null : (thread.pendingUserInputs?.[0] ?? null)
+            }
+            pendingActionCount={pendingActionCount}
+            onResolvePermission={input => void onResolvePermission?.(input)}
+            onResolveUserInput={input => void onResolveUserInput?.(input)}
+            onCancelTurn={() => onInterrupt?.()}
             onRuntimeModeChange={onRuntimeModeChange}
             onInteractionModeChange={onInteractionModeChange}
             onConfigOptionChange={

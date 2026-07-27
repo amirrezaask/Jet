@@ -1,11 +1,22 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import {
+  resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapIndexFromPointer,
   resolveTimelineMinimapTopPercent,
 } from "./MessagesTimeline.logic.js"
+
+test("resolveAssistantMessageCopyState coerces content-block arrays", () => {
+  const state = resolveAssistantMessageCopyState({
+    text: [{ type: "text", text: "hello", text_elements: [] }],
+    showCopyButton: true,
+    streaming: false,
+  })
+  assert.equal(state.text, "hello")
+  assert.equal(state.visible, true)
+})
 
 test("resolveTimelineIsAtEnd prefers near-end over strict end", () => {
   assert.equal(resolveTimelineIsAtEnd({ isAtEnd: false, isNearEnd: true }), true)

@@ -1,4 +1,4 @@
-import { ProviderDriverKind } from "./t3contracts.js"
+import { ProviderDriverKind } from "@gharargah/agents"
 
 /** Product-facing provider catalog for icons/labels (not a transport stub). */
 export const PROVIDER_OPTIONS: Array<{

@@ -1,40 +1,48 @@
 # ACP v1 support matrix
 
-Status reflects the live `ConnectionPool` + `AcpSupervisor` path (2026-07-24).
+Status reflects the live **Effect agent-server** path (`apps/agent-server`, 2026-07-27).
+Rust `AgentsHost` / `AcpSupervisor` / `host/acp` are **removed** from the live host — `agents:*` RPC on jet returns a migration error. Parity target for Cursor/Grok ACP remains t3code `AcpSessionRuntime` (vendored at `.t3code`).
 
 | Method / update / capability | Supported | Capability-gated | Tested | UI | Persistence | Mock scenarios | Notes |
 |---|---|---|---|---|---|---|---|
-| `initialize` / ACP v1 | Yes | — | Yes | Indirect | Connection snapshot | all | Rejects non-v1 negotiated protocol. |
-| `session/new` | Yes | — | Yes | Yes | `acpSessionId` | all | Created when no reusable session id. |
-| `session/load` | Yes | Agent `load_session` | Unit | Indirect | `acpSessionId` | `load_session` | Routing+capture registered before load; replay kept. |
-| `session/resume` | Yes | Agent `sessionCapabilities.resume` | Unit | Indirect | `acpSessionId` | — | Preferred when local history exists; no replay. |
-| `session/prompt` text | Yes | — | Yes | Streaming chat | `messages` + timeline text | `echo`, `slow_stream` | One text content block. |
-| `session/cancel` | Yes | — | Yes | Interrupt | Final cancelled status | `cancel_coop` | 15 s grace → force-stop after `provider_unresponsive_after_cancel`. |
-| `session/set_config_option` (model) | Yes | Agent config options | Unit | Model picker | Thread `model` | `config_model` | Applied on pool path after session new/load/resume. |
-| `AgentMessageChunk` | Yes | — | Yes | Yes | Assistant message + timeline | `echo`, `slow_stream` | Snapshot deltas + coalesced timeline flush. |
-| `AgentThoughtChunk` | Yes | — | Yes | ThoughtBlock | Timeline | `thought_then_answer` | Stable thought stream id. |
-| `ToolCall` / `ToolCallUpdate` | Yes | — | Yes | ToolCallCard | Timeline (reduced by id) | `tool_lifecycle` | One timeline identity per `toolCallId`. |
-| `Plan` | Yes | — | Unit/e2e-indirect | PlanCard | `plan` + timeline | `plan_update` | Stable plan id. |
-| `UsageUpdate` | Yes | — | Unit | UsageMeter | `usage` + timeline | `usage_meter` | Mapped to `AgentUsage`. |
-| `AvailableCommandsUpdate` | Yes | — | Unit | Slash menu | `availableCommands` | `slash_commands` | Composer `/` menu. |
-| `session/request_permission` | Yes | — | Integration + e2e | PermissionCard | `timeline`, `pendingPermissions` | `permission_allow`, `permission_tool_race`, `permission_allow_always` | Exact option ids + kinds preserved; allow-always memory on host. |
+| `initialize` / ACP v1 | Yes | — | Yes | Indirect | Pool client | all | Via `@gharargah/effect-acp`. |
+| `session/new` | Yes | — | Yes | Yes | `acpSessionId` | all | Injects host MCP `mcpServers` (loopback HTTP) or mock stdio. |
+| `session/load` | Yes | Agent `load_session` | Unit | Indirect | `acpSessionId` | `load_session` | Replay idle gate (2s / 90s); MCP injected. |
+| `session/resume` | Yes | Agent `sessionCapabilities.resume` | Soft | Indirect | `acpSessionId` | — | Preferred when local history exists; falls back to load. |
+| `session/prompt` text | Yes | — | Yes | Streaming chat | `messages` + timeline | `echo`, `slow_stream` | |
+| `session/cancel` | Yes | — | Yes | Interrupt | Final cancelled status | `cancel_coop` | 15s grace → `forceKill`. |
+| `session/set_config_option` (model) | Yes | Agent config options | Unit | Model picker | Thread `model` | `config_model` | |
+| `AgentMessageChunk` | Yes | — | Yes | Yes | Assistant message + timeline | `echo`, `slow_stream` | |
+| `AgentThoughtChunk` | Yes | — | Yes | ThoughtBlock | Timeline | `thought_then_answer` | |
+| `ToolCall` / `ToolCallUpdate` | Yes | — | Yes | ToolCallCard | Timeline | `tool_lifecycle` | |
+| `Plan` | Yes | — | Unit/e2e-indirect | PlanCard | `plan` + timeline | `plan_update` | |
+| `UsageUpdate` | Yes | — | Unit | UsageMeter | `usage` + timeline | `usage_meter` | |
+| `AvailableCommandsUpdate` | Yes | — | Unit | Slash menu | `availableCommands` | `slash_commands` | |
+| `session/request_permission` | Yes | — | Integration + e2e | PermissionCard | `pendingPermissions` | `permission_*` | |
 | `fs/read_text_file` | Yes | Client FS | Unit | No direct UI | Disk | `fs_roundtrip` | Session-root contained. |
 | `fs/write_text_file` | Yes | Client FS | Unit | No direct UI | Disk | — | No unsaved-buffer bridge yet. |
 | Client terminal methods | Yes | Advertised | Unit + mock | Indirect | Ephemeral | `terminal_roundtrip` | create/output/wait/kill/release; 256KB bound. |
-| Authentication methods | Yes | Initialize `auth_methods` | Unit + e2e | Connection state + auth banner | Snapshot | `auth_required` | Blocks turns until `agents:authenticate`. |
-| Session list/close/delete | Yes | Capability-gated | Unit/RPC | No | No | — | Live RPCs on connection. |
-| Logout | Yes | `agentCapabilities.auth.logout` | Unit/RPC | No | Snapshot | — | Capability-gated. |
-| Images/audio/resources in prompt | Partial | — | Unit + e2e | Composer attach | Prompt blocks | `image_prompt` | Text + optional image blocks (max 8); audio/resources still no. |
-| Structured sequenced deltas | Yes | — | Integration + e2e | Yes | Timeline + `acpSequence` | thought/tool/plan/usage | Per-thread monotonic allocator; permissions included. |
-| Protocol trace | Yes | — | Unit | AcpInspector | In-memory (bounded) | — | Redacted/bounded; inspector RPC. |
-| Force-stop provider | Yes | — | Unit/RPC | Inspector | — | — | Cancels turns, settles perms, kills process via ChildGuard. |
-| `cursor/ask_question` | Yes | Capability / Cursor | Unit + e2e | UserInputCard | pendingUserInputs | `ask_question` | Extension method; answers via `agents:resolveUserInput`. |
-| `cursor/create_plan` | Yes | Capability / Cursor | Unit + e2e | PlanCard | plan + timeline | `create_plan` | Extension method → plan timeline. |
-| `cursor/update_todos` | Yes | Capability / Cursor | Unit + e2e | PlanCard | plan + timeline | `update_todos` | Extension notification → plan timeline. |
-| `cursor/list_available_models` | Yes | Capability / Cursor | Soft | Model picker | discoveredModels | mock handler | Best-effort after session open; failures ignored. |
-| `elicitation/create` | Yes | Client elicitation | Unit + e2e | UserInputCard | pendingUserInputs | `elicitation` | Unstable feature; form+url advertised. |
+| Authentication methods | Yes | Initialize `auth_methods` | Unit + e2e | Connection banner | Pool connection state | `auth_required` | |
+| Session list/close/delete | Yes | Capability-gated | Unit/RPC | AcpInspector | No | — | Effect pool RPCs. |
+| Logout | Yes | `agentCapabilities.auth.logout` | Unit/RPC | AcpInspector | Snapshot | — | Best-effort. |
+| Images/audio/resources in prompt | Partial | — | Unit + e2e | Composer attach | Prompt blocks | `image_prompt` | Text + optional image blocks (max 8). |
+| Structured sequenced deltas | Yes | — | Integration + e2e | Yes | Timeline + `acpSequence` | thought/tool/plan/usage | |
+| Protocol trace | Yes | — | Unit | AcpInspector | In-memory (bounded, redacted) | — | `agents:getAcpTrace`. |
+| Force-stop provider | Yes | — | Unit/RPC | Inspector | — | — | `agents:forceStopProvider` → pool force-kill. |
+| `cursor/ask_question` | Yes | Capability / Cursor | Unit + e2e | UserInputCard | pendingUserInputs | `ask_question` | |
+| `cursor/create_plan` | Yes | Capability / Cursor | Unit + e2e | PlanCard | plan + timeline | `create_plan` | |
+| `cursor/update_todos` | Yes | Capability / Cursor | Unit + e2e | PlanCard | plan + timeline | `update_todos` | |
+| `cursor/list_available_models` | Yes | Capability / Cursor | Soft | Model picker | discoveredModels | mock handler | |
+| `elicitation/create` | Yes | Client elicitation | Unit + e2e | UserInputCard | pendingUserInputs | `elicitation` | |
 
-Provider profiles are launch configuration. See `acp-provider-compatibility.md` for real-provider opt-in smokes.
+## Non-ACP drivers (Effect)
+
+| Driver | Status | Notes |
+|--------|--------|-------|
+| Codex `codex:app-server` | Yes | Streams `item/agentMessage/delta` until `turn/completed` (no fixed sleep / fake mock fallback). |
+| Claude `claude:sdk` | Yes | `@anthropic-ai/claude-agent-sdk` `query()`. |
+| OpenCode `opencode:sdk` | Yes | `promptAsync` + SSE `event.subscribe`; falls back to blocking `prompt`. |
+| Catalog `*:cli` | Catalog-only | `createAdapter` throws — not silently remapped to Cursor ACP. |
 
 ## t3code ACP parity checklist
 
@@ -42,22 +50,19 @@ Parity target = t3code `AcpSessionRuntime` path (Cursor/Grok ACP), not Codex app
 
 | Area | Product | UX | Robustness | Notes |
 |---|---|---|---|---|
-| Multi-provider ACP (cursor/codex/claude/opencode/grok) | Yes | Same chat UI | Pool keyed by provider+workspace | CLI drivers remain as fallback where applicable |
-| Auth discovery + `authenticate` | Yes | Auth banner + method picker | Blocks prompt until authenticated | |
-| Connection lifecycle | Yes | Live banner + inspector force-stop | Restart policy + generation bump | |
-| Permissions | Yes | PermissionCard + composer stack | Exact option ids; allow-always memory | |
+| Multi-provider ACP (cursor/codex/claude/opencode/grok) | Yes | Same chat UI | Pool keyed by provider+workspace | CLI drivers catalog-only |
+| Auth discovery + `authenticate` | Yes | Auth banner + method picker | Connection state in pool | |
+| Connection lifecycle | Yes | Live banner + inspector force-stop | Idle reap 30m / 5m | |
+| Permissions | Yes | PermissionCard + composer stack | Exact option ids; allow_always option pick | |
 | Tools / thoughts / plans / usage / slash | Yes | Timeline cards + meter + `/` menu | Stable ids + sequence allocator | |
 | Session load/resume | Yes | Indirect | Replay capture; resume preferred | Replay-idle gate |
-| Runtime modes + `session/set_mode` | Yes | Runtime select + interaction mode | Maps plan/ask/implement aliases like t3 | Mock: `set_mode_plan` |
-| Interaction mode (plan/ask/implement) | Yes | Composer interaction select | Persisted `interactionMode` | |
-| Images in prompt | Yes | Composer attach | Max 8 images | |
-| Cursor extensions | Yes | Ask/plan/todos + model discovery | `create_plan` keeps `isProject`/`phases` | |
-| Parameterized model picker meta | Yes | Advertised on initialize | Base model + bracket config batch | |
-| Continuation key | Yes | Picker locked mid-thread | Host + UI `lockedProvider` | |
-| Sequence-gap heal | Yes | Refetch thread on hole | `acpSequence` guard | |
-| Host MCP (`mcpServers`) | Yes | Indirect | Loopback HTTP + Bearer | Mock: `mcp_servers_inject` |
-| Session list/close/delete/logout UI | Yes | ACP inspector actions | Host RPCs | |
-| Plan implement follow-up | Yes | Composer primary actions | Sends implement prompt | |
+| Crash durability | Yes | Interrupted status | SQLite SoT + JSON projection | |
+| Command idempotency | Yes | Transparent | `commandId` receipts | |
+| Idle reaper | Yes | Indirect | 30m idle / 5m sweep | Matches t3code |
+| Checkpoints | Partial | Host IPC | Transcript trim + `git stash apply` on revert when stash message stored | Full tree rewrite still thinner than t3 `CheckpointReactor` |
+| Host MCP (`mcpServers`) | Yes | Indirect | Loopback HTTP + Bearer (`gharargah_ping`, `gharargah_workspace_root`) | Mock: stdio inject |
+| Session list/close/delete/logout UI | Yes | ACP inspector actions | Effect pool RPCs | |
+| Desktop agent-server lifecycle | Yes | Tauri spawns Node launcher | Login-shell PATH shared with jet + agent-server | |
 
 ## Mock scenario coverage (required)
 
@@ -76,10 +81,10 @@ Parity target = t3code `AcpSessionRuntime` path (Cursor/Grok ACP), not Codex app
 | `config_model` | `matrix_config_model` | `scenario:config_model` |
 | `slash_commands` | `matrix_slash_commands` | `scenario:slash_commands` |
 | `chaos_malformed` | `matrix_chaos_malformed` | `scenario:chaos_malformed` |
-| `load_session` | `matrix_load_session` (new + reload, replay captured) | `scenario:load_session` (session id persisted) |
+| `load_session` | `matrix_load_session` | `scenario:load_session` |
 | `fs_roundtrip` | `matrix_fs_roundtrip` | `scenario:fs_roundtrip` |
 | `terminal_roundtrip` | `matrix_terminal_roundtrip` | `scenario:terminal_roundtrip` |
-| `multi_session` | `matrix_multi_session` (concurrent interleaved turns) | `scenario:multi_session` (host turn under flag) |
+| `multi_session` | `matrix_multi_session` | `scenario:multi_session` |
 | `ask_question` | `matrix_ask_question` | `scenario:ask_question` |
 | `create_plan` | `matrix_create_plan` | `scenario:create_plan` |
 | `update_todos` | `matrix_update_todos` | `scenario:update_todos` |
@@ -89,4 +94,4 @@ Parity target = t3code `AcpSessionRuntime` path (Cursor/Grok ACP), not Codex app
 | `set_mode_plan` | `matrix_set_mode_plan` | `scenario:set_mode_plan` |
 | `mcp_servers_inject` | `matrix_mcp_servers_inject` | `scenario:mcp_servers_inject` |
 
-Drift guards: `every_mock_scenario_has_a_matrix_entry` (Rust) + `matrix covers every documented mock scenario name` (e2e).
+Drift guards: Effect `acp-matrix.test.ts` + e2e scenario coverage. Canonical architecture: [`agents-effect-architecture.md`](./agents-effect-architecture.md).

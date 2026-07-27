@@ -28,10 +28,10 @@ const providers = [
   {
     id: "opencode",
     label: "OpenCode",
-    driverId: "opencode:acp",
+    driverId: "opencode:sdk",
     listedModel: "OpenCode",
-    firstReply: "Mock agent reply: hello opencode",
-    secondReply: "Mock agent reply: process-count",
+    firstReply: "OpenCode: hello opencode",
+    secondReply: "OpenCode: process-count",
   },
   {
     id: "cursor",
@@ -85,25 +85,41 @@ async function sendMessage(
 ): Promise<void> {
   const composer = modal.locator('[data-testid="composer-editor"]')
   await expectLocatorVisible(composer)
+  // Host may already be idle while the composer still shows Stop (isWorking).
+  await expect
+    .poll(async () => modal.locator('[data-composer-send="true"]').count(), {
+      timeout: 20_000,
+    })
+    .toBeGreaterThan(0)
+
   const before =
     (await readProviderThread(page, providerId))?.messages.filter(
       message => message.role === "user",
     ).length ?? 0
+  await composer.click()
   await composer.fill(text)
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    await composer.press("Enter")
-    await page.waitForTimeout(100)
-    const count =
-      (await readProviderThread(page, providerId))?.messages.filter(
-        message => message.role === "user",
-      ).length ?? 0
-    if (count > before) return
-  }
-  const thread = await readProviderThread(page, providerId)
-  throw new Error(
-    `composer did not submit for ${providerId}: ${thread?.status ?? "missing"} ${thread?.lastError ?? ""}`,
-  )
+  await expect
+    .poll(async () => ((await composer.textContent()) ?? "").includes(text), { timeout: 5_000 })
+    .toBe(true)
+
+  const send = modal.locator('[data-composer-send="true"]')
+  await expect
+    .poll(
+      async () => send.evaluate(el => !(el as HTMLButtonElement).disabled),
+      { timeout: 10_000 },
+    )
+    .toBe(true)
+  await send.click({ timeout: 5_000 })
+
+  await expect
+    .poll(
+      async () =>
+        (await readProviderThread(page, providerId))?.messages.filter(
+          message => message.role === "user",
+        ).length ?? 0,
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(before)
 }
 
 async function waitForAssistant(
@@ -211,13 +227,16 @@ test.describe("unified agent provider UI", () => {
         await waitForAssistant(page, provider.id, provider.firstReply)
         await expectLocatorVisible(modal.locator("[data-chat-user-bubble]").first())
         await expectLocatorVisible(modal.locator("[data-chat-terminal-pill]"))
+        // Prefer host idle as source of truth; turn-status rows can be virtualized away.
         await expect
-          .poll(
-            async () =>
-              (await modal.locator("[data-chat-turn-status]").first().textContent()) ?? "",
-            { timeout: 15_000 },
-          )
-          .toContain("Completed")
+          .poll(async () => (await readProviderThread(page, provider.id))?.status ?? "missing", {
+            timeout: 15_000,
+          })
+          .toBe("idle")
+        const turnStatus = modal.locator("[data-chat-turn-status]").first()
+        if ((await turnStatus.count()) > 0) {
+          await expect.poll(async () => (await turnStatus.textContent()) ?? "").toContain("Completed")
+        }
         const createdAfterFirstMessage = (await listThreadIds(page)).filter(
           id => !threadsBefore.has(id),
         )
@@ -264,6 +283,18 @@ test.describe("unified agent provider UI", () => {
       try {
         const modal = await openNewAgentSession(page, provider.id)
 
+        // Bind a concrete listed model (same as multi-turn) so canSend is deterministic.
+        const modelPicker = modal.locator("[data-chat-provider-model-picker]")
+        await modelPicker.click()
+        const setupPicker = page.locator("[data-agent-setup-picker]")
+        await expectLocatorVisible(setupPicker)
+        await setupPicker
+          .locator(`[data-model-picker-row][data-model-picker-provider="${provider.id}"]`)
+          .filter({ hasText: provider.listedModel })
+          .first()
+          .click()
+        await expect.poll(() => page.locator("[data-agent-setup-picker]").count()).toBe(0)
+
         await sendMessage(
           page,
           modal,
@@ -274,6 +305,11 @@ test.describe("unified agent provider UI", () => {
         await expectLocatorVisible(permission, { timeout: 20_000 })
         await permission.getByRole("button", { name: /^Allow once$/ }).click()
         await waitForAssistant(page, provider.id, "permission")
+        await expect
+          .poll(async () => modal.locator('[data-composer-send="true"]').count(), {
+            timeout: 20_000,
+          })
+          .toBeGreaterThan(0)
 
         await sendMessage(page, modal, provider.id, "wait")
         const stop = modal.getByRole("button", { name: "Stop generation" })

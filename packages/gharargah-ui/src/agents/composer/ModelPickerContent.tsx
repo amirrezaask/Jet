@@ -2,7 +2,7 @@ import {
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
-} from "../t3contracts.js";
+} from "@gharargah/agents";
 import { resolveSelectableModel } from "../model.js";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { memo, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";

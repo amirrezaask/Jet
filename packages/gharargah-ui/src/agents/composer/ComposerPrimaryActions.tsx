@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu.js";
 import { Spinner } from "@/components/ui/spinner.js";
 
-interface PendingActionState {
+export interface PendingActionState {
   questionIndex: number;
   isLastQuestion: boolean;
   canAdvance: boolean;

@@ -1,4 +1,4 @@
-import type { ProviderInstanceId } from "./t3contracts.js"
+import type { ProviderInstanceId } from "@gharargah/agents"
 
 export interface ModelSlugItem {
   readonly slug: string

@@ -289,6 +289,10 @@ test.describe("ACP structured timeline", () => {
 
         // DOM markers (virtualized list may need a beat after thread JSON updates).
         if (scenario === "tool_lifecycle") {
+          // Tools are aggregated into an activity group; expand to reveal ToolCallCard.
+          const activity = modal.locator("[data-chat-activity-group]").first()
+          await expectLocatorVisible(activity, { timeout: 15_000 })
+          await activity.getByRole("button").first().click()
           const tool = modal
             .locator('[data-gharargah-tool-call][data-tool-name="Read File"]')
             .first()

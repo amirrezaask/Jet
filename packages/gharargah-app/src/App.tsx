@@ -2540,6 +2540,7 @@ export function GharargahApp() {
                               targetThread.workspaceRootPath,
                             threadId: targetThread.id,
                             text: payload.text,
+                            commandId: crypto.randomUUID(),
                             agentId: payload.agentId,
                             driverId: payload.driverId,
                             model: payload.model,
@@ -2586,6 +2587,7 @@ export function GharargahApp() {
                             permissionId,
                             decision,
                             optionId,
+                            approvalDecision,
                           }) => {
                           if (!activeAgentThread) return
                             await window.gharargah?.agents?.resolvePermission?.(
@@ -2598,6 +2600,7 @@ export function GharargahApp() {
                             permissionId,
                             decision,
                             optionId,
+                            approvalDecision,
                               },
                             )
                         }}
@@ -2647,6 +2650,8 @@ export function GharargahApp() {
                               agentCatalog?.agents.find(
                             agent => agent.id === agentId,
                           )?.activeDriverId ?? defaultAgentDriverId(agentId)
+                          const agentChanged =
+                            agentId !== activeAgentThread.agentId
                           setActiveAgentThread(current =>
                             current
                               ? {
@@ -2654,9 +2659,13 @@ export function GharargahApp() {
                                   agentId,
                                   driverId,
                                   model,
-                                  configOptions: [],
-                                  discoveredModels: [],
-                                  sessionModes: null,
+                                  ...(agentChanged
+                                    ? {
+                                        configOptions: [],
+                                        discoveredModels: [],
+                                        sessionModes: null,
+                                      }
+                                    : {}),
                                 }
                               : current,
                           )

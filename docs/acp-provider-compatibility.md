@@ -1,43 +1,36 @@
 # ACP provider compatibility
 
-Profiles in `apps/server/src/host/acp/profiles.rs` define executable name, arguments, timeouts, restart metadata, and known quirks. Product routing uses the same profiles via `AgentsHost` → `AcpSupervisor` → `ConnectionPool` for every agent with an ACP driver (`*:acp`).
+Profiles live in Effect [`apps/agent-server/src/provider/acp-adapter.ts`](../apps/agent-server/src/provider/acp-adapter.ts) (`ACP_PROFILES`). Product routing: `OrchestrationEngine` → `createAdapter(driverId)` → `AcpProviderAdapter` / native adapters. Rust `host/acp/profiles.rs` is **removed**.
 
 | Profile | Command | Product status | Profile note |
 |---|---|---|---|
-| `cursor-acp` | `cursor-agent acp` | Wired (default ACP for Cursor) | Permission requests can arrive during a tool update; initialize advertises parameterized model picker. |
-| `codex-acp` | `codex acp` | Wired (ACP driver on Codex agent) | Tool updates can omit a title. |
-| `claude-acp` | `claude --acp` | Wired (ACP driver on Claude agent) | Authentication may require interactive completion; use in-app auth banner. |
-| `opencode-acp` | `opencode acp` | Wired (ACP driver on OpenCode agent) | Session configuration can be unavailable. |
-| `grok-acp` | `grok agent stdio` | Wired (Grok ACP-only agent) | Matches t3code spawn (`grok agent stdio`); auth via Grok CLI / `XAI_API_KEY`. |
-| `mock-strict` | `gharargah-mock-acp --scenario echo --strict` | Verified in automated ACP tests | Rejects malformed protocol messages. |
-| `mock-compat` | `gharargah-mock-acp --scenario echo` | Mock launch profile | Compatibility-shaped updates. |
-| `mock-chaos` | `gharargah-mock-acp --scenario chaos_malformed --strict` | Mock fault profile | Malformed traffic; `--fault disconnect` optional. |
+| `cursor:acp` | `cursor-agent acp` | Default Cursor | Permission during tool update; parameterized model picker. |
+| `codex:acp` | `codex acp` | ACP alternate for Codex | Primary product driver is `codex:app-server`. |
+| `claude:acp` | `claude --acp` | ACP alternate for Claude | Primary is `claude:sdk`. |
+| `opencode:acp` | `opencode acp` | ACP alternate | Primary is `opencode:sdk` (SSE streaming). |
+| `grok:acp` | `grok agent stdio` | Default Grok | Matches t3code spawn; auth via Grok CLI / `XAI_API_KEY`. |
+| mock | `gharargah-mock-acp --scenario …` | `GHARARGAH_AGENT_MOCK=1` | All ACP agents launch mock via pool. |
 
-`GHARARGAH_MOCK_ACP_BIN` overrides the mock executable for all `mock-*` profiles. Non-mock profiles resolve their executable name from `PATH`. With `GHARARGAH_AGENT_MOCK=1`, every ACP agent id launches the mock binary through the normal pool path.
+`GHARARGAH_MOCK_ACP_BIN` overrides the mock executable. Non-mock profiles resolve from `PATH` (login-shell PATH injected by Tauri into jet + agent-server).
 
-CLI (`*:cli`) drivers remain as fallback when the user picks them explicitly.
+Catalog `*:cli` drivers are **not** implemented — `createAdapter` throws rather than silently remapping to Cursor ACP.
+
+## Durability notes (t3code parity)
+
+- SQLite `agent_events` + command receipts + provider sessions under `.gharargah/agents/events.sqlite3`.
+- Connection keys: `{driverId}:{instance}:{workspace}`.
+- Idle ACP processes reaped after 30 minutes (5m sweep).
+- Host MCP loopback injected on `session/new|load|resume` (`gharargah_ping`, `gharargah_workspace_root`).
+- Checkpoints store `gitStashMessage`; revert trims transcript and `git stash apply` when possible.
 
 ## Opt-in provider smoke
 
-Do not put real provider credentials in normal test runs. With a provider CLI installed and already authenticated, choose its **ACP** driver in the desktop app, send a single harmless prompt in a disposable workspace, and inspect:
+With a provider CLI installed and authenticated, pick its primary driver, send one prompt in a disposable workspace:
 
-1. `agents:getConnectionState` reports `ready` after the turn (provider id = profile id, e.g. `codex-acp`).
-2. The persisted thread has an `acpSessionId` and matching `acpProvider`.
-3. A second prompt reuses the connection and attempts `session/load` / `session/resume` only if the provider advertised it.
-4. Interrupting a long response either receives `Cancelled` or reports `provider_unresponsive_after_cancel` after the 15-second grace period.
-5. Auth-required providers: connection banner shows authenticating → pick method → `agents:authenticate` → retry prompt.
-6. Force-stop from ACP inspector kills the provider process and bumps connection generation.
+1. `agents:getConnectionState` shows `connected` (or `authenticating` until auth).
+2. Thread has `acpSessionId` for ACP drivers.
+3. Second prompt prefers `session/resume` when history exists, else `session/load`.
+4. Interrupt either cancels cleanly or force-kills after 15s grace.
+5. Force-stop from ACP inspector kills the provider process.
 
-Acceptance for smoke: (1)–(4). Auth, terminal timeline rows, plans/usage/commands, and image attach are covered by mock matrix + E2E, not required on every real CLI.
-
-### Real Cursor ACP (opt-in)
-
-```bash
-# Probe initialize + session/new (+ optional prompt)
-python3 scripts/cursor_acp_probe.py --cwd fixtures/sample-workspace
-
-# Host integration smoke (two turns + session reuse)
-GHARARGAH_ACP_REAL_CURSOR=1 cargo test --manifest-path apps/server/Cargo.toml --test acp_real_cursor -- --nocapture
-```
-
-Expect: non-empty `sessionId`, `modes`/`configOptions` when advertised, second turn reuses session id.
+See [`acp-support-matrix.md`](./acp-support-matrix.md).

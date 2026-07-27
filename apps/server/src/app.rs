@@ -633,7 +633,7 @@ mod tests {
         let body = serde_json::json!({
             "channel": "agents:listAcpSessions",
             "args": [{
-                "connectionKey": format!("cursor-acp:{}", root.path().display())
+                "connectionKey": format!("cursor-acp:cursor-acp:{}", root.path().display())
             }]
         })
         .to_string();

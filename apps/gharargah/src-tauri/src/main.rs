@@ -1,6 +1,6 @@
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -8,9 +8,10 @@ use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
 struct ServerSidecar(Mutex<Option<CommandChild>>);
+struct AgentServerChild(Mutex<Option<Child>>);
 
 /// GUI apps inherit PATH=/usr/bin:/bin:/usr/sbin:/sbin. Resolve the user's
-/// login-shell PATH so the jet sidecar can find agent CLIs (codex, claude, …).
+/// login-shell PATH so jet + agent-server can find agent CLIs (codex, claude, …).
 fn login_shell_path() -> Option<String> {
     let shell = std::env::var_os("SHELL").unwrap_or_else(|| "/bin/zsh".into());
     for args in [["-ilc", "printenv PATH"], ["-lc", "printenv PATH"]] {
@@ -94,10 +95,98 @@ fn sidecar_path_env() -> String {
         .unwrap_or(current)
 }
 
+/// Prefer nvm Node (matches pnpm-installed native modules) over Homebrew Node.
+fn find_node(path_env: &str) -> PathBuf {
+    if let Some(home) = dirs::home_dir() {
+        let nvm_current = home.join(".nvm/current/bin/node");
+        if nvm_current.is_file() {
+            return nvm_current;
+        }
+        let versions_dir = home.join(".nvm/versions/node");
+        if let Ok(entries) = std::fs::read_dir(&versions_dir) {
+            let mut nodes: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path().join("bin/node"))
+                .filter(|p| p.is_file())
+                .collect();
+            // Prefer Node 22 — matches typical pnpm-installed better-sqlite3 ABI.
+            if let Some(n22) = nodes
+                .iter()
+                .find(|p| p.to_string_lossy().contains("/v22."))
+                .cloned()
+            {
+                return n22;
+            }
+            nodes.sort();
+            if let Some(n) = nodes.last() {
+                return n.clone();
+            }
+        }
+    }
+    for dir in std::env::split_paths(path_env) {
+        let candidate = dir.join("node");
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    PathBuf::from("node")
+}
+
+fn resolve_agent_server_launcher() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("GHARARGAH_AGENT_SERVER_ENTRY") {
+        let path = PathBuf::from(p);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    // Dev / monorepo: apps/gharargah/src-tauri → ../../agent-server/scripts/run.mjs
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let candidate = manifest.join("../../agent-server/scripts/run.mjs");
+    if candidate.exists() {
+        return Some(candidate);
+    }
+    None
+}
+
+fn spawn_agent_server(path_env: &str) -> Option<Child> {
+    let launcher = resolve_agent_server_launcher()?;
+    let node = find_node(path_env);
+    let mut cmd = Command::new(&node);
+    cmd.arg(&launcher)
+        .env("PATH", path_env)
+        .env("GHARARGAH_AGENT_HOST", "127.0.0.1")
+        .env("GHARARGAH_AGENT_PORT", "4751")
+        .env("GHARARGAH_AGENT_RUNTIME", "effect")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit());
+    if let Some(home) = dirs::home_dir() {
+        cmd.env("HOME", home);
+    }
+    if let Ok(shell) = std::env::var("SHELL") {
+        cmd.env("SHELL", shell);
+    }
+    match cmd.spawn() {
+        Ok(child) => {
+            eprintln!(
+                "[gharargah-desktop] agent-server spawned via {} ({})",
+                node.display(),
+                launcher.display()
+            );
+            Some(child)
+        }
+        Err(err) => {
+            eprintln!("[gharargah-desktop] failed to spawn agent-server: {err}");
+            None
+        }
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(ServerSidecar(Mutex::new(None)))
+        .manage(AgentServerChild(Mutex::new(None)))
         .setup(|app| {
             let listener = TcpListener::bind(("127.0.0.1", 0))?;
             let port = listener.local_addr()?.port();
@@ -116,10 +205,13 @@ fn main() {
                 launch_cwd.to_string_lossy().into_owned(),
             ];
 
-            // Inject login-shell PATH into the sidecar. Do this in the desktop
-            // host — jet's own lazy load can still run, but GUI-spawned
-            // children often never see Homebrew / ~/.local/bin otherwise.
+            // Inject login-shell PATH into jet + agent-server children.
             let path_env = sidecar_path_env();
+
+            if let Some(agent_child) = spawn_agent_server(&path_env) {
+                *app.state::<AgentServerChild>().0.lock().unwrap() = Some(agent_child);
+            }
+
             let mut command = app.shell().sidecar("jet")?.args(sidecar_args);
             command = command.current_dir(&launch_cwd).env("PATH", &path_env);
             if let Some(home) = dirs::home_dir() {
@@ -175,6 +267,9 @@ fn main() {
                 tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
             ) {
                 if let Some(child) = app.state::<ServerSidecar>().0.lock().unwrap().take() {
+                    let _ = child.kill();
+                }
+                if let Some(mut child) = app.state::<AgentServerChild>().0.lock().unwrap().take() {
                     let _ = child.kill();
                 }
             }

@@ -1,50 +1,37 @@
-# ACP architecture
+# ACP architecture (Effect)
 
-ACP lives in `apps/server`. The desktop renderer calls `agents:*` host channels; `AgentsHost` owns the JSON thread store and an `AcpSupervisor`.
+> **Migrated (2026-07):** ACP no longer lives in Rust `apps/server`. The live control plane is the Node Effect **agent-server**. This doc supersedes the old `AgentsHost` / `AcpSupervisor` description.
 
-```text
-renderer → agents:* RPC / events → AgentsHost
-         → AcpSupervisor → ConnectionPool → ACP stdio provider process
-                                      ↕
-                           ACP notifications / requests
-                                         ↓
-                              session_id → SessionRuntime
+```
+renderer → window.gharargah.agents (host-client)
+        → WS ws://127.0.0.1:4751/agents
+        → apps/agent-server OrchestrationEngine
+        → AcpProviderAdapter → AcpClientPool → @gharargah/effect-acp (stdio JSON-RPC)
 ```
 
-## Lifecycle
+Rust `jet` still owns FS / PTY / git / LSP / search. Any `agents:*` invoke on jet returns:
 
-`AcpSupervisor` rejects overlapping turns for a thread (`turn_already_running`), tracks a cancellation watch channel, keeps an in-memory connection snapshot/trace, and dispatches a `TurnJob`.
+`agents:* moved to Effect agent-server …`
 
-`ConnectionPool` keys workers by `provider-id:workspace-path`. A worker owns one provider process and initialized JSON-RPC connection (ACP v1 once). Turns for **different sessions run concurrently** on that connection; turns inside one session are exclusive (`TurnAlreadyRunning`). Every inbound notification/request is routed by ACP `session_id` into a `SessionRuntime` — there is no connection-global “current turn” handler.
+## Key modules
 
-Session restore:
+| Layer | Path |
+|-------|------|
+| WS RPC | `apps/agent-server/src/rpc/server.ts` |
+| Orchestration | `apps/agent-server/src/orchestration/engine.ts` |
+| ACP adapter | `apps/agent-server/src/provider/acp-adapter.ts` |
+| ACP pool + inspector | `apps/agent-server/src/provider/acp-pool.ts` |
+| MCP loopback | `apps/agent-server/src/provider/mcp-bridge.ts` |
+| ACP client | `packages/gharargah-effect-acp/src/client.ts` |
+| Shared types | `packages/gharargah-agents/` |
 
-- Prefer `session/resume` when advertised and local timeline already exists.
-- Else `session/load` with routing + capture registered **before** the request (replay is kept).
-- Never silently replace a missing/unloadable session with `session/new`; typed errors: `session_restore_unsupported`, `session_load_failed`, `session_resume_failed`.
+## Desktop lifecycle
 
-`agents:forceStopProvider` signals shutdown, cancels turns, settles pending permissions, drops the worker (SDK `ChildGuard` kills the process group), and bumps connection generation. Ignored cancel after the grace window marks the connection degraded and force-stops.
+Tauri (`apps/gharargah/src-tauri/src/main.rs`) spawns:
 
-Auth / list / close / delete / logout are capability-gated and implemented on the live connection (not stubs).
+1. **agent-server** — `node apps/agent-server/scripts/run.mjs` with login-shell PATH
+2. **jet** sidecar — HTTP UI host
 
-## Permission and filesystem bridge
+Dev (`pnpm dev` / `dev-web.mjs`) also starts agent-server via tsx.
 
-`session/request_permission` creates a pending oneshot, emits a sequenced timeline permission item with **full option objects** `{id, kind, label}`, and waits for `agents:resolvePermission` with an exact `optionId` (or a decision mapped only against advertised options). Unknown options cancel/reject — never invent approval IDs.
-
-`FsHandler` / `TerminalHandler` resolve paths against the **session** cwd/root set.
-
-## Events and persistence
-
-Each `SessionRuntime` owns a monotonic `Arc<AtomicU64>` sequence allocator seeded from `thread.acpSequence` (never reset per turn). Tool calls reduce by `toolCallId`; thoughts/plans use stable stream ids. The host merges timeline items by id (`created` vs `updated` in `agents:structuredDelta`) and emits full `threadUpdated` mainly at turn boundaries.
-
-| Field | Meaning |
-|---|---|
-| `timeline` | Normalized items; tool/permission/plan/usage/thought/text |
-| `pendingPermissions` | Full option objects awaiting resolve |
-| `usage` / `plan` | Updated from ACP notifications |
-| `acpSequence` | Last applied structured sequence |
-| `connection` | UI connection status mapped from `ProviderConnectionSnapshot` |
-
-## Test peer
-
-`gharargah-mock-acp` + `apps/server/tests/mock_acp_scenario_matrix.rs` + `acp_phase14_runtime.rs`.
+See [`agents-effect-architecture.md`](./agents-effect-architecture.md) and [`acp-support-matrix.md`](./acp-support-matrix.md).

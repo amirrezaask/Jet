@@ -128,14 +128,30 @@ export function computeMessageDurationStart(
   return result
 }
 
+export function coerceMessageText(value: unknown): string {
+  if (value == null) return ""
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  if (Array.isArray(value)) {
+    return value.map(coerceMessageText).filter(Boolean).join("")
+  }
+  if (typeof value === "object") {
+    const record = value as { text?: unknown; content?: unknown }
+    if (record.text != null) return coerceMessageText(record.text)
+    if (record.content != null) return coerceMessageText(record.content)
+  }
+  return ""
+}
+
 export function resolveAssistantMessageCopyState(input: {
-  text: string | null
+  text: string | null | unknown
   showCopyButton: boolean
   streaming: boolean
 }) {
-  const hasText = input.text !== null && input.text.trim().length > 0
+  const normalized = input.text == null ? null : coerceMessageText(input.text)
+  const hasText = normalized !== null && normalized.trim().length > 0
   return {
-    text: hasText ? input.text : null,
+    text: hasText ? normalized : null,
     visible: input.showCopyButton && hasText && !input.streaming,
   }
 }
@@ -452,7 +468,7 @@ export function deriveTimelineMinimapItems(rows: MessagesTimelineRow[]): Timelin
     const row = rows[rowIndex]
     if (!row || row.kind !== "message") continue
     if (row.message.role === "user") {
-      pendingUser = { id: row.message.id, text: row.message.text.trim() }
+      pendingUser = { id: row.message.id, text: coerceMessageText(row.message.text).trim() }
       continue
     }
     if (row.message.role !== "assistant" || !row.showAssistantMeta) continue
@@ -460,7 +476,7 @@ export function deriveTimelineMinimapItems(rows: MessagesTimelineRow[]): Timelin
       id: row.message.id,
       rowIndex,
       userText: pendingUser?.text ?? null,
-      assistantText: row.message.text.trim() || null,
+      assistantText: coerceMessageText(row.message.text).trim() || null,
     })
     pendingUser = null
   }

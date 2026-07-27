@@ -2,8 +2,10 @@ import type {
   AgentCatalogState,
   AgentProvidersState,
   ProviderSnapshot,
+  ProviderDriverKind,
+  ProviderInstanceId,
 } from "@gharargah/agents"
-import type { ProviderDriverKind, ProviderInstanceId } from "./t3contracts.js"
+import { asProviderInstanceId, ProviderDriverKind as DriverKind } from "@gharargah/agents"
 
 export type ProviderInstanceEntry = {
   readonly instanceId: ProviderInstanceId
@@ -11,6 +13,7 @@ export type ProviderInstanceEntry = {
   readonly displayName: string
   readonly accentColor?: string | undefined
   readonly continuationGroupKey?: string | undefined
+  readonly homePath?: string | null
   readonly enabled: boolean
   readonly status: ProviderSnapshot["status"]
   readonly message?: string | null
@@ -33,10 +36,12 @@ export function deriveProviderInstanceEntries(
 ): ProviderInstanceEntry[] {
   if (!state) return []
   return state.providers.map(snapshot => ({
-    instanceId: snapshot.instanceId as ProviderInstanceId,
-    driverKind: snapshot.driverKind as ProviderDriverKind,
+    instanceId: asProviderInstanceId(snapshot.instanceId),
+    driverKind: DriverKind.make(snapshot.driverKind),
     displayName: snapshot.displayName,
-    continuationGroupKey: `${snapshot.instanceId}:instance:${snapshot.instanceId}`,
+    continuationGroupKey:
+      snapshot.continuationGroupKey ?? `${snapshot.instanceId}:default`,
+    homePath: snapshot.homePath ?? null,
     enabled: snapshot.enabled,
     status: snapshot.status,
     message: snapshot.message,
@@ -65,6 +70,7 @@ export function agentCatalogToProviderState(
         status: preferred?.status ?? "unavailable",
         message: preferred?.message,
         models: agent.models,
+        continuationGroupKey: `${agent.id}:default`,
       }
     }),
   }

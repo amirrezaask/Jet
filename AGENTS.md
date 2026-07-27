@@ -174,7 +174,7 @@ GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:tauri
 | `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
 | `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
 
-**ACP / in-app agent chat specs** (`session-agent`, `acp-mock-scenarios`, `acp-structured`) require `GHARARGAH_ENABLE_AGENT_CHAT=1` (default off). See Agents section below.
+**ACP / in-app agent chat specs** (`session-agent`, `acp-mock-scenarios`, `acp-structured`) require `GHARARGAH_ENABLE_AGENT_CHAT=1` (default on). Set `GHARARGAH_ENABLE_AGENT_CHAT=0` only for recovery builds. See Agents section below.
 
 ### Programmatic control (`window.__gharargahAgent`)
 
@@ -338,31 +338,24 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 
 
-### Agents (`@gharargah/agents` + Rust host)
+### Agents (`@gharargah/agents` + Effect agent-server)
 
-**Status (2026-07):** In-app agent chat is a primary ADE surface. New session offers the same minimal Agent UI for Codex (app-server), Claude (SDK), OpenCode (ACP), and Cursor (ACP), alongside direct CLI/PTTY sessions.
+**Status (2026-07):** In-app agent chat is a primary ADE surface. Control plane is the **Node Effect-inspired runtime** in `apps/agent-server` (orchestration + providers + SQLite). Rust host no longer handles `agents:*` — only FS/PTY/git/LSP/terminal. See [`docs/agents-effect-architecture.md`](docs/agents-effect-architecture.md).
 
-**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"1"`). Set it to `0` only for a recovery build that removes Agent menu rows and the Agent mode tab while leaving host IPC available.
-
-When disabled:
-
-- New session menu shows **Shell** + **CLIs** only (no `* Agent` / `(ACP)` rows)
-- `showAgentTab` forced off; roster restore with `sessionMode=agent` falls back to `terminal`
-- Host `agents:*` IPC remains available for diagnostics and recovery
+**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"1"`). `GHARARGAH_AGENT_RUNTIME` defaults to `effect`.
 
 **Supported ADE paths:** Mission Control → New session → Agent provider → unified Agent tab, or CLI provider → terminal PTY.
 
 **Implementation:**
 
-- **Storage:** `.gharargah/agents/state.json` per workspace root (threads, messages, provider/model selection)
-- **Transport:** `window.gharargah.agents` via host invoke/events
-- **Drivers:** cursor / Claude / Codex / OpenCode / Grok via `apps/server/src/host/agents/` + `apps/server/src/host/acp/`
-- **Mock env:** `GHARARGAH_AGENT_MOCK=1` (stdio mock ACP); `GHARARGAH_AGENT_MOCK_SCENARIO=<name>` (default `echo`); `GHARARGAH_MOCK_ACP_BIN`; `GHARARGAH_AGENT_MOCK_LEGACY=1` (in-process fake stream)
-- **Key files:** `packages/gharargah-agents/`, `packages/gharargah-ui/src/agents/`, `packages/gharargah-ui/src/home/NewSessionMenu.tsx`, `packages/gharargah-app/src/App.tsx`, `apps/server/src/host/agents/`, `apps/server/src/host/acp/`
-- **E2E:** `tests/electron/agent-provider-parity.electron.spec.ts`, `session-agent.electron.spec.ts`, `acp-mock-scenarios.electron.spec.ts`, `acp-structured.electron.spec.ts`
+- **Storage:** `.gharargah/agents/` per workspace (SQLite SoT + JSON thread projection)
+- **Transport:** `window.gharargah.agents` → WS `ws://127.0.0.1:4751/agents` via `@gharargah/host-client`
+- **Drivers:** Cursor/Grok ACP (`@gharargah/effect-acp`), Codex app-server, Claude SDK stream-json, OpenCode SDK
+- **Mock env:** `GHARARGAH_AGENT_MOCK=1`; `GHARARGAH_MOCK_ACP_BIN`; scenario via `GHARARGAH_AGENT_MOCK_SCENARIO`
+- **Key files:** `apps/agent-server/`, `packages/gharargah-effect-acp/`, `packages/gharargah-agents/`, `packages/gharargah-ui/src/agents/`, `packages/gharargah-host-client/src/effect-agents-client.ts`
+- **E2E:** Prefer mock + agent-server; legacy Rust ACP matrix tests removed with the Rust agent path
 
-Manual smoke (CLI path): `pnpm dev` → New session → Codex / Claude / Blank → terminal pane.  
-Manual smoke (agent chat): `pnpm dev` → New session → Codex / Claude / OpenCode / Cursor under Agents → Agent tab.
+Manual smoke: `pnpm dev` (starts Rust host + agent-server + Vite) → New session → Agent.
 
 
 

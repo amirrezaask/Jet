@@ -1,22 +1,22 @@
 # ACP debugging
 
-## Inspector channels
+## Inspector channels (Effect agent-server WS)
 
-The host RPC dispatcher exposes:
+RPC methods on `ws://127.0.0.1:4751/agents`:
 
-| Channel | Argument | Result |
+| Method | Argument | Result |
 |---|---|---|
-| `agents:getAcpTrace` | Provider id, default `cursor-acp` | `{ providerId, entries }` |
-| `agents:getConnectionState` | Provider id, default `cursor-acp` | `ProviderConnectionSnapshot` |
-| `agents:resolvePermission` | `{ requestId, optionId }` | Resolves the pending ACP permission request. |
+| `agents:getAcpTrace` | `{ providerId?, workspaceRootPath? }` or provider id string | Redacted protocol-trace entries (bounded) |
+| `agents:getConnectionState` | `{ providerId?, workspaceRootPath?, connectionKey? }` | `AgentConnectionState` from ACP pool |
+| `agents:forceStopProvider` | `{ connectionKey?, providerId?, workspaceRootPath? }` | `{ ok, stopped: string[] }` |
+| `agents:listAcpSessions` | same filters | `{ sessions: [{ connectionKey, sessionId }] }` |
+| `agents:closeAcpSession` / `agents:deleteAcpSession` | `{ sessionId, … }` | `{ ok: true }` or `null` |
+| `agents:logoutProvider` | filters | `{ ok: true }` or `null` |
+| `agents:resolvePermission` | `{ permissionId, decision, optionId? }` | Resolves pending ACP permission |
 
-`getConnectionState` reports the supervisor's in-memory snapshot (`not_started`, `starting`, `ready`, or `degraded` in the current flow), timestamps, restart count, pid, and last error. Some declared states are reserved and are not yet transitioned by the live worker.
-
-`getAcpTrace` is a lifecycle trace today: turn start, successful finish, and error. It is not raw JSON-RPC traffic; the bounded/redacted `ProtocolTrace` utility is not wired to the active connection.
+`getAcpTrace` records redacted JSON-RPC in/out on each pooled `AcpClient` (not the old Rust lifecycle-only stub).
 
 ## Run mock scenarios
-
-For a full host-path test:
 
 ```sh
 GHARARGAH_AGENT_MOCK=1 \
@@ -24,24 +24,23 @@ GHARARGAH_AGENT_MOCK_SCENARIO=permission_allow \
 pnpm dev
 ```
 
-Choose a mock agent thread and send a prompt. To resolve a pending request through the host today, invoke `agents:resolvePermission` with its raw `requestId` and one of the provider option ids, normally `allow_once` or `reject_once`. The shipped renderer sends a different `{permissionId, decision}` shape, so its permission card currently demonstrates the request but cannot complete this bridge.
+Choose a mock agent thread and send a prompt. Permission cards use `{ permissionId, decision }` via `agents:resolvePermission`.
 
-To run the peer independently:
+Standalone mock peer:
 
 ```sh
 cargo run -p jet --bin gharargah-mock-acp -- \
   --scenario slow_stream --latency-ms 50 --chunk-size 8 --strict --trace
 ```
 
-See `acp-mock-scenarios.md` for all scenarios and flags. Use `GHARARGAH_MOCK_ACP_BIN` when the host should use a particular built binary.
+See `acp-mock-scenarios.md`. Use `GHARARGAH_MOCK_ACP_BIN` to point at a built binary.
 
 ## Cancellation and stop behavior
 
-`agents:interruptTurn` sets the host cancel watch and calls `AcpSupervisor::cancel_turn`. The connection sends ACP `session/cancel` once while the prompt request is in flight.
+`agents:interruptTurn` aborts the turn `AbortController`, calls adapter `interrupt`, and ACP `session/cancel`. After **15s** the client `forceKill`s the provider process if still alive.
 
-- A cooperative provider returns `StopReason::Cancelled`; the current thread UI still renders this as an interrupted/error message.
-- If no prompt response arrives within 15 seconds after cancellation, the turn fails with `provider_unresponsive_after_cancel`.
-- This is an honest timeout, not a fabricated cancelled result.
-- There is no public per-provider force-kill RPC. Host shutdown cancels active turns and drops pooled worker senders; it does not synchronously kill a stuck provider process. To recover a truly stuck desktop session, restart the host/app and retain the error plus inspector state for diagnosis.
+`agents:forceStopProvider` immediately SIGKILLs matching pooled clients.
 
-The pool serializes jobs per provider/workspace. A second prompt for the same thread is rejected with `turn_already_running`; it is not queued.
+## Architecture
+
+See [`acp-architecture.md`](./acp-architecture.md) and [`agents-effect-architecture.md`](./agents-effect-architecture.md). Rust `AcpSupervisor` is gone.

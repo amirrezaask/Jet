@@ -1,4 +1,4 @@
-import { ProviderDriverKind } from "../t3contracts.js";
+import { ProviderDriverKind } from "@gharargah/agents";
 import { ClaudeAI, CursorIcon, GrokIcon, Icon, OpenAI, OpenCodeIcon } from "./Icons.js";
 import { PROVIDER_OPTIONS } from "../providerOptions.js";
 

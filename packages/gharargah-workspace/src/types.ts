@@ -150,6 +150,19 @@ export type JetElectronAgents = {
   ): Promise<AgentThread | null>
   createThread(input: CreateAgentThreadInput): Promise<AgentThread>
   sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
+  createCheckpoint?(input: {
+    workspaceRootUri?: string
+    workspaceRootPath: string
+    threadId: string
+    label?: string
+    turnId?: string
+  }): Promise<{ id: string }>
+  revertCheckpoint?(input: {
+    workspaceRootUri?: string
+    workspaceRootPath: string
+    threadId: string
+    checkpointId: string
+  }): Promise<AgentThread>
   interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
   resolvePermission?(input: ResolveAgentPermissionInput): Promise<void>
   resolveUserInput?(input: import("@gharargah/agents").ResolveAgentUserInputInput): Promise<void>

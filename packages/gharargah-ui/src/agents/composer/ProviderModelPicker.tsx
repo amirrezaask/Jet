@@ -2,7 +2,7 @@ import {
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
-} from "../t3contracts.js"
+} from "@gharargah/agents"
 import type { AgentSessionConfigOption } from "@gharargah/agents"
 import { memo, useEffect, useMemo, useState } from "react"
 import type { VariantProps } from "class-variance-authority"

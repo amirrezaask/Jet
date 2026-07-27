@@ -4,6 +4,7 @@ import type {
   AgentThreadDelta,
   AgentTimelineItem,
 } from "./types.js"
+import { coerceAssistantText } from "./text-coerce.js"
 
 const TERMINAL_STATUSES = new Set<AgentThread["status"]>([
   "idle",
@@ -54,7 +55,7 @@ export function applyAgentThreadDelta(
     foundMessage = true
     return {
       ...message,
-      text: delta.text,
+      text: coerceAssistantText(delta.text),
       streaming: delta.streaming,
       updatedAt: delta.updatedAt,
     }
@@ -63,7 +64,7 @@ export function applyAgentThreadDelta(
     messages.push({
       id: delta.messageId,
       role: "assistant",
-      text: delta.text,
+      text: coerceAssistantText(delta.text),
       createdAt: delta.updatedAt,
       updatedAt: delta.updatedAt,
       streaming: delta.streaming,
@@ -119,5 +120,8 @@ export function applyAgentStructuredDelta(
       ? { discoveredModels: delta.discoveredModels }
       : {}),
     ...(delta.sessionModes !== undefined ? { sessionModes: delta.sessionModes } : {}),
+    ...(delta.availableCommands !== undefined
+      ? { availableCommands: delta.availableCommands ?? undefined }
+      : {}),
   }
 }

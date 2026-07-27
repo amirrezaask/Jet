@@ -26,8 +26,9 @@ export function defaultAgentDriverId(agentId: string | null | undefined): string
   const id = normalizeAgentId(agentId)
   if (id === "codex") return "codex:app-server"
   if (id === "claude") return "claude:sdk"
-  if (id === "opencode") return "opencode:acp"
+  if (id === "opencode") return "opencode:sdk"
   if (id === "cursor") return "cursor:acp"
+  if (id === "grok") return "grok:acp"
   return `${id}:cli`
 }
 

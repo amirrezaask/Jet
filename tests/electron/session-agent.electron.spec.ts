@@ -21,6 +21,37 @@ test.describe("project session agent chat", () => {
   test("New session opens agent chat; providers bind via model picker", async () => {
     const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
     try {
+      const effectHealth = await page.evaluate(async () => {
+        const url =
+          (window as Window & { __GHARARGAH_AGENT_WS_URL__?: string }).__GHARARGAH_AGENT_WS_URL__ ??
+          null
+        if (!url) return { ok: false, url: null as string | null }
+        return await new Promise<{ ok: boolean; url: string | null }>(resolve => {
+          const ws = new WebSocket(url)
+          const t = setTimeout(() => {
+            ws.close()
+            resolve({ ok: false, url })
+          }, 5_000)
+          ws.addEventListener("open", () => {
+            ws.send(JSON.stringify({ id: 99, method: "health", params: [] }))
+          })
+          ws.addEventListener("message", ev => {
+            try {
+              const msg = JSON.parse(String(ev.data)) as { id?: number; result?: { ok?: boolean } }
+              if (msg.id === 99) {
+                clearTimeout(t)
+                ws.close()
+                resolve({ ok: Boolean(msg.result?.ok), url })
+              }
+            } catch {
+              /* ignore */
+            }
+          })
+        })
+      })
+      expect(effectHealth.ok).toBe(true)
+      expect(effectHealth.url).toMatch(/^ws:\/\//)
+
       const catalog = await page.evaluate(() => window.gharargah!.agents!.listAgents())
       expect(catalog.agents.map(agent => agent.id)).toEqual([
         "codex",
@@ -59,9 +90,10 @@ test.describe("project session agent chat", () => {
             expect.objectContaining({ id: "claude:acp", kind: "acp", status: "ready" }),
           ])
         } else if (agent.id === "opencode") {
-          expect(agent.activeDriverId).toBe("opencode:acp")
+          expect(agent.activeDriverId).toBe("opencode:sdk")
           expect(agent.drivers).toEqual([
             expect.objectContaining({ id: "opencode:cli", kind: "cli", status: "ready" }),
+            expect.objectContaining({ id: "opencode:sdk", kind: "native", status: "ready" }),
             expect.objectContaining({ id: "opencode:acp", kind: "acp", status: "ready" }),
           ])
         } else if (agent.id === "cursor") {
@@ -127,7 +159,35 @@ test.describe("project session agent chat", () => {
       await expectLocatorVisible(composer, { timeout: 20_000 })
       await composer.click()
       await composer.fill("Confirm the session driver")
-      await modal.getByRole("button", { name: "Send message" }).click()
+      await expect
+        .poll(
+          async () =>
+            modal.locator('[data-composer-send="true"]').evaluate(
+              el => !(el as HTMLButtonElement).disabled,
+            ),
+          { timeout: 10_000 },
+        )
+        .toBe(true)
+      await modal.locator('[data-composer-send="true"]').click()
+      await expect
+        .poll(
+          async () => {
+            const raw = await page.evaluate(() => localStorage.getItem("gharargah-session-roster-v2"))
+            if (!raw) return null
+            const roster = JSON.parse(raw) as {
+              sessions: Array<{
+                agentId?: string
+                agentDriverId?: string
+                agentThreadId?: string
+              }>
+            }
+            const session =
+              roster.sessions.find(item => item.agentId === "cursor") ?? roster.sessions[0]
+            return session?.agentThreadId ?? null
+          },
+          { timeout: 20_000 },
+        )
+        .toEqual(expect.any(String))
       await expectLocatorContainsText(modal, "Confirm the session driver")
 
       const persisted = await page.evaluate(async () => {

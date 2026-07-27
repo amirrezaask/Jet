@@ -1,5 +1,5 @@
 import { type CSSProperties, memo } from "react";
-import { type ProviderDriverKind } from "../t3contracts.js";
+import { type ProviderDriverKind } from "@gharargah/agents";
 
 import { PROVIDER_ICON_BY_PROVIDER } from "./providerIconUtils";
 import { cn } from "@/lib/utils.js";

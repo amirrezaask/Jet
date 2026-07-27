@@ -1,4 +1,4 @@
-import type { ProviderDriverKind } from "../t3contracts.js";
+import type { ProviderDriverKind } from "@gharargah/agents";
 
 /**
  * Model slugs that show a gold "NEW" chip in the model picker list.

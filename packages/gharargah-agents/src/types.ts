@@ -8,6 +8,7 @@ export type AgentThreadStatus =
   | "waiting_for_permission"
   | "cancelling"
   | "cancelled"
+  | "interrupted"
   | "disconnected"
   | "reconnecting"
   | "error"
@@ -64,17 +65,37 @@ export type AgentPermissionRequest = {
   title: string
   description?: string | null
   scope?: string | null
+  /** T3-aligned request kind for composer/timeline summaries. */
+  requestKind?: ProviderRequestKind | null
+  /** Command, path, or other identity shown under the title. */
+  detail?: string | null
   options?: ReadonlyArray<AgentPermissionOption | "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always">
   createdAt: string
   sessionId?: string | null
   status?: "pending" | "submitting" | "resolved" | "cancelled" | "rejected"
+  toolCall?: {
+    name?: string
+    kind?: string
+    locations?: ReadonlyArray<{ path?: string }>
+    rawInput?: unknown
+  } | null
 }
+
+export type ProviderRequestKind = "command" | "file-read" | "file-change" | "other"
+
+export type ProviderApprovalDecision =
+  | "accept"
+  | "acceptForSession"
+  | "decline"
+  | "cancel"
 
 export type AgentUserInputQuestion = {
   id: string
   prompt: string
+  header?: string | null
   allowMultiple?: boolean
-  options?: ReadonlyArray<{ id: string; label: string }>
+  multiSelect?: boolean
+  options?: ReadonlyArray<{ id: string; label: string; description?: string | null }>
 }
 
 export type AgentUserInputRequest = {
@@ -156,6 +177,8 @@ export type AgentDriverSnapshot = {
   kind: AgentDriverKind
   status: AgentDriverStatus
   message?: string | null
+  /** True when the driver is advertised but intentionally limited (e.g. Cursor CLI). */
+  degraded?: boolean
 }
 
 /** An agent identity independent from the transport used to run it. */
@@ -186,6 +209,10 @@ export type ProviderSnapshot = {
   status: ProviderSnapshotStatus
   message?: string | null
   models: ProviderModel[]
+  /** Stable continuation grouping for multi-instance providers. */
+  continuationGroupKey?: string
+  /** Isolated HOME for Claude (and similar) instances. */
+  homePath?: string | null
 }
 
 export type AgentProvidersState = {
@@ -240,6 +267,21 @@ export type AgentThread = {
   configOptions?: Array<AgentSessionConfigOption> | null
   discoveredModels?: ProviderModel[] | null
   acpSequence?: number
+  /** Provider account/instance id used in ACP connection keys. */
+  providerInstanceId?: string | null
+  /** Lightweight transcript checkpoints (message/timeline cursors). */
+  checkpoints?: ReadonlyArray<{
+    id: string
+    createdAt: string
+    label: string
+    messageCount: number
+    timelineCount: number
+    turnId?: string | null
+    /** @deprecated Destructive stash create removed; kept for legacy revert. */
+    gitStashMessage?: string | null
+    /** HEAD at checkpoint create (non-destructive). */
+    gitRef?: string | null
+  }> | null
 }
 
 export type AgentThreadDelta = {
@@ -271,6 +313,7 @@ export type AgentStructuredDelta = {
   configOptions?: Array<AgentSessionConfigOption> | null
   discoveredModels?: ProviderModel[] | null
   sessionModes?: AgentThread["sessionModes"]
+  availableCommands?: ReadonlyArray<AgentAvailableCommand> | null
 }
 
 export type AgentThreadSummary = {
@@ -309,6 +352,8 @@ export type SendAgentMessageInput = {
   workspaceRootPath: string
   threadId: string
   text: string
+  /** Idempotency key — duplicate submits replay the accepted receipt. */
+  commandId?: string | null
   agentId?: string | null
   driverId?: string | null
   /** @deprecated Use agentId. */
@@ -336,6 +381,7 @@ export type InterruptAgentTurnInput = {
   workspaceRootUri: string
   workspaceRootPath: string
   threadId: string
+  commandId?: string | null
 }
 
 export type ResolveAgentPermissionInput = {
@@ -343,9 +389,13 @@ export type ResolveAgentPermissionInput = {
   workspaceRootPath: string
   threadId: string
   permissionId: string
+  commandId?: string | null
   /** Preferred: exact provider option id. */
   optionId?: string
+  /** Legacy ACP option kinds. */
   decision?: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always"
+  /** T3-aligned decision vocabulary. */
+  approvalDecision?: ProviderApprovalDecision
 }
 
 export type ResolveAgentUserInputInput = {
@@ -353,6 +403,7 @@ export type ResolveAgentUserInputInput = {
   workspaceRootPath: string
   threadId: string
   requestId: string
+  commandId?: string | null
   answers?: ReadonlyArray<{ questionId: string; selected: string[] }>
   action?: "accept" | "decline" | "cancel"
   content?: Record<string, unknown>
@@ -443,6 +494,19 @@ export type AgentTransport = {
   ): Promise<AgentThread | null>
   createThread(input: CreateAgentThreadInput): Promise<AgentThread>
   sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
+  createCheckpoint?(input: {
+    workspaceRootUri?: string
+    workspaceRootPath: string
+    threadId: string
+    label?: string
+    turnId?: string
+  }): Promise<{ id: string }>
+  revertCheckpoint?(input: {
+    workspaceRootUri?: string
+    workspaceRootPath: string
+    threadId: string
+    checkpointId: string
+  }): Promise<AgentThread>
   interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
   resolvePermission?(input: ResolveAgentPermissionInput): Promise<void>
   resolveUserInput?(input: ResolveAgentUserInputInput): Promise<void>
@@ -450,7 +514,7 @@ export type AgentTransport = {
   setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
   updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
   listAgents(): Promise<AgentCatalogState>
-  refreshAgents(): Promise<AgentCatalogState>
+  refreshAgents(providerId?: string): Promise<AgentCatalogState>
   /** @deprecated Compatibility APIs for older clients. */
   listProviders?(): Promise<AgentProvidersState>
   refreshProviders?(): Promise<AgentProvidersState>

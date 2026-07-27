@@ -2,7 +2,7 @@ import {
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
   type ModelPickerJumpKeybindingCommand,
   type ResolvedKeybindingsConfig,
-} from "./t3contracts.js"
+} from "@gharargah/agents"
 
 export function modelPickerJumpCommandForIndex(
   index: number,

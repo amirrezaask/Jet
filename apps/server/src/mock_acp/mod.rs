@@ -1,9 +1,10 @@
 pub mod cli;
 pub mod scenarios;
+pub mod cursor_ext;
 
 pub use scenarios::Scenario;
 
-use crate::host::acp::cursor_ext::{
+use crate::mock_acp::cursor_ext::{
     CursorAskOption, CursorAskQuestion, CursorAskQuestionRequest, CursorAskQuestionResponse,
     CursorAvailableModel, CursorCreatePlanRequest, CursorCreatePlanResponse,
     CursorListAvailableModelsRequest, CursorListAvailableModelsResponse,

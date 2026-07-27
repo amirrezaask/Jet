@@ -1,4 +1,9 @@
-import type { ResolveAgentUserInputInput, TimelineEntry, TurnDiffSummary } from "@gharargah/agents"
+import type {
+  ResolveAgentPermissionInput,
+  ResolveAgentUserInputInput,
+  TimelineEntry,
+  TurnDiffSummary,
+} from "@gharargah/agents"
 import { LegendList, type LegendListRef } from "@legendapp/list/react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FileText, Image as ImageIcon } from "lucide-react"
@@ -26,6 +31,7 @@ import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
   formatTimelineTimestamp,
+  coerceMessageText,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   type MessagesTimelineRow,
@@ -52,12 +58,13 @@ function useStableRows(rows: MessagesTimelineRow[]): MessagesTimelineRow[] {
 
 function UserTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "message" }> }) {
   const { row } = props
-  const copyText = row.message.text.trim()
+  const messageText = coerceMessageText(row.message.text)
+  const copyText = messageText.trim()
   return (
     <div className="group flex flex-col items-start gap-1.5" data-chat-user-bubble="">
       <div className="relative max-w-[85%] rounded-[1.25rem] bg-agent-user-bubble px-4 py-2.5">
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-agent-feed-primary">
-          {row.message.text}
+          {messageText}
         </p>
         {row.message.attachments?.length ? (
           <AttachmentGroup className="mt-2">
@@ -159,9 +166,10 @@ function AssistantTimelineRow(props: {
   theme: "light" | "dark"
 }) {
   const { row, theme } = props
-  const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)")
+  const rawText = coerceMessageText(row.message.text)
+  const messageText = rawText || (row.message.streaming ? "" : "(empty response)")
   const assistantCopyState = resolveAssistantMessageCopyState({
-    text: row.message.text ?? null,
+    text: rawText || null,
     showCopyButton: row.showAssistantCopyButton,
     streaming: row.assistantCopyStreaming,
   })
@@ -211,9 +219,10 @@ function WorkingTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "
 function StructuredTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "structured" }>
   onResolvePermission?: (
-    permissionId: string,
-    decision: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always",
-    optionId?: string,
+    input: Pick<
+      ResolveAgentPermissionInput,
+      "permissionId" | "decision" | "optionId" | "approvalDecision"
+    >,
   ) => void
   onResolveUserInput?: (
     input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
@@ -236,9 +245,7 @@ function StructuredTimelineRow(props: {
     return (
       <PermissionCard
         permission={item.permission}
-        onResolve={({ permissionId, decision, optionId }) =>
-          props.onResolvePermission?.(permissionId, decision ?? "reject", optionId)
-        }
+        onResolve={input => props.onResolvePermission?.(input)}
       />
     )
   }
@@ -259,9 +266,10 @@ function TimelineRowContent(props: {
   row: MessagesTimelineRow
   theme: "light" | "dark"
   onResolvePermission?: (
-    permissionId: string,
-    decision: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always",
-    optionId?: string,
+    input: Pick<
+      ResolveAgentPermissionInput,
+      "permissionId" | "decision" | "optionId" | "approvalDecision"
+    >,
   ) => void
   onResolveUserInput?: (
     input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
@@ -315,9 +323,10 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
   onToggleAllDirectories: () => void
   onIsAtEndChange?: (isAtEnd: boolean) => void
   onResolvePermission?: (
-    permissionId: string,
-    decision: "allow_once" | "allow_always" | "reject" | "reject_once" | "reject_always",
-    optionId?: string,
+    input: Pick<
+      ResolveAgentPermissionInput,
+      "permissionId" | "decision" | "optionId" | "approvalDecision"
+    >,
   ) => void
   onResolveUserInput?: (
     input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,

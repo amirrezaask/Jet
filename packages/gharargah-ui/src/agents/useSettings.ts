@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react"
-import type { ProviderInstanceId } from "./t3contracts.js"
+import type { ProviderInstanceId } from "@gharargah/agents"
 
 export type ClientSettings = {
   favorites: ReadonlyArray<{ readonly provider: ProviderInstanceId; readonly model: string }>

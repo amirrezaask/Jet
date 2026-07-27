@@ -1,5 +1,20 @@
 import type { GharargahHostAPI } from "@gharargah/workspace"
 import type { GharargahHostTransport } from "./transport.js"
+import { createEffectAgentsClient } from "./effect-agents-client.js"
+
+function agentRuntimeMode(): "effect" | "rust" {
+  try {
+    const env = (import.meta as ImportMeta & { env?: { GHARARGAH_AGENT_RUNTIME?: string } }).env
+    if (env?.GHARARGAH_AGENT_RUNTIME === "rust") return "rust"
+  } catch {
+    /* no import.meta.env */
+  }
+  if (typeof process !== "undefined" && process.env?.GHARARGAH_AGENT_RUNTIME === "rust") {
+    return "rust"
+  }
+  // Default: Effect agent-server (Rust agents path removed).
+  return "effect"
+}
 
 // The Rust host owns the authoritative replay. This buffer only bridges the
 // attach handshake, so keeping a second multi-megabyte copy is wasteful.
@@ -13,14 +28,17 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
   const terminalReplayFloors = new Map<string, number>()
 
   transport.on("agents:threadUpdated", (...args: unknown[]) => {
+    if (agentRuntimeMode() === "effect") return
     const thread = args[0] as import("@gharargah/agents").AgentThread
     for (const cb of agentThreadUpdatedListeners) cb(thread)
   })
   transport.on("agents:threadDelta", (...args: unknown[]) => {
+    if (agentRuntimeMode() === "effect") return
     const delta = args[0] as import("@gharargah/agents").AgentThreadDelta
     for (const cb of agentThreadDeltaListeners) cb(delta)
   })
   transport.on("agents:permissionRequest", (...args: unknown[]) => {
+    if (agentRuntimeMode() === "effect") return
     const request = args[0] as {
       workspaceRootUri?: string
       workspaceRootPath?: string
@@ -36,10 +54,12 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     }
   })
   transport.on("agents:structuredDelta", (...args: unknown[]) => {
+    if (agentRuntimeMode() === "effect") return
     const delta = args[0] as import("@gharargah/agents").AgentStructuredDelta
     for (const cb of agentStructuredDeltaListeners) cb(delta)
   })
   transport.on("agents:shellEnvReady", () => {
+    if (agentRuntimeMode() === "effect") return
     for (const cb of agentShellEnvReadyListeners) cb()
   })
   transport.on("lsp:crashed", (...args: unknown[]) => {
@@ -105,41 +125,19 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
   const searchReadyListeners = new Set<(rootUri: string) => void>()
   const terminalExitListeners = new Set<(id: string, exitCode: number, signal?: number) => void>()
 
-  return {
-    fs: {
-      readFile: uri => transport.invoke("fs:readFile", uri),
-      writeFile: (uri, content) => transport.invoke("fs:writeFile", uri, content),
-      writeTempDrop: (name, contentBase64) =>
-        transport.invoke("fs:writeTempDrop", name, contentBase64),
-      readDir: uri => transport.invoke("fs:readDir", uri),
-      stat: uri => transport.invoke("fs:stat", uri),
-      showOpenFolderDialog: () => transport.invoke("fs:showOpenFolderDialog"),
-      showSaveFileDialog: (defaultPath?: string) =>
-        transport.invoke("fs:showSaveFileDialog", defaultPath),
-      onFileChanged: callback => {
-        fileChangeListeners.add(callback)
-        return () => fileChangeListeners.delete(callback)
-      },
-    },
-    workspace: {
-      activate: rootUri => transport.invoke("workspace:activate", rootUri),
-      deactivate: rootUri => transport.invoke("workspace:deactivate", rootUri),
-      onFileIndex: callback => {
-        fileIndexListeners.add(callback)
-        return () => fileIndexListeners.delete(callback)
-      },
-      onSearchReady: callback => {
-        searchReadyListeners.add(callback)
-        return () => searchReadyListeners.delete(callback)
-      },
-    },
-    agents: {
+  const effectAgents = agentRuntimeMode() === "effect" ? createEffectAgentsClient() : null
+
+  const agentsApi: GharargahHostAPI["agents"] = effectAgents
+    ? effectAgents
+    : {
       listThreads: (workspaceRootUri, workspaceRootPath) =>
         transport.invoke("agents:listThreads", workspaceRootUri, workspaceRootPath),
       readThread: (workspaceRootUri, workspaceRootPath, threadId) =>
         transport.invoke("agents:readThread", workspaceRootUri, workspaceRootPath, threadId),
       createThread: input => transport.invoke("agents:createThread", input),
       sendMessage: input => transport.invoke("agents:sendMessage", input),
+      createCheckpoint: input => transport.invoke("agents:createCheckpoint", input),
+      revertCheckpoint: input => transport.invoke("agents:revertCheckpoint", input),
       interruptTurn: input => transport.invoke("agents:interruptTurn", input),
       resolvePermission: input => transport.invoke("agents:resolvePermission", input),
       resolveUserInput: input => transport.invoke("agents:resolveUserInput", input),
@@ -181,7 +179,37 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
         agentShellEnvReadyListeners.add(callback)
         return () => agentShellEnvReadyListeners.delete(callback)
       },
+    }
+
+  return {
+    fs: {
+      readFile: uri => transport.invoke("fs:readFile", uri),
+      writeFile: (uri, content) => transport.invoke("fs:writeFile", uri, content),
+      writeTempDrop: (name, contentBase64) =>
+        transport.invoke("fs:writeTempDrop", name, contentBase64),
+      readDir: uri => transport.invoke("fs:readDir", uri),
+      stat: uri => transport.invoke("fs:stat", uri),
+      showOpenFolderDialog: () => transport.invoke("fs:showOpenFolderDialog"),
+      showSaveFileDialog: (defaultPath?: string) =>
+        transport.invoke("fs:showSaveFileDialog", defaultPath),
+      onFileChanged: callback => {
+        fileChangeListeners.add(callback)
+        return () => fileChangeListeners.delete(callback)
+      },
     },
+    workspace: {
+      activate: rootUri => transport.invoke("workspace:activate", rootUri),
+      deactivate: rootUri => transport.invoke("workspace:deactivate", rootUri),
+      onFileIndex: callback => {
+        fileIndexListeners.add(callback)
+        return () => fileIndexListeners.delete(callback)
+      },
+      onSearchReady: callback => {
+        searchReadyListeners.add(callback)
+        return () => searchReadyListeners.delete(callback)
+      },
+    },
+    agents: agentsApi,
     search: {
       project: (rootUri, query, opts) => transport.invoke("search:project", rootUri, query, opts),
       listFiles: rootUri => transport.invoke("search:listFiles", rootUri),
