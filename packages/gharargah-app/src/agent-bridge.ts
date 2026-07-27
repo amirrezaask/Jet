@@ -51,6 +51,16 @@ export type GharargahAgentAPI = {
   measurePerf(name: string, startMark: string, endMark?: string): void
   /** Insert shell-quoted paths into the running terminal under its center (E2E / DnD path). */
   dropFilesOnTerminal(paths: string[]): Promise<boolean>
+  /** Ingest a notification (E2E / agent harness). */
+  ingestNotification?(
+    req: import("@gharargah/shared").IngestNotificationRequest,
+  ): Promise<unknown>
+  /** Open notification center (E2E). */
+  openNotificationCenter?(opts?: {
+    projectId?: string
+    sessionId?: string
+  }): Promise<void>
+  getNotificationCounts?(): Promise<import("@gharargah/shared").NotificationCounts>
 }
 
 export type AgentBridgeContext = {
@@ -266,6 +276,23 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
         rect.left + rect.width / 2,
         rect.top + rect.height / 2,
       )
+    },
+    async ingestNotification(req) {
+      const api = window.gharargah?.notifications
+      if (!api) throw new Error("notifications API unavailable")
+      return api.ingest(req)
+    },
+    async openNotificationCenter(opts) {
+      await ctx().executeCommand("notifications.show")
+      if (opts?.projectId || opts?.sessionId) {
+        // Command opens center; filters applied via dedicated ingest path in E2E using UI.
+        void opts
+      }
+    },
+    async getNotificationCounts() {
+      const api = window.gharargah?.notifications
+      if (!api) throw new Error("notifications API unavailable")
+      return api.counts()
     },
   }
 }

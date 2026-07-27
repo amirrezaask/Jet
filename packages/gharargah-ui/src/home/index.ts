@@ -5,6 +5,16 @@ export { SessionCard, type SessionCardProps } from "./SessionCard.js"
 export { EmptySessionCard, type EmptySessionCardProps } from "./EmptySessionCard.js"
 export { StatusBadge, type StatusBadgeProps } from "./StatusBadge.js"
 export {
+  NotificationBell,
+  NotificationCenter,
+  NotificationItem,
+  groupNotificationsByTime,
+  formatRelativeTime,
+  type NotificationBellProps,
+  type NotificationCenterProps,
+  type NotificationItemProps,
+} from "../notifications/index.js"
+export {
   SessionTabBar,
   type SessionTabBarProps,
   type SessionTabItem,

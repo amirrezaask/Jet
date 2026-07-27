@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { FolderPlus, Search } from "lucide-react"
 import type { PanelId } from "@gharargah/shared"
 import { Button } from "@/components/ui/button.js"
@@ -32,6 +32,9 @@ export type GharargahHomeProps = {
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
   onOpenTodos?: (rootUri: string) => void
+  notificationBell?: ReactNode
+  onViewProjectNotifications?: (projectId: string) => void
+  onViewSessionNotifications?: (sessionId: string) => void
 }
 
 function toSessionCard(group: HomeProjectGroup, term: HomeTerminalEntry): SessionCardModel {
@@ -60,6 +63,9 @@ export function GharargahHome(props: GharargahHomeProps) {
     onRemoveProject,
     onKillTerminal,
     onOpenTodos,
+    notificationBell,
+    onViewProjectNotifications,
+    onViewSessionNotifications,
   } = props
   const [query, setQuery] = useState("")
   const greeting = timeOfDayGreeting()
@@ -125,6 +131,7 @@ export function GharargahHome(props: GharargahHomeProps) {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {notificationBell}
               <div className="relative min-w-[14rem] flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -194,6 +201,8 @@ export function GharargahHome(props: GharargahHomeProps) {
                 onRemoveProject={onRemoveProject}
                 onKillTerminal={onKillTerminal}
                 onOpenTodos={onOpenTodos}
+                onViewProjectNotifications={onViewProjectNotifications}
+                onViewSessionNotifications={onViewSessionNotifications}
               />
             ))}
           </div>

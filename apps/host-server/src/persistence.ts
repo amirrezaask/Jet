@@ -20,7 +20,7 @@ type ProjectRow = {
 }
 
 export class ProjectDatabase {
-  private readonly db: DatabaseSync
+  readonly db: DatabaseSync
 
   constructor(dbPath: string) {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true })
@@ -41,6 +41,11 @@ export class ProjectDatabase {
       UPDATE sessions SET status='interrupted', updated_at=datetime('now')
         WHERE status IN ('starting','running','waiting');
     `)
+    // Lazy import avoided — schema helper applied from createRuntime.
+  }
+
+  raw(): DatabaseSync {
+    return this.db
   }
 
   projects(): Project[] {

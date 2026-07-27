@@ -257,6 +257,42 @@ export type JetElectronShell = {
   openInApp(appId: OpenInAppId, rootUri: string): Promise<{ ok: boolean }>
 }
 
+export type JetElectronNotifications = {
+  list(
+    req?: import("@gharargah/shared").ListNotificationsRequest,
+  ): Promise<import("@gharargah/shared").ListNotificationsResponse>
+  counts(): Promise<import("@gharargah/shared").NotificationCounts>
+  get(id: string): Promise<import("@gharargah/shared").AppNotification | null>
+  ingest(
+    req: import("@gharargah/shared").IngestNotificationRequest,
+  ): Promise<{
+    notification: import("@gharargah/shared").AppNotification | null
+    created: boolean
+    updated: boolean
+    deduped: boolean
+    skipped: boolean
+    skipReason?: string
+  }>
+  markRead(id: string): Promise<import("@gharargah/shared").AppNotification | null>
+  markUnread(id: string): Promise<import("@gharargah/shared").AppNotification | null>
+  dismiss(id: string): Promise<import("@gharargah/shared").AppNotification | null>
+  restore(id: string): Promise<import("@gharargah/shared").AppNotification | null>
+  acknowledge(id: string): Promise<import("@gharargah/shared").AppNotification | null>
+  markAllRead(
+    req?: import("@gharargah/shared").MarkAllNotificationsReadRequest,
+  ): Promise<import("@gharargah/shared").NotificationCounts>
+  getPreferences(): Promise<import("@gharargah/shared").NotificationPreferences>
+  setPreferences(
+    prefs: Partial<import("@gharargah/shared").NotificationPreferences>,
+  ): Promise<import("@gharargah/shared").NotificationPreferences>
+  bindSession(
+    req: import("@gharargah/shared").BindNotificationSessionRequest,
+  ): Promise<{ ok: boolean }>
+  onEvent(
+    callback: (event: import("@gharargah/shared").NotificationStreamEvent) => void,
+  ): () => void
+}
+
 export type GharargahHostAPI = {
   fs: JetElectronFS
   search: JetElectronSearch
@@ -267,6 +303,7 @@ export type GharargahHostAPI = {
   agents?: JetElectronAgents
   git?: JetElectronGit
   shell?: JetElectronShell
+  notifications?: JetElectronNotifications
   getLaunchConfig?(): Promise<LaunchConfig | null>
   getHomeDir?(): Promise<string>
   loadGlobalGharargahrcScanRoots?(): Promise<string[]>

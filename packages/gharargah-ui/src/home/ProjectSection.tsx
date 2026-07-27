@@ -41,6 +41,8 @@ export type HomeProjectSectionProps = {
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
   /** Open session modal on TODOs board for this project. */
   onOpenTodos?: (rootUri: string) => void
+  onViewProjectNotifications?: (projectId: string) => void
+  onViewSessionNotifications?: (sessionId: string) => void
 }
 
 export function ProjectSection(props: HomeProjectSectionProps) {
@@ -57,6 +59,8 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     onRemoveProject,
     onKillTerminal,
     onOpenTodos,
+    onViewProjectNotifications,
+    onViewSessionNotifications,
   } = props
 
   const todos = useProjectTodosBundle({
@@ -101,6 +105,15 @@ export function ProjectSection(props: HomeProjectSectionProps) {
           <ContextMenu>
             <ContextMenuTrigger asChild>{titleBlock}</ContextMenuTrigger>
             <ContextMenuContent data-gharargah-project-menu>
+              {onViewProjectNotifications ? (
+                <ContextMenuItem
+                  onSelect={() =>
+                    onViewProjectNotifications(projectId || path)
+                  }
+                >
+                  View project notifications
+                </ContextMenuItem>
+              ) : null}
               <ContextMenuItem
                 variant="destructive"
                 onSelect={() => onRemoveProject(rootUri)}
@@ -130,6 +143,11 @@ export function ProjectSection(props: HomeProjectSectionProps) {
                 onKill={
                   onKillTerminal
                     ? () => onKillTerminal(term.panelId, term.tabId)
+                    : undefined
+                }
+                onViewNotifications={
+                  onViewSessionNotifications
+                    ? () => onViewSessionNotifications(session.id)
                     : undefined
                 }
               />

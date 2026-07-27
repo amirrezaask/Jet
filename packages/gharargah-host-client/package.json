@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@gharargah/agents": "workspace:*",
+    "@gharargah/shared": "workspace:*",
     "@gharargah/workspace": "workspace:*"
   },
   "devDependencies": { "@types/node": "^22.15.29", "tsx": "^4.23.0", "typescript": "^7.0.2" }

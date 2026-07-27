@@ -36,10 +36,23 @@ import {
   writeTempDrop,
   type TerminalLaunch,
 } from "@gharargah/node-host"
+import type {
+  BindNotificationSessionRequest,
+  IngestNotificationRequest,
+  ListNotificationsRequest,
+  MarkAllNotificationsReadRequest,
+  NotificationPreferences,
+  NotificationStreamEvent,
+} from "@gharargah/shared"
 import type { EventHub } from "./events.js"
 import type { ProjectDatabase } from "./persistence.js"
 import type { HostConfig } from "./config.js"
 import { WorkspaceHost } from "./workspace.js"
+import {
+  NotificationService,
+  parseOscNotifications,
+  normalizeHookEventName,
+} from "./notifications/index.js"
 
 export type HostRuntime = {
   config: HostConfig
@@ -49,11 +62,28 @@ export type HostRuntime = {
   workspace: WorkspaceHost
   perf: PerfHost
   homeDir: string
+  notifications: NotificationService
 }
 
 export function createRuntime(config: HostConfig, events: EventHub, db: ProjectDatabase): HostRuntime {
   const terminal = new TerminalHost()
-  terminal.setEmit((channel, args) => events.emit(channel, args))
+  const notifications = new NotificationService(db.raw(), (streamEvent: NotificationStreamEvent) => {
+    events.emit("notifications:event", [streamEvent])
+  })
+
+  terminal.setEmit((channel, args) => {
+    events.emit(channel, args)
+    if (channel === "terminal:data") {
+      const ptyId = String(args[0] ?? "")
+      const data = String(args[1] ?? "")
+      handleTerminalOsc(notifications, ptyId, data)
+    } else if (channel === "terminal:exit") {
+      const ptyId = String(args[0] ?? "")
+      const exitCode = typeof args[1] === "number" ? args[1] : Number(args[1] ?? 0)
+      handleTerminalExit(notifications, ptyId, exitCode)
+    }
+  })
+
   const workspace = new WorkspaceHost()
   const homeDir = process.env.HOME ?? config.allowedRoots[0] ?? ""
   const runtime: HostRuntime = {
@@ -64,9 +94,57 @@ export function createRuntime(config: HostConfig, events: EventHub, db: ProjectD
     workspace,
     perf: new PerfHost(homeDir, Date.now()),
     homeDir,
+    notifications,
   }
   setLspCrashHandler(id => events.emit("lsp:crashed", [id]))
   return runtime
+}
+
+function handleTerminalOsc(
+  notifications: NotificationService,
+  ptyId: string,
+  data: string,
+): void {
+  const parsed = parseOscNotifications(data)
+  if (parsed.length === 0) return
+  const binding = notifications.bindingForPty(ptyId)
+  for (const item of parsed) {
+    notifications.ingest({
+      ...item,
+      sessionId: item.sessionId ?? binding?.sessionId ?? null,
+      projectId: item.projectId ?? binding?.projectId ?? null,
+      projectName: item.projectName ?? binding?.projectName ?? null,
+      sessionTitle: item.sessionTitle ?? binding?.sessionTitle ?? null,
+      provider: item.provider ?? binding?.provider ?? null,
+    })
+  }
+}
+
+function handleTerminalExit(
+  notifications: NotificationService,
+  ptyId: string,
+  exitCode: number,
+): void {
+  const binding = notifications.bindingForPty(ptyId)
+  if (exitCode === 0) return
+  const providerLabel = binding?.provider
+    ? binding.provider.charAt(0).toUpperCase() + binding.provider.slice(1)
+    : "Process"
+  notifications.ingest({
+    source: "process",
+    type: exitCode > 0 ? "failed" : "process-exited",
+    title: `${providerLabel} exited with code ${exitCode}`,
+    message: binding?.sessionTitle
+      ? `Session “${binding.sessionTitle}” ended unexpectedly.`
+      : "Session process ended unexpectedly.",
+    sessionId: binding?.sessionId ?? null,
+    projectId: binding?.projectId ?? null,
+    projectName: binding?.projectName ?? null,
+    sessionTitle: binding?.sessionTitle ?? null,
+    provider: binding?.provider ?? null,
+    eventId: `exit:${ptyId}:${exitCode}`,
+    metadata: { exitCode, ptyId },
+  })
 }
 
 export async function dispatch(
@@ -88,6 +166,9 @@ export async function dispatch(
     return loadGlobalGharargahrcScanRoots(runtime.homeDir)
   }
 
+  if (channel.startsWith("notifications:")) {
+    return handleNotifications(runtime, channel, args)
+  }
   if (channel.startsWith("fs:")) return handleFs(channel, args)
   if (channel.startsWith("git:")) return handleGit(channel, args)
   if (channel.startsWith("search:")) return handleSearch(runtime, channel, args)
@@ -99,6 +180,70 @@ export async function dispatch(
   if (channel.startsWith("perf:")) return handlePerf(runtime, channel, args)
 
   throw new Error(`unknown host channel: ${channel}`)
+}
+
+function handleNotifications(
+  runtime: HostRuntime,
+  channel: string,
+  args: unknown[],
+): unknown {
+  const n = runtime.notifications
+  switch (channel) {
+    case "notifications:list":
+      return n.list((args[0] as ListNotificationsRequest | undefined) ?? {})
+    case "notifications:counts":
+      return n.counts()
+    case "notifications:get":
+      return n.get(str(args[0], "id"))
+    case "notifications:ingest": {
+      const body = args[0] as IngestNotificationRequest
+      if (!body || typeof body !== "object") throw new Error("missing ingest body")
+      if (typeof body.title !== "string" || !body.title.trim()) {
+        throw new Error("ingest requires title")
+      }
+      if (typeof body.type !== "string") throw new Error("ingest requires type")
+      if (typeof body.source !== "string") throw new Error("ingest requires source")
+      // Normalize hook event names when providerEvent is set without type refinement.
+      if (body.providerEvent && body.type === "provider-notification") {
+        const mapped = normalizeHookEventName(body.providerEvent)
+        if (mapped) body.type = mapped
+      }
+      return n.ingest(body)
+    }
+    case "notifications:markRead":
+      return n.markRead(str(args[0], "id"))
+    case "notifications:markUnread":
+      return n.markUnread(str(args[0], "id"))
+    case "notifications:dismiss":
+      return n.dismiss(str(args[0], "id"))
+    case "notifications:restore":
+      return n.restore(str(args[0], "id"))
+    case "notifications:acknowledge":
+      return n.acknowledge(str(args[0], "id"))
+    case "notifications:markAllRead":
+      return n.markAllRead((args[0] as MarkAllNotificationsReadRequest | undefined) ?? {})
+    case "notifications:getPreferences":
+      return n.getPreferences()
+    case "notifications:setPreferences":
+      return n.setPreferences((args[0] as Partial<NotificationPreferences> | undefined) ?? {})
+    case "notifications:bindSession": {
+      const body = args[0] as BindNotificationSessionRequest
+      if (!body?.sessionId) throw new Error("bindSession requires sessionId")
+      n.bindSession({
+        sessionId: body.sessionId,
+        projectId: body.projectId ?? null,
+        projectName: body.projectName ?? null,
+        sessionTitle: body.sessionTitle ?? null,
+        provider: body.provider ?? null,
+        ptyId: body.ptyId ?? null,
+      })
+      return { ok: true }
+    }
+    case "notifications:runRetention":
+      return n.runRetention()
+    default:
+      throw new Error(`unknown notifications channel: ${channel}`)
+  }
 }
 
 export function shutdownRuntime(runtime: HostRuntime): void {

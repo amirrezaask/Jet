@@ -121,6 +121,24 @@ async function handleHttp(
     return
   }
 
+  // Provider hooks (Claude Stop / Codex / etc.) POST semantic events here.
+  if (req.method === "POST" && pathname === "/api/v1/notifications/ingest") {
+    const body = (await readJson(req)) as Record<string, unknown>
+    try {
+      const value = await dispatch(runtime, "notifications:ingest", [body], "hook")
+      sendJson(res, 200, { value })
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: "OPERATION_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+          details: {},
+        },
+      })
+    }
+    return
+  }
+
   if (pathname === "/api/v1/projects") {
     if (req.method === "GET") {
       sendJson(res, 200, runtime.db.projects())
@@ -325,6 +343,7 @@ function validateRpcPaths(config: HostConfig, channel: string, args: unknown[]):
     if (cwd && !pathAllowed(cwd, config.allowedRoots)) throw new Error("PATH_OUTSIDE_ALLOWED_ROOTS")
     return
   }
+  if (channel.startsWith("notifications:")) return
   if (!/^(fs|git|search|workspace|lsp|terminal):/.test(channel)) return
   if (channel === "fs:writeTempDrop") return
   if (channel.startsWith("terminal:") && typeof args[0] === "string" && !args[0].startsWith("file:")) {

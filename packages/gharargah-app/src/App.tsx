@@ -47,7 +47,9 @@ import {
   type AgentCatalogState,
   type AgentThread,
 } from "@gharargah/agents"
+import type { AppNotification, AgentProvider } from "@gharargah/shared"
 import { createAgentBridge } from "./agent-bridge.js"
+import { useNotificationCenter } from "./hooks/useNotificationCenter.js"
 import {
   TabStore,
   TabTypeRegistry,
@@ -65,6 +67,8 @@ import {
   GharargahHome,
   TerminalSessionModal,
   AgentCliPickerOverlay,
+  NotificationBell,
+  NotificationCenter,
   type AgentCliDriver,
   type OpenInAppId,
   type JetAppearanceSettings,
@@ -273,6 +277,9 @@ export function GharargahApp() {
     string | null
   >(null)
   const [terminalSessionRevision, setTerminalSessionRevision] = useState(0)
+  const notifications = useNotificationCenter()
+  const notificationsRef = useRef(notifications)
+  notificationsRef.current = notifications
   const [, setWorkspaceRevision] = useState(0)
   const [sessionMode, setSessionMode] = useState<SessionDialogMode>("terminal")
   const sessionModeRef = useRef(sessionMode)
@@ -464,6 +471,7 @@ export function GharargahApp() {
       setTerminalModalPanelId(panelId)
       setTerminalModalTabId(tabId)
       setSessionMode(resolvedMode)
+      notificationsRef.current.setViewingSessionId(tabId)
     },
     [],
   )
@@ -471,6 +479,7 @@ export function GharargahApp() {
   const closeTerminalModal = useCallback(() => {
     setTerminalModalTabId(null)
     setTerminalModalPanelId(null)
+    notificationsRef.current.setViewingSessionId(null)
   }, [])
 
   const focusTerminalTab = useCallback(
@@ -1177,9 +1186,53 @@ export function GharargahApp() {
         tabStore.update(tabId, previous => ({ ...(previous as object) }))
         setTerminalSessionRevision(revision => revision + 1)
         persistSessionRoster()
+        const session = terminalSessionForTab(tabId)
+        if (!session) return
+        const folder = workspace.folders.find(f => f.root.uri === session.cwdRootUri)
+        const provider = (session.agentId as AgentProvider | undefined) ?? null
+        void notificationsRef.current.bindSession({
+          sessionId: tabId,
+          projectId: folder?.id ?? session.cwdRootUri,
+          projectName: folder?.root.name ?? null,
+          sessionTitle:
+            session.customLabel ??
+            workspace.tabRegistry.get(tabId)?.label ??
+            null,
+          provider,
+          ptyId: session.ptyId ?? null,
+        })
       }),
-    [tabStore, persistSessionRoster],
+    [tabStore, persistSessionRoster, workspace],
   )
+
+  const openNotificationSession = useCallback(
+    async (n: AppNotification) => {
+      if (!n.sessionId) {
+        showGharargahToast("This notification has no linked session", {
+          variant: "warning",
+        })
+        await notifications.markRead(n.id)
+        return
+      }
+      const session = terminalSessionForTab(n.sessionId)
+      if (!session) {
+        showGharargahToast("Session was removed — notification kept in history", {
+          variant: "warning",
+        })
+        await notifications.markRead(n.id)
+        return
+      }
+      const panelId =
+        findPanelWithTab(panelTree, n.sessionId) ?? getAllLeafPanels(panelTree)[0]
+      if (!panelId) return
+      focusTerminalTab(panelId, n.sessionId, "terminal")
+      notifications.setOpen(false)
+      await notifications.markRead(n.id)
+    },
+    [panelTree, focusTerminalTab, notifications],
+  )
+  const openNotificationSessionRef = useRef(openNotificationSession)
+  openNotificationSessionRef.current = openNotificationSession
 
   useEffect(() => {
     persistSessionRoster()
@@ -1189,6 +1242,13 @@ export function GharargahApp() {
     sessionMode,
     terminalSessionRevision,
   ])
+
+  // Document title badge
+  useEffect(() => {
+    const base = "Gharargah"
+    const unread = notifications.counts.totalUnread
+    document.title = unread > 0 ? `(${unread}) ${base}` : base
+  }, [notifications.counts.totalUnread])
 
   useEffect(() => {
     if (initialized.current) return
@@ -1717,6 +1777,9 @@ export function GharargahApp() {
       bind("Cmd-Shift-b", appCommands.bufferList, whenWorkspace),
       bind("Mod-Shift-e", appCommands.showEditor, whenWorkspace),
       bind("Mod-Shift-t", appCommands.showTerminal, whenWorkspace),
+      bind("Cmd-Shift-n", () => {
+        notificationsRef.current.setOpen(true)
+      }, noOverlay),
       ...buildMacTerminalQuickSwitchBindings({
         workspace,
         getTerminalExplorerGroups,
@@ -1824,6 +1887,105 @@ export function GharargahApp() {
           category: "UI",
           aliases: ["preferences", "appearance", "font", "theme"],
       }),
+    )
+    disposables.push(
+      commands.register(
+        "notifications.show",
+        () => notificationsRef.current.setOpen(true),
+        {
+          id: "notifications.show",
+          title: "Open Notification Center",
+          category: "Notifications",
+          aliases: ["bell", "alerts", "inbox"],
+        },
+      ),
+      commands.register(
+        "notifications.markAllRead",
+        () => void notificationsRef.current.markAllVisibleRead(),
+        {
+          id: "notifications.markAllRead",
+          title: "Mark Visible Notifications as Read",
+          category: "Notifications",
+        },
+      ),
+      commands.register(
+        "notifications.nextUnread",
+        () => {
+          const n = notificationsRef.current
+          const unread = n.items.filter(i => i.status === "unread")
+          if (unread.length === 0) {
+            n.setOpen(true)
+            return
+          }
+          const idx = unread.findIndex(i => i.id === n.selectedId)
+          const next = unread[(idx + 1) % unread.length]!
+          n.setSelectedId(next.id)
+          n.setOpen(true)
+        },
+        {
+          id: "notifications.nextUnread",
+          title: "Next Unread Notification",
+          category: "Notifications",
+        },
+      ),
+      commands.register(
+        "notifications.prevUnread",
+        () => {
+          const n = notificationsRef.current
+          const unread = n.items.filter(i => i.status === "unread")
+          if (unread.length === 0) {
+            n.setOpen(true)
+            return
+          }
+          const idx = unread.findIndex(i => i.id === n.selectedId)
+          const prev =
+            unread[idx <= 0 ? unread.length - 1 : idx - 1]!
+          n.setSelectedId(prev.id)
+          n.setOpen(true)
+        },
+        {
+          id: "notifications.prevUnread",
+          title: "Previous Unread Notification",
+          category: "Notifications",
+        },
+      ),
+      commands.register(
+        "notifications.openSelected",
+        () => {
+          const n = notificationsRef.current
+          const item = n.items.find(i => i.id === n.selectedId) ?? n.items[0]
+          if (item) void openNotificationSessionRef.current(item)
+        },
+        {
+          id: "notifications.openSelected",
+          title: "Open Selected Notification",
+          category: "Notifications",
+        },
+      ),
+      commands.register(
+        "notifications.markSelectedRead",
+        () => {
+          const id = notificationsRef.current.selectedId
+          if (id) void notificationsRef.current.markRead(id)
+        },
+        {
+          id: "notifications.markSelectedRead",
+          title: "Mark Selected Notification Read",
+          category: "Notifications",
+        },
+      ),
+      commands.register(
+        "notifications.dismissSelected",
+        () => {
+          const id = notificationsRef.current.selectedId
+          if (id) void notificationsRef.current.dismiss(id)
+        },
+        {
+          id: "notifications.dismissSelected",
+          title: "Dismiss Selected Notification",
+          category: "Notifications",
+        },
+      ),
     )
     disposables.push(
       commands.register("ui.showThemePicker", () => setSettingsOpen(true), {
@@ -2392,20 +2554,28 @@ export function GharargahApp() {
             data-gharargah-session-layout={appearanceSettings.sessionLayout}
           >
             {appearanceSettings.sessionLayout === "tabs" ? (
-              <Suspense
-                fallback={
-                  <div className="h-10 shrink-0 border-b border-border bg-muted/35" />
-                }
-              >
-                <SessionTabBar
-                  sessions={sessionTabs}
-                  activeTabId={terminalModalTabId}
-                  onSelect={openTerminalFromHome}
-                  onClose={closeTerminalTab}
-                  newSessionRootUri={newSessionRootUri}
-                  onNewTab={rootUri => void newAgentTabFromHome(rootUri)}
+              <div className="flex items-center gap-1 border-b border-border bg-muted/35 pe-2">
+                <div className="min-w-0 flex-1">
+                  <Suspense
+                    fallback={
+                      <div className="h-10 shrink-0" />
+                    }
+                  >
+                    <SessionTabBar
+                      sessions={sessionTabs}
+                      activeTabId={terminalModalTabId}
+                      onSelect={openTerminalFromHome}
+                      onClose={closeTerminalTab}
+                      newSessionRootUri={newSessionRootUri}
+                      onNewTab={rootUri => void newAgentTabFromHome(rootUri)}
+                    />
+                  </Suspense>
+                </div>
+                <NotificationBell
+                  counts={notifications.counts}
+                  onClick={() => notifications.setOpen(true)}
                 />
-              </Suspense>
+              </div>
             ) : null}
             <div className="min-h-0 flex-1 overflow-hidden">
               {appearanceSettings.sessionLayout === "cards" ? (
@@ -2434,8 +2604,52 @@ export function GharargahApp() {
                 onRemoveProject={removeProjectByRootUri}
                 onKillTerminal={closeTerminalTab}
                 onOpenTodos={rootUri => void openTodosFromHome(rootUri)}
+                notificationBell={
+                  <NotificationBell
+                    counts={notifications.counts}
+                    onClick={() => notifications.setOpen(true)}
+                  />
+                }
+                onViewProjectNotifications={projectId =>
+                  notifications.openFiltered({ projectId })
+                }
+                onViewSessionNotifications={sessionId =>
+                  notifications.openFiltered({ sessionId })
+                }
               />
               ) : null}
+
+            <NotificationCenter
+              open={notifications.open}
+              onOpenChange={notifications.setOpen}
+              items={notifications.items}
+              counts={notifications.counts}
+              filter={notifications.filter}
+              onFilterChange={notifications.setFilter}
+              query={notifications.query}
+              onQueryChange={notifications.setQuery}
+              loading={notifications.loading}
+              error={notifications.error}
+              projectFilter={notifications.projectId}
+              sessionFilter={notifications.sessionId}
+              prefs={notifications.prefs}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onMarkAllRead={() => void notifications.markAllVisibleRead()}
+              isSessionAvailable={id => Boolean(terminalSessionForTab(id))}
+              onOpenNotification={n => void openNotificationSession(n)}
+              onMarkRead={id => void notifications.markRead(id)}
+              onMarkUnread={id => void notifications.markUnread(id)}
+              onDismiss={id => void notifications.dismiss(id)}
+              onAcknowledge={id => void notifications.acknowledge(id)}
+              selectedId={notifications.selectedId}
+              onSelectedIdChange={notifications.setSelectedId}
+            />
+            <div
+              id="gharargah-notification-live"
+              className="sr-only"
+              aria-live="polite"
+              aria-atomic="true"
+            />
 
             {terminalModalTabId && terminalModalPanelId ? (
               <TerminalSessionModal

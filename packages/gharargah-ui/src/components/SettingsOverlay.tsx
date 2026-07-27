@@ -1,5 +1,6 @@
 import type { GharargahTheme } from "@gharargah/shared"
 import { LayoutGrid, PanelsTopLeft, RotateCcw, X } from "lucide-react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button.js"
 import {
   Dialog,
@@ -40,6 +41,10 @@ export type SettingsOverlayProps = {
   settings: JetAppearanceSettings
   onSettingsChange: (settings: JetAppearanceSettings) => void
   onReset: () => void
+  notificationPrefs?: import("@gharargah/shared").NotificationPreferences | null
+  onNotificationPrefsChange?: (
+    patch: Partial<import("@gharargah/shared").NotificationPreferences>,
+  ) => void
 }
 
 const UI_FONT_PRESETS: { id: string; label: string; value: string }[] = [
@@ -170,7 +175,29 @@ export function SettingsOverlay({
   settings,
   onSettingsChange,
   onReset,
+  notificationPrefs: notificationPrefsProp,
+  onNotificationPrefsChange: onNotificationPrefsChangeProp,
 }: SettingsOverlayProps) {
+  const [localPrefs, setLocalPrefs] = useState<
+    import("@gharargah/shared").NotificationPreferences | null
+  >(null)
+
+  useEffect(() => {
+    if (!open || notificationPrefsProp) return
+    const api = window.gharargah?.notifications
+    if (!api) return
+    void api.getPreferences().then(setLocalPrefs).catch(() => {})
+  }, [open, notificationPrefsProp])
+
+  const notificationPrefs = notificationPrefsProp ?? localPrefs
+  const onNotificationPrefsChange =
+    onNotificationPrefsChangeProp ??
+    ((patch: Partial<import("@gharargah/shared").NotificationPreferences>) => {
+      const api = window.gharargah?.notifications
+      if (!api) return
+      void api.setPreferences(patch).then(setLocalPrefs)
+    })
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -188,7 +215,7 @@ export function SettingsOverlay({
             <div className="min-w-0">
               <DialogTitle className="text-base">Settings</DialogTitle>
               <DialogDescription className="mt-1">
-                Session layout, theme, and typography.
+                Session layout, theme, typography, and notifications.
               </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-1">
@@ -357,6 +384,45 @@ export function SettingsOverlay({
                 </div>
               </SettingsField>
             </section>
+
+            {notificationPrefs && onNotificationPrefsChange ? (
+              <section
+                className="flex flex-col gap-3"
+                data-gharargah-notification-prefs
+              >
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Controls in-app and desktop delivery. Session attention tracking is separate.
+                  </p>
+                </div>
+                {(
+                  [
+                    ["desktopEnabled", "Desktop notifications"],
+                    ["notifyOnCompleted", "Turn completed"],
+                    ["notifyOnInputRequired", "Input required"],
+                    ["notifyOnPermissionRequired", "Permission required"],
+                    ["notifyOnFailure", "Failures"],
+                    ["includeBackgroundOutput", "Background PTY output"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label
+                    key={key}
+                    className="flex items-center justify-between gap-3 text-xs text-foreground"
+                  >
+                    <span>{label}</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(notificationPrefs[key])}
+                      data-gharargah-notification-pref={key}
+                      onChange={e =>
+                        onNotificationPrefsChange({ [key]: e.target.checked })
+                      }
+                    />
+                  </label>
+                ))}
+              </section>
+            ) : null}
           </div>
         </ScrollArea>
       </DialogContent>

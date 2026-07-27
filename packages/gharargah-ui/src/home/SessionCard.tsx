@@ -25,6 +25,7 @@ export type SessionCardProps = {
   onKill?: () => void
   onReview?: () => void
   onReject?: () => void
+  onViewNotifications?: () => void
 }
 
 function ProviderGlyph({
@@ -55,11 +56,13 @@ function stopCardClick(e: MouseEvent) {
 }
 
 export function SessionCard(props: SessionCardProps) {
-  const { session, onClick, onKill, onReview, onReject } = props
+  const { session, onClick, onKill, onReview, onReject, onViewNotifications } =
+    props
   const showApprovalActions =
     session.status === "approval" || session.requiresApproval
 
-  const overflow: ReactNode = onKill ? (
+  const overflow: ReactNode =
+    onKill || onViewNotifications ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
@@ -80,13 +83,17 @@ export function SessionCard(props: SessionCardProps) {
         collisionPadding={{ top: 42, right: 8, bottom: 8, left: 8 }}
         onClick={stopCardClick}
       >
-        <DropdownMenuItem
-          variant="destructive"
-          onSelect={onKill}
-        >
-          <X className="size-4" />
-          End session
-        </DropdownMenuItem>
+        {onViewNotifications ? (
+          <DropdownMenuItem onSelect={onViewNotifications}>
+            View notifications
+          </DropdownMenuItem>
+        ) : null}
+        {onKill ? (
+          <DropdownMenuItem variant="destructive" onSelect={onKill}>
+            <X className="size-4" />
+            End session
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   ) : null

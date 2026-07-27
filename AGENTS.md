@@ -13,10 +13,10 @@ Guide for AI agents and contributors working in this repo.
 
 | Layer | Owns |
 | ----- | ---- |
-| **Gharargah App** | Home, terminal modals, project catalog, slim command/overlay set |
-| **Gharargah UI** | Home UI, TerminalSessionModal, TerminalPanel, overlays, themes (library still has editor/sidebar components — unwired) |
+| **Gharargah App** | Home, terminal modals, project catalog, slim command/overlay set, notification center |
+| **Gharargah UI** | Home UI, TerminalSessionModal, TerminalPanel, overlays, themes, notification center |
 | **Gharargah Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
-| **Host server (TS)** | FS, terminal PTY (`node-pty`), search/git/LSP over HTTP `/api/v1/rpc` + `/ws` |
+| **Host server (TS)** | FS, terminal PTY (`node-pty`), search/git/LSP/notifications over HTTP `/api/v1/rpc` + `/ws` |
 
 Library packages `@gharargah/monaco`, `@gharargah/lsp`, and editor/sidebar UI components remain in the monorepo; the app uses Monaco inside the session-modal editor.
 
@@ -229,6 +229,8 @@ Wired by `@gharargah/host-client` `createWebTransport()` → `createGharargahApi
 | `fs:showOpenFolderDialog`                              | Native folder picker             |
 | `git:isRepo`, `git:status`, `git:diff`                 | Git CLI wrappers                 |
 | `lsp:start`, `lsp:stop`                                | Spawn language server, WS bridge |
+| `notifications:*`                                      | Notification center CRUD + WS `notifications:event` |
+| `POST /api/v1/notifications/ingest`                    | Provider hook ingest (Claude/Codex Stop, etc.) |
 
 
 TS host: `apps/host-server/src/`  

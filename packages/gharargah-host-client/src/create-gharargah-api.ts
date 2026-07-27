@@ -104,6 +104,10 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     const signal = args[2] as number | undefined
     for (const cb of terminalExitListeners) cb(id, exitCode, signal)
   })
+  transport.on("notifications:event", (...args: unknown[]) => {
+    const event = args[0] as import("@gharargah/shared").NotificationStreamEvent
+    for (const cb of notificationEventListeners) cb(event)
+  })
 
   const lspCrashListeners = new Set<(id: string) => void>()
   const agentThreadUpdatedListeners = new Set<(thread: import("@gharargah/agents").AgentThread) => void>()
@@ -121,6 +125,9 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
   const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
   const searchReadyListeners = new Set<(rootUri: string) => void>()
   const terminalExitListeners = new Set<(id: string, exitCode: number, signal?: number) => void>()
+  const notificationEventListeners = new Set<
+    (event: import("@gharargah/shared").NotificationStreamEvent) => void
+  >()
 
   const effectAgents = agentRuntimeMode() === "effect" ? createEffectAgentsClient() : null
 
@@ -248,6 +255,25 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     },
     shell: {
       openInApp: (appId, rootUri) => transport.invoke("shell:openInApp", appId, rootUri),
+    },
+    notifications: {
+      list: req => transport.invoke("notifications:list", req ?? {}),
+      counts: () => transport.invoke("notifications:counts"),
+      get: id => transport.invoke("notifications:get", id),
+      ingest: req => transport.invoke("notifications:ingest", req),
+      markRead: id => transport.invoke("notifications:markRead", id),
+      markUnread: id => transport.invoke("notifications:markUnread", id),
+      dismiss: id => transport.invoke("notifications:dismiss", id),
+      restore: id => transport.invoke("notifications:restore", id),
+      acknowledge: id => transport.invoke("notifications:acknowledge", id),
+      markAllRead: req => transport.invoke("notifications:markAllRead", req ?? {}),
+      getPreferences: () => transport.invoke("notifications:getPreferences"),
+      setPreferences: prefs => transport.invoke("notifications:setPreferences", prefs),
+      bindSession: req => transport.invoke("notifications:bindSession", req),
+      onEvent: callback => {
+        notificationEventListeners.add(callback)
+        return () => notificationEventListeners.delete(callback)
+      },
     },
     terminal: {
       create: (cwdUri, launch) => transport.invoke("terminal:create", cwdUri, launch),
