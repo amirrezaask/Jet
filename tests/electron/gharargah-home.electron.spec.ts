@@ -276,6 +276,13 @@ test.describe("gharargah mission home", () => {
       const cardMenu = page.locator("[data-gharargah-terminal-card-menu]")
       await expectLocatorVisible(cardMenu)
       await cardMenu.getByRole("menuitem", { name: "End session" }).click()
+      await expectLocatorVisible(page.getByRole("alertdialog"))
+      await page.locator('[data-gharargah-confirm="cancel"]').click()
+      await expectLocatorVisible(cards.first())
+      await cards.first().click({ button: "right" })
+      await expectLocatorVisible(cardMenu)
+      await cardMenu.getByRole("menuitem", { name: "End session" }).click()
+      await page.locator('[data-gharargah-confirm="accept"]').click()
       await expect
         .poll(async () => cards.count(), { timeout: 10_000 })
         .toBe(0)

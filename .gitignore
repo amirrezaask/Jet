@@ -6,6 +6,8 @@ dist
 apps/jet-desktop/dist-electron
 apps/jet-desktop/release
 packages/jet-app/dist-electron
+apps/gharargah-electron/pack
+apps/gharargah-electron/dist
 .4coder
 .vscode
 .4coder_fleury

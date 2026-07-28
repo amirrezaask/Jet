@@ -2,22 +2,14 @@ import type { GharargahHostAPI } from "@gharargah/workspace"
 import type { GharargahHostTransport } from "./transport.js"
 import { createEffectAgentsClient } from "./effect-agents-client.js"
 
-function agentRuntimeMode(): "effect" | "rust" {
-  try {
-    const env = (import.meta as ImportMeta & { env?: { GHARARGAH_AGENT_RUNTIME?: string } }).env
-    if (env?.GHARARGAH_AGENT_RUNTIME === "rust") return "rust"
-  } catch {
-    /* no import.meta.env */
-  }
-  // Default: Effect agent-server (legacy Rust agents path removed).
-  return "effect"
-}
-
 // Host owns the authoritative terminal replay. This buffer only bridges the
 // attach handshake, so keeping a second multi-megabyte copy is wasteful.
 const MAX_BUFFERED_TERMINAL_CHARS = 64 * 1024
 
-export function createGharargahApi(transport: GharargahHostTransport): GharargahHostAPI {
+export function createGharargahApi(
+  transport: GharargahHostTransport,
+  options: { agentChatEnabled?: boolean } = {},
+): GharargahHostAPI {
   const terminalDataListeners = new Map<string, Set<(data: string) => void>>()
   type BufferedTerminalData = { data: string; sequence: number }
   const terminalDataBuffers = new Map<string, BufferedTerminalData[]>()
@@ -25,17 +17,17 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
   const terminalReplayFloors = new Map<string, number>()
 
   transport.on("agents:threadUpdated", (...args: unknown[]) => {
-    if (agentRuntimeMode() === "effect") return
+    if (options.agentChatEnabled) return
     const thread = args[0] as import("@gharargah/agents").AgentThread
     for (const cb of agentThreadUpdatedListeners) cb(thread)
   })
   transport.on("agents:threadDelta", (...args: unknown[]) => {
-    if (agentRuntimeMode() === "effect") return
+    if (options.agentChatEnabled) return
     const delta = args[0] as import("@gharargah/agents").AgentThreadDelta
     for (const cb of agentThreadDeltaListeners) cb(delta)
   })
   transport.on("agents:permissionRequest", (...args: unknown[]) => {
-    if (agentRuntimeMode() === "effect") return
+    if (options.agentChatEnabled) return
     const request = args[0] as {
       workspaceRootUri?: string
       workspaceRootPath?: string
@@ -51,12 +43,12 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     }
   })
   transport.on("agents:structuredDelta", (...args: unknown[]) => {
-    if (agentRuntimeMode() === "effect") return
+    if (options.agentChatEnabled) return
     const delta = args[0] as import("@gharargah/agents").AgentStructuredDelta
     for (const cb of agentStructuredDeltaListeners) cb(delta)
   })
   transport.on("agents:shellEnvReady", () => {
-    if (agentRuntimeMode() === "effect") return
+    if (options.agentChatEnabled) return
     for (const cb of agentShellEnvReadyListeners) cb()
   })
   transport.on("lsp:crashed", (...args: unknown[]) => {
@@ -129,7 +121,7 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     (event: import("@gharargah/shared").NotificationStreamEvent) => void
   >()
 
-  const effectAgents = agentRuntimeMode() === "effect" ? createEffectAgentsClient() : null
+  const effectAgents = options.agentChatEnabled ? createEffectAgentsClient() : null
 
   const agentsApi: GharargahHostAPI["agents"] = effectAgents
     ? effectAgents

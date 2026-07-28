@@ -1,8 +1,6 @@
 import { useSyncExternalStore } from "react"
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -34,8 +32,12 @@ function actionClassForVariant(variant: GharargahVariant | undefined, destructiv
   }
 }
 
-let pending: ConfirmOptions | null = null
-let resolveFn: ((value: boolean) => void) | null = null
+type PendingConfirm = {
+  options: ConfirmOptions
+  resolve: (value: boolean) => void
+}
+
+let pending: PendingConfirm | null = null
 const listeners = new Set<() => void>()
 
 function emitChange(): void {
@@ -49,30 +51,34 @@ function subscribe(listener: () => void): () => void {
 
 export function requestConfirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise(resolve => {
-    resolveFn?.(false)
-    pending = options
-    resolveFn = resolve
+    pending?.resolve(false)
+    pending = { options, resolve }
     emitChange()
   })
 }
 
 export function ConfirmDialogHost() {
-  const options = useSyncExternalStore(subscribe, () => pending, () => null)
-  const open = options != null
+  const request = useSyncExternalStore(subscribe, () => pending, () => null)
+  const options = request?.options ?? null
+  const open = request != null
 
-  const finish = (value: boolean) => {
+  const finish = (target: PendingConfirm, value: boolean) => {
+    if (pending !== target) return
     pending = null
-    const resolve = resolveFn
-    resolveFn = null
-    resolve?.(value)
+    target.resolve(value)
     emitChange()
+  }
+
+  const finishCurrent = (value: boolean) => {
+    const current = pending
+    if (current) finish(current, value)
   }
 
   return (
     <AlertDialog
       open={open}
       onOpenChange={next => {
-        if (!next) finish(false)
+        if (!next && request) finish(request, false)
       }}
     >
       <AlertDialogContent>
@@ -81,16 +87,22 @@ export function ConfirmDialogHost() {
           <AlertDialogDescription>{options?.description ?? ""}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel data-gharargah-confirm="cancel" onClick={() => finish(false)}>
+          <button
+            type="button"
+            data-gharargah-confirm="cancel"
+            className={buttonVariants({ variant: "outline" })}
+            onClick={() => finishCurrent(false)}
+          >
             {options?.cancelLabel ?? "Cancel"}
-          </AlertDialogCancel>
-          <AlertDialogAction
+          </button>
+          <button
+            type="button"
             data-gharargah-confirm="accept"
             className={actionClassForVariant(options?.variant, options?.destructive)}
-            onClick={() => finish(true)}
+            onClick={() => finishCurrent(true)}
           >
             {options?.confirmLabel ?? "Continue"}
-          </AlertDialogAction>
+          </button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

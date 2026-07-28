@@ -14,6 +14,11 @@ import type { SessionCardModel } from "./session-card-model.js"
 import type { TerminalCardStatus } from "./TerminalCard.js"
 import { useProjectTodosBundle } from "./todos/index.js"
 
+function compactProjectPath(projectPath: string): string {
+  const segments = projectPath.split(/[\\/]+/).filter(Boolean)
+  return segments.slice(-2).join("/") || projectPath
+}
+
 export type HomeTerminalEntry = {
   tabId: string
   panelId: PanelId
@@ -34,6 +39,7 @@ export type HomeProjectSectionProps = {
   rootUri: string
   terminals: HomeTerminalEntry[]
   sessions: SessionCardModel[]
+  filtering?: boolean
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
   onNewSession: (rootUri: string) => void
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
@@ -53,6 +59,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     rootUri,
     terminals,
     sessions,
+    filtering = false,
     onOpenTerminal,
     onNewSession,
     onOpenInApp,
@@ -75,7 +82,12 @@ export function ProjectSection(props: HomeProjectSectionProps) {
         {name}
       </h2>
       {path ? (
-        <p className="truncate font-mono text-3xs text-muted-foreground/80">{path}</p>
+        <p
+          className="truncate font-mono text-3xs text-muted-foreground/80"
+          title={path}
+        >
+          {compactProjectPath(path)}
+        </p>
       ) : null}
     </div>
   )
@@ -129,7 +141,14 @@ export function ProjectSection(props: HomeProjectSectionProps) {
         {actions}
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {sessions.length === 0 ? (
+        {sessions.length === 0 && filtering && terminals.length > 0 ? (
+          <div
+            className="col-span-full rounded-lg border border-dashed border-border/70 px-4 py-6 text-center text-xs text-muted-foreground"
+            data-gharargah-project-no-matching-sessions=""
+          >
+            No matching sessions in {name}.
+          </div>
+        ) : sessions.length === 0 ? (
           <EmptySessionCard rootUri={rootUri} onNewSession={onNewSession} />
         ) : (
           sessions.map(session => {

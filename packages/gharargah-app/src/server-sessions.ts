@@ -23,6 +23,7 @@ export async function saveServerSessionRoster(
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(roster),
+    keepalive: true,
   })
 }
 

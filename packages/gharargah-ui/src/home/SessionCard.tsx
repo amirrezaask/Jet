@@ -109,29 +109,25 @@ export function SessionCard(props: SessionCardProps) {
 
   const card = (
     <div
-      role="button"
-      tabIndex={0}
       data-gharargah-terminal-card
       data-gharargah-session-card
       data-gharargah-list-item
       data-status={session.status}
       data-kind={session.kind}
       data-approval={showApprovalActions ? "true" : undefined}
-      className="group w-full cursor-pointer text-left outline-none"
-      onClick={onClick}
-      onKeyDown={event => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault()
-          onClick()
-        }
-      }}
+      className="group relative w-full text-left"
     >
+      <button
+        type="button"
+        className="absolute inset-0 z-10 cursor-pointer rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40"
+        aria-label={`Open ${session.title}`}
+        onClick={onClick}
+      />
       <Card
         className={cn(
-          "gharargah-home-session-card flex h-full min-h-[5.5rem] flex-col gap-1.5 border-border bg-card py-2.5",
+          "gharargah-home-session-card pointer-events-none flex h-full min-h-[5.5rem] flex-col gap-1.5 border-border bg-card py-2.5",
           "transition-[border-color,box-shadow,background-color]",
-          "hover:border-primary/50 hover:bg-card",
-          "group-focus-visible:border-ring group-focus-visible:ring-[3px] group-focus-visible:ring-ring/40",
+          "group-hover:border-primary/50 group-hover:bg-card",
         )}
       >
         <CardHeader className="gap-0 px-3 py-0 [.border-b]:pb-0">
@@ -141,7 +137,9 @@ export function SessionCard(props: SessionCardProps) {
               {session.agentLabel}
             </span>
             <StatusBadge status={session.status} />
-            {overflow}
+            {overflow ? (
+              <div className="pointer-events-auto relative z-20">{overflow}</div>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-1 px-3 py-0">
@@ -155,7 +153,7 @@ export function SessionCard(props: SessionCardProps) {
           ) : null}
           {showApprovalActions && (onReview || onReject) ? (
             <div
-              className="mt-auto flex items-center justify-end gap-1.5 pt-1"
+              className="pointer-events-auto relative z-20 mt-auto flex items-center justify-end gap-1.5 pt-1"
               onClick={stopCardClick}
               onPointerDown={stopCardClick}
             >

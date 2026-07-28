@@ -27,7 +27,7 @@ export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   fontSize: DEFAULT_FONT_SIZE,
   fontFamily: DEFAULT_UI_FONT_FAMILY,
   monoFontFamily: DEFAULT_MONO_FONT_FAMILY,
-  sessionLayout: "sidebar",
+  sessionLayout: "cards",
   sidebarCollapsed: false,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   sidebarProjectFilterPath: null,

@@ -20,7 +20,7 @@ test.describe("desktop startup telemetry", () => {
         fs.readFileSync(logPath!, "utf8").trim().split("\n").at(-1)!,
       ) as Record<string, unknown>
       expect(latest.shell).toBe("web")
-      expect(latest.buildMode).toMatch(/debug|release/)
+      expect(latest.buildMode).toMatch(/development|production/)
       expect(latest.rendererReadyMs).toEqual(expect.any(Number))
       expect(latest.hostProcessElapsedMs).toEqual(expect.any(Number))
       expect(latest.workspaceRootCount).toBeGreaterThanOrEqual(1)

@@ -44,6 +44,7 @@ type LaunchWebOptions = {
   env?: Record<string, string>
   userDataDir?: string
   launchWithoutWorkspace?: boolean
+  withAgentServer?: boolean
 }
 
 async function freePort(): Promise<number> {
@@ -102,7 +103,9 @@ async function killProc(proc: ChildProcessWithoutNullStreams): Promise<void> {
 
 export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchShellResult> {
   const port = await freePort()
-  const agentPort = await freePort()
+  const agentEnabled =
+    options.withAgentServer ?? options.env?.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+  const agentPort = agentEnabled ? await freePort() : null
   const temporaryRoot = options.userDataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "jet-web-e2e-"))
   const browserData = path.join(temporaryRoot, "browser")
   const serverData = path.join(temporaryRoot, "server")
@@ -117,17 +120,19 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   if (!fs.existsSync(HOST_SERVER_ENTRY)) {
     throw new Error(`Host server entry missing at ${HOST_SERVER_ENTRY}`)
   }
-  if (!fs.existsSync(MOCK_ACP_BINARY)) {
-    throw new Error(`Mock ACP missing at ${MOCK_ACP_BINARY}`)
-  }
-  if (!fs.existsSync(MOCK_CLAUDE_SDK_BINARY)) {
-    throw new Error(`Mock Claude SDK missing at ${MOCK_CLAUDE_SDK_BINARY}`)
-  }
-  if (!fs.existsSync(MOCK_CODEX_APP_SERVER_BINARY)) {
-    throw new Error(`Mock Codex app-server missing at ${MOCK_CODEX_APP_SERVER_BINARY}`)
-  }
-  if (!fs.existsSync(AGENT_SERVER_ENTRY)) {
-    throw new Error(`agent-server entry missing; run pnpm install from repo root`)
+  if (agentEnabled) {
+    if (!fs.existsSync(MOCK_ACP_BINARY)) {
+      throw new Error(`Mock ACP missing at ${MOCK_ACP_BINARY}`)
+    }
+    if (!fs.existsSync(MOCK_CLAUDE_SDK_BINARY)) {
+      throw new Error(`Mock Claude SDK missing at ${MOCK_CLAUDE_SDK_BINARY}`)
+    }
+    if (!fs.existsSync(MOCK_CODEX_APP_SERVER_BINARY)) {
+      throw new Error(`Mock Codex app-server missing at ${MOCK_CODEX_APP_SERVER_BINARY}`)
+    }
+    if (!fs.existsSync(AGENT_SERVER_ENTRY)) {
+      throw new Error(`agent-server entry missing; run pnpm install from repo root`)
+    }
   }
   const tsxCli = resolveTsxCli()
 
@@ -137,21 +142,29 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     GHARARGAH_E2E: "1",
     GHARARGAH_AGENT_RUNTIME: "effect",
     GHARARGAH_AGENT_HOST: "127.0.0.1",
-    GHARARGAH_AGENT_PORT: String(agentPort),
-    GHARARGAH_AGENT_WS_URL: `ws://127.0.0.1:${agentPort}/agents`,
+    ...(agentPort == null
+      ? {}
+      : {
+          GHARARGAH_AGENT_PORT: String(agentPort),
+          GHARARGAH_AGENT_WS_URL: `ws://127.0.0.1:${agentPort}/agents`,
+        }),
     GHARARGAH_MOCK_ACP_BIN: MOCK_ACP_BINARY,
     GHARARGAH_MOCK_CODEX_APP_SERVER_BIN: MOCK_CODEX_APP_SERVER_BINARY,
     GHARARGAH_MOCK_CLAUDE_SDK_BIN: MOCK_CLAUDE_SDK_BINARY,
     ...options.env,
   }
 
-  const agentServer = spawn(process.execPath, [tsxCli, AGENT_SERVER_ENTRY], {
-    cwd: REPO_ROOT,
-    env: sharedEnv,
-    stdio: ["ignore", "pipe", "pipe"],
-  }) as ChildProcessWithoutNullStreams
-  const agentLogs = attachLogs(agentServer)
-  await waitForHttpOk(`http://127.0.0.1:${agentPort}/health`, agentServer, agentLogs)
+  const agentServer = agentEnabled
+    ? (spawn(process.execPath, [tsxCli, AGENT_SERVER_ENTRY], {
+        cwd: REPO_ROOT,
+        env: sharedEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      }) as ChildProcessWithoutNullStreams)
+    : null
+  const agentLogs = agentServer ? attachLogs(agentServer) : () => "(disabled)"
+  if (agentServer && agentPort != null) {
+    await waitForHttpOk(`http://127.0.0.1:${agentPort}/health`, agentServer, agentLogs)
+  }
 
   const server = spawn(
     process.execPath,
@@ -178,23 +191,37 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
 
   const context = await chromium.launchPersistentContext(browserData, {
     headless: process.env.GHARARGAH_HEADED !== "1",
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
+    locale: "en-US",
+    timezoneId: "UTC",
+    colorScheme: "dark",
   })
   const browserPage = context.pages()[0] ?? (await context.newPage())
   const errors: string[] = []
-  browserPage.on("pageerror", error => errors.push(error.message))
+  browserPage.on("pageerror", error => errors.push(error.stack ?? error.message))
   browserPage.on("console", message => {
-    if (message.type() === "error") errors.push(message.text())
+    if (message.type() === "error") {
+      const location = message.location()
+      const source = location.url
+        ? ` (${location.url}:${location.lineNumber + 1}:${location.columnNumber + 1})`
+        : ""
+      errors.push(`${message.text()}${source}`)
+    }
   })
 
-  const agentWsUrl = `ws://127.0.0.1:${agentPort}/agents`
-  await browserPage.addInitScript((wsUrl: string) => {
-    ;(window as Window & { __GHARARGAH_AGENT_WS_URL__?: string }).__GHARARGAH_AGENT_WS_URL__ = wsUrl
-  }, agentWsUrl)
+  const agentWsUrl = agentPort == null ? null : `ws://127.0.0.1:${agentPort}/agents`
+  if (agentWsUrl) {
+    await browserPage.addInitScript((wsUrl: string) => {
+      ;(window as Window & { __GHARARGAH_AGENT_WS_URL__?: string }).__GHARARGAH_AGENT_WS_URL__ = wsUrl
+    }, agentWsUrl)
+  }
 
   await browserPage.goto(url, { waitUntil: "domcontentloaded" })
   await browserPage.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
   await browserPage.evaluate(() => window.__gharargahAgent!.waitForReady())
-  const agentOk = await browserPage.evaluate(async (wsUrl: string) => {
+  const agentOk = agentWsUrl
+    ? await browserPage.evaluate(async (wsUrl: string) => {
     return await new Promise<boolean>(resolve => {
       try {
         const ws = new WebSocket(wsUrl)
@@ -229,13 +256,15 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
         resolve(false)
       }
     })
-  }, agentWsUrl)
+      }, agentWsUrl)
+    : true
   if (!agentOk) {
     throw new Error(
       `Effect agent-server not reachable at ${agentWsUrl}\n${jetLogs()}\n--- agent ---\n${agentLogs()}`,
     )
   }
-  const appAgentUrl = await browserPage.evaluate(async () => {
+  const appAgentUrl = agentWsUrl
+    ? await browserPage.evaluate(async () => {
     const injected =
       (window as Window & { __GHARARGAH_AGENT_WS_URL__?: string }).__GHARARGAH_AGENT_WS_URL__ ?? null
     try {
@@ -249,8 +278,9 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
       /* method optional */
     }
     return injected
-  })
-  if (!appAgentUrl || appAgentUrl !== agentWsUrl) {
+      })
+    : null
+  if (agentWsUrl && (!appAgentUrl || appAgentUrl !== agentWsUrl)) {
     throw new Error(
       `E2E agent WS mismatch: injected=${appAgentUrl} expected=${agentWsUrl}. ` +
         `App may be talking to a stale vite-baked 4751 server.`,
@@ -270,7 +300,7 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
       async close() {
         await context.close().catch(() => {})
         await killProc(server)
-        await killProc(agentServer)
+        if (agentServer) await killProc(agentServer)
         if (errors.length) process.stderr.write(`Browser console errors:\n${errors.join("\n")}\n`)
       },
     },

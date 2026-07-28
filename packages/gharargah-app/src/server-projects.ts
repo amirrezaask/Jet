@@ -44,6 +44,8 @@ export async function removeServerProject(projectId: string): Promise<void> {
   })
 }
 
+let projectCatalogSyncQueue: Promise<void> = Promise.resolve()
+
 /**
  * Make host SQLite `projects` table match the live workspace folder set.
  * Source of truth is the server DB after sync — no client Storage.
@@ -51,20 +53,31 @@ export async function removeServerProject(projectId: string): Promise<void> {
  * Uses idempotent add (server realpaths) to collect keep-ids, then deletes
  * the rest — avoids /var vs /private/var false remove+readd races.
  */
-export async function syncServerProjectCatalog(
+export function syncServerProjectCatalog(
   folders: WorkspaceFolder[],
 ): Promise<void> {
-  const keepIds = new Set<string>()
-  for (const folder of folders) {
-    const project = await addServerProject(folder.root.path, folder.root.name)
-    keepIds.add(project.id)
-  }
-  const projects = await loadServerProjects()
-  await Promise.all(
-    projects
-      .filter(project => !keepIds.has(project.id))
-      .map(project => removeServerProject(project.id)),
-  )
+  const snapshot = folders.map(folder => ({
+    path: folder.root.path,
+    name: folder.root.name,
+  }))
+  projectCatalogSyncQueue = projectCatalogSyncQueue
+    .catch(() => {
+      /* a newer snapshot can recover from a transient host failure */
+    })
+    .then(async () => {
+      const keepIds = new Set<string>()
+      for (const folder of snapshot) {
+        const project = await addServerProject(folder.path, folder.name)
+        keepIds.add(project.id)
+      }
+      const projects = await loadServerProjects()
+      await Promise.all(
+        projects
+          .filter(project => !keepIds.has(project.id))
+          .map(project => removeServerProject(project.id)),
+      )
+    })
+  return projectCatalogSyncQueue
 }
 
 /**

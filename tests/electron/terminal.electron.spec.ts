@@ -174,6 +174,62 @@ test.describe("electron terminal", () => {
     }
   })
 
+  test("sends fitted geometry immediately after PTY creation", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await page.evaluate(() => {
+        const terminal = window.gharargah?.terminal
+        if (!terminal) throw new Error("Terminal API unavailable")
+        const original = terminal.resize.bind(terminal)
+        const calls: Array<{ cols: number; rows: number }> = []
+        terminal.resize = async (id, cols, rows) => {
+          calls.push({ cols, rows })
+          return original(id, cols, rows)
+        }
+        ;(
+          window as unknown as {
+            __gharargahResizeCalls?: Array<{ cols: number; rows: number }>
+          }
+        ).__gharargahResizeCalls = calls
+      })
+
+      await showTerminal(page)
+
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as unknown as {
+                  __gharargahResizeCalls?: Array<{
+                    cols: number
+                    rows: number
+                  }>
+                }
+              ).__gharargahResizeCalls?.at(-1) ?? null,
+          ),
+        )
+        .toEqual(
+          expect.objectContaining({
+            cols: expect.any(Number),
+            rows: expect.any(Number),
+          }),
+        )
+      const geometry = await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __gharargahResizeCalls?: Array<{ cols: number; rows: number }>
+            }
+          ).__gharargahResizeCalls?.at(-1),
+      )
+      expect(geometry!.cols).toBeGreaterThan(80)
+      expect(geometry!.rows).toBeGreaterThan(24)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("updates tab label when shell emits OSC title sequence", async () => {
     const { app, page } = await launchJet()
     try {

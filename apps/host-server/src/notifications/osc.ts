@@ -115,6 +115,26 @@ export function parseOscNotifications(chunk: string): ParsedOscNotification[] {
   return out
 }
 
+export function parseOscStreamChunk(
+  buffered: string,
+  chunk: string,
+): { notifications: ParsedOscNotification[]; buffered: string } {
+  const combined = `${buffered}${chunk}`
+  const start = combined.lastIndexOf("\x1b]")
+  let nextBuffer = ""
+  if (start >= 0) {
+    const bel = combined.indexOf("\x07", start + 2)
+    const stringTerminator = combined.indexOf("\x1b\\", start + 2)
+    if (bel < 0 && stringTerminator < 0) {
+      nextBuffer = combined.slice(start, start + 64 * 1024)
+    }
+  }
+  return {
+    notifications: parseOscNotifications(combined),
+    buffered: nextBuffer,
+  }
+}
+
 /** Map common hook event names → notification types. */
 export function normalizeHookEventName(
   event: string | null | undefined,

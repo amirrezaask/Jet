@@ -80,6 +80,7 @@ export function useNotificationCenter(): NotificationCenterState {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [viewingSessionId, setViewingSessionId] = useState<string | null>(null)
   const recentDesktop = useRef(new Map<string, number>())
+  const refreshSequence = useRef(0)
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQuery(query), 200)
@@ -89,6 +90,7 @@ export function useNotificationCenter(): NotificationCenterState {
   const refresh = useCallback(async () => {
     const api = notificationsApi()
     if (!api) return
+    const requestSequence = ++refreshSequence.current
     setLoading(true)
     try {
       const req: ListNotificationsRequest = {
@@ -103,16 +105,18 @@ export function useNotificationCenter(): NotificationCenterState {
         prefs ? Promise.resolve(prefs) : api.getPreferences(),
         api.unreadBySession?.() ?? Promise.resolve({}),
       ])
+      if (requestSequence !== refreshSequence.current) return
       setItems(list.items)
       setCounts(list.counts)
       setUnreadBySession(bySession ?? {})
       if (!prefs) setPrefs(preferences)
       setError(null)
     } catch (err) {
+      if (requestSequence !== refreshSequence.current) return
       setError("Could not refresh notifications")
       console.error("[gharargah] notifications refresh failed", err)
     } finally {
-      setLoading(false)
+      if (requestSequence === refreshSequence.current) setLoading(false)
     }
   }, [filter, debouncedQuery, projectId, sessionId, prefs])
 

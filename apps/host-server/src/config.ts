@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { resolveLaunchTarget, type LaunchConfig } from "@gharargah/node-host"
+import { isLoopbackHostname } from "./security.js"
 
 export type HostConfig = {
   host: string
@@ -43,6 +44,11 @@ export async function loadConfig(argv = process.argv.slice(2)): Promise<HostConf
   const args = parseArgs(argv)
   const home = os.homedir()
   const host = String(args.host ?? process.env.JET_HOST ?? "127.0.0.1")
+  if (!isLoopbackHostname(host)) {
+    throw new Error(
+      `Refusing non-loopback host "${host}". Gharargah's host API must remain local.`,
+    )
+  }
   const port = Number(args.port ?? process.env.JET_PORT ?? 4747)
   const dataDir = path.resolve(
     String(args["data-dir"] ?? process.env.JET_DATA_DIR ?? path.join(home, ".local", "share", "jet")),
@@ -60,7 +66,12 @@ export async function loadConfig(argv = process.argv.slice(2)): Promise<HostConf
 
   const here = path.dirname(fileURLToPath(import.meta.url))
   const repoDist = path.resolve(here, "../../gharargah/dist")
-  const staticDir = fs.existsSync(repoDist) ? repoDist : null
+  const staticOverride = args["static-dir"] ?? process.env.JET_STATIC_DIR
+  const staticCandidate =
+    typeof staticOverride === "string" && staticOverride.trim()
+      ? path.resolve(staticOverride.trim())
+      : repoDist
+  const staticDir = fs.existsSync(staticCandidate) ? staticCandidate : null
 
   fs.mkdirSync(dataDir, { recursive: true })
 

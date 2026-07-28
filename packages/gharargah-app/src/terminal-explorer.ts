@@ -28,7 +28,9 @@ const OTHER_GROUP_ID = "gharargah:terminal-explorer:other"
 
 function normalizeAbsPath(p: string): string {
   const trimmed = p.replace(/[/\\]+$/, "")
-  return trimmed || p
+  return (trimmed || p)
+    .replace(/\\/g, "/")
+    .replace(/^\/private(?=\/(?:var|tmp)(?:\/|$))/, "")
 }
 
 function resolveFolderForCwd(
@@ -63,8 +65,6 @@ export function buildTerminalExplorerGroups(
 
   for (const { panelId, tabId } of terminals) {
     const session = terminalSessionForTab(tabId)
-    // Failed / unloadable sessions must not appear as home cards.
-    if (session?.status === "failed") continue
     const rawCwd = terminalCwdForTab(tabId) || workspace.root?.uri || ""
     const folder = resolveFolderForCwd(rawCwd, workspace)
     const cwdRootUri = folder?.root.uri ?? rawCwd

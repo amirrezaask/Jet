@@ -24,7 +24,7 @@ export type TerminalAttachSnapshot = {
   lastSequence: number
   status: "running" | "exited"
   exitCode: number | null
-  signal: string | null
+  signal: number | null
 }
 
 type EmitFn = (channel: string, args: unknown[]) => void
@@ -35,9 +35,10 @@ type TerminalEntry = {
   clientId: string
   status: "running" | "exited"
   exitCode: number | null
-  signal: string | null
+  signal: number | null
   sequence: number
   output: string[]
+  outputHead: number
   outputBytes: number
   proc: pty.IPty | null
 }
@@ -56,22 +57,48 @@ function shellFallbacks(): string[] {
 }
 
 function trimReplay(entry: TerminalEntry): void {
-  while (entry.outputBytes > MAX_TERMINAL_REPLAY && entry.output.length > 1) {
-    const dropped = entry.output.shift()!
+  while (
+    entry.outputBytes > MAX_TERMINAL_REPLAY &&
+    entry.output.length - entry.outputHead > 1
+  ) {
+    const dropped = entry.output[entry.outputHead]!
+    entry.output[entry.outputHead] = ""
+    entry.outputHead += 1
     entry.outputBytes -= Buffer.byteLength(dropped, "utf8")
   }
-  if (entry.outputBytes > MAX_TERMINAL_REPLAY && entry.output.length === 1) {
-    const only = entry.output[0]!
-    let bytes = Buffer.byteLength(only, "utf8")
-    let start = 0
-    while (bytes > MAX_TERMINAL_REPLAY && start < only.length) {
-      const cp = only.codePointAt(start) ?? 0
-      const width = cp > 0xffff ? 2 : 1
-      bytes -= Buffer.byteLength(only.slice(start, start + width), "utf8")
-      start += width
-    }
-    entry.output[0] = only.slice(start)
-    entry.outputBytes = Buffer.byteLength(entry.output[0], "utf8")
+  if (
+    entry.outputBytes > MAX_TERMINAL_REPLAY &&
+    entry.output.length - entry.outputHead === 1
+  ) {
+    const bytes = Buffer.from(entry.output[entry.outputHead]!, "utf8")
+    let start = bytes.length - MAX_TERMINAL_REPLAY
+    while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start += 1
+    entry.output[entry.outputHead] = bytes.subarray(start).toString("utf8")
+    entry.outputBytes = Buffer.byteLength(entry.output[entry.outputHead], "utf8")
+  }
+  if (entry.outputHead > 1024 && entry.outputHead * 2 > entry.output.length) {
+    entry.output = entry.output.slice(entry.outputHead)
+    entry.outputHead = 0
+  }
+}
+
+export function normalizeTerminalSize(
+  cols: number | undefined,
+  rows: number | undefined,
+): { cols: number; rows: number } | null {
+  const requestedCols = cols ?? 80
+  const requestedRows = rows ?? 24
+  if (
+    !Number.isFinite(requestedCols) ||
+    !Number.isFinite(requestedRows) ||
+    requestedCols <= 0 ||
+    requestedRows <= 0
+  ) {
+    return null
+  }
+  return {
+    cols: Math.min(Math.max(Math.trunc(requestedCols), 1), 1000),
+    rows: Math.min(Math.max(Math.trunc(requestedRows), 1), 1000),
   }
 }
 
@@ -143,6 +170,7 @@ export class TerminalHost {
       signal: null,
       sequence: 0,
       output: [],
+      outputHead: 0,
       outputBytes: 0,
       proc,
     }
@@ -159,7 +187,7 @@ export class TerminalHost {
     proc.onExit(({ exitCode, signal }) => {
       entry.status = "exited"
       entry.exitCode = exitCode
-      entry.signal = signal != null ? String(signal) : null
+      entry.signal = signal ?? null
       entry.proc = null
       const args: unknown[] = [id, exitCode]
       if (entry.signal) args.push(entry.signal)
@@ -178,12 +206,9 @@ export class TerminalHost {
 
   resize(id: string, cols?: number, rows?: number): null {
     if (id.length > 256) return null
-    const requestedCols = cols ?? 80
-    const requestedRows = rows ?? 24
-    if (requestedCols === 0 || requestedRows === 0) return null
-    const c = Math.min(Math.max(requestedCols, 1), 1000)
-    const r = Math.min(Math.max(requestedRows, 1), 1000)
-    this.entries.get(id)?.proc?.resize(c, r)
+    const size = normalizeTerminalSize(cols, rows)
+    if (!size) return null
+    this.entries.get(id)?.proc?.resize(size.cols, size.rows)
     return null
   }
 
@@ -194,7 +219,7 @@ export class TerminalHost {
     return {
       id: entry.id,
       title: entry.title,
-      output: entry.output.join(""),
+      output: entry.output.slice(entry.outputHead).join(""),
       lastSequence: entry.sequence,
       status: entry.status,
       exitCode: entry.exitCode,

@@ -1,5 +1,16 @@
 import { spawn } from "node:child_process"
 
+const MAX_TASK_OUTPUT = 8 * 1024 * 1024
+
+export function appendBoundedTaskOutput(current: string, chunk: string): string {
+  const combined = `${current}${chunk}`
+  if (Buffer.byteLength(combined, "utf8") <= MAX_TASK_OUTPUT) return combined
+  const bytes = Buffer.from(combined, "utf8")
+  let start = bytes.length - MAX_TASK_OUTPUT
+  while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start += 1
+  return bytes.subarray(start).toString("utf8")
+}
+
 export type TaskSpawnRequest = {
   command: string
   args?: string[]
@@ -23,10 +34,10 @@ export function spawnTask(req: TaskSpawnRequest): Promise<TaskSpawnResult> {
     })
     let output = ""
     proc.stdout.on("data", chunk => {
-      output += chunk.toString()
+      output = appendBoundedTaskOutput(output, chunk.toString())
     })
     proc.stderr.on("data", chunk => {
-      output += chunk.toString()
+      output = appendBoundedTaskOutput(output, chunk.toString())
     })
     proc.on("error", reject)
     proc.on("close", code => {

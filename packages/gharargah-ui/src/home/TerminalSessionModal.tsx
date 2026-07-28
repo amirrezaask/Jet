@@ -127,10 +127,10 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   } = props
 
   useEffect(() => {
-    if (!open || presentation !== "inline") return
+    if (!open) return
     const frame = requestAnimationFrame(() => focusSessionPane(mode))
     return () => cancelAnimationFrame(frame)
-  }, [open, mode, presentation])
+  }, [open, mode])
 
   if (!open) return null
 
@@ -243,7 +243,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         role="tablist"
         aria-label="Session view"
         onKeyDown={handleModeTabKeyDown}
-        className="flex h-6 shrink-0 items-center gap-px justify-self-center rounded-md bg-muted p-px text-muted-foreground"
+        className="flex h-8 shrink-0 items-center gap-px justify-self-center rounded-md bg-muted p-px text-muted-foreground"
       >
         {showAgentTab ? (
           <ModeTab
@@ -462,7 +462,8 @@ function ModeTab(props: {
       data-gharargah-session-mode-tab={mode}
       data-active={active ? "" : undefined}
       className={cn(
-        "inline-flex size-6 items-center justify-center rounded-sm transition-[color,background-color,box-shadow]",
+        "inline-flex h-[1.875rem] items-center justify-center gap-1 rounded-sm transition-[color,background-color,box-shadow]",
+        active ? "px-2.5" : "w-[1.875rem] px-0",
         "focus-visible:ring-ring outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         active
           ? "bg-background text-foreground shadow-sm"
@@ -471,6 +472,9 @@ function ModeTab(props: {
       onClick={onSelect}
     >
       <span className="[&_svg]:size-3">{icon}</span>
+      <span className={active ? "text-3xs font-medium" : "sr-only"}>
+        {label}
+      </span>
     </button>
   )
 }

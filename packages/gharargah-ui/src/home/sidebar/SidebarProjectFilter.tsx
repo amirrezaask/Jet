@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/context-menu.js"
 import type { ProjectSidebarActions } from "./ProjectSidebarItem.js"
 import type { SidebarProject } from "./types.js"
+import { sameProjectPath } from "./project-path.js"
 
 /** `null` = All projects. Value is absolute project path. */
 export type SidebarProjectFilterId = string | null
@@ -83,7 +84,8 @@ export function SidebarProjectFilter({
         All
       </FilterChip>
       {projects.map(project => {
-        const selected = value === project.path
+        const selected =
+          value != null && sameProjectPath(value, project.path)
         const chip = (
           <FilterChip
             selected={selected}

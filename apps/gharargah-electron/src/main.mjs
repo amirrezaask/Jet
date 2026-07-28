@@ -2,6 +2,9 @@
 /**
  * Thin Electron shell: spawn TS host/agent (+ Vite in --dev), load the shared web SPA.
  * No preload, no separate renderer entry — same packages/gharargah-app main.tsx as the browser.
+ *
+ * Packaged (DMG): backends + Node live under process.resourcesPath/gharargah.
+ * Dev / repo prod: spawn from monorepo via tsx (same as pnpm electron).
  */
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -10,12 +13,13 @@ import {
   DEFAULT_HOST,
   DEFAULT_HOST_PORT,
   DEFAULT_VITE_PORT,
+  isPackagedRuntime,
   spawnAgentServer,
   spawnHostServer,
   spawnVite,
   waitForUrl,
   wireChildLifecycle,
-} from "../../gharargah/scripts/spawn-backend.mjs"
+} from "./spawn-backend.mjs"
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const repoRoot = path.resolve(packageDir, "../..")
@@ -30,6 +34,18 @@ const isDev = process.argv.includes("--dev") || process.env.GHARARGAH_ELECTRON_D
 const hostPort = Number(process.env.JET_PORT ?? DEFAULT_HOST_PORT)
 const host = process.env.JET_HOST ?? DEFAULT_HOST
 const vitePort = Number(process.env.JET_WEB_PORT ?? DEFAULT_VITE_PORT)
+
+/** @returns {string | undefined} */
+function resolveRuntimeRoot() {
+  if (app.isPackaged) {
+    const packaged = path.join(process.resourcesPath, "gharargah")
+    if (isPackagedRuntime(packaged)) return packaged
+  }
+  // Local unpack smoke: GHARARGAH_RUNTIME_ROOT=/path/to/pack
+  const fromEnv = process.env.GHARARGAH_RUNTIME_ROOT
+  if (fromEnv && isPackagedRuntime(fromEnv)) return fromEnv
+  return undefined
+}
 
 /**
  * Optional folder/file path after flags → host-server launch config.
@@ -69,18 +85,22 @@ async function startBackends() {
   const viteUrl = `http://${host}:${vitePort}/`
   const hostUp = await urlReady(healthUrl)
   const viteUp = isDev ? await urlReady(viteUrl) : true
+  const runtimeRoot = resolveRuntimeRoot()
 
   if (!hostUp) {
     const launchPath = launchPathFromArgv()
     children.push(
       spawnHostServer({
         repoRoot,
+        runtimeRoot,
         host,
         port: hostPort,
         launchPath,
       }),
     )
-    children.push(spawnAgentServer({ repoRoot }))
+    if (process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1") {
+      children.push(spawnAgentServer({ repoRoot, runtimeRoot }))
+    }
   }
   if (isDev && !viteUp) {
     children.push(spawnVite({ appDir: gharargahAppDir }))

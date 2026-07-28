@@ -33,13 +33,14 @@ test.describe("keyboard shortcuts revamp", () => {
         )
         .toBeGreaterThan(0)
 
-      await page.keyboard.press("Escape")
-      await expectLocatorCount(
-        page.locator("[data-gharargah-agent-cli-option]"),
-        0,
-      )
-
-      await execCommand(page, "terminal.new")
+      const pickerInput = page.getByRole("combobox", { name: "Choose agent" })
+      await expect
+        .poll(() => pickerInput.getAttribute("aria-controls"))
+        .not.toBeNull()
+      await expect
+        .poll(() => pickerInput.getAttribute("aria-activedescendant"))
+        .not.toBeNull()
+      await page.keyboard.press("Enter")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
         timeout: 20_000,
       })

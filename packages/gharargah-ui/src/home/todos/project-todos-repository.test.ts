@@ -42,6 +42,9 @@ describe("project-todos-store", () => {
 
   it("projectTodoKey normalizes paths", () => {
     assert.equal(projectTodoKey("/tmp/proj"), projectTodoKey("/tmp/proj/"))
+    assert.equal(projectTodoKey("/var/folders/proj"), projectTodoKey("/private/var/folders/proj"))
+    assert.equal(projectTodoKey("/tmp/proj"), projectTodoKey("/private/tmp/proj"))
+    assert.equal(projectTodoKey("C:\\Users\\Example"), projectTodoKey("c:/Users/Example/"))
   })
 
   it("rejects empty text", () => {

@@ -6,7 +6,7 @@ export async function ensureMonacoWorkersConfigured(): Promise<void> {
   workersPromise = (async () => {
     const [{ configureMonacoWorkers }, EditorWorker, JsonWorker, CssWorker, HtmlWorker, TsWorker] =
       await Promise.all([
-        import("@gharargah/monaco"),
+        import("@gharargah/monaco/environment"),
         import("monaco-editor/esm/vs/editor/editor.worker?worker"),
         import("monaco-editor/esm/vs/language/json/json.worker?worker"),
         import("monaco-editor/esm/vs/language/css/css.worker?worker"),

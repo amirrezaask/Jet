@@ -5,6 +5,7 @@ import {
   filterSessionsByQuery,
   sessionMatchesQuery,
 } from "./filter-sessions.js"
+import { sameProjectPath } from "./project-path.js"
 import type { SidebarProject, SidebarSession } from "./types.js"
 
 const s = (partial: Partial<SidebarSession> & { id: string }): SidebarSession => ({
@@ -79,5 +80,18 @@ describe("session search", () => {
       ["p1"],
     )
     assert.equal(filtered[0]?.sessions.length, 1)
+  })
+})
+
+describe("sameProjectPath", () => {
+  it("matches macOS /var and /private/var aliases", () => {
+    assert.equal(
+      sameProjectPath("/var/folders/run/project", "/private/var/folders/run/project"),
+      true,
+    )
+  })
+
+  it("keeps distinct project paths distinct", () => {
+    assert.equal(sameProjectPath("/tmp/alpha", "/tmp/beta"), false)
   })
 })

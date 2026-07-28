@@ -22,8 +22,9 @@ Open the Vite URL (proxies `/api` and `/ws` to the host).
 ## Build / run without Vite
 
 ```bash
-pnpm build        # builds apps/gharargah/dist
-pnpm --filter @gharargah/host-server start   # serves API + SPA on :4747
+pnpm build        # Vite SPA + Electron runtime + macOS DMG
+                  # → apps/gharargah-electron/dist/Gharargah-*.dmg
+pnpm --filter @gharargah/host-server start   # serves API + SPA on :4747 (web-only)
 pnpm --filter @gharargah/agent-server start  # optional agents on :4751
 ```
 

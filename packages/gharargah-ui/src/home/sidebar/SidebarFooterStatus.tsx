@@ -11,7 +11,7 @@ export type SidebarFooterStatusProps = {
 
 export function SidebarFooterStatus({
   connected = true,
-  serverLabel = "localhost:4747",
+  serverLabel = "Local host",
   onOpenSettings,
 }: SidebarFooterStatusProps) {
   return (

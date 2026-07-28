@@ -10,7 +10,7 @@
     "dev": "tsx watch src/bin.ts",
     "start": "tsx src/bin.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/notifications/service.test.ts src/persistence.test.ts"
+    "test": "tsx --test src/events.test.ts src/notifications/service.test.ts src/persistence.test.ts src/security.test.ts"
   },
   "dependencies": {
     "@gharargah/node-host": "workspace:*",

@@ -19,6 +19,10 @@ export type TerminalSessionState = {
 
 const sessions = new Map<string, TerminalSessionState>()
 const tabByPtyId = new Map<string, string>()
+const pendingExitByPtyId = new Map<
+  string,
+  { exitCode: number; signal?: number }
+>()
 const listeners = new Set<(tabId: string) => void>()
 
 function notify(tabId: string): void {
@@ -77,10 +81,18 @@ export function trackTerminalPtyId(tabId: string, ptyId: string | null): void {
   if (session.ptyId) tabByPtyId.delete(session.ptyId)
   if (ptyId) {
     session.ptyId = ptyId
-    session.status = "running"
-    session.exitCode = undefined
-    session.signal = undefined
     tabByPtyId.set(ptyId, tabId)
+    const pendingExit = pendingExitByPtyId.get(ptyId)
+    if (pendingExit) {
+      pendingExitByPtyId.delete(ptyId)
+      session.status = "exited"
+      session.exitCode = pendingExit.exitCode
+      session.signal = pendingExit.signal
+    } else {
+      session.status = "running"
+      session.exitCode = undefined
+      session.signal = undefined
+    }
   } else {
     session.ptyId = undefined
   }
@@ -118,7 +130,14 @@ export function terminalTabIdForPty(ptyId: string): string | undefined {
 
 export function markTerminalExited(ptyId: string, exitCode: number, signal?: number): void {
   const tabId = tabByPtyId.get(ptyId)
-  if (!tabId) return
+  if (!tabId) {
+    if (pendingExitByPtyId.size >= 256) {
+      const oldest = pendingExitByPtyId.keys().next().value
+      if (oldest) pendingExitByPtyId.delete(oldest)
+    }
+    pendingExitByPtyId.set(ptyId, { exitCode, signal })
+    return
+  }
   const session = sessions.get(tabId)
   if (!session) return
   session.status = "exited"
@@ -160,7 +179,10 @@ export function restartTerminalSession(tabId: string): void {
 
 export function clearTerminalSession(tabId: string): void {
   const session = sessions.get(tabId)
-  if (session?.ptyId) tabByPtyId.delete(session.ptyId)
+  if (session?.ptyId) {
+    tabByPtyId.delete(session.ptyId)
+    pendingExitByPtyId.delete(session.ptyId)
+  }
   sessions.delete(tabId)
   notify(tabId)
 }

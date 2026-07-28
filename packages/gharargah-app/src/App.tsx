@@ -169,7 +169,10 @@ import {
 
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 
-const GitWorkspace = lazy(() => import("@gharargah/ui/git"))
+const GitWorkspace = lazy(async () => {
+  await ensureMonacoWorkersConfigured()
+  return import("@gharargah/ui/git")
+})
 const SessionTabBar = lazy(() =>
   import("@gharargah/ui/session-tabs").then(module => ({
     default: module.SessionTabBar,
@@ -199,6 +202,12 @@ function normalizeAbsPath(p: string): string {
   return trimmed || p
 }
 
+function comparableAbsPath(p: string): string {
+  return normalizeAbsPath(p)
+    .replace(/\\/g, "/")
+    .replace(/^\/private(?=\/(?:var|tmp)(?:\/|$))/, "")
+}
+
 /** Match a persisted cwd URI to a live folder when path forms differ (/var vs /private/var). */
 function resolveWorkspaceRootUri(
   cwdRootUri: string,
@@ -207,7 +216,8 @@ function resolveWorkspaceRootUri(
   if (folders.some(folder => folder.root.uri === cwdRootUri)) return cwdRootUri
   const cwdPath = normalizeAbsPath(fileUriToPath(cwdRootUri))
   const folder = folders.find(
-    candidate => normalizeAbsPath(candidate.root.path) === cwdPath,
+    candidate =>
+      comparableAbsPath(candidate.root.path) === comparableAbsPath(cwdPath),
   )
   return folder?.root.uri ?? cwdRootUri
 }
@@ -467,8 +477,12 @@ export function GharargahApp() {
 
   const activateProject = useCallback(
     (rootUri: string) => {
+      const resolvedRootUri = resolveWorkspaceRootUri(
+        rootUri,
+        workspace.folders,
+      )
       const folder = workspace.folders.find(
-        candidate => candidate.root.uri === rootUri,
+        candidate => candidate.root.uri === resolvedRootUri,
       )
       if (folder) workspace.setActiveFolder(folder.id)
     },
@@ -513,7 +527,10 @@ export function GharargahApp() {
         commitTree(tree, owningPanel)
         openTerminalModal(owningPanel, tabId, mode)
       }
-      const rootUri = terminalCwdForTab(tabId)
+      const rootUri = resolveWorkspaceRootUri(
+        terminalCwdForTab(tabId),
+        workspace.folders,
+      )
       if (rootUri && rootUri !== workspace.root?.uri) {
         activateProject(rootUri)
         requestAnimationFrame(focus)
@@ -643,52 +660,53 @@ export function GharargahApp() {
       endLine?: number,
       endColumn?: number,
     ) => {
-      void ensureMonacoWorkersConfigured()
-      const tree = cloneTree()
-      const existing = tree.findEditorPanelForFile(uri)
-      const panel =
-        existing ??
-        resolveEditorPanel(
-          tree,
-          editorPanelRef.current,
-          appStateRef.current.focusedPanel,
-        ) ??
-        editorPanelRef.current
-      if (!panel) return
-      editorPanelRef.current = panel
-      workspace.assignEditorPanel(tree, panel, uri, path)
-      if (line != null) {
-        setPendingEditorNavigation(uri, {
-          line,
-          column: column ?? 1,
-          endLine,
-          endColumn,
-        })
-      }
-      setFocusedPanel(panel)
-      setSessionMode("editor")
-      commitTree(tree, panel)
-      ensureSessionModalOpen(workspace.resolveRootUriForFile(uri))
-      if (line != null) {
-        requestAnimationFrame(() => {
-          const view = getEditorView(panel)
-          if (!view) return
-          void import("@gharargah/monaco").then(
-            ({ revealPosition, highlightRangeTemporarily }) => {
-              revealPosition(view as MonacoEditorHandle, line, column ?? 1)
-              if (endLine != null && endColumn != null) {
-                highlightRangeTemporarily(view as MonacoEditorHandle, {
-                  startLineNumber: line,
-                  startColumn: column ?? 1,
-                  endLineNumber: endLine,
-                  endColumn: endColumn,
-                })
-              }
-            },
-          )
-        })
-      }
-      void ensureLspForFile(uri)
+      void ensureMonacoWorkersConfigured().then(() => {
+        const tree = cloneTree()
+        const existing = tree.findEditorPanelForFile(uri)
+        const panel =
+          existing ??
+          resolveEditorPanel(
+            tree,
+            editorPanelRef.current,
+            appStateRef.current.focusedPanel,
+          ) ??
+          editorPanelRef.current
+        if (!panel) return
+        editorPanelRef.current = panel
+        workspace.assignEditorPanel(tree, panel, uri, path)
+        if (line != null) {
+          setPendingEditorNavigation(uri, {
+            line,
+            column: column ?? 1,
+            endLine,
+            endColumn,
+          })
+        }
+        setFocusedPanel(panel)
+        setSessionMode("editor")
+        commitTree(tree, panel)
+        ensureSessionModalOpen(workspace.resolveRootUriForFile(uri))
+        if (line != null) {
+          requestAnimationFrame(() => {
+            const view = getEditorView(panel)
+            if (!view) return
+            void import("@gharargah/monaco").then(
+              ({ revealPosition, highlightRangeTemporarily }) => {
+                revealPosition(view as MonacoEditorHandle, line, column ?? 1)
+                if (endLine != null && endColumn != null) {
+                  highlightRangeTemporarily(view as MonacoEditorHandle, {
+                    startLineNumber: line,
+                    startColumn: column ?? 1,
+                    endLineNumber: endLine,
+                    endColumn: endColumn,
+                  })
+                }
+              },
+            )
+          })
+        }
+        void ensureLspForFile(uri)
+      })
     },
     [
       cloneTree,
@@ -991,6 +1009,27 @@ export function GharargahApp() {
     }
   }, [activeAgentThread?.id])
 
+  const rosterWriteActiveRef = useRef(false)
+  const pendingRosterWriteRef = useRef<PersistedSessionRoster | null>(null)
+  const latestRosterRef = useRef<PersistedSessionRoster | null>(null)
+  const flushSessionRosterWrites = useCallback(async () => {
+    if (rosterWriteActiveRef.current) return
+    rosterWriteActiveRef.current = true
+    try {
+      while (pendingRosterWriteRef.current) {
+        const next = pendingRosterWriteRef.current
+        pendingRosterWriteRef.current = null
+        try {
+          await saveServerSessionRoster(next)
+        } catch {
+          /* host may be down; a newer snapshot can still recover */
+        }
+      }
+    } finally {
+      rosterWriteActiveRef.current = false
+      if (pendingRosterWriteRef.current) void flushSessionRosterWrites()
+    }
+  }, [])
   const persistSessionRoster = useCallback(() => {
     if (!sessionRosterReadyRef.current) return
     const sessions = listTerminalSessions().map(session => ({
@@ -1018,13 +1057,38 @@ export function GharargahApp() {
         ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
         : null,
     }
-    void saveServerSessionRoster(roster).catch(() => {
-      /* host may be down; in-memory sessions still work */
-    })
-  }, [workspace])
+    latestRosterRef.current = roster
+    pendingRosterWriteRef.current = roster
+    void flushSessionRosterWrites()
+  }, [workspace, flushSessionRosterWrites])
+
+  useEffect(() => {
+    const persistLatestOnPageHide = () => {
+      const roster = latestRosterRef.current
+      if (roster) void saveServerSessionRoster(roster)
+    }
+    window.addEventListener("pagehide", persistLatestOnPageHide)
+    return () => window.removeEventListener("pagehide", persistLatestOnPageHide)
+  }, [])
 
   const closeTerminalTab = useCallback(
-    (panelId: PanelId, tabId: string) => {
+    async (panelId: PanelId, tabId: string) => {
+      const session = terminalSessionForTab(tabId)
+      if (session?.status === "starting" || session?.status === "running") {
+        const label =
+          workspace.tabRegistry.get(tabId)?.label ??
+          session.customLabel ??
+          "Terminal"
+        const confirmed = await requestConfirm({
+          title: `End ${label}?`,
+          description:
+            "The running process will be stopped and this session will be removed.",
+          confirmLabel: "End Session",
+          cancelLabel: "Keep Running",
+          destructive: true,
+        })
+        if (!confirmed) return
+      }
       const close = () => {
         if (terminalModalTabIdRef.current === tabId) {
           setTerminalModalTabId(null)
@@ -1211,7 +1275,6 @@ export function GharargahApp() {
       subscribeTerminalSessions(tabId => {
         tabStore.update(tabId, previous => ({ ...(previous as object) }))
         setTerminalSessionRevision(revision => revision + 1)
-        persistSessionRoster()
         const session = terminalSessionForTab(tabId)
         if (!session) return
         const folder = workspace.folders.find(f => f.root.uri === session.cwdRootUri)
@@ -1228,7 +1291,7 @@ export function GharargahApp() {
           ptyId: session.ptyId ?? null,
         })
       }),
-    [tabStore, persistSessionRoster, workspace],
+    [tabStore, workspace],
   )
 
   const openNotificationSession = useCallback(
@@ -2369,7 +2432,7 @@ export function GharargahApp() {
     void window.gharargah
       .recordStartup({
       shell: "web",
-      buildMode: import.meta.env.DEV ? "debug" : "release",
+      buildMode: import.meta.env.DEV ? "development" : "production",
       rendererBootstrapMs: bootstrapAt,
       rendererReadyMs: performance.now(),
       domContentLoadedMs: navigation?.domContentLoadedEventEnd ?? null,
@@ -2833,7 +2896,7 @@ export function GharargahApp() {
                           removeProjectByRootUri(project.rootUri),
                       }}
                       onOpenSettings={() => setSettingsOpen(true)}
-                      serverLabel="localhost:4747"
+                      serverLabel="Local host"
                     />
                     <SidebarInset className="flex min-h-0 flex-col overflow-hidden">
                       {!terminalModalTabId ? (

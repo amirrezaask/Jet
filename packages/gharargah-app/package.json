@@ -6,7 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts src/server-sessions.test.ts src/probe-terminal-sessions.test.ts src/agent-draft.test.ts src/editor/code-editor-service.test.ts"
+    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts src/server-sessions.test.ts src/probe-terminal-sessions.test.ts src/agent-draft.test.ts src/editor/code-editor-service.test.ts src/tabs/terminal-session.test.ts"
   },
   "dependencies": {
     "@gharargah/agents": "workspace:*",

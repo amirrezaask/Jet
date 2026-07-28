@@ -37,6 +37,7 @@ import {
 import { SidebarSearch } from "./SidebarSearch.js"
 import { UnreadFirstSessionList } from "./UnreadFirstSessionList.js"
 import type { SidebarProject, SidebarSession } from "./types.js"
+import { sameProjectPath } from "./project-path.js"
 
 export const SIDEBAR_WIDTH_MIN = 240
 export const SIDEBAR_WIDTH_MAX = 480
@@ -95,7 +96,9 @@ export function GharagahSidebar({
   const filteredSessions = useMemo(() => {
     let list = sessions
     if (projectFilterId != null) {
-      const project = projects.find(p => p.path === projectFilterId)
+      const project = projects.find(p =>
+        sameProjectPath(p.path, projectFilterId),
+      )
       if (project) {
         list = list.filter(s => s.projectId === project.id)
       } else {
@@ -129,7 +132,9 @@ export function GharagahSidebar({
 
   const handleNewSession = useCallback(() => {
     if (projectFilterId != null) {
-      const project = projects.find(p => p.path === projectFilterId)
+      const project = projects.find(p =>
+        sameProjectPath(p.path, projectFilterId),
+      )
       if (project) {
         onNewSession(project.rootUri)
         return

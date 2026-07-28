@@ -97,9 +97,9 @@ export function mapHomeGroupsToSidebar(
   const sessions: SidebarSession[] = []
 
   for (const group of groups) {
-    const projectSessions = group.terminals
-      .filter(t => t.status !== "failed")
-      .map(t => mapTerminalToSidebarSession(group, t, opts))
+    const projectSessions = group.terminals.map(t =>
+      mapTerminalToSidebarSession(group, t, opts),
+    )
     for (const s of projectSessions) sessions.push(s)
     const unreadCount = projectSessions.reduce((n, s) => n + s.unreadCount, 0)
     const hasActive = projectSessions.some(

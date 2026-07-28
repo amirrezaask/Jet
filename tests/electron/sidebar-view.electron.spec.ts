@@ -5,7 +5,7 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, REPO_ROOT } from "./_launch.js"
+import { execCommand, hasPtySpawn, launchJet, REPO_ROOT } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -15,6 +15,7 @@ test.describe("sidebar view", () => {
   test("project filter chips, selection, unread sticky, preference persistence", async () => {
     const { app, page } = await launchJet()
     try {
+      await execCommand(page, "ui.setSessionLayout.sidebar")
       await expect
         .poll(() =>
           page.evaluate(
@@ -333,6 +334,7 @@ test.describe("sidebar view", () => {
 
     const { app, page } = await launchJet()
     try {
+      await execCommand(page, "ui.setSessionLayout.sidebar")
       await expect
         .poll(() =>
           page.evaluate(

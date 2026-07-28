@@ -139,9 +139,9 @@ export function GharargahHome(props: GharargahHomeProps) {
                   data-gharargah-home-search
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder="Search projects, agents, files…"
+                  placeholder="Search projects & sessions…"
                   className="h-8 pe-3 ps-8 text-xs"
-                  aria-label="Search projects"
+                  aria-label="Search projects and sessions"
                 />
               </div>
               {onAddProject ? (
@@ -193,6 +193,7 @@ export function GharargahHome(props: GharargahHomeProps) {
                 rootUri={group.rootUri}
                 terminals={group.terminals}
                 sessions={sessions}
+                filtering={query.trim().length > 0}
                 onOpenTerminal={onOpenTerminal}
                 onNewSession={onNewSession}
                 onOpenInApp={onOpenInApp}

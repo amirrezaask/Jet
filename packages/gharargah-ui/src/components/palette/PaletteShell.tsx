@@ -31,6 +31,8 @@ export interface PaletteShellProps<T> {
   emptyLabel: ReactNode
   statusRow?: ReactNode
   shouldFilter?: boolean
+  /** Allow keyboard selection before the user types a query. */
+  requireQueryForSelection?: boolean
   size?: "picker" | "wide"
   contentClassName?: string
   itemClassName?: string
@@ -52,6 +54,7 @@ export function PaletteShell<T>({
   emptyLabel,
   statusRow,
   shouldFilter,
+  requireQueryForSelection = true,
   size = "picker",
   contentClassName,
   itemClassName,
@@ -111,7 +114,8 @@ export function PaletteShell<T>({
             query={query}
             onQueryChange={setQuery}
             filter={filterMode}
-            requireQueryForSelection
+            requireQueryForSelection={requireQueryForSelection}
+            aria-label={title}
             items={listerItems}
             itemClassName={cn("mx-1.5 px-2.5 py-3", itemClassName)}
             itemStyle={node => itemStyle?.(node.data)}

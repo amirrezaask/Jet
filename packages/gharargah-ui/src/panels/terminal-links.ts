@@ -12,7 +12,7 @@ type ParsedLink = {
 }
 
 const FILE_URI_RE =
-  /file:\/\/[^\s'")\]]+(?::(\d+))?(?::(\d+))?/g
+  /file:\/\/[^\s'")\]]+?(?::(\d+))?(?::(\d+))?(?=$|[\s'")\]])/g
 const ABS_UNIX_PATH_RE =
   /(?:^|[\s('"])(\/(?:[^\s:']+\/)*[^\s:']+)(?::(\d+))?(?::(\d+))?/g
 const REL_PATH_RE =
@@ -27,7 +27,7 @@ function pushUnique(links: ParsedLink[], next: ParsedLink): void {
   if (!overlaps) links.push(next)
 }
 
-function scanLine(text: string): ParsedLink[] {
+export function scanTerminalPathLinks(text: string): ParsedLink[] {
   const links: ParsedLink[] = []
 
   for (const match of text.matchAll(FILE_URI_RE)) {
@@ -92,7 +92,7 @@ export function registerTerminalPathLinks(
         return
       }
       const text = line.translateToString(true)
-      const parsed = scanLine(text)
+      const parsed = scanTerminalPathLinks(text)
       if (parsed.length === 0) {
         callback(undefined)
         return

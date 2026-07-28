@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { applyLoginShellEnv } from "@gharargah/node-host"
 import { loadConfig } from "./config.js"
 import { startHostServer } from "./server.js"
 
+applyLoginShellEnv()
 const config = await loadConfig()
 const { close } = await startHostServer(config)
 

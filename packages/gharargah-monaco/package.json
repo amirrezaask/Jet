@@ -11,6 +11,10 @@
     "./pending": {
       "types": "./src/pending-editor.ts",
       "default": "./src/pending-editor.ts"
+    },
+    "./environment": {
+      "types": "./src/monaco-env.ts",
+      "default": "./src/monaco-env.ts"
     }
   },
   "scripts": {

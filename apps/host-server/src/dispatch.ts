@@ -51,7 +51,7 @@ import type { HostConfig } from "./config.js"
 import { WorkspaceHost } from "./workspace.js"
 import {
   NotificationService,
-  parseOscNotifications,
+  parseOscStreamChunk,
   normalizeHookEventName,
 } from "./notifications/index.js"
 
@@ -68,6 +68,7 @@ export type HostRuntime = {
 
 export function createRuntime(config: HostConfig, events: EventHub, db: ProjectDatabase): HostRuntime {
   const terminal = new TerminalHost()
+  const terminalOscBuffers = new Map<string, string>()
   const notifications = new NotificationService(db.raw(), (streamEvent: NotificationStreamEvent) => {
     events.emit("notifications:event", [streamEvent])
   })
@@ -77,9 +78,10 @@ export function createRuntime(config: HostConfig, events: EventHub, db: ProjectD
     if (channel === "terminal:data") {
       const ptyId = String(args[0] ?? "")
       const data = String(args[1] ?? "")
-      handleTerminalOsc(notifications, ptyId, data)
+      handleTerminalOsc(notifications, terminalOscBuffers, ptyId, data)
     } else if (channel === "terminal:exit") {
       const ptyId = String(args[0] ?? "")
+      terminalOscBuffers.delete(ptyId)
       const exitCode = typeof args[1] === "number" ? args[1] : Number(args[1] ?? 0)
       handleTerminalExit(notifications, ptyId, exitCode)
     }
@@ -103,10 +105,14 @@ export function createRuntime(config: HostConfig, events: EventHub, db: ProjectD
 
 function handleTerminalOsc(
   notifications: NotificationService,
+  buffers: Map<string, string>,
   ptyId: string,
   data: string,
 ): void {
-  const parsed = parseOscNotifications(data)
+  const result = parseOscStreamChunk(buffers.get(ptyId) ?? "", data)
+  if (result.buffered) buffers.set(ptyId, result.buffered)
+  else buffers.delete(ptyId)
+  const parsed = result.notifications
   if (parsed.length === 0) return
   const binding = notifications.bindingForPty(ptyId)
   for (const item of parsed) {

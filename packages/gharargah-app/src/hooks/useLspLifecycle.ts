@@ -216,6 +216,16 @@ export function useLspLifecycle(
     })
   }, [bumpLspRevision])
 
+  useEffect(
+    () => () => {
+      if (crashRetryTimerRef.current != null) {
+        window.clearTimeout(crashRetryTimerRef.current)
+        crashRetryTimerRef.current = null
+      }
+    },
+    [],
+  )
+
   return {
     lspManager: runtimeRef.current?.manager ?? null,
     lspClientPool: runtimeRef.current?.pool ?? null,

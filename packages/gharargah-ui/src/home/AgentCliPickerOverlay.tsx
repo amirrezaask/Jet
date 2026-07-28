@@ -95,6 +95,7 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
       }
       placeholder="Filter agents…"
       size="picker"
+      requireQueryForSelection={false}
       items={items}
       onSelect={onSelect}
       emptyLabel="No matching agents."

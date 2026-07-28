@@ -5,7 +5,11 @@ import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { describe, it, beforeEach, afterEach } from "node:test"
 import { NotificationService } from "./service.js"
-import { parseOscNotifications, normalizeHookEventName } from "./osc.js"
+import {
+  parseOscNotifications,
+  parseOscStreamChunk,
+  normalizeHookEventName,
+} from "./osc.js"
 import {
   evaluateDesktopDelivery,
   shouldCreateInAppNotification,
@@ -334,6 +338,15 @@ describe("OSC + hook normalize", () => {
     const parsed = parseOscNotifications("\x1b]777;notify;Hello;World\x07")
     assert.equal(parsed[0]?.title, "Hello")
     assert.equal(parsed[0]?.message, "World")
+  })
+
+  it("parses notifications split across PTY chunks", () => {
+    const first = parseOscStreamChunk("", "\x1b]777;notify;Build")
+    assert.equal(first.notifications.length, 0)
+    const second = parseOscStreamChunk(first.buffered, ";Finished\x07")
+    assert.equal(second.notifications[0]?.title, "Build")
+    assert.equal(second.notifications[0]?.message, "Finished")
+    assert.equal(second.buffered, "")
   })
 
   it("normalizes hook event names", () => {

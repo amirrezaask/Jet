@@ -15,7 +15,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/client-pool.test.ts src/project-root.test.ts"
+    "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@gharargah/monaco": "workspace:*",

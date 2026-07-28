@@ -9,8 +9,20 @@ import { createRuntime, dispatch, shutdownRuntime, type HostRuntime } from "./di
 import { EventHub } from "./events.js"
 import { parseSessionRosterBody, ProjectDatabase } from "./persistence.js"
 import { pathAllowed, pathStaysWithin } from "./sandbox.js"
+import { isAllowedWebSocketOrigin } from "./security.js"
 
 const VERSION = "0.0.1"
+const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
+const MAX_WEBSOCKET_BUFFERED_BYTES = 8 * 1024 * 1024
+
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message)
+  }
+}
 
 type RpcBody = {
   channel?: string
@@ -30,7 +42,8 @@ export async function startHostServer(config: HostConfig): Promise<{
     try {
       await handleHttp(runtime, req, res)
     } catch (error) {
-      sendJson(res, 500, {
+      const status = error instanceof HttpError ? error.status : 500
+      sendJson(res, status, {
         error: { code: "OPERATION_FAILED", message: String(error), details: {} },
       })
     }
@@ -39,6 +52,11 @@ export async function startHostServer(config: HostConfig): Promise<{
   const wss = new WebSocketServer({ noServer: true })
 
   server.on("upgrade", (req, socket, head) => {
+    if (!isAllowedWebSocketOrigin(req.headers.origin)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n")
+      socket.destroy()
+      return
+    }
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
     if (url.pathname === "/ws") {
       wss.handleUpgrade(req, socket, head, ws => {
@@ -63,13 +81,19 @@ export async function startHostServer(config: HostConfig): Promise<{
 
   console.log(`[host-server] listening on http://${config.host}:${config.port}`)
 
-  const close = async () => {
-    shutdownRuntime(runtime)
-    db.close()
-    await new Promise<void>(resolve => wss.close(() => resolve()))
-    await new Promise<void>((resolve, reject) => {
-      server.close(err => (err ? reject(err) : resolve()))
-    })
+  let closePromise: Promise<void> | null = null
+  const close = () => {
+    closePromise ??= (async () => {
+      shutdownRuntime(runtime)
+      const serverClosed = new Promise<void>((resolve, reject) => {
+        server.close(err => (err ? reject(err) : resolve()))
+      })
+      for (const client of wss.clients) client.terminate()
+      await new Promise<void>(resolve => wss.close(() => resolve()))
+      await serverClosed
+      db.close()
+    })()
+    return closePromise
   }
 
   return { runtime, close }
@@ -312,15 +336,24 @@ async function handleHttp(
 function handleEventSocket(runtime: HostRuntime, ws: WebSocket, url: URL): void {
   const since = Number(url.searchParams.get("since") ?? "0") || 0
   for (const event of runtime.events.replayAfter(since)) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event))
+    sendEventSocketMessage(ws, event)
   }
   const unsubscribe = runtime.events.subscribe(event => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event))
+    sendEventSocketMessage(ws, event)
   })
   ws.on("message", data => {
     if (String(data) === "ping") ws.send("pong")
   })
   ws.on("close", () => unsubscribe())
+}
+
+function sendEventSocketMessage(ws: WebSocket, event: unknown): void {
+  if (ws.readyState !== WebSocket.OPEN) return
+  if (ws.bufferedAmount > MAX_WEBSOCKET_BUFFERED_BYTES) {
+    ws.close(1013, "client is not consuming events")
+    return
+  }
+  ws.send(JSON.stringify(event))
 }
 
 function handleLspProxy(id: string, client: WebSocket): void {
@@ -432,7 +465,15 @@ function serveStatic(root: string, pathname: string, res: ServerResponse): boole
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  let totalBytes = 0
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    totalBytes += buffer.length
+    if (totalBytes > MAX_JSON_BODY_BYTES) {
+      throw new HttpError(413, "request body too large")
+    }
+    chunks.push(buffer)
+  }
   if (chunks.length === 0) return {}
   return JSON.parse(Buffer.concat(chunks).toString("utf8"))
 }

@@ -4,10 +4,13 @@ import "@gharargah/ui/styles.css"
 import { GharargahApp } from "./App.js"
 import { AppErrorBoundary } from "./AppErrorBoundary.js"
 import { createGharargahApi, createWebTransport } from "@gharargah/host-client"
+import { isAgentChatEnabled } from "@gharargah/agents"
 
 const startupWindow = window as Window & { __gharargahStartupBootstrapAt?: number }
 startupWindow.__gharargahStartupBootstrapAt ??= performance.now()
-window.gharargah = createGharargahApi(createWebTransport())
+window.gharargah = createGharargahApi(createWebTransport(), {
+  agentChatEnabled: isAgentChatEnabled(),
+})
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

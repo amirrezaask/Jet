@@ -5,5 +5,9 @@ export {
   shouldCreateInAppNotification,
   categoryForType,
 } from "./policy.js"
-export { parseOscNotifications, normalizeHookEventName } from "./osc.js"
+export {
+  parseOscNotifications,
+  parseOscStreamChunk,
+  normalizeHookEventName,
+} from "./osc.js"
 export { ensureNotificationSchema, contentHashFor } from "./schema.js"

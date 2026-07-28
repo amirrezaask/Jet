@@ -37,6 +37,9 @@ function ListerSearchInput({
   disabled,
   inputRef,
   autoFocus,
+  ariaLabel,
+  controlsId,
+  activeDescendantId,
 }: {
   value: string
   onChange: (next: string) => void
@@ -44,6 +47,9 @@ function ListerSearchInput({
   disabled?: boolean
   inputRef?: RefObject<HTMLInputElement | null>
   autoFocus?: boolean
+  ariaLabel?: string
+  controlsId: string
+  activeDescendantId?: string
 }) {
   const localRef = useRef<HTMLInputElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -66,6 +72,9 @@ function ListerSearchInput({
           role="combobox"
           aria-expanded={true}
           aria-autocomplete="list"
+          aria-label={ariaLabel ?? placeholder ?? "Filter items"}
+          aria-controls={controlsId}
+          aria-activedescendant={activeDescendantId}
           autoFocus={autoFocus}
           className="flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
           value={value}
@@ -84,6 +93,7 @@ function TreeRowChrome<T>({
   rowHeight,
   indentPx,
   rowAriaLabel,
+  rowId,
   onClick,
   render,
   rowActions,
@@ -94,6 +104,7 @@ function TreeRowChrome<T>({
   rowHeight: number
   indentPx: number
   rowAriaLabel?: string
+  rowId?: string
   onClick: () => void
   render: (node: ListerNode<T>, ctx: ListerItemContext) => ReactNode
   rowActions?: (node: ListerNode<T>) => ReactNode
@@ -116,6 +127,7 @@ function TreeRowChrome<T>({
       }}
     >
       <div
+        id={rowId}
         role="treeitem"
         aria-label={rowAriaLabel}
         aria-level={ctx.depth + 1}
@@ -539,6 +551,9 @@ export function Lister<T>({
   ])
 
   const listRole = role ?? (mode === "tree" ? "tree" : "listbox")
+  const listElementId = `${listId}-options`
+  const optionId = (nodeId: string) =>
+    `${listId}-option-${encodeURIComponent(nodeId)}`
 
   const body =
     visibleRows.length === 0 ? (
@@ -581,6 +596,7 @@ export function Lister<T>({
                 rowHeight={rowHeight}
                 indentPx={indentPx}
                 rowAriaLabel={rowAriaLabel?.(entry.node)}
+                rowId={optionId(entry.node.id)}
                 onClick={() => {
                   setSelectedIndex(v.index)
                   activateIndex(v.index)
@@ -617,6 +633,7 @@ export function Lister<T>({
           const flatRow =
             flatVariant === "palette" ? (
               <button
+                id={optionId(entry.node.id)}
                 type="button"
                 role="option"
                 aria-selected={selected}
@@ -666,6 +683,7 @@ export function Lister<T>({
   const scrollEl =
     mode === "tree" ? (
       <SidebarContent
+        id={listElementId}
         ref={el => {
           scrollRef.current = el
         }}
@@ -679,6 +697,7 @@ export function Lister<T>({
       </SidebarContent>
     ) : (
       <div
+        id={listElementId}
         ref={el => {
           scrollRef.current = el
         }}
@@ -710,6 +729,13 @@ export function Lister<T>({
           disabled={inputDisabled}
           inputRef={searchInputRef}
           autoFocus={autoFocusInput ?? (showInput || query.length > 0)}
+          ariaLabel={ariaLabel}
+          controlsId={listElementId}
+          activeDescendantId={
+            selectedIndex >= 0
+              ? optionId(visibleRows[selectedIndex]?.node.id ?? "")
+              : undefined
+          }
         />
       ) : null}
       {betweenInputAndList}

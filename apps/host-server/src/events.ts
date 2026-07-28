@@ -7,14 +7,32 @@ export type HostEvent = {
 
 type Listener = (event: HostEvent) => void
 
+function estimateHostEventBytes(event: HostEvent): number {
+  let bytes = 64 + Buffer.byteLength(event.channel, "utf8")
+  for (const arg of event.args) {
+    if (typeof arg === "string") bytes += Buffer.byteLength(arg, "utf8")
+    else {
+      try {
+        bytes += Buffer.byteLength(JSON.stringify(arg) ?? "", "utf8")
+      } catch {
+        bytes += 64
+      }
+    }
+  }
+  return bytes
+}
+
 export class EventHub {
   private sequence = 0
   private readonly history: HostEvent[] = []
+  private historyBytes = 0
   private readonly listeners = new Set<Listener>()
   private readonly capacity: number
+  private readonly maxHistoryBytes: number
 
-  constructor(capacity = 1024) {
+  constructor(capacity = 1024, maxHistoryBytes = 16 * 1024 * 1024) {
     this.capacity = capacity
+    this.maxHistoryBytes = maxHistoryBytes
   }
 
   emit(channel: string, args: unknown[]): HostEvent {
@@ -25,8 +43,16 @@ export class EventHub {
       channel,
       args,
     }
+    const eventBytes = estimateHostEventBytes(event)
     this.history.push(event)
-    while (this.history.length > this.capacity) this.history.shift()
+    this.historyBytes += eventBytes
+    while (
+      this.history.length > 1 &&
+      (this.history.length > this.capacity || this.historyBytes > this.maxHistoryBytes)
+    ) {
+      const dropped = this.history.shift()!
+      this.historyBytes -= estimateHostEventBytes(dropped)
+    }
     for (const listener of this.listeners) {
       try {
         listener(event)

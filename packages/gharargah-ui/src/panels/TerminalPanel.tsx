@@ -9,6 +9,7 @@ import { Button } from "../components/ui/button.js"
 import { TerminalCursorMotionLayer } from "./terminal-cursor-motion.js"
 import { TerminalScrollMotion } from "./terminal-scroll-motion.js"
 import { registerTerminalPathLinks } from "./terminal-links.js"
+import { createTerminalInputWriter } from "./terminal-input-writer.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
@@ -263,6 +264,7 @@ export function TerminalPanel({
 
     let unsub: (() => void) | null = null
     let dataDispose: { dispose: () => void } | null = null
+    let inputWriter: ReturnType<typeof createTerminalInputWriter> | null = null
     let ptyStarted = false
     const exitUnsubscribe = terminalApi.onExit((id, code) => {
       if (session.ptyId !== id) return
@@ -318,8 +320,18 @@ export function TerminalPanel({
       setDisplayStatus("running")
       setDisplayExitCode(undefined)
       unsub = terminalApi.onData(id, data => term.write(data))
-      dataDispose = term.onData(data => void terminalApi.write(id, data))
+      inputWriter = createTerminalInputWriter(
+        data => terminalApi.write(id, data),
+        error => {
+          const message = error instanceof Error ? error.message : String(error)
+          term.writeln(`\r\n\x1b[31mTerminal input failed:\x1b[0m ${message}`)
+        },
+      )
+      dataDispose = term.onData(data => inputWriter?.enqueue(data))
       syncFit()
+      // xterm was fitted before the PTY existed, so a no-op fit here still
+      // needs one authoritative resize to replace the host's 80×24 default.
+      resizePty(session)
       if (focused && isActive) focusTerminalInput(tabId)
     }
 
@@ -334,6 +346,7 @@ export function TerminalPanel({
           if (cancelled) return
           if (!attached) {
             term.writeln("\r\n\x1b[31mTerminal session is no longer available.\x1b[0m")
+            setDisplayStatus("failed")
             onFailedRef.current?.()
             return
           }
@@ -367,6 +380,7 @@ export function TerminalPanel({
         .catch(err => {
           const message = err instanceof Error ? err.message : String(err)
           term.writeln(`\r\n\x1b[31mTerminal failed to start:\x1b[0m ${message}`)
+          setDisplayStatus("failed")
           onFailedRef.current?.()
         })
     }
@@ -419,6 +433,7 @@ export function TerminalPanel({
       titleDispose.dispose()
       exitUnsubscribe()
       dataDispose?.dispose()
+      inputWriter?.dispose()
       unsub?.()
       pathLinks?.dispose()
       session.cursorMotion?.dispose()
@@ -457,7 +472,7 @@ export function TerminalPanel({
         <TerminalIcon className="size-8 opacity-40" />
         <p className="text-sm">Integrated terminal</p>
         <p className="max-w-xs text-center text-xs opacity-70">
-          Terminal requires Electron (node-pty + xterm). Browser mode shows this placeholder.
+          The terminal host is unavailable. Start or reconnect the Gharargah host.
         </p>
       </div>
     )
@@ -465,7 +480,7 @@ export function TerminalPanel({
 
   return (
     <div
-      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-transparent"
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-transparent"
       data-gharargah-terminal-panel=""
       data-gharargah-terminal-pty-id={connectedPtyId ?? ""}
       data-gharargah-terminal-status={displayStatus}
@@ -477,9 +492,20 @@ export function TerminalPanel({
         ref={containerRef}
         className="gharargah-terminal-surface jet-terminal-surface min-h-0 flex-1 overflow-hidden p-1.5"
       />
+      {displayStatus === "starting" ? (
+        <div
+          role="status"
+          aria-live="polite"
+          data-gharargah-terminal-starting=""
+          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70 text-xs text-muted-foreground"
+        >
+          Starting {launchCommand ?? "terminal"}…
+        </div>
+      ) : null}
       {displayStatus === "exited" || displayStatus === "failed" ? (
         <div
           data-gharargah-terminal-exit-bar
+          role={displayStatus === "failed" ? "alert" : "status"}
           className="flex h-9 shrink-0 items-center gap-2 border-t border-border/50 bg-muted/25 px-2.5 text-xs text-muted-foreground"
         >
           <span className="min-w-0 flex-1 truncate">

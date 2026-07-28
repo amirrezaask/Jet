@@ -1,5 +1,6 @@
 import type { ShellDriver } from "../shell/driver.js"
-import { expectContainsText, expectNotContainsText, expectSelectorVisible } from "../shell/assert.js"
+import { expect } from "@playwright/test"
+import { expectNotContainsText, expectSelectorVisible } from "../shell/assert.js"
 
 export type ListRowsOpts = {
   panel: string
@@ -19,11 +20,29 @@ export async function expectListRows(page: ShellDriver, opts: ListRowsOpts): Pro
   await expectNotContainsText(page, panelSel, noResultsText)
 
   if (needle) {
-    await expectContainsText(page, panelSel, needle)
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ({ selector, expected }) =>
+            [...document.querySelectorAll<HTMLElement>(selector)].some(row =>
+              (row.textContent ?? "").includes(expected),
+            ),
+          { selector: itemSel, expected: needle },
+        ),
+      )
+      .toBe(true)
   }
 
   await expectLayout(page, { selector: itemSel, minItems, minUniqueTops, minRowHeight })
   await expectNoOverlap(page, { selector: itemSel, minItems })
+  if (minItems >= 2) {
+    await expectRowSpacing(page, {
+      selector: itemSel,
+      minItems,
+      // Grouped lists may place section headers between adjacent result rows.
+      maxGapPx: 40,
+    })
+  }
   await expectRowTextVisible(page, { selector: itemSel, minItems })
 }
 

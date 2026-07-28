@@ -87,6 +87,9 @@ export function projectTodoKey(pathOrId: string): string {
   if (!trimmed) return trimmed
   try {
     return normalizeAbsPath(trimmed)
+      .replace(/\\/g, "/")
+      .replace(/^([A-Z]):/, (_, drive: string) => `${drive.toLowerCase()}:`)
+      .replace(/^\/private(?=\/(?:var|tmp)(?:\/|$))/, "")
   } catch {
     return trimmed
   }
