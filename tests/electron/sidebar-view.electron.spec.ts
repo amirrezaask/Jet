@@ -45,7 +45,7 @@ test.describe("sidebar view", () => {
         .toBe("on")
 
       await page.locator("[data-gharargah-sidebar-new-session]").click()
-      await page.locator('[data-gharargah-agent-cli-option="shell"]').click()
+      await page.locator('[data-gharargah-agent-cli-option="codex"]').click()
       await expectSelectorVisible(
         page,
         '[data-gharargah-terminal-modal][data-gharargah-session-presentation="inline"]',

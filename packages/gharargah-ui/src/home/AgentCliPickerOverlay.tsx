@@ -39,7 +39,7 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
     () =>
       AGENT_CLI_DRIVERS.map(driver => ({
         key: driver.id,
-        value: `${driver.label} ${driver.description} ${driver.command ?? "shell"}`,
+        value: `${driver.label} ${driver.description} ${driver.command}`,
         data: driver,
       })),
     [],
@@ -99,15 +99,14 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
       onSelect={onSelect}
       emptyLabel="No matching agents."
       statusRow={projectChips}
-      itemClassName="mx-1.5 justify-start px-2.5 py-2.5 text-left"
-      estimateSize={undefined}
+      itemClassName="justify-start py-2 text-left"
       renderItem={driver => (
         <span className="flex w-full min-w-0 items-center justify-start gap-3 text-left">
           <span
-            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/50"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/50"
             aria-hidden
           >
-            <AgentProviderIcon agent={driver.id} className="size-4" />
+            <AgentProviderIcon agent={driver.id} className="size-3.5" />
           </span>
           <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
             <span
@@ -117,7 +116,7 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
               {driver.label}
             </span>
             <span className="w-full truncate text-left font-mono text-3xs text-muted-foreground">
-              {driver.command ?? "login shell"}
+              {driver.command}
               {" · "}
               {driver.description}
             </span>

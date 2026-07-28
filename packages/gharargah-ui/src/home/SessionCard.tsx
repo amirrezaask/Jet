@@ -1,6 +1,13 @@
 import type { MouseEvent, ReactNode } from "react"
-import { Code2, MoreHorizontal, SquareTerminal, X } from "lucide-react"
-import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../agents/composer/Icons.js"
+import { MoreHorizontal, SquareTerminal, X } from "lucide-react"
+import {
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  OpenAI,
+  OpenCodeIcon,
+  type Icon,
+} from "../agents/composer/Icons.js"
 import { Button } from "@/components/ui/button.js"
 import { Card, CardContent, CardHeader } from "@/components/ui/card.js"
 import {
@@ -45,8 +52,10 @@ function ProviderGlyph({
         : agentId === "codex"
           ? OpenAI
           : agentId === "opencode"
-            ? Code2
-            : null
+            ? OpenCodeIcon
+            : agentId === "grok"
+              ? GrokIcon
+              : null
   if (IconComp) return <IconComp className={className} />
   return <SquareTerminal className={cn(className, "text-muted-foreground")} />
 }

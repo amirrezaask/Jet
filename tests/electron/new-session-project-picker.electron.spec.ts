@@ -60,7 +60,7 @@ test.describe("new session project picker", () => {
         .poll(() => secondChip.getAttribute("data-state"))
         .toBe("on")
 
-      await pickAgentCli(page, "shell")
+      await pickAgentCli(page, "codex")
       await expectSelectorVisible(
         page,
         '[data-gharargah-terminal-modal][data-gharargah-session-presentation="inline"]',
@@ -86,7 +86,7 @@ test.describe("new session project picker", () => {
         page.locator("[data-gharargah-agent-cli-project-picker]"),
         0,
       )
-      await pickAgentCli(page, "shell")
+      await pickAgentCli(page, "codex")
       await expectSelectorVisible(
         page,
         "[data-gharargah-terminal-modal]",

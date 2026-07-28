@@ -156,10 +156,10 @@ export async function clickNewSession(page: ShellDriver): Promise<void> {
   await page.getByRole("button", { name: /New session/i }).first().click()
 }
 
-/** Pick an agent CLI from the new-session lister (default: Shell). */
+/** Pick an agent CLI from the new-session lister (default: Codex). */
 export async function pickAgentCli(
   page: ShellDriver,
-  agentId: string = "shell",
+  agentId: string = "codex",
 ): Promise<void> {
   const option = page.locator(`[data-gharargah-agent-cli-option="${agentId}"]`)
   await option.waitFor({ state: "visible", timeout: 20_000 })
@@ -169,7 +169,7 @@ export async function pickAgentCli(
 /** Open a CLI-driven ADE session (picker → terminal modal). */
 export async function openNewCliSession(
   page: ShellDriver,
-  agentId: string = "shell",
+  agentId: string = "codex",
 ): Promise<ReturnType<ShellDriver["locator"]>> {
   await clickNewSession(page)
   await pickAgentCli(page, agentId)
@@ -194,5 +194,5 @@ export async function openNewAgentSession(
   page: ShellDriver,
   providerId?: string,
 ): Promise<ReturnType<ShellDriver["locator"]>> {
-  return openNewCliSession(page, providerId ?? "shell")
+  return openNewCliSession(page, providerId ?? "codex")
 }

@@ -148,7 +148,7 @@ test.describe("electron appearance and terminal-first UX", () => {
     try {
       const launcher = page.getByRole("button", { name: "New session" }).first()
       await expectLocatorVisible(launcher)
-      const modal = await openNewCliSession(page, "shell")
+      const modal = await openNewCliSession(page, "codex")
       await expectLocatorVisible(modal)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await expectLocatorCount(page.locator('[data-slot="dropdown-menu-content"]'), 0)

@@ -710,18 +710,14 @@ export function GharargahApp() {
   const createSessionWithAgentCli = useCallback(
     async (rootUri: string, driver: AgentCliDriver) => {
       try {
-        const label =
-          driver.id === "shell" ? undefined : driver.label
         const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-          label,
+          label: driver.label,
           launchCommand: driver.command,
         })
-        if (driver.id !== "shell") {
-          bindAgentToSession(tabId, {
-            agentId: driver.id,
-            driverId: `${driver.id}:cli`,
-          })
-        }
+        bindAgentToSession(tabId, {
+          agentId: driver.id,
+          driverId: `${driver.id}:cli`,
+        })
         openTerminalModal(panelId, tabId, "terminal")
       } catch (err) {
         console.error("[gharargah] createSessionWithAgentCli failed", err)

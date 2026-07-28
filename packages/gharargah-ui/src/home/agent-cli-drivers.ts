@@ -2,11 +2,11 @@ import type { SessionProvider } from "./session-card-model.js"
 
 /** Agent CLI drivers launched in a PTY for ADE sessions. */
 export type AgentCliDriver = {
-  id: SessionProvider | "shell"
+  id: SessionProvider
   label: string
   description: string
-  /** CLI binary (and optional args). Omit for a plain login shell. */
-  command?: string
+  /** CLI binary (and optional args). */
+  command: string
 }
 
 export const AGENT_CLI_DRIVERS: readonly AgentCliDriver[] = [
@@ -39,11 +39,6 @@ export const AGENT_CLI_DRIVERS: readonly AgentCliDriver[] = [
     label: "Grok",
     description: "xAI Grok CLI",
     command: "grok",
-  },
-  {
-    id: "shell",
-    label: "Shell",
-    description: "Blank terminal (no agent CLI)",
   },
 ] as const
 
