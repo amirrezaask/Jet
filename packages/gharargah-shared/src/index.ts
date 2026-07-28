@@ -35,26 +35,82 @@ export function extname(uriOrPath: string): string {
   return dot >= 0 ? name.slice(dot) : ""
 }
 
+const LANGUAGE_BY_EXT: Record<string, string> = {
+  ".ts": "typescript",
+  ".tsx": "tsx",
+  ".mts": "mts",
+  ".cts": "cts",
+  ".js": "javascript",
+  ".jsx": "jsx",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".rs": "rust",
+  ".go": "go",
+  ".py": "python",
+  ".pyi": "python",
+  ".pyw": "python",
+  ".rb": "ruby",
+  ".rake": "ruby",
+  ".gemspec": "ruby",
+  ".json": "json",
+  ".jsonc": "jsonc",
+  ".md": "markdown",
+  ".mdx": "mdx",
+  ".css": "css",
+  ".scss": "scss",
+  ".less": "less",
+  ".html": "html",
+  ".htm": "html",
+  ".yaml": "yaml",
+  ".yml": "yaml",
+  ".toml": "toml",
+  ".sh": "shell",
+  ".bash": "shell",
+  ".zsh": "shell",
+  ".php": "php",
+  ".java": "java",
+  ".kt": "kotlin",
+  ".kts": "kotlin",
+  ".swift": "swift",
+  ".cs": "csharp",
+  ".c": "cpp",
+  ".h": "cpp",
+  ".cpp": "cpp",
+  ".cc": "cpp",
+  ".cxx": "cpp",
+  ".hpp": "cpp",
+  ".hh": "cpp",
+  ".sql": "sql",
+  ".xml": "xml",
+  ".dockerfile": "dockerfile",
+  ".lua": "lua",
+  ".r": "r",
+  ".pl": "perl",
+  ".pm": "perl",
+  ".ps1": "powershell",
+  ".psm1": "powershell",
+  ".graphql": "graphql",
+  ".gql": "graphql",
+  ".dart": "dart",
+  ".scala": "scala",
+  ".ex": "elixir",
+  ".exs": "elixir",
+}
+
+/** Basename → language when extension alone is ambiguous or missing. */
+const LANGUAGE_BY_BASENAME: Record<string, string> = {
+  dockerfile: "dockerfile",
+  makefile: "shell",
+  gemfile: "ruby",
+  rakefile: "ruby",
+}
+
 export function languageIdFromPath(path: string): string {
+  const name = basename(path).toLowerCase()
+  const byName = LANGUAGE_BY_BASENAME[name]
+  if (byName) return byName
   const ext = extname(path).toLowerCase()
-  const map: Record<string, string> = {
-    ".ts": "typescript",
-    ".tsx": "tsx",
-    ".mts": "mts",
-    ".cts": "cts",
-    ".js": "javascript",
-    ".jsx": "jsx",
-    ".mjs": "javascript",
-    ".cjs": "javascript",
-    ".rs": "rust",
-    ".go": "go",
-    ".json": "json",
-    ".md": "markdown",
-    ".css": "css",
-    ".html": "html",
-    ".htm": "html",
-  }
-  return map[ext] ?? "plaintext"
+  return LANGUAGE_BY_EXT[ext] ?? "plaintext"
 }
 
 /** Map Gharargah language ids to LSP `textDocument/languageId` values. */

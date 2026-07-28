@@ -42,7 +42,7 @@ test.describe("electron terminal explorer", () => {
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await execCommand(page, "terminal.show")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
     } finally {
       await app.close()
     }

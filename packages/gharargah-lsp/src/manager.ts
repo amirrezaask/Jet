@@ -36,7 +36,12 @@ const DESCRIPTORS: LanguageServerDescriptor[] = [
   {
     id: "pyright",
     languageIds: ["python"],
-    rootMarkers: ["pyproject.toml", "requirements.txt"],
+    rootMarkers: ["pyproject.toml", "requirements.txt", "setup.py", "Pipfile", "setup.cfg"],
+  },
+  {
+    id: "ruby-lsp",
+    languageIds: ["ruby"],
+    rootMarkers: ["Gemfile", ".ruby-version"],
   },
   {
     id: "vscode-json-language-server",

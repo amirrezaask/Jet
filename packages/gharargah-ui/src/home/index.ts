@@ -55,6 +55,22 @@ export {
 } from "./OpenInAppMenu.js"
 export { timeOfDayGreeting, formatHomeDate } from "./greeting.js"
 export {
+  GharagahSidebar,
+  sidebarWidthStyle,
+  SIDEBAR_WIDTH_MIN,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_DEFAULT,
+  mapHomeGroupsToSidebar,
+  applyGrouping,
+  sortSessionsUnreadFirst,
+  type GharagahSidebarProps,
+  type SidebarProjectFilterId,
+  type SidebarProject,
+  type SidebarSession,
+  type SessionSidebarActions,
+  type ProjectSidebarActions,
+} from "./sidebar/index.js"
+export {
   AGENT_CLI_DRIVERS,
   agentCliDriverById,
   type AgentCliDriver,
@@ -62,6 +78,7 @@ export {
 export {
   AgentCliPickerOverlay,
   type AgentCliPickerOverlayProps,
+  type AgentCliPickerProject,
 } from "./AgentCliPickerOverlay.js"
 export {
   projectTodosRepository,

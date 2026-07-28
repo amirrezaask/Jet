@@ -255,6 +255,7 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
     },
     shell: {
       openInApp: (appId, rootUri) => transport.invoke("shell:openInApp", appId, rootUri),
+      revealInFolder: rootUri => transport.invoke("shell:revealInFolder", rootUri),
     },
     notifications: {
       list: req => transport.invoke("notifications:list", req ?? {}),
@@ -267,6 +268,10 @@ export function createGharargahApi(transport: GharargahHostTransport): Gharargah
       restore: id => transport.invoke("notifications:restore", id),
       acknowledge: id => transport.invoke("notifications:acknowledge", id),
       markAllRead: req => transport.invoke("notifications:markAllRead", req ?? {}),
+      unreadBySession: () =>
+        transport.invoke<Record<string, number>>("notifications:unreadBySession"),
+      markSessionUnread: sessionId =>
+        transport.invoke("notifications:markSessionUnread", sessionId),
       getPreferences: () => transport.invoke("notifications:getPreferences"),
       setPreferences: prefs => transport.invoke("notifications:setPreferences", prefs),
       bindSession: req => transport.invoke("notifications:bindSession", req),

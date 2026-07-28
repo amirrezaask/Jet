@@ -171,6 +171,52 @@ describe("NotificationService", () => {
     assert.equal(action[0]?.status, "read")
   })
 
+  it("unreadBySession aggregates per session", () => {
+    service.ingest({
+      source: "provider-hook",
+      type: "turn-completed",
+      title: "A",
+      sessionId: "s1",
+      eventId: "e-a",
+    })
+    service.ingest({
+      source: "provider-hook",
+      type: "turn-completed",
+      title: "B",
+      sessionId: "s1",
+      eventId: "e-b",
+    })
+    service.ingest({
+      source: "provider-hook",
+      type: "input-required",
+      title: "C",
+      sessionId: "s2",
+      eventId: "e-c",
+    })
+    const bySession = service.unreadBySession()
+    assert.equal(bySession.s1, 2)
+    assert.equal(bySession.s2, 1)
+    service.markAllRead({ sessionId: "s1" })
+    const after = service.unreadBySession()
+    assert.equal(after.s1 ?? 0, 0)
+    assert.equal(after.s2, 1)
+  })
+
+  it("markSessionUnread flips latest notification", () => {
+    service.ingest({
+      source: "provider-hook",
+      type: "turn-completed",
+      title: "Done",
+      sessionId: "s9",
+    })
+    service.markAllRead({ sessionId: "s9" })
+    assert.equal(service.unreadBySession().s9, undefined)
+    const n = service.markSessionUnread("s9")
+    assert.ok(n)
+    assert.equal(n?.status, "unread")
+    assert.equal(service.unreadBySession().s9, 1)
+  })
+
   it("filters and search", () => {
     service.ingest({
       source: "provider-hook",

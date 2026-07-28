@@ -6,7 +6,7 @@ test.describe("desktop shell", () => {
   test("uses native window chrome without a custom titlebar", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
       await expectLocatorCount(page.locator("[data-gharargah-titlebar]"), 0)
       await expectLocatorCount(page.locator("[data-gharargah-home-button]"), 0)
       await expectLocatorCount(page.locator("[data-gharargah-traffic-light-spacer]"), 0)

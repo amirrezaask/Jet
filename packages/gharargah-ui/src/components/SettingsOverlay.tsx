@@ -1,5 +1,5 @@
 import type { GharargahTheme } from "@gharargah/shared"
-import { LayoutGrid, PanelsTopLeft, RotateCcw, X } from "lucide-react"
+import { LayoutGrid, PanelLeft, PanelsTopLeft, RotateCcw, X } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button.js"
 import {
@@ -21,7 +21,7 @@ export const DEFAULT_UI_FONT_FAMILY =
 export const DEFAULT_MONO_FONT_FAMILY =
   '"Geist Mono Variable", "Geist Mono", ui-monospace, monospace'
 
-export type SessionLayout = "cards" | "tabs"
+export type SessionLayout = "cards" | "tabs" | "sidebar"
 
 export type JetAppearanceSettings = {
   themeId: string
@@ -30,8 +30,17 @@ export type JetAppearanceSettings = {
   fontFamily: string
   /** CSS font-family for terminal / editor mono (`--font-mono`). */
   monoFontFamily: string
-  /** Mission Control cards or browser-style session tabs. */
+  /** Mission Control cards, browser-style tabs, or sidebar navigation. */
   sessionLayout: SessionLayout
+  /** Whether the Mission Control sidebar is collapsed (icon mode). */
+  sidebarCollapsed: boolean
+  /** Sidebar expanded width in px (clamped 240–480). */
+  sidebarWidth: number
+  /**
+   * Project filter in sidebar layout (`null` = All).
+   * Persisted as absolute project path (stable across reloads).
+   */
+  sidebarProjectFilterPath: string | null
 }
 
 export type SettingsOverlayProps = {
@@ -238,7 +247,7 @@ export function SettingsOverlay({
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Session layout</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Choose Mission Control cards or a compact browser-style tab strip.
+                  Cards, browser-style tabs, or a project/session sidebar.
                 </p>
               </div>
               <ToggleGroup
@@ -246,7 +255,7 @@ export function SettingsOverlay({
                 variant="outline"
                 value={settings.sessionLayout}
                 onValueChange={value => {
-                  if (value === "cards" || value === "tabs") {
+                  if (value === "cards" || value === "tabs" || value === "sidebar") {
                     onSettingsChange(settingPatch(settings, { sessionLayout: value }))
                   }
                 }}
@@ -268,6 +277,14 @@ export function SettingsOverlay({
                 >
                   <PanelsTopLeft aria-hidden />
                   Tabs
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="sidebar"
+                  data-gharargah-session-layout-option="sidebar"
+                  className="h-9 flex-1 gap-2"
+                >
+                  <PanelLeft aria-hidden />
+                  Sidebar
                 </ToggleGroupItem>
               </ToggleGroup>
             </section>

@@ -1,0 +1,72 @@
+import { expect, test } from "@playwright/test"
+import {
+  expectLocatorVisible,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+import { execCommand, hasPtySpawn, launchJet } from "./_launch.js"
+
+const ptyAvailable = hasPtySpawn()
+
+const CASES: { path: string; languageId: string }[] = [
+  { path: "src/example.py", languageId: "python" },
+  { path: "src/example.rb", languageId: "ruby" },
+  { path: "src/example.go", languageId: "go" },
+  { path: "src/example.rs", languageId: "rust" },
+]
+
+const LSP_STATUSES = new Set([
+  "idle",
+  "starting",
+  "ready",
+  "unavailable",
+  "disconnected",
+  "restarting",
+  "failed",
+])
+
+test.describe("editor language syntax ids", () => {
+  test.skip(!ptyAvailable, "PTY support is required to open a session workspace")
+
+  test("opens Go/Python/Ruby/Rust fixtures with correct language ids", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await execCommand(page, "terminal.new")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+
+      for (const { path: rel, languageId } of CASES) {
+        await page.evaluate(async file => {
+          await window.__gharargahAgent!.openFile(file)
+          await window.__gharargahAgent!.waitForEditor()
+        }, rel)
+
+        await expect
+          .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().sessionMode), {
+            timeout: 15_000,
+          })
+          .toBe("editor")
+        await expectLocatorVisible(page.locator("[data-gharargah-monaco-editor]").first(), {
+          timeout: 20_000,
+        })
+        await expect
+          .poll(
+            () =>
+              page
+                .locator("[data-gharargah-editor-language]")
+                .first()
+                .getAttribute("data-gharargah-editor-language"),
+            { timeout: 15_000 },
+          )
+          .toBe(languageId)
+
+        await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+        const lsp = await page
+          .locator("[data-gharargah-editor-lsp]")
+          .first()
+          .getAttribute("data-gharargah-editor-lsp")
+        expect(LSP_STATUSES.has(lsp ?? "")).toBe(true)
+      }
+    } finally {
+      await app.close()
+    }
+  })
+})

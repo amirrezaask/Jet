@@ -26,6 +26,7 @@ describe("lsp-registry", () => {
     assert.equal(serverIdForLanguage("go"), "gopls")
     assert.equal(serverIdForLanguage("rust"), "rust-analyzer")
     assert.equal(serverIdForLanguage("python"), "pyright")
+    assert.equal(serverIdForLanguage("ruby"), "ruby-lsp")
     assert.equal(serverIdForLanguage("json"), "vscode-json-language-server")
     assert.equal(serverIdForLanguage("html"), "vscode-html-language-server")
     assert.equal(serverIdForLanguage("css"), "vscode-css-language-server")
@@ -41,6 +42,17 @@ describe("lsp-registry", () => {
     const ra = getLanguageServerDefinition("rust-analyzer")
     assert.ok(ra)
     assert.deepEqual(ra!.args, [])
+
+    const py = getLanguageServerDefinition("pyright")
+    assert.ok(py)
+    assert.ok(py!.rootMarkers.includes("setup.py"))
+    assert.ok(py!.rootMarkers.includes("Pipfile"))
+
+    const ruby = getLanguageServerDefinition("ruby-lsp")
+    assert.ok(ruby)
+    assert.deepEqual(ruby!.args, [])
+    assert.deepEqual(ruby!.candidateArgs?.solargraph, ["stdio"])
+    assert.ok(ruby!.rootMarkers.includes("Gemfile"))
   })
 
   it("rejects unknown server ids", () => {

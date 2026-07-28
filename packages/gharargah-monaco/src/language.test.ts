@@ -24,6 +24,13 @@ describe("monacoLanguageId", () => {
   it("passes through known languages", () => {
     assert.equal(monacoLanguageId("rust"), "rust")
     assert.equal(monacoLanguageId("go"), "go")
+    assert.equal(monacoLanguageId("python"), "python")
+    assert.equal(monacoLanguageId("ruby"), "ruby")
+  })
+
+  it("aliases toml and jsonc for Monaco", () => {
+    assert.equal(monacoLanguageId("toml"), "ini")
+    assert.equal(monacoLanguageId("jsonc"), "json")
   })
 
   it("normalizes case", () => {

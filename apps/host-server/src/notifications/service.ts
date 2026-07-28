@@ -250,6 +250,38 @@ export class NotificationService {
     }
   }
 
+  /** Per-session unread counts for sidebar badges. */
+  unreadBySession(): Record<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id AS sessionId, COUNT(*) AS n
+         FROM app_notifications
+         WHERE status='unread' AND session_id IS NOT NULL
+         GROUP BY session_id`,
+      )
+      .all() as Array<{ sessionId: string; n: number }>
+    const out: Record<string, number> = {}
+    for (const row of rows) {
+      if (!row.sessionId) continue
+      out[row.sessionId] = Number(row.n) || 0
+    }
+    return out
+  }
+
+  /** Mark the most recent non-dismissed notification for a session as unread. */
+  markSessionUnread(sessionId: string): AppNotification | null {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM app_notifications
+         WHERE session_id=? AND status != 'dismissed'
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(sessionId) as { id: string } | undefined
+    if (!row?.id) return null
+    return this.markUnread(row.id)
+  }
+
   get(id: string): AppNotification | null {
     const row = this.db
       .prepare("SELECT * FROM app_notifications WHERE id=?")
@@ -555,7 +587,17 @@ export class NotificationService {
       }
     } else {
       const ts = nowIso()
-      if (req.projectId) {
+      if (req.sessionId) {
+        this.db
+          .prepare(
+            `UPDATE app_notifications
+             SET status=CASE WHEN action_resolved_at IS NOT NULL THEN 'resolved' ELSE 'read' END,
+                 read_at=COALESCE(read_at, ?),
+                 updated_at=?
+             WHERE status='unread' AND created_at <= ? AND session_id=?`,
+          )
+          .run(ts, ts, before, req.sessionId)
+      } else if (req.projectId) {
         this.db
           .prepare(
             `UPDATE app_notifications

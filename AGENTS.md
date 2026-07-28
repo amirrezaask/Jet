@@ -313,11 +313,22 @@ Registered in `packages/jet-app/src/App.tsx`:
 
 ### LSP
 
-- Main: spawns `typescript-language-server --stdio`, bridges stdio ↔ WebSocket
-- Renderer: `@codemirror/lsp-client` via custom `simpleWebSocketTransport` in `jet-codemirror`
-- `LanguageServerManager.ensureServerForFile()` — TS/JS only for now
-- Requires `typescript-language-server` on **PATH** (TS/JS)
-- Requires `rust-analyzer` on **PATH** for Rust (optional)
+- Host spawns language servers over stdio and bridges them to `/ws/lsp/{id}` (WebSocket)
+- Renderer: `@gharargah/lsp` `LanguageServerManager` + Monaco providers
+- Servers (binary must be on **PATH**):
+
+| Languages | Server ID | Binary candidates |
+|-----------|-----------|-------------------|
+| typescript, javascript, tsx, jsx, mts, cts | `typescript-language-server` | `typescript-language-server` |
+| go | `gopls` | `gopls` |
+| rust | `rust-analyzer` | `rust-analyzer` |
+| python | `pyright` | `pyright-langserver`, `pyright`, `basedpyright-langserver`, `basedpyright` |
+| ruby | `ruby-lsp` | `ruby-lsp`, `solargraph` |
+| json, jsonc | `vscode-json-language-server` | `vscode-json-language-server`, `vscode-json-languageserver` |
+| html | `vscode-html-language-server` | `vscode-html-language-server` |
+| css | `vscode-css-language-server` | `vscode-css-language-server` |
+
+- Syntax highlighting uses Monaco Monarch (`basic-languages`); `languageIdFromPath` in `@gharargah/shared` maps extensions → language ids
 - Project search uses ripgrep / host search on **PATH**
 - `findProjectRoot()` uses `pathToFileUri` from `@gharargah/shared`
 

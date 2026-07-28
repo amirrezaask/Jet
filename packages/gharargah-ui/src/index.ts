@@ -33,6 +33,12 @@ export {
   AGENT_CLI_DRIVERS,
   detectSessionProvider,
   timeOfDayGreeting,
+  GharagahSidebar,
+  sidebarWidthStyle,
+  SIDEBAR_WIDTH_MIN,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_DEFAULT,
+  mapHomeGroupsToSidebar,
   type GharargahHomeProps,
   type HomeProjectGroup,
   type HomeTerminalEntry,
@@ -53,6 +59,7 @@ export {
   type NewSessionButtonProps,
   type AgentCliDriver,
   type AgentCliPickerOverlayProps,
+  type AgentCliPickerProject,
   type ProjectTodo,
   type ProjectTodoStatus,
   type ProjectTodosApi,
@@ -63,8 +70,13 @@ export {
   NotificationCenter,
   type NotificationBellProps,
   type NotificationCenterProps,
+  type GharagahSidebarProps,
+  type SidebarProject,
+  type SidebarSession,
+  type SessionSidebarActions,
+  type ProjectSidebarActions,
 } from "./home/index.js"
-export { SidebarProvider, SidebarInset } from "./components/ui/sidebar.js"
+export { SidebarProvider, SidebarInset, SidebarTrigger } from "./components/ui/sidebar.js"
 export {
   GharargahWorkspaceSidebar,
   JetSidebarViewTabs,

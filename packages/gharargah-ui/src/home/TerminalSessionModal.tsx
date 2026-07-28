@@ -47,9 +47,11 @@ export type TerminalSessionModalProps = {
   onModeChange: (mode: SessionDialogMode) => void
   /** Agent/ACP tab only for sessions launched with an ACP driver. */
   showAgentTab?: boolean
-  /** Merged into the session footer when mode is agent. */
+  /** Merged into the session header when mode is agent. */
   agentSessionHeader?: AgentSessionHeaderMeta | null
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
+  /** Extra controls before close (e.g. notification bell in sidebar layout). */
+  headerEnd?: ReactNode
   agent: ReactNode
   editor: ReactNode
   terminal: ReactNode
@@ -115,6 +117,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     showAgentTab = false,
     agentSessionHeader = null,
     onOpenInApp,
+    headerEnd = null,
     agent,
     editor,
     terminal,
@@ -139,7 +142,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       aria-label={
         presentation === "inline" ? "Return to new tab" : "Close session"
       }
-      className="shrink-0 text-muted-foreground hover:text-foreground"
+      className="size-6 shrink-0 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
       onClick={
         presentation === "inline" ? () => onOpenChange(false) : undefined
       }
@@ -151,8 +154,157 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   const showAgentMeta = mode === "agent" && agentSessionHeader
   const displayTitle = showAgentMeta ? agentSessionHeader.threadTitle : title
 
+  const sessionHeader = (
+    <DialogHeader
+      data-gharargah-terminal-modal-header=""
+      {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
+      className="grid h-8 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 border-b bg-background px-2 py-0 text-left sm:text-left"
+    >
+      <div className="flex min-w-0 items-center gap-1.5 justify-self-stretch">
+        <h2
+          data-gharargah-terminal-modal-title
+          className="shrink truncate text-xs font-medium tracking-tight text-foreground"
+        >
+          {displayTitle}
+        </h2>
+        {showAgentMeta ? (
+          <div className="flex min-w-0 items-center gap-1 truncate font-mono text-3xs text-muted-foreground">
+            {agentSessionHeader.projectName ||
+            agentSessionHeader.providerName ||
+            agentSessionHeader.modelLabel ? (
+              <span aria-hidden="true" className="text-muted-foreground/50">
+                ·
+              </span>
+            ) : null}
+            {agentSessionHeader.projectName ? (
+              <span className="truncate">{agentSessionHeader.projectName}</span>
+            ) : null}
+            {agentSessionHeader.projectName &&
+            agentSessionHeader.providerName ? (
+              <span aria-hidden="true" className="text-muted-foreground/50">
+                ·
+              </span>
+            ) : null}
+            {agentSessionHeader.providerName ? (
+              <span className="truncate" data-chat-header-provider="true">
+                {agentSessionHeader.providerName}
+              </span>
+            ) : null}
+            {(agentSessionHeader.projectName ||
+              agentSessionHeader.providerName) &&
+            agentSessionHeader.modelLabel ? (
+              <span aria-hidden="true" className="text-muted-foreground/50">
+                ·
+              </span>
+            ) : null}
+            {agentSessionHeader.modelLabel ? (
+              <span className="truncate" data-chat-header-model="true">
+                {agentSessionHeader.modelLabel}
+              </span>
+            ) : null}
+          </div>
+        ) : launchCommand || gitBranch ? (
+          <p className="flex min-w-0 items-center gap-1.5 truncate font-mono text-3xs text-muted-foreground">
+            <span aria-hidden="true" className="text-muted-foreground/50">
+              ·
+            </span>
+            {launchCommand ? (
+              <span
+                data-gharargah-terminal-launch-command
+                className="truncate"
+              >
+                {launchCommand}
+              </span>
+            ) : null}
+            {launchCommand && gitBranch ? (
+              <span className="text-muted-foreground/50" aria-hidden>
+                ·
+              </span>
+            ) : null}
+            {gitBranch ? (
+              <span
+                data-gharargah-terminal-git-branch
+                className="flex min-w-0 items-center gap-0.5 truncate"
+              >
+                <GitBranch
+                  className="size-2.5 shrink-0 opacity-80"
+                  aria-hidden
+                />
+                <span className="truncate">{gitBranch}</span>
+              </span>
+            ) : null}
+          </p>
+        ) : null}
+      </div>
+
+      <div
+        data-gharargah-session-mode-switch
+        role="tablist"
+        aria-label="Session view"
+        onKeyDown={handleModeTabKeyDown}
+        className="flex h-6 shrink-0 items-center gap-px justify-self-center rounded-md bg-muted p-px text-muted-foreground"
+      >
+        {showAgentTab ? (
+          <ModeTab
+            mode="agent"
+            active={mode === "agent"}
+            label="Agent"
+            icon={<Bot aria-hidden />}
+            onSelect={() => onModeChange("agent")}
+          />
+        ) : null}
+        <ModeTab
+          mode="terminal"
+          active={mode === "terminal"}
+          label="Terminal"
+          icon={<SquareTerminal aria-hidden />}
+          onSelect={() => onModeChange("terminal")}
+        />
+        <ModeTab
+          mode="editor"
+          active={mode === "editor"}
+          label="Editor"
+          icon={<FileCode2 aria-hidden />}
+          onSelect={() => onModeChange("editor")}
+        />
+        <ModeTab
+          mode="git"
+          active={mode === "git"}
+          label="Git"
+          icon={<GitBranch aria-hidden />}
+          onSelect={() => onModeChange("git")}
+        />
+        <ModeTab
+          mode="todos"
+          active={mode === "todos"}
+          label="TODOs"
+          icon={<Columns3 aria-hidden />}
+          onSelect={() => onModeChange("todos")}
+        />
+      </div>
+
+      <div className="flex min-w-0 shrink-0 items-center justify-self-end gap-0.5">
+        {projectRootUri && onOpenInApp ? (
+          <OpenInAppMenu
+            rootUri={projectRootUri}
+            onOpenInApp={onOpenInApp}
+            data-gharargah-open-in-app="modal"
+            className="h-6 gap-0.5 px-1 text-muted-foreground hover:text-foreground"
+          />
+        ) : null}
+        {headerEnd}
+        {presentation === "modal" ? (
+          <DialogClose asChild>{closeButton}</DialogClose>
+        ) : (
+          closeButton
+        )}
+      </div>
+    </DialogHeader>
+  )
+
   const stage = (
     <>
+      {sessionHeader}
       <div
         data-gharargah-terminal-modal-body=""
         className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-contain"
@@ -240,143 +392,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           {mode === "todos" ? todos : null}
         </div>
       </div>
-
-      <DialogHeader
-        data-gharargah-terminal-modal-header=""
-        {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
-        className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-t bg-background px-3 py-2 text-left sm:text-left"
-      >
-        <div className="min-w-0 justify-self-stretch">
-          <h2
-            data-gharargah-terminal-modal-title
-            className="truncate text-sm font-medium tracking-tight text-foreground"
-          >
-            {displayTitle}
-          </h2>
-          {showAgentMeta ? (
-            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
-              {agentSessionHeader.projectName ? (
-                <span className="truncate">
-                  {agentSessionHeader.projectName}
-                </span>
-              ) : null}
-              {agentSessionHeader.projectName &&
-              agentSessionHeader.providerName ? (
-                <span aria-hidden="true" className="text-muted-foreground/50">
-                  ·
-                </span>
-              ) : null}
-              {agentSessionHeader.providerName ? (
-                <span className="truncate" data-chat-header-provider="true">
-                  {agentSessionHeader.providerName}
-                </span>
-              ) : null}
-              {(agentSessionHeader.projectName ||
-                agentSessionHeader.providerName) &&
-              agentSessionHeader.modelLabel ? (
-                <span aria-hidden="true" className="text-muted-foreground/50">
-                  ·
-                </span>
-              ) : null}
-              {agentSessionHeader.modelLabel ? (
-                <span className="truncate" data-chat-header-model="true">
-                  {agentSessionHeader.modelLabel}
-                </span>
-              ) : null}
-            </div>
-          ) : launchCommand || gitBranch ? (
-            <p className="mt-0.5 flex min-w-0 items-center gap-2 truncate font-mono text-3xs text-muted-foreground">
-              {launchCommand ? (
-                <span
-                  data-gharargah-terminal-launch-command
-                  className="truncate"
-                >
-                  {launchCommand}
-                </span>
-              ) : null}
-              {launchCommand && gitBranch ? (
-                <span className="text-muted-foreground/50" aria-hidden>
-                  ·
-                </span>
-              ) : null}
-              {gitBranch ? (
-                <span
-                  data-gharargah-terminal-git-branch
-                  className="flex min-w-0 items-center gap-1 truncate"
-                >
-                  <GitBranch
-                    className="size-3 shrink-0 opacity-80"
-                    aria-hidden
-                  />
-                  <span className="truncate">{gitBranch}</span>
-                </span>
-              ) : null}
-            </p>
-          ) : null}
-        </div>
-
-        <div
-          data-gharargah-session-mode-switch
-          role="tablist"
-          aria-label="Session view"
-          onKeyDown={handleModeTabKeyDown}
-          className="flex shrink-0 items-center gap-0.5 justify-self-center rounded-lg bg-muted p-0.5 text-muted-foreground"
-        >
-          {showAgentTab ? (
-            <ModeTab
-              mode="agent"
-              active={mode === "agent"}
-              label="Agent"
-              icon={<Bot aria-hidden />}
-              onSelect={() => onModeChange("agent")}
-            />
-          ) : null}
-          <ModeTab
-            mode="terminal"
-            active={mode === "terminal"}
-            label="Terminal"
-            icon={<SquareTerminal aria-hidden />}
-            onSelect={() => onModeChange("terminal")}
-          />
-          <ModeTab
-            mode="editor"
-            active={mode === "editor"}
-            label="Editor"
-            icon={<FileCode2 aria-hidden />}
-            onSelect={() => onModeChange("editor")}
-          />
-          <ModeTab
-            mode="git"
-            active={mode === "git"}
-            label="Git"
-            icon={<GitBranch aria-hidden />}
-            onSelect={() => onModeChange("git")}
-          />
-          <ModeTab
-            mode="todos"
-            active={mode === "todos"}
-            label="TODOs"
-            icon={<Columns3 aria-hidden />}
-            onSelect={() => onModeChange("todos")}
-          />
-        </div>
-
-        <div className="flex min-w-0 shrink-0 items-center justify-self-end gap-0.5">
-          {projectRootUri && onOpenInApp ? (
-            <OpenInAppMenu
-              rootUri={projectRootUri}
-              onOpenInApp={onOpenInApp}
-              data-gharargah-open-in-app="modal"
-              className="text-muted-foreground hover:text-foreground"
-            />
-          ) : null}
-          {presentation === "modal" ? (
-            <DialogClose asChild>{closeButton}</DialogClose>
-          ) : (
-            closeButton
-          )}
-        </div>
-      </DialogHeader>
     </>
   )
 
@@ -440,7 +455,7 @@ function ModeTab(props: {
       data-gharargah-session-mode-tab={mode}
       data-active={active ? "" : undefined}
       className={cn(
-        "inline-flex size-7 items-center justify-center rounded-sm transition-[color,background-color,box-shadow]",
+        "inline-flex size-6 items-center justify-center rounded-sm transition-[color,background-color,box-shadow]",
         "focus-visible:ring-ring outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         active
           ? "bg-background text-foreground shadow-sm"
@@ -448,7 +463,7 @@ function ModeTab(props: {
       )}
       onClick={onSelect}
     >
-      <span className="[&_svg]:size-3.5">{icon}</span>
+      <span className="[&_svg]:size-3">{icon}</span>
     </button>
   )
 }

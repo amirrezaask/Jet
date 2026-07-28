@@ -1,0 +1,115 @@
+import type { ReactNode } from "react"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu.js"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu.js"
+import type { SidebarSession } from "./types.js"
+
+export type SessionSidebarActions = {
+  onOpen: (session: SidebarSession) => void
+  onRename?: (session: SidebarSession) => void
+  onMarkRead?: (session: SidebarSession) => void
+  onMarkUnread?: (session: SidebarSession) => void
+  onDuplicate?: (session: SidebarSession) => void
+  onClose?: (session: SidebarSession) => void
+  onDelete?: (session: SidebarSession) => void
+}
+
+function SessionMenuItems({
+  session,
+  actions,
+  Item,
+  Separator,
+}: {
+  session: SidebarSession
+  actions: SessionSidebarActions
+  Item: typeof ContextMenuItem
+  Separator: typeof ContextMenuSeparator
+}) {
+  return (
+    <>
+      <Item onSelect={() => actions.onOpen(session)}>Open</Item>
+      <Item onSelect={() => actions.onOpen(session)}>Open in new tab</Item>
+      {actions.onRename ? (
+        <Item onSelect={() => actions.onRename?.(session)}>Rename</Item>
+      ) : null}
+      <Separator />
+      {session.unreadCount > 0 && actions.onMarkRead ? (
+        <Item onSelect={() => actions.onMarkRead?.(session)}>Mark as read</Item>
+      ) : null}
+      {session.unreadCount === 0 && actions.onMarkUnread ? (
+        <Item onSelect={() => actions.onMarkUnread?.(session)}>Mark as unread</Item>
+      ) : null}
+      {actions.onDuplicate ? (
+        <Item onSelect={() => actions.onDuplicate?.(session)}>Duplicate</Item>
+      ) : null}
+      <Separator />
+      {actions.onClose ? (
+        <Item onSelect={() => actions.onClose?.(session)}>Close</Item>
+      ) : null}
+      {actions.onDelete ? (
+        <Item variant="destructive" onSelect={() => actions.onDelete?.(session)}>
+          Delete
+        </Item>
+      ) : null}
+    </>
+  )
+}
+
+export function SessionContextMenu({
+  session,
+  actions,
+  children,
+}: {
+  session: SidebarSession
+  actions: SessionSidebarActions
+  children: ReactNode
+}) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent data-gharargah-session-context-menu="">
+        <SessionMenuItems
+          session={session}
+          actions={actions}
+          Item={ContextMenuItem}
+          Separator={ContextMenuSeparator}
+        />
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
+export function SessionDropdownMenu({
+  session,
+  actions,
+  trigger,
+}: {
+  session: SidebarSession
+  actions: SessionSidebarActions
+  trigger: ReactNode
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent align="end" data-gharargah-session-dropdown-menu="">
+        <SessionMenuItems
+          session={session}
+          actions={actions}
+          Item={DropdownMenuItem as typeof ContextMenuItem}
+          Separator={DropdownMenuSeparator as typeof ContextMenuSeparator}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}

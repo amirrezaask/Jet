@@ -6,6 +6,8 @@ export type LanguageServerDefinition = {
   languages: string[]
   commandCandidates: string[]
   args: string[]
+  /** Per-candidate args override `args` when that binary is chosen. */
+  candidateArgs?: Record<string, string[]>
   rootMarkers: string[]
 }
 
@@ -36,7 +38,15 @@ const PRODUCTION_SERVERS: LanguageServerDefinition[] = [
     languages: ["python"],
     commandCandidates: ["pyright-langserver", "pyright", "basedpyright-langserver", "basedpyright"],
     args: ["--stdio"],
-    rootMarkers: ["pyproject.toml", "requirements.txt"],
+    rootMarkers: ["pyproject.toml", "requirements.txt", "setup.py", "Pipfile", "setup.cfg"],
+  },
+  {
+    id: "ruby-lsp",
+    languages: ["ruby"],
+    commandCandidates: ["ruby-lsp", "solargraph"],
+    args: [],
+    candidateArgs: { solargraph: ["stdio"] },
+    rootMarkers: ["Gemfile", ".ruby-version"],
   },
   {
     id: "vscode-json-language-server",
@@ -135,7 +145,10 @@ export function resolveLanguageServerCommand(
 ): { command: string; args: string[] } | { error: string } {
   for (const candidate of def.commandCandidates) {
     const found = findExecutableOnPath(candidate)
-    if (found) return { command: found, args: [...def.args] }
+    if (found) {
+      const args = def.candidateArgs?.[candidate] ?? def.args
+      return { command: found, args: [...args] }
+    }
   }
   return {
     error: `No executable found for ${def.id}: tried ${def.commandCandidates.join(", ")}`,

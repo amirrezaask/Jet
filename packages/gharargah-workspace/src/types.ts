@@ -255,6 +255,7 @@ export type OpenInAppId =
 
 export type JetElectronShell = {
   openInApp(appId: OpenInAppId, rootUri: string): Promise<{ ok: boolean }>
+  revealInFolder(rootUri: string): Promise<{ ok: boolean }>
 }
 
 export type JetElectronNotifications = {
@@ -281,6 +282,10 @@ export type JetElectronNotifications = {
   markAllRead(
     req?: import("@gharargah/shared").MarkAllNotificationsReadRequest,
   ): Promise<import("@gharargah/shared").NotificationCounts>
+  unreadBySession(): Promise<Record<string, number>>
+  markSessionUnread(
+    sessionId: string,
+  ): Promise<import("@gharargah/shared").AppNotification | null>
   getPreferences(): Promise<import("@gharargah/shared").NotificationPreferences>
   setPreferences(
     prefs: Partial<import("@gharargah/shared").NotificationPreferences>,

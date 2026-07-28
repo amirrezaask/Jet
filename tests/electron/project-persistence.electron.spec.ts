@@ -7,7 +7,7 @@ import {
 } from "../shell/assert.js"
 
 import { resolve } from "node:path"
-import { launchJet, openNewAgentSession, REPO_ROOT } from "./_launch.js"
+import { launchJet, openNewAgentSession, ensureCardsLayout, REPO_ROOT } from "./_launch.js"
 
 test.describe("electron project persistence", () => {
   test("restores saved projects on home after reload", async () => {
@@ -15,10 +15,29 @@ test.describe("electron project persistence", () => {
 
     const { app, page } = await launchJet()
     try {
+      await ensureCardsLayout(page)
       await page.evaluate(path => window.__gharargahAgent!.addWorkspace(path), secondPath)
       await expect
         .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
+
+      await expect
+        .poll(async () => {
+          const projects = await page.evaluate(async () => {
+            const res = await fetch("/api/v1/projects")
+            if (!res.ok) return [] as Array<{ rootPath: string }>
+            return (await res.json()) as Array<{ rootPath: string }>
+          })
+          return projects.some(p => p.rootPath.includes("second-workspace"))
+        })
+        .toBe(true)
+
+      // No client-side project catalog.
+      await expect
+        .poll(() =>
+          page.evaluate(() => localStorage.getItem("jet-project-catalog-v1")),
+        )
+        .toBeNull()
 
       const secondName = "second-workspace"
       const section = page.locator(

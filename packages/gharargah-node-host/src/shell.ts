@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import fs from "node:fs"
+import path from "node:path"
 import { uriToPath } from "./paths.js"
 
 function spawnDetached(program: string, args: string[]): void {
@@ -162,6 +163,26 @@ export function openInApp(appId: string, rootUri: string): { ok: true } {
       break
     default:
       throw new Error(`unknown app: ${appId}`)
+  }
+  return { ok: true }
+}
+
+/** Reveal a file or folder in the OS file manager (Finder / Explorer / xdg). */
+export function revealInFolder(rootUri: string): { ok: true } {
+  const p = uriToPath(rootUri)
+  if (!p) throw new Error("missing path")
+  if (!fs.existsSync(p)) throw new Error(`path does not exist: ${p}`)
+  if (process.platform === "darwin") {
+    spawnDetached("open", ["-R", p])
+  } else if (process.platform === "win32") {
+    spawnDetached("explorer", ["/select,", p])
+  } else {
+    const dir = fs.statSync(p).isDirectory() ? p : path.dirname(p)
+    tryCmds([
+      ["xdg-open", dir],
+      ["nautilus", dir],
+      ["dolphin", dir],
+    ])
   }
   return { ok: true }
 }

@@ -5,7 +5,7 @@ import {
   expectLocatorContainsText,
   expectLocatorCount,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet } from "./_launch.js"
+import {hasPtySpawn, launchJet, ensureCardsLayout} from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -31,6 +31,7 @@ test.describe("project todos board", () => {
   test("home summary opens TODOs tab; create persists across reload", async () => {
     const { app, page } = await launchJet()
     try {
+      await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]")
 
       const state = await page.evaluate(() => window.__gharargahAgent!.getState())
@@ -174,6 +175,7 @@ test.describe("project todos board", () => {
   test("drag card reorders within column and moves across states", async () => {
     const { app, page } = await launchJet()
     try {
+      await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]")
 
       const state = await page.evaluate(() => window.__gharargahAgent!.getState())

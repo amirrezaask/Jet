@@ -20,7 +20,7 @@ export {
   type GitShowRef,
 } from "./git.js"
 export { TerminalHost, type TerminalLaunch, type TerminalAttachSnapshot } from "./terminal.js"
-export { openInApp } from "./shell.js"
+export { openInApp, revealInFolder } from "./shell.js"
 export { spawnTask, type TaskSpawnRequest, type TaskSpawnResult } from "./tasks.js"
 export { PerfHost } from "./perf.js"
 export {

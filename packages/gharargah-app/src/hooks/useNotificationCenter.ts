@@ -32,6 +32,7 @@ export type NotificationCenterState = {
   }) => void
   items: AppNotification[]
   counts: NotificationCounts
+  unreadBySession: Record<string, number>
   filter: NotificationFilter
   setFilter: (filter: NotificationFilter) => void
   query: string
@@ -46,6 +47,8 @@ export type NotificationCenterState = {
   refresh: () => Promise<void>
   markRead: (id: string) => Promise<void>
   markUnread: (id: string) => Promise<void>
+  markSessionRead: (sessionId: string) => Promise<void>
+  markSessionUnread: (sessionId: string) => Promise<void>
   dismiss: (id: string) => Promise<void>
   acknowledge: (id: string) => Promise<void>
   markAllVisibleRead: () => Promise<void>
@@ -63,6 +66,9 @@ export function useNotificationCenter(): NotificationCenterState {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<AppNotification[]>([])
   const [counts, setCounts] = useState<NotificationCounts>(EMPTY_COUNTS)
+  const [unreadBySession, setUnreadBySession] = useState<Record<string, number>>(
+    {},
+  )
   const [filter, setFilter] = useState<NotificationFilter>("all")
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -92,12 +98,14 @@ export function useNotificationCenter(): NotificationCenterState {
         sessionId: sessionId ?? undefined,
         limit: 100,
       }
-      const [list, preferences] = await Promise.all([
+      const [list, preferences, bySession] = await Promise.all([
         api.list(req),
         prefs ? Promise.resolve(prefs) : api.getPreferences(),
+        api.unreadBySession?.() ?? Promise.resolve({}),
       ])
       setItems(list.items)
       setCounts(list.counts)
+      setUnreadBySession(bySession ?? {})
       if (!prefs) setPrefs(preferences)
       setError(null)
     } catch (err) {
@@ -179,6 +187,14 @@ export function useNotificationCenter(): NotificationCenterState {
     await notificationsApi()?.markUnread(id)
     await refresh()
   }
+  const markSessionRead = async (sessionId: string) => {
+    await notificationsApi()?.markAllRead({ sessionId })
+    await refresh()
+  }
+  const markSessionUnread = async (sessionId: string) => {
+    await notificationsApi()?.markSessionUnread(sessionId)
+    await refresh()
+  }
   const dismiss = async (id: string) => {
     await notificationsApi()?.dismiss(id)
     await refresh()
@@ -210,6 +226,7 @@ export function useNotificationCenter(): NotificationCenterState {
     openFiltered,
     items,
     counts,
+    unreadBySession,
     filter,
     setFilter,
     query,
@@ -224,6 +241,8 @@ export function useNotificationCenter(): NotificationCenterState {
     refresh,
     markRead,
     markUnread,
+    markSessionRead,
+    markSessionUnread,
     dismiss,
     acknowledge,
     markAllVisibleRead,

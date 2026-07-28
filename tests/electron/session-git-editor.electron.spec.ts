@@ -175,7 +175,6 @@ test.describe("session Git and editor workspaces", () => {
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"][data-active]')
       await expectSelectorVisible(page, "[data-gharargah-monaco-editor]", { timeout: 20_000 })
       await expectLocatorContainsText(page.locator("[data-gharargah-modal-editor-tabs]"), "index.ts")
-      await expectLocatorContainsText(page.locator("[data-gharargah-modal-editor-breadcrumbs]"), "src/index.ts")
       const marker = "// editor-playwright-save"
       const editor = page.locator("[data-gharargah-monaco-editor] .monaco-editor")
       await editor.click()

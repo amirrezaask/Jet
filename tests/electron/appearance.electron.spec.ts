@@ -66,7 +66,7 @@ test.describe("electron appearance and terminal-first UX", () => {
       })
 
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
 
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))

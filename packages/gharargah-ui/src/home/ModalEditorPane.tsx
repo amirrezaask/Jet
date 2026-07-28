@@ -1,6 +1,5 @@
 import { useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react"
 import { Command, FileSearch, XIcon } from "lucide-react"
-import { fileUriToPath, isUntitledUri } from "@gharargah/shared"
 import type { LspStatus } from "@gharargah/lsp"
 import { lspStatusIsActive, lspStatusShortLabel } from "@gharargah/lsp/status"
 import type { WorkspaceService } from "@gharargah/workspace"
@@ -42,7 +41,6 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
   const cursorPos = useSyncExternalStore(subscribeEditorCursor, getEditorCursor, getEditorCursor)
   const cursor = cursorPos ?? { line: 1, column: 1 }
   const activeFile = activeTabId ? workspace.fileForUri(activeTabId) : null
-  const crumbs = breadcrumbSegments(activeTabId, activeFile?.path ?? null)
 
   return (
     <div
@@ -114,34 +112,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
             )
           })
         )}
-      </div>
-
-      <div
-        data-gharargah-modal-editor-breadcrumbs=""
-        className="flex h-8 shrink-0 items-center gap-2 border-b border-border/40 px-3"
-      >
-        <nav
-          aria-label="File path"
-          className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-3xs text-muted-foreground"
-        >
-          {crumbs.length === 0 ? (
-            <span>No file</span>
-          ) : (
-            crumbs.map((segment, index) => (
-              <span key={`${segment}-${index}`}>
-                {index > 0 ? <span className="mx-1 opacity-50">/</span> : null}
-                <span
-                  className={
-                    index === crumbs.length - 1 ? "text-foreground/90" : "text-muted-foreground"
-                  }
-                >
-                  {segment}
-                </span>
-              </span>
-            ))
-          )}
-        </nav>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 px-1">
           {onQuickOpen ? (
             <Button
               type="button"
@@ -180,7 +151,10 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
         <span data-gharargah-editor-cursor="">
           Ln {cursor.line}, Col {cursor.column}
         </span>
-        <span className="ml-auto truncate">
+        <span
+          data-gharargah-editor-language={activeFile?.languageId ?? "plaintext"}
+          className="ml-auto truncate"
+        >
           {activeFile?.languageId ?? "plaintext"}
           {activeFile?.isDirty ? " · dirty" : ""}
         </span>
@@ -208,13 +182,4 @@ function handleBufferTabKeyDown(event: KeyboardEvent<HTMLDivElement>) {
   event.preventDefault()
   tabs[next]?.focus()
   tabs[next]?.click()
-}
-
-function breadcrumbSegments(tabId: string | null, path: string | null): string[] {
-  if (!tabId) return []
-  if (isUntitledUri(tabId)) return [tabId.replace(/^untitled:/, "Untitled")]
-  const abs = path && path.length > 0 ? path : fileUriToPath(tabId)
-  const parts = abs.split(/[/\\]/).filter(Boolean)
-  if (parts.length <= 5) return parts
-  return ["…", ...parts.slice(-4)]
 }

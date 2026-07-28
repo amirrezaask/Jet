@@ -223,6 +223,7 @@ function Sidebar({
         data-slot="sidebar-gap"
         className={cn(
           "relative w-(--sidebar-width) bg-transparent transition-[width] duration-[var(--gharargah-motion-panel)] ease-[var(--gharargah-ease-drawer)]",
+          "group-data-[gharargah-sidebar-resizing]/sidebar-wrapper:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -234,6 +235,7 @@ function Sidebar({
         data-slot="sidebar-container"
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[transform,width] duration-[var(--gharargah-motion-panel)] ease-[var(--gharargah-ease-drawer)] md:flex",
+          "group-data-[gharargah-sidebar-resizing]/sidebar-wrapper:transition-none",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:-translate-x-full"
             : "right-0 group-data-[collapsible=offcanvas]:translate-x-full",
@@ -283,8 +285,78 @@ function SidebarTrigger({
   )
 }
 
-function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-  const { toggleSidebar } = useSidebar()
+function SidebarRail({
+  className,
+  onResize,
+  minWidth = 240,
+  maxWidth = 480,
+  ...props
+}: React.ComponentProps<"button"> & {
+  /** When set, drag the rail to resize; click (no drag) still toggles. */
+  onResize?: (widthPx: number) => void
+  minWidth?: number
+  maxWidth?: number
+}) {
+  const { toggleSidebar, state } = useSidebar()
+  const dragRef = React.useRef<{
+    pointerId: number
+    startX: number
+    startWidth: number
+    moved: boolean
+    lastWidth: number
+  } | null>(null)
+
+  const readWidthPx = React.useCallback((): number => {
+    const wrapper = document.querySelector(
+      '[data-slot="sidebar-wrapper"]',
+    ) as HTMLElement | null
+    if (!wrapper) return minWidth
+    const raw = getComputedStyle(wrapper).getPropertyValue("--sidebar-width").trim()
+    const n = parseFloat(raw)
+    return Number.isFinite(n) ? n : minWidth
+  }, [minWidth])
+
+  const wrapperEl = React.useCallback((): HTMLElement | null => {
+    return document.querySelector(
+      '[data-slot="sidebar-wrapper"]',
+    ) as HTMLElement | null
+  }, [])
+
+  const applyWidthPx = React.useCallback((widthPx: number): number => {
+    const clamped = Math.max(minWidth, Math.min(maxWidth, Math.round(widthPx)))
+    wrapperEl()?.style.setProperty("--sidebar-width", `${clamped}px`)
+    return clamped
+  }, [minWidth, maxWidth, wrapperEl])
+
+  const setResizing = React.useCallback(
+    (active: boolean) => {
+      const el = wrapperEl()
+      if (!el) return
+      if (active) el.dataset.gharargahSidebarResizing = ""
+      else delete el.dataset.gharargahSidebarResizing
+    },
+    [wrapperEl],
+  )
+
+  const endDrag = React.useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>, commit: boolean) => {
+      const drag = dragRef.current
+      if (!drag || drag.pointerId !== event.pointerId) return
+      dragRef.current = null
+      setResizing(false)
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        /* already released */
+      }
+      if (commit && drag.moved && onResize) {
+        onResize(drag.lastWidth)
+        return
+      }
+      if (!drag.moved) toggleSidebar()
+    },
+    [onResize, setResizing, toggleSidebar],
+  )
 
   return (
     <Tooltip>
@@ -292,9 +364,40 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
         <button
           data-sidebar="rail"
           data-slot="sidebar-rail"
-          aria-label="Toggle Sidebar"
+          aria-label={onResize && state === "expanded" ? "Resize sidebar" : "Toggle Sidebar"}
           tabIndex={-1}
-          onClick={toggleSidebar}
+          onClick={event => {
+            // Pointer path handles click-vs-drag when resizable + expanded.
+            if (onResize && state === "expanded") {
+              event.preventDefault()
+              return
+            }
+            toggleSidebar()
+          }}
+          onPointerDown={event => {
+            if (!onResize || state !== "expanded" || event.button !== 0) return
+            event.preventDefault()
+            event.currentTarget.setPointerCapture(event.pointerId)
+            setResizing(true)
+            const startWidth = readWidthPx()
+            dragRef.current = {
+              pointerId: event.pointerId,
+              startX: event.clientX,
+              startWidth,
+              moved: false,
+              lastWidth: startWidth,
+            }
+          }}
+          onPointerMove={event => {
+            const drag = dragRef.current
+            if (!drag || drag.pointerId !== event.pointerId || !onResize) return
+            const delta = event.clientX - drag.startX
+            if (!drag.moved && Math.abs(delta) < 3) return
+            drag.moved = true
+            drag.lastWidth = applyWidthPx(drag.startWidth + delta)
+          }}
+          onPointerUp={event => endDrag(event, true)}
+          onPointerCancel={event => endDrag(event, false)}
           className={cn(
             "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-[background-color,color] duration-[var(--gharargah-motion-fast)] ease-out group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex",
             "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
@@ -307,7 +410,9 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
           {...props}
         />
       </TooltipTrigger>
-      <TooltipContent side="right">Toggle Sidebar</TooltipContent>
+      <TooltipContent side="right">
+        {onResize && state === "expanded" ? "Drag to resize" : "Toggle Sidebar"}
+      </TooltipContent>
     </Tooltip>
   )
 }

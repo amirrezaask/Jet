@@ -46,12 +46,21 @@ export async function launchJet(
 }
 
 export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
-  await page.waitForSelector("[data-gharargah-home]", { timeout: timeoutMs })
+  await page.waitForSelector(
+    "[data-gharargah-home], [data-gharargah-mission-sidebar]",
+    { timeout: timeoutMs },
+  )
   await page.waitForFunction(
     () => window.__gharargahAgent?.getState()?.shellView === "home",
     null,
     { timeout: timeoutMs },
   )
+}
+
+/** Force Cards layout when a spec exercises Mission Control home UI. */
+export async function ensureCardsLayout(page: ShellDriver): Promise<void> {
+  await execCommand(page, "ui.setSessionLayout.cards")
+  await page.waitForSelector("[data-gharargah-home]", { timeout: 15_000 })
 }
 
 export async function waitForDialog(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
@@ -139,7 +148,12 @@ export async function execCommand(page: ShellDriver, commandId: string): Promise
 }
 
 export async function clickNewSession(page: ShellDriver): Promise<void> {
-  await page.getByRole("button", { name: "New session" }).first().click()
+  const sidebarNew = page.locator("[data-gharargah-sidebar-new-session]")
+  if ((await sidebarNew.count()) > 0 && (await sidebarNew.first().isVisible())) {
+    await sidebarNew.first().click()
+    return
+  }
+  await page.getByRole("button", { name: /New session/i }).first().click()
 }
 
 /** Pick an agent CLI from the new-session lister (default: Shell). */

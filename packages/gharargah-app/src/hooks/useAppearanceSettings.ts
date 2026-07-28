@@ -6,6 +6,7 @@ import {
   DEFAULT_MONO_FONT_FAMILY,
   DEFAULT_UI_FONT_FAMILY,
   type JetAppearanceSettings,
+  type SessionLayout,
 } from "@gharargah/ui"
 import { applyColorScheme, syncNativeChromeFromTheme } from "@gharargah/ui"
 
@@ -17,13 +18,19 @@ const FONT_SIZE_STORAGE_KEY = "jet-font-size"
 const APPEARANCE_STORAGE_KEY = "jet-appearance-settings"
 const DEFAULT_FONT_SIZE = 13
 const FONT_SIZE_STEP = 2
+const DEFAULT_SIDEBAR_WIDTH = 300
+const MIN_SIDEBAR_WIDTH = 240
+const MAX_SIDEBAR_WIDTH = 480
 
 export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   themeId: defaultThemeId,
   fontSize: DEFAULT_FONT_SIZE,
   fontFamily: DEFAULT_UI_FONT_FAMILY,
   monoFontFamily: DEFAULT_MONO_FONT_FAMILY,
-  sessionLayout: "cards",
+  sessionLayout: "sidebar",
+  sidebarCollapsed: false,
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+  sidebarProjectFilterPath: null,
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -42,8 +49,26 @@ function normalizeFontFamily(value: unknown, fallback: string): string {
   return trimmed.length > 0 ? trimmed : fallback
 }
 
-function normalizeSessionLayout(value: unknown): JetAppearanceSettings["sessionLayout"] {
-  return value === "tabs" ? "tabs" : "cards"
+export function normalizeSessionLayout(value: unknown): SessionLayout {
+  if (value === "tabs" || value === "sidebar") return value
+  return "cards"
+}
+
+function normalizeProjectFilterPath(value: unknown): string | null {
+  if (value == null || value === "" || value === "all") return null
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  // Older builds briefly persisted root URIs — accept those too.
+  if (trimmed.startsWith("file://")) {
+    try {
+      const path = decodeURIComponent(trimmed.replace(/^file:\/\//, ""))
+      return path.length > 0 ? path : null
+    } catch {
+      return null
+    }
+  }
+  return trimmed
 }
 
 function loadStoredFontSize(): number {
@@ -88,6 +113,19 @@ function loadAppearanceSettings(): JetAppearanceSettings {
       fontFamily: normalizeFontFamily(parsed.fontFamily, base.fontFamily),
       monoFontFamily: normalizeFontFamily(parsed.monoFontFamily, base.monoFontFamily),
       sessionLayout: normalizeSessionLayout(parsed.sessionLayout),
+      sidebarCollapsed: parsed.sidebarCollapsed === true,
+      sidebarWidth: clampNumber(
+        parsed.sidebarWidth,
+        DEFAULT_SIDEBAR_WIDTH,
+        MIN_SIDEBAR_WIDTH,
+        MAX_SIDEBAR_WIDTH,
+      ),
+      sidebarProjectFilterPath: normalizeProjectFilterPath(
+        (parsed as { sidebarProjectFilterPath?: unknown }).sidebarProjectFilterPath ??
+          (parsed as { sidebarProjectFilterRootUri?: unknown })
+            .sidebarProjectFilterRootUri ??
+          (parsed as { sidebarProjectFilterId?: unknown }).sidebarProjectFilterId,
+      ),
     }
   } catch {
     return base

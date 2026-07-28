@@ -325,7 +325,7 @@ test.describe("electron terminal", () => {
       // Dialog Escape closes modal only (goHome is gated off while modal open).
       await page.keyboard.press("Escape")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
 
       await page.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])").first().click()
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")

@@ -96,6 +96,7 @@ export function MonacoEditorHost({
       automaticLayout: false,
       readOnly,
       scrollBeyondLastLine: false,
+      minimap: { enabled: false },
       fontFamily: "var(--font-mono, 'Geist Mono', 'IBM Plex Mono', monospace)",
       fontSize: 14,
       lineHeight: 22,

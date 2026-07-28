@@ -61,6 +61,7 @@ export function MonacoDiffEditorHost({
       readOnly,
       renderSideBySide,
       scrollBeyondLastLine: false,
+      minimap: { enabled: false },
       fontFamily: "var(--font-mono, 'Geist Mono', 'IBM Plex Mono', monospace)",
       fontSize: 14,
       lineHeight: 22,

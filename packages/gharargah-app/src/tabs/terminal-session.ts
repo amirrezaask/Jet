@@ -13,6 +13,8 @@ export type TerminalSessionState = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  /** ISO timestamp of last meaningful activity (status / notify). */
+  lastActivityAt: string
 }
 
 const sessions = new Map<string, TerminalSessionState>()
@@ -28,12 +30,17 @@ export function subscribeTerminalSessions(listener: (tabId: string) => void): ()
   return () => listeners.delete(listener)
 }
 
+function touchActivity(session: TerminalSessionState): void {
+  session.lastActivityAt = new Date().toISOString()
+}
+
 export function registerTerminalSession(
   tabId: string,
   cwdRootUri: string,
   launchCommand?: string,
 ): void {
   const existing = sessions.get(tabId)
+  const now = new Date().toISOString()
   sessions.set(tabId, {
     tabId,
     cwdRootUri,
@@ -47,6 +54,7 @@ export function registerTerminalSession(
     agentId: existing?.agentId,
     agentDriverId: existing?.agentDriverId,
     agentThreadId: existing?.agentThreadId,
+    lastActivityAt: existing?.lastActivityAt ?? now,
   })
   notify(tabId)
 }
@@ -76,6 +84,7 @@ export function trackTerminalPtyId(tabId: string, ptyId: string | null): void {
   } else {
     session.ptyId = undefined
   }
+  touchActivity(session)
   notify(tabId)
 }
 
@@ -99,6 +108,7 @@ export function bindAgentToSession(
   session.agentId = binding.agentId
   session.agentDriverId = binding.driverId
   session.agentThreadId = binding.threadId
+  touchActivity(session)
   notify(tabId)
 }
 
@@ -114,6 +124,7 @@ export function markTerminalExited(ptyId: string, exitCode: number, signal?: num
   session.status = "exited"
   session.exitCode = exitCode
   session.signal = signal
+  touchActivity(session)
   notify(tabId)
 }
 
@@ -125,6 +136,7 @@ export function markTerminalFailed(tabId: string): void {
   session.status = "failed"
   session.exitCode = undefined
   session.signal = undefined
+  touchActivity(session)
   notify(tabId)
 }
 
@@ -142,6 +154,7 @@ export function restartTerminalSession(tabId: string): void {
   session.exitCode = undefined
   session.signal = undefined
   session.generation += 1
+  touchActivity(session)
   notify(tabId)
 }
 
@@ -168,6 +181,7 @@ export type HydratedTerminalSession = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  lastActivityAt?: string
 }
 
 /** Restore session fields after a tab has been re-opened (refresh hydrate). */
@@ -187,7 +201,16 @@ export function hydrateTerminalSession(entry: HydratedTerminalSession): void {
     agentId: entry.agentId,
     agentDriverId: entry.agentDriverId,
     agentThreadId: entry.agentThreadId,
+    lastActivityAt:
+      entry.lastActivityAt ?? existing?.lastActivityAt ?? new Date().toISOString(),
   })
   if (entry.ptyId) tabByPtyId.set(entry.ptyId, entry.tabId)
   notify(entry.tabId)
+}
+
+export function bumpTerminalActivity(tabId: string): void {
+  const session = sessions.get(tabId)
+  if (!session) return
+  touchActivity(session)
+  notify(tabId)
 }

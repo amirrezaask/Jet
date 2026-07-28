@@ -20,6 +20,7 @@ import {
   listProjectFiles,
   loadGlobalGharargahrcScanRoots,
   openInApp,
+  revealInFolder,
   PerfHost,
   projectSearch,
   readDir,
@@ -222,6 +223,10 @@ function handleNotifications(
       return n.acknowledge(str(args[0], "id"))
     case "notifications:markAllRead":
       return n.markAllRead((args[0] as MarkAllNotificationsReadRequest | undefined) ?? {})
+    case "notifications:unreadBySession":
+      return n.unreadBySession()
+    case "notifications:markSessionUnread":
+      return n.markSessionUnread(str(args[0], "sessionId"))
     case "notifications:getPreferences":
       return n.getPreferences()
     case "notifications:setPreferences":
@@ -432,6 +437,9 @@ function handleTerminal(
 function handleShell(channel: string, args: unknown[]): unknown {
   if (channel === "shell:openInApp") {
     return openInApp(str(args[0], "appId"), str(args[1], "rootUri"))
+  }
+  if (channel === "shell:revealInFolder") {
+    return revealInFolder(str(args[0], "rootUri"))
   }
   throw new Error(`unknown shell channel: ${channel}`)
 }
