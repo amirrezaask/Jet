@@ -7,6 +7,8 @@
     "dev:web": "node apps/gharargah/scripts/dev-web.mjs",
     "dev:agent-server": "pnpm --filter @gharargah/agent-server start",
     "dev:host-server": "pnpm --filter @gharargah/host-server start",
+    "electron": "pnpm --filter @gharargah/electron start",
+    "electron:dev": "pnpm --filter @gharargah/electron dev",
     "test:e2e": "playwright test --project=web-e2e",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",

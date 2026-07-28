@@ -22,8 +22,8 @@ export function PanelEmptyState() {
           <span className="text-muted-foreground/40" aria-hidden>
             ·
           </span>
-          <KeyBindingKbd binding={formatKeyBinding("Mod-n")} />
-          <span className="text-xs text-muted-foreground">new file</span>
+          <KeyBindingKbd binding={formatKeyBinding("Mod-Shift-p")} />
+          <span className="text-xs text-muted-foreground">commands</span>
         </div>
       </EmptyContent>
     </Empty>

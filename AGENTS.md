@@ -8,6 +8,8 @@ Guide for AI agents and contributors working in this repo.
 
 **Hard policy: no Rust / no Tauri.** Host IPC is TypeScript (`apps/host-server` + `@gharargah/node-host`). Do not add `.rs`, `Cargo.toml`, or Tauri crates.
 
+**Desktop:** optional thin Electron shell (`apps/gharargah-electron`) — process supervisor + `BrowserWindow` only. Same SPA entry (`packages/gharargah-app/src/main.tsx` + `createWebTransport()`); host/agent spawn as Node children (not Electron Node). Dev: `pnpm electron:dev`. Prod (after `pnpm build`): `pnpm electron`.
+
 **Core split (current product):**
 
 
@@ -40,6 +42,7 @@ Do **not** copy large chunks wholesale; match Gharargah’s architecture.
 jet/
 ├── apps/
 │   ├── gharargah/              Vite frontend shell (proxies to host)
+│   ├── gharargah-electron/     Thin Electron main (loads shared SPA URL)
 │   ├── host-server/            TypeScript host (HTTP/WS RPC + PTY)
 │   └── agent-server/           Effect agent control plane (WS :4751)
 ├── fixtures/
@@ -87,6 +90,8 @@ Keep imports acyclic. Lower layers must not import React.
 ```bash
 pnpm install          # workspace install
 pnpm dev              # host-server + agent-server + Vite
+pnpm electron:dev     # same backends + Vite inside Electron window
+pnpm electron         # after pnpm build — Electron loads host-served dist
 pnpm typecheck        # all packages (TypeScript 7)
 pnpm test:e2e         # Playwright web E2E (headless Chromium)
 pnpm test:bench       # UX latency benchmarks (tests/bench/)
@@ -273,31 +278,34 @@ Node helpers: `packages/gharargah-node-host/src/`
 
 ### Commands & palette
 
-Registered in `packages/jet-app/src/App.tsx`:
+Registered in `packages/gharargah-app/src/App.tsx`:
 
 
 | Command                 | Default key           |
 | ----------------------- | --------------------- |
-| `ui.showCommandPalette` | Mod-p                 |
-| `ui.toggleColorScheme`  | — (palette: Toggle Color Scheme) |
-| `workspace.openFolder`  | Cmd-k Cmd-o (native dialog) |
+| `session.new`           | Mod-n                 |
+| `terminal.list`         | Mod-k (session switch)|
+| `workspace.quickOpen`   | Mod-p                 |
+| `ui.showCommandPalette` | Mod-Shift-p           |
+| `dialog.showGit`        | Mod-Shift-g           |
+| `dialog.showEditor`     | Mod-Shift-e           |
+| `dialog.showTerminal`   | Mod-Shift-t           |
+| `dialog.showTodos`      | Mod-Shift-d           |
+| `ui.toggleSidebar`      | Mod-b                 |
+| `settings.show`         | Mod-,                 |
+| `workspace.openFile`    | Mod-o (path CdOverlay)|
+| `workspace.openFolder`  | — (palette)           |
 | `workspace.cd`          | — (palette: Change Directory) |
-| `workspace.openFile`    | Mod-o                 |
 | `workspace.saveFile`    | Mod-s                 |
-| `workspace.newFile`     | Mod-n                 |
+| `workspace.newFile`     | — (palette)           |
+| `workspace.bufferList`  | Mod-Shift-b           |
 | `editor.find`           | Mod-f                 |
 | `editor.replace`        | Mod-h                 |
 | `editor.gotoLine`       | Mod-g                 |
-| `workspace.quickOpen`   | Mod-Shift-o           |
 | `layout.closeTab`       | Mod-w                 |
-| `git.showChanges`       | Mod-Shift-g           |
-| `explorer.show`         | Mod-Shift-e           |
-| `search.show`           | Mod-Shift-f           |
-| `problems.show`         | —                     |
-| `terminal.show`         | —                     |
-| `dialog.showTerminal`   | — (palette: Show Terminal) |
-| `dialog.showEditor`     | — (palette: Show Editor) |
-| `dialog.showTodos`      | — (palette: Show TODOs) |
+| `terminal.show`         | Ctrl-`                |
+| `gharargah.goHome`      | Mod-Shift-h / Escape  |
+| `ui.toggleColorScheme`  | — (palette)           |
 | `dialog.showAgent`      | — (gated; requires `GHARARGAH_ENABLE_AGENT_CHAT=1`) |
 
 
@@ -414,7 +422,7 @@ Manual smoke: `pnpm dev` (starts Rust host + agent-server + Vite) → New sessio
 2. Project cards + **New session** (Blank / Codex / Claude / OpenCode / Cursor CLIs) → `TerminalSessionModal`
 3. Click terminal card → reopen that session in the modal
 4. `terminal.new` / `terminal.show` / `terminal.list` — create, toggle modal, switch sessions
-5. **Mod-p** / **Mod-Shift-p** command palette (slim command set)
+5. **Mod-Shift-p** command palette (slim command set); **Mod-n** new session; **Mod-k** switch session; **Mod-p** quick open
 6. `workspace.cd` / add project / switch project overlays
 7. Settings / themes / zoom / color scheme
 8. Multi-root project catalog persistence across reload
@@ -629,7 +637,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 - Shipping UI/UX changes without **`pnpm test:e2e`** validation
 - Putting editor document text in React `useState`
 - Calling Node/Tauri APIs from lower packages (use `window.gharargah` / `@gharargah/host-client`)
-- **Shell:** Web SPA + TS `host-server` only. No Rust/Tauri. Renderer via `createWebTransport()`. Dev: `pnpm dev`. Tests: `pnpm test:e2e`.
+- **Shell:** Web SPA + TS `host-server`. Optional Electron shell loads the same SPA URL. No Rust/Tauri. Renderer via `createWebTransport()`. Dev: `pnpm dev` / `pnpm electron:dev`. Tests: `pnpm test:e2e`.
 - Adding Rust / Cargo / Tauri back into the repo
 - Large shadcn default styling — keep RAD/custom theme direction
 

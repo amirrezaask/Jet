@@ -10,6 +10,9 @@ export type KeymapContext = {
   projectSwitcherOpen: boolean
   gotoLineOpen: boolean
   outlineOpen: boolean
+  terminalListOpen: boolean
+  agentCliPickerOpen: boolean
+  settingsOpen: boolean
   workspaceOpen: boolean
   explorerFocus: boolean
   terminalExplorerFocus: boolean
@@ -35,8 +38,23 @@ export function anyOverlayOpen(ctx: KeymapContext): boolean {
     ctx.cdOpen ||
     ctx.projectSwitcherOpen ||
     ctx.gotoLineOpen ||
-    ctx.outlineOpen
+    ctx.outlineOpen ||
+    ctx.terminalListOpen ||
+    ctx.agentCliPickerOpen ||
+    ctx.settingsOpen
   )
+}
+
+/** Primary chord modifier: ⌘ on Apple, Ctrl elsewhere. */
+export function isMacPlatform(): boolean {
+  if (typeof navigator !== "undefined" && navigator.platform) {
+    return /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+  }
+  const proc =
+    typeof globalThis !== "undefined"
+      ? (globalThis as { process?: { platform?: string } }).process
+      : undefined
+  return proc?.platform === "darwin"
 }
 
 export function matchesWhen(binding: JetKeyBinding, ctx: KeymapContext): boolean {
@@ -88,7 +106,8 @@ export function keyEventMatchesBindingPart(e: KeyboardEvent, part: string): bool
   const { modifiers, key } = parseKeyPart(part)
   const needsShift = modifiers.has("Shift")
   const needsAlt = modifiers.has("Alt")
-  const needsCmd = modifiers.has("Cmd") || modifiers.has("Mod")
+  const needsMod = modifiers.has("Mod")
+  const needsCmd = modifiers.has("Cmd")
   const needsCtrl = modifiers.has("Ctrl")
 
   if (needsShift !== e.shiftKey) return false
@@ -96,12 +115,21 @@ export function keyEventMatchesBindingPart(e: KeyboardEvent, part: string): bool
 
   const hasMeta = e.metaKey
   const hasCtrl = e.ctrlKey
+  const mac = isMacPlatform()
 
-  if (needsCmd && needsCtrl) {
+  // Mod = platform primary (⌘ mac / Ctrl elsewhere). Cmd always means meta.
+  let wantMeta = needsCmd
+  let wantCtrl = needsCtrl
+  if (needsMod) {
+    if (mac) wantMeta = true
+    else wantCtrl = true
+  }
+
+  if (wantMeta && wantCtrl) {
     if (!hasMeta || !hasCtrl) return false
-  } else if (needsCmd) {
+  } else if (wantMeta) {
     if (!hasMeta) return false
-  } else if (needsCtrl) {
+  } else if (wantCtrl) {
     if (!hasCtrl || hasMeta) return false
   } else {
     if (hasMeta || hasCtrl) return false

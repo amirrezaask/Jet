@@ -5,7 +5,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { hasPtySpawn, launchJet, openNewCliSession, showTerminal } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewCliSession, showTerminal, waitForHome } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -146,8 +146,7 @@ test.describe("electron appearance and terminal-first UX", () => {
   test("New session opens agent CLI picker then terminal", async () => {
     const { app, page } = await launchJet()
     try {
-      const launcher = page.getByRole("button", { name: "New session" }).first()
-      await expectLocatorVisible(launcher)
+      await waitForHome(page)
       const modal = await openNewCliSession(page, "codex")
       await expectLocatorVisible(modal)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")

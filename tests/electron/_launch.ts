@@ -141,6 +141,21 @@ export async function confirmOverlay(page: ShellDriver): Promise<void> {
   await page.keyboard.press("Meta+Enter")
 }
 
+/** Platform primary chord modifier for Playwright (`Meta` on macOS, `Control` elsewhere). */
+export function modChord(): "Meta" | "Control" {
+  return process.platform === "darwin" ? "Meta" : "Control"
+}
+
+export async function pressMod(
+  page: ShellDriver,
+  key: string,
+  opts?: { shift?: boolean },
+): Promise<void> {
+  const mods = [modChord()]
+  if (opts?.shift) mods.push("Shift")
+  await page.keyboard.press(`${mods.join("+")}+${key}`)
+}
+
 export async function execCommand(page: ShellDriver, commandId: string): Promise<void> {
   await page.evaluate(async (cmd: string) => {
     await window.__gharargahAgent!.executeCommand(cmd)

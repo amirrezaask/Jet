@@ -6,6 +6,7 @@ function formatKeyPart(part: string): string {
   const key = tokens.pop() ?? part
   const mods = tokens.map(t => {
     switch (t) {
+      case "Mod":
       case "Cmd":
         return isMac ? "⌘" : "Ctrl"
       case "Ctrl":
@@ -13,9 +14,9 @@ function formatKeyPart(part: string): string {
       case "Alt":
         return isMac ? "⌥" : "Alt"
       case "Shift":
-        return "⇧"
+        return isMac ? "⇧" : "Shift"
       default:
-        return t
+        return t === "Mod" ? (isMac ? "⌘" : "Ctrl") : t
     }
   })
   const label =
@@ -33,10 +34,27 @@ function formatKeyPart(part: string): string {
         ? "`"
         : key === "Enter"
           ? "↵"
-          : key
-  return [...mods, label].join("")
+          : key === "Mod"
+            ? isMac
+              ? "⌘"
+              : "Ctrl"
+            : key === "Cmd"
+              ? isMac
+                ? "⌘"
+                : "Ctrl"
+              : key
+  // Never surface the abstract "Mod" token in UI.
+  const cleaned = [...mods, label].map(token =>
+    token === "Mod" ? (isMac ? "⌘" : "Ctrl") : token,
+  )
+  return cleaned.join(isMac ? "" : "+")
 }
 
+/** Human label for a binding chord (`Mod-p` → `⌘P` / `Ctrl+P`). Never leaves `Mod` in output. */
 export function formatKeyBinding(key: string): string {
-  return key.split(" ").map(formatKeyPart).join(" ")
+  return key
+    .split(" ")
+    .map(part => formatKeyPart(part.trim()))
+    .filter(Boolean)
+    .join(" ")
 }

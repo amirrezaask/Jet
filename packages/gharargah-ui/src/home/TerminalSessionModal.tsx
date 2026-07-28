@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog.js"
 import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
+import { formatKeyBinding } from "@/lib/format-key.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
 
 export type SessionDialogMode =
@@ -257,6 +258,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           mode="terminal"
           active={mode === "terminal"}
           label="Terminal"
+          shortcut="Mod-Shift-t"
           icon={<SquareTerminal aria-hidden />}
           onSelect={() => onModeChange("terminal")}
         />
@@ -264,6 +266,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           mode="editor"
           active={mode === "editor"}
           label="Editor"
+          shortcut="Mod-Shift-e"
           icon={<FileCode2 aria-hidden />}
           onSelect={() => onModeChange("editor")}
         />
@@ -271,6 +274,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           mode="git"
           active={mode === "git"}
           label="Git"
+          shortcut="Mod-Shift-g"
           icon={<GitBranch aria-hidden />}
           onSelect={() => onModeChange("git")}
         />
@@ -278,6 +282,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           mode="todos"
           active={mode === "todos"}
           label="TODOs"
+          shortcut="Mod-Shift-d"
           icon={<Columns3 aria-hidden />}
           onSelect={() => onModeChange("todos")}
         />
@@ -438,17 +443,19 @@ function ModeTab(props: {
   mode: SessionDialogMode
   active: boolean
   label: string
+  shortcut?: string
   icon: ReactNode
   onSelect: () => void
 }) {
-  const { mode, active, label, icon, onSelect } = props
+  const { mode, active, label, shortcut, icon, onSelect } = props
+  const title = shortcut ? `${label} (${formatKeyBinding(shortcut)})` : label
   return (
     <button
       type="button"
       role="tab"
       aria-selected={active}
       aria-label={label}
-      title={label}
+      title={title}
       aria-controls={`gharargah-session-pane-${mode}`}
       id={`gharargah-session-tab-${mode}`}
       tabIndex={active ? 0 : -1}

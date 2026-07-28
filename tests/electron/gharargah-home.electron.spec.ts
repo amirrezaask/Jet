@@ -121,7 +121,7 @@ test.describe("gharargah mission home", () => {
     }
   })
 
-  test("project and terminal card context menus, modal close, git branch, Cmd+p terminal list", async () => {
+  test("project and terminal card context menus, modal close, git branch, Mod-k terminal list", async () => {
     const { app, page } = await launchJet()
     try {
       await ensureCardsLayout(page)
@@ -286,7 +286,7 @@ test.describe("gharargah mission home", () => {
       await page.keyboard.press("Escape")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
-      await page.keyboard.press("Meta+p")
+      await page.keyboard.press("Meta+k")
       await expectListRows(page, {
         panel: "gharargah:palette",
         minItems: 1,

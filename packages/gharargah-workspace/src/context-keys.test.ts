@@ -43,6 +43,9 @@ const baseCtx: KeymapContext = {
   projectSwitcherOpen: false,
   gotoLineOpen: false,
   outlineOpen: false,
+  terminalListOpen: false,
+  agentCliPickerOpen: false,
+  settingsOpen: false,
   workspaceOpen: true,
   explorerFocus: false,
   terminalExplorerFocus: false,
@@ -95,19 +98,44 @@ describe("keyEventMatchesBindingPart", () => {
   })
 
   it("matches Mod-backslash", () => {
+    const mac = process.platform === "darwin"
     assert.equal(
       keyEventMatchesBindingPart(
-        keyEvent({ key: "\\", metaKey: true, code: "Backslash" }),
+        keyEvent({ key: "\\", metaKey: mac, ctrlKey: !mac, code: "Backslash" }),
         "Mod-\\",
       ),
       true,
     )
     assert.equal(
       keyEventMatchesBindingPart(
-        keyEvent({ key: "\\", metaKey: true, shiftKey: true, code: "Backslash" }),
+        keyEvent({
+          key: "\\",
+          metaKey: mac,
+          ctrlKey: !mac,
+          shiftKey: true,
+          code: "Backslash",
+        }),
         "Mod-Shift-\\",
       ),
       true,
+    )
+  })
+
+  it("Mod uses platform primary modifier", () => {
+    const mac = process.platform === "darwin"
+    assert.equal(
+      keyEventMatchesBindingPart(
+        keyEvent({ key: "n", metaKey: true, ctrlKey: false }),
+        "Mod-n",
+      ),
+      mac,
+    )
+    assert.equal(
+      keyEventMatchesBindingPart(
+        keyEvent({ key: "n", metaKey: false, ctrlKey: true }),
+        "Mod-n",
+      ),
+      !mac,
     )
   })
 })

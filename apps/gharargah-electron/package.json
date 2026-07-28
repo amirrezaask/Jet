@@ -1,0 +1,15 @@
+{
+  "name": "@gharargah/electron",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "dev": "electron . --dev",
+    "start": "electron .",
+    "postinstall": "node ./node_modules/electron/install.js"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0"
+  }
+}

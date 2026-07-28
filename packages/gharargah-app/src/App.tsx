@@ -1119,6 +1119,9 @@ export function GharargahApp() {
       projectSwitcherOpen,
       gotoLineOpen,
       outlineOpen: false,
+      terminalListOpen,
+      agentCliPickerOpen: agentCliPickerRootUri != null,
+      settingsOpen,
       workspaceOpen: workspace.manager.hasFolders(),
       explorerFocus: false,
       terminalExplorerFocus: false,
@@ -1137,6 +1140,9 @@ export function GharargahApp() {
       cdOpen,
       projectSwitcherOpen,
       gotoLineOpen,
+      terminalListOpen,
+      agentCliPickerRootUri,
+      settingsOpen,
       workspace.root,
       terminalModalTabId,
     ],
@@ -1542,14 +1548,6 @@ export function GharargahApp() {
   openWorkspaceRef.current = openWorkspaceFolder
   addWorkspaceRef.current = addWorkspaceFolder
 
-  const keybindingByFn = useMemo(() => {
-    const map = new Map<JetKeyBinding["run"], string>()
-    for (const binding of keymapBindings) {
-      if (!map.has(binding.run)) map.set(binding.run, binding.key)
-    }
-    return map
-  }, [keymapBindings])
-
   const fnByCommandId = FN_BY_COMMAND_ID
 
   const getCommandContext = useCallback(
@@ -1576,6 +1574,19 @@ export function GharargahApp() {
     resetAppearanceSettings()
     showGharargahToast("Appearance reset")
   }, [resetAppearanceSettings])
+
+  const toggleSidebar = useCallback(() => {
+    setAppearanceSettings(prev => {
+      if (prev.sessionLayout !== "sidebar") {
+        return {
+          ...prev,
+          sessionLayout: "sidebar",
+          sidebarCollapsed: false,
+        }
+      }
+      return { ...prev, sidebarCollapsed: !prev.sidebarCollapsed }
+    })
+  }, [setAppearanceSettings])
 
   const appCommands = useMemo(
     () =>
@@ -1619,6 +1630,17 @@ export function GharargahApp() {
         getContextFolder: () => workspace.manager.activeFolder,
         getSearchSupported: () => searchSupported,
         goHome,
+        openSessionPicker: (rootUri: string) => {
+          setAgentCliPickerRootUri(rootUri)
+        },
+        resolveSessionNewRootUri: () => {
+          const active = workspace.manager.activeFolder?.root.uri
+          if (active) return active
+          const folder = workspace.folders[0]?.root.uri
+          if (folder) return folder
+          const project = projectRegistry.list()[0]
+          return project ? pathToFileUri(project.path) : null
+        },
       }),
     [
       workspace,
@@ -1651,12 +1673,18 @@ export function GharargahApp() {
 
   const paletteBaseCommands = useMemo(() => {
     void deferredPanelTree
+    const extraKeyByRun = new Map<JetKeyBinding["run"], string>()
+    for (const binding of keymapBindings) {
+      if (!extraKeyByRun.has(binding.run)) extraKeyByRun.set(binding.run, binding.key)
+    }
     const list = commands.list(getCommandContext()).map(cmd => {
       const fnName = fnByCommandId.get(cmd.id)
       const run = fnName
         ? appCommands[fnName as keyof typeof appCommands]
-        : undefined
-      const key = run ? keybindingByFn.get(run) : undefined
+        : cmd.id === "ui.toggleSidebar"
+          ? toggleSidebar
+          : undefined
+      const key = run ? extraKeyByRun.get(run) : undefined
       return {
         ...cmd,
         keybinding: key ? formatKeyBinding(key) : undefined,
@@ -1669,9 +1697,10 @@ export function GharargahApp() {
     commands,
     deferredPanelTree,
     appCommands,
-    keybindingByFn,
+    keymapBindings,
     fnByCommandId,
     getCommandContext,
+    toggleSidebar,
   ])
 
   const paletteCommands = useMemo(() => {
@@ -1755,33 +1784,43 @@ export function GharargahApp() {
     const noOverlay = (ctx: KeymapContext) => !anyOverlayOpen(ctx)
     const whenWorkspace = (ctx: KeymapContext) =>
       ctx.workspaceOpen && noOverlay(ctx)
+    // Mission Control keymap (Mod = ⌘ mac / Ctrl elsewhere):
+    // Mod-n new session · Mod-k switch session · Mod-p quick open ·
+    // Mod-b toggle sidebar · Mod-Shift-g git · Mod-Shift-p palette · Mod-o path open ·
+    // Mod-Shift-e/t/d editor/terminal/todos · Mod-, settings
     keymaps.registerUser([
-      bind("Cmd-p", appCommands.terminalList, noOverlay),
-      bind("Cmd-Shift-p", appCommands.palette, noOverlay),
-      bind("Cmd-k Cmd-o", appCommands.openFolder, noOverlay),
-      bind("Cmd-w", appCommands.closeTab, whenWorkspace),
+      bind("Mod-n", appCommands.sessionNew, noOverlay),
+      bind("Mod-k", appCommands.terminalList, noOverlay),
+      bind("Mod-p", appCommands.quickOpen, whenWorkspace),
+      bind("Mod-b", toggleSidebar, noOverlay),
+      bind("Mod-Shift-g", appCommands.showGit, whenWorkspace),
+      bind("Mod-Shift-p", appCommands.palette, noOverlay),
+      bind("Mod-o", appCommands.openFile, noOverlay),
+      bind("Mod-w", appCommands.closeTab, whenWorkspace),
       bind("Ctrl-`", appCommands.terminal, whenWorkspace),
-      bind("Cmd-=", appCommands.zoomIn, noOverlay),
-      bind("Cmd--", appCommands.zoomOut, noOverlay),
-      bind("Cmd-o", appCommands.openFile, noOverlay),
-      bind("Cmd-Shift-o", appCommands.quickOpen, whenWorkspace),
-      bind("Cmd-s", appCommands.save, whenWorkspace),
-      bind("Cmd-n", appCommands.newFile, whenWorkspace),
-      bind("Cmd-f", appCommands.find, ctx => ctx.editorFocus && noOverlay(ctx)),
+      bind("Mod-=", appCommands.zoomIn, noOverlay),
+      bind("Mod--", appCommands.zoomOut, noOverlay),
+      bind("Mod-Shift-o", appCommands.quickOpen, whenWorkspace),
+      bind("Mod-s", appCommands.save, whenWorkspace),
+      bind("Mod-f", appCommands.find, ctx => ctx.editorFocus && noOverlay(ctx)),
       bind(
-        "Cmd-h",
+        "Mod-h",
         appCommands.replace,
         ctx => ctx.editorFocus && noOverlay(ctx),
       ),
       bind(
-        "Cmd-g",
+        "Mod-g",
         appCommands.gotoLine,
         ctx => ctx.editorFocus && noOverlay(ctx),
       ),
-      bind("Cmd-Shift-b", appCommands.bufferList, whenWorkspace),
+      bind("Mod-Shift-b", appCommands.bufferList, whenWorkspace),
       bind("Mod-Shift-e", appCommands.showEditor, whenWorkspace),
       bind("Mod-Shift-t", appCommands.showTerminal, whenWorkspace),
-      bind("Cmd-Shift-n", () => {
+      bind("Mod-Shift-d", appCommands.showTodos, whenWorkspace),
+      bind("Mod-,", () => {
+        setSettingsOpen(true)
+      }, noOverlay),
+      bind("Mod-Shift-n", () => {
         notificationsRef.current.setOpen(true)
       }, noOverlay),
       ...buildMacTerminalQuickSwitchBindings({
@@ -1804,6 +1843,8 @@ export function GharargahApp() {
     workspace,
     getTerminalExplorerGroups,
     focusTerminalTab,
+    setSettingsOpen,
+    toggleSidebar,
   ])
 
   useEffect(() => {
@@ -2026,6 +2067,14 @@ export function GharargahApp() {
           aliases: ["reset theme", "reset font"],
       }),
     )
+    disposables.push(
+      commands.register("ui.toggleSidebar", toggleSidebar, {
+        id: "ui.toggleSidebar",
+        title: "Toggle Sidebar",
+        category: "UI",
+        aliases: ["collapse sidebar", "show sidebar", "hide sidebar"],
+      }),
+    )
     for (const layout of ["cards", "tabs", "sidebar"] as const) {
       const title =
         layout === "cards" ? "Cards" : layout === "tabs" ? "Tabs" : "Sidebar"
@@ -2060,6 +2109,7 @@ export function GharargahApp() {
     workspace,
     removeProjectByRootUri,
     setAppearanceSettings,
+    toggleSidebar,
   ])
 
   useEffect(() => {

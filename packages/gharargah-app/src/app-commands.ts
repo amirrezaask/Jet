@@ -94,6 +94,8 @@ export type BuildAppCommandsDeps = {
   getContextFolder: () => import("@gharargah/workspace").WorkspaceFolder | null
   getSearchSupported: () => boolean
   goHome: () => void
+  openSessionPicker: (rootUri: string) => void
+  resolveSessionNewRootUri: () => string | null
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -345,6 +347,27 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     },
     showTerminal: () => deps.setSessionMode("terminal"),
     showTodos: () => deps.setSessionMode("todos"),
+    showGit: () => {
+      const tree = currentPanelTree()
+      const terminals = listTerminalTabs(tree)
+      if (terminals.length === 0) {
+        deps.setMessage("No session open")
+        return
+      }
+      const activeId = deps.getActiveTerminalTabId()
+      const target =
+        terminals.find(entry => entry.tabId === activeId) ??
+        terminals[terminals.length - 1]!
+      deps.focusTerminalTab(target.panelId, target.tabId, "git")
+    },
+    sessionNew: () => {
+      const rootUri = deps.resolveSessionNewRootUri()
+      if (!rootUri) {
+        deps.setMessage("No project available — add a project first")
+        return
+      }
+      deps.openSessionPicker(rootUri)
+    },
     terminal: async () => {
       const tree = deps.cloneTree()
       const focused = currentFocusedPanel()
@@ -493,9 +516,10 @@ export function buildMacTerminalQuickSwitchBindings(opts: {
 
 export const APP_COMMAND_REGISTRY = [
   { id: "ui.showCommandPalette", fn: "palette", title: "Show Command Palette", category: "UI", aliases: ["commands", "palette", "help"] },
-  { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly"] },
+  { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly", "cmd-p"] },
   { id: "workspace.bufferList", fn: "bufferList", title: "Buffer List", category: "Workspace", aliases: ["open buffers", "switch buffer"] },
-  { id: "terminal.list", fn: "terminalList", title: "Terminal List", category: "View", aliases: ["switch terminal", "terminal lister", "cmd-p"] },
+  { id: "terminal.list", fn: "terminalList", title: "Switch Session…", category: "View", aliases: ["switch terminal", "session switcher", "cmd-k", "switch session"] },
+  { id: "session.new", fn: "sessionNew", title: "New Session…", category: "View", aliases: ["new agent", "agent cli", "cmd-n"] },
   { id: "workspace.saveFile", fn: "save", title: "Save File", category: "Workspace", aliases: ["write"] },
   { id: "workspace.openFile", fn: "openFile", title: "Open File", category: "Workspace", aliases: ["browse file"] },
   { id: "workspace.openFolder", fn: "openFolder", title: "Open Folder", category: "Workspace", aliases: ["open workspace"] },
@@ -515,6 +539,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "dialog.showEditor", fn: "showEditor", title: "Show Editor", category: "View", aliases: ["focus editor"] },
   { id: "dialog.showAgent", fn: "showAgent", title: "Show Agent", category: "View", aliases: ["conversation", "assistant"] },
   { id: "dialog.showTerminal", fn: "showTerminal", title: "Show Terminal", category: "View", aliases: ["focus terminal"] },
+  { id: "dialog.showGit", fn: "showGit", title: "Show Git", category: "View", aliases: ["git", "source control"] },
   { id: "dialog.showTodos", fn: "showTodos", title: "Show TODOs", category: "View", aliases: ["todo board", "kanban"] },
   { id: "terminal.show", fn: "terminal", title: "Toggle Terminal", category: "View", aliases: ["shell", "integrated terminal"] },
   { id: "terminal.new", fn: "terminalNew", title: "New Terminal", category: "View" },

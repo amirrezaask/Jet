@@ -3,7 +3,8 @@ import { FolderPlus, Search } from "lucide-react"
 import type { PanelId } from "@gharargah/shared"
 import { Button } from "@/components/ui/button.js"
 import { Input } from "@/components/ui/input.js"
-import { Kbd } from "@/components/ui/kbd.js"
+import { KeyBindingKbd } from "@/components/KeyBindingKbd.js"
+import { formatKeyBinding } from "@/lib/format-key.js"
 import { formatHomeDate, timeOfDayGreeting } from "./greeting.js"
 import type { OpenInAppId } from "./OpenInAppMenu.js"
 import { ProjectSection, type HomeTerminalEntry } from "./ProjectSection.js"
@@ -139,12 +140,9 @@ export function GharargahHome(props: GharargahHomeProps) {
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   placeholder="Search projects, agents, files…"
-                  className="h-8 pe-12 ps-8 text-xs"
+                  className="h-8 pe-3 ps-8 text-xs"
                   aria-label="Search projects"
                 />
-                <Kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 border border-border/60 bg-background/40 text-4xs text-muted-foreground">
-                  ⌘K
-                </Kbd>
               </div>
               {onAddProject ? (
                 <Button
@@ -207,6 +205,32 @@ export function GharargahHome(props: GharargahHomeProps) {
             ))}
           </div>
         )}
+
+        <footer
+          data-gharargah-home-shortcuts=""
+          className="mt-auto flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t border-border/40 pt-3 pb-1 text-3xs text-muted-foreground"
+        >
+          <span className="inline-flex items-center gap-1">
+            <KeyBindingKbd binding={formatKeyBinding("Mod-n")} />
+            New
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <KeyBindingKbd binding={formatKeyBinding("Mod-k")} />
+            Switch
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <KeyBindingKbd binding={formatKeyBinding("Mod-p")} />
+            Open
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <KeyBindingKbd binding={formatKeyBinding("Mod-Shift-g")} />
+            Git
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <KeyBindingKbd binding={formatKeyBinding("Mod-Shift-p")} />
+            Palette
+          </span>
+        </footer>
       </div>
     </div>
   )

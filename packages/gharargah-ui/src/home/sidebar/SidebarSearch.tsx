@@ -1,7 +1,6 @@
 import { useEffect, useState, type RefObject } from "react"
 import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input.js"
-import { Kbd } from "@/components/ui/kbd.js"
 import { SidebarInput } from "@/components/ui/sidebar.js"
 import { cn } from "@/lib/utils.js"
 
@@ -49,12 +48,9 @@ export function SidebarSearch({
         onChange={e => setLocal(e.target.value)}
         placeholder="Search"
         aria-label="Search sessions"
-        className="h-8 rounded-lg pl-8 pr-10 text-xs"
+        className="h-8 rounded-lg pl-8 pr-3 text-xs"
         data-gharargah-sidebar-search-input=""
       />
-      <Kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[0.625rem]">
-        ⌘K
-      </Kbd>
     </div>
   )
 }

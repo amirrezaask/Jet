@@ -104,7 +104,7 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       }
 
       if (ctx.terminalFocus || inXterm) {
-        if (keyEventMatchesBinding(e, "Cmd-w")) {
+        if (keyEventMatchesBinding(e, "Mod-w") || keyEventMatchesBinding(e, "Cmd-w")) {
           if (!workspaceRef.current.manager.hasFolders() || anyOverlayOpen(ctx)) return
           e.preventDefault()
           e.stopPropagation()
@@ -112,10 +112,19 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
           return
         }
         if (dispatchKeyBinding(e)) return
-        if (keyEventMatchesBinding(e, "Cmd-=") || keyEventMatchesBinding(e, "Cmd--")) {
+        if (
+          keyEventMatchesBinding(e, "Mod-=") ||
+          keyEventMatchesBinding(e, "Mod--") ||
+          keyEventMatchesBinding(e, "Cmd-=") ||
+          keyEventMatchesBinding(e, "Cmd--")
+        ) {
           e.preventDefault()
           e.stopPropagation()
-          void executeCommandRef.current(keyEventMatchesBinding(e, "Cmd--") ? "ui.zoomOut" : "ui.zoomIn")
+          void executeCommandRef.current(
+            keyEventMatchesBinding(e, "Mod--") || keyEventMatchesBinding(e, "Cmd--")
+              ? "ui.zoomOut"
+              : "ui.zoomIn",
+          )
           return
         }
         if (ctx.terminalFocus && !inXterm) {
@@ -129,7 +138,7 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
         return
       }
 
-      if (keyEventMatchesBinding(e, "Cmd-w")) {
+      if (keyEventMatchesBinding(e, "Mod-w") || keyEventMatchesBinding(e, "Cmd-w")) {
         if (!workspaceRef.current.manager.hasFolders()) return
         e.preventDefault()
         e.stopPropagation()

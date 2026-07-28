@@ -5,6 +5,7 @@ import { lspStatusIsActive, lspStatusShortLabel } from "@gharargah/lsp/status"
 import type { WorkspaceService } from "@gharargah/workspace"
 import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
+import { formatKeyBinding } from "@/lib/format-key.js"
 import { getEditorCursor, subscribeEditorCursor } from "@/status/editor-cursor-store.js"
 
 export type ModalEditorBuffer = {
@@ -118,7 +119,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
               type="button"
               variant="ghost"
               size="xs"
-              title="Quick open (⌘⇧O)"
+              title={`Quick open (${formatKeyBinding("Mod-p")})`}
               className="text-muted-foreground hover:text-foreground"
               onClick={onQuickOpen}
             >
@@ -131,7 +132,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
               type="button"
               variant="ghost"
               size="xs"
-              title="Command palette (⌘P)"
+              title={`Command palette (${formatKeyBinding("Mod-Shift-p")})`}
               className="text-muted-foreground hover:text-foreground"
               onClick={onCommandPalette}
             >

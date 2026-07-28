@@ -9,6 +9,7 @@ import {
 } from "react"
 import { FolderPlus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
+import { formatKeyBinding } from "@/lib/format-key.js"
 import {
   Sidebar,
   SidebarContent,
@@ -137,24 +138,6 @@ export function GharagahSidebar({
     onNewSession()
   }, [projectFilterId, projects, onNewSession])
 
-  const focusSearch = useCallback(() => {
-    searchRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        if (document.documentElement.dataset.gharargahSessionLayout !== "sidebar") {
-          return
-        }
-        e.preventDefault()
-        focusSearch()
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [focusSearch])
-
   const onListKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       if (searchQuery) {
@@ -194,7 +177,11 @@ export function GharagahSidebar({
         {!compact ? (
           <>
             <div className="flex items-center gap-1.5 px-1">
-              <SidebarTrigger className="size-7 shrink-0" aria-label="Toggle sidebar" />
+              <SidebarTrigger
+                className="size-7 shrink-0"
+                aria-label="Toggle sidebar"
+                title={`Toggle sidebar (${formatKeyBinding("Mod-b")})`}
+              />
               <SidebarSearch
                 value={searchQuery}
                 onChange={setSearchQuery}
@@ -207,6 +194,7 @@ export function GharagahSidebar({
                 variant="outline"
                 className="size-8 shrink-0 rounded-lg"
                 aria-label="New Session"
+                title={`New session (${formatKeyBinding("Mod-n")})`}
                 data-gharargah-sidebar-new-session=""
                 onClick={handleNewSession}
               >
@@ -237,13 +225,18 @@ export function GharagahSidebar({
           </>
         ) : (
           <div className="flex flex-col items-center gap-1 px-0.5">
-            <SidebarTrigger className="size-7" aria-label="Toggle sidebar" />
+            <SidebarTrigger
+              className="size-7"
+              aria-label="Toggle sidebar"
+              title={`Toggle sidebar (${formatKeyBinding("Mod-b")})`}
+            />
             <Button
               type="button"
               size="icon-sm"
               variant="ghost"
               className="size-7"
               aria-label="New Session"
+              title={`New session (${formatKeyBinding("Mod-n")})`}
               data-gharargah-sidebar-new-session=""
               onClick={handleNewSession}
             >
