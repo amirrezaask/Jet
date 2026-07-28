@@ -5,7 +5,7 @@ import {
   expectLocatorContainsText,
   expectLocatorCount,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, execCommand, openNewAgentSession } from "./_launch.js"
+import { hasPtySpawn, launchJet, execCommand, openNewAgentSession, ensureCardsLayout } from "./_launch.js"
 import { expectListRows } from "../helpers/list.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -16,6 +16,7 @@ test.describe("gharargah mission home", () => {
   test("home greeting, project section, search, card opens terminal modal, home returns", async () => {
     const { app, page } = await launchJet()
     try {
+     await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]")
       await expectSelectorVisible(page, "[data-gharargah-shell='home']")
       await expectLocatorCount(page.locator("[data-gharargah-home-metrics]"), 0)
@@ -123,6 +124,7 @@ test.describe("gharargah mission home", () => {
   test("project and terminal card context menus, modal close, git branch, Cmd+p terminal list", async () => {
     const { app, page } = await launchJet()
     try {
+      await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]")
       const workspaceName = await page.evaluate(
         () => window.__gharargahAgent!.listWorkspaces()[0]?.name ?? "sample-workspace",
@@ -299,6 +301,7 @@ test.describe("gharargah mission home", () => {
   test("home has no custom titlebar chrome", async () => {
     const { app, page } = await launchJet()
     try {
+      await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]")
       await expectLocatorCount(page.locator("[data-gharargah-titlebar]"), 0)
       await expectLocatorCount(page.locator("[data-gharargah-home-button]"), 0)
@@ -311,6 +314,7 @@ test.describe("gharargah mission home", () => {
   test("restored session with missing PTY is dropped from home", async () => {
     const { app, page } = await launchJet()
     try {
+      await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]")
       const workspace = await page.evaluate(() => {
         const state = window.__gharargahAgent!.getState()
@@ -323,10 +327,11 @@ test.describe("gharargah mission home", () => {
         }
       })
 
-      await page.evaluate(ws => {
-        localStorage.setItem(
-          "gharargah-session-roster-v2",
-          JSON.stringify({
+      await page.evaluate(async ws => {
+        await fetch("/api/v1/sessions", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
             version: 2,
             sessions: [
               {
@@ -339,7 +344,7 @@ test.describe("gharargah mission home", () => {
             ],
             modal: null,
           }),
-        )
+        })
       }, workspace)
 
       await page.reload({ waitUntil: "domcontentloaded" })

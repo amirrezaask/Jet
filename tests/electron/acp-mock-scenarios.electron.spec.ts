@@ -66,9 +66,9 @@ async function readActiveThread(
     async ({ uri, workspace }) => {
       const agents = window.gharargah!.agents!;
       const list = await agents.listThreads(uri, workspace);
-      const rosterRaw = localStorage.getItem("gharargah-session-roster-v2");
-      const roster = rosterRaw
-        ? (JSON.parse(rosterRaw) as {
+      const res = await fetch("/api/v1/sessions");
+      const roster = res.ok
+        ? ((await res.json()) as {
             modal?: { tabId?: string };
             sessions?: Array<{ tabId?: string; agentThreadId?: string }>;
           })
@@ -315,11 +315,9 @@ test.describe("ACP mock scenario matrix (host path)", () => {
             const uri = `file://${workspace}`;
             const agents = window.gharargah!.agents!;
             const list = await agents.listThreads(uri, workspace);
-            const rosterRaw = localStorage.getItem(
-              "gharargah-session-roster-v2",
-            );
-            const roster = rosterRaw
-              ? (JSON.parse(rosterRaw) as {
+            const res = await fetch("/api/v1/sessions");
+            const roster = res.ok
+              ? ((await res.json()) as {
                   modal?: { tabId?: string };
                   sessions?: Array<{ tabId?: string; agentThreadId?: string }>;
                 })

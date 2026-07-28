@@ -7,7 +7,9 @@ import {
   useRef,
   useState,
   useDeferredValue,
+  type ReactElement,
 } from "react"
+import { createPortal } from "react-dom"
 import type { PanelId, PanelView } from "@gharargah/shared"
 import { fileUriToPath, pathToFileUri } from "@gharargah/shared"
 import {
@@ -65,14 +67,20 @@ import {
   requestConfirm,
   AppShell,
   GharargahHome,
+  GharagahSidebar,
+  sidebarWidthStyle,
+  mapHomeGroupsToSidebar,
   TerminalSessionModal,
   AgentCliPickerOverlay,
   NotificationBell,
   NotificationCenter,
+  SidebarProvider,
+  SidebarInset,
   type AgentCliDriver,
   type OpenInAppId,
   type JetAppearanceSettings,
   type SessionDialogMode,
+  type SidebarSession,
   ModalEditorPane,
   getEditorView,
   getEditorCursor,
@@ -109,12 +117,15 @@ import {
   terminalCwdForTab,
   terminalPtyIdForTab,
   terminalSessionForTab,
+  setTerminalCustomLabel,
+  bumpTerminalActivity,
 } from "./tabs/terminal-session.js"
+import { type PersistedSessionRoster } from "./session-roster-store.js"
 import {
-  readSessionRoster,
-  writeSessionRoster,
-  type PersistedSessionRoster,
-} from "./session-roster-store.js"
+  loadServerSessionRoster,
+  migrateLegacyLocalSessionRoster,
+  saveServerSessionRoster,
+} from "./server-sessions.js"
 import { reconcileHydratedTerminalPtys } from "./probe-terminal-sessions.js"
 import {
   getAllLeafPanels,
@@ -133,11 +144,8 @@ import { loadGlobalJetrc } from "./load-global-gharargahrc.js"
 import { WorkspaceLayoutStore } from "./workspace-layout-store.js"
 import { swapWorkspaceLayout } from "./swap-workspace-layout.js"
 import {
-  readProjectCatalog,
-  writeProjectCatalog,
-} from "./project-catalog-store.js"
-import {
   loadServerProjectPaths,
+  migrateLegacyLocalProjectCatalog,
   syncServerProjectCatalog,
 } from "./server-projects.js"
 import { useAppearanceSettings } from "./hooks/useAppearanceSettings.js"
@@ -189,6 +197,19 @@ type OpenWorkspaceOptions = { replace?: boolean; silent?: boolean }
 function normalizeAbsPath(p: string): string {
   const trimmed = p.replace(/[/\\]+$/, "")
   return trimmed || p
+}
+
+/** Match a persisted cwd URI to a live folder when path forms differ (/var vs /private/var). */
+function resolveWorkspaceRootUri(
+  cwdRootUri: string,
+  folders: ReadonlyArray<{ root: { uri: string; path: string } }>,
+): string {
+  if (folders.some(folder => folder.root.uri === cwdRootUri)) return cwdRootUri
+  const cwdPath = normalizeAbsPath(fileUriToPath(cwdRootUri))
+  const folder = folders.find(
+    candidate => normalizeAbsPath(candidate.root.path) === cwdPath,
+  )
+  return folder?.root.uri ?? cwdRootUri
 }
 
 function loadRecentCommands(): string[] {
@@ -991,6 +1012,7 @@ export function GharargahApp() {
       agentId: session.agentId,
       agentDriverId: session.agentDriverId,
       agentThreadId: session.agentThreadId,
+      lastActivityAt: session.lastActivityAt,
     }))
     const modalTabId = terminalModalTabIdRef.current
     const roster: PersistedSessionRoster = {
@@ -1000,7 +1022,9 @@ export function GharargahApp() {
         ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
         : null,
     }
-    writeSessionRoster(roster)
+    void saveServerSessionRoster(roster).catch(() => {
+      /* host may be down; in-memory sessions still work */
+    })
   }, [workspace])
 
   const closeTerminalTab = useCallback(
@@ -1470,28 +1494,12 @@ export function GharargahApp() {
 
   useEffect(() => {
     const sub = workspace.manager.onDidChangeFolders.event(() => {
-      if (projectCatalogReadyRef.current) {
-        writeProjectCatalog(
-          workspace.manager.folders,
-          workspace.manager.activeFolder?.id ?? null,
-        )
-        void syncServerProjectCatalog(workspace.manager.folders).catch(() => {
-          showGharargahToast("Could not persist the project catalog", {
-            variant: "warning",
-          })
-        })
-      }
-    })
-    return () => sub.dispose()
-  }, [workspace])
-
-  useEffect(() => {
-    const sub = workspace.manager.onDidChangeActiveFolder.event(() => {
       if (!projectCatalogReadyRef.current) return
-      writeProjectCatalog(
-        workspace.manager.folders,
-        workspace.manager.activeFolder?.id ?? null,
-      )
+      void syncServerProjectCatalog(workspace.manager.folders).catch(() => {
+        showGharargahToast("Could not persist the project catalog", {
+          variant: "warning",
+        })
+      })
     })
     return () => sub.dispose()
   }, [workspace])
@@ -2022,7 +2030,9 @@ export function GharargahApp() {
           aliases: ["reset theme", "reset font"],
       }),
     )
-    for (const layout of ["cards", "tabs"] as const) {
+    for (const layout of ["cards", "tabs", "sidebar"] as const) {
+      const title =
+        layout === "cards" ? "Cards" : layout === "tabs" ? "Tabs" : "Sidebar"
       disposables.push(
         commands.register(
           `ui.setSessionLayout.${layout}`,
@@ -2031,18 +2041,16 @@ export function GharargahApp() {
               ...previous,
               sessionLayout: layout,
             }))
-            showGharargahToast(
-              `Session layout: ${layout === "cards" ? "Cards" : "Tabs"}`,
-            )
+            showGharargahToast(`Session layout: ${title}`)
           },
           {
             id: `ui.setSessionLayout.${layout}`,
-            title: `Session Layout: ${layout === "cards" ? "Cards" : "Tabs"}`,
+            title: `Session Layout: ${title}`,
             category: "UI",
             aliases: ["home layout", "sessions", layout],
-        },
-      ),
-    )
+          },
+        ),
+      )
     }
     return () => {
       for (const d of disposables) d?.dispose()
@@ -2144,20 +2152,10 @@ export function GharargahApp() {
       const cfg = window.gharargah?.getLaunchConfig
         ? await window.gharargah.getLaunchConfig()
         : null
-      const catalog = readProjectCatalog()
-      const serverPaths = await loadServerProjectPaths().catch(
-        () => [] as string[],
-      )
-      const paths = [...serverPaths]
-      for (const project of catalog.projects) {
-        if (
-          !paths.some(
-            path => normalizeAbsPath(path) === normalizeAbsPath(project.path),
-          )
-        ) {
-          paths.push(project.path)
-        }
-      }
+      await migrateLegacyLocalProjectCatalog().catch(() => {})
+      const paths = [
+        ...(await loadServerProjectPaths().catch(() => [] as string[])),
+      ]
       const explicitLaunch =
         cfg?.source === "explicit" ||
         cfg?.source === "external" ||
@@ -2181,7 +2179,7 @@ export function GharargahApp() {
 
       const activePath = explicitLaunch
         ? (cfg?.workspacePath ?? null)
-        : (catalog.activePath ?? cfg?.workspacePath ?? null)
+        : (cfg?.workspacePath ?? paths[0] ?? null)
       if (activePath) {
         const normalized = normalizeAbsPath(activePath)
         const active = workspace.folders.find(
@@ -2191,13 +2189,16 @@ export function GharargahApp() {
       }
 
       projectCatalogReadyRef.current = true
-      writeProjectCatalog(
-        workspace.manager.folders,
-        workspace.manager.activeFolder?.id ?? null,
-      )
       await syncServerProjectCatalog(workspace.manager.folders).catch(() => {})
+      await migrateLegacyLocalSessionRoster().catch(() => {})
 
-      const roster = readSessionRoster()
+      const roster = await loadServerSessionRoster().catch(
+        (): PersistedSessionRoster => ({
+          version: 2,
+          sessions: [],
+          modal: null,
+        }),
+      )
       if (roster.sessions.length > 0) {
         const tree = cloneTree()
         // Skip clearly unloadable roster rows (no PTY / already failed) so they
@@ -2208,15 +2209,19 @@ export function GharargahApp() {
           const sessionKey = entry.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
             ? entry.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
             : entry.tabId
+          const cwdRootUri = resolveWorkspaceRootUri(
+            entry.cwdRootUri,
+            workspace.folders,
+          )
           openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
             sessionKey,
             label: entry.label,
-            cwdRootUri: entry.cwdRootUri,
+            cwdRootUri,
             launchCommand: entry.launchCommand,
           })
           hydrateTerminalSession({
             tabId: entry.tabId,
-            cwdRootUri: entry.cwdRootUri,
+            cwdRootUri,
             launchCommand: entry.launchCommand,
             ptyId: entry.ptyId,
             status: entry.status,
@@ -2225,6 +2230,7 @@ export function GharargahApp() {
             agentId: entry.agentId,
             agentDriverId: entry.agentDriverId,
             agentThreadId: entry.agentThreadId,
+            lastActivityAt: entry.lastActivityAt,
           })
         }
         commitTree(tree)
@@ -2342,10 +2348,11 @@ export function GharargahApp() {
 
   const handleAppearanceSettingsChange = useCallback(
     (next: JetAppearanceSettings) => {
-      if (
-        appearanceSettings.sessionLayout === "tabs" &&
+      const leavingInline =
+        (appearanceSettings.sessionLayout === "tabs" ||
+          appearanceSettings.sessionLayout === "sidebar") &&
         next.sessionLayout === "cards"
-      ) {
+      if (leavingInline) {
         closeTerminalModal()
       }
       setAppearanceSettings(next)
@@ -2517,12 +2524,100 @@ export function GharargahApp() {
       agentId: terminal.agentId,
     })),
   )
+  const homeGroupsForSidebar = useMemo(
+    () =>
+      terminalGroups.map(g => ({
+        id: g.id,
+        name: g.name,
+        path: g.path,
+        rootUri: g.rootUri,
+        terminals: g.terminals.map(t => ({
+          tabId: t.tabId,
+          panelId: t.panelId,
+          label: t.label,
+          status: t.status,
+          exitCode: t.exitCode,
+          launchCommand: t.launchCommand,
+          agentId: t.agentId,
+        })),
+      })),
+    [terminalGroups],
+  )
+  const lastActivityBySession = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const s of listTerminalSessions()) {
+      if (s.lastActivityAt) map[s.tabId] = s.lastActivityAt
+    }
+    return map
+  }, [terminalSessionRevision])
+  const { projects: sidebarProjects, sessions: sidebarSessions } = useMemo(
+    () =>
+      mapHomeGroupsToSidebar(homeGroupsForSidebar, {
+        unreadBySession: notifications.unreadBySession,
+        lastActivityBySession,
+      }),
+    [
+      homeGroupsForSidebar,
+      notifications.unreadBySession,
+      lastActivityBySession,
+    ],
+  )
   const newSessionRootUri =
     (terminalModalTabId ? terminalCwdForTab(terminalModalTabId) : null) ??
     workspace.manager.activeFolder?.root.uri ??
     workspace.root?.uri ??
     workspace.folders[0]?.root.uri ??
     ""
+
+  const openSidebarSession = useCallback(
+    (session: SidebarSession) => {
+      openTerminalFromHome(session.panelId, session.id)
+      if (session.unreadCount > 0) {
+        void notifications.markSessionRead(session.id)
+      }
+    },
+    [openTerminalFromHome, notifications],
+  )
+
+  const renameSidebarSession = useCallback(
+    (session: SidebarSession) => {
+      const next = window.prompt("Rename session", session.title)?.trim()
+      if (!next || next === session.title) return
+      setTerminalCustomLabel(session.id, next)
+      workspace.tabRegistry.update(session.id, { label: next })
+      bumpTerminalActivity(session.id)
+      setTerminalSessionRevision(r => r + 1)
+    },
+    [workspace],
+  )
+
+  const duplicateSidebarSession = useCallback(
+    async (session: SidebarSession) => {
+      const rootUri =
+        sidebarProjects.find(p => p.id === session.projectId)?.rootUri ??
+        terminalCwdForTab(session.id)
+      if (!rootUri) return
+      const term = listTerminalSessions().find(s => s.tabId === session.id)
+      try {
+        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
+          label: `${session.title} copy`,
+          launchCommand: term?.launchCommand,
+        })
+        openTerminalModal(panelId, tabId, "terminal")
+      } catch (err) {
+        showGharargahToast(err instanceof Error ? err.message : String(err), {
+          variant: "destructive",
+        })
+      }
+    },
+    [sidebarProjects, openTerminalInWorkspace, openTerminalModal],
+  )
+
+  const isSidebarLayout = appearanceSettings.sessionLayout === "sidebar"
+  const isInlineWorkspace =
+    appearanceSettings.sessionLayout === "tabs" || isSidebarLayout
+  const [sidebarWorkspaceHost, setSidebarWorkspaceHost] =
+    useState<HTMLDivElement | null>(null)
 
   return (
     <OverlayControllerProvider
@@ -2619,6 +2714,104 @@ export function GharargahApp() {
               />
               ) : null}
 
+              {isSidebarLayout ? (
+                <SidebarProvider
+                  open={!appearanceSettings.sidebarCollapsed}
+                  onOpenChange={open =>
+                    setAppearanceSettings(prev => ({
+                      ...prev,
+                      sidebarCollapsed: !open,
+                    }))
+                  }
+                  style={sidebarWidthStyle(appearanceSettings.sidebarWidth)}
+                  className="h-full min-h-0"
+                >
+                  <div className="flex h-full min-h-0 w-full">
+                    <GharagahSidebar
+                      projects={sidebarProjects}
+                      sessions={sidebarSessions}
+                      projectFilterId={
+                        appearanceSettings.sidebarProjectFilterPath
+                      }
+                      onProjectFilterIdChange={id =>
+                        setAppearanceSettings(prev => ({
+                          ...prev,
+                          sidebarProjectFilterPath: id,
+                        }))
+                      }
+                      selectedSessionId={terminalModalTabId}
+                      onSelectSession={openSidebarSession}
+                      onNewSession={rootUri => {
+                        const target =
+                          rootUri ??
+                          workspace.manager.activeFolder?.root.uri ??
+                          workspace.folders[0]?.root.uri ??
+                          ""
+                        if (target) {
+                          void newAgentTabFromHome(target)
+                        }
+                      }}
+                      onAddProject={() => setAddWorkspaceOpen(true)}
+                      onSidebarWidthChange={widthPx =>
+                        setAppearanceSettings(prev => ({
+                          ...prev,
+                          sidebarWidth: widthPx,
+                        }))
+                      }
+                      sessionActions={{
+                        onOpen: openSidebarSession,
+                        onRename: renameSidebarSession,
+                        onMarkRead: s =>
+                          void notifications.markSessionRead(s.id),
+                        onMarkUnread: s =>
+                          void notifications.markSessionUnread(s.id),
+                        onDuplicate: s => void duplicateSidebarSession(s),
+                        onClose: s => closeTerminalTab(s.panelId, s.id),
+                        onDelete: s => closeTerminalTab(s.panelId, s.id),
+                      }}
+                      projectActions={{
+                        onNewSession: project =>
+                          void newAgentTabFromHome(project.rootUri),
+                        onOpenProject: project => {
+                          void openWorkspaceFolder(
+                            fileUriToPath(project.rootUri) ?? project.path,
+                            { replace: false },
+                          )
+                        },
+                        onRevealFolder: project => {
+                          void window.gharargah?.shell?.revealInFolder?.(
+                            project.rootUri,
+                          )
+                        },
+                        onRemoveProject: project =>
+                          removeProjectByRootUri(project.rootUri),
+                      }}
+                      onOpenSettings={() => setSettingsOpen(true)}
+                      serverLabel="localhost:4747"
+                    />
+                    <SidebarInset className="flex min-h-0 flex-col overflow-hidden">
+                      {!terminalModalTabId ? (
+                        <div
+                          className="flex h-8 shrink-0 items-center justify-end border-b border-border px-2"
+                          data-gharargah-sidebar-workspace-empty=""
+                        >
+                          <NotificationBell
+                            counts={notifications.counts}
+                            onClick={() => notifications.setOpen(true)}
+                            className="size-6 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
+                          />
+                        </div>
+                      ) : null}
+                      <div
+                        ref={setSidebarWorkspaceHost}
+                        className="relative min-h-0 flex-1 overflow-hidden"
+                        data-gharargah-sidebar-workspace=""
+                      />
+                    </SidebarInset>
+                  </div>
+                </SidebarProvider>
+              ) : null}
+
             <NotificationCenter
               open={notifications.open}
               onOpenChange={notifications.setOpen}
@@ -2651,14 +2844,14 @@ export function GharargahApp() {
               aria-atomic="true"
             />
 
-            {terminalModalTabId && terminalModalPanelId ? (
-              <TerminalSessionModal
+            {terminalModalTabId && terminalModalPanelId
+              ? ((node: ReactElement) =>
+                  isSidebarLayout && sidebarWorkspaceHost
+                    ? createPortal(node, sidebarWorkspaceHost)
+                    : node)(
+                  <TerminalSessionModal
                 open
-                  presentation={
-                    appearanceSettings.sessionLayout === "tabs"
-                      ? "inline"
-                      : "modal"
-                  }
+                  presentation={isInlineWorkspace ? "inline" : "modal"}
                 onOpenChange={open => {
                   if (!open) closeTerminalModal()
                 }}
@@ -2754,6 +2947,15 @@ export function GharargahApp() {
                   onOpenInApp={(rootUri, appId) =>
                     void openProjectInApp(rootUri, appId)
                   }
+                headerEnd={
+                  isSidebarLayout ? (
+                    <NotificationBell
+                      counts={notifications.counts}
+                      onClick={() => notifications.setOpen(true)}
+                      className="size-6 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
+                    />
+                  ) : null
+                }
                 agent={
                   agentLoading && !activeAgentThread ? (
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -3207,8 +3409,9 @@ export function GharargahApp() {
                       />
                   )
                 })()}
-              />
-            ) : null}
+              />,
+                )
+              : null}
             </div>
             {editorPanelId ? (
               <Suspense fallback={null}>
@@ -3225,6 +3428,13 @@ export function GharargahApp() {
             onOpenChange={open => {
               if (!open) setAgentCliPickerRootUri(null)
             }}
+            projects={workspace.folders.map(folder => ({
+              rootUri: folder.root.uri,
+              name: folder.root.name,
+              path: folder.root.path,
+            }))}
+            selectedRootUri={agentCliPickerRootUri}
+            onSelectedRootUriChange={setAgentCliPickerRootUri}
             onSelect={driver => {
               const rootUri = agentCliPickerRootUri
               setAgentCliPickerRootUri(null)

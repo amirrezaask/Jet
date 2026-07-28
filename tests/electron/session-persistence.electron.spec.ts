@@ -5,10 +5,21 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession, ensureCardsLayout } from "./_launch.js"
 
-const SESSION_ROSTER_STORAGE_KEY = "gharargah-session-roster-v2"
 const ptyAvailable = hasPtySpawn()
+
+type ServerSessionRoster = {
+  sessions: Array<{ ptyId?: string; status: string; tabId: string }>
+}
+
+async function fetchSessionRoster(page: import("@playwright/test").Page): Promise<ServerSessionRoster | null> {
+  return page.evaluate(async () => {
+    const res = await fetch("/api/v1/sessions")
+    if (!res.ok) return null
+    return (await res.json()) as ServerSessionRoster
+  })
+}
 
 test.describe("session refresh persistence", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
@@ -16,6 +27,7 @@ test.describe("session refresh persistence", () => {
   test("home terminal session card survives reload and reattaches", async () => {
     const { app, page } = await launchJet()
     try {
+      await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]")
       const state = await page.evaluate(() => window.__gharargahAgent!.getState())
       const workspaceName = state.workspaces[0]?.name ?? "sample-workspace"
@@ -32,23 +44,20 @@ test.describe("session refresh persistence", () => {
       await expectLocatorVisible(cards.first())
       await expect
         .poll(async () => {
-          const roster = await page.evaluate(key => {
-            const raw = localStorage.getItem(key)
-            if (!raw) return null
-            return JSON.parse(raw) as {
-              sessions: Array<{ ptyId?: string; status: string }>
-            }
-          }, SESSION_ROSTER_STORAGE_KEY)
+          const roster = await fetchSessionRoster(page)
           const session = roster?.sessions[0]
           return session?.ptyId && session.status === "running" ? session.ptyId : null
         }, { timeout: 20_000 })
         .toBeTruthy()
 
-      const ptyIdBefore = await page.evaluate(key => {
-        const raw = localStorage.getItem(key)
-        if (!raw) return null
-        return (JSON.parse(raw) as { sessions: Array<{ ptyId?: string }> }).sessions[0]?.ptyId ?? null
-      }, SESSION_ROSTER_STORAGE_KEY)
+      const ptyIdBefore = (await fetchSessionRoster(page))?.sessions[0]?.ptyId ?? null
+
+      // Client catalog is server-backed — no localStorage roster.
+      await expect
+        .poll(() =>
+          page.evaluate(() => localStorage.getItem("gharargah-session-roster-v2")),
+        )
+        .toBeNull()
 
       await page.keyboard.press("Escape")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
@@ -71,11 +80,7 @@ test.describe("session refresh persistence", () => {
         /Running|Idle|Failed/,
       )
 
-      const ptyIdAfter = await page.evaluate(key => {
-        const raw = localStorage.getItem(key)
-        if (!raw) return null
-        return (JSON.parse(raw) as { sessions: Array<{ ptyId?: string }> }).sessions[0]?.ptyId ?? null
-      }, SESSION_ROSTER_STORAGE_KEY)
+      const ptyIdAfter = (await fetchSessionRoster(page))?.sessions[0]?.ptyId ?? null
       expect(ptyIdAfter).toBe(ptyIdBefore)
 
       await cardsAfter.first().click()

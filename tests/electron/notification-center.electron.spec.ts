@@ -8,6 +8,9 @@ import {
 import { execCommand, launchJet, openNewAgentSession } from "./_launch.js"
 
 async function closeOverlays(page: import("./_launch.js").ShellDriver): Promise<void> {
+  await page.evaluate(async () => {
+    await window.__gharargahAgent?.executeCommand("gharargah.goHome")
+  }).catch(() => {})
   for (let i = 0; i < 3; i++) {
     await page.keyboard.press("Escape")
     await page.waitForTimeout(150)
@@ -25,7 +28,7 @@ test.describe("notification center", () => {
   test("ingest creates unread badge, panel, and open-session flow", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
       await expectSelectorVisible(page, "[data-gharargah-notification-bell]")
 
       await openNewAgentSession(page)
@@ -37,13 +40,18 @@ test.describe("notification center", () => {
         timeout: 10_000,
       })
 
-      const sessionId = await page.evaluate(() => {
-        const raw = localStorage.getItem("gharargah-session-roster-v2")
-        if (!raw) return null
-        const roster = JSON.parse(raw) as { sessions: Array<{ tabId: string }> }
-        return roster.sessions[0]?.tabId ?? null
-      })
-      expect(sessionId).toBeTruthy()
+      let sessionId: string | null = null
+      await expect
+        .poll(async () => {
+          sessionId = await page.evaluate(async () => {
+            const res = await fetch("/api/v1/sessions")
+            if (!res.ok) return null
+            const roster = (await res.json()) as { sessions: Array<{ tabId: string }> }
+            return roster.sessions[0]?.tabId ?? null
+          })
+          return sessionId
+        }, { timeout: 20_000 })
+        .toBeTruthy()
 
       const state = await page.evaluate(() => window.__gharargahAgent!.getState())
       const projectName = state.workspaces[0]?.name ?? "sample-workspace"
@@ -108,18 +116,24 @@ test.describe("notification center", () => {
   test("permission resolve + mark-all-read keep history semantics", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
       await openNewAgentSession(page)
       await closeOverlays(page)
 
-      const sessionId = await page.evaluate(() => {
-        const raw = localStorage.getItem("gharargah-session-roster-v2")
-        if (!raw) return null
-        return (
-          (JSON.parse(raw) as { sessions: Array<{ tabId: string }> }).sessions[0]
-            ?.tabId ?? null
-        )
-      })
+      let sessionId: string | null = null
+      await expect
+        .poll(async () => {
+          sessionId = await page.evaluate(async () => {
+            const res = await fetch("/api/v1/sessions")
+            if (!res.ok) return null
+            return (
+              ((await res.json()) as { sessions: Array<{ tabId: string }> }).sessions[0]
+                ?.tabId ?? null
+            )
+          })
+          return sessionId
+        }, { timeout: 20_000 })
+        .toBeTruthy()
 
       const eventId = `perm-e2e-${Date.now()}`
       await page.evaluate(
@@ -182,18 +196,24 @@ test.describe("notification center", () => {
   test("hook + osc dedupe; refresh keeps counts", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
       await openNewAgentSession(page)
       await closeOverlays(page)
 
-      const sessionId = await page.evaluate(() => {
-        const raw = localStorage.getItem("gharargah-session-roster-v2")
-        if (!raw) return null
-        return (
-          (JSON.parse(raw) as { sessions: Array<{ tabId: string }> }).sessions[0]
-            ?.tabId ?? null
-        )
-      })
+      let sessionId: string | null = null
+      await expect
+        .poll(async () => {
+          sessionId = await page.evaluate(async () => {
+            const res = await fetch("/api/v1/sessions")
+            if (!res.ok) return null
+            return (
+              ((await res.json()) as { sessions: Array<{ tabId: string }> }).sessions[0]
+                ?.tabId ?? null
+            )
+          })
+          return sessionId
+        }, { timeout: 20_000 })
+        .toBeTruthy()
 
       const turnId = `turn-dup-${Date.now()}`
       await page.evaluate(

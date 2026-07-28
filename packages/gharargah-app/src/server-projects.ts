@@ -1,6 +1,15 @@
-import type { WorkspaceFolder } from "@gharargah/workspace"
+import { normalizeAbsPath, type WorkspaceFolder } from "@gharargah/workspace"
 
-type ServerProject = { id: string; name: string; rootPath: string }
+export type ServerProject = {
+  id: string
+  name: string
+  rootPath: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** Legacy browser catalog — migrated once into host SQLite then cleared. */
+const LEGACY_PROJECT_CATALOG_KEY = "jet-project-catalog-v1"
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
@@ -9,25 +18,93 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export async function loadServerProjects(): Promise<ServerProject[]> {
+  return request<ServerProject[]>("/api/v1/projects")
+}
+
 export async function loadServerProjectPaths(): Promise<string[]> {
-  const projects = await request<ServerProject[]>("/api/v1/projects")
+  const projects = await loadServerProjects()
   return projects.map(project => project.rootPath)
 }
 
-export async function syncServerProjectCatalog(folders: WorkspaceFolder[]): Promise<void> {
-  const projects = await request<ServerProject[]>("/api/v1/projects")
-  const desired = new Set(folders.map(folder => folder.root.path))
-  const existing = new Set(projects.map(project => project.rootPath))
-  await Promise.all([
-    ...folders.filter(folder => !existing.has(folder.root.path)).map(folder =>
-      request<ServerProject>("/api/v1/projects", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rootPath: folder.root.path, name: folder.root.name }),
-      }),
-    ),
-    ...projects.filter(project => !desired.has(project.rootPath)).map(project =>
-      request<void>(`/api/v1/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }),
-    ),
-  ])
+export async function addServerProject(
+  rootPath: string,
+  name?: string,
+): Promise<ServerProject> {
+  return request<ServerProject>("/api/v1/projects", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rootPath, name }),
+  })
+}
+
+export async function removeServerProject(projectId: string): Promise<void> {
+  await request<void>(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+  })
+}
+
+/**
+ * Make host SQLite `projects` table match the live workspace folder set.
+ * Source of truth is the server DB after sync — no client Storage.
+ *
+ * Uses idempotent add (server realpaths) to collect keep-ids, then deletes
+ * the rest — avoids /var vs /private/var false remove+readd races.
+ */
+export async function syncServerProjectCatalog(
+  folders: WorkspaceFolder[],
+): Promise<void> {
+  const keepIds = new Set<string>()
+  for (const folder of folders) {
+    const project = await addServerProject(folder.root.path, folder.root.name)
+    keepIds.add(project.id)
+  }
+  const projects = await loadServerProjects()
+  await Promise.all(
+    projects
+      .filter(project => !keepIds.has(project.id))
+      .map(project => removeServerProject(project.id)),
+  )
+}
+
+/**
+ * One-shot: push any leftover localStorage catalog into SQLite, then delete key.
+ * Safe to call every boot — no-op when key absent.
+ */
+export async function migrateLegacyLocalProjectCatalog(
+  storage: Pick<Storage, "getItem" | "removeItem"> = localStorage,
+): Promise<void> {
+  let raw: string | null = null
+  try {
+    raw = storage.getItem(LEGACY_PROJECT_CATALOG_KEY)
+  } catch {
+    return
+  }
+  if (!raw) return
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      projects?: Array<{ path?: string }>
+    }
+    const paths = Array.isArray(parsed.projects)
+      ? parsed.projects
+          .map(item =>
+            typeof item?.path === "string" ? normalizeAbsPath(item.path) : null,
+          )
+          .filter((path): path is string => Boolean(path))
+      : []
+    for (const rootPath of paths) {
+      try {
+        await addServerProject(rootPath)
+      } catch {
+        /* path may be outside allowed roots or gone — skip */
+      }
+    }
+  } finally {
+    try {
+      storage.removeItem(LEGACY_PROJECT_CATALOG_KEY)
+    } catch {
+      /* ignore */
+    }
+  }
 }

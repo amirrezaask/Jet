@@ -1,5 +1,6 @@
 import type { GharargahPanelTree, WorkspaceService } from "@gharargah/workspace"
 import type { PanelId } from "@gharargah/shared"
+import { fileUriToPath } from "@gharargah/shared"
 import { detectSessionProvider } from "@gharargah/ui"
 import { listTerminalTabs } from "./tab-routing.js"
 import { terminalCwdForTab, terminalSessionForTab } from "./tabs/terminal-session.js"
@@ -25,6 +26,25 @@ export type TerminalExplorerGroup = {
 
 const OTHER_GROUP_ID = "gharargah:terminal-explorer:other"
 
+function normalizeAbsPath(p: string): string {
+  const trimmed = p.replace(/[/\\]+$/, "")
+  return trimmed || p
+}
+
+function resolveFolderForCwd(
+  cwdRootUri: string,
+  workspace: WorkspaceService,
+): { root: { uri: string; path: string; name: string }; id: string } | null {
+  const exact = workspace.folders.find(folder => folder.root.uri === cwdRootUri)
+  if (exact) return exact
+  const cwdPath = normalizeAbsPath(fileUriToPath(cwdRootUri))
+  return (
+    workspace.folders.find(
+      folder => normalizeAbsPath(folder.root.path) === cwdPath,
+    ) ?? null
+  )
+}
+
 export function buildTerminalExplorerGroups(
   treeOrTrees: GharargahPanelTree | GharargahPanelTree[],
   workspace: WorkspaceService,
@@ -41,15 +61,13 @@ export function buildTerminalExplorerGroups(
   const byRootUri = new Map<string, TerminalExplorerEntry[]>()
   const orphans: TerminalExplorerEntry[] = []
 
-  const folderByRootUri = new Map(
-    workspace.folders.map(folder => [folder.root.uri, folder]),
-  )
-
   for (const { panelId, tabId } of terminals) {
     const session = terminalSessionForTab(tabId)
     // Failed / unloadable sessions must not appear as home cards.
     if (session?.status === "failed") continue
-    const cwdRootUri = terminalCwdForTab(tabId) || workspace.root?.uri || ""
+    const rawCwd = terminalCwdForTab(tabId) || workspace.root?.uri || ""
+    const folder = resolveFolderForCwd(rawCwd, workspace)
+    const cwdRootUri = folder?.root.uri ?? rawCwd
     const label = workspace.tabRegistry.get(tabId)?.label ?? "Terminal"
     const entry: TerminalExplorerEntry = {
       tabId,
@@ -64,10 +82,10 @@ export function buildTerminalExplorerGroups(
         detectSessionProvider(session?.launchCommand),
     }
 
-    if (folderByRootUri.has(cwdRootUri)) {
-      const list = byRootUri.get(cwdRootUri) ?? []
+    if (folder) {
+      const list = byRootUri.get(folder.root.uri) ?? []
       list.push(entry)
-      byRootUri.set(cwdRootUri, list)
+      byRootUri.set(folder.root.uri, list)
     } else {
       orphans.push(entry)
     }

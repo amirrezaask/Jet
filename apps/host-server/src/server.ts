@@ -7,7 +7,7 @@ import { getLspSession, uriToPath } from "@gharargah/node-host"
 import type { HostConfig } from "./config.js"
 import { createRuntime, dispatch, shutdownRuntime, type HostRuntime } from "./dispatch.js"
 import { EventHub } from "./events.js"
-import { ProjectDatabase } from "./persistence.js"
+import { parseSessionRosterBody, ProjectDatabase } from "./persistence.js"
 import { pathAllowed, pathStaysWithin } from "./sandbox.js"
 
 const VERSION = "0.0.1"
@@ -137,6 +137,40 @@ async function handleHttp(
       })
     }
     return
+  }
+
+  if (pathname === "/api/v1/sessions") {
+    if (req.method === "GET") {
+      sendJson(res, 200, runtime.db.getSessionRoster())
+      return
+    }
+    if (req.method === "PUT") {
+      const body = await readJson(req)
+      const roster = parseSessionRosterBody(body)
+      if (!roster) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_SESSION_ROSTER",
+            message: "session roster body invalid",
+            details: {},
+          },
+        })
+        return
+      }
+      try {
+        const saved = runtime.db.replaceSessionRoster(roster)
+        sendJson(res, 200, saved)
+      } catch (error) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_SESSION_ROSTER",
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          },
+        })
+      }
+      return
+    }
   }
 
   if (pathname === "/api/v1/projects") {

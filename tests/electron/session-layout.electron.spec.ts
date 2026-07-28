@@ -47,9 +47,9 @@ test.describe("session layout", () => {
           `file://${workspacePath}`,
           workspacePath,
         )
-        const raw = localStorage.getItem("gharargah-session-roster-v2")
-        const roster = raw
-          ? (JSON.parse(raw) as {
+        const res = await fetch("/api/v1/sessions")
+        const roster = res.ok
+          ? ((await res.json()) as {
               sessions: Array<{
                 agentId?: string
                 agentDriverId?: string
@@ -110,18 +110,19 @@ test.describe("session layout", () => {
       await modal.getByRole("button", { name: "Send message" }).click()
       await expect
         .poll(async () => {
-          const raw = await page.evaluate(() =>
-            localStorage.getItem("gharargah-session-roster-v2"),
-          )
-          if (!raw) return null
-          const roster = JSON.parse(raw) as {
-            sessions: Array<{
-              agentId?: string
-              agentDriverId?: string
-              agentThreadId?: string
-            }>
-          }
-          return roster.sessions.at(-1) ?? null
+          const session = await page.evaluate(async () => {
+            const res = await fetch("/api/v1/sessions")
+            if (!res.ok) return null
+            const roster = (await res.json()) as {
+              sessions: Array<{
+                agentId?: string
+                agentDriverId?: string
+                agentThreadId?: string
+              }>
+            }
+            return roster.sessions.at(-1) ?? null
+          })
+          return session
         })
         .toEqual(
           expect.objectContaining({
@@ -259,20 +260,20 @@ test.describe("session layout", () => {
             const body = modal?.querySelector(
               "[data-gharargah-terminal-modal-body]",
             )
-            const footer = document.querySelector(
+            const header = document.querySelector(
               "[data-gharargah-terminal-modal-header]",
             )
             const tabs = document.querySelector("[data-gharargah-session-tabs]")
-            if (!body || !footer || !tabs) return false
-            const tabsBeforeBody =
-              (tabs.compareDocumentPosition(body) &
+            if (!body || !header || !tabs) return false
+            const tabsBeforeHeader =
+              (tabs.compareDocumentPosition(header) &
                 Node.DOCUMENT_POSITION_FOLLOWING) !==
               0
-            const bodyBeforeFooter =
-              (body.compareDocumentPosition(footer) &
+            const headerBeforeBody =
+              (header.compareDocumentPosition(body) &
                 Node.DOCUMENT_POSITION_FOLLOWING) !==
               0
-            return tabsBeforeBody && bodyBeforeFooter
+            return tabsBeforeHeader && headerBeforeBody
           }),
         )
         .toBe(true)

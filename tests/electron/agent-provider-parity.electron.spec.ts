@@ -48,9 +48,9 @@ async function readProviderThread(
   providerId: string,
 ): Promise<AgentThread | null> {
   return page.evaluate(async id => {
-    const raw = localStorage.getItem("gharargah-session-roster-v2")
-    if (!raw) return null
-    const roster = JSON.parse(raw) as {
+    const res = await fetch("/api/v1/sessions")
+    if (!res.ok) return null
+    const roster = (await res.json()) as {
       sessions: Array<{ agentId?: string; agentThreadId?: string }>
     }
     const session = [...roster.sessions].reverse().find(item => item.agentId === id)
@@ -182,10 +182,10 @@ test.describe("unified agent provider UI", () => {
           .toBe("unknown")
         const createdThreads = (await listThreadIds(page)).filter(id => !threadsBefore.has(id))
         expect(createdThreads).toHaveLength(0)
-        const unboundRoster = await page.evaluate(() => {
-          const raw = localStorage.getItem("gharargah-session-roster-v2")
-          if (!raw) return null
-          const roster = JSON.parse(raw) as {
+        const unboundRoster = await page.evaluate(async () => {
+          const res = await fetch("/api/v1/sessions")
+          if (!res.ok) return null
+          const roster = (await res.json()) as {
             sessions: Array<{
               agentId?: string
               agentDriverId?: string

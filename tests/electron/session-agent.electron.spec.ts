@@ -131,9 +131,9 @@ test.describe("project session agent chat", () => {
         await expectLocatorContainsText(modal, provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "OpenCode")
 
         const binding = await page.evaluate(async providerId => {
-          const raw = localStorage.getItem("gharargah-session-roster-v2")
-          if (!raw) return null
-          const roster = JSON.parse(raw) as {
+          const res = await fetch("/api/v1/sessions")
+          if (!res.ok) return null
+          const roster = (await res.json()) as {
             sessions: Array<{ agentId?: string; agentDriverId?: string }>
           }
           return roster.sessions.find(item => item.agentId === providerId) ?? null
@@ -172,18 +172,20 @@ test.describe("project session agent chat", () => {
       await expect
         .poll(
           async () => {
-            const raw = await page.evaluate(() => localStorage.getItem("gharargah-session-roster-v2"))
-            if (!raw) return null
-            const roster = JSON.parse(raw) as {
-              sessions: Array<{
-                agentId?: string
-                agentDriverId?: string
-                agentThreadId?: string
-              }>
-            }
-            const session =
-              roster.sessions.find(item => item.agentId === "cursor") ?? roster.sessions[0]
-            return session?.agentThreadId ?? null
+            return page.evaluate(async () => {
+              const res = await fetch("/api/v1/sessions")
+              if (!res.ok) return null
+              const roster = (await res.json()) as {
+                sessions: Array<{
+                  agentId?: string
+                  agentDriverId?: string
+                  agentThreadId?: string
+                }>
+              }
+              const session =
+                roster.sessions.find(item => item.agentId === "cursor") ?? roster.sessions[0]
+              return session?.agentThreadId ?? null
+            })
           },
           { timeout: 20_000 },
         )
@@ -191,9 +193,9 @@ test.describe("project session agent chat", () => {
       await expectLocatorContainsText(modal, "Confirm the session driver")
 
       const persisted = await page.evaluate(async () => {
-        const raw = localStorage.getItem("gharargah-session-roster-v2")
-        if (!raw) return null
-        const roster = JSON.parse(raw) as {
+        const res = await fetch("/api/v1/sessions")
+        if (!res.ok) return null
+        const roster = (await res.json()) as {
           version: number
           sessions: Array<{
             agentId?: string

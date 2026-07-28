@@ -17,6 +17,7 @@ export type PersistedSessionEntry = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  lastActivityAt?: string
 }
 
 export type PersistedSessionModal = {
@@ -96,6 +97,8 @@ function parseEntry(raw: unknown): PersistedSessionEntry | null {
   if (agentDriverId) entry.agentDriverId = agentDriverId
   const agentThreadId = asNonEmptyString(item.agentThreadId)
   if (agentThreadId) entry.agentThreadId = agentThreadId
+  const lastActivityAt = asNonEmptyString(item.lastActivityAt)
+  if (lastActivityAt) entry.lastActivityAt = lastActivityAt
   return entry
 }
 
