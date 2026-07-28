@@ -1,5 +1,12 @@
-import { Code2, SquareTerminal } from "lucide-react"
-import { ClaudeAI, CursorIcon, OpenAI, type Icon } from "../../agents/composer/Icons.js"
+import { SquareTerminal } from "lucide-react"
+import {
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  OpenAI,
+  OpenCodeIcon,
+  type Icon,
+} from "../../agents/composer/Icons.js"
 import { cn } from "@/lib/utils.js"
 import type { SidebarSessionStatus } from "./types.js"
 
@@ -23,8 +30,10 @@ export function AgentProviderIcon({
         : id === "codex"
           ? OpenAI
           : id === "opencode"
-            ? Code2
-            : null
+            ? OpenCodeIcon
+            : id === "grok"
+              ? GrokIcon
+              : null
   if (IconComp) return <IconComp className={cls} aria-hidden />
   return <SquareTerminal className={cn(cls, "text-muted-foreground")} aria-hidden />
 }

@@ -1,11 +1,12 @@
 import { useMemo } from "react"
-import { Bot, Folder, SquareTerminal } from "lucide-react"
+import { Folder } from "lucide-react"
 import { PaletteShell, type PaletteShellItem } from "../components/palette/PaletteShell.js"
 import { cn } from "@/lib/utils.js"
 import {
   AGENT_CLI_DRIVERS,
   type AgentCliDriver,
 } from "./agent-cli-drivers.js"
+import { AgentProviderIcon } from "./sidebar/SessionStatusIndicator.js"
 
 export type AgentCliPickerProject = {
   rootUri: string
@@ -98,27 +99,30 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
       onSelect={onSelect}
       emptyLabel="No matching agents."
       statusRow={projectChips}
+      itemClassName="mx-1.5 justify-start px-2.5 py-2.5 text-left"
+      estimateSize={undefined}
       renderItem={driver => (
-        <>
-          {driver.id === "shell" ? (
-            <SquareTerminal className="size-4 shrink-0 text-muted-foreground" />
-          ) : (
-            <Bot className="size-4 shrink-0 text-muted-foreground" />
-          )}
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex w-full min-w-0 items-center justify-start gap-3 text-left">
+          <span
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/50"
+            aria-hidden
+          >
+            <AgentProviderIcon agent={driver.id} className="size-4" />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
             <span
               data-gharargah-agent-cli-option={driver.id}
-              className="truncate text-sm font-medium text-foreground"
+              className="w-full truncate text-left text-sm font-medium text-foreground"
             >
               {driver.label}
             </span>
-            <span className="truncate font-mono text-3xs text-muted-foreground">
+            <span className="w-full truncate text-left font-mono text-3xs text-muted-foreground">
               {driver.command ?? "login shell"}
               {" · "}
               {driver.description}
             </span>
           </span>
-        </>
+        </span>
       )}
     />
   )
