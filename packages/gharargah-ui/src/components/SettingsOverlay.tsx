@@ -50,10 +50,30 @@ export type SettingsOverlayProps = {
   settings: JetAppearanceSettings
   onSettingsChange: (settings: JetAppearanceSettings) => void
   onReset: () => void
+  serverConnection?: DesktopServerConnection | null
+  onServerConnect?: (serverUrl: string | null) => Promise<DesktopServerConnection>
   notificationPrefs?: import("@gharargah/shared").NotificationPreferences | null
   onNotificationPrefsChange?: (
     patch: Partial<import("@gharargah/shared").NotificationPreferences>,
   ) => void
+}
+
+export type DesktopServerConnection = {
+  activeUrl: string
+  localUrl: string
+  mode: "local" | "remote"
+  startupError?: string | null
+}
+
+export type GharargahDesktopBridge = {
+  getServerConnection: () => Promise<DesktopServerConnection>
+  connectToServer: (serverUrl: string | null) => Promise<DesktopServerConnection>
+}
+
+declare global {
+  interface Window {
+    gharargahDesktop?: GharargahDesktopBridge
+  }
 }
 
 const UI_FONT_PRESETS: { id: string; label: string; value: string }[] = [
@@ -184,12 +204,23 @@ export function SettingsOverlay({
   settings,
   onSettingsChange,
   onReset,
+  serverConnection,
+  onServerConnect,
   notificationPrefs: notificationPrefsProp,
   onNotificationPrefsChange: onNotificationPrefsChangeProp,
 }: SettingsOverlayProps) {
   const [localPrefs, setLocalPrefs] = useState<
     import("@gharargah/shared").NotificationPreferences | null
   >(null)
+  const [remoteServerUrl, setRemoteServerUrl] = useState("")
+  const [serverPending, setServerPending] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || !serverConnection) return
+    setRemoteServerUrl(serverConnection.mode === "remote" ? serverConnection.activeUrl : "")
+    setServerError(serverConnection.startupError ?? null)
+  }, [open, serverConnection])
 
   useEffect(() => {
     if (!open || notificationPrefsProp) return
@@ -206,6 +237,19 @@ export function SettingsOverlay({
       if (!api) return
       void api.setPreferences(patch).then(setLocalPrefs)
     })
+
+  const connectServer = async (serverUrl: string | null) => {
+    if (!onServerConnect || serverPending) return
+    setServerPending(true)
+    setServerError(null)
+    try {
+      await onServerConnect(serverUrl)
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setServerPending(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -224,7 +268,7 @@ export function SettingsOverlay({
             <div className="min-w-0">
               <DialogTitle className="text-base">Settings</DialogTitle>
               <DialogDescription className="mt-1">
-                Session layout, theme, typography, and notifications.
+                Server, session layout, theme, typography, and notifications.
               </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-1">
@@ -243,6 +287,84 @@ export function SettingsOverlay({
 
         <ScrollArea className="min-h-0">
           <div className="flex max-h-[calc(min(36rem,100vh-3rem)-4.5rem)] flex-col gap-6 p-4">
+            {serverConnection && onServerConnect ? (
+              <section className="flex flex-col gap-3" data-gharargah-server-settings="">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Server</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Electron includes a local server. Connecting elsewhere reloads the app from
+                    that Gharargah server.
+                  </p>
+                </div>
+                <SettingsField
+                  label="Current server"
+                  detail={serverConnection.mode === "local" ? "Bundled with this app" : "Remote"}
+                >
+                  <div
+                    className="truncate rounded-md border border-border bg-muted/30 px-2.5 py-2 font-mono text-3xs text-foreground"
+                    data-gharargah-active-server=""
+                  >
+                    {serverConnection.activeUrl}
+                  </div>
+                </SettingsField>
+                <SettingsField
+                  label="Remote server URL"
+                  detail="Root http(s) origin, for example https://gharargah.example."
+                >
+                  <div className="flex gap-2">
+                    <Input
+                      type="url"
+                      inputMode="url"
+                      spellCheck={false}
+                      aria-label="Remote server URL"
+                      placeholder="https://gharargah.example"
+                      value={remoteServerUrl}
+                      onChange={event => setRemoteServerUrl(event.target.value)}
+                      onKeyDown={event => {
+                        if (event.key === "Enter" && remoteServerUrl.trim()) {
+                          event.preventDefault()
+                          void connectServer(remoteServerUrl)
+                        }
+                      }}
+                      className="h-8 min-w-0 flex-1 font-mono text-3xs"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={serverPending || !remoteServerUrl.trim()}
+                      onClick={() => void connectServer(remoteServerUrl)}
+                      data-gharargah-connect-remote=""
+                    >
+                      {serverPending ? "Connecting…" : "Connect"}
+                    </Button>
+                  </div>
+                </SettingsField>
+                <div className="flex items-center justify-between gap-3">
+                  <p
+                    className="min-w-0 text-xs text-destructive"
+                    role={serverError ? "alert" : undefined}
+                    data-gharargah-server-error=""
+                  >
+                    {serverError}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      serverPending ||
+                      (serverConnection.mode === "local" && !serverConnection.startupError)
+                    }
+                    onClick={() => void connectServer(null)}
+                    data-gharargah-use-bundled-server=""
+                    className="shrink-0"
+                  >
+                    Use bundled server
+                  </Button>
+                </div>
+              </section>
+            ) : null}
+
             <section className="flex flex-col gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Session layout</h3>

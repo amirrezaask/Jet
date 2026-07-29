@@ -168,7 +168,7 @@ test.describe("session Git and editor workspaces", () => {
         [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
           .map(tab => tab.getAttribute("aria-label") ?? "")
           .join(""),
-      )).toContain("TerminalEditorGitTODOs")
+      )).toContain("AgentEditorGitTerminal")
 
       await openQuickFile(page, "index", "src/index.ts")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")

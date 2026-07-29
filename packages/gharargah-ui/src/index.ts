@@ -24,6 +24,7 @@ export {
   StatusBadge,
   SessionTabBar,
   TerminalSessionModal,
+  SessionTerminalWorkspace,
   TERMINAL_MODAL_SESSION_LIST_ID,
   ModalEditorPane,
   NewSessionButton,
@@ -47,6 +48,8 @@ export {
   type ModalEditorBuffer,
   type ModalEditorPaneProps,
   type TerminalSessionModalProps,
+  type SessionTerminalItem,
+  type SessionTerminalWorkspaceProps,
   type AgentSessionHeaderMeta,
   type SessionCardModel,
   type SessionCardStatus,
@@ -126,6 +129,8 @@ export {
   DEFAULT_UI_FONT_FAMILY,
   DEFAULT_MONO_FONT_FAMILY,
   type JetAppearanceSettings,
+  type DesktopServerConnection,
+  type GharargahDesktopBridge,
   type SessionLayout,
 } from "./components/SettingsOverlay.js"
 export { StatusBar } from "./status/StatusBar.js"

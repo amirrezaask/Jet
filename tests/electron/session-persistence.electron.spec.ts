@@ -59,7 +59,7 @@ test.describe("session refresh persistence", () => {
         )
         .toBeNull()
 
-      await page.keyboard.press("Escape")
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectLocatorVisible(cards.first())
 

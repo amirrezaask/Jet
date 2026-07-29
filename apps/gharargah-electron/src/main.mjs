@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * Thin Electron shell: spawn TS host/agent (+ Vite in --dev), load the shared web SPA.
- * No preload, no separate renderer entry — same packages/gharargah-app main.tsx as the browser.
+ * A narrow preload bridge lets Settings select the bundled server or a remote Gharargah origin.
  *
  * Packaged (DMG): backends + Node live under process.resourcesPath/gharargah.
  * Dev / repo prod: spawn from monorepo via tsx (same as pnpm electron).
  */
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, ipcMain } from "electron"
 import {
   DEFAULT_HOST,
   DEFAULT_HOST_PORT,
@@ -20,6 +20,12 @@ import {
   waitForUrl,
   wireChildLifecycle,
 } from "./spawn-backend.mjs"
+import {
+  normalizeServerUrl,
+  readServerSelection,
+  SERVER_SELECTION_FILENAME,
+  writeServerSelection,
+} from "./server-selection.mjs"
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const repoRoot = path.resolve(packageDir, "../..")
@@ -34,6 +40,8 @@ const isDev = process.argv.includes("--dev") || process.env.GHARARGAH_ELECTRON_D
 const hostPort = Number(process.env.JET_PORT ?? DEFAULT_HOST_PORT)
 const host = process.env.JET_HOST ?? DEFAULT_HOST
 const vitePort = Number(process.env.JET_WEB_PORT ?? DEFAULT_VITE_PORT)
+const localServerUrl = `http://${host}:${hostPort}`
+const localAppUrl = isDev ? `http://${host}:${vitePort}` : localServerUrl
 
 /** @returns {string | undefined} */
 function resolveRuntimeRoot() {
@@ -79,8 +87,12 @@ async function urlReady(url) {
 
 const children = []
 let stopChildren = () => {}
+let localBackendsReady = false
+let activeServerUrl = localServerUrl
+let startupError = null
 
-async function startBackends() {
+async function ensureLocalBackends() {
+  if (localBackendsReady) return
   const healthUrl = `http://${host}:${hostPort}/health`
   const viteUrl = `http://${host}:${vitePort}/`
   const hostUp = await urlReady(healthUrl)
@@ -113,9 +125,93 @@ async function startBackends() {
 
   await waitForUrl(healthUrl)
   if (isDev) await waitForUrl(viteUrl)
+  localBackendsReady = true
 }
 
-function createWindow() {
+function healthUrl(serverUrl) {
+  return new URL("/health", `${serverUrl}/`).toString()
+}
+
+async function waitForGharargahServer(serverUrl, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  let lastError = null
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(healthUrl(serverUrl))
+      if (response.ok) {
+        const payload = await response.json()
+        if (payload?.status === "ok") return
+      }
+      lastError = new Error(`Health check returned HTTP ${response.status}`)
+    } catch (error) {
+      lastError = error
+    }
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  const detail = lastError instanceof Error ? `: ${lastError.message}` : ""
+  throw new Error(`Could not reach a Gharargah server at ${serverUrl}${detail}`)
+}
+
+function serverConnection() {
+  return {
+    activeUrl: activeServerUrl,
+    localUrl: localServerUrl,
+    mode: activeServerUrl === localServerUrl ? "local" : "remote",
+    startupError,
+  }
+}
+
+function queueWindowNavigation(serverUrl) {
+  const targetUrl = serverUrl === localServerUrl ? localAppUrl : serverUrl
+  setTimeout(() => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      void win.loadURL(targetUrl)
+    }
+  }, 0)
+}
+
+async function selectInitialServer(configPath) {
+  const selectedServerUrl = readServerSelection(configPath)
+  if (selectedServerUrl) {
+    try {
+      await waitForGharargahServer(selectedServerUrl, 5_000)
+      activeServerUrl = selectedServerUrl
+      return selectedServerUrl
+    } catch (error) {
+      startupError = error instanceof Error ? error.message : String(error)
+      console.error(`[gharargah-electron] ${startupError}; falling back to bundled server`)
+    }
+  }
+  await ensureLocalBackends()
+  activeServerUrl = localServerUrl
+  return localAppUrl
+}
+
+function registerServerIpc(configPath) {
+  ipcMain.handle("gharargah:server:get", () => serverConnection())
+  ipcMain.handle("gharargah:server:connect", async (_event, requestedUrl) => {
+    const remoteUrl =
+      typeof requestedUrl === "string" && requestedUrl.trim()
+        ? normalizeServerUrl(requestedUrl)
+        : null
+
+    if (remoteUrl) {
+      await waitForGharargahServer(remoteUrl, 10_000)
+      writeServerSelection(configPath, remoteUrl)
+      activeServerUrl = remoteUrl
+    } else {
+      await ensureLocalBackends()
+      writeServerSelection(configPath, null)
+      activeServerUrl = localServerUrl
+    }
+    startupError = null
+    const connection = serverConnection()
+    queueWindowNavigation(activeServerUrl)
+    return connection
+  })
+}
+
+function createWindow(url) {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -128,10 +224,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(packageDir, "src", "preload.cjs"),
     },
   })
-
-  const url = isDev ? `http://${host}:${vitePort}/` : `http://${host}:${hostPort}/`
 
   win.once("ready-to-show", () => win.show())
   void win.loadURL(url)
@@ -142,17 +237,22 @@ app.whenReady().then(async () => {
   if (process.platform === "darwin" && app.dock) {
     app.dock.setIcon(path.join(packageDir, "assets", "icon.png"))
   }
+  const configPath = path.join(app.getPath("userData"), SERVER_SELECTION_FILENAME)
+  registerServerIpc(configPath)
+  let initialUrl
   try {
-    await startBackends()
+    initialUrl = await selectInitialServer(configPath)
   } catch (err) {
     console.error("[gharargah-electron] backend startup failed:", err)
     stopChildren()
     app.exit(1)
     return
   }
-  createWindow()
+  createWindow(initialUrl)
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow(activeServerUrl === localServerUrl ? localAppUrl : activeServerUrl)
+    }
   })
 })
 

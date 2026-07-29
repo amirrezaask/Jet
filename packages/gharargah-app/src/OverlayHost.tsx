@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import {
   CommandPalette,
   CdOverlay,
@@ -9,6 +10,7 @@ import {
   GotoLineModal,
   showGharargahToast,
   bundledThemeList,
+  type DesktopServerConnection,
 } from "@gharargah/ui"
 import { useOverlayController } from "./hooks/OverlayController.js"
 
@@ -16,6 +18,13 @@ export default function OverlayHost() {
   const { state, workspace, handlers } = useOverlayController()
   const { open, appearanceSettings, projects, paletteCommands, terminalGroups } = state
   const workspaceFolders = workspace.folders
+  const desktopBridge = window.gharargahDesktop
+  const [serverConnection, setServerConnection] = useState<DesktopServerConnection | null>(null)
+
+  useEffect(() => {
+    if (!open.settings || !desktopBridge) return
+    void desktopBridge.getServerConnection().then(setServerConnection).catch(() => {})
+  }, [desktopBridge, open.settings])
 
   return (
     <>
@@ -148,6 +157,16 @@ export default function OverlayHost() {
           settings={appearanceSettings}
           onSettingsChange={handlers.onAppearanceSettingsChange}
           onReset={handlers.onResetAppearanceSettings}
+          serverConnection={serverConnection}
+          onServerConnect={
+            desktopBridge
+              ? async serverUrl => {
+                  const connection = await desktopBridge.connectToServer(serverUrl)
+                  setServerConnection(connection)
+                  return connection
+                }
+              : undefined
+          }
         />
       ) : null}
 

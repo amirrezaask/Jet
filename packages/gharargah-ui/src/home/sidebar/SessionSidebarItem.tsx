@@ -55,14 +55,14 @@ export function SessionSidebarItem({
       }${unreadLabel ? `, ${unreadLabel}` : ""}`}
       onClick={() => onSelect(session)}
       className={cn(
-        "h-auto min-h-8 items-start gap-2 py-1.5",
+        "h-auto min-h-8 items-center gap-2 py-1.5",
         selected &&
           "border-l-2 border-l-primary bg-primary/10 data-[active=true]:bg-primary/10",
         session.unreadCount > 0 && "font-medium",
       )}
       tooltip={compact ? session.title : undefined}
     >
-      <AgentProviderIcon agent={session.agent} className="mt-0.5" />
+      <AgentProviderIcon agent={session.agent} />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
         <span className="flex items-center gap-1.5">
           <span

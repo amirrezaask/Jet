@@ -147,7 +147,7 @@ test.describe("project session agent chat", () => {
       await openNewAgentSession(page, "cursor")
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
-      await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 5)
+      await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 4)
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
       await expectLocatorContainsText(modal, "Cursor")
 
@@ -266,7 +266,7 @@ test.describe("project session agent chat", () => {
         )
         .toBe("Send follow-up")
 
-      for (const mode of ["terminal", "editor", "git", "todos"] as const) {
+      for (const mode of ["terminal", "editor", "git"] as const) {
         await modal.locator(`[data-gharargah-session-mode-tab="${mode}"]`).click()
         await expectSelectorVisible(
           page,
@@ -274,6 +274,13 @@ test.describe("project session agent chat", () => {
         )
         await expectLocatorCount(modal.locator(`[data-gharargah-session-pane="${mode}"][data-active]`), 1)
       }
+      await page.evaluate(() =>
+        window.__gharargahAgent!.executeCommand("dialog.showTodos"),
+      )
+      await expectLocatorCount(
+        modal.locator('[data-gharargah-session-pane="todos"][data-active]'),
+        1,
+      )
 
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(modal, 0)

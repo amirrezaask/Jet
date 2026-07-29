@@ -4,6 +4,8 @@ export type TerminalSessionState = {
   tabId: string
   cwdRootUri: string
   launchCommand?: string
+  /** Parent ADE session for a generic shell opened from its Terminal tool. */
+  parentSessionTabId?: string
   ptyId?: string
   status: TerminalSessionStatus
   exitCode?: number
@@ -24,6 +26,15 @@ const pendingExitByPtyId = new Map<
   { exitCode: number; signal?: number }
 >()
 const listeners = new Set<(tabId: string) => void>()
+const sessionTerminalWorkspaces = new Map<
+  string,
+  {
+    tabIds: string[]
+    activeTabId?: string
+    nextOrdinal: number
+  }
+>()
+let nextSessionTerminalId = 0
 
 function notify(tabId: string): void {
   for (const listener of listeners) listener(tabId)
@@ -42,6 +53,10 @@ export function registerTerminalSession(
   tabId: string,
   cwdRootUri: string,
   launchCommand?: string,
+  options?: {
+    parentSessionTabId?: string
+    customLabel?: string
+  },
 ): void {
   const existing = sessions.get(tabId)
   const now = new Date().toISOString()
@@ -49,12 +64,14 @@ export function registerTerminalSession(
     tabId,
     cwdRootUri,
     launchCommand,
+    parentSessionTabId:
+      options?.parentSessionTabId ?? existing?.parentSessionTabId,
     ptyId: existing?.ptyId,
     status: existing?.status ?? "starting",
     exitCode: existing?.exitCode,
     signal: existing?.signal,
     generation: existing?.generation ?? 0,
-    customLabel: existing?.customLabel,
+    customLabel: options?.customLabel ?? existing?.customLabel,
     agentId: existing?.agentId,
     agentDriverId: existing?.agentDriverId,
     agentThreadId: existing?.agentThreadId,
@@ -178,17 +195,131 @@ export function restartTerminalSession(tabId: string): void {
 }
 
 export function clearTerminalSession(tabId: string): void {
+  const workspace = sessionTerminalWorkspaces.get(tabId)
+  if (workspace) {
+    for (const childTabId of [...workspace.tabIds]) {
+      clearTerminalSession(childTabId)
+    }
+    sessionTerminalWorkspaces.delete(tabId)
+  }
   const session = sessions.get(tabId)
   if (session?.ptyId) {
     tabByPtyId.delete(session.ptyId)
     pendingExitByPtyId.delete(session.ptyId)
   }
   sessions.delete(tabId)
+  if (session?.parentSessionTabId) {
+    const parentWorkspace = sessionTerminalWorkspaces.get(
+      session.parentSessionTabId,
+    )
+    if (parentWorkspace) {
+      const removedIndex = parentWorkspace.tabIds.indexOf(tabId)
+      parentWorkspace.tabIds = parentWorkspace.tabIds.filter(
+        candidate => candidate !== tabId,
+      )
+      if (parentWorkspace.activeTabId === tabId) {
+        parentWorkspace.activeTabId =
+          parentWorkspace.tabIds[
+            Math.min(
+              Math.max(0, removedIndex - 1),
+              parentWorkspace.tabIds.length - 1,
+            )
+          ] ?? session.parentSessionTabId
+      }
+      notify(session.parentSessionTabId)
+    }
+  }
   notify(tabId)
 }
 
 export function listTerminalSessions(): TerminalSessionState[] {
-  return [...sessions.values()]
+  return [...sessions.values()].filter(session => !session.parentSessionTabId)
+}
+
+/**
+ * Create a regular shell that belongs to an ADE session. These shells are kept
+ * out of the Mission Control roster: they are Terminal-tool tabs, not sessions.
+ */
+export function addSessionTerminal(
+  parentSessionTabId: string,
+  options?: { minimumOrdinal?: number },
+): TerminalSessionState | undefined {
+  const parent = sessions.get(parentSessionTabId)
+  if (!parent) return undefined
+  const minimumOrdinal = Math.max(1, options?.minimumOrdinal ?? 1)
+  const workspace = sessionTerminalWorkspaces.get(parentSessionTabId) ?? {
+    tabIds: [],
+    nextOrdinal: minimumOrdinal,
+  }
+  workspace.nextOrdinal = Math.max(workspace.nextOrdinal, minimumOrdinal)
+  const ordinal = workspace.nextOrdinal
+  workspace.nextOrdinal += 1
+  nextSessionTerminalId += 1
+  const tabId = `${parentSessionTabId}:shell:${Date.now().toString(36)}:${nextSessionTerminalId}`
+  registerTerminalSession(tabId, parent.cwdRootUri, undefined, {
+    parentSessionTabId,
+    customLabel: `Terminal ${ordinal}`,
+  })
+  workspace.tabIds.push(tabId)
+  workspace.activeTabId = tabId
+  sessionTerminalWorkspaces.set(parentSessionTabId, workspace)
+  notify(parentSessionTabId)
+  return sessions.get(tabId)
+}
+
+export function listSessionTerminals(
+  parentSessionTabId: string,
+): TerminalSessionState[] {
+  const workspace = sessionTerminalWorkspaces.get(parentSessionTabId)
+  if (!workspace) return []
+  return workspace.tabIds.flatMap(tabId => {
+    const session = sessions.get(tabId)
+    return session ? [session] : []
+  })
+}
+
+export function activeSessionTerminalTabId(
+  parentSessionTabId: string,
+): string | undefined {
+  return sessionTerminalWorkspaces.get(parentSessionTabId)?.activeTabId
+}
+
+export function setActiveSessionTerminal(
+  parentSessionTabId: string,
+  tabId: string,
+): void {
+  const workspace = sessionTerminalWorkspaces.get(parentSessionTabId) ?? {
+    tabIds: [],
+    nextOrdinal: 1,
+  }
+  if (
+    tabId !== parentSessionTabId &&
+    !workspace.tabIds.includes(tabId)
+  ) {
+    return
+  }
+  workspace.activeTabId = tabId
+  sessionTerminalWorkspaces.set(parentSessionTabId, workspace)
+  notify(parentSessionTabId)
+}
+
+export function removeSessionTerminal(
+  parentSessionTabId: string,
+  tabId: string,
+): void {
+  if (tabId === parentSessionTabId) return
+  const session = sessions.get(tabId)
+  if (session?.parentSessionTabId !== parentSessionTabId) return
+  clearTerminalSession(tabId)
+}
+
+/** Includes the primary agent/terminal PTY and all Terminal-tool shell PTYs. */
+export function terminalPtyIdsForSession(parentSessionTabId: string): string[] {
+  const ids = [
+    sessions.get(parentSessionTabId)?.ptyId,
+    ...listSessionTerminals(parentSessionTabId).map(session => session.ptyId),
+  ]
+  return ids.filter((id): id is string => Boolean(id))
 }
 
 export type HydratedTerminalSession = {
@@ -214,6 +345,7 @@ export function hydrateTerminalSession(entry: HydratedTerminalSession): void {
     tabId: entry.tabId,
     cwdRootUri: entry.cwdRootUri,
     launchCommand: entry.launchCommand,
+    parentSessionTabId: undefined,
     ptyId: entry.ptyId,
     status: entry.status,
     exitCode: entry.exitCode,

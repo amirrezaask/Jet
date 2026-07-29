@@ -1681,13 +1681,6 @@ body,
     backdrop-filter: blur(18px);
   }
 
-  [data-gharargah-session-mode-switch] {
-    border-color: color-mix(in srgb, var(--primary) 22%, transparent);
-    background: color-mix(in srgb, var(--card) 42%, transparent);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-  }
-
   [data-gharargah-session-mode-tab][data-active] {
     color: var(--foreground);
   }

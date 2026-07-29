@@ -1,13 +1,6 @@
-import { useEffect, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import type { AgentUsage } from "@gharargah/agents"
-import {
-  Bot,
-  Columns3,
-  GitBranch,
-  SquareTerminal,
-  XIcon,
-  FileCode2,
-} from "lucide-react"
+import { GitBranch, XIcon } from "lucide-react"
 import {
   Dialog,
   DialogClose,
@@ -16,6 +9,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.js"
 import { Button } from "@/components/ui/button.js"
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs.js"
 import { cn } from "@/lib/utils.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
@@ -36,6 +34,7 @@ export type AgentSessionHeaderMeta = {
 }
 
 export type TerminalSessionModalProps = {
+  sessionId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   presentation?: "modal" | "inline"
@@ -46,7 +45,7 @@ export type TerminalSessionModalProps = {
   projectRootUri: string | null
   mode: SessionDialogMode
   onModeChange: (mode: SessionDialogMode) => void
-  /** Agent/ACP tab only for sessions launched with an ACP driver. */
+  /** Whether this session has an agent surface (CLI or in-app chat). */
   showAgentTab?: boolean
   /** Merged into the session header when mode is agent. */
   agentSessionHeader?: AgentSessionHeaderMeta | null
@@ -106,6 +105,7 @@ function focusSessionPane(mode: SessionDialogMode) {
 
 export function TerminalSessionModal(props: TerminalSessionModalProps) {
   const {
+    sessionId,
     open,
     onOpenChange,
     presentation = "modal",
@@ -159,12 +159,12 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     <DialogHeader
       data-gharargah-terminal-modal-header=""
       {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
-      className="grid h-8 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 border-b bg-background px-2 py-0 text-left sm:text-left"
+      className="grid h-10 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-background px-2 py-0 text-left sm:text-left"
     >
       <div className="flex min-w-0 items-center gap-1.5 justify-self-stretch">
         <h2
           data-gharargah-terminal-modal-title
-          className="shrink truncate text-xs font-medium tracking-tight text-foreground"
+          className="shrink truncate text-sm font-semibold tracking-tight text-foreground"
         >
           {displayTitle}
         </h2>
@@ -238,55 +238,43 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         ) : null}
       </div>
 
-      <div
+      <Tabs
         data-gharargah-session-mode-switch
-        role="tablist"
-        aria-label="Session view"
-        onKeyDown={handleModeTabKeyDown}
-        className="flex h-8 shrink-0 items-center gap-px justify-self-center rounded-md bg-muted p-px text-muted-foreground"
+        value={mode}
+        onValueChange={value => onModeChange(value as SessionDialogMode)}
+        className="block min-w-0 justify-self-center"
       >
-        {showAgentTab ? (
-          <ModeTab
+        <TabsList
+          variant="line"
+          aria-label="Session tools"
+          className="gap-0"
+        >
+          <SessionToolTab
             mode="agent"
-            active={mode === "agent"}
             label="Agent"
-            icon={<Bot aria-hidden />}
-            onSelect={() => onModeChange("agent")}
+            disabled={!showAgentTab}
+            active={mode === "agent"}
           />
-        ) : null}
-        <ModeTab
-          mode="terminal"
-          active={mode === "terminal"}
-          label="Terminal"
-          shortcut="Mod-Shift-t"
-          icon={<SquareTerminal aria-hidden />}
-          onSelect={() => onModeChange("terminal")}
-        />
-        <ModeTab
-          mode="editor"
-          active={mode === "editor"}
-          label="Editor"
-          shortcut="Mod-Shift-e"
-          icon={<FileCode2 aria-hidden />}
-          onSelect={() => onModeChange("editor")}
-        />
-        <ModeTab
-          mode="git"
-          active={mode === "git"}
-          label="Git"
-          shortcut="Mod-Shift-g"
-          icon={<GitBranch aria-hidden />}
-          onSelect={() => onModeChange("git")}
-        />
-        <ModeTab
-          mode="todos"
-          active={mode === "todos"}
-          label="TODOs"
-          shortcut="Mod-Shift-d"
-          icon={<Columns3 aria-hidden />}
-          onSelect={() => onModeChange("todos")}
-        />
-      </div>
+          <SessionToolTab
+            mode="editor"
+            active={mode === "editor"}
+            label="Editor"
+            shortcut="Mod-Shift-e"
+          />
+          <SessionToolTab
+            mode="git"
+            active={mode === "git"}
+            label="Git"
+            shortcut="Mod-Shift-g"
+          />
+          <SessionToolTab
+            mode="terminal"
+            active={mode === "terminal"}
+            label="Terminal"
+            shortcut="Mod-Shift-t"
+          />
+        </TabsList>
+      </Tabs>
 
       <div className="flex min-w-0 shrink-0 items-center justify-self-end gap-0.5">
         {projectRootUri && onOpenInApp ? (
@@ -405,6 +393,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       <section
         data-gharargah-glass=""
         data-gharargah-terminal-modal
+        data-gharargah-session-id={sessionId}
         data-gharargah-session-presentation="inline"
         data-gharargah-session-mode={mode}
         aria-label={displayTitle}
@@ -421,8 +410,36 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         size="stage"
         showCloseButton={false}
         onInteractOutside={event => event.preventDefault()}
+        onEscapeKeyDown={event => {
+          const activePane = document.querySelector(
+            `[data-gharargah-session-pane="${mode}"][data-active]`,
+          )
+          const visibleTerminal =
+            activePane?.querySelector<HTMLElement>(
+              "[data-gharargah-session-terminal-pane][data-active] [data-gharargah-terminal-panel]",
+            ) ??
+            activePane?.querySelector<HTMLElement>(
+              "[data-gharargah-terminal-panel]",
+            )
+          if (!visibleTerminal) return
+          event.preventDefault()
+          if (
+            event.target instanceof Element &&
+            event.target.closest(".xterm")
+          ) {
+            return
+          }
+          visibleTerminal
+            .querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")
+            ?.focus()
+          const ptyId = visibleTerminal.dataset.gharargahTerminalPtyId
+          if (ptyId) {
+            void window.gharargah?.terminal?.write(ptyId, "\u001b")
+          }
+        }}
         data-gharargah-glass=""
         data-gharargah-terminal-modal
+        data-gharargah-session-id={sessionId}
         data-gharargah-session-presentation="modal"
         data-gharargah-session-mode={mode}
         className="flex flex-col gap-0 overflow-hidden border bg-background p-0 shadow-xl"
@@ -439,64 +456,32 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   )
 }
 
-function ModeTab(props: {
+function SessionToolTab(props: {
   mode: SessionDialogMode
   active: boolean
   label: string
   shortcut?: string
-  icon: ReactNode
-  onSelect: () => void
+  disabled?: boolean
 }) {
-  const { mode, active, label, shortcut, icon, onSelect } = props
-  const title = shortcut ? `${label} (${formatKeyBinding(shortcut)})` : label
+  const { mode, active, label, shortcut, disabled = false } = props
+  const title = disabled
+    ? `${label} (no agent in this session)`
+    : shortcut
+      ? `${label} (${formatKeyBinding(shortcut)})`
+      : label
   return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
+    <TabsTrigger
+      value={mode}
       aria-label={label}
       title={title}
       aria-controls={`gharargah-session-pane-${mode}`}
       id={`gharargah-session-tab-${mode}`}
-      tabIndex={active ? 0 : -1}
+      disabled={disabled}
       data-gharargah-session-mode-tab={mode}
       data-active={active ? "" : undefined}
-      className={cn(
-        "inline-flex h-[1.875rem] items-center justify-center gap-1 rounded-sm transition-[color,background-color,box-shadow]",
-        active ? "px-2.5" : "w-[1.875rem] px-0",
-        "focus-visible:ring-ring outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-        active
-          ? "bg-background text-foreground shadow-sm"
-          : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
-      )}
-      onClick={onSelect}
+      className="min-w-14 px-3"
     >
-      <span className="[&_svg]:size-3">{icon}</span>
-      <span className={active ? "text-3xs font-medium" : "sr-only"}>
-        {label}
-      </span>
-    </button>
+      {label}
+    </TabsTrigger>
   )
-}
-
-function handleModeTabKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
-  const tabs = Array.from(
-    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-  )
-  if (tabs.length === 0) return
-  const current = Math.max(
-    0,
-    tabs.indexOf(document.activeElement as HTMLButtonElement),
-  )
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? tabs.length - 1
-        : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
-          tabs.length
-  event.preventDefault()
-  tabs[next]?.focus()
-  tabs[next]?.click()
 }

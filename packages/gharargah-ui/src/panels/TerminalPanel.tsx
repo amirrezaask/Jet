@@ -179,9 +179,17 @@ function resizePty(session: TerminalSession): void {
 }
 
 function focusTerminalInput(tabId: string): void {
-  const textarea = document.querySelector<HTMLTextAreaElement>(
-    `[data-gharargah-tab-slot="${tabId}"] [data-gharargah-terminal-panel] .xterm-helper-textarea`,
+  const docked = document.querySelector<HTMLElement>(
+    `[data-gharargah-tab-slot="${tabId}"] [data-gharargah-terminal-panel]`,
   )
+  const sessionTerminal = [
+    ...document.querySelectorAll<HTMLElement>(
+      "[data-gharargah-terminal-panel][data-gharargah-terminal-tab-id]",
+    ),
+  ].find(panel => panel.dataset.gharargahTerminalTabId === tabId)
+  const textarea = (
+    docked ?? sessionTerminal
+  )?.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")
   textarea?.focus()
 }
 
@@ -468,6 +476,7 @@ export function TerminalPanel({
         role="region"
         aria-label="Terminal"
         data-gharargah-terminal-panel=""
+        data-gharargah-terminal-tab-id={tabId}
       >
         <TerminalIcon className="size-8 opacity-40" />
         <p className="text-sm">Integrated terminal</p>
@@ -482,6 +491,7 @@ export function TerminalPanel({
     <div
       className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-transparent"
       data-gharargah-terminal-panel=""
+      data-gharargah-terminal-tab-id={tabId}
       data-gharargah-terminal-pty-id={connectedPtyId ?? ""}
       data-gharargah-terminal-status={displayStatus}
       onMouseDown={() => {

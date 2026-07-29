@@ -89,6 +89,7 @@ import {
   destroyEditorBuffer,
   ProjectTodosPane,
 } from "@gharargah/ui"
+import { SessionTerminalWorkspacePane } from "./SessionTerminalWorkspacePane.js"
 import {
   setPendingEditorNavigation,
   setPendingInitialContent,
@@ -500,9 +501,16 @@ export function GharargahApp() {
   }, [])
 
   const openTerminalModal = useCallback(
-    (panelId: PanelId, tabId: string, mode: SessionDialogMode = "terminal") => {
+    (panelId: PanelId, tabId: string, mode?: SessionDialogMode) => {
+      const session = terminalSessionForTab(tabId)
+      const requestedMode = mode ?? (session?.agentId ? "agent" : "terminal")
+      const canShowAgent =
+        Boolean(session?.agentId) ||
+        (isAgentChatEnabled() && !session?.launchCommand)
       const resolvedMode =
-        mode === "agent" && !isAgentChatEnabled() ? "terminal" : mode
+        requestedMode === "agent" && !canShowAgent
+          ? "terminal"
+          : requestedMode
       setTerminalModalPanelId(panelId)
       setTerminalModalTabId(tabId)
       setSessionMode(resolvedMode)
@@ -518,7 +526,7 @@ export function GharargahApp() {
   }, [])
 
   const focusTerminalTab = useCallback(
-    (panelId: PanelId, tabId: string, mode: SessionDialogMode = "terminal") => {
+    (panelId: PanelId, tabId: string, mode?: SessionDialogMode) => {
       const focus = () => {
         const tree = cloneTree()
         const owningPanel = findPanelWithTab(tree, tabId) ?? panelId
@@ -563,10 +571,11 @@ export function GharargahApp() {
     (panelId: PanelId, tabId: string) => {
       const session = terminalSessionForTab(tabId)
       const mode =
-        isAgentChatEnabled() &&
-        (Boolean(session?.agentThreadId) ||
-          isAgentInterfaceDriverId(session?.agentDriverId) ||
-          agentDraftThreadByTabRef.current.has(tabId))
+        Boolean(session?.agentId) ||
+        (isAgentChatEnabled() &&
+          (Boolean(session?.agentThreadId) ||
+            isAgentInterfaceDriverId(session?.agentDriverId) ||
+            agentDraftThreadByTabRef.current.has(tabId)))
           ? "agent"
           : "terminal"
       focusTerminalTab(panelId, tabId, mode)
@@ -736,7 +745,7 @@ export function GharargahApp() {
           agentId: driver.id,
           driverId: `${driver.id}:cli`,
         })
-        openTerminalModal(panelId, tabId, "terminal")
+        openTerminalModal(panelId, tabId, "agent")
       } catch (err) {
         console.error("[gharargah] createSessionWithAgentCli failed", err)
         showGharargahToast(err instanceof Error ? err.message : String(err), {
@@ -880,7 +889,12 @@ export function GharargahApp() {
 
   useEffect(() => {
     if (!isAgentChatEnabled()) {
-      if (sessionMode === "agent") setSessionMode("terminal")
+      if (
+        sessionMode === "agent" &&
+        !terminalSessionForTab(terminalModalTabId ?? "")?.agentId
+      ) {
+        setSessionMode("terminal")
+      }
       return
     }
     if (sessionMode !== "agent" || !terminalModalTabId) return
@@ -889,6 +903,7 @@ export function GharargahApp() {
       setSessionMode("terminal")
       return
     }
+    if (session.agentId && session.launchCommand) return
     // Drop a previous session's thread so the title/composer don't keep showing
     // the wrong agent while the new tab's thread loads. Same-thread identity is
     // preserved so live ACP deltas survive ensureSessionAgentThread churn.
@@ -1273,19 +1288,27 @@ export function GharargahApp() {
   useEffect(
     () =>
       subscribeTerminalSessions(tabId => {
-        tabStore.update(tabId, previous => ({ ...(previous as object) }))
-        setTerminalSessionRevision(revision => revision + 1)
         const session = terminalSessionForTab(tabId)
+        const owningSessionTabId = session?.parentSessionTabId ?? tabId
+        tabStore.update(owningSessionTabId, previous => ({
+          ...(previous as object),
+        }))
+        setTerminalSessionRevision(revision => revision + 1)
         if (!session) return
-        const folder = workspace.folders.find(f => f.root.uri === session.cwdRootUri)
-        const provider = (session.agentId as AgentProvider | undefined) ?? null
+        const owningSession =
+          terminalSessionForTab(owningSessionTabId) ?? session
+        const folder = workspace.folders.find(
+          f => f.root.uri === owningSession.cwdRootUri,
+        )
+        const provider =
+          (owningSession.agentId as AgentProvider | undefined) ?? null
         void notificationsRef.current.bindSession({
-          sessionId: tabId,
-          projectId: folder?.id ?? session.cwdRootUri,
+          sessionId: owningSessionTabId,
+          projectId: folder?.id ?? owningSession.cwdRootUri,
           projectName: folder?.root.name ?? null,
           sessionTitle:
-            session.customLabel ??
-            workspace.tabRegistry.get(tabId)?.label ??
+            owningSession.customLabel ??
+            workspace.tabRegistry.get(owningSessionTabId)?.label ??
             null,
           provider,
           ptyId: session.ptyId ?? null,
@@ -1314,7 +1337,7 @@ export function GharargahApp() {
       const panelId =
         findPanelWithTab(panelTree, n.sessionId) ?? getAllLeafPanels(panelTree)[0]
       if (!panelId) return
-      focusTerminalTab(panelId, n.sessionId, "terminal")
+      focusTerminalTab(panelId, n.sessionId)
       notifications.setOpen(false)
       await notifications.markRead(n.id)
     },
@@ -2382,14 +2405,17 @@ export function GharargahApp() {
           if (panelId && !deadTabIds.includes(roster.modal.tabId)) {
             setTerminalModalPanelId(panelId)
             setTerminalModalTabId(roster.modal.tabId)
-            const restoredDriver = roster.sessions.find(
+            const restoredSession = roster.sessions.find(
               entry => entry.tabId === roster.modal?.tabId,
-            )?.agentDriverId
+            )
             let restoredMode = roster.modal.sessionMode
             if (
               restoredMode === "agent" &&
+              !restoredSession?.agentId &&
               (!isAgentChatEnabled() ||
-                !isAgentInterfaceDriverId(restoredDriver))
+                !isAgentInterfaceDriverId(
+                  restoredSession?.agentDriverId,
+                ))
             ) {
               restoredMode = "terminal"
             }
@@ -2712,7 +2738,17 @@ export function GharargahApp() {
           label: `${session.title} copy`,
           launchCommand: term?.launchCommand,
         })
-        openTerminalModal(panelId, tabId, "terminal")
+        if (term?.agentId) {
+          bindAgentToSession(tabId, {
+            agentId: term.agentId,
+            driverId: term.agentDriverId ?? `${term.agentId}:cli`,
+          })
+        }
+        openTerminalModal(
+          panelId,
+          tabId,
+          term?.agentId ? "agent" : "terminal",
+        )
       } catch (err) {
         showGharargahToast(err instanceof Error ? err.message : String(err), {
           variant: "destructive",
@@ -2896,7 +2932,11 @@ export function GharargahApp() {
                           removeProjectByRootUri(project.rootUri),
                       }}
                       onOpenSettings={() => setSettingsOpen(true)}
-                      serverLabel="Local host"
+                      serverLabel={
+                        /^(localhost|127\.0\.0\.1|\[::1\])(?::|$)/.test(window.location.host)
+                          ? "Local host"
+                          : window.location.host
+                      }
                     />
                     <SidebarInset className="flex min-h-0 flex-col overflow-hidden">
                       {!terminalModalTabId ? (
@@ -2959,6 +2999,7 @@ export function GharargahApp() {
                     ? createPortal(node, sidebarWorkspaceHost)
                     : node)(
                   <TerminalSessionModal
+                sessionId={terminalModalTabId}
                 open
                   presentation={isInlineWorkspace ? "inline" : "modal"}
                 onOpenChange={open => {
@@ -2979,10 +3020,15 @@ export function GharargahApp() {
                     return project ? `${project} / ${fileLabel}` : fileLabel
                   }
                   if (sessionMode === "agent") {
+                      const terminalSession =
+                        terminalSessionForTab(terminalModalTabId)
                       const agentName =
                         agentCatalog?.agents.find(
                       agent => agent.id === activeAgentThread?.agentId,
-                    )?.displayName ?? "Agent"
+                    )?.displayName ??
+                        workspace.tabRegistry.get(terminalModalTabId)?.label ??
+                        terminalSession?.agentId ??
+                        "Agent"
                     return project ? `${project} / ${agentName}` : agentName
                   }
                     if (sessionMode === "git")
@@ -3002,8 +3048,11 @@ export function GharargahApp() {
                   }
                 mode={sessionMode}
                 showAgentTab={
-                  isAgentChatEnabled() &&
-                  !terminalSessionForTab(terminalModalTabId)?.launchCommand
+                  Boolean(
+                    terminalSessionForTab(terminalModalTabId)?.agentId,
+                  ) ||
+                  (isAgentChatEnabled() &&
+                    !terminalSessionForTab(terminalModalTabId)?.launchCommand)
                 }
                   agentSessionHeader={(() => {
                     if (sessionMode !== "agent" || !activeAgentThread)
@@ -3041,13 +3090,13 @@ export function GharargahApp() {
                     }
                   })()}
                 onModeChange={mode => {
+                  const terminalSession =
+                    terminalSessionForTab(terminalModalTabId)
                   if (
                     mode === "agent" &&
+                    !terminalSession?.agentId &&
                     (!isAgentChatEnabled() ||
-                      Boolean(
-                        terminalSessionForTab(terminalModalTabId)
-                          ?.launchCommand,
-                      ))
+                      Boolean(terminalSession?.launchCommand))
                   ) {
                     return
                   }
@@ -3066,7 +3115,22 @@ export function GharargahApp() {
                   ) : null
                 }
                 agent={
-                  agentLoading && !activeAgentThread ? (
+                  terminalSessionForTab(terminalModalTabId)?.agentId &&
+                  terminalSessionForTab(terminalModalTabId)?.launchCommand ? (
+                    <PanelBody
+                      panelId={terminalModalPanelId}
+                      view={
+                        {
+                          kind: "tabs",
+                          activeTabId: terminalModalTabId,
+                          tabIds: [terminalModalTabId],
+                        } as PanelView
+                      }
+                      store={tabStore}
+                      registry={tabTypeRegistry}
+                      focused={sessionMode === "agent"}
+                    />
+                  ) : agentLoading && !activeAgentThread ? (
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                       Loading agent…
                     </div>
@@ -3457,18 +3521,45 @@ export function GharargahApp() {
                   </ModalEditorPane>
                 }
                 terminal={
-                  <PanelBody
-                    panelId={terminalModalPanelId}
-                      view={
-                        {
-                      kind: "tabs",
-                      activeTabId: terminalModalTabId,
-                      tabIds: [terminalModalTabId],
-                        } as PanelView
-                      }
-                    store={tabStore}
-                    registry={tabTypeRegistry}
-                    focused={sessionMode === "terminal"}
+                  <SessionTerminalWorkspacePane
+                    sessionTabId={terminalModalTabId}
+                    theme={activeTheme}
+                    active={sessionMode === "terminal"}
+                    primaryTerminal={
+                      terminalSessionForTab(terminalModalTabId)?.agentId ||
+                      (isAgentChatEnabled() &&
+                        !terminalSessionForTab(terminalModalTabId)
+                          ?.launchCommand) ? null : (
+                        <PanelBody
+                          panelId={terminalModalPanelId}
+                          view={
+                            {
+                              kind: "tabs",
+                              activeTabId: terminalModalTabId,
+                              tabIds: [terminalModalTabId],
+                            } as PanelView
+                          }
+                          store={tabStore}
+                          registry={tabTypeRegistry}
+                          focused={sessionMode === "terminal"}
+                        />
+                      )
+                    }
+                    onOpenPath={(rawPath, line, column) => {
+                      const rootUri =
+                        terminalCwdForTab(terminalModalTabId)
+                      const cwdPath = fileUriToPath(rootUri)
+                      const fullPath = resolvePathUnderRoot(cwdPath, rawPath)
+                      const fileUri = pathToFileUri(fullPath)
+                      if (!workspace.resolveRootUriForFile(fileUri)) return
+                      openPathFromTerminal(
+                        openFileInEditorRef.current,
+                        cwdPath,
+                        rawPath,
+                        line,
+                        column,
+                      )
+                    }}
                   />
                 }
                 git={

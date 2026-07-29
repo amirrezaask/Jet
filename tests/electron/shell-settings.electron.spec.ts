@@ -60,4 +60,66 @@ test.describe("electron shell settings", () => {
       await app.close()
     }
   })
+
+  test("Electron settings can select a remote server or return to the bundled server", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await page.evaluate(() => {
+        const calls: Array<string | null> = []
+        ;(window as Window & { __serverCalls?: Array<string | null> }).__serverCalls = calls
+        window.gharargahDesktop = {
+          getServerConnection: async () => ({
+            activeUrl: "http://127.0.0.1:4747",
+            localUrl: "http://127.0.0.1:4747",
+            mode: "local",
+            startupError: null,
+          }),
+          connectToServer: async serverUrl => {
+            calls.push(serverUrl)
+            return {
+              activeUrl: serverUrl ?? "http://127.0.0.1:4747",
+              localUrl: "http://127.0.0.1:4747",
+              mode: serverUrl ? "remote" : "local",
+              startupError: null,
+            }
+          },
+        }
+      })
+
+      await openSettings(page)
+      await expect
+        .poll(() => page.locator("[data-gharargah-active-server]").textContent())
+        .toBe("http://127.0.0.1:4747")
+      await page.getByRole("textbox", { name: "Remote server URL" }).fill(
+        "https://gharargah.example",
+      )
+      await page.locator("[data-gharargah-connect-remote]").click()
+      await expect
+        .poll(() => page.locator("[data-gharargah-active-server]").textContent())
+        .toBe("https://gharargah.example")
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as Window & { __serverCalls?: Array<string | null> }).__serverCalls,
+          ),
+        )
+        .toEqual(["https://gharargah.example"])
+
+      await page.locator("[data-gharargah-use-bundled-server]").click()
+      await expect
+        .poll(() => page.locator("[data-gharargah-active-server]").textContent())
+        .toBe("http://127.0.0.1:4747")
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as Window & { __serverCalls?: Array<string | null> }).__serverCalls,
+          ),
+        )
+        .toEqual(["https://gharargah.example", null])
+    } finally {
+      await app.close()
+    }
+  })
 })

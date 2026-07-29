@@ -182,7 +182,7 @@ export async function pickAgentCli(
   await option.click()
 }
 
-/** Open a CLI-driven ADE session (picker → terminal modal). */
+/** Open a CLI-driven ADE session (picker → Agent surface). */
 export async function openNewCliSession(
   page: ShellDriver,
   agentId: string = "codex",
@@ -195,7 +195,7 @@ export async function openNewCliSession(
     () =>
       document
         .querySelector("[data-gharargah-terminal-modal]")
-        ?.getAttribute("data-gharargah-session-mode") === "terminal",
+        ?.getAttribute("data-gharargah-session-mode") === "agent",
     null,
     { timeout: 20_000 },
   )

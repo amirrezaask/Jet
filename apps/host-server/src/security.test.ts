@@ -19,3 +19,22 @@ test("websocket origin permits local browser clients and non-browser clients", (
   assert.equal(isAllowedWebSocketOrigin("file:///tmp/index.html"), false)
   assert.equal(isAllowedWebSocketOrigin("not a url"), false)
 })
+
+test("websocket origin permits an exact remote same-origin deployment", () => {
+  assert.equal(
+    isAllowedWebSocketOrigin("https://gharargah.example", "gharargah.example"),
+    true,
+  )
+  assert.equal(
+    isAllowedWebSocketOrigin("https://gharargah.example:8443", "gharargah.example:8443"),
+    true,
+  )
+  assert.equal(
+    isAllowedWebSocketOrigin("https://attacker.example", "gharargah.example"),
+    false,
+  )
+  assert.equal(
+    isAllowedWebSocketOrigin("https://gharargah.example:8443", "gharargah.example"),
+    false,
+  )
+})

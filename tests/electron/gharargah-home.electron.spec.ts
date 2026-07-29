@@ -53,7 +53,7 @@ test.describe("gharargah mission home", () => {
       const afterNew = await page.evaluate(() => window.__gharargahAgent!.getState())
       expect(afterNew.activeWorkspace).toBeTruthy()
 
-      await page.keyboard.press("Escape")
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectSelectorVisible(page, "[data-gharargah-home]")
 
@@ -162,14 +162,77 @@ test.describe("gharargah mission home", () => {
           [...document.querySelectorAll("[data-gharargah-session-mode-tab]")]
             .map(tab => tab.getAttribute("aria-label") ?? ""),
         ))
-        .toEqual(["Terminal", "Editor", "Git", "TODOs"])
-      await expectLocatorCount(page.locator('[data-gharargah-session-mode-tab="agent"]'), 0)
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="terminal"][data-active]')
+        .toEqual(["Agent", "Editor", "Git", "Terminal"])
+      await expect
+        .poll(() =>
+          page.locator("[data-gharargah-session-mode-switch] svg").count(),
+        )
+        .toBe(0)
+      await expect
+        .poll(() =>
+          page
+            .locator('[data-gharargah-session-mode-tab="agent"]')
+            .evaluate(element => (element as HTMLButtonElement).disabled),
+        )
+        .toBe(false)
+      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"]')
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"]')
-      await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="todos"]')
-      await expectLocatorCount(page.locator('[data-gharargah-session-pane="terminal"][data-active]'), 1)
+      await expectLocatorCount(page.locator('[data-gharargah-session-pane="agent"][data-active]'), 1)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+
+      // The agent CLI is the Agent surface. Terminal owns separate,
+      // session-scoped shell tabs and supports more than one shell.
+      await page.locator('[data-gharargah-session-mode-tab="terminal"]').click()
+      await expectSelectorVisible(page, "[data-gharargah-session-terminal-workspace]")
+      await expectLocatorCount(page.locator("[data-gharargah-session-terminal-tab]"), 1)
+      await expectLocatorContainsText(
+        page.locator("[data-gharargah-session-terminal-tabs]"),
+        "Terminal 1",
+      )
+      await page.locator("[data-gharargah-new-session-terminal]").click()
+      await expectLocatorCount(page.locator("[data-gharargah-session-terminal-tab]"), 2)
+      await expectLocatorContainsText(
+        page.locator("[data-gharargah-session-terminal-tabs]"),
+        "Terminal 2",
+      )
+      await expect
+        .poll(() =>
+          page.locator(
+            '[data-gharargah-session-pane="terminal"] [data-gharargah-terminal-panel]',
+          ).count(),
+        )
+        .toBe(2)
+      await page.locator('[data-gharargah-session-mode-tab="agent"]').click()
+      await expectSelectorVisible(page, '[data-gharargah-session-pane="agent"][data-active]')
+      await expectLocatorVisible(
+        page.locator(
+          '[data-gharargah-session-pane="agent"] [data-gharargah-terminal-panel]',
+        ),
+      )
+      await page.setViewportSize({ width: 390, height: 844 })
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        )
+        .toBe(true)
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            [
+              ...document.querySelectorAll(
+                "[data-gharargah-session-mode-tab]",
+              ),
+            ].every(tab => {
+              const rect = tab.getBoundingClientRect()
+              return rect.width > 0 && rect.left >= 0 && rect.right <= window.innerWidth
+            }),
+          ),
+        )
+        .toBe(true)
+      await page.setViewportSize({ width: 1440, height: 900 })
       await expect
         .poll(async () => page.locator("[data-gharargah-terminal-git-branch]").textContent(), {
           timeout: 15_000,
@@ -290,7 +353,7 @@ test.describe("gharargah mission home", () => {
 
       await execCommand(page, "terminal.new")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await page.keyboard.press("Escape")
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await page.keyboard.press("Meta+k")

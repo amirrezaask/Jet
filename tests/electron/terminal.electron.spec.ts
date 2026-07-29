@@ -378,8 +378,7 @@ test.describe("electron terminal", () => {
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
       await expectLocatorVisible(panel.locator("[data-gharargah-terminal-cursor]"))
 
-      // Dialog Escape closes modal only (goHome is gated off while modal open).
-      await page.keyboard.press("Escape")
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
 
@@ -428,6 +427,68 @@ test.describe("electron terminal", () => {
       expect(box.cursorTop).toBeLessThan(box.screenHeight)
       expect(box.cursorLeft).toBeGreaterThanOrEqual(0)
       expect(box.cursorLeft).toBeLessThan(box.screenWidth)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Escape is written to the active terminal instead of closing its session", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+      await page.evaluate(() => {
+        const terminal = window.gharargah?.terminal
+        if (!terminal) throw new Error("Terminal API unavailable")
+        const target = window as Window & { __terminalEscapeWrites?: string[] }
+        target.__terminalEscapeWrites = []
+        const write = terminal.write.bind(terminal)
+        terminal.write = async (ptyId, data) => {
+          target.__terminalEscapeWrites?.push(data)
+          return write(ptyId, data)
+        }
+      })
+
+      await page.keyboard.press("Escape")
+
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as Window & {
+                  __terminalEscapeWrites?: string[]
+                }
+              ).__terminalEscapeWrites?.filter(data => data === "\u001b")
+                .length ?? 0,
+          ),
+        )
+        .toBe(1)
+
+      // The Terminal tool owns Escape even if a chrome control temporarily
+      // holds focus; route the byte to the visible PTY and restore xterm focus.
+      await page.locator("[data-gharargah-terminal-modal-close]").focus()
+      await page.keyboard.press("Escape")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as Window & {
+                  __terminalEscapeWrites?: string[]
+                }
+              ).__terminalEscapeWrites?.filter(data => data === "\u001b")
+                .length ?? 0,
+          ),
+        )
+        .toBe(2)
+      await expectLocatorFocused(
+        page.locator(
+          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
+        ),
+      )
     } finally {
       await app.close()
     }

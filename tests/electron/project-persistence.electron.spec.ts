@@ -46,7 +46,7 @@ test.describe("electron project persistence", () => {
       await expectLocatorVisible(section)
       await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await page.keyboard.press("Escape")
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await page.reload()

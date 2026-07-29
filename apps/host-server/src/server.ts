@@ -52,7 +52,7 @@ export async function startHostServer(config: HostConfig): Promise<{
   const wss = new WebSocketServer({ noServer: true })
 
   server.on("upgrade", (req, socket, head) => {
-    if (!isAllowedWebSocketOrigin(req.headers.origin)) {
+    if (!isAllowedWebSocketOrigin(req.headers.origin, req.headers.host)) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n")
       socket.destroy()
       return

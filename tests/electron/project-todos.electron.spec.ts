@@ -5,7 +5,12 @@ import {
   expectLocatorContainsText,
   expectLocatorCount,
 } from "../shell/assert.js"
-import {hasPtySpawn, launchJet, ensureCardsLayout} from "./_launch.js"
+import {
+  ensureCardsLayout,
+  execCommand,
+  hasPtySpawn,
+  launchJet,
+} from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -129,12 +134,12 @@ test.describe("project todos board", () => {
       await expectLocatorCount(board.locator("[data-gharargah-todo-edit-input]"), 0)
       await expectLocatorContainsText(board, "Review architecture\nwith the team")
 
-      // Switch tabs still available.
+      // Session tools remain available; TODOs stays reachable as a command.
       await modal.locator('[data-gharargah-session-mode-tab="terminal"]').click()
       await expect
         .poll(async () => modal.getAttribute("data-gharargah-session-mode"))
         .toBe("terminal")
-      await modal.locator('[data-gharargah-session-mode-tab="todos"]').click()
+      await execCommand(page, "dialog.showTodos")
       await expectLocatorVisible(board)
       await expectLocatorContainsText(board, "Review architecture\nwith the team")
 

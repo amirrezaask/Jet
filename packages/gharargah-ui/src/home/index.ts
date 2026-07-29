@@ -38,6 +38,11 @@ export {
   type SessionDialogMode,
 } from "./TerminalSessionModal.js"
 export {
+  SessionTerminalWorkspace,
+  type SessionTerminalItem,
+  type SessionTerminalWorkspaceProps,
+} from "./SessionTerminalWorkspace.js"
+export {
   ModalEditorPane,
   type ModalEditorPaneProps,
   type ModalEditorBuffer,

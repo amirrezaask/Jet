@@ -28,17 +28,37 @@ test.describe("mac terminal quick switch", () => {
       await showTerminal(page)
       await execCommand(page, "terminal.new")
       await execCommand(page, "terminal.new")
-      await page.waitForTimeout(400)
+      await expect
+        .poll(async () =>
+          page.evaluate(async () => {
+            const response = await fetch("/api/v1/sessions")
+            if (!response.ok) return 0
+            const roster = (await response.json()) as {
+              sessions: Array<{ tabId: string }>
+            }
+            return roster.sessions.length
+          }),
+        )
+        .toBeGreaterThanOrEqual(3)
+      const secondSessionId = await page.evaluate(async () => {
+        const response = await fetch("/api/v1/sessions")
+        const roster = (await response.json()) as {
+          sessions: Array<{ tabId: string }>
+        }
+        return roster.sessions[1]?.tabId ?? ""
+      })
 
       await page.keyboard.press("Meta+2")
-      await page.waitForTimeout(300)
 
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
-      // Shell OSC titles often replace "Terminal 2" (e.g. "zsh 2"); still must be the 2nd session.
       await expect
-        .poll(async () => modalTitle(page), { timeout: 10_000 })
-        .toMatch(/2/)
+        .poll(() =>
+          page
+            .locator("[data-gharargah-terminal-modal]")
+            .getAttribute("data-gharargah-session-id"),
+        )
+        .toBe(secondSessionId)
     } finally {
       await app.close()
     }

@@ -6,6 +6,7 @@ import {
   registerTerminalSession,
   terminalCwdForTab,
   terminalLaunchCommandForTab,
+  terminalPtyIdsForSession,
   terminalPtyIdForTab,
   terminalSessionForTab,
   markTerminalFailed,
@@ -31,8 +32,9 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
     keepMounted: true,
     title: state => state.label,
     dispose: instance => {
-      const ptyId = terminalPtyIdForTab(instance.id)
-      if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
+      for (const ptyId of terminalPtyIdsForSession(instance.id)) {
+        void window.gharargah?.terminal?.dispose(ptyId)
+      }
       clearTerminalSession(instance.id)
     },
     render: (instance, ctx) => {
