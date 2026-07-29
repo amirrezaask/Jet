@@ -98,11 +98,42 @@ test.describe("electron appearance and terminal-first UX", () => {
         )
         .toMatch(/blur\(/)
 
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const surface = document.querySelector<HTMLElement>(
+              "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
+            )
+            if (!surface) return null
+            const bg = getComputedStyle(surface).backgroundColor
+            return {
+              bg,
+              inlineBg: surface.style.background,
+            }
+          }),
+        )
+        .toMatchObject({
+          inlineBg: "",
+        })
+
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const surface = document.querySelector<HTMLElement>(
+              "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
+            )
+            if (!surface) return ""
+            return getComputedStyle(surface).backgroundColor
+          }),
+        )
+        .not.toBe("rgb(0, 0, 0)")
+
       await page.evaluate(async () => {
         await window.__gharargahAgent!.executeCommand("settings.show")
       })
 
       await expectSelectorVisible(page, "[data-gharargah-settings-overlay]")
+      await page.locator("[data-gharargah-settings-category='appearance']").click()
       await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 5)
       await expectSelectorVisible(page, "[data-gharargah-theme-option='default-dark']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='default-light']")

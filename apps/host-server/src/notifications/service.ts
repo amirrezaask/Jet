@@ -399,9 +399,9 @@ export class NotificationService {
         hash,
       })
       return {
-        notification: enriched,
+        notification: enriched.notification,
         created: false,
-        updated: enriched.id === duplicate.id && enriched.updatedAt !== duplicate.updatedAt,
+        updated: enriched.updated,
         deduped: true,
         skipped: false,
       }
@@ -630,15 +630,22 @@ export class NotificationService {
     providerTurnId?: string | null
     providerSessionId?: string | null
   }): AppNotification | null {
-    if (!input.sessionId) return null
+    if (!input.sessionId && !input.providerSessionId) return null
+    const scope =
+      input.sessionId != null
+        ? { sql: "session_id=?", value: input.sessionId }
+        : {
+            sql: "provider_session_id=?",
+            value: input.providerSessionId as string,
+          }
     const candidates = this.db
       .prepare(
         `SELECT * FROM app_notifications
-         WHERE session_id=? AND type=? AND requires_action=1 AND action_resolved_at IS NULL
+         WHERE ${scope.sql} AND type=? AND requires_action=1 AND action_resolved_at IS NULL
            AND status != 'dismissed'
          ORDER BY created_at DESC LIMIT 20`,
       )
-      .all(input.sessionId, input.type) as unknown as NotificationRow[]
+      .all(scope.value, input.type) as unknown as NotificationRow[]
 
     let match: NotificationRow | undefined
     for (const row of candidates) {
@@ -782,17 +789,24 @@ export class NotificationService {
     providerSessionId: string | null
     contentHash: string
   }): AppNotification | null {
-    if (!input.sessionId) return null
+    if (!input.sessionId && !input.providerSessionId) return null
     const since = new Date(Date.now() - DEDUPE_WINDOW_MS).toISOString()
+    const scope =
+      input.sessionId != null
+        ? { sql: "session_id=?", value: input.sessionId }
+        : {
+            sql: "provider_session_id=?",
+            value: input.providerSessionId as string,
+          }
 
     if (input.eventId) {
       const row = this.db
         .prepare(
           `SELECT * FROM app_notifications
-           WHERE session_id=? AND type=? AND event_id=? AND created_at >= ?
+           WHERE ${scope.sql} AND type=? AND event_id=?
            ORDER BY created_at DESC LIMIT 1`,
         )
-        .get(input.sessionId, input.type, input.eventId, since) as
+        .get(scope.value, input.type, input.eventId) as
         | NotificationRow
         | undefined
       if (row) return rowToNotification(row)
@@ -802,10 +816,10 @@ export class NotificationService {
       const row = this.db
         .prepare(
           `SELECT * FROM app_notifications
-           WHERE session_id=? AND type=? AND provider_turn_id=? AND created_at >= ?
+           WHERE ${scope.sql} AND type=? AND provider_turn_id=?
            ORDER BY created_at DESC LIMIT 1`,
         )
-        .get(input.sessionId, input.type, input.providerTurnId, since) as
+        .get(scope.value, input.type, input.providerTurnId) as
         | NotificationRow
         | undefined
       if (row) return rowToNotification(row)
@@ -814,10 +828,10 @@ export class NotificationService {
     const row = this.db
       .prepare(
         `SELECT * FROM app_notifications
-         WHERE session_id=? AND type=? AND content_hash=? AND created_at >= ?
+         WHERE ${scope.sql} AND type=? AND content_hash=? AND created_at >= ?
          ORDER BY created_at DESC LIMIT 1`,
       )
-      .get(input.sessionId, input.type, input.contentHash, since) as
+      .get(scope.value, input.type, input.contentHash, since) as
       | NotificationRow
       | undefined
     return row ? rowToNotification(row) : null
@@ -835,11 +849,13 @@ export class NotificationService {
       requiresAction: boolean
       hash: string
     },
-  ): AppNotification {
+  ): { notification: AppNotification; updated: boolean } {
     const existingRank =
       NOTIFICATION_SOURCE_RANK[existing.source] ?? 0
     const incomingRank = NOTIFICATION_SOURCE_RANK[raw.source] ?? 0
-    if (incomingRank <= existingRank) return existing
+    if (incomingRank <= existingRank) {
+      return { notification: existing, updated: false }
+    }
 
     const ts = nowIso()
     const metadata = {
@@ -891,7 +907,8 @@ export class NotificationService {
       )
     const notification = this.get(existing.id)!
     this.emit({ type: "notification.updated", notification })
-    return notification
+    this.emitCounts()
+    return { notification, updated: true }
   }
 }
 

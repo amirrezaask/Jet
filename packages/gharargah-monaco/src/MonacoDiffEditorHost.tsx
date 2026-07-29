@@ -6,6 +6,7 @@ import { ensureMonacoEnvironment } from "./monaco-env.js"
 import { isLargeFile } from "./language.js"
 import { monacoModels } from "./model-registry.js"
 import { applyGharargahMonacoTheme } from "./theme.js"
+import { MonacoCursorGhostTrail } from "./cursor-ghost-trail.js"
 
 export type MonacoDiffEditorHostProps = {
   originalUri: string
@@ -74,6 +75,8 @@ export function MonacoDiffEditorHost({
     })
 
     editorRef.current = editor
+    const originalCursorGhostTrail = new MonacoCursorGhostTrail(editor.getOriginalEditor())
+    const modifiedCursorGhostTrail = new MonacoCursorGhostTrail(editor.getModifiedEditor())
     applyGharargahMonacoTheme(theme)
 
     const resizeObserver = new ResizeObserver(() => {
@@ -85,6 +88,8 @@ export function MonacoDiffEditorHost({
 
     return () => {
       resizeObserver.disconnect()
+      originalCursorGhostTrail.dispose()
+      modifiedCursorGhostTrail.dispose()
       editor.dispose()
       editorRef.current = null
       monacoModels.release(originalUri)
@@ -92,7 +97,9 @@ export function MonacoDiffEditorHost({
       monacoModels.disposeIfUnreferenced(originalUri)
       monacoModels.disposeIfUnreferenced(modifiedUri)
     }
-  }, [originalUri, modifiedUri, originalContent, modifiedContent, languageId, readOnly, renderSideBySide])
+  // Content and presentation changes are updated in place below. Recreating the
+  // diff editor for every Git refresh discards scroll state and repeats layout.
+  }, [originalUri, modifiedUri, languageId])
 
   useEffect(() => {
     applyGharargahMonacoTheme(theme)

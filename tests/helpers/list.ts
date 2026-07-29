@@ -7,6 +7,7 @@ export type ListRowsOpts = {
   minItems: number
   minUniqueTops?: number
   minRowHeight?: number
+  maxRowHeight?: number
   needle?: string
   noResultsText?: string
 }
@@ -33,7 +34,13 @@ export async function expectListRows(page: ShellDriver, opts: ListRowsOpts): Pro
       .toBe(true)
   }
 
-  await expectLayout(page, { selector: itemSel, minItems, minUniqueTops, minRowHeight })
+  await expectLayout(page, {
+    selector: itemSel,
+    minItems,
+    minUniqueTops,
+    minRowHeight,
+    maxRowHeight: opts.maxRowHeight,
+  })
   await expectNoOverlap(page, { selector: itemSel, minItems })
   if (minItems >= 2) {
     await expectRowSpacing(page, {
@@ -51,6 +58,7 @@ export type LayoutOpts = {
   minItems?: number
   minUniqueTops?: number
   minRowHeight?: number
+  maxRowHeight?: number
 }
 
 export async function expectLayout(page: ShellDriver, opts: LayoutOpts): Promise<void> {
@@ -58,9 +66,16 @@ export async function expectLayout(page: ShellDriver, opts: LayoutOpts): Promise
   const minItems = opts.minItems ?? 2
   const minUniqueTops = opts.minUniqueTops ?? minItems
   const minRowHeight = opts.minRowHeight ?? 18
+  const maxRowHeight = opts.maxRowHeight
 
   const layout = await page.evaluate(
-    ({ sel, minItems: _mi, minUniqueTops: _mut, minRowHeight: _mrh }) => {
+    ({
+      sel,
+      minItems: _mi,
+      minUniqueTops: _mut,
+      minRowHeight: _mrh,
+      maxRowHeight: _maxrh,
+    }) => {
       const all = [...document.querySelectorAll<HTMLElement>(sel)]
       const items = all.filter(el => {
         if (el.hasAttribute("aria-hidden") && el.getAttribute("aria-hidden") !== "false") return false
@@ -74,10 +89,18 @@ export async function expectLayout(page: ShellDriver, opts: LayoutOpts): Promise
       const tops = rects.map(r => Math.round(r.top))
       const uniqueTops = new Set(tops).size
       const minH = rects.length ? Math.min(...rects.map(r => r.height)) : 0
+      const maxH = rects.length ? Math.max(...rects.map(r => r.height)) : 0
       const flexShrinks = items.slice(0, 5).map(el => getComputedStyle(el).flexShrink)
-      return { count: items.length, uniqueTops, minH, tops: tops.slice(0, 8), flexShrinks }
+      return {
+        count: items.length,
+        uniqueTops,
+        minH,
+        maxH,
+        tops: tops.slice(0, 8),
+        flexShrinks,
+      }
     },
-    { sel, minItems, minUniqueTops, minRowHeight },
+    { sel, minItems, minUniqueTops, minRowHeight, maxRowHeight },
   )
 
   if (layout.count < minItems) {
@@ -90,6 +113,11 @@ export async function expectLayout(page: ShellDriver, opts: LayoutOpts): Promise
   }
   if (layout.minH < minRowHeight) {
     throw new Error(`expectLayout: minRowHeight=${layout.minH} expected>=${minRowHeight}`)
+  }
+  if (maxRowHeight != null && layout.maxH > maxRowHeight) {
+    throw new Error(
+      `expectLayout: maxRowHeight=${layout.maxH} expected<=${maxRowHeight}`,
+    )
   }
   const enforceShrink = /data-gharargah-list-item|role=["']option/.test(sel)
   if (enforceShrink && layout.flexShrinks.some(s => s !== "0")) {
@@ -274,6 +302,79 @@ export type RowTextVisibleOpts = {
   textSelector?: string
   minGlyphHeightPx?: number
   requireWithinRowBounds?: boolean
+}
+
+export type RowActionAlignmentOpts = {
+  selector?: string
+  minItems?: number
+  tolerancePx?: number
+}
+
+/** Assert trailing row actions stay centered, in bounds, and out of the text column. */
+export async function expectRowActionAlignment(
+  page: ShellDriver,
+  opts: RowActionAlignmentOpts = {},
+): Promise<void> {
+  const sel = opts.selector ?? "[data-gharargah-list-item]"
+  const minItems = opts.minItems ?? 1
+  const tolerance = opts.tolerancePx ?? 1.5
+
+  const report = await page.evaluate(
+    ({ sel, tolerance }) => {
+      const rows = [...document.querySelectorAll<HTMLElement>(sel)]
+      const aligned = rows.flatMap((row, index) => {
+        const content = row.querySelector<HTMLElement>(
+          '[data-slot="palette-row-content"]',
+        )
+        const action = row.querySelector<HTMLElement>(
+          '[data-slot="palette-row-action"]',
+        )
+        if (!content || !action) return []
+        const rowRect = row.getBoundingClientRect()
+        const contentRect = content.getBoundingClientRect()
+        const actionRect = action.getBoundingClientRect()
+        const centerDelta = Math.abs(
+          actionRect.top + actionRect.height / 2 -
+            (rowRect.top + rowRect.height / 2),
+        )
+        const horizontalOverlap = contentRect.right - actionRect.left
+        const withinRow =
+          actionRect.top >= rowRect.top - tolerance &&
+          actionRect.bottom <= rowRect.bottom + tolerance &&
+          actionRect.right <= rowRect.right + tolerance
+        return [{
+          index,
+          text: (row.textContent ?? "").trim().slice(0, 40),
+          centerDelta,
+          horizontalOverlap,
+          withinRow,
+        }]
+      })
+      return {
+        count: aligned.length,
+        failures: aligned
+          .filter(
+            row =>
+              row.centerDelta > tolerance ||
+              row.horizontalOverlap > tolerance ||
+              !row.withinRow,
+          )
+          .slice(0, 5),
+      }
+    },
+    { sel, tolerance },
+  )
+
+  if (report.count < minItems) {
+    throw new Error(
+      `expectRowActionAlignment: found ${report.count} row actions, expected >= ${minItems}`,
+    )
+  }
+  if (report.failures.length > 0) {
+    throw new Error(
+      `expectRowActionAlignment: misaligned action(s): ${JSON.stringify(report.failures)}`,
+    )
+  }
 }
 
 export type RowTextReadableOpts = {

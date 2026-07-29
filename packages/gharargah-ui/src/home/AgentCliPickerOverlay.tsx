@@ -1,12 +1,21 @@
 import { useMemo } from "react"
-import { Folder } from "lucide-react"
+import { Folder, Trash2 } from "lucide-react"
 import { PaletteShell, type PaletteShellItem } from "../components/palette/PaletteShell.js"
 import { cn } from "@/lib/utils.js"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "../components/ui/context-menu.js"
 import {
   AGENT_CLI_DRIVERS,
   type AgentCliDriver,
 } from "./agent-cli-drivers.js"
 import { AgentProviderIcon } from "./sidebar/SessionStatusIndicator.js"
+import { readCssLengthPx } from "../lister/measure.js"
+
+const AGENT_CLI_ROW_HEIGHT_REM = 3.5
 
 export type AgentCliPickerProject = {
   rootUri: string
@@ -23,6 +32,7 @@ export type AgentCliPickerOverlayProps = {
   /** Selected project root URI (required when creating a session). */
   selectedRootUri?: string | null
   onSelectedRootUriChange?: (rootUri: string) => void
+  onRemoveProject?: (rootUri: string) => boolean | void | Promise<boolean | void>
 }
 
 export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
@@ -33,6 +43,7 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
     projects = [],
     selectedRootUri = null,
     onSelectedRootUriChange,
+    onRemoveProject,
   } = props
 
   const items = useMemo<PaletteShellItem<AgentCliDriver>[]>(
@@ -47,6 +58,21 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
 
   const showProjectChips = projects.length > 1 && onSelectedRootUriChange != null
 
+  const removeProject = async (
+    project: AgentCliPickerProject,
+    projectIndex: number,
+  ) => {
+    if (!onRemoveProject) return
+    const removed = await onRemoveProject(project.rootUri)
+    if (removed === false || selectedRootUri !== project.rootUri) return
+
+    const remainingSelection =
+      projects[projectIndex + 1] ?? projects[projectIndex - 1]
+    if (remainingSelection) {
+      onSelectedRootUriChange?.(remainingSelection.rootUri)
+    }
+  }
+
   const projectChips = showProjectChips ? (
     <div
       role="radiogroup"
@@ -54,9 +80,9 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
       data-gharargah-agent-cli-project-picker=""
       className="flex min-w-0 items-center gap-1.5 overflow-x-auto border-b border-border/60 px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
-      {projects.map(project => {
+      {projects.map((project, projectIndex) => {
         const selected = selectedRootUri === project.rootUri
-        return (
+        const chip = (
           <button
             key={project.rootUri}
             type="button"
@@ -78,6 +104,24 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
             <Folder className="size-3 shrink-0 opacity-70" aria-hidden />
             <span className="max-w-[8rem] truncate">{project.name}</span>
           </button>
+        )
+        if (!onRemoveProject) {
+          return chip
+        }
+        return (
+          <ContextMenu key={project.rootUri}>
+            <ContextMenuTrigger asChild>{chip}</ContextMenuTrigger>
+            <ContextMenuContent data-gharargah-agent-cli-project-menu="">
+              <ContextMenuItem
+                variant="destructive"
+                data-gharargah-agent-cli-project-remove={project.rootUri}
+                onSelect={() => void removeProject(project, projectIndex)}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                Remove {project.name}
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         )
       })}
     </div>
@@ -101,6 +145,12 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
       emptyLabel="No matching agents."
       statusRow={projectChips}
       itemClassName="justify-start py-2 text-left"
+      estimateSize={() =>
+        readCssLengthPx(
+          "--gharargah-agent-cli-row-height",
+          AGENT_CLI_ROW_HEIGHT_REM,
+        )
+      }
       renderItem={driver => (
         <span className="flex w-full min-w-0 items-center justify-start gap-3 text-left">
           <span

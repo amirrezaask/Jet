@@ -33,7 +33,10 @@ export function onReducedMotionChange(listener: (reduced: boolean) => void): () 
   const observer = root && g.MutationObserver
     ? new g.MutationObserver(handler)
     : null
-  observer?.observe(root!, { attributes: true, attributeFilter: ["data-gharargah-reduced-motion"] })
+  observer?.observe(root!, {
+    attributes: true,
+    attributeFilter: ["data-jet-reduced-motion", "data-gharargah-reduced-motion"],
+  })
   return () => {
     mq?.removeEventListener("change", handler)
     observer?.disconnect()

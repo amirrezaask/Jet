@@ -8,7 +8,7 @@ function ensure(): void {
   })
   observer.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ["style"],
+    attributeFilter: ["style", "class"],
   })
 }
 

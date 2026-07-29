@@ -118,11 +118,13 @@ function handleTerminalOsc(
   for (const item of parsed) {
     notifications.ingest({
       ...item,
-      sessionId: item.sessionId ?? binding?.sessionId ?? null,
-      projectId: item.projectId ?? binding?.projectId ?? null,
-      projectName: item.projectName ?? binding?.projectName ?? null,
-      sessionTitle: item.sessionTitle ?? binding?.sessionTitle ?? null,
-      provider: item.provider ?? binding?.provider ?? null,
+      // Terminal output is untrusted. A sequence may add semantic event data,
+      // but it must never escape the PTY's authoritative session binding.
+      sessionId: binding?.sessionId ?? null,
+      projectId: binding?.projectId ?? null,
+      projectName: binding?.projectName ?? null,
+      sessionTitle: binding?.sessionTitle ?? null,
+      provider: binding?.provider ?? item.provider ?? null,
     })
   }
 }
@@ -208,14 +210,44 @@ function handleNotifications(
       if (typeof body.title !== "string" || !body.title.trim()) {
         throw new Error("ingest requires title")
       }
-      if (typeof body.type !== "string") throw new Error("ingest requires type")
-      if (typeof body.source !== "string") throw new Error("ingest requires source")
-      // Normalize hook event names when providerEvent is set without type refinement.
-      if (body.providerEvent && body.type === "provider-notification") {
-        const mapped = normalizeHookEventName(body.providerEvent)
-        if (mapped) body.type = mapped
+      if (body.title.length > 240) throw new Error("ingest title is too long")
+      if (body.message != null && body.message.length > 8_000) {
+        throw new Error("ingest message is too long")
       }
-      return n.ingest(body)
+      if (
+        ![
+          "turn-completed",
+          "input-required",
+          "permission-required",
+          "failed",
+          "process-exited",
+          "session-started",
+          "provider-notification",
+          "background-output",
+          "system",
+        ].includes(body.type)
+      ) {
+        throw new Error("ingest type is invalid")
+      }
+      if (
+        ![
+          "provider-hook",
+          "provider-plugin",
+          "osc",
+          "process",
+          "system",
+          "aggregated-pty",
+        ].includes(body.source)
+      ) {
+        throw new Error("ingest source is invalid")
+      }
+      const request = { ...body }
+      // Normalize hook event names when providerEvent is set without type refinement.
+      if (request.providerEvent && request.type === "provider-notification") {
+        const mapped = normalizeHookEventName(request.providerEvent)
+        if (mapped) request.type = mapped
+      }
+      return n.ingest(request)
     }
     case "notifications:markRead":
       return n.markRead(str(args[0], "id"))
@@ -391,7 +423,6 @@ async function handleLsp(runtime: HostRuntime, channel: string, args: unknown[])
       rootUri,
       serverId,
       allowedRoots: runtime.config.allowedRoots,
-      onSpawnError: id => runtime.events.emit("lsp:crashed", [id]),
     })
     if (started.error) {
       return { id: started.id, transportUrl: "", error: started.error }
@@ -421,6 +452,11 @@ function handleTerminal(
     }
     case "terminal:write":
       return runtime.terminal.write(str(args[0], "id"), String(args[1] ?? ""))
+    case "terminal:writeBinary":
+      return runtime.terminal.writeBinary(
+        str(args[0], "id"),
+        String(args[1] ?? ""),
+      )
     case "terminal:resize":
       return runtime.terminal.resize(
         str(args[0], "id"),

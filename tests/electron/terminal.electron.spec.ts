@@ -105,6 +105,47 @@ test.describe("electron terminal", () => {
     }
   })
 
+  test("preserves non-UTF-8 xterm binary input bytes", async () => {
+    const { app, page } = await launchJet()
+    try {
+      const output = await page.evaluate(async () => {
+        const terminal = window.gharargah?.terminal
+        const workspacePath = window.__gharargahAgent?.getState().activeWorkspace
+        if (!terminal || !workspacePath) throw new Error("Terminal API or workspace unavailable")
+        const direct = await terminal.create(`file://${workspacePath}`, {
+          command: "/bin/sh",
+          args: ["-c", "stty raw -echo; od -An -t u1 -N 3"],
+        })
+        const text = new Promise<string>((resolve, reject) => {
+          let received = ""
+          let unsubscribe = () => {}
+          const timeout = window.setTimeout(() => {
+            unsubscribe()
+            reject(new Error(`Timed out waiting for binary terminal input: ${received}`))
+          }, 5_000)
+          unsubscribe = terminal.onData(direct.id, chunk => {
+            received += chunk
+            if (!/0\s+128\s+255/.test(received)) return
+            window.clearTimeout(timeout)
+            unsubscribe()
+            resolve(received)
+          })
+        })
+        await terminal.writeBinary(
+          direct.id,
+          btoa(String.fromCharCode(0, 128, 255)),
+        )
+        const received = await text
+        await terminal.dispose(direct.id)
+        return received
+      })
+
+      expect(output).toMatch(/0\s+128\s+255/)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("runs ls and shows fixture directory listing", async () => {
     const { app, page } = await launchJet()
     try {
@@ -180,17 +221,29 @@ test.describe("electron terminal", () => {
       await page.evaluate(() => {
         const terminal = window.gharargah?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
-        const original = terminal.resize.bind(terminal)
-        const calls: Array<{ cols: number; rows: number }> = []
+        const originalResize = terminal.resize.bind(terminal)
+        const originalCreate = terminal.create.bind(terminal)
+        const resizeCalls: Array<{ cols: number; rows: number }> = []
+        const createCalls: Array<{ cols?: number; rows?: number }> = []
+        terminal.create = async (cwdUri, launch) => {
+          createCalls.push({ cols: launch?.cols, rows: launch?.rows })
+          return originalCreate(cwdUri, launch)
+        }
         terminal.resize = async (id, cols, rows) => {
-          calls.push({ cols, rows })
-          return original(id, cols, rows)
+          resizeCalls.push({ cols, rows })
+          return originalResize(id, cols, rows)
         }
         ;(
           window as unknown as {
             __gharargahResizeCalls?: Array<{ cols: number; rows: number }>
+            __gharargahCreateCalls?: Array<{ cols?: number; rows?: number }>
           }
-        ).__gharargahResizeCalls = calls
+        ).__gharargahResizeCalls = resizeCalls
+        ;(
+          window as unknown as {
+            __gharargahCreateCalls?: Array<{ cols?: number; rows?: number }>
+          }
+        ).__gharargahCreateCalls = createCalls
       })
 
       await showTerminal(page)
@@ -225,6 +278,15 @@ test.describe("electron terminal", () => {
       )
       expect(geometry!.cols).toBeGreaterThan(80)
       expect(geometry!.rows).toBeGreaterThan(24)
+      const initialGeometry = await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __gharargahCreateCalls?: Array<{ cols?: number; rows?: number }>
+            }
+          ).__gharargahCreateCalls?.at(-1),
+      )
+      expect(initialGeometry).toEqual(geometry)
     } finally {
       await app.close()
     }
@@ -335,23 +397,25 @@ test.describe("electron terminal", () => {
     }
   })
 
-  test("renders smooth terminal cursor with a bounded ghost trail", async () => {
+  test("keeps one native terminal caret with a bounded ghost-only trail", async () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
       const panel = page.locator("[data-gharargah-terminal-panel]")
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
 
-      const layer = panel.locator("[data-gharargah-terminal-cursor-layer]")
+      const layer = panel.locator("[data-gharargah-terminal-cursor-trail]")
       await expectLocatorVisible(layer)
-      await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor]"), 1)
+      await expectLocatorAttribute(layer, "data-gharargah-terminal-live-caret", "xterm")
+      await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor]"), 0)
       await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor-ghost]"), 5)
+      await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
 
       await page.evaluate(() => {
-        const cursorLayer = document.querySelector<HTMLElement>("[data-gharargah-terminal-cursor-layer]")
+        const cursorLayer = document.querySelector("[data-gharargah-terminal-cursor-trail]")
         if (!cursorLayer) return
         const observer = new MutationObserver(() => {
-          const visibleGhost = [...cursorLayer.querySelectorAll<HTMLElement>("[data-gharargah-terminal-cursor-ghost]")]
+          const visibleGhost = [...cursorLayer.querySelectorAll("[data-gharargah-terminal-cursor-ghost]")]
             .some(ghost => Number.parseFloat(ghost.style.opacity || "0") > 0.02)
           if (visibleGhost) {
             cursorLayer.dataset.gharargahGhostObserved = "true"
@@ -362,9 +426,63 @@ test.describe("electron terminal", () => {
         window.setTimeout(() => observer.disconnect(), 1_000)
       })
 
-      await panel.locator("\.gharargah-terminal-surface").click()
+      await panel.locator(".gharargah-terminal-surface").click()
       await page.keyboard.type("cursor")
       await expectLocatorAttribute(layer, "data-gharargah-ghost-observed", "true", { timeout: 5_000 })
+
+      const nativeCursor = panel.locator(".xterm-cursor")
+      await expectLocatorCount(nativeCursor, 1)
+      await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor]"), 0)
+      const compositor = await layer
+        .locator("[data-gharargah-terminal-cursor-ghost]")
+        .first()
+        .evaluate(element => {
+          const style = element.style
+          return { willChange: style.willChange, animationCount: element.getAnimations().length }
+        })
+      expect(compositor.willChange).toBe("transform, opacity")
+      expect(compositor.animationCount).toBeLessThanOrEqual(1)
+
+      await page.locator("[data-gharargah-terminal-modal-close]").focus()
+      await expect
+        .poll(() =>
+          layer.locator("[data-gharargah-terminal-cursor-ghost]").evaluateAll(elements =>
+            elements.every(element => element.style.opacity === "0"),
+          ),
+        )
+        .toBe(true)
+
+      await panel.locator(".gharargah-terminal-surface").click()
+      await page.evaluate(() => {
+        document.documentElement.style.setProperty(
+          "--gharargah-terminal-cursor-motion",
+          "off",
+        )
+      })
+      await page.keyboard.type("x")
+      await expect
+        .poll(() =>
+          layer.locator("[data-gharargah-terminal-cursor-ghost]").evaluateAll(elements =>
+            elements.every(element => element.style.opacity === "0"),
+          ),
+        )
+        .toBe(true)
+
+      await page.evaluate(() => {
+        document.documentElement.style.setProperty(
+          "--gharargah-terminal-cursor-motion",
+          "trail",
+        )
+        document.documentElement.dataset.jetReducedMotion = "true"
+      })
+      await page.keyboard.type("y")
+      await expect
+        .poll(() =>
+          layer.locator("[data-gharargah-terminal-cursor-ghost]").evaluateAll(elements =>
+            elements.every(element => element.style.opacity === "0"),
+          ),
+        )
+        .toBe(true)
     } finally {
       await app.close()
     }
@@ -376,7 +494,7 @@ test.describe("electron terminal", () => {
       await showTerminal(page)
       const panel = page.locator("[data-gharargah-terminal-panel]")
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
-      await expectLocatorVisible(panel.locator("[data-gharargah-terminal-cursor]"))
+      await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
 
       await page.locator("[data-gharargah-terminal-modal-close]").click()
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
@@ -391,10 +509,10 @@ test.describe("electron terminal", () => {
           "[data-gharargah-terminal-panel] .xterm-screen",
         )
         const cursor = document.querySelector<HTMLElement>(
-          "[data-gharargah-terminal-panel] [data-gharargah-terminal-cursor]",
+          "[data-gharargah-terminal-panel] .xterm-cursor",
         )
         if (!screen || !cursor) return false
-        const opacity = Number.parseFloat(cursor.style.opacity || "0")
+        const opacity = Number.parseFloat(getComputedStyle(cursor).opacity || "1")
         if (opacity < 0.1) return false
         const screenRect = screen.getBoundingClientRect()
         const cursorRect = cursor.getBoundingClientRect()
@@ -412,7 +530,7 @@ test.describe("electron terminal", () => {
           "[data-gharargah-terminal-panel] .xterm-screen",
         )!
         const cursor = document.querySelector<HTMLElement>(
-          "[data-gharargah-terminal-panel] [data-gharargah-terminal-cursor]",
+          "[data-gharargah-terminal-panel] .xterm-cursor",
         )!
         const screenRect = screen.getBoundingClientRect()
         const cursorRect = cursor.getBoundingClientRect()
@@ -545,6 +663,44 @@ test.describe("electron terminal", () => {
 
       expect(bytes).toContain("\n")
       expect(bytes).not.toContain("\r")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("maps macOS terminal navigation keys to readline input", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+      await page.evaluate(() => {
+        const terminal = window.gharargah?.terminal
+        if (!terminal) throw new Error("Terminal API unavailable")
+        const target = window as Window & { __terminalNavigationWrites?: string[] }
+        target.__terminalNavigationWrites = []
+        const original = terminal.write.bind(terminal)
+        terminal.write = async (ptyId, data) => {
+          target.__terminalNavigationWrites?.push(data)
+          return original(ptyId, data)
+        }
+      })
+
+      await page.keyboard.press("Alt+ArrowLeft")
+      await page.keyboard.press("Meta+ArrowRight")
+      await page.keyboard.press("Meta+Backspace")
+
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as Window & {
+                  __terminalNavigationWrites?: string[]
+                }
+              ).__terminalNavigationWrites?.join("") ?? "",
+          ),
+        )
+        .toContain("\u001bb\u0005\u0015")
     } finally {
       await app.close()
     }

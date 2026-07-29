@@ -6,10 +6,13 @@ import {
   registerTerminalSession,
   terminalCwdForTab,
   terminalLaunchCommandForTab,
+  terminalLaunchArgsForTab,
   terminalPtyIdsForSession,
   terminalPtyIdForTab,
   terminalSessionForTab,
   markTerminalFailed,
+  recordTerminalOutput,
+  recordTerminalUserInput,
   restartTerminalSession,
   trackTerminalPtyId,
 } from "./terminal-session.js"
@@ -42,6 +45,7 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
       const terminal = createElement(TerminalPanel, {
         cwdRootUri: instance.state.cwdRootUri,
         launchCommand: terminalLaunchCommandForTab(instance.id),
+        launchArgs: terminalLaunchArgsForTab(instance.id),
         theme: deps.getTheme(),
         tabId: instance.id,
         focused: ctx.focused && ctx.isActive,
@@ -51,6 +55,8 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         exitCode: session?.exitCode,
         sessionGeneration: session?.generation,
         onPtyId: trackTerminalPtyId,
+        onInput: recordTerminalUserInput,
+        onOutput: recordTerminalOutput,
         onTitleChange: deps.onTerminalTitleChange,
         // Keep the failed session visible so the error and Restart action survive.
         onFailed: () => markTerminalFailed(instance.id),

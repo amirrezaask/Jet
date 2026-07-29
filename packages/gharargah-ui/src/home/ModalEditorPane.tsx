@@ -1,12 +1,18 @@
-import { useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react"
-import { Command, FileSearch, XIcon } from "lucide-react"
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react"
+import { Command, FileSearch, SearchIcon, XIcon } from "lucide-react"
 import type { LspStatus } from "@gharargah/lsp"
 import { lspStatusIsActive, lspStatusShortLabel } from "@gharargah/lsp/status"
-import type { WorkspaceService } from "@gharargah/workspace"
+import { type ListItem, type WorkspaceService } from "@gharargah/workspace"
 import { Button } from "@/components/ui/button.js"
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable.js"
 import { cn } from "@/lib/utils.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
 import { getEditorCursor, subscribeEditorCursor } from "@/status/editor-cursor-store.js"
+import { SearchLocationList } from "@/panels/location-list/SearchLocationList.js"
 
 export type ModalEditorBuffer = {
   tabId: string
@@ -22,6 +28,9 @@ export type ModalEditorPaneProps = {
   onActivateBuffer: (tabId: string) => void
   onCloseBuffer: (tabId: string) => void
   onQuickOpen?: () => void
+  projectSearchOpen?: boolean
+  onProjectSearchOpenChange?: (open: boolean) => void
+  onOpenSearchItem?: (item: ListItem) => void
   onCommandPalette?: () => void
   children: ReactNode
 }
@@ -35,6 +44,9 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
     onActivateBuffer,
     onCloseBuffer,
     onQuickOpen,
+    projectSearchOpen = false,
+    onProjectSearchOpenChange,
+    onOpenSearchItem,
     onCommandPalette,
     children,
   } = props
@@ -127,6 +139,20 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
               <span className="hidden sm:inline">Quick Open</span>
             </Button>
           ) : null}
+          {onProjectSearchOpenChange ? (
+            <Button
+              type="button"
+              variant={projectSearchOpen ? "secondary" : "ghost"}
+              size="xs"
+              aria-pressed={projectSearchOpen}
+              title={`Search project (${formatKeyBinding("Mod-Shift-f")})`}
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => onProjectSearchOpenChange(!projectSearchOpen)}
+            >
+              <SearchIcon data-icon="inline-start" />
+              <span className="hidden sm:inline">Search</span>
+            </Button>
+          ) : null}
           {onCommandPalette ? (
             <Button
               type="button"
@@ -143,7 +169,42 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
+      <ResizablePanelGroup
+        orientation="horizontal"
+        data-gharargah-modal-editor-content-group=""
+        className="relative min-h-0 flex-1 overflow-hidden"
+      >
+        {projectSearchOpen && onOpenSearchItem ? (
+          <>
+            <ResizablePanel
+              id="editor-project-search"
+              defaultSize="320px"
+              minSize="256px"
+              maxSize="45%"
+              groupResizeBehavior="preserve-pixel-size"
+            >
+              <ModalProjectSearch
+                workspace={workspace}
+                onOpenItem={onOpenSearchItem}
+                onDismiss={() => onProjectSearchOpenChange?.(false)}
+              />
+            </ResizablePanel>
+            <ResizableHandle
+              id="editor-project-search-resize"
+              data-gharargah-editor-project-search-resize=""
+              aria-label="Resize project search"
+            />
+          </>
+        ) : null}
+        <ResizablePanel id="editor-content" minSize="360px">
+          <div
+            data-gharargah-modal-editor-content=""
+            className="relative h-full min-h-0 min-w-0 overflow-hidden"
+          >
+            {children}
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       <div
         data-gharargah-modal-editor-status=""
@@ -167,6 +228,72 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
         </span>
       </div>
     </div>
+  )
+}
+
+function ModalProjectSearch({
+  workspace,
+  onOpenItem,
+  onDismiss,
+}: {
+  workspace: WorkspaceService
+  onOpenItem: (item: ListItem) => void
+  onDismiss: () => void
+}) {
+  const listIdRef = useRef("editor-project-search")
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    const listId = listIdRef.current
+    workspace.listStore.create({
+      id: listId,
+      title: "Search",
+      feed: "search",
+      items: [],
+      searchQuery: "",
+      searchCaseSensitive: false,
+      searchRegex: false,
+      searchFuzzy: false,
+      searchLoading: false,
+      searchError: null,
+    })
+    setReady(true)
+    return () => {
+      workspace.listStore.dispose(listId)
+    }
+  }, [workspace])
+
+  return (
+    <aside
+      data-gharargah-editor-project-search=""
+      aria-label="Project search"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col bg-background"
+    >
+      <div className="flex h-9 shrink-0 items-center border-b px-2">
+        <h2 className="text-xs font-semibold">Search</h2>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Close project search"
+          className="ml-auto text-muted-foreground"
+          onClick={onDismiss}
+        >
+          <XIcon />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1">
+        {ready ? (
+          <SearchLocationList
+            listId={listIdRef.current}
+            workspace={workspace}
+            onOpenItem={onOpenItem}
+            onDismiss={onDismiss}
+            autoFocus
+          />
+        ) : null}
+      </div>
+    </aside>
   )
 }
 

@@ -5,6 +5,7 @@ import {
   prefersReducedMotion,
   wheelDeltaPixels,
 } from "@gharargah/shared"
+import { terminalKeybindingData } from "./terminal-keybindings.js"
 
 /** xterm adapter for Gharargah's shared RAD scroll curve. */
 export class TerminalScrollMotion {
@@ -61,18 +62,11 @@ export class TerminalScrollMotion {
   }
 
   private readonly onKey = (event: KeyboardEvent): boolean => {
-    // Shift+Enter → LF. xterm always emits CR for Enter (Shift ignored); CLI
-    // agents (cursor-agent) need LF for multiline prompts.
-    if (
-      event.type === "keydown" &&
-      event.key === "Enter" &&
-      event.shiftKey &&
-      !event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey
-    ) {
+    const input = terminalKeybindingData(event, navigator.platform)
+    if (input !== null) {
       event.preventDefault()
-      this.term.input("\n")
+      event.stopPropagation()
+      this.term.input(input)
       return false
     }
     if (!this.controller || (event.key !== "PageUp" && event.key !== "PageDown")) return true

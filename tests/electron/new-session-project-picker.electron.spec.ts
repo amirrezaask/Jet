@@ -71,6 +71,82 @@ test.describe("new session project picker", () => {
     }
   })
 
+  test("removes a project chip from its accessible context menu", async () => {
+    const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
+    const { app, page } = await launchJet()
+    try {
+      await page.evaluate(
+        async ([second, repo]) => {
+          await window.__gharargahAgent!.addWorkspace(second)
+          await window.__gharargahAgent!.addWorkspace(repo)
+        },
+        [secondPath, REPO_ROOT],
+      )
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+        )
+        .toBe(3)
+
+      await clickNewSession(page)
+      const picker = page.locator(
+        "[data-gharargah-agent-cli-project-picker]",
+      )
+      await expectLocatorVisible(picker)
+      const pickerBefore = await picker.boundingBox()
+
+      const removedChip = page.getByRole("radio", {
+        name: "Project second-workspace",
+      })
+      await removedChip.click()
+      await expect
+        .poll(() => removedChip.getAttribute("data-state"))
+        .toBe("on")
+      await removedChip.click({ button: "right" })
+
+      const menu = page.locator(
+        "[data-gharargah-agent-cli-project-menu]",
+      )
+      await expectLocatorVisible(menu)
+      const removeItem = menu.getByRole("menuitem", {
+        name: "Remove second-workspace",
+      })
+      await expectLocatorVisible(removeItem)
+      await removeItem.click()
+
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            window.__gharargahAgent!.listWorkspaces().map(project => project.name),
+          ),
+        )
+        .not.toContain("second-workspace")
+      await expectLocatorCount(removedChip, 0)
+      await expectLocatorCount(
+        page.locator("[data-gharargah-agent-cli-project-option]"),
+        2,
+      )
+      await expectLocatorCount(
+        page.locator(
+          '[data-gharargah-agent-cli-project-option][data-state="on"]',
+        ),
+        1,
+      )
+      await expect
+        .poll(() =>
+          page
+            .getByRole("radio", { name: "Project jet" })
+            .getAttribute("data-state"),
+        )
+        .toBe("on")
+      await expectLocatorVisible(picker)
+      const pickerAfter = await picker.boundingBox()
+      expect(pickerAfter).toEqual(pickerBefore)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("hides project chips for a single workspace", async () => {
     const { app, page } = await launchJet()
     try {

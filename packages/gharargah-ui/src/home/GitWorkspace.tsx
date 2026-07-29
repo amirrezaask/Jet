@@ -24,10 +24,24 @@ import {
 import { Button } from "@/components/ui/button.js"
 import { Checkbox } from "@/components/ui/checkbox.js"
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog.js"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js"
 import {
@@ -43,14 +57,15 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable.js"
+import { Label } from "@/components/ui/label.js"
 import { Spinner } from "@/components/ui/spinner.js"
+import { Textarea } from "@/components/ui/textarea.js"
 import { cn } from "@/lib/utils.js"
 import { requestConfirm } from "@/components/ConfirmDialogHost.js"
 import { showGharargahToast } from "@/toast.js"
 
 type GitWorkspaceProps = {
   rootUri: string | null
-  repositoryName: string
   theme: GharargahTheme
   onOpenFile: (path: string) => void
   onBranchChange?: (branch: string | null) => void
@@ -83,7 +98,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 export function GitWorkspace(props: GitWorkspaceProps) {
-  const { rootUri, repositoryName, theme, onOpenFile, onBranchChange, focusPath } = props
+  const { rootUri, theme, onOpenFile, onBranchChange, focusPath } = props
   const api = window.gharargah?.git
   const fsApi = window.gharargah?.fs
   const [isRepo, setIsRepo] = useState<boolean | null>(null)
@@ -101,8 +116,6 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const [loading, setLoading] = useState(true)
   const [diffLoading, setDiffLoading] = useState(false)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
-  const [commitSummary, setCommitSummary] = useState("")
-  const [commitBody, setCommitBody] = useState("")
   const diffRequest = useRef(0)
 
   const refresh = useCallback(async () => {
@@ -264,17 +277,15 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     await runAction("Discard", () => api.discard(rootUri, [entry.path]), "Changes discarded")
   }
 
-  const commit = async () => {
-    const message = commitSummary.trim()
-    if (!rootUri || !api || !message || stagedCount === 0) return
+  const commit = async (summaryText: string, bodyText: string): Promise<boolean> => {
+    const message = summaryText.trim()
+    if (!rootUri || !api || !message || stagedCount === 0) return false
     const committed = await runAction(
       "Commit",
-      () => api.commit(rootUri, message, commitBody.trim() || undefined),
+      () => api.commit(rootUri, message, bodyText.trim() || undefined),
       `Committed ${stagedCount} ${stagedCount === 1 ? "file" : "files"}`,
     )
-    if (!committed) return
-    setCommitSummary("")
-    setCommitBody("")
+    return committed
   }
 
   if (loading && isRepo === null) {
@@ -302,10 +313,12 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       aria-label="Git workspace"
     >
       <GitToolbar
-        repositoryName={repositoryName}
+        repositoryKey={rootUri}
         summary={summary}
         branches={branches}
+        stagedCount={stagedCount}
         pendingAction={pendingAction}
+        onCommit={commit}
         onCheckout={branch => {
           if (!rootUri || !api || branch === summary.branch) return
           void runAction("Switch branch", () => api.checkout(rootUri, branch), `Switched to ${branch}`)
@@ -321,14 +334,17 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       <GitViewTabs
         view={view}
         stagedCount={stagedCount}
-        historyCount={history.length}
         onChange={setView}
       />
 
       {view === "history" ? (
         <HistoryList commits={history} />
       ) : (
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 bg-background">
+        <ResizablePanelGroup
+          orientation="horizontal"
+          data-gharargah-git-content=""
+          className="min-h-0 flex-1 bg-background"
+        >
           <ResizablePanel defaultSize="31%" minSize="220px" maxSize="48%">
             <FileNavigator
               rows={navigationRows}
@@ -362,130 +378,270 @@ export function GitWorkspace(props: GitWorkspaceProps) {
           </ResizablePanel>
         </ResizablePanelGroup>
       )}
-
-      {view !== "history" ? (
-        <form
-          data-gharargah-git-commit-form=""
-          className="shrink-0 border-t bg-card p-3"
-          onSubmit={event => {
-            event.preventDefault()
-            void commit()
-          }}
-        >
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-            <div className="grid min-w-0 gap-1.5">
-              <label htmlFor="git-commit-summary" className="sr-only">Commit summary</label>
-              <Input
-                id="git-commit-summary"
-                name="git-commit-summary"
-                autoComplete="off"
-                value={commitSummary}
-                onChange={event => setCommitSummary(event.target.value)}
-                placeholder="Commit summary…"
-                className="h-8 bg-background text-xs"
-              />
-              <label htmlFor="git-commit-body" className="sr-only">Commit description</label>
-              <textarea
-                id="git-commit-body"
-                name="git-commit-body"
-                value={commitBody}
-                onChange={event => setCommitBody(event.target.value)}
-                placeholder="Optional description…"
-                rows={2}
-                className="min-h-12 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-2xs leading-4 text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-              />
-            </div>
-            <div className="flex min-w-36 flex-col justify-between gap-2">
-              <p className="flex items-center justify-end gap-1.5 text-2xs tabular-nums text-muted-foreground">
-                <CheckIcon aria-hidden />
-                {stagedCount} {stagedCount === 1 ? "file" : "files"} staged
-              </p>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!commitSummary.trim() || stagedCount === 0 || pendingAction !== null}
-                data-gharargah-git-commit
-              >
-                {pendingAction === "Commit" ? <Spinner /> : <CircleDotIcon data-icon="inline-start" />}
-                Commit {stagedCount || ""}
-              </Button>
-            </div>
-          </div>
-        </form>
-      ) : null}
     </section>
   )
 }
 
 function GitToolbar(props: {
-  repositoryName: string
+  repositoryKey: string
   summary: GitRepositorySummary
   branches: string[]
+  stagedCount: number
   pendingAction: string | null
+  onCommit: (summary: string, body: string) => Promise<boolean>
   onCheckout: (branch: string) => void
   onRemoteAction: (action: "fetch" | "pull" | "push") => void
   onRefresh: () => void
 }) {
-  const { repositoryName, summary, branches, pendingAction, onCheckout, onRemoteAction, onRefresh } = props
+  const {
+    repositoryKey,
+    summary,
+    branches,
+    stagedCount,
+    pendingAction,
+    onCommit,
+    onCheckout,
+    onRemoteAction,
+    onRefresh,
+  } = props
   const busy = pendingAction !== null
+  const branchOptions =
+    summary.branch && !branches.includes(summary.branch)
+      ? [summary.branch, ...branches]
+      : branches
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-y bg-card px-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <GitBranchIcon className="text-foreground" aria-hidden />
-        <span className="max-w-40 truncate text-xs font-medium">{repositoryName}</span>
-        <label htmlFor="git-branch" className="sr-only">Current branch</label>
-        <div className="relative">
-          <select
-            id="git-branch"
-            name="git-branch"
-            value={summary.branch ?? ""}
-            disabled={busy}
-            onChange={event => onCheckout(event.target.value)}
-            className="h-8 min-w-32 appearance-none rounded-md border border-input bg-background py-1 pr-7 pl-2 font-mono text-2xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            {summary.branch ? <option value={summary.branch}>{summary.branch}</option> : null}
-            {branches.filter(branch => branch !== summary.branch).map(branch => (
-              <option key={branch} value={branch}>{branch}</option>
-            ))}
-          </select>
-          <ChevronDownIcon className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        </div>
-        <div className="hidden items-center gap-2 text-2xs tabular-nums text-muted-foreground sm:flex">
-          <span title={`${summary.ahead} commits ahead`}><ArrowUpIcon className="inline text-emerald-400" aria-hidden /> {summary.ahead}</span>
-          <span title={`${summary.behind} commits behind`}><ArrowDownIcon className="inline text-rose-400" aria-hidden /> {summary.behind}</span>
+    <header
+      data-gharargah-git-toolbar=""
+      className="flex h-11 shrink-0 items-center gap-2 border-b bg-background px-3"
+    >
+      <div className="flex min-w-0 items-center gap-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              className="w-10 gap-1"
+              aria-label={
+                summary.branch
+                  ? `Switch branch, current branch ${summary.branch}`
+                  : "Switch branch"
+              }
+              data-gharargah-git-branch-trigger=""
+              disabled={busy}
+            >
+              <GitBranchIcon />
+              <ChevronDownIcon className="size-2.5 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuLabel>Switch branch</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup
+              value={summary.branch ?? ""}
+              onValueChange={onCheckout}
+            >
+              {branchOptions.map(branch => (
+                <DropdownMenuRadioItem key={branch} value={branch}>
+                  {branch}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div
+          aria-label={`${summary.ahead} commits ahead, ${summary.behind} commits behind`}
+          className="hidden items-center gap-2 text-2xs tabular-nums text-muted-foreground sm:flex"
+        >
+          <span title={`${summary.ahead} commits ahead`}><ArrowUpIcon className="inline" aria-hidden /> {summary.ahead}</span>
+          <span title={`${summary.behind} commits behind`}><ArrowDownIcon className="inline" aria-hidden /> {summary.behind}</span>
         </div>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1">
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onRemoteAction("fetch")}>
-          {pendingAction === "Fetch" ? <Spinner /> : <ArrowDownIcon data-icon="inline-start" />}
-          Fetch
-        </Button>
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onRemoteAction("pull")}>
-          Pull
-        </Button>
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onRemoteAction("push")}>
-          <UploadIcon data-icon="inline-start" /> Push
-        </Button>
+        <GitCommitDialog
+          key={repositoryKey}
+          branch={summary.branch}
+          stagedCount={stagedCount}
+          busy={busy}
+          committing={pendingAction === "Commit"}
+          onCommit={onCommit}
+        />
+        {pendingAction ? (
+          <span role="status" className="hidden items-center gap-1.5 text-2xs text-muted-foreground sm:flex">
+            <Spinner />
+            {pendingAction}…
+          </span>
+        ) : null}
         <Button type="button" variant="ghost" size="icon-sm" disabled={busy} aria-label="Refresh Git" onClick={onRefresh}>
           <RefreshCwIcon className={cn(busy && "animate-spin")} />
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="icon-sm" disabled={busy} aria-label="Repository actions">
+              <MoreHorizontalIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={() => onRemoteAction("fetch")}>
+                <ArrowDownIcon />
+                Fetch from remote
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onRemoteAction("pull")}>
+                <ArrowDownIcon />
+                Pull from remote
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onRemoteAction("push")}>
+                <UploadIcon />
+                Push to remote
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
+  )
+}
+
+function GitCommitDialog(props: {
+  branch: string | null
+  stagedCount: number
+  busy: boolean
+  committing: boolean
+  onCommit: (summary: string, body: string) => Promise<boolean>
+}) {
+  const { branch, stagedCount, busy, committing, onCommit } = props
+  const [open, setOpen] = useState(false)
+  const [summary, setSummary] = useState("")
+  const [body, setBody] = useState("")
+  const summaryRef = useRef<HTMLInputElement>(null)
+  const stagedLabel = `${stagedCount} staged ${stagedCount === 1 ? "file" : "files"}`
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && committing) return
+    setOpen(nextOpen)
+  }
+
+  const handleSubmit = async () => {
+    if (!summary.trim() || stagedCount === 0 || busy) return
+    const committed = await onCommit(summary, body)
+    if (!committed) return
+    setSummary("")
+    setBody("")
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          size="xs"
+          disabled={busy || stagedCount === 0}
+          aria-label={
+            stagedCount === 0
+              ? "No staged files to commit"
+              : `Commit ${stagedCount} staged ${stagedCount === 1 ? "file" : "files"}`
+          }
+          data-gharargah-git-commit-trigger=""
+        >
+          <CircleDotIcon data-icon="inline-start" />
+          Commit
+        </Button>
+      </DialogTrigger>
+      <DialogContent
+        size="prompt"
+        motion="standard"
+        data-gharargah-git-commit-dialog=""
+        onOpenAutoFocus={event => {
+          event.preventDefault()
+          summaryRef.current?.focus()
+        }}
+        onEscapeKeyDown={event => {
+          if (committing) event.preventDefault()
+        }}
+        onPointerDownOutside={event => {
+          if (committing) event.preventDefault()
+        }}
+      >
+        <form
+          data-gharargah-git-commit-form=""
+          aria-busy={committing}
+          className="flex flex-col gap-4"
+          onSubmit={event => {
+            event.preventDefault()
+            void handleSubmit()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Commit changes</DialogTitle>
+            <DialogDescription>
+              Commit {stagedLabel} to {branch ?? "the current branch"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="git-commit-summary">Summary</Label>
+              <Input
+                ref={summaryRef}
+                id="git-commit-summary"
+                name="git-commit-summary"
+                autoComplete="off"
+                required
+                value={summary}
+                onChange={event => setSummary(event.target.value)}
+                placeholder="Describe the changes"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="git-commit-body">Description</Label>
+              <Textarea
+                id="git-commit-body"
+                name="git-commit-body"
+                value={body}
+                onChange={event => setBody(event.target.value)}
+                placeholder="Add context (optional)"
+                rows={4}
+                className="min-h-24 resize-y font-mono text-2xs leading-4"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={committing}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="submit"
+              disabled={!summary.trim() || stagedCount === 0 || busy}
+              data-gharargah-git-commit=""
+            >
+              {committing ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <CircleDotIcon data-icon="inline-start" />
+              )}
+              {committing ? "Committing…" : `Commit ${stagedCount} ${stagedCount === 1 ? "file" : "files"}`}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 function GitViewTabs(props: {
   view: GitView
   stagedCount: number
-  historyCount: number
   onChange: (view: GitView) => void
 }) {
-  const { view, stagedCount, historyCount, onChange } = props
+  const { view, stagedCount, onChange } = props
   return (
     <div role="tablist" aria-label="Git views" onKeyDown={handleTabKeyDown} className="flex h-9 shrink-0 items-end gap-1 border-b border-border/60 px-3">
       <GitViewTab active={view === "changes"} label="Changes" onSelect={() => onChange("changes")} />
       <GitViewTab active={view === "staged"} label={`Staged ${stagedCount || ""}`} onSelect={() => onChange("staged")} />
-      <GitViewTab active={view === "history"} label={`History ${historyCount || ""}`} onSelect={() => onChange("history")} />
+      <GitViewTab active={view === "history"} label="History" onSelect={() => onChange("history")} />
     </div>
   )
 }
@@ -532,12 +688,20 @@ function FileNavigator(props: {
   const fileRows = rows.filter((row): row is Extract<NavigationRow, { kind: "file" }> => row.kind === "file")
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowUp", "ArrowDown", "Home", "End", "Enter"].includes(event.key)) return
+    if (event.target !== event.currentTarget) return
+    if (!["ArrowUp", "ArrowDown", "Home", "End", "Enter", " "].includes(event.key)) return
     if (fileRows.length === 0) return
     const current = fileRows.findIndex(row => row.entry.path === selected?.path && row.staged === selected.staged)
     if (event.key === "Enter") {
       const row = fileRows[Math.max(0, current)]
       if (row) onOpenFile(row.entry.path)
+      return
+    }
+    if (event.key === " ") {
+      const row = fileRows[Math.max(0, current)]
+      if (!row) return
+      event.preventDefault()
+      onToggleStage({ path: row.entry.path, staged: row.staged })
       return
     }
     const nextIndex = event.key === "Home"
@@ -586,6 +750,7 @@ function FileNavigator(props: {
         ref={scrollRef}
         data-gharargah-list-panel="git-files"
         tabIndex={0}
+        aria-label="Changed files list"
         onKeyDown={handleKeyDown}
         className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
       >
@@ -728,31 +893,56 @@ function DiffViewer(props: {
     (diffContents.original.length > 0 || diffContents.modified.length > 0)
   return (
     <div data-gharargah-git-diff="" className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-card px-3">
-        <FileDiffIcon className="text-primary" aria-hidden />
+      <div
+        data-gharargah-git-diff-toolbar=""
+        className="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-3"
+      >
+        <FileDiffIcon className="text-muted-foreground" aria-hidden />
         <span className="min-w-0 flex-1 truncate font-mono text-2xs">{selected.path}</span>
-        <Button type="button" variant="ghost" size="xs" onClick={() => onOpenFile(selected.path)}>
-          <ExternalLinkIcon data-icon="inline-start" /> Open file
-        </Button>
-        {!selected.staged && selectedEntry && selectedEntry.status !== "untracked" ? (
-          <Button type="button" variant="ghost" size="xs" disabled={pending} onClick={() => onDiscard(selectedEntry)}>
-            <RotateCcwIcon data-icon="inline-start" /> Discard file
-          </Button>
-        ) : null}
-        <div className="flex rounded-md border border-input bg-background p-0.5" aria-label="Diff layout">
-          {(["unified", "split"] as const).map(style => (
-            <button
-              key={style}
-              type="button"
-              aria-pressed={diffStyle === style}
-              className={cn("h-6 rounded-sm px-2 text-[10px] capitalize text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50", diffStyle === style && "bg-primary/15 text-foreground")}
-              onClick={() => onDiffStyleChange(style)}
-            >{style}</button>
-          ))}
-        </div>
-        <Button type="button" variant="outline" size="xs" disabled={pending} onClick={() => onToggleStage(selected)}>
+        <Button type="button" variant="secondary" size="xs" disabled={pending} onClick={() => onToggleStage(selected)}>
           {selected.staged ? "Unstage file" : "Stage file"}
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              disabled={pending}
+              aria-label={`Diff actions for ${selected.path}`}
+            >
+              <MoreHorizontalIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={() => onOpenFile(selected.path)}>
+                <ExternalLinkIcon />
+                Open file
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Diff layout</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={diffStyle}
+              onValueChange={value => onDiffStyleChange(value as DiffStyle)}
+            >
+              <DropdownMenuRadioItem value="unified">Unified</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="split">Split</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            {!selected.staged && selectedEntry && selectedEntry.status !== "untracked" ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuItem variant="destructive" onSelect={() => onDiscard(selectedEntry)}>
+                    <RotateCcwIcon />
+                    Discard changes
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         {loading ? (

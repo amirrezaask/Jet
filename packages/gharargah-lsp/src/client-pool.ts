@@ -1,7 +1,12 @@
-import * as monaco from "monaco-editor"
-import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc/browser.js"
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js"
+import {
+  CancellationTokenSource,
+  createMessageConnection,
+  type MessageConnection,
+} from "vscode-jsonrpc/browser.js"
 import type {
   CompletionItem,
+  ConfigurationParams,
   Diagnostic,
   Hover,
   Location,
@@ -13,7 +18,9 @@ import type {
   SignatureHelp,
   TextDocumentIdentifier,
   WorkspaceEdit,
+  InitializeResult,
 } from "vscode-languageserver-protocol"
+import { TextDocumentSyncKind } from "vscode-languageserver-protocol"
 import {
   applyWorkspaceEdit,
   clearLspMarkers,
@@ -26,6 +33,8 @@ import type { LspConnection } from "./manager.js"
 import type { JetLspWorkspaceDeps } from "./gharargah-workspace.js"
 import { createWebSocketTransports } from "./transport.js"
 import { gharargahLspClientCapabilities } from "./client-capabilities.js"
+import { lspConnectionMatchesDocument } from "./connection-scope.js"
+import { defaultWorkspaceConfiguration } from "./client-configuration.js"
 
 export type LspServerMessageKind = "info" | "warning" | "error"
 export type LspServerMessageHandler = (message: string, kind: LspServerMessageKind) => void
@@ -126,6 +135,20 @@ function completionLabel(item: CompletionItem): string {
   return ""
 }
 
+function requestWithCancellation<R>(
+  connection: MessageConnection,
+  method: string,
+  params: unknown,
+  token: monaco.CancellationToken,
+): Promise<R> {
+  const source = new CancellationTokenSource()
+  const subscription = token.onCancellationRequested(() => source.cancel())
+  return (connection.sendRequest(method, params, source.token) as Promise<R>).finally(() => {
+    subscription.dispose()
+    source.dispose()
+  })
+}
+
 export class LspClientPool {
   private clients = new Map<string, MonacoLspClient>()
   private pending = new Map<string, Promise<MonacoLspClient>>()
@@ -210,10 +233,16 @@ export class LspClientPool {
       const applied = await applyLspWorkspaceEdit(params.edit, deps)
       return { applied }
     })
+    connection.onRequest("workspace/configuration", (params: ConfigurationParams) =>
+      defaultWorkspaceConfiguration(params),
+    )
+    connection.onRequest("window/workDoneProgress/create", () => null)
+    connection.onRequest("client/registerCapability", () => null)
+    connection.onRequest("client/unregisterCapability", () => null)
 
     connection.listen()
 
-    await connection.sendRequest("initialize", {
+    const initialized = await connection.sendRequest<InitializeResult>("initialize", {
       processId: null,
       clientInfo: { name: "gharargah", version: "0.0.1" },
       rootUri: conn.projectRootUri,
@@ -223,7 +252,12 @@ export class LspClientPool {
 
     await connection.sendNotification("initialized", {})
 
-    this.registerProviders(conn, connection, deps)
+    const textDocumentSync = initialized.capabilities.textDocumentSync
+    const syncKind =
+      typeof textDocumentSync === "number"
+        ? textDocumentSync
+        : (textDocumentSync?.change ?? TextDocumentSyncKind.None)
+    this.registerProviders(conn, connection, deps, syncKind)
 
     let disconnected = false
     const client: MonacoLspClient = {
@@ -263,8 +297,12 @@ export class LspClientPool {
   }
 
   private matchesConnection(model: monaco.editor.ITextModel, conn: LspConnection): boolean {
-    const lang = model.getLanguageId()
-    return conn.languageIds.includes(lang)
+    return lspConnectionMatchesDocument(
+      model.uri.toString(),
+      model.getLanguageId(),
+      conn.projectRootUri,
+      conn.languageIds,
+    )
   }
 
   private async didOpen(
@@ -294,6 +332,7 @@ export class LspClientPool {
     conn: LspConnection,
     connection: MessageConnection,
     deps: JetLspWorkspaceDeps,
+    syncKind: TextDocumentSyncKind,
   ): void {
     const selector = [...new Set(conn.languageIds)]
     const disposables: monaco.IDisposable[] = []
@@ -302,44 +341,73 @@ export class LspClientPool {
       uri: model.uri.toString(),
     })
 
-    disposables.push(
-      monaco.editor.onDidCreateModel(model => {
-        if (!this.matchesConnection(model, conn)) return
-        void this.didOpen(conn.id, connection, model)
-        disposables.push(
-          model.onDidChangeContent(() => {
-            void connection.sendNotification("textDocument/didChange", {
-              textDocument: { uri: model.uri.toString(), version: model.getVersionId() },
-              contentChanges: [{ text: model.getValue() }],
-            })
-          }),
-        )
-      }),
-    )
-
-    for (const model of monaco.editor.getModels()) {
-      if (!this.matchesConnection(model, conn)) continue
+    const registerModelChanges = (model: monaco.editor.ITextModel) => {
       disposables.push(
-        model.onDidChangeContent(() => {
+        model.onDidChangeContent(event => {
+          if (syncKind === TextDocumentSyncKind.None) return
+          const contentChanges =
+            syncKind === TextDocumentSyncKind.Incremental
+              ? event.changes.map(change => ({
+                  range: {
+                    start: {
+                      line: change.range.startLineNumber - 1,
+                      character: change.range.startColumn - 1,
+                    },
+                    end: {
+                      line: change.range.endLineNumber - 1,
+                      character: change.range.endColumn - 1,
+                    },
+                  },
+                  rangeLength: change.rangeLength,
+                  text: change.text,
+                }))
+              : [{ text: model.getValue() }]
           void connection.sendNotification("textDocument/didChange", {
             textDocument: { uri: model.uri.toString(), version: model.getVersionId() },
-            contentChanges: [{ text: model.getValue() }],
+            contentChanges,
           })
         }),
       )
     }
 
     disposables.push(
+      monaco.editor.onDidCreateModel(model => {
+        if (!this.matchesConnection(model, conn)) return
+        void this.didOpen(conn.id, connection, model)
+        registerModelChanges(model)
+      }),
+    )
+
+    disposables.push(
+      monaco.editor.onWillDisposeModel(model => {
+        if (!this.matchesConnection(model, conn)) return
+        const uri = model.uri.toString()
+        const open = this.openDocs.get(conn.id)
+        if (!open?.delete(uri)) return
+        clearLspMarkers(uri, conn.id)
+        void connection.sendNotification("textDocument/didClose", {
+          textDocument: { uri },
+        })
+      }),
+    )
+
+    for (const model of monaco.editor.getModels()) {
+      if (!this.matchesConnection(model, conn)) continue
+      registerModelChanges(model)
+    }
+
+    disposables.push(
       monaco.languages.registerCompletionItemProvider(selector, {
         triggerCharacters: [".", '"', "'", "/", "@", "<"],
-        provideCompletionItems: async (model, position) => {
+        provideCompletionItems: async (model, position, _context, token) => {
+          if (!this.matchesConnection(model, conn)) return { suggestions: [] }
           await this.didOpen(conn.id, connection, model)
-          const result = await connection.sendRequest<
+          const result = await requestWithCancellation<
             { items?: CompletionItem[]; isIncomplete?: boolean } | CompletionItem[]
-          >("textDocument/completion", {
+          >(connection, "textDocument/completion", {
             textDocument: docId(model),
             position: lspPos(position),
-          })
+          }, token)
           const items = Array.isArray(result) ? result : (result?.items ?? [])
           return {
             incomplete: !Array.isArray(result) && Boolean(result?.isIncomplete),
@@ -362,12 +430,13 @@ export class LspClientPool {
 
     disposables.push(
       monaco.languages.registerHoverProvider(selector, {
-        provideHover: async (model, position) => {
+        provideHover: async (model, position, token) => {
+          if (!this.matchesConnection(model, conn)) return null
           await this.didOpen(conn.id, connection, model)
-          const hover = await connection.sendRequest<Hover | null>("textDocument/hover", {
+          const hover = await requestWithCancellation<Hover | null>(connection, "textDocument/hover", {
             textDocument: docId(model),
             position: lspPos(position),
-          })
+          }, token)
           if (!hover?.contents) return null
           const value = Array.isArray(hover.contents)
             ? hover.contents.map(c => markupToString(c as string | MarkupContent)).join("\n\n")
@@ -382,11 +451,14 @@ export class LspClientPool {
 
     disposables.push(
       monaco.languages.registerDefinitionProvider(selector, {
-        provideDefinition: async (model, position) => {
+        provideDefinition: async (model, position, token) => {
+          if (!this.matchesConnection(model, conn)) return null
           await this.didOpen(conn.id, connection, model)
-          const result = await connection.sendRequest<Location | Location[] | LocationLink[] | null>(
+          const result = await requestWithCancellation<Location | Location[] | LocationLink[] | null>(
+            connection,
             "textDocument/definition",
             { textDocument: docId(model), position: lspPos(position) },
+            token,
           )
           return this.locationsToLinks(result)
         },
@@ -395,13 +467,14 @@ export class LspClientPool {
 
     disposables.push(
       monaco.languages.registerReferenceProvider(selector, {
-        provideReferences: async (model, position, context) => {
+        provideReferences: async (model, position, context, token) => {
+          if (!this.matchesConnection(model, conn)) return []
           await this.didOpen(conn.id, connection, model)
-          const result = await connection.sendRequest<Location[] | null>("textDocument/references", {
+          const result = await requestWithCancellation<Location[] | null>(connection, "textDocument/references", {
             textDocument: docId(model),
             position: lspPos(position),
             context: { includeDeclaration: context.includeDeclaration },
-          })
+          }, token)
           return (result ?? []).map((loc: Location) => ({
             uri: monaco.Uri.parse(loc.uri),
             range: monacoRange(loc.range),
@@ -412,13 +485,14 @@ export class LspClientPool {
 
     disposables.push(
       monaco.languages.registerRenameProvider(selector, {
-        provideRenameEdits: async (model, position, newName) => {
+        provideRenameEdits: async (model, position, newName, token) => {
+          if (!this.matchesConnection(model, conn)) return null
           await this.didOpen(conn.id, connection, model)
-          const edit = await connection.sendRequest<WorkspaceEdit | null>("textDocument/rename", {
+          const edit = await requestWithCancellation<WorkspaceEdit | null>(connection, "textDocument/rename", {
             textDocument: docId(model),
             position: lspPos(position),
             newName,
-          })
+          }, token)
           if (!edit) return null
           await applyLspWorkspaceEdit(edit, deps)
           return { edits: [] }
@@ -428,14 +502,17 @@ export class LspClientPool {
 
     disposables.push(
       monaco.languages.registerDocumentFormattingEditProvider(selector, {
-        provideDocumentFormattingEdits: async model => {
+        provideDocumentFormattingEdits: async (model, _options, token) => {
+          if (!this.matchesConnection(model, conn)) return []
           await this.didOpen(conn.id, connection, model)
-          const edits = await connection.sendRequest<{ range: Range; newText: string }[] | null>(
+          const edits = await requestWithCancellation<{ range: Range; newText: string }[] | null>(
+            connection,
             "textDocument/formatting",
             {
               textDocument: docId(model),
               options: { tabSize: 2, insertSpaces: true },
             },
+            token,
           )
           return (edits ?? []).map((e: { range: Range; newText: string }) => ({
             range: monacoRange(e.range),
@@ -448,12 +525,13 @@ export class LspClientPool {
     disposables.push(
       monaco.languages.registerSignatureHelpProvider(selector, {
         signatureHelpTriggerCharacters: ["(", ","],
-        provideSignatureHelp: async (model, position) => {
+        provideSignatureHelp: async (model, position, token) => {
+          if (!this.matchesConnection(model, conn)) return null
           await this.didOpen(conn.id, connection, model)
-          const help = await connection.sendRequest<SignatureHelp | null>("textDocument/signatureHelp", {
+          const help = await requestWithCancellation<SignatureHelp | null>(connection, "textDocument/signatureHelp", {
             textDocument: docId(model),
             position: lspPos(position),
-          })
+          }, token)
           if (!help) return null
           return {
             value: {

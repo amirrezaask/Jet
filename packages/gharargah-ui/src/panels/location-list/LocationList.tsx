@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/empty.js"
 import { Lister, type ListerNode } from "@/lister/index.js"
 import { cn } from "@/lib/utils.js"
-import { useMemo } from "react"
+import { useMemo, type KeyboardEventHandler } from "react"
 
 export type LocationListProps = {
   listId: string
@@ -23,6 +23,7 @@ export type LocationListProps = {
   /** Show Lister local-filter input (default off; search tab enables). */
   showInput?: boolean
   filterPlaceholder?: string
+  onKeyDownCapture?: KeyboardEventHandler<HTMLDivElement>
 }
 
 export function LocationList({
@@ -36,6 +37,7 @@ export function LocationList({
   feed,
   showInput = false,
   filterPlaceholder = "Filter…",
+  onKeyDownCapture,
 }: LocationListProps) {
   const listerItems = useMemo<ListerNode<ListItem>[]>(
     () =>
@@ -50,16 +52,16 @@ export function LocationList({
   return (
     <div
       className="flex h-full min-h-0 flex-1 flex-col bg-background text-foreground"
-      data-gharargah-list-panel={listId}
       data-gharargah-location-list
       data-gharargah-list-feed={feed}
+      onKeyDownCapture={onKeyDownCapture}
     >
       {header}
       <Lister
         listId={listId}
         mode="flat"
         flatVariant="plain"
-        filter="local"
+        filter={showInput ? "local" : "none"}
         showInput={showInput}
         autoFocusInput={false}
         placeholder={filterPlaceholder}

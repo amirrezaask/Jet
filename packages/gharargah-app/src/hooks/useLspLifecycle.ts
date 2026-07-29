@@ -133,7 +133,13 @@ export function useLspLifecycle(
       const attach = async () => {
         const conn = await manager.ensureServerForFile(file, rootUri)
         if (!conn) return false
-        await pool.getOrCreateClient(conn)
+        try {
+          await pool.getOrCreateClient(conn)
+        } catch (error) {
+          pool.releaseConnection(conn.id)
+          await manager.stopConnection(conn.id)
+          throw error
+        }
         crashRetryCountRef.current = 0
         setLspStatus("ready")
         bumpLspRevision()

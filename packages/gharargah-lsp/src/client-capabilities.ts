@@ -1,7 +1,7 @@
 /** Initialize params capabilities advertised to language servers. */
 export const gharargahLspClientCapabilities = {
   textDocument: {
-    synchronization: { dynamicRegistration: false, willSave: false, didSave: true, didClose: true },
+    synchronization: { dynamicRegistration: false, willSave: false, didSave: false },
     completion: {
       completionItem: { snippetSupport: true, documentationFormat: ["markdown", "plaintext"] },
     },

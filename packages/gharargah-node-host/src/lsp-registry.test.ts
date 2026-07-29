@@ -95,4 +95,21 @@ describe("lsp-registry", () => {
     assert.ok(resolved.command.length > 0)
     assert.deepEqual(resolved.args, ["--stdio"])
   })
+
+  it("supports an explicit per-server binary override", () => {
+    const key = "GHARARGAH_LSP_GOPLS_BIN"
+    const previous = process.env[key]
+    process.env[key] = process.execPath
+    try {
+      const def = getLanguageServerDefinition("gopls")
+      assert.ok(def)
+      const resolved = resolveLanguageServerCommand(def)
+      assert.ok(!("error" in resolved))
+      assert.equal(resolved.command, process.execPath)
+      assert.deepEqual(resolved.args, ["serve"])
+    } finally {
+      if (previous === undefined) delete process.env[key]
+      else process.env[key] = previous
+    }
+  })
 })

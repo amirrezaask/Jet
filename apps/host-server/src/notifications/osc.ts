@@ -4,6 +4,30 @@ import type {
   NotificationType,
 } from "@gharargah/shared"
 
+const MAX_OSC_BYTES = 64 * 1024
+const MAX_TITLE_LENGTH = 240
+const MAX_MESSAGE_LENGTH = 8_000
+const PROVIDERS = new Set<AgentProvider>([
+  "claude",
+  "cursor",
+  "codex",
+  "opencode",
+  "grok",
+  "shell",
+  "system",
+])
+const TYPES = new Set<NotificationType>([
+  "turn-completed",
+  "input-required",
+  "permission-required",
+  "failed",
+  "process-exited",
+  "session-started",
+  "provider-notification",
+  "background-output",
+  "system",
+])
+
 /**
  * Parse provider/system notify OSC sequences from a PTY chunk.
  *
@@ -19,7 +43,31 @@ export type ParsedOscNotification = Omit<
 > & { source: "osc" }
 
 const OSC_RE =
-  /\x1b\](?:9;([^\x07\x1b]*)|777;notify;([^\x07\x1b]*);([^\x07\x1b]*)|1337;(Gharargah(?:=notify)?;[^\x07\x1b]*))(?:\x07|\x1b\\)/g
+  /\x1b\](?:9;([^\x07\x1b]*)|777;notify;([^\x07\x1b]*);([^\x07\x1b]*)|1337;((?:Gharargah=notify;|GharargahNotify=)[^\x07\x1b]*))(?:\x07|\x1b\\)/g
+
+function cleanText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string") return null
+  const text = value
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .trim()
+  return text ? text.slice(0, maxLength) : null
+}
+
+function cleanId(value: unknown): string | null {
+  return cleanText(value, 512)
+}
+
+function asType(value: unknown): NotificationType {
+  return typeof value === "string" && TYPES.has(value as NotificationType)
+    ? (value as NotificationType)
+    : "provider-notification"
+}
+
+function asProvider(value: unknown): AgentProvider | null {
+  return typeof value === "string" && PROVIDERS.has(value as AgentProvider)
+    ? (value as AgentProvider)
+    : null
+}
 
 function parseGharargahPayload(payload: string): ParsedOscNotification | null {
   // Gharargah=notify;{json} or GharargahNotify=type|title|message
@@ -27,35 +75,24 @@ function parseGharargahPayload(payload: string): ParsedOscNotification | null {
     const json = payload.slice("Gharargah=notify;".length)
     try {
       const data = JSON.parse(json) as Record<string, unknown>
-      const type = (data.type as NotificationType | undefined) ?? "provider-notification"
+      const type = asType(data.type)
       const title =
-        typeof data.title === "string" && data.title.trim()
-          ? data.title
-          : "Provider notification"
+        cleanText(data.title, MAX_TITLE_LENGTH) ?? "Provider notification"
       return {
         source: "osc",
         type,
         title,
-        message: typeof data.message === "string" ? data.message : null,
-        sessionId: typeof data.sessionId === "string" ? data.sessionId : null,
-        projectId: typeof data.projectId === "string" ? data.projectId : null,
-        provider: (data.provider as AgentProvider | undefined) ?? null,
-        eventId: typeof data.eventId === "string" ? data.eventId : null,
-        providerTurnId:
-          typeof data.providerTurnId === "string" ? data.providerTurnId : null,
-        providerSessionId:
-          typeof data.providerSessionId === "string" ? data.providerSessionId : null,
-        providerEvent:
-          typeof data.providerEvent === "string" ? data.providerEvent : null,
+        message: cleanText(data.message, MAX_MESSAGE_LENGTH),
+        provider: asProvider(data.provider),
+        eventId: cleanId(data.eventId),
+        providerTurnId: cleanId(data.providerTurnId),
+        providerSessionId: cleanId(data.providerSessionId),
+        providerEvent: cleanText(data.providerEvent, 120),
         requiresAction:
           typeof data.requiresAction === "boolean" ? data.requiresAction : undefined,
-        resolveOf:
-          data.resolveOf && typeof data.resolveOf === "object"
-            ? (data.resolveOf as IngestNotificationRequest["resolveOf"])
-            : undefined,
-        metadata: data.metadata && typeof data.metadata === "object"
-          ? (data.metadata as Record<string, unknown>)
-          : { osc: true },
+        // OSC is untrusted terminal output. Resolving existing actionable
+        // notifications is reserved for the higher-confidence hook path.
+        metadata: { osc: 1337 },
       }
     } catch {
       return null
@@ -64,9 +101,10 @@ function parseGharargahPayload(payload: string): ParsedOscNotification | null {
   if (payload.startsWith("GharargahNotify=")) {
     const rest = payload.slice("GharargahNotify=".length)
     const [typeRaw, titleRaw, ...messageParts] = rest.split("|")
-    const type = (typeRaw as NotificationType) || "provider-notification"
-    const title = titleRaw?.trim() || "Provider notification"
-    const message = messageParts.join("|").trim() || null
+    const type = asType(typeRaw)
+    const title =
+      cleanText(titleRaw, MAX_TITLE_LENGTH) ?? "Provider notification"
+    const message = cleanText(messageParts.join("|"), MAX_MESSAGE_LENGTH)
     return {
       source: "osc",
       type,
@@ -84,20 +122,20 @@ export function parseOscNotifications(chunk: string): ParsedOscNotification[] {
   let match: RegExpExecArray | null
   while ((match = OSC_RE.exec(chunk)) !== null) {
     if (match[1] != null) {
-      const message = match[1].trim()
+      const message = cleanText(match[1], MAX_MESSAGE_LENGTH)
       if (!message) continue
       out.push({
         source: "osc",
         type: "provider-notification",
-        title: message.slice(0, 120),
+        title: message.slice(0, MAX_TITLE_LENGTH),
         message: message.length > 120 ? message : null,
         metadata: { osc: 9 },
       })
       continue
     }
     if (match[2] != null) {
-      const title = match[2].trim() || "Notification"
-      const body = match[3]?.trim() || null
+      const title = cleanText(match[2], MAX_TITLE_LENGTH) ?? "Notification"
+      const body = cleanText(match[3], MAX_MESSAGE_LENGTH)
       out.push({
         source: "osc",
         type: "provider-notification",
@@ -126,7 +164,11 @@ export function parseOscStreamChunk(
     const bel = combined.indexOf("\x07", start + 2)
     const stringTerminator = combined.indexOf("\x1b\\", start + 2)
     if (bel < 0 && stringTerminator < 0) {
-      nextBuffer = combined.slice(start, start + 64 * 1024)
+      const tail = combined.slice(start)
+      // Never let an unterminated control sequence retain unbounded PTY
+      // output. Once over the cap, discard it and wait for a fresh OSC opener.
+      nextBuffer =
+        Buffer.byteLength(tail, "utf8") <= MAX_OSC_BYTES ? tail : ""
     }
   }
   return {

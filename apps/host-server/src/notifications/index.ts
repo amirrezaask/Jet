@@ -10,4 +10,8 @@ export {
   parseOscStreamChunk,
   normalizeHookEventName,
 } from "./osc.js"
+export {
+  normalizeProviderHookRequest,
+  type ProviderHookContext,
+} from "./provider-hooks.js"
 export { ensureNotificationSchema, contentHashFor } from "./schema.js"

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useDeferredValue,
+  type CSSProperties,
   type ReactElement,
 } from "react"
 import { createPortal } from "react-dom"
@@ -52,6 +53,7 @@ import {
 import type { AppNotification, AgentProvider } from "@gharargah/shared"
 import { createAgentBridge } from "./agent-bridge.js"
 import { useNotificationCenter } from "./hooks/useNotificationCenter.js"
+import { notificationLaunchForProvider } from "./hooks/notification-provider-launch.js"
 import {
   TabStore,
   TabTypeRegistry,
@@ -67,10 +69,12 @@ import {
   requestConfirm,
   AppShell,
   GharargahHome,
+  GharargahWindowTitlebar,
   GharagahSidebar,
   sidebarWidthStyle,
   mapHomeGroupsToSidebar,
   TerminalSessionModal,
+  formatSessionHeaderTitle,
   AgentCliPickerOverlay,
   NotificationBell,
   NotificationCenter,
@@ -118,6 +122,7 @@ import {
   terminalCwdForTab,
   terminalPtyIdForTab,
   terminalSessionForTab,
+  terminalSessionNeedsCloseConfirmation,
   setTerminalCustomLabel,
   bumpTerminalActivity,
 } from "./tabs/terminal-session.js"
@@ -333,6 +338,7 @@ export function GharargahApp() {
   const [editorFocus, setEditorFocus] = useState(false)
   const [searchSupported, setSearchSupported] = useState(false)
   const [searchScanReady, setSearchScanReady] = useState(false)
+  const [projectSearchOpen, setProjectSearchOpen] = useState(false)
   const [editorChromeTick, setEditorChromeTick] = useState(0)
   const [recentCommands, setRecentCommands] = useState<string[]>(() =>
     loadRecentCommands(),
@@ -586,7 +592,11 @@ export function GharargahApp() {
   const openTerminalInWorkspace = useCallback(
     async (
       rootUri: string,
-      opts?: { label?: string; launchCommand?: string },
+      opts?: {
+        label?: string
+        launchCommand?: string
+        launchArgs?: string[] | ((tabId: string) => string[])
+      },
     ) => {
       if (rootUri && rootUri !== workspace.root?.uri) {
         activateProject(rootUri)
@@ -604,6 +614,7 @@ export function GharargahApp() {
         cwdRootUri: rootUri,
         label,
         launchCommand: opts?.launchCommand,
+        launchArgs: opts?.launchArgs,
         },
       )
       setFocusedPanel(panelId)
@@ -740,6 +751,11 @@ export function GharargahApp() {
         const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
           label: driver.label,
           launchCommand: driver.command,
+          launchArgs: sessionId =>
+            notificationLaunchForProvider(driver.id, driver.command, {
+              sessionId,
+              origin: window.location.origin,
+            }).args,
         })
         bindAgentToSession(tabId, {
           agentId: driver.id,
@@ -1055,6 +1071,7 @@ export function GharargahApp() {
         session.customLabel ??
         "Terminal",
       launchCommand: session.launchCommand,
+      launchArgs: session.launchArgs,
       ptyId: session.ptyId,
       status: session.status,
       exitCode: session.exitCode,
@@ -1062,6 +1079,8 @@ export function GharargahApp() {
       agentId: session.agentId,
       agentDriverId: session.agentDriverId,
       agentThreadId: session.agentThreadId,
+      hasUserInput: session.hasUserInput,
+      hasMeaningfulOutput: session.hasMeaningfulOutput,
       lastActivityAt: session.lastActivityAt,
     }))
     const modalTabId = terminalModalTabIdRef.current
@@ -1089,7 +1108,7 @@ export function GharargahApp() {
   const closeTerminalTab = useCallback(
     async (panelId: PanelId, tabId: string) => {
       const session = terminalSessionForTab(tabId)
-      if (session?.status === "starting" || session?.status === "running") {
+      if (session && terminalSessionNeedsCloseConfirmation(session)) {
         const label =
           workspace.tabRegistry.get(tabId)?.label ??
           session.customLabel ??
@@ -1571,11 +1590,12 @@ export function GharargahApp() {
   )
 
   const removeProjectByRootUri = useCallback(
-    (rootUri: string) => {
+    async (rootUri: string): Promise<boolean> => {
       const folder = workspace.folders.find(
         candidate => candidate.root.uri === rootUri,
       )
-      if (folder) void removeWorkspaceFolder(folder.id)
+      if (!folder) return false
+      return removeWorkspaceFolder(folder.id)
     },
     [workspace, removeWorkspaceFolder],
   )
@@ -1682,6 +1702,7 @@ export function GharargahApp() {
         getFocusedPanel: () => appStateRef.current.focusedPanel,
         setPaletteOpen,
         setQuickOpenOpen,
+        setProjectSearchOpen,
         setBufferListOpen,
         setTerminalListOpen,
         setOpenFileOpen,
@@ -1878,6 +1899,7 @@ export function GharargahApp() {
       bind("Mod-n", appCommands.sessionNew, noOverlay),
       bind("Mod-k", appCommands.terminalList, noOverlay),
       bind("Mod-p", appCommands.quickOpen, whenWorkspace),
+      bind("Mod-Shift-f", appCommands.search, whenWorkspace),
       bind("Mod-b", toggleSidebar, noOverlay),
       bind("Mod-Shift-g", appCommands.showGit, whenWorkspace),
       bind("Mod-Shift-p", appCommands.palette, noOverlay),
@@ -2350,11 +2372,13 @@ export function GharargahApp() {
             label: entry.label,
             cwdRootUri,
             launchCommand: entry.launchCommand,
+            launchArgs: entry.launchArgs,
           })
           hydrateTerminalSession({
             tabId: entry.tabId,
             cwdRootUri,
             launchCommand: entry.launchCommand,
+            launchArgs: entry.launchArgs,
             ptyId: entry.ptyId,
             status: entry.status,
             exitCode: entry.exitCode,
@@ -2362,6 +2386,8 @@ export function GharargahApp() {
             agentId: entry.agentId,
             agentDriverId: entry.agentDriverId,
             agentThreadId: entry.agentThreadId,
+            hasUserInput: entry.hasUserInput,
+            hasMeaningfulOutput: entry.hasMeaningfulOutput,
             lastActivityAt: entry.lastActivityAt,
           })
         }
@@ -2763,6 +2789,13 @@ export function GharargahApp() {
     appearanceSettings.sessionLayout === "tabs" || isSidebarLayout
   const [sidebarWorkspaceHost, setSidebarWorkspaceHost] =
     useState<HTMLDivElement | null>(null)
+  const desktopWindowChrome =
+    window.gharargahDesktop?.windowChrome?.customTitlebar === true
+      ? window.gharargahDesktop.windowChrome
+      : null
+  const windowTitle = terminalModalTabId
+    ? (workspace.tabRegistry.get(terminalModalTabId)?.label ?? "Session")
+    : "Mission Control"
 
   return (
     <OverlayControllerProvider
@@ -2792,7 +2825,28 @@ export function GharargahApp() {
             className="flex h-full min-h-0 w-full flex-col"
             data-gharargah-shell="home"
             data-gharargah-session-layout={appearanceSettings.sessionLayout}
+            style={
+              desktopWindowChrome
+                ? ({
+                    "--gharargah-window-chrome-height": `${desktopWindowChrome.titlebarHeight}px`,
+                  } as CSSProperties)
+                : undefined
+            }
           >
+            {desktopWindowChrome ? (
+              <GharargahWindowTitlebar
+                platform={desktopWindowChrome.platform}
+                title={windowTitle}
+                sidebar={
+                  isSidebarLayout
+                    ? {
+                        collapsed: appearanceSettings.sidebarCollapsed,
+                        width: appearanceSettings.sidebarWidth,
+                      }
+                    : null
+                }
+              />
+            ) : null}
             {appearanceSettings.sessionLayout === "tabs" ? (
               <div className="flex items-center gap-1 border-b border-border bg-muted/35 pe-2">
                 <div className="min-w-0 flex-1">
@@ -2903,6 +2957,7 @@ export function GharargahApp() {
                           sidebarWidth: widthPx,
                         }))
                       }
+                      showWindowChrome={desktopWindowChrome != null}
                       sessionActions={{
                         onOpen: openSidebarSession,
                         onRename: renameSidebarSession,
@@ -2928,8 +2983,21 @@ export function GharargahApp() {
                             project.rootUri,
                           )
                         },
-                        onRemoveProject: project =>
-                          removeProjectByRootUri(project.rootUri),
+                        onRemoveProject: project => {
+                          const filterPath =
+                            appearanceSettings.sidebarProjectFilterPath
+                          if (
+                            filterPath != null &&
+                            normalizeAbsPath(filterPath) ===
+                              normalizeAbsPath(project.path)
+                          ) {
+                            setAppearanceSettings(prev => ({
+                              ...prev,
+                              sidebarProjectFilterPath: null,
+                            }))
+                          }
+                          void removeProjectByRootUri(project.rootUri)
+                        },
                       }}
                       onOpenSettings={() => setSettingsOpen(true)}
                       serverLabel={
@@ -2999,55 +3067,49 @@ export function GharargahApp() {
                     ? createPortal(node, sidebarWorkspaceHost)
                     : node)(
                   <TerminalSessionModal
-                sessionId={terminalModalTabId}
-                open
-                  presentation={isInlineWorkspace ? "inline" : "modal"}
-                onOpenChange={open => {
-                  if (!open) closeTerminalModal()
-                }}
-                title={(() => {
-                  void terminalModalTitleTick
-                  void editorChromeTick
-                  const rootUri = terminalCwdForTab(terminalModalTabId)
-                    const project = workspace.folders.find(
-                      f => f.root.uri === rootUri,
-                    )?.root.name
-                  if (sessionMode === "editor") {
-                    const fileLabel = editorActiveTabId
+                    sessionId={terminalModalTabId}
+                    open
+                    presentation={isInlineWorkspace ? "inline" : "modal"}
+                    windowChrome={desktopWindowChrome}
+                    onOpenChange={open => {
+                      if (!open) closeTerminalModal()
+                    }}
+                    title={(() => {
+                      void terminalModalTitleTick
+                      void editorChromeTick
+                      const rootUri = terminalCwdForTab(terminalModalTabId)
+                      const project = workspace.folders.find(
+                        f => f.root.uri === rootUri,
+                      )?.root.name
+                      if (sessionMode === "editor") {
+                        const fileLabel = editorActiveTabId
                         ? (workspace.fileForUri(editorActiveTabId)?.name ??
                           tabStore.title(editorActiveTabId))
-                      : "Editor"
-                    return project ? `${project} / ${fileLabel}` : fileLabel
-                  }
-                  if (sessionMode === "agent") {
-                      const terminalSession =
-                        terminalSessionForTab(terminalModalTabId)
-                      const agentName =
-                        agentCatalog?.agents.find(
-                      agent => agent.id === activeAgentThread?.agentId,
-                    )?.displayName ??
+                          : "Editor"
+                        return formatSessionHeaderTitle(project, fileLabel)
+                      }
+                      if (sessionMode === "agent") {
+                        return project ?? "Session"
+                      }
+                      if (sessionMode === "git")
+                        return formatSessionHeaderTitle(project, "Git")
+                      if (sessionMode === "todos")
+                        return formatSessionHeaderTitle(project, "TODOs")
+                      const label =
                         workspace.tabRegistry.get(terminalModalTabId)?.label ??
-                        terminalSession?.agentId ??
-                        "Agent"
-                    return project ? `${project} / ${agentName}` : agentName
-                  }
-                    if (sessionMode === "git")
-                      return project ? `${project} / Git` : "Git"
-                    if (sessionMode === "todos")
-                      return project ? `${project} / TODOs` : "TODOs"
-                    const label =
-                      workspace.tabRegistry.get(terminalModalTabId)?.label ??
-                      "Terminal"
-                  return project ? `${project} / ${label}` : label
-                })()}
-                gitBranch={terminalModalGitBranch}
-                projectRootUri={terminalCwdForTab(terminalModalTabId) || null}
-                  launchCommand={
-                    terminalSessionForTab(terminalModalTabId)?.launchCommand ??
-                    null
-                  }
-                mode={sessionMode}
-                showAgentTab={
+                        "Terminal"
+                      return formatSessionHeaderTitle(project, label)
+                    })()}
+                    gitBranch={terminalModalGitBranch}
+                    projectRootUri={
+                      terminalCwdForTab(terminalModalTabId) || null
+                    }
+                    launchCommand={
+                      terminalSessionForTab(terminalModalTabId)?.launchCommand ??
+                      null
+                    }
+                    mode={sessionMode}
+                    showAgentTab={
                   Boolean(
                     terminalSessionForTab(terminalModalTabId)?.agentId,
                   ) ||
@@ -3066,10 +3128,6 @@ export function GharargahApp() {
                         .filter(Boolean)
                         .at(-1) ??
                       null
-                    const providerName =
-                      agentCatalog?.agents.find(
-                        agent => agent.id === activeAgentThread.agentId,
-                      )?.displayName ?? activeAgentThread.agentId
                     const selectedModelSlug = activeAgentThread.model
                     const models =
                       agentCatalog?.agents.find(
@@ -3084,7 +3142,6 @@ export function GharargahApp() {
                     return {
                       threadTitle: activeAgentThread.title,
                       projectName,
-                      providerName,
                       modelLabel,
                       usage: activeAgentThread.usage,
                     }
@@ -3498,9 +3555,23 @@ export function GharargahApp() {
                         commitTree(tree)
                       })()
                     }}
-                      onQuickOpen={() =>
+                    onQuickOpen={() =>
                         void executeCommand("workspace.quickOpen")
                       }
+                      projectSearchOpen={projectSearchOpen}
+                      onProjectSearchOpenChange={setProjectSearchOpen}
+                      onOpenSearchItem={item => {
+                        setPendingEditorNavigation(item.fileUri, {
+                          line: item.line,
+                          column: item.column,
+                        })
+                        openFileInEditor(
+                          item.fileUri,
+                          fileUriToPath(item.fileUri),
+                          item.line,
+                          item.column,
+                        )
+                      }}
                       onCommandPalette={() =>
                         void executeCommand("ui.showCommandPalette")
                       }
@@ -3574,13 +3645,6 @@ export function GharargahApp() {
                       rootUri={terminalCwdForTab(terminalModalTabId) || null}
                       theme={activeTheme}
                       focusPath={gitFocusPath}
-                      repositoryName={
-                        workspace.folders.find(
-                            folder =>
-                              folder.root.uri ===
-                              terminalCwdForTab(terminalModalTabId),
-                        )?.root.name ?? "Repository"
-                      }
                       onBranchChange={setTerminalModalGitBranch}
                       onOpenFile={relativePath => {
                         const rootUri = terminalCwdForTab(terminalModalTabId)
@@ -3635,6 +3699,7 @@ export function GharargahApp() {
             }))}
             selectedRootUri={agentCliPickerRootUri}
             onSelectedRootUriChange={setAgentCliPickerRootUri}
+            onRemoveProject={removeProjectByRootUri}
             onSelect={driver => {
               const rootUri = agentCliPickerRootUri
               setAgentCliPickerRootUri(null)

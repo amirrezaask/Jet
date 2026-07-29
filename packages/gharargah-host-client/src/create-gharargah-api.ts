@@ -300,6 +300,8 @@ export function createGharargahApi(
         return result
       },
       write: (id, data) => transport.invoke("terminal:write", id, data),
+      writeBinary: (id, dataBase64) =>
+        transport.invoke("terminal:writeBinary", id, dataBase64),
       resize: (id, cols, rows) => transport.invoke("terminal:resize", id, cols, rows),
       onData: (id, callback) => {
         let set = terminalDataListeners.get(id)

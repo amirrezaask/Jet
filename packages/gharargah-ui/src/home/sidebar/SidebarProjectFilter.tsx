@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { forwardRef, type ReactNode, type ButtonHTMLAttributes } from "react"
 import { Folder } from "lucide-react"
 import { cn } from "@/lib/utils.js"
 import {
@@ -23,40 +23,49 @@ export type SidebarProjectFilterProps = {
   className?: string
 }
 
-function FilterChip({
-  selected,
-  onClick,
-  children,
-  "aria-label": ariaLabel,
-  "data-option": dataOption,
-}: {
-  selected: boolean
-  onClick: () => void
-  children: ReactNode
-  "aria-label": string
-  "data-option": string
-}) {
+const FilterChip = forwardRef<
+  HTMLButtonElement,
+  {
+    selected: boolean
+    children: ReactNode
+    "aria-label": string
+    "data-option": string
+  } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "type">
+>(function FilterChip(
+  {
+    selected,
+    children,
+    "aria-label": ariaLabel,
+    "data-option": dataOption,
+    className,
+    ...props
+  },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       role="radio"
       aria-checked={selected}
       aria-label={ariaLabel}
       data-gharargah-sidebar-project-filter-option={dataOption}
-      data-state={selected ? "on" : "off"}
-      onClick={onClick}
       className={cn(
         "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-3xs font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected
           ? "border-transparent bg-muted text-foreground"
           : "border-border/80 bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+        className,
       )}
+      {...props}
+      data-state={selected ? "on" : "off"}
     >
       {children}
     </button>
   )
-}
+})
+
 
 export function SidebarProjectFilter({
   projects,
@@ -97,7 +106,7 @@ export function SidebarProjectFilter({
             <span className="max-w-[7rem] truncate">{project.name}</span>
             {project.unreadCount > 0 ? (
               <span
-                className="rounded-full bg-primary/20 px-1 text-[0.625rem] tabular-nums text-primary"
+                className="rounded-full bg-primary/20 px-1 text-4xs tabular-nums text-primary"
                 data-gharargah-sidebar-project-filter-unread=""
               >
                 {project.unreadCount > 99 ? "99+" : project.unreadCount}
@@ -113,7 +122,7 @@ export function SidebarProjectFilter({
         return (
           <ContextMenu key={project.id}>
             <ContextMenuTrigger asChild>{chip}</ContextMenuTrigger>
-            <ContextMenuContent>
+            <ContextMenuContent data-gharargah-sidebar-project-filter-menu="">
               <ContextMenuItem onSelect={() => projectActions.onNewSession(project)}>
                 New session
               </ContextMenuItem>

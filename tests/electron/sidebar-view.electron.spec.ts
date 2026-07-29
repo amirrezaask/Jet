@@ -227,6 +227,73 @@ test.describe("sidebar view", () => {
             .getAttribute("data-gharargah-sidebar-state"),
         )
         .toBe("collapsed")
+
+      const selectedCompactRow = page.locator(
+        "[data-gharargah-sidebar-session-selected]",
+      )
+      const projectMonogram = selectedCompactRow.locator(
+        "[data-gharargah-sidebar-project-monogram]",
+      )
+      await expectLocatorVisible(projectMonogram)
+      await expect
+        .poll(() =>
+          projectMonogram.getAttribute(
+            "data-gharargah-sidebar-project-name",
+          ),
+        )
+        .toBe(projectName)
+      await expect
+        .poll(() => projectMonogram.textContent())
+        .toBe("SW")
+      await expect
+        .poll(() => selectedCompactRow.getAttribute("aria-label"))
+        .toMatch(new RegExp(`project ${projectName}`, "i"))
+      await expect
+        .poll(async () => {
+          const label = await selectedCompactRow.getAttribute("aria-label")
+          return label != null && !/codex/i.test(label)
+        })
+        .toBe(true)
+      await expect
+        .poll(async () => {
+          const [sidebarBox, rowBox, monogramBox] = await Promise.all([
+            page
+              .locator("[data-gharargah-mission-sidebar]")
+              .boundingBox(),
+            selectedCompactRow.boundingBox(),
+            projectMonogram.boundingBox(),
+          ])
+          if (!sidebarBox || !rowBox || !monogramBox) return null
+          const center = (box: { x: number; width: number }) =>
+            box.x + box.width / 2
+          return {
+            rowCentered:
+              Math.abs(center(rowBox) - center(sidebarBox)) <= 1,
+            monogramCentered:
+              Math.abs(center(monogramBox) - center(sidebarBox)) <= 1,
+            // 1.125rem monogram — allow rem/subpixel variance across zoom.
+            monogramSized:
+              monogramBox.width >= 14 &&
+              monogramBox.width <= 20 &&
+              monogramBox.height >= 14 &&
+              monogramBox.height <= 20,
+          }
+        })
+        .toEqual({
+          rowCentered: true,
+          monogramCentered: true,
+          monogramSized: true,
+        })
+      await projectMonogram.hover()
+      await expect
+        .poll(() =>
+          page
+            .getByRole("tooltip")
+            .filter({ hasText: projectName })
+            .isVisible(),
+        )
+        .toBe(true)
+
       await page.getByRole("button", { name: "Toggle sidebar" }).first().click()
       await expect
         .poll(() =>
@@ -390,6 +457,80 @@ test.describe("sidebar view", () => {
         )
         .count()
       expect(chipCount).toBeGreaterThanOrEqual(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("removes a project from sidebar filter chip context menu", async () => {
+    const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
+    const { app, page } = await launchJet()
+    try {
+      await execCommand(page, "ui.setSessionLayout.sidebar")
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => window.__gharargahAgent!.getState().sessionLayout,
+          ),
+        )
+        .toBe("sidebar")
+
+      await page.evaluate(
+        path => window.__gharargahAgent!.addWorkspace(path),
+        secondPath,
+      )
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+        )
+        .toBe(2)
+
+      await expectSelectorVisible(page, "[data-gharargah-sidebar-project-filter]")
+      const chip = page.locator(
+        '[data-gharargah-sidebar-project-filter-option]:not([data-gharargah-sidebar-project-filter-option="all"])',
+      ).filter({ hasText: "second-workspace" })
+      await expectLocatorVisible(chip)
+      await chip.click()
+      await expect
+        .poll(() => chip.getAttribute("data-state"))
+        .toBe("on")
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-gharargah-mission-sidebar]")
+            .getAttribute("data-gharargah-sidebar-project-filter-active"),
+        )
+        .toMatch(/second-workspace/)
+
+      await chip.click({ button: "right" })
+      const menu = page.locator(
+        "[data-gharargah-sidebar-project-filter-menu]",
+      )
+      await expectLocatorVisible(menu)
+      await menu.getByRole("menuitem", { name: "Remove project" }).click()
+
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            window.__gharargahAgent!.listWorkspaces().map(p => p.name),
+          ),
+        )
+        .not.toContain("second-workspace")
+      await expectLocatorCount(chip, 0)
+      await expect
+        .poll(() =>
+          page
+            .locator('[data-gharargah-sidebar-project-filter-option="all"]')
+            .getAttribute("data-state"),
+        )
+        .toBe("on")
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-gharargah-mission-sidebar]")
+            .getAttribute("data-gharargah-sidebar-project-filter-active"),
+        )
+        .toBe("all")
     } finally {
       await app.close()
     }

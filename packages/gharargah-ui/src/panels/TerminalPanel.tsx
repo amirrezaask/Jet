@@ -14,6 +14,7 @@ import { createTerminalInputWriter } from "./terminal-input-writer.js"
 export type TerminalPanelProps = {
   cwdRootUri: string
   launchCommand?: string
+  launchArgs?: string[]
   theme: GharargahTheme
   tabId: string
   focused: boolean
@@ -23,6 +24,8 @@ export type TerminalPanelProps = {
   exitCode?: number
   sessionGeneration?: number
   onPtyId?: (tabId: string, ptyId: string | null) => void
+  onInput?: (tabId: string) => void
+  onOutput?: (tabId: string) => void
   onTitleChange?: (tabId: string, title: string) => void
   onRestart?: () => void
   onClose?: () => void
@@ -94,17 +97,37 @@ function readCssVar(name: string): string | null {
 
 function liveThemeOptions(theme: GharargahTheme): NonNullable<XTerm["options"]["theme"]> {
   const options = themeOptions(theme)
+  const readAnsi = (
+    key: keyof NonNullable<typeof options>,
+    cssKey: string,
+  ): string | undefined =>
+    readCssVar(`--gharargah-terminal-ansi-${cssKey}`) ??
+    (options[key] as string | undefined)
+
   return {
     ...options,
     background: "transparent",
     foreground: readCssVar("--gharargah-text") ?? options.foreground,
     cursor: readCssVar("--gharargah-accent") ?? options.cursor,
-    selectionBackground: readCssVar("--gharargah-selection") ?? options.selectionBackground,
+    selectionBackground:
+      readCssVar("--gharargah-selection") ?? options.selectionBackground,
+    black: readAnsi("black", "black"),
+    red: readAnsi("red", "red"),
+    green: readAnsi("green", "green"),
+    yellow: readAnsi("yellow", "yellow"),
+    blue: readAnsi("blue", "blue"),
+    magenta: readAnsi("magenta", "magenta"),
+    cyan: readAnsi("cyan", "cyan"),
+    white: readAnsi("white", "white"),
+    brightBlack: readAnsi("brightBlack", "bright-black"),
+    brightRed: readAnsi("brightRed", "bright-red"),
+    brightGreen: readAnsi("brightGreen", "bright-green"),
+    brightYellow: readAnsi("brightYellow", "bright-yellow"),
+    brightBlue: readAnsi("brightBlue", "bright-blue"),
+    brightMagenta: readAnsi("brightMagenta", "bright-magenta"),
+    brightCyan: readAnsi("brightCyan", "bright-cyan"),
+    brightWhite: readAnsi("brightWhite", "bright-white"),
   }
-}
-
-function readTerminalSurfaceBackground(): string {
-  return "transparent"
 }
 
 function readTerminalLineHeight(): number {
@@ -196,6 +219,7 @@ function focusTerminalInput(tabId: string): void {
 export function TerminalPanel({
   cwdRootUri,
   launchCommand,
+  launchArgs,
   theme,
   tabId,
   focused,
@@ -205,6 +229,8 @@ export function TerminalPanel({
   exitCode,
   sessionGeneration = 0,
   onPtyId,
+  onInput,
+  onOutput,
   onTitleChange,
   onRestart,
   onClose,
@@ -220,6 +246,10 @@ export function TerminalPanel({
   themeRef.current = theme
   const onTitleChangeRef = useRef(onTitleChange)
   onTitleChangeRef.current = onTitleChange
+  const onInputRef = useRef(onInput)
+  onInputRef.current = onInput
+  const onOutputRef = useRef(onOutput)
+  onOutputRef.current = onOutput
   const onFailedRef = useRef(onFailed)
   onFailedRef.current = onFailed
   const onOpenPathRef = useRef(onOpenPath)
@@ -232,6 +262,7 @@ export function TerminalPanel({
     const container = containerRef.current
 
     const term = new XTerm({
+      allowTransparency: true,
       theme: themeOptions(theme),
       fontSize: readRootFontSize(),
       fontFamily: readTerminalFontFamily(),
@@ -272,6 +303,7 @@ export function TerminalPanel({
 
     let unsub: (() => void) | null = null
     let dataDispose: { dispose: () => void } | null = null
+    let binaryDispose: { dispose: () => void } | null = null
     let inputWriter: ReturnType<typeof createTerminalInputWriter> | null = null
     let ptyStarted = false
     const exitUnsubscribe = terminalApi.onExit((id, code) => {
@@ -317,7 +349,6 @@ export function TerminalPanel({
 
     const syncTheme = () => {
       term.options.theme = liveThemeOptions(themeRef.current)
-      container.style.background = readTerminalSurfaceBackground()
       term.refresh(0, Math.max(0, term.rows - 1))
       session.cursorMotion?.refresh(false)
     }
@@ -327,15 +358,26 @@ export function TerminalPanel({
       setConnectedPtyId(id)
       setDisplayStatus("running")
       setDisplayExitCode(undefined)
-      unsub = terminalApi.onData(id, data => term.write(data))
+      unsub = terminalApi.onData(id, data => {
+        onOutputRef.current?.(tabId)
+        term.write(data)
+      })
       inputWriter = createTerminalInputWriter(
         data => terminalApi.write(id, data),
         error => {
           const message = error instanceof Error ? error.message : String(error)
           term.writeln(`\r\n\x1b[31mTerminal input failed:\x1b[0m ${message}`)
         },
+        data => terminalApi.writeBinary(id, btoa(data)),
       )
-      dataDispose = term.onData(data => inputWriter?.enqueue(data))
+      dataDispose = term.onData(data => {
+        onInputRef.current?.(tabId)
+        inputWriter?.enqueue(data)
+      })
+      binaryDispose = term.onBinary(data => {
+        onInputRef.current?.(tabId)
+        inputWriter?.enqueueBinary(data)
+      })
       syncFit()
       // xterm was fitted before the PTY existed, so a no-op fit here still
       // needs one authoritative resize to replace the host's 80×24 default.
@@ -358,7 +400,10 @@ export function TerminalPanel({
             onFailedRef.current?.()
             return
           }
-          if (attached.output) term.write(attached.output)
+          if (attached.output) {
+            onOutputRef.current?.(tabId)
+            term.write(attached.output)
+          }
           if (attached.title) onTitleChangeRef.current?.(tabId, attached.title)
           connectPty(existingPtyId)
           if (attached.status === "exited") {
@@ -375,7 +420,11 @@ export function TerminalPanel({
         return
       }
       void terminalApi
-        .create(cwdRootUri, launchCommand ? { command: launchCommand } : undefined)
+        .create(cwdRootUri, {
+          ...(launchCommand ? { command: launchCommand, args: launchArgs } : {}),
+          cols: term.cols,
+          rows: term.rows,
+        })
         .then(({ id, title }) => {
           if (cancelled) {
             void terminalApi.dispose(id)
@@ -441,6 +490,7 @@ export function TerminalPanel({
       titleDispose.dispose()
       exitUnsubscribe()
       dataDispose?.dispose()
+      binaryDispose?.dispose()
       inputWriter?.dispose()
       unsub?.()
       pathLinks?.dispose()
@@ -449,7 +499,7 @@ export function TerminalPanel({
       term.dispose()
       sessionRef.current = null
     }
-  }, [cwdRootUri, tabId, onPtyId, launchCommand, sessionGeneration])
+  }, [cwdRootUri, tabId, onPtyId, launchCommand, launchArgs, sessionGeneration])
 
   useEffect(() => {
     setDisplayStatus(status)
@@ -462,7 +512,6 @@ export function TerminalPanel({
     if (!session || !container) return
 
     session.term.options.theme = liveThemeOptions(themeRef.current)
-    container.style.background = readTerminalSurfaceBackground()
     session.cursorMotion?.setActive(focused && isActive)
 
     if (!focused || !isActive) return

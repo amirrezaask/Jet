@@ -8,6 +8,10 @@ import {
 } from "@/components/ui/dialog.js"
 import { COMMAND_SHELL_CLASS } from "@/lib/command-shell.js"
 import { Lister, type ListerNode } from "@/lister/index.js"
+import {
+  readPaletteRowHeight,
+  type PaletteRowLayout,
+} from "@/lister/measure.js"
 import { cn } from "@/lib/utils.js"
 
 export interface PaletteShellItem<T> {
@@ -37,6 +41,10 @@ export interface PaletteShellProps<T> {
   contentClassName?: string
   itemClassName?: string
   itemStyle?: (item: T) => CSSProperties | undefined
+  /** Single-line rows stay compact; detail rows reserve title + metadata line boxes. */
+  rowLayout?: PaletteRowLayout
+  /** Virtual row height in CSS pixels. Defaults to the compact single-line palette contract. */
+  estimateSize?: (item: T) => number
 }
 
 export function PaletteShell<T>({
@@ -59,6 +67,8 @@ export function PaletteShell<T>({
   contentClassName,
   itemClassName,
   itemStyle,
+  rowLayout = "single",
+  estimateSize,
 }: PaletteShellProps<T>) {
   const isControlled = queryProp !== undefined
   const [uncontrolledQuery, setUncontrolledQuery] = useState("")
@@ -117,9 +127,11 @@ export function PaletteShell<T>({
             requireQueryForSelection={requireQueryForSelection}
             aria-label={title}
             items={listerItems}
-            itemClassName={cn("mx-1.5 px-2.5 py-3", itemClassName)}
+            itemClassName={cn("mx-1.5 px-2.5 py-1.5", itemClassName)}
             itemStyle={node => itemStyle?.(node.data)}
-            estimateSize={() => 48}
+            estimateSize={node =>
+              estimateSize?.(node.data) ?? readPaletteRowHeight(rowLayout)
+            }
             betweenInputAndList={statusRow}
             listClassName="min-h-0 max-h-[min(var(--gharargah-overlay-list-max),calc(100dvh-5rem))] px-0.5 pb-1.5"
             className="min-h-0"

@@ -17,6 +17,7 @@ export {
 export { AppShell } from "./shell/AppShell.js"
 export {
   GharargahHome,
+  GharargahWindowTitlebar,
   ProjectSection,
   TerminalCard,
   SessionCard,
@@ -24,6 +25,7 @@ export {
   StatusBadge,
   SessionTabBar,
   TerminalSessionModal,
+  formatSessionHeaderTitle,
   SessionTerminalWorkspace,
   TERMINAL_MODAL_SESSION_LIST_ID,
   ModalEditorPane,
@@ -41,6 +43,8 @@ export {
   SIDEBAR_WIDTH_DEFAULT,
   mapHomeGroupsToSidebar,
   type GharargahHomeProps,
+  type GharargahWindowTitlebarProps,
+  type DesktopWindowPlatform,
   type HomeProjectGroup,
   type HomeTerminalEntry,
   type TerminalCardStatus,

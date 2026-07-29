@@ -7,9 +7,13 @@ import {
   listSessionTerminals,
   listTerminalSessions,
   markTerminalExited,
+  recordTerminalOutput,
+  recordTerminalUserInput,
   registerTerminalSession,
   removeSessionTerminal,
+  restartTerminalSession,
   terminalSessionForTab,
+  terminalSessionNeedsCloseConfirmation,
   trackTerminalPtyId,
 } from "./terminal-session.js"
 
@@ -52,4 +56,71 @@ test("session terminals stay grouped under their parent session", () => {
 
   clearTerminalSession(parentTabId)
   assert.equal(terminalSessionForTab(first!.tabId), undefined)
+})
+
+test("fresh shell lifecycle does not require close confirmation", () => {
+  const tabId = "terminal:fresh-shell"
+  registerTerminalSession(tabId, "file:///tmp")
+
+  assert.equal(
+    terminalSessionNeedsCloseConfirmation(terminalSessionForTab(tabId)),
+    false,
+  )
+
+  trackTerminalPtyId(tabId, "pty:fresh-shell")
+  recordTerminalOutput(tabId)
+
+  assert.equal(terminalSessionForTab(tabId)?.hasUserInput, false)
+  assert.equal(terminalSessionForTab(tabId)?.hasMeaningfulOutput, false)
+  assert.equal(
+    terminalSessionNeedsCloseConfirmation(terminalSessionForTab(tabId)),
+    false,
+  )
+  clearTerminalSession(tabId)
+})
+
+test("user input makes a running shell require close confirmation", () => {
+  const tabId = "terminal:used-shell"
+  registerTerminalSession(tabId, "file:///tmp")
+  trackTerminalPtyId(tabId, "pty:used-shell")
+
+  recordTerminalUserInput(tabId)
+  recordTerminalOutput(tabId)
+
+  assert.equal(terminalSessionForTab(tabId)?.hasUserInput, true)
+  assert.equal(terminalSessionForTab(tabId)?.hasMeaningfulOutput, true)
+  assert.equal(
+    terminalSessionNeedsCloseConfirmation(terminalSessionForTab(tabId)),
+    true,
+  )
+
+  markTerminalExited("pty:used-shell", 0)
+  assert.equal(
+    terminalSessionNeedsCloseConfirmation(terminalSessionForTab(tabId)),
+    false,
+  )
+  clearTerminalSession(tabId)
+})
+
+test("launched CLI output is meaningful without user input", () => {
+  const tabId = "terminal:cli-output"
+  registerTerminalSession(tabId, "file:///tmp", "codex")
+  trackTerminalPtyId(tabId, "pty:cli-output")
+
+  recordTerminalOutput(tabId)
+
+  assert.equal(terminalSessionForTab(tabId)?.hasMeaningfulOutput, true)
+  assert.equal(
+    terminalSessionNeedsCloseConfirmation(terminalSessionForTab(tabId)),
+    true,
+  )
+
+  restartTerminalSession(tabId)
+  assert.equal(terminalSessionForTab(tabId)?.hasUserInput, false)
+  assert.equal(terminalSessionForTab(tabId)?.hasMeaningfulOutput, false)
+  assert.equal(
+    terminalSessionNeedsCloseConfirmation(terminalSessionForTab(tabId)),
+    false,
+  )
+  clearTerminalSession(tabId)
 })

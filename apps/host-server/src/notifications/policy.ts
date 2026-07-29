@@ -9,9 +9,34 @@ import {
 export function mergeNotificationPreferences(
   partial?: Partial<NotificationPreferences> | null,
 ): NotificationPreferences {
+  const input = partial ?? {}
+  const boolean = (key: keyof NotificationPreferences): boolean => {
+    const value = input[key]
+    return typeof value === "boolean"
+      ? value
+      : (DEFAULTS[key] as boolean)
+  }
+  const integer = (
+    key: keyof NotificationPreferences,
+    min: number,
+    max: number,
+  ): number => {
+    const value = input[key]
+    const fallback = DEFAULTS[key] as number
+    if (typeof value !== "number" || !Number.isFinite(value)) return fallback
+    return Math.min(max, Math.max(min, Math.trunc(value)))
+  }
   return {
-    ...DEFAULTS,
-    ...(partial ?? {}),
+    desktopEnabled: boolean("desktopEnabled"),
+    soundEnabled: boolean("soundEnabled"),
+    notifyOnCompleted: boolean("notifyOnCompleted"),
+    notifyOnInputRequired: boolean("notifyOnInputRequired"),
+    notifyOnPermissionRequired: boolean("notifyOnPermissionRequired"),
+    notifyOnFailure: boolean("notifyOnFailure"),
+    includeBackgroundOutput: boolean("includeBackgroundOutput"),
+    backgroundOutputSettleMs: integer("backgroundOutputSettleMs", 250, 60_000),
+    retentionDays: integer("retentionDays", 1, 365),
+    maxRetained: integer("maxRetained", 100, 50_000),
   }
 }
 

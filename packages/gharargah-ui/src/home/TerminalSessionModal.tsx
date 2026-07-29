@@ -1,6 +1,13 @@
-import { useEffect, type ReactNode } from "react"
+import { useEffect, type CSSProperties, type ReactNode } from "react"
 import type { AgentUsage } from "@gharargah/agents"
-import { GitBranch, XIcon } from "lucide-react"
+import {
+  Bot,
+  Code2,
+  GitBranch,
+  SquareTerminal,
+  XIcon,
+  type LucideIcon,
+} from "lucide-react"
 import {
   Dialog,
   DialogClose,
@@ -17,6 +24,8 @@ import {
 import { cn } from "@/lib/utils.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
+import { distinctSessionHeaderLabel } from "./session-header-labels.js"
+import type { DesktopWindowPlatform } from "./GharargahWindowTitlebar.js"
 
 export type SessionDialogMode =
   | "agent"
@@ -28,7 +37,6 @@ export type SessionDialogMode =
 export type AgentSessionHeaderMeta = {
   threadTitle: string
   projectName?: string | null
-  providerName?: string | null
   modelLabel?: string | null
   usage?: AgentUsage | null
 }
@@ -38,6 +46,11 @@ export type TerminalSessionModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   presentation?: "modal" | "inline"
+  windowChrome?: {
+    platform: DesktopWindowPlatform
+    titlebarHeight: number
+    trafficLights: boolean
+  } | null
   title: string
   /** CLI binary running in the PTY (shown under title). */
   launchCommand?: string | null
@@ -109,6 +122,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     open,
     onOpenChange,
     presentation = "modal",
+    windowChrome = null,
     title,
     launchCommand,
     gitBranch,
@@ -153,15 +167,48 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   )
 
   const showAgentMeta = mode === "agent" && agentSessionHeader
+  const ownsWindowChrome = presentation === "modal" && windowChrome != null
+  const dragRegion = ownsWindowChrome
+    ? ({ WebkitAppRegion: "drag" } as CSSProperties)
+    : undefined
+  const noDragRegion = ownsWindowChrome
+    ? ({ WebkitAppRegion: "no-drag" } as CSSProperties)
+    : undefined
+  const headerStyle = ownsWindowChrome
+    ? ({
+        ...dragRegion,
+        height: `${windowChrome.titlebarHeight}px`,
+        minHeight: `${windowChrome.titlebarHeight}px`,
+      } as CSSProperties)
+    : undefined
   const displayTitle = showAgentMeta ? agentSessionHeader.threadTitle : title
+  const displayLaunchCommand = mode === "agent" ? null : launchCommand
+  const displayProjectName = showAgentMeta
+    ? distinctSessionHeaderLabel(
+        displayTitle,
+        agentSessionHeader.projectName,
+      )
+    : null
 
   const sessionHeader = (
     <DialogHeader
       data-gharargah-terminal-modal-header=""
       {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
-      className="grid h-10 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-background px-2 py-0 text-left sm:text-left"
+      data-gharargah-window-drag-region={ownsWindowChrome ? "" : undefined}
+      className={cn(
+        "flex flex-row shrink-0 items-center gap-2 border-b bg-background px-2 py-0 text-left sm:text-left",
+        !ownsWindowChrome && "h-10",
+      )}
+      style={headerStyle}
     >
-      <div className="flex min-w-0 items-center gap-1.5 justify-self-stretch">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        {windowChrome?.trafficLights && ownsWindowChrome ? (
+          <div
+            aria-hidden
+            data-gharargah-traffic-light-spacer=""
+            style={dragRegion}
+          />
+        ) : null}
         <h2
           data-gharargah-terminal-modal-title
           className="shrink truncate text-sm font-semibold tracking-tight text-foreground"
@@ -170,30 +217,20 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         </h2>
         {showAgentMeta ? (
           <div className="flex min-w-0 items-center gap-1 truncate font-mono text-3xs text-muted-foreground">
-            {agentSessionHeader.projectName ||
-            agentSessionHeader.providerName ||
-            agentSessionHeader.modelLabel ? (
+            {displayProjectName || agentSessionHeader.modelLabel ? (
               <span aria-hidden="true" className="text-muted-foreground/50">
                 ·
               </span>
             ) : null}
-            {agentSessionHeader.projectName ? (
-              <span className="truncate">{agentSessionHeader.projectName}</span>
-            ) : null}
-            {agentSessionHeader.projectName &&
-            agentSessionHeader.providerName ? (
-              <span aria-hidden="true" className="text-muted-foreground/50">
-                ·
+            {displayProjectName ? (
+              <span
+                className="truncate"
+                data-gharargah-session-project-name
+              >
+                {displayProjectName}
               </span>
             ) : null}
-            {agentSessionHeader.providerName ? (
-              <span className="truncate" data-chat-header-provider="true">
-                {agentSessionHeader.providerName}
-              </span>
-            ) : null}
-            {(agentSessionHeader.projectName ||
-              agentSessionHeader.providerName) &&
-            agentSessionHeader.modelLabel ? (
+            {displayProjectName && agentSessionHeader.modelLabel ? (
               <span aria-hidden="true" className="text-muted-foreground/50">
                 ·
               </span>
@@ -204,20 +241,20 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
               </span>
             ) : null}
           </div>
-        ) : launchCommand || gitBranch ? (
+        ) : displayLaunchCommand || gitBranch ? (
           <p className="flex min-w-0 items-center gap-1.5 truncate font-mono text-3xs text-muted-foreground">
             <span aria-hidden="true" className="text-muted-foreground/50">
               ·
             </span>
-            {launchCommand ? (
+            {displayLaunchCommand ? (
               <span
                 data-gharargah-terminal-launch-command
                 className="truncate"
               >
-                {launchCommand}
+                {displayLaunchCommand}
               </span>
             ) : null}
-            {launchCommand && gitBranch ? (
+            {displayLaunchCommand && gitBranch ? (
               <span className="text-muted-foreground/50" aria-hidden>
                 ·
               </span>
@@ -238,45 +275,51 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         ) : null}
       </div>
 
-      <Tabs
-        data-gharargah-session-mode-switch
-        value={mode}
-        onValueChange={value => onModeChange(value as SessionDialogMode)}
-        className="block min-w-0 justify-self-center"
+      <div
+        className="flex shrink-0 items-center gap-0.5"
+        style={noDragRegion}
       >
-        <TabsList
-          variant="line"
-          aria-label="Session tools"
-          className="gap-0"
+        <Tabs
+          data-gharargah-session-mode-switch
+          value={mode}
+          onValueChange={value => onModeChange(value as SessionDialogMode)}
+          className="block min-w-0"
         >
-          <SessionToolTab
-            mode="agent"
-            label="Agent"
-            disabled={!showAgentTab}
-            active={mode === "agent"}
-          />
-          <SessionToolTab
-            mode="editor"
-            active={mode === "editor"}
-            label="Editor"
-            shortcut="Mod-Shift-e"
-          />
-          <SessionToolTab
-            mode="git"
-            active={mode === "git"}
-            label="Git"
-            shortcut="Mod-Shift-g"
-          />
-          <SessionToolTab
-            mode="terminal"
-            active={mode === "terminal"}
-            label="Terminal"
-            shortcut="Mod-Shift-t"
-          />
-        </TabsList>
-      </Tabs>
-
-      <div className="flex min-w-0 shrink-0 items-center justify-self-end gap-0.5">
+          <TabsList
+            variant="line"
+            aria-label="Session tools"
+            className="h-8 gap-0"
+          >
+            <SessionToolTab
+              mode="agent"
+              label="Agent"
+              icon={Bot}
+              disabled={!showAgentTab}
+              active={mode === "agent"}
+            />
+            <SessionToolTab
+              mode="editor"
+              active={mode === "editor"}
+              label="Editor"
+              icon={Code2}
+              shortcut="Mod-Shift-e"
+            />
+            <SessionToolTab
+              mode="git"
+              active={mode === "git"}
+              label="Git"
+              icon={GitBranch}
+              shortcut="Mod-Shift-g"
+            />
+            <SessionToolTab
+              mode="terminal"
+              active={mode === "terminal"}
+              label="Terminal"
+              icon={SquareTerminal}
+              shortcut="Mod-Shift-t"
+            />
+          </TabsList>
+        </Tabs>
         {projectRootUri && onOpenInApp ? (
           <OpenInAppMenu
             rootUri={projectRootUri}
@@ -460,10 +503,11 @@ function SessionToolTab(props: {
   mode: SessionDialogMode
   active: boolean
   label: string
+  icon: LucideIcon
   shortcut?: string
   disabled?: boolean
 }) {
-  const { mode, active, label, shortcut, disabled = false } = props
+  const { mode, active, label, icon: Icon, shortcut, disabled = false } = props
   const title = disabled
     ? `${label} (no agent in this session)`
     : shortcut
@@ -479,9 +523,9 @@ function SessionToolTab(props: {
       disabled={disabled}
       data-gharargah-session-mode-tab={mode}
       data-active={active ? "" : undefined}
-      className="min-w-14 px-3"
+      className="size-8 min-w-8 flex-none px-0"
     >
-      {label}
+      <Icon className="size-4" aria-hidden />
     </TabsTrigger>
   )
 }

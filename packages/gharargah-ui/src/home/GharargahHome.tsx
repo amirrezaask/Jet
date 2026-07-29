@@ -1,8 +1,24 @@
-import { useMemo, useState, type ReactNode } from "react"
-import { FolderPlus, Search } from "lucide-react"
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
+import { FolderPlus, Search, SearchX } from "lucide-react"
 import type { PanelId } from "@gharargah/shared"
 import { Button } from "@/components/ui/button.js"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty.js"
 import { Input } from "@/components/ui/input.js"
+import { Kbd } from "@/components/ui/kbd.js"
 import { KeyBindingKbd } from "@/components/KeyBindingKbd.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
 import { formatHomeDate, timeOfDayGreeting } from "./greeting.js"
@@ -69,11 +85,13 @@ export function GharargahHome(props: GharargahHomeProps) {
     onViewSessionNotifications,
   } = props
   const [query, setQuery] = useState("")
+  const searchRef = useRef<HTMLInputElement>(null)
+  const deferredQuery = useDeferredValue(query)
   const greeting = timeOfDayGreeting()
   const dateLabel = formatHomeDate()
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = deferredQuery.trim().toLowerCase()
     return groups
       .map(group => {
         const sessions = group.terminals
@@ -101,7 +119,54 @@ export function GharargahHome(props: GharargahHomeProps) {
         return { group, sessions }
       })
       .filter((row): row is { group: HomeProjectGroup; sessions: SessionCardModel[] } => row !== null)
-  }, [groups, query])
+  }, [groups, deferredQuery])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return
+      const target = event.target
+      const editing =
+        target instanceof HTMLElement &&
+        target.closest("input, textarea, select, [contenteditable='true']") !=
+          null
+
+      if (
+        event.key === "/" &&
+        !editing &&
+        document.querySelector(
+          "[data-gharargah-terminal-modal], [role='dialog'][data-state='open']",
+        ) == null &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        event.preventDefault()
+        searchRef.current?.focus()
+        return
+      }
+
+      if (
+        event.key !== "Escape" ||
+        document.activeElement !== searchRef.current
+      ) {
+        return
+      }
+      event.preventDefault()
+      if (searchRef.current?.value) {
+        setQuery("")
+      } else {
+        searchRef.current?.blur()
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
+
+  const resultCount = filtered.reduce(
+    (count, row) => count + row.sessions.length,
+    0,
+  )
 
   return (
     <div
@@ -134,15 +199,26 @@ export function GharargahHome(props: GharargahHomeProps) {
             <div className="flex flex-wrap items-center gap-2">
               {notificationBell}
               <div className="relative min-w-[14rem] flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
                 <Input
+                  ref={searchRef}
                   data-gharargah-home-search
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder="Search projects & sessions…"
-                  className="h-8 pe-3 ps-8 text-xs"
+                  placeholder="Search projects or sessions…"
+                  className="h-8 pe-8 ps-8 text-xs"
                   aria-label="Search projects and sessions"
+                  aria-keyshortcuts="/"
                 />
+                <Kbd
+                  aria-hidden
+                  className="absolute top-1/2 right-2 h-4 min-w-4 -translate-y-1/2 bg-transparent px-0 text-3xs"
+                >
+                  /
+                </Kbd>
               </div>
               {onAddProject ? (
                 <Button
@@ -153,7 +229,7 @@ export function GharargahHome(props: GharargahHomeProps) {
                   className="gap-1.5"
                   onClick={onAddProject}
                 >
-                  <FolderPlus className="size-3.5" />
+                  <FolderPlus data-icon="inline-start" />
                   Add project
                 </Button>
               ) : null}
@@ -162,28 +238,65 @@ export function GharargahHome(props: GharargahHomeProps) {
         </header>
 
         {groups.length === 0 ? (
-          <div
+          <Empty
             data-gharargah-home-empty
-            className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 px-4 py-10 text-center"
+            className="border border-border/70 bg-card/20"
           >
-            <p className="text-sm text-muted-foreground">No projects yet. Add a folder to get started.</p>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FolderPlus aria-hidden />
+              </EmptyMedia>
+              <EmptyTitle>No projects yet</EmptyTitle>
+              <EmptyDescription>
+                Add a folder to start a CLI session in its project context.
+              </EmptyDescription>
+            </EmptyHeader>
             {onAddProject ? (
+              <EmptyContent>
+                <Button
+                  type="button"
+                  data-gharargah-home-add-project
+                  onClick={onAddProject}
+                >
+                  <FolderPlus data-icon="inline-start" />
+                  Add project
+                </Button>
+              </EmptyContent>
+            ) : null}
+          </Empty>
+        ) : filtered.length === 0 ? (
+          <Empty
+            data-gharargah-home-empty="search"
+            className="border border-dashed border-border/70"
+          >
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <SearchX aria-hidden />
+              </EmptyMedia>
+              <EmptyTitle>No matching projects or sessions</EmptyTitle>
+              <EmptyDescription>
+                Nothing matches “{deferredQuery.trim()}”. Try another project,
+                session, or agent name.
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
               <Button
                 type="button"
-                data-gharargah-home-add-project
-                onClick={onAddProject}
+                variant="outline"
+                onClick={() => {
+                  setQuery("")
+                  searchRef.current?.focus()
+                }}
               >
-                <FolderPlus className="size-4" />
-                Add project
+                Clear search
               </Button>
-            ) : null}
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No projects match “{query.trim()}”.
-          </p>
+            </EmptyContent>
+          </Empty>
         ) : (
-          <div className="flex flex-col gap-3 pb-3">
+          <div
+            className="flex flex-col gap-3 pb-3"
+            aria-busy={query !== deferredQuery}
+          >
             {filtered.map(({ group, sessions }) => (
               <ProjectSection
                 key={group.id}
@@ -206,6 +319,11 @@ export function GharargahHome(props: GharargahHomeProps) {
             ))}
           </div>
         )}
+        <p className="sr-only" aria-live="polite" aria-atomic="true">
+          {query.trim()
+            ? `${filtered.length} projects and ${resultCount} sessions shown.`
+            : ""}
+        </p>
 
         <footer
           data-gharargah-home-shortcuts=""

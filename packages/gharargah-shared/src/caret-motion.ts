@@ -6,6 +6,7 @@ export const GHOST_MAX = 5
 export const GHOST_DECAY_MS = 200
 export const GHOST_INITIAL_OPACITY = 0.28
 export const GHOST_DECAY_CURVE = 1.6
+export const GHOST_EASING = "cubic-bezier(0.23, 1, 0.32, 1)"
 
 export type CaretPoint = {
   x: number
@@ -20,6 +21,94 @@ export type CaretGhost = {
   h: number
   opacity: number
   bornAt: number
+}
+
+export type CaretGhostVisual = {
+  x: number
+  y: number
+  width: number
+  height: number
+  opacity?: number
+  borderRadius?: string
+  background?: string
+}
+
+/** Local WAAPI shapes — avoid DOM lib so Node packages can typecheck shared. */
+type CaretKeyframe = Record<string, string | number>
+type CaretKeyframeAnimationOptions = {
+  duration: number
+  easing?: string
+  fill?: "none" | "forwards" | "backwards" | "both" | "auto"
+}
+
+type CaretGhostElement = {
+  style: {
+    transform: string
+    width: string
+    height: string
+    opacity: string
+    borderRadius: string
+    background: string
+    willChange: string
+  }
+  animate(
+    frames: CaretKeyframe[],
+    options: CaretKeyframeAnimationOptions,
+  ): { cancel(): void }
+}
+
+/**
+ * Reuses a fixed set of ghost nodes and lets the compositor own their fade.
+ * Callers only write geometry when a caret moves; there is no per-frame JS.
+ */
+export class CaretGhostCompositor {
+  private readonly animations: Array<{ cancel(): void } | null>
+  private next = 0
+
+  constructor(private readonly elements: readonly CaretGhostElement[]) {
+    this.animations = elements.map(element => {
+      element.style.willChange = "transform, opacity"
+      element.style.opacity = "0"
+      return null
+    })
+  }
+
+  push(visual: CaretGhostVisual): void {
+    if (this.elements.length === 0) return
+    const index = this.next
+    this.next = (this.next + 1) % this.elements.length
+    const element = this.elements[index]!
+    this.animations[index]?.cancel()
+    element.style.transform = `translate3d(${visual.x}px, ${visual.y}px, 0)`
+    element.style.width = `${Math.max(1, visual.width)}px`
+    element.style.height = `${Math.max(1, visual.height)}px`
+    element.style.borderRadius = visual.borderRadius ?? "1px"
+    element.style.background =
+      visual.background ?? "var(--gharargah-cursor-color, var(--gharargah-accent))"
+    const opacity = visual.opacity ?? GHOST_INITIAL_OPACITY
+    element.style.opacity = String(opacity)
+    this.animations[index] = element.animate(
+      [{ opacity }, { opacity: 0 }],
+      {
+        duration: GHOST_DECAY_MS,
+        easing: GHOST_EASING,
+        fill: "forwards",
+      },
+    )
+  }
+
+  clear(): void {
+    for (let index = 0; index < this.elements.length; index++) {
+      this.animations[index]?.cancel()
+      this.animations[index] = null
+      this.elements[index]!.style.opacity = "0"
+    }
+    this.next = 0
+  }
+
+  dispose(): void {
+    this.clear()
+  }
 }
 
 export function expSmooth(current: number, target: number, speed: number, dt: number): number {

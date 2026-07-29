@@ -19,7 +19,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-test-module-mocks --import tsx --test src/model-registry.test.ts src/language.test.ts src/utf16.test.ts src/diagnostics.test.ts src/theme.test.ts"
+    "test": "node --experimental-test-module-mocks --import tsx --test src/model-registry.test.ts src/pending-editor.test.ts src/language.test.ts src/utf16.test.ts src/diagnostics.test.ts src/theme.test.ts src/editor-shortcuts.test.ts"
   },
   "dependencies": {
     "@gharargah/shared": "workspace:*",

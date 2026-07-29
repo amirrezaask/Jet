@@ -173,6 +173,63 @@ export function applyGharargahThemeCss(theme: GharargahTheme): void {
     root.style.setProperty("--sidebar-ring", c.focusBorder)
   }
   applyJetHighlightCssVars(theme)
+  applyGharargahTerminalAnsiCssVars(theme)
+  applyAgentChatCssVars(theme)
+}
+
+export function applyAgentChatCssVars(theme: GharargahTheme): void {
+  const root = getDocumentElement()
+  if (!root) return
+  const c = theme.colors
+  const dark = isDarkTheme(theme)
+
+  root.style.setProperty("--agent-feed-bg", c.bg)
+  root.style.setProperty("--agent-feed-primary", c.text)
+  root.style.setProperty("--agent-feed-muted", c.textMuted)
+  root.style.setProperty(
+    "--agent-user-bubble",
+    dark
+      ? `color-mix(in srgb, ${c.hover} 75%, ${c.panel} 25%)`
+      : `color-mix(in srgb, ${c.hover} 88%, ${c.panel} 12%)`,
+  )
+  root.style.setProperty(
+    "--agent-composer-surface",
+    dark
+      ? `color-mix(in srgb, ${c.panelRaised} 72%, ${c.bg} 28%)`
+      : `color-mix(in srgb, ${c.panelRaised} 65%, ${c.bg} 35%)`,
+  )
+  root.style.setProperty(
+    "--agent-composer-border",
+    `color-mix(in srgb, ${c.border} 80%, transparent)`,
+  )
+}
+
+export function applyGharargahTerminalAnsiCssVars(theme: GharargahTheme): void {
+  const ansi = theme.terminalAnsi
+  const root = getDocumentElement()
+  if (!root || !ansi) return
+  const entries: [keyof JetTerminalAnsiColors, string][] = [
+    ["black", ansi.black],
+    ["red", ansi.red],
+    ["green", ansi.green],
+    ["yellow", ansi.yellow],
+    ["blue", ansi.blue],
+    ["magenta", ansi.magenta],
+    ["cyan", ansi.cyan],
+    ["white", ansi.white],
+    ["brightBlack", ansi.brightBlack],
+    ["brightRed", ansi.brightRed],
+    ["brightGreen", ansi.brightGreen],
+    ["brightYellow", ansi.brightYellow],
+    ["brightBlue", ansi.brightBlue],
+    ["brightMagenta", ansi.brightMagenta],
+    ["brightCyan", ansi.brightCyan],
+    ["brightWhite", ansi.brightWhite],
+  ]
+  for (const [key, value] of entries) {
+    const cssKey = key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
+    root.style.setProperty(`--gharargah-terminal-ansi-${cssKey}`, value)
+  }
 }
 
 export function applyJetHighlightCssVars(theme: GharargahTheme): void {

@@ -449,7 +449,6 @@ export const AgentChatView = memo(function AgentChatView(props: {
         <ChatHeader
           activeThreadTitle={thread.title}
           activeProjectName={projectName}
-          activeProviderName={selectedAgent?.displayName ?? thread.agentId}
           activeModelLabel={modelLabel}
           connection={thread.connection}
           usage={thread.usage}

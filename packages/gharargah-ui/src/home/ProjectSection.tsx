@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import type { PanelId } from "@gharargah/shared"
 import { Trash2 } from "lucide-react"
 import {
@@ -75,6 +76,10 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     projectName: name,
     onOpenTodos: onOpenTodos ? () => onOpenTodos(rootUri) : undefined,
   })
+  const terminalById = useMemo(
+    () => new Map(terminals.map(terminal => [terminal.tabId, terminal])),
+    [terminals],
+  )
 
   const titleBlock = (
     <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -107,7 +112,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
       data-gharargah-project-section
       data-gharargah-project-name={name}
       data-gharargah-project-id={projectId || path}
-      className="flex flex-col gap-2 border-b border-border/40 pb-3 last:border-b-0 last:pb-0"
+      className="flex flex-col gap-2 border-b border-border/40 pb-3 [contain-intrinsic-size:auto_8rem] [content-visibility:auto] last:border-b-0 last:pb-0"
     >
       <div
         data-gharargah-project-row
@@ -152,7 +157,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
           <EmptySessionCard rootUri={rootUri} onNewSession={onNewSession} />
         ) : (
           sessions.map(session => {
-            const term = terminals.find(t => t.tabId === session.id)
+            const term = terminalById.get(session.id)
             if (!term) return null
             return (
               <SessionCard

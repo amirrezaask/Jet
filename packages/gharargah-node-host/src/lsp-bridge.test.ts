@@ -6,6 +6,8 @@ import { pathToFileUri } from "@gharargah/shared"
 import {
   LspFramingDecoder,
   encodeLspMessage,
+  getLspSession,
+  setLspCrashHandler,
   startLspSession,
   stopAllLspSessions,
   createLspRestartHelper,
@@ -14,6 +16,7 @@ import { resetLanguageServerRegistryForTests } from "./lsp-registry.js"
 
 afterEach(() => {
   stopAllLspSessions()
+  setLspCrashHandler(() => {})
   resetLanguageServerRegistryForTests()
 })
 
@@ -98,6 +101,45 @@ describe("startLspSession", () => {
       assert.equal(result.error, undefined, result.error)
       assert.ok(result.id.startsWith("lsp-mock-language-server-"))
       assert.match(result.transportUrl, /^ws:\/\/127\.0\.0\.1:\d+$/)
+    } finally {
+      if (prevMock === undefined) delete process.env.GHARARGAH_LSP_MOCK
+      else process.env.GHARARGAH_LSP_MOCK = prevMock
+      if (prevBin === undefined) delete process.env.GHARARGAH_LSP_MOCK_BIN
+      else process.env.GHARARGAH_LSP_MOCK_BIN = prevBin
+      resetLanguageServerRegistryForTests()
+    }
+  })
+
+  it("cleans up and reports a server that exits successfully but unexpectedly", async () => {
+    const mockScript = path.join(os.tmpdir(), `gharargah-exiting-lsp-${Date.now()}.sh`)
+    const { writeFileSync } = await import("node:fs")
+    writeFileSync(mockScript, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+
+    const prevMock = process.env.GHARARGAH_LSP_MOCK
+    const prevBin = process.env.GHARARGAH_LSP_MOCK_BIN
+    process.env.GHARARGAH_LSP_MOCK = "1"
+    process.env.GHARARGAH_LSP_MOCK_BIN = mockScript
+    resetLanguageServerRegistryForTests()
+
+    try {
+      const crashed = new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error("timed out waiting for LSP exit")),
+          2_000,
+        )
+        setLspCrashHandler(id => {
+          clearTimeout(timeout)
+          resolve(id)
+        })
+      })
+      const result = await startLspSession({
+        rootUri: pathToFileUri(os.tmpdir()),
+        serverId: "mock-language-server",
+        allowedRoots: [os.tmpdir()],
+      })
+
+      assert.equal(await crashed, result.id)
+      assert.equal(getLspSession(result.id), undefined)
     } finally {
       if (prevMock === undefined) delete process.env.GHARARGAH_LSP_MOCK
       else process.env.GHARARGAH_LSP_MOCK = prevMock

@@ -30,9 +30,49 @@ test.describe("session Git and editor workspaces", () => {
         needle: "src/index.ts",
         noResultsText: "No matching changes",
       })
+      const repositoryToolbar = page.locator("[data-gharargah-git-toolbar]")
+      const session = page.locator("[data-gharargah-terminal-modal]")
+      await expect
+        .poll(() => session.getByText("workspace / Git", { exact: true }).count())
+        .toBeGreaterThanOrEqual(1)
+      await expect
+        .poll(() => session.getByText("main", { exact: true }).count())
+        .toBeGreaterThanOrEqual(1)
+      await expectLocatorCount(repositoryToolbar.getByText("workspace", { exact: true }), 0)
+      await expectLocatorCount(repositoryToolbar.getByText("main", { exact: true }), 0)
+      await expectLocatorCount(repositoryToolbar.getByText(/^Commit \d+$/), 0)
+      await expectLocatorVisible(
+        repositoryToolbar.getByRole("button", {
+          name: "Switch branch, current branch main",
+        }),
+      )
+      await expectLocatorCount(repositoryToolbar.getByRole("button"), 4)
+      await expectLocatorVisible(repositoryToolbar.getByRole("button", { name: "Refresh Git" }))
+      await expectLocatorVisible(page.getByRole("tab", { name: "History", exact: true }))
+      await expectLocatorCount(page.locator("[data-gharargah-git-commit-form]"), 0)
+      await expect
+        .poll(async () => {
+          const workspace = await page.locator("[data-gharargah-git-workspace]").boundingBox()
+          const content = await page.locator("[data-gharargah-git-content]").boundingBox()
+          if (!workspace || !content) return Number.POSITIVE_INFINITY
+          return Math.abs(workspace.y + workspace.height - (content.y + content.height))
+        })
+        .toBeLessThanOrEqual(1)
+      const repositoryActions = repositoryToolbar.getByRole("button", { name: "Repository actions" })
+      await repositoryActions.focus()
+      await repositoryActions.press("Enter")
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Fetch from remote" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Pull from remote" }))
+      await expectLocatorVisible(page.getByRole("menuitem", { name: "Push to remote" }))
+      await page.keyboard.press("Escape")
+      await expect.poll(() => repositoryActions.evaluate(element => element === document.activeElement)).toBe(true)
+
       const indexRow = page.locator('[data-gharargah-git-file="src/index.ts"]').first()
       await indexRow.locator("button").nth(1).click()
       await expectLocatorContainsText(page.locator("[data-gharargah-git-diff]"), "src/index.ts")
+      const diffToolbar = page.locator("[data-gharargah-git-diff-toolbar]")
+      await expectLocatorCount(diffToolbar.getByRole("button"), 2)
+      await expectLocatorVisible(diffToolbar.getByRole("button", { name: "Stage file" }))
       await page.getByRole("button", { name: "Stage file" }).click()
       await expectLocatorVisible(page.getByRole("button", { name: "Unstage file" }), { timeout: 20_000 })
       await expectLocatorContainsText(page.locator("[data-gharargah-git-diff]"), "src/index.ts")
@@ -45,11 +85,19 @@ test.describe("session Git and editor workspaces", () => {
       expect(git(fixture.workspace, "diff", "--cached", "--name-only", "src/index.ts")).toBe("")
       expect(git(fixture.workspace, "diff", "--name-only", "src/index.ts")).toBe("src/index.ts")
 
+      const changedFiles = page.locator('[data-gharargah-list-panel="git-files"]')
+      await changedFiles.focus()
+      await changedFiles.press("Space")
+      await expectLocatorVisible(page.getByRole("button", { name: "Unstage file" }), { timeout: 20_000 })
+      await changedFiles.press("Space")
+      await expectLocatorVisible(page.getByRole("button", { name: "Stage file" }), { timeout: 20_000 })
+
       // Menus and confirmations are portaled outside the parent Dialog. They must not close it.
       const discardRow = page.locator('[data-gharargah-git-file="src/config.go"]').first()
       await discardRow.locator("button").nth(1).click()
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
-      await page.getByRole("button", { name: "Discard file" }).click()
+      await page.getByRole("button", { name: "Diff actions for src/config.go" }).click()
+      await page.getByRole("menuitem", { name: "Discard changes" }).click()
       await expectLocatorVisible(page.getByRole("alertdialog"))
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await page.locator('[data-gharargah-confirm="cancel"]').click()
@@ -92,40 +140,52 @@ test.describe("session Git and editor workspaces", () => {
       await restageAll.click()
       await expect.poll(() => git(fixture.workspace, "diff", "--name-only"), { timeout: 20_000 }).toBe("")
 
-      await page.getByRole("button", { name: "split" }).click()
-      await expect.poll(() => page.getByRole("button", { name: "split" }).getAttribute("aria-pressed")).toBe("true")
+      const diffActions = page.getByRole("button", { name: /Diff actions for/ })
+      await diffActions.click()
+      const splitDiff = page.getByRole("menuitemradio", { name: "Split" })
+      await expectLocatorVisible(splitDiff)
+      await splitDiff.click()
+      await diffActions.click()
+      await expect.poll(() => page.getByRole("menuitemradio", { name: "Split" }).getAttribute("aria-checked")).toBe("true")
+      await page.keyboard.press("Escape")
+      await expect.poll(() => diffActions.evaluate(element => element === document.activeElement)).toBe(true)
 
       await selectBranch(page, "feature/git-workspace")
       await expect.poll(() => git(fixture.workspace, "branch", "--show-current"), { timeout: 20_000 }).toBe("feature/git-workspace")
       await selectBranch(page, "main")
       await expect.poll(() => git(fixture.workspace, "branch", "--show-current"), { timeout: 20_000 }).toBe("main")
 
-      const fetch = page.getByRole("button", { name: "Fetch" })
-      await fetch.click()
-      await expect.poll(() => fetch.evaluate(el => !(el as HTMLButtonElement).disabled), { timeout: 20_000 }).toBe(true)
+      await repositoryActions.click()
+      await page.getByRole("menuitem", { name: "Fetch from remote" }).click()
+      await expect.poll(() => repositoryActions.evaluate(el => !(el as HTMLButtonElement).disabled), { timeout: 20_000 }).toBe(true)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
 
+      const commitTrigger = repositoryToolbar.locator("[data-gharargah-git-commit-trigger]")
+      await expect.poll(() => commitTrigger.evaluate(el => !(el as HTMLButtonElement).disabled), { timeout: 20_000 }).toBe(true)
+      await commitTrigger.click()
+      await expectLocatorVisible(page.locator("[data-gharargah-git-commit-dialog]"))
+      await expect.poll(() => page.locator("#git-commit-summary").evaluate(element => element === document.activeElement)).toBe(true)
       await page.locator("#git-commit-summary").fill("Cover Git workspace")
       await page.locator("#git-commit-body").fill("Exercise staging, history, branch, and remote actions.")
+      await page.getByRole("button", { name: "Cancel" }).click()
+      await expectLocatorCount(page.locator("[data-gharargah-git-commit-dialog]"), 0)
+      await expect.poll(() => commitTrigger.evaluate(element => element === document.activeElement)).toBe(true)
+      await commitTrigger.press("Enter")
+      await expect.poll(() => page.locator("#git-commit-summary").inputValue()).toBe("Cover Git workspace")
       const commitButton = page.locator("[data-gharargah-git-commit]")
-      await expect.poll(() => commitButton.evaluate(el => !(el as HTMLButtonElement).disabled), { timeout: 20_000 }).toBe(true)
-      await expect.poll(async () => {
-        if (git(fixture.workspace, "status", "--short") === "") return true
-        await commitButton.evaluate(element => {
-          const button = element as HTMLButtonElement
-          if (!button.disabled) button.form?.requestSubmit(button)
-        })
-        return false
-      }, { timeout: 20_000 }).toBe(true)
+      await expect.poll(() => commitButton.evaluate(el => !el.hasAttribute("disabled") && (el).getAttribute("aria-disabled") !== "true"), { timeout: 20_000 }).toBe(true)
+      await page.locator("#git-commit-summary").press("Enter")
+      await expect.poll(() => git(fixture.workspace, "status", "--short"), { timeout: 20_000 }).toBe("")
+      await expectLocatorCount(page.locator("[data-gharargah-git-commit-dialog]"), 0)
       expect(git(fixture.workspace, "log", "-1", "--pretty=%s%n%b")).toContain("Cover Git workspace")
 
-      const pull = page.getByRole("button", { name: "Pull" })
-      await pull.click()
-      await expect.poll(() => pull.evaluate(el => !(el as HTMLButtonElement).disabled), { timeout: 20_000 }).toBe(true)
+      await repositoryActions.click()
+      await page.getByRole("menuitem", { name: "Pull from remote" }).click()
+      await expect.poll(() => repositoryActions.evaluate(el => !(el as HTMLButtonElement).disabled), { timeout: 20_000 }).toBe(true)
 
-      const push = page.getByRole("button", { name: "Push" })
-      await push.click()
-      await expect.poll(() => push.evaluate(el => !(el as HTMLButtonElement).disabled), { timeout: 20_000 }).toBe(true)
+      await repositoryActions.click()
+      await page.getByRole("menuitem", { name: "Push to remote" }).click()
+      await expect.poll(() => repositoryActions.evaluate(el => !(el as HTMLButtonElement).disabled), { timeout: 20_000 }).toBe(true)
       expect(git(fixture.workspace, "rev-parse", "main")).toBe(git(fixture.workspace, "rev-parse", "origin/main"))
 
       await page.getByRole("tab", { name: /History/ }).click()
@@ -312,10 +372,13 @@ async function selectBranch(
   page: ShellDriver,
   branch: string,
 ) {
-  await page.locator("#git-branch").evaluate((element, value) => {
-    const select = element as HTMLSelectElement
-    select.value = value
-    select.dispatchEvent(new Event("change", { bubbles: true }))
-  }, branch)
-  await expect.poll(() => page.locator("#git-branch").evaluate(el => (el as HTMLSelectElement).value), { timeout: 20_000 }).toBe(branch)
+  await page.locator("[data-gharargah-git-branch-trigger]").click()
+  await page.getByRole("menuitemradio", { name: branch, exact: true }).click()
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-gharargah-git-branch-trigger]")
+        .getAttribute("aria-label"),
+    { timeout: 20_000 })
+    .toBe(`Switch branch, current branch ${branch}`)
 }

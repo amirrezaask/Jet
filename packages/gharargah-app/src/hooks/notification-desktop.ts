@@ -54,17 +54,21 @@ export function evaluateDesktopDeliveryClient(input: {
   return { deliver: true }
 }
 
-export function maybeShowDesktopNotification(n: AppNotification): void {
+export function maybeShowDesktopNotification(
+  n: AppNotification,
+  options?: { soundEnabled?: boolean; onClick?: () => void },
+): void {
   if (typeof Notification === "undefined") return
   if (Notification.permission !== "granted") return
   try {
     const note = new Notification(n.title, {
       body: n.message ?? undefined,
       tag: n.id,
-      silent: false,
+      silent: !options?.soundEnabled,
     })
     note.onclick = () => {
       window.focus()
+      options?.onClick?.()
       note.close()
     }
   } catch {

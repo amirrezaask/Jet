@@ -60,4 +60,26 @@ describe("project-root", () => {
     const root = await findProjectRoot(parentDir(filePath), ["Cargo.toml"], fs)
     assert.equal(root, projectRoot)
   })
+
+  it("does not escape the active workspace to an unrelated parent marker", async () => {
+    const fs = mockFs(["/Users/dev/go.mod"])
+    const root = await findProjectRoot(
+      "/Users/dev/workspace/src",
+      ["go.mod"],
+      fs,
+      "/Users/dev/workspace",
+    )
+    assert.equal(root, null)
+  })
+
+  it("checks the workspace boundary itself for a marker", async () => {
+    const fs = mockFs(["/Users/dev/workspace/go.mod"])
+    const root = await findProjectRoot(
+      "/Users/dev/workspace/src/pkg",
+      ["go.mod"],
+      fs,
+      "/Users/dev/workspace",
+    )
+    assert.equal(root, "/Users/dev/workspace")
+  })
 })

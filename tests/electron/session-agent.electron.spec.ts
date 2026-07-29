@@ -157,6 +157,43 @@ test.describe("project session agent chat", () => {
 
       const composer = modal.locator('[data-testid="composer-editor"]')
       await expectLocatorVisible(composer, { timeout: 20_000 })
+
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const surface = document.querySelector<HTMLElement>(".chat-composer-glass")
+            if (!surface) return ""
+            return getComputedStyle(surface).backgroundColor
+          }),
+        )
+        .not.toBe("rgb(0, 0, 0)")
+
+      await page.evaluate(async () => {
+        await window.__gharargahAgent!.executeCommand("ui.setTheme.default-light")
+      })
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement).classList.contains("dark"),
+          ),
+        )
+        .toBe(false)
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const surface = document.querySelector<HTMLElement>(".chat-composer-glass")
+            if (!surface) return null
+            const bg = getComputedStyle(surface).backgroundColor
+            return {
+              bg,
+              inline: document.documentElement.style.getPropertyValue("--agent-composer-surface"),
+            }
+          }),
+        )
+        .toMatchObject({
+          inline: expect.stringMatching(/#ffffff|#fafafa|oklch/i),
+        })
+
       await composer.click()
       await composer.fill("Confirm the session driver")
       await expect

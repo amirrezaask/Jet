@@ -58,6 +58,8 @@ export type GharagahSidebarProps = {
   onOpenSettings?: () => void
   /** Persist expanded sidebar width (px) after a drag resize. */
   onSidebarWidthChange?: (widthPx: number) => void
+  /** Offset the fixed desktop sidebar below the renderer-owned Electron titlebar. */
+  showWindowChrome?: boolean
   serverLabel?: string
   connected?: boolean
   loading?: boolean
@@ -79,6 +81,7 @@ export function GharagahSidebar({
   projectActions,
   onOpenSettings,
   onSidebarWidthChange,
+  showWindowChrome = false,
   serverLabel,
   connected = true,
   loading = false,
@@ -174,6 +177,15 @@ export function GharagahSidebar({
     <Sidebar
       collapsible="icon"
       className={cn("border-r border-sidebar-border", className)}
+      style={
+        showWindowChrome
+          ? ({
+              top: "var(--gharargah-window-chrome-height)",
+              height:
+                "calc(100svh - var(--gharargah-window-chrome-height))",
+            } as CSSProperties)
+          : undefined
+      }
       data-gharargah-mission-sidebar=""
       data-gharargah-sidebar-state={state}
       data-gharargah-sidebar-project-filter-active={projectFilterId ?? "all"}

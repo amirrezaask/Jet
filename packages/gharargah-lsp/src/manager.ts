@@ -62,6 +62,7 @@ const DESCRIPTORS: LanguageServerDescriptor[] = [
 
 export class LanguageServerManager {
   private connections = new Map<string, LspConnection>()
+  private pendingConnections = new Map<string, Promise<LspConnection | null>>()
   private lastSpawnError: string | null = null
   readonly onDiagnostics = new Emitter<unknown>()
 
@@ -90,41 +91,70 @@ export class LanguageServerManager {
     if (!descriptor) return null
 
     const workspaceRootUri = workspaceRoot
+    const workspaceRootPath = fileUriToPath(workspaceRootUri)
     const filePath = fileUriToPath(file.uri)
     const startDir = parentDir(filePath)
     const projectRoot =
       descriptor.id === "gopls"
-        ? ((await findProjectRoot(startDir, ["go.work"], window.gharargah?.fs)) ??
-          (await findProjectRoot(startDir, ["go.mod"], window.gharargah?.fs)))
-        : await findProjectRoot(startDir, descriptor.rootMarkers, window.gharargah?.fs)
-    if (!projectRoot) return null
+        ? ((await findProjectRoot(
+            startDir,
+            ["go.work"],
+            window.gharargah?.fs,
+            workspaceRootPath,
+          )) ??
+          (await findProjectRoot(
+            startDir,
+            ["go.mod"],
+            window.gharargah?.fs,
+            workspaceRootPath,
+          )))
+        : await findProjectRoot(
+            startDir,
+            descriptor.rootMarkers,
+            window.gharargah?.fs,
+            workspaceRootPath,
+          )
 
-    const projectRootUri = pathToFileUri(projectRoot)
+    // Language servers can still provide useful inferred/ad-hoc projects when
+    // no marker exists. The active workspace is the safe fallback boundary.
+    const projectRootUri = pathToFileUri(projectRoot ?? workspaceRootPath)
     const key = `${descriptor.id}:${projectRootUri}`
     const existing = this.connections.get(key)
     if (existing) return existing
+    const pending = this.pendingConnections.get(key)
+    if (pending) return pending
 
-    try {
-      const conn = await this.lspApi.start(projectRootUri, descriptor.id)
-      if (conn.error) {
-        this.lastSpawnError = conn.error
+    const starting = (async (): Promise<LspConnection | null> => {
+      try {
+        const conn = await this.lspApi.start(projectRootUri, descriptor.id)
+        if (conn.error) {
+          this.lastSpawnError = conn.error
+          return null
+        }
+        const connection: LspConnection = {
+          id: conn.id,
+          rootUri: workspaceRootUri,
+          projectRootUri,
+          languageIds: descriptor.languageIds,
+          transportUrl: conn.transportUrl,
+          descriptorId: descriptor.id,
+        }
+        this.connections.set(key, connection)
+        this.lastSpawnError = null
+        return connection
+      } catch (err) {
+        this.lastSpawnError =
+          err instanceof Error ? err.message : "Language server failed to start"
         return null
       }
-      const connection: LspConnection = {
-        id: conn.id,
-        rootUri: workspaceRootUri,
-        projectRootUri,
-        languageIds: descriptor.languageIds,
-        transportUrl: conn.transportUrl,
-        descriptorId: descriptor.id,
+    })()
+    this.pendingConnections.set(key, starting)
+    try {
+      return await starting
+    } finally {
+      if (this.pendingConnections.get(key) === starting) {
+        this.pendingConnections.delete(key)
       }
-      this.connections.set(key, connection)
-      this.lastSpawnError = null
-      return connection
-    } catch (err) {
-      this.lastSpawnError =
-        err instanceof Error ? err.message : "Language server failed to start"
-      return null
     }
   }
 
@@ -155,6 +185,11 @@ export class LanguageServerManager {
         return
       }
     }
+  }
+
+  async stopConnection(id: string): Promise<void> {
+    this.clearConnection(id)
+    await this.lspApi.stop(id).catch(() => {})
   }
 
   async stopServersForRoot(rootUri: string): Promise<string[]> {

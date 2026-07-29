@@ -4,6 +4,7 @@ export type TerminalSessionState = {
   tabId: string
   cwdRootUri: string
   launchCommand?: string
+  launchArgs?: string[]
   /** Parent ADE session for a generic shell opened from its Terminal tool. */
   parentSessionTabId?: string
   ptyId?: string
@@ -15,6 +16,10 @@ export type TerminalSessionState = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  /** True after xterm has emitted user-originated input for this PTY generation. */
+  hasUserInput: boolean
+  /** True after output that proves launched work progressed beyond an idle shell. */
+  hasMeaningfulOutput: boolean
   /** ISO timestamp of last meaningful activity (status / notify). */
   lastActivityAt: string
 }
@@ -54,6 +59,7 @@ export function registerTerminalSession(
   cwdRootUri: string,
   launchCommand?: string,
   options?: {
+    launchArgs?: string[]
     parentSessionTabId?: string
     customLabel?: string
   },
@@ -64,6 +70,7 @@ export function registerTerminalSession(
     tabId,
     cwdRootUri,
     launchCommand,
+    launchArgs: options?.launchArgs ?? existing?.launchArgs,
     parentSessionTabId:
       options?.parentSessionTabId ?? existing?.parentSessionTabId,
     ptyId: existing?.ptyId,
@@ -75,6 +82,8 @@ export function registerTerminalSession(
     agentId: existing?.agentId,
     agentDriverId: existing?.agentDriverId,
     agentThreadId: existing?.agentThreadId,
+    hasUserInput: existing?.hasUserInput ?? false,
+    hasMeaningfulOutput: existing?.hasMeaningfulOutput ?? false,
     lastActivityAt: existing?.lastActivityAt ?? now,
   })
   notify(tabId)
@@ -90,6 +99,10 @@ export function terminalCwdForTab(tabId: string): string {
 
 export function terminalLaunchCommandForTab(tabId: string): string | undefined {
   return sessions.get(tabId)?.launchCommand
+}
+
+export function terminalLaunchArgsForTab(tabId: string): string[] | undefined {
+  return sessions.get(tabId)?.launchArgs
 }
 
 export function trackTerminalPtyId(tabId: string, ptyId: string | null): void {
@@ -119,6 +132,43 @@ export function trackTerminalPtyId(tabId: string, ptyId: string | null): void {
 
 export function terminalPtyIdForTab(tabId: string): string | undefined {
   return sessions.get(tabId)?.ptyId
+}
+
+/**
+ * A live terminal only needs destructive-close confirmation after observable
+ * use. Merely creating/attaching a PTY does not count: a fresh shell may emit a
+ * prompt before the user has done anything.
+ */
+export function terminalSessionNeedsCloseConfirmation(
+  session: TerminalSessionState | undefined,
+): boolean {
+  if (
+    !session ||
+    (session.status !== "starting" && session.status !== "running")
+  ) {
+    return false
+  }
+  return session.hasUserInput || session.hasMeaningfulOutput
+}
+
+export function recordTerminalUserInput(tabId: string): void {
+  const session = sessions.get(tabId)
+  if (!session || session.hasUserInput) return
+  session.hasUserInput = true
+  touchActivity(session)
+  notify(tabId)
+}
+
+export function recordTerminalOutput(tabId: string): void {
+  const session = sessions.get(tabId)
+  if (!session || session.hasMeaningfulOutput) return
+  // A generic shell's initial prompt is lifecycle noise. Once the user has
+  // interacted, any output is meaningful; launched CLIs are meaningful as soon
+  // as they produce output of their own.
+  if (!session.launchCommand && !session.hasUserInput) return
+  session.hasMeaningfulOutput = true
+  touchActivity(session)
+  notify(tabId)
 }
 
 export function setTerminalCustomLabel(tabId: string, label: string): void {
@@ -190,6 +240,8 @@ export function restartTerminalSession(tabId: string): void {
   session.exitCode = undefined
   session.signal = undefined
   session.generation += 1
+  session.hasUserInput = false
+  session.hasMeaningfulOutput = false
   touchActivity(session)
   notify(tabId)
 }
@@ -326,6 +378,7 @@ export type HydratedTerminalSession = {
   tabId: string
   cwdRootUri: string
   launchCommand?: string
+  launchArgs?: string[]
   ptyId?: string
   status: TerminalSessionStatus
   exitCode?: number
@@ -334,6 +387,8 @@ export type HydratedTerminalSession = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  hasUserInput?: boolean
+  hasMeaningfulOutput?: boolean
   lastActivityAt?: string
 }
 
@@ -345,6 +400,7 @@ export function hydrateTerminalSession(entry: HydratedTerminalSession): void {
     tabId: entry.tabId,
     cwdRootUri: entry.cwdRootUri,
     launchCommand: entry.launchCommand,
+    launchArgs: entry.launchArgs,
     parentSessionTabId: undefined,
     ptyId: entry.ptyId,
     status: entry.status,
@@ -355,6 +411,8 @@ export function hydrateTerminalSession(entry: HydratedTerminalSession): void {
     agentId: entry.agentId,
     agentDriverId: entry.agentDriverId,
     agentThreadId: entry.agentThreadId,
+    hasUserInput: entry.hasUserInput ?? false,
+    hasMeaningfulOutput: entry.hasMeaningfulOutput ?? false,
     lastActivityAt:
       entry.lastActivityAt ?? existing?.lastActivityAt ?? new Date().toISOString(),
   })

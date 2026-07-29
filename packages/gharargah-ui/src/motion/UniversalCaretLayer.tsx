@@ -1,11 +1,12 @@
 import { useEffect } from "react"
 import {
   CaretEndpointAnim,
-  CaretGhostBuffer,
+  CaretGhostCompositor,
+  GHOST_MAX,
   onReducedMotionChange,
   prefersReducedMotion,
   type CaretPoint,
-  type CaretGhost,
+  type CaretGhostVisual,
 } from "@gharargah/shared"
 import { gharargahMotion } from "./tokens.js"
 
@@ -204,8 +205,9 @@ function createVisual(kind: "cursor" | "ghost"): HTMLDivElement {
     top: "0",
     left: "0",
     pointerEvents: "none",
-    willChange: "transform, width, height, opacity",
+    willChange: "transform, opacity",
     background: "var(--gharargah-cursor-color, var(--gharargah-accent))",
+    transformOrigin: "top left",
   })
   return element
 }
@@ -213,9 +215,9 @@ function createVisual(kind: "cursor" | "ghost"): HTMLDivElement {
 class UniversalCaretController {
   private readonly layer = document.createElement("div")
   private readonly cursor = createVisual("cursor")
-  private readonly ghostEls = Array.from({ length: 5 }, () => createVisual("ghost"))
+  private readonly ghostEls = Array.from({ length: GHOST_MAX }, () => createVisual("ghost"))
   private readonly anim = new CaretEndpointAnim()
-  private readonly ghosts = new CaretGhostBuffer()
+  private readonly ghostTrail = new CaretGhostCompositor(this.ghostEls)
   private readonly events = new AbortController()
   private readonly measurer = new TextCaretMeasurer()
   private readonly rootObserver: MutationObserver
@@ -227,8 +229,6 @@ class UniversalCaretController {
   private composing = false
   private selecting = false
   private initialized = false
-  private lastGhostX = 0
-  private lastGhostY = 0
   private raf: number | null = null
   private eventRaf: number | null = null
   private eventTimer: number | null = null
@@ -269,10 +269,12 @@ class UniversalCaretController {
 
     this.unsubscribeReduced = onReducedMotionChange(reduced => {
       this.reduced = reduced
+      if (reduced) this.ghostTrail.clear()
       this.schedule(true)
     })
     this.rootObserver = new MutationObserver(() => {
       this.appearance = readCursorAppearance()
+      this.ghostTrail.clear()
       this.schedule(true)
     })
     this.rootObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] })
@@ -328,7 +330,7 @@ class UniversalCaretController {
     this.clearSettle()
     this.target = target
     this.initialized = false
-    this.ghosts.clear()
+    this.ghostTrail.clear()
     this.observeTarget(target)
     if (!target) {
       this.hide()
@@ -360,7 +362,20 @@ class UniversalCaretController {
     if (this.target) this.target.style.caretColor = "transparent"
   }
 
-  private schedule(instant: boolean, typingTrail = false): void {
+  private ghostVisual(point: CaretPoint): CaretGhostVisual {
+    const style = this.appearance.style
+    const width = style === "bar" ? 2 : Math.max(1, point.charWidth)
+    const height = style === "underline" ? 2 : Math.max(1, point.h)
+    return {
+      x: point.x,
+      y: point.y + (style === "underline" ? Math.max(0, point.h - height) : 0),
+      width,
+      height,
+      borderRadius: style === "block" ? "2px" : "1px",
+    }
+  }
+
+  private schedule(instant: boolean, leaveTrail = false): void {
     const target = this.target
     if (target && (!target.isConnected || document.activeElement !== target)) {
       this.setTarget(null)
@@ -379,28 +394,34 @@ class UniversalCaretController {
     const motion = this.appearance.motion
     const snap = instant || this.reduced || motion === "off" || !this.initialized
     if (snap) {
-      if (typingTrail && motion === "trail" && !this.reduced) {
-        this.ghosts.push(this.anim.x, this.anim.y, this.anim.h, performance.now())
-      } else if (!typingTrail) {
-        this.ghosts.clear()
-      }
       this.anim.snap(point)
-      this.lastGhostX = point.x
-      this.lastGhostY = point.y
       this.initialized = true
-      const ghosts = this.ghosts.tick(performance.now())
-      this.render(ghosts)
-      if (ghosts.length > 0) this.start()
-      else this.stop()
+      if (this.reduced || motion !== "trail") this.ghostTrail.clear()
+      this.render()
+      this.stop()
       return
     }
-    this.anim.snap(point)
-    this.lastGhostX = point.x
-    this.lastGhostY = point.y
+
+    const moved =
+      Math.abs(point.x - this.anim.targetX) > 0.25 ||
+      Math.abs(point.y - this.anim.targetY) > 0.25
+    if (leaveTrail && moved && motion === "trail") {
+      this.ghostTrail.push(this.ghostVisual({
+        x: this.anim.x,
+        y: this.anim.y,
+        h: this.anim.h,
+        charWidth: this.anim.charWidth,
+      }))
+    }
+    this.anim.setTarget(point, false)
     this.initialized = true
-    const ghosts = this.ghosts.tick(performance.now())
-    this.render(ghosts)
-    this.stop()
+    this.render()
+    const distance =
+      Math.abs(this.anim.targetX - this.anim.x) +
+      Math.abs(this.anim.targetY - this.anim.y) +
+      Math.abs(this.anim.targetH - this.anim.h)
+    if (distance > 0.5) this.start()
+    else this.stop()
   }
 
   private scheduleDeferred(instant: boolean, typingTrail = false): void {
@@ -436,39 +457,30 @@ class UniversalCaretController {
     if (this.tickTimer != null) window.clearTimeout(this.tickTimer)
     this.raf = null
     this.tickTimer = null
+    const dt = Math.min(0.05, Math.max(0, (time - this.lastFrame) / 1000))
     this.lastFrame = time
-    const ghosts = this.ghosts.tick(time)
-    this.render(ghosts)
-    if (ghosts.length > 0) this.start()
+    const active = this.anim.step(dt)
+    this.render()
+    if (active) this.start()
   }
 
-  private styleVisual(element: HTMLElement, x: number, y: number, h: number, opacity: number): void {
+  private render(): void {
     const style = this.appearance.style
     const width = style === "bar" ? 2 : Math.max(1, this.anim.charWidth)
-    const height = style === "underline" ? 2 : Math.max(1, h)
-    const offsetY = style === "underline" ? Math.max(0, h - height) : 0
-    element.style.transform = `translate3d(${x}px, ${y + offsetY}px, 0)`
-    element.style.width = `${width}px`
-    element.style.height = `${height}px`
-    element.style.opacity = String(opacity)
-    element.style.borderRadius = style === "block" ? "2px" : "1px"
-  }
-
-  private render(ghosts: CaretGhost[]): void {
-    this.styleVisual(this.cursor, this.anim.x, this.anim.y, this.anim.h, 0.92)
-    this.ghostEls.forEach((element, index) => {
-      const ghost = ghosts[index]
-      if (!ghost) {
-        element.style.opacity = "0"
-        return
-      }
-      this.styleVisual(element, ghost.x, ghost.y, ghost.h, ghost.opacity * 0.92)
-    })
+    const baseHeight = style === "underline" ? 2 : Math.max(1, this.anim.targetH)
+    const offsetY = style === "underline" ? Math.max(0, this.anim.h - baseHeight) : 0
+    const scaleY = style === "underline" ? 1 : Math.max(0.01, this.anim.h / baseHeight)
+    this.cursor.style.transform =
+      `translate3d(${this.anim.x}px, ${this.anim.y + offsetY}px, 0) scaleY(${scaleY})`
+    if (this.cursor.style.width !== `${width}px`) this.cursor.style.width = `${width}px`
+    if (this.cursor.style.height !== `${baseHeight}px`) this.cursor.style.height = `${baseHeight}px`
+    this.cursor.style.opacity = "0.92"
+    this.cursor.style.borderRadius = style === "block" ? "2px" : "1px"
   }
 
   private hide(): void {
     this.cursor.style.opacity = "0"
-    this.ghostEls.forEach(element => (element.style.opacity = "0"))
+    this.ghostTrail.clear()
   }
 
   private readonly onFocusIn = (event: FocusEvent) => {
@@ -480,12 +492,12 @@ class UniversalCaretController {
   private readonly onInput = (event: Event) => {
     if (!this.eventIsWithinTarget(event)) return
     this.clearSettle()
-    this.scheduleDeferred(true, true)
+    this.scheduleDeferred(false, true)
   }
   private readonly onKeyDown = (event: KeyboardEvent) => {
     if (!this.eventIsWithinTarget(event)) return
     this.clearSettle()
-    this.scheduleDeferred(true, false)
+    this.scheduleDeferred(false, true)
   }
   private readonly onClick = (event: MouseEvent) => {
     if (!this.eventIsWithinTarget(event)) return
@@ -503,7 +515,7 @@ class UniversalCaretController {
     this.useCustomCaret()
     this.scheduleDeferred(true)
   }
-  private readonly onSelectionChange = () => this.scheduleDeferred(true, false)
+  private readonly onSelectionChange = () => this.scheduleDeferred(false, true)
   private readonly onCompositionStart = (event: CompositionEvent) => {
     if (!this.eventIsWithinTarget(event)) return
     this.composing = true
@@ -525,6 +537,7 @@ class UniversalCaretController {
     this.targetRemovalObserver.disconnect()
     this.targetObserver?.disconnect()
     this.measurer.dispose()
+    this.ghostTrail.dispose()
     this.stop()
     this.clearSettle()
     if (this.eventRaf != null) cancelAnimationFrame(this.eventRaf)

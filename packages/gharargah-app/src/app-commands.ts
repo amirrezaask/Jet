@@ -62,6 +62,7 @@ export type BuildAppCommandsDeps = {
   getFocusedPanel: () => PanelId | null
   setPaletteOpen: (open: boolean) => void
   setQuickOpenOpen: (open: boolean) => void
+  setProjectSearchOpen: (open: boolean) => void
   setBufferListOpen: (open: boolean) => void
   setTerminalListOpen: (open: boolean) => void
   setOpenFileOpen: (open: boolean) => void
@@ -254,6 +255,11 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       if (await gitSearchUnavailable(ctx)) return
       deps.setSessionMode("editor")
       deps.setQuickOpenOpen(true)
+    },
+    search: async ctx => {
+      if (await gitSearchUnavailable(ctx)) return
+      deps.setSessionMode("editor")
+      deps.setProjectSearchOpen(true)
     },
     bufferList: () => {
       syncOpenBuffersFromPanels()
@@ -517,6 +523,7 @@ export function buildMacTerminalQuickSwitchBindings(opts: {
 export const APP_COMMAND_REGISTRY = [
   { id: "ui.showCommandPalette", fn: "palette", title: "Show Command Palette", category: "UI", aliases: ["commands", "palette", "help"] },
   { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly", "cmd-p"] },
+  { id: "workspace.search", fn: "search", title: "Search Project", category: "Workspace", aliases: ["find in files", "project search", "cmd-shift-f"] },
   { id: "workspace.bufferList", fn: "bufferList", title: "Buffer List", category: "Workspace", aliases: ["open buffers", "switch buffer"] },
   { id: "terminal.list", fn: "terminalList", title: "Switch Session…", category: "View", aliases: ["switch terminal", "session switcher", "cmd-k", "switch session"] },
   { id: "session.new", fn: "sessionNew", title: "New Session…", category: "View", aliases: ["new agent", "agent cli", "cmd-n"] },

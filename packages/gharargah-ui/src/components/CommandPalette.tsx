@@ -43,25 +43,47 @@ export function CommandPalette({
       items={items}
       onSelect={cmd => onRun(cmd.id)}
       emptyLabel="No results."
+      rowLayout="detail"
       renderItem={cmd => (
-        <span className="flex w-full items-center justify-between gap-3">
-          <span className="min-w-0">
-            <span className="flex items-center gap-2">
-              <span className="truncate font-medium">{cmd.title}</span>
+        <span className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+          <span
+            data-slot="palette-row-content"
+            className="flex min-w-0 flex-col justify-center gap-0.5"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span
+                data-slot="palette-row-title"
+                className="min-w-0 truncate font-medium leading-tight"
+              >
+                {cmd.title}
+              </span>
               {cmd.recent && (
-                <Badge variant="secondary" className="text-xs">
+                <Badge
+                  variant="secondary"
+                  className="px-1.5 py-0 text-3xs leading-normal"
+                >
                   Recent
                 </Badge>
               )}
             </span>
-            <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span
+              data-slot="palette-row-meta"
+              className="flex min-w-0 items-center gap-1.5 truncate text-xs leading-tight text-muted-foreground"
+            >
               {cmd.category && <span>{cmd.category}</span>}
               {cmd.category && cmd.aliases?.length ? <span aria-hidden>·</span> : null}
-              {cmd.aliases?.length ? <span>{cmd.aliases.join(" · ")}</span> : null}
+              {cmd.aliases?.length ? (
+                <span className="min-w-0 truncate">{cmd.aliases.join(" · ")}</span>
+              ) : null}
             </span>
           </span>
           {cmd.keybinding ? (
-            <KeyBindingKbd binding={cmd.keybinding} className="ml-auto shrink-0" />
+            <span
+              data-slot="palette-row-action"
+              className="flex shrink-0 items-center self-center"
+            >
+              <KeyBindingKbd binding={cmd.keybinding} />
+            </span>
           ) : null}
         </span>
       )}

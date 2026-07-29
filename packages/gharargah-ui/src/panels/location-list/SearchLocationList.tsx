@@ -9,6 +9,7 @@ import { CircleAlertIcon } from "lucide-react"
 import { LocationList } from "./LocationList.js"
 import { useAutoFocus } from "@/lib/use-auto-focus.js"
 import { searchHitToListItem } from "./mappers.js"
+import { focusListPanel } from "@/lib/list-registry.js"
 
 function useListDocument(doc: ListDocument, workspace: WorkspaceService): ListDocument {
   const [, setRev] = useState(0)
@@ -26,6 +27,7 @@ export function SearchLocationList({
   onOpenItem,
   getSearchFolders,
   autoFocus = false,
+  onDismiss,
 }: {
   listId: string
   workspace: WorkspaceService
@@ -33,12 +35,27 @@ export function SearchLocationList({
   /** When set, project search is scoped to these folders (e.g. current tab workspace). */
   getSearchFolders?: () => WorkspaceFolder[]
   autoFocus?: boolean
+  onDismiss?: () => void
 }) {
   const initial = workspace.listStore.get(listId)!
   const doc = useListDocument(initial, workspace)
   const searchGen = useRef(0)
-  const searchQueue = useRef(Promise.resolve())
-  const searchInputRef = useAutoFocus<HTMLInputElement>(autoFocus)
+  const autoFocusInputRef = useAutoFocus<HTMLInputElement>(autoFocus)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!autoFocus) return
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        searchInputRef.current?.focus()
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      if (secondFrame) window.cancelAnimationFrame(secondFrame)
+    }
+  }, [autoFocus])
 
   const patchDoc = useCallback(
     (patch: Partial<ListDocument>) => workspace.listStore.update(listId, patch),
@@ -52,47 +69,44 @@ export function SearchLocationList({
     const folders = getSearchFolders?.() ?? workspace.folders
     if (folders.length === 0 || !window.gharargah?.search || !query) {
       searchGen.current += 1
-      patchDoc({ searchLoading: false, searchError: null })
+      patchDoc({ items: [], searchLoading: false, searchError: null })
       return
     }
     const gen = ++searchGen.current
     patchDoc({ searchLoading: true, searchError: null })
-    searchQueue.current = searchQueue.current
-      .catch(() => undefined)
-      .then(async () => {
-        if (gen !== searchGen.current) return
-        try {
-          const hits = await projectSearchAcrossFolders(folders, window.gharargah!.search!, query, {
-            caseSensitive: current.searchCaseSensitive ?? false,
-            regex: current.searchRegex ?? false,
-            fuzzy: current.searchFuzzy ?? false,
-          })
-          if (gen !== searchGen.current) return
-          const multiRoot = folders.length > 1
-          const items = hits.map((h, i) =>
-            searchHitToListItem(
-              h.result,
-              i,
-              h.folder.root.path,
-              multiRoot ? h.folder.root.name : undefined,
-            ),
-          )
-          patchDoc({ items, searchLoading: false })
-        } catch (err) {
-          if (gen !== searchGen.current) return
-          patchDoc({
-            searchLoading: false,
-            searchError: err instanceof Error ? err.message : String(err),
-          })
-        }
+    try {
+      const hits = await projectSearchAcrossFolders(folders, window.gharargah.search, query, {
+        caseSensitive: current.searchCaseSensitive ?? false,
+        regex: current.searchRegex ?? false,
+        fuzzy: current.searchFuzzy ?? false,
       })
-    await searchQueue.current
+      if (gen !== searchGen.current) return
+      const multiRoot = folders.length > 1
+      const items = hits.map((h, i) =>
+        searchHitToListItem(
+          h.result,
+          i,
+          h.folder.root.path,
+          multiRoot ? h.folder.root.name : undefined,
+        ),
+      )
+      patchDoc({ items, searchLoading: false })
+    } catch (err) {
+      if (gen !== searchGen.current) return
+      patchDoc({
+        searchLoading: false,
+        searchError: err instanceof Error ? err.message : String(err),
+      })
+    }
   }, [workspace, listId, patchDoc, getSearchFolders])
   const runSearchRef = useRef(runSearch)
   runSearchRef.current = runSearch
 
   useEffect(() => {
-    void runSearchRef.current()
+    const timer = window.setTimeout(() => {
+      void runSearchRef.current()
+    }, 120)
+    return () => window.clearTimeout(timer)
   }, [
     doc.searchQuery,
     doc.searchCaseSensitive,
@@ -105,10 +119,30 @@ export function SearchLocationList({
       <div className="flex flex-wrap items-center gap-2">
         <GharargahCaretInput
           id={`search-input-${listId}`}
-          ref={searchInputRef}
+          autoFocus={autoFocus}
+          ref={element => {
+            searchInputRef.current = element
+            autoFocusInputRef(element)
+          }}
           type="search"
           value={doc.searchQuery ?? ""}
           onChange={e => patchDoc({ searchQuery: e.target.value })}
+          onKeyDown={event => {
+            if (event.key === "Escape" && onDismiss) {
+              event.preventDefault()
+              onDismiss()
+              return
+            }
+            if (event.key === "ArrowDown") {
+              event.preventDefault()
+              focusListPanel(listId, "focusFirstItem")
+              return
+            }
+            if (event.key === "Enter" && doc.items[0]) {
+              event.preventDefault()
+              onOpenItem(doc.items[0])
+            }
+          }}
           placeholder="Search project…"
           className="h-8 min-w-[12rem] flex-1"
           spellCheck={false}
@@ -174,10 +208,42 @@ export function SearchLocationList({
       onOpenItem={onOpenItem}
       loading={doc.searchLoading}
       emptyTitle="No results"
-      emptyDescription="Try another query."
+      emptyDescription={
+        (doc.searchQuery ?? "").trim()
+          ? "Try another query."
+          : "Type to search across the project."
+      }
       header={header}
-      showInput
-      filterPlaceholder="Filter results…"
+      onKeyDownCapture={event => {
+        const target = event.target
+        if (
+          target instanceof HTMLElement &&
+          target.closest("button, input, select, textarea, [contenteditable='true']")
+        ) {
+          return
+        }
+        if (event.key === "Escape" && onDismiss) {
+          event.preventDefault()
+          onDismiss()
+          return
+        }
+        if (
+          event.key.length === 1 &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey
+        ) {
+          event.preventDefault()
+          searchInputRef.current?.focus()
+          patchDoc({ searchQuery: `${doc.searchQuery ?? ""}${event.key}` })
+          return
+        }
+        if (event.key === "Backspace") {
+          event.preventDefault()
+          searchInputRef.current?.focus()
+          patchDoc({ searchQuery: (doc.searchQuery ?? "").slice(0, -1) })
+        }
+      }}
     />
   )
 }

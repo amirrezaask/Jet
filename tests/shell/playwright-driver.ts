@@ -12,7 +12,10 @@ class PlaywrightLocator implements ShellLocator {
     return this.selector
   }
 
-  click(options?: { timeout?: number }): Promise<void> {
+  click(options?: {
+    timeout?: number
+    button?: "left" | "right" | "middle"
+  }): Promise<void> {
     return this.pw.first().click(options)
   }
 
@@ -104,12 +107,29 @@ class PlaywrightLocator implements ShellLocator {
     )
   }
 
+  getByText(text: string | RegExp, options?: { exact?: boolean }): ShellLocator {
+    const inner = this.pw.getByText(text, options)
+    return new PlaywrightLocator(
+      this.page,
+      `${this.selector} >> text=`,
+      inner as ReturnType<Page["locator"]>,
+    )
+  }
+
   locator(selector: string): ShellLocator {
     return new PlaywrightLocator(
       this.page,
       `${this.selector} >> ${selector}`,
       this.pw.locator(selector),
     )
+  }
+
+  evaluateAll<R>(pageFunction: (elements: Element[]) => R | Promise<R>): Promise<R> {
+    return this.pw.evaluateAll(pageFunction)
+  }
+
+  inputValue(): Promise<string> {
+    return this.pw.first().inputValue()
   }
 }
 
@@ -153,6 +173,10 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
       const pw = page.getByLabel(text)
       return new PlaywrightLocator(page, "label", pw as ReturnType<Page["locator"]>)
     },
+    getByText(text, options) {
+      const pw = page.getByText(text, options)
+      return new PlaywrightLocator(page, "text", pw as ReturnType<Page["locator"]>)
+    },
     async isVisible(selector) {
       return page.locator(selector).first().isVisible()
     },
@@ -174,8 +198,11 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
     async screenshot() {
       return (await page.screenshot({ type: "png" })).toString("base64")
     },
-    reload() {
-      return page.reload().then(() => undefined)
+    reload(options) {
+      return page.reload(options).then(() => undefined)
+    },
+    addInitScript(script) {
+      return page.addInitScript(script)
     },
   }
 }

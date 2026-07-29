@@ -147,8 +147,25 @@ export function useNotificationCenter(): NotificationCenterState {
           recentDesktop: recentDesktop.current,
         })
         if (decision.deliver) {
-          recentDesktop.current.set(n.id, Date.now())
-          maybeShowDesktopNotification(n)
+          const now = Date.now()
+          recentDesktop.current.set(n.id, now)
+          if (recentDesktop.current.size > 256) {
+            for (const [id, deliveredAt] of recentDesktop.current) {
+              if (now - deliveredAt >= 60_000 || recentDesktop.current.size > 256) {
+                recentDesktop.current.delete(id)
+              }
+            }
+          }
+          maybeShowDesktopNotification(n, {
+            soundEnabled: prefs?.soundEnabled,
+            onClick: () => {
+              setSelectedId(n.id)
+              setProjectId(null)
+              setSessionId(null)
+              setFilter("all")
+              setOpen(true)
+            },
+          })
         }
         // Announce high-priority for SR
         if (n.severity === "error" || n.requiresAction) {

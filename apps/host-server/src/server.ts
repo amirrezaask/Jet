@@ -10,6 +10,7 @@ import { EventHub } from "./events.js"
 import { parseSessionRosterBody, ProjectDatabase } from "./persistence.js"
 import { pathAllowed, pathStaysWithin } from "./sandbox.js"
 import { isAllowedWebSocketOrigin } from "./security.js"
+import { normalizeProviderHookRequest } from "./notifications/index.js"
 
 const VERSION = "0.0.1"
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
@@ -147,10 +148,21 @@ async function handleHttp(
 
   // Provider hooks (Claude Stop / Codex / etc.) POST semantic events here.
   if (req.method === "POST" && pathname === "/api/v1/notifications/ingest") {
-    const body = (await readJson(req)) as Record<string, unknown>
+    const body = await readJson(req)
     try {
-      const value = await dispatch(runtime, "notifications:ingest", [body], "hook")
-      sendJson(res, 200, { value })
+      const normalized = normalizeProviderHookRequest(body, {
+        provider: url.searchParams.get("provider"),
+        sessionId: url.searchParams.get("sessionId"),
+        projectId: url.searchParams.get("projectId"),
+        projectName: url.searchParams.get("projectName"),
+        sessionTitle: url.searchParams.get("sessionTitle"),
+      })
+      await dispatch(runtime, "notifications:ingest", [normalized], "hook")
+      // Hook consumers interpret response bodies as control output. An empty 2xx
+      // acknowledges delivery without accidentally feeding Gharargah data back
+      // into the provider's conversation.
+      res.writeHead(204)
+      res.end()
     } catch (error) {
       sendJson(res, 400, {
         error: {
@@ -356,6 +368,15 @@ function sendEventSocketMessage(ws: WebSocket, event: unknown): void {
   ws.send(JSON.stringify(event))
 }
 
+/** Coerce ws payloads to UTF-8 text. Browser JSON-RPC readers call JSON.parse on
+ *  message data; binary frames become Blob/ArrayBuffer and hang initialize. */
+function wsDataToText(data: WebSocket.RawData): string {
+  if (typeof data === "string") return data
+  if (Buffer.isBuffer(data)) return data.toString("utf8")
+  if (Array.isArray(data)) return Buffer.concat(data).toString("utf8")
+  return Buffer.from(data).toString("utf8")
+}
+
 function handleLspProxy(id: string, client: WebSocket): void {
   const session = getLspSession(id)
   if (!session) {
@@ -363,17 +384,18 @@ function handleLspProxy(id: string, client: WebSocket): void {
     return
   }
   const upstream = new WebSocket(`ws://127.0.0.1:${session.port}`)
-  const pending: WebSocket.RawData[] = []
+  const pending: string[] = []
   upstream.on("open", () => {
     for (const msg of pending) upstream.send(msg)
     pending.length = 0
   })
   client.on("message", data => {
-    if (upstream.readyState === WebSocket.OPEN) upstream.send(data)
-    else if (pending.length < 256) pending.push(data)
+    const text = wsDataToText(data)
+    if (upstream.readyState === WebSocket.OPEN) upstream.send(text)
+    else if (pending.length < 256) pending.push(text)
   })
   upstream.on("message", data => {
-    if (client.readyState === WebSocket.OPEN) client.send(data)
+    if (client.readyState === WebSocket.OPEN) client.send(wsDataToText(data))
   })
   const closeBoth = () => {
     try {
@@ -392,7 +414,6 @@ function handleLspProxy(id: string, client: WebSocket): void {
   upstream.on("error", closeBoth)
   client.on("error", closeBoth)
 }
-
 function validateRpcPaths(config: HostConfig, channel: string, args: unknown[]): void {
   if (channel.startsWith("agents:")) {
     const first = args[0]

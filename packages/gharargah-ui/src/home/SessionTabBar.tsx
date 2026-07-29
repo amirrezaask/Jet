@@ -64,6 +64,17 @@ export function SessionTabBar(props: SessionTabBarProps) {
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => onSelect(session.panelId, session.tabId)}
+                onMouseDown={(event: MouseEvent<HTMLButtonElement>) => {
+                  if (event.button !== 1) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onAuxClick={(event: MouseEvent<HTMLButtonElement>) => {
+                  if (event.button !== 1) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onClose(session.panelId, session.tabId)
+                }}
                 data-gharargah-session-tab={session.tabId}
                 className={cn(
                   "h-full w-full min-w-0 justify-start rounded-none border-0 bg-transparent px-2 pr-7 text-left shadow-none",

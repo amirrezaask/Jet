@@ -20,12 +20,13 @@ export type ShellDriver = {
     move(x: number, y: number, options?: { steps?: number }): Promise<void>
     down(): Promise<void>
     up(): Promise<void>
-    click(x: number, y: number): Promise<void>
+    click(x: number, y: number, options?: { button?: "left" | "right" | "middle" }): Promise<void>
   }
   locator(selector: string): ShellLocator
   getByRole(role: string, options?: { name?: string | RegExp }): ShellLocator
   getByPlaceholder(text: string | RegExp): ShellLocator
   getByLabel(text: string | RegExp): ShellLocator
+  getByText(text: string | RegExp, options?: { exact?: boolean }): ShellLocator
   isVisible(selector: string): Promise<boolean>
   count(selector: string): Promise<number>
   textContent(selector: string): Promise<string>
@@ -33,7 +34,8 @@ export type ShellDriver = {
   fillSelector(selector: string, value: string): Promise<void>
   setViewportSize(size: { width: number; height: number }): Promise<void>
   screenshot(): Promise<string>
-  reload(): Promise<void>
+  reload(options?: { waitUntil?: "load" | "domcontentloaded" | "networkidle" }): Promise<void>
+  addInitScript(script: () => void): Promise<void>
 }
 
 export type ShellLocator = {
@@ -51,11 +53,14 @@ export type ShellLocator = {
   getAttribute(name: string): Promise<string | null>
   textContent(): Promise<string | null>
   getByRole(role: string, options?: { name?: string | RegExp }): ShellLocator
+  getByText(text: string | RegExp, options?: { exact?: boolean }): ShellLocator
   locator(selector: string): ShellLocator
   waitFor(options?: { state?: "visible" | "attached" | "hidden"; timeout?: number }): Promise<void>
   boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>
   evaluate<R, Arg>(pageFunction: (arg: Arg, element: Element) => R | Promise<R>, arg: Arg): Promise<R>
   evaluate<R>(pageFunction: (element: Element) => R | Promise<R>): Promise<R>
+  evaluateAll<R>(pageFunction: (elements: Element[]) => R | Promise<R>): Promise<R>
+  inputValue(): Promise<string>
   isVisible(): Promise<boolean>
   count(): Promise<number>
   toSelector(): string

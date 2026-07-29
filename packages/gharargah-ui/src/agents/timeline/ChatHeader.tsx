@@ -7,7 +7,6 @@ import { UsageMeter } from "./UsageMeter.js"
 export const ChatHeader = memo(function ChatHeader(props: {
   activeThreadTitle: string
   activeProjectName?: string | null
-  activeProviderName?: string | null
   activeModelLabel?: string | null
   connection?: AgentConnectionState | null
   usage?: AgentUsage | null
@@ -16,7 +15,6 @@ export const ChatHeader = memo(function ChatHeader(props: {
   const {
     activeThreadTitle,
     activeProjectName,
-    activeProviderName,
     activeModelLabel,
     connection,
     usage,
@@ -44,17 +42,7 @@ export const ChatHeader = memo(function ChatHeader(props: {
         </Tooltip>
         <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
           {activeProjectName ? <span className="truncate">{activeProjectName}</span> : null}
-          {activeProjectName && activeProviderName ? (
-            <span aria-hidden="true" className="text-muted-foreground/50">
-              ·
-            </span>
-          ) : null}
-          {activeProviderName ? (
-            <span className="truncate" data-chat-header-provider="true">
-              {activeProviderName}
-            </span>
-          ) : null}
-          {(activeProjectName || activeProviderName) && activeModelLabel ? (
+          {activeProjectName && activeModelLabel ? (
             <span aria-hidden="true" className="text-muted-foreground/50">
               ·
             </span>
@@ -62,6 +50,11 @@ export const ChatHeader = memo(function ChatHeader(props: {
           {activeModelLabel ? (
             <span className="truncate" data-chat-header-model="true">
               {activeModelLabel}
+            </span>
+          ) : null}
+          {(activeProjectName || activeModelLabel) && connection?.status ? (
+            <span aria-hidden="true" className="text-muted-foreground/50">
+              ·
             </span>
           ) : null}
           {connection?.status ? (

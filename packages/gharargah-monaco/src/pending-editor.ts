@@ -1,3 +1,5 @@
+import { canonicalizeFileUri } from "@gharargah/shared"
+
 export type PendingEditorNavigation = {
   line: number
   column: number
@@ -7,16 +9,26 @@ export type PendingEditorNavigation = {
 
 const pendingNavigation = new Map<string, PendingEditorNavigation>()
 const pendingInitialContent = new Map<string, string>()
+const MAX_PENDING_ENTRIES = 256
 
 function canonicalUri(uri: string): string {
+  if (uri.startsWith("file://")) return canonicalizeFileUri(uri)
   return uri
+}
+
+function setBounded<T>(map: Map<string, T>, key: string, value: T): void {
+  map.delete(key)
+  map.set(key, value)
+  if (map.size <= MAX_PENDING_ENTRIES) return
+  const oldest = map.keys().next().value
+  if (oldest != null) map.delete(oldest)
 }
 
 export function setPendingEditorNavigation(
   uri: string,
   nav: PendingEditorNavigation,
 ): void {
-  pendingNavigation.set(canonicalUri(uri), nav)
+  setBounded(pendingNavigation, canonicalUri(uri), nav)
 }
 
 export function consumePendingEditorNavigation(
@@ -29,7 +41,7 @@ export function consumePendingEditorNavigation(
 }
 
 export function setPendingInitialContent(uri: string, content: string): void {
-  pendingInitialContent.set(canonicalUri(uri), content)
+  setBounded(pendingInitialContent, canonicalUri(uri), content)
 }
 
 export function consumePendingInitialContent(uri: string): string | undefined {

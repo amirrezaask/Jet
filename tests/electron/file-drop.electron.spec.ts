@@ -6,6 +6,7 @@ import {
   focusTerminal,
   hasPtySpawn,
   launchJet,
+  pressMod,
   readTerminalText,
   showTerminal,
 } from "./_launch.js"
@@ -232,6 +233,21 @@ test.describe("file drag and drop", () => {
           timeout: 10_000,
         })
         .toContain("untitled-drop-marker-42")
+
+      // Imported content has never been saved. Returning to the initial Monaco
+      // revision through Undo must not make the untitled buffer discardable.
+      await expectLocatorVisible(page.locator("[data-gharargah-buffer-dirty]"))
+      const initialText = await page.evaluate(
+        () => window.__gharargahAgent!.getEditorText() ?? "",
+      )
+      await page.locator("[data-gharargah-monaco-editor] .monaco-editor").click()
+      await page.keyboard.press("End")
+      await page.keyboard.type("x")
+      await pressMod(page, "z")
+      await expect
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText() ?? ""))
+        .toBe(initialText)
+      await expectLocatorVisible(page.locator("[data-gharargah-buffer-dirty]"))
     } finally {
       await app.close()
     }

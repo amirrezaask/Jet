@@ -10,6 +10,7 @@ import {
   parseOscStreamChunk,
   normalizeHookEventName,
 } from "./osc.js"
+import { normalizeProviderHookRequest } from "./provider-hooks.js"
 import {
   evaluateDesktopDelivery,
   shouldCreateInAppNotification,
@@ -91,6 +92,70 @@ describe("NotificationService", () => {
     assert.equal(b.deduped, true)
     assert.equal(b.notification?.source, "provider-hook")
     assert.equal(service.list().items.length, 1)
+  })
+
+  it("dedupes provider events before an app session binding is known", () => {
+    const first = service.ingest({
+      source: "osc",
+      type: "turn-completed",
+      title: "Done",
+      provider: "codex",
+      providerSessionId: "provider-session",
+      providerTurnId: "provider-turn",
+      eventId: "provider-event",
+    })
+    const second = service.ingest({
+      source: "provider-hook",
+      type: "turn-completed",
+      title: "Codex completed the turn",
+      provider: "codex",
+      providerSessionId: "provider-session",
+      providerTurnId: "provider-turn",
+      eventId: "provider-event",
+    })
+    assert.equal(first.created, true)
+    assert.equal(second.deduped, true)
+    assert.equal(second.updated, true)
+    assert.equal(service.list().items.length, 1)
+  })
+
+  it("dedupes immediate Claude Stop repeats without collapsing later turns", () => {
+    const firstRequest = normalizeProviderHookRequest(
+      {
+        hook_event_name: "Stop",
+        session_id: "claude-session",
+        last_assistant_message: "Finished the first task",
+      },
+      { provider: "claude" },
+    )
+    assert.equal(firstRequest.eventId, null)
+
+    const first = service.ingest(firstRequest)
+    const immediateRepeat = service.ingest(firstRequest)
+    assert.equal(first.created, true)
+    assert.equal(immediateRepeat.deduped, true)
+    assert.equal(service.list().items.length, 1)
+
+    const differentTurn = service.ingest(
+      normalizeProviderHookRequest(
+        {
+          hook_event_name: "Stop",
+          session_id: "claude-session",
+          last_assistant_message: "Finished a different task",
+        },
+        { provider: "claude" },
+      ),
+    )
+    assert.equal(differentTurn.created, true)
+    assert.equal(service.list().items.length, 2)
+
+    db.prepare(`UPDATE app_notifications SET created_at=? WHERE id=?`).run(
+      "2000-01-01T00:00:00.000Z",
+      first.notification!.id,
+    )
+    const laterSameContent = service.ingest(firstRequest)
+    assert.equal(laterSameContent.created, true)
+    assert.equal(service.list().items.length, 3)
   })
 
   it("permission resolve updates same record; completion is separate", () => {
@@ -340,6 +405,15 @@ describe("OSC + hook normalize", () => {
     assert.equal(parsed[0]?.message, "World")
   })
 
+  it("parses the compact GharargahNotify form and rejects invalid enums", () => {
+    const parsed = parseOscNotifications(
+      "\x1b]1337;GharargahNotify=not-a-type|Hello|World\x07",
+    )
+    assert.equal(parsed.length, 1)
+    assert.equal(parsed[0]?.type, "provider-notification")
+    assert.equal(parsed[0]?.title, "Hello")
+  })
+
   it("parses notifications split across PTY chunks", () => {
     const first = parseOscStreamChunk("", "\x1b]777;notify;Build")
     assert.equal(first.notifications.length, 0)
@@ -354,6 +428,76 @@ describe("OSC + hook normalize", () => {
     assert.equal(normalizeHookEventName("agent-turn-complete"), "turn-completed")
     assert.equal(normalizeHookEventName("permission_request"), "permission-required")
   })
+
+  it("normalizes native Claude hook input with authoritative URL context", () => {
+    const normalized = normalizeProviderHookRequest(
+      {
+        hook_event_name: "Notification",
+        notification_type: "permission_prompt",
+        session_id: "claude-session",
+        prompt_id: "prompt-1",
+        title: "Permission\u0000 needed",
+        message: "Allow Bash?",
+        sessionId: "forged-app-session",
+      },
+      {
+        provider: "claude",
+        sessionId: "app-session",
+        projectId: "project-1",
+      },
+    )
+    assert.equal(normalized.type, "permission-required")
+    assert.equal(normalized.sessionId, "app-session")
+    assert.equal(normalized.providerSessionId, "claude-session")
+    assert.equal(normalized.providerTurnId, "prompt-1")
+    assert.equal(normalized.title, "Permission needed")
+    assert.equal(normalized.source, "provider-hook")
+  })
+
+  it("normalizes Codex notify argv payload", () => {
+    const normalized = normalizeProviderHookRequest(
+      {
+        type: "agent-turn-complete",
+        "turn-id": "turn-7",
+        "last-assistant-message": "Finished the refactor",
+      },
+      { provider: "codex", sessionId: "app-session" },
+    )
+    assert.equal(normalized.type, "turn-completed")
+    assert.equal(normalized.providerTurnId, "turn-7")
+    assert.equal(normalized.message, "Finished the refactor")
+  })
+
+  it("normalizes OpenCode v1 and v2 permission events", () => {
+    for (const version of ["permission", "permission.v2"]) {
+      const asked = normalizeProviderHookRequest(
+        {
+          event: {
+            type: `${version}.asked`,
+            properties: { sessionID: "opencode-session" },
+          },
+        },
+        { provider: "opencode", sessionId: "app-session" },
+      )
+      assert.equal(asked.type, "permission-required")
+      assert.equal(asked.requiresAction, true)
+      assert.equal(asked.resolveOf, undefined)
+
+      const replied = normalizeProviderHookRequest(
+        {
+          event: {
+            type: `${version}.replied`,
+            properties: { sessionID: "opencode-session" },
+          },
+        },
+        { provider: "opencode", sessionId: "app-session" },
+      )
+      assert.equal(replied.type, "permission-required")
+      assert.equal(replied.requiresAction, false)
+      assert.equal(replied.resolveOf?.type, "permission-required")
+      assert.equal(replied.resolveOf?.providerSessionId, "opencode-session")
+    }
+  })
 })
 
 describe("policy", () => {
@@ -361,6 +505,17 @@ describe("policy", () => {
     const prefs = mergeNotificationPreferences({ notifyOnCompleted: false })
     assert.equal(shouldCreateInAppNotification(prefs, "turn-completed"), false)
     assert.equal(shouldCreateInAppNotification(prefs, "failed"), true)
+  })
+
+  it("bounds malformed numeric preference input", () => {
+    const prefs = mergeNotificationPreferences({
+      retentionDays: -100,
+      maxRetained: Number.POSITIVE_INFINITY,
+      backgroundOutputSettleMs: 999_999,
+    })
+    assert.equal(prefs.retentionDays, 1)
+    assert.equal(prefs.maxRetained, 5_000)
+    assert.equal(prefs.backgroundOutputSettleMs, 60_000)
   })
 
   it("suppresses desktop when viewing session", () => {

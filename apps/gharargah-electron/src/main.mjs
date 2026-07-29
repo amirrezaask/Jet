@@ -8,7 +8,7 @@
  */
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow, ipcMain } from "electron"
+import { app, BrowserWindow, ipcMain, nativeTheme } from "electron"
 import {
   DEFAULT_HOST,
   DEFAULT_HOST_PORT,
@@ -42,6 +42,26 @@ const host = process.env.JET_HOST ?? DEFAULT_HOST
 const vitePort = Number(process.env.JET_WEB_PORT ?? DEFAULT_VITE_PORT)
 const localServerUrl = `http://${host}:${hostPort}`
 const localAppUrl = isDev ? `http://${host}:${vitePort}` : localServerUrl
+const titlebarHeight = 40
+
+function windowTitlebarOptions() {
+  if (process.platform === "darwin") {
+    return {
+      titleBarStyle: "hiddenInset",
+      trafficLightPosition: { x: 14, y: 13 },
+    }
+  }
+
+  return {
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      // Fully transparent overlays render opaque on some Linux WMs.
+      color: "#01000000",
+      height: titlebarHeight,
+      symbolColor: nativeTheme.shouldUseDarkColors ? "#f5f5f5" : "#202020",
+    },
+  }
+}
 
 /** @returns {string | undefined} */
 function resolveRuntimeRoot() {
@@ -220,6 +240,7 @@ function createWindow(url) {
     title: "Gharargah",
     icon: iconPath,
     show: false,
+    ...windowTitlebarOptions(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

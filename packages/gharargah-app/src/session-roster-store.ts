@@ -10,6 +10,7 @@ export type PersistedSessionEntry = {
   cwdRootUri: string
   label: string
   launchCommand?: string
+  launchArgs?: string[]
   ptyId?: string
   status: TerminalSessionStatus
   exitCode?: number
@@ -17,6 +18,8 @@ export type PersistedSessionEntry = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  hasUserInput?: boolean
+  hasMeaningfulOutput?: boolean
   lastActivityAt?: string
 }
 
@@ -84,6 +87,12 @@ function parseEntry(raw: unknown): PersistedSessionEntry | null {
   }
   const launchCommand = asNonEmptyString(item.launchCommand)
   if (launchCommand) entry.launchCommand = launchCommand
+  if (Array.isArray(item.launchArgs)) {
+    const launchArgs = item.launchArgs.filter(
+      (arg): arg is string => typeof arg === "string" && arg.length <= 32_768,
+    )
+    if (launchArgs.length > 0) entry.launchArgs = launchArgs
+  }
   const ptyId = asNonEmptyString(item.ptyId)
   if (ptyId) entry.ptyId = ptyId
   const customLabel = asNonEmptyString(item.customLabel)
@@ -97,6 +106,8 @@ function parseEntry(raw: unknown): PersistedSessionEntry | null {
   if (agentDriverId) entry.agentDriverId = agentDriverId
   const agentThreadId = asNonEmptyString(item.agentThreadId)
   if (agentThreadId) entry.agentThreadId = agentThreadId
+  if (item.hasUserInput === true) entry.hasUserInput = true
+  if (item.hasMeaningfulOutput === true) entry.hasMeaningfulOutput = true
   const lastActivityAt = asNonEmptyString(item.lastActivityAt)
   if (lastActivityAt) entry.lastActivityAt = lastActivityAt
   return entry

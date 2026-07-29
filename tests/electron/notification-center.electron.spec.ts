@@ -216,7 +216,7 @@ test.describe("notification center", () => {
         .toBeTruthy()
 
       const turnId = `turn-dup-${Date.now()}`
-      await page.evaluate(
+      const hookStatus = await page.evaluate(
         async ({ sid, turnId: tid }) => {
           await window.__gharargahAgent!.ingestNotification!({
             source: "osc",
@@ -227,18 +227,24 @@ test.describe("notification center", () => {
             providerTurnId: tid,
             eventId: tid,
           })
-          await window.__gharargahAgent!.ingestNotification!({
-            source: "provider-hook",
-            type: "turn-completed",
-            title: "Codex completed the turn",
-            sessionId: sid,
-            provider: "codex",
-            providerTurnId: tid,
-            eventId: tid,
+          const url = new URL("/api/v1/notifications/ingest", window.location.origin)
+          url.searchParams.set("provider", "codex")
+          url.searchParams.set("sessionId", sid!)
+          const response = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              type: "agent-turn-complete",
+              "turn-id": tid,
+              eventId: tid,
+              "last-assistant-message": "Codex completed the turn",
+            }),
           })
+          return response.status
         },
         { sid: sessionId, turnId },
       )
+      expect(hookStatus).toBe(204)
 
       await openCenter(page)
       await page.locator('[data-gharargah-notification-filter="completed"]').click()

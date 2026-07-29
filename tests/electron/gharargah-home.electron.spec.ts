@@ -41,6 +41,25 @@ test.describe("gharargah mission home", () => {
       const section = page.locator(sectionSel)
       await expectLocatorVisible(section)
 
+      await page.locator("[data-gharargah-home]").click({ position: { x: 4, y: 4 } })
+      await page.keyboard.press("/")
+      const search = page.locator("[data-gharargah-home-search]")
+      await expect.poll(() => search.evaluate(el => document.activeElement === el)).toBe(true)
+      await search.fill("___no_such_project___")
+      const noMatches = page.locator('[data-gharargah-home-empty="search"]')
+      await expectLocatorVisible(noMatches)
+      await expectLocatorContainsText(noMatches, "No matching projects or sessions")
+      await noMatches.getByRole("button", { name: "Clear search" }).click()
+      await expect.poll(() => search.evaluate(el => document.activeElement === el)).toBe(true)
+      await expect.poll(() => search.evaluate(el => (el as HTMLInputElement).value)).toBe("")
+      await expectLocatorVisible(section)
+      await search.fill("___no_such_project___")
+      await page.keyboard.press("Escape")
+      await expect.poll(() => search.evaluate(el => (el as HTMLInputElement).value)).toBe("")
+      await expect.poll(() => search.evaluate(el => document.activeElement === el)).toBe(true)
+      await page.keyboard.press("Escape")
+      await expect.poll(() => search.evaluate(el => document.activeElement === el)).toBe(false)
+
       await openNewAgentSession(page)
       await expect
         .poll(async () => page.evaluate(() => window.__gharargahAgent?.getState()?.shellView ?? null), {
@@ -95,7 +114,6 @@ test.describe("gharargah mission home", () => {
         .poll(async () => (await cards.first().textContent())?.trim().length ?? 0, { timeout: 10_000 })
         .toBeGreaterThan(0)
 
-      const search = page.locator("[data-gharargah-home-search]")
       await search.fill("___no_such_project___")
       await expectLocatorCount(page.locator(sectionSel), 0)
       await search.fill(workspaceName.slice(0, Math.min(6, workspaceName.length)))
@@ -167,7 +185,32 @@ test.describe("gharargah mission home", () => {
         .poll(() =>
           page.locator("[data-gharargah-session-mode-switch] svg").count(),
         )
-        .toBe(0)
+        .toBe(4)
+      await expect
+        .poll(async () =>
+          page.evaluate(() => {
+            const header = document.querySelector(
+              "[data-gharargah-terminal-modal-header]",
+            )
+            const switcher = document.querySelector(
+              "[data-gharargah-session-mode-switch]",
+            )
+            const title = document.querySelector(
+              "[data-gharargah-terminal-modal-title]",
+            )
+            if (!header || !switcher || !title) return null
+            const headerRect = header.getBoundingClientRect()
+            const switcherRect = switcher.getBoundingClientRect()
+            const titleRect = title.getBoundingClientRect()
+            const midX = headerRect.left + headerRect.width / 2
+            return (
+              switcherRect.left > titleRect.right &&
+              switcherRect.left >= midX &&
+              Math.abs(switcherRect.top - titleRect.top) < 24
+            )
+          }),
+        )
+        .toBe(true)
       await expect
         .poll(() =>
           page
@@ -297,6 +340,7 @@ test.describe("gharargah mission home", () => {
           (window as typeof window & { __gitActions?: string[] }).__gitActions ?? [],
         ))
         .toContain("stage:src/index.ts")
+      await page.locator("[data-gharargah-git-commit-trigger]").click()
       await page.locator("#git-commit-summary").fill("Test Git workspace")
       await page.locator("[data-gharargah-git-commit]").click()
       await expect

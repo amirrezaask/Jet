@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import type { MouseEvent, ReactNode } from "react"
 import { Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import {
@@ -19,8 +19,8 @@ export type SessionTerminalWorkspaceProps = {
   activeId: string
   onActiveChange: (id: string) => void
   onAdd: () => void
-  onCloseActive: () => void
-  canCloseActive: boolean
+  onClose: (id: string) => void
+  canClose: (id: string) => boolean
   className?: string
 }
 
@@ -36,8 +36,8 @@ export function SessionTerminalWorkspace(
     activeId,
     onActiveChange,
     onAdd,
-    onCloseActive,
-    canCloseActive,
+    onClose,
+    canClose,
     className,
   } = props
 
@@ -68,6 +68,17 @@ export function SessionTerminalWorkspace(
                 value={item.id}
                 data-gharargah-session-terminal-tab={item.id}
                 className="h-9 min-w-24 max-w-44 justify-start truncate px-3 font-mono text-xs"
+                onMouseDown={(event: MouseEvent<HTMLButtonElement>) => {
+                  if (event.button !== 1) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onAuxClick={(event: MouseEvent<HTMLButtonElement>) => {
+                  if (event.button !== 1) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (canClose(item.id)) onClose(item.id)
+                }}
               >
                 <span className="truncate">{item.label}</span>
               </TabsTrigger>
@@ -82,8 +93,8 @@ export function SessionTerminalWorkspace(
             data-gharargah-close-session-terminal=""
             aria-label="Close terminal"
             title="Close terminal"
-            disabled={!canCloseActive}
-            onClick={onCloseActive}
+            disabled={!canClose(activeId)}
+            onClick={() => onClose(activeId)}
             className="text-muted-foreground hover:text-foreground"
           >
             <X aria-hidden />

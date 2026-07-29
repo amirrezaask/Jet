@@ -69,6 +69,7 @@ export type LspSession = {
   port: number
   command: string
   getStderrSnippet: () => string
+  stopping: boolean
 }
 
 export type StartLspSessionOptions = {
@@ -98,6 +99,20 @@ export type LspRestartHelper = {
 const sessions = new Map<string, LspSession>()
 let crashCallback: ((id: string, stderrSnippet?: string) => void) | null = null
 
+function closeSessionBridge(session: LspSession): void {
+  for (const client of session.wss.clients) client.terminate()
+  try {
+    session.wss.close()
+  } catch {
+    /* already closed */
+  }
+  try {
+    session.server.close()
+  } catch {
+    /* already closed */
+  }
+}
+
 function attachSessionBridge(
   session: LspSession,
   proc: ChildProcess,
@@ -107,6 +122,20 @@ function attachSessionBridge(
   const decoder = new LspFramingDecoder()
   let activeWs: WebSocket | null = null
   const pendingServerMessages: string[] = []
+  let finished = false
+
+  const finish = (crashed: boolean) => {
+    if (finished) return
+    finished = true
+    sessions.delete(session.id)
+    pendingServerMessages.length = 0
+    if (activeWs && activeWs.readyState === activeWs.OPEN) activeWs.close()
+    closeSessionBridge(session)
+    if (crashed) {
+      const stderr = stderrBuffer.snippet()
+      crashCallback?.(session.id, stderr)
+    }
+  }
 
   proc.stdout?.on("data", (chunk: Buffer) => {
     for (const msg of decoder.feed(chunk)) {
@@ -152,16 +181,13 @@ function attachSessionBridge(
     })
   })
 
-  proc.on("exit", code => {
-    if (activeWs && activeWs.readyState === activeWs.OPEN) activeWs.close()
-    if (code && code !== 0) {
-      crashCallback?.(session.id, stderrBuffer.snippet())
-    }
+  proc.on("exit", () => {
+    finish(!session.stopping)
   })
 
   proc.on("error", err => {
     console.error("LSP spawn error:", err)
-    crashCallback?.(session.id, stderrBuffer.snippet())
+    finish(!session.stopping)
     onSpawnError?.(session.id)
   })
 }
@@ -188,16 +214,6 @@ export async function startLspSession(opts: StartLspSessionOptions): Promise<Sta
     return { id: "", transportUrl: "", error: message }
   }
 
-  const id = `lsp-${opts.serverId}-${Date.now()}`
-  const stderrBuffer = new StderrRingBuffer()
-
-  const proc = spawn(resolved.command, resolved.args, {
-    cwd,
-    stdio: ["pipe", "pipe", "pipe"],
-    shell: false,
-    env: process.env,
-  })
-
   const server = createServer()
   const wss = new WebSocketServer({ server })
 
@@ -208,6 +224,14 @@ export async function startLspSession(opts: StartLspSessionOptions): Promise<Sta
 
   const addr = server.address()
   const port = typeof addr === "object" && addr ? addr.port : 0
+  const id = `lsp-${opts.serverId}-${Date.now()}`
+  const stderrBuffer = new StderrRingBuffer()
+  const proc = spawn(resolved.command, resolved.args, {
+    cwd,
+    stdio: ["pipe", "pipe", "pipe"],
+    shell: false,
+    env: process.env,
+  })
 
   const session: LspSession = {
     id,
@@ -218,10 +242,11 @@ export async function startLspSession(opts: StartLspSessionOptions): Promise<Sta
     port,
     command: resolved.command,
     getStderrSnippet: () => stderrBuffer.snippet(),
+    stopping: false,
   }
 
-  attachSessionBridge(session, proc, stderrBuffer, opts.onSpawnError)
   sessions.set(id, session)
+  attachSessionBridge(session, proc, stderrBuffer, opts.onSpawnError)
 
   return { id, transportUrl: `ws://127.0.0.1:${port}` }
 }
@@ -229,17 +254,17 @@ export async function startLspSession(opts: StartLspSessionOptions): Promise<Sta
 export async function stopLspSession(id: string): Promise<void> {
   const session = sessions.get(id)
   if (!session) return
-  session.process.kill()
-  session.wss.close()
-  session.server.close()
+  session.stopping = true
   sessions.delete(id)
+  session.process.kill()
+  closeSessionBridge(session)
 }
 
 export function stopAllLspSessions(): void {
   for (const session of sessions.values()) {
+    session.stopping = true
     session.process.kill()
-    session.wss.close()
-    session.server.close()
+    closeSessionBridge(session)
   }
   sessions.clear()
 }

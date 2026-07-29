@@ -143,7 +143,10 @@ export function findExecutableOnPath(name: string): string | null {
 export function resolveLanguageServerCommand(
   def: LanguageServerDefinition,
 ): { command: string; args: string[] } | { error: string } {
-  for (const candidate of def.commandCandidates) {
+  const overrideKey = `GHARARGAH_LSP_${def.id.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}_BIN`
+  const override = process.env[overrideKey]?.trim()
+  const candidates = override ? [override, ...def.commandCandidates] : def.commandCandidates
+  for (const candidate of candidates) {
     const found = findExecutableOnPath(candidate)
     if (found) {
       const args = def.candidateArgs?.[candidate] ?? def.args
@@ -151,7 +154,7 @@ export function resolveLanguageServerCommand(
     }
   }
   return {
-    error: `No executable found for ${def.id}: tried ${def.commandCandidates.join(", ")}`,
+    error: `No executable found for ${def.id}: tried ${candidates.join(", ")}`,
   }
 }
 

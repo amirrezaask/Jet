@@ -8,6 +8,8 @@ export type EditorSession = {
   isDirty: boolean
   largeFile: boolean
   savedBaseline: string
+  /** Null until an initially-dirty untitled buffer has been saved at least once. */
+  savedAlternativeVersionId: number | null
 }
 
 class EditorSessionRegistry {

@@ -18,6 +18,7 @@ import {
   type SessionSidebarActions,
 } from "./SessionContextMenu.js"
 import { AgentProviderIcon, SessionStatusIndicator } from "./SessionStatusIndicator.js"
+import { projectMonogram } from "./project-monogram.js"
 import type { SidebarSession } from "./types.js"
 
 export type SessionSidebarItemProps = {
@@ -42,6 +43,9 @@ export function SessionSidebarItem({
       ? `${session.unreadCount} unread message${session.unreadCount === 1 ? "" : "s"}`
       : undefined
   const relative = formatRelativeTime(session.lastActivityAt)
+  const compactLabel = `Project ${session.projectName}${
+    unreadLabel ? `, ${unreadLabel}` : ""
+  }`
 
   const button = (
     <SidebarMenuButton
@@ -50,44 +54,63 @@ export function SessionSidebarItem({
       data-gharargah-sidebar-session-selected={selected ? "" : undefined}
       data-gharargah-list-item=""
       aria-current={selected ? "true" : undefined}
-      aria-label={`${session.title}, ${session.agentLabel}${
-        showProjectMeta ? `, ${session.projectName}` : ""
-      }${unreadLabel ? `, ${unreadLabel}` : ""}`}
+      aria-label={
+        compact
+          ? compactLabel
+          : `${session.title}, ${session.agentLabel}${
+              showProjectMeta ? `, ${session.projectName}` : ""
+            }${unreadLabel ? `, ${unreadLabel}` : ""}`
+      }
       onClick={() => onSelect(session)}
       className={cn(
         "h-auto min-h-8 items-center gap-2 py-1.5",
-        selected &&
+        compact && "size-8! min-h-8 justify-center gap-0 p-0!",
+        selected && !compact &&
           "border-l-2 border-l-primary bg-primary/10 data-[active=true]:bg-primary/10",
+        selected && compact && "bg-primary/10 data-[active=true]:bg-primary/10",
         session.unreadCount > 0 && "font-medium",
       )}
-      tooltip={compact ? session.title : undefined}
     >
-      <AgentProviderIcon agent={session.agent} />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-        <span className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-xs",
-              session.unreadCount > 0 ? "font-semibold text-foreground" : "text-foreground",
-            )}
-          >
-            {session.title}
-          </span>
-          {!compact ? (
-            <span className="shrink-0 text-3xs text-muted-foreground tabular-nums">
-              {relative}
+      {compact ? (
+        <span
+          role="img"
+          aria-label={`Project ${session.projectName}`}
+          data-gharargah-sidebar-project-monogram=""
+          data-gharargah-sidebar-project-name={session.projectName}
+          className="flex size-[1.125rem] shrink-0 items-center justify-center rounded-[0.3rem] border border-sidebar-border bg-sidebar-accent font-mono text-[0.5625rem] font-semibold leading-none tracking-[-0.04em] text-sidebar-accent-foreground"
+        >
+          {projectMonogram(session.projectName)}
+        </span>
+      ) : (
+        <>
+          <AgentProviderIcon agent={session.agent} />
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+            <span className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate text-xs",
+                  session.unreadCount > 0
+                    ? "font-semibold text-foreground"
+                    : "text-foreground",
+                )}
+              >
+                {session.title}
+              </span>
+              <span className="shrink-0 text-3xs text-muted-foreground tabular-nums">
+                {relative}
+              </span>
             </span>
-          ) : null}
-        </span>
-        <span className="flex items-center gap-1.5 text-3xs text-muted-foreground">
-          <span className="truncate">
-            {showProjectMeta
-              ? `${session.agentLabel} · ${session.projectName}`
-              : session.agentLabel}
+            <span className="flex items-center gap-1.5 text-3xs text-muted-foreground">
+              <span className="truncate">
+                {showProjectMeta
+                  ? `${session.agentLabel} · ${session.projectName}`
+                  : session.agentLabel}
+              </span>
+              <SessionStatusIndicator status={session.status} />
+            </span>
           </span>
-          <SessionStatusIndicator status={session.status} />
-        </span>
-      </span>
+        </>
+      )}
       {session.unreadCount > 0 ? (
         <SidebarMenuBadge
           aria-label={unreadLabel}
@@ -120,12 +143,16 @@ export function SessionSidebarItem({
   )
 
   return (
-    <SidebarMenuItem className="group/menu-item">
+    <SidebarMenuItem
+      className={cn("group/menu-item", compact && "flex justify-center")}
+    >
       <SessionContextMenu session={session} actions={actions}>
         {compact ? (
           <Tooltip>
             <TooltipTrigger asChild>{button}</TooltipTrigger>
-            <TooltipContent side="right">{session.title}</TooltipContent>
+            <TooltipContent side="right" align="center">
+              {session.projectName}
+            </TooltipContent>
           </Tooltip>
         ) : (
           button

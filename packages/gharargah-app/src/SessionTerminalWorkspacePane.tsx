@@ -16,12 +16,15 @@ import {
   addSessionTerminal,
   listSessionTerminals,
   markTerminalFailed,
+  recordTerminalOutput,
+  recordTerminalUserInput,
   removeSessionTerminal,
   restartTerminalSession,
   setActiveSessionTerminal,
   subscribeTerminalSessions,
   terminalPtyIdForTab,
   terminalSessionForTab,
+  terminalSessionNeedsCloseConfirmation,
   trackTerminalPtyId,
 } from "./tabs/terminal-session.js"
 
@@ -82,6 +85,8 @@ export function SessionTerminalWorkspacePane(
           exitCode={session.exitCode}
           sessionGeneration={session.generation}
           onPtyId={trackTerminalPtyId}
+          onInput={recordTerminalUserInput}
+          onOutput={recordTerminalOutput}
           onFailed={() => markTerminalFailed(session.tabId)}
           onRestart={() => {
             const ptyId = terminalPtyIdForTab(session.tabId)
@@ -120,7 +125,7 @@ export function SessionTerminalWorkspacePane(
     if (tabId === sessionTabId) return
     const session = terminalSessionForTab(tabId)
     if (!session) return
-    if (session.status === "starting" || session.status === "running") {
+    if (terminalSessionNeedsCloseConfirmation(session)) {
       const confirmed = await requestConfirm({
         title: `Close ${session.customLabel ?? "terminal"}?`,
         description: "The running shell process will be stopped.",
@@ -148,8 +153,8 @@ export function SessionTerminalWorkspacePane(
           minimumOrdinal: includePrimary ? 2 : 1,
         })
       }}
-      onCloseActive={() => void closeTerminal(activeId)}
-      canCloseActive={Boolean(activeId && activeId !== sessionTabId)}
+      onClose={tabId => void closeTerminal(tabId)}
+      canClose={tabId => Boolean(tabId && tabId !== sessionTabId)}
     />
   )
 }

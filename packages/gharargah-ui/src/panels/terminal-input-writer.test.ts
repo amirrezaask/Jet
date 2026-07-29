@@ -33,3 +33,23 @@ test("reports rejected writes without producing an unhandled rejection", async (
   await writer.flush()
   assert.equal(errors.length, 1)
 })
+
+test("preserves ordering between text and binary terminal input", async () => {
+  const writes: string[] = []
+  const writer = createTerminalInputWriter(
+    async data => {
+      writes.push(`text:${data}`)
+    },
+    error => assert.fail(String(error)),
+    async data => {
+      writes.push(`binary:${data}`)
+    },
+  )
+
+  writer.enqueue("a")
+  writer.enqueueBinary("\x80\xff")
+  writer.enqueue("b")
+  await writer.flush()
+
+  assert.deepEqual(writes, ["text:a", "binary:\x80\xff", "text:b"])
+})

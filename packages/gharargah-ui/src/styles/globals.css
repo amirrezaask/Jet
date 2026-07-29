@@ -113,6 +113,14 @@
   --gharargah-row-height: calc(var(--gharargah-fs-base) * 1.5);
   --gharargah-window-chrome-height: calc(var(--gharargah-fs-base) * 2.5);
   --gharargah-location-row-height: calc(var(--gharargah-fs-base) * 2.5);
+  /* Palette virtualization and rendered slots share these rem-scaled contracts.
+   * Single-line pickers stay compact; detail rows reserve title + metadata. */
+  --gharargah-palette-row-height: 2.5rem;
+  --gharargah-palette-detail-row-height: 3.5rem;
+  /* Agent CLI picker rows contain a provider glyph plus two text lines.
+   * Keep the virtual slot rem-scaled so appearance zoom cannot clip or overlap
+   * the line boxes. Other palette rows retain their compact contract. */
+  --gharargah-agent-cli-row-height: 3.5rem;
   /* Traffic-light clearance only — not a closed-sidebar placeholder. */
   --gharargah-traffic-light-inset: 5rem;
   --gharargah-overlay-list-max: 22rem;
@@ -925,6 +933,12 @@ body,
 
 [data-gharargah-terminal-panel] .xterm-screen {
   position: relative;
+}
+
+[data-gharargah-terminal-panel] .xterm,
+[data-gharargah-terminal-panel] .xterm-viewport,
+[data-gharargah-terminal-panel] .xterm-screen {
+  background: transparent !important;
 }
 
 [data-gharargah-terminal-panel] .xterm .xterm-rows {

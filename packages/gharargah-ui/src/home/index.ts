@@ -1,4 +1,9 @@
 export { GharargahHome, type GharargahHomeProps, type HomeProjectGroup } from "./GharargahHome.js"
+export {
+  GharargahWindowTitlebar,
+  type GharargahWindowTitlebarProps,
+  type DesktopWindowPlatform,
+} from "./GharargahWindowTitlebar.js"
 export { ProjectSection, type HomeProjectSectionProps, type HomeTerminalEntry } from "./ProjectSection.js"
 export { TerminalCard, type TerminalCardProps, type TerminalCardStatus } from "./TerminalCard.js"
 export { SessionCard, type SessionCardProps } from "./SessionCard.js"
@@ -37,6 +42,7 @@ export {
   type AgentSessionHeaderMeta,
   type SessionDialogMode,
 } from "./TerminalSessionModal.js"
+export { formatSessionHeaderTitle } from "./session-header-labels.js"
 export {
   SessionTerminalWorkspace,
   type SessionTerminalItem,

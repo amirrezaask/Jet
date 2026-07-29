@@ -105,7 +105,7 @@ export type JetElectronLSP = {
 export type JetElectronTerminal = {
   create(
     cwdUri: string,
-    launch?: { command: string; args?: string[] },
+    launch?: { command?: string; args?: string[]; cols?: number; rows?: number },
   ): Promise<{ id: string; title?: string }>
   attach(id: string): Promise<{
     id: string
@@ -117,6 +117,7 @@ export type JetElectronTerminal = {
     signal?: number
   } | null>
   write(id: string, data: string): Promise<void>
+  writeBinary(id: string, dataBase64: string): Promise<void>
   resize(id: string, cols: number, rows: number): Promise<void>
   onData(id: string, callback: (data: string) => void): () => void
   onExit(cb: (id: string, exitCode: number, signal?: number) => void): () => void

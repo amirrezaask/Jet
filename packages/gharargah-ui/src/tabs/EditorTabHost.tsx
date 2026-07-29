@@ -149,6 +149,27 @@ function EditorTabHostInner({
       let file = workspace.fileForUri(fileUri)
       if (!file) file = workspace.createWorkspaceFile(fileUri, path)
 
+      const cachedSession = editorSessions.panelSessions(panelId).get(fileUri)
+      const cachedModel = monacoModels.get(fileUri)
+      if (cachedSession && cachedModel) {
+        editorSessions.touchSessionAccess(panelId, fileUri)
+        setLanguageId(cachedSession.fileLanguageId)
+        setContent(cachedModel.getValue())
+        setReady(true)
+        if (
+          !cachedSession.largeFile &&
+          !untitled &&
+          resolveLspClientRef.current
+        ) {
+          void resolveLspClientRef.current(fileUri).then(client => {
+            if (cancelled) return
+            if (!client) onLspAttachFailedRef.current?.(fileUri)
+            else onProblemsChangeRef.current?.()
+          })
+        }
+        return
+      }
+
       let initialText = ""
       let savedBaseline = workspace.savedBaselineFor(fileUri) ?? ""
       let largeFile = false
@@ -174,12 +195,19 @@ function EditorTabHostInner({
 
       if (cancelled) return
 
+      // The session owns one model reference independently of the mounted editor.
+      // This preserves undo history and avoids re-reading the file on every tab switch.
+      const model = monacoModels.getOrCreate(fileUri, initialText, file.languageId)
       const session: EditorSession = {
         fileUri,
         fileLanguageId: file.languageId,
         isDirty: untitled && initialText.length > 0,
         largeFile,
         savedBaseline,
+        savedAlternativeVersionId:
+          untitled && initialText.length > 0
+            ? null
+            : model.getAlternativeVersionId(),
       }
       editorSessions.panelSessions(panelId).set(fileUri, session)
       editorSessions.touchSessionAccess(panelId, fileUri)
@@ -209,7 +237,7 @@ function EditorTabHostInner({
     return () => {
       cancelled = true
     }
-  }, [fileUri, panelId, workspace, resolveLspClientRef, onLspAttachFailedRef, onProblemsChangeRef])
+  }, [fileUri, panelId.id, workspace])
 
   useEffect(() => {
     if (lspRevision == null || lspRevision === 0 || !resolveLspClient) return
@@ -236,8 +264,10 @@ function EditorTabHostInner({
       const session = editorSessions.panelSessions(panelId).get(fileUri)
       if (!session) return
       session.savedBaseline = baseline
-      const current = monacoModels.getContent(fileUri) ?? ""
-      session.isDirty = current !== baseline
+      const model = monacoModels.get(fileUri)
+      session.savedAlternativeVersionId =
+        model?.getAlternativeVersionId() ?? session.savedAlternativeVersionId
+      session.isDirty = false
       workspace.markDirty(uri, session.isDirty)
     })
     return () => sub.dispose()
@@ -247,6 +277,14 @@ function EditorTabHostInner({
     const sub = workspace.onFileReload.event(({ uri, content: next }) => {
       if (uri !== fileUri) return
       monacoModels.updateContent(uri, next, { preserveCursor: true })
+      const session = editorSessions.panelSessions(panelId).get(fileUri)
+      const model = monacoModels.get(uri)
+      if (session && model) {
+        session.savedBaseline = next
+        session.savedAlternativeVersionId = model.getAlternativeVersionId()
+        session.isDirty = false
+        workspace.markDirty(uri, false)
+      }
       onProblemsChangeRef.current?.()
     })
     return () => sub.dispose()
@@ -271,15 +309,21 @@ function EditorTabHostInner({
 
   useEffect(() => {
     return () => {
-      if (editorRef.current) registerEditorView(panelId, null)
+      const editor = editorRef.current
+      if (!editor) return
+      registerEditorView(panelId, null)
+      editorSessions.clearActiveEditor(panelId, editor)
+      editorRef.current = null
     }
   }, [panelId])
 
   const handleContentChange = useCallback(
-    (value: string) => {
+    (model: NonNullable<ReturnType<MonacoEditorHandle["getModel"]>>) => {
       const session = editorSessions.panelSessions(panelId).get(fileUri)
       if (!session) return
-      session.isDirty = value !== session.savedBaseline
+      session.isDirty =
+        session.savedAlternativeVersionId == null ||
+        model.getAlternativeVersionId() !== session.savedAlternativeVersionId
       workspace.markDirty(fileUri, session.isDirty)
       onProblemsChangeRef.current?.()
     },
@@ -330,10 +374,17 @@ function EditorTabHostInner({
               languageId={languageId}
               theme={theme}
               autoFocus={autoFocus}
+              viewStateId={`panel-${panelId.id}`}
               onReady={handleReady}
               onContentChange={handleContentChange}
               onFocusChange={handleFocusChange}
               onCursorChange={handleCursorChange}
+              onQuickOpen={() =>
+                void executeCommandRef.current("workspace.quickOpen")
+              }
+              onCommandPalette={() =>
+                void executeCommandRef.current("ui.showCommandPalette")
+              }
             />
           ) : null}
         </div>

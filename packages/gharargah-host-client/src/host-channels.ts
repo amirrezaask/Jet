@@ -34,6 +34,7 @@ export const HOST_CHANNELS = new Set([
   "lsp:stop",
   "terminal:create",
   "terminal:write",
+  "terminal:writeBinary",
   "terminal:resize",
   "terminal:attach",
   "terminal:dispose",

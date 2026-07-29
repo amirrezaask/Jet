@@ -11,9 +11,15 @@ import {
   consumePendingInitialContent,
 } from "./navigation.js"
 import {
+  getActiveMonacoEditor,
   setActiveMonacoEditor,
   type MonacoEditorHandle,
 } from "./editor-api.js"
+import { MonacoCursorGhostTrail } from "./cursor-ghost-trail.js"
+import {
+  interceptPrimaryCommandPaletteShortcut,
+  interceptPrimaryQuickOpenShortcut,
+} from "./editor-shortcuts.js"
 
 export type MonacoEditorHostProps = {
   uri: string
@@ -22,10 +28,14 @@ export type MonacoEditorHostProps = {
   theme: GharargahTheme
   readOnly?: boolean
   autoFocus?: boolean
+  /** Stable surface identity used to restore cursor, selections, folds, and scroll. */
+  viewStateId?: string
   onReady?: (editor: MonacoEditorHandle) => void
-  onContentChange?: (content: string) => void
+  onContentChange?: (model: monaco.editor.ITextModel) => void
   onFocusChange?: (focused: boolean) => void
   onCursorChange?: (line: number, column: number) => void
+  onQuickOpen?: () => void
+  onCommandPalette?: () => void
   className?: string
 }
 
@@ -55,25 +65,33 @@ export function MonacoEditorHost({
   theme,
   readOnly = false,
   autoFocus = false,
+  viewStateId,
   onReady,
   onContentChange,
   onFocusChange,
   onCursorChange,
+  onQuickOpen,
+  onCommandPalette,
   className,
 }: MonacoEditorHostProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<MonacoEditorHandle | null>(null)
-  const editorId = useId()
+  const generatedEditorId = useId()
+  const editorId = viewStateId ?? generatedEditorId
   const uriRef = useRef(uri)
   const onReadyRef = useRef(onReady)
   const onContentChangeRef = useRef(onContentChange)
   const onFocusChangeRef = useRef(onFocusChange)
   const onCursorChangeRef = useRef(onCursorChange)
+  const onQuickOpenRef = useRef(onQuickOpen)
+  const onCommandPaletteRef = useRef(onCommandPalette)
 
   onReadyRef.current = onReady
   onContentChangeRef.current = onContentChange
   onFocusChangeRef.current = onFocusChange
   onCursorChangeRef.current = onCursorChange
+  onQuickOpenRef.current = onQuickOpen
+  onCommandPaletteRef.current = onCommandPalette
 
   useEffect(() => {
     ensureMonacoEnvironment()
@@ -110,6 +128,7 @@ export function MonacoEditorHost({
     })
 
     editorRef.current = editor
+    const cursorGhostTrail = new MonacoCursorGhostTrail(editor)
     applyGharargahMonacoTheme(theme)
 
     const savedState = monacoModels.restoreViewState(editorId, uri)
@@ -123,8 +142,8 @@ export function MonacoEditorHost({
 
     disposables.push(
       editor.onDidChangeModelContent(() => {
-        const value = editor.getModel()?.getValue()
-        if (value != null) onContentChangeRef.current?.(value)
+        const currentModel = editor.getModel()
+        if (currentModel) onContentChangeRef.current?.(currentModel)
       }),
     )
 
@@ -147,6 +166,27 @@ export function MonacoEditorHost({
       }),
     )
 
+    disposables.push(
+      editor.onKeyDown(event => {
+        const browserEvent = event.browserEvent
+        const platform = navigator.platform
+        if (
+          interceptPrimaryQuickOpenShortcut(
+            browserEvent,
+            platform,
+            () => onQuickOpenRef.current?.(),
+          )
+        ) {
+          return
+        }
+        interceptPrimaryCommandPaletteShortcut(
+          browserEvent,
+          platform,
+          () => onCommandPaletteRef.current?.(),
+        )
+      }),
+    )
+
     const resizeObserver = new ResizeObserver(() => {
       editor.layout()
     })
@@ -160,12 +200,14 @@ export function MonacoEditorHost({
       monacoModels.saveViewState(editorId, currentUri, state)
       resizeObserver.disconnect()
       for (const d of disposables) d.dispose()
+      cursorGhostTrail.dispose()
       editor.dispose()
+      if (getActiveMonacoEditor() === editor) setActiveMonacoEditor(null)
       editorRef.current = null
       monacoModels.release(currentUri)
       monacoModels.disposeIfUnreferenced(currentUri)
     }
-  }, [editorId, autoFocus, readOnly])
+  }, [editorId])
 
   useEffect(() => {
     uriRef.current = uri
@@ -211,6 +253,10 @@ export function MonacoEditorHost({
   useEffect(() => {
     editorRef.current?.updateOptions({ readOnly })
   }, [readOnly])
+
+  useEffect(() => {
+    if (autoFocus) editorRef.current?.focus()
+  }, [autoFocus])
 
   return (
     <div
