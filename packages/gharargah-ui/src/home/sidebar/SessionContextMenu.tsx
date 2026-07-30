@@ -54,7 +54,7 @@ function SessionMenuItems({
       {actions.onDuplicate ? (
         <Item onSelect={() => actions.onDuplicate?.(session)}>Duplicate</Item>
       ) : null}
-      {actions.onMarkDone && session.status !== "completed" ? (
+      {actions.onMarkDone && !session.doneAt ? (
         <Item onSelect={() => actions.onMarkDone?.(session)}>Mark done</Item>
       ) : null}
       <Separator />

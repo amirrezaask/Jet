@@ -234,6 +234,11 @@ export function normalizeProviderHookRequest(
     cleanId(
       raw.providerSessionId ??
         raw.session_id ??
+        raw.sessionId ??
+        // Codex notify uses kebab-case `thread-id` (serde rename_all).
+        raw["thread-id"] ??
+        raw.thread_id ??
+        raw.threadId ??
         openCode.payload.sessionID ??
         openCode.payload.sessionId,
     ) ?? null
@@ -242,6 +247,8 @@ export function normalizeProviderHookRequest(
       raw.providerTurnId ??
         raw.prompt_id ??
         raw["turn-id"] ??
+        raw.turn_id ??
+        raw.turnId ??
         openCode.payload.messageID ??
         openCode.payload.turnId,
     ) ?? null

@@ -425,7 +425,7 @@ test.describe("gharargah mission home", () => {
     }
   })
 
-  test("restored session with missing PTY is dropped from home", async () => {
+  test("restored session with missing PTY stays on home as open card", async () => {
     const { app, page } = await launchJet()
     try {
       await ensureCardsLayout(page)
@@ -434,15 +434,18 @@ test.describe("gharargah mission home", () => {
         const state = window.__gharargahAgent!.getState()
         const path = state.workspaces[0]?.path ?? state.activeWorkspace
         if (!path) throw new Error("no workspace")
+        const uri =
+          (state.workspaces[0] as { uri?: string } | undefined)?.uri ??
+          (path.startsWith("/") ? `file://${path}` : `file:///${path}`)
         return {
           path,
           name: state.workspaces[0]?.name ?? "sample-workspace",
-          uri: `file://${path}`,
+          uri,
         }
       })
 
       await page.evaluate(async ws => {
-        await fetch("/api/v1/sessions", {
+        const res = await fetch("/api/v1/sessions", {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -452,6 +455,8 @@ test.describe("gharargah mission home", () => {
                 tabId: "gharargah:terminal:missing-pty-e2e",
                 cwdRootUri: ws.uri,
                 label: "Missing PTY session",
+                launchCommand: "codex",
+                agentId: "codex",
                 ptyId: "term-does-not-exist-e2e",
                 status: "running",
               },
@@ -459,30 +464,47 @@ test.describe("gharargah mission home", () => {
             modal: null,
           }),
         })
+        if (!res.ok) throw new Error(`seed sessions failed: ${res.status}`)
       }, workspace)
+
+      // Confirm seed stuck before reload (pagehide must not wipe empty over it).
+      await expect
+        .poll(async () => {
+          const roster = await page.evaluate(async () => {
+            const res = await fetch("/api/v1/sessions")
+            if (!res.ok) return null
+            return (await res.json()) as { sessions?: Array<{ tabId: string }> }
+          })
+          return roster?.sessions?.some(s => s.tabId === "gharargah:terminal:missing-pty-e2e") ?? false
+        }, { timeout: 10_000 })
+        .toBe(true)
 
       await page.reload({ waitUntil: "domcontentloaded" })
       await page.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
       await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]", { timeout: 30_000 })
+
+      await expect
+        .poll(async () => {
+          const roster = await page.evaluate(async () => {
+            const res = await fetch("/api/v1/sessions")
+            if (!res.ok) return null
+            return (await res.json()) as { sessions?: Array<{ label?: string }> }
+          })
+          return roster?.sessions?.some(s => s.label === "Missing PTY session") ?? false
+        }, { timeout: 20_000 })
+        .toBe(true)
 
       const section = page.locator(
         `[data-gharargah-project-section][data-gharargah-project-name="${workspace.name}"]`,
       )
       await expectLocatorVisible(section)
-      const deadCard = section.locator(
+      const restoredCard = section.locator(
         '[data-gharargah-terminal-card]:not([data-gharargah-new-session])',
       )
-      await expectLocatorCount(deadCard, 0, { timeout: 20_000 })
-      await expect
-        .poll(
-          async () =>
-            page.evaluate(() =>
-              document.body?.innerText?.includes("Missing PTY session") ?? false,
-            ),
-          { timeout: 5_000 },
-        )
-        .toBe(false)
+      await expectLocatorVisible(restoredCard.first(), { timeout: 20_000 })
+      await expectLocatorContainsText(restoredCard.first(), "Missing PTY session")
     } finally {
       await app.close()
     }

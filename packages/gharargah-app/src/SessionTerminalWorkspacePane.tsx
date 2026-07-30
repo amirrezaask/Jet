@@ -27,6 +27,7 @@ import {
   terminalSessionNeedsCloseConfirmation,
   trackTerminalPtyId,
 } from "./tabs/terminal-session.js"
+import { applyAgentCliResumeLaunchArgs } from "./agent-cli-resume.js"
 
 const TerminalPanel = lazy(async () => {
   const mod = await import("@gharargah/ui/terminal")
@@ -91,6 +92,7 @@ export function SessionTerminalWorkspacePane(
           onRestart={() => {
             const ptyId = terminalPtyIdForTab(session.tabId)
             if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
+            applyAgentCliResumeLaunchArgs(session.tabId)
             restartTerminalSession(session.tabId)
           }}
           onClose={() => void closeTerminal(session.tabId)}

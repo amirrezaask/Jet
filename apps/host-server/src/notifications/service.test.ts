@@ -458,14 +458,35 @@ describe("OSC + hook normalize", () => {
     const normalized = normalizeProviderHookRequest(
       {
         type: "agent-turn-complete",
+        "thread-id": "b5f6c1c2-1111-4111-8111-444455556666",
         "turn-id": "turn-7",
         "last-assistant-message": "Finished the refactor",
       },
       { provider: "codex", sessionId: "app-session" },
     )
     assert.equal(normalized.type, "turn-completed")
+    assert.equal(normalized.sessionId, "app-session")
+    assert.equal(
+      normalized.providerSessionId,
+      "b5f6c1c2-1111-4111-8111-444455556666",
+    )
     assert.equal(normalized.providerTurnId, "turn-7")
     assert.equal(normalized.message, "Finished the refactor")
+  })
+
+  it("maps Codex snake_case thread_id to providerSessionId", () => {
+    const normalized = normalizeProviderHookRequest(
+      {
+        type: "agent-turn-complete",
+        thread_id: "aaaaaaaa-1111-4111-8111-bbbbbbbbbbbb",
+        turn_id: "t1",
+      },
+      { provider: "codex", sessionId: "app-session" },
+    )
+    assert.equal(
+      normalized.providerSessionId,
+      "aaaaaaaa-1111-4111-8111-bbbbbbbbbbbb",
+    )
   })
 
   it("normalizes OpenCode v1 and v2 permission events", () => {

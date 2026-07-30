@@ -1,5 +1,5 @@
 import type { ProviderAdapter, ProviderAdapterContext } from "./types.js"
-import { AcpClient, ACP_CANCEL_FORCE_KILL_MS } from "@gharargah/effect-acp"
+import { AcpClient, ACP_CANCEL_FORCE_KILL_MS, runAcpRequest, runBootstrapAcpClient } from "@gharargah/effect-acp"
 import { globalAcpPool } from "./acp-pool.js"
 import { ensureMcpServers } from "./mcp-bridge.js"
 import {
@@ -410,7 +410,7 @@ export class AcpProviderAdapter implements ProviderAdapter {
     let client = globalAcpPool.get(key)
     if (!client) {
       const profile = this.profile()
-      client = new AcpClient({
+      client = await runBootstrapAcpClient({
         command: profile.command,
         args: profile.args,
         cwd: ctx.thread.workspaceRootPath,
@@ -445,8 +445,6 @@ export class AcpProviderAdapter implements ProviderAdapter {
           }
         },
       })
-      await client.start()
-      await client.initialize()
       globalAcpPool.set(key, client)
       const connected = {
         status: "connected" as const,
@@ -560,7 +558,7 @@ export class AcpProviderAdapter implements ProviderAdapter {
     // Cursor extension: enrich models via cursor/list_available_models when catalog empty.
     if (this.id === "cursor:acp" && (!discoveredModels || discoveredModels.length === 0)) {
       try {
-        const listed = await client.request("cursor/list_available_models", {})
+        const listed = await runAcpRequest(client, "cursor/list_available_models", {})
         const fromExt = parseCursorListAvailableModels(listed)
         if (fromExt.length > 0) discoveredModels = fromExt
       } catch {

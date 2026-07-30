@@ -1,8 +1,17 @@
 import http from "node:http"
 import { Effect } from "effect"
 import { WebSocketServer, type WebSocket } from "ws"
+import {
+  decodeAgentRpcRequest,
+  AgentRpcError,
+  type AgentRpcRequest,
+} from "@gharargah/rpc"
 import type { AgentThread } from "@gharargah/agents"
-import { makeOrchestrationLive, OrchestrationService, runOrch } from "../effect/services.js"
+import {
+  makeOrchestrationLive,
+  OrchestrationService,
+  runOrch,
+} from "../effect/services.js"
 import type { OrchEventSink } from "../orchestration/engine.js"
 import { globalAcpPool } from "../provider/acp-pool.js"
 import { closeMcpBridge } from "../provider/mcp-bridge.js"
@@ -13,12 +22,6 @@ export type AgentServerOptions = {
   port?: number
 }
 
-type RpcRequest = {
-  id?: string | number
-  method: string
-  params?: unknown
-}
-
 type Client = {
   ws: WebSocket
 }
@@ -27,111 +30,148 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" ? (v as Record<string, unknown>) : {}
 }
 
+/**
+ * Boot agent-server as an Effect program: Layer orchestration + Schema RPC + WS.
+ * HTTP health stays on node:http so /agents WS upgrade stays simple.
+ */
+export function startAgentServerEffect(
+  opts: AgentServerOptions = {},
+): Effect.Effect<{ host: string; port: number; close: () => Promise<void> }, Error> {
+  return Effect.gen(function* () {
+    const host = opts.host ?? process.env.GHARARGAH_AGENT_HOST ?? "127.0.0.1"
+    const requestedPort = opts.port ?? Number(process.env.GHARARGAH_AGENT_PORT ?? 4751)
+
+    const clients = new Set<Client>()
+    const broadcast = (event: string, payload: unknown) => {
+      const msg = JSON.stringify({ event, payload })
+      for (const c of clients) {
+        if (c.ws.readyState === c.ws.OPEN) c.ws.send(msg)
+      }
+    }
+
+    const sink: OrchEventSink = {
+      threadUpdated: (thread: AgentThread) => broadcast("agents:threadUpdated", thread),
+      threadDelta: delta => broadcast("agents:threadDelta", delta),
+      structuredDelta: delta => broadcast("agents:structuredDelta", delta),
+      permissionRequest: payload => broadcast("agents:permissionRequest", payload),
+    }
+
+    const orchLayer = makeOrchestrationLive(sink)
+    const orch = yield* Effect.gen(function* () {
+      return yield* OrchestrationService
+    }).pipe(Effect.provide(orchLayer))
+
+    globalAcpPool.startReaper()
+
+    const server = http.createServer((req, res) => {
+      if (req.url === "/health" || req.url === "/healthz") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(
+          JSON.stringify({
+            ok: true,
+            service: "gharargah-agent-server",
+            runtime: "effect",
+          }),
+        )
+        return
+      }
+      res.writeHead(404)
+      res.end("not found")
+    })
+
+    const wss = new WebSocketServer({ server, path: "/agents" })
+    wss.on("connection", ws => {
+      const client: Client = { ws }
+      clients.add(client)
+      if (getShellEnvStatus() === "ready") {
+        ws.send(JSON.stringify({ event: "agents:shellEnvReady", payload: null }))
+      } else {
+        ws.send(
+          JSON.stringify({
+            event: "agents:shellEnvReady",
+            payload: { status: getShellEnvStatus() },
+          }),
+        )
+      }
+      ws.on("message", async raw => {
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(String(raw))
+        } catch {
+          ws.send(JSON.stringify({ error: "invalid_json" }))
+          return
+        }
+        const decoded = await Effect.runPromise(
+          decodeAgentRpcRequest(parsed).pipe(
+            Effect.mapError(
+              err =>
+                new AgentRpcError({
+                  message: "invalid_rpc",
+                  cause: err,
+                }),
+            ),
+            Effect.either,
+          ),
+        )
+        if (decoded._tag === "Left") {
+          ws.send(JSON.stringify({ error: "invalid_rpc" }))
+          return
+        }
+        const req: AgentRpcRequest = decoded.right
+        try {
+          const result = await handleRpc(orch, req.method, req.params)
+          ws.send(JSON.stringify({ id: req.id, result }))
+        } catch (err) {
+          ws.send(
+            JSON.stringify({
+              id: req.id,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          )
+        }
+      })
+      ws.on("close", () => clients.delete(client))
+    })
+
+    yield* Effect.tryPromise({
+      try: () =>
+        new Promise<void>((resolve, reject) => {
+          server.listen(requestedPort, host, () => resolve())
+          server.on("error", reject)
+        }),
+      catch: err => err as Error,
+    })
+
+    const address = server.address()
+    const port =
+      typeof address === "object" && address && "port" in address
+        ? address.port
+        : requestedPort
+
+    return {
+      host,
+      port,
+      close: async () => {
+        await Effect.runPromise(orch.close())
+        await globalAcpPool.closeAll()
+        await closeMcpBridge().catch(() => undefined)
+        await new Promise<void>((resolve, reject) => {
+          wss.close(err => (err ? reject(err) : resolve()))
+        })
+        await new Promise<void>((resolve, reject) => {
+          server.close(err => (err ? reject(err) : resolve()))
+        })
+      },
+    }
+  })
+}
+
 export async function startAgentServer(opts: AgentServerOptions = {}): Promise<{
   host: string
   port: number
   close: () => Promise<void>
 }> {
-  const host = opts.host ?? process.env.GHARARGAH_AGENT_HOST ?? "127.0.0.1"
-  const requestedPort = opts.port ?? Number(process.env.GHARARGAH_AGENT_PORT ?? 4751)
-
-  const clients = new Set<Client>()
-  const broadcast = (event: string, payload: unknown) => {
-    const msg = JSON.stringify({ event, payload })
-    for (const c of clients) {
-      if (c.ws.readyState === c.ws.OPEN) c.ws.send(msg)
-    }
-  }
-
-  const sink: OrchEventSink = {
-    threadUpdated: (thread: AgentThread) => broadcast("agents:threadUpdated", thread),
-    threadDelta: delta => broadcast("agents:threadDelta", delta),
-    structuredDelta: delta => broadcast("agents:structuredDelta", delta),
-    permissionRequest: payload => broadcast("agents:permissionRequest", payload),
-  }
-
-  const orchLayer = makeOrchestrationLive(sink)
-  const orch = await Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* OrchestrationService
-    }).pipe(Effect.provide(orchLayer)),
-  )
-
-  // Start idle reaper for pooled ACP clients.
-  globalAcpPool.startReaper()
-
-  const server = http.createServer((req, res) => {
-    if (req.url === "/health" || req.url === "/healthz") {
-      res.writeHead(200, { "content-type": "application/json" })
-      res.end(JSON.stringify({ ok: true, service: "gharargah-agent-server", runtime: "effect" }))
-      return
-    }
-    res.writeHead(404)
-    res.end("not found")
-  })
-
-  const wss = new WebSocketServer({ server, path: "/agents" })
-  wss.on("connection", ws => {
-    const client: Client = { ws }
-    clients.add(client)
-    // PATH already enriched in bin.ts; only emit ready when shell env is ready.
-    if (getShellEnvStatus() === "ready") {
-      ws.send(JSON.stringify({ event: "agents:shellEnvReady", payload: null }))
-    } else {
-      ws.send(
-        JSON.stringify({
-          event: "agents:shellEnvReady",
-          payload: { status: getShellEnvStatus() },
-        }),
-      )
-    }
-    ws.on("message", async raw => {
-      let req: RpcRequest
-      try {
-        req = JSON.parse(String(raw)) as RpcRequest
-      } catch {
-        ws.send(JSON.stringify({ error: "invalid_json" }))
-        return
-      }
-      try {
-        const result = await handleRpc(orch, req.method, req.params)
-        ws.send(JSON.stringify({ id: req.id, result }))
-      } catch (err) {
-        ws.send(
-          JSON.stringify({
-            id: req.id,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        )
-      }
-    })
-    ws.on("close", () => clients.delete(client))
-  })
-
-  await new Promise<void>((resolve, reject) => {
-    server.listen(requestedPort, host, () => resolve())
-    server.on("error", reject)
-  })
-
-  const address = server.address()
-  const port =
-    typeof address === "object" && address && "port" in address ? address.port : requestedPort
-
-  return {
-    host,
-    port,
-    close: async () => {
-      await Effect.runPromise(orch.close())
-      await globalAcpPool.closeAll()
-      await closeMcpBridge().catch(() => undefined)
-      await new Promise<void>((resolve, reject) => {
-        wss.close(err => (err ? reject(err) : resolve()))
-      })
-      await new Promise<void>((resolve, reject) => {
-        server.close(err => (err ? reject(err) : resolve()))
-      })
-    },
-  }
+  return Effect.runPromise(startAgentServerEffect(opts))
 }
 
 type OrchHandle = {
@@ -375,7 +415,8 @@ async function handleRpc(
       return { ok: true }
     }
     case "agents:setSessionConfigOption": {
-      const input = (args?.[0] ?? params) as import("@gharargah/agents").SetAgentSessionConfigOptionInput
+      const input = (args?.[0] ??
+        params) as import("@gharargah/agents").SetAgentSessionConfigOptionInput
       const thread = await Effect.runPromise(
         engine.readThread(input.workspaceRootPath, input.threadId),
       )

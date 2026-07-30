@@ -534,13 +534,29 @@ export function TerminalPanel({
             onFailedRef.current?.()
             return
           }
+          if (attached.status === "exited") {
+            // Stale PTY from a previous host life — respawn (resume argv already
+            // on launchArgs when agentCliSessionId was synced).
+            if (!readOnly && launchCommandAtStart) {
+              void terminalApi.dispose(existingPtyId).catch(() => {})
+              createFreshPty()
+              return
+            }
+            if (attached.output) {
+              onOutputRef.current?.(tabId, attached.output)
+              writeTerminalOutput(term, attached.output, syncCursorHiddenAttr)
+            }
+            setDisplayStatus("exited")
+            setDisplayExitCode(attached.exitCode)
+            return
+          }
           if (attached.output) {
             onOutputRef.current?.(tabId, attached.output)
             writeTerminalOutput(term, attached.output, syncCursorHiddenAttr)
           }
           if (attached.title) onTitleChangeRef.current?.(tabId, attached.title)
           if (!readOnly) connectPty(existingPtyId)
-          if (attached.status === "exited" || readOnly) {
+          if (readOnly) {
             setDisplayStatus("exited")
             setDisplayExitCode(attached.exitCode)
           }

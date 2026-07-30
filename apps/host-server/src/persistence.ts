@@ -2,6 +2,14 @@ import { DatabaseSync } from "node:sqlite"
 import fs from "node:fs"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
+import {
+  EMPTY_SESSION_ROSTER,
+  tryDecodeSessionRoster,
+  type SessionRoster,
+  type SessionRosterEntry,
+  type SessionRosterMode,
+  type TerminalSessionStatus,
+} from "@gharargah/rpc"
 import { fileUriToPath, pathToFileUri } from "@gharargah/shared"
 
 export type Project = {
@@ -12,39 +20,8 @@ export type Project = {
   updatedAt: string
 }
 
-export type SessionRosterStatus = "starting" | "running" | "exited" | "failed"
-export type SessionRosterMode = "agent" | "terminal" | "editor" | "git" | "todos"
-
-export type SessionRosterEntry = {
-  tabId: string
-  cwdRootUri: string
-  label: string
-  launchCommand?: string
-  launchArgs?: string[]
-  ptyId?: string
-  status: SessionRosterStatus
-  exitCode?: number
-  customLabel?: string
-  agentId?: string
-  agentDriverId?: string
-  agentThreadId?: string
-  agentCliSessionId?: string
-  hasUserInput?: boolean
-  hasMeaningfulOutput?: boolean
-  lastActivityAt?: string
-  doneAt?: string
-}
-
-export type SessionRosterModal = {
-  tabId: string
-  sessionMode: SessionRosterMode
-}
-
-export type SessionRoster = {
-  version: 2
-  sessions: SessionRosterEntry[]
-  modal: SessionRosterModal | null
-}
+export type SessionRosterStatus = TerminalSessionStatus
+export type { SessionRosterMode, SessionRosterEntry, SessionRoster }
 
 type ProjectRow = {
   id: string
@@ -79,44 +56,6 @@ type RosterModalRow = {
   session_mode: string | null
 }
 
-const EMPTY_ROSTER: SessionRoster = {
-  version: 2,
-  sessions: [],
-  modal: null,
-}
-
-const SESSION_STATUSES = new Set<SessionRosterStatus>([
-  "starting",
-  "running",
-  "exited",
-  "failed",
-])
-
-const SESSION_MODES = new Set<SessionRosterMode>([
-  "terminal",
-  "agent",
-  "editor",
-  "git",
-  "todos",
-])
-
-function asNonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null
-}
-
-function asStatus(value: unknown): SessionRosterStatus | null {
-  if (value === "interrupted") return "failed"
-  return typeof value === "string" && SESSION_STATUSES.has(value as SessionRosterStatus)
-    ? (value as SessionRosterStatus)
-    : null
-}
-
-function asSessionMode(value: unknown): SessionRosterMode | null {
-  return typeof value === "string" && SESSION_MODES.has(value as SessionRosterMode)
-    ? (value as SessionRosterMode)
-    : null
-}
-
 function parseLaunchArgsJson(value: string | null): unknown {
   if (!value) return undefined
   try {
@@ -126,86 +65,14 @@ function parseLaunchArgsJson(value: string | null): unknown {
   }
 }
 
-function parseEntry(raw: unknown): SessionRosterEntry | null {
-  if (!raw || typeof raw !== "object") return null
-  const item = raw as Partial<SessionRosterEntry>
-  const tabId = asNonEmptyString(item.tabId)
-  const cwdRootUri = asNonEmptyString(item.cwdRootUri)
-  const label = asNonEmptyString(item.label) ?? "Terminal"
-  const status = asStatus(item.status) ?? "starting"
-  if (!tabId || !cwdRootUri) return null
-  const entry: SessionRosterEntry = {
-    tabId,
-    cwdRootUri,
-    label,
-    status,
-  }
-  const launchCommand = asNonEmptyString(item.launchCommand)
-  if (launchCommand) entry.launchCommand = launchCommand
-  if (Array.isArray(item.launchArgs)) {
-    const launchArgs = item.launchArgs.filter(
-      (arg): arg is string => typeof arg === "string" && arg.length <= 32_768,
-    )
-    if (launchArgs.length > 0) entry.launchArgs = launchArgs
-  }
-  const ptyId = asNonEmptyString(item.ptyId)
-  if (ptyId) entry.ptyId = ptyId
-  const customLabel = asNonEmptyString(item.customLabel)
-  if (customLabel) entry.customLabel = customLabel
-  if (typeof item.exitCode === "number" && Number.isFinite(item.exitCode)) {
-    entry.exitCode = item.exitCode
-  }
-  const agentId = asNonEmptyString(item.agentId)
-  if (agentId) entry.agentId = agentId
-  const agentDriverId = asNonEmptyString(item.agentDriverId)
-  if (agentDriverId) entry.agentDriverId = agentDriverId
-  const agentThreadId = asNonEmptyString(item.agentThreadId)
-  if (agentThreadId) entry.agentThreadId = agentThreadId
-  const agentCliSessionId = asNonEmptyString(item.agentCliSessionId)
-  if (agentCliSessionId) entry.agentCliSessionId = agentCliSessionId
-  if (item.hasUserInput === true) entry.hasUserInput = true
-  if (item.hasMeaningfulOutput === true) entry.hasMeaningfulOutput = true
-  const lastActivityAt = asNonEmptyString(item.lastActivityAt)
-  if (lastActivityAt) entry.lastActivityAt = lastActivityAt
-  const doneAt = asNonEmptyString(item.doneAt)
-  if (doneAt) entry.doneAt = doneAt
-  if (!entry.agentId || !entry.launchCommand) return null
-  return entry
-}
-
-function parseModal(raw: unknown): SessionRosterModal | null {
-  if (!raw || typeof raw !== "object") return null
-  const item = raw as Partial<SessionRosterModal>
-  const tabId = asNonEmptyString(item.tabId)
-  const sessionMode = asSessionMode(item.sessionMode)
-  if (!tabId || !sessionMode) return null
-  return { tabId, sessionMode }
-}
-
 /** Validate + normalize a PUT body. Returns null when structurally invalid. */
 export function parseSessionRosterBody(raw: unknown): SessionRoster | null {
-  if (!raw || typeof raw !== "object") return null
-  const body = raw as { version?: unknown; sessions?: unknown; modal?: unknown }
-  if (body.version !== 1 && body.version !== 2) return null
-  if (!Array.isArray(body.sessions)) return null
-  const seen = new Set<string>()
-  const sessions: SessionRosterEntry[] = []
-  for (const item of body.sessions) {
-    const entry = parseEntry(item)
-    if (!entry || seen.has(entry.tabId)) continue
-    seen.add(entry.tabId)
-    sessions.push(entry)
-  }
-  const modal = parseModal(body.modal)
-  return {
-    version: 2,
-    sessions,
-    modal: modal && seen.has(modal.tabId) ? modal : null,
-  }
+  return tryDecodeSessionRoster(raw)
 }
 
 export class ProjectDatabase {
   readonly db: DatabaseSync
+  private closed = false
 
   constructor(dbPath: string) {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true })
@@ -287,13 +154,15 @@ export class ProjectDatabase {
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES(4)")
       .run()
+    // Keep all roster rows across host restart (including blank shells).
+    // Drop incomplete agent stubs only (agent_id set but no launch_command).
     this.db.exec(`
       DELETE FROM session_roster_entries
-        WHERE agent_id IS NULL OR launch_command IS NULL
-           OR TRIM(COALESCE(agent_id, '')) = ''
-           OR TRIM(COALESCE(launch_command, '')) = '';
+        WHERE agent_id IS NOT NULL AND TRIM(COALESCE(agent_id, '')) != ''
+          AND (launch_command IS NULL OR TRIM(COALESCE(launch_command, '')) = '');
       UPDATE session_roster_entries SET status='starting', pty_id=NULL, updated_at=datetime('now')
-        WHERE status IN ('starting','running');
+        WHERE status IN ('starting','running')
+          AND (done_at IS NULL OR TRIM(COALESCE(done_at, '')) = '');
       UPDATE session_roster_modal SET tab_id=NULL, session_mode=NULL, updated_at=datetime('now')
         WHERE tab_id IS NOT NULL
           AND tab_id NOT IN (SELECT tab_id FROM session_roster_entries);
@@ -391,48 +260,37 @@ export class ProjectDatabase {
       )
       .all() as unknown as RosterEntryRow[]
 
-    const sessions: SessionRosterEntry[] = []
-    const seen = new Set<string>()
-    for (const row of rows) {
-      const entry = parseEntry({
-        tabId: row.tab_id,
-        cwdRootUri: row.cwd_root_uri,
-        label: row.label,
-        launchCommand: row.launch_command ?? undefined,
-        launchArgs: parseLaunchArgsJson(row.launch_args_json),
-        ptyId: row.pty_id ?? undefined,
-        status: row.status,
-        exitCode: row.exit_code ?? undefined,
-        customLabel: row.custom_label ?? undefined,
-        agentId: row.agent_id ?? undefined,
-        agentDriverId: row.agent_driver_id ?? undefined,
-        agentThreadId: row.agent_thread_id ?? undefined,
-        agentCliSessionId: row.agent_cli_session_id ?? undefined,
-        hasUserInput: row.has_user_input === 1,
-        hasMeaningfulOutput: row.has_meaningful_output === 1,
-        lastActivityAt: row.last_activity_at ?? undefined,
-        doneAt: row.done_at ?? undefined,
-      })
-      if (!entry || seen.has(entry.tabId)) continue
-      seen.add(entry.tabId)
-      sessions.push(entry)
-    }
+    const sessions = rows.map(row => ({
+      tabId: row.tab_id,
+      cwdRootUri: row.cwd_root_uri,
+      label: row.label,
+      launchCommand: row.launch_command ?? undefined,
+      launchArgs: parseLaunchArgsJson(row.launch_args_json),
+      ptyId: row.pty_id ?? undefined,
+      status: row.status,
+      exitCode: row.exit_code ?? undefined,
+      customLabel: row.custom_label ?? undefined,
+      agentId: row.agent_id ?? undefined,
+      agentDriverId: row.agent_driver_id ?? undefined,
+      agentThreadId: row.agent_thread_id ?? undefined,
+      agentCliSessionId: row.agent_cli_session_id ?? undefined,
+      hasUserInput: row.has_user_input === 1,
+      hasMeaningfulOutput: row.has_meaningful_output === 1,
+      lastActivityAt: row.last_activity_at ?? undefined,
+      doneAt: row.done_at ?? undefined,
+    }))
 
     const modalRow = this.db
       .prepare("SELECT tab_id, session_mode FROM session_roster_modal WHERE id=1")
       .get() as RosterModalRow | undefined
-    const modal = parseModal(
+    const modal =
       modalRow?.tab_id && modalRow.session_mode
         ? { tabId: modalRow.tab_id, sessionMode: modalRow.session_mode }
-        : null,
-    )
+        : null
 
-    if (sessions.length === 0) return EMPTY_ROSTER
-    return {
-      version: 2,
-      sessions,
-      modal: modal && seen.has(modal.tabId) ? modal : null,
-    }
+    return (
+      tryDecodeSessionRoster({ version: 2, sessions, modal }) ?? EMPTY_SESSION_ROSTER
+    )
   }
 
   replaceSessionRoster(roster: SessionRoster): SessionRoster {
@@ -515,7 +373,13 @@ export class ProjectDatabase {
   }
 
   close(): void {
-    this.db.close()
+    if (this.closed) return
+    this.closed = true
+    try {
+      this.db.close()
+    } catch {
+      /* already closed */
+    }
   }
 
   private canonicalizeCwdUri(cwdRootUri: string): string {

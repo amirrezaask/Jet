@@ -18,6 +18,8 @@ export type SidebarSession = {
   agent: string
   agentLabel: string
   status: SidebarSessionStatus
+  /** ISO timestamp when user marked the session done; open sessions omit this. */
+  doneAt?: string
   unreadCount: number
   lastActivityAt: string
   isPinned: boolean

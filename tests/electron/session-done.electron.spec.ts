@@ -5,7 +5,7 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, openNewAgentSession, ensureCardsLayout } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession, ensureCardsLayout, execCommand } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -78,6 +78,27 @@ test.describe("session done persistence", () => {
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm", { timeout: 20_000 })
       await expectLocatorCount(page.locator("[data-gharargah-session-mark-done]"), 0)
+
+      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+
+      await execCommand(page, "ui.setSessionLayout.sidebar")
+      await expect
+        .poll(async () => page.evaluate(() => window.__gharargahAgent!.getState().sessionLayout), {
+          timeout: 10_000,
+        })
+        .toBe("sidebar")
+
+      await expectLocatorVisible(page.locator("[data-gharargah-mission-sidebar]"))
+      const doneSection = page.locator(
+        '[data-gharargah-sidebar-section-label="done"]',
+      )
+      await expectLocatorVisible(doneSection, { timeout: 15_000 })
+      await expectLocatorVisible(
+        page.locator(
+          '[data-gharargah-sidebar-session-section="done"] [data-gharargah-sidebar-session]',
+        ).first(),
+      )
     } finally {
       await app.close()
     }

@@ -1,73 +1,112 @@
 import assert from "node:assert/strict"
-import { describe, it } from "node:test"
+import { describe, it, beforeEach } from "node:test"
 import {
   buildAgentCliLaunchArgs,
   isPersistableAgentSession,
+  launchArgsIncludeResume,
   mergeAgentCliResumeArgs,
+  prepareHydratedAgentCliFields,
   tryParseAgentCliSessionId,
 } from "./agent-cli-launch.js"
+import {
+  applyAgentCliResumeLaunchArgs,
+  ensureAgentCliProcess,
+} from "./agent-cli-resume.js"
+import {
+  clearTerminalSession,
+  hydrateTerminalSession,
+  listTerminalSessions,
+  markSessionDone,
+  setAgentCliSessionId,
+  terminalSessionForTab,
+} from "./tabs/terminal-session.js"
 
 const context = {
   sessionId: "gharargah:terminal:test",
   origin: "http://127.0.0.1:4747",
 }
 
-describe("agentCliLaunch", () => {
-  it("prepends codex resume before notify overrides", () => {
-    const fresh = buildAgentCliLaunchArgs("codex", context)
-    const resumed = buildAgentCliLaunchArgs(
-      "codex",
-      context,
-      "11111111-1111-4111-8111-111111111111",
-    )
-    assert.deepEqual(resumed.slice(0, 2), [
-      "resume",
-      "11111111-1111-4111-8111-111111111111",
-    ])
-    assert.ok(resumed.length > fresh.length)
+const UUID = "11111111-1111-4111-8111-111111111111"
+
+describe("agentCliLaunch resume argv", () => {
+  it("codex: resume <id> before notify", () => {
+    const resumed = buildAgentCliLaunchArgs("codex", context, UUID)
+    assert.deepEqual(resumed.slice(0, 2), ["resume", UUID])
     assert.ok(resumed.at(-1)?.startsWith("notify="))
   })
 
-  it("launches cursor-agent with --trust and keeps it on resume", () => {
-    const fresh = buildAgentCliLaunchArgs("cursor", context)
-    assert.deepEqual(fresh, ["--trust"])
-    const resumed = buildAgentCliLaunchArgs(
-      "cursor",
-      context,
-      "44444444-4444-4444-8444-444444444444",
+  it("claude: --resume <id>", () => {
+    assert.deepEqual(
+      mergeAgentCliResumeArgs("claude", ["--settings", "{}"], UUID).slice(0, 2),
+      ["--resume", UUID],
     )
-    assert.deepEqual(resumed, [
-      "--resume",
-      "44444444-4444-4444-8444-444444444444",
+  })
+
+  it("cursor: --resume=<id> --trust", () => {
+    assert.deepEqual(buildAgentCliLaunchArgs("cursor", context, UUID), [
+      `--resume=${UUID}`,
       "--trust",
     ])
   })
 
-  it("prepends claude --resume before settings hook", () => {
-    const args = mergeAgentCliResumeArgs(
-      "claude",
-      ["--settings", "{}"],
-      "22222222-2222-4222-8222-222222222222",
+  it("opencode: --session <id>", () => {
+    assert.deepEqual(
+      mergeAgentCliResumeArgs("opencode", [], "ses_abc123").slice(0, 2),
+      ["--session", "ses_abc123"],
     )
-    assert.deepEqual(args.slice(0, 2), [
+  })
+
+  it("grok: --resume <id>", () => {
+    assert.deepEqual(mergeAgentCliResumeArgs("grok", [], UUID).slice(0, 2), [
       "--resume",
-      "22222222-2222-4222-8222-222222222222",
+      UUID,
     ])
   })
 
-  it("parses session ids from provider output", () => {
-    const id = "33333333-3333-4333-8333-333333333333"
+  it("parses provider session ids from output", () => {
+    assert.equal(
+      tryParseAgentCliSessionId("claude", `Session started session_id=${UUID}`),
+      UUID,
+    )
     assert.equal(
       tryParseAgentCliSessionId(
-        "claude",
-        `Session started session_id=${id}`,
+        "opencode",
+        "Continuing session ses_3cf7dd8d4ffeUPfENpVxfFojZ2",
       ),
-      id,
+      "ses_3cf7dd8d4ffeUPfENpVxfFojZ2",
+    )
+    assert.equal(
+      tryParseAgentCliSessionId(
+        "codex",
+        `thread-id=${UUID} agent turn complete`,
+      ),
+      UUID,
+    )
+    assert.equal(
+      tryParseAgentCliSessionId(
+        "cursor",
+        `{"type":"system","session_id":"${UUID}","model":"x"}`,
+      ),
+      UUID,
     )
     assert.equal(tryParseAgentCliSessionId("codex", "noise only"), null)
   })
 
-  it("only persists agent CLI sessions", () => {
+  it("hydrate rebuilds resume argv when agentCliSessionId present", () => {
+    const fields = prepareHydratedAgentCliFields({
+      tabId: "gharargah:terminal:x",
+      agentId: "codex",
+      agentCliSessionId: UUID,
+      launchCommand: "codex",
+      status: "running",
+      origin: context.origin,
+    })
+    assert.equal(fields.status, "starting")
+    assert.equal(fields.ptyId, undefined)
+    assert.ok(launchArgsIncludeResume("codex", fields.launchArgs, UUID))
+  })
+
+  it("persists top-level sessions; skips child shells and incomplete agents", () => {
     assert.equal(
       isPersistableAgentSession({
         agentId: "codex",
@@ -75,13 +114,84 @@ describe("agentCliLaunch", () => {
       }),
       true,
     )
-    assert.equal(isPersistableAgentSession({ launchCommand: "codex" }), false)
-    assert.equal(
-      isPersistableAgentSession({
-        agentId: "codex",
-        parentSessionTabId: "gharargah:terminal:parent",
-      }),
-      false,
+    assert.equal(isPersistableAgentSession({}), true)
+    assert.equal(isPersistableAgentSession({ agentId: "codex" }), false)
+  })
+})
+
+describe("ensureAgentCliProcess", () => {
+  beforeEach(() => {
+    for (const session of listTerminalSessions()) {
+      clearTerminalSession(session.tabId)
+    }
+  })
+
+  it("respawns exited agent with resume argv", () => {
+    const tabId = "gharargah:terminal:resume-exit"
+    hydrateTerminalSession({
+      tabId,
+      cwdRootUri: "file:///tmp/proj",
+      launchCommand: "codex",
+      launchArgs: ["-c", "notify=x"],
+      status: "exited",
+      exitCode: 0,
+      agentId: "codex",
+      agentCliSessionId: UUID,
+    })
+
+    assert.equal(ensureAgentCliProcess(tabId), true)
+    const session = terminalSessionForTab(tabId)
+    assert.ok(session)
+    assert.equal(session.status, "starting")
+    assert.ok(launchArgsIncludeResume("codex", session.launchArgs, UUID))
+    assert.ok(session.generation >= 1)
+  })
+
+  it("no-ops while first spawn is still starting without pty", () => {
+    const tabId = "gharargah:terminal:fresh"
+    hydrateTerminalSession({
+      tabId,
+      cwdRootUri: "file:///tmp/proj",
+      launchCommand: "claude",
+      status: "starting",
+      agentId: "claude",
+    })
+    const gen = terminalSessionForTab(tabId)?.generation ?? 0
+    assert.equal(ensureAgentCliProcess(tabId), false)
+    assert.equal(terminalSessionForTab(tabId)?.generation, gen)
+  })
+
+  it("skips done sessions", () => {
+    const tabId = "gharargah:terminal:done"
+    hydrateTerminalSession({
+      tabId,
+      cwdRootUri: "file:///tmp/proj",
+      launchCommand: "codex",
+      status: "exited",
+      agentId: "codex",
+      agentCliSessionId: UUID,
+    })
+    markSessionDone(tabId)
+    assert.equal(ensureAgentCliProcess(tabId), false)
+  })
+
+  it("applyAgentCliResumeLaunchArgs writes opencode --session", () => {
+    const tabId = "gharargah:terminal:oc"
+    hydrateTerminalSession({
+      tabId,
+      cwdRootUri: "file:///tmp/proj",
+      launchCommand: "opencode",
+      status: "running",
+      agentId: "opencode",
+    })
+    setAgentCliSessionId(tabId, "ses_abc")
+    assert.equal(applyAgentCliResumeLaunchArgs(tabId), true)
+    assert.ok(
+      launchArgsIncludeResume(
+        "opencode",
+        terminalSessionForTab(tabId)?.launchArgs,
+        "ses_abc",
+      ),
     )
   })
 })

@@ -68,6 +68,27 @@ export function ProjectSidebarItem({
       ? `${project.unreadCount} unread message${project.unreadCount === 1 ? "" : "s"}`
       : undefined
 
+  const openSessions = project.sessions.filter(session => !session.doneAt)
+  const doneSessions = project.sessions.filter(session => Boolean(session.doneAt))
+
+  const renderSessionList = (sessions: SidebarSession[], section: "open" | "done") => (
+    <SidebarMenu
+      className="gap-0.5"
+      data-gharargah-sidebar-session-section={section}
+    >
+      {sessions.map(session => (
+        <SessionSidebarItem
+          key={session.id}
+          session={session}
+          selected={selectedSessionId === session.id}
+          compact={compact}
+          actions={sessionActions}
+          onSelect={onSelectSession}
+        />
+      ))}
+    </SidebarMenu>
+  )
+
   const menuItems = (
     <>
       <ContextMenuItem onSelect={() => projectActions.onNewSession(project)}>
@@ -224,18 +245,34 @@ export function ProjectSidebarItem({
                 </div>
               </SidebarMenuSubItem>
             ) : (
-              <SidebarMenu className="gap-0.5">
-                {project.sessions.map(session => (
-                  <SessionSidebarItem
-                    key={session.id}
-                    session={session}
-                    selected={selectedSessionId === session.id}
-                    compact={compact}
-                    actions={sessionActions}
-                    onSelect={onSelectSession}
-                  />
-                ))}
-              </SidebarMenu>
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <div
+                    className="px-2 pt-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground"
+                    data-gharargah-sidebar-section-label="open"
+                  >
+                    Open
+                  </div>
+                  {openSessions.length === 0 ? (
+                    <div className="px-2 py-1.5 text-3xs text-muted-foreground">
+                      No open sessions
+                    </div>
+                  ) : (
+                    renderSessionList(openSessions, "open")
+                  )}
+                </div>
+                {doneSessions.length > 0 ? (
+                  <div className="flex flex-col gap-0.5">
+                    <div
+                      className="px-2 pt-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground"
+                      data-gharargah-sidebar-section-label="done"
+                    >
+                      Done
+                    </div>
+                    {renderSessionList(doneSessions, "done")}
+                  </div>
+                ) : null}
+              </div>
             )}
           </SidebarMenuSub>
         </CollapsibleContent>

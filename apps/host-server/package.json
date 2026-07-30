@@ -10,11 +10,15 @@
     "dev": "tsx watch src/bin.ts",
     "start": "tsx src/bin.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/events.test.ts src/notifications/service.test.ts src/persistence.test.ts src/security.test.ts"
+    "test": "tsx --test src/events.test.ts src/notifications/service.test.ts src/persistence.test.ts src/security.test.ts src/notification-pubsub.test.ts src/persistence-git-effect.test.ts"
   },
   "dependencies": {
+    "@effect/platform": "0.97.1",
+    "@effect/platform-node": "0.99.0",
     "@gharargah/node-host": "workspace:*",
+    "@gharargah/rpc": "workspace:*",
     "@gharargah/shared": "workspace:*",
+    "effect": "3.22.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {

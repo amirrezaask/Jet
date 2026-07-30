@@ -26,27 +26,20 @@ test.describe("mac terminal quick switch", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
+      const sessionIds: string[] = []
+      const readModalSessionId = async () =>
+        (await page
+          .locator("[data-gharargah-terminal-modal]")
+          .getAttribute("data-gharargah-session-id")) ?? ""
+
+      sessionIds.push(await readModalSessionId())
       await execCommand(page, "terminal.new")
+      sessionIds.push(await readModalSessionId())
       await execCommand(page, "terminal.new")
-      await expect
-        .poll(async () =>
-          page.evaluate(async () => {
-            const response = await fetch("/api/v1/sessions")
-            if (!response.ok) return 0
-            const roster = (await response.json()) as {
-              sessions: Array<{ tabId: string }>
-            }
-            return roster.sessions.length
-          }),
-        )
-        .toBeGreaterThanOrEqual(3)
-      const secondSessionId = await page.evaluate(async () => {
-        const response = await fetch("/api/v1/sessions")
-        const roster = (await response.json()) as {
-          sessions: Array<{ tabId: string }>
-        }
-        return roster.sessions[1]?.tabId ?? ""
-      })
+      sessionIds.push(await readModalSessionId())
+      expect(new Set(sessionIds.filter(Boolean)).size).toBeGreaterThanOrEqual(3)
+      const secondSessionId = sessionIds[1]!
+      expect(secondSessionId.length).toBeGreaterThan(0)
 
       await page.keyboard.press("Meta+2")
 

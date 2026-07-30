@@ -127,7 +127,7 @@ test.describe("session refresh persistence", () => {
     }
   })
 
-  test("cursor agent CLI launches with --trust and stays running", async () => {
+  test("cursor agent CLI mints chat id, launches with --resume, stays running", async () => {
     test.skip(!cursorAgentAvailable, "cursor-agent not on PATH")
     const { app, page } = await launchJet()
     try {
@@ -135,15 +135,21 @@ test.describe("session refresh persistence", () => {
       await expectSelectorVisible(page, "[data-gharargah-home]")
       await openNewCliSession(page, "cursor")
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm", {
-        timeout: 20_000,
+        timeout: 30_000,
       })
 
       await expect
         .poll(async () => {
           const roster = await fetchSessionRoster(page)
-          return roster?.sessions[0]?.launchArgs ?? null
-        }, { timeout: 20_000 })
-        .toEqual(["--trust"])
+          const session = roster?.sessions[0]
+          const args = session?.launchArgs ?? null
+          const chatId = session?.agentCliSessionId ?? null
+          if (!args || !chatId) return null
+          if (args[0] !== `--resume=${chatId}`) return null
+          if (!args.includes("--trust")) return null
+          return chatId
+        }, { timeout: 30_000 })
+        .toBeTruthy()
 
       // Trust prompt Quit used to surface as "Process exited with code 1".
       await page.waitForTimeout(1500)

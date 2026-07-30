@@ -1,5 +1,7 @@
 import type { GharargahHostAPI } from "@gharargah/workspace"
 import type { AgentTransport } from "@gharargah/agents"
+import { AgentRpcRequest } from "@gharargah/rpc"
+import { Effect, Schema } from "effect"
 
 /**
  * WebSocket transport to Node agent-server.
@@ -114,6 +116,10 @@ export function createEffectAgentsClient(options?: {
     })
     ws.addEventListener("close", () => {
       if (closed) return
+      for (const [, p] of pending) {
+        p.reject(new Error("agent-server websocket disconnected"))
+      }
+      pending.clear()
       // Reset ready so callers wait for the next open after reconnect.
       ready = new Promise<void>(r => {
         resolveReady = r
@@ -126,21 +132,36 @@ export function createEffectAgentsClient(options?: {
   function invoke(method: string, ...params: unknown[]): Promise<unknown> {
     return ready.then(
       () =>
-        new Promise((resolve, reject) => {
-          if (!ws || ws.readyState !== WebSocket.OPEN) {
-            reject(new Error("agent-server websocket not open"))
-            return
-          }
-          const id = nextId++
-          pending.set(id, { resolve, reject })
-          ws.send(JSON.stringify({ id, method, params }))
-          setTimeout(() => {
-            if (pending.has(id)) {
-              pending.delete(id)
-              reject(new Error(`agent-server timeout: ${method}`))
+        Effect.runPromise(
+          Effect.gen(function* () {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+              return yield* Effect.fail(new Error("agent-server websocket not open"))
             }
-          }, 120_000)
-        }),
+            const id = nextId++
+            const encoded = yield* Effect.mapError(
+              Schema.encode(AgentRpcRequest)({
+                id,
+                method,
+                params: params.length <= 1 ? params[0] : params,
+              }),
+              cause => new Error(`invalid agent RPC encode: ${String(cause)}`),
+            )
+            return yield* Effect.async<unknown, Error>(resume => {
+              pending.set(id, {
+                resolve: v => resume(Effect.succeed(v)),
+                reject: e => resume(Effect.fail(e)),
+              })
+              ws!.send(JSON.stringify(encoded))
+              const timer = setTimeout(() => {
+                if (pending.has(id)) {
+                  pending.delete(id)
+                  resume(Effect.fail(new Error(`agent-server timeout: ${method}`)))
+                }
+              }, 120_000)
+              return Effect.sync(() => clearTimeout(timer))
+            })
+          }),
+        ),
     )
   }
 

@@ -1,133 +1,21 @@
-import type { TerminalSessionStatus } from "./tabs/terminal-session.js"
+import {
+  decodeSessionRosterUnknown,
+  type SessionRoster,
+  type SessionRosterEntry,
+  type SessionRosterModal,
+  type SessionRosterMode,
+  type TerminalSessionStatus,
+} from "@gharargah/rpc"
+
+export type { TerminalSessionStatus }
 
 export const SESSION_ROSTER_STORAGE_KEY = "gharargah-session-roster-v2"
 export const LEGACY_SESSION_ROSTER_STORAGE_KEY = "jet-session-roster-v1"
 
-export type PersistedSessionMode = "agent" | "terminal" | "editor" | "git" | "todos"
-
-export type PersistedSessionEntry = {
-  tabId: string
-  cwdRootUri: string
-  label: string
-  launchCommand?: string
-  launchArgs?: string[]
-  ptyId?: string
-  status: TerminalSessionStatus
-  exitCode?: number
-  customLabel?: string
-  agentId?: string
-  agentDriverId?: string
-  agentThreadId?: string
-  agentCliSessionId?: string
-  hasUserInput?: boolean
-  hasMeaningfulOutput?: boolean
-  lastActivityAt?: string
-  doneAt?: string
-}
-
-export type PersistedSessionModal = {
-  tabId: string
-  sessionMode: PersistedSessionMode
-}
-
-export type PersistedSessionRoster = {
-  version: 2
-  sessions: PersistedSessionEntry[]
-  modal: PersistedSessionModal | null
-}
-
-const EMPTY_ROSTER: PersistedSessionRoster = {
-  version: 2,
-  sessions: [],
-  modal: null,
-}
-
-const SESSION_STATUSES = new Set<TerminalSessionStatus>([
-  "starting",
-  "running",
-  "exited",
-  "failed",
-])
-
-const SESSION_MODES = new Set<PersistedSessionMode>([
-  "terminal",
-  "agent",
-  "editor",
-  "git",
-  "todos",
-])
-
-function asNonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null
-}
-
-function asStatus(value: unknown): TerminalSessionStatus | null {
-  return typeof value === "string" && SESSION_STATUSES.has(value as TerminalSessionStatus)
-    ? (value as TerminalSessionStatus)
-    : null
-}
-
-function asSessionMode(value: unknown): PersistedSessionMode | null {
-  return typeof value === "string" && SESSION_MODES.has(value as PersistedSessionMode)
-    ? (value as PersistedSessionMode)
-    : null
-}
-
-function parseEntry(raw: unknown): PersistedSessionEntry | null {
-  if (!raw || typeof raw !== "object") return null
-  const item = raw as Partial<PersistedSessionEntry>
-  const tabId = asNonEmptyString(item.tabId)
-  const cwdRootUri = asNonEmptyString(item.cwdRootUri)
-  const label = asNonEmptyString(item.label) ?? "Terminal"
-  const status = asStatus(item.status) ?? "starting"
-  if (!tabId || !cwdRootUri) return null
-  const entry: PersistedSessionEntry = {
-    tabId,
-    cwdRootUri,
-    label,
-    status,
-  }
-  const launchCommand = asNonEmptyString(item.launchCommand)
-  if (launchCommand) entry.launchCommand = launchCommand
-  if (Array.isArray(item.launchArgs)) {
-    const launchArgs = item.launchArgs.filter(
-      (arg): arg is string => typeof arg === "string" && arg.length <= 32_768,
-    )
-    if (launchArgs.length > 0) entry.launchArgs = launchArgs
-  }
-  const ptyId = asNonEmptyString(item.ptyId)
-  if (ptyId) entry.ptyId = ptyId
-  const customLabel = asNonEmptyString(item.customLabel)
-  if (customLabel) entry.customLabel = customLabel
-  if (typeof item.exitCode === "number" && Number.isFinite(item.exitCode)) {
-    entry.exitCode = item.exitCode
-  }
-  const agentId = asNonEmptyString(item.agentId)
-  if (agentId) entry.agentId = agentId
-  const agentDriverId = asNonEmptyString(item.agentDriverId)
-  if (agentDriverId) entry.agentDriverId = agentDriverId
-  const agentThreadId = asNonEmptyString(item.agentThreadId)
-  if (agentThreadId) entry.agentThreadId = agentThreadId
-  const agentCliSessionId = asNonEmptyString(item.agentCliSessionId)
-  if (agentCliSessionId) entry.agentCliSessionId = agentCliSessionId
-  if (item.hasUserInput === true) entry.hasUserInput = true
-  if (item.hasMeaningfulOutput === true) entry.hasMeaningfulOutput = true
-  const lastActivityAt = asNonEmptyString(item.lastActivityAt)
-  if (lastActivityAt) entry.lastActivityAt = lastActivityAt
-  const doneAt = asNonEmptyString(item.doneAt)
-  if (doneAt) entry.doneAt = doneAt
-  if (!entry.agentId || !entry.launchCommand) return null
-  return entry
-}
-
-function parseModal(raw: unknown): PersistedSessionModal | null {
-  if (!raw || typeof raw !== "object") return null
-  const item = raw as Partial<PersistedSessionModal>
-  const tabId = asNonEmptyString(item.tabId)
-  const sessionMode = asSessionMode(item.sessionMode)
-  if (!tabId || !sessionMode) return null
-  return { tabId, sessionMode }
-}
+export type PersistedSessionMode = SessionRosterMode
+export type PersistedSessionEntry = SessionRosterEntry
+export type PersistedSessionModal = SessionRosterModal
+export type PersistedSessionRoster = SessionRoster
 
 export function readSessionRoster(
   storage: Pick<Storage, "getItem"> = localStorage,
@@ -136,39 +24,26 @@ export function readSessionRoster(
     const raw =
       storage.getItem(SESSION_ROSTER_STORAGE_KEY) ??
       storage.getItem(LEGACY_SESSION_ROSTER_STORAGE_KEY)
-    if (!raw) return EMPTY_ROSTER
-    const parsed = JSON.parse(raw) as {
-      version?: unknown
-      sessions?: unknown
-      modal?: unknown
+    if (!raw) {
+      return decodeSessionRosterUnknown(null)
     }
-    if (parsed.version !== 1 && parsed.version !== 2) return EMPTY_ROSTER
-    if (!Array.isArray(parsed.sessions)) return EMPTY_ROSTER
-    const seen = new Set<string>()
-    const sessions: PersistedSessionEntry[] = []
-    for (const item of parsed.sessions) {
-      const entry = parseEntry(item)
-      if (!entry || seen.has(entry.tabId)) continue
-      seen.add(entry.tabId)
-      sessions.push(entry)
-    }
-    const modal = parseModal(parsed.modal)
-    return {
-      version: 2,
-      sessions,
-      modal: modal && seen.has(modal.tabId) ? modal : null,
-    }
+    return decodeSessionRosterUnknown(JSON.parse(raw) as unknown)
   } catch {
-    return EMPTY_ROSTER
+    return decodeSessionRosterUnknown(null)
   }
 }
 
 export function writeSessionRoster(
   roster: PersistedSessionRoster,
-  storage: Pick<Storage, "setItem"> = localStorage,
+  storage?: Pick<Storage, "setItem">,
 ): void {
+  const store =
+    storage ??
+    (typeof localStorage !== "undefined"
+      ? localStorage
+      : ({ setItem() {} } as Pick<Storage, "setItem">))
   try {
-    storage.setItem(SESSION_ROSTER_STORAGE_KEY, JSON.stringify(roster))
+    store.setItem(SESSION_ROSTER_STORAGE_KEY, JSON.stringify(roster))
   } catch {
     /* localStorage may be disabled; in-memory sessions still work. */
   }

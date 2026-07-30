@@ -15,7 +15,7 @@
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "effect": "^3.22.0"
+    "effect": "3.22.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",

@@ -25,6 +25,12 @@ import {
 } from "../provider/model-discovery.js"
 import { coerceAssistantText } from "@gharargah/agents"
 import { logTurnMetric } from "../metrics.js"
+import {
+  AgentCommandError,
+  ApprovalBlockedError,
+  ThreadNotFoundError,
+  TurnAlreadyRunningError,
+} from "../effect/errors.js"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
@@ -162,13 +168,15 @@ function catalogDriversForAgent(agentId: string): CatalogDriver[] {
 }
 
 export class OrchestrationEngine {
-  private store = new AgentStore()
   private turns = new Map<string, ActiveTurn>()
   private threadLocks = new Map<string, Promise<void>>()
   private seq = new Map<string, number>()
   private adapters = new Map<string, ReturnType<typeof createAdapter>>()
 
-  constructor(private readonly sink: OrchEventSink) {}
+  constructor(
+    private readonly sink: OrchEventSink,
+    private readonly store: AgentStore = new AgentStore(),
+  ) {}
 
   async dispatch(command: OrchestrationCommand): Promise<unknown> {
     const root =
@@ -218,7 +226,7 @@ export class OrchestrationEngine {
         result = await this.revertCheckpoint(command.input)
         break
       default:
-        throw new Error(`unknown command`)
+        throw new AgentCommandError({ message: "unknown command" })
     }
 
     if (root) {
@@ -338,17 +346,21 @@ export class OrchestrationEngine {
     input: import("@gharargah/agents").SendAgentMessageInput,
   ): Promise<AgentThread> {
     if (input.text.length > PROVIDER_SEND_TURN_MAX_CHARS) {
-      throw new Error(`prompt exceeds ${PROVIDER_SEND_TURN_MAX_CHARS} chars`)
+      throw new AgentCommandError({
+        message: `prompt exceeds ${PROVIDER_SEND_TURN_MAX_CHARS} chars`,
+      })
     }
     const attachmentCount = (input.images?.length ?? 0) + (input.files?.length ?? 0)
     if (attachmentCount > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-      throw new Error(`max ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments`)
+      throw new AgentCommandError({
+        message: `max ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments`,
+      })
     }
 
     return this.withThreadLock(input.threadId, async () => {
       const thread = this.store.readThread(input.workspaceRootPath, input.threadId)
-      if (!thread) throw new Error("thread not found")
-      if (this.turns.has(thread.id)) throw new Error("turn_already_running")
+      if (!thread) throw new ThreadNotFoundError({ threadId: input.threadId })
+      if (this.turns.has(thread.id)) throw new TurnAlreadyRunningError({ threadId: thread.id })
 
       const now = nowIso()
       const attachments = [
@@ -880,7 +892,7 @@ export class OrchestrationEngine {
     const thread = this.store.readThread(input.workspaceRootPath, input.threadId)
     if (!thread) return null
     if (input.archived && hasOpenApprovals(thread)) {
-      throw new Error("cannot archive thread while approvals are open")
+      throw new ApprovalBlockedError({ operation: "archive", threadId: thread.id })
     }
     thread.archivedAt = input.archived ? nowIso() : null
     thread.updatedAt = nowIso()
@@ -893,7 +905,7 @@ export class OrchestrationEngine {
     const thread = this.store.readThread(workspaceRootPath, threadId)
     if (!thread) return null
     if (hasOpenApprovals(thread)) {
-      throw new Error("cannot settle thread while approvals are open")
+      throw new ApprovalBlockedError({ operation: "settle", threadId: thread.id })
     }
     thread.status = "idle"
     thread.activity = "settled"
@@ -907,7 +919,7 @@ export class OrchestrationEngine {
     const thread = this.store.readThread(workspaceRootPath, threadId)
     if (!thread) return null
     if (hasOpenApprovals(thread)) {
-      throw new Error("cannot snooze thread while approvals are open")
+      throw new ApprovalBlockedError({ operation: "snooze", threadId: thread.id })
     }
     thread.status = "idle"
     thread.activity = "snoozed"
@@ -966,7 +978,7 @@ export class OrchestrationEngine {
     turnId?: string
   }): Promise<{ id: string }> {
     const thread = this.store.readThread(input.workspaceRootPath, input.threadId)
-    if (!thread) throw new Error("thread not found")
+    if (!thread) throw new ThreadNotFoundError({ threadId: input.threadId })
     const id = crypto.randomUUID()
     const label = input.label ?? `checkpoint-${new Date().toISOString()}`
     // Record HEAD only — never `git stash push` (destructive to dirty trees).
@@ -1006,9 +1018,11 @@ export class OrchestrationEngine {
     checkpointId: string
   }): Promise<AgentThread> {
     const thread = this.store.readThread(input.workspaceRootPath, input.threadId)
-    if (!thread) throw new Error("thread not found")
+    if (!thread) throw new ThreadNotFoundError({ threadId: input.threadId })
     const cp = (thread.checkpoints ?? []).find(c => c.id === input.checkpointId)
-    if (!cp) throw new Error("checkpoint not found")
+    if (!cp) {
+      throw new AgentCommandError({ message: `checkpoint not found: ${input.checkpointId}` })
+    }
     thread.messages = thread.messages.slice(0, cp.messageCount)
     if (thread.timeline) thread.timeline = thread.timeline.slice(0, cp.timelineCount)
     // Legacy checkpoints may still carry gitStashMessage from older servers.

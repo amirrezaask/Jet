@@ -7,6 +7,10 @@ import type { TerminalSessionStatus } from "./tabs/terminal-session.js"
 
 const UUID_RE =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i
+/** OpenCode session ids look like `ses_…`, not UUIDs. */
+const OPENCODE_SESSION_RE = /\b(ses_[A-Za-z0-9]+)\b/
+const CLAUDE_SESSION_RE =
+  /session[_ -]?id[=:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/i
 
 /** Provider-native CLI session id (Codex thread, Claude session, etc.). */
 export function agentCliCommandForProvider(provider: AgentProvider): string {
@@ -18,6 +22,13 @@ export function agentCliCommandForProvider(provider: AgentProvider): string {
   }
 }
 
+/**
+ * Resume argv per CLI:
+ * - codex: `resume <id>`
+ * - claude / grok: `--resume <id>`
+ * - cursor: `--resume=<id>` (equals form — commander optional `[chatId]` won't eat `--trust`)
+ * - opencode: `--session <id>`
+ */
 export function mergeAgentCliResumeArgs(
   provider: AgentProvider,
   notifyArgs: string[],
@@ -31,7 +42,7 @@ export function mergeAgentCliResumeArgs(
     case "claude":
       return ["--resume", id, ...notifyArgs]
     case "cursor":
-      return ["--resume", id, ...notifyArgs]
+      return [`--resume=${id}`, ...notifyArgs]
     case "opencode":
       return ["--session", id, ...notifyArgs]
     case "grok":
@@ -57,24 +68,44 @@ export function tryParseAgentCliSessionId(
   chunk: string,
 ): string | null {
   if (!provider || !chunk) return null
-  const uuid = chunk.match(UUID_RE)?.[0]
-  if (!uuid) return null
+
+  if (provider === "opencode") {
+    const ses = chunk.match(OPENCODE_SESSION_RE)?.[1]
+    if (ses) return ses
+    const uuid = chunk.match(UUID_RE)?.[0]
+    if (uuid && /session/i.test(chunk)) return uuid
+    return null
+  }
 
   if (provider === "claude") {
-    if (/session[_ -]?id/i.test(chunk)) return uuid
+    const labeled = chunk.match(CLAUDE_SESSION_RE)?.[1]
+    if (labeled) return labeled
+    const uuid = chunk.match(UUID_RE)?.[0]
+    if (uuid && /session[_ -]?id/i.test(chunk)) return uuid
     return null
   }
+
   if (provider === "codex") {
-    if (/session/i.test(chunk)) return uuid
+    const labeled =
+      chunk.match(
+        /(?:thread|session)[_ -]?id[=:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/i,
+      )?.[1] ?? null
+    if (labeled) return labeled
+    const uuid = chunk.match(UUID_RE)?.[0]
+    if (uuid && /session|thread/i.test(chunk)) return uuid
     return null
   }
-  if (provider === "opencode") {
-    if (/session/i.test(chunk)) return uuid
-    return null
-  }
+
   if (provider === "cursor" || provider === "grok") {
-    return uuid
+    // stream-json / create-chat emit `"session_id":"<uuid>"`.
+    const labeled =
+      chunk.match(
+        /"session_id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})"/i,
+      )?.[1] ?? null
+    if (labeled) return labeled
+    return chunk.match(UUID_RE)?.[0] ?? null
   }
+
   return null
 }
 
@@ -141,7 +172,12 @@ export function prepareHydratedAgentCliFields(input: {
       status: "exited",
     }
   }
-  if (!input.agentCliSessionId || !isAgentCliProvider(input.agentId)) {
+
+  const provider =
+    (isAgentCliProvider(input.agentId) ? input.agentId : undefined) ??
+    detectAgentCliProviderFromCommand(input.launchCommand)
+
+  if (!input.agentCliSessionId || !provider) {
     return {
       launchCommand: input.launchCommand,
       launchArgs: input.launchArgs,
@@ -152,13 +188,33 @@ export function prepareHydratedAgentCliFields(input: {
           : input.status,
     }
   }
-  const provider = input.agentId
+
   return {
     launchCommand: input.launchCommand ?? agentCliCommandForProvider(provider),
-    launchArgs: syncAgentCliLaunchArgs(input.tabId, provider, input.agentCliSessionId, origin),
+    launchArgs: syncAgentCliLaunchArgs(
+      input.tabId,
+      provider,
+      input.agentCliSessionId,
+      origin,
+    ),
     ptyId: undefined,
     status: "starting",
   }
+}
+
+export function detectAgentCliProviderFromCommand(
+  launchCommand?: string | null,
+): AgentProvider | undefined {
+  if (!launchCommand) return undefined
+  const cmd = launchCommand.trim().split(/\s+/)[0]?.toLowerCase() ?? ""
+  if (cmd === "claude" || cmd.endsWith("/claude")) return "claude"
+  if (cmd === "codex" || cmd.endsWith("/codex")) return "codex"
+  if (cmd === "opencode" || cmd.endsWith("/opencode")) return "opencode"
+  if (cmd === "cursor-agent" || cmd.endsWith("/cursor-agent") || cmd === "cursor") {
+    return "cursor"
+  }
+  if (cmd === "grok" || cmd.endsWith("/grok")) return "grok"
+  return undefined
 }
 
 export function isAgentCliProvider(
@@ -173,13 +229,47 @@ export function isAgentCliProvider(
   )
 }
 
-/** Only agent CLI home sessions are written to the session roster. */
+/**
+ * Top-level home sessions are written to the session roster.
+ * Child shells (parentSessionTabId) stay in-memory only.
+ * Agent stubs without a launch command are incomplete and skipped.
+ */
 export function isPersistableAgentSession(session: {
   agentId?: string
   launchCommand?: string
   parentSessionTabId?: string
 }): boolean {
   if (session.parentSessionTabId) return false
-  if (!session.agentId || !isAgentCliProvider(session.agentId)) return false
-  return Boolean(session.launchCommand?.trim())
+  if (session.agentId && !session.launchCommand?.trim()) return false
+  if (session.agentId && !isAgentCliProvider(session.agentId)) return false
+  return true
+}
+
+/** True when argv already carries this provider's resume flag + id. */
+export function launchArgsIncludeResume(
+  provider: AgentProvider,
+  launchArgs: string[] | undefined,
+  cliSessionId: string,
+): boolean {
+  const id = cliSessionId.trim()
+  if (!id || !launchArgs?.length) return false
+  switch (provider) {
+    case "codex":
+      return launchArgs[0] === "resume" && launchArgs[1] === id
+    case "opencode":
+      return (
+        (launchArgs[0] === "--session" || launchArgs[0] === "-s") &&
+        launchArgs[1] === id
+      )
+    case "cursor":
+      return (
+        launchArgs[0] === `--resume=${id}` ||
+        (launchArgs[0] === "--resume" && launchArgs[1] === id)
+      )
+    case "claude":
+    case "grok":
+      return launchArgs[0] === "--resume" && launchArgs[1] === id
+    default:
+      return false
+  }
 }

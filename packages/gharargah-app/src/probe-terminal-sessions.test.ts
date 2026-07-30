@@ -21,7 +21,7 @@ describe("reconcileHydratedTerminalPtys", () => {
     clearAllSessions()
   })
 
-  it("reports missing pty sessions as dead (drop from home)", async () => {
+  it("keeps missing pty sessions and marks them starting for respawn", async () => {
     hydrateTerminalSession({
       tabId: "gharargah:terminal:dead",
       cwdRootUri: "file:///tmp/proj",
@@ -30,16 +30,18 @@ describe("reconcileHydratedTerminalPtys", () => {
       customLabel: "Dead shell",
     })
 
-    const terminal: Pick<JetElectronTerminal, "attach"> = {
+    const terminal: Pick<JetElectronTerminal, "attach" | "dispose"> = {
       attach: async () => null,
+      dispose: async () => {},
     }
 
     const dead = await reconcileHydratedTerminalPtys(terminal as JetElectronTerminal)
 
-    assert.deepEqual(dead, ["gharargah:terminal:dead"])
+    assert.deepEqual(dead, [])
     const session = terminalSessionForTab("gharargah:terminal:dead")
     assert.ok(session)
-    assert.equal(session.status, "running")
+    assert.equal(session.status, "starting")
+    assert.equal(session.ptyId, undefined)
   })
 
   it("keeps done sessions even when pty is missing", async () => {
@@ -72,8 +74,9 @@ describe("reconcileHydratedTerminalPtys", () => {
       agentCliSessionId: "11111111-1111-4111-8111-111111111111",
     })
 
-    const terminal: Pick<JetElectronTerminal, "attach"> = {
+    const terminal: Pick<JetElectronTerminal, "attach" | "dispose"> = {
       attach: async () => null,
+      dispose: async () => {},
     }
 
     const dead = await reconcileHydratedTerminalPtys(terminal as JetElectronTerminal)
@@ -110,7 +113,7 @@ describe("reconcileHydratedTerminalPtys", () => {
     assert.equal(session.ptyId, "term-exited")
   })
 
-  it("reports running sessions without ptyId as dead when not resumable", async () => {
+  it("keeps running sessions without ptyId and marks them starting", async () => {
     hydrateTerminalSession({
       tabId: "gharargah:terminal:orphan",
       cwdRootUri: "file:///tmp/proj",
@@ -125,10 +128,11 @@ describe("reconcileHydratedTerminalPtys", () => {
 
     const dead = await reconcileHydratedTerminalPtys(terminal as JetElectronTerminal)
 
-    assert.deepEqual(dead, ["gharargah:terminal:orphan"])
+    assert.deepEqual(dead, [])
+    assert.equal(terminalSessionForTab("gharargah:terminal:orphan")?.status, "starting")
   })
 
-  it("reports failed sessions without ptyId as dead when not resumable", async () => {
+  it("keeps failed sessions without ptyId and marks them starting for respawn", async () => {
     hydrateTerminalSession({
       tabId: "gharargah:terminal:failed",
       cwdRootUri: "file:///tmp/proj",
@@ -141,6 +145,7 @@ describe("reconcileHydratedTerminalPtys", () => {
 
     const dead = await reconcileHydratedTerminalPtys(terminal as JetElectronTerminal)
 
-    assert.deepEqual(dead, ["gharargah:terminal:failed"])
+    assert.deepEqual(dead, [])
+    assert.equal(terminalSessionForTab("gharargah:terminal:failed")?.status, "starting")
   })
 })

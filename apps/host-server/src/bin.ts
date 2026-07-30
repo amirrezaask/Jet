@@ -1,15 +1,27 @@
 #!/usr/bin/env node
+import { NodeRuntime } from "@effect/platform-node"
+import { Effect } from "effect"
 import { applyLoginShellEnv } from "@gharargah/node-host"
 import { loadConfig } from "./config.js"
 import { startHostServer } from "./server.js"
 
-applyLoginShellEnv()
-const config = await loadConfig()
-const { close } = await startHostServer(config)
+const program = Effect.gen(function* () {
+  applyLoginShellEnv()
+  const config = yield* Effect.promise(() => loadConfig())
+  const { close } = yield* Effect.promise(() => startHostServer(config))
 
-const stop = async () => {
-  await close()
-  process.exit(0)
-}
-process.on("SIGINT", () => void stop())
-process.on("SIGTERM", () => void stop())
+  const stop = () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => close())
+      yield* Effect.sync(() => process.exit(0))
+    })
+
+  yield* Effect.sync(() => {
+    process.on("SIGINT", () => void Effect.runPromise(stop()))
+    process.on("SIGTERM", () => void Effect.runPromise(stop()))
+  })
+
+  yield* Effect.never
+})
+
+NodeRuntime.runMain(program)

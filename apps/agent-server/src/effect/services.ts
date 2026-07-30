@@ -4,7 +4,12 @@ import type { AgentCatalogState, AgentThread } from "@gharargah/agents"
 import { AgentStore } from "../persistence/store.js"
 import { OrchestrationEngine, type OrchEventSink } from "../orchestration/engine.js"
 import type { OrchError } from "./errors.js"
-import { AgentCommandError } from "./errors.js"
+import {
+  AgentCommandError,
+  ApprovalBlockedError,
+  ThreadNotFoundError,
+  TurnAlreadyRunningError,
+} from "./errors.js"
 
 export class AgentStoreService extends Context.Tag("gharargah/AgentStore")<
   AgentStoreService,
@@ -47,51 +52,77 @@ export class OrchestrationService extends Context.Tag("gharargah/Orchestration")
 
 export const AgentStoreLive = Layer.sync(AgentStoreService, () => new AgentStore())
 
-export function makeOrchestrationLive(sink: OrchEventSink): Layer.Layer<
+export function EventSinkLive(sink: OrchEventSink): Layer.Layer<EventSinkService> {
+  return Layer.succeed(EventSinkService, sink)
+}
+
+function mapUnknownToOrchError(err: unknown): OrchError {
+  if (
+    err instanceof AgentCommandError ||
+    err instanceof ThreadNotFoundError ||
+    err instanceof TurnAlreadyRunningError ||
+    err instanceof ApprovalBlockedError
+  ) {
+    return err
+  }
+  if (err && typeof err === "object" && "_tag" in err) {
+    const tag = String((err as { _tag: string })._tag)
+    if (
+      tag === "AgentCommandError" ||
+      tag === "ThreadNotFoundError" ||
+      tag === "TurnAlreadyRunningError" ||
+      tag === "ApprovalBlockedError"
+    ) {
+      return err as OrchError
+    }
+  }
+  return new AgentCommandError({
+    message: err instanceof Error ? err.message : String(err),
+    cause: err,
+  })
+}
+
+export const OrchestrationLive = Layer.effect(
   OrchestrationService,
-  never,
-  never
-> {
-  return Layer.sync(OrchestrationService, () => {
-    const engine = new OrchestrationEngine(sink)
+  Effect.gen(function* () {
+    const store = yield* AgentStoreService
+    const sink = yield* EventSinkService
+    const engine = new OrchestrationEngine(sink, store)
     return {
-      dispatch: command =>
+      dispatch: (command: OrchestrationCommand) =>
         Effect.tryPromise({
           try: () => engine.dispatch(command),
-          catch: err =>
-            new AgentCommandError({
-              message: err instanceof Error ? err.message : String(err),
-              cause: err,
-            }),
+          catch: mapUnknownToOrchError,
         }),
-      listThreads: (uri, path) => Effect.sync(() => engine.listThreads(uri, path)),
-      readThread: (path, id) => Effect.sync(() => engine.readThread(path, id)),
+      listThreads: (uri: string, path: string) =>
+        Effect.sync(() => engine.listThreads(uri, path)),
+      readThread: (path: string, id: string) => Effect.sync(() => engine.readThread(path, id)),
       listAgents: () => Effect.sync(() => engine.listAgents()),
-      refreshAgents: providerId =>
+      refreshAgents: (providerId?: string) =>
         Effect.tryPromise({
           try: () => engine.refreshAgents(providerId),
-          catch: err =>
-            new AgentCommandError({
-              message: err instanceof Error ? err.message : String(err),
-              cause: err,
-            }),
+          catch: mapUnknownToOrchError,
         }),
       listProviders: () => Effect.sync(() => engine.listProviders()),
-      refreshProviders: providerId =>
+      refreshProviders: (providerId?: string) =>
         Effect.tryPromise({
           try: () => engine.refreshProviders(providerId),
-          catch: err =>
-            new AgentCommandError({
-              message: err instanceof Error ? err.message : String(err),
-              cause: err,
-            }),
+          catch: mapUnknownToOrchError,
         }),
       close: () =>
         Effect.sync(() => {
           engine.close()
         }),
     }
-  })
+  }),
+)
+
+/** Composed app layer: store + sink + orchestration. */
+export function makeOrchestrationLive(sink: OrchEventSink): Layer.Layer<OrchestrationService> {
+  return OrchestrationLive.pipe(
+    Layer.provide(AgentStoreLive),
+    Layer.provide(EventSinkLive(sink)),
+  )
 }
 
 /** Run an Effect and surface OrchError as a thrown Error for the WS boundary. */

@@ -28,7 +28,7 @@ function mapCardStatusToSidebar(status: SessionCardStatus): SidebarSessionStatus
       return "completed"
     case "idle":
     default:
-      return "completed"
+      return "disconnected"
   }
 }
 
@@ -85,6 +85,7 @@ export function mapTerminalToSidebarSession(
     agent,
     agentLabel,
     status,
+    ...(term.doneAt ? { doneAt: term.doneAt } : {}),
     unreadCount: opts.unreadBySession?.[term.tabId] ?? 0,
     lastActivityAt,
     isPinned: false,

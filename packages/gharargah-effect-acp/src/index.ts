@@ -8,3 +8,13 @@ export {
   type AcpRequestHandler,
   type AcpTraceEntry,
 } from "./client.js"
+export {
+  acquireAcpClient,
+  acpRequest,
+  bootstrapAcpClient,
+  closeAcpClient,
+  runAcpRequest,
+  runBootstrapAcpClient,
+  startAcpClient,
+} from "./effect.js"
+

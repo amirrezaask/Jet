@@ -2,6 +2,7 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -11,6 +12,8 @@ import {
   type ReactElement,
 } from "react"
 import { createPortal } from "react-dom"
+import { RegistryContext } from "@effect-atom/atom-react"
+import { rosterAtom, notificationCenterAtom } from "./effect/atoms.js"
 import type { PanelId, PanelView } from "@gharargah/shared"
 import { fileUriToPath, pathToFileUri } from "@gharargah/shared"
 import {
@@ -138,6 +141,8 @@ import {
   prepareHydratedAgentCliFields,
   syncAgentCliLaunchArgs,
 } from "./agent-cli-launch.js"
+import { ensureAgentCliProcess, applyAgentCliResumeLaunchArgs } from "./agent-cli-resume.js"
+import { mintCursorAgentChatId } from "./cursor-cli-session.js"
 import { type PersistedSessionRoster } from "./session-roster-store.js"
 import {
   loadServerSessionRoster,
@@ -268,6 +273,7 @@ function jetPlatformFS(): import("@gharargah/workspace").FileSystemProvider {
 }
 
 export function GharargahApp() {
+  const atomRegistry = useContext(RegistryContext)
   const {
     appearanceSettings,
     setAppearanceSettings,
@@ -545,6 +551,8 @@ export function GharargahApp() {
 
   const focusTerminalTab = useCallback(
     (panelId: PanelId, tabId: string, mode?: SessionDialogMode) => {
+      // Dead/exited agent CLI → respawn with provider resume flags before open.
+      ensureAgentCliProcess(tabId)
       const focus = () => {
         const tree = cloneTree()
         const owningPanel = findPanelWithTab(tree, tabId) ?? panelId
@@ -760,19 +768,35 @@ export function GharargahApp() {
   const createSessionWithAgentCli = useCallback(
     async (rootUri: string, driver: AgentCliDriver) => {
       try {
+        let cliSessionId: string | null = null
+        // Cursor has no notify hook — mint chat id up front so resume works
+        // after refresh (interactive TUI does not emit session_id reliably).
+        if (driver.id === "cursor" && window.gharargah?.terminal) {
+          cliSessionId = await mintCursorAgentChatId(
+            rootUri,
+            window.gharargah.terminal,
+          )
+        }
         const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
           label: driver.label,
           launchCommand: driver.command,
-          launchArgs: tabId =>
-            buildAgentCliLaunchArgs(driver.id, {
-              sessionId: tabId,
-              origin: window.location.origin,
-            }),
+          launchArgs: nextTabId =>
+            buildAgentCliLaunchArgs(
+              driver.id,
+              {
+                sessionId: nextTabId,
+                origin: window.location.origin,
+              },
+              cliSessionId,
+            ),
         })
         bindAgentToSession(tabId, {
           agentId: driver.id,
           driverId: `${driver.id}:cli`,
         })
+        if (cliSessionId) {
+          setAgentCliSessionId(tabId, cliSessionId)
+        }
         openTerminalModal(panelId, tabId, "agent")
       } catch (err) {
         console.error("[gharargah] createSessionWithAgentCli failed", err)
@@ -1110,13 +1134,26 @@ export function GharargahApp() {
     }
     latestRosterRef.current = roster
     pendingRosterWriteRef.current = roster
+    atomRegistry.set(rosterAtom, roster)
     void flushSessionRosterWrites()
-  }, [workspace, flushSessionRosterWrites])
+  }, [workspace, flushSessionRosterWrites, atomRegistry])
 
   useEffect(() => {
     const api = window.gharargah?.notifications
     if (!api?.onEvent) return
     return api.onEvent(event => {
+      if (event.type === "notification.counts-updated") {
+        atomRegistry.set(notificationCenterAtom, {
+          unreadCount: event.counts.totalUnread,
+          lastEventAt: new Date().toISOString(),
+        })
+      } else if (event.type === "notification.created") {
+        const prev = atomRegistry.get(notificationCenterAtom)
+        atomRegistry.set(notificationCenterAtom, {
+          unreadCount: prev.unreadCount + 1,
+          lastEventAt: new Date().toISOString(),
+        })
+      }
       if (event.type !== "notification.created") return
       const n = event.notification
       if (!n.sessionId || !n.providerSessionId) return
@@ -1136,16 +1173,53 @@ export function GharargahApp() {
         },
       )
     })
-  }, [])
+  }, [atomRegistry])
 
   useEffect(() => {
     const persistLatestOnPageHide = () => {
-      const roster = latestRosterRef.current
-      if (roster) void saveServerSessionRoster(roster)
+      if (!sessionRosterReadyRef.current) return
+      // Rebuild from live sessions so unload never clobbers a fresher server
+      // write (e.g. test/API seed) with a stale empty latestRosterRef.
+      const sessions = listTerminalSessions()
+        .filter(isPersistableAgentSession)
+        .map(session => ({
+          tabId: session.tabId,
+          cwdRootUri: session.cwdRootUri,
+          label:
+            workspace.tabRegistry.get(session.tabId)?.label ??
+            session.customLabel ??
+            "Terminal",
+          launchCommand: session.launchCommand,
+          launchArgs: session.launchArgs,
+          status: session.status,
+          exitCode: session.exitCode,
+          customLabel: session.customLabel,
+          agentId: session.agentId,
+          agentDriverId: session.agentDriverId,
+          agentThreadId: session.agentThreadId,
+          agentCliSessionId: session.agentCliSessionId,
+          hasUserInput: session.hasUserInput,
+          hasMeaningfulOutput: session.hasMeaningfulOutput,
+          lastActivityAt: session.lastActivityAt,
+          doneAt: session.doneAt,
+        }))
+      if (sessions.length === 0) return
+      const persistedTabIds = new Set(sessions.map(session => session.tabId))
+      const modalTabId = terminalModalTabIdRef.current
+      const roster: PersistedSessionRoster = {
+        version: 2,
+        sessions,
+        modal:
+          modalTabId && persistedTabIds.has(modalTabId)
+            ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
+            : null,
+      }
+      latestRosterRef.current = roster
+      void saveServerSessionRoster(roster)
     }
     window.addEventListener("pagehide", persistLatestOnPageHide)
     return () => window.removeEventListener("pagehide", persistLatestOnPageHide)
-  }, [])
+  }, [workspace])
 
   const closeTerminalTab = useCallback(
     async (panelId: PanelId, tabId: string) => {
@@ -2459,6 +2533,10 @@ export function GharargahApp() {
             lastActivityAt: entry.lastActivityAt,
             doneAt: entry.doneAt,
           })
+          // Defensive: rebuild resume argv even if roster launchArgs were stale.
+          if (entry.agentCliSessionId) {
+            applyAgentCliResumeLaunchArgs(entry.tabId)
+          }
         }
         commitTree(tree)
         setTerminalSessionRevision(revision => revision + 1)
@@ -2466,38 +2544,13 @@ export function GharargahApp() {
         const deadTabIds = await reconcileHydratedTerminalPtys(
           window.gharargah?.terminal,
         )
-        let treeAfterPrune = tree
-        if (deadTabIds.length > 0) {
-          const pruneTree = cloneTree()
-          for (const tabId of deadTabIds) {
-            if (terminalModalTabIdRef.current === tabId) {
-              setTerminalModalTabId(null)
-              setTerminalModalPanelId(null)
-            }
-            const ptyId = terminalPtyIdForTab(tabId)
-            if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
-            const owningPanel = findPanelWithTab(pruneTree, tabId)
-            if (owningPanel) {
-              const view = pruneTree.getView(owningPanel)
-              if (view?.kind === "tabs") {
-                tabStore.dispose(tabId)
-                workspace.disposeTab(tabId)
-                pruneTree.setView(owningPanel, popPanelTab(view, tabId))
-                closePanelIfEmpty(pruneTree, owningPanel)
-                continue
-              }
-            }
-            clearTerminalSession(tabId)
-            tabStore.dispose(tabId)
-            workspace.disposeTab(tabId)
-          }
-          commitTree(pruneTree)
-          treeAfterPrune = pruneTree
-        }
+        // Sessions are never pruned on reload — reconcile only marks missing PTYs
+        // unavailable so cards stay open / done. deadTabIds is always empty.
+        void deadTabIds
 
         if (roster.modal) {
-          const panelId = findPanelWithTab(treeAfterPrune, roster.modal.tabId)
-          if (panelId && !deadTabIds.includes(roster.modal.tabId)) {
+          const panelId = findPanelWithTab(tree, roster.modal.tabId)
+          if (panelId) {
             setTerminalModalPanelId(panelId)
             setTerminalModalTabId(roster.modal.tabId)
             const restoredSession = roster.sessions.find(

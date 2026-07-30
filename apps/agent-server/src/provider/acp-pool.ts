@@ -2,8 +2,11 @@ import {
   ACP_IDLE_REAP_MS,
   ACP_REAPER_INTERVAL_MS,
   AcpClient,
+  closeAcpClient,
+  runAcpRequest,
   type AcpTraceEntry,
 } from "@gharargah/effect-acp"
+import { Effect } from "effect"
 import type { AgentConnectionState } from "@gharargah/agents"
 
 type PooledClient = {
@@ -159,10 +162,10 @@ export class AcpClientPool {
       if (input.providerId && !key.includes(input.providerId)) continue
       if (!entry.client.sessionIds.has(input.sessionId)) continue
       try {
-        await entry.client.request("session/close", { sessionId: input.sessionId })
+        await runAcpRequest(entry.client, "session/close", { sessionId: input.sessionId })
       } catch {
         try {
-          await entry.client.request("session/delete", { sessionId: input.sessionId })
+          await runAcpRequest(entry.client, "session/delete", { sessionId: input.sessionId })
         } catch {
           /* best-effort */
         }
@@ -184,7 +187,7 @@ export class AcpClientPool {
       if (filter?.workspaceRootPath && !key.endsWith(`:${filter.workspaceRootPath}`)) continue
       if (filter?.providerId && !key.includes(filter.providerId)) continue
       try {
-        await entry.client.request("logout", {})
+        await runAcpRequest(entry.client, "logout", {})
         any = true
       } catch {
         /* capability may be absent */
@@ -233,7 +236,7 @@ export class AcpClientPool {
   private async forceClose(client: AcpClient): Promise<void> {
     try {
       await Promise.race([
-        client.close(),
+        Effect.runPromise(closeAcpClient(client)),
         new Promise<void>(resolve => setTimeout(resolve, this.forceKillMs)),
       ])
     } catch {

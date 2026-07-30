@@ -2,12 +2,23 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import fs from "node:fs"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
+import { Effect, ManagedRuntime, Schema } from "effect"
 import { WebSocketServer, WebSocket } from "ws"
 import { getLspSession, uriToPath } from "@gharargah/node-host"
+import {
+  HostRpcRequest,
+  InvalidRpcPayloadError,
+  PathOutsideRootsError,
+  hostErrorHttpStatus,
+  hostErrorWire,
+  type HostRpcError,
+} from "@gharargah/rpc"
 import type { HostConfig } from "./config.js"
-import { createRuntime, dispatch, shutdownRuntime, type HostRuntime } from "./dispatch.js"
-import { EventHub } from "./events.js"
-import { parseSessionRosterBody, ProjectDatabase } from "./persistence.js"
+import { dispatch } from "./dispatch.js"
+import { makeHostLayers, type HostLayerServices } from "./effect/layers.js"
+import { HostRuntimeTag } from "./effect/tags.js"
+import { shutdownRuntime, type HostRuntime } from "./host-runtime.js"
+import { parseSessionRosterBody } from "./persistence.js"
 import { pathAllowed, pathStaysWithin } from "./sandbox.js"
 import { isAllowedWebSocketOrigin } from "./security.js"
 import { normalizeProviderHookRequest } from "./notifications/index.js"
@@ -25,23 +36,36 @@ class HttpError extends Error {
   }
 }
 
-type RpcBody = {
-  channel?: string
-  args?: unknown[]
-  clientId?: string
+function runHostRpc(
+  managed: ManagedRuntime.ManagedRuntime<HostLayerServices, never>,
+  channel: string,
+  args: unknown[],
+  clientId: string,
+): Promise<{ ok: true; value: unknown } | { ok: false; error: HostRpcError }> {
+  return managed.runPromise(
+    dispatch(channel, args, clientId).pipe(
+      Effect.map(value => ({ ok: true as const, value })),
+      Effect.catchAll(error => Effect.succeed({ ok: false as const, error })),
+    ),
+  )
 }
 
 export async function startHostServer(config: HostConfig): Promise<{
   runtime: HostRuntime
   close: () => Promise<void>
 }> {
-  const events = new EventHub(1024)
-  const db = new ProjectDatabase(path.join(config.dataDir, "jet.sqlite3"))
-  const runtime = createRuntime(config, events, db)
+  const hostLayer = makeHostLayers(config)
+  /** Keeps the Layer scope open for the process lifetime (TerminalHost acquireRelease). */
+  const managed = ManagedRuntime.make(hostLayer)
+  const runtime = await managed.runPromise(
+    Effect.gen(function* () {
+      return yield* HostRuntimeTag
+    }),
+  )
 
   const server = createServer(async (req, res) => {
     try {
-      await handleHttp(runtime, req, res)
+      await handleHttp(runtime, managed, req, res)
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500
       sendJson(res, status, {
@@ -92,7 +116,7 @@ export async function startHostServer(config: HostConfig): Promise<{
       for (const client of wss.clients) client.terminate()
       await new Promise<void>(resolve => wss.close(() => resolve()))
       await serverClosed
-      db.close()
+      await managed.dispose()
     })()
     return closePromise
   }
@@ -102,6 +126,7 @@ export async function startHostServer(config: HostConfig): Promise<{
 
 async function handleHttp(
   runtime: HostRuntime,
+  managed: ManagedRuntime.ManagedRuntime<HostLayerServices, never>,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -125,24 +150,32 @@ async function handleHttp(
   }
 
   if (req.method === "POST" && pathname === "/api/v1/rpc") {
-    const body = (await readJson(req)) as RpcBody
-    const channel = body.channel ?? ""
-    const args = Array.isArray(body.args) ? body.args : []
-    const clientId = typeof body.clientId === "string" ? body.clientId : "browser"
-    try {
-      validateRpcPaths(runtime.config, channel, args)
-      const value = await dispatch(runtime, channel, args, clientId)
-      sendJson(res, 200, { value })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const code = message.includes("not allowed") || message.includes("PATH_OUTSIDE")
-        ? "PATH_OUTSIDE_ALLOWED_ROOTS"
-        : message.startsWith("unknown")
-          ? "UNKNOWN_OPERATION"
-          : "OPERATION_FAILED"
-      const status = code === "PATH_OUTSIDE_ALLOWED_ROOTS" ? 403 : 400
-      sendJson(res, status, { error: { code, message, details: {} } })
+    const body = await readJson(req)
+    const decoded = Schema.decodeUnknownEither(HostRpcRequest)(body)
+    if (decoded._tag === "Left") {
+      const error = new InvalidRpcPayloadError({
+        message: "invalid rpc body",
+        cause: decoded.left,
+      })
+      const wire = hostErrorWire(error)
+      sendJson(res, hostErrorHttpStatus(error), { error: wire })
+      return
     }
+    const { channel, args, clientId } = decoded.right
+    const rpcArgs = [...args]
+    const pathError = validateRpcPaths(runtime.config, channel, rpcArgs)
+    if (pathError) {
+      const wire = hostErrorWire(pathError)
+      sendJson(res, hostErrorHttpStatus(pathError), { error: wire })
+      return
+    }
+    const result = await runHostRpc(managed, channel, rpcArgs, clientId)
+    if (result.ok) {
+      sendJson(res, 200, { value: result.value })
+      return
+    }
+    const wire = hostErrorWire(result.error)
+    sendJson(res, hostErrorHttpStatus(result.error), { error: wire })
     return
   }
 
@@ -157,7 +190,12 @@ async function handleHttp(
         projectName: url.searchParams.get("projectName"),
         sessionTitle: url.searchParams.get("sessionTitle"),
       })
-      await dispatch(runtime, "notifications:ingest", [normalized], "hook")
+      const ingest = await runHostRpc(managed, "notifications:ingest", [normalized], "hook")
+      if (!ingest.ok) {
+        const wire = hostErrorWire(ingest.error)
+        sendJson(res, hostErrorHttpStatus(ingest.error), { error: wire })
+        return
+      }
       // Hook consumers interpret response bodies as control output. An empty 2xx
       // acknowledges delivery without accidentally feeding Gharargah data back
       // into the provider's conversation.
@@ -414,7 +452,21 @@ function handleLspProxy(id: string, client: WebSocket): void {
   upstream.on("error", closeBoth)
   client.on("error", closeBoth)
 }
-function validateRpcPaths(config: HostConfig, channel: string, args: unknown[]): void {
+function validateRpcPaths(
+  config: HostConfig,
+  channel: string,
+  args: unknown[],
+): PathOutsideRootsError | null {
+  try {
+    validateRpcPathsOrThrow(config, channel, args)
+    return null
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return new PathOutsideRootsError({ message })
+  }
+}
+
+function validateRpcPathsOrThrow(config: HostConfig, channel: string, args: unknown[]): void {
   if (channel.startsWith("agents:")) {
     const first = args[0]
     if (first && typeof first === "object") {

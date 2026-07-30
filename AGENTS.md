@@ -18,7 +18,7 @@ Guide for AI agents and contributors working in this repo.
 | **Gharargah App** | Home, terminal modals, project catalog, slim command/overlay set, notification center |
 | **Gharargah UI** | Home UI, TerminalSessionModal, TerminalPanel, overlays, themes, notification center |
 | **Gharargah Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
-| **Host server (TS)** | FS, terminal PTY (`node-pty`), search/git/LSP/notifications over HTTP `/api/v1/rpc` + `/ws` |
+| **Host server (Effect)** | FS, terminal PTY (`node-pty`), search/git/LSP/notifications over HTTP `/api/v1/rpc` + `/ws` (Schema + Layers) |
 
 Library packages `@gharargah/monaco`, `@gharargah/lsp`, and editor/sidebar UI components remain in the monorepo; the app uses Monaco inside the session-modal editor.
 
@@ -43,21 +43,23 @@ jet/
 ├── apps/
 │   ├── gharargah/              Vite frontend shell (proxies to host)
 │   ├── gharargah-electron/     Thin Electron main (loads shared SPA URL)
-│   ├── host-server/            TypeScript host (HTTP/WS RPC + PTY)
+│   ├── host-server/            Effect host (HTTP/WS RPC + PTY Layers)
 │   └── agent-server/           Effect agent control plane (WS :4751)
 ├── fixtures/
 │   └── sample-workspace/       Fixture project for E2E smoke tests
 ├── packages/
+│   ├── gharargah-rpc/          Effect Schema IPC + TaggedErrors
 │   ├── gharargah-shared/       URIs, Emitter, panel primitives
-│   ├── gharargah-node-host/    Node FS/git/search/PTY helpers
-│   ├── gharargah-host-client/  Browser transport → HTTP/WS
+│   ├── gharargah-node-host/    Node FS/git/search/PTY (+ Effect terminal scope)
+│   ├── gharargah-host-client/  Effect HostClient + Promise shim → HTTP/WS
 │   ├── gharargah-panels/       PanelTree — splits, tabs, resize, serde
 │   ├── gharargah-workspace/    WorkspaceService, TabRegistry, commands, keymaps
 │   ├── gharargah-codemirror/   (library; unwired from app)
 │   ├── gharargah-lsp/          (library; unwired from app)
 │   ├── gharargah-agents/       (library; in-app ACP chat)
-│   ├── gharargah-ui/           Home, terminal modal/panel, overlays, themes (+ unused editor/sidebar)
-│   └── gharargah-app/          Root React app — home + terminal modals only
+│   ├── gharargah-effect-acp/   ACP stdio + Effect acquire helpers
+│   ├── gharargah-ui/           Home, terminal modal/panel, overlays, themes
+│   └── gharargah-app/          Root React app — atoms + home + terminal modals
 ├── tests/
 │   ├── electron/               Shared UI E2E specs (Playwright web-e2e)
 │   ├── shell/                  launchWeb() against TS host
@@ -73,6 +75,7 @@ jet/
 ### Package dependency direction
 
 ```
+gharargah-rpc + gharargah-shared  ←  gharargah-node-host, host-client, host-server, agent-server
 gharargah-shared  ←  gharargah-panels, gharargah-workspace, gharargah-node-host
 gharargah-workspace + gharargah-panels + gharargah-ui  ←  gharargah-app
 gharargah-app + gharargah-host-client  ←  apps/gharargah (Vite)
@@ -360,7 +363,7 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 
 ### Agents (`@gharargah/agents` + Effect agent-server)
 
-**Status (2026-07):** In-app agent chat is a primary ADE surface. Control plane is the **Node Effect-inspired runtime** in `apps/agent-server` (orchestration + providers + SQLite). Rust host no longer handles `agents:*` — only FS/PTY/git/LSP/terminal. See [`docs/agents-effect-architecture.md`](docs/agents-effect-architecture.md).
+**Status (2026-07):** Full Effect stack — Schema RPC (`@gharargah/rpc`), host-server Layers, agent-server `OrchestrationService`, SPA `@effect-atom` registry. ADE default still uses agent CLIs in PTYs. See [`docs/agents-effect-architecture.md`](docs/agents-effect-architecture.md).
 
 **Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"0"` — ADE uses agent CLIs in PTYs). Set `GHARARGAH_ENABLE_AGENT_CHAT=1` only to opt back into in-app ACP/SDK chat. `GHARARGAH_AGENT_RUNTIME` defaults to `effect`.
 
@@ -369,13 +372,13 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 **Implementation:**
 
 - **Storage:** `.gharargah/agents/` per workspace (SQLite SoT + JSON thread projection)
-- **Transport:** `window.gharargah.agents` → WS `ws://127.0.0.1:4751/agents` via `@gharargah/host-client`
+- **Transport:** `window.gharargah.agents` → WS `ws://127.0.0.1:4751/agents` via `@gharargah/host-client` (Schema-encoded RPC)
 - **Drivers:** Cursor/Grok ACP (`@gharargah/effect-acp`), Codex app-server, Claude SDK stream-json, OpenCode SDK
 - **Mock env:** `GHARARGAH_AGENT_MOCK=1`; `GHARARGAH_MOCK_ACP_BIN`; scenario via `GHARARGAH_AGENT_MOCK_SCENARIO`
-- **Key files:** `apps/agent-server/`, `packages/gharargah-effect-acp/`, `packages/gharargah-agents/`, `packages/gharargah-ui/src/agents/`, `packages/gharargah-host-client/src/effect-agents-client.ts`
+- **Key files:** `apps/agent-server/`, `packages/gharargah-rpc/`, `packages/gharargah-effect-acp/`, `packages/gharargah-agents/`, `packages/gharargah-ui/src/agents/`, `packages/gharargah-host-client/src/effect-agents-client.ts`, `packages/gharargah-app/src/effect/`
 - **E2E:** Prefer mock + agent-server; legacy Rust ACP matrix tests removed with the Rust agent path
 
-Manual smoke: `pnpm dev` (starts Rust host + agent-server + Vite) → New session → Agent.
+Manual smoke: `pnpm dev` (starts TS host + agent-server + Vite) → New session → Agent.
 
 
 

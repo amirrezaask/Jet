@@ -6,6 +6,7 @@ import {
   isAgentCliProvider,
   syncAgentCliLaunchArgs,
 } from "../agent-cli-launch.js"
+import { applyAgentCliResumeLaunchArgs } from "../agent-cli-resume.js"
 import {
   clearTerminalSession,
   isSessionDone,
@@ -90,23 +91,9 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         // Keep the failed session visible so the error and Restart action survives.
         onFailed: () => markTerminalFailed(instance.id),
         onRestart: () => {
-          const current = terminalSessionForTab(instance.id)
           const ptyId = terminalPtyIdForTab(instance.id)
           if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
-          if (
-            current?.agentId &&
-            current.agentCliSessionId &&
-            isAgentCliProvider(current.agentId)
-          ) {
-            updateTerminalLaunchArgs(
-              instance.id,
-              syncAgentCliLaunchArgs(
-                instance.id,
-                current.agentId,
-                current.agentCliSessionId,
-              ),
-            )
-          }
+          applyAgentCliResumeLaunchArgs(instance.id)
           restartTerminalSession(instance.id)
         },
         onClose: () => deps.closeTerminalTab(ctx.panelId, instance.id),

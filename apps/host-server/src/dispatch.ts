@@ -1,162 +1,94 @@
+import { Effect } from "effect"
 import {
   fileSearch,
-  gitBranch,
-  gitBranches,
-  gitCheckout,
-  gitCommitWithBody,
-  gitDiff,
-  gitDiscard,
-  gitFetch,
-  gitHistory,
   gitIsRepo,
-  gitPull,
-  gitPush,
-  gitStage,
-  gitStatus,
-  gitSummary,
-  gitUnstage,
-  gitShow,
   isSearchScanReady,
   listProjectFiles,
   loadGlobalGharargahrcScanRoots,
   openInApp,
   revealInFolder,
-  PerfHost,
   projectSearch,
   readDir,
   readFile,
-  setLspCrashHandler,
   spawnTask,
   startLspSession,
   stat,
-  stopAllLspSessions,
   stopLspSession,
-  TerminalHost,
   trackFileAccess,
   writeFile,
   writeTempDrop,
   type TerminalLaunch,
 } from "@gharargah/node-host"
+import {
+  OperationFailedError,
+  PathOutsideRootsError,
+  UnknownChannelError,
+  unknownChannel,
+  type HostRpcError,
+} from "@gharargah/rpc"
 import type {
   BindNotificationSessionRequest,
   IngestNotificationRequest,
   ListNotificationsRequest,
   MarkAllNotificationsReadRequest,
   NotificationPreferences,
-  NotificationStreamEvent,
 } from "@gharargah/shared"
-import type { EventHub } from "./events.js"
-import type { ProjectDatabase } from "./persistence.js"
-import type { HostConfig } from "./config.js"
-import { WorkspaceHost } from "./workspace.js"
-import {
-  NotificationService,
-  parseOscStreamChunk,
-  normalizeHookEventName,
-} from "./notifications/index.js"
+import { GitServiceLive, GitServiceTag } from "./effect/git.js"
+import { HostRuntimeTag } from "./effect/tags.js"
+import type { HostRuntime } from "./host-runtime.js"
+import { normalizeHookEventName } from "./notifications/index.js"
 
-export type HostRuntime = {
-  config: HostConfig
-  events: EventHub
-  db: ProjectDatabase
-  terminal: TerminalHost
-  workspace: WorkspaceHost
-  perf: PerfHost
-  homeDir: string
-  notifications: NotificationService
+export type { HostRuntime } from "./host-runtime.js"
+export { createRuntime, shutdownRuntime } from "./host-runtime.js"
+
+export function mapDispatchError(channel: string, error: unknown): HostRpcError {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes("not allowed") || message.includes("PATH_OUTSIDE")) {
+    return new PathOutsideRootsError({ message })
+  }
+  if (message.startsWith("unknown host channel:")) {
+    return unknownChannel(channel)
+  }
+  if (message.startsWith("unknown")) {
+    return new UnknownChannelError({ channel, message })
+  }
+  return new OperationFailedError({ message, cause: error })
 }
 
-export function createRuntime(config: HostConfig, events: EventHub, db: ProjectDatabase): HostRuntime {
-  const terminal = new TerminalHost()
-  const terminalOscBuffers = new Map<string, string>()
-  const notifications = new NotificationService(db.raw(), (streamEvent: NotificationStreamEvent) => {
-    events.emit("notifications:event", [streamEvent])
-  })
+export type DispatchEnv = HostRuntimeTag | GitServiceTag
 
-  terminal.setEmit((channel, args) => {
-    events.emit(channel, args)
-    if (channel === "terminal:data") {
-      const ptyId = String(args[0] ?? "")
-      const data = String(args[1] ?? "")
-      handleTerminalOsc(notifications, terminalOscBuffers, ptyId, data)
-    } else if (channel === "terminal:exit") {
-      const ptyId = String(args[0] ?? "")
-      terminalOscBuffers.delete(ptyId)
-      const exitCode = typeof args[1] === "number" ? args[1] : Number(args[1] ?? 0)
-      handleTerminalExit(notifications, ptyId, exitCode)
+export function dispatch(
+  channel: string,
+  args: unknown[],
+  clientId: string,
+): Effect.Effect<unknown, HostRpcError, DispatchEnv> {
+  return Effect.gen(function* () {
+    if (channel.startsWith("git:")) {
+      return yield* handleGitEffect(channel, args)
     }
-  })
-
-  const workspace = new WorkspaceHost()
-  const homeDir = process.env.HOME ?? config.allowedRoots[0] ?? ""
-  const runtime: HostRuntime = {
-    config,
-    events,
-    db,
-    terminal,
-    workspace,
-    perf: new PerfHost(homeDir, Date.now()),
-    homeDir,
-    notifications,
-  }
-  setLspCrashHandler(id => events.emit("lsp:crashed", [id]))
-  return runtime
-}
-
-function handleTerminalOsc(
-  notifications: NotificationService,
-  buffers: Map<string, string>,
-  ptyId: string,
-  data: string,
-): void {
-  const result = parseOscStreamChunk(buffers.get(ptyId) ?? "", data)
-  if (result.buffered) buffers.set(ptyId, result.buffered)
-  else buffers.delete(ptyId)
-  const parsed = result.notifications
-  if (parsed.length === 0) return
-  const binding = notifications.bindingForPty(ptyId)
-  for (const item of parsed) {
-    notifications.ingest({
-      ...item,
-      // Terminal output is untrusted. A sequence may add semantic event data,
-      // but it must never escape the PTY's authoritative session binding.
-      sessionId: binding?.sessionId ?? null,
-      projectId: binding?.projectId ?? null,
-      projectName: binding?.projectName ?? null,
-      sessionTitle: binding?.sessionTitle ?? null,
-      provider: binding?.provider ?? item.provider ?? null,
+    const runtime = yield* HostRuntimeTag
+    return yield* Effect.tryPromise({
+      try: () => dispatchImpl(runtime, channel, args, clientId),
+      catch: err => mapDispatchError(channel, err),
     })
-  }
-}
-
-function handleTerminalExit(
-  notifications: NotificationService,
-  ptyId: string,
-  exitCode: number,
-): void {
-  const binding = notifications.bindingForPty(ptyId)
-  if (exitCode === 0) return
-  const providerLabel = binding?.provider
-    ? binding.provider.charAt(0).toUpperCase() + binding.provider.slice(1)
-    : "Process"
-  notifications.ingest({
-    source: "process",
-    type: exitCode > 0 ? "failed" : "process-exited",
-    title: `${providerLabel} exited with code ${exitCode}`,
-    message: binding?.sessionTitle
-      ? `Session “${binding.sessionTitle}” ended unexpectedly.`
-      : "Session process ended unexpectedly.",
-    sessionId: binding?.sessionId ?? null,
-    projectId: binding?.projectId ?? null,
-    projectName: binding?.projectName ?? null,
-    sessionTitle: binding?.sessionTitle ?? null,
-    provider: binding?.provider ?? null,
-    eventId: `exit:${ptyId}:${exitCode}`,
-    metadata: { exitCode, ptyId },
   })
 }
 
-export async function dispatch(
+export function dispatchPromise(
+  runtime: HostRuntime,
+  channel: string,
+  args: unknown[],
+  clientId: string,
+): Promise<unknown> {
+  return Effect.runPromise(
+    dispatch(channel, args, clientId).pipe(
+      Effect.provideService(HostRuntimeTag, runtime),
+      Effect.provide(GitServiceLive),
+    ),
+  )
+}
+
+async function dispatchImpl(
   runtime: HostRuntime,
   channel: string,
   args: unknown[],
@@ -179,7 +111,6 @@ export async function dispatch(
     return handleNotifications(runtime, channel, args)
   }
   if (channel.startsWith("fs:")) return handleFs(channel, args)
-  if (channel.startsWith("git:")) return handleGit(channel, args)
   if (channel.startsWith("search:")) return handleSearch(runtime, channel, args)
   if (channel.startsWith("workspace:")) return handleWorkspace(runtime, channel, args)
   if (channel.startsWith("lsp:")) return handleLsp(runtime, channel, args)
@@ -289,13 +220,6 @@ function handleNotifications(
   }
 }
 
-export function shutdownRuntime(runtime: HostRuntime): void {
-  runtime.events.emit("server:shuttingDown", [])
-  runtime.workspace.stopAll()
-  runtime.terminal.stopAll()
-  stopAllLspSessions()
-}
-
 async function handleFs(channel: string, args: unknown[]): Promise<unknown> {
   switch (channel) {
     case "fs:readFile":
@@ -314,61 +238,71 @@ async function handleFs(channel: string, args: unknown[]): Promise<unknown> {
   }
 }
 
-async function handleGit(channel: string, args: unknown[]): Promise<unknown> {
+function handleGitEffect(
+  channel: string,
+  args: unknown[],
+): Effect.Effect<unknown, HostRpcError, GitServiceTag> {
   const rootUri = str(args[0], "rootUri")
-  switch (channel) {
-    case "git:isRepo":
-      return gitIsRepo(rootUri)
-    case "git:status":
-      return gitStatus(rootUri)
-    case "git:diff": {
-      const opts = (args[1] as { path?: string; staged?: boolean } | undefined) ?? undefined
-      return gitDiff(rootUri, opts)
+  return Effect.gen(function* () {
+    const git = yield* GitServiceTag
+    switch (channel) {
+      case "git:isRepo":
+        return yield* git.isRepo(rootUri)
+      case "git:status":
+        return yield* git.status(rootUri)
+      case "git:diff": {
+        const opts = (args[1] as { path?: string; staged?: boolean } | undefined) ?? undefined
+        return yield* git.diff(rootUri, opts)
+      }
+      case "git:show": {
+        const opts = args[1] as { path?: string; ref?: "HEAD" | "INDEX" } | undefined
+        const filePath = typeof opts?.path === "string" ? opts.path : ""
+        const ref = opts?.ref === "INDEX" ? "INDEX" : "HEAD"
+        return yield* git.show(rootUri, filePath, ref)
+      }
+      case "git:branch":
+        return yield* git.branch(rootUri)
+      case "git:summary":
+        return yield* git.summary(rootUri)
+      case "git:branches":
+        return yield* git.branches(rootUri)
+      case "git:stage":
+        yield* git.stage(rootUri, stringArray(args[1]))
+        return null
+      case "git:unstage":
+        yield* git.unstage(rootUri, stringArray(args[1]))
+        return null
+      case "git:discard":
+        yield* git.discard(rootUri, stringArray(args[1]))
+        return null
+      case "git:commit": {
+        const summary = String(args[1] ?? "")
+        const body = typeof args[2] === "string" ? args[2] : undefined
+        yield* git.commit(rootUri, summary, body)
+        return null
+      }
+      case "git:checkout":
+        yield* git.checkout(rootUri, str(args[1], "branch"))
+        return null
+      case "git:fetch":
+        yield* git.fetch(rootUri)
+        return null
+      case "git:pull":
+        yield* git.pull(rootUri)
+        return null
+      case "git:push":
+        yield* git.push(rootUri)
+        return null
+      case "git:history":
+        return yield* git.history(rootUri, typeof args[1] === "number" ? args[1] : 50)
+      default:
+        return yield* Effect.fail(unknownChannel(channel))
     }
-    case "git:show": {
-      const opts = args[1] as { path?: string; ref?: "HEAD" | "INDEX" } | undefined
-      const path = typeof opts?.path === "string" ? opts.path : ""
-      const ref = opts?.ref === "INDEX" ? "INDEX" : "HEAD"
-      return gitShow(rootUri, path, ref)
-    }
-    case "git:branch":
-      return gitBranch(rootUri)
-    case "git:summary":
-      return gitSummary(rootUri)
-    case "git:branches":
-      return gitBranches(rootUri)
-    case "git:stage":
-      await gitStage(rootUri, stringArray(args[1]))
-      return null
-    case "git:unstage":
-      await gitUnstage(rootUri, stringArray(args[1]))
-      return null
-    case "git:discard":
-      await gitDiscard(rootUri, stringArray(args[1]))
-      return null
-    case "git:commit": {
-      const summary = String(args[1] ?? "")
-      const body = typeof args[2] === "string" ? args[2] : undefined
-      await gitCommitWithBody(rootUri, summary, body)
-      return null
-    }
-    case "git:checkout":
-      await gitCheckout(rootUri, str(args[1], "branch"))
-      return null
-    case "git:fetch":
-      await gitFetch(rootUri)
-      return null
-    case "git:pull":
-      await gitPull(rootUri)
-      return null
-    case "git:push":
-      await gitPush(rootUri)
-      return null
-    case "git:history":
-      return gitHistory(rootUri, typeof args[1] === "number" ? args[1] : 50)
-    default:
-      throw new Error(`unknown git channel: ${channel}`)
-  }
+  }).pipe(
+    Effect.catchTag("GitCommandFailed", e =>
+      Effect.fail(new OperationFailedError({ message: e.message, cause: e })),
+    ),
+  )
 }
 
 async function handleSearch(

@@ -6,16 +6,23 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts src/server-sessions.test.ts src/probe-terminal-sessions.test.ts src/agent-draft.test.ts src/editor/code-editor-service.test.ts src/hooks/notification-provider-launch.test.ts src/tabs/terminal-session.test.ts"
+    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts src/server-sessions.test.ts src/probe-terminal-sessions.test.ts src/agent-draft.test.ts src/editor/code-editor-service.test.ts src/hooks/notification-provider-launch.test.ts src/tabs/terminal-session.test.ts src/effect/atoms.test.ts src/effect/session-machine.test.ts"
   },
   "dependencies": {
+    "@effect-atom/atom": "0.5.3",
+    "@effect-atom/atom-react": "0.5.0",
+    "@effect/experimental": "0.58.0",
+    "@effect/platform": "0.97.1",
+    "@effect/rpc": "0.73.0",
     "@gharargah/agents": "workspace:*",
     "@gharargah/host-client": "workspace:*",
     "@gharargah/lsp": "workspace:*",
     "@gharargah/panels": "workspace:*",
+    "@gharargah/rpc": "workspace:*",
     "@gharargah/shared": "workspace:*",
     "@gharargah/ui": "workspace:*",
     "@gharargah/workspace": "workspace:*",
+    "effect": "3.22.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "@gharargah/monaco": "workspace:*",

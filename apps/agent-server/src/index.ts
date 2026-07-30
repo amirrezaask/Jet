@@ -16,5 +16,8 @@ export {
   makeOrchestrationLive,
   runOrch,
   AgentStoreService,
+  EventSinkService,
+  AgentStoreLive,
+  OrchestrationLive,
 } from "./effect/services.js"
 export { globalAcpPool } from "./provider/acp-pool.js"

@@ -1,10 +1,13 @@
 import type { SidebarSession } from "../types.js"
 
-/** Unread sessions first, then by latest activity descending within each bucket. */
+/** Open before done; unread first within each bucket; then latest activity. */
 export function sortSessionsUnreadFirst(
   sessions: SidebarSession[],
 ): SidebarSession[] {
   return [...sessions].sort((a, b) => {
+    const aDone = Boolean(a.doneAt)
+    const bDone = Boolean(b.doneAt)
+    if (aDone !== bDone) return aDone ? 1 : -1
     const aUnread = a.unreadCount > 0
     const bUnread = b.unreadCount > 0
     if (aUnread !== bUnread) return aUnread ? -1 : 1

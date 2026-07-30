@@ -107,7 +107,7 @@ describe("ProjectDatabase session roster", () => {
     assert.equal(next.modal, null)
   })
 
-  it("drops plain shell sessions from roster", () => {
+  it("accepts blank shells alongside agent sessions on replace", () => {
     const saved = db.replaceSessionRoster({
       version: 2,
       sessions: [
@@ -129,11 +129,18 @@ describe("ProjectDatabase session roster", () => {
       ],
       modal: null,
     })
-    assert.equal(saved.sessions.length, 1)
-    assert.equal(saved.sessions[0]?.tabId, "gharargah:terminal:agent")
+    assert.equal(saved.sessions.length, 2)
+    assert.equal(
+      saved.sessions.some(s => s.tabId === "gharargah:terminal:shell"),
+      true,
+    )
+    assert.equal(
+      saved.sessions.some(s => s.tabId === "gharargah:terminal:agent"),
+      true,
+    )
   })
 
-  it("marks agent sessions as starting after reopen (host restart)", () => {
+  it("marks open sessions as starting after reopen (host restart)", () => {
     db.replaceSessionRoster({
       version: 2,
       sessions: [
@@ -160,8 +167,11 @@ describe("ProjectDatabase session roster", () => {
 
     db = new ProjectDatabase(dbPath)
     const roster = db.getSessionRoster()
+    const live = roster.sessions.find(s => s.tabId === "gharargah:terminal:live")
     const agent = roster.sessions.find(s => s.tabId === "gharargah:terminal:agent")
-    assert.equal(roster.sessions.length, 1)
+    assert.equal(roster.sessions.length, 2)
+    assert.equal(live?.status, "starting")
+    assert.equal(live?.ptyId, undefined)
     assert.equal(agent?.status, "starting")
     assert.equal(agent?.ptyId, undefined)
     assert.equal(agent?.agentCliSessionId, "11111111-1111-4111-8111-111111111111")
@@ -235,6 +245,28 @@ describe("ProjectDatabase session roster", () => {
       true,
     )
     const restored = db.getSessionRoster().sessions[0]
-    assert.equal(restored, undefined)
+    // Blank shells survive host reopen; only incomplete agent stubs are stripped.
+    assert.equal(restored?.tabId, "gharargah:terminal:legacy")
+    assert.equal(restored?.label, "Legacy")
+    assert.equal(restored?.status, "exited")
+  })
+
+  it("persists blank shell sessions without agentId", () => {
+    const saved = db.replaceSessionRoster({
+      version: 2,
+      sessions: [
+        {
+          tabId: "gharargah:terminal:blank",
+          cwdRootUri: "file:///tmp/blank",
+          label: "Terminal",
+          status: "running",
+        },
+      ],
+      modal: { tabId: "gharargah:terminal:blank", sessionMode: "terminal" },
+    })
+    assert.equal(saved.sessions.length, 1)
+    assert.equal(saved.sessions[0]?.agentId, undefined)
+    assert.equal(saved.sessions[0]?.launchCommand, undefined)
+    assert.deepEqual(db.getSessionRoster(), saved)
   })
 })

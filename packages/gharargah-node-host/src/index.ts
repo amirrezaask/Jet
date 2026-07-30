@@ -18,8 +18,11 @@ export {
   gitPush,
   gitShow,
   type GitShowRef,
+  type GitSummary,
+  type GitHistoryCommit,
 } from "./git.js"
 export { TerminalHost, type TerminalLaunch, type TerminalAttachSnapshot } from "./terminal.js"
+export { makeTerminalHostScoped } from "./effect-terminal.js"
 export { openInApp, revealInFolder } from "./shell.js"
 export { spawnTask, type TaskSpawnRequest, type TaskSpawnResult } from "./tasks.js"
 export { PerfHost } from "./perf.js"
