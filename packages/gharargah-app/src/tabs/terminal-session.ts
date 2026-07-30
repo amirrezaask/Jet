@@ -7,6 +7,11 @@
  * UI detach. PTY lifetime is owned by host until explicit end/done/restart.
  */
 import {
+  detectAgentCliProviderFromCommand,
+  extractAgentCliSessionIdFromLaunchArgs,
+  isAgentCliProvider,
+} from "../agent-cli-launch.js"
+import {
   defaultSessionStore,
   type HydratedTerminalSession,
   type TerminalSessionState,
@@ -27,6 +32,9 @@ export function registerTerminalSession(
     launchArgs?: string[]
     parentSessionTabId?: string
     customLabel?: string
+    agentId?: string
+    agentDriverId?: string
+    agentCliSessionId?: string
   },
 ): void {
   defaultSessionStore.register(tabId, cwdRootUri, launchCommand, options)
@@ -103,7 +111,14 @@ export function updateTerminalLaunchArgs(tabId: string, launchArgs: string[]): v
 
 export function sessionHasResumableAgentCli(tabId: string): boolean {
   const session = defaultSessionStore.get(tabId)
-  return Boolean(session?.agentCliSessionId && session.agentId)
+  if (!session?.agentId) return false
+  if (session.agentCliSessionId) return true
+  const provider = isAgentCliProvider(session.agentId)
+    ? session.agentId
+    : detectAgentCliProviderFromCommand(session.launchCommand)
+  return Boolean(
+    extractAgentCliSessionIdFromLaunchArgs(provider, session.launchArgs),
+  )
 }
 
 export function terminalTabIdForPty(ptyId: string): string | undefined {

@@ -125,6 +125,17 @@ Reducer: pure `nextSessionStatus` in `@gharargah/app` `effect/session-machine.ts
 - Filter `launchArgs` to strings ≤ 32 768 chars
 - Structurally invalid PUT body → HTTP 400 (`tryDecodeSessionRoster` → `null`); corrupt localStorage → empty roster (`decodeSessionRosterUnknown`)
 
+### ADE CLI resume (Mission Control terminal cards)
+
+Persistence is **roster + provider chat/thread id**, not PTY process survival:
+
+- Host SQLite stores `agentCliSessionId`; `pty_id` is always nulled on PUT (PTYs live only in host memory)
+- After client refresh / host restart: hydrate roster → rebuild resume argv → `TerminalPanel` spawns a fresh CLI process
+- **Codex / Claude:** HTTP notify hooks deliver `providerSessionId` → stored as `agentCliSessionId`
+- **Cursor:** no session notify hook — ADE pre-mints via `cursor-agent create-chat`, launches with `--resume=<id> --trust`. Mint failure aborts session create (toast). Hydrate also recovers id from `--resume=` in `launchArgs` if the column was empty
+- **OpenCode / Grok:** session id from PTY stdout parse
+- Child “Terminal tool” shells (`parentSessionTabId`) are in-memory only and are not roster-persisted
+
 ## Agent-server
 
 - `OrchestrationLive` = `AgentStoreLive` + `EventSinkLive` + engine with injected store

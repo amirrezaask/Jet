@@ -18,6 +18,9 @@ export type OpenTerminalTabOpts = {
   cwdRootUri?: string
   launchCommand?: string
   launchArgs?: string[] | ((tabId: string) => string[])
+  agentId?: string
+  agentDriverId?: string
+  agentCliSessionId?: string
 }
 
 export function listTerminalTabs(
@@ -75,7 +78,12 @@ export function openTerminalTab(
     typeof opts.launchArgs === "function"
       ? opts.launchArgs(tabId)
       : opts.launchArgs
-  registerTerminalSession(tabId, cwdRootUri, opts.launchCommand, { launchArgs })
+  registerTerminalSession(tabId, cwdRootUri, opts.launchCommand, {
+    launchArgs,
+    agentId: opts.agentId,
+    agentDriverId: opts.agentDriverId,
+    agentCliSessionId: opts.agentCliSessionId,
+  })
   return workspace.openOrFocusTab(tree, panel, {
     id: tabId,
     kind: TERMINAL_TAB_TYPE_ID,

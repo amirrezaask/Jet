@@ -43,8 +43,15 @@ export async function mintCursorAgentChatId(
       await sleep(50)
     }
     const finalSnap = await terminalApi.attach(ptyId)
-    return finalSnap?.output.match(UUID_RE)?.[0] ?? null
-  } catch {
+    const id = finalSnap?.output.match(UUID_RE)?.[0] ?? null
+    if (!id) {
+      console.warn(
+        "[gharargah] cursor-agent create-chat timed out or emitted no chat id",
+      )
+    }
+    return id
+  } catch (err) {
+    console.warn("[gharargah] cursor-agent create-chat failed", err)
     return null
   } finally {
     if (ptyId) {

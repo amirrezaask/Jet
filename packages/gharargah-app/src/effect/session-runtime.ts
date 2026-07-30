@@ -70,6 +70,9 @@ export type SessionRuntimeApi = {
       launchArgs?: string[]
       parentSessionTabId?: string
       customLabel?: string
+      agentId?: string
+      agentDriverId?: string
+      agentCliSessionId?: string
     },
   ) => void
   readonly get: (tabId: string) => TerminalSessionState | undefined
@@ -148,10 +151,11 @@ export function createSessionStore(): SessionRuntimeApi {
         signal: existing?.signal,
         generation: existing?.generation ?? 0,
         customLabel: options?.customLabel ?? existing?.customLabel,
-        agentId: existing?.agentId,
-        agentDriverId: existing?.agentDriverId,
+        agentId: options?.agentId ?? existing?.agentId,
+        agentDriverId: options?.agentDriverId ?? existing?.agentDriverId,
         agentThreadId: existing?.agentThreadId,
-        agentCliSessionId: existing?.agentCliSessionId,
+        agentCliSessionId:
+          options?.agentCliSessionId?.trim() || existing?.agentCliSessionId,
         hasUserInput: existing?.hasUserInput ?? false,
         hasMeaningfulOutput: existing?.hasMeaningfulOutput ?? false,
         lastActivityAt: existing?.lastActivityAt ?? now,

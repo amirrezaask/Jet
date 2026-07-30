@@ -3,7 +3,7 @@ import {
   notificationLaunchForProvider,
   type ProviderNotificationLaunchContext,
 } from "./hooks/notification-provider-launch.js"
-import type { TerminalSessionStatus } from "./tabs/terminal-session.js"
+import type { TerminalSessionStatus } from "./effect/session-machine.js"
 
 const UUID_RE =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i
@@ -96,8 +96,17 @@ export function tryParseAgentCliSessionId(
     return null
   }
 
-  if (provider === "cursor" || provider === "grok") {
-    // stream-json / create-chat emit `"session_id":"<uuid>"`.
+  if (provider === "cursor") {
+    // Require labeled session_id — bare UUID fallback steals unrelated ids.
+    // create-chat mint uses its own UUID_RE in cursor-cli-session.ts.
+    return (
+      chunk.match(
+        /"session_id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})"/i,
+      )?.[1] ?? null
+    )
+  }
+
+  if (provider === "grok") {
     const labeled =
       chunk.match(
         /"session_id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})"/i,
@@ -107,6 +116,48 @@ export function tryParseAgentCliSessionId(
   }
 
   return null
+}
+
+/**
+ * Recover a provider CLI session id from resume argv when the roster column
+ * is empty (e.g. persist raced ahead of setAgentCliSessionId).
+ */
+export function extractAgentCliSessionIdFromLaunchArgs(
+  provider: AgentProvider | undefined,
+  launchArgs: string[] | undefined,
+): string | null {
+  if (!provider || !launchArgs?.length) return null
+  switch (provider) {
+    case "codex":
+      if (launchArgs[0] === "resume" && launchArgs[1]?.trim()) {
+        return launchArgs[1].trim()
+      }
+      return null
+    case "opencode":
+      if (
+        (launchArgs[0] === "--session" || launchArgs[0] === "-s") &&
+        launchArgs[1]?.trim()
+      ) {
+        return launchArgs[1].trim()
+      }
+      return null
+    case "cursor": {
+      const eq = launchArgs[0]?.match(/^--resume=(.+)$/)
+      if (eq?.[1]?.trim()) return eq[1].trim()
+      if (launchArgs[0] === "--resume" && launchArgs[1]?.trim()) {
+        return launchArgs[1].trim()
+      }
+      return null
+    }
+    case "claude":
+    case "grok":
+      if (launchArgs[0] === "--resume" && launchArgs[1]?.trim()) {
+        return launchArgs[1].trim()
+      }
+      return null
+    default:
+      return null
+  }
 }
 
 export function syncAgentCliLaunchArgs(
@@ -149,6 +200,8 @@ export type HydratedAgentCliFields = {
   launchArgs?: string[]
   ptyId?: string
   status: TerminalSessionStatus
+  /** Resolved id (column or extracted from launchArgs). */
+  agentCliSessionId?: string
 }
 
 export function prepareHydratedAgentCliFields(input: {
@@ -170,6 +223,7 @@ export function prepareHydratedAgentCliFields(input: {
       launchArgs: input.launchArgs,
       ptyId: undefined,
       status: "exited",
+      agentCliSessionId: input.agentCliSessionId?.trim() || undefined,
     }
   }
 
@@ -177,7 +231,12 @@ export function prepareHydratedAgentCliFields(input: {
     (isAgentCliProvider(input.agentId) ? input.agentId : undefined) ??
     detectAgentCliProviderFromCommand(input.launchCommand)
 
-  if (!input.agentCliSessionId || !provider) {
+  const cliSessionId =
+    input.agentCliSessionId?.trim() ||
+    extractAgentCliSessionIdFromLaunchArgs(provider, input.launchArgs) ||
+    undefined
+
+  if (!cliSessionId || !provider) {
     return {
       launchCommand: input.launchCommand,
       launchArgs: input.launchArgs,
@@ -186,6 +245,7 @@ export function prepareHydratedAgentCliFields(input: {
         input.status === "running" || input.status === "starting"
           ? "starting"
           : input.status,
+      agentCliSessionId: cliSessionId,
     }
   }
 
@@ -194,11 +254,12 @@ export function prepareHydratedAgentCliFields(input: {
     launchArgs: syncAgentCliLaunchArgs(
       input.tabId,
       provider,
-      input.agentCliSessionId,
+      cliSessionId,
       origin,
     ),
     ptyId: undefined,
     status: "starting",
+    agentCliSessionId: cliSessionId,
   }
 }
 

@@ -616,6 +616,9 @@ export function GharargahApp() {
         label?: string
         launchCommand?: string
         launchArgs?: string[] | ((tabId: string) => string[])
+        agentId?: string
+        agentDriverId?: string
+        agentCliSessionId?: string
       },
     ) => {
       if (rootUri && rootUri !== workspace.root?.uri) {
@@ -635,6 +638,9 @@ export function GharargahApp() {
         label,
         launchCommand: opts?.launchCommand,
         launchArgs: opts?.launchArgs,
+        agentId: opts?.agentId,
+        agentDriverId: opts?.agentDriverId,
+        agentCliSessionId: opts?.agentCliSessionId,
         },
       )
       setFocusedPanel(panelId)
@@ -771,11 +777,24 @@ export function GharargahApp() {
         let cliSessionId: string | null = null
         // Cursor has no notify hook — mint chat id up front so resume works
         // after refresh (interactive TUI does not emit session_id reliably).
-        if (driver.id === "cursor" && window.gharargah?.terminal) {
+        if (driver.id === "cursor") {
+          if (!window.gharargah?.terminal) {
+            showGharargahToast("Terminal host unavailable — cannot mint Cursor chat id", {
+              variant: "destructive",
+            })
+            return
+          }
           cliSessionId = await mintCursorAgentChatId(
             rootUri,
             window.gharargah.terminal,
           )
+          if (!cliSessionId) {
+            showGharargahToast(
+              "Could not mint Cursor chat id (is cursor-agent logged in?). Session not created.",
+              { variant: "destructive" },
+            )
+            return
+          }
         }
         const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
           label: driver.label,
@@ -789,6 +808,9 @@ export function GharargahApp() {
               },
               cliSessionId,
             ),
+          agentId: driver.id,
+          agentDriverId: `${driver.id}:cli`,
+          agentCliSessionId: cliSessionId ?? undefined,
         })
         bindAgentToSession(tabId, {
           agentId: driver.id,
@@ -2515,6 +2537,8 @@ export function GharargahApp() {
             status: entry.status,
             doneAt: entry.doneAt,
           })
+          const cliSessionId =
+            hydrated.agentCliSessionId ?? entry.agentCliSessionId
           hydrateTerminalSession({
             tabId: entry.tabId,
             cwdRootUri,
@@ -2527,14 +2551,14 @@ export function GharargahApp() {
             agentId: entry.agentId,
             agentDriverId: entry.agentDriverId,
             agentThreadId: entry.agentThreadId,
-            agentCliSessionId: entry.agentCliSessionId,
+            agentCliSessionId: cliSessionId,
             hasUserInput: entry.hasUserInput,
             hasMeaningfulOutput: entry.hasMeaningfulOutput,
             lastActivityAt: entry.lastActivityAt,
             doneAt: entry.doneAt,
           })
           // Defensive: rebuild resume argv even if roster launchArgs were stale.
-          if (entry.agentCliSessionId) {
+          if (cliSessionId) {
             applyAgentCliResumeLaunchArgs(entry.tabId)
           }
         }

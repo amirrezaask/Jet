@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it, beforeEach } from "node:test"
 import {
   buildAgentCliLaunchArgs,
+  extractAgentCliSessionIdFromLaunchArgs,
   isPersistableAgentSession,
   launchArgsIncludeResume,
   mergeAgentCliResumeArgs,
@@ -17,6 +18,7 @@ import {
   hydrateTerminalSession,
   listTerminalSessions,
   markSessionDone,
+  sessionHasResumableAgentCli,
   setAgentCliSessionId,
   terminalSessionForTab,
 } from "./tabs/terminal-session.js"
@@ -89,7 +91,34 @@ describe("agentCliLaunch resume argv", () => {
       ),
       UUID,
     )
+    assert.equal(
+      tryParseAgentCliSessionId("cursor", `noise ${UUID} more`),
+      null,
+    )
     assert.equal(tryParseAgentCliSessionId("codex", "noise only"), null)
+  })
+
+  it("extracts cli session id from resume launchArgs", () => {
+    assert.equal(
+      extractAgentCliSessionIdFromLaunchArgs("cursor", [
+        `--resume=${UUID}`,
+        "--trust",
+      ]),
+      UUID,
+    )
+    assert.equal(
+      extractAgentCliSessionIdFromLaunchArgs("codex", ["resume", UUID, "-c", "x"]),
+      UUID,
+    )
+    assert.equal(
+      extractAgentCliSessionIdFromLaunchArgs("opencode", ["--session", "ses_abc"]),
+      "ses_abc",
+    )
+    assert.equal(
+      extractAgentCliSessionIdFromLaunchArgs("claude", ["--resume", UUID]),
+      UUID,
+    )
+    assert.equal(extractAgentCliSessionIdFromLaunchArgs("cursor", ["--trust"]), null)
   })
 
   it("hydrate rebuilds resume argv when agentCliSessionId present", () => {
@@ -103,7 +132,22 @@ describe("agentCliLaunch resume argv", () => {
     })
     assert.equal(fields.status, "starting")
     assert.equal(fields.ptyId, undefined)
+    assert.equal(fields.agentCliSessionId, UUID)
     assert.ok(launchArgsIncludeResume("codex", fields.launchArgs, UUID))
+  })
+
+  it("hydrate recovers cli session id from launchArgs when column missing", () => {
+    const fields = prepareHydratedAgentCliFields({
+      tabId: "gharargah:terminal:cursor-race",
+      agentId: "cursor",
+      launchCommand: "cursor-agent",
+      launchArgs: [`--resume=${UUID}`, "--trust"],
+      status: "running",
+      origin: context.origin,
+    })
+    assert.equal(fields.agentCliSessionId, UUID)
+    assert.equal(fields.status, "starting")
+    assert.ok(launchArgsIncludeResume("cursor", fields.launchArgs, UUID))
   })
 
   it("persists top-level sessions; skips child shells and incomplete agents", () => {
@@ -193,5 +237,18 @@ describe("ensureAgentCliProcess", () => {
         "ses_abc",
       ),
     )
+  })
+
+  it("sessionHasResumableAgentCli treats resume launchArgs as resumable", () => {
+    const tabId = "gharargah:terminal:args-only"
+    hydrateTerminalSession({
+      tabId,
+      cwdRootUri: "file:///tmp/proj",
+      launchCommand: "cursor-agent",
+      launchArgs: [`--resume=${UUID}`, "--trust"],
+      status: "starting",
+      agentId: "cursor",
+    })
+    assert.equal(sessionHasResumableAgentCli(tabId), true)
   })
 })
