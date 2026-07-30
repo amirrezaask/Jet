@@ -10,7 +10,7 @@
     "dev": "electron . --dev",
     "start": "electron .",
     "test": "node --test src/*.test.mjs",
-    "pack:stage": "node ../../scripts/stage-electron-pack.mjs",
+    "pack:stage": "node ../../scripts/stage-electron-pack.mjs pack",
     "dist:dmg": "electron-builder --mac dmg --publish never",
     "postinstall": "node ./node_modules/electron/install.js"
   },

@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 /**
- * Stage self-contained runtime for Electron packaging:
- *   apps/gharargah-electron/pack/{web,backend,node}
+ * Stage self-contained Gharargah runtime (SPA + bundled host/agent + Node).
  *
- * - web: Vite SPA dist
- * - backend: esbuild-bundled host/agent + native npm deps (node-pty, fff)
- * - node: official Node binary matching process.version (ABI-safe for natives)
+ * Default output: dist/gharargah/
+ *   gharargah              launcher → host-server on :4747 + static SPA
+ *   gharargah-agent        optional when GHARARGAH_ENABLE_AGENT_CHAT=1 at build
+ *   web/                   Vite SPA dist
+ *   backend/               esbuild bundles + native deps (node-pty, fff)
+ *   node/                  official Node binary (ABI-matched for natives)
+ *
+ * Override output: GHARARGAH_PACK_DIR or first CLI arg (e.g. apps/gharargah-electron/pack).
  */
 import { spawnSync } from "node:child_process"
 import { createRequire } from "node:module"
@@ -17,12 +21,15 @@ import { fileURLToPath } from "node:url"
 
 const require = createRequire(import.meta.url)
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const electronDir = path.join(repoRoot, "apps/gharargah-electron")
-const packDir = path.join(electronDir, "pack")
 const webSrc = path.join(repoRoot, "apps/gharargah/dist")
-const webDest = path.join(packDir, "web")
-const backendDir = path.join(packDir, "backend")
-const nodeDest = path.join(packDir, "node")
+
+function resolvePackDir() {
+  const fromEnv = process.env.GHARARGAH_PACK_DIR
+  if (fromEnv?.trim()) return path.resolve(fromEnv.trim())
+  const fromArg = process.argv[2]
+  if (fromArg?.trim()) return path.resolve(fromArg.trim())
+  return path.join(repoRoot, "dist/gharargah")
+}
 
 function run(command, args, cwd = repoRoot) {
   const result = spawnSync(command, args, { cwd, stdio: "inherit", env: process.env })
@@ -36,7 +43,7 @@ function resolveEsbuild() {
   return require(require.resolve("esbuild", { paths: [vitePkg] }))
 }
 
-async function bundleBackends() {
+async function bundleBackends(backendDir) {
   const esbuild = resolveEsbuild()
   const includeAgentChat = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
   fs.mkdirSync(backendDir, { recursive: true })
@@ -78,7 +85,7 @@ const require = __gharargahCreateRequire(import.meta.url);
   )
 }
 
-function writeBackendPackageJson() {
+function writeBackendPackageJson(backendDir) {
   const pkg = {
     name: "gharargah-backend-runtime",
     private: true,
@@ -91,10 +98,19 @@ function writeBackendPackageJson() {
   fs.writeFileSync(path.join(backendDir, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`)
 }
 
-function installBackendNatives() {
-  writeBackendPackageJson()
+function fixPackagedNodePtyPerms(backendDir) {
+  const script = path.join(
+    repoRoot,
+    "packages/gharargah-node-host/scripts/fix-node-pty-perms.mjs",
+  )
+  run("node", [script, backendDir], repoRoot)
+}
+
+function installBackendNatives(backendDir) {
+  writeBackendPackageJson(backendDir)
   // Fresh install against the Node we will ship (system Node during build — same major).
   run("npm", ["install", "--omit=dev", "--no-fund", "--no-audit"], backendDir)
+  fixPackagedNodePtyPerms(backendDir)
   console.log("Installed backend native deps")
 }
 
@@ -106,6 +122,10 @@ function nodePlatformTriple() {
   if (platform === "linux" && arch === "arm64") return "linux-arm64"
   if (platform === "linux" && arch === "x64") return "linux-x64"
   throw new Error(`Unsupported Node download target: ${platform}-${arch}`)
+}
+
+function nodeBinRelative() {
+  return process.platform === "win32" ? "node.exe" : "bin/node"
 }
 
 function download(url, dest) {
@@ -137,7 +157,7 @@ function download(url, dest) {
   })
 }
 
-async function ensureNodeRuntime() {
+async function ensureNodeRuntime(packDir, nodeDest) {
   const version = process.version.replace(/^v/, "")
   const triple = nodePlatformTriple()
   const base = `node-v${version}-${triple}`
@@ -155,7 +175,6 @@ async function ensureNodeRuntime() {
 
   fs.rmSync(nodeDest, { recursive: true, force: true })
   const extractParent = packDir
-  // Clear any previous extract dir with the same name
   fs.rmSync(path.join(extractParent, base), { recursive: true, force: true })
   run("tar", ["-xzf", tarball, "-C", extractParent])
   const extracted = path.join(extractParent, base)
@@ -163,13 +182,13 @@ async function ensureNodeRuntime() {
     throw new Error(`Node extract missing: ${extracted}`)
   }
   fs.renameSync(extracted, nodeDest)
-  const nodeBin = path.join(nodeDest, "bin", "node")
+  const nodeBin = path.join(nodeDest, nodeBinRelative())
   if (!fs.existsSync(nodeBin)) throw new Error(`node binary missing at ${nodeBin}`)
   fs.chmodSync(nodeBin, 0o755)
   console.log(`Node runtime ready: ${nodeBin}`)
 }
 
-function copyWebDist() {
+function copyWebDist(webDest) {
   if (!fs.existsSync(path.join(webSrc, "index.html"))) {
     throw new Error(`Frontend dist missing at ${webSrc}; run vite build first`)
   }
@@ -178,13 +197,57 @@ function copyWebDist() {
   console.log(`Copied SPA → ${webDest}`)
 }
 
-async function main() {
-  fs.mkdirSync(packDir, { recursive: true })
-  copyWebDist()
-  await bundleBackends()
-  installBackendNatives()
-  await ensureNodeRuntime()
-  console.log(`Pack staged at ${packDir}`)
+function writeLauncherScripts(packDir) {
+  const nodeRel = nodeBinRelative()
+  const hostLauncher = `#!/bin/sh
+# Gharargah — self-contained Mission Control server (SPA + host API, default :4747)
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+exec "$ROOT/node/${nodeRel}" "$ROOT/backend/host-server.mjs" \\
+  --static-dir "$ROOT/web" \\
+  "$@"
+`
+  const hostPath = path.join(packDir, "gharargah")
+  fs.writeFileSync(hostPath, hostLauncher)
+  fs.chmodSync(hostPath, 0o755)
+
+  const agentEntry = path.join(packDir, "backend", "agent-server.mjs")
+  if (fs.existsSync(agentEntry)) {
+    const agentLauncher = `#!/bin/sh
+# Gharargah agent control plane (default :4751)
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+exec "$ROOT/node/${nodeRel}" "$ROOT/backend/agent-server.mjs" "$@"
+`
+    const agentPath = path.join(packDir, "gharargah-agent")
+    fs.writeFileSync(agentPath, agentLauncher)
+    fs.chmodSync(agentPath, 0o755)
+  } else {
+    fs.rmSync(path.join(packDir, "gharargah-agent"), { force: true })
+  }
+
+  console.log(`Launchers: ${hostPath}${fs.existsSync(agentEntry) ? `, ${path.join(packDir, "gharargah-agent")}` : ""}`)
 }
 
-await main()
+export async function stageRuntimePack(packDir = resolvePackDir()) {
+  const resolved = path.resolve(packDir)
+  const webDest = path.join(resolved, "web")
+  const backendDir = path.join(resolved, "backend")
+  const nodeDest = path.join(resolved, "node")
+
+  fs.mkdirSync(resolved, { recursive: true })
+  copyWebDist(webDest)
+  await bundleBackends(backendDir)
+  installBackendNatives(backendDir)
+  await ensureNodeRuntime(resolved, nodeDest)
+  writeLauncherScripts(resolved)
+  console.log(`Runtime pack staged at ${resolved}`)
+  return resolved
+}
+
+const isMain =
+  process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+
+if (isMain) {
+  await stageRuntimePack()
+}

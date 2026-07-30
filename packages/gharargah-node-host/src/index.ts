@@ -36,7 +36,11 @@ export {
 export { probeFffAvailable, isFffAvailable, disposeFffIndex } from "./fff-service.js"
 export { assertAllowedPath, assertAllowedUri, normalizeRoots } from "./sandbox.js"
 export { loadGlobalGharargahrcScanRoots } from "./global-gharargahrc.js"
-export { applyLoginShellEnv, resolveLoginShellPath } from "./shell-env.js"
+export {
+  applyLoginShellEnv,
+  enrichProcessPath,
+  resolveLoginShellPath,
+} from "./shell-env.js"
 export {
   findWorkspaceRoot,
   resolveLaunchTarget,
