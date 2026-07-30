@@ -80,6 +80,19 @@ export function readTerminalCellMetrics(term: Terminal): TerminalCellMetrics | n
   return { width, height }
 }
 
+/** True when the app hid the hardware caret (CSI ? 25 l) — skip ghost trail. */
+export function isXtermCursorHidden(term: Terminal): boolean {
+  const core = (
+    term as Terminal & {
+      _core?: { _coreService?: { isCursorHidden?: boolean }; coreService?: { isCursorHidden?: boolean } }
+    }
+  )._core
+  return (
+    core?._coreService?.isCursorHidden === true ||
+    core?.coreService?.isCursorHidden === true
+  )
+}
+
 /** Pure caret placement from buffer cursor + measured cell metrics. */
 export function terminalCaretPoint(input: {
   cols: number
@@ -202,6 +215,7 @@ export class TerminalCursorMotionLayer {
   }
 
   private point(): CaretPoint | null {
+    if (isXtermCursorHidden(this.term)) return null
     const cell = readTerminalCellMetrics(this.term)
     if (!cell) return null
     const buffer = this.term.buffer.active

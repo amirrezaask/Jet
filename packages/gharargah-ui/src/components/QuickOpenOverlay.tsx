@@ -139,10 +139,13 @@ export function QuickOpenOverlay({
       onSelect={path => onSelect(path, query, workspaceId)}
       emptyLabel={scanReady ? "No matching files." : "Waiting for index…"}
       statusRow={statusRow}
+      contentWidthMono
       renderItem={path => (
         <>
           <FileIcon path={path} />
-          <span className="truncate font-mono">{path}</span>
+          <span className="truncate font-mono" title={path}>
+            {path}
+          </span>
         </>
       )}
     />

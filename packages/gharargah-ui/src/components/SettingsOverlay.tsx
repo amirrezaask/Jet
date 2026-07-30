@@ -36,18 +36,13 @@ import { themePreviewSwatches } from "@/theme/bundled.js"
 
 export const DEFAULT_UI_FONT_FAMILY =
   '"Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif'
-export const DEFAULT_MONO_FONT_FAMILY =
-  '"Geist Mono Variable", "Geist Mono", ui-monospace, monospace'
+export const DEFAULT_MONO_FONT_FAMILY = '"Commit Mono", ui-monospace, monospace'
 
 export type SessionLayout = "cards" | "tabs" | "sidebar"
 
 export type JetAppearanceSettings = {
   themeId: string
   fontSize: number
-  /** CSS font-family for UI chrome (`--font-sans`). */
-  fontFamily: string
-  /** CSS font-family for terminal / editor mono (`--font-mono`). */
-  monoFontFamily: string
   /** Mission Control cards, browser-style tabs, or sidebar navigation. */
   sessionLayout: SessionLayout
   /** Whether the Mission Control sidebar is collapsed (icon mode). */
@@ -104,34 +99,6 @@ declare global {
   }
 }
 
-const UI_FONT_PRESETS: { id: string; label: string; value: string }[] = [
-  { id: "geist", label: "Geist", value: DEFAULT_UI_FONT_FAMILY },
-  {
-    id: "system",
-    label: "System",
-    value: 'system-ui, -apple-system, "Segoe UI", sans-serif',
-  },
-  {
-    id: "ibm-plex",
-    label: "IBM Plex Sans",
-    value: '"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif',
-  },
-]
-
-const MONO_FONT_PRESETS: { id: string; label: string; value: string }[] = [
-  { id: "geist-mono", label: "Geist Mono", value: DEFAULT_MONO_FONT_FAMILY },
-  {
-    id: "system-mono",
-    label: "System Mono",
-    value: 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace',
-  },
-  {
-    id: "ibm-plex-mono",
-    label: "IBM Plex Mono",
-    value: '"IBM Plex Mono", ui-monospace, monospace',
-  },
-]
-
 function parseNumber(
   value: string,
   fallback: number,
@@ -148,11 +115,6 @@ function settingPatch(
   patch: Partial<JetAppearanceSettings>,
 ): JetAppearanceSettings {
   return { ...settings, ...patch }
-}
-
-function normalizeFontFamily(value: string, fallback: string): string {
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : fallback
 }
 
 function ThemeButton({
@@ -194,41 +156,6 @@ function ThemeButton({
           ))}
       </span>
     </Button>
-  )
-}
-
-function FontPresetRow({
-  presets,
-  value,
-  onSelect,
-  dataAttr,
-}: {
-  presets: { id: string; label: string; value: string }[]
-  value: string
-  onSelect: (next: string) => void
-  dataAttr: string
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {presets.map((preset) => {
-        const active = value === preset.value
-        return (
-          <Button
-            key={preset.id}
-            type="button"
-            size="sm"
-            variant={active ? "secondary" : "outline"}
-            aria-pressed={active}
-            data-gharargah-font-preset={`${dataAttr}:${preset.id}`}
-            onClick={() => onSelect(preset.value)}
-            className="h-7 px-2 text-3xs"
-            style={{ fontFamily: preset.value }}
-          >
-            {preset.label}
-          </Button>
-        )
-      })}
-    </div>
   )
 }
 
@@ -576,94 +503,6 @@ export function SettingsOverlay({
                         }
                         className="h-8 font-mono"
                       />
-                    </SettingsField>
-                    <SettingsField
-                      label="UI font family"
-                      detail="Body and interface chrome."
-                      htmlFor="gharargah-ui-font-family"
-                    >
-                      <div className="flex flex-col gap-2">
-                        <FontPresetRow
-                          presets={UI_FONT_PRESETS}
-                          value={settings.fontFamily}
-                          dataAttr="ui"
-                          onSelect={(next) =>
-                            onSettingsChange(
-                              settingPatch(settings, { fontFamily: next }),
-                            )
-                          }
-                        />
-                        <Input
-                          id="gharargah-ui-font-family"
-                          type="text"
-                          spellCheck={false}
-                          value={settings.fontFamily}
-                          data-gharargah-font-family-input="ui"
-                          onChange={(event) =>
-                            onSettingsChange(
-                              settingPatch(settings, {
-                                fontFamily: event.target.value,
-                              }),
-                            )
-                          }
-                          onBlur={(event) =>
-                            onSettingsChange(
-                              settingPatch(settings, {
-                                fontFamily: normalizeFontFamily(
-                                  event.target.value,
-                                  DEFAULT_UI_FONT_FAMILY,
-                                ),
-                              }),
-                            )
-                          }
-                          className="h-8 font-mono text-3xs"
-                          style={{ fontFamily: settings.fontFamily }}
-                        />
-                      </div>
-                    </SettingsField>
-                    <SettingsField
-                      label="Mono font family"
-                      detail="Terminal and editor text."
-                      htmlFor="gharargah-mono-font-family"
-                    >
-                      <div className="flex flex-col gap-2">
-                        <FontPresetRow
-                          presets={MONO_FONT_PRESETS}
-                          value={settings.monoFontFamily}
-                          dataAttr="mono"
-                          onSelect={(next) =>
-                            onSettingsChange(
-                              settingPatch(settings, { monoFontFamily: next }),
-                            )
-                          }
-                        />
-                        <Input
-                          id="gharargah-mono-font-family"
-                          type="text"
-                          spellCheck={false}
-                          value={settings.monoFontFamily}
-                          data-gharargah-font-family-input="mono"
-                          onChange={(event) =>
-                            onSettingsChange(
-                              settingPatch(settings, {
-                                monoFontFamily: event.target.value,
-                              }),
-                            )
-                          }
-                          onBlur={(event) =>
-                            onSettingsChange(
-                              settingPatch(settings, {
-                                monoFontFamily: normalizeFontFamily(
-                                  event.target.value,
-                                  DEFAULT_MONO_FONT_FAMILY,
-                                ),
-                              }),
-                            )
-                          }
-                          className="h-8 font-mono text-3xs"
-                          style={{ fontFamily: settings.monoFontFamily }}
-                        />
-                      </div>
                     </SettingsField>
                   </div>
                 </section>

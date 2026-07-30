@@ -1,5 +1,9 @@
 @import "@fontsource-variable/geist/wght.css";
-@import "@fontsource-variable/geist-mono/wght.css";
+@import "@fontsource/commit-mono/400.css";
+@import "@fontsource/commit-mono/500.css";
+@import "@fontsource/commit-mono/600.css";
+@import "@fontsource/commit-mono/700.css";
+@import "@fontsource/commit-mono/400-italic.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -39,7 +43,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  --font-mono: "Commit Mono", ui-monospace, monospace;
   --text-4xs: var(--gharargah-fs-4xs);
   --text-3xs: var(--gharargah-fs-3xs);
   --text-2xs: var(--gharargah-fs-2xs);
@@ -919,6 +923,7 @@ body,
 /* xterm must fill the terminal tab slot; fit addon reads container clientHeight */
 [data-gharargah-terminal-panel] .gharargah-terminal-surface,
 [data-gharargah-terminal-panel] .jet-terminal-surface,
+[data-gharargah-terminal-panel] [data-gharargah-terminal-fit],
 [data-gharargah-terminal-panel] .xterm,
 [data-gharargah-terminal-panel] .xterm-viewport {
   height: 100%;
@@ -935,15 +940,33 @@ body,
   position: relative;
 }
 
+/*
+  Defense for TUI apps (Cursor Agent): after CSI ?25l, DomRenderer can leave a
+  stale .xterm-cursor-bar at the parked bottom cell. Hide via attribute synced
+  from xterm's isCursorHidden after each paint.
+*/
+[data-gharargah-terminal-panel][data-gharargah-terminal-cursor-hidden="1"] .xterm-cursor,
+[data-gharargah-terminal-panel][data-gharargah-terminal-cursor-hidden="1"] .xterm-cursor-bar,
+[data-gharargah-terminal-panel][data-gharargah-terminal-cursor-hidden="1"] .xterm-cursor-block,
+[data-gharargah-terminal-panel][data-gharargah-terminal-cursor-hidden="1"] .xterm-cursor-underline,
+[data-gharargah-terminal-panel][data-gharargah-terminal-cursor-hidden="1"] .xterm-cursor-outline {
+  visibility: hidden !important;
+  box-shadow: none !important;
+  outline: none !important;
+  animation: none !important;
+  background-color: transparent !important;
+  border: none !important;
+  color: inherit !important;
+}
+
 [data-gharargah-terminal-panel] .xterm,
 [data-gharargah-terminal-panel] .xterm-viewport,
 [data-gharargah-terminal-panel] .xterm-screen {
   background: transparent !important;
 }
 
-[data-gharargah-terminal-panel] .xterm .xterm-rows {
-  font-family: var(--font-mono);
-}
+/* Font comes only from xterm options (canvas/DOM measure). CSS font-family on
+   .xterm-rows desyncs glyph width from cell metrics → cursor drift. */
 
 .chat-composer-horizontal-inset {
   padding-inline-start: calc(env(safe-area-inset-left) + 0.75rem);

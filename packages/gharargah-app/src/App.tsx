@@ -1748,6 +1748,7 @@ export function GharargahApp() {
           const project = projectRegistry.list()[0]
           return project ? pathToFileUri(project.path) : null
         },
+        resolveLspClient,
       }),
     [
       workspace,
@@ -1773,6 +1774,7 @@ export function GharargahApp() {
       setBufferListOpen,
       setOpenFileOpen,
       setGotoLineOpen,
+      resolveLspClient,
     ],
   )
 

@@ -19,7 +19,11 @@ import { registerListPanel, registerListPanelController, type ListPanelControlle
 import { cn } from "@/lib/utils.js"
 import { fuzzyFilter } from "./fuzzy.js"
 import { filterTreeRows } from "./filter-tree.js"
-import { readLocationRowHeight, readTreeRowHeights } from "./measure.js"
+import {
+  measureLongestItemContentWidth,
+  readLocationRowHeight,
+  readTreeRowHeights,
+} from "./measure.js"
 import { ListerTreeState, type FlatEntry } from "./tree-state.js"
 import type {
   ListerItemContext,
@@ -195,6 +199,10 @@ export function Lister<T>({
   listClassName,
   inputDisabled,
   betweenInputAndList,
+  contentWidthLabel,
+  contentWidthChromePx = 0,
+  contentWidthMono = false,
+  onContentWidthChange,
   "aria-label": ariaLabel,
   role,
 }: ListerProps<T>) {
@@ -302,6 +310,41 @@ export function Lister<T>({
       loading: false,
     }))
   }, [mode, treeRows, items, filter, query])
+
+  const lastContentWidthRef = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    if (!onContentWidthChange) return
+
+    const report = () => {
+      const labels = visibleRows.map(
+        row => contentWidthLabel?.(row.node) ?? row.node.searchText,
+      )
+      const widthPx = measureLongestItemContentWidth(labels, {
+        mono: contentWidthMono,
+        chromePx: contentWidthChromePx,
+      })
+      if (lastContentWidthRef.current === widthPx) return
+      lastContentWidthRef.current = widthPx
+      onContentWidthChange(widthPx)
+    }
+
+    report()
+    let cancelled = false
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      void document.fonts.ready.then(() => {
+        if (!cancelled) report()
+      })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [
+    visibleRows,
+    contentWidthLabel,
+    contentWidthChromePx,
+    contentWidthMono,
+    onContentWidthChange,
+  ])
 
   useEffect(() => {
     const queryChanged = previousQueryRef.current !== query

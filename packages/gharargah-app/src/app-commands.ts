@@ -43,6 +43,27 @@ function asMonaco(view: unknown): MonacoEditorHandle | null {
   return null
 }
 
+type LspLocationLike = {
+  uri?: string
+  targetUri?: string
+  range?: { start: { line: number; character: number } }
+  targetSelectionRange?: { start: { line: number; character: number } }
+  targetRange?: { start: { line: number; character: number } }
+}
+
+function firstDefinitionTarget(
+  result: LspLocationLike | LspLocationLike[] | null | undefined,
+): { uri: string; line: number; column: number } | null {
+  if (!result) return null
+  const item = Array.isArray(result) ? result[0] : result
+  if (!item) return null
+  const uri = item.targetUri ?? item.uri
+  const start =
+    item.targetSelectionRange?.start ?? item.targetRange?.start ?? item.range?.start
+  if (!uri || !start) return null
+  return { uri, line: start.line + 1, column: start.character + 1 }
+}
+
 function runMonacoAction(ctx: JetCommandContext, actionId: string): void {
   const editor = asMonaco(ctx.getActiveEditorView())
   if (!editor) return
@@ -97,6 +118,10 @@ export type BuildAppCommandsDeps = {
   goHome: () => void
   openSessionPicker: (rootUri: string) => void
   resolveSessionNewRootUri: () => string | null
+  resolveLspClient?: (fileUri: string) => Promise<{
+    ready: Promise<void>
+    sendRequest: <R>(method: string, params?: unknown) => Promise<R>
+  } | null>
 }
 
 export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
@@ -457,7 +482,40 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     rename: ctx => runEditorAction(ctx, "editor.action.rename"),
     goToReferences: ctx => runEditorAction(ctx, "editor.action.goToReferences"),
     parameterHints: ctx => runEditorAction(ctx, "editor.action.triggerParameterHints"),
-    goToDefinition: ctx => runEditorAction(ctx, "editor.action.revealDefinition"),
+    goToDefinition: async ctx => {
+      const editor = asMonaco(ctx.getActiveEditorView())
+      if (!editor) return
+      const model = editor.getModel()
+      const pos = editor.getPosition()
+      if (!model || !pos) return
+
+      const action = editor.getAction("editor.action.revealDefinition")
+      if (action?.isSupported()) {
+        await action.run()
+        return
+      }
+
+      // Monaco's revealDefinition is gated on hasDefinitionProvider. When that
+      // context key is stale/false, hit the LSP client directly and open the file.
+      const client = await deps.resolveLspClient?.(model.uri.toString())
+      if (!client) return
+      await client.ready
+      const result = await client.sendRequest<LspLocationLike | LspLocationLike[] | null>(
+        "textDocument/definition",
+        {
+          textDocument: { uri: model.uri.toString() },
+          position: { line: pos.lineNumber - 1, character: pos.column - 1 },
+        },
+      )
+      const target = firstDefinitionTarget(result)
+      if (!target) return
+      deps.openFileInEditor(
+        target.uri,
+        fileUriToPath(target.uri),
+        target.line,
+        target.column,
+      )
+    },
     goToDeclaration: ctx => runEditorAction(ctx, "editor.action.revealDeclaration"),
     goToTypeDefinition: ctx => runEditorAction(ctx, "editor.action.goToTypeDefinition"),
     goToImplementation: ctx => runEditorAction(ctx, "editor.action.goToImplementation"),

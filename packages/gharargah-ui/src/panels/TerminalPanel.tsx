@@ -39,10 +39,14 @@ type TerminalSession = {
   ptyId: string | null
   cursorMotion: TerminalCursorMotionLayer | null
   scrollMotion: TerminalScrollMotion
+  /** Latest geometry we want the PTY to match (may differ while a resize RPC is in flight). */
+  wantedCols: number
+  wantedRows: number
+  resizeInFlight: boolean
+  resizeQueued: boolean
 }
 
-const MONO_FONT_FALLBACK =
-  '"Geist Mono Variable", "Geist Mono", "IBM Plex Mono", "SFMono-Regular", Menlo, monospace'
+const MONO_FONT_FALLBACK = '"Commit Mono", ui-monospace, monospace'
 
 function readRootFontSize(): number {
   const px = parseFloat(getComputedStyle(document.documentElement).fontSize)
@@ -135,7 +139,8 @@ function readTerminalLineHeight(): number {
     .getPropertyValue("--gharargah-terminal-line-height")
     .trim()
   const n = parseFloat(raw)
-  return Number.isFinite(n) && n >= 1 ? n : 1.2
+  // xterm DomRenderer cursor/cell math is unreliable above 1 — keep default at 1.
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 1.5) : 1
 }
 
 function readTerminalCursorBlink(): boolean {
@@ -196,9 +201,77 @@ function fitWhenReady(session: TerminalSession, container: HTMLElement): boolean
   return changed
 }
 
+/**
+ * Push xterm cols/rows to the PTY. Resize RPCs are async and can complete out of
+ * order during modal animation — serialize so the host always ends on the latest
+ * geometry (stale smaller/larger sizes make progress bars wrap instead of \\r-update).
+ */
 function resizePty(session: TerminalSession): void {
   if (!session.ptyId) return
-  void window.gharargah?.terminal?.resize(session.ptyId, session.term.cols, session.term.rows)
+  session.wantedCols = session.term.cols
+  session.wantedRows = session.term.rows
+  if (session.resizeInFlight) {
+    session.resizeQueued = true
+    return
+  }
+  const run = (): void => {
+    const id = session.ptyId
+    if (!id) {
+      session.resizeInFlight = false
+      session.resizeQueued = false
+      return
+    }
+    const cols = session.wantedCols
+    const rows = session.wantedRows
+    session.resizeInFlight = true
+    session.resizeQueued = false
+    const api = window.gharargah?.terminal
+    if (!api) {
+      session.resizeInFlight = false
+      return
+    }
+    void Promise.resolve(api.resize(id, cols, rows)).finally(() => {
+      session.resizeInFlight = false
+      if (
+        session.resizeQueued ||
+        session.wantedCols !== cols ||
+        session.wantedRows !== rows
+      ) {
+        run()
+      }
+    })
+  }
+  run()
+}
+
+function isTerminalCursorHidden(term: XTerm): boolean {
+  const core = (
+    term as XTerm & {
+      _core?: { _coreService?: { isCursorHidden?: boolean }; coreService?: { isCursorHidden?: boolean } }
+    }
+  )._core
+  return (
+    core?._coreService?.isCursorHidden === true ||
+    core?.coreService?.isCursorHidden === true
+  )
+}
+
+/** True when chunk toggles DECCTCEM (CSI ? 25 h/l). */
+function chunkTouchesCursorVisibility(data: string): boolean {
+  return data.includes("\x1b[?25l") || data.includes("\x1b[?25h")
+}
+
+/**
+ * Write PTY bytes into xterm. Cursor hide/show is a mode flag — without an
+ * explicit refresh, DomRenderer can leave a stale bar at the TUI parked
+ * position (Cursor Agent paints its own caret, parks hardware cursor at bottom).
+ */
+function writeTerminalOutput(term: XTerm, data: string, onPainted?: () => void): void {
+  const needsCursorPaint = chunkTouchesCursorVisibility(data)
+  term.write(data, () => {
+    if (needsCursorPaint) term.refresh(0, Math.max(0, term.rows - 1))
+    onPainted?.()
+  })
 }
 
 function focusTerminalInput(tabId: string): void {
@@ -267,8 +340,14 @@ export function TerminalPanel({
       fontSize: readRootFontSize(),
       fontFamily: readTerminalFontFamily(),
       lineHeight: readTerminalLineHeight(),
+      letterSpacing: 0,
       cursorBlink: readTerminalCursorBlink(),
+      // TUIs (Cursor Agent) park the hardware caret off-prompt; never draw an
+      // inactive outline/bar while the pane is blurred.
+      cursorInactiveStyle: "none",
       scrollback: 5000,
+      // Never convert LF→CRLF; progress bars and TUI apps rely on raw \\r.
+      convertEol: false,
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -288,6 +367,10 @@ export function TerminalPanel({
       ptyId: null,
       cursorMotion: screen ? new TerminalCursorMotionLayer(term, screen) : null,
       scrollMotion: new TerminalScrollMotion(term, container),
+      wantedCols: term.cols,
+      wantedRows: term.rows,
+      resizeInFlight: false,
+      resizeQueued: false,
     }
     session.cursorMotion?.setActive(focused && isActive)
     sessionRef.current = session
@@ -353,6 +436,15 @@ export function TerminalPanel({
       session.cursorMotion?.refresh(false)
     }
 
+    const syncCursorHiddenAttr = () => {
+      const panel = container.closest<HTMLElement>("[data-gharargah-terminal-panel]")
+      if (!panel) return
+      panel.dataset.gharargahTerminalCursorHidden = isTerminalCursorHidden(term)
+        ? "1"
+        : "0"
+      session.cursorMotion?.refresh(true)
+    }
+
     const connectPty = (id: string) => {
       session.ptyId = id
       setConnectedPtyId(id)
@@ -360,7 +452,7 @@ export function TerminalPanel({
       setDisplayExitCode(undefined)
       unsub = terminalApi.onData(id, data => {
         onOutputRef.current?.(tabId)
-        term.write(data)
+        writeTerminalOutput(term, data, syncCursorHiddenAttr)
       })
       inputWriter = createTerminalInputWriter(
         data => terminalApi.write(id, data),
@@ -402,7 +494,7 @@ export function TerminalPanel({
           }
           if (attached.output) {
             onOutputRef.current?.(tabId)
-            term.write(attached.output)
+            writeTerminalOutput(term, attached.output, syncCursorHiddenAttr)
           }
           if (attached.title) onTitleChangeRef.current?.(tabId, attached.title)
           connectPty(existingPtyId)
@@ -445,7 +537,30 @@ export function TerminalPanel({
     syncTheme()
     syncTypography()
     syncFit()
-    startPty()
+
+    // Measure after webfonts settle — wrong cell width → wrong cols → PTY/xterm
+    // mismatch → wrapped progress lines that \\r cannot rewrite in place.
+    const refitAfterFonts = () => {
+      if (cancelled) return
+      syncTypography()
+      syncFit()
+    }
+    const fontsReady =
+      typeof document !== "undefined" && document.fonts?.ready
+        ? document.fonts.ready.then(refitAfterFonts).catch(() => {})
+        : Promise.resolve()
+    const onFontsLoadingDone = () => refitAfterFonts()
+    document.fonts?.addEventListener?.("loadingdone", onFontsLoadingDone)
+
+    void Promise.race([
+      fontsReady,
+      new Promise<void>(resolve => {
+        window.setTimeout(resolve, 300)
+      }),
+    ]).finally(() => {
+      if (cancelled) return
+      startPty()
+    })
 
     let resizeRaf = 0
     const resizeObserver = new ResizeObserver(() => {
@@ -484,6 +599,7 @@ export function TerminalPanel({
     return () => {
       cancelled = true
       if (resizeRaf) cancelAnimationFrame(resizeRaf)
+      document.fonts?.removeEventListener?.("loadingdone", onFontsLoadingDone)
       resizeObserver.disconnect()
       unsubscribeRootStyleObserver()
       visibilityObserver.disconnect()
@@ -547,10 +663,18 @@ export function TerminalPanel({
         focusTerminalInput(tabId)
       }}
     >
-      <div
-        ref={containerRef}
-        className="gharargah-terminal-surface jet-terminal-surface min-h-0 flex-1 overflow-hidden p-1.5"
-      />
+      <div className="gharargah-terminal-surface jet-terminal-surface relative min-h-0 flex-1 overflow-hidden p-1.5">
+        {/*
+          FitAddon measures this element's parent box and does NOT subtract parent
+          padding. Keep padding on the chrome wrapper; fit target stays unpadded so
+          cols/rows match the real glyph grid (avoids wrap-on-\\r progress bars).
+        */}
+        <div
+          ref={containerRef}
+          className="h-full min-h-0 w-full overflow-hidden"
+          data-gharargah-terminal-fit=""
+        />
+      </div>
       {displayStatus === "starting" ? (
         <div
           role="status"

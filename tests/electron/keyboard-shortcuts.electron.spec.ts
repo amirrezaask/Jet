@@ -70,6 +70,10 @@ test.describe("keyboard shortcuts revamp", () => {
       await expectSelectorVisible(page, '[data-gharargah-list-panel="gharargah:palette"]', {
         timeout: 20_000,
       })
+      await expectSelectorVisible(
+        page,
+        '[data-gharargah-palette][data-gharargah-palette-fit="content"]',
+      )
       const quickOpenInput = page.locator('[role="dialog"][data-state="open"] input').first()
       await quickOpenInput.waitFor({ state: "visible", timeout: 10_000 })
       await quickOpenInput.fill("index")
@@ -79,6 +83,28 @@ test.describe("keyboard shortcuts revamp", () => {
         needle: "index",
         noResultsText: "No matching files.",
       })
+      // Dialog reports fit-content sizing; width must cover longest visible path label.
+      await expect
+        .poll(async () =>
+          page.evaluate(() => {
+            const dialog = document.querySelector<HTMLElement>(
+              '[data-gharargah-palette][data-gharargah-palette-fit="content"]',
+            )
+            if (!dialog) return null
+            const rows = [
+              ...document.querySelectorAll<HTMLElement>(
+                '[data-gharargah-list-panel="gharargah:palette"] [data-gharargah-list-item] .font-mono',
+              ),
+            ]
+            if (rows.length === 0) return null
+            const truncated = rows.some(el => el.scrollWidth > el.clientWidth + 1)
+            return {
+              dialogWidth: dialog.getBoundingClientRect().width,
+              truncated,
+            }
+          }),
+        )
+        .toMatchObject({ truncated: false })
       await page.keyboard.press("Escape")
       await expectLocatorCount(
         page.locator('[data-gharargah-list-panel="gharargah:palette"]'),

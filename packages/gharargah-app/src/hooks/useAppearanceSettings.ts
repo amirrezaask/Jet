@@ -25,8 +25,6 @@ const MAX_SIDEBAR_WIDTH = 480
 export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   themeId: defaultThemeId,
   fontSize: DEFAULT_FONT_SIZE,
-  fontFamily: DEFAULT_UI_FONT_FAMILY,
-  monoFontFamily: DEFAULT_MONO_FONT_FAMILY,
   sessionLayout: "cards",
   sidebarCollapsed: false,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
@@ -41,12 +39,6 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 
 function normalizeThemeId(value: unknown): string {
   return getThemeById(typeof value === "string" ? value : null).id
-}
-
-function normalizeFontFamily(value: unknown, fallback: string): string {
-  if (typeof value !== "string") return fallback
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : fallback
 }
 
 export function normalizeSessionLayout(value: unknown): SessionLayout {
@@ -110,8 +102,6 @@ function loadAppearanceSettings(): JetAppearanceSettings {
     return {
       themeId: normalizeThemeId(parsed.themeId ?? base.themeId),
       fontSize: clampNumber(parsed.fontSize, base.fontSize, 10, 24),
-      fontFamily: normalizeFontFamily(parsed.fontFamily, base.fontFamily),
-      monoFontFamily: normalizeFontFamily(parsed.monoFontFamily, base.monoFontFamily),
       sessionLayout: normalizeSessionLayout(parsed.sessionLayout),
       sidebarCollapsed: parsed.sidebarCollapsed === true,
       sidebarWidth: clampNumber(
@@ -147,16 +137,10 @@ function persistAppearanceSettings(settings: JetAppearanceSettings): void {
 function applyAppearanceCss(settings: JetAppearanceSettings): void {
   const root = document.documentElement
   root.style.fontSize = `${settings.fontSize}px`
-  root.style.setProperty(
-    "--font-sans",
-    normalizeFontFamily(settings.fontFamily, DEFAULT_UI_FONT_FAMILY),
-  )
-  root.style.setProperty(
-    "--font-mono",
-    normalizeFontFamily(settings.monoFontFamily, DEFAULT_MONO_FONT_FAMILY),
-  )
+  root.style.setProperty("--font-sans", DEFAULT_UI_FONT_FAMILY)
+  root.style.setProperty("--font-mono", DEFAULT_MONO_FONT_FAMILY)
   root.style.setProperty("--gharargah-editor-line-height", "1.45")
-  root.style.setProperty("--gharargah-terminal-line-height", "1.2")
+  root.style.setProperty("--gharargah-terminal-line-height", "1")
   root.style.setProperty("--gharargah-terminal-cursor-blink", "1")
   root.style.setProperty("--gharargah-cursor-style", "bar")
   root.style.setProperty("--gharargah-cursor-motion", "trail")

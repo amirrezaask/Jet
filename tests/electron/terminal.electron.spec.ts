@@ -292,6 +292,152 @@ test.describe("electron terminal", () => {
     }
   })
 
+  test("carriage-return progress updates overwrite the same line", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+
+      const ptyId = await page
+        .locator("[data-gharargah-terminal-panel]")
+        .getAttribute("data-gharargah-terminal-pty-id")
+      expect(ptyId).toBeTruthy()
+
+      await page.evaluate(async id => {
+        const terminal = window.gharargah?.terminal
+        if (!terminal) throw new Error("Terminal API unavailable")
+        // Run printf so CR is on the PTY → xterm display path (not shell line-edit).
+        await terminal.write(
+          id,
+          "printf 'CR-TEST-AAAA\\rCR-TEST-BBBB\\n'; echo CR-TEST-DONE\n",
+        )
+      }, ptyId!)
+
+      await expect
+        .poll(async () => readTerminalText(page), { timeout: 10_000 })
+        .toContain("CR-TEST-DONE")
+
+      const text = await readTerminalText(page)
+      expect(text).toContain("CR-TEST-BBBB")
+      // Command echo still contains AAAA inside the printf quotes. A broken \\r path
+      // would also leave AAAA in the printed progress line → 2+ occurrences.
+      expect((text.match(/CR-TEST-AAAA/g) ?? []).length).toBe(1)
+      // Progress line itself must be the rewritten BBBB form (no AAAA→BBBB stack).
+      expect(text).toMatch(/CR-TEST-BBBB\s*CR-TEST-DONE/)
+      expect(text).not.toMatch(/CR-TEST-AAAA\s*CR-TEST-BBBB/)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("PTY winsize stays in sync with fitted xterm after layout settles", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+
+      const ptyId = await page
+        .locator("[data-gharargah-terminal-panel]")
+        .getAttribute("data-gharargah-terminal-pty-id")
+      expect(ptyId).toBeTruthy()
+
+      await page.evaluate(async id => {
+        const terminal = window.gharargah?.terminal
+        if (!terminal) throw new Error("Terminal API unavailable")
+        await terminal.write(id, "stty size; echo STTY-SIZE-DONE\n")
+      }, ptyId!)
+
+      await expect
+        .poll(async () => readTerminalText(page), { timeout: 10_000 })
+        .toContain("STTY-SIZE-DONE")
+
+      const sizes = await page.evaluate(() => {
+        const rowsEl = document.querySelector<HTMLElement>(
+          "[data-gharargah-terminal-panel] .xterm-rows",
+        )
+        if (!rowsEl) return null
+        const text = rowsEl.textContent ?? ""
+        const match = text.match(/(\d+)\s+(\d+)[\s\S]*STTY-SIZE-DONE/)
+        if (!match) return null
+        return {
+          ptyRows: Number(match[1]),
+          ptyCols: Number(match[2]),
+          rowCount: rowsEl.querySelectorAll(":scope > div").length,
+        }
+      })
+      expect(sizes).toBeTruthy()
+      expect(sizes!.ptyCols).toBeGreaterThan(40)
+      expect(sizes!.ptyRows).toBeGreaterThan(10)
+      // Visible DomRenderer row count must match PTY rows (fit ↔ winsize).
+      expect(sizes!.rowCount).toBe(sizes!.ptyRows)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("hides the hardware cursor after CSI ?25l (TUI park)", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+
+      const ptyId = await page
+        .locator("[data-gharargah-terminal-panel]")
+        .getAttribute("data-gharargah-terminal-pty-id")
+      expect(ptyId).toBeTruthy()
+
+      // Park caret on last row then hide — Cursor Agent pattern (fake UI caret elsewhere).
+      // sleep keeps the shell from redrawing a prompt (which often sends ?25h).
+      await page.evaluate(async id => {
+        const terminal = window.gharargah?.terminal
+        if (!terminal) throw new Error("Terminal API unavailable")
+        await terminal.write(
+          id,
+          "printf '\\033[2J\\033[HUI-CARET\\033[999;1H\\033[?25lCURSOR-HIDE-DONE\\n'; sleep 8\n",
+        )
+      }, ptyId!)
+
+      await expect
+        .poll(async () => readTerminalText(page), { timeout: 10_000 })
+        .toContain("CURSOR-HIDE-DONE")
+
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const panel = document.querySelector<HTMLElement>(
+                "[data-gharargah-terminal-panel]",
+              )
+              return panel?.dataset.gharargahTerminalCursorHidden === "1"
+            }),
+          { timeout: 5_000 },
+        )
+        .toBe(true)
+
+      const visibleHardwareCaret = await page.evaluate(() => {
+        const cursors = [
+          ...document.querySelectorAll<HTMLElement>(
+            "[data-gharargah-terminal-panel] .xterm-cursor",
+          ),
+        ]
+        return cursors.some(el => {
+          const style = getComputedStyle(el)
+          if (style.visibility === "hidden" || style.display === "none") return false
+          if (Number.parseFloat(style.opacity || "1") < 0.05) return false
+          // Bar caret uses inset box-shadow; block uses background.
+          return (
+            style.boxShadow !== "none" ||
+            (style.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+              style.backgroundColor !== "transparent")
+          )
+        })
+      })
+      expect(visibleHardwareCaret).toBe(false)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("updates tab label when shell emits OSC title sequence", async () => {
     const { app, page } = await launchJet()
     try {

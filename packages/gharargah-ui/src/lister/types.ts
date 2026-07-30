@@ -73,6 +73,20 @@ export type ListerProps<T> = {
   inputDisabled?: boolean
   /** Renders between search input and list (palette status row). */
   betweenInputAndList?: ReactNode
+  /**
+   * Label used when reporting preferred content width.
+   * Defaults to `node.searchText`.
+   */
+  contentWidthLabel?: (node: ListerNode<T>) => string
+  /** Extra chrome (icon + padding + gaps) added to measured label width. */
+  contentWidthChromePx?: number
+  /** Measure labels with mono font (file paths). */
+  contentWidthMono?: boolean
+  /**
+   * Preferred list/dialog width in CSS px for the current visible rows
+   * (longest label + chrome). Lets palette hosts grow past fixed size tokens.
+   */
+  onContentWidthChange?: (widthPx: number) => void
   "aria-label"?: string
   role?: "listbox" | "tree" | "list"
 }

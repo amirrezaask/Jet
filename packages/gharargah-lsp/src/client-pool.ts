@@ -29,6 +29,7 @@ import {
   type LspDiagnostic,
   type LspWorkspaceEdit,
 } from "@gharargah/monaco"
+import { canonicalizeFileUri, fileUriToPath } from "@gharargah/shared"
 import type { LspConnection } from "./manager.js"
 import type { JetLspWorkspaceDeps } from "./gharargah-workspace.js"
 import { createWebSocketTransports } from "./transport.js"
@@ -157,13 +158,42 @@ export class LspClientPool {
   private workspaceDeps: JetLspWorkspaceDeps | null = null
   private onServerMessage: LspServerMessageHandler | null = null
   private openDocs = new Map<string, Set<string>>()
+  private editorOpener: monaco.IDisposable | null = null
 
   setWorkspaceDeps(deps: JetLspWorkspaceDeps): void {
     this.workspaceDeps = deps
+    this.ensureEditorOpener()
   }
 
   setServerMessageHandler(handler: LspServerMessageHandler | null): void {
     this.onServerMessage = handler
+  }
+
+  /** Monaco go-to-def / peek need an opener for models other than the active one. */
+  private ensureEditorOpener(): void {
+    if (this.editorOpener) return
+    this.editorOpener = monaco.editor.registerEditorOpener({
+      openCodeEditor: (_source, resource, selectionOrPosition) => {
+        const deps = this.workspaceDeps
+        if (!deps) return false
+        if (resource.scheme !== "file") return false
+        const uri = canonicalizeFileUri(resource.toString())
+        const path = fileUriToPath(uri)
+        let line: number | undefined
+        let column: number | undefined
+        if (selectionOrPosition) {
+          if ("startLineNumber" in selectionOrPosition) {
+            line = selectionOrPosition.startLineNumber
+            column = selectionOrPosition.startColumn
+          } else {
+            line = selectionOrPosition.lineNumber
+            column = selectionOrPosition.column
+          }
+        }
+        deps.openFile(uri, path, line, column)
+        return true
+      },
+    })
   }
 
   async getOrCreateClient(conn: LspConnection): Promise<MonacoLspClient> {
@@ -199,6 +229,8 @@ export class LspClientPool {
   clear(): void {
     this.pending.clear()
     for (const id of [...this.clients.keys()]) this.releaseConnection(id)
+    this.editorOpener?.dispose()
+    this.editorOpener = null
   }
 
   private async connect(conn: LspConnection): Promise<MonacoLspClient> {
@@ -334,7 +366,16 @@ export class LspClientPool {
     deps: JetLspWorkspaceDeps,
     syncKind: TextDocumentSyncKind,
   ): void {
-    const selector = [...new Set(conn.languageIds)]
+    // Monaco model language ids (tsx/jsx/mts/cts are aliased to ts/js at model create).
+    const selector = [
+      ...new Set(
+        conn.languageIds.map(id => {
+          if (id === "tsx" || id === "mts" || id === "cts") return "typescript"
+          if (id === "jsx") return "javascript"
+          return id
+        }),
+      ),
+    ]
     const disposables: monaco.IDisposable[] = []
 
     const docId = (model: monaco.editor.ITextModel): TextDocumentIdentifier => ({

@@ -33,7 +33,7 @@ Scale (rem, ~px):
 
 Never write `text-[Npx]`. If a size is missing from the scale, add a token — don't inline.
 
-Fonts: `--font-sans` Geist, `--font-mono` Geist Mono.
+Fonts: `--font-sans` Geist, `--font-mono` Commit Mono.
 
 ### Motion
 `gharargahMotion` (from `@gharargah/ui`) is the single source of animation timings. CSS vars: `--gharargah-motion-fast/hot/menu/overlay/panel/slow-menu/scroll/entity`; easing vars: `--gharargah-ease-out/in-out/drawer`. Never hardcode `duration-150` / `.15s`; reference the token.
@@ -79,13 +79,17 @@ const items: PaletteShellItem<MyItem>[] = data.map(x => ({
   title="My palette"
   description="Search my things…"
   placeholder="Filter…"
-  size="picker"              // picker | wide
+  size="picker"              // picker | wide; grows with fitContent (default)
+  fitContent                 // measure longest item → dialog width (viewport-capped)
+  contentWidthMono           // file-path rows (QuickOpen)
   items={items}
   onSelect={item => run(item)}
   emptyLabel="No matches."
   renderItem={item => <span>{item.name}</span>}
 />
 ```
+
+Preferred width helpers (`measureLongestItemContentWidth`, `PALETTE_LISTER_CHROME_PX`) live in `@gharargah/ui` / `lister/measure` so hosts can size chrome without guessing. Lister fires `onContentWidthChange` for the current visible rows.
 
 Async? Provide `query` + `onQueryChange` + `shouldFilter={false}` + optional `statusRow`.
 

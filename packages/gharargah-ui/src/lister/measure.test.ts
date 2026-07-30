@@ -1,6 +1,13 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { readPaletteRowHeight, resolveCssLengthPx } from "./measure.js"
+import {
+  measureLongestItemContentWidth,
+  measureTextWidthPx,
+  readListerLabelFont,
+  readPaletteRowHeight,
+  readPaletteSizeMinWidthPx,
+  resolveCssLengthPx,
+} from "./measure.js"
 
 describe("resolveCssLengthPx", () => {
   it("scales semantic rem row heights with the persisted UI font size", () => {
@@ -23,5 +30,32 @@ describe("resolveCssLengthPx", () => {
     assert.equal(resolveCssLengthPx("3.5rem", 10, 3.5), 35)
     assert.equal(resolveCssLengthPx("2.5rem", 24, 2.5), 60)
     assert.equal(resolveCssLengthPx("3.5rem", 24, 3.5), 84)
+  })
+})
+
+describe("measureLongestItemContentWidth", () => {
+  it("reports width driven by the longest label plus chrome", () => {
+    const font = readListerLabelFont({ mono: true })
+    const short = measureTextWidthPx("a.ts", font)
+    const long = measureTextWidthPx(
+      "packages/gharargah-ui/src/home/TerminalSessionModal.tsx",
+      font,
+    )
+    assert.ok(long > short)
+
+    const chrome = 58
+    const needed = measureLongestItemContentWidth(
+      ["a.ts", "packages/gharargah-ui/src/home/TerminalSessionModal.tsx", "mid.ts"],
+      { font, chromePx: chrome },
+    )
+    assert.equal(needed, long + chrome)
+  })
+
+  it("returns only chrome when there are no labels", () => {
+    assert.equal(measureLongestItemContentWidth([], { chromePx: 40 }), 40)
+  })
+
+  it("keeps wide palette min wider than picker", () => {
+    assert.ok(readPaletteSizeMinWidthPx("wide") > readPaletteSizeMinWidthPx("picker"))
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react"
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,9 @@ import {
 import { COMMAND_SHELL_CLASS } from "@/lib/command-shell.js"
 import { Lister, type ListerNode } from "@/lister/index.js"
 import {
+  PALETTE_LISTER_CHROME_PX,
   readPaletteRowHeight,
+  readPaletteSizeMinWidthPx,
   type PaletteRowLayout,
 } from "@/lister/measure.js"
 import { cn } from "@/lib/utils.js"
@@ -38,6 +40,15 @@ export interface PaletteShellProps<T> {
   /** Allow keyboard selection before the user types a query. */
   requireQueryForSelection?: boolean
   size?: "picker" | "wide"
+  /**
+   * Grow dialog width to fit longest visible item (capped by viewport).
+   * Default on — lister reports preferred content width via measure helpers.
+   */
+  fitContent?: boolean
+  /** Measure item labels with mono font (file paths). */
+  contentWidthMono?: boolean
+  /** Extra chrome beyond default palette row padding/icon. */
+  contentWidthChromePx?: number
   contentClassName?: string
   itemClassName?: string
   itemStyle?: (item: T) => CSSProperties | undefined
@@ -64,6 +75,9 @@ export function PaletteShell<T>({
   shouldFilter,
   requireQueryForSelection = true,
   size = "picker",
+  fitContent = true,
+  contentWidthMono = false,
+  contentWidthChromePx = PALETTE_LISTER_CHROME_PX,
   contentClassName,
   itemClassName,
   itemStyle,
@@ -78,9 +92,16 @@ export function PaletteShell<T>({
     onQueryChange?.(next)
   }
 
+  const [contentWidthPx, setContentWidthPx] = useState(0)
+
   useEffect(() => {
     if (!open && !isControlled) setUncontrolledQuery("")
+    if (!open) setContentWidthPx(0)
   }, [open, isControlled])
+
+  const onContentWidthChange = useCallback((widthPx: number) => {
+    setContentWidthPx(widthPx)
+  }, [])
 
   const filterMode = shouldFilter === false ? "external" : "local"
 
@@ -94,6 +115,18 @@ export function PaletteShell<T>({
     [items],
   )
 
+  const fitStyle = useMemo((): CSSProperties | undefined => {
+    if (!fitContent || contentWidthPx <= 0) return undefined
+    const minPx = readPaletteSizeMinWidthPx(size)
+    const viewportCap =
+      typeof window !== "undefined" ? Math.max(minPx, window.innerWidth - 32) : minPx
+    const widthPx = Math.min(Math.max(contentWidthPx, minPx), viewportCap)
+    return {
+      width: widthPx,
+      maxWidth: "calc(100% - 2rem)",
+    }
+  }, [fitContent, contentWidthPx, size])
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogHeader className="sr-only">
@@ -105,6 +138,8 @@ export function PaletteShell<T>({
         size={size}
         data-gharargah-glass=""
         data-gharargah-palette=""
+        data-gharargah-palette-fit={fitContent ? "content" : undefined}
+        style={fitStyle}
         className={[
           "max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden border bg-popover p-0 shadow-xl",
           contentClassName,
@@ -132,6 +167,9 @@ export function PaletteShell<T>({
             estimateSize={node =>
               estimateSize?.(node.data) ?? readPaletteRowHeight(rowLayout)
             }
+            contentWidthMono={contentWidthMono}
+            contentWidthChromePx={fitContent ? contentWidthChromePx : 0}
+            onContentWidthChange={fitContent ? onContentWidthChange : undefined}
             betweenInputAndList={statusRow}
             listClassName="min-h-0 max-h-[min(var(--gharargah-overlay-list-max),calc(100dvh-5rem))] px-0.5 pb-1.5"
             className="min-h-0"
