@@ -105,7 +105,12 @@ export type JetElectronLSP = {
 export type JetElectronTerminal = {
   create(
     cwdUri: string,
-    launch?: { command?: string; args?: string[]; cols?: number; rows?: number },
+    launch?: {
+      command?: string
+      args?: string[]
+      cols?: number
+      rows?: number
+    },
   ): Promise<{ id: string; title?: string }>
   attach(id: string): Promise<{
     id: string

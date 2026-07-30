@@ -7,6 +7,7 @@ import {
   listSessionTerminals,
   listTerminalSessions,
   markTerminalExited,
+  markSessionDone,
   recordTerminalOutput,
   recordTerminalUserInput,
   registerTerminalSession,
@@ -99,6 +100,21 @@ test("user input makes a running shell require close confirmation", () => {
     terminalSessionNeedsCloseConfirmation(terminalSessionForTab(tabId)),
     false,
   )
+  clearTerminalSession(tabId)
+})
+
+test("markSessionDone archives session without removing it", () => {
+  const tabId = "terminal:done-session"
+  registerTerminalSession(tabId, "file:///tmp", "codex")
+  trackTerminalPtyId(tabId, "pty:done-session")
+
+  markSessionDone(tabId)
+
+  const session = terminalSessionForTab(tabId)
+  assert.ok(session?.doneAt)
+  assert.equal(session?.ptyId, undefined)
+  assert.equal(session?.status, "exited")
+  assert.equal(listTerminalSessions().length, 1)
   clearTerminalSession(tabId)
 })
 

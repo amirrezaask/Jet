@@ -2,6 +2,7 @@ import { useEffect, type CSSProperties, type ReactNode } from "react"
 import type { AgentUsage } from "@gharargah/agents"
 import {
   Bot,
+  Check,
   Code2,
   GitBranch,
   SquareTerminal,
@@ -65,6 +66,9 @@ export type TerminalSessionModalProps = {
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   /** Extra controls before close (e.g. notification bell in sidebar layout). */
   headerEnd?: ReactNode
+  /** Mark session done — keeps history, stops live PTY. */
+  onMarkDone?: () => void
+  isDone?: boolean
   agent: ReactNode
   editor: ReactNode
   terminal: ReactNode
@@ -133,6 +137,8 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     agentSessionHeader = null,
     onOpenInApp,
     headerEnd = null,
+    onMarkDone,
+    isDone = false,
     agent,
     editor,
     terminal,
@@ -329,6 +335,20 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           />
         ) : null}
         {headerEnd}
+        {onMarkDone && !isDone ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-6 gap-1 px-2 text-3xs"
+            data-gharargah-session-mark-done
+            onClick={onMarkDone}
+            style={noDragRegion}
+          >
+            <Check className="size-3" aria-hidden />
+            Done
+          </Button>
+        ) : null}
         {presentation === "modal" ? (
           <DialogClose asChild>{closeButton}</DialogClose>
         ) : (

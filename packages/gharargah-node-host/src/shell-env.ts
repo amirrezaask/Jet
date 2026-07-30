@@ -60,15 +60,26 @@ export function resolveLoginShellPath(): string | undefined {
   }
 }
 
+const USER_BIN_RELS = [".local/bin", ".cargo/bin", "bin", ".opencode/bin"] as const
+const SYSTEM_BIN_DIRS = [
+  "/opt/homebrew/bin",
+  "/opt/homebrew/sbin",
+  "/usr/local/bin",
+  "/usr/local/sbin",
+] as const
+
 /**
  * Enrich PATH for GUI-spawned host processes (Electron / DMG) so PTY shells and
  * agent CLIs resolve the same binaries as a login terminal.
+ *
+ * Fully stripped macOS GUI PATHs get a full login-shell rebuild. Partially
+ * populated PATHs (e.g. system dirs + /usr/local/bin only) still get missing
+ * user bins like ~/.local/bin prepended — required for cursor-agent / claude.
  */
 export function enrichProcessPath(): { path: string; enriched: boolean } {
   const current = process.env.PATH ?? ""
-  if (!isGuiStrippedPath(current) && process.env.GHARARGAH_SHELL_ENV_FORCE !== "1") {
-    return { path: current, enriched: false }
-  }
+  const force = process.env.GHARARGAH_SHELL_ENV_FORCE === "1"
+  const fullRebuild = force || isGuiStrippedPath(current)
 
   const dirs: string[] = []
   const push = (p: string) => {
@@ -76,23 +87,23 @@ export function enrichProcessPath(): { path: string; enriched: boolean } {
     dirs.push(p)
   }
 
-  const login = loginShellPath()
-  if (login) {
-    for (const d of login.split(":")) push(d)
+  if (fullRebuild) {
+    const login = loginShellPath()
+    if (login) {
+      for (const d of login.split(":")) push(d)
+    }
   }
 
   const home = os.homedir()
-  for (const rel of [".local/bin", ".cargo/bin", "bin", ".opencode/bin"]) {
+  const currentDirs = new Set(current.split(":").filter(Boolean))
+  for (const rel of USER_BIN_RELS) {
     const candidate = path.join(home, rel)
-    if (fs.existsSync(candidate)) push(candidate)
+    if (!fs.existsSync(candidate)) continue
+    if (fullRebuild || !currentDirs.has(candidate)) push(candidate)
   }
-  for (const system of [
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/bin",
-    "/usr/local/sbin",
-  ]) {
-    if (fs.existsSync(system)) push(system)
+  for (const system of SYSTEM_BIN_DIRS) {
+    if (!fs.existsSync(system)) continue
+    if (fullRebuild || !currentDirs.has(system)) push(system)
   }
   for (const d of current.split(":")) push(d)
 

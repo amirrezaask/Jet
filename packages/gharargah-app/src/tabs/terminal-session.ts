@@ -16,12 +16,16 @@ export type TerminalSessionState = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  /** Provider-native CLI session id used to resume after host restart. */
+  agentCliSessionId?: string
   /** True after xterm has emitted user-originated input for this PTY generation. */
   hasUserInput: boolean
   /** True after output that proves launched work progressed beyond an idle shell. */
   hasMeaningfulOutput: boolean
   /** ISO timestamp of last meaningful activity (status / notify). */
   lastActivityAt: string
+  /** When set, session is archived for history — not removed from roster. */
+  doneAt?: string
 }
 
 const sessions = new Map<string, TerminalSessionState>()
@@ -82,9 +86,11 @@ export function registerTerminalSession(
     agentId: existing?.agentId,
     agentDriverId: existing?.agentDriverId,
     agentThreadId: existing?.agentThreadId,
+    agentCliSessionId: existing?.agentCliSessionId,
     hasUserInput: existing?.hasUserInput ?? false,
     hasMeaningfulOutput: existing?.hasMeaningfulOutput ?? false,
     lastActivityAt: existing?.lastActivityAt ?? now,
+    doneAt: existing?.doneAt,
   })
   notify(tabId)
 }
@@ -191,6 +197,33 @@ export function bindAgentToSession(
   notify(tabId)
 }
 
+export function agentCliSessionIdForTab(tabId: string): string | undefined {
+  return sessions.get(tabId)?.agentCliSessionId
+}
+
+export function setAgentCliSessionId(tabId: string, cliSessionId: string): void {
+  const session = sessions.get(tabId)
+  if (!session) return
+  const next = cliSessionId.trim()
+  if (!next || session.agentCliSessionId === next) return
+  session.agentCliSessionId = next
+  touchActivity(session)
+  notify(tabId)
+}
+
+export function updateTerminalLaunchArgs(tabId: string, launchArgs: string[]): void {
+  const session = sessions.get(tabId)
+  if (!session) return
+  session.launchArgs = launchArgs
+  touchActivity(session)
+  notify(tabId)
+}
+
+export function sessionHasResumableAgentCli(tabId: string): boolean {
+  const session = sessions.get(tabId)
+  return Boolean(session?.agentCliSessionId && session.agentId)
+}
+
 export function terminalTabIdForPty(ptyId: string): string | undefined {
   return tabByPtyId.get(ptyId)
 }
@@ -226,9 +259,25 @@ export function markTerminalFailed(tabId: string): void {
   notify(tabId)
 }
 
-/** Alias for hydrate / attach-miss paths — same as {@link markTerminalFailed}. */
+/** Alias for hydrate / attach-miss paths on non-resumable sessions. */
 export function markTerminalUnavailable(tabId: string): void {
+  if (sessionHasResumableAgentCli(tabId)) {
+    markTerminalAwaitingResume(tabId)
+    return
+  }
   markTerminalFailed(tabId)
+}
+
+export function markTerminalAwaitingResume(tabId: string): void {
+  const session = sessions.get(tabId)
+  if (!session) return
+  if (session.ptyId) tabByPtyId.delete(session.ptyId)
+  session.ptyId = undefined
+  session.status = "starting"
+  session.exitCode = undefined
+  session.signal = undefined
+  touchActivity(session)
+  notify(tabId)
 }
 
 export function restartTerminalSession(tabId: string): void {
@@ -242,6 +291,7 @@ export function restartTerminalSession(tabId: string): void {
   session.generation += 1
   session.hasUserInput = false
   session.hasMeaningfulOutput = false
+  session.doneAt = undefined
   touchActivity(session)
   notify(tabId)
 }
@@ -286,6 +336,27 @@ export function clearTerminalSession(tabId: string): void {
 
 export function listTerminalSessions(): TerminalSessionState[] {
   return [...sessions.values()].filter(session => !session.parentSessionTabId)
+}
+
+export function isSessionDone(tabId: string): boolean {
+  return Boolean(sessions.get(tabId)?.doneAt)
+}
+
+export function markSessionDone(tabId: string): void {
+  const session = sessions.get(tabId)
+  if (!session || session.doneAt) return
+  session.doneAt = new Date().toISOString()
+  if (session.ptyId) {
+    tabByPtyId.delete(session.ptyId)
+    pendingExitByPtyId.delete(session.ptyId)
+    session.ptyId = undefined
+  }
+  if (session.status === "starting" || session.status === "running") {
+    session.status = "exited"
+    session.exitCode = session.exitCode ?? 0
+  }
+  touchActivity(session)
+  notify(tabId)
 }
 
 /**
@@ -387,9 +458,11 @@ export type HydratedTerminalSession = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  agentCliSessionId?: string
   hasUserInput?: boolean
   hasMeaningfulOutput?: boolean
   lastActivityAt?: string
+  doneAt?: string
 }
 
 /** Restore session fields after a tab has been re-opened (refresh hydrate). */
@@ -411,10 +484,12 @@ export function hydrateTerminalSession(entry: HydratedTerminalSession): void {
     agentId: entry.agentId,
     agentDriverId: entry.agentDriverId,
     agentThreadId: entry.agentThreadId,
+    agentCliSessionId: entry.agentCliSessionId,
     hasUserInput: entry.hasUserInput ?? false,
     hasMeaningfulOutput: entry.hasMeaningfulOutput ?? false,
     lastActivityAt:
       entry.lastActivityAt ?? existing?.lastActivityAt ?? new Date().toISOString(),
+    doneAt: entry.doneAt ?? existing?.doneAt,
   })
   if (entry.ptyId) tabByPtyId.set(entry.ptyId, entry.tabId)
   notify(entry.tabId)

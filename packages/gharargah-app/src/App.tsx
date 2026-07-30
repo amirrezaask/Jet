@@ -53,7 +53,6 @@ import {
 import type { AppNotification, AgentProvider } from "@gharargah/shared"
 import { createAgentBridge } from "./agent-bridge.js"
 import { useNotificationCenter } from "./hooks/useNotificationCenter.js"
-import { notificationLaunchForProvider } from "./hooks/notification-provider-launch.js"
 import {
   TabStore,
   TabTypeRegistry,
@@ -125,7 +124,20 @@ import {
   terminalSessionNeedsCloseConfirmation,
   setTerminalCustomLabel,
   bumpTerminalActivity,
+  markSessionDone,
+  isSessionDone,
+  setAgentCliSessionId,
+  updateTerminalLaunchArgs,
 } from "./tabs/terminal-session.js"
+import {
+  buildAgentCliLaunchArgs,
+  captureAgentCliSessionFromNotification,
+  captureAgentCliSessionFromOutput,
+  isAgentCliProvider,
+  isPersistableAgentSession,
+  prepareHydratedAgentCliFields,
+  syncAgentCliLaunchArgs,
+} from "./agent-cli-launch.js"
 import { type PersistedSessionRoster } from "./session-roster-store.js"
 import {
   loadServerSessionRoster,
@@ -751,11 +763,11 @@ export function GharargahApp() {
         const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
           label: driver.label,
           launchCommand: driver.command,
-          launchArgs: sessionId =>
-            notificationLaunchForProvider(driver.id, driver.command, {
-              sessionId,
+          launchArgs: tabId =>
+            buildAgentCliLaunchArgs(driver.id, {
+              sessionId: tabId,
               origin: window.location.origin,
-            }).args,
+            }),
         })
         bindAgentToSession(tabId, {
           agentId: driver.id,
@@ -1063,7 +1075,9 @@ export function GharargahApp() {
   }, [])
   const persistSessionRoster = useCallback(() => {
     if (!sessionRosterReadyRef.current) return
-    const sessions = listTerminalSessions().map(session => ({
+    const sessions = listTerminalSessions()
+      .filter(isPersistableAgentSession)
+      .map(session => ({
       tabId: session.tabId,
       cwdRootUri: session.cwdRootUri,
       label:
@@ -1072,29 +1086,57 @@ export function GharargahApp() {
         "Terminal",
       launchCommand: session.launchCommand,
       launchArgs: session.launchArgs,
-      ptyId: session.ptyId,
       status: session.status,
       exitCode: session.exitCode,
       customLabel: session.customLabel,
       agentId: session.agentId,
       agentDriverId: session.agentDriverId,
       agentThreadId: session.agentThreadId,
+      agentCliSessionId: session.agentCliSessionId,
       hasUserInput: session.hasUserInput,
       hasMeaningfulOutput: session.hasMeaningfulOutput,
       lastActivityAt: session.lastActivityAt,
+      doneAt: session.doneAt,
     }))
+    const persistedTabIds = new Set(sessions.map(session => session.tabId))
     const modalTabId = terminalModalTabIdRef.current
     const roster: PersistedSessionRoster = {
       version: 2,
       sessions,
-      modal: modalTabId
-        ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
-        : null,
+      modal:
+        modalTabId && persistedTabIds.has(modalTabId)
+          ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
+          : null,
     }
     latestRosterRef.current = roster
     pendingRosterWriteRef.current = roster
     void flushSessionRosterWrites()
   }, [workspace, flushSessionRosterWrites])
+
+  useEffect(() => {
+    const api = window.gharargah?.notifications
+    if (!api?.onEvent) return
+    return api.onEvent(event => {
+      if (event.type !== "notification.created") return
+      const n = event.notification
+      if (!n.sessionId || !n.providerSessionId) return
+      captureAgentCliSessionFromNotification(
+        n.sessionId,
+        n.provider,
+        n.providerSessionId,
+        (tabId, cliSessionId) => {
+          setAgentCliSessionId(tabId, cliSessionId)
+          const session = terminalSessionForTab(tabId)
+          if (session?.agentId && isAgentCliProvider(session.agentId)) {
+            updateTerminalLaunchArgs(
+              tabId,
+              syncAgentCliLaunchArgs(tabId, session.agentId, cliSessionId),
+            )
+          }
+        },
+      )
+    })
+  }, [])
 
   useEffect(() => {
     const persistLatestOnPageHide = () => {
@@ -1156,6 +1198,23 @@ export function GharargahApp() {
       }
     },
     [cloneTree, commitTree, workspace, tabStore, activateProject],
+  )
+
+  const markSessionDoneFromHome = useCallback(
+    async (_panelId: PanelId, tabId: string) => {
+      const session = terminalSessionForTab(tabId)
+      if (!session || isSessionDone(tabId)) return
+      const ptyId = terminalPtyIdForTab(tabId)
+      if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
+      markSessionDone(tabId)
+      if (terminalModalTabIdRef.current === tabId) {
+        setTerminalModalTabId(null)
+        setTerminalModalPanelId(null)
+      }
+      setTerminalSessionRevision(revision => revision + 1)
+      persistSessionRoster()
+    },
+    [persistSessionRoster],
   )
 
   const onTerminalTitleChange = useCallback(
@@ -2357,10 +2416,7 @@ export function GharargahApp() {
       )
       if (roster.sessions.length > 0) {
         const tree = cloneTree()
-        // Skip clearly unloadable roster rows (no PTY / already failed) so they
-        // never flash as home cards before the attach probe runs.
         for (const entry of roster.sessions) {
-          if (entry.status === "failed" || !entry.ptyId) continue
           if (findPanelWithTab(tree, entry.tabId)) continue
           const sessionKey = entry.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
             ? entry.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
@@ -2376,21 +2432,32 @@ export function GharargahApp() {
             launchCommand: entry.launchCommand,
             launchArgs: entry.launchArgs,
           })
+          const hydrated = prepareHydratedAgentCliFields({
+            tabId: entry.tabId,
+            agentId: entry.agentId,
+            agentCliSessionId: entry.agentCliSessionId,
+            launchCommand: entry.launchCommand,
+            launchArgs: entry.launchArgs,
+            status: entry.status,
+            doneAt: entry.doneAt,
+          })
           hydrateTerminalSession({
             tabId: entry.tabId,
             cwdRootUri,
-            launchCommand: entry.launchCommand,
-            launchArgs: entry.launchArgs,
-            ptyId: entry.ptyId,
-            status: entry.status,
+            launchCommand: hydrated.launchCommand,
+            launchArgs: hydrated.launchArgs,
+            ptyId: hydrated.ptyId,
+            status: hydrated.status,
             exitCode: entry.exitCode,
             customLabel: entry.customLabel,
             agentId: entry.agentId,
             agentDriverId: entry.agentDriverId,
             agentThreadId: entry.agentThreadId,
+            agentCliSessionId: entry.agentCliSessionId,
             hasUserInput: entry.hasUserInput,
             hasMeaningfulOutput: entry.hasMeaningfulOutput,
             lastActivityAt: entry.lastActivityAt,
+            doneAt: entry.doneAt,
           })
         }
         commitTree(tree)
@@ -2702,6 +2769,7 @@ export function GharargahApp() {
           exitCode: t.exitCode,
           launchCommand: t.launchCommand,
           agentId: t.agentId,
+          doneAt: t.doneAt,
         })),
       })),
     [terminalGroups],
@@ -2889,6 +2957,7 @@ export function GharargahApp() {
                     exitCode: t.exitCode,
                     launchCommand: t.launchCommand,
                     agentId: t.agentId,
+                    doneAt: t.doneAt,
                   })),
                 }))}
                 onOpenTerminal={openTerminalFromHome}
@@ -2899,6 +2968,7 @@ export function GharargahApp() {
                 onAddProject={() => setAddWorkspaceOpen(true)}
                 onRemoveProject={removeProjectByRootUri}
                 onKillTerminal={closeTerminalTab}
+                onMarkSessionDone={markSessionDoneFromHome}
                 onOpenTodos={rootUri => void openTodosFromHome(rootUri)}
                 notificationBell={
                   <NotificationBell
@@ -2970,6 +3040,7 @@ export function GharargahApp() {
                         onDuplicate: s => void duplicateSidebarSession(s),
                         onClose: s => closeTerminalTab(s.panelId, s.id),
                         onDelete: s => closeTerminalTab(s.panelId, s.id),
+                        onMarkDone: s => void markSessionDoneFromHome(s.panelId, s.id),
                       }}
                       projectActions={{
                         onNewSession: project =>
@@ -3164,6 +3235,13 @@ export function GharargahApp() {
                   onOpenInApp={(rootUri, appId) =>
                     void openProjectInApp(rootUri, appId)
                   }
+                  onMarkDone={() =>
+                    void markSessionDoneFromHome(
+                      terminalModalPanelId!,
+                      terminalModalTabId,
+                    )
+                  }
+                  isDone={isSessionDone(terminalModalTabId)}
                 headerEnd={
                   isSidebarLayout ? (
                     <NotificationBell

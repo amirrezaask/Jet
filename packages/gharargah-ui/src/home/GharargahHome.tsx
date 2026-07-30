@@ -48,6 +48,7 @@ export type GharargahHomeProps = {
   onAddProject?: () => void
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
+  onMarkSessionDone?: (panelId: PanelId, tabId: string) => void
   onOpenTodos?: (rootUri: string) => void
   notificationBell?: ReactNode
   onViewProjectNotifications?: (projectId: string) => void
@@ -57,7 +58,7 @@ export type GharargahHomeProps = {
 function toSessionCard(group: HomeProjectGroup, term: HomeTerminalEntry): SessionCardModel {
   if (term.session) return term.session
   const agentId = term.agentId ?? detectSessionProvider(term.launchCommand)
-  const status = mapRuntimeStatusToCardStatus(term.status)
+  const status = mapRuntimeStatusToCardStatus(term.status, Boolean(term.doneAt))
   return {
     id: term.tabId,
     projectId: group.id,
@@ -79,6 +80,7 @@ export function GharargahHome(props: GharargahHomeProps) {
     onAddProject,
     onRemoveProject,
     onKillTerminal,
+    onMarkSessionDone,
     onOpenTodos,
     notificationBell,
     onViewProjectNotifications,
@@ -312,6 +314,7 @@ export function GharargahHome(props: GharargahHomeProps) {
                 onOpenInApp={onOpenInApp}
                 onRemoveProject={onRemoveProject}
                 onKillTerminal={onKillTerminal}
+                onMarkSessionDone={onMarkSessionDone}
                 onOpenTodos={onOpenTodos}
                 onViewProjectNotifications={onViewProjectNotifications}
                 onViewSessionNotifications={onViewSessionNotifications}

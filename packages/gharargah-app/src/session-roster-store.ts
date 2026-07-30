@@ -18,9 +18,11 @@ export type PersistedSessionEntry = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  agentCliSessionId?: string
   hasUserInput?: boolean
   hasMeaningfulOutput?: boolean
   lastActivityAt?: string
+  doneAt?: string
 }
 
 export type PersistedSessionModal = {
@@ -106,10 +108,15 @@ function parseEntry(raw: unknown): PersistedSessionEntry | null {
   if (agentDriverId) entry.agentDriverId = agentDriverId
   const agentThreadId = asNonEmptyString(item.agentThreadId)
   if (agentThreadId) entry.agentThreadId = agentThreadId
+  const agentCliSessionId = asNonEmptyString(item.agentCliSessionId)
+  if (agentCliSessionId) entry.agentCliSessionId = agentCliSessionId
   if (item.hasUserInput === true) entry.hasUserInput = true
   if (item.hasMeaningfulOutput === true) entry.hasMeaningfulOutput = true
   const lastActivityAt = asNonEmptyString(item.lastActivityAt)
   if (lastActivityAt) entry.lastActivityAt = lastActivityAt
+  const doneAt = asNonEmptyString(item.doneAt)
+  if (doneAt) entry.doneAt = doneAt
+  if (!entry.agentId || !entry.launchCommand) return null
   return entry
 }
 

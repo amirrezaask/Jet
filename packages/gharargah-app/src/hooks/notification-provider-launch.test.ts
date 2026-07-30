@@ -33,10 +33,16 @@ describe("notificationLaunchForProvider", () => {
   })
 
   it("keeps OSC fallback for providers without session-scoped hooks", () => {
-    for (const provider of ["opencode", "cursor", "grok"] as const) {
+    for (const provider of ["opencode", "grok"] as const) {
       const launch = notificationLaunchForProvider(provider, provider, context)
       assert.equal(launch.driver, "osc")
       assert.deepEqual(launch.args, [])
     }
+  })
+
+  it("auto-trusts the workspace for Cursor Agent CLI", () => {
+    const launch = notificationLaunchForProvider("cursor", "cursor-agent", context)
+    assert.equal(launch.driver, "osc")
+    assert.deepEqual(launch.args, ["--trust"])
   })
 })

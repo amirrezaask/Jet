@@ -1270,6 +1270,12 @@ body,
     background: color-mix(in srgb, var(--home-status-failed) 16%, transparent);
   }
 
+  [data-gharargah-home] .gharargah-home-status-badge[data-status="done"] {
+    color: var(--home-status-idle);
+    border-color: color-mix(in srgb, var(--home-status-idle) 50%, transparent);
+    background: color-mix(in srgb, var(--home-status-idle) 14%, transparent);
+  }
+
   /* Project labels + paths */
   [data-gharargah-home] [data-gharargah-project-row] h2 {
     letter-spacing: 0.16em;

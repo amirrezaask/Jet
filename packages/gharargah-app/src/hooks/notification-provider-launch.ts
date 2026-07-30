@@ -65,5 +65,10 @@ export function notificationLaunchForProvider(
       driver: "hook",
     }
   }
+  if (provider === "cursor") {
+    // ADE launches into a project the user already opened. Without --trust,
+    // cursor-agent blocks on a workspace-trust TUI; Quit exits with code 1.
+    return { command, args: ["--trust"], driver: "osc" }
+  }
   return { command, args: [], driver: "osc" }
 }

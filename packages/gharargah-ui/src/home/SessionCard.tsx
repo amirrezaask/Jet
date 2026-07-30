@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from "react"
-import { MoreHorizontal, SquareTerminal, X } from "lucide-react"
+import { Check, MoreHorizontal, SquareTerminal, X } from "lucide-react"
 import {
   ClaudeAI,
   CursorIcon,
@@ -30,6 +30,7 @@ export type SessionCardProps = {
   session: SessionCardModel
   onClick: () => void
   onKill?: () => void
+  onMarkDone?: () => void
   onReview?: () => void
   onReject?: () => void
   onViewNotifications?: () => void
@@ -65,13 +66,14 @@ function stopCardClick(e: MouseEvent) {
 }
 
 export function SessionCard(props: SessionCardProps) {
-  const { session, onClick, onKill, onReview, onReject, onViewNotifications } =
+  const { session, onClick, onKill, onMarkDone, onReview, onReject, onViewNotifications } =
     props
   const showApprovalActions =
     session.status === "approval" || session.requiresApproval
+  const isDone = session.status === "done"
 
   const overflow: ReactNode =
-    onKill || onViewNotifications ? (
+    onKill || onMarkDone || onViewNotifications ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
@@ -95,6 +97,12 @@ export function SessionCard(props: SessionCardProps) {
         {onViewNotifications ? (
           <DropdownMenuItem onSelect={onViewNotifications}>
             View notifications
+          </DropdownMenuItem>
+        ) : null}
+        {onMarkDone && !isDone ? (
+          <DropdownMenuItem onSelect={onMarkDone} data-gharargah-session-mark-done>
+            <Check className="size-4" />
+            Mark done
           </DropdownMenuItem>
         ) : null}
         {onKill ? (
@@ -194,19 +202,24 @@ export function SessionCard(props: SessionCardProps) {
     </div>
   )
 
-  if (!onKill) return card
+  if (!onKill && !onMarkDone) return card
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
       <ContextMenuContent data-gharargah-terminal-card-menu>
-        <ContextMenuItem
-          variant="destructive"
-          onSelect={onKill}
-        >
-          <X className="size-4" />
-          End session
-        </ContextMenuItem>
+        {onMarkDone && !isDone ? (
+          <ContextMenuItem onSelect={onMarkDone} data-gharargah-session-mark-done>
+            <Check className="size-4" />
+            Mark done
+          </ContextMenuItem>
+        ) : null}
+        {onKill ? (
+          <ContextMenuItem variant="destructive" onSelect={onKill}>
+            <X className="size-4" />
+            End session
+          </ContextMenuItem>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   )

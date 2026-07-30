@@ -7,6 +7,7 @@ export type SessionCardStatus =
   | "approval"
   | "idle"
   | "failed"
+  | "done"
 
 export type SessionProvider =
   | "claude"
@@ -33,7 +34,9 @@ export type TerminalRuntimeStatus = "starting" | "running" | "exited" | "failed"
 
 export function mapRuntimeStatusToCardStatus(
   status: TerminalRuntimeStatus,
+  done?: boolean,
 ): SessionCardStatus {
+  if (done) return "done"
   switch (status) {
     case "starting":
     case "running":
@@ -92,6 +95,7 @@ export function defaultSessionDescription(
   if (status === "failed") {
     return kind === "terminal" ? "Process unavailable." : "Session failed."
   }
+  if (status === "done") return "Marked done — history kept."
   if (status === "approval") return "Changes require review before continuing."
   if (status === "queued") return "Waiting in queue."
   if (status === "planning") return "Planning next steps."
@@ -118,5 +122,7 @@ export function sessionStatusLabel(status: SessionCardStatus): string {
       return "Idle"
     case "failed":
       return "Failed"
+    case "done":
+      return "Done"
   }
 }

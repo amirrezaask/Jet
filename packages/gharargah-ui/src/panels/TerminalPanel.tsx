@@ -23,9 +23,10 @@ export type TerminalPanelProps = {
   status?: "starting" | "running" | "exited" | "failed"
   exitCode?: number
   sessionGeneration?: number
+  readOnly?: boolean
   onPtyId?: (tabId: string, ptyId: string | null) => void
   onInput?: (tabId: string) => void
-  onOutput?: (tabId: string) => void
+  onOutput?: (tabId: string, data?: string) => void
   onTitleChange?: (tabId: string, title: string) => void
   onRestart?: () => void
   onClose?: () => void
@@ -301,6 +302,7 @@ export function TerminalPanel({
   status = "starting",
   exitCode,
   sessionGeneration = 0,
+  readOnly = false,
   onPtyId,
   onInput,
   onOutput,
@@ -327,12 +329,20 @@ export function TerminalPanel({
   onFailedRef.current = onFailed
   const onOpenPathRef = useRef(onOpenPath)
   onOpenPathRef.current = onOpenPath
+  // Launch command/args are create/restart-time only. Capturing a CLI session id
+  // updates launchArgs for the next resume — must not remount the live PTY.
+  const launchCommandRef = useRef(launchCommand)
+  launchCommandRef.current = launchCommand
+  const launchArgsRef = useRef(launchArgs)
+  launchArgsRef.current = launchArgs
 
   useEffect(() => {
     const terminalApi = window.gharargah?.terminal
     if (!terminalApi || !cwdRootUri || !containerRef.current) return
     let cancelled = false
     const container = containerRef.current
+    const launchCommandAtStart = launchCommandRef.current
+    const launchArgsAtStart = launchArgsRef.current
 
     const term = new XTerm({
       allowTransparency: true,
@@ -451,25 +461,27 @@ export function TerminalPanel({
       setDisplayStatus("running")
       setDisplayExitCode(undefined)
       unsub = terminalApi.onData(id, data => {
-        onOutputRef.current?.(tabId)
+        onOutputRef.current?.(tabId, data)
         writeTerminalOutput(term, data, syncCursorHiddenAttr)
       })
-      inputWriter = createTerminalInputWriter(
-        data => terminalApi.write(id, data),
-        error => {
-          const message = error instanceof Error ? error.message : String(error)
-          term.writeln(`\r\n\x1b[31mTerminal input failed:\x1b[0m ${message}`)
-        },
-        data => terminalApi.writeBinary(id, btoa(data)),
-      )
-      dataDispose = term.onData(data => {
-        onInputRef.current?.(tabId)
-        inputWriter?.enqueue(data)
-      })
-      binaryDispose = term.onBinary(data => {
-        onInputRef.current?.(tabId)
-        inputWriter?.enqueueBinary(data)
-      })
+      if (!readOnly) {
+        inputWriter = createTerminalInputWriter(
+          data => terminalApi.write(id, data),
+          error => {
+            const message = error instanceof Error ? error.message : String(error)
+            term.writeln(`\r\n\x1b[31mTerminal input failed:\x1b[0m ${message}`)
+          },
+          data => terminalApi.writeBinary(id, btoa(data)),
+        )
+        dataDispose = term.onData(data => {
+          onInputRef.current?.(tabId)
+          inputWriter?.enqueue(data)
+        })
+        binaryDispose = term.onBinary(data => {
+          onInputRef.current?.(tabId)
+          inputWriter?.enqueueBinary(data)
+        })
+      }
       syncFit()
       // xterm was fitted before the PTY existed, so a no-op fit here still
       // needs one authoritative resize to replace the host's 80×24 default.
@@ -477,43 +489,12 @@ export function TerminalPanel({
       if (focused && isActive) focusTerminalInput(tabId)
     }
 
-    const startPty = () => {
-      if (ptyStarted || cancelled) return
-      // PTY creation must not depend on a paint or measurable foreground tab.
-      // Start at xterm's default geometry and resize when layout becomes ready.
-      syncFit()
-      ptyStarted = true
-      if (existingPtyId) {
-        void terminalApi.attach(existingPtyId).then(attached => {
-          if (cancelled) return
-          if (!attached) {
-            term.writeln("\r\n\x1b[31mTerminal session is no longer available.\x1b[0m")
-            setDisplayStatus("failed")
-            onFailedRef.current?.()
-            return
-          }
-          if (attached.output) {
-            onOutputRef.current?.(tabId)
-            writeTerminalOutput(term, attached.output, syncCursorHiddenAttr)
-          }
-          if (attached.title) onTitleChangeRef.current?.(tabId, attached.title)
-          connectPty(existingPtyId)
-          if (attached.status === "exited") {
-            setDisplayStatus("exited")
-            setDisplayExitCode(attached.exitCode)
-          }
-        })
-        return
-      }
-      // Hydrate marked this session dead (no PTY). Wait for Restart — do not auto-spawn.
-      if (status === "failed" || status === "exited") {
-        setDisplayStatus(status)
-        setDisplayExitCode(exitCode)
-        return
-      }
+    const createFreshPty = () => {
       void terminalApi
         .create(cwdRootUri, {
-          ...(launchCommand ? { command: launchCommand, args: launchArgs } : {}),
+          ...(launchCommandAtStart
+            ? { command: launchCommandAtStart, args: launchArgsAtStart }
+            : {}),
           cols: term.cols,
           rows: term.rows,
         })
@@ -532,6 +513,49 @@ export function TerminalPanel({
           setDisplayStatus("failed")
           onFailedRef.current?.()
         })
+    }
+
+    const startPty = () => {
+      if (ptyStarted || cancelled) return
+      // PTY creation must not depend on a paint or measurable foreground tab.
+      // Start at xterm's default geometry and resize when layout becomes ready.
+      syncFit()
+      ptyStarted = true
+      if (existingPtyId) {
+        void terminalApi.attach(existingPtyId).then(attached => {
+          if (cancelled) return
+          if (!attached) {
+            if (!readOnly && launchCommandAtStart) {
+              createFreshPty()
+              return
+            }
+            term.writeln("\r\n\x1b[31mTerminal session is no longer available.\x1b[0m")
+            setDisplayStatus("failed")
+            onFailedRef.current?.()
+            return
+          }
+          if (attached.output) {
+            onOutputRef.current?.(tabId, attached.output)
+            writeTerminalOutput(term, attached.output, syncCursorHiddenAttr)
+          }
+          if (attached.title) onTitleChangeRef.current?.(tabId, attached.title)
+          if (!readOnly) connectPty(existingPtyId)
+          if (attached.status === "exited" || readOnly) {
+            setDisplayStatus("exited")
+            setDisplayExitCode(attached.exitCode)
+          }
+        })
+        return
+      }
+      if (
+        readOnly ||
+        ((status === "failed" || status === "exited") && !launchCommandAtStart)
+      ) {
+        setDisplayStatus(status === "failed" ? "failed" : "exited")
+        setDisplayExitCode(exitCode)
+        return
+      }
+      createFreshPty()
     }
 
     syncTheme()
@@ -615,7 +639,7 @@ export function TerminalPanel({
       term.dispose()
       sessionRef.current = null
     }
-  }, [cwdRootUri, tabId, onPtyId, launchCommand, launchArgs, sessionGeneration])
+  }, [cwdRootUri, tabId, onPtyId, sessionGeneration, readOnly])
 
   useEffect(() => {
     setDisplayStatus(status)

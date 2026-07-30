@@ -14,6 +14,7 @@ export type TerminalExplorerEntry = {
   exitCode?: number
   launchCommand?: string
   agentId?: "codex" | "claude" | "opencode" | "cursor" | "grok"
+  doneAt?: string
 }
 
 export type TerminalExplorerGroup = {
@@ -80,6 +81,7 @@ export function buildTerminalExplorerGroups(
       agentId:
         (session?.agentId as TerminalExplorerEntry["agentId"] | undefined) ??
         detectSessionProvider(session?.launchCommand),
+      doneAt: session?.doneAt,
     }
 
     if (folder) {

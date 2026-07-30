@@ -52,7 +52,7 @@ describe("ProjectDatabase session roster", () => {
     const saved = db.replaceSessionRoster(roster)
     assert.equal(saved.sessions.length, 1)
     assert.equal(saved.sessions[0]?.tabId, "gharargah:terminal:a")
-    assert.equal(saved.sessions[0]?.ptyId, "term-1")
+    assert.equal(saved.sessions[0]?.ptyId, undefined)
     assert.equal(saved.sessions[0]?.hasUserInput, true)
     assert.equal(saved.sessions[0]?.hasMeaningfulOutput, true)
     assert.equal(saved.modal?.sessionMode, "terminal")
@@ -79,9 +79,10 @@ describe("ProjectDatabase session roster", () => {
         {
           tabId: "gharargah:terminal:old",
           cwdRootUri: "file:///tmp/old",
-          label: "Old",
+          label: "Old Codex",
           status: "running",
-          ptyId: "term-old",
+          launchCommand: "codex",
+          agentId: "codex",
         },
       ],
       modal: { tabId: "gharargah:terminal:old", sessionMode: "agent" },
@@ -92,9 +93,11 @@ describe("ProjectDatabase session roster", () => {
         {
           tabId: "gharargah:terminal:new",
           cwdRootUri: "file:///tmp/new",
-          label: "New",
+          label: "New Claude",
           status: "exited",
           exitCode: 0,
+          launchCommand: "claude",
+          agentId: "claude",
         },
       ],
       modal: null,
@@ -104,7 +107,33 @@ describe("ProjectDatabase session roster", () => {
     assert.equal(next.modal, null)
   })
 
-  it("marks starting/running as failed after reopen (host restart)", () => {
+  it("drops plain shell sessions from roster", () => {
+    const saved = db.replaceSessionRoster({
+      version: 2,
+      sessions: [
+        {
+          tabId: "gharargah:terminal:shell",
+          cwdRootUri: "file:///tmp/shell",
+          label: "Shell",
+          status: "running",
+          ptyId: "term-shell",
+        },
+        {
+          tabId: "gharargah:terminal:agent",
+          cwdRootUri: "file:///tmp/agent",
+          label: "Codex",
+          status: "running",
+          launchCommand: "codex",
+          agentId: "codex",
+        },
+      ],
+      modal: null,
+    })
+    assert.equal(saved.sessions.length, 1)
+    assert.equal(saved.sessions[0]?.tabId, "gharargah:terminal:agent")
+  })
+
+  it("marks agent sessions as starting after reopen (host restart)", () => {
     db.replaceSessionRoster({
       version: 2,
       sessions: [
@@ -116,11 +145,13 @@ describe("ProjectDatabase session roster", () => {
           ptyId: "term-live",
         },
         {
-          tabId: "gharargah:terminal:done",
-          cwdRootUri: "file:///tmp/done",
-          label: "Done",
-          status: "exited",
-          exitCode: 0,
+          tabId: "gharargah:terminal:agent",
+          cwdRootUri: "file:///tmp/agent",
+          label: "Codex",
+          status: "running",
+          launchCommand: "codex",
+          agentId: "codex",
+          agentCliSessionId: "11111111-1111-4111-8111-111111111111",
         },
       ],
       modal: null,
@@ -129,10 +160,36 @@ describe("ProjectDatabase session roster", () => {
 
     db = new ProjectDatabase(dbPath)
     const roster = db.getSessionRoster()
-    const live = roster.sessions.find(s => s.tabId === "gharargah:terminal:live")
-    const done = roster.sessions.find(s => s.tabId === "gharargah:terminal:done")
-    assert.equal(live?.status, "failed")
-    assert.equal(done?.status, "exited")
+    const agent = roster.sessions.find(s => s.tabId === "gharargah:terminal:agent")
+    assert.equal(roster.sessions.length, 1)
+    assert.equal(agent?.status, "starting")
+    assert.equal(agent?.ptyId, undefined)
+    assert.equal(agent?.agentCliSessionId, "11111111-1111-4111-8111-111111111111")
+  })
+
+  it("round-trips doneAt and agentCliSessionId", () => {
+    db.replaceSessionRoster({
+      version: 2,
+      sessions: [
+        {
+          tabId: "gharargah:terminal:archived",
+          cwdRootUri: "file:///tmp/archived",
+          label: "Archived",
+          status: "exited",
+          launchCommand: "claude",
+          doneAt: "2026-07-30T00:00:00.000Z",
+          agentId: "claude",
+          agentCliSessionId: "22222222-2222-4222-8222-222222222222",
+        },
+      ],
+      modal: null,
+    })
+    const roster = db.getSessionRoster()
+    assert.equal(roster.sessions[0]?.doneAt, "2026-07-30T00:00:00.000Z")
+    assert.equal(
+      roster.sessions[0]?.agentCliSessionId,
+      "22222222-2222-4222-8222-222222222222",
+    )
   })
 
   it("migrates pre-usage-evidence roster tables with safe false defaults", () => {
@@ -178,7 +235,6 @@ describe("ProjectDatabase session roster", () => {
       true,
     )
     const restored = db.getSessionRoster().sessions[0]
-    assert.equal(restored?.hasUserInput, undefined)
-    assert.equal(restored?.hasMeaningfulOutput, undefined)
+    assert.equal(restored, undefined)
   })
 })

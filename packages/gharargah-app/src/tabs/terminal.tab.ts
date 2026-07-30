@@ -2,7 +2,13 @@ import { createElement, lazy, Suspense } from "react"
 import type { TabType } from "@gharargah/ui"
 import type { TabContributorDeps } from "./deps.js"
 import {
+  captureAgentCliSessionFromOutput,
+  isAgentCliProvider,
+  syncAgentCliLaunchArgs,
+} from "../agent-cli-launch.js"
+import {
   clearTerminalSession,
+  isSessionDone,
   registerTerminalSession,
   terminalCwdForTab,
   terminalLaunchCommandForTab,
@@ -14,7 +20,9 @@ import {
   recordTerminalOutput,
   recordTerminalUserInput,
   restartTerminalSession,
+  setAgentCliSessionId,
   trackTerminalPtyId,
+  updateTerminalLaunchArgs,
 } from "./terminal-session.js"
 
 import type { KnownTabKind } from "@gharargah/workspace"
@@ -54,15 +62,51 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         status: session?.status,
         exitCode: session?.exitCode,
         sessionGeneration: session?.generation,
+        readOnly: isSessionDone(instance.id),
         onPtyId: trackTerminalPtyId,
         onInput: recordTerminalUserInput,
-        onOutput: recordTerminalOutput,
+        onOutput: (tabId, data) => {
+          recordTerminalOutput(tabId)
+          if (!data) return
+          const current = terminalSessionForTab(tabId)
+          if (!current?.agentId || current.agentCliSessionId) return
+          captureAgentCliSessionFromOutput(
+            tabId,
+            isAgentCliProvider(current.agentId) ? current.agentId : undefined,
+            data,
+            (id, cliSessionId) => {
+              setAgentCliSessionId(id, cliSessionId)
+              const next = terminalSessionForTab(id)
+              if (next?.agentId && isAgentCliProvider(next.agentId)) {
+                updateTerminalLaunchArgs(
+                  id,
+                  syncAgentCliLaunchArgs(id, next.agentId, cliSessionId),
+                )
+              }
+            },
+          )
+        },
         onTitleChange: deps.onTerminalTitleChange,
-        // Keep the failed session visible so the error and Restart action survive.
+        // Keep the failed session visible so the error and Restart action survives.
         onFailed: () => markTerminalFailed(instance.id),
         onRestart: () => {
+          const current = terminalSessionForTab(instance.id)
           const ptyId = terminalPtyIdForTab(instance.id)
           if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
+          if (
+            current?.agentId &&
+            current.agentCliSessionId &&
+            isAgentCliProvider(current.agentId)
+          ) {
+            updateTerminalLaunchArgs(
+              instance.id,
+              syncAgentCliLaunchArgs(
+                instance.id,
+                current.agentId,
+                current.agentCliSessionId,
+              ),
+            )
+          }
           restartTerminalSession(instance.id)
         },
         onClose: () => deps.closeTerminalTab(ctx.panelId, instance.id),

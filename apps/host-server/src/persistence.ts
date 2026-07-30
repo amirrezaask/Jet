@@ -28,9 +28,11 @@ export type SessionRosterEntry = {
   agentId?: string
   agentDriverId?: string
   agentThreadId?: string
+  agentCliSessionId?: string
   hasUserInput?: boolean
   hasMeaningfulOutput?: boolean
   lastActivityAt?: string
+  doneAt?: string
 }
 
 export type SessionRosterModal = {
@@ -65,9 +67,11 @@ type RosterEntryRow = {
   agent_id: string | null
   agent_driver_id: string | null
   agent_thread_id: string | null
+  agent_cli_session_id: string | null
   has_user_input: number
   has_meaningful_output: number
   last_activity_at: string | null
+  done_at: string | null
 }
 
 type RosterModalRow = {
@@ -157,10 +161,15 @@ function parseEntry(raw: unknown): SessionRosterEntry | null {
   if (agentDriverId) entry.agentDriverId = agentDriverId
   const agentThreadId = asNonEmptyString(item.agentThreadId)
   if (agentThreadId) entry.agentThreadId = agentThreadId
+  const agentCliSessionId = asNonEmptyString(item.agentCliSessionId)
+  if (agentCliSessionId) entry.agentCliSessionId = agentCliSessionId
   if (item.hasUserInput === true) entry.hasUserInput = true
   if (item.hasMeaningfulOutput === true) entry.hasMeaningfulOutput = true
   const lastActivityAt = asNonEmptyString(item.lastActivityAt)
   if (lastActivityAt) entry.lastActivityAt = lastActivityAt
+  const doneAt = asNonEmptyString(item.doneAt)
+  if (doneAt) entry.doneAt = doneAt
+  if (!entry.agentId || !entry.launchCommand) return null
   return entry
 }
 
@@ -267,12 +276,27 @@ export class ProjectDatabase {
         "ALTER TABLE session_roster_entries ADD COLUMN has_meaningful_output INTEGER NOT NULL DEFAULT 0",
       )
     }
+    if (!columns.some(column => column.name === "done_at")) {
+      this.db.exec("ALTER TABLE session_roster_entries ADD COLUMN done_at TEXT")
+    }
+    if (!columns.some(column => column.name === "agent_cli_session_id")) {
+      this.db.exec(
+        "ALTER TABLE session_roster_entries ADD COLUMN agent_cli_session_id TEXT",
+      )
+    }
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES(4)")
       .run()
     this.db.exec(`
-      UPDATE session_roster_entries SET status='interrupted', updated_at=datetime('now')
+      DELETE FROM session_roster_entries
+        WHERE agent_id IS NULL OR launch_command IS NULL
+           OR TRIM(COALESCE(agent_id, '')) = ''
+           OR TRIM(COALESCE(launch_command, '')) = '';
+      UPDATE session_roster_entries SET status='starting', pty_id=NULL, updated_at=datetime('now')
         WHERE status IN ('starting','running');
+      UPDATE session_roster_modal SET tab_id=NULL, session_mode=NULL, updated_at=datetime('now')
+        WHERE tab_id IS NOT NULL
+          AND tab_id NOT IN (SELECT tab_id FROM session_roster_entries);
     `)
   }
 
@@ -360,8 +384,8 @@ export class ProjectDatabase {
     const rows = this.db
       .prepare(
         `SELECT tab_id, cwd_root_uri, label, launch_command, launch_args_json, pty_id, status, exit_code,
-                custom_label, agent_id, agent_driver_id, agent_thread_id,
-                has_user_input, has_meaningful_output, last_activity_at
+                custom_label, agent_id, agent_driver_id, agent_thread_id, agent_cli_session_id,
+                has_user_input, has_meaningful_output, last_activity_at, done_at
          FROM session_roster_entries
          ORDER BY updated_at ASC`,
       )
@@ -383,9 +407,11 @@ export class ProjectDatabase {
         agentId: row.agent_id ?? undefined,
         agentDriverId: row.agent_driver_id ?? undefined,
         agentThreadId: row.agent_thread_id ?? undefined,
+        agentCliSessionId: row.agent_cli_session_id ?? undefined,
         hasUserInput: row.has_user_input === 1,
         hasMeaningfulOutput: row.has_meaningful_output === 1,
         lastActivityAt: row.last_activity_at ?? undefined,
+        doneAt: row.done_at ?? undefined,
       })
       if (!entry || seen.has(entry.tabId)) continue
       seen.add(entry.tabId)
@@ -422,10 +448,10 @@ export class ProjectDatabase {
       const insert = this.db.prepare(
         `INSERT INTO session_roster_entries(
            tab_id, cwd_root_uri, label, launch_command, launch_args_json, pty_id, status, exit_code,
-           custom_label, agent_id, agent_driver_id, agent_thread_id,
-           has_user_input, has_meaningful_output, last_activity_at,
+           custom_label, agent_id, agent_driver_id, agent_thread_id, agent_cli_session_id,
+           has_user_input, has_meaningful_output, last_activity_at, done_at,
            project_id, created_at, updated_at
-         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       for (const entry of normalized.sessions) {
         const cwdRootUri = this.canonicalizeCwdUri(entry.cwdRootUri)
@@ -436,16 +462,18 @@ export class ProjectDatabase {
           entry.label,
           entry.launchCommand ?? null,
           entry.launchArgs ? JSON.stringify(entry.launchArgs) : null,
-          entry.ptyId ?? null,
+          null,
           entry.status,
           entry.exitCode ?? null,
           entry.customLabel ?? null,
           entry.agentId ?? null,
           entry.agentDriverId ?? null,
           entry.agentThreadId ?? null,
+          entry.agentCliSessionId ?? null,
           entry.hasUserInput ? 1 : 0,
           entry.hasMeaningfulOutput ? 1 : 0,
           entry.lastActivityAt ?? null,
+          entry.doneAt ?? null,
           projectId,
           now,
           now,
@@ -486,6 +514,10 @@ export class ProjectDatabase {
     return this.getSessionRoster()
   }
 
+  close(): void {
+    this.db.close()
+  }
+
   private canonicalizeCwdUri(cwdRootUri: string): string {
     try {
       const abs = path.resolve(fileUriToPath(cwdRootUri))
@@ -521,9 +553,5 @@ export class ProjectDatabase {
     } catch {
       return null
     }
-  }
-
-  close(): void {
-    this.db.close()
   }
 }

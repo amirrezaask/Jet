@@ -21,6 +21,7 @@ export type SessionSidebarActions = {
   onMarkRead?: (session: SidebarSession) => void
   onMarkUnread?: (session: SidebarSession) => void
   onDuplicate?: (session: SidebarSession) => void
+  onMarkDone?: (session: SidebarSession) => void
   onClose?: (session: SidebarSession) => void
   onDelete?: (session: SidebarSession) => void
 }
@@ -52,6 +53,9 @@ function SessionMenuItems({
       ) : null}
       {actions.onDuplicate ? (
         <Item onSelect={() => actions.onDuplicate?.(session)}>Duplicate</Item>
+      ) : null}
+      {actions.onMarkDone && session.status !== "completed" ? (
+        <Item onSelect={() => actions.onMarkDone?.(session)}>Mark done</Item>
       ) : null}
       <Separator />
       {actions.onClose ? (

@@ -28,6 +28,7 @@ export type HomeTerminalEntry = {
   exitCode?: number
   launchCommand?: string
   agentId?: import("./session-card-model.js").SessionProvider
+  doneAt?: string
   /** Precomputed presentation model when available. */
   session?: SessionCardModel
 }
@@ -46,6 +47,7 @@ export type HomeProjectSectionProps = {
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
+  onMarkSessionDone?: (panelId: PanelId, tabId: string) => void
   /** Open session modal on TODOs board for this project. */
   onOpenTodos?: (rootUri: string) => void
   onViewProjectNotifications?: (projectId: string) => void
@@ -66,6 +68,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     onOpenInApp,
     onRemoveProject,
     onKillTerminal,
+    onMarkSessionDone,
     onOpenTodos,
     onViewProjectNotifications,
     onViewSessionNotifications,
@@ -167,6 +170,11 @@ export function ProjectSection(props: HomeProjectSectionProps) {
                 onKill={
                   onKillTerminal
                     ? () => onKillTerminal(term.panelId, term.tabId)
+                    : undefined
+                }
+                onMarkDone={
+                  onMarkSessionDone && !term.doneAt
+                    ? () => onMarkSessionDone(term.panelId, term.tabId)
                     : undefined
                 }
                 onViewNotifications={
