@@ -61,6 +61,7 @@ export {
   withSortedProjectSessions,
 } from "./project.js"
 export {
+  applyStickyListOrder,
   applyStickySelectedOrder,
   sortSessionsUnreadFirst,
 } from "./unread-first.js"

@@ -31,6 +31,12 @@ export type HomeTerminalEntry = {
   doneAt?: string
   /** Precomputed presentation model when available. */
   session?: SessionCardModel
+  /** Unread from ADE snapshot / notification center. */
+  unreadCount?: number
+  activityLabel?: string
+  statsLine?: string
+  requiresApproval?: boolean
+  adeStatus?: SessionCardModel["status"]
 }
 
 export type HomeProjectSectionProps = {

@@ -10,9 +10,9 @@ function sleep(ms: number): Promise<void> {
 /**
  * Mint a Cursor Agent chat id via `cursor-agent create-chat`.
  *
- * Cursor has no session-scoped notify hook; the interactive TUI also does not
- * reliably print `session_id`. Pre-minting lets ADE launch with `--resume=<id>`
- * from the first spawn so refresh can restore the same chat.
+ * Prefer live hooks (`sessionStart` → native session id) for new sessions —
+ * open interactive PTY immediately and capture id asynchronously.
+ * Keep this helper for tests / manual recovery when hooks are unavailable.
  */
 export async function mintCursorAgentChatId(
   cwdRootUri: string,

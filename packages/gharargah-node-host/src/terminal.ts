@@ -12,6 +12,8 @@ export type TerminalLaunch = {
   args?: string[]
   cols?: number
   rows?: number
+  /** Extra env vars merged into the PTY environment (ADE hook forwarders). */
+  env?: Record<string, string>
 }
 
 export type TerminalCreateResult = {
@@ -151,6 +153,7 @@ export class TerminalHost {
             TERM: "xterm-256color",
             COLORTERM: "truecolor",
             HOME: process.env.HOME ?? os.homedir(),
+            ...(launch?.env ?? {}),
           } as Record<string, string>,
         })
         break

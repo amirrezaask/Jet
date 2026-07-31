@@ -6,6 +6,7 @@ import type { GharargahTheme } from "@gharargah/shared"
 import "@xterm/xterm/css/xterm.css"
 import { subscribeRootStyle } from "./root-style-observer.js"
 import { Button } from "../components/ui/button.js"
+import { Spinner } from "../components/ui/spinner.js"
 import { TerminalScrollMotion } from "./terminal-scroll-motion.js"
 import { registerTerminalPathLinks } from "./terminal-links.js"
 import { createTerminalInputWriter } from "./terminal-input-writer.js"
@@ -14,6 +15,7 @@ export type TerminalPanelProps = {
   cwdRootUri: string
   launchCommand?: string
   launchArgs?: string[]
+  launchEnv?: Record<string, string>
   theme: GharargahTheme
   tabId: string
   focused: boolean
@@ -23,6 +25,13 @@ export type TerminalPanelProps = {
   exitCode?: number
   sessionGeneration?: number
   readOnly?: boolean
+  /**
+   * Hold off creating/attaching a PTY (e.g. Cursor chat-id mint). Panel stays
+   * in the starting overlay until this clears and the effect remounts.
+   */
+  deferPty?: boolean
+  /** Override for the starting overlay copy. */
+  startingMessage?: string
   onPtyId?: (tabId: string, ptyId: string | null) => void
   onInput?: (tabId: string) => void
   onOutput?: (tabId: string, data?: string) => void
@@ -292,6 +301,7 @@ export function TerminalPanel({
   cwdRootUri,
   launchCommand,
   launchArgs,
+  launchEnv,
   theme,
   tabId,
   focused,
@@ -301,6 +311,8 @@ export function TerminalPanel({
   exitCode,
   sessionGeneration = 0,
   readOnly = false,
+  deferPty = false,
+  startingMessage,
   onPtyId,
   onInput,
   onOutput,
@@ -333,6 +345,8 @@ export function TerminalPanel({
   launchCommandRef.current = launchCommand
   const launchArgsRef = useRef(launchArgs)
   launchArgsRef.current = launchArgs
+  const launchEnvRef = useRef(launchEnv)
+  launchEnvRef.current = launchEnv
 
   useEffect(() => {
     const terminalApi = window.gharargah?.terminal
@@ -341,6 +355,7 @@ export function TerminalPanel({
     const container = containerRef.current
     const launchCommandAtStart = launchCommandRef.current
     const launchArgsAtStart = launchArgsRef.current
+    const launchEnvAtStart = launchEnvRef.current
 
     const term = new XTerm({
       allowTransparency: true,
@@ -484,7 +499,11 @@ export function TerminalPanel({
       void terminalApi
         .create(cwdRootUri, {
           ...(launchCommandAtStart
-            ? { command: launchCommandAtStart, args: launchArgsAtStart }
+            ? {
+                command: launchCommandAtStart,
+                args: launchArgsAtStart,
+                env: launchEnvAtStart,
+              }
             : {}),
           cols: term.cols,
           rows: term.rows,
@@ -511,6 +530,10 @@ export function TerminalPanel({
       // PTY creation must not depend on a paint or measurable foreground tab.
       // Start at xterm's default geometry and resize when layout becomes ready.
       syncFit()
+      if (deferPty) {
+        // Keep starting overlay; effect remounts when deferPty clears.
+        return
+      }
       ptyStarted = true
       if (existingPtyId) {
         void terminalApi.attach(existingPtyId).then(attached => {
@@ -645,7 +668,7 @@ export function TerminalPanel({
       term.dispose()
       sessionRef.current = null
     }
-  }, [cwdRootUri, tabId, onPtyId, sessionGeneration, readOnly])
+  }, [cwdRootUri, tabId, onPtyId, sessionGeneration, readOnly, deferPty])
 
   useEffect(() => {
     setDisplayStatus(status)
@@ -704,14 +727,21 @@ export function TerminalPanel({
           data-gharargah-terminal-fit=""
         />
       </div>
-      {displayStatus === "starting" ? (
+      {displayStatus === "starting" || deferPty ? (
         <div
           role="status"
           aria-live="polite"
           data-gharargah-terminal-starting=""
-          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70 text-xs text-muted-foreground"
+          data-gharargah-terminal-defer-pty={deferPty ? "1" : undefined}
+          className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/70 text-xs text-muted-foreground"
         >
-          Starting {launchCommand ?? "terminal"}…
+          <Spinner className="size-4 text-muted-foreground" />
+          <span>
+            {startingMessage ??
+              (deferPty
+                ? "Preparing chat…"
+                : `Starting ${launchCommand ?? "terminal"}…`)}
+          </span>
         </div>
       ) : null}
       {displayStatus === "exited" || displayStatus === "failed" ? (

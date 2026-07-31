@@ -105,6 +105,9 @@ importers:
       '@effect/platform-node':
         specifier: 0.99.0
         version: 0.99.0(@effect/cluster@0.51.0(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.73.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/sql@0.47.0(@effect/experimental@0.58.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/workflow@0.12.5(@effect/experimental@0.58.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.73.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.73.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/sql@0.47.0(@effect/experimental@0.58.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)
+      '@gharargah/agents':
+        specifier: workspace:*
+        version: link:../../packages/gharargah-agents
       '@gharargah/node-host':
         specifier: workspace:*
         version: link:../../packages/gharargah-node-host
@@ -237,6 +240,9 @@ importers:
       '@effect/platform-browser':
         specifier: 0.77.1
         version: 0.77.1(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1)
+      '@gharargah/agents':
+        specifier: workspace:*
+        version: link:../gharargah-agents
       '@gharargah/rpc':
         specifier: workspace:*
         version: link:../gharargah-rpc
@@ -418,6 +424,9 @@ importers:
       '@fontsource/commit-mono':
         specifier: ^5.3.0
         version: 5.3.0
+      '@gharargah/agents':
+        specifier: workspace:*
+        version: link:../gharargah-agents
       '@gharargah/lsp':
         specifier: workspace:*
         version: link:../gharargah-lsp
@@ -551,6 +560,9 @@ importers:
 
   packages/gharargah-workspace:
     dependencies:
+      '@gharargah/agents':
+        specifier: workspace:*
+        version: link:../gharargah-agents
       '@gharargah/panels':
         specifier: workspace:*
         version: link:../gharargah-panels

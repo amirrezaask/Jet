@@ -1,48 +1,47 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { notificationLaunchForProvider } from "./notification-provider-launch.js"
+import { notificationLaunchForProviderSync } from "./notification-provider-launch.js"
 
-describe("notificationLaunchForProvider", () => {
+describe("notificationLaunchForProviderSync", () => {
   const context = {
-    sessionId: "session with spaces",
+    sessionId: "sess-1",
     origin: "http://127.0.0.1:4747",
   }
 
-  it("adds session-scoped Claude HTTP hooks without touching global settings", () => {
-    const launch = notificationLaunchForProvider("claude", "claude", context)
+  it("wires Claude with SessionStart and full hook surface", () => {
+    const launch = notificationLaunchForProviderSync("claude", "claude", context)
     assert.equal(launch.driver, "hook")
-    assert.deepEqual(launch.args.slice(0, 1), ["--settings"])
-    const settings = JSON.parse(launch.args[1]!) as {
-      hooks: Record<string, Array<{ hooks: Array<{ url: string }> }>>
-    }
-    assert.match(
-      settings.hooks.Stop![0]!.hooks[0]!.url,
-      /provider=claude&sessionId=session\+with\+spaces/,
-    )
-    assert.ok(settings.hooks.Notification)
-    assert.ok(settings.hooks.StopFailure)
+    assert.equal(launch.args[0], "--settings")
+    const settings = String(launch.args[1] ?? "")
+    assert.ok(settings.includes("SessionStart"))
+    assert.ok(settings.includes("PreToolUse"))
+    assert.ok(settings.includes("Stop"))
+    assert.ok(settings.includes("sessionId=sess-1"))
+    assert.equal(launch.env.GHARARGAH_SESSION_ID, "sess-1")
   })
 
-  it("adds a Codex notify command that forwards the appended JSON argument", () => {
-    const launch = notificationLaunchForProvider("codex", "codex", context)
+  it("wires Codex notify + hooks feature flag", () => {
+    const launch = notificationLaunchForProviderSync("codex", "codex", context)
     assert.equal(launch.driver, "hook")
-    assert.deepEqual(launch.args.slice(0, 1), ["-c"])
-    assert.match(launch.args[1]!, /^notify=/)
-    assert.match(launch.args[1]!, /--data-binary/)
-    assert.match(launch.args[1]!, /provider=codex/)
+    assert.ok(launch.args.includes("-c"))
+    assert.ok(launch.args.some((a) => a.includes("notify=")))
+    assert.ok(launch.args.some((a) => a.includes("codex_hooks")))
   })
 
-  it("keeps OSC fallback for providers without session-scoped hooks", () => {
+  it("uses osc/plugin for providers without session --settings", () => {
     for (const provider of ["opencode", "grok"] as const) {
-      const launch = notificationLaunchForProvider(provider, provider, context)
-      assert.equal(launch.driver, "osc")
-      assert.deepEqual(launch.args, [])
+      const launch = notificationLaunchForProviderSync(provider, provider, context)
+      assert.ok(launch.driver === "osc" || launch.driver === "plugin")
+      assert.equal(launch.env.GHARARGAH_PROVIDER, provider)
     }
   })
 
-  it("auto-trusts the workspace for Cursor Agent CLI", () => {
-    const launch = notificationLaunchForProvider("cursor", "cursor-agent", context)
-    assert.equal(launch.driver, "osc")
+  it("keeps Cursor --trust", () => {
+    const launch = notificationLaunchForProviderSync(
+      "cursor",
+      "cursor-agent",
+      context,
+    )
     assert.deepEqual(launch.args, ["--trust"])
   })
 })

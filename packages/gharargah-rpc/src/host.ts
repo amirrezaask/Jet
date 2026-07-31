@@ -40,6 +40,7 @@ export const HostEventChannels = [
   "terminal:data",
   "terminal:exit",
   "notifications:event",
+  "agents:event",
   "workspace:gitBranch",
   "workspace:searchReady",
   "workspace:fileIndex",

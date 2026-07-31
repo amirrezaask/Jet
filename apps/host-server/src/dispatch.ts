@@ -37,6 +37,7 @@ import { GitServiceLive, GitServiceTag } from "./effect/git.js"
 import { HostRuntimeTag } from "./effect/tags.js"
 import type { HostRuntime } from "./host-runtime.js"
 import { normalizeHookEventName } from "./notifications/index.js"
+import { installProjectHooksForProvider } from "./agents/index.js"
 
 export type { HostRuntime } from "./host-runtime.js"
 export { createRuntime, shutdownRuntime } from "./host-runtime.js"
@@ -94,9 +95,6 @@ async function dispatchImpl(
   args: unknown[],
   clientId: string,
 ): Promise<unknown> {
-  if (channel.startsWith("agents:")) {
-    throw new Error("agents:* removed; use CLI PTY sessions (no in-app agent control plane)")
-  }
   if (channel === "ui:syncNativeChrome") return null
   if (channel === "fs:showOpenFolderDialog" || channel === "fs:showSaveFileDialog") return null
   if (channel === "gharargah:getLaunchConfig") return runtime.config.launchConfig
@@ -105,6 +103,9 @@ async function dispatchImpl(
     return loadGlobalGharargahrcScanRoots(runtime.homeDir)
   }
 
+  if (channel.startsWith("agents:")) {
+    return handleAgents(runtime, channel, args)
+  }
   if (channel.startsWith("notifications:")) {
     return handleNotifications(runtime, channel, args)
   }
@@ -209,6 +210,15 @@ function handleNotifications(
         provider: body.provider ?? null,
         ptyId: body.ptyId ?? null,
       })
+      const provider = parseAgentProvider(body.provider ?? "")
+      if (provider && body.ptyId) {
+        runtime.agents.onProcessStarted({
+          provider,
+          sessionId: body.sessionId,
+          processId: body.ptyId,
+          projectId: body.projectId ?? undefined,
+        })
+      }
       return { ok: true }
     }
     case "notifications:runRetention":
@@ -216,6 +226,83 @@ function handleNotifications(
     default:
       throw new Error(`unknown notifications channel: ${channel}`)
   }
+}
+
+function handleAgents(
+  runtime: HostRuntime,
+  channel: string,
+  args: unknown[],
+): unknown {
+  const agents = runtime.agents
+  switch (channel) {
+    case "agents:getSnapshot":
+      return agents.getSnapshot(str(args[0], "sessionId"))
+    case "agents:listEvents": {
+      const sessionId = str(args[0], "sessionId")
+      const opts = (args[1] as { limit?: number; before?: string } | undefined) ?? {}
+      return agents.listEvents(sessionId, opts)
+    }
+    case "agents:ingestNative": {
+      const body = args[0] as {
+        provider: string
+        sessionId: string
+        payload: unknown
+        processId?: string
+        projectId?: string
+        focusedSessionId?: string | null
+        appFocused?: boolean
+      }
+      if (!body?.sessionId || !body.provider) {
+        throw new Error("agents:ingestNative requires provider + sessionId")
+      }
+      const provider = parseAgentProvider(body.provider)
+      if (!provider) throw new Error("invalid agent provider")
+      const result = agents.ingestNative(body.payload, {
+        provider,
+        sessionId: body.sessionId,
+        processId: body.processId,
+        projectId: body.projectId,
+        focusedSessionId: body.focusedSessionId,
+        appFocused: body.appFocused,
+      })
+      return {
+        eventCount: result.events.length,
+        snapshot: result.snapshot,
+        nativeSessionId: result.snapshot?.nativeSessionId ?? null,
+      }
+    }
+    case "agents:installProjectHooks": {
+      const body = args[0] as { provider: string; projectRoot: string }
+      if (!body?.projectRoot || !body.provider) {
+        throw new Error("agents:installProjectHooks requires provider + projectRoot")
+      }
+      const provider = parseAgentProvider(body.provider)
+      if (!provider) throw new Error("invalid agent provider")
+      const written = installProjectHooksForProvider(
+        provider,
+        body.projectRoot,
+        runtime.config.dataDir,
+      )
+      return { written }
+    }
+    default:
+      throw new Error(`unknown agents channel: ${channel}`)
+  }
+}
+
+function parseAgentProvider(
+  value: string,
+): "claude" | "codex" | "cursor" | "opencode" | "grok" | null {
+  if (
+    value === "claude" ||
+    value === "codex" ||
+    value === "cursor" ||
+    value === "opencode" ||
+    value === "grok"
+  ) {
+    return value
+  }
+  return null
 }
 
 async function handleFs(channel: string, args: unknown[]): Promise<unknown> {

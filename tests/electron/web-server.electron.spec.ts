@@ -88,7 +88,7 @@ test.describe("single-binary web server", () => {
 
       expect(result).toEqual({
         rpcStatus: 400,
-        errorCode: "OPERATION_FAILED",
+        errorCode: "UNKNOWN_OPERATION",
         healthStatus: 200,
       })
     } finally {

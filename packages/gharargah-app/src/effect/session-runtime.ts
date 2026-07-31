@@ -11,6 +11,8 @@ export type TerminalSessionState = {
   cwdRootUri: string
   launchCommand?: string
   launchArgs?: string[]
+  /** Env injected into the PTY for ADE hook forwarders. */
+  launchEnv?: Record<string, string>
   /** Parent ADE session for a generic shell opened from its Terminal tool. */
   parentSessionTabId?: string
   ptyId?: string
@@ -24,6 +26,11 @@ export type TerminalSessionState = {
   agentThreadId?: string
   /** Provider-native CLI session id used to resume after host restart. */
   agentCliSessionId?: string
+  /**
+   * Ephemeral: waiting for provider CLI session id before first roster write
+   * (Cursor has no id until hooks fire). Not persisted. Does not block PTY.
+   */
+  pendingCliMint?: boolean
   /** True after xterm has emitted user-originated input for this PTY generation. */
   hasUserInput: boolean
   /** True after output that proves launched work progressed beyond an idle shell. */
@@ -68,11 +75,13 @@ export type SessionRuntimeApi = {
     launchCommand?: string,
     options?: {
       launchArgs?: string[]
+      launchEnv?: Record<string, string>
       parentSessionTabId?: string
       customLabel?: string
       agentId?: string
       agentDriverId?: string
       agentCliSessionId?: string
+      pendingCliMint?: boolean
     },
   ) => void
   readonly get: (tabId: string) => TerminalSessionState | undefined
@@ -94,6 +103,7 @@ export type SessionRuntimeApi = {
     binding: { agentId: string; driverId: string; threadId?: string },
   ) => void
   readonly setAgentCliSessionId: (tabId: string, cliSessionId: string) => void
+  readonly setPendingCliMint: (tabId: string, pending: boolean) => void
   readonly updateLaunchArgs: (tabId: string, launchArgs: string[]) => void
   readonly bumpActivity: (tabId: string) => void
   readonly addSessionTerminal: (
@@ -143,6 +153,7 @@ export function createSessionStore(): SessionRuntimeApi {
         cwdRootUri,
         launchCommand,
         launchArgs: options?.launchArgs ?? existing?.launchArgs,
+        launchEnv: options?.launchEnv ?? existing?.launchEnv,
         parentSessionTabId:
           options?.parentSessionTabId ?? existing?.parentSessionTabId,
         ptyId: existing?.ptyId,
@@ -156,6 +167,7 @@ export function createSessionStore(): SessionRuntimeApi {
         agentThreadId: existing?.agentThreadId,
         agentCliSessionId:
           options?.agentCliSessionId?.trim() || existing?.agentCliSessionId,
+        pendingCliMint: options?.pendingCliMint ?? existing?.pendingCliMint,
         hasUserInput: existing?.hasUserInput ?? false,
         hasMeaningfulOutput: existing?.hasMeaningfulOutput ?? false,
         lastActivityAt: existing?.lastActivityAt ?? now,
@@ -390,7 +402,18 @@ export function createSessionStore(): SessionRuntimeApi {
       const next = cliSessionId.trim()
       if (!next || session.agentCliSessionId === next) return
       session.agentCliSessionId = next
+      // CLI id ready — allow roster persist (Cursor deferred until this point).
+      session.pendingCliMint = undefined
       touchActivity(session)
+      notify(tabId)
+    },
+
+    setPendingCliMint(tabId, pending) {
+      const session = sessions.get(tabId)
+      if (!session) return
+      const next = Boolean(pending)
+      if (session.pendingCliMint === next) return
+      session.pendingCliMint = next || undefined
       notify(tabId)
     },
 

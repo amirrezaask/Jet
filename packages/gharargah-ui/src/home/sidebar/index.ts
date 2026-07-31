@@ -16,6 +16,7 @@ export {
 export { SidebarFooterStatus } from "./SidebarFooterStatus.js"
 export {
   applyGrouping,
+  applyStickyListOrder,
   applyStickySelectedOrder,
   getGroupingDefinition,
   projectGrouping,

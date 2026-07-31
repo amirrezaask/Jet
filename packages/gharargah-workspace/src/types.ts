@@ -203,6 +203,42 @@ export type JetElectronNotifications = {
   ): () => void
 }
 
+export type JetElectronAgents = {
+  getSnapshot(
+    sessionId: string,
+  ): Promise<import("@gharargah/agents").AgentSessionSnapshot | null>
+  listEvents(
+    sessionId: string,
+    opts?: { limit?: number; before?: string },
+  ): Promise<import("@gharargah/agents").AgentEvent[]>
+  ingestNative(req: {
+    provider: string
+    sessionId: string
+    payload: unknown
+    processId?: string
+    projectId?: string
+    focusedSessionId?: string | null
+    appFocused?: boolean
+  }): Promise<{
+    eventCount: number
+    snapshot: import("@gharargah/agents").AgentSessionSnapshot | null
+    nativeSessionId: string | null
+  }>
+  installProjectHooks(req: {
+    provider: string
+    projectRoot: string
+  }): Promise<{ written: string[] }>
+  onEvent(
+    callback: (event: {
+      type: "agents.snapshot" | "agents.event"
+      sessionId: string
+      snapshot?: import("@gharargah/agents").AgentSessionSnapshot
+      nativeSessionId?: string
+      event?: import("@gharargah/agents").AgentEvent
+    }) => void,
+  ): () => void
+}
+
 export type GharargahHostAPI = {
   fs: JetElectronFS
   search: JetElectronSearch
@@ -213,6 +249,7 @@ export type GharargahHostAPI = {
   git?: JetElectronGit
   shell?: JetElectronShell
   notifications?: JetElectronNotifications
+  agents?: JetElectronAgents
   getLaunchConfig?(): Promise<LaunchConfig | null>
   getHomeDir?(): Promise<string>
   loadGlobalGharargahrcScanRoots?(): Promise<string[]>

@@ -179,13 +179,29 @@ async function handleHttp(
     return
   }
 
-  // Provider hooks (Claude Stop / Codex / etc.) POST semantic events here.
+  // Provider hooks (Claude / Codex / Cursor / OpenCode) → ADE agent events.
   if (req.method === "POST" && pathname === "/api/v1/notifications/ingest") {
     const body = await readJson(req)
     try {
+      const providerParam = url.searchParams.get("provider")
+      const sessionIdParam = url.searchParams.get("sessionId")
+      const { parseAgentProviderParam } = await import("./agents/index.js")
+      const agentProvider = parseAgentProviderParam(providerParam)
+      if (agentProvider && sessionIdParam) {
+        runtime.agents.ingestNative(body, {
+          provider: agentProvider,
+          sessionId: sessionIdParam,
+          projectId: url.searchParams.get("projectId") ?? undefined,
+          projectName: url.searchParams.get("projectName") ?? undefined,
+          sessionTitle: url.searchParams.get("sessionTitle") ?? undefined,
+        })
+        res.writeHead(204)
+        res.end()
+        return
+      }
       const normalized = normalizeProviderHookRequest(body, {
-        provider: url.searchParams.get("provider"),
-        sessionId: url.searchParams.get("sessionId"),
+        provider: providerParam,
+        sessionId: sessionIdParam,
         projectId: url.searchParams.get("projectId"),
         projectName: url.searchParams.get("projectName"),
         sessionTitle: url.searchParams.get("sessionTitle"),

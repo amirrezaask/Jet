@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { AppNotification } from "@gharargah/shared"
+import type { AppNotification, NotificationFilter } from "@gharargah/shared"
 import { Bell, CheckCheck, LoaderCircle } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import { Input } from "@/components/ui/input.js"
@@ -19,6 +19,8 @@ export type NotificationCenterProps = {
   items: AppNotification[]
   query: string
   onQueryChange: (query: string) => void
+  filter?: NotificationFilter
+  onFilterChange?: (filter: NotificationFilter) => void
   loading?: boolean
   error?: string | null
   onMarkAllRead: () => void
@@ -40,6 +42,8 @@ export function NotificationCenter(props: NotificationCenterProps) {
     items,
     query,
     onQueryChange,
+    filter = "all",
+    onFilterChange,
     loading,
     error,
     onMarkAllRead,
@@ -149,6 +153,33 @@ export function NotificationCenter(props: NotificationCenterProps) {
               Mark all as read
             </Button>
           </div>
+          {onFilterChange ? (
+            <div
+              className="mt-2 flex flex-wrap gap-1"
+              data-gharargah-notification-filters
+            >
+              {(
+                [
+                  ["all", "All"],
+                  ["action-needed", "Permission required"],
+                  ["completed", "Completed"],
+                  ["errors", "Failed"],
+                ] as const
+              ).map(([value, label]) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant={filter === value ? "secondary" : "ghost"}
+                  className="h-6 px-2 text-4xs"
+                  data-gharargah-notification-filter={value}
+                  onClick={() => onFilterChange(value)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
         </SheetHeader>
 
         <div className="relative min-h-0 flex-1">

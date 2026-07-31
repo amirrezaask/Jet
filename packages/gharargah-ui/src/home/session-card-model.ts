@@ -27,6 +27,10 @@ export type SessionCardModel = {
   description?: string
   status: SessionCardStatus
   requiresApproval?: boolean
+  /** ADE unread badge count from AgentSessionSnapshot. */
+  unreadCount?: number
+  /** Compact stats: "8m active · 3 turns · 24 tools". */
+  statsLine?: string
 }
 
 /** Runtime PTY statuses used by terminal sessions. */

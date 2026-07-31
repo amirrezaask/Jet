@@ -174,6 +174,15 @@ describe("agentCliLaunch resume argv", () => {
       }),
       false,
     )
+    assert.equal(
+      isPersistableAgentSession({
+        agentId: "cursor",
+        launchCommand: "cursor-agent",
+        agentDriverId: "cursor:cli",
+        pendingCliMint: true,
+      }),
+      false,
+    )
   })
 
   it("prepareHydratedAgentCliFields leaves native sessions unchanged", () => {

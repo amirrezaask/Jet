@@ -1,6 +1,6 @@
 import type { AgentProvider } from "@gharargah/shared"
 import {
-  notificationLaunchForProvider,
+  notificationLaunchForProviderSync,
   type ProviderNotificationLaunchContext,
 } from "./hooks/notification-provider-launch.js"
 import type { TerminalSessionStatus } from "./effect/session-machine.js"
@@ -58,9 +58,19 @@ export function buildAgentCliLaunchArgs(
   cliSessionId?: string | null,
 ): string[] {
   const command = agentCliCommandForProvider(provider)
-  const notifyArgs = notificationLaunchForProvider(provider, command, context).args
+  const notifyArgs = notificationLaunchForProviderSync(provider, command, context)
+    .args
   if (!cliSessionId) return notifyArgs
   return mergeAgentCliResumeArgs(provider, notifyArgs, cliSessionId)
+}
+
+/** Env vars for PTY so project hooks / plugins can forward to ingest. */
+export function buildAgentCliLaunchEnv(
+  provider: AgentProvider,
+  context: ProviderNotificationLaunchContext,
+): Record<string, string> {
+  const command = agentCliCommandForProvider(provider)
+  return notificationLaunchForProviderSync(provider, command, context).env
 }
 
 export function tryParseAgentCliSessionId(
@@ -313,8 +323,11 @@ export function isPersistableAgentSession(session: {
   agentDriverId?: string
   launchCommand?: string
   parentSessionTabId?: string
+  pendingCliMint?: boolean
 }): boolean {
   if (session.parentSessionTabId) return false
+  // Cursor (and similar): no resumable CLI id yet — skip roster write.
+  if (session.pendingCliMint) return false
   if (session.agentId && !isAgentCliProvider(session.agentId)) return false
   if (
     session.agentId &&

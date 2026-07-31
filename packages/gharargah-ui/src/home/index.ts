@@ -36,6 +36,16 @@ export {
   type TerminalRuntimeStatus,
 } from "./session-card-model.js"
 export {
+  adeFieldsFromSnapshot,
+  mapAgentStatusToCardStatus,
+  cardModelFromAdeSnapshot,
+} from "./ade-session-card.js"
+export {
+  AgentActivityTimeline,
+  useSharedClockMs,
+  type AgentActivityTimelineProps,
+} from "./AgentActivityTimeline.js"
+export {
   TerminalSessionModal,
   TERMINAL_MODAL_SESSION_LIST_ID,
   type TerminalSessionModalProps,
@@ -74,6 +84,7 @@ export {
   mapHomeGroupsToSidebar,
   applyGrouping,
   sortSessionsUnreadFirst,
+  applyStickyListOrder,
   type GharagahSidebarProps,
   type SidebarProjectFilterId,
   type SidebarProject,

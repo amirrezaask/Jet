@@ -45,7 +45,6 @@ export type GharargahHomeProps = {
   onOpenTerminal: (panelId: PanelId, tabId: string) => void
   onNewSession: (rootUri: string) => void
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
-  onAddProject?: () => void
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
   onMarkSessionDone?: (panelId: PanelId, tabId: string) => void
@@ -58,7 +57,9 @@ export type GharargahHomeProps = {
 function toSessionCard(group: HomeProjectGroup, term: HomeTerminalEntry): SessionCardModel {
   if (term.session) return term.session
   const agentId = term.agentId ?? detectSessionProvider(term.launchCommand)
-  const status = mapRuntimeStatusToCardStatus(term.status, Boolean(term.doneAt))
+  const status =
+    term.adeStatus ??
+    mapRuntimeStatusToCardStatus(term.status, Boolean(term.doneAt))
   return {
     id: term.tabId,
     projectId: group.id,
@@ -66,8 +67,13 @@ function toSessionCard(group: HomeProjectGroup, term: HomeTerminalEntry): Sessio
     agentId,
     agentLabel: sessionAgentLabel(agentId),
     title: term.label,
-    description: defaultSessionDescription(agentId ? "agent" : "terminal", status),
+    description:
+      term.activityLabel ??
+      defaultSessionDescription(agentId ? "agent" : "terminal", status),
     status,
+    requiresApproval: term.requiresApproval,
+    unreadCount: term.unreadCount,
+    statsLine: term.statsLine,
   }
 }
 
@@ -77,7 +83,6 @@ export function GharargahHome(props: GharargahHomeProps) {
     onOpenTerminal,
     onNewSession,
     onOpenInApp,
-    onAddProject,
     onRemoveProject,
     onKillTerminal,
     onMarkSessionDone,
@@ -222,19 +227,6 @@ export function GharargahHome(props: GharargahHomeProps) {
                   /
                 </Kbd>
               </div>
-              {onAddProject ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  data-gharargah-home-add-project
-                  className="gap-1.5"
-                  onClick={onAddProject}
-                >
-                  <FolderPlus data-icon="inline-start" />
-                  Add project
-                </Button>
-              ) : null}
             </div>
           </div>
         </header>
@@ -250,21 +242,10 @@ export function GharargahHome(props: GharargahHomeProps) {
               </EmptyMedia>
               <EmptyTitle>No projects yet</EmptyTitle>
               <EmptyDescription>
-                Add a folder to start a CLI session in its project context.
+                Add a folder from the command palette to start a CLI session in
+                its project context.
               </EmptyDescription>
             </EmptyHeader>
-            {onAddProject ? (
-              <EmptyContent>
-                <Button
-                  type="button"
-                  data-gharargah-home-add-project
-                  onClick={onAddProject}
-                >
-                  <FolderPlus data-icon="inline-start" />
-                  Add project
-                </Button>
-              </EmptyContent>
-            ) : null}
           </Empty>
         ) : filtered.length === 0 ? (
           <Empty

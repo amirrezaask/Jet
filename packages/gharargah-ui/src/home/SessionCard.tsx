@@ -159,6 +159,22 @@ export function SessionCard(props: SessionCardProps) {
               {session.description}
             </p>
           ) : null}
+          {session.statsLine ? (
+            <p
+              className="line-clamp-1 text-4xs tabular-nums text-muted-foreground/80"
+              data-gharargah-session-stats
+            >
+              {session.statsLine}
+            </p>
+          ) : null}
+          {session.unreadCount && session.unreadCount > 0 ? (
+            <span
+              className="absolute top-2 right-2 z-20 rounded-full bg-primary px-1.5 py-0.5 text-4xs font-medium text-primary-foreground"
+              data-gharargah-session-unread
+            >
+              Unread {session.unreadCount}
+            </span>
+          ) : null}
           {showApprovalActions && (onReview || onReject) ? (
             <div
               className="pointer-events-auto relative z-20 mt-auto flex items-center justify-end gap-1.5 pt-1"

@@ -5,12 +5,19 @@ import {
   TerminalHost,
 } from "@gharargah/node-host"
 import type { NotificationStreamEvent } from "@gharargah/shared"
+import type { AgentProvider } from "@gharargah/agents"
 import type { HostConfig } from "./config.js"
 import type { EventHub } from "./events.js"
 import {
   NotificationService,
   parseOscStreamChunk,
 } from "./notifications/index.js"
+import {
+  AgentTelemetryService,
+  listQueuedHooks,
+  removeQueuedHook,
+  type AgentSnapshotStreamEvent,
+} from "./agents/index.js"
 import type { ProjectDatabase } from "./persistence.js"
 import { WorkspaceHost } from "./workspace.js"
 
@@ -23,6 +30,20 @@ export type HostRuntime = {
   perf: PerfHost
   homeDir: string
   notifications: NotificationService
+  agents: AgentTelemetryService
+}
+
+function asAgentProvider(value: string | null | undefined): AgentProvider | null {
+  if (
+    value === "claude" ||
+    value === "codex" ||
+    value === "cursor" ||
+    value === "opencode" ||
+    value === "grok"
+  ) {
+    return value
+  }
+  return null
 }
 
 export function createRuntime(
@@ -43,17 +64,22 @@ export function createRuntime(
     })
   const notifications = new NotificationService(db.raw(), emitNotification)
 
+  const emitAgent = (streamEvent: AgentSnapshotStreamEvent) => {
+    events.emit("agents:event", [streamEvent])
+  }
+  const agents = new AgentTelemetryService(db.raw(), notifications, emitAgent)
+
   terminal.setEmit((channel, args) => {
     events.emit(channel, args)
     if (channel === "terminal:data") {
       const ptyId = String(args[0] ?? "")
       const data = String(args[1] ?? "")
-      handleTerminalOsc(notifications, terminalOscBuffers, ptyId, data)
+      handleTerminalOsc(notifications, agents, terminalOscBuffers, ptyId, data)
     } else if (channel === "terminal:exit") {
       const ptyId = String(args[0] ?? "")
       terminalOscBuffers.delete(ptyId)
       const exitCode = typeof args[1] === "number" ? args[1] : Number(args[1] ?? 0)
-      handleTerminalExit(notifications, ptyId, exitCode)
+      handleTerminalExit(notifications, agents, ptyId, exitCode)
     }
   })
 
@@ -68,13 +94,38 @@ export function createRuntime(
     perf: new PerfHost(homeDir, Date.now()),
     homeDir,
     notifications,
+    agents,
   }
   setLspCrashHandler(id => events.emit("lsp:crashed", [id]))
+
+  // Drain offline hook queue from previous host downtime.
+  drainHookQueue(agents, config.dataDir)
+
   return runtime
+}
+
+function drainHookQueue(agents: AgentTelemetryService, dataDir: string): void {
+  for (const item of listQueuedHooks(dataDir)) {
+    const provider = asAgentProvider(item.meta.provider)
+    if (!provider || !item.meta.sessionId) {
+      removeQueuedHook(item.file)
+      continue
+    }
+    try {
+      agents.ingestNative(item.payload, {
+        provider,
+        sessionId: item.meta.sessionId,
+      })
+      removeQueuedHook(item.file)
+    } catch {
+      /* leave for next startup */
+    }
+  }
 }
 
 function handleTerminalOsc(
   notifications: NotificationService,
+  agents: AgentTelemetryService,
   buffers: Map<string, string>,
   ptyId: string,
   data: string,
@@ -86,6 +137,27 @@ function handleTerminalOsc(
   if (parsed.length === 0) return
   const binding = notifications.bindingForPty(ptyId)
   for (const item of parsed) {
+    const provider = asAgentProvider(binding?.provider ?? item.provider ?? null)
+    if (provider && binding?.sessionId) {
+      agents.ingestNative(
+        {
+          type: item.type,
+          title: item.title,
+          message: item.message,
+          providerEvent: item.type,
+          providerSessionId: item.providerSessionId,
+        },
+        {
+          provider,
+          sessionId: binding.sessionId,
+          processId: ptyId,
+          projectId: binding.projectId ?? undefined,
+          projectName: binding.projectName ?? undefined,
+          sessionTitle: binding.sessionTitle ?? undefined,
+        },
+      )
+      continue
+    }
     notifications.ingest({
       ...item,
       sessionId: binding?.sessionId ?? null,
@@ -99,10 +171,23 @@ function handleTerminalOsc(
 
 function handleTerminalExit(
   notifications: NotificationService,
+  agents: AgentTelemetryService,
   ptyId: string,
   exitCode: number,
 ): void {
   const binding = notifications.bindingForPty(ptyId)
+  const provider = asAgentProvider(binding?.provider ?? null)
+  if (provider && binding?.sessionId) {
+    agents.onProcessExited({
+      provider,
+      sessionId: binding.sessionId,
+      processId: ptyId,
+      exitCode,
+      expectedExit: exitCode === 0,
+      projectId: binding.projectId ?? undefined,
+    })
+    return
+  }
   if (exitCode === 0) return
   const providerLabel = binding?.provider
     ? binding.provider.charAt(0).toUpperCase() + binding.provider.slice(1)

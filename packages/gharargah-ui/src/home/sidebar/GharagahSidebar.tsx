@@ -6,8 +6,9 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type ReactNode,
 } from "react"
-import { FolderPlus, Plus } from "lucide-react"
+import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
 import {
@@ -22,10 +23,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar.js"
 import { cn } from "@/lib/utils.js"
-import {
-  applyStickySelectedOrder,
-  sortSessionsUnreadFirst,
-} from "./grouping/index.js"
+import { applyStickyListOrder } from "./grouping/index.js"
 import { filterSessionsByQuery } from "./filter-sessions.js"
 import type { ProjectSidebarActions } from "./ProjectSidebarItem.js"
 import type { SessionSidebarActions } from "./SessionContextMenu.js"
@@ -52,7 +50,7 @@ export type GharagahSidebarProps = {
   selectedSessionId: string | null
   onSelectSession: (session: SidebarSession) => void
   onNewSession: (projectRootUri?: string) => void
-  onAddProject?: () => void
+  notificationBell?: ReactNode
   sessionActions: SessionSidebarActions
   projectActions: ProjectSidebarActions
   onOpenSettings?: () => void
@@ -76,7 +74,7 @@ export function GharagahSidebar({
   selectedSessionId,
   onSelectSession,
   onNewSession,
-  onAddProject,
+  notificationBell,
   sessionActions,
   projectActions,
   onOpenSettings,
@@ -94,7 +92,6 @@ export function GharagahSidebar({
   const searchRef = useRef<HTMLInputElement | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [stickyOrder, setStickyOrder] = useState<string[]>([])
-  const prevSelectedRef = useRef<string | null>(null)
 
   const filteredSessions = useMemo(() => {
     let list = sessions
@@ -111,19 +108,24 @@ export function GharagahSidebar({
     return filterSessionsByQuery(list, searchQuery)
   }, [sessions, projects, projectFilterId, searchQuery])
 
-  // Sticky order: capture order when selection changes; hold while selected.
-  useEffect(() => {
-    if (selectedSessionId !== prevSelectedRef.current) {
-      prevSelectedRef.current = selectedSessionId
-      const sorted = sortSessionsUnreadFirst(filteredSessions)
-      setStickyOrder(sorted.map(s => s.id))
-    }
-  }, [selectedSessionId, filteredSessions])
+  const visibleSessions = useMemo(
+    () => applyStickyListOrder(filteredSessions, stickyOrder),
+    [filteredSessions, stickyOrder],
+  )
 
-  const visibleSessions = useMemo(() => {
-    const sorted = sortSessionsUnreadFirst(filteredSessions)
-    return applyStickySelectedOrder(sorted, stickyOrder, selectedSessionId)
-  }, [filteredSessions, stickyOrder, selectedSessionId])
+  // Refresh sticky ids when membership changes — never reshuffle on activity.
+  useEffect(() => {
+    const nextIds = visibleSessions.map(s => s.id)
+    setStickyOrder(prev => {
+      if (
+        prev.length === nextIds.length &&
+        prev.every((id, i) => id === nextIds[i])
+      ) {
+        return prev
+      }
+      return nextIds
+    })
+  }, [visibleSessions])
 
   const handleSelectSession = useCallback(
     (session: SidebarSession) => {
@@ -205,6 +207,7 @@ export function GharagahSidebar({
                 inputRef={searchRef}
                 className="min-w-0 flex-1 px-0"
               />
+              {notificationBell}
               <Button
                 type="button"
                 size="icon-sm"
@@ -225,19 +228,6 @@ export function GharagahSidebar({
                 onChange={onProjectFilterIdChange}
                 projectActions={projectActions}
               />
-              {onAddProject ? (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="outline"
-                  className="size-8 shrink-0 rounded-lg"
-                  aria-label="Add Project"
-                  data-gharargah-sidebar-add-project=""
-                  onClick={onAddProject}
-                >
-                  <FolderPlus className="size-3.5" aria-hidden />
-                </Button>
-              ) : null}
             </div>
           </>
         ) : (
@@ -247,6 +237,7 @@ export function GharagahSidebar({
               aria-label="Toggle sidebar"
               title={`Toggle sidebar (${formatKeyBinding("Mod-b")})`}
             />
+            {notificationBell}
             <Button
               type="button"
               size="icon-sm"
@@ -259,19 +250,6 @@ export function GharagahSidebar({
             >
               <Plus className="size-3.5" aria-hidden />
             </Button>
-            {onAddProject ? (
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                className="size-7"
-                aria-label="Add Project"
-                data-gharargah-sidebar-add-project=""
-                onClick={onAddProject}
-              >
-                <FolderPlus className="size-3.5" aria-hidden />
-              </Button>
-            ) : null}
           </div>
         )}
       </SidebarHeader>
@@ -305,19 +283,8 @@ export function GharagahSidebar({
           >
             <p className="text-xs font-medium">No projects yet</p>
             <p className="text-3xs text-muted-foreground">
-              Add a project to start a session.
+              Add a project from the command palette to start a session.
             </p>
-            {onAddProject ? (
-              <Button
-                type="button"
-                size="sm"
-                className="gap-1.5"
-                onClick={onAddProject}
-              >
-                <FolderPlus className="size-3.5" aria-hidden />
-                Add Project
-              </Button>
-            ) : null}
           </div>
         ) : (
           <SidebarGroup className="flex min-h-0 flex-1 flex-col p-0">

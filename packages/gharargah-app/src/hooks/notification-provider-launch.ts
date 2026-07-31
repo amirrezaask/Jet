@@ -1,18 +1,36 @@
-import type { AgentProvider } from "@gharargah/shared"
+import {
+  getCliAgentDriver,
+  type AgentProvider as CliAgentProvider,
+} from "@gharargah/agents"
 
 export type ProviderNotificationLaunch = {
   command: string
   args: string[]
-  driver: "hook" | "osc"
+  driver: "hook" | "osc" | "plugin"
+  env: Record<string, string>
 }
 
 export type ProviderNotificationLaunchContext = {
   sessionId: string
   origin: string
+  projectRoot?: string
+}
+
+function asCliProvider(provider: string): CliAgentProvider {
+  if (
+    provider === "claude" ||
+    provider === "codex" ||
+    provider === "cursor" ||
+    provider === "opencode" ||
+    provider === "grok"
+  ) {
+    return provider
+  }
+  return "codex"
 }
 
 function ingestUrl(
-  provider: AgentProvider,
+  provider: CliAgentProvider,
   context: ProviderNotificationLaunchContext,
 ): string {
   const url = new URL("/api/v1/notifications/ingest", context.origin)
@@ -21,54 +39,114 @@ function ingestUrl(
   return url.toString()
 }
 
-function claudeSettings(url: string): string {
-  const handler = { type: "http", url, timeout: 5 }
-  const entry = { hooks: [handler] }
-  return JSON.stringify({
-    hooks: {
-      Notification: [{ matcher: "", ...entry }],
-      Stop: [entry],
-      StopFailure: [entry],
-    },
-  })
-}
-
-function codexNotifyOverride(url: string): string {
-  // Codex appends its JSON payload as the final argv item. The fixed argv[0]
-  // makes that payload `$1`, while curl receives it without shell re-parsing.
-  const script =
-    'curl --silent --show-error --max-time 5 --request POST --header "content-type: application/json" --data-binary "$1" "$0" >/dev/null'
-  return `notify=${JSON.stringify(["sh", "-c", script, url])}`
-}
-
 /**
- * Session-scoped provider notification wiring. It never edits a user's global
- * provider config; providers without a stable per-launch hook use OSC.
+ * Session-scoped provider notification / hook wiring via CliAgentDriver.
+ * Never edits a user's global provider config for Claude (uses --settings).
+ * Codex/Cursor/OpenCode may merge project-local hook files via host RPC.
  */
-export function notificationLaunchForProvider(
-  provider: AgentProvider,
+export async function notificationLaunchForProvider(
+  provider: string,
+  command: string,
+  context: ProviderNotificationLaunchContext,
+): Promise<ProviderNotificationLaunch> {
+  const cliProvider = asCliProvider(provider)
+  const url = ingestUrl(cliProvider, context)
+  const driver = getCliAgentDriver(cliProvider)
+  const installed = await driver.installHooks({
+    sessionId: context.sessionId,
+    projectRoot: context.projectRoot ?? ".",
+    ingestUrl: url,
+    provider: cliProvider,
+    origin: context.origin,
+  })
+  return {
+    command,
+    args: installed.launchArgs,
+    driver: installed.driver,
+    env: installed.env,
+  }
+}
+
+/** Sync helper for call sites that already have launch args built. */
+export function notificationLaunchForProviderSync(
+  provider: string,
   command: string,
   context: ProviderNotificationLaunchContext,
 ): ProviderNotificationLaunch {
-  const url = ingestUrl(provider, context)
-  if (provider === "claude") {
+  const cliProvider = asCliProvider(provider)
+  const url = ingestUrl(cliProvider, context)
+  if (cliProvider === "claude") {
+    const handler = { type: "http", url, timeout: 5 }
+    const entry = { hooks: [handler] }
+    const matcherEntry = { matcher: "", ...entry }
+    const settings = JSON.stringify({
+      hooks: {
+        SessionStart: [entry],
+        SessionEnd: [entry],
+        UserPromptSubmit: [entry],
+        PreToolUse: [matcherEntry],
+        PostToolUse: [matcherEntry],
+        PostToolUseFailure: [matcherEntry],
+        PermissionRequest: [matcherEntry],
+        Notification: [matcherEntry],
+        SubagentStart: [entry],
+        SubagentStop: [entry],
+        PreCompact: [entry],
+        PostCompact: [entry],
+        Stop: [entry],
+        StopFailure: [entry],
+      },
+    })
     return {
       command,
-      args: ["--settings", claudeSettings(url)],
+      args: ["--settings", settings],
       driver: "hook",
+      env: {
+        GHARARGAH_SESSION_ID: context.sessionId,
+        GHARARGAH_INGEST_URL: url,
+        GHARARGAH_PROVIDER: cliProvider,
+      },
     }
   }
-  if (provider === "codex") {
+  if (cliProvider === "codex") {
+    const script =
+      'curl --silent --show-error --max-time 5 --request POST --header "content-type: application/json" --data-binary "$1" "$0" >/dev/null'
     return {
       command,
-      args: ["-c", codexNotifyOverride(url)],
+      args: [
+        "-c",
+        "features.codex_hooks=true",
+        "-c",
+        `notify=${JSON.stringify(["sh", "-c", script, url])}`,
+      ],
       driver: "hook",
+      env: {
+        GHARARGAH_SESSION_ID: context.sessionId,
+        GHARARGAH_INGEST_URL: url,
+        GHARARGAH_PROVIDER: cliProvider,
+      },
     }
   }
-  if (provider === "cursor") {
-    // ADE launches into a project the user already opened. Without --trust,
-    // cursor-agent blocks on a workspace-trust TUI; Quit exits with code 1.
-    return { command, args: ["--trust"], driver: "osc" }
+  if (cliProvider === "cursor") {
+    return {
+      command,
+      args: ["--trust"],
+      driver: "hook",
+      env: {
+        GHARARGAH_SESSION_ID: context.sessionId,
+        GHARARGAH_INGEST_URL: url,
+        GHARARGAH_PROVIDER: cliProvider,
+      },
+    }
   }
-  return { command, args: [], driver: "osc" }
+  return {
+    command,
+    args: [],
+    driver: cliProvider === "opencode" ? "plugin" : "osc",
+    env: {
+      GHARARGAH_SESSION_ID: context.sessionId,
+      GHARARGAH_INGEST_URL: url,
+      GHARARGAH_PROVIDER: cliProvider,
+    },
+  }
 }

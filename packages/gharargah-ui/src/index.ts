@@ -82,6 +82,11 @@ export {
   type SidebarSession,
   type SessionSidebarActions,
   type ProjectSidebarActions,
+  adeFieldsFromSnapshot,
+  mapAgentStatusToCardStatus,
+  cardModelFromAdeSnapshot,
+  AgentActivityTimeline,
+  useSharedClockMs,
 } from "./home/index.js"
 export { SidebarProvider, SidebarInset, SidebarTrigger } from "./components/ui/sidebar.js"
 export {

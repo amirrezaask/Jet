@@ -2,6 +2,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import {
   applyGrouping,
+  applyStickyListOrder,
   applyStickySelectedOrder,
   sortProjects,
   sortSessionsInProject,
@@ -231,6 +232,59 @@ describe("applyStickySelectedOrder", () => {
     assert.deepEqual(
       sticky.map(s => s.id),
       ["2", "1", "3"],
+    )
+  })
+})
+
+describe("applyStickyListOrder", () => {
+  it("keeps peer order stable when activity timestamps churn", () => {
+    const previous = ["a", "b", "c"]
+    const churned = [
+      session({
+        id: "c",
+        agent: "cursor",
+        lastActivityAt: "2026-07-28T15:00:00Z",
+      }),
+      session({
+        id: "a",
+        agent: "cursor",
+        lastActivityAt: "2026-07-28T14:00:00Z",
+      }),
+      session({
+        id: "b",
+        agent: "cursor",
+        lastActivityAt: "2026-07-28T16:00:00Z",
+      }),
+    ]
+    assert.deepEqual(
+      applyStickyListOrder(churned, previous).map(s => s.id),
+      ["a", "b", "c"],
+    )
+  })
+
+  it("prepends newcomers without reshuffling existing peers", () => {
+    const previous = ["a", "b"]
+    const withNew = [
+      session({
+        id: "b",
+        agent: "cursor",
+        lastActivityAt: "2026-07-28T10:00:00Z",
+      }),
+      session({
+        id: "new",
+        agent: "cursor",
+        unreadCount: 1,
+        lastActivityAt: "2026-07-28T12:00:00Z",
+      }),
+      session({
+        id: "a",
+        agent: "cursor",
+        lastActivityAt: "2026-07-28T11:00:00Z",
+      }),
+    ]
+    assert.deepEqual(
+      applyStickyListOrder(withNew, previous).map(s => s.id),
+      ["new", "a", "b"],
     )
   })
 })

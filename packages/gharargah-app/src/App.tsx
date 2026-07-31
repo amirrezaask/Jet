@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useDeferredValue,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactElement,
 } from "react"
@@ -85,6 +86,9 @@ import {
   setEditorCursorStore,
   destroyEditorBuffer,
   ProjectTodosPane,
+  adeFieldsFromSnapshot,
+  mapAgentStatusToCardStatus,
+  AgentActivityTimeline,
 } from "@gharargah/ui"
 import { SessionTerminalWorkspacePane } from "./SessionTerminalWorkspacePane.js"
 import {
@@ -123,15 +127,21 @@ import {
 } from "./tabs/terminal-session.js"
 import {
   buildAgentCliLaunchArgs,
+  buildAgentCliLaunchEnv,
   captureAgentCliSessionFromNotification,
-  captureAgentCliSessionFromOutput,
   isAgentCliProvider,
   isPersistableAgentSession,
   prepareHydratedAgentCliFields,
   syncAgentCliLaunchArgs,
 } from "./agent-cli-launch.js"
+import {
+  applyAgentStreamUnknown,
+  getAgentSnapshot,
+  getAgentEvents,
+  getAgentTelemetryVersion,
+  subscribeAgentTelemetryVersion,
+} from "./agent-snapshot-store.js"
 import { ensureAgentCliProcess, applyAgentCliResumeLaunchArgs } from "./agent-cli-resume.js"
-import { mintCursorAgentChatId } from "./cursor-cli-session.js"
 import { type PersistedSessionRoster } from "./session-roster-store.js"
 import {
   loadServerSessionRoster,
@@ -312,6 +322,13 @@ export function GharargahApp() {
     string | null
   >(null)
   const [terminalSessionRevision, setTerminalSessionRevision] = useState(0)
+  // ADE telemetry — separate from terminalSessionRevision so hook floods do not
+  // re-persist the session roster or rebuild PTY lists on every tool event.
+  const agentTelemetryRevision = useSyncExternalStore(
+    subscribeAgentTelemetryVersion,
+    getAgentTelemetryVersion,
+    getAgentTelemetryVersion,
+  )
   const notifications = useNotificationCenter()
   const notificationsRef = useRef(notifications)
   notificationsRef.current = notifications
@@ -581,9 +598,11 @@ export function GharargahApp() {
         label?: string
         launchCommand?: string
         launchArgs?: string[] | ((tabId: string) => string[])
+        launchEnv?: Record<string, string> | ((tabId: string) => Record<string, string>)
         agentId?: string
         agentDriverId?: string
         agentCliSessionId?: string
+        pendingCliMint?: boolean
       },
     ) => {
       if (rootUri && rootUri !== workspace.root?.uri) {
@@ -603,10 +622,12 @@ export function GharargahApp() {
         label,
         launchCommand: opts?.launchCommand,
         launchArgs: opts?.launchArgs,
+        launchEnv: opts?.launchEnv,
         agentId: opts?.agentId,
         agentDriverId: opts?.agentDriverId,
         agentCliSessionId: opts?.agentCliSessionId,
-        },
+        pendingCliMint: opts?.pendingCliMint,
+      },
       )
       setFocusedPanel(panelId)
       commitTree(tree, panelId)
@@ -622,28 +643,9 @@ export function GharargahApp() {
   const createAgentSession = useCallback(
     async (rootUri: string, driver: AgentCliDriver) => {
       try {
-        let cliSessionId: string | null = null
-        // Cursor has no notify hook — mint chat id up front so resume works
-        // after refresh (interactive TUI does not emit session_id reliably).
-        if (driver.id === "cursor") {
-          if (!window.gharargah?.terminal) {
-            showGharargahToast("Terminal host unavailable — cannot mint Cursor chat id", {
-              variant: "destructive",
-            })
-            return
-          }
-          cliSessionId = await mintCursorAgentChatId(
-            rootUri,
-            window.gharargah.terminal,
-          )
-          if (!cliSessionId) {
-            showGharargahToast(
-              "Could not mint Cursor chat id (is cursor-agent logged in?). Session not created.",
-              { variant: "destructive" },
-            )
-            return
-          }
-        }
+        // Cursor: open interactive PTY immediately (same as other agents).
+        // Hooks supply session_id later; roster write stays deferred until then.
+        const deferRosterUntilCliId = driver.id === "cursor"
         const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
           label: driver.label,
           launchCommand: driver.command,
@@ -653,20 +655,31 @@ export function GharargahApp() {
               {
                 sessionId: nextTabId,
                 origin: window.location.origin,
+                projectRoot: fileUriToPath(rootUri),
               },
-              cliSessionId,
+              null,
             ),
+          launchEnv: nextTabId =>
+            buildAgentCliLaunchEnv(driver.id, {
+              sessionId: nextTabId,
+              origin: window.location.origin,
+              projectRoot: fileUriToPath(rootUri),
+            }),
           agentId: driver.id,
           agentDriverId: agentDriverIdForMode(driver.id, "cli"),
-          agentCliSessionId: cliSessionId ?? undefined,
+          pendingCliMint: deferRosterUntilCliId,
         })
+        // Project-local hooks for Codex/Cursor/OpenCode (idempotent merge).
+        void window.gharargah?.agents
+          ?.installProjectHooks?.({
+            provider: driver.id,
+            projectRoot: fileUriToPath(rootUri),
+          })
+          .catch(() => undefined)
         bindAgentToSession(tabId, {
           agentId: driver.id,
           driverId: agentDriverIdForMode(driver.id, "cli"),
         })
-        if (cliSessionId) {
-          setAgentCliSessionId(tabId, cliSessionId)
-        }
         openTerminalModal(panelId, tabId, "agent")
       } catch (err) {
         console.error("[gharargah] createAgentSession failed", err)
@@ -910,6 +923,38 @@ export function GharargahApp() {
       )
     })
   }, [atomRegistry])
+
+  useEffect(() => {
+    const agentsApi = window.gharargah?.agents
+    if (!agentsApi?.onEvent) return
+    return agentsApi.onEvent(payload => {
+      applyAgentStreamUnknown(payload)
+      if (
+        payload.type === "agents.snapshot" &&
+        payload.nativeSessionId &&
+        payload.sessionId &&
+        payload.snapshot
+      ) {
+        captureAgentCliSessionFromNotification(
+          payload.sessionId,
+          payload.snapshot.provider,
+          payload.nativeSessionId,
+          (tabId, cliSessionId) => {
+            setAgentCliSessionId(tabId, cliSessionId)
+            const session = terminalSessionForTab(tabId)
+            if (session?.agentId && isAgentCliProvider(session.agentId)) {
+              updateTerminalLaunchArgs(
+                tabId,
+                syncAgentCliLaunchArgs(tabId, session.agentId, cliSessionId),
+              )
+              // Roster needs the new agentCliSessionId — only then bump PTY revision.
+              setTerminalSessionRevision(n => n + 1)
+            }
+          },
+        )
+      }
+    })
+  }, [])
 
   useEffect(() => {
     const persistLatestOnPageHide = () => {
@@ -2705,23 +2750,37 @@ export function GharargahApp() {
                   name: g.name,
                   path: g.path,
                   rootUri: g.rootUri,
-                  terminals: g.terminals.map(t => ({
-                    tabId: t.tabId,
-                    panelId: t.panelId,
-                    label: t.label,
-                    status: t.status,
-                    exitCode: t.exitCode,
-                    launchCommand: t.launchCommand,
-                    agentId: t.agentId,
-                    doneAt: t.doneAt,
-                  })),
+                  terminals: g.terminals.map(t => {
+                    // Touch agentTelemetryRevision so card ADE fields refresh.
+                    void agentTelemetryRevision
+                    const snap = getAgentSnapshot(t.tabId)
+                    const ade = adeFieldsFromSnapshot(snap)
+                    return {
+                      tabId: t.tabId,
+                      panelId: t.panelId,
+                      label: t.label,
+                      status: t.status,
+                      exitCode: t.exitCode,
+                      launchCommand: t.launchCommand,
+                      agentId: t.agentId,
+                      doneAt: t.doneAt,
+                      unreadCount:
+                        ade.unreadCount ??
+                        notifications.unreadBySession?.[t.tabId],
+                      activityLabel: ade.activityLabel,
+                      statsLine: ade.statsLine,
+                      requiresApproval: ade.attentionKind === "permission_required",
+                      adeStatus: snap
+                        ? mapAgentStatusToCardStatus(snap.status, Boolean(t.doneAt))
+                        : undefined,
+                    }
+                  }),
                 }))}
                 onOpenTerminal={openTerminalFromHome}
                 onNewSession={rootUri => void newAgentTabFromHome(rootUri)}
                   onOpenInApp={(rootUri, appId) =>
                     void openProjectInApp(rootUri, appId)
                   }
-                onAddProject={() => setAddWorkspaceOpen(true)}
                 onRemoveProject={removeProjectByRootUri}
                 onKillTerminal={closeTerminalTab}
                 onMarkSessionDone={markSessionDoneFromHome}
@@ -2778,7 +2837,13 @@ export function GharargahApp() {
                           void newAgentTabFromHome(target)
                         }
                       }}
-                      onAddProject={() => setAddWorkspaceOpen(true)}
+                      notificationBell={
+                        <NotificationBell
+                          counts={notifications.counts}
+                          onClick={() => notifications.setOpen(true)}
+                          className="size-8 shrink-0 rounded-lg"
+                        />
+                      }
                       onSidebarWidthChange={widthPx =>
                         setAppearanceSettings(prev => ({
                           ...prev,
@@ -2831,18 +2896,6 @@ export function GharargahApp() {
                       }
                     />
                     <SidebarInset className="flex min-h-0 flex-col overflow-hidden">
-                      {!terminalModalTabId ? (
-                        <div
-                          className="flex h-8 shrink-0 items-center justify-end border-b border-border px-2"
-                          data-gharargah-sidebar-workspace-empty=""
-                        >
-                          <NotificationBell
-                            counts={notifications.counts}
-                            onClick={() => notifications.setOpen(true)}
-                            className="size-6 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
-                          />
-                        </div>
-                      ) : null}
                       <div
                         ref={setSidebarWorkspaceHost}
                         className="relative min-h-0 flex-1 overflow-hidden"
@@ -2859,6 +2912,8 @@ export function GharargahApp() {
               items={notifications.items}
               query={notifications.query}
               onQueryChange={notifications.setQuery}
+              filter={notifications.filter}
+              onFilterChange={notifications.setFilter}
               loading={notifications.loading}
               error={notifications.error}
               onMarkAllRead={() => void notifications.markAllVisibleRead()}
@@ -2951,31 +3006,41 @@ export function GharargahApp() {
                     )
                   }
                   isDone={isSessionDone(terminalModalTabId)}
-                headerEnd={
-                  isSidebarLayout ? (
-                    <NotificationBell
-                      counts={notifications.counts}
-                      onClick={() => notifications.setOpen(true)}
-                      className="size-6 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
-                    />
-                  ) : null
-                }
                 agent={
                   terminalSessionForTab(terminalModalTabId)?.agentId &&
                   terminalSessionForTab(terminalModalTabId)?.launchCommand ? (
-                    <PanelBody
-                      panelId={terminalModalPanelId}
-                      view={
-                        {
-                          kind: "tabs",
-                          activeTabId: terminalModalTabId,
-                          tabIds: [terminalModalTabId],
-                        } as PanelView
-                      }
-                      store={tabStore}
-                      registry={tabTypeRegistry}
-                      focused={sessionMode === "agent"}
-                    />
+                    <div
+                      className="flex h-full min-h-0 flex-col"
+                      data-gharargah-session-pane="agent"
+                    >
+                      <div
+                        className="max-h-40 shrink-0 overflow-hidden border-b border-border/60"
+                        data-gharargah-agent-activity
+                      >
+                        <AgentActivityTimeline
+                          events={
+                            (void agentTelemetryRevision,
+                            getAgentEvents(terminalModalTabId))
+                          }
+                          className="max-h-40"
+                        />
+                      </div>
+                      <div className="min-h-0 flex-1">
+                        <PanelBody
+                          panelId={terminalModalPanelId}
+                          view={
+                            {
+                              kind: "tabs",
+                              activeTabId: terminalModalTabId,
+                              tabIds: [terminalModalTabId],
+                            } as PanelView
+                          }
+                          store={tabStore}
+                          registry={tabTypeRegistry}
+                          focused={sessionMode === "agent"}
+                        />
+                      </div>
+                    </div>
                   ) : null
                 }
                 editor={
@@ -3148,7 +3213,6 @@ export function GharargahApp() {
             selectedRootUri={agentCliPickerRootUri}
             onSelectedRootUriChange={setAgentCliPickerRootUri}
             onRemoveProject={removeProjectByRootUri}
-            onAddProject={() => setAddWorkspaceOpen(true)}
             onSelect={driver => {
               const rootUri = agentCliPickerRootUri
               setAgentCliPickerRootUri(null)

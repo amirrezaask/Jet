@@ -70,14 +70,29 @@ test.describe("session refresh persistence", () => {
 
       await page.evaluate(
         async ({ sessionId, providerSessionId }) => {
-          await window.gharargah!.notifications.ingest({
-            source: "provider-hook",
-            provider: "codex",
-            type: "session-started",
-            title: "Codex session started",
-            sessionId,
-            providerSessionId,
-          })
+          // SessionStart-shaped Claude hook → ADE path stores native id immediately.
+          const res = await fetch(
+            `/api/v1/notifications/ingest?provider=claude&sessionId=${encodeURIComponent(sessionId)}`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                hook_event_name: "SessionStart",
+                session_id: providerSessionId,
+                source: "startup",
+              }),
+            },
+          )
+          if (!res.ok && res.status !== 204) {
+            await window.gharargah!.notifications.ingest({
+              source: "provider-hook",
+              provider: "codex",
+              type: "session-started",
+              title: "Codex session started",
+              sessionId,
+              providerSessionId,
+            })
+          }
         },
         { sessionId: tabId, providerSessionId: MOCK_CLI_SESSION_ID },
       )
@@ -127,7 +142,7 @@ test.describe("session refresh persistence", () => {
     }
   })
 
-  test("cursor agent CLI mints chat id, survives reload, resumes same chat", async () => {
+  test("cursor agent CLI opens instantly, stores after hook session id, resumes", async () => {
     test.skip(!cursorAgentAvailable, "cursor-agent not on PATH")
     const { app, page } = await launchJet()
     try {
@@ -141,10 +156,19 @@ test.describe("session refresh persistence", () => {
       await expectLocatorVisible(section)
 
       await openNewCliSession(page, "cursor")
+      // Modal + interactive PTY open immediately — no create-chat defer gate.
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+        timeout: 10_000,
+      })
+      await expectLocatorCount(
+        page.locator("[data-gharargah-terminal-defer-pty='1']"),
+        0,
+      )
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm", {
-        timeout: 30_000,
+        timeout: 20_000,
       })
 
+      // Roster deferred until hooks / native session id arrive.
       let chatId = ""
       await expect
         .poll(async () => {
@@ -156,7 +180,7 @@ test.describe("session refresh persistence", () => {
           if (args[0] !== `--resume=${id}`) return null
           if (!args.includes("--trust")) return null
           return id
-        }, { timeout: 30_000 })
+        }, { timeout: 45_000 })
         .toBeTruthy()
 
       const rosterBefore = await fetchSessionRoster(page)

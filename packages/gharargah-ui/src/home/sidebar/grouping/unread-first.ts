@@ -36,3 +36,26 @@ export function applyStickySelectedOrder(
   next.splice(Math.min(stickyIndex, next.length), 0, selected)
   return next
 }
+
+/**
+ * Pin relative order of existing sessions across activity/unread churn.
+ * New ids prepend (activity-sorted among themselves). Gone ids drop.
+ * Open vs done still respected via `sortSessionsUnreadFirst` for newcomers only.
+ */
+export function applyStickyListOrder(
+  sessions: SidebarSession[],
+  previousOrder: string[],
+): SidebarSession[] {
+  if (previousOrder.length === 0) return sortSessionsUnreadFirst(sessions)
+  const byId = new Map(sessions.map(s => [s.id, s]))
+  const kept: SidebarSession[] = []
+  for (const id of previousOrder) {
+    const session = byId.get(id)
+    if (!session) continue
+    kept.push(session)
+    byId.delete(id)
+  }
+  if (byId.size === 0) return kept
+  const newcomers = sortSessionsUnreadFirst([...byId.values()])
+  return [...newcomers, ...kept]
+}

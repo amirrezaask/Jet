@@ -63,6 +63,16 @@ export function createGharargahApi(
     const event = args[0] as import("@gharargah/shared").NotificationStreamEvent
     for (const cb of notificationEventListeners) cb(event)
   })
+  transport.on("agents:event", (...args: unknown[]) => {
+    const event = args[0] as {
+      type: "agents.snapshot" | "agents.event"
+      sessionId: string
+      snapshot?: import("@gharargah/agents").AgentSessionSnapshot
+      nativeSessionId?: string
+      event?: import("@gharargah/agents").AgentEvent
+    }
+    for (const cb of agentEventListeners) cb(event)
+  })
 
   const lspCrashListeners = new Set<(id: string) => void>()
   const fileChangeListeners = new Set<(uri: string) => void>()
@@ -71,6 +81,15 @@ export function createGharargahApi(
   const terminalExitListeners = new Set<(id: string, exitCode: number, signal?: number) => void>()
   const notificationEventListeners = new Set<
     (event: import("@gharargah/shared").NotificationStreamEvent) => void
+  >()
+  const agentEventListeners = new Set<
+    (event: {
+      type: "agents.snapshot" | "agents.event"
+      sessionId: string
+      snapshot?: import("@gharargah/agents").AgentSessionSnapshot
+      nativeSessionId?: string
+      event?: import("@gharargah/agents").AgentEvent
+    }) => void
   >()
 
   return {
@@ -165,6 +184,18 @@ export function createGharargahApi(
       onEvent: callback => {
         notificationEventListeners.add(callback)
         return () => notificationEventListeners.delete(callback)
+      },
+    },
+    agents: {
+      getSnapshot: sessionId => transport.invoke("agents:getSnapshot", sessionId),
+      listEvents: (sessionId, opts) =>
+        transport.invoke("agents:listEvents", sessionId, opts ?? {}),
+      ingestNative: req => transport.invoke("agents:ingestNative", req),
+      installProjectHooks: req =>
+        transport.invoke("agents:installProjectHooks", req),
+      onEvent: callback => {
+        agentEventListeners.add(callback)
+        return () => agentEventListeners.delete(callback)
       },
     },
     terminal: {

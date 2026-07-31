@@ -55,21 +55,18 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page.evaluate(() => {
-            const header = document.querySelector(
-              "[data-gharargah-terminal-modal-header]",
+            const sidebar = document.querySelector(
+              "[data-gharargah-mission-sidebar]",
             )
-            const bell = header?.querySelector(
+            const bell = sidebar?.querySelector(
               "[data-gharargah-notification-bell]",
             )
             const body = document.querySelector(
               "[data-gharargah-terminal-modal-body]",
             )
-            const empty = document.querySelector(
-              "[data-gharargah-sidebar-workspace-empty]",
-            )
-            if (!header || !bell || !body || empty) return false
+            if (!sidebar || !bell || !body) return false
             return (
-              (header.compareDocumentPosition(body) &
+              (sidebar.compareDocumentPosition(body) &
                 Node.DOCUMENT_POSITION_FOLLOWING) !==
               0
             )

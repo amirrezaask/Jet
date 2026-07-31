@@ -30,11 +30,13 @@ export function registerTerminalSession(
   launchCommand?: string,
   options?: {
     launchArgs?: string[]
+    launchEnv?: Record<string, string>
     parentSessionTabId?: string
     customLabel?: string
     agentId?: string
     agentDriverId?: string
     agentCliSessionId?: string
+    pendingCliMint?: boolean
   },
 ): void {
   defaultSessionStore.register(tabId, cwdRootUri, launchCommand, options)
@@ -54,6 +56,12 @@ export function terminalLaunchCommandForTab(tabId: string): string | undefined {
 
 export function terminalLaunchArgsForTab(tabId: string): string[] | undefined {
   return defaultSessionStore.get(tabId)?.launchArgs
+}
+
+export function terminalLaunchEnvForTab(
+  tabId: string,
+): Record<string, string> | undefined {
+  return defaultSessionStore.get(tabId)?.launchEnv
 }
 
 export function trackTerminalPtyId(tabId: string, ptyId: string | null): void {
@@ -103,6 +111,10 @@ export function agentCliSessionIdForTab(tabId: string): string | undefined {
 
 export function setAgentCliSessionId(tabId: string, cliSessionId: string): void {
   defaultSessionStore.setAgentCliSessionId(tabId, cliSessionId)
+}
+
+export function setPendingCliMint(tabId: string, pending: boolean): void {
+  defaultSessionStore.setPendingCliMint(tabId, pending)
 }
 
 export function updateTerminalLaunchArgs(tabId: string, launchArgs: string[]): void {
