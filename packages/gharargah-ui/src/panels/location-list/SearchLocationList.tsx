@@ -1,7 +1,7 @@
 import type { ListDocument, ListItem, WorkspaceFolder, WorkspaceService } from "@gharargah/workspace"
 import { projectSearchAcrossFolders } from "@gharargah/workspace"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { GharargahCaretInput } from "@/motion/useGharargahCaretOverlay.js"
+import { Input } from "@/components/ui/input.js"
 import { Spinner } from "@/components/ui/spinner.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert.js"
@@ -117,7 +117,7 @@ export function SearchLocationList({
   const header = (
     <div className="flex shrink-0 flex-col gap-2 border-b border-border p-2">
       <div className="flex flex-wrap items-center gap-2">
-        <GharargahCaretInput
+        <Input
           id={`search-input-${listId}`}
           autoFocus={autoFocus}
           ref={element => {

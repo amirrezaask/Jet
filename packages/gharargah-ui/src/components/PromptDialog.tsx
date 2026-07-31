@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.js"
 import { Label } from "@/components/ui/label.js"
-import { GharargahCaretInput } from "@/motion/useGharargahCaretOverlay.js"
+import { Input } from "@/components/ui/input.js"
 
 export interface PromptDialogProps {
   open: boolean
@@ -60,7 +60,7 @@ export function PromptDialog({
           <Label htmlFor={inputId} className="sr-only">
             {labelText}
           </Label>
-          <GharargahCaretInput
+          <Input
             id={inputId}
             ref={inputRef}
             placeholder={placeholder}

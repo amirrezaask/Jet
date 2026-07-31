@@ -19,11 +19,7 @@ export type SessionSidebarActions = {
   onOpen: (session: SidebarSession) => void
   onRename?: (session: SidebarSession) => void
   onMarkRead?: (session: SidebarSession) => void
-  onMarkUnread?: (session: SidebarSession) => void
-  onDuplicate?: (session: SidebarSession) => void
-  onMarkDone?: (session: SidebarSession) => void
   onClose?: (session: SidebarSession) => void
-  onDelete?: (session: SidebarSession) => void
 }
 
 function SessionMenuItems({
@@ -40,31 +36,20 @@ function SessionMenuItems({
   return (
     <>
       <Item onSelect={() => actions.onOpen(session)}>Open</Item>
-      <Item onSelect={() => actions.onOpen(session)}>Open in new tab</Item>
       {actions.onRename ? (
         <Item onSelect={() => actions.onRename?.(session)}>Rename</Item>
       ) : null}
-      <Separator />
       {session.unreadCount > 0 && actions.onMarkRead ? (
-        <Item onSelect={() => actions.onMarkRead?.(session)}>Mark as read</Item>
+        <>
+          <Separator />
+          <Item onSelect={() => actions.onMarkRead?.(session)}>Mark as read</Item>
+        </>
       ) : null}
-      {session.unreadCount === 0 && actions.onMarkUnread ? (
-        <Item onSelect={() => actions.onMarkUnread?.(session)}>Mark as unread</Item>
-      ) : null}
-      {actions.onDuplicate ? (
-        <Item onSelect={() => actions.onDuplicate?.(session)}>Duplicate</Item>
-      ) : null}
-      {actions.onMarkDone && !session.doneAt ? (
-        <Item onSelect={() => actions.onMarkDone?.(session)}>Mark done</Item>
-      ) : null}
-      <Separator />
       {actions.onClose ? (
-        <Item onSelect={() => actions.onClose?.(session)}>Close</Item>
-      ) : null}
-      {actions.onDelete ? (
-        <Item variant="destructive" onSelect={() => actions.onDelete?.(session)}>
-          Delete
-        </Item>
+        <>
+          <Separator />
+          <Item onSelect={() => actions.onClose?.(session)}>Close</Item>
+        </>
       ) : null}
     </>
   )

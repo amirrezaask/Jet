@@ -142,10 +142,6 @@ function applyAppearanceCss(settings: JetAppearanceSettings): void {
   root.style.setProperty("--gharargah-editor-line-height", "1.45")
   root.style.setProperty("--gharargah-terminal-line-height", "1")
   root.style.setProperty("--gharargah-terminal-cursor-blink", "1")
-  root.style.setProperty("--gharargah-cursor-style", "bar")
-  root.style.setProperty("--gharargah-cursor-motion", "trail")
-  root.style.setProperty("--gharargah-terminal-cursor-style", "bar")
-  root.style.setProperty("--gharargah-terminal-cursor-motion", "trail")
   root.dataset.jetDensity = "compact"
   root.dataset.jetReducedMotion = "false"
   root.dataset.gharargahSessionLayout = settings.sessionLayout

@@ -6,7 +6,6 @@ import type { GharargahTheme } from "@gharargah/shared"
 import "@xterm/xterm/css/xterm.css"
 import { subscribeRootStyle } from "./root-style-observer.js"
 import { Button } from "../components/ui/button.js"
-import { TerminalCursorMotionLayer } from "./terminal-cursor-motion.js"
 import { TerminalScrollMotion } from "./terminal-scroll-motion.js"
 import { registerTerminalPathLinks } from "./terminal-links.js"
 import { createTerminalInputWriter } from "./terminal-input-writer.js"
@@ -38,7 +37,6 @@ type TerminalSession = {
   term: XTerm
   fit: FitAddon
   ptyId: string | null
-  cursorMotion: TerminalCursorMotionLayer | null
   scrollMotion: TerminalScrollMotion
   /** Latest geometry we want the PTY to match (may differ while a resize RPC is in flight). */
   wantedCols: number
@@ -352,6 +350,7 @@ export function TerminalPanel({
       lineHeight: readTerminalLineHeight(),
       letterSpacing: 0,
       cursorBlink: readTerminalCursorBlink(),
+      cursorStyle: "bar",
       // TUIs (Cursor Agent) park the hardware caret off-prompt; never draw an
       // inactive outline/bar while the pane is blurred.
       cursorInactiveStyle: "none",
@@ -370,19 +369,16 @@ export function TerminalPanel({
           })
         : null
 
-    const screen = container.querySelector<HTMLElement>(".xterm-screen")
     const session: TerminalSession = {
       term,
       fit,
       ptyId: null,
-      cursorMotion: screen ? new TerminalCursorMotionLayer(term, screen) : null,
       scrollMotion: new TerminalScrollMotion(term, container),
       wantedCols: term.cols,
       wantedRows: term.rows,
       resizeInFlight: false,
       resizeQueued: false,
     }
-    session.cursorMotion?.setActive(focused && isActive)
     sessionRef.current = session
 
     const titleDispose = term.onTitleChange(raw => {
@@ -409,8 +405,6 @@ export function TerminalPanel({
       if (cancelled) return false
       const changed = fitWhenReady(session, container)
       if (changed) resizePty(session)
-      // Fit can change cols/rows without resizing .xterm-screen — force cursor re-measure.
-      if (cellMetricsValid(session.term)) session.cursorMotion?.refresh(true)
       return changed
     }
 
@@ -437,13 +431,11 @@ export function TerminalPanel({
         changed = true
       }
       if (changed && syncFit()) term.refresh(0, term.rows - 1)
-      session.cursorMotion?.refresh(changed)
     }
 
     const syncTheme = () => {
       term.options.theme = liveThemeOptions(themeRef.current)
       term.refresh(0, Math.max(0, term.rows - 1))
-      session.cursorMotion?.refresh(false)
     }
 
     const syncCursorHiddenAttr = () => {
@@ -452,9 +444,6 @@ export function TerminalPanel({
       panel.dataset.gharargahTerminalCursorHidden = isTerminalCursorHidden(term)
         ? "1"
         : "0"
-      // Re-measure only: this runs after every PTY chunk, and a reset would
-      // wipe the ghost trail before the compositor can fade it out.
-      session.cursorMotion?.refresh(false)
     }
 
     const connectPty = (id: string) => {
@@ -652,7 +641,6 @@ export function TerminalPanel({
       inputWriter?.dispose()
       unsub?.()
       pathLinks?.dispose()
-      session.cursorMotion?.dispose()
       session.scrollMotion.dispose()
       term.dispose()
       sessionRef.current = null
@@ -670,7 +658,6 @@ export function TerminalPanel({
     if (!session || !container) return
 
     session.term.options.theme = liveThemeOptions(themeRef.current)
-    session.cursorMotion?.setActive(focused && isActive)
 
     if (!focused || !isActive) return
     requestAnimationFrame(() => focusTerminalInput(tabId))

@@ -7,6 +7,4 @@ export {
   type LayoutMorphOptions,
   type PanelRect,
 } from "./layoutMorph.js"
-export { useGharargahCaretOverlay, GharargahCaretInput } from "./useGharargahCaretOverlay.jsx"
-export { UniversalCaretLayer } from "./UniversalCaretLayer.js"
 export { HotGlowTracker } from "./HotGlowTracker.js"

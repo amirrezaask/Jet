@@ -543,92 +543,20 @@ test.describe("electron terminal", () => {
     }
   })
 
-  test("keeps one native terminal caret with a bounded ghost-only trail", async () => {
+  test("keeps one native terminal caret", async () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
       const panel = page.locator("[data-gharargah-terminal-panel]")
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
 
-      const layer = panel.locator("[data-gharargah-terminal-cursor-trail]")
-      await expectLocatorVisible(layer)
-      await expectLocatorAttribute(layer, "data-gharargah-terminal-live-caret", "xterm")
-      await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor]"), 0)
-      await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor-ghost]"), 5)
+      await expectLocatorCount(panel.locator("[data-gharargah-terminal-cursor-trail]"), 0)
       await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
-
-      await page.evaluate(() => {
-        const cursorLayer = document.querySelector("[data-gharargah-terminal-cursor-trail]")
-        if (!cursorLayer) return
-        const observer = new MutationObserver(() => {
-          const visibleGhost = [...cursorLayer.querySelectorAll("[data-gharargah-terminal-cursor-ghost]")]
-            .some(ghost => Number.parseFloat(ghost.style.opacity || "0") > 0.02)
-          if (visibleGhost) {
-            cursorLayer.dataset.gharargahGhostObserved = "true"
-            observer.disconnect()
-          }
-        })
-        observer.observe(cursorLayer, { subtree: true, attributes: true, attributeFilter: ["style"] })
-        window.setTimeout(() => observer.disconnect(), 1_000)
-      })
 
       await panel.locator(".gharargah-terminal-surface").click()
       await page.keyboard.type("cursor")
-      await expectLocatorAttribute(layer, "data-gharargah-ghost-observed", "true", { timeout: 5_000 })
-
-      const nativeCursor = panel.locator(".xterm-cursor")
-      await expectLocatorCount(nativeCursor, 1)
-      await expectLocatorCount(layer.locator("[data-gharargah-terminal-cursor]"), 0)
-      const compositor = await layer
-        .locator("[data-gharargah-terminal-cursor-ghost]")
-        .first()
-        .evaluate(element => {
-          const style = element.style
-          return { willChange: style.willChange, animationCount: element.getAnimations().length }
-        })
-      expect(compositor.willChange).toBe("transform, opacity")
-      expect(compositor.animationCount).toBeLessThanOrEqual(1)
-
-      await page.locator("[data-gharargah-terminal-modal-close]").focus()
-      await expect
-        .poll(() =>
-          layer.locator("[data-gharargah-terminal-cursor-ghost]").evaluateAll(elements =>
-            elements.every(element => element.style.opacity === "0"),
-          ),
-        )
-        .toBe(true)
-
-      await panel.locator(".gharargah-terminal-surface").click()
-      await page.evaluate(() => {
-        document.documentElement.style.setProperty(
-          "--gharargah-terminal-cursor-motion",
-          "off",
-        )
-      })
-      await page.keyboard.type("x")
-      await expect
-        .poll(() =>
-          layer.locator("[data-gharargah-terminal-cursor-ghost]").evaluateAll(elements =>
-            elements.every(element => element.style.opacity === "0"),
-          ),
-        )
-        .toBe(true)
-
-      await page.evaluate(() => {
-        document.documentElement.style.setProperty(
-          "--gharargah-terminal-cursor-motion",
-          "trail",
-        )
-        document.documentElement.dataset.jetReducedMotion = "true"
-      })
-      await page.keyboard.type("y")
-      await expect
-        .poll(() =>
-          layer.locator("[data-gharargah-terminal-cursor-ghost]").evaluateAll(elements =>
-            elements.every(element => element.style.opacity === "0"),
-          ),
-        )
-        .toBe(true)
+      await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
+      await expectLocatorCount(panel.locator("[data-gharargah-terminal-cursor-ghost]"), 0)
     } finally {
       await app.close()
     }

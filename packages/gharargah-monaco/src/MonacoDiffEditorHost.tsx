@@ -6,8 +6,6 @@ import { ensureMonacoEnvironment } from "./monaco-env.js"
 import { isLargeFile } from "./language.js"
 import { monacoModels } from "./model-registry.js"
 import { applyGharargahMonacoTheme } from "./theme.js"
-import { MonacoCursorGhostTrail } from "./cursor-ghost-trail.js"
-
 export type MonacoDiffEditorHostProps = {
   originalUri: string
   modifiedUri: string
@@ -75,8 +73,6 @@ export function MonacoDiffEditorHost({
     })
 
     editorRef.current = editor
-    const originalCursorGhostTrail = new MonacoCursorGhostTrail(editor.getOriginalEditor())
-    const modifiedCursorGhostTrail = new MonacoCursorGhostTrail(editor.getModifiedEditor())
     applyGharargahMonacoTheme(theme)
 
     const resizeObserver = new ResizeObserver(() => {
@@ -88,8 +84,6 @@ export function MonacoDiffEditorHost({
 
     return () => {
       resizeObserver.disconnect()
-      originalCursorGhostTrail.dispose()
-      modifiedCursorGhostTrail.dispose()
       editor.dispose()
       editorRef.current = null
       monacoModels.release(originalUri)

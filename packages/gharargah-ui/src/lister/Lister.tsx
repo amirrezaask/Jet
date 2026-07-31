@@ -14,7 +14,6 @@ import { ChevronRight, SearchIcon } from "lucide-react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { SidebarContent, SidebarMenuSubButton } from "@/components/ui/sidebar.js"
 import { gharargahInteractiveRowClass } from "@/motion/tokens.js"
-import { useGharargahCaretOverlay } from "@/motion/useGharargahCaretOverlay.js"
 import { registerListPanel, registerListPanelController, type ListPanelController } from "@/lib/list-registry.js"
 import { cn } from "@/lib/utils.js"
 import { fuzzyFilter } from "./fuzzy.js"
@@ -55,13 +54,9 @@ function ListerSearchInput({
   controlsId: string
   activeDescendantId?: string
 }) {
-  const localRef = useRef<HTMLInputElement>(null)
-  const anchorRef = useRef<HTMLDivElement>(null)
   const setRefs = (el: HTMLInputElement | null) => {
-    localRef.current = el
     if (inputRef) (inputRef as MutableRefObject<HTMLInputElement | null>).current = el
   }
-  useGharargahCaretOverlay(localRef, true, anchorRef)
 
   return (
     <div
@@ -69,24 +64,22 @@ function ListerSearchInput({
       className="flex h-9 items-center gap-2 border-b px-3"
     >
       <SearchIcon className="size-4 shrink-0 opacity-50" aria-hidden="true" />
-      <div ref={anchorRef} data-gharargah-caret-anchor="" className="relative min-w-0 flex-1">
-        <input
-          ref={setRefs}
-          data-slot="command-input"
-          role="combobox"
-          aria-expanded={true}
-          aria-autocomplete="list"
-          aria-label={ariaLabel ?? placeholder ?? "Filter items"}
-          aria-controls={controlsId}
-          aria-activedescendant={activeDescendantId}
-          autoFocus={autoFocus}
-          className="flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          value={value}
-          placeholder={placeholder}
-          disabled={disabled}
-          onChange={e => onChange(e.target.value)}
-        />
-      </div>
+      <input
+        ref={setRefs}
+        data-slot="command-input"
+        role="combobox"
+        aria-expanded={true}
+        aria-autocomplete="list"
+        aria-label={ariaLabel ?? placeholder ?? "Filter items"}
+        aria-controls={controlsId}
+        aria-activedescendant={activeDescendantId}
+        autoFocus={autoFocus}
+        className="flex h-10 w-full min-w-0 flex-1 rounded-md bg-transparent py-3 text-sm outline-none focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        value={value}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={e => onChange(e.target.value)}
+      />
     </div>
   )
 }

@@ -196,7 +196,6 @@ export {
   type LayoutMorphOptions,
   type PanelRect,
 } from "./motion/layoutMorph.js"
-export { useGharargahCaretOverlay, GharargahCaretInput } from "./motion/useGharargahCaretOverlay.jsx"
 export { cn } from "./lib/utils.js"
 export { formatKeyBinding } from "./lib/format-key.js"
 export { TooltipProvider } from "./components/ui/tooltip.js"

@@ -15,7 +15,6 @@ import {
   setActiveMonacoEditor,
   type MonacoEditorHandle,
 } from "./editor-api.js"
-import { MonacoCursorGhostTrail } from "./cursor-ghost-trail.js"
 import {
   interceptPrimaryCommandPaletteShortcut,
   interceptPrimaryQuickOpenShortcut,
@@ -122,13 +121,12 @@ export function MonacoEditorHost({
       renderWhitespace: "selection",
       bracketPairColorization: { enabled: true },
       smoothScrolling: true,
-      cursorBlinking: "smooth",
-      cursorSmoothCaretAnimation: "on",
+      cursorBlinking: "blink",
+      cursorSmoothCaretAnimation: "off",
       ...largeFileOptions(large),
     })
 
     editorRef.current = editor
-    const cursorGhostTrail = new MonacoCursorGhostTrail(editor)
     applyGharargahMonacoTheme(theme)
 
     const savedState = monacoModels.restoreViewState(editorId, uri)
@@ -200,7 +198,6 @@ export function MonacoEditorHost({
       monacoModels.saveViewState(editorId, currentUri, state)
       resizeObserver.disconnect()
       for (const d of disposables) d.dispose()
-      cursorGhostTrail.dispose()
       editor.dispose()
       if (getActiveMonacoEditor() === editor) setActiveMonacoEditor(null)
       editorRef.current = null
