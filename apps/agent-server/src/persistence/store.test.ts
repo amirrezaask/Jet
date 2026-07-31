@@ -49,3 +49,45 @@ describe("AgentStore legacy Rust schema migration", () => {
     }
   })
 })
+
+describe("AgentStore crash recovery", () => {
+  function runningThread(id: string) {
+    return {
+      id,
+      workspaceRootUri: "file:///tmp/x",
+      workspaceRootPath: "/tmp/x",
+      title: id,
+      status: "running" as const,
+      messages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+  }
+
+  it("marks a thread orphaned by a host restart as interrupted", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gharargah-recover-"))
+    const store = new AgentStore()
+    try {
+      store.writeThread(root, runningThread("orphan") as never)
+      const listed = store.listThreads(root)
+      assert.equal(listed.find(t => t.id === "orphan")?.status, "interrupted")
+    } finally {
+      store.close()
+    }
+  })
+
+  it("leaves a turn this process is still driving alone", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "gharargah-recover-live-"))
+    const store = new AgentStore()
+    try {
+      store.writeThread(root, runningThread("live") as never)
+      // Listing threads mid-turn must not cancel the turn out from under the UI.
+      store.isThreadLive = id => id === "live"
+      const listed = store.listThreads(root)
+      assert.equal(listed.find(t => t.id === "live")?.status, "running")
+      assert.equal(store.readThread(root, "live")?.status, "running")
+    } finally {
+      store.close()
+    }
+  })
+})

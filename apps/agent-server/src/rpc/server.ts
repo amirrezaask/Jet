@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import { WebSocketServer, type WebSocket } from "ws"
 import {
   decodeAgentRpcRequest,
-  AgentRpcError,
   type AgentRpcRequest,
 } from "@gharargah/rpc"
 import type { AgentThread } from "@gharargah/agents"
@@ -12,10 +11,12 @@ import {
   OrchestrationService,
   runOrch,
 } from "../effect/services.js"
+import { AgentCommandError } from "../effect/errors.js"
 import type { OrchEventSink } from "../orchestration/engine.js"
 import { globalAcpPool } from "../provider/acp-pool.js"
 import { closeMcpBridge } from "../provider/mcp-bridge.js"
 import { getShellEnvStatus } from "../shell-env.js"
+import { mapErrorToAgentRpc } from "./map-rpc-error.js"
 
 export type AgentServerOptions = {
   host?: string
@@ -102,19 +103,15 @@ export function startAgentServerEffect(
           return
         }
         const decoded = await Effect.runPromise(
-          decodeAgentRpcRequest(parsed).pipe(
-            Effect.mapError(
-              err =>
-                new AgentRpcError({
-                  message: "invalid_rpc",
-                  cause: err,
-                }),
-            ),
-            Effect.either,
-          ),
+          decodeAgentRpcRequest(parsed).pipe(Effect.either),
         )
         if (decoded._tag === "Left") {
-          ws.send(JSON.stringify({ error: "invalid_rpc" }))
+          ws.send(
+            JSON.stringify({
+              id: (parsed as { id?: string | number }).id,
+              error: mapErrorToAgentRpc(new Error("invalid_rpc")),
+            }),
+          )
           return
         }
         const req: AgentRpcRequest = decoded.right
@@ -125,7 +122,7 @@ export function startAgentServerEffect(
           ws.send(
             JSON.stringify({
               id: req.id,
-              error: err instanceof Error ? err.message : String(err),
+              error: mapErrorToAgentRpc(err),
             }),
           )
         }
@@ -475,6 +472,6 @@ async function handleRpc(
       return ok ? { ok: true } : null
     }
     default:
-      throw new Error(`unknown method: ${method}`)
+      throw new AgentCommandError({ message: `unknown method: ${method}` })
   }
 }

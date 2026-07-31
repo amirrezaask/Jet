@@ -175,6 +175,10 @@ export class ClaudeSdkAdapter implements ProviderAdapter {
       } else {
         const mockBin = process.env.GHARARGAH_MOCK_CLAUDE_SDK_BIN
         if (mockBin && process.env.GHARARGAH_AGENT_MOCK === "1") {
+          console.warn(
+            "[claude:sdk] SDK path failed under GHARARGAH_AGENT_MOCK — using explicit CLI bridge:",
+            err instanceof Error ? err.message : err,
+          )
           await this.runCliBridge(ctx, messageId, abort, mockBin)
         } else {
           ctx.emit({

@@ -113,6 +113,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
   shellEnvLoading?: boolean
   isRunning?: boolean
   isSendBusy?: boolean
+  isRespondingPermission?: boolean
   commands?: ReadonlyArray<AgentAvailableCommand>
   runtimeMode?: ComposerRuntimeMode
   interactionMode?: ComposerInteractionMode
@@ -319,6 +320,9 @@ export const ChatComposer = memo(function ChatComposer(props: {
   const submitComposer = useCallback(
     async (event?: { preventDefault?: () => void }) => {
       event?.preventDefault?.()
+      if (props.pendingPermission) {
+        return
+      }
       if (props.pendingUserInput && !props.pendingPermission) {
         userInputPanelRef.current?.goNext()
         return
@@ -490,6 +494,24 @@ export const ChatComposer = memo(function ChatComposer(props: {
 
   const onComposerCommandKey = useCallback(
     (event: KeyboardEvent) => {
+      if (props.pendingPermission) {
+        if (event.key === "Enter" && !event.shiftKey) {
+          props.onResolvePermission?.({
+            permissionId: props.pendingPermission.id,
+            decision: "allow_once",
+            approvalDecision: "accept",
+          })
+          return true
+        }
+        if (event.key === "Escape") {
+          props.onResolvePermission?.({
+            permissionId: props.pendingPermission.id,
+            decision: "reject_once",
+            approvalDecision: "decline",
+          })
+          return true
+        }
+      }
       if (showSlashMenu) {
         if (event.key === "Enter" || event.key === "Tab") {
           const command = filteredCommands[slashIndex]
@@ -505,7 +527,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
       }
       return false
     },
-    [applySlashCommand, filteredCommands, showSlashMenu, slashIndex, submitComposer],
+    [applySlashCommand, filteredCommands, props, showSlashMenu, slashIndex, submitComposer],
   )
 
   const onSlashMenuKeyDownCapture = useCallback(
@@ -552,7 +574,7 @@ export const ChatComposer = memo(function ChatComposer(props: {
         <ComposerPendingApprovalPanel
           permission={props.pendingPermission}
           pendingCount={props.pendingActionCount ?? 1}
-          isResponding={props.isSendBusy}
+          isResponding={props.isRespondingPermission ?? props.isSendBusy}
           onResolve={input => props.onResolvePermission?.(input)}
           onCancelTurn={props.onCancelTurn}
         />

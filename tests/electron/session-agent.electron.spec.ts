@@ -5,11 +5,18 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewNativeAgentSession } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 /** Agent chat is enabled by default; 0 builds the recovery-only terminal surface. */
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
+
+const nativeDriverIds: Record<string, string> = {
+  codex: "codex:app-server",
+  claude: "claude:sdk",
+  opencode: "opencode:sdk",
+  cursor: "cursor:acp",
+}
 
 test.describe("project session agent chat", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
@@ -73,7 +80,7 @@ test.describe("project session agent chat", () => {
             expect.objectContaining({ id: "codex:cli", kind: "cli", status: "ready" }),
             expect.objectContaining({
               id: "codex:app-server",
-              kind: "native",
+              kind: "app-server",
               status: "ready",
             }),
             expect.objectContaining({ id: "codex:acp", kind: "acp", status: "ready" }),
@@ -84,7 +91,7 @@ test.describe("project session agent chat", () => {
             expect.objectContaining({ id: "claude:cli", kind: "cli", status: "ready" }),
             expect.objectContaining({
               id: "claude:sdk",
-              kind: "native",
+              kind: "sdk",
               status: "ready",
             }),
             expect.objectContaining({ id: "claude:acp", kind: "acp", status: "ready" }),
@@ -93,7 +100,7 @@ test.describe("project session agent chat", () => {
           expect(agent.activeDriverId).toBe("opencode:sdk")
           expect(agent.drivers).toEqual([
             expect.objectContaining({ id: "opencode:cli", kind: "cli", status: "ready" }),
-            expect.objectContaining({ id: "opencode:sdk", kind: "native", status: "ready" }),
+            expect.objectContaining({ id: "opencode:sdk", kind: "sdk", status: "ready" }),
             expect.objectContaining({ id: "opencode:acp", kind: "acp", status: "ready" }),
           ])
         } else if (agent.id === "cursor") {
@@ -124,27 +131,39 @@ test.describe("project session agent chat", () => {
       const modal = page.locator("[data-gharargah-terminal-modal]")
 
       for (const provider of ["codex", "claude", "opencode"] as const) {
-        await openNewAgentSession(page, provider)
+        await openNewNativeAgentSession(page, provider)
         await expectLocatorVisible(modal)
         await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
         await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="agent"][data-active]')
         await expectLocatorContainsText(modal, provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "OpenCode")
 
+        // A native session knows its agent and driver up front so the first
+        // turn routes correctly, but no thread exists until the user sends.
         const binding = await page.evaluate(async providerId => {
           const res = await fetch("/api/v1/sessions")
           if (!res.ok) return null
           const roster = (await res.json()) as {
-            sessions: Array<{ agentId?: string; agentDriverId?: string }>
+            sessions: Array<{
+              agentId?: string
+              agentDriverId?: string
+              agentThreadId?: string
+              launchCommand?: string
+            }>
           }
           return roster.sessions.find(item => item.agentId === providerId) ?? null
         }, provider)
-        expect(binding).toBeNull()
+        expect(binding).toMatchObject({
+          agentId: provider,
+          agentDriverId: nativeDriverIds[provider],
+        })
+        expect(binding?.agentThreadId).toBeUndefined()
+        expect(binding?.launchCommand).toBeUndefined()
 
         await page.locator("[data-gharargah-terminal-modal-close]").click()
         await expectLocatorCount(modal, 0)
       }
 
-      await openNewAgentSession(page, "cursor")
+      await openNewNativeAgentSession(page, "cursor")
       await expectLocatorVisible(modal)
       await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
       await expectLocatorCount(modal.locator("[data-gharargah-session-mode-tab]"), 4)
@@ -173,9 +192,7 @@ test.describe("project session agent chat", () => {
       })
       await expect
         .poll(() =>
-          page.evaluate(() =>
-            getComputedStyle(document.documentElement).classList.contains("dark"),
-          ),
+          page.evaluate(() => document.documentElement.classList.contains("dark")),
         )
         .toBe(false)
       await expect
@@ -294,7 +311,9 @@ test.describe("project session agent chat", () => {
       await page.keyboard.press("Escape")
       await expect
         .poll(async () => {
-          return modal.locator('[data-chat-composer-overlay] [data-slot="permission-card"]').count()
+          return modal
+            .locator('[data-chat-composer-overlay] [data-slot="composer-pending-approval"]')
+            .count()
         })
         .toBe(0)
       await expect

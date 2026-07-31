@@ -3,14 +3,14 @@ import {
   expectLocatorCount,
   expectLocatorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewNativeAgentSession } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
 
 test.describe("composer model picker", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
-  test.skip(!agentChatE2e, "requires GHARARGAH_ENABLE_AGENT_CHAT=1")
+  test.skip(!agentChatE2e, "disabled by GHARARGAH_ENABLE_AGENT_CHAT=0")
 
   test("opens searchable flat model list without React #185 crash", async () => {
     const { app, page } = await launchJet({
@@ -45,7 +45,7 @@ test.describe("composer model picker", () => {
         }
       })
 
-      const modal = await openNewAgentSession(page, "codex")
+      const modal = await openNewNativeAgentSession(page, "codex")
 
       const modelPicker = modal.locator('[data-chat-provider-model-picker="true"]')
       await expectLocatorVisible(modelPicker)

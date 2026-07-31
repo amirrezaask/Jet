@@ -46,11 +46,17 @@ import type { MonacoEditorHandle } from "@gharargah/monaco"
 import {
   applyAgentStructuredDelta,
   applyAgentThreadDelta,
+  agentDriverIdForMode,
   defaultAgentDriverId,
   isAgentChatEnabled,
   isAgentInterfaceDriverId,
   mergeAgentThreadSnapshot,
+  readAgentDriverMode,
+  readAgentDriverModes,
+  writeAgentDriverMode,
   type AgentCatalogState,
+  type AgentDriverMode,
+  type AgentFileReference,
   type AgentThread,
 } from "@gharargah/agents"
 import type { AppNotification, AgentProvider } from "@gharargah/shared"
@@ -343,6 +349,9 @@ export function GharargahApp() {
   const [agentCliPickerRootUri, setAgentCliPickerRootUri] = useState<
     string | null
   >(null)
+  const [agentDriverModes, setAgentDriverModes] = useState(() =>
+    readAgentDriverModes(),
+  )
   const [agentCatalog, setAgentCatalog] = useState<AgentCatalogState | null>(
     null,
   )
@@ -651,13 +660,18 @@ export function GharargahApp() {
   )
 
   const draftAgentThreadForTab = useCallback(
-    (tabId: string, preferredAgentId?: string | null): AgentThread | null => {
+    (
+      tabId: string,
+      preferredAgentId?: string | null,
+      preferredDriverId?: string | null,
+    ): AgentThread | null => {
       const existing = agentDraftThreadByTabRef.current.get(tabId)
       if (existing) {
         if (preferredAgentId && existing.agentId !== preferredAgentId) {
           const updated = {
             ...existing,
             agentId: preferredAgentId,
+            driverId: preferredDriverId ?? null,
             model: null,
             updatedAt: new Date().toISOString(),
           }
@@ -677,6 +691,7 @@ export function GharargahApp() {
         workspaceRootPath:
           folder?.root.path ?? fileUriToPath(session.cwdRootUri),
         preferredAgentId,
+        preferredDriverId,
       })
       agentDraftThreadByTabRef.current.set(tabId, draft)
       return draft
@@ -771,9 +786,62 @@ export function GharargahApp() {
     setAgentCliPickerRootUri(rootUri)
   }, [])
 
-  const createSessionWithAgentCli = useCallback(
-    async (rootUri: string, driver: AgentCliDriver) => {
+  /**
+   * Browser-style "New tab" opens an unbound session: the composer's model
+   * picker chooses the provider, and the thread binds on the first message.
+   */
+  const newSessionTab = useCallback(
+    async (rootUri: string) => {
+      if (!isAgentChatEnabled()) {
+        setAgentCliPickerRootUri(rootUri)
+        return
+      }
       try {
+        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
+          label: "New session",
+        })
+        openTerminalModal(panelId, tabId, "agent")
+      } catch (err) {
+        showGharargahToast(err instanceof Error ? err.message : String(err), {
+          variant: "destructive",
+        })
+      }
+    },
+    [openTerminalInWorkspace, openTerminalModal],
+  )
+
+  const handleAgentDriverModeChange = useCallback(
+    (agentId: string, mode: AgentDriverMode) => {
+      setAgentDriverModes(writeAgentDriverMode(agentId, mode))
+    },
+    [],
+  )
+
+  const createAgentSession = useCallback(
+    async (rootUri: string, driver: AgentCliDriver) => {
+      const mode = agentDriverModes[driver.id] ?? readAgentDriverMode(driver.id)
+      try {
+        if (mode === "native") {
+          if (!isAgentChatEnabled()) {
+            showGharargahToast("In-app agent chat is disabled", {
+              variant: "destructive",
+            })
+            return
+          }
+          const driverId = agentDriverIdForMode(driver.id, "native")
+          const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
+            label: driver.label,
+            agentId: driver.id,
+            agentDriverId: driverId,
+          })
+          bindAgentToSession(tabId, {
+            agentId: driver.id,
+            driverId,
+          })
+          openTerminalModal(panelId, tabId, "agent")
+          return
+        }
+
         let cliSessionId: string | null = null
         // Cursor has no notify hook — mint chat id up front so resume works
         // after refresh (interactive TUI does not emit session_id reliably).
@@ -809,26 +877,31 @@ export function GharargahApp() {
               cliSessionId,
             ),
           agentId: driver.id,
-          agentDriverId: `${driver.id}:cli`,
+          agentDriverId: agentDriverIdForMode(driver.id, "cli"),
           agentCliSessionId: cliSessionId ?? undefined,
         })
         bindAgentToSession(tabId, {
           agentId: driver.id,
-          driverId: `${driver.id}:cli`,
+          driverId: agentDriverIdForMode(driver.id, "cli"),
         })
         if (cliSessionId) {
           setAgentCliSessionId(tabId, cliSessionId)
         }
         openTerminalModal(panelId, tabId, "agent")
       } catch (err) {
-        console.error("[gharargah] createSessionWithAgentCli failed", err)
+        console.error("[gharargah] createAgentSession failed", err)
         showGharargahToast(err instanceof Error ? err.message : String(err), {
           variant: "destructive",
         })
         closeTerminalModal()
       }
     },
-    [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
+    [
+      agentDriverModes,
+      openTerminalInWorkspace,
+      openTerminalModal,
+      closeTerminalModal,
+    ],
   )
 
   const openTodosFromHome = useCallback(
@@ -937,7 +1010,16 @@ export function GharargahApp() {
           }
 
           if (!agentCatalog) await loadAgentCatalog()
-          const draft = draftAgentThreadForTab(tabId)
+          // A native session already picked its agent; seed the draft with it so
+          // the composer doesn't fall back to the first catalog provider.
+          const boundDriverId = isAgentInterfaceDriverId(session.agentDriverId)
+            ? session.agentDriverId
+            : null
+          const draft = draftAgentThreadForTab(
+            tabId,
+            boundDriverId ? (session.agentId ?? null) : null,
+            boundDriverId,
+          )
           setActiveAgentThread(draft)
           return draft
         } finally {
@@ -2877,6 +2959,28 @@ export function GharargahApp() {
     workspace.folders[0]?.root.uri ??
     ""
 
+  const handleAgentChatOpenFile = useCallback(
+    (ref: AgentFileReference) => {
+      if (!terminalModalTabId) return
+      const rootUri = terminalCwdForTab(terminalModalTabId)
+      const folder = workspace.folders.find(f => f.root.uri === rootUri)
+      const rootPath = folder?.root.path ?? (rootUri ? fileUriToPath(rootUri) : "")
+      if (!rootPath) return
+      openAgentFileReference(openFileInEditor, rootPath, ref)
+    },
+    [openFileInEditor, terminalModalTabId, workspace.folders],
+  )
+
+  const handleAgentChatOpenDiff = useCallback(
+    (ref: AgentFileReference) => {
+      openDiff(path => {
+        setGitFocusPath(path)
+        setSessionMode("git")
+      }, ref.path)
+    },
+    [openDiff],
+  )
+
   const openSidebarSession = useCallback(
     (session: SidebarSession) => {
       openTerminalFromHome(session.panelId, session.id)
@@ -3008,7 +3112,7 @@ export function GharargahApp() {
                       onSelect={openTerminalFromHome}
                       onClose={closeTerminalTab}
                       newSessionRootUri={newSessionRootUri}
-                      onNewTab={rootUri => void newAgentTabFromHome(rootUri)}
+                      onNewTab={rootUri => void newSessionTab(rootUri)}
                     />
                   </Suspense>
                 </div>
@@ -3183,17 +3287,10 @@ export function GharargahApp() {
               open={notifications.open}
               onOpenChange={notifications.setOpen}
               items={notifications.items}
-              counts={notifications.counts}
-              filter={notifications.filter}
-              onFilterChange={notifications.setFilter}
               query={notifications.query}
               onQueryChange={notifications.setQuery}
               loading={notifications.loading}
               error={notifications.error}
-              projectFilter={notifications.projectId}
-              sessionFilter={notifications.sessionId}
-              prefs={notifications.prefs}
-              onOpenSettings={() => setSettingsOpen(true)}
               onMarkAllRead={() => void notifications.markAllVisibleRead()}
               isSessionAvailable={id => Boolean(terminalSessionForTab(id))}
               onOpenNotification={n => void openNotificationSession(n)}
@@ -3363,27 +3460,8 @@ export function GharargahApp() {
                         hideHeader
                         terminalCount={1}
                         onOpenTerminal={() => setSessionMode("terminal")}
-                        onOpenFile={ref => {
-                          const rootUri = terminalCwdForTab(terminalModalTabId)
-                          const folder = workspace.folders.find(
-                            f => f.root.uri === rootUri,
-                          )
-                          const rootPath =
-                            folder?.root.path ??
-                            (rootUri ? fileUriToPath(rootUri) : "")
-                          if (!rootPath) return
-                          openAgentFileReference(
-                            openFileInEditor,
-                            rootPath,
-                            ref,
-                          )
-                        }}
-                        onOpenDiff={ref => {
-                          openDiff(path => {
-                            setGitFocusPath(path)
-                            setSessionMode("git")
-                          }, ref.path)
-                        }}
+                        onOpenFile={handleAgentChatOpenFile}
+                        onOpenDiff={handleAgentChatOpenDiff}
                         onSend={async payload => {
                           if (!activeAgentThread) return
                           const agents = window.gharargah?.agents
@@ -3471,17 +3549,19 @@ export function GharargahApp() {
                             )
                           }
                         }}
-                        onInterrupt={() => {
+                        onInterrupt={async () => {
                           if (
                             !activeAgentThread ||
                             isAgentDraftThread(activeAgentThread)
                           )
                             return
-                          void window.gharargah?.agents?.interruptTurn({
-                              workspaceRootUri:
-                                activeAgentThread.workspaceRootUri,
-                              workspaceRootPath:
-                                activeAgentThread.workspaceRootPath,
+                          // Awaited so a failed interrupt surfaces in the
+                          // chat error banner instead of disappearing.
+                          await window.gharargah?.agents?.interruptTurn({
+                            workspaceRootUri:
+                              activeAgentThread.workspaceRootUri,
+                            workspaceRootPath:
+                              activeAgentThread.workspaceRootPath,
                             threadId: activeAgentThread.id,
                           })
                         }}
@@ -3534,10 +3614,16 @@ export function GharargahApp() {
                         onSelectionChange={(agentId, model) => {
                           if (!activeAgentThread) return
                           if (isAgentDraftThread(activeAgentThread)) {
+                            const driverId =
+                              agentCatalog?.agents.find(
+                                catalogAgent => catalogAgent.id === agentId,
+                              )?.activeDriverId ??
+                              activeAgentThread.driverId ??
+                              defaultAgentDriverId(agentId)
                             const updated = {
                               ...activeAgentThread,
                               agentId,
-                              driverId: null,
+                              driverId,
                               model,
                               updatedAt: new Date().toISOString(),
                             }
@@ -3754,10 +3840,8 @@ export function GharargahApp() {
                     theme={activeTheme}
                     active={sessionMode === "terminal"}
                     primaryTerminal={
-                      terminalSessionForTab(terminalModalTabId)?.agentId ||
-                      (isAgentChatEnabled() &&
-                        !terminalSessionForTab(terminalModalTabId)
-                          ?.launchCommand) ? null : (
+                      terminalSessionForTab(terminalModalTabId)
+                        ?.agentId ? null : (
                         <PanelBody
                           panelId={terminalModalPanelId}
                           view={
@@ -3857,11 +3941,15 @@ export function GharargahApp() {
             selectedRootUri={agentCliPickerRootUri}
             onSelectedRootUriChange={setAgentCliPickerRootUri}
             onRemoveProject={removeProjectByRootUri}
+            driverModes={agentDriverModes}
+            onDriverModeChange={
+              isAgentChatEnabled() ? handleAgentDriverModeChange : undefined
+            }
             onSelect={driver => {
               const rootUri = agentCliPickerRootUri
               setAgentCliPickerRootUri(null)
               if (!rootUri) return
-              void createSessionWithAgentCli(rootUri, driver)
+              void createAgentSession(rootUri, driver)
             }}
           />
           <ConfirmDialogHost />

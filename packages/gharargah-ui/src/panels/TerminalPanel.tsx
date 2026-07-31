@@ -452,7 +452,9 @@ export function TerminalPanel({
       panel.dataset.gharargahTerminalCursorHidden = isTerminalCursorHidden(term)
         ? "1"
         : "0"
-      session.cursorMotion?.refresh(true)
+      // Re-measure only: this runs after every PTY chunk, and a reset would
+      // wipe the ghost trail before the compositor can fade it out.
+      session.cursorMotion?.refresh(false)
     }
 
     const connectPty = (id: string) => {

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react"
 import type { AppNotification, NotificationSeverity } from "@gharargah/shared"
 import {
   AlertTriangle,
@@ -16,6 +17,10 @@ import {
 } from "@/components/ui/dropdown-menu.js"
 import { cn } from "@/lib/utils.js"
 import { formatRelativeTime } from "./group-by-time.js"
+
+/** Horizontal two-finger scroll (trackpad wheel deltaX) past this px dismisses. */
+const DISMISS_SCROLL_THRESHOLD = 72
+const DISMISS_VISUAL_CAP = 112
 
 export type NotificationItemProps = {
   notification: AppNotification
@@ -66,8 +71,60 @@ export function NotificationItem(props: NotificationItemProps) {
   const actionable = n.requiresAction && !n.actionResolvedAt
   const meta = [n.provider, n.projectName, n.sessionTitle].filter(Boolean).join(" · ")
 
+  const rootRef = useRef<HTMLDivElement>(null)
+  const accumX = useRef(0)
+  const settleTimer = useRef<number | null>(null)
+  const [offsetX, setOffsetX] = useState(0)
+  const dismissing = useRef(false)
+
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el || !onDismiss) return
+
+    const resetOffset = () => {
+      accumX.current = 0
+      setOffsetX(0)
+    }
+
+    const onWheel = (e: WheelEvent) => {
+      if (dismissing.current) return
+      // Two-finger horizontal scroll: require dominant deltaX over vertical list scroll.
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 1.15) return
+      e.preventDefault()
+      e.stopPropagation()
+
+      accumX.current += e.deltaX
+      const visual = Math.max(
+        -DISMISS_VISUAL_CAP,
+        Math.min(DISMISS_VISUAL_CAP, accumX.current),
+      )
+      setOffsetX(visual)
+
+      if (settleTimer.current != null) window.clearTimeout(settleTimer.current)
+      settleTimer.current = window.setTimeout(() => {
+        if (!dismissing.current && Math.abs(accumX.current) < DISMISS_SCROLL_THRESHOLD) {
+          resetOffset()
+        }
+      }, 180)
+
+      if (Math.abs(accumX.current) >= DISMISS_SCROLL_THRESHOLD) {
+        dismissing.current = true
+        if (settleTimer.current != null) window.clearTimeout(settleTimer.current)
+        setOffsetX(accumX.current > 0 ? DISMISS_VISUAL_CAP : -DISMISS_VISUAL_CAP)
+        onDismiss()
+      }
+    }
+
+    el.addEventListener("wheel", onWheel, { passive: false, capture: true })
+    return () => {
+      el.removeEventListener("wheel", onWheel, true)
+      if (settleTimer.current != null) window.clearTimeout(settleTimer.current)
+    }
+  }, [onDismiss])
+
   return (
     <div
+      ref={rootRef}
       role="option"
       aria-selected={selected}
       data-gharargah-notification-item
@@ -77,11 +134,20 @@ export function NotificationItem(props: NotificationItemProps) {
       data-requires-action={actionable ? "true" : "false"}
       data-unread={unread ? "true" : "false"}
       className={cn(
-        "group flex w-full items-start gap-2 rounded-md border border-transparent px-2 py-1.5 text-left transition-colors",
+        "group relative flex w-full items-start gap-2 overflow-hidden rounded-md border border-transparent px-2 py-1.5 text-left transition-colors",
         "hover:bg-accent/60 focus-within:bg-accent/60",
         selected && "border-border bg-accent/70",
         unread && "bg-accent/30",
       )}
+      style={{
+        transform: offsetX ? `translateX(${offsetX}px)` : undefined,
+        opacity: Math.max(0.35, 1 - Math.abs(offsetX) / (DISMISS_VISUAL_CAP * 1.4)),
+        transition:
+          offsetX === 0
+            ? "transform 160ms var(--gharargah-ease-out, ease-out), opacity 160ms var(--gharargah-ease-out, ease-out)"
+            : undefined,
+      }}
+      title="Two-finger scroll sideways to dismiss"
     >
       <button
         type="button"

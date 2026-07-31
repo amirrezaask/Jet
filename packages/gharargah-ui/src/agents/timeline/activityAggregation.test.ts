@@ -61,6 +61,20 @@ test("aggregateToolCalls attaches diff stats", () => {
   assert.equal(aggregated!.editFileCount, 2)
   assert.deepEqual(aggregated!.diffStat, { additions: 15, deletions: 3 })
   assert.match(aggregated!.label, /Edited 2 files/)
+  assert.equal(aggregated!.hasFailure, false)
+})
+
+test("aggregateToolCalls marks failed tools", () => {
+  const aggregated = aggregateToolCalls({
+    id: "a2",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    toolCalls: [
+      tool({ id: "t1", name: "Read", kind: "read", status: "completed" }),
+      tool({ id: "t2", name: "Shell", kind: "shell", status: "failed" }),
+    ],
+  })
+  assert.ok(aggregated)
+  assert.equal(aggregated!.hasFailure, true)
 })
 
 test("countActivityBuckets counts mixed tools", () => {
@@ -132,6 +146,12 @@ test("deriveMessagesTimelineRows aggregates tools and emits Completed", () => {
     workingLabel: "Working…",
     activeTurnStartedAt: null,
     turnDiffSummaryByAssistantMessageId: new Map(),
+    latestTurn: {
+      turnId: "a1",
+      state: "completed",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:03.000Z",
+    },
   })
 
   assert.equal(rows[0]?.kind, "message")

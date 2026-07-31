@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { memo, useMemo, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize"
@@ -55,27 +55,44 @@ function maybeRenderPatch(code: string, language: string, theme: "light" | "dark
   )
 }
 
-const markdownComponents: Components = {
-  code(props) {
-    const { className, children } = props
-    const code = String(children).replace(/\n$/, "")
-    const language = extractLanguage(className)
+const markdownCodeComponent: Components["code"] = props => {
+  const { className, children } = props
+  const code = String(children).replace(/\n$/, "")
+  return (
+    <code
+      className={
+        className ??
+        "rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[0.9em] text-agent-feed-primary"
+      }
+    >
+      {code}
+    </code>
+  )
+}
+
+const staticMarkdownComponents: Components = {
+  code: markdownCodeComponent,
+  table(props) {
     return (
-      <code
-        className={
-          className ??
-          "rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[0.9em] text-agent-feed-primary"
-        }
-      >
-        {code}
-      </code>
+      <div className="mt-3 overflow-x-auto rounded-xl border border-input">
+        <table {...props} className="min-w-full text-sm" />
+      </div>
     )
+  },
+  th(props) {
+    return <th {...props} className="border-b border-input bg-muted/50 px-3 py-2 text-left" />
+  },
+  td(props) {
+    return <td {...props} className="border-b border-input px-3 py-2 align-top" />
   },
 }
 
-export function AgentMarkdown({ text, theme, onOpenFile }: AgentMarkdownProps) {
-  const components: Components = {
-    ...markdownComponents,
+function createMarkdownComponents(input: {
+  theme: "light" | "dark"
+  onOpenFile?: (ref: AgentFileReference) => void
+}): Components {
+  return {
+    ...staticMarkdownComponents,
     pre(props) {
       const codeChild = Array.isArray(props.children) ? props.children[0] : props.children
       const element = codeChild as {
@@ -84,13 +101,14 @@ export function AgentMarkdown({ text, theme, onOpenFile }: AgentMarkdownProps) {
           children?: ReactNode
         }
       }
-      const code = typeof element?.props?.children === "string"
-        ? element.props.children
-        : Array.isArray(element?.props?.children)
-          ? element.props.children.join("")
-          : String(element?.props?.children ?? "")
+      const code =
+        typeof element?.props?.children === "string"
+          ? element.props.children
+          : Array.isArray(element?.props?.children)
+            ? element.props.children.join("")
+            : String(element?.props?.children ?? "")
       const language = extractLanguage(element?.props?.className)
-      const patchView = maybeRenderPatch(code, language, theme)
+      const patchView = maybeRenderPatch(code, language, input.theme)
       if (patchView) return patchView
       return (
         <pre className="mt-3 overflow-x-auto rounded-xl border border-input bg-card p-3 text-xs leading-5 text-foreground">
@@ -100,8 +118,8 @@ export function AgentMarkdown({ text, theme, onOpenFile }: AgentMarkdownProps) {
     },
     a(props) {
       const href = props.href ?? ""
-      const fileRef = onOpenFile ? parseFileHref(href) : null
-      if (fileRef && onOpenFile) {
+      const fileRef = input.onOpenFile ? parseFileHref(href) : null
+      if (fileRef && input.onOpenFile) {
         return (
           <a
             {...props}
@@ -109,7 +127,7 @@ export function AgentMarkdown({ text, theme, onOpenFile }: AgentMarkdownProps) {
             className="text-blue-400 underline underline-offset-4 hover:text-blue-300"
             onClick={event => {
               event.preventDefault()
-              onOpenFile(fileRef)
+              input.onOpenFile?.(fileRef)
             }}
           />
         )
@@ -123,33 +141,28 @@ export function AgentMarkdown({ text, theme, onOpenFile }: AgentMarkdownProps) {
         />
       )
     },
-    table(props) {
-      return (
-        <div className="mt-3 overflow-x-auto rounded-xl border border-input">
-          <table {...props} className="min-w-full text-sm" />
-        </div>
-      )
-    },
-    th(props) {
-      return <th {...props} className="border-b border-input bg-muted/50 px-3 py-2 text-left" />
-    },
-    td(props) {
-      return <td {...props} className="border-b border-input px-3 py-2 align-top" />
-    },
   }
+}
+
+export const AgentMarkdown = memo(function AgentMarkdown({
+  text,
+  theme,
+  onOpenFile,
+}: AgentMarkdownProps) {
+  const components = useMemo(
+    () => createMarkdownComponents({ theme, onOpenFile }),
+    [theme, onOpenFile],
+  )
 
   return (
     <div className="prose prose-sm max-w-none text-foreground prose-code:before:content-none prose-code:after:content-none prose-pre:p-0">
       <ReactMarkdown
         components={components}
-        rehypePlugins={[
-          rehypeRaw,
-          [rehypeSanitize, AGENT_MARKDOWN_SANITIZE_SCHEMA],
-        ]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, AGENT_MARKDOWN_SANITIZE_SCHEMA]]}
         remarkPlugins={[remarkBreaks, remarkGfm]}
       >
         {text}
       </ReactMarkdown>
     </div>
   )
-}
+})

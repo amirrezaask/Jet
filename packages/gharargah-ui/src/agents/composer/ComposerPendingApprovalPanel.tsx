@@ -3,6 +3,7 @@ import type {
   ProviderRequestKind,
   ResolveAgentPermissionInput,
 } from "@gharargah/agents"
+import { useEffect } from "react"
 import { Button } from "../../components/ui/button.js"
 
 function kindLabel(kind: ProviderRequestKind | null | undefined): string {
@@ -50,6 +51,40 @@ export function ComposerPendingApprovalPanel(props: {
     })
   }
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isResponding) return
+      // Approving runs a command or writes a file, so only honour the shortcut
+      // when the user is actually focused on this composer — never from the
+      // terminal pane, another session, or an unfocused document.
+      const target = event.target
+      if (!(target instanceof Element) || !target.closest("[data-chat-composer-form]")) {
+        return
+      }
+      // Focus already on one of the buttons below — let it activate itself
+      // rather than firing the shortcut on top of the click.
+      if (target.closest('[data-slot="composer-pending-approval"]')) return
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault()
+        onResolve({
+          permissionId: permission.id,
+          decision: "allow_once",
+          approvalDecision: "accept",
+        })
+      }
+      if (event.key === "Escape") {
+        event.preventDefault()
+        onResolve({
+          permissionId: permission.id,
+          decision: "reject_once",
+          approvalDecision: "decline",
+        })
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isResponding, onResolve, permission.id])
+
   return (
     <section
       className="mb-2 rounded-xl border border-border/50 bg-muted/20 p-3"
@@ -61,7 +96,12 @@ export function ComposerPendingApprovalPanel(props: {
             {kindLabel(permission.requestKind)} approval
           </p>
           {permission.detail ? (
-            <p className="mt-1 font-mono text-xs text-foreground/90">{permission.detail}</p>
+            <pre
+              aria-label="Approval detail"
+              className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-xs text-foreground/90"
+            >
+              {permission.detail}
+            </pre>
           ) : permission.description ? (
             <p className="mt-1 text-xs text-muted-foreground">{permission.description}</p>
           ) : (
@@ -110,7 +150,7 @@ export function ComposerPendingApprovalPanel(props: {
             })
           }
         >
-          Always allow this session
+          Always allow
         </Button>
         <Button
           type="button"
@@ -124,7 +164,7 @@ export function ComposerPendingApprovalPanel(props: {
             })
           }
         >
-          Approve once
+          Allow once
         </Button>
       </div>
     </section>

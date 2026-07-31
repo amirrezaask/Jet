@@ -69,7 +69,7 @@ export function useNotificationCenter(): NotificationCenterState {
   const [unreadBySession, setUnreadBySession] = useState<Record<string, number>>(
     {},
   )
-  const [filter, setFilter] = useState<NotificationFilter>("all")
+  const [filter, setFilter] = useState<NotificationFilter>("unread")
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -162,7 +162,7 @@ export function useNotificationCenter(): NotificationCenterState {
               setSelectedId(n.id)
               setProjectId(null)
               setSessionId(null)
-              setFilter("all")
+              setFilter("unread")
               setOpen(true)
             },
           })

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Option } from "effect"
 import type { OrchestrationCommand } from "@gharargah/agents"
 import type { AgentCatalogState, AgentThread } from "@gharargah/agents"
 import { AgentStore } from "../persistence/store.js"
@@ -10,6 +10,7 @@ import {
   ThreadNotFoundError,
   TurnAlreadyRunningError,
 } from "./errors.js"
+import { UnknownDriverError } from "../provider/registry.js"
 
 export class AgentStoreService extends Context.Tag("gharargah/AgentStore")<
   AgentStoreService,
@@ -57,11 +58,21 @@ export function EventSinkLive(sink: OrchEventSink): Layer.Layer<EventSinkService
 }
 
 function mapUnknownToOrchError(err: unknown): OrchError {
+  if (err instanceof UnknownDriverError) {
+    return err
+  }
+  if (err && typeof err === "object" && "_tag" in err) {
+    const tag = String((err as { _tag: string })._tag)
+    if (tag === "UnknownDriverError") {
+      return err as UnknownDriverError
+    }
+  }
   if (
     err instanceof AgentCommandError ||
     err instanceof ThreadNotFoundError ||
     err instanceof TurnAlreadyRunningError ||
-    err instanceof ApprovalBlockedError
+    err instanceof ApprovalBlockedError ||
+    err instanceof UnknownDriverError
   ) {
     return err
   }
@@ -71,7 +82,8 @@ function mapUnknownToOrchError(err: unknown): OrchError {
       tag === "AgentCommandError" ||
       tag === "ThreadNotFoundError" ||
       tag === "TurnAlreadyRunningError" ||
-      tag === "ApprovalBlockedError"
+      tag === "ApprovalBlockedError" ||
+      tag === "UnknownDriverError"
     ) {
       return err as OrchError
     }
@@ -125,25 +137,17 @@ export function makeOrchestrationLive(sink: OrchEventSink): Layer.Layer<Orchestr
   )
 }
 
-/** Run an Effect and surface OrchError as a thrown Error for the WS boundary. */
+/**
+ * Run an Effect and surface OrchError to the WS boundary (mapped in rpc/server).
+ *
+ * `Effect.runPromise` rejects with a `FiberFailure` that hides the typed error
+ * inside its cause, which would leave the boundary mapping tags by message
+ * regex. Unwrapping here keeps `_tag` intact all the way to the client.
+ */
 export async function runOrch<A>(effect: Effect.Effect<A, OrchError>): Promise<A> {
-  return Effect.runPromise(
-    effect.pipe(
-      Effect.mapError(err => {
-        if ("message" in err && typeof err.message === "string") {
-          return new Error(err.message)
-        }
-        if (err._tag === "ThreadNotFoundError") {
-          return new Error(`thread not found: ${err.threadId}`)
-        }
-        if (err._tag === "TurnAlreadyRunningError") {
-          return new Error("turn_already_running")
-        }
-        if (err._tag === "ApprovalBlockedError") {
-          return new Error(`cannot ${err.operation} thread while approvals are open`)
-        }
-        return new Error(String(err))
-      }),
-    ),
-  )
+  const exit = await Effect.runPromiseExit(effect)
+  if (Exit.isSuccess(exit)) return exit.value
+  const failure = Cause.failureOption(exit.cause)
+  if (Option.isSome(failure)) throw failure.value
+  throw Cause.squash(exit.cause)
 }

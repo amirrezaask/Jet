@@ -14,6 +14,7 @@ export function ConnectionBanner(props: {
     connection.status === "authenticating" ? (connection.authMethods ?? []) : []
   return (
     <div
+      role="alert"
       className={
         isError
           ? "flex flex-wrap items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive"

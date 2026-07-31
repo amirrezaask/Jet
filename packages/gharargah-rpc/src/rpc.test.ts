@@ -153,6 +153,36 @@ describe("SessionRoster compat decode", () => {
     assert.equal(decoded?.sessions[0]?.tabId, "gharargah:terminal:blank")
   })
 
+  it("keeps native-driver agent sessions that have no launchCommand", () => {
+    const decoded = tryDecodeSessionRoster({
+      version: 2,
+      sessions: [
+        {
+          tabId: "gharargah:terminal:native",
+          cwdRootUri: "file:///native",
+          label: "Codex",
+          status: "running",
+          agentId: "codex",
+          agentDriverId: "codex:app-server",
+          agentThreadId: "thread-1",
+        },
+        {
+          tabId: "gharargah:terminal:cli-stub",
+          cwdRootUri: "file:///cli-stub",
+          label: "Codex",
+          status: "starting",
+          agentId: "codex",
+          agentDriverId: "codex:cli",
+        },
+      ],
+      modal: null,
+    })
+    assert.equal(decoded?.sessions.length, 1)
+    assert.equal(decoded?.sessions[0]?.tabId, "gharargah:terminal:native")
+    assert.equal(decoded?.sessions[0]?.agentDriverId, "codex:app-server")
+    assert.equal(decoded?.sessions[0]?.agentThreadId, "thread-1")
+  })
+
   it("clears orphan modal and dedupes tab ids", () => {
     const decoded = tryDecodeSessionRoster({
       version: 2,

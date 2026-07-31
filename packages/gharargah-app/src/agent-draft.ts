@@ -7,6 +7,7 @@ export function createAgentDraftThread(input: {
   workspaceRootUri: string
   workspaceRootPath: string
   preferredAgentId?: string | null
+  preferredDriverId?: string | null
 }): AgentThread {
   const now = new Date().toISOString()
   return {
@@ -15,7 +16,7 @@ export function createAgentDraftThread(input: {
     workspaceRootUri: input.workspaceRootUri,
     workspaceRootPath: input.workspaceRootPath,
     agentId: input.preferredAgentId ?? null,
-    driverId: null,
+    driverId: input.preferredDriverId ?? null,
     model: null,
     createdAt: now,
     updatedAt: now,

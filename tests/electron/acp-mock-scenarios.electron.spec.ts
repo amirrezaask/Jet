@@ -9,11 +9,11 @@ import {
   expectLocatorCount,
   expectLocatorVisible,
 } from "../shell/assert.js";
-import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js";
+import { hasPtySpawn, launchJet, openNewNativeAgentSession } from "./_launch.js";
 import fs from "node:fs";
 import path from "node:path";
 
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1";
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0";
 
 const ALL_SCENARIOS = [
   // auth_required first: later user-input scenarios have left wedged Jet/mock
@@ -49,7 +49,7 @@ const ALL_SCENARIOS = [
 async function openCursorAcpSession(
   page: Awaited<ReturnType<typeof launchJet>>["page"],
 ) {
-  const modal = await openNewAgentSession(page, "cursor");
+  const modal = await openNewNativeAgentSession(page, "cursor");
   const composer = modal.locator('[data-testid="composer-editor"]');
   await expectLocatorVisible(composer, { timeout: 20_000 });
   return { modal, composer };
@@ -308,6 +308,10 @@ test.describe("ACP mock scenario matrix (host path)", () => {
         }
 
         if (scenario === "image_prompt") {
+          // Drafts live client-side until the first turn, so prime the thread
+          // before addressing it by id.
+          await sendPrompt(page, modal, composer, "bind image thread");
+          await waitForAssistantContaining(page, "images=0");
           // Composer file picker is OS-native; exercise host image path via sendMessage.
           await page.evaluate(async () => {
             const workspace =

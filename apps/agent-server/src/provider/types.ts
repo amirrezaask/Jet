@@ -1,4 +1,5 @@
 import type { AgentThread, ProviderRuntimeEvent, SendAgentMessageInput } from "@gharargah/agents"
+import type { AgentTransportKind } from "@gharargah/rpc"
 
 export type ProviderAdapterContext = {
   thread: AgentThread
@@ -16,7 +17,7 @@ export type ProviderAdapterContext = {
 
 export type ProviderAdapter = {
   readonly id: string
-  readonly kind: "acp" | "app-server" | "sdk" | "mock"
+  readonly kind: AgentTransportKind
   startTurn(ctx: ProviderAdapterContext): Promise<void>
   interrupt?(threadId: string): Promise<void>
   stopSession?(threadId: string): Promise<void>

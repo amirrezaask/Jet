@@ -24,6 +24,7 @@ export type AggregatedActivity = {
   diffStat: ActivityDiffStat | null
   editFileCount: number
   changedFiles: ReadonlyArray<import("@gharargah/agents").AgentFileChange>
+  hasFailure: boolean
 }
 
 const EMPTY_COUNTS: ActivityCounts = {
@@ -159,6 +160,10 @@ export function aggregateToolCalls(input: {
     label = formatEditedFilesLabel(editFileCount, diffStat)
   }
 
+  const hasFailure = input.toolCalls.some(
+    toolCall => toolCall.status === "failed" || toolCall.status === "cancelled",
+  )
+
   return {
     id: input.id,
     createdAt: input.createdAt,
@@ -169,5 +174,6 @@ export function aggregateToolCalls(input: {
       diffStat && (diffStat.additions > 0 || diffStat.deletions > 0) ? diffStat : null,
     editFileCount,
     changedFiles: input.turnDiffSummary?.files ?? [],
+    hasFailure,
   }
 }

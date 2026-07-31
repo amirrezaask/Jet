@@ -6,7 +6,7 @@ import {
   expectLocatorVisible,
 } from "../shell/assert.js"
 import type { ShellDriver } from "../shell/driver.js"
-import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewNativeAgentSession } from "./_launch.js"
 
 const providers = [
   {
@@ -30,8 +30,8 @@ const providers = [
     label: "OpenCode",
     driverId: "opencode:sdk",
     listedModel: "OpenCode",
-    firstReply: "OpenCode: hello opencode",
-    secondReply: "OpenCode: process-count",
+    firstReply: "mock:hello opencode",
+    secondReply: "process-turn:2",
   },
   {
     id: "cursor",
@@ -144,8 +144,8 @@ async function waitForAssistant(
 test.describe("unified agent provider UI", () => {
   test.skip(!hasPtySpawn(), "the session modal requires a PTY-capable host")
   test.skip(
-    process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "1",
-    "in-app agent chat requires GHARARGAH_ENABLE_AGENT_CHAT=1",
+    process.env.GHARARGAH_ENABLE_AGENT_CHAT === "0",
+    "in-app agent chat is disabled by GHARARGAH_ENABLE_AGENT_CHAT=0",
   )
 
   for (const provider of providers) {
@@ -158,7 +158,7 @@ test.describe("unified agent provider UI", () => {
       })
       try {
         const threadsBefore = new Set(await listThreadIds(page))
-        const modal = await openNewAgentSession(page, provider.id)
+        const modal = await openNewNativeAgentSession(page, provider.id)
         await expect.poll(() => modal.getAttribute("data-gharargah-session-mode")).toBe("agent")
         await expectLocatorVisible(modal.locator("[data-chat-slim-title]"))
         await expectLocatorVisible(modal.locator("[data-messages-timeline]"))
@@ -177,9 +177,11 @@ test.describe("unified agent provider UI", () => {
         await expect
           .poll(() => modal.locator("[data-chat-provider]").getAttribute("data-chat-provider"))
           .toBe(provider.id)
+        // The draft is seeded with the session's driver so the first turn routes
+        // to the agent the user picked, before any thread is persisted.
         await expect
           .poll(() => modal.locator("[data-chat-driver]").getAttribute("data-chat-driver"))
-          .toBe("unknown")
+          .toBe(provider.driverId)
         const createdThreads = (await listThreadIds(page)).filter(id => !threadsBefore.has(id))
         expect(createdThreads).toHaveLength(0)
         const unboundRoster = await page.evaluate(async () => {
@@ -285,7 +287,7 @@ test.describe("unified agent provider UI", () => {
     test(`${provider.label} permission, cancellation, draft, and recovery lifecycle`, async () => {
       const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
       try {
-        const modal = await openNewAgentSession(page, provider.id)
+        const modal = await openNewNativeAgentSession(page, provider.id)
 
         // Bind a concrete listed model (same as multi-turn) so canSend is deterministic.
         const modelPicker = modal.locator("[data-chat-provider-model-picker]")
@@ -305,7 +307,7 @@ test.describe("unified agent provider UI", () => {
           provider.id,
           provider.id === "codex" ? "request permission" : "permission",
         )
-        const permission = modal.locator('[data-slot="permission-card"]').first()
+        const permission = modal.locator('[data-slot="composer-pending-approval"]').first()
         await expectLocatorVisible(permission, { timeout: 20_000 })
         await permission.getByRole("button", { name: /^Allow once$/ }).click()
         await waitForAssistant(page, provider.id, "permission")

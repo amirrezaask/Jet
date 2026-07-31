@@ -4,14 +4,14 @@ import {
   expectLocatorCount,
   expectLocatorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, openNewAgentSession } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewNativeAgentSession } from "./_launch.js"
 
-const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+const agentChatE2e = process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "0"
 
 async function openCursorAcpSession(
   page: Awaited<ReturnType<typeof launchJet>>["page"],
 ) {
-  const modal = await openNewAgentSession(page, "cursor")
+  const modal = await openNewNativeAgentSession(page, "cursor")
   const composer = modal.locator('[data-testid="composer-editor"]')
   await expectLocatorVisible(composer, { timeout: 20_000 })
   await expectLocatorVisible(modal.locator("[data-composer-attach-image]"))
@@ -300,7 +300,7 @@ test.describe("ACP structured timeline", () => {
           await expect
             .poll(() => tool.getAttribute("data-tool-summary"))
             .toBe("/workspace/src/mock-tool.ts")
-          await tool.getByRole("button").first().click()
+          await tool.locator("[data-tool-call-toggle]").click()
           await expectLocatorContainsText(tool, "export const mock = true")
         }
         if (scenario === "plan_update") {

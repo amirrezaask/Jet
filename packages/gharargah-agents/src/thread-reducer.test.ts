@@ -68,6 +68,35 @@ test("a late streaming delta cannot revive a completed turn", () => {
   assert.equal(result, current)
 })
 
+test("an older streaming delta cannot rewind assistant text", () => {
+  const current = thread({
+    updatedAt: "2026-01-01T00:00:03.000Z",
+    status: "running",
+    messages: [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        text: "longer partial",
+        createdAt: "2026-01-01T00:00:01.000Z",
+        updatedAt: "2026-01-01T00:00:03.000Z",
+        streaming: true,
+      },
+    ],
+  })
+  const result = applyAgentThreadDelta(current, {
+    workspaceRootUri: current.workspaceRootUri,
+    threadId: current.id,
+    updatedAt: "2026-01-01T00:00:02.000Z",
+    status: "running",
+    lastError: null,
+    messageId: "assistant-1",
+    text: "short",
+    streaming: true,
+  })
+  assert.equal(result, current)
+  assert.equal(result?.messages[0]?.text, "longer partial")
+})
+
 test("text delta creates the assistant placeholder when events race", () => {
   const result = applyAgentThreadDelta(thread({ status: "running" }), {
     workspaceRootUri: "file:///workspace",

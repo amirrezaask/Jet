@@ -1,3 +1,5 @@
+import type { AgentTransportKind } from "@gharargah/rpc"
+import { Data } from "effect"
 import type { ProviderAdapter } from "./types.js"
 import { AcpProviderAdapter } from "./acp-adapter.js"
 import { CodexAppServerAdapter } from "./codex-adapter.js"
@@ -5,20 +7,27 @@ import { ClaudeSdkAdapter } from "./claude-adapter.js"
 import { OpenCodeAdapter } from "./opencode-adapter.js"
 import type { ProviderInstance } from "./types.js"
 
+export class UnknownDriverError extends Data.TaggedError("UnknownDriverError")<{
+  readonly driverId: string
+  readonly message: string
+}> {}
+
 export function createAdapter(driverId: string): ProviderAdapter {
   if (driverId === "codex:app-server") return new CodexAppServerAdapter()
   if (driverId === "claude:sdk") return new ClaudeSdkAdapter()
   if (driverId === "opencode:sdk") return new OpenCodeAdapter()
   if (driverId === "opencode:acp") return new AcpProviderAdapter("opencode:acp")
   if (driverId.endsWith(":acp")) return new AcpProviderAdapter(driverId)
-  // Catalog may advertise CLI drivers — they are not implemented as adapters.
   if (driverId.endsWith(":cli")) {
-    throw new Error(
-      `driver ${driverId} is catalog-only; use the primary *:acp / *:sdk / *:app-server driver`,
-    )
+    throw new UnknownDriverError({
+      driverId,
+      message: `Driver ${driverId} is catalog-only (CLI in terminal). Use the primary transport: *:acp, *:sdk, or *:app-server.`,
+    })
   }
-  // Unknown non-acp ids must not silently fall through to cursor-agent.
-  throw new Error(`unknown agent driver: ${driverId}`)
+  throw new UnknownDriverError({
+    driverId,
+    message: `Unknown agent driver: ${driverId}`,
+  })
 }
 
 export function defaultProviderInstances(): ProviderInstance[] {
@@ -65,3 +74,4 @@ export function defaultProviderInstances(): ProviderInstance[] {
 }
 
 export type { ProviderAdapter, ProviderInstance, ProviderAdapterContext } from "./types.js"
+export type { AgentTransportKind }

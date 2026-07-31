@@ -1,13 +1,23 @@
 import type {
   AgentFileReference,
-  ResolveAgentPermissionInput,
+  AgentPermissionRequest,
   ResolveAgentUserInputInput,
   TimelineEntry,
   TurnDiffSummary,
 } from "@gharargah/agents"
 import { LegendList, type LegendListRef } from "@legendapp/list/react"
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { FileText, Image as ImageIcon } from "lucide-react"
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
+import { flushSync } from "react-dom"
+import { AlertCircle, FileText, Image as ImageIcon } from "lucide-react"
 import {
   Attachment,
   AttachmentContent,
@@ -25,7 +35,6 @@ import { DiffStatLabel, hasNonZeroStat } from "../DiffStatLabel.js"
 import { MessageCopyButton } from "./MessageCopyButton.js"
 import { ThoughtBlock } from "./ThoughtBlock.js"
 import { ToolCallCard } from "./ToolCallCard.js"
-import { PermissionCard } from "./PermissionCard.js"
 import { UserInputCard } from "./UserInputCard.js"
 import { PlanCard } from "./PlanCard.js"
 import { UsageMeter } from "./UsageMeter.js"
@@ -38,6 +47,7 @@ import {
   resolveTimelineIsAtEnd,
   type MessagesTimelineRow,
   type StableMessagesTimelineRowsState,
+  type TimelineLatestTurn,
 } from "./MessagesTimeline.logic.js"
 
 const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />
@@ -46,6 +56,40 @@ const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />
 const EMPTY_STABLE_ROWS: StableMessagesTimelineRowsState = {
   byId: new Map(),
   result: [],
+}
+
+type TimelineRowCallbackContextValue = {
+  onToggleAllDirectories: () => void
+  onOpenFile?: (ref: AgentFileReference) => void
+  onOpenDiff?: (ref: AgentFileReference) => void
+  onResolveUserInput?: (
+    input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
+  ) => void
+}
+
+type TimelineRowDisplayContextValue = {
+  theme: "light" | "dark"
+  expandAll: boolean
+  listRef: React.RefObject<LegendListRef | null>
+}
+
+const TimelineRowCallbackCtx = createContext<TimelineRowCallbackContextValue | null>(null)
+const TimelineRowDisplayCtx = createContext<TimelineRowDisplayContextValue | null>(null)
+
+function useTimelineRowCallbacks(): TimelineRowCallbackContextValue {
+  const value = useContext(TimelineRowCallbackCtx)
+  if (!value) {
+    throw new Error("TimelineRowCallbackCtx is missing")
+  }
+  return value
+}
+
+function useTimelineRowDisplay(): TimelineRowDisplayContextValue {
+  const value = useContext(TimelineRowDisplayCtx)
+  if (!value) {
+    throw new Error("TimelineRowDisplayCtx is missing")
+  }
+  return value
 }
 
 function useStableRows(rows: MessagesTimelineRow[]): MessagesTimelineRow[] {
@@ -58,7 +102,9 @@ function useStableRows(rows: MessagesTimelineRow[]): MessagesTimelineRow[] {
   return stable
 }
 
-function UserTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "message" }> }) {
+const UserTimelineRow = memo(function UserTimelineRow(props: {
+  row: Extract<MessagesTimelineRow, { kind: "message" }>
+}) {
   const { row } = props
   const messageText = coerceMessageText(row.message.text)
   const copyText = messageText.trim()
@@ -104,34 +150,55 @@ function UserTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "mes
       </div>
     </div>
   )
-}
+})
 
-function TurnStatusTimelineRow(props: {
+const TurnStatusTimelineRow = memo(function TurnStatusTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "turn_status" }>
 }) {
   return (
     <p
       className={cn(
         "py-1 text-sm font-medium",
-        props.row.status === "failed" ? "text-destructive" : "text-agent-feed-muted",
+        props.row.status === "completed" ? "text-agent-feed-muted" : "text-destructive",
       )}
       data-chat-turn-status={props.row.status}
     >
       {props.row.label}
     </p>
   )
-}
+})
 
-function ActivityGroupTimelineRow(props: {
+const ActivityGroupTimelineRow = memo(function ActivityGroupTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "activity_group" }>
-  expandAll: boolean
-  onToggleAllDirectories: () => void
-  onOpenFile?: (ref: AgentFileReference) => void
-  onOpenDiff?: (ref: AgentFileReference) => void
 }) {
-  const { row, expandAll, onToggleAllDirectories, onOpenFile, onOpenDiff } = props
+  const { row } = props
+  const { expandAll, listRef } = useTimelineRowDisplay()
+  const { onToggleAllDirectories, onOpenFile, onOpenDiff } = useTimelineRowCallbacks()
   const [open, setOpen] = useState(false)
   const canExpand = row.toolCalls.length > 0 || row.changedFiles.length > 0
+  const expandedRegionId = `activity-group-${row.id}`
+
+  const toggleOpen = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (!canExpand) return
+      const anchorBottomBeforeToggle = event.currentTarget.getBoundingClientRect().bottom
+
+      flushSync(() => {
+        setOpen(value => !value)
+      })
+
+      const delta = event.currentTarget.getBoundingClientRect().bottom - anchorBottomBeforeToggle
+      if (Math.abs(delta) < 0.5) return
+
+      const list = listRef.current
+      const currentScroll = list?.getState?.().scroll
+      if (list && typeof currentScroll === "number") {
+        list.scrollToOffset({ offset: currentScroll + delta, animated: false })
+      }
+    },
+    [canExpand, listRef],
+  )
+
   return (
     <div className="py-0.5" data-chat-activity-group="" data-chat-activity-label={row.label}>
       <button
@@ -142,10 +209,12 @@ function ActivityGroupTimelineRow(props: {
         )}
         disabled={!canExpand}
         aria-expanded={canExpand ? open : undefined}
-        onClick={() => {
-          if (canExpand) setOpen(value => !value)
-        }}
+        aria-controls={canExpand ? expandedRegionId : undefined}
+        onClick={toggleOpen}
       >
+        {row.hasFailure ? (
+          <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+        ) : null}
         <span>{row.label}</span>
         {row.diffStat && hasNonZeroStat(row.diffStat) ? (
           <DiffStatLabel
@@ -157,7 +226,12 @@ function ActivityGroupTimelineRow(props: {
         ) : null}
       </button>
       {open && canExpand ? (
-        <div className="mt-2 space-y-2 border-s border-border/40 ps-3">
+        <div
+          id={expandedRegionId}
+          role="region"
+          aria-label="Activity details"
+          className="mt-2 space-y-2 border-s border-border/40 ps-3"
+        >
           {row.changedFiles.length > 0 ? (
             <ChangedFilesCard
               files={row.changedFiles}
@@ -179,14 +253,14 @@ function ActivityGroupTimelineRow(props: {
       ) : null}
     </div>
   )
-}
+})
 
-function AssistantTimelineRow(props: {
+const AssistantTimelineRow = memo(function AssistantTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "message" }>
-  theme: "light" | "dark"
-  onOpenFile?: (ref: AgentFileReference) => void
 }) {
-  const { row, theme, onOpenFile } = props
+  const { row } = props
+  const { theme } = useTimelineRowDisplay()
+  const { onOpenFile } = useTimelineRowCallbacks()
   const rawText = coerceMessageText(row.message.text)
   const messageText = rawText || (row.message.streaming ? "" : "(empty response)")
   const assistantCopyState = resolveAssistantMessageCopyState({
@@ -219,9 +293,11 @@ function AssistantTimelineRow(props: {
       ) : null}
     </div>
   )
-}
+})
 
-function WorkingTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "working" }> }) {
+const WorkingTimelineRow = memo(function WorkingTimelineRow(props: {
+  row: Extract<MessagesTimelineRow, { kind: "working" }>
+}) {
   return (
     <div className="py-1 pl-0.5">
       <div
@@ -235,25 +311,34 @@ function WorkingTimelineRow(props: { row: Extract<MessagesTimelineRow, { kind: "
       </div>
     </div>
   )
+})
+
+/**
+ * The timeline only records approvals; the live decision lives in the composer,
+ * so a still-pending request reads as awaiting rather than settled.
+ */
+function permissionSummaryLabel(permission: AgentPermissionRequest): string {
+  switch (permission.status) {
+    case "cancelled":
+    case "rejected":
+      return "Declined"
+    case "resolved":
+      return "Approved"
+    case "submitting":
+      return "Deciding…"
+    default:
+      return "Awaiting approval"
+  }
 }
 
-function StructuredTimelineRow(props: {
+const StructuredTimelineRow = memo(function StructuredTimelineRow(props: {
   row: Extract<MessagesTimelineRow, { kind: "structured" }>
-  onOpenFile?: (ref: AgentFileReference) => void
-  onResolvePermission?: (
-    input: Pick<
-      ResolveAgentPermissionInput,
-      "permissionId" | "decision" | "optionId" | "approvalDecision"
-    >,
-  ) => void
-  onResolveUserInput?: (
-    input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
-  ) => void
 }) {
+  const { onOpenFile, onResolveUserInput } = useTimelineRowCallbacks()
   const { item } = props.row
   if (item.kind === "thought") return <ThoughtBlock text={item.text} />
   if (item.kind === "tool_call") {
-    return <ToolCallCard toolCall={item.toolCall} onOpenFile={props.onOpenFile} />
+    return <ToolCallCard toolCall={item.toolCall} onOpenFile={onOpenFile} />
   }
   if (item.kind === "terminal") {
     return (
@@ -267,10 +352,12 @@ function StructuredTimelineRow(props: {
   }
   if (item.kind === "permission") {
     return (
-      <PermissionCard
-        permission={item.permission}
-        onResolve={input => props.onResolvePermission?.(input)}
-      />
+      <p
+        className="text-xs text-muted-foreground"
+        data-timeline-permission-summary=""
+      >
+        {item.permission.title} — {permissionSummaryLabel(item.permission)}
+      </p>
     )
   }
   if (item.kind === "plan") return <PlanCard plan={item.plan} />
@@ -279,31 +366,23 @@ function StructuredTimelineRow(props: {
     return (
       <UserInputCard
         userInput={item.userInput}
-        onResolve={input => props.onResolveUserInput?.(input)}
+        onResolve={input => onResolveUserInput?.(input)}
       />
     )
   }
-  return <p className={item.kind === "error" ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>{item.text}</p>
-}
+  return (
+    <p
+      className={
+        item.kind === "error" ? "text-xs text-destructive" : "text-xs text-muted-foreground"
+      }
+    >
+      {item.text}
+    </p>
+  )
+})
 
-function TimelineRowContent(props: {
-  row: MessagesTimelineRow
-  theme: "light" | "dark"
-  expandAll: boolean
-  onToggleAllDirectories: () => void
-  onOpenFile?: (ref: AgentFileReference) => void
-  onOpenDiff?: (ref: AgentFileReference) => void
-  onResolvePermission?: (
-    input: Pick<
-      ResolveAgentPermissionInput,
-      "permissionId" | "decision" | "optionId" | "approvalDecision"
-    >,
-  ) => void
-  onResolveUserInput?: (
-    input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
-  ) => void
-}) {
-  const { row, theme, expandAll, onToggleAllDirectories, onOpenFile, onOpenDiff } = props
+const TimelineRowContent = memo(function TimelineRowContent(props: { row: MessagesTimelineRow }) {
+  const { row } = props
   return (
     <div
       className={cn(
@@ -321,52 +400,32 @@ function TimelineRowContent(props: {
         <UserTimelineRow row={row} />
       ) : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
-        <AssistantTimelineRow row={row} theme={theme} onOpenFile={onOpenFile} />
+        <AssistantTimelineRow row={row} />
       ) : null}
       {row.kind === "turn_status" ? <TurnStatusTimelineRow row={row} /> : null}
-      {row.kind === "activity_group" ? (
-        <ActivityGroupTimelineRow
-          row={row}
-          expandAll={expandAll}
-          onToggleAllDirectories={onToggleAllDirectories}
-          onOpenFile={onOpenFile}
-          onOpenDiff={onOpenDiff}
-        />
-      ) : null}
+      {row.kind === "activity_group" ? <ActivityGroupTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
-      {row.kind === "structured" ? (
-        <StructuredTimelineRow
-          row={row}
-          onOpenFile={onOpenFile}
-          onResolvePermission={props.onResolvePermission}
-          onResolveUserInput={props.onResolveUserInput}
-        />
-      ) : null}
+      {row.kind === "structured" ? <StructuredTimelineRow row={row} /> : null}
     </div>
   )
-}
+})
 
 export const MessagesTimeline = memo(function MessagesTimeline(props: {
   listRef?: React.RefObject<LegendListRef | null>
   timelineEntries: ReadonlyArray<TimelineEntry>
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<string, TurnDiffSummary>
+  latestTurn?: TimelineLatestTurn | null
+  runningTurnId?: string | null
   isWorking: boolean
   workingLabel: string
   activeTurnStartedAt?: string | null
   theme: "light" | "dark"
   contentInsetEndAdjustment: number
   expandAll: boolean
-  maintainScrollAtEndEnabled?: boolean
   onToggleAllDirectories: () => void
   onOpenFile?: (ref: AgentFileReference) => void
   onOpenDiff?: (ref: AgentFileReference) => void
   onIsAtEndChange?: (isAtEnd: boolean) => void
-  onResolvePermission?: (
-    input: Pick<
-      ResolveAgentPermissionInput,
-      "permissionId" | "decision" | "optionId" | "approvalDecision"
-    >,
-  ) => void
   onResolveUserInput?: (
     input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
   ) => void
@@ -375,18 +434,18 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
     listRef: externalListRef,
     timelineEntries,
     turnDiffSummaryByAssistantMessageId,
+    latestTurn = null,
+    runningTurnId = null,
     isWorking,
     workingLabel,
     activeTurnStartedAt = null,
     theme,
     contentInsetEndAdjustment,
-    maintainScrollAtEndEnabled = true,
     expandAll,
     onToggleAllDirectories,
     onOpenFile,
     onOpenDiff,
     onIsAtEndChange,
-    onResolvePermission,
     onResolveUserInput,
   } = props
 
@@ -397,6 +456,8 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
     () =>
       deriveMessagesTimelineRows({
         timelineEntries,
+        latestTurn,
+        runningTurnId,
         isWorking,
         workingLabel,
         activeTurnStartedAt,
@@ -404,6 +465,8 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
       }),
     [
       timelineEntries,
+      latestTurn,
+      runningTurnId,
       isWorking,
       workingLabel,
       activeTurnStartedAt,
@@ -411,6 +474,38 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
     ],
   )
   const rows = useStableRows(rawRows)
+
+  const callbackSourceRef = useRef({
+    onToggleAllDirectories,
+    onOpenFile,
+    onOpenDiff,
+    onResolveUserInput,
+  })
+  callbackSourceRef.current = {
+    onToggleAllDirectories,
+    onOpenFile,
+    onOpenDiff,
+    onResolveUserInput,
+  }
+
+  const stableCallbacks = useMemo<TimelineRowCallbackContextValue>(
+    () => ({
+      onToggleAllDirectories: () => callbackSourceRef.current.onToggleAllDirectories(),
+      onOpenFile: ref => callbackSourceRef.current.onOpenFile?.(ref),
+      onOpenDiff: ref => callbackSourceRef.current.onOpenDiff?.(ref),
+      onResolveUserInput: input => callbackSourceRef.current.onResolveUserInput?.(input),
+    }),
+    [],
+  )
+
+  const displayValue = useMemo<TimelineRowDisplayContextValue>(
+    () => ({
+      theme,
+      expandAll,
+      listRef,
+    }),
+    [theme, expandAll, listRef],
+  )
 
   const handleScroll = useCallback(() => {
     const state = listRef.current?.getState?.()
@@ -428,19 +523,10 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
   const renderItem = useCallback(
     ({ item }: { item: MessagesTimelineRow }) => (
       <div className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip" data-timeline-root="true">
-        <TimelineRowContent
-          row={item}
-          theme={theme}
-          expandAll={expandAll}
-          onToggleAllDirectories={onToggleAllDirectories}
-          onOpenFile={onOpenFile}
-          onOpenDiff={onOpenDiff}
-          onResolvePermission={onResolvePermission}
-          onResolveUserInput={onResolveUserInput}
-        />
+        <TimelineRowContent row={item} />
       </div>
     ),
-    [expandAll, onToggleAllDirectories, onOpenFile, onOpenDiff, onResolvePermission, onResolveUserInput, theme],
+    [],
   )
 
   if (rows.length === 0 && !isWorking) {
@@ -457,41 +543,41 @@ export const MessagesTimeline = memo(function MessagesTimeline(props: {
   }
 
   return (
-    <div data-messages-timeline="true" className="relative h-full min-h-0">
-      <LegendList<MessagesTimelineRow>
-        ref={listRef}
-        data={rows}
-        keyExtractor={item => item.id}
-        getItemType={item => {
-          if (item.kind === "message") return `message:${item.message.role}`
-          if (item.kind === "structured") return `structured:${item.item.kind}`
-          return item.kind
-        }}
-        renderItem={renderItem}
-        estimatedItemSize={90}
-        initialScrollAtEnd
-        contentInsetEndAdjustment={contentInsetEndAdjustment}
-        maintainScrollAtEnd={
-          maintainScrollAtEndEnabled
-            ? {
-                animated: false,
-                on: {
-                  dataChange: true,
-                  itemLayout: true,
-                  layout: true,
-                },
-              }
-            : false
-        }
-        maintainVisibleContentPosition={{
-          data: true,
-          size: false,
-        }}
-        onScroll={handleScroll}
-        className="scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5"
-        ListHeaderComponent={TIMELINE_LIST_HEADER}
-        ListFooterComponent={TIMELINE_LIST_FOOTER}
-      />
-    </div>
+    <TimelineRowCallbackCtx.Provider value={stableCallbacks}>
+      <TimelineRowDisplayCtx.Provider value={displayValue}>
+        <div data-messages-timeline="true" className="relative h-full min-h-0">
+          <LegendList<MessagesTimelineRow>
+            ref={listRef}
+            data={rows}
+            keyExtractor={item => item.id}
+            getItemType={item => {
+              if (item.kind === "message") return `message:${item.message.role}`
+              if (item.kind === "structured") return `structured:${item.item.kind}`
+              return item.kind
+            }}
+            renderItem={renderItem}
+            estimatedItemSize={90}
+            initialScrollAtEnd
+            contentInsetEndAdjustment={contentInsetEndAdjustment}
+            maintainScrollAtEnd={{
+              animated: false,
+              on: {
+                dataChange: true,
+                itemLayout: true,
+                layout: true,
+              },
+            }}
+            maintainVisibleContentPosition={{
+              data: true,
+              size: false,
+            }}
+            onScroll={handleScroll}
+            className="scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5"
+            ListHeaderComponent={TIMELINE_LIST_HEADER}
+            ListFooterComponent={TIMELINE_LIST_FOOTER}
+          />
+        </div>
+      </TimelineRowDisplayCtx.Provider>
+    </TimelineRowCallbackCtx.Provider>
   )
 })

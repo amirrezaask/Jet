@@ -59,11 +59,6 @@ export function GharargahWindowTitlebar({
               style={dragRegion}
             />
           ) : null}
-          {!sidebar.collapsed ? (
-            <span className="truncate pe-3 text-xs font-semibold tracking-tight">
-              Gharargah
-            </span>
-          ) : null}
         </div>
       ) : hasTrafficLights ? (
         <div

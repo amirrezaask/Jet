@@ -202,9 +202,38 @@ export async function openNewCliSession(
   return modal
 }
 
+/** Open a native in-app agent chat session (picker → Native → Agent surface). */
+export async function openNewNativeAgentSession(
+  page: ShellDriver,
+  agentId: string = "codex",
+): Promise<ReturnType<ShellDriver["locator"]>> {
+  await clickNewSession(page)
+  const nativeOption = page.locator(
+    `[data-gharargah-agent-driver-mode-option="${agentId}:native"]`,
+  )
+  await nativeOption.waitFor({ state: "visible", timeout: 20_000 })
+  await nativeOption.click()
+  await pickAgentCli(page, agentId)
+  const modal = page.locator("[data-gharargah-terminal-modal]")
+  await modal.waitFor({ state: "visible", timeout: 20_000 })
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("[data-gharargah-terminal-modal]")
+        ?.getAttribute("data-gharargah-session-mode") === "agent",
+    null,
+    { timeout: 20_000 },
+  )
+  await page.locator('[data-testid="composer-editor"]').waitFor({
+    state: "visible",
+    timeout: 20_000,
+  })
+  return modal
+}
+
 /**
- * @deprecated Prefer {@link openNewCliSession}. Kept for older agent-chat specs;
- * product new-session path is always the agent CLI picker.
+ * @deprecated Ambiguous. Use {@link openNewCliSession} for PTY/session-shell specs
+ * or {@link openNewNativeAgentSession} for in-app agent chat specs.
  */
 export async function openNewAgentSession(
   page: ShellDriver,

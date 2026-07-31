@@ -191,8 +191,8 @@ export class TerminalCursorMotionLayer {
     this.sync(true)
   }
 
-  refresh(_reset = true): void {
-    this.sync(true)
+  refresh(reset = true): void {
+    this.sync(reset)
   }
 
   private readonly handleFocusChange = (): void => {

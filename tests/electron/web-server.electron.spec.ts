@@ -67,7 +67,7 @@ test.describe("single-binary web server", () => {
 
   test("server-owned mock agent continues through browser reload", async () => {
     test.skip(
-      process.env.GHARARGAH_ENABLE_AGENT_CHAT !== "1",
+      process.env.GHARARGAH_ENABLE_AGENT_CHAT === "0",
       "In-app agent chat is disabled; CLI agents run in terminal sessions.",
     )
     const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })

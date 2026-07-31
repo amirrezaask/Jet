@@ -1,4 +1,5 @@
 import type { ProviderAdapter, ProviderAdapterContext } from "./types.js"
+import { runNativeMockTurn } from "./native-mock.js"
 
 type OpenCodeClient = {
   session: {
@@ -55,7 +56,8 @@ export class OpenCodeAdapter implements ProviderAdapter {
     ctx.signal.addEventListener("abort", () => abort.abort())
 
     if (useMock) {
-      await this.mockEcho(ctx, messageId, abort.signal)
+      await runNativeMockTurn(ctx, messageId, { transport: "opencode-sdk" })
+      this.aborts.delete(ctx.thread.id)
       return
     }
 
@@ -285,47 +287,6 @@ export class OpenCodeAdapter implements ProviderAdapter {
         throw err
       }
     }
-  }
-
-  private async mockEcho(
-    ctx: ProviderAdapterContext,
-    messageId: string,
-    signal: AbortSignal,
-  ): Promise<void> {
-    ctx.emit({
-      type: "session.bound",
-      threadId: ctx.thread.id,
-      providerTransport: "opencode-sdk",
-      providerSessionId: ctx.thread.providerSessionId ?? `opencode-${ctx.thread.id}`,
-      providerInstanceId: ctx.thread.providerInstanceId ?? undefined,
-    })
-    const text = `OpenCode: ${ctx.input.text}`
-    let out = ""
-    for (const ch of text) {
-      if (signal.aborted || ctx.signal.aborted) {
-        ctx.emit({ type: "turn.cancelled", turnId: ctx.turnId, threadId: ctx.thread.id })
-        this.aborts.delete(ctx.thread.id)
-        return
-      }
-      out += ch
-      ctx.emit({
-        type: "content.delta",
-        turnId: ctx.turnId,
-        threadId: ctx.thread.id,
-        messageId,
-        text: out,
-      })
-      await new Promise(r => setTimeout(r, 4))
-    }
-    ctx.emit({
-      type: "content.done",
-      turnId: ctx.turnId,
-      threadId: ctx.thread.id,
-      messageId,
-      text: out,
-    })
-    ctx.emit({ type: "turn.completed", turnId: ctx.turnId, threadId: ctx.thread.id })
-    this.aborts.delete(ctx.thread.id)
   }
 
   async interrupt(threadId: string): Promise<void> {

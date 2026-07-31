@@ -47,7 +47,7 @@ export function applyAgentThreadDelta(
   const currentIsNewer = timestamp(current.updatedAt) > timestamp(delta.updatedAt)
   const preserveTerminalStatus =
     TERMINAL_STATUSES.has(current.status) && delta.status === "running"
-  if (currentIsNewer && preserveTerminalStatus) return current
+  if (currentIsNewer && (preserveTerminalStatus || delta.streaming)) return current
 
   let foundMessage = false
   const messages = current.messages.map(message => {

@@ -70,6 +70,7 @@ export class CodexAppServerAdapter implements ProviderAdapter {
   readonly id = "codex:app-server"
   readonly kind = "app-server" as const
   private aborts = new Map<string, AbortController>()
+  private activeThreadIds = new Set<string>()
   private turnDone = new Map<
     string,
     (status: "completed" | "cancelled" | "failed", error?: string) => void
@@ -99,6 +100,7 @@ export class CodexAppServerAdapter implements ProviderAdapter {
         else resolve(status)
       })
     })
+    this.activeThreadIds.add(ctx.thread.id)
 
     const assistantRef = { text: "" }
 
@@ -190,6 +192,7 @@ export class CodexAppServerAdapter implements ProviderAdapter {
     } finally {
       clearTimeout(idleTimer)
       this.turnDone.delete(ctx.thread.id)
+      this.activeThreadIds.delete(ctx.thread.id)
       this.aborts.delete(ctx.thread.id)
     }
   }
@@ -455,11 +458,17 @@ export class CodexAppServerAdapter implements ProviderAdapter {
       dead: false,
     }
 
+    const adapter = this
     child.on("exit", () => {
       session.dead = true
       sessionsByCwd.delete(cwd)
       for (const [, p] of session.pending) p.reject(new Error("codex app-server exited"))
       session.pending.clear()
+      for (const threadId of adapter.activeThreadIds) {
+        adapter.turnDone.get(threadId)?.("failed", "codex app-server exited")
+        adapter.turnDone.delete(threadId)
+      }
+      adapter.activeThreadIds.clear()
     })
 
     // Bootstrap handshake once per process.

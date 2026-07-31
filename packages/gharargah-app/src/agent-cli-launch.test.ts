@@ -155,11 +155,39 @@ describe("agentCliLaunch resume argv", () => {
       isPersistableAgentSession({
         agentId: "codex",
         launchCommand: "codex",
+        agentDriverId: "codex:cli",
+      }),
+      true,
+    )
+    assert.equal(
+      isPersistableAgentSession({
+        agentId: "codex",
+        agentDriverId: "codex:app-server",
       }),
       true,
     )
     assert.equal(isPersistableAgentSession({}), true)
-    assert.equal(isPersistableAgentSession({ agentId: "codex" }), false)
+    assert.equal(
+      isPersistableAgentSession({
+        agentId: "codex",
+        agentDriverId: "codex:cli",
+      }),
+      false,
+    )
+  })
+
+  it("prepareHydratedAgentCliFields leaves native sessions unchanged", () => {
+    const fields = prepareHydratedAgentCliFields({
+      tabId: "gharargah:terminal:native",
+      agentId: "codex",
+      agentDriverId: "codex:app-server",
+      status: "running",
+      origin: context.origin,
+    })
+    assert.equal(fields.launchCommand, undefined)
+    assert.equal(fields.launchArgs, undefined)
+    assert.equal(fields.status, "running")
+    assert.equal(fields.agentCliSessionId, undefined)
   })
 })
 

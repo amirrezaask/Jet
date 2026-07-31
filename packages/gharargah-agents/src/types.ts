@@ -176,7 +176,9 @@ export type ProviderModel = {
   configOptions?: AgentSessionConfigOption[]
 }
 
-export type AgentDriverKind = "cli" | "acp" | "native"
+/** Mirrors `AgentTransportKind` in `@gharargah/rpc`; duplicated because this
+ * package sits below rpc in the dependency graph. Keep both in sync. */
+export type AgentDriverKind = "cli" | "acp" | "app-server" | "sdk" | "mock"
 
 export type AgentDriverStatus = "ready" | "unavailable" | "pending"
 
@@ -203,8 +205,11 @@ export type AgentSnapshot = {
 export type AgentCatalogState = {
   agents: AgentSnapshot[]
   updatedAt: string
-  /** Login-shell PATH resolution; picker stays loading until `ready`. */
-  shellEnvStatus?: "loading" | "ready"
+  /**
+   * Login-shell PATH resolution. The picker stays loading until `ready`;
+   * `error` means the probe failed and agent availability may be understated.
+   */
+  shellEnvStatus?: "loading" | "ready" | "error"
 }
 
 /** @deprecated Compatibility view for the older provider-based picker. */

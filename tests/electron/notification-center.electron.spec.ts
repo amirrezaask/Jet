@@ -104,16 +104,24 @@ test.describe("notification center", () => {
 
       await closeOverlays(page)
       await openCenter(page)
-      const item = page.locator("[data-gharargah-notification-item]").first()
+      // Unread-only list: opening marks read → item leaves the center.
+      await expectSelectorVisible(page, "[data-gharargah-notification-empty]", {
+        timeout: 10_000,
+      })
       await expect
-        .poll(async () => item.getAttribute("data-unread"), { timeout: 10_000 })
-        .toBe("false")
+        .poll(async () => {
+          const counts = await page.evaluate(() =>
+            window.__gharargahAgent!.getNotificationCounts!(),
+          )
+          return counts.totalUnread
+        }, { timeout: 10_000 })
+        .toBe(0)
     } finally {
       await app.close()
     }
   })
 
-  test("permission resolve + mark-all-read keep history semantics", async () => {
+  test("permission resolve + mark-all-read clears unread list", async () => {
     const { app, page } = await launchJet()
     try {
       await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
@@ -151,7 +159,6 @@ test.describe("notification center", () => {
       )
 
       await openCenter(page)
-      await page.locator('[data-gharargah-notification-filter="action-needed"]').click()
       await expectLocatorContainsText(
         page.locator("[data-gharargah-notification-item]").first(),
         "permission",
@@ -177,17 +184,21 @@ test.describe("notification center", () => {
         { sid: sessionId, eventId },
       )
 
-      await page.locator('[data-gharargah-notification-filter="all"]').click()
-      await page.locator("[data-gharargah-notification-mark-all-read]").click()
-
-      await page.locator('[data-gharargah-notification-filter="action-needed"]').click()
-      await expectSelectorVisible(page, "[data-gharargah-notification-empty]")
-
-      await page.locator('[data-gharargah-notification-filter="completed"]').click()
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-notification-item]").first(),
+        page.locator("[data-gharargah-notification-item]"),
         "completed",
       )
+
+      await page.locator("[data-gharargah-notification-mark-all-read]").click()
+      await expectSelectorVisible(page, "[data-gharargah-notification-empty]")
+      await expect
+        .poll(async () => {
+          const counts = await page.evaluate(() =>
+            window.__gharargahAgent!.getNotificationCounts!(),
+          )
+          return counts.totalUnread
+        }, { timeout: 10_000 })
+        .toBe(0)
     } finally {
       await app.close()
     }
@@ -247,7 +258,6 @@ test.describe("notification center", () => {
       expect(hookStatus).toBe(204)
 
       await openCenter(page)
-      await page.locator('[data-gharargah-notification-filter="completed"]').click()
       await expect
         .poll(async () => page.locator("[data-gharargah-notification-item]").count())
         .toBe(1)
@@ -273,6 +283,63 @@ test.describe("notification center", () => {
           return counts.totalUnread
         }, { timeout: 15_000 })
         .toBe(unreadBefore.totalUnread)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("two-finger horizontal scroll dismisses row", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await openNewAgentSession(page)
+      await closeOverlays(page)
+
+      let sessionId: string | null = null
+      await expect
+        .poll(async () => {
+          sessionId = await page.evaluate(async () => {
+            const res = await fetch("/api/v1/sessions")
+            if (!res.ok) return null
+            return (
+              ((await res.json()) as { sessions: Array<{ tabId: string }> }).sessions[0]
+                ?.tabId ?? null
+            )
+          })
+          return sessionId
+        }, { timeout: 20_000 })
+        .toBeTruthy()
+
+      await page.evaluate(async ({ sid }) => {
+        await window.__gharargahAgent!.ingestNotification!({
+          source: "provider-hook",
+          type: "turn-completed",
+          title: "Dismiss via scroll",
+          sessionId: sid,
+          provider: "claude",
+          eventId: `scroll-dismiss-${Date.now()}`,
+        })
+      }, { sid: sessionId })
+
+      await openCenter(page)
+      const item = page.locator("[data-gharargah-notification-item]").first()
+      await expectLocatorContainsText(item, "Dismiss via scroll")
+
+      // Synthetic trackpad horizontal scroll (two-finger sideways).
+      await item.evaluate(el => {
+        el.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaX: 120,
+            deltaY: 0,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+      })
+
+      await expectSelectorVisible(page, "[data-gharargah-notification-empty]", {
+        timeout: 10_000,
+      })
     } finally {
       await app.close()
     }

@@ -156,6 +156,7 @@ export function ToolCallCard(props: {
   ])
   const summary = summarizeToolCall(toolCall)
   const fileRef = onOpenFile ? fileRefFromToolCall(toolCall) : null
+  const showFilePathButton = Boolean(summary && fileRef && onOpenFile)
   const StatusIcon =
     toolCall.status === "completed"
       ? CheckCircle2
@@ -174,71 +175,82 @@ export function ToolCallCard(props: {
       data-tool-name={toolCall.name}
       data-tool-summary={summary ?? undefined}
     >
-      <CollapsibleTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="w-full min-w-0 justify-start gap-1.5 px-2 text-agent-feed-muted"
-          aria-label={`${open ? "Collapse" : "Expand"} ${toolCall.name}${summary ? `, ${summary}` : ""}`}
-        >
-          <ChevronRight
-            className={open ? "size-3 shrink-0 rotate-90" : "size-3 shrink-0"}
-          />
-          <span className="shrink-0 text-muted-foreground [&_svg]:size-3.5">
-            <ToolIcon kind={toolCall.kind} />
-          </span>
-          <span className="min-w-0 shrink-0 truncate text-left text-xs font-medium text-agent-feed-primary">
-            {toolCall.name}
-          </span>
-          {summary ? (
-            <>
-              <span className="shrink-0 text-muted-foreground/45" aria-hidden>
-                ·
-              </span>
-              {fileRef && onOpenFile ? (
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 truncate text-left font-mono text-xs text-agent-feed-muted underline-offset-2 hover:underline"
-                  title={summary}
-                  data-gharargah-tool-path=""
-                  onClick={event => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    onOpenFile(fileRef)
-                  }}
-                >
-                  {summary}
-                </button>
-              ) : (
+      <div className="flex w-full min-w-0 items-center gap-1.5 px-2 text-agent-feed-muted">
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-tool-call-toggle=""
+            className={
+              showFilePathButton
+                ? "h-auto min-h-0 shrink-0 justify-start gap-1.5 px-0 text-agent-feed-muted hover:bg-transparent"
+                : "h-auto min-h-0 min-w-0 flex-1 justify-start gap-1.5 px-0 text-agent-feed-muted hover:bg-transparent"
+            }
+            aria-label={`${open ? "Collapse" : "Expand"} ${toolCall.name}${summary ? `, ${summary}` : ""}`}
+          >
+            <ChevronRight
+              className={open ? "size-3 shrink-0 rotate-90" : "size-3 shrink-0"}
+            />
+            <span className="shrink-0 text-muted-foreground [&_svg]:size-3.5">
+              <ToolIcon kind={toolCall.kind} />
+            </span>
+            <span className="min-w-0 shrink-0 truncate text-left text-xs font-medium text-agent-feed-primary">
+              {toolCall.name}
+            </span>
+            {!showFilePathButton && summary ? (
+              <>
+                <span className="shrink-0 text-muted-foreground/45" aria-hidden>
+                  ·
+                </span>
                 <span
                   className="min-w-0 flex-1 truncate text-left font-mono text-xs text-agent-feed-muted"
                   title={summary}
                 >
                   {summary}
                 </span>
-              )}
-            </>
-          ) : (
-            <span className="min-w-0 flex-1" />
-          )}
-          {StatusIcon ? (
-            <StatusIcon
-              className={
-                toolCall.status === "running"
-                  ? "size-3.5 shrink-0 animate-spin text-muted-foreground"
-                  : toolCall.status === "failed"
-                    ? "size-3.5 shrink-0 text-destructive"
-                    : "size-3.5 shrink-0 text-muted-foreground"
-              }
-              aria-hidden
-            />
-          ) : null}
-          <span className="shrink-0 text-3xs text-agent-feed-muted">
-            {elapsed(toolCall) ?? toolCall.status}
-          </span>
-        </Button>
-      </CollapsibleTrigger>
+              </>
+            ) : !showFilePathButton ? (
+              <span className="min-w-0 flex-1" />
+            ) : null}
+          </Button>
+        </CollapsibleTrigger>
+        {showFilePathButton && summary ? (
+          <>
+            <span className="shrink-0 text-muted-foreground/45" aria-hidden>
+              ·
+            </span>
+            <button
+              type="button"
+              className="min-w-0 flex-1 truncate text-left font-mono text-xs text-agent-feed-muted underline-offset-2 hover:underline"
+              title={summary}
+              data-gharargah-tool-path=""
+              onClick={event => {
+                event.preventDefault()
+                onOpenFile!(fileRef!)
+              }}
+            >
+              {summary}
+            </button>
+          </>
+        ) : null}
+        {!summary ? <span className="min-w-0 flex-1" /> : null}
+        {StatusIcon ? (
+          <StatusIcon
+            className={
+              toolCall.status === "running"
+                ? "size-3.5 shrink-0 animate-spin text-muted-foreground"
+                : toolCall.status === "failed"
+                  ? "size-3.5 shrink-0 text-destructive"
+                  : "size-3.5 shrink-0 text-muted-foreground"
+            }
+            aria-hidden
+          />
+        ) : null}
+        <span className="shrink-0 text-3xs text-agent-feed-muted">
+          {elapsed(toolCall) ?? toolCall.status}
+        </span>
+      </div>
       <CollapsibleContent className="overflow-visible data-[state=closed]:hidden">
         <div className={flat ? "space-y-3 px-2 py-2" : "space-y-3 border-t border-border/40 px-3 py-2.5"}>
           {toolCall.input ? (

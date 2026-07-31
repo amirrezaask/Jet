@@ -1,5 +1,6 @@
 import {
   type AgentCatalogState,
+  type AgentDriverSnapshot,
   type AgentMessage,
   type AgentPermissionRequest,
   type AgentThread,
@@ -15,6 +16,7 @@ import {
   newAgentThread,
   normalizeAgentId,
 } from "@gharargah/agents"
+import { agentTransportKindForDriverId, type AgentTransportKind } from "@gharargah/rpc"
 import { AgentStore } from "../persistence/store.js"
 import { createAdapter, defaultProviderInstances } from "../provider/registry.js"
 import { globalAcpPool } from "../provider/acp-pool.js"
@@ -25,6 +27,7 @@ import {
 } from "../provider/model-discovery.js"
 import { coerceAssistantText } from "@gharargah/agents"
 import { logTurnMetric } from "../metrics.js"
+import { getShellEnvStatus } from "../shell-env.js"
 import {
   AgentCommandError,
   ApprovalBlockedError,
@@ -101,9 +104,56 @@ function hasOpenApprovals(thread: AgentThread): boolean {
   )
 }
 
+function settlePendingApprovals(thread: AgentThread, active: ActiveTurn | undefined): void {
+  if (active) {
+    for (const [, waiter] of active.permissionWaiters) {
+      waiter.resolve({ approvalDecision: "decline", optionId: "reject_once" })
+    }
+    active.permissionWaiters.clear()
+    for (const [, waiter] of active.userInputWaiters) {
+      waiter.resolve({ action: "cancel" })
+    }
+    active.userInputWaiters.clear()
+  }
+  thread.pendingPermissions = (thread.pendingPermissions ?? []).map(p =>
+    !p.status || p.status === "pending" || p.status === "submitting"
+      ? { ...p, status: "cancelled" as const }
+      : p,
+  )
+  thread.pendingUserInputs = (thread.pendingUserInputs ?? []).map(p =>
+    !p.status || p.status === "pending" || p.status === "submitting"
+      ? { ...p, status: "cancelled" as const }
+      : p,
+  )
+}
+
+function isTurnScopedEvent(
+  event: ProviderRuntimeEvent,
+): event is ProviderRuntimeEvent & { turnId: string } {
+  return "turnId" in event && typeof (event as { turnId?: string }).turnId === "string"
+}
+
+function shouldIgnoreStaleTurnEvent(
+  event: ProviderRuntimeEvent,
+  active: ActiveTurn | undefined,
+): boolean {
+  if (!isTurnScopedEvent(event)) return false
+  const terminal = new Set([
+    "turn.completed",
+    "turn.cancelled",
+    "turn.failed",
+    "session.bound",
+    "connection.update",
+    "commands.update",
+  ])
+  if (terminal.has(event.type)) return false
+  if (!active) return true
+  return active.turnId !== event.turnId
+}
+
 type CatalogDriver = {
   id: string
-  kind: "cli" | "acp" | "native"
+  kind: AgentTransportKind
   status: "ready" | "unavailable" | "pending"
   message: string | null
   degraded?: boolean
@@ -121,49 +171,57 @@ function driverProbe(agentId: string): {
   return { status: "unavailable", message: hint }
 }
 
+/**
+ * The in-app chat can only be driven headlessly, so a `:cli` driver id — from a
+ * legacy thread or a session created in CLI mode — is rewritten to the agent's
+ * native driver rather than failing the turn.
+ */
+function resolveInAppDriverId(
+  driverId: string | null | undefined,
+  agentId: string | null | undefined,
+): string {
+  const requested = driverId?.trim()
+  if (!requested || requested.endsWith(":cli")) {
+    const agent = requested?.endsWith(":cli") ? requested.slice(0, -":cli".length) : agentId
+    return defaultAgentDriverId(normalizeAgentId(agent))
+  }
+  return requested
+}
+
 function catalogDriversForAgent(agentId: string): CatalogDriver[] {
   const probe = driverProbe(agentId)
+  const withKind = (id: string, degraded?: boolean): CatalogDriver => ({
+    id,
+    kind: agentTransportKindForDriverId(id),
+    status: probe.status,
+    message: probe.message,
+    ...(degraded ? { degraded } : {}),
+  })
   switch (agentId) {
     case "codex":
       return [
-        { id: "codex:cli", kind: "cli", status: probe.status, message: probe.message },
-        { id: "codex:app-server", kind: "native", status: probe.status, message: probe.message },
-        { id: "codex:acp", kind: "acp", status: probe.status, message: probe.message },
+        withKind("codex:cli"),
+        withKind("codex:app-server"),
+        withKind("codex:acp"),
       ]
     case "claude":
       return [
-        { id: "claude:cli", kind: "cli", status: probe.status, message: probe.message },
-        { id: "claude:sdk", kind: "native", status: probe.status, message: probe.message },
-        { id: "claude:acp", kind: "acp", status: probe.status, message: probe.message },
+        withKind("claude:cli"),
+        withKind("claude:sdk"),
+        withKind("claude:acp"),
       ]
     case "opencode":
       return [
-        { id: "opencode:cli", kind: "cli", status: probe.status, message: probe.message },
-        { id: "opencode:sdk", kind: "native", status: probe.status, message: probe.message },
-        { id: "opencode:acp", kind: "acp", status: probe.status, message: probe.message },
+        withKind("opencode:cli"),
+        withKind("opencode:sdk"),
+        withKind("opencode:acp"),
       ]
     case "cursor":
-      return [
-        {
-          id: "cursor:cli",
-          kind: "cli",
-          status: probe.status,
-          message: probe.message,
-          degraded: true,
-        },
-        { id: "cursor:acp", kind: "acp", status: probe.status, message: probe.message },
-      ]
+      return [withKind("cursor:cli", true), withKind("cursor:acp")]
     case "grok":
-      return [{ id: "grok:acp", kind: "acp", status: probe.status, message: probe.message }]
+      return [withKind("grok:acp")]
     default:
-      return [
-        {
-          id: defaultAgentDriverId(agentId),
-          kind: defaultAgentDriverId(agentId).endsWith(":acp") ? "acp" : "native",
-          status: probe.status,
-          message: probe.message,
-        },
-      ]
+      return [withKind(defaultAgentDriverId(agentId))]
   }
 }
 
@@ -176,7 +234,9 @@ export class OrchestrationEngine {
   constructor(
     private readonly sink: OrchEventSink,
     private readonly store: AgentStore = new AgentStore(),
-  ) {}
+  ) {
+    this.store.isThreadLive = threadId => this.turns.has(threadId)
+  }
 
   async dispatch(command: OrchestrationCommand): Promise<unknown> {
     const root =
@@ -261,7 +321,7 @@ export class OrchestrationEngine {
     const updatedAt = nowIso()
     return {
       updatedAt,
-      shellEnvStatus: "ready",
+      shellEnvStatus: getShellEnvStatus(),
       agents: instances.map(inst => {
         const agentId = inst.driverKind
         return {
@@ -269,7 +329,7 @@ export class OrchestrationEngine {
           displayName: inst.displayName,
           enabled: inst.enabled,
           activeDriverId: defaultAgentDriverId(agentId),
-          drivers: catalogDriversForAgent(agentId),
+          drivers: catalogDriversForAgent(agentId) as unknown as AgentDriverSnapshot[],
           models: listCachedModels(agentId),
         }
       }),
@@ -362,6 +422,20 @@ export class OrchestrationEngine {
       if (!thread) throw new ThreadNotFoundError({ threadId: input.threadId })
       if (this.turns.has(thread.id)) throw new TurnAlreadyRunningError({ threadId: thread.id })
 
+      // Resolve the adapter before touching the thread: a bad driver id must
+      // not leave a persisted thread stuck in "running" with no active turn.
+      const requestedDriverId =
+        input.driverId ?? thread.driverId ?? defaultAgentDriverId(input.agentId ?? thread.agentId)
+      const driverId = resolveInAppDriverId(
+        requestedDriverId,
+        input.agentId ?? thread.agentId,
+      )
+      let adapter = this.adapters.get(driverId)
+      if (!adapter) {
+        adapter = createAdapter(driverId)
+        this.adapters.set(driverId, adapter)
+      }
+
       const now = nowIso()
       const attachments = [
         ...(input.files ?? []).map(f => ({
@@ -397,7 +471,7 @@ export class OrchestrationEngine {
       }
       thread.messages = [...thread.messages, userMsg, assistantMsg]
       if (input.agentId) thread.agentId = normalizeAgentId(input.agentId)
-      if (input.driverId) thread.driverId = input.driverId
+      thread.driverId = driverId
       if (input.model) thread.model = input.model
       thread.status = "running"
       thread.lastError = null
@@ -414,13 +488,6 @@ export class OrchestrationEngine {
         userInputWaiters: new Map(),
       }
       this.turns.set(thread.id, active)
-
-      const driverId = thread.driverId ?? defaultAgentDriverId(thread.agentId)
-      let adapter = this.adapters.get(driverId)
-      if (!adapter) {
-        adapter = createAdapter(driverId)
-        this.adapters.set(driverId, adapter)
-      }
 
       const turnStartedAt = Date.now()
       logTurnMetric({
@@ -488,6 +555,7 @@ export class OrchestrationEngine {
     _lastFlushLen: number,
     setFlushLen: (n: number) => void,
   ): void {
+    if (shouldIgnoreStaleTurnEvent(event, active)) return
     const thread = this.store.readThread(seed.workspaceRootPath, seed.id) ?? seed
     const nextSeq = (this.seq.get(thread.id) ?? thread.acpSequence ?? 0) + 1
     this.seq.set(thread.id, nextSeq)
@@ -777,7 +845,7 @@ export class OrchestrationEngine {
       }
       case "turn.completed": {
         thread.status = "idle"
-        thread.pendingPermissions = []
+        settlePendingApprovals(thread, active)
         thread.acpSequence = nextSeq
         thread.updatedAt = nowIso()
         thread.messages = thread.messages.map(m =>
@@ -789,6 +857,7 @@ export class OrchestrationEngine {
       }
       case "turn.cancelled": {
         thread.status = "cancelled"
+        settlePendingApprovals(thread, active)
         thread.acpSequence = nextSeq
         thread.updatedAt = nowIso()
         thread.messages = thread.messages.map(m =>
@@ -801,6 +870,7 @@ export class OrchestrationEngine {
       case "turn.failed": {
         thread.status = "error"
         thread.lastError = event.error
+        settlePendingApprovals(thread, active)
         thread.acpSequence = nextSeq
         thread.updatedAt = nowIso()
         thread.messages = thread.messages.map(m =>
@@ -828,6 +898,12 @@ export class OrchestrationEngine {
     this.sink.threadUpdated(thread)
     const driverId = thread.driverId ?? defaultAgentDriverId(thread.agentId)
     await this.adapters.get(driverId)?.interrupt?.(thread.id)
+    const activeTurn = this.turns.get(input.threadId)
+    if (activeTurn) {
+      settlePendingApprovals(thread, activeTurn)
+      this.store.writeThread(thread.workspaceRootPath, thread)
+      this.sink.threadUpdated(thread)
+    }
     return this.store.readThread(input.workspaceRootPath, input.threadId)
   }
 

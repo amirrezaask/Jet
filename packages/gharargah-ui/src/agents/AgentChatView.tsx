@@ -9,7 +9,7 @@ import {
   deriveComposerCapabilities,
   deriveTimelineEntriesFromThread,
 } from "@gharargah/agents"
-import { AlertCircle, ChevronDown, Monitor } from "lucide-react"
+import { AlertCircle, ChevronDown, Monitor, X } from "lucide-react"
 import {
   memo,
   useCallback,
@@ -33,6 +33,7 @@ import {
 } from "./providerInstances.js"
 import { ChatHeader } from "./timeline/ChatHeader.js"
 import { MessagesTimeline } from "./timeline/MessagesTimeline.js"
+import { deriveTimelineTurnFromThread } from "./timeline/MessagesTimeline.logic.js"
 import { ConnectionBanner } from "./timeline/ConnectionBanner.js"
 import type { TimelineScrollMode } from "./timeline/timelineScrollAnchoring.js"
 
@@ -56,7 +57,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
       data?: string
     }>
   }) => Promise<void>
-  onInterrupt?: () => void
+  onInterrupt?: () => Promise<void> | void
   onSelectionChange?: (instanceId: string, model: string) => void
   onAgentsRefresh?: (providerId?: string) => void
   onResolvePermission?: (input: Omit<ResolveAgentPermissionInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">) => Promise<void> | void
@@ -99,7 +100,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
   const [expandAll, setExpandAll] = useState(true)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(120)
-  const [scrollFollowEnabled, setScrollFollowEnabled] = useState(true)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [dismissedErrorKey, setDismissedErrorKey] = useState<string | null>(null)
+  const [respondingPermissionId, setRespondingPermissionId] = useState<string | null>(null)
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const [droppedFileBatch, setDroppedFileBatch] = useState<{
     id: number
@@ -111,9 +114,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
   const userScrollGenerationRef = useRef(0)
   const liveFollowGenerationRef = useRef(0)
   const timelineEntriesLengthRef = useRef(0)
-  const scrollFollowEnabledRef = useRef(scrollFollowEnabled)
+  const isAtEndRef = useRef(true)
   const showScrollToBottomRef = useRef(showScrollToBottom)
-  scrollFollowEnabledRef.current = scrollFollowEnabled
+  const showScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   showScrollToBottomRef.current = showScrollToBottom
 
   const providers = useMemo(() => {
@@ -154,6 +157,10 @@ export const AgentChatView = memo(function AgentChatView(props: {
     () => (thread ? buildTurnDiffSummaryByAssistantMessageId(thread) : new Map()),
     [thread],
   )
+  const { latestTurn, runningTurnId } = useMemo(
+    () => (thread ? deriveTimelineTurnFromThread(thread) : { latestTurn: null, runningTurnId: null }),
+    [thread],
+  )
 
   const isWorking = ["connecting", "authenticating", "running", "waiting_for_permission", "cancelling", "reconnecting"].includes(thread?.status ?? "") || submitting
 
@@ -182,13 +189,27 @@ export const AgentChatView = memo(function AgentChatView(props: {
     userScrollGenerationRef.current += 1
     timelineScrollModeRef.current = "free-scrolling"
     liveFollowGenerationRef.current = -1
-    setScrollFollowEnabled(false)
   }, [])
+
+  const cancelShowScrollToBottom = useCallback(() => {
+    if (showScrollTimeoutRef.current) {
+      clearTimeout(showScrollTimeoutRef.current)
+      showScrollTimeoutRef.current = null
+    }
+  }, [])
+
+  const scheduleShowScrollToBottom = useCallback(() => {
+    cancelShowScrollToBottom()
+    showScrollTimeoutRef.current = setTimeout(() => {
+      showScrollTimeoutRef.current = null
+      setShowScrollToBottom(true)
+    }, 150)
+  }, [cancelShowScrollToBottom])
 
   const scrollToEnd = useCallback((animated = true) => {
     timelineScrollModeRef.current = "following-end"
     liveFollowGenerationRef.current = userScrollGenerationRef.current
-    setScrollFollowEnabled(true)
+    cancelShowScrollToBottom()
     setShowScrollToBottom(false)
     const list = listRef.current
     if (!list) return
@@ -200,7 +221,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
       index: Math.max(0, timelineEntriesLengthRef.current - 1),
       animated,
     })
-  }, [])
+  }, [cancelShowScrollToBottom])
 
   const onIsAtEndChange = useCallback(
     (isAtEnd: boolean) => {
@@ -209,36 +230,26 @@ export const AgentChatView = memo(function AgentChatView(props: {
         liveFollowGenerationRef.current === userScrollGenerationRef.current &&
         timelineScrollModeRef.current !== "free-scrolling"
       ) {
-        // Transient not-at-end while live-following (content growth) — ignore.
+        cancelShowScrollToBottom()
         return
       }
+      if (isAtEndRef.current === isAtEnd) return
+      isAtEndRef.current = isAtEnd
       if (isAtEnd) {
-        if (
-          timelineScrollModeRef.current === "following-end" &&
-          scrollFollowEnabledRef.current &&
-          !showScrollToBottomRef.current
-        ) {
-          return
-        }
         timelineScrollModeRef.current = "following-end"
         liveFollowGenerationRef.current = userScrollGenerationRef.current
-        setScrollFollowEnabled(true)
+        cancelShowScrollToBottom()
         setShowScrollToBottom(false)
         return
       }
-      if (
-        timelineScrollModeRef.current === "free-scrolling" &&
-        !scrollFollowEnabledRef.current &&
-        showScrollToBottomRef.current
-      ) {
+      if (timelineScrollModeRef.current === "free-scrolling" && showScrollToBottomRef.current) {
         return
       }
       timelineScrollModeRef.current = "free-scrolling"
       liveFollowGenerationRef.current = -1
-      setScrollFollowEnabled(false)
-      setShowScrollToBottom(true)
+      scheduleShowScrollToBottom()
     },
-    [],
+    [cancelShowScrollToBottom, scheduleShowScrollToBottom],
   )
 
   useEffect(() => {
@@ -258,11 +269,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
       }
       scrollNode.addEventListener("wheel", handleManualNavigation, { passive: true })
       scrollNode.addEventListener("touchmove", handleManualNavigation, { passive: true })
-      scrollNode.addEventListener("pointerdown", handleManualNavigation, { passive: true })
       cleanup = () => {
         scrollNode.removeEventListener("wheel", handleManualNavigation)
         scrollNode.removeEventListener("touchmove", handleManualNavigation)
-        scrollNode.removeEventListener("pointerdown", handleManualNavigation)
       }
     })
     return () => {
@@ -296,9 +305,15 @@ export const AgentChatView = memo(function AgentChatView(props: {
   useEffect(() => {
     timelineScrollModeRef.current = "following-end"
     liveFollowGenerationRef.current = userScrollGenerationRef.current
-    setScrollFollowEnabled(true)
+    isAtEndRef.current = true
+    cancelShowScrollToBottom()
     setShowScrollToBottom(false)
-  }, [thread?.id])
+    setActionError(null)
+    setDismissedErrorKey(null)
+    setRespondingPermissionId(null)
+  }, [cancelShowScrollToBottom, thread?.id])
+
+  useEffect(() => () => cancelShowScrollToBottom(), [cancelShowScrollToBottom])
 
   async function handleSend(payload: {
     text: string
@@ -317,7 +332,6 @@ export const AgentChatView = memo(function AgentChatView(props: {
     setSubmitting(true)
     timelineScrollModeRef.current = "anchoring-new-turn"
     liveFollowGenerationRef.current = userScrollGenerationRef.current
-    setScrollFollowEnabled(true)
     try {
       await onSend({
         text: payload.text,
@@ -411,6 +425,54 @@ export const AgentChatView = memo(function AgentChatView(props: {
     }
   }
 
+  const handleResolvePermission = useCallback(
+    async (
+      input: Omit<ResolveAgentPermissionInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
+    ) => {
+      setRespondingPermissionId(input.permissionId)
+      setActionError(null)
+      try {
+        await onResolvePermission?.(input)
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : String(error))
+      } finally {
+        setRespondingPermissionId(null)
+      }
+    },
+    [onResolvePermission],
+  )
+
+  const handleResolveUserInput = useCallback(
+    async (
+      input: Omit<ResolveAgentUserInputInput, "workspaceRootUri" | "workspaceRootPath" | "threadId">,
+    ) => {
+      setActionError(null)
+      try {
+        await onResolveUserInput?.(input)
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : String(error))
+      }
+    },
+    [onResolveUserInput],
+  )
+
+  const handleInterrupt = useCallback(async () => {
+    setActionError(null)
+    try {
+      await onInterrupt?.()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
+    }
+  }, [onInterrupt])
+
+  const bannerError =
+    actionError ??
+    (thread.lastError && dismissedErrorKey !== `${thread.id}:${thread.lastError}`
+      ? thread.lastError
+      : null)
+
+  const pendingPermission = thread.pendingPermissions?.[0] ?? null
+
   return (
     <div
       className="relative flex h-full min-h-0 flex-col bg-background"
@@ -468,10 +530,31 @@ export const AgentChatView = memo(function AgentChatView(props: {
         </div>
       ) : null}
 
-      {thread.status === "error" && thread.lastError ? (
-        <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+      {bannerError ? (
+        <div
+          className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive"
+          role="alert"
+        >
           <AlertCircle className="size-3.5 shrink-0" />
-          <span>{thread.lastError}</span>
+          <span className="min-w-0 flex-1">{bannerError}</span>
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            className="shrink-0 text-destructive hover:text-destructive"
+            aria-label="Dismiss error"
+            onClick={() => {
+              if (actionError) {
+                setActionError(null)
+                return
+              }
+              if (thread.lastError) {
+                setDismissedErrorKey(`${thread.id}:${thread.lastError}`)
+              }
+            }}
+          >
+            <X className="size-3.5" />
+          </Button>
         </div>
       ) : null}
 
@@ -480,18 +563,19 @@ export const AgentChatView = memo(function AgentChatView(props: {
           listRef={listRef}
           timelineEntries={timelineEntries}
           turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+          latestTurn={latestTurn}
+          runningTurnId={runningTurnId}
           isWorking={isWorking}
           workingLabel={activityLabel ?? "Working…"}
+          activeTurnStartedAt={latestTurn?.startedAt ?? null}
           theme={theme}
           contentInsetEndAdjustment={composerOverlayHeight}
           expandAll={expandAll}
-          maintainScrollAtEndEnabled={scrollFollowEnabled}
           onToggleAllDirectories={() => setExpandAll(value => !value)}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
           onIsAtEndChange={onIsAtEndChange}
-          onResolvePermission={input => void onResolvePermission?.(input)}
-          onResolveUserInput={input => void onResolveUserInput?.(input)}
+          onResolveUserInput={handleResolveUserInput}
         />
 
         {showScrollToBottom ? (
@@ -559,6 +643,9 @@ export const AgentChatView = memo(function AgentChatView(props: {
             shellEnvLoading={shellEnvPending}
             isRunning={isWorking}
             isSendBusy={submitting}
+            isRespondingPermission={
+              pendingPermission ? respondingPermissionId === pendingPermission.id : false
+            }
             commands={thread.availableCommands}
             runtimeMode={runtimeMode}
             interactionMode={interactionMode}
@@ -566,14 +653,14 @@ export const AgentChatView = memo(function AgentChatView(props: {
             configOptions={nonModelConfigOptions}
             capabilities={composerCapabilities}
             droppedFileBatch={droppedFileBatch}
-            pendingPermission={thread.pendingPermissions?.[0] ?? null}
+            pendingPermission={pendingPermission}
             pendingUserInput={
-              thread.pendingPermissions?.[0] ? null : (thread.pendingUserInputs?.[0] ?? null)
+              pendingPermission ? null : (thread.pendingUserInputs?.[0] ?? null)
             }
             pendingActionCount={pendingActionCount}
-            onResolvePermission={input => void onResolvePermission?.(input)}
-            onResolveUserInput={input => void onResolveUserInput?.(input)}
-            onCancelTurn={() => onInterrupt?.()}
+            onResolvePermission={input => void handleResolvePermission(input)}
+            onResolveUserInput={input => void handleResolveUserInput(input)}
+            onCancelTurn={() => void handleInterrupt()}
             onRuntimeModeChange={onRuntimeModeChange}
             onInteractionModeChange={onInteractionModeChange}
             onConfigOptionChange={
@@ -596,7 +683,7 @@ export const AgentChatView = memo(function AgentChatView(props: {
             }}
             onInstanceModelChange={(instanceId, model) => onSelectionChange?.(instanceId, model)}
             onSend={handleSend}
-            onInterrupt={() => onInterrupt?.()}
+            onInterrupt={() => void handleInterrupt()}
             onProvidersRefresh={onAgentsRefresh}
           />
         </div>

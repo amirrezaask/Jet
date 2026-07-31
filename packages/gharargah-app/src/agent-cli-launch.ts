@@ -207,6 +207,7 @@ export type HydratedAgentCliFields = {
 export function prepareHydratedAgentCliFields(input: {
   tabId: string
   agentId?: string
+  agentDriverId?: string
   agentCliSessionId?: string
   launchCommand?: string
   launchArgs?: string[]
@@ -224,6 +225,18 @@ export function prepareHydratedAgentCliFields(input: {
       ptyId: undefined,
       status: "exited",
       agentCliSessionId: input.agentCliSessionId?.trim() || undefined,
+    }
+  }
+
+  // Native sessions have no PTY to re-attach; the agent thread carries the
+  // conversation, so the persisted status survives the reload untouched.
+  if (isNativeAgentSession(input)) {
+    return {
+      launchCommand: undefined,
+      launchArgs: undefined,
+      ptyId: undefined,
+      status: input.status,
+      agentCliSessionId: undefined,
     }
   }
 
@@ -293,16 +306,44 @@ export function isAgentCliProvider(
 /**
  * Top-level home sessions are written to the session roster.
  * Child shells (parentSessionTabId) stay in-memory only.
- * Agent stubs without a launch command are incomplete and skipped.
+ * Incomplete CLI stubs (agent + :cli driver, no launch command) are skipped.
  */
 export function isPersistableAgentSession(session: {
   agentId?: string
+  agentDriverId?: string
   launchCommand?: string
   parentSessionTabId?: string
 }): boolean {
   if (session.parentSessionTabId) return false
-  if (session.agentId && !session.launchCommand?.trim()) return false
   if (session.agentId && !isAgentCliProvider(session.agentId)) return false
+  if (
+    session.agentId &&
+    !session.launchCommand?.trim() &&
+    isIncompleteCliAgentStub(session)
+  ) {
+    return false
+  }
+  return true
+}
+
+function isNativeAgentSession(input: {
+  agentId?: string
+  launchCommand?: string
+  agentDriverId?: string
+}): boolean {
+  if (!input.agentId?.trim()) return false
+  if (input.launchCommand?.trim()) return false
+  const driverId = input.agentDriverId?.trim()
+  if (!driverId) return false
+  return !driverId.endsWith(":cli")
+}
+
+function isIncompleteCliAgentStub(session: {
+  agentId?: string
+  agentDriverId?: string
+}): boolean {
+  const driverId = session.agentDriverId?.trim()
+  if (driverId) return driverId.endsWith(":cli")
   return true
 }
 

@@ -98,8 +98,12 @@ function parseEntry(raw: unknown): SessionRosterEntry | null {
 
   const launchCommand = asNonEmptyString(item.launchCommand) ?? undefined
   const agentId = asNonEmptyString(item.agentId) ?? undefined
-  // Agent stubs without a launch command are incomplete; blank shells are OK.
-  if (agentId && !launchCommand) return null
+  const agentDriverId = asNonEmptyString(item.agentDriverId) ?? undefined
+  // Native-driver sessions run in-app and legitimately have no launch command;
+  // a CLI agent without one is an incomplete stub. Blank shells are OK.
+  if (agentId && !launchCommand && (!agentDriverId || agentDriverId.endsWith(":cli"))) {
+    return null
+  }
 
   let launchArgs: string[] | undefined
   if (Array.isArray(item.launchArgs)) {
@@ -127,9 +131,7 @@ function parseEntry(raw: unknown): SessionRosterEntry | null {
       : {}),
     ...(exitCode !== undefined ? { exitCode } : {}),
     ...(agentId ? { agentId } : {}),
-    ...(asNonEmptyString(item.agentDriverId)
-      ? { agentDriverId: asNonEmptyString(item.agentDriverId)! }
-      : {}),
+    ...(agentDriverId ? { agentDriverId } : {}),
     ...(asNonEmptyString(item.agentThreadId)
       ? { agentThreadId: asNonEmptyString(item.agentThreadId)! }
       : {}),

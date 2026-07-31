@@ -185,7 +185,7 @@ GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:e2e
 | `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
 | `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
 
-**ACP / in-app agent chat specs** (`session-agent`, `acp-mock-scenarios`, `acp-structured`) require `GHARARGAH_ENABLE_AGENT_CHAT=1` (opt-in; default off — ADE uses agent CLIs). See Agents section below.
+**ACP / in-app agent chat specs** (`session-agent`, `agent-driver-mode`, `agent-provider-parity`, `acp-mock-scenarios`, `acp-structured`, `model-picker`, `shell-env-agents`) run by default. Set `GHARARGAH_ENABLE_AGENT_CHAT=0` to skip them along with the feature. See Agents section below.
 
 ### Programmatic control (`window.__gharargahAgent`)
 
@@ -309,7 +309,7 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 | `terminal.show`         | Ctrl-`                |
 | `gharargah.goHome`      | Mod-Shift-h / Escape  |
 | `ui.toggleColorScheme`  | — (palette)           |
-| `dialog.showAgent`      | — (gated; requires `GHARARGAH_ENABLE_AGENT_CHAT=1`) |
+| `dialog.showAgent`      | — (gated; hidden when `GHARARGAH_ENABLE_AGENT_CHAT=0`) |
 
 
 `CommandRegistry.execute()` receives `getActiveEditorView: () => unknown` — cast to `EditorView` in handlers that need `view.state.doc`.
@@ -363,11 +363,29 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 
 ### Agents (`@gharargah/agents` + Effect agent-server)
 
-**Status (2026-07):** Full Effect stack — Schema RPC (`@gharargah/rpc`), host-server Layers, agent-server `OrchestrationService`, SPA `@effect-atom` registry. ADE default still uses agent CLIs in PTYs. See [`docs/agents-effect-architecture.md`](docs/agents-effect-architecture.md).
+**Status (2026-07):** Full Effect stack — Schema RPC (`@gharargah/rpc`), host-server Layers, agent-server `OrchestrationService`, SPA `@effect-atom` registry. See [`docs/agents-effect-architecture.md`](docs/agents-effect-architecture.md).
 
-**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"0"` — ADE uses agent CLIs in PTYs). Set `GHARARGAH_ENABLE_AGENT_CHAT=1` only to opt back into in-app ACP/SDK chat. `GHARARGAH_AGENT_RUNTIME` defaults to `effect`.
+**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"1"`). Set it to `"0"` to hide native driver mode and fall back to CLI-only sessions. `GHARARGAH_AGENT_RUNTIME` defaults to `effect`.
 
-**Supported ADE paths:** Mission Control → New session → choose agent CLI (lister) → terminal PTY running that CLI, plus editor/git for the project.
+#### Driver mode (CLI ↔ native)
+
+Every agent runs in one of two modes, chosen per agent in the new-session picker
+and remembered in `localStorage` under `gharargah-agent-driver-mode`:
+
+| Mode | Driver id | Surface |
+| ---- | --------- | ------- |
+| `cli` (default) | `<agent>:cli` | PTY running the agent's own CLI |
+| `native` | `codex:app-server`, `claude:sdk`, `opencode:sdk`, `cursor:acp`, `grok:acp` | In-app chat (`AgentChatView`) driven headlessly by the agent-server |
+
+Logic lives in `packages/gharargah-agents/src/driver-mode.ts`
+(`readAgentDriverMode`, `writeAgentDriverMode`, `agentDriverIdForMode`); the
+picker toggle is `AgentCliPickerOverlay`; session creation branches in
+`GharargahApp.createAgentSession`. A native session carries `agentId` +
+`agentDriverId` and **no** `launchCommand` — anything that treats a missing
+launch command as an incomplete stub must special-case it
+(`isPersistableAgentSession`, `session-roster.ts::parseEntry`).
+
+**Supported ADE paths:** Mission Control → New session → pick an agent, in CLI mode (terminal PTY running that agent's CLI) or native mode (in-app chat over the headless driver), plus editor/git for the project.
 
 **Implementation:**
 
@@ -379,6 +397,26 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 - **E2E:** Prefer mock + agent-server; legacy Rust ACP matrix tests removed with the Rust agent path
 
 Manual smoke: `pnpm dev` (starts TS host + agent-server + Vite) → New session → Agent.
+
+#### Agent-server invariants
+
+- **Crash recovery must not touch live turns.** `AgentStore.listThreads` rewrites
+  `running`/`connecting`/`cancelling`/`waiting_for_permission` threads to `interrupted`
+  so a host restart cannot leave a thread wedged. `OrchestrationEngine` injects
+  `store.isThreadLive` so a turn *this* process is driving is skipped — otherwise merely
+  listing threads (session switcher, second window) cancels the turn you are watching.
+- **`:cli` driver ids are coerced, not rejected.** The in-app chat can only be driven
+  headlessly, so `resolveInAppDriverId` rewrites a legacy or CLI-mode `<agent>:cli` id to
+  the agent's native driver. Adapter resolution happens *before* any thread mutation, so a
+  genuinely unknown driver fails the turn without leaving a half-written `running` thread.
+- **Typed errors must survive the RPC boundary.** `runOrch` unwraps the `Exit`/`Cause`
+  rather than using `Effect.runPromise`, whose `FiberFailure` hides the tagged error and
+  forces the boundary to guess tags from message text.
+- **Login-shell PATH is resolved synchronously at boot** (`prepareShellEnv`), before the WS
+  server accepts clients, so a Finder-launched app never serves a catalog built from a
+  GUI-stripped PATH. `shellEnvStatus` is therefore always `ready` by the time a client can
+  read it. Set `GHARARGAH_SHELL_ENV_DISABLE=1` to keep the PATH you passed in (used by
+  `shell-env-agents.electron.spec.ts` to exercise the all-unavailable state).
 
 
 
@@ -403,7 +441,12 @@ Manual smoke: `pnpm dev` (starts TS host + agent-server + Vite) → New session 
 2. **Match existing style** — ESM `.js` extensions in TS imports, strict TS, no `@types/node` in `jet-shared`
 3. **URI discipline** — use `pathToFileUri` / `fileUriToPath` from `@gharargah/shared`; avoid `process.platform` in shared packages
 4. **Panel mutations** — clone tree → mutate → `commitTree()` pattern in App (immutable-ish updates)
-5. **Exports** — packages expose `./src/index.ts` directly (no build step for libs); Vite bundles app
+5. **Exports** — packages expose `./src/index.ts` directly (no build step for libs); Vite bundles app.
+   Every `exports` condition (`types`, `import`, `default`) must point at source. Pointing `import`/`default`
+   at `./dist/*` silently ships stale JavaScript: `tsc` still checks `types` against source, so typecheck
+   stays green while the app runs whatever was last compiled. `@gharargah/shared` did exactly this and ran
+   3-day-old code for the whole app. `turbo typecheck` `dependsOn: ["^build"]`, so any package with a
+   `build` script keeps regenerating a `dist/` — harmless only while nothing resolves to it.
 6. **Do not edit** the planning doc at `.cursor/plans/jet_editor_plan_*.plan.md`
 7. **Commits** — only when user asks
 

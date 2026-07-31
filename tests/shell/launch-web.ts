@@ -103,8 +103,12 @@ async function killProc(proc: ChildProcessWithoutNullStreams): Promise<void> {
 
 export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchShellResult> {
   const port = await freePort()
+  // Native agent chat ships on by default; only an explicit "0" opts out.
   const agentEnabled =
-    options.withAgentServer ?? options.env?.GHARARGAH_ENABLE_AGENT_CHAT === "1"
+    options.withAgentServer ??
+    (options.env?.GHARARGAH_ENABLE_AGENT_CHAT ??
+      process.env.GHARARGAH_ENABLE_AGENT_CHAT ??
+      "1") !== "0"
   const agentPort = agentEnabled ? await freePort() : null
   const temporaryRoot = options.userDataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "jet-web-e2e-"))
   const browserData = path.join(temporaryRoot, "browser")

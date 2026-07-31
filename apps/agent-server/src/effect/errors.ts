@@ -1,4 +1,5 @@
 import { Data } from "effect"
+import type { UnknownDriverError } from "../provider/registry.js"
 
 export class AgentCommandError extends Data.TaggedError("AgentCommandError")<{
   readonly message: string
@@ -23,3 +24,4 @@ export type OrchError =
   | ThreadNotFoundError
   | TurnAlreadyRunningError
   | ApprovalBlockedError
+  | UnknownDriverError

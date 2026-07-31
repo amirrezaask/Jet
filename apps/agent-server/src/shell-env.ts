@@ -37,6 +37,11 @@ function isGuiStrippedPath(value: string): boolean {
 
 export function enrichProcessPath(): { path: string; enriched: boolean } {
   const current = process.env.PATH ?? ""
+  // Escape hatch for callers that have already curated PATH and do not want a
+  // login shell second-guessing it.
+  if (process.env.GHARARGAH_SHELL_ENV_DISABLE === "1") {
+    return { path: current, enriched: false }
+  }
   if (!isGuiStrippedPath(current) && process.env.GHARARGAH_SHELL_ENV_FORCE !== "1") {
     return { path: current, enriched: false }
   }

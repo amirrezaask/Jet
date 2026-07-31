@@ -1,7 +1,22 @@
 import type { GharargahHostAPI } from "@gharargah/workspace"
 import type { AgentTransport } from "@gharargah/agents"
-import { AgentRpcRequest } from "@gharargah/rpc"
+import {
+  AgentRpcRequest,
+  AGENT_PUSH_EVENTS,
+  decodeAgentPushPayload,
+  decodeAgentRpcResponse,
+  normalizeAgentRpcError,
+  type AgentPushEventName,
+} from "@gharargah/rpc"
 import { Effect, Schema } from "effect"
+import { agentRpcClientErrorFromWire, AgentRpcClientError } from "./agent-rpc-client-error.js"
+import {
+  computeReconnectDelayMs,
+  DEFAULT_AGENT_WS_BACKOFF,
+  type AgentsWsConnectionState,
+} from "./agent-ws-reconnect.js"
+
+const RPC_TIMEOUT_MS = 120_000
 
 /**
  * WebSocket transport to Node agent-server.
@@ -10,12 +25,14 @@ import { Effect, Schema } from "effect"
 export type EffectAgentsClient = AgentTransport & {
   close(): void
   ready: Promise<void>
+  getWsConnectionState(): AgentsWsConnectionState
+  onWsConnectionState(cb: (state: AgentsWsConnectionState) => void): () => void
 }
 
 export function createEffectAgentsClient(options?: {
   url?: string
+  rpcTimeoutMs?: number
 }): EffectAgentsClient {
-  /** Resolve on each connect so Playwright `__GHARARGAH_AGENT_WS_URL__` beats vite-baked 4751. */
   function resolveUrl(): string {
     if (options?.url) return options.url
     if (typeof window !== "undefined") {
@@ -29,18 +46,26 @@ export function createEffectAgentsClient(options?: {
     } catch {
       /* ignore */
     }
-    const host = "127.0.0.1"
-    const port = "4751"
-    return `ws://${host}:${port}/agents`
+    return `ws://127.0.0.1:4751/agents`
   }
 
   let ws: WebSocket | null = null
   let nextId = 1
-  let closed = false
+  let disposed = false
+  let reconnectAttempt = 0
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let connectionState: AgentsWsConnectionState = "connecting"
+  const connectionStateListeners = new Set<(state: AgentsWsConnectionState) => void>()
+
   const pending = new Map<
     number,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
+    {
+      resolve: (v: unknown) => void
+      reject: (e: AgentRpcClientError) => void
+      timer: ReturnType<typeof setTimeout>
+    }
   >()
+
   const threadUpdated = new Set<(t: import("@gharargah/agents").AgentThread) => void>()
   const threadDelta = new Set<(d: import("@gharargah/agents").AgentThreadDelta) => void>()
   const permission = new Set<
@@ -58,75 +83,177 @@ export function createEffectAgentsClient(options?: {
     resolveReady = r
   })
 
+  function setConnectionState(next: AgentsWsConnectionState): void {
+    if (connectionState === next) return
+    connectionState = next
+    for (const cb of connectionStateListeners) {
+      try {
+        cb(next)
+      } catch {
+        /* listener errors must not break the socket */
+      }
+    }
+  }
+
+  function rejectAllPending(reason: AgentRpcClientError): void {
+    for (const [id, p] of pending) {
+      clearTimeout(p.timer)
+      p.reject(reason)
+      pending.delete(id)
+    }
+  }
+
+  function clearReconnectTimer(): void {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+  }
+
+  function scheduleReconnect(): void {
+    if (disposed || reconnectTimer) return
+    setConnectionState("reconnecting")
+    const delay = computeReconnectDelayMs(reconnectAttempt, DEFAULT_AGENT_WS_BACKOFF)
+    reconnectAttempt += 1
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      connect()
+    }, delay)
+  }
+
+  function dispatchPush(event: string, payload: unknown): void {
+    if (!(AGENT_PUSH_EVENTS as readonly string[]).includes(event)) return
+    const pushEvent = event as AgentPushEventName
+    const decoded = Effect.runSync(
+      decodeAgentPushPayload(pushEvent, payload).pipe(
+        Effect.catchAll(() => Effect.succeed(null)),
+      ),
+    )
+    if (decoded === null) {
+      console.warn(`[gharargah-agents] dropped malformed push frame: ${event}`)
+      return
+    }
+
+    const safeForEach = <T>(listeners: Set<(arg: T) => void>, arg: T) => {
+      for (const cb of listeners) {
+        try {
+          cb(arg)
+        } catch {
+          /* one listener must not block others */
+        }
+      }
+    }
+
+    switch (pushEvent) {
+      case "agents:threadUpdated":
+        safeForEach(threadUpdated, payload as import("@gharargah/agents").AgentThread)
+        break
+      case "agents:threadDelta":
+        safeForEach(threadDelta, payload as import("@gharargah/agents").AgentThreadDelta)
+        break
+      case "agents:structuredDelta":
+        safeForEach(structured, payload as import("@gharargah/agents").AgentStructuredDelta)
+        break
+      case "agents:permissionRequest": {
+        const p = payload as {
+          workspaceRootUri: string
+          threadId: string
+          request: import("@gharargah/agents").AgentPermissionRequest
+        }
+        safeForEach(permission, {
+          workspaceRootUri: p.workspaceRootUri,
+          threadId: p.threadId,
+          permission: p.request,
+        })
+        break
+      }
+      case "agents:shellEnvReady":
+        for (const cb of shellReady) {
+          try {
+            cb()
+          } catch {
+            /* ignore */
+          }
+        }
+        break
+    }
+  }
+
+  function handleMessage(raw: string): void {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return
+    }
+    const decoded = Effect.runSync(
+      decodeAgentRpcResponse(parsed).pipe(Effect.catchAll(() => Effect.succeed(null))),
+    )
+    if (!decoded) return
+
+    if ("result" in decoded && decoded.id !== undefined) {
+      const id = Number(decoded.id)
+      const p = pending.get(id)
+      if (p) {
+        clearTimeout(p.timer)
+        pending.delete(id)
+        p.resolve(decoded.result)
+      }
+      return
+    }
+
+    if ("error" in decoded && decoded.id !== undefined) {
+      const id = Number(decoded.id)
+      const p = pending.get(id)
+      if (p) {
+        clearTimeout(p.timer)
+        pending.delete(id)
+        p.reject(agentRpcClientErrorFromWire(decoded.error))
+      }
+      return
+    }
+
+    const push = parsed as { event?: string; payload?: unknown }
+    if (push.event) {
+      dispatchPush(push.event, push.payload ?? null)
+    }
+  }
+
   function connect(): void {
-    if (closed) return
+    if (disposed) return
+    clearReconnectTimer()
+    setConnectionState(reconnectAttempt > 0 ? "reconnecting" : "connecting")
     const url = resolveUrl()
     ws = new WebSocket(url)
-    ws.addEventListener("open", () => resolveReady())
-    ws.addEventListener("message", ev => {
-      let msg: {
-        id?: number
-        result?: unknown
-        error?: string
-        event?: string
-        payload?: unknown
-      }
-      try {
-        msg = JSON.parse(String(ev.data)) as typeof msg
-      } catch {
-        return
-      }
-      if (msg.id !== undefined && pending.has(msg.id)) {
-        const p = pending.get(msg.id)!
-        pending.delete(msg.id)
-        if (msg.error) p.reject(new Error(msg.error))
-        else p.resolve(msg.result)
-        return
-      }
-      switch (msg.event) {
-        case "agents:threadUpdated":
-          for (const cb of threadUpdated) cb(msg.payload as import("@gharargah/agents").AgentThread)
-          break
-        case "agents:threadDelta":
-          for (const cb of threadDelta)
-            cb(msg.payload as import("@gharargah/agents").AgentThreadDelta)
-          break
-        case "agents:structuredDelta":
-          for (const cb of structured)
-            cb(msg.payload as import("@gharargah/agents").AgentStructuredDelta)
-          break
-        case "agents:permissionRequest": {
-          const payload = msg.payload as {
-            workspaceRootUri: string
-            threadId: string
-            request: import("@gharargah/agents").AgentPermissionRequest
-          }
-          for (const cb of permission)
-            cb({
-              workspaceRootUri: payload.workspaceRootUri,
-              threadId: payload.threadId,
-              permission: payload.request,
-            })
-          break
-        }
-        case "agents:shellEnvReady":
-          for (const cb of shellReady) cb()
-          break
-      }
+    ws.addEventListener("open", () => {
+      reconnectAttempt = 0
+      setConnectionState("open")
+      resolveReady()
     })
+    ws.addEventListener("message", ev => handleMessage(String(ev.data)))
     ws.addEventListener("close", () => {
-      if (closed) return
-      for (const [, p] of pending) {
-        p.reject(new Error("agent-server websocket disconnected"))
+      ws = null
+      if (disposed) {
+        setConnectionState("closed")
+        return
       }
-      pending.clear()
-      // Reset ready so callers wait for the next open after reconnect.
+      rejectAllPending(
+        new AgentRpcClientError({
+          _tag: "HostDisconnected",
+          message: "agent-server websocket disconnected",
+          retryable: true,
+        }),
+      )
       ready = new Promise<void>(r => {
         resolveReady = r
       })
-      setTimeout(connect, 500)
+      scheduleReconnect()
+    })
+    ws.addEventListener("error", () => {
+      /* close handler performs reconnect + pending rejection */
     })
   }
+
   connect()
 
   function invoke(method: string, ...params: unknown[]): Promise<unknown> {
@@ -135,7 +262,13 @@ export function createEffectAgentsClient(options?: {
         Effect.runPromise(
           Effect.gen(function* () {
             if (!ws || ws.readyState !== WebSocket.OPEN) {
-              return yield* Effect.fail(new Error("agent-server websocket not open"))
+              return yield* Effect.fail(
+                new AgentRpcClientError({
+                  _tag: "HostDisconnected",
+                  message: "agent-server websocket not open",
+                  retryable: true,
+                }),
+              )
             }
             const id = nextId++
             const encoded = yield* Effect.mapError(
@@ -144,21 +277,35 @@ export function createEffectAgentsClient(options?: {
                 method,
                 params: params.length <= 1 ? params[0] : params,
               }),
-              cause => new Error(`invalid agent RPC encode: ${String(cause)}`),
+              cause =>
+                new AgentRpcClientError({
+                  _tag: "InvalidRpcPayload",
+                  message: `invalid agent RPC encode: ${String(cause)}`,
+                  retryable: false,
+                }),
             )
-            return yield* Effect.async<unknown, Error>(resume => {
-              pending.set(id, {
-                resolve: v => resume(Effect.succeed(v)),
-                reject: e => resume(Effect.fail(e)),
-              })
-              ws!.send(JSON.stringify(encoded))
+            return yield* Effect.async<unknown, AgentRpcClientError>(resume => {
               const timer = setTimeout(() => {
                 if (pending.has(id)) {
                   pending.delete(id)
-                  resume(Effect.fail(new Error(`agent-server timeout: ${method}`)))
+                  resume(
+                    Effect.fail(
+                      new AgentRpcClientError({
+                        _tag: "RpcTimeout",
+                        message: `agent-server timeout: ${method}`,
+                        retryable: true,
+                        detail: { method, timeoutMs: options?.rpcTimeoutMs ?? RPC_TIMEOUT_MS },
+                      }),
+                    ),
+                  )
                 }
-              }, 120_000)
-              return Effect.sync(() => clearTimeout(timer))
+              }, options?.rpcTimeoutMs ?? RPC_TIMEOUT_MS)
+              pending.set(id, {
+                resolve: v => resume(Effect.succeed(v)),
+                reject: e => resume(Effect.fail(e)),
+                timer,
+              })
+              ws!.send(JSON.stringify(encoded))
             })
           }),
         ),
@@ -169,9 +316,27 @@ export function createEffectAgentsClient(options?: {
     get ready() {
       return ready
     },
+    getWsConnectionState() {
+      return connectionState
+    },
+    onWsConnectionState(cb) {
+      connectionStateListeners.add(cb)
+      cb(connectionState)
+      return () => connectionStateListeners.delete(cb)
+    },
     close() {
-      closed = true
+      disposed = true
+      clearReconnectTimer()
+      rejectAllPending(
+        new AgentRpcClientError({
+          _tag: "HostDisconnected",
+          message: "agent-server websocket closed",
+          retryable: false,
+        }),
+      )
+      setConnectionState("closed")
       ws?.close()
+      ws = null
     },
     listThreads: (workspaceRootUri, workspaceRootPath) =>
       invoke("agents:listThreads", workspaceRootUri, workspaceRootPath) as Promise<

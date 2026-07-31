@@ -130,7 +130,7 @@ async function ensureLocalBackends() {
         launchPath,
       }),
     )
-    if (process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1") {
+    if ((process.env.GHARARGAH_ENABLE_AGENT_CHAT ?? "1") !== "0") {
       children.push(spawnAgentServer({ repoRoot, runtimeRoot }))
     }
   }

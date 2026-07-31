@@ -1,6 +1,6 @@
 /**
- * In-app ACP/SDK agent chat. ADE product path uses agent CLIs in PTYs instead.
- * Opt in with GHARARGAH_ENABLE_AGENT_CHAT=1 (tests / recovery).
+ * In-app ACP/SDK agent chat (native driver mode in the session picker).
+ * Enabled by default; set GHARARGAH_ENABLE_AGENT_CHAT=0 to hide native mode.
  */
 export function isAgentChatEnabled(): boolean {
   const env = (import.meta as ImportMeta & { env?: { GHARARGAH_ENABLE_AGENT_CHAT?: string } }).env

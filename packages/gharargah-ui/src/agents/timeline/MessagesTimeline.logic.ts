@@ -2,12 +2,6 @@ export * from "./timelineScrollAnchoring.js"
 
 import { aggregateToolCalls } from "./activityAggregation.js"
 
-export const TIMELINE_MINIMAP_ITEM_SPACING = 8
-export const TIMELINE_MINIMAP_MIN_ITEMS = 2
-export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)"
-export const TIMELINE_CONTENT_MAX_WIDTH = 768
-export const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48
-
 export interface TimelineEndState {
   readonly isAtEnd?: boolean
   readonly isNearEnd?: boolean
@@ -17,41 +11,11 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   return state?.isNearEnd ?? state?.isAtEnd
 }
 
-export function resolveTimelineMinimapHeightStyle(itemCount: number): string {
-  const naturalHeight = Math.max(1, (itemCount - 1) * TIMELINE_MINIMAP_ITEM_SPACING)
-  return `min(${naturalHeight}px, ${TIMELINE_MINIMAP_MAX_HEIGHT_CSS})`
-}
-
-export function resolveTimelineMinimapTopPercent(index: number, itemCount: number): number {
-  if (itemCount <= 1) {
-    return 0
-  }
-  return (Math.max(0, Math.min(index, itemCount - 1)) / (itemCount - 1)) * 100
-}
-
-export function resolveTimelineMinimapIndexFromPointer(input: {
-  readonly itemCount: number
-  readonly railTop: number
-  readonly railHeight: number
-  readonly pointerY: number
-}): number | null {
-  if (input.itemCount <= 0 || input.railHeight <= 0) {
-    return null
-  }
-  if (input.itemCount === 1) {
-    return 0
-  }
-  const progress = Math.max(0, Math.min(1, (input.pointerY - input.railTop) / input.railHeight))
-  return Math.max(0, Math.min(input.itemCount - 1, Math.round(progress * (input.itemCount - 1))))
-}
-
-export function resolveTimelineMinimapHasPersistentGutter(viewportWidth: number): boolean {
-  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
-    return false
-  }
-  const contentWidth = Math.min(viewportWidth, TIMELINE_CONTENT_MAX_WIDTH)
-  const sideGutter = Math.max(0, (viewportWidth - contentWidth) / 2)
-  return sideGutter >= TIMELINE_MINIMAP_PERSISTENT_GUTTER
+export type TimelineLatestTurn = {
+  turnId: string
+  state: "running" | "completed" | "failed" | "interrupted" | "cancelled"
+  startedAt: string | null
+  completedAt: string | null
 }
 
 export interface TimelineDurationMessage {
@@ -62,11 +26,54 @@ export interface TimelineDurationMessage {
   streaming: boolean
 }
 
-export type TimelineLatestTurn = {
-  turnId: string
-  state: "running" | "completed" | "failed" | "interrupted" | "cancelled"
-  startedAt: string | null
-  completedAt: string | null
+const ACTIVE_THREAD_STATUSES = new Set([
+  "connecting",
+  "authenticating",
+  "running",
+  "waiting_for_permission",
+  "cancelling",
+  "reconnecting",
+])
+
+export function deriveTimelineTurnFromThread(
+  thread: import("@gharargah/agents").AgentThread,
+): {
+  latestTurn: TimelineLatestTurn | null
+  runningTurnId: string | null
+} {
+  const messages = thread.messages
+  const lastUser = [...messages].reverse().find(message => message.role === "user")
+  const lastAssistant = [...messages].reverse().find(message => message.role === "assistant")
+
+  const turnId = lastAssistant?.id ?? lastUser?.id ?? null
+
+  if (!turnId) {
+    return { latestTurn: null, runningTurnId: null }
+  }
+
+  const isActive = ACTIVE_THREAD_STATUSES.has(thread.status)
+  let state: TimelineLatestTurn["state"]
+  if (isActive) {
+    state = "running"
+  } else if (thread.status === "cancelled") {
+    state = "cancelled"
+  } else if (thread.status === "interrupted") {
+    state = "interrupted"
+  } else if (thread.status === "error" || thread.status === "disconnected") {
+    state = "failed"
+  } else {
+    state = "completed"
+  }
+
+  return {
+    latestTurn: {
+      turnId,
+      state,
+      startedAt: lastUser?.createdAt ?? lastAssistant?.createdAt ?? null,
+      completedAt: isActive ? null : (lastAssistant?.updatedAt ?? thread.updatedAt),
+    },
+    runningTurnId: isActive ? turnId : null,
+  }
 }
 
 export type MessagesTimelineRow =
@@ -87,7 +94,7 @@ export type MessagesTimelineRow =
       kind: "turn_status"
       id: string
       createdAt: string
-      status: "completed" | "failed"
+      status: "completed" | "failed" | "cancelled"
       label: string
     }
   | {
@@ -99,6 +106,7 @@ export type MessagesTimelineRow =
       diffStat: { additions: number; deletions: number } | null
       editFileCount: number
       changedFiles: ReadonlyArray<import("@gharargah/agents").AgentFileChange>
+      hasFailure: boolean
     }
   | {
       kind: "structured"
@@ -236,6 +244,7 @@ export function deriveMessagesTimelineRows(input: {
       diffStat: aggregated.diffStat,
       editFileCount: aggregated.editFileCount,
       changedFiles: aggregated.changedFiles,
+      hasFailure: aggregated.hasFailure,
     })
     if (aggregated.editFileCount > 0) segmentEmittedEdit = true
     segmentHasPostUserContent = true
@@ -271,7 +280,8 @@ export function deriveMessagesTimelineRows(input: {
     const assistantTurnStillInProgress =
       timelineEntry.message.role === "assistant" &&
       unsettledTurnId !== null &&
-      timelineEntry.message.turnId === unsettledTurnId
+      (timelineEntry.message.turnId === unsettledTurnId ||
+        timelineEntry.message.id === unsettledTurnId)
 
     const durationStart =
       durationStartByMessageId.get(timelineEntry.message.id) ?? timelineEntry.message.createdAt
@@ -361,6 +371,7 @@ export function deriveMessagesTimelineRows(input: {
             diffStat: diffStat.additions > 0 || diffStat.deletions > 0 ? diffStat : null,
             editFileCount: files.length,
             changedFiles: files,
+            hasFailure: false,
           })
           segmentEmittedEdit = true
         }
@@ -382,14 +393,25 @@ export function deriveMessagesTimelineRows(input: {
       row => row.kind === "message" && row.message.id === lastUserMessageId,
     )
     if (userIndex >= 0 && turnStatusEmittedForUser !== lastUserMessageId) {
-      const failed =
-        input.latestTurn?.state === "failed" || input.latestTurn?.state === "cancelled"
+      const turnState = input.latestTurn?.state
+      let status: Extract<MessagesTimelineRow, { kind: "turn_status" }>["status"] = "completed"
+      let label = "Completed"
+      if (turnState === "failed") {
+        status = "failed"
+        label = "Failed"
+      } else if (turnState === "cancelled") {
+        status = "cancelled"
+        label = "Cancelled"
+      } else if (turnState === "interrupted") {
+        status = "failed"
+        label = "Stopped"
+      }
       nextRows.splice(userIndex + 1, 0, {
         kind: "turn_status",
         id: `turn-status:${lastUserMessageId}`,
         createdAt: input.activeTurnStartedAt ?? new Date().toISOString(),
-        status: failed ? "failed" : "completed",
-        label: failed ? "Failed" : "Completed",
+        status,
+        label,
       })
     }
   }
@@ -413,6 +435,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       a.label === next.label &&
       a.createdAt === next.createdAt &&
       a.editFileCount === next.editFileCount &&
+      a.hasFailure === next.hasFailure &&
       a.changedFiles === next.changedFiles &&
       a.diffStat?.additions === next.diffStat?.additions &&
       a.diffStat?.deletions === next.diffStat?.deletions &&
@@ -457,37 +480,6 @@ export function computeStableMessagesTimelineRows(
   })
 
   return anyChanged ? { byId: next, result } : previous
-}
-
-export interface TimelineMinimapItem {
-  readonly id: string
-  readonly rowIndex: number
-  readonly userText: string | null
-  readonly assistantText: string | null
-}
-
-export function deriveTimelineMinimapItems(rows: MessagesTimelineRow[]): TimelineMinimapItem[] {
-  const items: TimelineMinimapItem[] = []
-  let pendingUser: { id: string; text: string } | null = null
-
-  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-    const row = rows[rowIndex]
-    if (!row || row.kind !== "message") continue
-    if (row.message.role === "user") {
-      pendingUser = { id: row.message.id, text: coerceMessageText(row.message.text).trim() }
-      continue
-    }
-    if (row.message.role !== "assistant" || !row.showAssistantMeta) continue
-    items.push({
-      id: row.message.id,
-      rowIndex,
-      userText: pendingUser?.text ?? null,
-      assistantText: coerceMessageText(row.message.text).trim() || null,
-    })
-    pendingUser = null
-  }
-
-  return items
 }
 
 function formatShortTimestamp(iso: string): string {

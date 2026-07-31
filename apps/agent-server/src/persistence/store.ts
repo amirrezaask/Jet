@@ -102,6 +102,12 @@ function migrateLegacySchema(db: DatabaseSync): void {
 export class AgentStore {
   private dbs = new Map<string, DatabaseSync>()
 
+  /**
+   * Set by the engine so crash recovery can tell a thread this process is
+   * actively driving from one orphaned by a host restart.
+   */
+  isThreadLive?: (threadId: string) => boolean
+
   private db(rootPath: string): DatabaseSync {
     const key = path.resolve(rootPath)
     let db = this.dbs.get(key)
@@ -241,8 +247,11 @@ export class AgentStore {
         }
       }
     }
-    // Crash recovery: orphan running → interrupted
+    // Crash recovery: orphan running → interrupted. A turn this process is
+    // still driving is not an orphan, so listing threads mid-turn must leave
+    // it alone.
     for (const t of threads) {
+      if (this.isThreadLive?.(t.id)) continue
       if (
         t.status === "running" ||
         t.status === "connecting" ||
