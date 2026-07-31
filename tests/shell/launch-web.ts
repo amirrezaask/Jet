@@ -9,16 +9,6 @@ import type { LaunchShellResult } from "./driver.js"
 
 const REPO_ROOT = path.resolve(__dirname, "../..")
 const HOST_SERVER_ENTRY = path.join(REPO_ROOT, "apps/host-server/src/bin.ts")
-const MOCK_ACP_BINARY = path.join(REPO_ROOT, "apps/host-server/mocks/bin/gharargah-mock-acp")
-const MOCK_CODEX_APP_SERVER_BINARY = path.join(
-  REPO_ROOT,
-  "apps/host-server/mocks/bin/gharargah-mock-line-rpc",
-)
-const MOCK_CLAUDE_SDK_BINARY = path.join(
-  REPO_ROOT,
-  "apps/host-server/mocks/bin/gharargah-mock-claude-sdk",
-)
-const AGENT_SERVER_ENTRY = path.join(REPO_ROOT, "apps/agent-server/src/bin.ts")
 
 function resolveTsxCli(): string {
   const candidates = [
@@ -44,7 +34,6 @@ type LaunchWebOptions = {
   env?: Record<string, string>
   userDataDir?: string
   launchWithoutWorkspace?: boolean
-  withAgentServer?: boolean
 }
 
 async function freePort(): Promise<number> {
@@ -103,13 +92,6 @@ async function killProc(proc: ChildProcessWithoutNullStreams): Promise<void> {
 
 export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchShellResult> {
   const port = await freePort()
-  // Native agent chat ships on by default; only an explicit "0" opts out.
-  const agentEnabled =
-    options.withAgentServer ??
-    (options.env?.GHARARGAH_ENABLE_AGENT_CHAT ??
-      process.env.GHARARGAH_ENABLE_AGENT_CHAT ??
-      "1") !== "0"
-  const agentPort = agentEnabled ? await freePort() : null
   const temporaryRoot = options.userDataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "jet-web-e2e-"))
   const browserData = path.join(temporaryRoot, "browser")
   const serverData = path.join(temporaryRoot, "server")
@@ -124,50 +106,13 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   if (!fs.existsSync(HOST_SERVER_ENTRY)) {
     throw new Error(`Host server entry missing at ${HOST_SERVER_ENTRY}`)
   }
-  if (agentEnabled) {
-    if (!fs.existsSync(MOCK_ACP_BINARY)) {
-      throw new Error(`Mock ACP missing at ${MOCK_ACP_BINARY}`)
-    }
-    if (!fs.existsSync(MOCK_CLAUDE_SDK_BINARY)) {
-      throw new Error(`Mock Claude SDK missing at ${MOCK_CLAUDE_SDK_BINARY}`)
-    }
-    if (!fs.existsSync(MOCK_CODEX_APP_SERVER_BINARY)) {
-      throw new Error(`Mock Codex app-server missing at ${MOCK_CODEX_APP_SERVER_BINARY}`)
-    }
-    if (!fs.existsSync(AGENT_SERVER_ENTRY)) {
-      throw new Error(`agent-server entry missing; run pnpm install from repo root`)
-    }
-  }
   const tsxCli = resolveTsxCli()
 
   const sharedEnv = {
     ...process.env,
     JET_ALLOWED_ROOTS: `${REPO_ROOT},${temporaryRoot},${path.dirname(sourceWorkspace)}`,
     GHARARGAH_E2E: "1",
-    GHARARGAH_AGENT_RUNTIME: "effect",
-    GHARARGAH_AGENT_HOST: "127.0.0.1",
-    ...(agentPort == null
-      ? {}
-      : {
-          GHARARGAH_AGENT_PORT: String(agentPort),
-          GHARARGAH_AGENT_WS_URL: `ws://127.0.0.1:${agentPort}/agents`,
-        }),
-    GHARARGAH_MOCK_ACP_BIN: MOCK_ACP_BINARY,
-    GHARARGAH_MOCK_CODEX_APP_SERVER_BIN: MOCK_CODEX_APP_SERVER_BINARY,
-    GHARARGAH_MOCK_CLAUDE_SDK_BIN: MOCK_CLAUDE_SDK_BINARY,
     ...options.env,
-  }
-
-  const agentServer = agentEnabled
-    ? (spawn(process.execPath, [tsxCli, AGENT_SERVER_ENTRY], {
-        cwd: REPO_ROOT,
-        env: sharedEnv,
-        stdio: ["ignore", "pipe", "pipe"],
-      }) as ChildProcessWithoutNullStreams)
-    : null
-  const agentLogs = agentServer ? attachLogs(agentServer) : () => "(disabled)"
-  if (agentServer && agentPort != null) {
-    await waitForHttpOk(`http://127.0.0.1:${agentPort}/health`, agentServer, agentLogs)
   }
 
   const server = spawn(
@@ -191,7 +136,7 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   ) as ChildProcessWithoutNullStreams
   const jetLogs = attachLogs(server)
   const url = `http://127.0.0.1:${port}`
-  await waitForHttpOk(`${url}/health`, server, () => `${jetLogs()}\n--- agent ---\n${agentLogs()}`)
+  await waitForHttpOk(`${url}/health`, server, jetLogs)
 
   const context = await chromium.launchPersistentContext(browserData, {
     headless: process.env.GHARARGAH_HEADED !== "1",
@@ -214,82 +159,9 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     }
   })
 
-  const agentWsUrl = agentPort == null ? null : `ws://127.0.0.1:${agentPort}/agents`
-  if (agentWsUrl) {
-    await browserPage.addInitScript((wsUrl: string) => {
-      ;(window as Window & { __GHARARGAH_AGENT_WS_URL__?: string }).__GHARARGAH_AGENT_WS_URL__ = wsUrl
-    }, agentWsUrl)
-  }
-
   await browserPage.goto(url, { waitUntil: "domcontentloaded" })
   await browserPage.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
   await browserPage.evaluate(() => window.__gharargahAgent!.waitForReady())
-  const agentOk = agentWsUrl
-    ? await browserPage.evaluate(async (wsUrl: string) => {
-    return await new Promise<boolean>(resolve => {
-      try {
-        const ws = new WebSocket(wsUrl)
-        const t = setTimeout(() => {
-          try {
-            ws.close()
-          } catch {
-            /* ignore */
-          }
-          resolve(false)
-        }, 8_000)
-        ws.addEventListener("open", () => {
-          ws.send(JSON.stringify({ id: 1, method: "health", params: [] }))
-        })
-        ws.addEventListener("message", ev => {
-          try {
-            const msg = JSON.parse(String(ev.data)) as { id?: number; result?: { ok?: boolean } }
-            if (msg.id === 1 && msg.result?.ok) {
-              clearTimeout(t)
-              ws.close()
-              resolve(true)
-            }
-          } catch {
-            /* ignore */
-          }
-        })
-        ws.addEventListener("error", () => {
-          clearTimeout(t)
-          resolve(false)
-        })
-      } catch {
-        resolve(false)
-      }
-    })
-      }, agentWsUrl)
-    : true
-  if (!agentOk) {
-    throw new Error(
-      `Effect agent-server not reachable at ${agentWsUrl}\n${jetLogs()}\n--- agent ---\n${agentLogs()}`,
-    )
-  }
-  const appAgentUrl = agentWsUrl
-    ? await browserPage.evaluate(async () => {
-    const injected =
-      (window as Window & { __GHARARGAH_AGENT_WS_URL__?: string }).__GHARARGAH_AGENT_WS_URL__ ?? null
-    try {
-      const health = await window.gharargah?.agents?.getConnectionState?.(
-        "file:///tmp",
-        "/tmp",
-        "probe",
-      )
-      void health
-    } catch {
-      /* method optional */
-    }
-    return injected
-      })
-    : null
-  if (agentWsUrl && (!appAgentUrl || appAgentUrl !== agentWsUrl)) {
-    throw new Error(
-      `E2E agent WS mismatch: injected=${appAgentUrl} expected=${agentWsUrl}. ` +
-        `App may be talking to a stale vite-baked 4751 server.`,
-    )
-  }
   if (!options.launchWithoutWorkspace) {
     await browserPage.waitForFunction(
       () => (window.__gharargahAgent?.listWorkspaces().length ?? 0) > 0,
@@ -304,7 +176,6 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
       async close() {
         await context.close().catch(() => {})
         await killProc(server)
-        if (agentServer) await killProc(agentServer)
         if (errors.length) process.stderr.write(`Browser console errors:\n${errors.join("\n")}\n`)
       },
     },

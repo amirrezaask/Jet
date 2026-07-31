@@ -4,9 +4,6 @@ import tailwindcss from "@tailwindcss/vite"
 import path from "node:path"
 
 export default defineConfig({
-  define: {
-    "import.meta.env.GHARARGAH_ENABLE_AGENT_CHAT": JSON.stringify(process.env.GHARARGAH_ENABLE_AGENT_CHAT ?? "0"),
-  },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

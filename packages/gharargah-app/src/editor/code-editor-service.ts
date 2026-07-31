@@ -1,5 +1,12 @@
-import type { AgentFileReference } from "@gharargah/agents"
 import { pathToFileUri } from "@gharargah/shared"
+
+export type AgentFileReference = {
+  path: string
+  line?: number
+  column?: number
+  endLine?: number
+  endColumn?: number
+}
 import { setPendingEditorNavigation } from "@gharargah/monaco/pending"
 import { isPathUnderRoot, resolvePathUnderRoot } from "./path-utils.js"
 

@@ -1,5 +1,4 @@
 import { useEffect, type CSSProperties, type ReactNode } from "react"
-import type { AgentUsage } from "@gharargah/agents"
 import {
   Bot,
   Check,
@@ -39,7 +38,6 @@ export type AgentSessionHeaderMeta = {
   threadTitle: string
   projectName?: string | null
   modelLabel?: string | null
-  usage?: AgentUsage | null
 }
 
 export type TerminalSessionModalProps = {

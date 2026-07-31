@@ -7,7 +7,7 @@ import {
   OpenAI,
   OpenCodeIcon,
   type Icon,
-} from "../agents/composer/Icons.js"
+} from "./provider-icons.js"
 import { Button } from "@/components/ui/button.js"
 import { Card, CardContent, CardHeader } from "@/components/ui/card.js"
 import {

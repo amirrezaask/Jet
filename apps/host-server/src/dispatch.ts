@@ -95,9 +95,7 @@ async function dispatchImpl(
   clientId: string,
 ): Promise<unknown> {
   if (channel.startsWith("agents:")) {
-    throw new Error(
-      "agents:* moved to Effect agent-server (ws://127.0.0.1:4751/agents); host no longer handles agents",
-    )
+    throw new Error("agents:* removed; use CLI PTY sessions (no in-app agent control plane)")
   }
   if (channel === "ui:syncNativeChrome") return null
   if (channel === "fs:showOpenFolderDialog" || channel === "fs:showSaveFileDialog") return null

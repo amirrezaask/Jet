@@ -6,7 +6,7 @@ import {
   OpenAI,
   OpenCodeIcon,
   type Icon,
-} from "../../agents/composer/Icons.js"
+} from "../provider-icons.js"
 import { cn } from "@/lib/utils.js"
 import type { SidebarSessionStatus } from "./types.js"
 

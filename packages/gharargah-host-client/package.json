@@ -16,7 +16,6 @@
   "dependencies": {
     "@effect/platform": "0.97.1",
     "@effect/platform-browser": "0.77.1",
-    "@gharargah/agents": "workspace:*",
     "@gharargah/rpc": "workspace:*",
     "@gharargah/shared": "workspace:*",
     "@gharargah/workspace": "workspace:*",

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * Stage self-contained Gharargah runtime (SPA + bundled host/agent + Node).
+ * Stage self-contained Gharargah runtime (SPA + bundled host + Node).
  *
  * Default output: dist/gharargah/
  *   gharargah              launcher → host-server on :4747 + static SPA
- *   gharargah-agent        optional when GHARARGAH_ENABLE_AGENT_CHAT=1 at build
  *   web/                   Vite SPA dist
  *   backend/               esbuild bundles + native deps (node-pty, fff)
  *   node/                  official Node binary (ABI-matched for natives)
@@ -45,7 +44,6 @@ function resolveEsbuild() {
 
 async function bundleBackends(backendDir) {
   const esbuild = resolveEsbuild()
-  const includeAgentChat = process.env.GHARARGAH_ENABLE_AGENT_CHAT === "1"
   fs.mkdirSync(backendDir, { recursive: true })
   for (const stale of ["host-server.mjs", "agent-server.mjs", "host-server.cjs", "agent-server.cjs"]) {
     fs.rmSync(path.join(backendDir, stale), { force: true })
@@ -71,18 +69,7 @@ const require = __gharargahCreateRequire(import.meta.url);
     entryPoints: [path.join(repoRoot, "apps/host-server/src/bin.ts")],
     outfile: path.join(backendDir, "host-server.mjs"),
   })
-  if (includeAgentChat) {
-    await esbuild.build({
-      ...common,
-      entryPoints: [path.join(repoRoot, "apps/agent-server/src/bin.ts")],
-      outfile: path.join(backendDir, "agent-server.mjs"),
-    })
-  }
-  console.log(
-    includeAgentChat
-      ? "Bundled host-server.mjs + agent-server.mjs"
-      : "Bundled host-server.mjs (agent chat disabled)",
-  )
+  console.log("Bundled host-server.mjs")
 }
 
 function writeBackendPackageJson(backendDir) {
@@ -210,23 +197,8 @@ exec "$ROOT/node/${nodeRel}" "$ROOT/backend/host-server.mjs" \\
   const hostPath = path.join(packDir, "gharargah")
   fs.writeFileSync(hostPath, hostLauncher)
   fs.chmodSync(hostPath, 0o755)
-
-  const agentEntry = path.join(packDir, "backend", "agent-server.mjs")
-  if (fs.existsSync(agentEntry)) {
-    const agentLauncher = `#!/bin/sh
-# Gharargah agent control plane (default :4751)
-set -eu
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-exec "$ROOT/node/${nodeRel}" "$ROOT/backend/agent-server.mjs" "$@"
-`
-    const agentPath = path.join(packDir, "gharargah-agent")
-    fs.writeFileSync(agentPath, agentLauncher)
-    fs.chmodSync(agentPath, 0o755)
-  } else {
-    fs.rmSync(path.join(packDir, "gharargah-agent"), { force: true })
-  }
-
-  console.log(`Launchers: ${hostPath}${fs.existsSync(agentEntry) ? `, ${path.join(packDir, "gharargah-agent")}` : ""}`)
+  fs.rmSync(path.join(packDir, "gharargah-agent"), { force: true })
+  console.log(`Launchers: ${hostPath}`)
 }
 
 export async function stageRuntimePack(packDir = resolvePackDir()) {

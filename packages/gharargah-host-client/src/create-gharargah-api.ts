@@ -1,6 +1,5 @@
 import type { GharargahHostAPI } from "@gharargah/workspace"
 import type { GharargahHostTransport } from "./transport.js"
-import { createEffectAgentsClient } from "./effect-agents-client.js"
 
 // Host owns the authoritative terminal replay. This buffer only bridges the
 // attach handshake, so keeping a second multi-megabyte copy is wasteful.
@@ -8,7 +7,6 @@ const MAX_BUFFERED_TERMINAL_CHARS = 64 * 1024
 
 export function createGharargahApi(
   transport: GharargahHostTransport,
-  options: { agentChatEnabled?: boolean } = {},
 ): GharargahHostAPI {
   const terminalDataListeners = new Map<string, Set<(data: string) => void>>()
   type BufferedTerminalData = { data: string; sequence: number }
@@ -16,41 +14,6 @@ export function createGharargahApi(
   const terminalDataBufferSizes = new Map<string, number>()
   const terminalReplayFloors = new Map<string, number>()
 
-  transport.on("agents:threadUpdated", (...args: unknown[]) => {
-    if (options.agentChatEnabled) return
-    const thread = args[0] as import("@gharargah/agents").AgentThread
-    for (const cb of agentThreadUpdatedListeners) cb(thread)
-  })
-  transport.on("agents:threadDelta", (...args: unknown[]) => {
-    if (options.agentChatEnabled) return
-    const delta = args[0] as import("@gharargah/agents").AgentThreadDelta
-    for (const cb of agentThreadDeltaListeners) cb(delta)
-  })
-  transport.on("agents:permissionRequest", (...args: unknown[]) => {
-    if (options.agentChatEnabled) return
-    const request = args[0] as {
-      workspaceRootUri?: string
-      workspaceRootPath?: string
-      threadId: string
-      request: import("@gharargah/agents").AgentPermissionRequest
-    }
-    for (const cb of agentPermissionListeners) {
-      cb({
-        workspaceRootUri: request.workspaceRootUri ?? "",
-        threadId: request.threadId,
-        permission: request.request,
-      })
-    }
-  })
-  transport.on("agents:structuredDelta", (...args: unknown[]) => {
-    if (options.agentChatEnabled) return
-    const delta = args[0] as import("@gharargah/agents").AgentStructuredDelta
-    for (const cb of agentStructuredDeltaListeners) cb(delta)
-  })
-  transport.on("agents:shellEnvReady", () => {
-    if (options.agentChatEnabled) return
-    for (const cb of agentShellEnvReadyListeners) cb()
-  })
   transport.on("lsp:crashed", (...args: unknown[]) => {
     const id = args[0] as string
     for (const cb of lspCrashListeners) cb(id)
@@ -102,17 +65,6 @@ export function createGharargahApi(
   })
 
   const lspCrashListeners = new Set<(id: string) => void>()
-  const agentThreadUpdatedListeners = new Set<(thread: import("@gharargah/agents").AgentThread) => void>()
-  const agentThreadDeltaListeners = new Set<(delta: import("@gharargah/agents").AgentThreadDelta) => void>()
-  const agentPermissionListeners = new Set<(input: {
-    workspaceRootUri: string
-    threadId: string
-    permission: import("@gharargah/agents").AgentPermissionRequest
-  }) => void>()
-  const agentStructuredDeltaListeners = new Set<
-    (delta: import("@gharargah/agents").AgentStructuredDelta) => void
-  >()
-  const agentShellEnvReadyListeners = new Set<() => void>()
   const fileChangeListeners = new Set<(uri: string) => void>()
   const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
   const searchReadyListeners = new Set<(rootUri: string) => void>()
@@ -120,62 +72,6 @@ export function createGharargahApi(
   const notificationEventListeners = new Set<
     (event: import("@gharargah/shared").NotificationStreamEvent) => void
   >()
-
-  const effectAgents = options.agentChatEnabled ? createEffectAgentsClient() : null
-
-  const agentsApi: GharargahHostAPI["agents"] = effectAgents
-    ? effectAgents
-    : {
-      listThreads: (workspaceRootUri, workspaceRootPath) =>
-        transport.invoke("agents:listThreads", workspaceRootUri, workspaceRootPath),
-      readThread: (workspaceRootUri, workspaceRootPath, threadId) =>
-        transport.invoke("agents:readThread", workspaceRootUri, workspaceRootPath, threadId),
-      createThread: input => transport.invoke("agents:createThread", input),
-      sendMessage: input => transport.invoke("agents:sendMessage", input),
-      createCheckpoint: input => transport.invoke("agents:createCheckpoint", input),
-      revertCheckpoint: input => transport.invoke("agents:revertCheckpoint", input),
-      interruptTurn: input => transport.invoke("agents:interruptTurn", input),
-      resolvePermission: input => transport.invoke("agents:resolvePermission", input),
-      resolveUserInput: input => transport.invoke("agents:resolveUserInput", input),
-      setSessionConfigOption: input => transport.invoke("agents:setSessionConfigOption", input),
-      setArchived: input => transport.invoke("agents:setArchived", input),
-      updateThreadSettings: input => transport.invoke("agents:updateThreadSettings", input),
-      listAgents: () => transport.invoke("agents:listAgents"),
-      refreshAgents: providerId => transport.invoke("agents:refreshAgents", providerId),
-      listProviders: () => transport.invoke("agents:listProviders"),
-      refreshProviders: () => transport.invoke("agents:refreshProviders"),
-      onThreadUpdated: callback => {
-        agentThreadUpdatedListeners.add(callback)
-        return () => agentThreadUpdatedListeners.delete(callback)
-      },
-      onThreadDelta: callback => {
-        agentThreadDeltaListeners.add(callback)
-        return () => agentThreadDeltaListeners.delete(callback)
-      },
-      onPermissionRequest: callback => {
-        agentPermissionListeners.add(callback)
-        return () => agentPermissionListeners.delete(callback)
-      },
-      getAcpTrace: (providerId?: string) =>
-        transport.invoke("agents:getAcpTrace", providerId ?? "cursor"),
-      getConnectionState: (
-        provider?: string | { providerId?: string; workspaceRootPath?: string },
-      ) => transport.invoke("agents:getConnectionState", provider ?? "cursor"),
-      forceStopProvider: input => transport.invoke("agents:forceStopProvider", input),
-      listAcpSessions: input => transport.invoke("agents:listAcpSessions", input),
-      authenticate: input => transport.invoke("agents:authenticate", input),
-      closeAcpSession: input => transport.invoke("agents:closeAcpSession", input),
-      deleteAcpSession: input => transport.invoke("agents:deleteAcpSession", input),
-      logoutProvider: input => transport.invoke("agents:logoutProvider", input),
-      onStructuredDelta: callback => {
-        agentStructuredDeltaListeners.add(callback)
-        return () => agentStructuredDeltaListeners.delete(callback)
-      },
-      onShellEnvReady: callback => {
-        agentShellEnvReadyListeners.add(callback)
-        return () => agentShellEnvReadyListeners.delete(callback)
-      },
-    }
 
   return {
     fs: {
@@ -205,7 +101,6 @@ export function createGharargahApi(
         return () => searchReadyListeners.delete(callback)
       },
     },
-    agents: agentsApi,
     search: {
       project: (rootUri, query, opts) => transport.invoke("search:project", rootUri, query, opts),
       listFiles: rootUri => transport.invoke("search:listFiles", rootUri),

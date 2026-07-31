@@ -7,8 +7,6 @@ import {
   decodeHostRpcRequest,
   hostErrorWire,
   PathOutsideRootsError,
-  AgentRpcRequest,
-  decodeAgentRpcRequest,
   unknownChannel,
   tryDecodeSessionRoster,
   decodeSessionRosterUnknown,
@@ -65,21 +63,12 @@ describe("gharargah-rpc schemas", () => {
     assert.match(err.message, /nope:x/)
   })
 
-  it("decodes agent RPC request", async () => {
-    const req = await Effect.runPromise(
-      decodeAgentRpcRequest({ id: 1, method: "agents:listAgents", params: {} }),
-    )
-    assert.equal(req.method, "agents:listAgents")
-    assert.equal(req.id, 1)
-  })
-
   it("rejects bad host request", async () => {
     await assert.rejects(() => Effect.runPromise(decodeHostRpcRequest({ args: [] })))
   })
 
   it("HostRpcRequest schema type is struct", () => {
     assert.ok(HostRpcRequest)
-    assert.ok(AgentRpcRequest)
   })
 })
 
@@ -153,7 +142,7 @@ describe("SessionRoster compat decode", () => {
     assert.equal(decoded?.sessions[0]?.tabId, "gharargah:terminal:blank")
   })
 
-  it("keeps native-driver agent sessions that have no launchCommand", () => {
+  it("drops native-driver agent sessions without launchCommand", () => {
     const decoded = tryDecodeSessionRoster({
       version: 2,
       sessions: [
@@ -177,10 +166,7 @@ describe("SessionRoster compat decode", () => {
       ],
       modal: null,
     })
-    assert.equal(decoded?.sessions.length, 1)
-    assert.equal(decoded?.sessions[0]?.tabId, "gharargah:terminal:native")
-    assert.equal(decoded?.sessions[0]?.agentDriverId, "codex:app-server")
-    assert.equal(decoded?.sessions[0]?.agentThreadId, "thread-1")
+    assert.equal(decoded?.sessions.length, 0)
   })
 
   it("clears orphan modal and dedupes tab ids", () => {

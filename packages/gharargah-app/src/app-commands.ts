@@ -14,7 +14,6 @@ import type {
 import { panelTabIds } from "@gharargah/workspace"
 import type { MonacoEditorHandle } from "@gharargah/monaco"
 import { getEditorView, destroyEditorBuffer } from "@gharargah/ui"
-import { isAgentChatEnabled } from "@gharargah/agents"
 import {
   getActiveEditorFileUri,
   getAllLeafPanels,
@@ -372,10 +371,6 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
       deps.setGotoLineOpen(true)
     },
     showEditor: () => deps.setSessionMode("editor"),
-    showAgent: () => {
-      if (!isAgentChatEnabled()) return
-      deps.setSessionMode("agent")
-    },
     showTerminal: () => deps.setSessionMode("terminal"),
     showTodos: () => deps.setSessionMode("todos"),
     showGit: () => {
@@ -602,7 +597,6 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.replace", fn: "replace", title: "Replace in Editor", category: "Editor" },
   { id: "editor.gotoLine", fn: "gotoLine", title: "Go to Line…", category: "Editor" },
   { id: "dialog.showEditor", fn: "showEditor", title: "Show Editor", category: "View", aliases: ["focus editor"] },
-  { id: "dialog.showAgent", fn: "showAgent", title: "Show Agent", category: "View", aliases: ["conversation", "assistant"] },
   { id: "dialog.showTerminal", fn: "showTerminal", title: "Show Terminal", category: "View", aliases: ["focus terminal"] },
   { id: "dialog.showGit", fn: "showGit", title: "Show Git", category: "View", aliases: ["git", "source control"] },
   { id: "dialog.showTodos", fn: "showTodos", title: "Show TODOs", category: "View", aliases: ["todo board", "kanban"] },

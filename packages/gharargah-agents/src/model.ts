@@ -1,116 +1,19 @@
-import type {
-  AgentThread,
-  AgentThreadSummary,
-  AgentWorkspaceSnapshot,
-  CreateAgentThreadInput,
-} from "./types.js"
-
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
-function fileUriToPath(uri: string): string {
-  if (!uri.startsWith("file://")) return uri
-  let path = decodeURIComponent(uri.slice(7))
-  if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1)
-  return path
-}
-
+/** Normalize legacy / alias agent ids to canonical CLI provider ids. */
 export function normalizeAgentId(agentId: string | null | undefined): string {
   if (agentId === "claudeAgent") return "claude"
   if (agentId === "cursorAcp" || agentId === "cursor-acp") return "cursor"
   return agentId ?? "codex"
 }
 
-export function defaultAgentDriverId(agentId: string | null | undefined): string {
-  const id = normalizeAgentId(agentId)
-  if (id === "codex") return "codex:app-server"
-  if (id === "claude") return "claude:sdk"
-  if (id === "opencode") return "opencode:sdk"
-  if (id === "cursor") return "cursor:acp"
-  if (id === "grok") return "grok:acp"
-  return `${id}:cli`
+/** CLI driver id for an agent (`codex:cli`, `claude:cli`, …). */
+export function agentCliDriverId(agentId: string | null | undefined): string {
+  return `${normalizeAgentId(agentId)}:cli`
 }
 
-export function isAcpDriverId(driverId: string | null | undefined): boolean {
-  return typeof driverId === "string" && driverId.endsWith(":acp")
-}
-
-export function isAgentInterfaceDriverId(driverId: string | null | undefined): boolean {
-  return (
-    isAcpDriverId(driverId) ||
-    (typeof driverId === "string" &&
-      (driverId.endsWith(":app-server") || driverId.endsWith(":sdk")))
-  )
-}
-
-export function acpDriverIdForAgent(agentId: string | null | undefined): string {
-  const id = normalizeAgentId(agentId)
-  if (id === "cursor") return "cursor:acp"
-  return `${id}:acp`
-}
-
-export function summarizeThread(thread: AgentThread): AgentThreadSummary {
-  let latestUserMessageAt: string | null = null
-  for (const message of thread.messages) {
-    if (message.role !== "user") continue
-    if (latestUserMessageAt === null || message.createdAt > latestUserMessageAt) {
-      latestUserMessageAt = message.createdAt
-    }
-  }
-  return {
-    id: thread.id,
-    title: thread.title,
-    updatedAt: thread.updatedAt,
-    createdAt: thread.createdAt,
-    archivedAt: thread.archivedAt,
-    status: thread.status,
-    lastError: thread.lastError,
-    latestUserMessageAt,
-    messageCount: thread.messages.length,
-  }
-}
-
-export function buildWorkspaceSnapshot(
-  workspaceRootUri: string,
-  workspaceRootPath: string,
-  threads: AgentThread[],
-): AgentWorkspaceSnapshot {
-  return {
-    workspaceRootUri,
-    workspaceRootPath,
-    threads: threads.map(summarizeThread).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-  }
-}
-
-export function newAgentThread(input: CreateAgentThreadInput): AgentThread {
-  const createdAt = nowIso()
-  const rootPath = input.workspaceRootPath || fileUriToPath(input.workspaceRootUri)
-  const agentId = normalizeAgentId(input.agentId ?? input.provider)
-  return {
-    id: crypto.randomUUID(),
-    title: input.title?.trim() || "New agent",
-    workspaceRootUri: input.workspaceRootUri,
-    workspaceRootPath: rootPath,
-    agentId,
-    driverId: input.driverId ?? defaultAgentDriverId(agentId),
-    model: input.model ?? "auto",
-    createdAt,
-    updatedAt: createdAt,
-    archivedAt: null,
-    status: "idle",
-    lastError: null,
-    messages: [],
-  }
-}
-
-export function touchThread<T extends AgentThread>(
-  thread: T,
-  patch: Partial<Omit<AgentThread, "id" | "workspaceRootUri" | "workspaceRootPath" | "createdAt">>,
-): T {
-  return {
-    ...thread,
-    ...patch,
-    updatedAt: nowIso(),
-  }
+/** @deprecated Prefer `agentCliDriverId` — kept for call-site compatibility. */
+export function agentDriverIdForMode(
+  agentId: string,
+  _mode: "cli" | "native" = "cli",
+): string {
+  return agentCliDriverId(agentId)
 }

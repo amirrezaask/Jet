@@ -65,60 +65,17 @@ test.describe("single-binary web server", () => {
     }
   })
 
-  test("server-owned mock agent continues through browser reload", async () => {
-    test.skip(
-      process.env.GHARARGAH_ENABLE_AGENT_CHAT === "0",
-      "In-app agent chat is disabled; CLI agents run in terminal sessions.",
-    )
-    const { app, page } = await launchJet({ env: { GHARARGAH_AGENT_MOCK: "1" } })
-    try {
-      await waitForHome(page)
-      const started = await page.evaluate(async () => {
-        const path = window.__gharargahAgent!.getState().activeWorkspace!
-        const uri = `file://${path}`
-        const agents = window.gharargah!.agents!
-        const thread = await agents.createThread({
-          workspaceRootUri: uri,
-          workspaceRootPath: path,
-          provider: "cursor",
-          model: "auto",
-          title: "Reload test",
-        })
-        await agents.sendMessage({
-          workspaceRootUri: uri,
-          workspaceRootPath: path,
-          threadId: thread.id,
-          text: "continue after reload",
-        })
-        return { id: thread.id, path, uri }
-      })
-      await page.reload()
-      await waitForHome(page)
-      await expect.poll(() => page.evaluate(async input => {
-        return (await window.gharargah!.agents!.readThread(input.uri, input.path, input.id))?.status
-      }, started), { timeout: 10_000 }).toBe("idle")
-      const text = await page.evaluate(async input => {
-        const thread = await window.gharargah!.agents!.readThread(input.uri, input.path, input.id)
-        return thread?.messages.map(message => message.text).join("\n") ?? ""
-      }, started)
-      expect(text).toContain("Mock agent reply: continue after reload")
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("ACP RPC bridges async operations without aborting the server runtime", async () => {
+  test("rejects removed agents:* host RPC without aborting the server", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForHome(page)
       const result = await page.evaluate(async () => {
-        const path = window.__gharargahAgent!.getState().activeWorkspace!
         const response = await fetch("/api/v1/rpc", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            channel: "agents:listAcpSessions",
-            args: [{ connectionKey: `cursor-acp:${path}` }],
+            channel: "agents:listAgents",
+            args: [],
           }),
         })
         const health = await fetch("/health")

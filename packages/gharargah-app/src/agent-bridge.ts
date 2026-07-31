@@ -21,7 +21,7 @@ export type JetAgentState = {
   shellView: "home" | "workspace"
   sessionLayout: "cards" | "tabs" | "sidebar"
   sessionMode: "agent" | "terminal" | "editor" | "git" | "todos" | null
-  /** Vite-baked; true when GHARARGAH_ENABLE_AGENT_CHAT=1 at frontend build. */
+  /** Always false — in-app native agent chat removed; CLI PTY only. */
   agentChatEnabled: boolean
 }
 

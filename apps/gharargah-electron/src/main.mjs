@@ -14,7 +14,6 @@ import {
   DEFAULT_HOST_PORT,
   DEFAULT_VITE_PORT,
   isPackagedRuntime,
-  spawnAgentServer,
   spawnHostServer,
   spawnVite,
   waitForUrl,
@@ -130,9 +129,6 @@ async function ensureLocalBackends() {
         launchPath,
       }),
     )
-    if ((process.env.GHARARGAH_ENABLE_AGENT_CHAT ?? "1") !== "0") {
-      children.push(spawnAgentServer({ repoRoot, runtimeRoot }))
-    }
   }
   if (isDev && !viteUp) {
     children.push(spawnVite({ appDir: gharargahAppDir }))

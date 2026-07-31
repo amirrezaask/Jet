@@ -9,7 +9,6 @@ export type LaunchJetOptions = {
   env?: Record<string, string>
   userDataDir?: string
   launchWithoutWorkspace?: boolean
-  withAgentServer?: boolean
 }
 
 export const REPO_ROOT = resolve(__dirname, "..", "..")
@@ -182,7 +181,7 @@ export async function pickAgentCli(
   await option.click()
 }
 
-/** Open a CLI-driven ADE session (picker → Agent surface). */
+/** Open a CLI-driven ADE session (picker → Agent surface / PTY). */
 export async function openNewCliSession(
   page: ShellDriver,
   agentId: string = "codex",
@@ -202,39 +201,7 @@ export async function openNewCliSession(
   return modal
 }
 
-/** Open a native in-app agent chat session (picker → Native → Agent surface). */
-export async function openNewNativeAgentSession(
-  page: ShellDriver,
-  agentId: string = "codex",
-): Promise<ReturnType<ShellDriver["locator"]>> {
-  await clickNewSession(page)
-  const nativeOption = page.locator(
-    `[data-gharargah-agent-driver-mode-option="${agentId}:native"]`,
-  )
-  await nativeOption.waitFor({ state: "visible", timeout: 20_000 })
-  await nativeOption.click()
-  await pickAgentCli(page, agentId)
-  const modal = page.locator("[data-gharargah-terminal-modal]")
-  await modal.waitFor({ state: "visible", timeout: 20_000 })
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector("[data-gharargah-terminal-modal]")
-        ?.getAttribute("data-gharargah-session-mode") === "agent",
-    null,
-    { timeout: 20_000 },
-  )
-  await page.locator('[data-testid="composer-editor"]').waitFor({
-    state: "visible",
-    timeout: 20_000,
-  })
-  return modal
-}
-
-/**
- * @deprecated Ambiguous. Use {@link openNewCliSession} for PTY/session-shell specs
- * or {@link openNewNativeAgentSession} for in-app agent chat specs.
- */
+/** @deprecated Use {@link openNewCliSession}. */
 export async function openNewAgentSession(
   page: ShellDriver,
   providerId?: string,

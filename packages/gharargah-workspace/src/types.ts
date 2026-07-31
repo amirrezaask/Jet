@@ -6,22 +6,6 @@ import type {
   PanelView,
   ProjectSearchResult,
 } from "@gharargah/shared"
-import type {
-  AgentThread,
-  AgentThreadDelta,
-  AgentStructuredDelta,
-  AgentPermissionRequest,
-  AgentConnectionState,
-  AgentWorkspaceSnapshot,
-  AgentProvidersState,
-  AgentCatalogState,
-  CreateAgentThreadInput,
-  InterruptAgentTurnInput,
-  ResolveAgentPermissionInput,
-  SendAgentMessageInput,
-  SetAgentThreadArchivedInput,
-  UpdateAgentThreadSettingsInput,
-} from "@gharargah/agents"
 
 export type WorkspaceFile = {
   uri: string
@@ -142,91 +126,6 @@ export type JetElectronWorkspace = {
   onSearchReady?(callback: (rootUri: string) => void): () => void
 }
 
-export type JetElectronAgents = {
-  listThreads(
-    workspaceRootUri: string,
-    workspaceRootPath: string,
-  ): Promise<AgentWorkspaceSnapshot>
-  readThread(
-    workspaceRootUri: string,
-    workspaceRootPath: string,
-    threadId: string,
-  ): Promise<AgentThread | null>
-  createThread(input: CreateAgentThreadInput): Promise<AgentThread>
-  sendMessage(input: SendAgentMessageInput): Promise<AgentThread>
-  createCheckpoint?(input: {
-    workspaceRootUri?: string
-    workspaceRootPath: string
-    threadId: string
-    label?: string
-    turnId?: string
-  }): Promise<{ id: string }>
-  revertCheckpoint?(input: {
-    workspaceRootUri?: string
-    workspaceRootPath: string
-    threadId: string
-    checkpointId: string
-  }): Promise<AgentThread>
-  interruptTurn(input: InterruptAgentTurnInput): Promise<AgentThread | null>
-  resolvePermission?(input: ResolveAgentPermissionInput): Promise<void>
-  resolveUserInput?(input: import("@gharargah/agents").ResolveAgentUserInputInput): Promise<void>
-  setSessionConfigOption?(input: import("@gharargah/agents").SetAgentSessionConfigOptionInput): Promise<void>
-  setArchived(input: SetAgentThreadArchivedInput): Promise<AgentThread | null>
-  updateThreadSettings(input: UpdateAgentThreadSettingsInput): Promise<AgentThread | null>
-  listAgents(): Promise<AgentCatalogState>
-  refreshAgents(providerId?: string): Promise<AgentCatalogState>
-  /** @deprecated Compatibility APIs for older renderer bundles. */
-  listProviders?(): Promise<AgentProvidersState>
-  refreshProviders?(): Promise<AgentProvidersState>
-  onThreadUpdated?(callback: (thread: AgentThread) => void): () => void
-  onThreadDelta?(callback: (delta: AgentThreadDelta) => void): () => void
-  onPermissionRequest?(callback: (input: {
-    workspaceRootUri: string
-    threadId: string
-    permission: AgentPermissionRequest
-  }) => void): () => void
-  onStructuredDelta?(callback: (delta: AgentStructuredDelta) => void): () => void
-  /** Fires once login-shell PATH is applied (or skipped / timed out). */
-  onShellEnvReady?(callback: () => void): () => void
-  getAcpTrace?(providerId?: string): Promise<unknown>
-  getConnectionState?(
-    provider?: string | { providerId?: string; workspaceRootPath?: string },
-  ): Promise<AgentConnectionState | null>
-  forceStopProvider?(input: {
-    connectionKey?: string
-    providerId?: string
-    workspaceRootPath?: string
-  }): Promise<void>
-  listAcpSessions?(input: {
-    connectionKey?: string
-    providerId?: string
-    workspaceRootPath?: string
-  }): Promise<unknown>
-  authenticate?(input: {
-    connectionKey?: string
-    providerId?: string
-    workspaceRootPath?: string
-    methodId?: string
-  }): Promise<void>
-  closeAcpSession?(input: {
-    connectionKey?: string
-    providerId?: string
-    workspaceRootPath?: string
-    sessionId: string
-  }): Promise<void>
-  deleteAcpSession?(input: {
-    connectionKey?: string
-    providerId?: string
-    workspaceRootPath?: string
-    sessionId: string
-  }): Promise<void>
-  logoutProvider?(input: {
-    connectionKey?: string
-    providerId?: string
-    workspaceRootPath?: string
-  }): Promise<void>
-}
-
 export type JetElectronGit = {
   isRepo(rootUri: string): Promise<boolean>
   status(rootUri: string): Promise<GitStatusEntry[]>
@@ -311,7 +210,6 @@ export type GharargahHostAPI = {
   terminal?: JetElectronTerminal
   tasks?: JetElectronTasks
   workspace?: JetElectronWorkspace
-  agents?: JetElectronAgents
   git?: JetElectronGit
   shell?: JetElectronShell
   notifications?: JetElectronNotifications

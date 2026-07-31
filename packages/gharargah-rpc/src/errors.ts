@@ -64,7 +64,7 @@ export class LspCrashedError extends Data.TaggedError("LspCrashed")<{
   readonly code = "OPERATION_FAILED" as const
 }
 
-/** @deprecated Use InvalidRpcPayloadError; kept for docs compatibility. */
+/** @deprecated Legacy agent RPC error tag; in-app agent control plane removed. */
 export class AgentRpcTaggedError extends Data.TaggedError("AgentRpcError")<{
   readonly message: string
   readonly method?: string

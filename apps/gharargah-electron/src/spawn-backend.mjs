@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Shared host / agent / Vite spawn helpers for web dev and Electron.
- * Host/agent always run under system Node (never Electron's Node) so node-pty stays ABI-safe.
+ * Shared host / Vite spawn helpers for web dev and Electron.
+ * Host always runs under system Node (never Electron's Node) so node-pty stays ABI-safe.
  *
  * Canonical copy lives here (packaged into the Electron asar).
  * apps/gharargah/scripts/spawn-backend.mjs re-exports this module.
@@ -13,7 +13,6 @@ import { fileURLToPath } from "node:url"
 
 export const DEFAULT_HOST = "127.0.0.1"
 export const DEFAULT_HOST_PORT = 4747
-export const DEFAULT_AGENT_PORT = 4751
 export const DEFAULT_VITE_PORT = 5174
 
 export function resolveAppDir(fromMetaUrl = import.meta.url) {
@@ -134,43 +133,6 @@ export function spawnHostServer(opts) {
 
 /**
  * @param {{
- *   repoRoot: string
- *   runtimeRoot?: string
- *   stdio?: import('node:child_process').StdioOptions
- *   env?: NodeJS.ProcessEnv
- * }} opts
- */
-export function spawnAgentServer(opts) {
-  const { repoRoot, runtimeRoot, stdio = "inherit", env = process.env } = opts
-  const nodeBin = resolveNodeBin({ runtimeRoot })
-  const agentEnv = {
-    ...env,
-    GHARARGAH_AGENT_HOST: env.GHARARGAH_AGENT_HOST ?? DEFAULT_HOST,
-    GHARARGAH_AGENT_PORT: env.GHARARGAH_AGENT_PORT ?? String(DEFAULT_AGENT_PORT),
-    GHARARGAH_AGENT_RUNTIME: env.GHARARGAH_AGENT_RUNTIME ?? "effect",
-  }
-
-  if (runtimeRoot && isPackagedRuntime(runtimeRoot)) {
-    const backendDir = path.join(runtimeRoot, "backend")
-    const entry = path.join(backendDir, "agent-server.mjs")
-    return spawn(nodeBin, [entry], {
-      cwd: backendDir,
-      stdio,
-      env: agentEnv,
-    })
-  }
-
-  const tsxCli = resolveTsxCli(repoRoot)
-  const entry = path.resolve(repoRoot, "apps/agent-server/src/bin.ts")
-  return spawn(nodeBin, [tsxCli, entry], {
-    cwd: repoRoot,
-    stdio,
-    env: agentEnv,
-  })
-}
-
-/**
- * @param {{
  *   appDir: string
  *   stdio?: import('node:child_process').StdioOptions
  *   env?: NodeJS.ProcessEnv
@@ -181,10 +143,7 @@ export function spawnVite(opts) {
   return spawn(resolveViteBin(appDir), [], {
     cwd: appDir,
     stdio,
-    env: {
-      ...env,
-      GHARARGAH_AGENT_RUNTIME: env.GHARARGAH_AGENT_RUNTIME ?? "effect",
-    },
+    env: { ...env },
   })
 }
 

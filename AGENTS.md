@@ -8,7 +8,7 @@ Guide for AI agents and contributors working in this repo.
 
 **Hard policy: no Rust / no Tauri.** Host IPC is TypeScript (`apps/host-server` + `@gharargah/node-host`). Do not add `.rs`, `Cargo.toml`, or Tauri crates.
 
-**Desktop:** optional thin Electron shell (`apps/gharargah-electron`) — process supervisor + `BrowserWindow` only. Same SPA entry (`packages/gharargah-app/src/main.tsx` + `createWebTransport()`); host/agent spawn as Node children (not Electron Node). Dev: `pnpm electron:dev`. Prod (after `pnpm build`): `pnpm electron`.
+**Desktop:** optional thin Electron shell (`apps/gharargah-electron`) — process supervisor + `BrowserWindow` only. Same SPA entry (`packages/gharargah-app/src/main.tsx` + `createWebTransport()`); host spawns as Node child (not Electron Node). Dev: `pnpm electron:dev`. Prod (after `pnpm build`): `pnpm electron`.
 
 **Core split (current product):**
 
@@ -43,8 +43,7 @@ jet/
 ├── apps/
 │   ├── gharargah/              Vite frontend shell (proxies to host)
 │   ├── gharargah-electron/     Thin Electron main (loads shared SPA URL)
-│   ├── host-server/            Effect host (HTTP/WS RPC + PTY Layers)
-│   └── agent-server/           Effect agent control plane (WS :4751)
+│   └── host-server/            Effect host (HTTP/WS RPC + PTY Layers)
 ├── fixtures/
 │   └── sample-workspace/       Fixture project for E2E smoke tests
 ├── packages/
@@ -56,8 +55,7 @@ jet/
 │   ├── gharargah-workspace/    WorkspaceService, TabRegistry, commands, keymaps
 │   ├── gharargah-codemirror/   (library; unwired from app)
 │   ├── gharargah-lsp/          (library; unwired from app)
-│   ├── gharargah-agents/       (library; in-app ACP chat)
-│   ├── gharargah-effect-acp/   ACP stdio + Effect acquire helpers
+│   ├── gharargah-agents/       CLI agent id helpers (`*:cli` driver ids)
 │   ├── gharargah-ui/           Home, terminal modal/panel, overlays, themes
 │   └── gharargah-app/          Root React app — atoms + home + terminal modals
 ├── tests/
@@ -75,7 +73,7 @@ jet/
 ### Package dependency direction
 
 ```
-gharargah-rpc + gharargah-shared  ←  gharargah-node-host, host-client, host-server, agent-server
+gharargah-rpc + gharargah-shared  ←  gharargah-node-host, host-client, host-server
 gharargah-shared  ←  gharargah-panels, gharargah-workspace, gharargah-node-host
 gharargah-workspace + gharargah-panels + gharargah-ui  ←  gharargah-app
 gharargah-app + gharargah-host-client  ←  apps/gharargah (Vite)
@@ -92,7 +90,7 @@ Keep imports acyclic. Lower layers must not import React.
 
 ```bash
 pnpm install          # workspace install
-pnpm dev              # host-server + agent-server + Vite
+pnpm dev              # host-server + Vite
 pnpm electron:dev     # same backends + Vite inside Electron window
 pnpm electron         # after pnpm build — Electron loads host-served dist
 pnpm typecheck        # all packages (TypeScript 7)
@@ -121,7 +119,7 @@ Then validate with **`pnpm test:e2e`** (see Agent visual verification).
 
 ### Preferred: Playwright against TS host (headless)
 
-Specs live in `tests/electron/*.electron.spec.ts` (shared suite). `launchJet()` → `launchWeb()` starts `@gharargah/host-server` + agent-server + Chromium. `GHARARGAH_E2E=1` unless `GHARARGAH_HEADED=1`.
+Specs live in `tests/electron/*.electron.spec.ts` (shared suite). `launchJet()` → `launchWeb()` starts `@gharargah/host-server` + Chromium. `GHARARGAH_E2E=1` unless `GHARARGAH_HEADED=1`.
 
 1. Run shared UI specs: `pnpm test:e2e`
 2. Add or extend a spec under `tests/electron/` — helpers in `tests/helpers/` and `tests/electron/_launch.ts`. See `tests/README.md`.
@@ -184,8 +182,6 @@ GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:e2e
 | `terminal.electron.spec.ts` | xterm row height | Wait for PTY output before measuring `.xterm-row` |
 | `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
 | `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
-
-**ACP / in-app agent chat specs** (`session-agent`, `agent-driver-mode`, `agent-provider-parity`, `acp-mock-scenarios`, `acp-structured`, `model-picker`, `shell-env-agents`) run by default. Set `GHARARGAH_ENABLE_AGENT_CHAT=0` to skip them along with the feature. See Agents section below.
 
 ### Programmatic control (`window.__gharargahAgent`)
 
@@ -309,7 +305,6 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 | `terminal.show`         | Ctrl-`                |
 | `gharargah.goHome`      | Mod-Shift-h / Escape  |
 | `ui.toggleColorScheme`  | — (palette)           |
-| `dialog.showAgent`      | — (gated; hidden when `GHARARGAH_ENABLE_AGENT_CHAT=0`) |
 
 
 `CommandRegistry.execute()` receives `getActiveEditorView: () => unknown` — cast to `EditorView` in handlers that need `view.state.doc`.
@@ -355,68 +350,33 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 | Editor   | CodeMirror host + in-buffer find                           |
 | Search   | Project ripgrep search + in-buffer find                    |
 | Problems | LSP/CM lint diagnostics list + jump                        |
-| Terminal | xterm + Rust PTY (host) — primary ADE surface via session modal |
-| Agent explorer | Library only (unwired); was sidebar thread list |
-| Agent chat | Unified in-app surface for Codex, Claude, OpenCode, and Cursor |
+| Terminal | xterm + host PTY — primary ADE surface via session modal |
 
 
 
-### Agents (`@gharargah/agents` + Effect agent-server)
+### Agents (CLI PTY only)
 
-**Status (2026-07):** Full Effect stack — Schema RPC (`@gharargah/rpc`), host-server Layers, agent-server `OrchestrationService`, SPA `@effect-atom` registry. See [`docs/agents-effect-architecture.md`](docs/agents-effect-architecture.md).
+Agents are **CLI processes in a PTY** — no in-app chat control plane.
 
-**Feature flag:** `GHARARGAH_ENABLE_AGENT_CHAT` (Vite-injected; default `"1"`). Set it to `"0"` to hide native driver mode and fall back to CLI-only sessions. `GHARARGAH_AGENT_RUNTIME` defaults to `effect`.
+**Flow:** Mission Control → New session → pick project chip (or `+`) → pick agent from `AGENT_CLI_DRIVERS` → `createAgentSession` builds `launchCommand` / args → host `terminal:create` → `TerminalSessionModal` agent tab shows the same PTY.
 
-#### Driver mode (CLI ↔ native)
+| Agent | Binary | Driver id |
+| ----- | ------ | --------- |
+| Codex | `codex` | `codex:cli` |
+| Claude | `claude` | `claude:cli` |
+| OpenCode | `opencode` | `opencode:cli` |
+| Cursor | `cursor-agent` | `cursor:cli` |
+| Grok | `grok` | `grok:cli` |
 
-Every agent runs in one of two modes, chosen per agent in the new-session picker
-and remembered in `localStorage` under `gharargah-agent-driver-mode`:
+**Key files:**
+- `packages/gharargah-ui/src/home/AgentCliPickerOverlay.tsx` + `agent-cli-drivers.ts`
+- `packages/gharargah-app/src/agent-cli-launch.ts`, `agent-cli-resume.ts`, `cursor-cli-session.ts`
+- `packages/gharargah-agents/src/model.ts` — `normalizeAgentId` / `agentCliDriverId`
+- Session roster: `packages/gharargah-rpc/src/session-roster.ts` (requires `launchCommand` when `agentId` set)
 
-| Mode | Driver id | Surface |
-| ---- | --------- | ------- |
-| `cli` (default) | `<agent>:cli` | PTY running the agent's own CLI |
-| `native` | `codex:app-server`, `claude:sdk`, `opencode:sdk`, `cursor:acp`, `grok:acp` | In-app chat (`AgentChatView`) driven headlessly by the agent-server |
+**Resume:** `agentCliSessionId` + provider-specific resume argv (notifications for Codex/Claude; Cursor pre-mint).
 
-Logic lives in `packages/gharargah-agents/src/driver-mode.ts`
-(`readAgentDriverMode`, `writeAgentDriverMode`, `agentDriverIdForMode`); the
-picker toggle is `AgentCliPickerOverlay`; session creation branches in
-`GharargahApp.createAgentSession`. A native session carries `agentId` +
-`agentDriverId` and **no** `launchCommand` — anything that treats a missing
-launch command as an incomplete stub must special-case it
-(`isPersistableAgentSession`, `session-roster.ts::parseEntry`).
-
-**Supported ADE paths:** Mission Control → New session → pick an agent, in CLI mode (terminal PTY running that agent's CLI) or native mode (in-app chat over the headless driver), plus editor/git for the project.
-
-**Implementation:**
-
-- **Storage:** `.gharargah/agents/` per workspace (SQLite SoT + JSON thread projection)
-- **Transport:** `window.gharargah.agents` → WS `ws://127.0.0.1:4751/agents` via `@gharargah/host-client` (Schema-encoded RPC)
-- **Drivers:** Cursor/Grok ACP (`@gharargah/effect-acp`), Codex app-server, Claude SDK stream-json, OpenCode SDK
-- **Mock env:** `GHARARGAH_AGENT_MOCK=1`; `GHARARGAH_MOCK_ACP_BIN`; scenario via `GHARARGAH_AGENT_MOCK_SCENARIO`
-- **Key files:** `apps/agent-server/`, `packages/gharargah-rpc/`, `packages/gharargah-effect-acp/`, `packages/gharargah-agents/`, `packages/gharargah-ui/src/agents/`, `packages/gharargah-host-client/src/effect-agents-client.ts`, `packages/gharargah-app/src/effect/`
-- **E2E:** Prefer mock + agent-server; legacy Rust ACP matrix tests removed with the Rust agent path
-
-Manual smoke: `pnpm dev` (starts TS host + agent-server + Vite) → New session → Agent.
-
-#### Agent-server invariants
-
-- **Crash recovery must not touch live turns.** `AgentStore.listThreads` rewrites
-  `running`/`connecting`/`cancelling`/`waiting_for_permission` threads to `interrupted`
-  so a host restart cannot leave a thread wedged. `OrchestrationEngine` injects
-  `store.isThreadLive` so a turn *this* process is driving is skipped — otherwise merely
-  listing threads (session switcher, second window) cancels the turn you are watching.
-- **`:cli` driver ids are coerced, not rejected.** The in-app chat can only be driven
-  headlessly, so `resolveInAppDriverId` rewrites a legacy or CLI-mode `<agent>:cli` id to
-  the agent's native driver. Adapter resolution happens *before* any thread mutation, so a
-  genuinely unknown driver fails the turn without leaving a half-written `running` thread.
-- **Typed errors must survive the RPC boundary.** `runOrch` unwraps the `Exit`/`Cause`
-  rather than using `Effect.runPromise`, whose `FiberFailure` hides the tagged error and
-  forces the boundary to guess tags from message text.
-- **Login-shell PATH is resolved synchronously at boot** (`prepareShellEnv`), before the WS
-  server accepts clients, so a Finder-launched app never serves a catalog built from a
-  GUI-stripped PATH. `shellEnvStatus` is therefore always `ready` by the time a client can
-  read it. Set `GHARARGAH_SHELL_ENV_DISABLE=1` to keep the PATH you passed in (used by
-  `shell-env-agents.electron.spec.ts` to exercise the all-unavailable state).
+Manual smoke: `pnpm dev` → New session → pick CLI agent → terminal modal.
 
 
 

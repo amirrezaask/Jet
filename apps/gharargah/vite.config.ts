@@ -10,13 +10,6 @@ const browserTargets = ["chrome107", "edge107", "firefox104", "safari16"]
 
 export default defineConfig({
   base: "/",
-  define: {
-    "import.meta.env.GHARARGAH_ENABLE_AGENT_CHAT": JSON.stringify(process.env.GHARARGAH_ENABLE_AGENT_CHAT ?? "1"),
-    "import.meta.env.GHARARGAH_AGENT_RUNTIME": JSON.stringify(process.env.GHARARGAH_AGENT_RUNTIME ?? "effect"),
-    "import.meta.env.GHARARGAH_AGENT_WS_URL": JSON.stringify(
-      process.env.GHARARGAH_AGENT_WS_URL ?? "ws://127.0.0.1:4751/agents",
-    ),
-  },
   build: {
     target: browserTargets,
     cssTarget: browserTargets,

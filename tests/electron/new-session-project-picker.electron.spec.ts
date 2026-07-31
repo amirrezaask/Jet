@@ -46,6 +46,10 @@ test.describe("new session project picker", () => {
         page,
         "[data-gharargah-agent-cli-project-picker]",
       )
+      await expectSelectorVisible(
+        page,
+        "[data-gharargah-agent-cli-add-project]",
+      )
 
       const chips = page.locator("[data-gharargah-agent-cli-project-option]")
       await expectLocatorCount(chips, 2)
@@ -147,7 +151,7 @@ test.describe("new session project picker", () => {
     }
   })
 
-  test("hides project chips for a single workspace", async () => {
+  test("shows project chips and add control for a single workspace", async () => {
     const { app, page } = await launchJet()
     try {
       await expect
@@ -158,9 +162,17 @@ test.describe("new session project picker", () => {
 
       await clickNewSession(page)
       await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectSelectorVisible(
+        page,
+        "[data-gharargah-agent-cli-project-picker]",
+      )
       await expectLocatorCount(
-        page.locator("[data-gharargah-agent-cli-project-picker]"),
-        0,
+        page.locator("[data-gharargah-agent-cli-project-option]"),
+        1,
+      )
+      await expectSelectorVisible(
+        page,
+        "[data-gharargah-agent-cli-add-project]",
       )
       await pickAgentCli(page, "codex")
       await expectSelectorVisible(
@@ -168,6 +180,44 @@ test.describe("new session project picker", () => {
         "[data-gharargah-terminal-modal]",
         { timeout: 20_000 },
       )
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("plus chip opens add project modal from new session picker", async () => {
+    const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
+    const { app, page } = await launchJet()
+    try {
+      await clickNewSession(page)
+      await expectSelectorVisible(
+        page,
+        "[data-gharargah-agent-cli-add-project]",
+      )
+      await page.locator("[data-gharargah-agent-cli-add-project]").click()
+
+      const addDialog = page.getByRole("dialog", {
+        name: "Add workspace folder",
+      })
+      await expectLocatorVisible(addDialog)
+      await page.getByPlaceholder("Path to folder…").fill(`${secondPath}/`)
+      await addDialog.getByRole("button", { name: /Add Project/i }).click()
+
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+        )
+        .toBeGreaterThanOrEqual(2)
+
+      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      const secondChip = page
+        .locator("[data-gharargah-agent-cli-project-option]")
+        .filter({ hasText: "second-workspace" })
+        .first()
+      await expectLocatorVisible(secondChip)
+      await expect
+        .poll(() => secondChip.getAttribute("data-state"))
+        .toBe("on")
     } finally {
       await app.close()
     }

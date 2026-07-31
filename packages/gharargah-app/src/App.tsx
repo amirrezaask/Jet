@@ -43,22 +43,7 @@ import {
   resolveQuickOpenDisplayPath,
 } from "@gharargah/workspace"
 import type { MonacoEditorHandle } from "@gharargah/monaco"
-import {
-  applyAgentStructuredDelta,
-  applyAgentThreadDelta,
-  agentDriverIdForMode,
-  defaultAgentDriverId,
-  isAgentChatEnabled,
-  isAgentInterfaceDriverId,
-  mergeAgentThreadSnapshot,
-  readAgentDriverMode,
-  readAgentDriverModes,
-  writeAgentDriverMode,
-  type AgentCatalogState,
-  type AgentDriverMode,
-  type AgentFileReference,
-  type AgentThread,
-} from "@gharargah/agents"
+import { agentDriverIdForMode } from "@gharargah/agents"
 import type { AppNotification, AgentProvider } from "@gharargah/shared"
 import { createAgentBridge } from "./agent-bridge.js"
 import { useNotificationCenter } from "./hooks/useNotificationCenter.js"
@@ -107,8 +92,6 @@ import {
   setPendingInitialContent,
 } from "@gharargah/monaco/pending"
 import {
-  openAgentFileReference,
-  openDiff,
   openPathFromTerminal,
   resolvePathUnderRoot,
 } from "./editor/code-editor-service.js"
@@ -191,10 +174,6 @@ import {
   OverlayControllerProvider,
   type OverlayHandlers,
 } from "./hooks/OverlayController.js"
-import {
-  createAgentDraftThread,
-  isAgentDraftThread,
-} from "./agent-draft.js"
 
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 
@@ -205,11 +184,6 @@ const GitWorkspace = lazy(async () => {
 const SessionTabBar = lazy(() =>
   import("@gharargah/ui/session-tabs").then(module => ({
     default: module.SessionTabBar,
-  })),
-)
-const AgentChatView = lazy(() =>
-  import("@gharargah/ui/agents").then(module => ({
-    default: module.AgentChatView,
   })),
 )
 const FindReplacePopover = lazy(() =>
@@ -349,19 +323,6 @@ export function GharargahApp() {
   const [agentCliPickerRootUri, setAgentCliPickerRootUri] = useState<
     string | null
   >(null)
-  const [agentDriverModes, setAgentDriverModes] = useState(() =>
-    readAgentDriverModes(),
-  )
-  const [agentCatalog, setAgentCatalog] = useState<AgentCatalogState | null>(
-    null,
-  )
-  const [activeAgentThread, setActiveAgentThread] =
-    useState<AgentThread | null>(null)
-  const [agentLoading, setAgentLoading] = useState(false)
-  const agentThreadRequestByTabRef = useRef(
-    new Map<string, Promise<AgentThread | null>>(),
-  )
-  const agentDraftThreadByTabRef = useRef(new Map<string, AgentThread>())
   const [editorFocus, setEditorFocus] = useState(false)
   const [searchSupported, setSearchSupported] = useState(false)
   const [searchScanReady, setSearchScanReady] = useState(false)
@@ -536,10 +497,9 @@ export function GharargahApp() {
   const openTerminalModal = useCallback(
     (panelId: PanelId, tabId: string, mode?: SessionDialogMode) => {
       const session = terminalSessionForTab(tabId)
-      const requestedMode = mode ?? (session?.agentId ? "agent" : "terminal")
-      const canShowAgent =
-        Boolean(session?.agentId) ||
-        (isAgentChatEnabled() && !session?.launchCommand)
+      const canShowAgent = Boolean(session?.agentId && session?.launchCommand)
+      const requestedMode =
+        mode ?? (canShowAgent && session?.agentId ? "agent" : "terminal")
       const resolvedMode =
         requestedMode === "agent" && !canShowAgent
           ? "terminal"
@@ -606,11 +566,7 @@ export function GharargahApp() {
     (panelId: PanelId, tabId: string) => {
       const session = terminalSessionForTab(tabId)
       const mode =
-        Boolean(session?.agentId) ||
-        (isAgentChatEnabled() &&
-          (Boolean(session?.agentThreadId) ||
-            isAgentInterfaceDriverId(session?.agentDriverId) ||
-            agentDraftThreadByTabRef.current.has(tabId)))
+        Boolean(session?.agentId && session?.launchCommand)
           ? "agent"
           : "terminal"
       focusTerminalTab(panelId, tabId, mode)
@@ -659,44 +615,68 @@ export function GharargahApp() {
     [workspace, activateProject, cloneTree, commitTree, setFocusedPanel],
   )
 
-  const draftAgentThreadForTab = useCallback(
-    (
-      tabId: string,
-      preferredAgentId?: string | null,
-      preferredDriverId?: string | null,
-    ): AgentThread | null => {
-      const existing = agentDraftThreadByTabRef.current.get(tabId)
-      if (existing) {
-        if (preferredAgentId && existing.agentId !== preferredAgentId) {
-          const updated = {
-            ...existing,
-            agentId: preferredAgentId,
-            driverId: preferredDriverId ?? null,
-            model: null,
-            updatedAt: new Date().toISOString(),
+  const newSessionTab = useCallback((rootUri: string) => {
+    setAgentCliPickerRootUri(rootUri)
+  }, [])
+
+  const createAgentSession = useCallback(
+    async (rootUri: string, driver: AgentCliDriver) => {
+      try {
+        let cliSessionId: string | null = null
+        // Cursor has no notify hook — mint chat id up front so resume works
+        // after refresh (interactive TUI does not emit session_id reliably).
+        if (driver.id === "cursor") {
+          if (!window.gharargah?.terminal) {
+            showGharargahToast("Terminal host unavailable — cannot mint Cursor chat id", {
+              variant: "destructive",
+            })
+            return
           }
-          agentDraftThreadByTabRef.current.set(tabId, updated)
-          return updated
+          cliSessionId = await mintCursorAgentChatId(
+            rootUri,
+            window.gharargah.terminal,
+          )
+          if (!cliSessionId) {
+            showGharargahToast(
+              "Could not mint Cursor chat id (is cursor-agent logged in?). Session not created.",
+              { variant: "destructive" },
+            )
+            return
+          }
         }
-        return existing
+        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
+          label: driver.label,
+          launchCommand: driver.command,
+          launchArgs: nextTabId =>
+            buildAgentCliLaunchArgs(
+              driver.id,
+              {
+                sessionId: nextTabId,
+                origin: window.location.origin,
+              },
+              cliSessionId,
+            ),
+          agentId: driver.id,
+          agentDriverId: agentDriverIdForMode(driver.id, "cli"),
+          agentCliSessionId: cliSessionId ?? undefined,
+        })
+        bindAgentToSession(tabId, {
+          agentId: driver.id,
+          driverId: agentDriverIdForMode(driver.id, "cli"),
+        })
+        if (cliSessionId) {
+          setAgentCliSessionId(tabId, cliSessionId)
+        }
+        openTerminalModal(panelId, tabId, "agent")
+      } catch (err) {
+        console.error("[gharargah] createAgentSession failed", err)
+        showGharargahToast(err instanceof Error ? err.message : String(err), {
+          variant: "destructive",
+        })
+        closeTerminalModal()
       }
-      const session = terminalSessionForTab(tabId)
-      if (!session) return null
-      const folder = workspace.folders.find(
-        candidate => candidate.root.uri === session.cwdRootUri,
-      )
-      const draft = createAgentDraftThread({
-        tabId,
-        workspaceRootUri: session.cwdRootUri,
-        workspaceRootPath:
-          folder?.root.path ?? fileUriToPath(session.cwdRootUri),
-        preferredAgentId,
-        preferredDriverId,
-      })
-      agentDraftThreadByTabRef.current.set(tabId, draft)
-      return draft
     },
-    [workspace],
+    [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
   )
 
   const ensureSessionModalOpen = useCallback(
@@ -786,124 +766,6 @@ export function GharargahApp() {
     setAgentCliPickerRootUri(rootUri)
   }, [])
 
-  /**
-   * Browser-style "New tab" opens an unbound session: the composer's model
-   * picker chooses the provider, and the thread binds on the first message.
-   */
-  const newSessionTab = useCallback(
-    async (rootUri: string) => {
-      if (!isAgentChatEnabled()) {
-        setAgentCliPickerRootUri(rootUri)
-        return
-      }
-      try {
-        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-          label: "New session",
-        })
-        openTerminalModal(panelId, tabId, "agent")
-      } catch (err) {
-        showGharargahToast(err instanceof Error ? err.message : String(err), {
-          variant: "destructive",
-        })
-      }
-    },
-    [openTerminalInWorkspace, openTerminalModal],
-  )
-
-  const handleAgentDriverModeChange = useCallback(
-    (agentId: string, mode: AgentDriverMode) => {
-      setAgentDriverModes(writeAgentDriverMode(agentId, mode))
-    },
-    [],
-  )
-
-  const createAgentSession = useCallback(
-    async (rootUri: string, driver: AgentCliDriver) => {
-      const mode = agentDriverModes[driver.id] ?? readAgentDriverMode(driver.id)
-      try {
-        if (mode === "native") {
-          if (!isAgentChatEnabled()) {
-            showGharargahToast("In-app agent chat is disabled", {
-              variant: "destructive",
-            })
-            return
-          }
-          const driverId = agentDriverIdForMode(driver.id, "native")
-          const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-            label: driver.label,
-            agentId: driver.id,
-            agentDriverId: driverId,
-          })
-          bindAgentToSession(tabId, {
-            agentId: driver.id,
-            driverId,
-          })
-          openTerminalModal(panelId, tabId, "agent")
-          return
-        }
-
-        let cliSessionId: string | null = null
-        // Cursor has no notify hook — mint chat id up front so resume works
-        // after refresh (interactive TUI does not emit session_id reliably).
-        if (driver.id === "cursor") {
-          if (!window.gharargah?.terminal) {
-            showGharargahToast("Terminal host unavailable — cannot mint Cursor chat id", {
-              variant: "destructive",
-            })
-            return
-          }
-          cliSessionId = await mintCursorAgentChatId(
-            rootUri,
-            window.gharargah.terminal,
-          )
-          if (!cliSessionId) {
-            showGharargahToast(
-              "Could not mint Cursor chat id (is cursor-agent logged in?). Session not created.",
-              { variant: "destructive" },
-            )
-            return
-          }
-        }
-        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-          label: driver.label,
-          launchCommand: driver.command,
-          launchArgs: nextTabId =>
-            buildAgentCliLaunchArgs(
-              driver.id,
-              {
-                sessionId: nextTabId,
-                origin: window.location.origin,
-              },
-              cliSessionId,
-            ),
-          agentId: driver.id,
-          agentDriverId: agentDriverIdForMode(driver.id, "cli"),
-          agentCliSessionId: cliSessionId ?? undefined,
-        })
-        bindAgentToSession(tabId, {
-          agentId: driver.id,
-          driverId: agentDriverIdForMode(driver.id, "cli"),
-        })
-        if (cliSessionId) {
-          setAgentCliSessionId(tabId, cliSessionId)
-        }
-        openTerminalModal(panelId, tabId, "agent")
-      } catch (err) {
-        console.error("[gharargah] createAgentSession failed", err)
-        showGharargahToast(err instanceof Error ? err.message : String(err), {
-          variant: "destructive",
-        })
-        closeTerminalModal()
-      }
-    },
-    [
-      agentDriverModes,
-      openTerminalInWorkspace,
-      openTerminalModal,
-      closeTerminalModal,
-    ],
-  )
-
   const openTodosFromHome = useCallback(
     async (rootUri: string) => {
       try {
@@ -949,236 +811,6 @@ export function GharargahApp() {
     },
     [],
   )
-
-  const loadAgentCatalog = useCallback(
-    async (
-    refresh = false,
-    providerId?: string,
-  ): Promise<AgentCatalogState | null> => {
-    const agents = window.gharargah?.agents
-    if (!agents) return null
-    const catalog = refresh
-      ? await agents.refreshAgents(providerId)
-      : await agents.listAgents()
-    setAgentCatalog(catalog)
-    return catalog
-    },
-    [],
-  )
-
-  const ensureSessionAgentThread = useCallback(
-    async (tabId: string): Promise<AgentThread | null> => {
-      const pending = agentThreadRequestByTabRef.current.get(tabId)
-      if (pending) return pending
-
-      const request = (async () => {
-        const agents = window.gharargah?.agents
-        const session = terminalSessionForTab(tabId)
-        if (!agents || !session) return null
-        const folder = workspace.folders.find(
-          candidate => candidate.root.uri === session.cwdRootUri,
-        )
-        const workspaceRootPath =
-          folder?.root.path ?? fileUriToPath(session.cwdRootUri)
-
-        setAgentLoading(true)
-        try {
-          if (session.agentThreadId) {
-            const existing = await agents.readThread(
-              session.cwdRootUri,
-              workspaceRootPath,
-              session.agentThreadId,
-            )
-            if (existing) {
-              bindAgentToSession(tabId, {
-                agentId: existing.agentId ?? session.agentId ?? "codex",
-                driverId:
-                  existing.driverId ??
-                  session.agentDriverId ??
-                  defaultAgentDriverId(
-                    existing.agentId ?? session.agentId ?? "codex",
-                  ),
-                threadId: existing.id,
-              })
-              // Prefer the in-memory thread when it is the same id and at least as
-              // fresh — avoids clobbering live ACP deltas with a stale read.
-              setActiveAgentThread(current =>
-                mergeAgentThreadSnapshot(current, existing),
-              )
-              return existing
-            }
-          }
-
-          if (!agentCatalog) await loadAgentCatalog()
-          // A native session already picked its agent; seed the draft with it so
-          // the composer doesn't fall back to the first catalog provider.
-          const boundDriverId = isAgentInterfaceDriverId(session.agentDriverId)
-            ? session.agentDriverId
-            : null
-          const draft = draftAgentThreadForTab(
-            tabId,
-            boundDriverId ? (session.agentId ?? null) : null,
-            boundDriverId,
-          )
-          setActiveAgentThread(draft)
-          return draft
-        } finally {
-          setAgentLoading(false)
-        }
-      })()
-      agentThreadRequestByTabRef.current.set(tabId, request)
-      try {
-        return await request
-      } finally {
-        if (agentThreadRequestByTabRef.current.get(tabId) === request) {
-          agentThreadRequestByTabRef.current.delete(tabId)
-        }
-      }
-    },
-    [
-      agentCatalog,
-      draftAgentThreadForTab,
-      loadAgentCatalog,
-      workspace,
-    ],
-  )
-
-  useEffect(() => {
-    if (!isAgentChatEnabled()) {
-      if (
-        sessionMode === "agent" &&
-        !terminalSessionForTab(terminalModalTabId ?? "")?.agentId
-      ) {
-        setSessionMode("terminal")
-      }
-      return
-    }
-    if (sessionMode !== "agent" || !terminalModalTabId) return
-    const session = terminalSessionForTab(terminalModalTabId)
-    if (!session) {
-      setSessionMode("terminal")
-      return
-    }
-    if (session.agentId && session.launchCommand) return
-    // Drop a previous session's thread so the title/composer don't keep showing
-    // the wrong agent while the new tab's thread loads. Same-thread identity is
-    // preserved so live ACP deltas survive ensureSessionAgentThread churn.
-    setActiveAgentThread(current => {
-      if (!current) return null
-      if (session?.agentThreadId && current.id === session.agentThreadId)
-        return current
-      if (
-        isAgentDraftThread(current) &&
-        agentDraftThreadByTabRef.current.get(terminalModalTabId) === current
-      ) {
-        return current
-      }
-      return null
-    })
-    void ensureSessionAgentThread(terminalModalTabId).catch(error => {
-      showGharargahToast(
-        error instanceof Error ? error.message : String(error),
-        {
-        variant: "destructive",
-        },
-      )
-    })
-  }, [sessionMode, terminalModalTabId, ensureSessionAgentThread])
-
-  useEffect(() => {
-    if (!isAgentChatEnabled()) return
-    const agentsApi = window.gharargah?.agents
-    if (!agentsApi) return
-
-    let cancelled = false
-    let pollTimer: ReturnType<typeof setTimeout> | undefined
-
-    const refresh = () => {
-      if (!cancelled) void loadAgentCatalog(true)
-    }
-    const offReady = agentsApi.onShellEnvReady?.(refresh)
-
-    const pollUntilReady = async () => {
-      const catalog = await loadAgentCatalog(false)
-      if (cancelled) return
-      if (catalog?.shellEnvStatus === "loading") {
-        pollTimer = setTimeout(() => {
-          void pollUntilReady()
-        }, 400)
-      }
-    }
-    void pollUntilReady()
-
-    return () => {
-      cancelled = true
-      offReady?.()
-      if (pollTimer) clearTimeout(pollTimer)
-    }
-  }, [loadAgentCatalog])
-
-  useEffect(() => {
-    const agents = window.gharargah?.agents
-    if (!agents || !activeAgentThread || isAgentDraftThread(activeAgentThread))
-      return
-    const offUpdated = agents.onThreadUpdated?.(thread => {
-      if (thread.id === activeAgentThread.id) {
-        setActiveAgentThread(current =>
-          mergeAgentThreadSnapshot(current, thread),
-        )
-      }
-    })
-    const offDelta = agents.onThreadDelta?.(delta => {
-      if (delta.threadId !== activeAgentThread.id) return
-      setActiveAgentThread(current => applyAgentThreadDelta(current, delta))
-    })
-    const offPermission = agents.onPermissionRequest?.(request => {
-      if (request.threadId !== activeAgentThread.id) return
-      setActiveAgentThread(current => {
-        if (!current || current.id !== request.threadId) return current
-        const pendingPermissions = [
-          ...(current.pendingPermissions ?? []).filter(
-            item => item.id !== request.permission.id,
-          ),
-          request.permission,
-        ]
-        return {
-          ...current,
-          pendingPermissions,
-          status: "waiting_for_permission",
-        }
-      })
-    })
-    const offStructuredDelta = agents.onStructuredDelta?.(delta => {
-      if (delta.threadId !== activeAgentThread.id) return
-      setActiveAgentThread(current => {
-        if (!current || current.id !== delta.threadId) return current
-        if ((current.acpSequence ?? -1) >= delta.sequence) return current
-        // Sequence hole: keep applying this delta, then heal from disk.
-        if (delta.sequence > (current.acpSequence ?? 0) + 1) {
-          void agents
-            .readThread(
-              current.workspaceRootUri,
-              current.workspaceRootPath,
-              current.id,
-            )
-            .then(thread => {
-              if (thread) {
-                setActiveAgentThread(latest =>
-                  mergeAgentThreadSnapshot(latest, thread),
-                )
-              }
-            })
-        }
-        return applyAgentStructuredDelta(current, delta)
-      })
-    })
-    return () => {
-      offUpdated?.()
-      offDelta?.()
-      offPermission?.()
-      offStructuredDelta?.()
-    }
-  }, [activeAgentThread?.id])
 
   const rosterWriteActiveRef = useRef(false)
   const pendingRosterWriteRef = useRef<PersistedSessionRoster | null>(null)
@@ -1348,13 +980,6 @@ export function GharargahApp() {
           setTerminalModalTabId(null)
           setTerminalModalPanelId(null)
         }
-        agentDraftThreadByTabRef.current.delete(tabId)
-        setActiveAgentThread(current =>
-          isAgentDraftThread(current) &&
-          current?.id === `draft:${tabId}`
-            ? null
-            : current,
-        )
         const ptyId = terminalPtyIdForTab(tabId)
         if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
         const tree = cloneTree()
@@ -2237,7 +1862,6 @@ export function GharargahApp() {
 
   useEffect(() => {
     const disposables = APP_COMMAND_REGISTRY.map(entry => {
-      if (entry.id === "dialog.showAgent" && !isAgentChatEnabled()) return null
       const run = appCommands[entry.fn]
       if (!run) return null
       return commands.register(entry.id, run, {
@@ -2518,7 +2142,7 @@ export function GharargahApp() {
       searchReady: searchScanReady,
       sessionMode: terminalModalTabId ? sessionMode : null,
       sessionLayout: appearanceSettings.sessionLayout,
-      agentChatEnabled: isAgentChatEnabled(),
+      agentChatEnabled: false,
     }))
     return () => {
       delete window.__gharargahAgent
@@ -2595,6 +2219,7 @@ export function GharargahApp() {
       if (roster.sessions.length > 0) {
         const tree = cloneTree()
         for (const entry of roster.sessions) {
+          if (entry.agentId && !entry.launchCommand?.trim()) continue
           if (findPanelWithTab(tree, entry.tabId)) continue
           const sessionKey = entry.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
             ? entry.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
@@ -2663,14 +2288,10 @@ export function GharargahApp() {
               entry => entry.tabId === roster.modal?.tabId,
             )
             let restoredMode = roster.modal.sessionMode
-            if (
-              restoredMode === "agent" &&
-              !restoredSession?.agentId &&
-              (!isAgentChatEnabled() ||
-                !isAgentInterfaceDriverId(
-                  restoredSession?.agentDriverId,
-                ))
-            ) {
+            const isCliAgent = Boolean(
+              restoredSession?.agentId && restoredSession?.launchCommand,
+            )
+            if (restoredMode === "agent" && !isCliAgent) {
               restoredMode = "terminal"
             }
             setSessionMode(restoredMode)
@@ -2763,7 +2384,14 @@ export function GharargahApp() {
       },
       onFolderPickerSelect: handleFolderPickerSelect,
       onSelectFolder: path => openWorkspaceFolder(path, { replace: true }),
-      onAddWorkspaceSelect: path => openWorkspaceFolder(path),
+      onAddWorkspaceSelect: path => {
+        const pickerWasOpen = agentCliPickerRootUri != null
+        void openWorkspaceFolder(path).then(() => {
+          if (pickerWasOpen) {
+            setAgentCliPickerRootUri(pathToFileUri(normalizeAbsPath(path)))
+          }
+        })
+      },
       onResetAppearanceSettings: resetAppearanceWithToast,
       onSelectProject: path => openWorkspaceFolder(path),
       onRunCommand: id => {
@@ -2846,6 +2474,7 @@ export function GharargahApp() {
       executeCommand,
       handleFolderPickerSelect,
       openWorkspaceFolder,
+      agentCliPickerRootUri,
       resetAppearanceWithToast,
       handleFolderPickerOpenChange,
       editorPanelRef,
@@ -2959,28 +2588,6 @@ export function GharargahApp() {
     workspace.folders[0]?.root.uri ??
     ""
 
-  const handleAgentChatOpenFile = useCallback(
-    (ref: AgentFileReference) => {
-      if (!terminalModalTabId) return
-      const rootUri = terminalCwdForTab(terminalModalTabId)
-      const folder = workspace.folders.find(f => f.root.uri === rootUri)
-      const rootPath = folder?.root.path ?? (rootUri ? fileUriToPath(rootUri) : "")
-      if (!rootPath) return
-      openAgentFileReference(openFileInEditor, rootPath, ref)
-    },
-    [openFileInEditor, terminalModalTabId, workspace.folders],
-  )
-
-  const handleAgentChatOpenDiff = useCallback(
-    (ref: AgentFileReference) => {
-      openDiff(path => {
-        setGitFocusPath(path)
-        setSessionMode("git")
-      }, ref.path)
-    },
-    [openDiff],
-  )
-
   const openSidebarSession = useCallback(
     (session: SidebarSession) => {
       openTerminalFromHome(session.panelId, session.id)
@@ -3001,38 +2608,6 @@ export function GharargahApp() {
       setTerminalSessionRevision(r => r + 1)
     },
     [workspace],
-  )
-
-  const duplicateSidebarSession = useCallback(
-    async (session: SidebarSession) => {
-      const rootUri =
-        sidebarProjects.find(p => p.id === session.projectId)?.rootUri ??
-        terminalCwdForTab(session.id)
-      if (!rootUri) return
-      const term = listTerminalSessions().find(s => s.tabId === session.id)
-      try {
-        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-          label: `${session.title} copy`,
-          launchCommand: term?.launchCommand,
-        })
-        if (term?.agentId) {
-          bindAgentToSession(tabId, {
-            agentId: term.agentId,
-            driverId: term.agentDriverId ?? `${term.agentId}:cli`,
-          })
-        }
-        openTerminalModal(
-          panelId,
-          tabId,
-          term?.agentId ? "agent" : "terminal",
-        )
-      } catch (err) {
-        showGharargahToast(err instanceof Error ? err.message : String(err), {
-          variant: "destructive",
-        })
-      }
-    },
-    [sidebarProjects, openTerminalInWorkspace, openTerminalModal],
   )
 
   const isSidebarLayout = appearanceSettings.sessionLayout === "sidebar"
@@ -3216,12 +2791,7 @@ export function GharargahApp() {
                         onRename: renameSidebarSession,
                         onMarkRead: s =>
                           void notifications.markSessionRead(s.id),
-                        onMarkUnread: s =>
-                          void notifications.markSessionUnread(s.id),
-                        onDuplicate: s => void duplicateSidebarSession(s),
                         onClose: s => closeTerminalTab(s.panelId, s.id),
-                        onDelete: s => closeTerminalTab(s.panelId, s.id),
-                        onMarkDone: s => void markSessionDoneFromHome(s.panelId, s.id),
                       }}
                       projectActions={{
                         onNewSession: project =>
@@ -3356,52 +2926,17 @@ export function GharargahApp() {
                       null
                     }
                     mode={sessionMode}
-                    showAgentTab={
-                  Boolean(
-                    terminalSessionForTab(terminalModalTabId)?.agentId,
-                  ) ||
-                  (isAgentChatEnabled() &&
-                    !terminalSessionForTab(terminalModalTabId)?.launchCommand)
-                }
-                  agentSessionHeader={(() => {
-                    if (sessionMode !== "agent" || !activeAgentThread)
-                      return null
-                    const rootUri = terminalCwdForTab(terminalModalTabId)
-                    const projectName =
-                      workspace.folders.find(f => f.root.uri === rootUri)?.root
-                        .name ??
-                      activeAgentThread.workspaceRootPath
-                        .split("/")
-                        .filter(Boolean)
-                        .at(-1) ??
-                      null
-                    const selectedModelSlug = activeAgentThread.model
-                    const models =
-                      agentCatalog?.agents.find(
-                        agent => agent.id === activeAgentThread.agentId,
-                      )?.models ?? []
-                    const match = models.find(
-                      model => model.slug === selectedModelSlug,
-                    )
-                    const modelLabel = selectedModelSlug
-                      ? (match?.shortName ?? match?.name ?? selectedModelSlug)
-                      : null
-                    return {
-                      threadTitle: activeAgentThread.title,
-                      projectName,
-                      modelLabel,
-                      usage: activeAgentThread.usage,
-                    }
-                  })()}
+                    showAgentTab={(() => {
+                      const session = terminalSessionForTab(terminalModalTabId)
+                      return Boolean(session?.agentId && session?.launchCommand)
+                    })()}
                 onModeChange={mode => {
                   const terminalSession =
                     terminalSessionForTab(terminalModalTabId)
-                  if (
-                    mode === "agent" &&
-                    !terminalSession?.agentId &&
-                    (!isAgentChatEnabled() ||
-                      Boolean(terminalSession?.launchCommand))
-                  ) {
+                  const canShowAgent = Boolean(
+                    terminalSession?.agentId && terminalSession?.launchCommand,
+                  )
+                  if (mode === "agent" && !canShowAgent) {
                     return
                   }
                   setSessionMode(mode)
@@ -3441,332 +2976,7 @@ export function GharargahApp() {
                       registry={tabTypeRegistry}
                       focused={sessionMode === "agent"}
                     />
-                  ) : agentLoading && !activeAgentThread ? (
-                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                      Loading agent…
-                    </div>
-                  ) : (
-                    <Suspense
-                      fallback={
-                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                          Loading conversation…
-                        </div>
-                      }
-                    >
-                      <AgentChatView
-                        thread={activeAgentThread}
-                        agents={agentCatalog}
-                        theme={colorScheme}
-                        hideHeader
-                        terminalCount={1}
-                        onOpenTerminal={() => setSessionMode("terminal")}
-                        onOpenFile={handleAgentChatOpenFile}
-                        onOpenDiff={handleAgentChatOpenDiff}
-                        onSend={async payload => {
-                          if (!activeAgentThread) return
-                          const agents = window.gharargah?.agents
-                          if (!agents) return
-                          let targetThread = activeAgentThread
-                          if (isAgentDraftThread(targetThread)) {
-                            if (
-                              !payload.agentId ||
-                              !payload.driverId ||
-                              !payload.model
-                            ) {
-                              throw new Error(
-                                "Choose an agent and model before sending",
-                              )
-                            }
-                            targetThread = await agents.createThread({
-                              workspaceRootUri:
-                                targetThread.workspaceRootUri,
-                              workspaceRootPath:
-                                targetThread.workspaceRootPath,
-                              title: `${
-                                agentCatalog?.agents.find(
-                                  agent => agent.id === payload.agentId,
-                                )?.displayName ?? "Agent"
-                              } session`,
-                              agentId: payload.agentId,
-                              driverId: payload.driverId,
-                              model: payload.model,
-                              runtimeMode:
-                                targetThread.runtimeMode === "auto"
-                                  ? "auto-accept-edits"
-                                  : targetThread.runtimeMode,
-                              interactionMode: targetThread.interactionMode,
-                            })
-                            bindAgentToSession(terminalModalTabId, {
-                              agentId: payload.agentId,
-                              driverId: payload.driverId,
-                              threadId: targetThread.id,
-                            })
-                            agentDraftThreadByTabRef.current.delete(
-                              terminalModalTabId,
-                            )
-                            const agentLabel =
-                              agentCatalog?.agents.find(
-                                agent => agent.id === payload.agentId,
-                              )?.displayName ?? "Agent"
-                            workspace.tabRegistry.update(terminalModalTabId, {
-                              label: agentLabel,
-                            })
-                            setActiveAgentThread(targetThread)
-                          }
-                          const next = await agents.sendMessage({
-                            workspaceRootUri:
-                              targetThread.workspaceRootUri,
-                            workspaceRootPath:
-                              targetThread.workspaceRootPath,
-                            threadId: targetThread.id,
-                            text: payload.text,
-                            commandId: crypto.randomUUID(),
-                            agentId: payload.agentId,
-                            driverId: payload.driverId,
-                            model: payload.model,
-                                ...(payload.images?.length
-                                  ? { images: payload.images }
-                                  : {}),
-                                ...(payload.files?.length
-                                  ? { files: payload.files }
-                                  : {}),
-                          })
-                          if (!next) return
-                          // The RPC result is the pre-turn snapshot. A fast provider
-                          // can finish before this promise settles, so merge it with
-                          // the same monotonic reducer used for host events.
-                          setActiveAgentThread(current =>
-                            mergeAgentThreadSnapshot(current, next),
-                          )
-                          const latest = await agents.readThread(
-                            targetThread.workspaceRootUri,
-                            targetThread.workspaceRootPath,
-                            targetThread.id,
-                          )
-                          if (latest) {
-                            setActiveAgentThread(current =>
-                              mergeAgentThreadSnapshot(current, latest),
-                            )
-                          }
-                        }}
-                        onInterrupt={async () => {
-                          if (
-                            !activeAgentThread ||
-                            isAgentDraftThread(activeAgentThread)
-                          )
-                            return
-                          // Awaited so a failed interrupt surfaces in the
-                          // chat error banner instead of disappearing.
-                          await window.gharargah?.agents?.interruptTurn({
-                            workspaceRootUri:
-                              activeAgentThread.workspaceRootUri,
-                            workspaceRootPath:
-                              activeAgentThread.workspaceRootPath,
-                            threadId: activeAgentThread.id,
-                          })
-                        }}
-                          onResolvePermission={async ({
-                            permissionId,
-                            decision,
-                            optionId,
-                            approvalDecision,
-                          }) => {
-                          if (!activeAgentThread) return
-                            await window.gharargah?.agents?.resolvePermission?.(
-                              {
-                                workspaceRootUri:
-                                  activeAgentThread.workspaceRootUri,
-                                workspaceRootPath:
-                                  activeAgentThread.workspaceRootPath,
-                            threadId: activeAgentThread.id,
-                            permissionId,
-                            decision,
-                            optionId,
-                            approvalDecision,
-                              },
-                            )
-                        }}
-                        onResolveUserInput={async input => {
-                          if (!activeAgentThread) return
-                          await window.gharargah?.agents?.resolveUserInput?.({
-                              workspaceRootUri:
-                                activeAgentThread.workspaceRootUri,
-                              workspaceRootPath:
-                                activeAgentThread.workspaceRootPath,
-                            threadId: activeAgentThread.id,
-                            ...input,
-                          })
-                        }}
-                        onConfigOptionChange={async ({ configId, value }) => {
-                          if (!activeAgentThread) return
-                            await window.gharargah?.agents?.setSessionConfigOption?.(
-                              {
-                                workspaceRootUri:
-                                  activeAgentThread.workspaceRootUri,
-                                workspaceRootPath:
-                                  activeAgentThread.workspaceRootPath,
-                            threadId: activeAgentThread.id,
-                            configId,
-                            value,
-                              },
-                            )
-                        }}
-                        onSelectionChange={(agentId, model) => {
-                          if (!activeAgentThread) return
-                          if (isAgentDraftThread(activeAgentThread)) {
-                            const driverId =
-                              agentCatalog?.agents.find(
-                                catalogAgent => catalogAgent.id === agentId,
-                              )?.activeDriverId ??
-                              activeAgentThread.driverId ??
-                              defaultAgentDriverId(agentId)
-                            const updated = {
-                              ...activeAgentThread,
-                              agentId,
-                              driverId,
-                              model,
-                              updatedAt: new Date().toISOString(),
-                            }
-                            agentDraftThreadByTabRef.current.set(
-                              terminalModalTabId,
-                              updated,
-                            )
-                            setActiveAgentThread(updated)
-                            return
-                          }
-                            const driverId =
-                              agentCatalog?.agents.find(
-                            agent => agent.id === agentId,
-                          )?.activeDriverId ?? defaultAgentDriverId(agentId)
-                          const agentChanged =
-                            agentId !== activeAgentThread.agentId
-                          setActiveAgentThread(current =>
-                            current
-                              ? {
-                                  ...current,
-                                  agentId,
-                                  driverId,
-                                  model,
-                                  ...(agentChanged
-                                    ? {
-                                        configOptions: [],
-                                        discoveredModels: [],
-                                        sessionModes: null,
-                                      }
-                                    : {}),
-                                }
-                              : current,
-                          )
-                            void window.gharargah?.agents?.updateThreadSettings(
-                              {
-                                workspaceRootUri:
-                                  activeAgentThread.workspaceRootUri,
-                                workspaceRootPath:
-                                  activeAgentThread.workspaceRootPath,
-                            threadId: activeAgentThread.id,
-                            agentId,
-                            driverId,
-                            model,
-                              },
-                            )
-                        }}
-                          onAgentsRefresh={providerId =>
-                            void loadAgentCatalog(true, providerId)
-                          }
-                        onAuthenticate={async methodId => {
-                          if (!activeAgentThread) return
-                          const providerId =
-                            activeAgentThread.acpProvider ??
-                            activeAgentThread.connection?.providerId ??
-                            activeAgentThread.agentId ??
-                            "cursor"
-                          await window.gharargah?.agents?.authenticate?.({
-                            providerId,
-                              workspaceRootPath:
-                                activeAgentThread.workspaceRootPath,
-                            methodId: methodId || undefined,
-                          })
-                            const state =
-                              await window.gharargah?.agents?.getConnectionState?.(
-                                {
-                            providerId,
-                                  workspaceRootPath:
-                                    activeAgentThread.workspaceRootPath,
-                                },
-                          )
-                          if (state) {
-                            setActiveAgentThread(current =>
-                                current
-                                  ? { ...current, connection: state }
-                                  : current,
-                            )
-                          }
-                        }}
-                        onRuntimeModeChange={mode => {
-                          if (!activeAgentThread) return
-                          if (isAgentDraftThread(activeAgentThread)) {
-                            const updated = {
-                              ...activeAgentThread,
-                              runtimeMode: mode,
-                              updatedAt: new Date().toISOString(),
-                            }
-                            agentDraftThreadByTabRef.current.set(
-                              terminalModalTabId,
-                              updated,
-                            )
-                            setActiveAgentThread(updated)
-                            return
-                          }
-                          setActiveAgentThread(current =>
-                              current
-                                ? { ...current, runtimeMode: mode }
-                                : current,
-                          )
-                            void window.gharargah?.agents?.updateThreadSettings(
-                              {
-                                workspaceRootUri:
-                                  activeAgentThread.workspaceRootUri,
-                                workspaceRootPath:
-                                  activeAgentThread.workspaceRootPath,
-                            threadId: activeAgentThread.id,
-                            runtimeMode: mode,
-                              },
-                            )
-                        }}
-                        onInteractionModeChange={mode => {
-                          if (!activeAgentThread) return
-                          if (isAgentDraftThread(activeAgentThread)) {
-                            const updated = {
-                              ...activeAgentThread,
-                              interactionMode: mode,
-                              updatedAt: new Date().toISOString(),
-                            }
-                            agentDraftThreadByTabRef.current.set(
-                              terminalModalTabId,
-                              updated,
-                            )
-                            setActiveAgentThread(updated)
-                            return
-                          }
-                          setActiveAgentThread(current =>
-                              current
-                                ? { ...current, interactionMode: mode }
-                                : current,
-                          )
-                            void window.gharargah?.agents?.updateThreadSettings(
-                              {
-                                workspaceRootUri:
-                                  activeAgentThread.workspaceRootUri,
-                                workspaceRootPath:
-                                  activeAgentThread.workspaceRootPath,
-                            threadId: activeAgentThread.id,
-                            interactionMode: mode,
-                              },
-                            )
-                        }}
-                      />
-                    </Suspense>
-                  )
+                  ) : null
                 }
                 editor={
                   <ModalEditorPane
@@ -3925,9 +3135,6 @@ export function GharargahApp() {
             ) : null}
           </div>
 
-          <Suspense fallback={null}>
-            {showOverlayHost && <OverlayHost />}
-          </Suspense>
           <AgentCliPickerOverlay
             open={agentCliPickerRootUri != null}
             onOpenChange={open => {
@@ -3941,10 +3148,7 @@ export function GharargahApp() {
             selectedRootUri={agentCliPickerRootUri}
             onSelectedRootUriChange={setAgentCliPickerRootUri}
             onRemoveProject={removeProjectByRootUri}
-            driverModes={agentDriverModes}
-            onDriverModeChange={
-              isAgentChatEnabled() ? handleAgentDriverModeChange : undefined
-            }
+            onAddProject={() => setAddWorkspaceOpen(true)}
             onSelect={driver => {
               const rootUri = agentCliPickerRootUri
               setAgentCliPickerRootUri(null)
@@ -3952,6 +3156,9 @@ export function GharargahApp() {
               void createAgentSession(rootUri, driver)
             }}
           />
+          <Suspense fallback={null}>
+            {showOverlayHost && <OverlayHost />}
+          </Suspense>
           <ConfirmDialogHost />
           <Toaster position="bottom-right" />
         </AppShell>

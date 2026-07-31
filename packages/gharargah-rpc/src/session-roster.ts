@@ -99,9 +99,9 @@ function parseEntry(raw: unknown): SessionRosterEntry | null {
   const launchCommand = asNonEmptyString(item.launchCommand) ?? undefined
   const agentId = asNonEmptyString(item.agentId) ?? undefined
   const agentDriverId = asNonEmptyString(item.agentDriverId) ?? undefined
-  // Native-driver sessions run in-app and legitimately have no launch command;
-  // a CLI agent without one is an incomplete stub. Blank shells are OK.
-  if (agentId && !launchCommand && (!agentDriverId || agentDriverId.endsWith(":cli"))) {
+  // CLI agents must have a launch command; agentId without one is an incomplete
+  // stub (including legacy native-driver sessions). Blank shells are OK.
+  if (agentId && !launchCommand) {
     return null
   }
 
