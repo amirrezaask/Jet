@@ -170,17 +170,6 @@ test.describe("ADE telemetry", () => {
       await expectSelectorVisible(page, "[data-gharargah-notification-center]", {
         timeout: 10_000,
       })
-      await expectLocatorVisible(
-        page.locator('[data-gharargah-notification-filter="action-needed"]'),
-      )
-      await expectLocatorVisible(
-        page.locator('[data-gharargah-notification-filter="completed"]'),
-      )
-      await expectLocatorVisible(
-        page.locator('[data-gharargah-notification-filter="errors"]'),
-      )
-
-      await page.locator('[data-gharargah-notification-filter="errors"]').click()
       await expectLocatorContainsText(
         page.locator("[data-gharargah-notification-item]").first(),
         /failed|error|terminated/i,

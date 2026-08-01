@@ -13,7 +13,7 @@ import {
   expectNotContainsText,
 } from "../shell/assert.js"
 
-import { focusTerminal, hasPtySpawn, launchJet, readTerminalText, showTerminal } from "./_launch.js"
+import { focusTerminal, hasPtySpawn, launchJet, readTerminalText, showTerminal, execCommand } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -570,7 +570,7 @@ test.describe("electron terminal", () => {
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
       await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
 
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
 
@@ -660,7 +660,7 @@ test.describe("electron terminal", () => {
 
       // The Terminal tool owns Escape even if a chrome control temporarily
       // holds focus; route the byte to the visible PTY and restore xterm focus.
-      await page.locator("[data-gharargah-terminal-modal-close]").focus()
+      await page.locator("[data-gharargah-session-mode-dock] button").first().focus()
       await page.keyboard.press("Escape")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await expect

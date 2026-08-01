@@ -208,6 +208,92 @@ describe("active agent CLI warm resume", () => {
     assert.deepEqual(started, ["one", "three", "two"])
   })
 
+  it("releases a queued session to the foreground without spawning it", async () => {
+    const sessions = [session("one"), session("two")]
+    const live = new Map(sessions.map(item => [item.tabId, item]))
+    const started: string[] = []
+    const gates = new Map<string, ReturnType<typeof deferred<{ id: string }>>>()
+    const disposed: string[] = []
+    const settled: string[] = []
+    const terminal = {
+      create(cwdRootUri: string) {
+        const tabId = cwdRootUri.slice(cwdRootUri.lastIndexOf("/") + 1)
+        started.push(tabId)
+        const gate = deferred<{ id: string }>()
+        gates.set(tabId, gate)
+        return gate.promise
+      },
+      async dispose(ptyId: string) {
+        disposed.push(ptyId)
+      },
+    } satisfies Pick<JetElectronTerminal, "create" | "dispose">
+    const run = startActiveAgentCliWarmResume({
+      terminal,
+      sessions,
+      getSession: tabId => live.get(tabId),
+      onPtyCreated(tabId) {
+        if (tabId === "two") {
+          assert.fail("released session must not bind a warm PTY")
+        }
+      },
+      onJobSettled: tabId => settled.push(tabId),
+      concurrency: 1,
+      attempts: 1,
+    })
+
+    await flush()
+    assert.deepEqual(started, ["one"])
+    assert.equal(run.isPending("two"), true)
+    run.releaseToForeground("two")
+    assert.equal(run.isPending("two"), false)
+    assert.ok(settled.includes("two"))
+    gates.get("one")!.resolve({ id: "pty-one" })
+    const summary = await run.done
+    assert.deepEqual(started, ["one"])
+    assert.equal(summary.skipped, 1)
+    assert.equal(summary.resumed, 1)
+    assert.deepEqual(disposed, [])
+  })
+
+  it("releases an in-flight warm create so the foreground panel can spawn", async () => {
+    const active = session("foreground")
+    const live = new Map([[active.tabId, active]])
+    const gate = deferred<{ id: string }>()
+    const disposed: string[] = []
+    const settledWakeups: string[] = []
+    const terminal = {
+      create() {
+        return gate.promise
+      },
+      async dispose(ptyId: string) {
+        disposed.push(ptyId)
+      },
+    } satisfies Pick<JetElectronTerminal, "create" | "dispose">
+    const run = startActiveAgentCliWarmResume({
+      terminal,
+      sessions: [active],
+      getSession: tabId => live.get(tabId),
+      onPtyCreated() {
+        assert.fail("foreground release must dispose the warm PTY")
+      },
+      onJobSettled: tabId => settledWakeups.push(tabId),
+      attempts: 1,
+    })
+
+    await flush()
+    assert.equal(run.isPending("foreground"), true)
+    run.releaseToForeground("foreground")
+    assert.equal(run.isPending("foreground"), false)
+    assert.equal(settledWakeups[0], "foreground")
+    gate.resolve({ id: "warm-pty" })
+    const summary = await run.done
+    assert.deepEqual(disposed, ["warm-pty"])
+    assert.equal(summary.resumed, 0)
+    assert.equal(summary.skipped, 1)
+    // Wake on release, then again when the abandoned create settles.
+    assert.deepEqual(settledWakeups, ["foreground", "foreground"])
+  })
+
   it("isolates failures, retries with backoff, and continues the queue", async () => {
     const sessions = [session("bad"), session("good")]
     const live = new Map(sessions.map(item => [item.tabId, item]))

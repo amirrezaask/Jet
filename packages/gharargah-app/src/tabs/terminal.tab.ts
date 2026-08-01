@@ -70,8 +70,14 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         exitCode: session?.exitCode,
         sessionGeneration: session?.generation,
         readOnly: isSessionArchived(instance.id),
-        deferPty: isActiveAgentWarmResumePending(instance.id),
-        startingMessage: "Resuming agent session…",
+        // Only defer background cards. An open/focused session must spawn
+        // immediately — otherwise Cursor (slow --resume) sticks on "Resuming"
+        // until the user switches away and back.
+        deferPty:
+          isActiveAgentWarmResumePending(instance.id) && !ctx.isActive,
+        startingMessage: session?.agentCliSessionId
+          ? "Resuming agent session…"
+          : undefined,
         onPtyId: trackTerminalPtyId,
         onInput: recordTerminalUserInput,
         onOutput: (tabId, data) => {

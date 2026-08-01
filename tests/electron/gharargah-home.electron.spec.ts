@@ -72,7 +72,7 @@ test.describe("gharargah mission home", () => {
       const afterNew = await page.evaluate(() => window.__gharargahAgent!.getState())
       expect(afterNew.activeWorkspace).toBeTruthy()
 
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectSelectorVisible(page, "[data-gharargah-home]")
 
@@ -161,7 +161,7 @@ test.describe("gharargah mission home", () => {
 
       await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal-close]")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal-header]")
       await expect
         .poll(async () => {
           return page.locator("[data-gharargah-terminal-modal]").evaluate(el => {
@@ -389,7 +389,7 @@ test.describe("gharargah mission home", () => {
       await modalOpenMenu.getByRole("menuitem", { name: "Cursor" }).click()
       await expect.poll(async () => modalOpenMenu.isVisible(), { timeout: 10_000 }).toBe(false)
 
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       const cards = section.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
@@ -412,7 +412,7 @@ test.describe("gharargah mission home", () => {
 
       await execCommand(page, "terminal.new")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await page.keyboard.press("Meta+k")

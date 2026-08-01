@@ -7,7 +7,7 @@ import {
 } from "../shell/assert.js"
 
 import { resolve } from "node:path"
-import { launchJet, openNewAgentSession, ensureCardsLayout, REPO_ROOT } from "./_launch.js"
+import { launchJet, openNewAgentSession, ensureCardsLayout, REPO_ROOT, execCommand } from "./_launch.js"
 
 test.describe("electron project persistence", () => {
   test("restores saved projects on home after reload", async () => {
@@ -46,7 +46,7 @@ test.describe("electron project persistence", () => {
       await expectLocatorVisible(section)
       await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await page.reload()

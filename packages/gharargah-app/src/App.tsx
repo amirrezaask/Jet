@@ -152,7 +152,7 @@ import {
   findExistingAgentCliHistorySession,
 } from "./agent-cli-resume.js"
 import {
-  prioritizeActiveAgentWarmResume,
+  releaseActiveAgentWarmResumeToForeground,
   startActiveAgentCliWarmResume,
   type ActiveAgentWarmResumeRun,
 } from "./background-agent-cli-resume.js"
@@ -537,6 +537,8 @@ export function GharargahApp() {
         requestedMode === "agent" && !canShowAgent
           ? "terminal"
           : requestedMode
+      // Modal view owns spawn — release warm-resume deferral for this tab.
+      releaseActiveAgentWarmResumeToForeground(tabId)
       setTerminalModalPanelId(panelId)
       setTerminalModalTabId(tabId)
       setSessionMode(resolvedMode)
@@ -553,8 +555,8 @@ export function GharargahApp() {
 
   const focusTerminalTab = useCallback(
     (panelId: PanelId, tabId: string, mode?: SessionDialogMode) => {
-      prioritizeActiveAgentWarmResume(tabId)
       // Dead/exited agent CLI → respawn with provider resume flags before open.
+      // (Warm-resume release happens in openTerminalModal.)
       ensureAgentCliProcess(tabId)
       const focus = () => {
         const tree = cloneTree()
@@ -2524,6 +2526,7 @@ export function GharargahApp() {
           if (panelId) {
             setTerminalModalPanelId(panelId)
             setTerminalModalTabId(roster.modal.tabId)
+            releaseActiveAgentWarmResumeToForeground(roster.modal.tabId)
             const restoredSession = roster.sessions.find(
               entry => entry.tabId === roster.modal?.tabId,
             )
@@ -3108,8 +3111,6 @@ export function GharargahApp() {
               items={notifications.items}
               query={notifications.query}
               onQueryChange={notifications.setQuery}
-              filter={notifications.filter}
-              onFilterChange={notifications.setFilter}
               loading={notifications.loading}
               error={notifications.error}
               onMarkAllRead={() => void notifications.markAllVisibleRead()}

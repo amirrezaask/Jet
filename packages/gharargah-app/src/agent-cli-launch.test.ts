@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it, beforeEach } from "node:test"
 import {
   buildAgentCliLaunchArgs,
+  buildAgentCliLaunchEnv,
   extractAgentCliSessionIdFromLaunchArgs,
   isPersistableAgentSession,
   launchArgsIncludeResume,
@@ -54,6 +55,12 @@ describe("agentCliLaunch resume argv", () => {
       `--resume=${UUID}`,
       "--trust",
     ])
+  })
+
+  it("cursor launch env sets COLORFGBG for TUI theme detection", () => {
+    const env = buildAgentCliLaunchEnv("cursor", context)
+    assert.ok(env.COLORFGBG === "0;15" || env.COLORFGBG === "15;0")
+    assert.equal(env.GHARARGAH_PROVIDER, "cursor")
   })
 
   it("opencode: --session <id>", () => {

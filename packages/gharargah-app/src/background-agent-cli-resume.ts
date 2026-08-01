@@ -29,6 +29,11 @@ export type ActiveAgentWarmResumeRun = {
   readonly done: Promise<ActiveAgentWarmResumeSummary>
   /** Promote a clicked session ahead of background-only work. */
   readonly prioritize: (tabId: string) => void
+  /**
+   * Hand a session to the foreground TerminalPanel. Queued jobs are skipped;
+   * an in-flight create is disposed when it returns so the panel can spawn.
+   */
+  readonly releaseToForeground: (tabId: string) => void
   /** Stop queued work. A create already crossing IPC is disposed if it returns. */
   readonly cancel: () => void
   readonly isPending: (tabId: string) => boolean
@@ -112,6 +117,7 @@ export function startActiveAgentCliWarmResume(
   let failed = 0
   let skipped = 0
   let settled = 0
+  const releasedToForeground = new Set<string>()
   let resolveDone: (summary: ActiveAgentWarmResumeSummary) => void = () => {}
   const done = new Promise<ActiveAgentWarmResumeSummary>(resolve => {
     resolveDone = resolve
@@ -144,6 +150,7 @@ export function startActiveAgentCliWarmResume(
       const session = options.getSession(job.tabId)
       if (
         cancelled ||
+        releasedToForeground.has(job.tabId) ||
         !session ||
         !isActiveAgentWarmResumeCandidate(session, options.origin)
       ) {
@@ -178,6 +185,7 @@ export function startActiveAgentCliWarmResume(
         const latest = options.getSession(job.tabId)
         if (
           cancelled ||
+          releasedToForeground.has(job.tabId) ||
           !latest ||
           latest.archivedAt ||
           (latest.ptyId && latest.ptyId !== created.id)
@@ -193,7 +201,11 @@ export function startActiveAgentCliWarmResume(
         return
       } catch {
         lastAttemptFailed = true
-        if (attempt + 1 < attempts && !cancelled) {
+        if (
+          attempt + 1 < attempts &&
+          !cancelled &&
+          !releasedToForeground.has(job.tabId)
+        ) {
           await sleep(retryDelayMs * (attempt + 1))
         }
       }
@@ -218,6 +230,11 @@ export function startActiveAgentCliWarmResume(
       const job = queue.shift()
       if (!job) break
       if (job.state !== "queued") continue
+      if (releasedToForeground.has(job.tabId)) {
+        skipped += 1
+        settle(job)
+        continue
+      }
       job.state = "running"
       inFlight += 1
       maxInFlight = Math.max(maxInFlight, inFlight)
@@ -235,11 +252,26 @@ export function startActiveAgentCliWarmResume(
     prioritize(tabId) {
       const job = jobsByTab.get(tabId)
       if (!job || job.state !== "queued") return
+      if (releasedToForeground.has(tabId)) return
       const index = queue.indexOf(job)
       if (index <= 0) return
       queue.splice(index, 1)
       queue.unshift(job)
       pump()
+    },
+    releaseToForeground(tabId) {
+      const job = jobsByTab.get(tabId)
+      if (!job || job.state === "settled") return
+      releasedToForeground.add(tabId)
+      if (job.state === "queued") {
+        const index = queue.indexOf(job)
+        if (index >= 0) queue.splice(index, 1)
+        skipped += 1
+        settle(job)
+        return
+      }
+      // In-flight create: wake the panel now; dispose when create returns.
+      options.onJobSettled?.(tabId)
     },
     cancel() {
       if (cancelled) return
@@ -247,6 +279,7 @@ export function startActiveAgentCliWarmResume(
       pump()
     },
     isPending(tabId) {
+      if (releasedToForeground.has(tabId)) return false
       const state = jobsByTab.get(tabId)?.state
       return state === "queued" || state === "running"
     },
@@ -261,6 +294,11 @@ export function startActiveAgentCliWarmResume(
 
 export function prioritizeActiveAgentWarmResume(tabId: string): void {
   currentRun?.prioritize(tabId)
+}
+
+/** Let the open TerminalPanel own spawn; drop this tab from warm-resume deferral. */
+export function releaseActiveAgentWarmResumeToForeground(tabId: string): void {
+  currentRun?.releaseToForeground(tabId)
 }
 
 export function isActiveAgentWarmResumePending(tabId: string): boolean {

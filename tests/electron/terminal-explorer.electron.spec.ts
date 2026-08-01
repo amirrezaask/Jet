@@ -20,12 +20,12 @@ test.describe("electron terminal explorer", () => {
       await showTerminal(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await execCommand(page, "terminal.new")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
 
       const cards = page.locator("[data-gharargah-terminal-card]")
       await expectLocatorVisible(cards.first())

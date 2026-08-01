@@ -80,8 +80,9 @@ function themeOptions(theme: GharargahTheme): NonNullable<XTerm["options"]["them
   const c = theme.colors
   const ansi = theme.terminalAnsi
   return {
-    // Canvas stays transparent — CSS surface owns the fill (glass content layer).
-    background: "transparent",
+    // Real bg so OSC 11 reports a luminance TUIs (Cursor Agent) can theme against.
+    // CSS still paints the surface; cell default matches the shell.
+    background: c.bg,
     foreground: c.text,
     cursor: c.accent,
     selectionBackground: c.selection,
@@ -120,7 +121,7 @@ function liveThemeOptions(theme: GharargahTheme): NonNullable<XTerm["options"]["
 
   return {
     ...options,
-    background: "transparent",
+    background: readCssVar("--gharargah-bg") ?? options.background,
     foreground: readCssVar("--gharargah-text") ?? options.foreground,
     cursor: readCssVar("--gharargah-accent") ?? options.cursor,
     selectionBackground:

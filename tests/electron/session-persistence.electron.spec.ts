@@ -14,6 +14,7 @@ import {
   openNewAgentSession,
   openNewCliSession,
   ensureCardsLayout,
+  execCommand,
 } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -105,7 +106,7 @@ test.describe("session refresh persistence", () => {
         }, { timeout: 20_000 })
         .toBe(MOCK_CLI_SESSION_ID)
 
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
       await expectLocatorVisible(cards.first())
 
@@ -209,7 +210,7 @@ test.describe("session refresh persistence", () => {
       await page.waitForTimeout(1500)
       await expectLocatorCount(page.locator("[data-gharargah-terminal-exit-bar]"), 0)
 
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await page.reload()

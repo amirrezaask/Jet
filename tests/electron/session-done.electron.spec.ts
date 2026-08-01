@@ -90,7 +90,7 @@ test.describe("session archive persistence", () => {
         .toBeGreaterThan(0)
       const sessionBefore = rosterBefore!.sessions[0]!
 
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await execCommand(page, "ui.setSessionLayout.sidebar")
@@ -191,7 +191,7 @@ test.describe("session archive persistence", () => {
         .toBe("")
       await expectLocatorCount(page.locator("[data-gharargah-session-archive]"), 0)
 
-      await page.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await execCommand(page, "ui.setSessionLayout.sidebar")

@@ -70,7 +70,20 @@ export function buildAgentCliLaunchEnv(
   context: ProviderNotificationLaunchContext,
 ): Record<string, string> {
   const command = agentCliCommandForProvider(provider)
-  return notificationLaunchForProviderSync(provider, command, context).env
+  const env = {
+    ...notificationLaunchForProviderSync(provider, command, context).env,
+  }
+  // Cursor (and other TUIs) probe COLORFGBG when OSC 11 is slow/missing.
+  // 0;15 = dark fg on light bg; 15;0 = light fg on dark bg.
+  if (provider === "cursor") {
+    env.COLORFGBG = colorFgBgForDocumentScheme()
+  }
+  return env
+}
+
+function colorFgBgForDocumentScheme(): string {
+  if (typeof document === "undefined") return "15;0"
+  return document.documentElement.classList.contains("dark") ? "15;0" : "0;15"
 }
 
 export function tryParseAgentCliSessionId(

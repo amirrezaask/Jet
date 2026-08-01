@@ -1715,20 +1715,6 @@ body,
     color: var(--foreground);
   }
 
-  [data-gharargah-terminal-modal-close] {
-    border: 1px solid transparent;
-    border-radius: var(--radius);
-    transition:
-      border-color var(--glass-motion) var(--glass-ease),
-      color var(--glass-motion) var(--glass-ease),
-      background-color var(--glass-motion) var(--glass-ease);
-  }
-
-  [data-gharargah-terminal-modal-close]:hover {
-    border-color: var(--border);
-    background: var(--accent);
-  }
-
   [data-gharargah-terminal-modal-body] {
     position: relative;
     z-index: 0;

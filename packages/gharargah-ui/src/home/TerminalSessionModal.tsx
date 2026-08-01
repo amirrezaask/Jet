@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import { RotateCcw, XIcon } from "lucide-react"
+import { RotateCcw } from "lucide-react"
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -192,24 +191,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
 
   if (!open) return null
 
-  const closeButton = (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      data-gharargah-terminal-modal-close
-      aria-label={
-        presentation === "inline" ? "Return to new tab" : "Close session"
-      }
-      className="size-6 shrink-0 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
-      onClick={
-        presentation === "inline" ? () => onOpenChange(false) : undefined
-      }
-    >
-      <XIcon aria-hidden />
-    </Button>
-  )
-
   const showAgentMeta = mode === "agent" && agentSessionHeader
   const ownsWindowChrome = presentation === "modal" && windowChrome != null
   const dragRegion = ownsWindowChrome
@@ -297,11 +278,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             <span className="hidden min-[720px]:inline">Resume</span>
           </Button>
         ) : null}
-        {presentation === "modal" ? (
-          <DialogClose asChild>{closeButton}</DialogClose>
-        ) : (
-          closeButton
-        )}
       </div>
     </DialogHeader>
   )

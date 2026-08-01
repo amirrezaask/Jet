@@ -143,7 +143,7 @@ test.describe("project todos board", () => {
       await expectLocatorVisible(board)
       await expectLocatorContainsText(board, "Review architecture\nwith the team")
 
-      await modal.locator("[data-gharargah-terminal-modal-close]").click()
+      await execCommand(page, "gharargah.goHome")
       await expect.poll(async () => modal.isVisible()).toBe(false)
 
       // Summary counter updated on home.
