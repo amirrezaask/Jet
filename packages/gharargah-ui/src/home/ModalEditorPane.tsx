@@ -235,33 +235,11 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
       ) : null}
 
       <ResizablePanelGroup
-        orientation="horizontal"
+        orientation="vertical"
         data-gharargah-modal-editor-content-group=""
         className="relative min-h-0 flex-1 overflow-hidden"
       >
-        {projectSearchOpen && onOpenSearchItem ? (
-          <>
-            <ResizablePanel
-              id="editor-project-search"
-              defaultSize="320px"
-              minSize="256px"
-              maxSize="45%"
-              groupResizeBehavior="preserve-pixel-size"
-            >
-              <ModalProjectSearch
-                workspace={workspace}
-                onOpenItem={onOpenSearchItem}
-                onDismiss={() => onProjectSearchOpenChange?.(false)}
-              />
-            </ResizablePanel>
-            <ResizableHandle
-              id="editor-project-search-resize"
-              data-gharargah-editor-project-search-resize=""
-              aria-label="Resize project search"
-            />
-          </>
-        ) : null}
-        <ResizablePanel id="editor-content" minSize="360px">
+        <ResizablePanel id="editor-content" minSize="240px">
           <div
             id="gharargah-modal-editor-tabpanel"
             role="tabpanel"
@@ -272,6 +250,28 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
             {children}
           </div>
         </ResizablePanel>
+        {projectSearchOpen && onOpenSearchItem ? (
+          <>
+            <ResizableHandle
+              id="editor-project-search-resize"
+              data-gharargah-editor-project-search-resize=""
+              aria-label="Resize project search"
+            />
+            <ResizablePanel
+              id="editor-project-search"
+              defaultSize="280px"
+              minSize="160px"
+              maxSize="55%"
+              groupResizeBehavior="preserve-pixel-size"
+            >
+              <ModalProjectSearch
+                workspace={workspace}
+                onOpenItem={onOpenSearchItem}
+                onDismiss={() => onProjectSearchOpenChange?.(false)}
+              />
+            </ResizablePanel>
+          </>
+        ) : null}
       </ResizablePanelGroup>
 
       <div
@@ -334,8 +334,9 @@ function ModalProjectSearch({
   return (
     <aside
       data-gharargah-editor-project-search=""
+      data-gharargah-editor-project-search-drawer=""
       aria-label="Project search"
-      className="flex h-full min-h-0 w-full min-w-0 flex-col bg-background"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col border-t border-border bg-background"
     >
       <div className="flex h-9 shrink-0 items-center border-b px-2">
         <h2 className="text-xs font-semibold">Search</h2>

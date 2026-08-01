@@ -46,6 +46,11 @@ export type AgentCliPickerOverlayProps = {
     rootUri: string,
     signal: AbortSignal,
   ) => Promise<AgentCliHistoryResult>
+  /** Sync peek into a shared startup-warmed cache (avoids loading flash). */
+  peekPreviousSessions?: (
+    driver: AgentCliDriver,
+    rootUri: string,
+  ) => AgentCliHistoryResult | undefined
   onResumeSession?: (
     driver: AgentCliDriver,
     session: AgentCliHistorySession,
@@ -80,6 +85,7 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
     onRemoveProject,
     onAddProject,
     loadPreviousSessions,
+    peekPreviousSessions,
     onResumeSession,
   } = props
 
@@ -192,8 +198,11 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
       return
     }
     const cacheKey = `${highlightedDriver.id}\u0000${selectedRootUri}`
-    const cached = historyCacheRef.current.get(cacheKey)
+    const cached =
+      historyCacheRef.current.get(cacheKey) ??
+      peekPreviousSessions?.(highlightedDriver, selectedRootUri)
     if (cached) {
+      historyCacheRef.current.set(cacheKey, cached)
       setHistoryState({ status: "loaded", result: cached })
       return
     }
@@ -219,6 +228,7 @@ export function AgentCliPickerOverlay(props: AgentCliPickerOverlayProps) {
     highlightedDriver,
     selectedRootUri,
     loadPreviousSessions,
+    peekPreviousSessions,
     retryRevision,
   ])
 

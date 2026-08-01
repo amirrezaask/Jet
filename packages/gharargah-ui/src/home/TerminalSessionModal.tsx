@@ -32,6 +32,10 @@ export type AgentSessionHeaderMeta = {
 
 export type SessionRuntimeStatus = "starting" | "running" | "exited" | "failed"
 
+/** Clears the floating mode dock; keep in sync with `--gharargah-session-dock-clearance`. */
+const SESSION_STAGE_CLASS =
+  "absolute inset-x-0 top-0 bottom-[length:var(--gharargah-session-dock-clearance,3.75rem)] flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+
 export type TerminalSessionModalProps = {
   sessionId: string
   open: boolean
@@ -315,7 +319,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             hidden={mode !== "agent"}
             aria-hidden={mode !== "agent"}
             className={cn(
-              "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+              SESSION_STAGE_CLASS,
               mode === "agent" ? "z-10" : "pointer-events-none z-0",
             )}
           >
@@ -332,7 +336,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           hidden={mode !== "editor"}
           aria-hidden={mode !== "editor"}
           className={cn(
-            "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+            SESSION_STAGE_CLASS,
             mode === "editor" ? "z-10" : "pointer-events-none z-0",
           )}
         >
@@ -348,7 +352,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           hidden={mode !== "terminal"}
           aria-hidden={mode !== "terminal"}
           className={cn(
-            "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+            SESSION_STAGE_CLASS,
             mode === "terminal" ? "z-10" : "pointer-events-none z-0",
           )}
         >
@@ -364,7 +368,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           hidden={mode !== "git"}
           aria-hidden={mode !== "git"}
           className={cn(
-            "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+            SESSION_STAGE_CLASS,
             mode === "git" ? "z-10" : "pointer-events-none z-0",
           )}
         >
@@ -380,7 +384,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           hidden={mode !== "todos"}
           aria-hidden={mode !== "todos"}
           className={cn(
-            "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+            SESSION_STAGE_CLASS,
             mode === "todos" ? "z-10" : "pointer-events-none z-0",
           )}
         >

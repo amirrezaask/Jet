@@ -128,16 +128,44 @@ test.describe("terminal tab close behavior", () => {
       await expect.poll(() => activeTab.getAttribute("data-state")).toBe("active")
       await expectLocatorCount(page.getByRole("alertdialog"), 0)
 
+      await page.locator("[data-gharargah-new-session-terminal]").click()
+      await expectLocatorCount(tabs, 3)
+      const previousActiveId = activeTabId
+      const freshActiveId = await tabs.nth(2).getAttribute(
+        "data-gharargah-session-terminal-tab",
+      )
+      expect(freshActiveId).toBeTruthy()
+      expect(previousActiveId).not.toBe(freshActiveId)
+      const closeButton = page.locator(
+        `[data-gharargah-session-terminal-tab-close="${previousActiveId}"]`,
+      )
+      await expect
+        .poll(() => closeButton.getAttribute("disabled"))
+        .toBeNull()
+      await closeButton.click()
+      await expectLocatorCount(
+        page.locator(
+          `[data-gharargah-session-terminal-tab="${previousActiveId}"]`,
+        ),
+        0,
+      )
+      const freshActiveTab = page.locator(
+        `[data-gharargah-session-terminal-tab="${freshActiveId}"]`,
+      )
+      await expect
+        .poll(() => freshActiveTab.getAttribute("data-state"))
+        .toBe("active")
+
       const activeInput = page.locator(
-        `[data-gharargah-session-terminal-pane="${activeTabId}"] .xterm-helper-textarea`,
+        `[data-gharargah-session-terminal-pane="${freshActiveId}"] .xterm-helper-textarea`,
       )
       await activeInput.focus()
       await page.keyboard.type("echo used")
-      await activeTab.click({ button: "middle" })
+      await freshActiveTab.click({ button: "middle" })
       await expectLocatorVisible(page.getByRole("alertdialog"))
       await expectLocatorCount(
         page.locator(
-          `[data-gharargah-session-terminal-tab="${activeTabId}"]`,
+          `[data-gharargah-session-terminal-tab="${freshActiveId}"]`,
         ),
         1,
       )

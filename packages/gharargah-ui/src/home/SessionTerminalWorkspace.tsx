@@ -1,11 +1,6 @@
 import type { MouseEvent, ReactNode } from "react"
 import { Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs.js"
 import { cn } from "@/lib/utils.js"
 import { SessionHeaderChromePortal } from "./session-header-chrome.js"
 
@@ -60,63 +55,76 @@ export function SessionTerminalTabBar(props: SessionTerminalTabBarProps) {
         className,
       )}
     >
-      <Tabs
-        value={activeId}
-        onValueChange={onActiveChange}
-        className="min-w-0 flex-1 overflow-hidden"
+      <div
+        role="tablist"
+        aria-label="Terminals"
+        data-gharargah-session-terminal-tabs=""
+        className="flex h-8 min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto"
       >
-        <TabsList
-          variant="line"
-          aria-label="Terminals"
-          data-gharargah-session-terminal-tabs=""
-          className="h-8 max-w-full justify-start gap-0.5 overflow-x-auto bg-transparent p-0"
-        >
-          {items.map(item => {
-            const selected = item.id === activeId
-            return (
-              <TabsTrigger
-                key={item.id}
-                value={item.id}
+        {items.map(item => {
+          const selected = item.id === activeId
+          const closable = canClose(item.id)
+          return (
+            <div
+              key={item.id}
+              data-gharargah-session-terminal-tab-shell={item.id}
+              data-active={selected ? "" : undefined}
+              className={cn(
+                "group relative flex max-w-40 min-w-20 shrink-0 items-center gap-0.5 rounded-md border px-1.5",
+                selected
+                  ? "border-border bg-card text-foreground shadow-sm"
+                  : "border-transparent text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
+              )}
+              onMouseDown={(event: MouseEvent<HTMLDivElement>) => {
+                if (event.button !== 1) return
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onAuxClick={(event: MouseEvent<HTMLDivElement>) => {
+                if (event.button !== 1) return
+                event.preventDefault()
+                event.stopPropagation()
+                if (closable) onClose(item.id)
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
                 data-gharargah-session-terminal-tab={item.id}
                 data-active={selected ? "" : undefined}
-                className={cn(
-                  "h-7 min-w-20 max-w-40 justify-start truncate rounded-md border px-2.5 font-mono text-2xs",
-                  selected
-                    ? "border-border bg-card text-foreground shadow-sm"
-                    : "border-transparent text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
-                )}
-                onMouseDown={(event: MouseEvent<HTMLButtonElement>) => {
-                  if (event.button !== 1) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                }}
-                onAuxClick={(event: MouseEvent<HTMLButtonElement>) => {
-                  if (event.button !== 1) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  if (canClose(item.id)) onClose(item.id)
-                }}
+                data-state={selected ? "active" : "inactive"}
+                title={item.label}
+                className="min-w-0 flex-1 truncate px-1 text-left font-mono text-2xs font-medium outline-none focus-visible:underline focus-visible:underline-offset-4"
+                onClick={() => onActiveChange(item.id)}
               >
                 <span className="truncate">{item.label}</span>
-              </TabsTrigger>
-            )
-          })}
-        </TabsList>
-      </Tabs>
+              </button>
+              <button
+                type="button"
+                aria-label={`Close ${item.label}`}
+                title={`Close ${item.label}`}
+                data-gharargah-session-terminal-tab-close={item.id}
+                data-gharargah-close-session-terminal={item.id}
+                disabled={!closable}
+                className={cn(
+                  "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground",
+                  closable ? "opacity-70 hover:opacity-100" : "pointer-events-none opacity-0",
+                )}
+                onPointerDown={event => event.stopPropagation()}
+                onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                  event.stopPropagation()
+                  if (closable) onClose(item.id)
+                }}
+              >
+                <X className="size-3" aria-hidden />
+              </button>
+            </div>
+          )
+        })}
+      </div>
       <div className="flex shrink-0 items-center">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          data-gharargah-close-session-terminal=""
-          aria-label="Close terminal"
-          title="Close terminal"
-          disabled={!canClose(activeId)}
-          onClick={() => onClose(activeId)}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <X aria-hidden />
-        </Button>
         <Button
           type="button"
           variant="ghost"

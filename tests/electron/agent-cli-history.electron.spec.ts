@@ -3,7 +3,6 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-  expectLocatorAttribute,
   expectLocatorContainsText,
   expectLocatorVisible,
   expectNotContainsText,
@@ -64,6 +63,20 @@ sleep 1
     })
     try {
       await waitForHome(page)
+      // Startup prefetch warms provider history in the background. Give the fake
+      // OpenCode list (~200ms) a beat so highlight can hit the shared cache.
+      await expect
+        .poll(
+          async () =>
+            page.evaluate(() =>
+              performance
+                .getEntriesByName("gharargah:agent-cli-history-prefetch")
+                .some(entry => entry.entryType === "measure"),
+            ),
+          { timeout: 20_000, intervals: [100, 250, 500] },
+        )
+        .toBe(true)
+
       await clickNewSession(page)
 
       const openCodeRow = page
@@ -75,28 +88,10 @@ sleep 1
         '[data-gharargah-agent-cli-history][data-provider="opencode"]',
       )
       await expectLocatorVisible(history)
-      await expectLocatorAttribute(
-        history,
-        "data-gharargah-agent-cli-history-state",
-        "loading",
-      )
-      const loadingBounds = await history.evaluate(element => {
-        const rect = element.getBoundingClientRect()
-        return { width: Math.round(rect.width), height: Math.round(rect.height) }
-      })
       await expect
-        .poll(() =>
-          history.evaluate(element =>
-            element.getAnimations({ subtree: true }).length,
-          ),
-        )
-        .toBe(0)
+        .poll(() => history.getAttribute("data-gharargah-agent-cli-history-state"))
+        .toBe("loaded")
       await expectLocatorContainsText(history, "External OpenCode session")
-      const loadedBounds = await history.evaluate(element => {
-        const rect = element.getBoundingClientRect()
-        return { width: Math.round(rect.width), height: Math.round(rect.height) }
-      })
-      expect(loadedBounds).toEqual(loadingBounds)
       await expectNotContainsText(
         page,
         '[data-gharargah-agent-cli-history][data-provider="opencode"]',

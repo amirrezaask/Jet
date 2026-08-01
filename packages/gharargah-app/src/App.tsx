@@ -156,6 +156,13 @@ import {
   startActiveAgentCliWarmResume,
   type ActiveAgentWarmResumeRun,
 } from "./background-agent-cli-resume.js"
+import {
+  buildAgentCliHistoryPrefetchTargets,
+  ensureAgentCliHistory,
+  peekAgentCliHistory,
+  startAgentCliHistoryPrefetch,
+  type AgentCliHistoryPrefetchRun,
+} from "./background-agent-cli-history.js"
 import { type PersistedSessionRoster } from "./session-roster-store.js"
 import {
   loadServerSessionRoster,
@@ -374,6 +381,9 @@ export function GharargahApp() {
   const sessionRosterReadyRef = useRef(false)
   const startupRecordedRef = useRef(false)
   const activeAgentWarmResumeRef = useRef<ActiveAgentWarmResumeRun | null>(null)
+  const agentCliHistoryPrefetchRef = useRef<AgentCliHistoryPrefetchRun | null>(
+    null,
+  )
   const openWorkspaceRef = useRef<
     (folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>
   >(() => {})
@@ -722,17 +732,46 @@ export function GharargahApp() {
       if (!agents?.listCliSessions) {
         return Promise.reject(new Error("CLI session history is unavailable on this host"))
       }
-      return agents.listCliSessions(
-        {
-          provider: driver.id,
-          cwd: fileUriToPath(rootUri),
-          limit: 50,
-        },
+      return ensureAgentCliHistory({
+        listCliSessions: agents.listCliSessions.bind(agents),
+        provider: driver.id,
+        cwd: fileUriToPath(rootUri),
+        limit: 50,
         signal,
-      )
+      })
     },
     [],
   )
+
+  const peekAgentCliHistoryForPicker = useCallback(
+    (driver: AgentCliDriver, rootUri: string) =>
+      peekAgentCliHistory(driver.id, fileUriToPath(rootUri)),
+    [],
+  )
+
+  const prefetchAgentCliHistoryForFolders = useCallback(() => {
+    const listCliSessions = window.gharargah?.agents?.listCliSessions
+    if (!listCliSessions) return
+    const targets = buildAgentCliHistoryPrefetchTargets(
+      workspace.folders.map(folder => folder.root.path),
+    )
+    if (targets.length === 0) return
+    const run = startAgentCliHistoryPrefetch({
+      listCliSessions: listCliSessions.bind(window.gharargah!.agents!),
+      targets,
+    })
+    agentCliHistoryPrefetchRef.current = run
+    void run.done.then(summary => {
+      if (agentCliHistoryPrefetchRef.current === run) {
+        agentCliHistoryPrefetchRef.current = null
+      }
+      performance.measure("gharargah:agent-cli-history-prefetch", {
+        start: performance.now() - summary.durationMs,
+        end: performance.now(),
+        detail: summary,
+      })
+    })
+  }, [workspace])
 
   const resumeAgentCliHistorySession = useCallback(
     async (
@@ -2367,7 +2406,10 @@ export function GharargahApp() {
   ])
 
   useEffect(() => {
-    return () => activeAgentWarmResumeRef.current?.cancel()
+    return () => {
+      activeAgentWarmResumeRef.current?.cancel()
+      agentCliHistoryPrefetchRef.current?.cancel()
+    }
   }, [])
 
   useEffect(() => {
@@ -2546,6 +2588,7 @@ export function GharargahApp() {
 
       sessionRosterReadyRef.current = true
       persistSessionRoster()
+      prefetchAgentCliHistoryForFolders()
     })()
   }, [
     layoutReady,
@@ -2554,8 +2597,13 @@ export function GharargahApp() {
     commitTree,
     persistSessionRoster,
     tabStore,
+    prefetchAgentCliHistoryForFolders,
   ])
 
+  useEffect(() => {
+    if (!layoutReady || !projectCatalogReadyRef.current) return
+    prefetchAgentCliHistoryForFolders()
+  }, [layoutReady, workspace.folders.length, prefetchAgentCliHistoryForFolders])
   useEffect(() => {
     if (
       startupRecordedRef.current ||
@@ -3420,6 +3468,7 @@ export function GharargahApp() {
             onRemoveProject={removeProjectByRootUri}
             onAddProject={() => setAddWorkspaceOpen(true)}
             loadPreviousSessions={loadAgentCliHistory}
+            peekPreviousSessions={peekAgentCliHistoryForPicker}
             onResumeSession={(driver, history) => {
               const rootUri = agentCliPickerRootUri
               setAgentCliPickerRootUri(null)

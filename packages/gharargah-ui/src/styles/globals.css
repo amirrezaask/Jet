@@ -1680,7 +1680,9 @@ body,
   }
 
   [data-gharargah-session-dock-inset] {
-    padding-bottom: 3.75rem;
+    /* Reserved for the floating mode dock; stages clear it via bottom inset. */
+    --gharargah-session-dock-clearance: 3.75rem;
+    padding-bottom: var(--gharargah-session-dock-clearance);
   }
 
   [data-gharargah-session-mode-dock] {
@@ -1709,6 +1711,7 @@ body,
   }
 
   [data-gharargah-session-header-tabs] [data-gharargah-modal-editor-tab][data-active],
+  [data-gharargah-session-header-tabs] [data-gharargah-session-terminal-tab-shell][data-active],
   [data-gharargah-session-header-tabs] [data-gharargah-session-terminal-tab][data-active] {
     border-color: color-mix(in srgb, var(--border) 90%, var(--primary));
     background: color-mix(in srgb, var(--card) 72%, transparent);
@@ -1723,7 +1726,11 @@ body,
 
   [data-gharargah-terminal-modal-stage] {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    left: 0;
+    /* Absolute children ignore parent padding — clear the floating mode dock. */
+    bottom: var(--gharargah-session-dock-clearance, 3.75rem);
     z-index: 0;
     background: var(--background);
   }

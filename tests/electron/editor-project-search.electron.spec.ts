@@ -33,6 +33,10 @@ test.describe("editor project search", () => {
 
       await pressMod(page, "f", { shift: true })
       await expectSelectorVisible(page, "[data-gharargah-editor-project-search]")
+      await expectSelectorVisible(
+        page,
+        "[data-gharargah-editor-project-search-drawer]",
+      )
       const input = page.locator('input[aria-label="Search project"]')
       await expect
         .poll(() => input.evaluate(element => element === document.activeElement))
@@ -49,45 +53,50 @@ test.describe("editor project search", () => {
       const initialEditorBox = await editorContent.boundingBox()
       expect(initialSearchBox).not.toBeNull()
       expect(initialEditorBox).not.toBeNull()
-      expect(initialSearchBox!.width).toBeGreaterThanOrEqual(255)
-      expect(initialEditorBox!.width).toBeGreaterThanOrEqual(359)
+      expect(initialSearchBox!.height).toBeGreaterThanOrEqual(159)
+      expect(initialEditorBox!.height).toBeGreaterThanOrEqual(239)
+      expect(initialSearchBox!.y).toBeGreaterThanOrEqual(
+        initialEditorBox!.y + initialEditorBox!.height - 2,
+      )
 
       await dragResizeHandle(page, {
         selector: "[data-gharargah-editor-project-search-resize]",
-        deltaX: 120,
+        // Drag handle upward into the editor to grow the bottom search drawer.
+        deltaY: -120,
       })
 
       const grownSearchBox = await searchPanel.boundingBox()
       const shrunkEditorBox = await editorContent.boundingBox()
       expect(grownSearchBox).not.toBeNull()
       expect(shrunkEditorBox).not.toBeNull()
-      expect(grownSearchBox!.width).toBeGreaterThan(initialSearchBox!.width + 80)
-      expect(shrunkEditorBox!.width).toBeLessThan(initialEditorBox!.width - 80)
-      expect(shrunkEditorBox!.width).toBeGreaterThanOrEqual(359)
-      expect(grownSearchBox!.x + grownSearchBox!.width).toBeLessThanOrEqual(
-        shrunkEditorBox!.x,
+      expect(grownSearchBox!.height).toBeGreaterThan(initialSearchBox!.height + 80)
+      expect(shrunkEditorBox!.height).toBeLessThan(initialEditorBox!.height - 80)
+      expect(shrunkEditorBox!.height).toBeGreaterThanOrEqual(239)
+      expect(grownSearchBox!.y).toBeGreaterThanOrEqual(
+        shrunkEditorBox!.y + shrunkEditorBox!.height - 2,
       )
 
       await dragResizeHandle(page, {
         selector: "[data-gharargah-editor-project-search-resize]",
-        deltaX: -1_000,
+        // Drag handle downward into the search drawer to hit its min height.
+        deltaY: 1_000,
       })
 
       const minimumSearchBox = await searchPanel.boundingBox()
       const expandedEditorBox = await editorContent.boundingBox()
       expect(minimumSearchBox).not.toBeNull()
       expect(expandedEditorBox).not.toBeNull()
-      expect(minimumSearchBox!.width).toBeGreaterThanOrEqual(255)
-      expect(minimumSearchBox!.width).toBeLessThanOrEqual(258)
-      expect(expandedEditorBox!.width).toBeGreaterThanOrEqual(359)
-      expect(minimumSearchBox!.x + minimumSearchBox!.width).toBeLessThanOrEqual(
-        expandedEditorBox!.x,
+      expect(minimumSearchBox!.height).toBeGreaterThanOrEqual(159)
+      expect(minimumSearchBox!.height).toBeLessThanOrEqual(168)
+      expect(expandedEditorBox!.height).toBeGreaterThanOrEqual(239)
+      expect(minimumSearchBox!.y).toBeGreaterThanOrEqual(
+        expandedEditorBox!.y + expandedEditorBox!.height - 2,
       )
 
       const caseToggle = searchPanel.getByRole("button", { name: "Case" })
       await caseToggle.click()
       await expect.poll(() => caseToggle.getAttribute("data-state")).toBe("on")
-      await caseToggle.press("Space")
+      await caseToggle.click()
       await expect.poll(() => caseToggle.getAttribute("data-state")).toBe("off")
       await expect
         .poll(() => input.evaluate(element => (element as HTMLInputElement).value))
