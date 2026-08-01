@@ -1,0 +1,41 @@
+import {
+  createContext,
+  useContext,
+  type ReactNode,
+  type RefCallback,
+} from "react"
+import { createPortal } from "react-dom"
+
+type SessionHeaderChromeContextValue = {
+  target: HTMLElement | null
+}
+
+const SessionHeaderChromeContext =
+  createContext<SessionHeaderChromeContextValue | null>(null)
+
+export function SessionHeaderChromeProvider(props: {
+  target: HTMLElement | null
+  children: ReactNode
+}) {
+  return (
+    <SessionHeaderChromeContext.Provider value={{ target: props.target }}>
+      {props.children}
+    </SessionHeaderChromeContext.Provider>
+  )
+}
+
+/** Portal mode-specific chrome (buffer/terminal/git controls) into the session header. */
+export function SessionHeaderChromePortal(props: {
+  active: boolean
+  children: ReactNode
+}) {
+  const ctx = useContext(SessionHeaderChromeContext)
+  if (!props.active || !ctx?.target) return null
+  return createPortal(props.children, ctx.target)
+}
+
+export function sessionHeaderContextRef(
+  setTarget: (el: HTMLElement | null) => void,
+): RefCallback<HTMLElement> {
+  return el => setTarget(el)
+}

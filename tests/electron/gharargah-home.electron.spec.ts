@@ -186,27 +186,29 @@ test.describe("gharargah mission home", () => {
           page.locator("[data-gharargah-session-mode-switch] svg").count(),
         )
         .toBe(4)
+      await expectSelectorVisible(page, "[data-gharargah-session-mode-dock]")
       await expect
         .poll(async () =>
           page.evaluate(() => {
+            const body = document.querySelector(
+              "[data-gharargah-terminal-modal-body]",
+            )
+            const dock = document.querySelector(
+              "[data-gharargah-session-mode-dock]",
+            )
             const header = document.querySelector(
               "[data-gharargah-terminal-modal-header]",
             )
-            const switcher = document.querySelector(
-              "[data-gharargah-session-mode-switch]",
-            )
-            const title = document.querySelector(
-              "[data-gharargah-terminal-modal-title]",
-            )
-            if (!header || !switcher || !title) return null
+            if (!body || !dock || !header) return null
+            const bodyRect = body.getBoundingClientRect()
+            const dockRect = dock.getBoundingClientRect()
             const headerRect = header.getBoundingClientRect()
-            const switcherRect = switcher.getBoundingClientRect()
-            const titleRect = title.getBoundingClientRect()
-            const midX = headerRect.left + headerRect.width / 2
+            const midX = bodyRect.left + bodyRect.width / 2
+            const dockCenterX = dockRect.left + dockRect.width / 2
             return (
-              switcherRect.left > titleRect.right &&
-              switcherRect.left >= midX &&
-              Math.abs(switcherRect.top - titleRect.top) < 24
+              dockRect.bottom <= bodyRect.bottom + 1 &&
+              dockRect.top > headerRect.bottom &&
+              Math.abs(dockCenterX - midX) < bodyRect.width * 0.25
             )
           }),
         )
@@ -228,15 +230,29 @@ test.describe("gharargah mission home", () => {
       // session-scoped shell tabs and supports more than one shell.
       await page.locator('[data-gharargah-session-mode-tab="terminal"]').click()
       await expectSelectorVisible(page, "[data-gharargah-session-terminal-workspace]")
-      await expectLocatorCount(page.locator("[data-gharargah-session-terminal-tab]"), 1)
+      await expectLocatorCount(
+        page.locator(
+          "[data-gharargah-terminal-modal-header] [data-gharargah-session-terminal-tab]",
+        ),
+        1,
+      )
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-session-terminal-tabs]"),
+        page.locator(
+          "[data-gharargah-terminal-modal-header] [data-gharargah-session-terminal-tabs]",
+        ),
         "Terminal 1",
       )
       await page.locator("[data-gharargah-new-session-terminal]").click()
-      await expectLocatorCount(page.locator("[data-gharargah-session-terminal-tab]"), 2)
+      await expectLocatorCount(
+        page.locator(
+          "[data-gharargah-terminal-modal-header] [data-gharargah-session-terminal-tab]",
+        ),
+        2,
+      )
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-session-terminal-tabs]"),
+        page.locator(
+          "[data-gharargah-terminal-modal-header] [data-gharargah-session-terminal-tabs]",
+        ),
         "Terminal 2",
       )
       await expect
@@ -276,11 +292,6 @@ test.describe("gharargah mission home", () => {
         )
         .toBe(true)
       await page.setViewportSize({ width: 1440, height: 900 })
-      await expect
-        .poll(async () => page.locator("[data-gharargah-terminal-git-branch]").textContent(), {
-          timeout: 15_000,
-        })
-        .toMatch(/main/)
 
       // Git is one tool inside the same project session.
       await page.evaluate(() => {
@@ -319,6 +330,10 @@ test.describe("gharargah mission home", () => {
       await page.locator('[data-gharargah-session-mode-tab="git"]').click()
       await expectSelectorVisible(page, "[data-gharargah-git-workspace]", { timeout: 20_000 })
       await expectSelectorVisible(page, "[data-gharargah-session-pane=git]:not([hidden])")
+      await expectSelectorVisible(
+        page,
+        "[data-gharargah-terminal-modal-header] [data-gharargah-git-branch-trigger]",
+      )
       await expectListRows(page, {
         panel: "git-files",
         minItems: 2,

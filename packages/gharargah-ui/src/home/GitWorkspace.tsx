@@ -63,6 +63,7 @@ import { Textarea } from "@/components/ui/textarea.js"
 import { cn } from "@/lib/utils.js"
 import { requestConfirm } from "@/components/ConfirmDialogHost.js"
 import { showGharargahToast } from "@/toast.js"
+import { SessionHeaderChromePortal } from "./session-header-chrome.js"
 
 type GitWorkspaceProps = {
   rootUri: string | null
@@ -306,35 +307,40 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     )
   }
 
+  const onCheckout = (branch: string) => {
+    if (!rootUri || !api || branch === summary.branch) return
+    void runAction("Switch branch", () => api.checkout(rootUri, branch), `Switched to ${branch}`)
+  }
+
   return (
     <section
       data-gharargah-git-workspace=""
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
       aria-label="Git workspace"
     >
+      <SessionHeaderChromePortal active>
+        <GitBranchHeaderControls
+          summary={summary}
+          branches={branches}
+          pending={pendingAction !== null}
+          onCheckout={onCheckout}
+        />
+      </SessionHeaderChromePortal>
+
       <GitToolbar
         repositoryKey={rootUri}
         summary={summary}
-        branches={branches}
+        view={view}
         stagedCount={stagedCount}
         pendingAction={pendingAction}
+        onViewChange={setView}
         onCommit={commit}
-        onCheckout={branch => {
-          if (!rootUri || !api || branch === summary.branch) return
-          void runAction("Switch branch", () => api.checkout(rootUri, branch), `Switched to ${branch}`)
-        }}
         onRemoteAction={action => {
           if (!rootUri || !api) return
           const task = action === "fetch" ? api.fetch : action === "pull" ? api.pull : api.push
           void runAction(capitalize(action), () => task.call(api, rootUri), `${capitalize(action)} complete`)
         }}
         onRefresh={() => void refresh()}
-      />
-
-      <GitViewTabs
-        view={view}
-        stagedCount={stagedCount}
-        onChange={setView}
       />
 
       {view === "history" ? (
@@ -382,81 +388,105 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   )
 }
 
+function GitBranchHeaderControls(props: {
+  summary: GitRepositorySummary
+  branches: string[]
+  pending: boolean
+  onCheckout: (branch: string) => void
+}) {
+  const { summary, branches, pending, onCheckout } = props
+  const branchOptions =
+    summary.branch && !branches.includes(summary.branch)
+      ? [summary.branch, ...branches]
+      : branches
+  return (
+    <div
+      data-gharargah-session-header-tabs="git"
+      className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="max-w-48 gap-1"
+            aria-label={
+              summary.branch
+                ? `Switch branch, current branch ${summary.branch}`
+                : "Switch branch"
+            }
+            data-gharargah-git-branch-trigger=""
+            disabled={pending}
+          >
+            <GitBranchIcon className="size-3" />
+            <span className="truncate">{summary.branch ?? "Branch"}</span>
+            <ChevronDownIcon className="size-2.5 opacity-70" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel>Switch branch</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuRadioGroup
+            value={summary.branch ?? ""}
+            onValueChange={onCheckout}
+          >
+            {branchOptions.map(branch => (
+              <DropdownMenuRadioItem key={branch} value={branch}>
+                {branch}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <div
+        aria-label={`${summary.ahead} commits ahead, ${summary.behind} commits behind`}
+        className="hidden items-center gap-2 text-2xs tabular-nums text-muted-foreground sm:flex"
+      >
+        <span title={`${summary.ahead} commits ahead`}>
+          <ArrowUpIcon className="inline size-3" aria-hidden /> {summary.ahead}
+        </span>
+        <span title={`${summary.behind} commits behind`}>
+          <ArrowDownIcon className="inline size-3" aria-hidden /> {summary.behind}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function GitToolbar(props: {
   repositoryKey: string
   summary: GitRepositorySummary
-  branches: string[]
+  view: GitView
   stagedCount: number
   pendingAction: string | null
+  onViewChange: (view: GitView) => void
   onCommit: (summary: string, body: string) => Promise<boolean>
-  onCheckout: (branch: string) => void
   onRemoteAction: (action: "fetch" | "pull" | "push") => void
   onRefresh: () => void
 }) {
   const {
     repositoryKey,
     summary,
-    branches,
+    view,
     stagedCount,
     pendingAction,
+    onViewChange,
     onCommit,
-    onCheckout,
     onRemoteAction,
     onRefresh,
   } = props
   const busy = pendingAction !== null
-  const branchOptions =
-    summary.branch && !branches.includes(summary.branch)
-      ? [summary.branch, ...branches]
-      : branches
   return (
     <header
       data-gharargah-git-toolbar=""
-      className="flex h-11 shrink-0 items-center gap-2 border-b bg-background px-3"
+      className="flex h-9 shrink-0 items-center gap-2 border-b bg-background px-2"
     >
-      <div className="flex min-w-0 items-center gap-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              className="w-10 gap-1"
-              aria-label={
-                summary.branch
-                  ? `Switch branch, current branch ${summary.branch}`
-                  : "Switch branch"
-              }
-              data-gharargah-git-branch-trigger=""
-              disabled={busy}
-            >
-              <GitBranchIcon />
-              <ChevronDownIcon className="size-2.5 opacity-70" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuLabel>Switch branch</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuRadioGroup
-              value={summary.branch ?? ""}
-              onValueChange={onCheckout}
-            >
-              {branchOptions.map(branch => (
-                <DropdownMenuRadioItem key={branch} value={branch}>
-                  {branch}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <div
-          aria-label={`${summary.ahead} commits ahead, ${summary.behind} commits behind`}
-          className="hidden items-center gap-2 text-2xs tabular-nums text-muted-foreground sm:flex"
-        >
-          <span title={`${summary.ahead} commits ahead`}><ArrowUpIcon className="inline" aria-hidden /> {summary.ahead}</span>
-          <span title={`${summary.behind} commits behind`}><ArrowDownIcon className="inline" aria-hidden /> {summary.behind}</span>
-        </div>
-      </div>
+      <GitViewTabs
+        view={view}
+        stagedCount={stagedCount}
+        onChange={onViewChange}
+      />
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <GitCommitDialog
           key={repositoryKey}
@@ -638,7 +668,12 @@ function GitViewTabs(props: {
 }) {
   const { view, stagedCount, onChange } = props
   return (
-    <div role="tablist" aria-label="Git views" onKeyDown={handleTabKeyDown} className="flex h-9 shrink-0 items-end gap-1 border-b border-border/60 px-3">
+    <div
+      role="tablist"
+      aria-label="Git views"
+      onKeyDown={handleTabKeyDown}
+      className="flex min-w-0 items-center gap-0.5"
+    >
       <GitViewTab active={view === "changes"} label="Changes" onSelect={() => onChange("changes")} />
       <GitViewTab active={view === "staged"} label={`Staged ${stagedCount || ""}`} onSelect={() => onChange("staged")} />
       <GitViewTab active={view === "history"} label="History" onSelect={() => onChange("history")} />
@@ -654,8 +689,10 @@ function GitViewTab(props: { active: boolean; label: string; onSelect: () => voi
       aria-selected={props.active}
       tabIndex={props.active ? 0 : -1}
       className={cn(
-        "relative h-8 px-3 text-2xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
-        props.active ? "text-foreground after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:bg-primary" : "text-muted-foreground hover:text-foreground",
+        "h-7 rounded-md border px-2.5 text-2xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+        props.active
+          ? "border-border bg-card text-foreground shadow-sm"
+          : "border-transparent text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
       )}
       onClick={props.onSelect}
     >

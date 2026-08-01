@@ -1,5 +1,6 @@
-import React, { type SVGProps, useId } from "react";
-import { cn } from "@/lib/utils.js";
+import React, { type SVGProps } from "react"
+import { cn } from "@/lib/utils.js"
+import type { SessionProvider } from "./session-card-model.js"
 
 export type Icon = React.FC<SVGProps<SVGSVGElement>>;
 export const CursorIcon: Icon = ({ className, ...props }) => (
@@ -59,3 +60,16 @@ export const OpenCodeIcon: Icon = (props) => (
     </defs>
   </svg>
 );
+
+/** Brand glyph for a CLI agent provider (Codex/Claude/Cursor/…). */
+export function sessionProviderIcon(
+  agentId: SessionProvider | null | undefined,
+): Icon | null {
+  if (!agentId) return null
+  if (agentId === "claude") return ClaudeAI
+  if (agentId === "cursor") return CursorIcon
+  if (agentId === "codex") return OpenAI
+  if (agentId === "opencode") return OpenCodeIcon
+  if (agentId === "grok") return GrokIcon
+  return null
+}

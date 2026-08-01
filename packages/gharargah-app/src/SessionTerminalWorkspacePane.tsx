@@ -38,6 +38,8 @@ export type SessionTerminalWorkspacePaneProps = {
   sessionTabId: string
   theme: GharargahTheme
   active: boolean
+  /** When true, terminal tabs render in the session header. */
+  headerActive?: boolean
   /** The session PTY is Terminal 1 only for non-agent sessions. */
   primaryTerminal?: ReactNode
   onOpenPath?: (path: string, line?: number, column?: number) => void
@@ -50,6 +52,7 @@ export function SessionTerminalWorkspacePane(
     sessionTabId,
     theme,
     active,
+    headerActive = false,
     primaryTerminal = null,
     onOpenPath,
   } = props
@@ -147,6 +150,7 @@ export function SessionTerminalWorkspacePane(
     <SessionTerminalWorkspace
       items={items}
       activeId={activeId}
+      headerActive={headerActive}
       onActiveChange={tabId =>
         setActiveSessionTerminal(sessionTabId, tabId)
       }

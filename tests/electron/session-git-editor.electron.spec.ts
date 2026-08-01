@@ -31,24 +31,26 @@ test.describe("session Git and editor workspaces", () => {
         noResultsText: "No matching changes",
       })
       const repositoryToolbar = page.locator("[data-gharargah-git-toolbar]")
+      const sessionHeader = page.locator("[data-gharargah-terminal-modal-header]")
       const session = page.locator("[data-gharargah-terminal-modal]")
       await expect
-        .poll(() => session.getByText("workspace / Git", { exact: true }).count())
-        .toBeGreaterThanOrEqual(1)
-      await expect
-        .poll(() => session.getByText("main", { exact: true }).count())
-        .toBeGreaterThanOrEqual(1)
+        .poll(async () =>
+          (await session.locator("[data-gharargah-terminal-modal-title]").textContent())?.trim() ?? "",
+        )
+        .toBe("workspace / Git")
       await expectLocatorCount(repositoryToolbar.getByText("workspace", { exact: true }), 0)
       await expectLocatorCount(repositoryToolbar.getByText("main", { exact: true }), 0)
       await expectLocatorCount(repositoryToolbar.getByText(/^Commit \d+$/), 0)
       await expectLocatorVisible(
-        repositoryToolbar.getByRole("button", {
+        sessionHeader.getByRole("button", {
           name: "Switch branch, current branch main",
         }),
       )
-      await expectLocatorCount(repositoryToolbar.getByRole("button"), 4)
+      await expectLocatorCount(repositoryToolbar.getByRole("button"), 3)
       await expectLocatorVisible(repositoryToolbar.getByRole("button", { name: "Refresh Git" }))
-      await expectLocatorVisible(page.getByRole("tab", { name: "History", exact: true }))
+      await expectLocatorVisible(repositoryToolbar.getByRole("tab", { name: "Changes", exact: true }))
+      await expectLocatorVisible(repositoryToolbar.getByRole("tab", { name: "History", exact: true }))
+      await expectSelectorVisible(page, "[data-gharargah-session-mode-dock]")
       await expectLocatorCount(page.locator("[data-gharargah-git-commit-form]"), 0)
       await expect
         .poll(async () => {
@@ -234,7 +236,12 @@ test.describe("session Git and editor workspaces", () => {
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"][data-active]')
       await expectSelectorVisible(page, "[data-gharargah-monaco-editor]", { timeout: 20_000 })
-      await expectLocatorContainsText(page.locator("[data-gharargah-modal-editor-tabs]"), "index.ts")
+      await expectLocatorContainsText(
+        page.locator(
+          "[data-gharargah-terminal-modal-header] [data-gharargah-modal-editor-tabs]",
+        ),
+        "index.ts",
+      )
       const marker = "// editor-playwright-save"
       const editor = page.locator("[data-gharargah-monaco-editor] .monaco-editor")
       await editor.click()
@@ -283,14 +290,16 @@ test.describe("session Git and editor workspaces", () => {
       await expectLocatorCount(page.locator("[data-gharargah-modal-editor-tab]"), 1)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
 
-      const editorMode = page.locator('[data-gharargah-session-mode-tab="editor"]')
-      await editorMode.focus()
-      await editorMode.press("ArrowRight")
+      await page.locator('[data-gharargah-session-mode-tab="git"]').click()
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="git"][data-active]')
       await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
       await expectSelectorVisible(page, '[data-gharargah-session-mode-tab="editor"][data-active]')
       await expectLocatorCount(page.locator("[data-gharargah-session-mode-tab]"), 4)
       await expectLocatorCount(page.locator("[data-gharargah-workspace-sidebar]"), 0)
+      await expectSelectorVisible(
+        page,
+        "[data-gharargah-terminal-modal-header] [data-gharargah-modal-editor-tabs]",
+      )
     } finally {
       await app.close()
       fixture.remove()

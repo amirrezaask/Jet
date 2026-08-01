@@ -14,16 +14,25 @@ test.describe("terminal-first session workspace", () => {
 
       await expectLocatorContainsText(
         page.locator("[data-gharargah-terminal-modal-title]"),
-        "sample-workspace",
-      )
-      await expectLocatorContainsText(
-        page.locator("[data-gharargah-terminal-modal-title]"),
         "Codex",
       )
+      await expect
+        .poll(async () =>
+          (await page.locator("[data-gharargah-terminal-modal-title]").textContent()) ?? "",
+        )
+        .not.toMatch(/sample-workspace/)
+      await expectSelectorVisible(page, "[data-gharargah-session-mode-dock]")
       await expectLocatorCount(
-        page.locator("[data-gharargah-session-mode-label]"),
+        page.locator("[data-gharargah-session-mode-tab]"),
         4,
       )
+      await expect
+        .poll(() =>
+          page
+            .locator('[data-gharargah-session-mode-tab="agent"]')
+            .getAttribute("data-gharargah-session-mode-agent"),
+        )
+        .toBe("codex")
       await expectLocatorCount(
         page.locator("[data-gharargah-agent-activity-rail]"),
         0,
@@ -73,7 +82,11 @@ test.describe("terminal-first session workspace", () => {
 
       expect(layout).not.toBeNull()
       expect(layout?.pane).toEqual(layout?.body)
-      expect(layout?.terminal).toEqual(layout?.body)
+      // Agent PTY fills the stage; floating mode dock overlays the bottom inset.
+      expect(layout?.terminal?.top).toBe(layout?.body?.top)
+      expect(layout?.terminal?.left).toBe(layout?.body?.left)
+      expect(layout?.terminal?.right).toBe(layout?.body?.right)
+      expect(layout?.terminal?.bottom).toBe(layout?.body?.bottom)
     } finally {
       await app.close()
     }

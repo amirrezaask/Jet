@@ -16,7 +16,7 @@ const ptyAvailable = hasPtySpawn()
 test.describe("session header", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
 
-  test("shows project and agent identity without repeating the CLI provider", async () => {
+  test("shows the agent title in agent mode without project or provider chrome", async () => {
     const { app, page } = await launchJet()
     try {
       const modal = await openNewCliSession(page, "codex")
@@ -26,13 +26,15 @@ test.describe("session header", () => {
       const title = header.locator(
         "[data-gharargah-terminal-modal-title]",
       )
-      const workspaceName = await page.evaluate(() => {
-        const workspace = window.__gharargahAgent!.getState().activeWorkspace!
-        return workspace.split("/").filter(Boolean).at(-1)
-      })
 
       await expectLocatorVisible(header)
-      await expectLocatorContainsText(title, workspaceName!)
+      await expect
+        .poll(() => title.evaluate(el => el.classList.contains("sr-only")))
+        .toBe(false)
+      await expectLocatorContainsText(title, "Codex")
+      await expect
+        .poll(async () => (await title.textContent()) ?? "")
+        .not.toMatch(/\//)
       await expectLocatorCount(
         header.locator("[data-chat-header-provider]"),
         0,
@@ -41,12 +43,22 @@ test.describe("session header", () => {
         header.locator("[data-gharargah-terminal-launch-command]"),
         0,
       )
-      await expect
-        .poll(async () => {
-          const text = (await header.textContent()) ?? ""
-          return text.match(/codex/gi)?.length ?? 0
-        })
-        .toBe(1)
+      await expectLocatorCount(
+        header.locator("[data-gharargah-session-status-label]"),
+        0,
+      )
+      await expectLocatorCount(
+        header.locator("[data-gharargah-session-status-indicator]"),
+        0,
+      )
+      await expectLocatorCount(
+        header.locator("[data-gharargah-session-project-name]"),
+        0,
+      )
+      await expectLocatorCount(
+        header.locator("[data-chat-header-model]"),
+        0,
+      )
     } finally {
       await app.close()
     }

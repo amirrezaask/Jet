@@ -1,13 +1,5 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react"
-import {
-  Bot,
-  Code2,
-  GitBranch,
-  RotateCcw,
-  SquareTerminal,
-  XIcon,
-  type LucideIcon,
-} from "lucide-react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { RotateCcw, XIcon } from "lucide-react"
 import {
   Dialog,
   DialogClose,
@@ -16,16 +8,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.js"
 import { Button } from "@/components/ui/button.js"
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs.js"
 import { cn } from "@/lib/utils.js"
-import { formatKeyBinding } from "@/lib/format-key.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
-import { distinctSessionHeaderLabel } from "./session-header-labels.js"
 import type { DesktopWindowPlatform } from "./GharargahWindowTitlebar.js"
+import { SessionModeDock } from "./SessionModeDock.js"
+import {
+  SessionHeaderChromeProvider,
+  sessionHeaderContextRef,
+} from "./session-header-chrome.js"
+import type { SessionProvider } from "./session-card-model.js"
 
 export type SessionDialogMode =
   | "agent"
@@ -64,6 +55,8 @@ export type TerminalSessionModalProps = {
   onModeChange: (mode: SessionDialogMode) => void
   /** Whether this session has an agent surface (CLI or in-app chat). */
   showAgentTab?: boolean
+  /** Drives Agent dock brand glyph (Codex/Claude/…). */
+  agentId?: SessionProvider | null
   /** Merged into the session header when mode is agent. */
   agentSessionHeader?: AgentSessionHeaderMeta | null
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
@@ -146,6 +139,9 @@ function monacoWidgetOwnsEscape(
 
 export function TerminalSessionModal(props: TerminalSessionModalProps) {
   const monacoEscapeOwnedRef = useRef(false)
+  const [headerContextEl, setHeaderContextEl] = useState<HTMLElement | null>(
+    null,
+  )
   const {
     sessionId,
     open,
@@ -153,15 +149,16 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     presentation = "modal",
     windowChrome = null,
     title,
-    launchCommand,
-    status = null,
+    launchCommand: _launchCommand,
+    status: _status = null,
     archivedAt = null,
     onResumeArchived,
-    gitBranch,
+    gitBranch: _gitBranch,
     projectRootUri,
     mode,
     onModeChange,
     showAgentTab = false,
+    agentId = null,
     agentSessionHeader = null,
     onOpenInApp,
     headerEnd = null,
@@ -229,33 +226,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       } as CSSProperties)
     : undefined
   const displayTitle = showAgentMeta ? agentSessionHeader.threadTitle : title
-  const displayLaunchCommand = mode === "agent" ? null : launchCommand
-  const displayProjectName = showAgentMeta
-    ? distinctSessionHeaderLabel(
-        displayTitle,
-        agentSessionHeader.projectName,
-      )
-    : null
-  const statusLabel =
-    archivedAt
-      ? "Archived"
-      : status === "starting"
-      ? "Starting"
-      : status === "running"
-        ? "Live"
-        : status === "failed"
-          ? "Failed"
-          : status === "exited"
-            ? "Finished"
-            : null
-  const StatusIcon =
-    mode === "agent"
-      ? Bot
-      : mode === "editor"
-        ? Code2
-        : mode === "git"
-          ? GitBranch
-          : SquareTerminal
+  const showVisibleTitle = mode === "agent"
 
   const sessionHeader = (
     <DialogHeader
@@ -263,12 +234,17 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
       data-gharargah-window-drag-region={ownsWindowChrome ? "" : undefined}
       className={cn(
-        "flex flex-row shrink-0 items-center gap-3 border-b bg-background px-2.5 py-0 text-left sm:text-left",
-        !ownsWindowChrome && "h-12",
+        "flex flex-row shrink-0 items-center gap-2 border-b bg-background px-2.5 py-0 text-left sm:text-left",
+        !ownsWindowChrome && "h-10",
       )}
       style={headerStyle}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-1.5",
+          showVisibleTitle ? "max-w-[42%] shrink" : "shrink-0",
+        )}
+      >
         {windowChrome?.trafficLights && ownsWindowChrome ? (
           <div
             aria-hidden
@@ -276,147 +252,29 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             style={dragRegion}
           />
         ) : null}
-        <div
-          data-gharargah-session-identity-icon=""
-          className="relative flex size-7 shrink-0 items-center justify-center rounded-md border bg-muted/55 text-muted-foreground"
-          aria-hidden
+        <h2
+          data-gharargah-terminal-modal-title
+          className={cn(
+            showVisibleTitle
+              ? "min-w-0 truncate text-xs font-semibold tracking-tight text-foreground"
+              : "sr-only",
+          )}
         >
-          <StatusIcon />
-          {status ? (
-            <span
-              data-gharargah-session-status-indicator=""
-              data-status={status}
-              className={cn(
-                "absolute -end-0.5 -bottom-0.5 size-2 rounded-full border-2 border-background",
-                status === "failed"
-                  ? "bg-destructive"
-                  : status === "running"
-                    ? "bg-primary"
-                    : "bg-muted-foreground",
-              )}
-            />
-          ) : null}
-        </div>
-        <div className="flex min-w-0 flex-col justify-center gap-0.5">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <h2
-              data-gharargah-terminal-modal-title
-              className="shrink truncate text-xs font-semibold tracking-tight text-foreground"
-            >
-              {displayTitle}
-            </h2>
-            {statusLabel ? (
-              <span
-                data-gharargah-session-status-label=""
-                className="hidden shrink-0 font-mono text-3xs text-muted-foreground min-[720px]:inline"
-              >
-                {statusLabel}
-              </span>
-            ) : null}
-          </div>
-          {showAgentMeta ? (
-            <div className="flex min-w-0 items-center gap-1 truncate font-mono text-3xs text-muted-foreground">
-              {displayProjectName || agentSessionHeader.modelLabel ? (
-                <span aria-hidden="true" className="text-muted-foreground/50">
-                  ·
-                </span>
-              ) : null}
-              {displayProjectName ? (
-                <span
-                  className="truncate"
-                  data-gharargah-session-project-name
-                >
-                  {displayProjectName}
-                </span>
-              ) : null}
-              {displayProjectName && agentSessionHeader.modelLabel ? (
-                <span aria-hidden="true" className="text-muted-foreground/50">
-                  ·
-                </span>
-              ) : null}
-              {agentSessionHeader.modelLabel ? (
-                <span className="truncate" data-chat-header-model="true">
-                  {agentSessionHeader.modelLabel}
-                </span>
-              ) : null}
-            </div>
-          ) : displayLaunchCommand || gitBranch ? (
-            <p className="flex min-w-0 items-center gap-1.5 truncate font-mono text-3xs text-muted-foreground">
-              {displayLaunchCommand ? (
-                <span
-                  data-gharargah-terminal-launch-command
-                  className="truncate"
-                >
-                  {displayLaunchCommand}
-                </span>
-              ) : null}
-              {displayLaunchCommand && gitBranch ? (
-                <span className="text-muted-foreground/50" aria-hidden>
-                  ·
-                </span>
-              ) : null}
-              {gitBranch ? (
-                <span
-                  data-gharargah-terminal-git-branch
-                  className="flex min-w-0 items-center gap-0.5 truncate"
-                >
-                  <GitBranch
-                    className="size-2.5 shrink-0 opacity-80"
-                    aria-hidden
-                  />
-                  <span className="truncate">{gitBranch}</span>
-                </span>
-              ) : null}
-            </p>
-          ) : null}
-        </div>
+          {displayTitle}
+        </h2>
       </div>
+
+      <div
+        ref={sessionHeaderContextRef(setHeaderContextEl)}
+        data-gharargah-session-header-context=""
+        className="flex min-h-0 min-w-0 flex-1 items-center overflow-hidden"
+        style={noDragRegion}
+      />
 
       <div
         className="flex shrink-0 items-center gap-0.5"
         style={noDragRegion}
       >
-        <Tabs
-          data-gharargah-session-mode-switch
-          value={mode}
-          onValueChange={value => onModeChange(value as SessionDialogMode)}
-          className="block min-w-0"
-        >
-          <TabsList
-            variant="default"
-            aria-label="Session tools"
-            className="h-8 gap-0.5 rounded-lg bg-muted/55 p-0.5"
-          >
-            <SessionToolTab
-              mode="agent"
-              label="Agent"
-              icon={Bot}
-              disabled={!showAgentTab}
-              active={mode === "agent"}
-            />
-            <SessionToolTab
-              mode="editor"
-              active={mode === "editor"}
-              label="Editor"
-              icon={Code2}
-              shortcut="Mod-Shift-e"
-            />
-            <SessionToolTab
-              mode="git"
-              active={mode === "git"}
-              label="Git"
-              icon={GitBranch}
-              shortcut="Mod-Shift-g"
-            />
-            <SessionToolTab
-              mode="terminal"
-              active={mode === "terminal"}
-              label="Terminal"
-              icon={SquareTerminal}
-              shortcut="Mod-Shift-t"
-            />
-          </TabsList>
-        </Tabs>
         {projectRootUri && onOpenInApp ? (
           <OpenInAppMenu
             rootUri={projectRootUri}
@@ -448,11 +306,26 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     </DialogHeader>
   )
 
+  const modeDock = (
+    <div
+      data-gharargah-session-mode-dock-host=""
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-3"
+    >
+      <SessionModeDock
+        mode={mode}
+        onModeChange={onModeChange}
+        showAgentTab={showAgentTab}
+        agentId={agentId}
+      />
+    </div>
+  )
+
   const stage = (
-    <>
+    <SessionHeaderChromeProvider target={headerContextEl}>
       {sessionHeader}
       <div
         data-gharargah-terminal-modal-body=""
+        data-gharargah-session-dock-inset=""
         className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden overscroll-contain"
       >
         {showAgentTab ? (
@@ -537,8 +410,9 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         >
           {mode === "todos" ? todos : null}
         </div>
+        {modeDock}
       </div>
-    </>
+    </SessionHeaderChromeProvider>
   )
 
   if (presentation === "inline") {
@@ -617,42 +491,5 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         {stage}
       </DialogContent>
     </Dialog>
-  )
-}
-
-function SessionToolTab(props: {
-  mode: SessionDialogMode
-  active: boolean
-  label: string
-  icon: LucideIcon
-  shortcut?: string
-  disabled?: boolean
-}) {
-  const { mode, active, label, icon: Icon, shortcut, disabled = false } = props
-  const title = disabled
-    ? `${label} (no agent in this session)`
-    : shortcut
-      ? `${label} (${formatKeyBinding(shortcut)})`
-      : label
-  return (
-    <TabsTrigger
-      value={mode}
-      aria-label={label}
-      title={title}
-      aria-controls={`gharargah-session-pane-${mode}`}
-      id={`gharargah-session-tab-${mode}`}
-      disabled={disabled}
-      data-gharargah-session-mode-tab={mode}
-      data-active={active ? "" : undefined}
-      className="h-7 min-w-7 flex-none px-2 text-xs"
-    >
-      <Icon aria-hidden />
-      <span
-        data-gharargah-session-mode-label=""
-        className="hidden min-[860px]:inline"
-      >
-        {label}
-      </span>
-    </TabsTrigger>
   )
 }

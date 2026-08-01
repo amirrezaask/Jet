@@ -3158,12 +3158,12 @@ export function GharargahApp() {
                       }
                       if (sessionMode === "agent") {
                         const session = terminalSessionForTab(terminalModalTabId)
-                        const label =
+                        return (
                           session?.customLabel ??
                           session?.agentTitle ??
                           workspace.tabRegistry.get(terminalModalTabId)?.label ??
                           "Agent"
-                        return formatSessionHeaderTitle(project, label)
+                        )
                       }
                       if (sessionMode === "git")
                         return formatSessionHeaderTitle(project, "Git")
@@ -3195,6 +3195,17 @@ export function GharargahApp() {
                     showAgentTab={(() => {
                       const session = terminalSessionForTab(terminalModalTabId)
                       return Boolean(session?.agentId && session?.launchCommand)
+                    })()}
+                    agentId={(() => {
+                      const id =
+                        terminalSessionForTab(terminalModalTabId)?.agentId
+                      return id === "claude" ||
+                        id === "codex" ||
+                        id === "cursor" ||
+                        id === "opencode" ||
+                        id === "grok"
+                        ? id
+                        : null
                     })()}
                 onModeChange={mode => {
                   const terminalSession =
@@ -3240,6 +3251,7 @@ export function GharargahApp() {
                     activeTabId={editorActiveTabId}
                     workspace={workspace}
                     lspStatus={lspStatus}
+                    headerActive={sessionMode === "editor"}
                     onActivateBuffer={tabId => {
                       if (!editorPanelId) return
                         handlePanelEvent({
@@ -3305,6 +3317,7 @@ export function GharargahApp() {
                     sessionTabId={terminalModalTabId}
                     theme={activeTheme}
                     active={sessionMode === "terminal"}
+                    headerActive={sessionMode === "terminal"}
                     primaryTerminal={
                       terminalSessionForTab(terminalModalTabId)
                         ?.agentId ? null : (

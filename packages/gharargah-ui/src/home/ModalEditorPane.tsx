@@ -13,11 +13,24 @@ import { cn } from "@/lib/utils.js"
 import { formatKeyBinding } from "@/lib/format-key.js"
 import { getEditorCursor, subscribeEditorCursor } from "@/status/editor-cursor-store.js"
 import { SearchLocationList } from "@/panels/location-list/SearchLocationList.js"
+import { SessionHeaderChromePortal } from "./session-header-chrome.js"
 
 export type ModalEditorBuffer = {
   tabId: string
   label: string
   dirty: boolean
+}
+
+export type ModalEditorTabBarProps = {
+  buffers: ModalEditorBuffer[]
+  activeTabId: string | null
+  onActivateBuffer: (tabId: string) => void
+  onCloseBuffer: (tabId: string) => void
+  onQuickOpen?: () => void
+  projectSearchOpen?: boolean
+  onProjectSearchOpenChange?: (open: boolean) => void
+  onCommandPalette?: () => void
+  className?: string
 }
 
 export type ModalEditorPaneProps = {
@@ -32,7 +45,142 @@ export type ModalEditorPaneProps = {
   onProjectSearchOpenChange?: (open: boolean) => void
   onOpenSearchItem?: (item: ListItem) => void
   onCommandPalette?: () => void
+  /** When true, buffer tabs render in the session header via portal. */
+  headerActive?: boolean
   children: ReactNode
+}
+
+export function ModalEditorTabBar(props: ModalEditorTabBarProps) {
+  const {
+    buffers,
+    activeTabId,
+    onActivateBuffer,
+    onCloseBuffer,
+    onQuickOpen,
+    projectSearchOpen = false,
+    onProjectSearchOpenChange,
+    onCommandPalette,
+    className,
+  } = props
+
+  return (
+    <div
+      data-gharargah-modal-editor-tabs=""
+      data-gharargah-session-header-tabs="editor"
+      role="tablist"
+      aria-label="Open buffers"
+      onKeyDown={handleBufferTabKeyDown}
+      className={cn(
+        "flex h-full min-h-8 min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto",
+        className,
+      )}
+    >
+      {buffers.length === 0 ? (
+        <p className="flex items-center px-2 text-2xs text-muted-foreground">
+          No open buffers — Quick Open a file
+        </p>
+      ) : (
+        buffers.map(buffer => {
+          const active = buffer.tabId === activeTabId
+          return (
+            <div
+              key={buffer.tabId}
+              data-gharargah-modal-editor-tab={buffer.tabId}
+              data-active={active ? "" : undefined}
+              className={cn(
+                "group relative flex max-w-48 min-w-0 shrink-0 items-center gap-1 rounded-md border px-2",
+                active
+                  ? "border-border bg-card text-foreground shadow-sm"
+                  : "border-transparent text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
+              )}
+              onMouseDown={event => {
+                if (event.button === 1) {
+                  event.preventDefault()
+                  onCloseBuffer(buffer.tabId)
+                }
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                id={`gharargah-editor-tab-${encodeURIComponent(buffer.tabId)}`}
+                aria-controls="gharargah-modal-editor-tabpanel"
+                aria-selected={active}
+                aria-label={`${buffer.label}${buffer.dirty ? ", unsaved changes" : ""}`}
+                data-dirty={buffer.dirty ? "" : undefined}
+                tabIndex={active ? 0 : -1}
+                className="min-w-0 flex-1 truncate text-left text-2xs font-medium outline-none focus-visible:underline focus-visible:underline-offset-4"
+                onClick={() => onActivateBuffer(buffer.tabId)}
+                title={buffer.label}
+              >
+                {buffer.label}
+              </button>
+              {buffer.dirty ? (
+                <span
+                  data-gharargah-buffer-dirty=""
+                  className="size-1.5 shrink-0 rounded-full bg-primary"
+                  aria-label="Unsaved changes"
+                />
+              ) : null}
+              <button
+                type="button"
+                aria-label={`Close ${buffer.label}`}
+                className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100"
+                onClick={event => {
+                  event.stopPropagation()
+                  onCloseBuffer(buffer.tabId)
+                }}
+              >
+                <XIcon className="size-3" />
+              </button>
+            </div>
+          )
+        })
+      )}
+      <div className="ml-auto flex shrink-0 items-center gap-0.5 px-0.5">
+        {onQuickOpen ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            title={`Quick open (${formatKeyBinding("Mod-p")})`}
+            className="text-muted-foreground hover:text-foreground"
+            onClick={onQuickOpen}
+          >
+            <FileSearch data-icon="inline-start" />
+            <span className="hidden sm:inline">Quick Open</span>
+          </Button>
+        ) : null}
+        {onProjectSearchOpenChange ? (
+          <Button
+            type="button"
+            variant={projectSearchOpen ? "secondary" : "ghost"}
+            size="xs"
+            aria-pressed={projectSearchOpen}
+            title={`Search project (${formatKeyBinding("Mod-Shift-f")})`}
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => onProjectSearchOpenChange(!projectSearchOpen)}
+          >
+            <SearchIcon data-icon="inline-start" />
+            <span className="hidden sm:inline">Search</span>
+          </Button>
+        ) : null}
+        {onCommandPalette ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            title={`Command palette (${formatKeyBinding("Mod-Shift-p")})`}
+            className="text-muted-foreground hover:text-foreground"
+            onClick={onCommandPalette}
+          >
+            <Command data-icon="inline-start" />
+            <span className="hidden sm:inline">Commands</span>
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 export function ModalEditorPane(props: ModalEditorPaneProps) {
@@ -48,6 +196,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
     onProjectSearchOpenChange,
     onOpenSearchItem,
     onCommandPalette,
+    headerActive = false,
     children,
   } = props
 
@@ -58,123 +207,32 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
     ? `gharargah-editor-tab-${encodeURIComponent(activeTabId)}`
     : undefined
 
+  const tabBar = (
+    <ModalEditorTabBar
+      buffers={buffers}
+      activeTabId={activeTabId}
+      onActivateBuffer={onActivateBuffer}
+      onCloseBuffer={onCloseBuffer}
+      onQuickOpen={onQuickOpen}
+      projectSearchOpen={projectSearchOpen}
+      onProjectSearchOpenChange={onProjectSearchOpenChange}
+      onCommandPalette={onCommandPalette}
+    />
+  )
+
   return (
     <div
       data-gharargah-modal-editor=""
       className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden"
     >
-      <div
-        data-gharargah-modal-editor-tabs=""
-        role="tablist"
-        aria-label="Open buffers"
-        onKeyDown={handleBufferTabKeyDown}
-        className="flex h-9 shrink-0 items-stretch gap-0 overflow-x-auto border-b bg-muted"
-      >
-        {buffers.length === 0 ? (
-          <p className="flex items-center px-3 text-2xs text-muted-foreground">
-            No open buffers — Quick Open a file
-          </p>
-        ) : (
-          buffers.map(buffer => {
-            const active = buffer.tabId === activeTabId
-            return (
-              <div
-                key={buffer.tabId}
-                data-gharargah-modal-editor-tab={buffer.tabId}
-                data-active={active ? "" : undefined}
-                className={cn(
-                  "group relative flex max-w-48 min-w-0 shrink-0 items-center gap-1 border-r border-border/40 px-2",
-                  active
-                    ? "bg-background text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
-                onMouseDown={event => {
-                  if (event.button === 1) {
-                    event.preventDefault()
-                    onCloseBuffer(buffer.tabId)
-                  }
-                }}
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  id={`gharargah-editor-tab-${encodeURIComponent(buffer.tabId)}`}
-                  aria-controls="gharargah-modal-editor-tabpanel"
-                  aria-selected={active}
-                  aria-label={`${buffer.label}${buffer.dirty ? ", unsaved changes" : ""}`}
-                  data-dirty={buffer.dirty ? "" : undefined}
-                  tabIndex={active ? 0 : -1}
-                  className="min-w-0 flex-1 truncate text-left text-2xs font-medium outline-none focus-visible:underline focus-visible:underline-offset-4"
-                  onClick={() => onActivateBuffer(buffer.tabId)}
-                  title={buffer.label}
-                >
-                  {buffer.label}
-                </button>
-                {buffer.dirty ? (
-                  <span
-                    data-gharargah-buffer-dirty=""
-                    className="size-1.5 shrink-0 rounded-full bg-primary"
-                    aria-label="Unsaved changes"
-                  />
-                ) : null}
-                <button
-                  type="button"
-                  aria-label={`Close ${buffer.label}`}
-                  className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100"
-                  onClick={event => {
-                    event.stopPropagation()
-                    onCloseBuffer(buffer.tabId)
-                  }}
-                >
-                  <XIcon className="size-3" />
-                </button>
-              </div>
-            )
-          })
-        )}
-        <div className="ml-auto flex shrink-0 items-center gap-0.5 px-1">
-          {onQuickOpen ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              title={`Quick open (${formatKeyBinding("Mod-p")})`}
-              className="text-muted-foreground hover:text-foreground"
-              onClick={onQuickOpen}
-            >
-              <FileSearch data-icon="inline-start" />
-              <span className="hidden sm:inline">Quick Open</span>
-            </Button>
-          ) : null}
-          {onProjectSearchOpenChange ? (
-            <Button
-              type="button"
-              variant={projectSearchOpen ? "secondary" : "ghost"}
-              size="xs"
-              aria-pressed={projectSearchOpen}
-              title={`Search project (${formatKeyBinding("Mod-Shift-f")})`}
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => onProjectSearchOpenChange(!projectSearchOpen)}
-            >
-              <SearchIcon data-icon="inline-start" />
-              <span className="hidden sm:inline">Search</span>
-            </Button>
-          ) : null}
-          {onCommandPalette ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              title={`Command palette (${formatKeyBinding("Mod-Shift-p")})`}
-              className="text-muted-foreground hover:text-foreground"
-              onClick={onCommandPalette}
-            >
-              <Command data-icon="inline-start" />
-              <span className="hidden sm:inline">Commands</span>
-            </Button>
-          ) : null}
+      <SessionHeaderChromePortal active={headerActive}>
+        {tabBar}
+      </SessionHeaderChromePortal>
+      {!headerActive ? (
+        <div className="flex h-9 shrink-0 items-stretch border-b bg-muted px-1">
+          {tabBar}
         </div>
-      </div>
+      ) : null}
 
       <ResizablePanelGroup
         orientation="horizontal"

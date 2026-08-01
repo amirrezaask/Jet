@@ -1,13 +1,6 @@
 import type { MouseEvent, ReactNode } from "react"
 import { Archive, MoreHorizontal, SquareTerminal, X } from "lucide-react"
-import {
-  ClaudeAI,
-  CursorIcon,
-  GrokIcon,
-  OpenAI,
-  OpenCodeIcon,
-  type Icon,
-} from "./provider-icons.js"
+import { sessionProviderIcon } from "./provider-icons.js"
 import { Button } from "@/components/ui/button.js"
 import { Card, CardContent, CardHeader } from "@/components/ui/card.js"
 import {
@@ -42,21 +35,7 @@ function ProviderGlyph({
   agentId?: SessionProvider
 }) {
   const className = "size-3.5 shrink-0"
-  if (!agentId) {
-    return <SquareTerminal className={cn(className, "text-muted-foreground")} />
-  }
-  const IconComp: Icon | null =
-    agentId === "claude"
-      ? ClaudeAI
-      : agentId === "cursor"
-        ? CursorIcon
-        : agentId === "codex"
-          ? OpenAI
-          : agentId === "opencode"
-            ? OpenCodeIcon
-            : agentId === "grok"
-              ? GrokIcon
-              : null
+  const IconComp = sessionProviderIcon(agentId)
   if (IconComp) return <IconComp className={className} />
   return <SquareTerminal className={cn(className, "text-muted-foreground")} />
 }

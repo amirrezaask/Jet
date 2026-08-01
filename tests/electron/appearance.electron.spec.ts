@@ -54,7 +54,7 @@ test.describe("electron appearance and terminal-first UX", () => {
         .toEqual([
           { opaque: true, blurred: false },
           { opaque: true, blurred: false },
-          { opaque: false, blurred: false },
+          { opaque: false, blurred: false }, // mode dock: translucent fill, no blur off glass surface
         ])
 
       await page.evaluate(async () => {

@@ -52,17 +52,29 @@ export {
   type AgentSessionHeaderMeta,
   type SessionDialogMode,
 } from "./TerminalSessionModal.js"
+export {
+  SessionModeDock,
+  type SessionModeDockProps,
+} from "./SessionModeDock.js"
 export { formatSessionHeaderTitle } from "./session-header-labels.js"
 export {
   SessionTerminalWorkspace,
+  SessionTerminalTabBar,
   type SessionTerminalItem,
   type SessionTerminalWorkspaceProps,
+  type SessionTerminalTabBarProps,
 } from "./SessionTerminalWorkspace.js"
 export {
   ModalEditorPane,
+  ModalEditorTabBar,
   type ModalEditorPaneProps,
+  type ModalEditorTabBarProps,
   type ModalEditorBuffer,
 } from "./ModalEditorPane.js"
+export {
+  SessionHeaderChromeProvider,
+  SessionHeaderChromePortal,
+} from "./session-header-chrome.js"
 export {
   NewSessionButton,
   type NewSessionButtonProps,
