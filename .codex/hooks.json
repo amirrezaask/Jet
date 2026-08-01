@@ -1,0 +1,103 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
