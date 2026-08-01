@@ -13,6 +13,8 @@ type LspRuntime = {
 }
 
 let lspRuntimePromise: Promise<LspRuntime> | null = null
+let lspRuntimeUsers = 0
+let lspRuntimeReleaseGeneration = 0
 
 async function loadLspRuntime(): Promise<LspRuntime> {
   if (!lspRuntimePromise) {
@@ -45,10 +47,31 @@ export function useLspLifecycle(
   const crashRetryCountRef = useRef(0)
   const crashRetryTimerRef = useRef<number | null>(null)
   const runtimeRef = useRef<LspRuntime | null>(null)
+  const knownRootUrisRef = useRef(new Set(workspace.folders.map(folder => folder.root.uri)))
   const onOpenFileRef = useRef(onOpenFile)
   onOpenFileRef.current = onOpenFile
   const MAX_CRASH_RETRIES = 3
   const CRASH_RETRY_BASE_MS = 500
+
+  useEffect(() => {
+    lspRuntimeUsers++
+    lspRuntimeReleaseGeneration++
+    return () => {
+      lspRuntimeUsers = Math.max(0, lspRuntimeUsers - 1)
+      const generation = ++lspRuntimeReleaseGeneration
+      queueMicrotask(() => {
+        if (lspRuntimeUsers !== 0 || lspRuntimeReleaseGeneration !== generation) return
+        const runtimePromise = lspRuntimePromise
+        lspRuntimePromise = null
+        if (!runtimePromise) return
+        void runtimePromise.then(async runtime => {
+          runtime.pool.clear()
+          await runtime.manager?.stopAll()
+          runtime.manager?.dispose()
+        })
+      })
+    }
+  }, [])
 
   const bumpLspRevision = useCallback(() => setLspRevision(r => r + 1), [])
 
@@ -59,6 +82,9 @@ export function useLspLifecycle(
     const { monacoModels } = await import("@gharargah/monaco")
     runtime.pool.setWorkspaceDeps({
       openFile: (uri, path, line, column) => onOpenFileRef.current(uri, path, line, column),
+      pushJumpLocation: (uri, line, column) => {
+        workspace.jumpStack.push({ fileUri: uri, line, column })
+      },
       readFile: uri => workspace.readFile(uri),
       getLanguageId: uri => {
         const file = workspace.fileForUri(uri)
@@ -190,6 +216,25 @@ export function useLspLifecycle(
     },
     [bumpLspRevision],
   )
+
+  useEffect(() => {
+    const sub = workspace.manager.onDidChangeFolders.event(folders => {
+      const next = new Set(folders.map(folder => folder.root.uri))
+      const runtime = runtimeRef.current
+      if (runtime?.manager) {
+        for (const rootUri of knownRootUrisRef.current) {
+          if (next.has(rootUri)) continue
+          void runtime.manager.stopServersForRoot(rootUri).then(stoppedIds => {
+            for (const id of stoppedIds) runtime.pool.releaseConnection(id)
+            setLspStatus(runtime.manager?.hasAnyConnection() ? "ready" : "idle")
+            bumpLspRevision()
+          })
+        }
+      }
+      knownRootUrisRef.current = next
+    })
+    return () => sub.dispose()
+  }, [workspace, bumpLspRevision])
 
   useEffect(() => {
     if (!window.gharargah?.lsp?.onCrashed) return

@@ -6,7 +6,7 @@ import {
   clearTerminalSession,
   hydrateTerminalSession,
   listTerminalSessions,
-  markSessionDone,
+  archiveSession,
   terminalSessionForTab,
 } from "./tabs/terminal-session.js"
 
@@ -44,14 +44,14 @@ describe("reconcileHydratedTerminalPtys", () => {
     assert.equal(session.ptyId, undefined)
   })
 
-  it("keeps done sessions even when pty is missing", async () => {
+  it("keeps archived sessions even when pty is missing", async () => {
     hydrateTerminalSession({
-      tabId: "gharargah:terminal:done",
+      tabId: "gharargah:terminal:archived",
       cwdRootUri: "file:///tmp/proj",
       ptyId: "term-missing",
       status: "running",
     })
-    markSessionDone("gharargah:terminal:done")
+    archiveSession("gharargah:terminal:archived")
 
     const terminal: Pick<JetElectronTerminal, "attach" | "dispose"> = {
       attach: async () => null,
@@ -61,7 +61,7 @@ describe("reconcileHydratedTerminalPtys", () => {
     const dead = await reconcileHydratedTerminalPtys(terminal as JetElectronTerminal)
 
     assert.deepEqual(dead, [])
-    assert.ok(terminalSessionForTab("gharargah:terminal:done")?.doneAt)
+    assert.ok(terminalSessionForTab("gharargah:terminal:archived")?.archivedAt)
   })
 
   it("keeps agent CLI sessions with a stored provider session id", async () => {

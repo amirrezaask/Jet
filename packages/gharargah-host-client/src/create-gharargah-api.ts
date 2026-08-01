@@ -187,6 +187,10 @@ export function createGharargahApi(
       },
     },
     agents: {
+      listCliSessions: (req, signal) =>
+        transport.invokeWithSignal
+          ? transport.invokeWithSignal("agents:listCliSessions", [req], signal ?? new AbortController().signal)
+          : transport.invoke("agents:listCliSessions", req),
       getSnapshot: sessionId => transport.invoke("agents:getSnapshot", sessionId),
       listEvents: (sessionId, opts) =>
         transport.invoke("agents:listEvents", sessionId, opts ?? {}),

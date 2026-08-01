@@ -3,6 +3,7 @@ import { canonicalizeFileUri } from "@gharargah/shared"
 /** Workspace integration hooks used by the Monaco LSP client pool. */
 export type JetLspWorkspaceDeps = {
   openFile: (uri: string, path: string, line?: number, column?: number) => void
+  pushJumpLocation?: (uri: string, line: number, column: number) => void
   readFile: (uri: string) => Promise<string>
   getLanguageId: (uri: string) => string
   isDirty: (uri: string) => boolean

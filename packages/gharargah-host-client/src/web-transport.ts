@@ -71,6 +71,30 @@ export class WebHostTransport implements GharargahHostTransport {
     }
   }
 
+  async invokeWithSignal<T>(
+    channel: string,
+    args: unknown[],
+    signal: AbortSignal,
+  ): Promise<T> {
+    if (this.closed) throw new Error("host transport closed")
+    if (signal.aborted) throw new Error("host invoke aborted")
+    const ac = new AbortController()
+    const abort = () => ac.abort(signal.reason)
+    signal.addEventListener("abort", abort, { once: true })
+    this.pendingAborts.add(ac)
+    try {
+      return await Effect.runPromise(
+        invokeHostRpc(this.clientId, channel, args, { signal: ac.signal }).pipe(
+          Effect.map(value => value as T),
+          Effect.mapError(error => new Error(error.message)),
+        ),
+      )
+    } finally {
+      signal.removeEventListener("abort", abort)
+      this.pendingAborts.delete(ac)
+    }
+  }
+
   on(channel: string, listener: (...args: unknown[]) => void): () => void {
     let channelListeners = this.listeners.get(channel)
     if (!channelListeners) {

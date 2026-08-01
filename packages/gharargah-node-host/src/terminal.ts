@@ -6,6 +6,14 @@ import { uriToPath } from "./paths.js"
 
 const MAX_TERMINAL_REPLAY = 2 * 1024 * 1024
 const MAX_WRITE_BYTES = 1024 * 1024
+/**
+ * node-pty commonly delivers output in 1 KiB chunks. Sending each chunk as a
+ * JSON/WebSocket event makes a log flood spend more time on framing, parsing,
+ * and callbacks than on terminal emulation. Keep interactive latency below a
+ * frame while coalescing throughput-oriented bursts into useful-sized frames.
+ */
+const TERMINAL_EMIT_BATCH_BYTES = 64 * 1024
+const TERMINAL_EMIT_BATCH_DELAY_MS = 4
 
 export type TerminalLaunch = {
   command?: string
@@ -44,10 +52,56 @@ type TerminalEntry = {
   output: string[]
   outputHead: number
   outputBytes: number
+  pendingOutput: string[]
+  pendingOutputBytes: number
+  pendingOutputTimer: ReturnType<typeof setTimeout> | null
   proc: pty.IPty | null
   disposed: boolean
   dataDisposable: pty.IDisposable | null
   exitDisposable: pty.IDisposable | null
+}
+
+function flushPendingOutput(entry: TerminalEntry, emit: EmitFn): void {
+  if (entry.pendingOutputTimer) {
+    clearTimeout(entry.pendingOutputTimer)
+    entry.pendingOutputTimer = null
+  }
+  if (entry.disposed || entry.pendingOutput.length === 0) return
+  const data =
+    entry.pendingOutput.length === 1
+      ? entry.pendingOutput[0]!
+      : entry.pendingOutput.join("")
+  entry.pendingOutput.length = 0
+  entry.pendingOutputBytes = 0
+  emit("terminal:data", [entry.id, data, entry.sequence])
+}
+
+function queueOutput(
+  entry: TerminalEntry,
+  data: string,
+  dataBytes: number,
+  emit: EmitFn,
+): void {
+  // Keep normal batches bounded. A single unusually large node-pty chunk is
+  // forwarded intact so Unicode/control sequences are never split here.
+  if (
+    entry.pendingOutputBytes > 0 &&
+    entry.pendingOutputBytes + dataBytes > TERMINAL_EMIT_BATCH_BYTES
+  ) {
+    flushPendingOutput(entry, emit)
+  }
+  entry.pendingOutput.push(data)
+  entry.pendingOutputBytes += dataBytes
+  if (entry.pendingOutputBytes >= TERMINAL_EMIT_BATCH_BYTES) {
+    flushPendingOutput(entry, emit)
+    return
+  }
+  if (!entry.pendingOutputTimer) {
+    entry.pendingOutputTimer = setTimeout(
+      () => flushPendingOutput(entry, emit),
+      TERMINAL_EMIT_BATCH_DELAY_MS,
+    )
+  }
 }
 
 function defaultShell(): { command: string; args: string[] } {
@@ -184,6 +238,9 @@ export class TerminalHost {
       output: [],
       outputHead: 0,
       outputBytes: 0,
+      pendingOutput: [],
+      pendingOutputBytes: 0,
+      pendingOutputTimer: null,
       proc,
       disposed: false,
       dataDisposable: null,
@@ -194,14 +251,17 @@ export class TerminalHost {
     entry.dataDisposable = proc.onData(data => {
       if (entry.disposed) return
       entry.sequence += 1
+      const dataBytes = Buffer.byteLength(data, "utf8")
       entry.output.push(data)
-      entry.outputBytes += Buffer.byteLength(data, "utf8")
+      entry.outputBytes += dataBytes
       trimReplay(entry)
-      this.emit("terminal:data", [id, data, entry.sequence])
+      queueOutput(entry, data, dataBytes, this.emit)
     })
 
     entry.exitDisposable = proc.onExit(({ exitCode, signal }) => {
       if (entry.disposed) return
+      // Preserve wire ordering: consumers must see the final output before exit.
+      flushPendingOutput(entry, this.emit)
       entry.status = "exited"
       entry.exitCode = exitCode
       entry.signal = signal ?? null
@@ -247,6 +307,9 @@ export class TerminalHost {
   attach(id: string, clientId: string): TerminalAttachSnapshot | null {
     const entry = this.entries.get(id)
     if (!entry) return null
+    // Establish a clean sequence boundary. Otherwise a batch containing both
+    // pre- and post-attach bytes could be accepted in full and duplicate replay.
+    flushPendingOutput(entry, this.emit)
     entry.clientId = clientId
     return {
       id: entry.id,
@@ -264,6 +327,10 @@ export class TerminalHost {
     if (!entry) return null
     this.entries.delete(id)
     entry.disposed = true
+    if (entry.pendingOutputTimer) clearTimeout(entry.pendingOutputTimer)
+    entry.pendingOutputTimer = null
+    entry.pendingOutput.length = 0
+    entry.pendingOutputBytes = 0
     entry.dataDisposable?.dispose()
     entry.exitDisposable?.dispose()
     entry.dataDisposable = null

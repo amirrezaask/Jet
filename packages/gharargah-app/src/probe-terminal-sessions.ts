@@ -1,6 +1,6 @@
 import type { JetElectronTerminal } from "@gharargah/workspace"
 import {
-  isSessionDone,
+  isSessionArchived,
   listTerminalSessions,
   markTerminalExited,
   markTerminalUnavailable,
@@ -13,8 +13,8 @@ import {
  *
  * Sessions are never dropped on reload. Missing PTYs are marked unavailable
  * (status → starting) so the card stays and TerminalPanel can respawn / resume
- * when the user reopens the session. Done sessions keep their doneAt and only
- * dispose any leftover PTY handle.
+ * when the user reopens the session. Archived sessions keep their archivedAt
+ * and only dispose any leftover PTY handle.
  *
  * Returns an empty list for API compatibility with older callers that pruned.
  */
@@ -24,7 +24,7 @@ export async function reconcileHydratedTerminalPtys(
 ): Promise<string[]> {
   if (!terminalApi?.attach) {
     for (const session of sessions) {
-      if (isSessionDone(session.tabId)) continue
+      if (isSessionArchived(session.tabId)) continue
       if (sessionHasResumableAgentCli(session.tabId)) {
         markTerminalUnavailable(session.tabId)
         continue
@@ -38,7 +38,7 @@ export async function reconcileHydratedTerminalPtys(
 
   await Promise.all(
     sessions.map(async session => {
-      if (isSessionDone(session.tabId)) {
+      if (isSessionArchived(session.tabId)) {
         if (session.ptyId) {
           try {
             await terminalApi.dispose(session.ptyId)

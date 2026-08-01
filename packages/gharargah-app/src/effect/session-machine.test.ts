@@ -25,9 +25,13 @@ test("status reducer matches product lifecycle", () => {
   assert.equal(nextSessionStatus("running", { _tag: "Failed" }), "failed")
   assert.equal(nextSessionStatus("failed", { _tag: "AwaitResume" }), "starting")
   assert.equal(nextSessionStatus("exited", { _tag: "Restart" }), "starting")
-  assert.equal(nextSessionStatus("running", { _tag: "MarkDone" }), "exited")
-  assert.equal(nextSessionStatus("exited", { _tag: "MarkDone" }), "exited")
-  assert.equal(nextSessionStatus("failed", { _tag: "MarkDone" }), "failed")
+  assert.equal(
+    nextSessionStatus("exited", { _tag: "ResumeArchived" }),
+    "starting",
+  )
+  assert.equal(nextSessionStatus("running", { _tag: "Archive" }), "exited")
+  assert.equal(nextSessionStatus("exited", { _tag: "Archive" }), "exited")
+  assert.equal(nextSessionStatus("failed", { _tag: "Archive" }), "failed")
   assert.equal(nextSessionStatus("starting", { _tag: "PtyUnbound" }), "starting")
   assert.equal(
     nextSessionStatus("running", { _tag: "Hydrate", status: "exited" }),
@@ -35,7 +39,7 @@ test("status reducer matches product lifecycle", () => {
   )
 })
 
-test("all current product events are legal from every status", () => {
+test("common events are legal from every status", () => {
   const events: SessionLifecycleEvent[] = [
     { _tag: "PtyBound" },
     { _tag: "PtyUnbound" },
@@ -43,7 +47,7 @@ test("all current product events are legal from every status", () => {
     { _tag: "Failed" },
     { _tag: "AwaitResume" },
     { _tag: "Restart" },
-    { _tag: "MarkDone" },
+    { _tag: "Archive" },
     { _tag: "Hydrate", status: "starting" },
   ]
   for (const status of ALL) {
@@ -55,4 +59,19 @@ test("all current product events are legal from every status", () => {
       )
     }
   }
+})
+
+test("archived resume only accepts terminal states", () => {
+  assert.equal(
+    isLegalSessionTransition("exited", { _tag: "ResumeArchived" }),
+    true,
+  )
+  assert.equal(
+    isLegalSessionTransition("failed", { _tag: "ResumeArchived" }),
+    true,
+  )
+  assert.equal(
+    isLegalSessionTransition("running", { _tag: "ResumeArchived" }),
+    false,
+  )
 })

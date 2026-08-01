@@ -82,6 +82,12 @@ test.describe("electron terminal explorer", () => {
       const modal = await openNewAgentSession(page)
       await expectLocatorVisible(modal)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+      await expectLocatorCount(
+        modal.locator(
+          "[data-gharargah-terminal-modal-header] [data-gharargah-session-archive]",
+        ),
+        0,
+      )
     } finally {
       await app.close()
     }

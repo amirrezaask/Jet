@@ -106,6 +106,25 @@ const handle = message => {
     })
     return
   }
+  if (message.method === "textDocument/completion") {
+    record({ kind: "completion", params: message.params })
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        isIncomplete: false,
+        items: [{
+          label: "greetFromLsp",
+          kind: 3,
+          detail: "Mock LSP completion",
+          insertText: "greetFromLsp",
+          insertTextFormat: 1,
+          commitCharacters: ["("],
+        }],
+      },
+    })
+    return
+  }
   if (message.method === "shutdown") {
     send({ jsonrpc: "2.0", id: message.id, result: null })
     return
@@ -221,8 +240,49 @@ test.describe("TypeScript language server", () => {
       expect(opened?.document?.uri).toMatch(/src\/index\.ts$/)
       expect(configuration?.result).toEqual([{}])
 
-      // Cursor on `greet` import → go to definition must open utils.ts.
+      const activeTab = page.locator('[data-gharargah-modal-editor-tab][data-active] button[role="tab"]')
+      await expect.poll(() => activeTab.getAttribute("aria-selected")).toBe("true")
+      await expect.poll(() => activeTab.getAttribute("aria-controls"))
+        .toBe("gharargah-modal-editor-tabpanel")
+      const activeTabId = await activeTab.getAttribute("id")
+      await expect.poll(() =>
+        page.locator("#gharargah-modal-editor-tabpanel").getAttribute("aria-labelledby"),
+      ).toBe(activeTabId)
+
+      // Completion is server-backed and rendered by Monaco's suggest UI.
       await page.locator(".monaco-editor textarea.inputarea").click({ force: true })
+      await page.evaluate(() => {
+        window.__gharargahAgent!.setEditorSelection(6, 1)
+      })
+      await page.keyboard.type("gree")
+      await execCommand(page, "editor.action.triggerSuggest")
+      await expect
+        .poll(() =>
+          page.locator(".suggest-widget .monaco-list-row").filter({ hasText: "greetFromLsp" }).count(),
+          { timeout: 10_000 },
+        )
+        .toBeGreaterThan(0)
+      await page.keyboard.press("Escape")
+      await expect
+        .poll(() => page.locator("[data-gharargah-terminal-modal]").count(), {
+          timeout: 5_000,
+        })
+        .toBe(1)
+      await execCommand(page, "editor.undo")
+      await expect
+        .poll(() => {
+          try {
+            return readFileSync(mock.tracePath, "utf8")
+          } catch {
+            return ""
+          }
+        }, { timeout: 10_000 })
+        .toContain('"kind":"completion"')
+
+      // Cursor on `greet` import → go to definition must open utils.ts.
+      await page
+        .locator(".monaco-editor textarea.inputarea")
+        .waitFor({ state: "attached", timeout: 5_000 })
       await page.evaluate(() => {
         window.__gharargahAgent!.setEditorSelection(1, 10)
       })
@@ -232,7 +292,7 @@ test.describe("TypeScript language server", () => {
         })
         .toEqual({ line: 1, column: 10 })
 
-      await execCommand(page, "editor.action.revealDefinition")
+      await page.keyboard.press("F12")
 
       await expect
         .poll(() => {
@@ -249,6 +309,21 @@ test.describe("TypeScript language server", () => {
           timeout: 10_000,
         })
         .toContain("export function greet")
+      await expect.poll(() =>
+        page.locator("[data-gharargah-modal-editor-tab][data-active]").textContent(),
+      ).toContain("utils.ts")
+      await expect.poll(() => page.locator("[data-gharargah-modal-editor-tab]").count()).toBe(2)
+
+      // Definition jumps participate in the editor jump stack and restore the source tab.
+      await execCommand(page, "editor.navigateBack")
+      await expect.poll(() =>
+        page.locator("[data-gharargah-modal-editor-tab][data-active]").textContent(),
+      ).toContain("index.ts")
+      await expect
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.getCursorPosition()), {
+          timeout: 10_000,
+        })
+        .toEqual({ line: 1, column: 10 })
     } finally {
       await app.close()
       mock.remove()

@@ -355,6 +355,61 @@ describe("NotificationService", () => {
     assert.equal(service.get(old.notification!.id), null)
   })
 
+  it("bounds large retention batches to 500 rows per pass", () => {
+    const insert = db.prepare(
+      `INSERT INTO app_notifications(
+        id, type, severity, status, title, source,
+        created_at, updated_at, metadata_json
+      ) VALUES(?,?,?,?,?,?,?,?,?)`,
+    )
+    db.exec("BEGIN")
+    for (let index = 0; index < 1_200; index += 1) {
+      insert.run(
+        `old-${index}`,
+        "turn-completed",
+        "info",
+        "dismissed",
+        "done",
+        "system",
+        "2000-01-01T00:00:00.000Z",
+        "2000-01-01T00:00:00.000Z",
+        "{}",
+      )
+    }
+    db.exec("COMMIT")
+
+    const result = service.runRetention(new Date("2026-07-28T00:00:00.000Z"))
+    const remaining = db
+      .prepare("SELECT COUNT(*) AS n FROM app_notifications")
+      .get() as { n: number }
+    assert.equal(result.deleted, 500)
+    assert.equal(remaining.n, 700)
+  })
+
+  it("coalesces retention scheduled by a synchronous notification burst", async () => {
+    class CountingNotificationService extends NotificationService {
+      retentionRuns = 0
+
+      override runRetention(now = new Date()): { deleted: number } {
+        this.retentionRuns += 1
+        return super.runRetention(now)
+      }
+    }
+
+    const counted = new CountingNotificationService(db)
+    for (let index = 0; index < 20; index += 1) {
+      counted.ingest({
+        source: "system",
+        type: "system",
+        title: `event ${index}`,
+        sessionId: "burst",
+        eventId: `burst-${index}`,
+      })
+    }
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(counted.retentionRuns, 1)
+  })
+
   it("skips background-output when preference disabled", () => {
     const result = service.ingest({
       source: "aggregated-pty",

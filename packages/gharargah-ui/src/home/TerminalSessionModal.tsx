@@ -1,9 +1,9 @@
-import { useEffect, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react"
 import {
   Bot,
-  Check,
   Code2,
   GitBranch,
+  RotateCcw,
   SquareTerminal,
   XIcon,
   type LucideIcon,
@@ -40,6 +40,8 @@ export type AgentSessionHeaderMeta = {
   modelLabel?: string | null
 }
 
+export type SessionRuntimeStatus = "starting" | "running" | "exited" | "failed"
+
 export type TerminalSessionModalProps = {
   sessionId: string
   open: boolean
@@ -53,6 +55,9 @@ export type TerminalSessionModalProps = {
   title: string
   /** CLI binary running in the PTY (shown under title). */
   launchCommand?: string | null
+  status?: SessionRuntimeStatus | null
+  archivedAt?: string | null
+  onResumeArchived?: () => void
   gitBranch?: string | null
   projectRootUri: string | null
   mode: SessionDialogMode
@@ -64,9 +69,6 @@ export type TerminalSessionModalProps = {
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   /** Extra controls before close (e.g. notification bell in sidebar layout). */
   headerEnd?: ReactNode
-  /** Mark session done — keeps history, stops live PTY. */
-  onMarkDone?: () => void
-  isDone?: boolean
   agent: ReactNode
   editor: ReactNode
   terminal: ReactNode
@@ -90,7 +92,7 @@ function focusSessionPane(mode: SessionDialogMode) {
   if (mode === "editor") {
     document
       .querySelector<HTMLElement>(
-        "[data-gharargah-terminal-modal] [data-gharargah-editor-scroll-area] .cm-content",
+        "[data-gharargah-terminal-modal] [data-gharargah-editor-scroll-area] .monaco-editor textarea.inputarea",
       )
       ?.focus()
     return
@@ -118,7 +120,32 @@ function focusSessionPane(mode: SessionDialogMode) {
     ?.focus()
 }
 
+function monacoWidgetOwnsEscape(
+  activePane: Element | null,
+  eventTarget: EventTarget | null,
+): boolean {
+  if (!activePane) return false
+  const targetEditor =
+    eventTarget instanceof Element ? eventTarget.closest(".monaco-editor") : null
+  const activeEditor =
+    document.activeElement instanceof Element
+      ? document.activeElement.closest(".monaco-editor")
+      : null
+  const editor = targetEditor ?? activeEditor
+  if (!editor || !activePane.contains(editor)) return false
+  return editor.querySelector(
+    [
+      '.suggest-widget[monaco-visible-content-widget="true"]',
+      ".parameter-hints-widget.visible",
+      ".rename-box.visible",
+      ".find-widget.visible",
+      ".zone-widget",
+    ].join(","),
+  ) != null
+}
+
 export function TerminalSessionModal(props: TerminalSessionModalProps) {
+  const monacoEscapeOwnedRef = useRef(false)
   const {
     sessionId,
     open,
@@ -127,6 +154,9 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     windowChrome = null,
     title,
     launchCommand,
+    status = null,
+    archivedAt = null,
+    onResumeArchived,
     gitBranch,
     projectRootUri,
     mode,
@@ -135,8 +165,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     agentSessionHeader = null,
     onOpenInApp,
     headerEnd = null,
-    onMarkDone,
-    isDone = false,
     agent,
     editor,
     terminal,
@@ -149,6 +177,21 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     const frame = requestAnimationFrame(() => focusSessionPane(mode))
     return () => cancelAnimationFrame(frame)
   }, [open, mode])
+
+  useEffect(() => {
+    if (!open || presentation !== "modal" || mode !== "editor") return
+    const captureMonacoEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      const activePane = document.querySelector(
+        '[data-gharargah-session-pane="editor"][data-active]',
+      )
+      monacoEscapeOwnedRef.current = monacoWidgetOwnsEscape(activePane, event.target)
+    }
+    // Radix observes Escape at document capture, before React capture handlers.
+    // Window capture records Monaco ownership first without blocking Monaco.
+    window.addEventListener("keydown", captureMonacoEscape, true)
+    return () => window.removeEventListener("keydown", captureMonacoEscape, true)
+  }, [open, presentation, mode])
 
   if (!open) return null
 
@@ -193,6 +236,26 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         agentSessionHeader.projectName,
       )
     : null
+  const statusLabel =
+    archivedAt
+      ? "Archived"
+      : status === "starting"
+      ? "Starting"
+      : status === "running"
+        ? "Live"
+        : status === "failed"
+          ? "Failed"
+          : status === "exited"
+            ? "Finished"
+            : null
+  const StatusIcon =
+    mode === "agent"
+      ? Bot
+      : mode === "editor"
+        ? Code2
+        : mode === "git"
+          ? GitBranch
+          : SquareTerminal
 
   const sessionHeader = (
     <DialogHeader
@@ -200,12 +263,12 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
       data-gharargah-window-drag-region={ownsWindowChrome ? "" : undefined}
       className={cn(
-        "flex flex-row shrink-0 items-center gap-2 border-b bg-background px-2 py-0 text-left sm:text-left",
-        !ownsWindowChrome && "h-10",
+        "flex flex-row shrink-0 items-center gap-3 border-b bg-background px-2.5 py-0 text-left sm:text-left",
+        !ownsWindowChrome && "h-12",
       )}
       style={headerStyle}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {windowChrome?.trafficLights && ownsWindowChrome ? (
           <div
             aria-hidden
@@ -213,70 +276,100 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             style={dragRegion}
           />
         ) : null}
-        <h2
-          data-gharargah-terminal-modal-title
-          className="shrink truncate text-sm font-semibold tracking-tight text-foreground"
+        <div
+          data-gharargah-session-identity-icon=""
+          className="relative flex size-7 shrink-0 items-center justify-center rounded-md border bg-muted/55 text-muted-foreground"
+          aria-hidden
         >
-          {displayTitle}
-        </h2>
-        {showAgentMeta ? (
-          <div className="flex min-w-0 items-center gap-1 truncate font-mono text-3xs text-muted-foreground">
-            {displayProjectName || agentSessionHeader.modelLabel ? (
-              <span aria-hidden="true" className="text-muted-foreground/50">
-                ·
-              </span>
-            ) : null}
-            {displayProjectName ? (
+          <StatusIcon />
+          {status ? (
+            <span
+              data-gharargah-session-status-indicator=""
+              data-status={status}
+              className={cn(
+                "absolute -end-0.5 -bottom-0.5 size-2 rounded-full border-2 border-background",
+                status === "failed"
+                  ? "bg-destructive"
+                  : status === "running"
+                    ? "bg-primary"
+                    : "bg-muted-foreground",
+              )}
+            />
+          ) : null}
+        </div>
+        <div className="flex min-w-0 flex-col justify-center gap-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <h2
+              data-gharargah-terminal-modal-title
+              className="shrink truncate text-xs font-semibold tracking-tight text-foreground"
+            >
+              {displayTitle}
+            </h2>
+            {statusLabel ? (
               <span
-                className="truncate"
-                data-gharargah-session-project-name
+                data-gharargah-session-status-label=""
+                className="hidden shrink-0 font-mono text-3xs text-muted-foreground min-[720px]:inline"
               >
-                {displayProjectName}
-              </span>
-            ) : null}
-            {displayProjectName && agentSessionHeader.modelLabel ? (
-              <span aria-hidden="true" className="text-muted-foreground/50">
-                ·
-              </span>
-            ) : null}
-            {agentSessionHeader.modelLabel ? (
-              <span className="truncate" data-chat-header-model="true">
-                {agentSessionHeader.modelLabel}
+                {statusLabel}
               </span>
             ) : null}
           </div>
-        ) : displayLaunchCommand || gitBranch ? (
-          <p className="flex min-w-0 items-center gap-1.5 truncate font-mono text-3xs text-muted-foreground">
-            <span aria-hidden="true" className="text-muted-foreground/50">
-              ·
-            </span>
-            {displayLaunchCommand ? (
-              <span
-                data-gharargah-terminal-launch-command
-                className="truncate"
-              >
-                {displayLaunchCommand}
-              </span>
-            ) : null}
-            {displayLaunchCommand && gitBranch ? (
-              <span className="text-muted-foreground/50" aria-hidden>
-                ·
-              </span>
-            ) : null}
-            {gitBranch ? (
-              <span
-                data-gharargah-terminal-git-branch
-                className="flex min-w-0 items-center gap-0.5 truncate"
-              >
-                <GitBranch
-                  className="size-2.5 shrink-0 opacity-80"
-                  aria-hidden
-                />
-                <span className="truncate">{gitBranch}</span>
-              </span>
-            ) : null}
-          </p>
-        ) : null}
+          {showAgentMeta ? (
+            <div className="flex min-w-0 items-center gap-1 truncate font-mono text-3xs text-muted-foreground">
+              {displayProjectName || agentSessionHeader.modelLabel ? (
+                <span aria-hidden="true" className="text-muted-foreground/50">
+                  ·
+                </span>
+              ) : null}
+              {displayProjectName ? (
+                <span
+                  className="truncate"
+                  data-gharargah-session-project-name
+                >
+                  {displayProjectName}
+                </span>
+              ) : null}
+              {displayProjectName && agentSessionHeader.modelLabel ? (
+                <span aria-hidden="true" className="text-muted-foreground/50">
+                  ·
+                </span>
+              ) : null}
+              {agentSessionHeader.modelLabel ? (
+                <span className="truncate" data-chat-header-model="true">
+                  {agentSessionHeader.modelLabel}
+                </span>
+              ) : null}
+            </div>
+          ) : displayLaunchCommand || gitBranch ? (
+            <p className="flex min-w-0 items-center gap-1.5 truncate font-mono text-3xs text-muted-foreground">
+              {displayLaunchCommand ? (
+                <span
+                  data-gharargah-terminal-launch-command
+                  className="truncate"
+                >
+                  {displayLaunchCommand}
+                </span>
+              ) : null}
+              {displayLaunchCommand && gitBranch ? (
+                <span className="text-muted-foreground/50" aria-hidden>
+                  ·
+                </span>
+              ) : null}
+              {gitBranch ? (
+                <span
+                  data-gharargah-terminal-git-branch
+                  className="flex min-w-0 items-center gap-0.5 truncate"
+                >
+                  <GitBranch
+                    className="size-2.5 shrink-0 opacity-80"
+                    aria-hidden
+                  />
+                  <span className="truncate">{gitBranch}</span>
+                </span>
+              ) : null}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <div
@@ -290,9 +383,9 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           className="block min-w-0"
         >
           <TabsList
-            variant="line"
+            variant="default"
             aria-label="Session tools"
-            className="h-8 gap-0"
+            className="h-8 gap-0.5 rounded-lg bg-muted/55 p-0.5"
           >
             <SessionToolTab
               mode="agent"
@@ -333,18 +426,17 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           />
         ) : null}
         {headerEnd}
-        {onMarkDone && !isDone ? (
+        {archivedAt && onResumeArchived ? (
           <Button
             type="button"
+            size="xs"
             variant="outline"
-            size="sm"
-            className="h-6 gap-1 px-2 text-3xs"
-            data-gharargah-session-mark-done
-            onClick={onMarkDone}
-            style={noDragRegion}
+            onClick={onResumeArchived}
+            data-gharargah-session-resume-archived=""
+            title="Resume archived session"
           >
-            <Check className="size-3" aria-hidden />
-            Done
+            <RotateCcw aria-hidden data-icon="inline-start" />
+            <span className="hidden min-[720px]:inline">Resume</span>
           </Button>
         ) : null}
         {presentation === "modal" ? (
@@ -472,9 +564,20 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         showCloseButton={false}
         onInteractOutside={event => event.preventDefault()}
         onEscapeKeyDown={event => {
+          if (monacoEscapeOwnedRef.current) {
+            monacoEscapeOwnedRef.current = false
+            event.preventDefault()
+            return
+          }
           const activePane = document.querySelector(
             `[data-gharargah-session-pane="${mode}"][data-active]`,
           )
+          // Radix observes Escape before Monaco's textarea receives it. Keep
+          // the session mounted while Monaco dismisses its active widget.
+          if (mode === "editor" && monacoWidgetOwnsEscape(activePane, event.target)) {
+            event.preventDefault()
+            return
+          }
           const visibleTerminal =
             activePane?.querySelector<HTMLElement>(
               "[data-gharargah-session-terminal-pane][data-active] [data-gharargah-terminal-panel]",
@@ -541,9 +644,15 @@ function SessionToolTab(props: {
       disabled={disabled}
       data-gharargah-session-mode-tab={mode}
       data-active={active ? "" : undefined}
-      className="size-8 min-w-8 flex-none px-0"
+      className="h-7 min-w-7 flex-none px-2 text-xs"
     >
-      <Icon className="size-4" aria-hidden />
+      <Icon aria-hidden />
+      <span
+        data-gharargah-session-mode-label=""
+        className="hidden min-[860px]:inline"
+      >
+        {label}
+      </span>
     </TabsTrigger>
   )
 }

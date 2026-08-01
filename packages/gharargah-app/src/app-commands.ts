@@ -45,22 +45,38 @@ function asMonaco(view: unknown): MonacoEditorHandle | null {
 type LspLocationLike = {
   uri?: string
   targetUri?: string
-  range?: { start: { line: number; character: number } }
-  targetSelectionRange?: { start: { line: number; character: number } }
-  targetRange?: { start: { line: number; character: number } }
+  range?: LspRangeLike
+  targetSelectionRange?: LspRangeLike
+  targetRange?: LspRangeLike
+}
+
+type LspRangeLike = {
+  start: { line: number; character: number }
+  end: { line: number; character: number }
 }
 
 function firstDefinitionTarget(
   result: LspLocationLike | LspLocationLike[] | null | undefined,
-): { uri: string; line: number; column: number } | null {
+): {
+  uri: string
+  line: number
+  column: number
+  endLine: number
+  endColumn: number
+} | null {
   if (!result) return null
   const item = Array.isArray(result) ? result[0] : result
   if (!item) return null
   const uri = item.targetUri ?? item.uri
-  const start =
-    item.targetSelectionRange?.start ?? item.targetRange?.start ?? item.range?.start
-  if (!uri || !start) return null
-  return { uri, line: start.line + 1, column: start.character + 1 }
+  const range = item.targetSelectionRange ?? item.targetRange ?? item.range
+  if (!uri || !range) return null
+  return {
+    uri,
+    line: range.start.line + 1,
+    column: range.start.character + 1,
+    endLine: range.end.line + 1,
+    endColumn: range.end.character + 1,
+  }
 }
 
 function runMonacoAction(ctx: JetCommandContext, actionId: string): void {
@@ -101,7 +117,14 @@ export type BuildAppCommandsDeps = {
   removeWorkspaceFolder: (folderId: string) => Promise<boolean>
   setActiveWorkspaceFolder: (folderId: string) => void
   handlePanelEvent: (event: PanelEvent) => void
-  openFileInEditor: (uri: string, path: string, line?: number, column?: number) => void
+  openFileInEditor: (
+    uri: string,
+    path: string,
+    line?: number,
+    column?: number,
+    endLine?: number,
+    endColumn?: number,
+  ) => void
   editorPanelRef: { current: PanelId | null }
   setZoomLevel: (delta: number) => void
   projectRegistry: import("@gharargah/workspace").ProjectRegistry
@@ -119,6 +142,7 @@ export type BuildAppCommandsDeps = {
   resolveSessionNewRootUri: () => string | null
   resolveLspClient?: (fileUri: string) => Promise<{
     ready: Promise<void>
+    supports: (method: string) => boolean
     sendRequest: <R>(method: string, params?: unknown) => Promise<R>
   } | null>
 }
@@ -227,6 +251,87 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     const target = tabs[(idx + delta + tabs.length) % tabs.length]!
     deps.workspace.touchBuffer(target)
     deps.handlePanelEvent({ type: "tabActivate", panelId: panel, tabId: target })
+  }
+
+  function currentJumpEntry(ctx: JetCommandContext) {
+    const editor = asMonaco(ctx.getActiveEditorView())
+    const model = editor?.getModel()
+    const position = editor?.getPosition()
+    const panelId = activeEditorPanel() ?? undefined
+    if (!model || !position) return null
+    return {
+      fileUri: model.uri.toString(),
+      line: position.lineNumber,
+      column: position.column,
+      panelId,
+    }
+  }
+
+  async function goToLspLocation(
+    ctx: JetCommandContext,
+    method:
+      | "textDocument/declaration"
+      | "textDocument/definition"
+      | "textDocument/typeDefinition"
+      | "textDocument/implementation",
+    label: string,
+  ): Promise<void> {
+    const source = currentJumpEntry(ctx)
+    if (!source) return
+    const editor = asMonaco(ctx.getActiveEditorView())
+    const model = editor?.getModel()
+    const position = editor?.getPosition()
+    if (!model || !position) return
+
+    const client = await deps.resolveLspClient?.(model.uri.toString())
+    if (!client) {
+      ctx.ui.showMessage("No language server is available for this file")
+      return
+    }
+    await client.ready
+    if (!client.supports(method)) {
+      ctx.ui.showMessage(`${label} is not supported by this language server`)
+      return
+    }
+    const result = await client.sendRequest<LspLocationLike | LspLocationLike[] | null>(
+      method,
+      {
+        textDocument: { uri: model.uri.toString() },
+        position: { line: position.lineNumber - 1, character: position.column - 1 },
+      },
+    )
+    const target = firstDefinitionTarget(result)
+    if (!target) {
+      ctx.ui.showMessage(`No ${label.toLowerCase()} found`)
+      return
+    }
+    deps.workspace.jumpStack.push(source)
+    deps.openFileInEditor(
+      target.uri,
+      fileUriToPath(target.uri),
+      target.line,
+      target.column,
+      target.endLine,
+      target.endColumn,
+    )
+  }
+
+  function moveThroughJumpHistory(ctx: JetCommandContext, direction: "back" | "forward"): void {
+    const current = currentJumpEntry(ctx)
+    if (!current) return
+    const target = direction === "back"
+      ? deps.workspace.jumpStack.popBack(current)
+      : deps.workspace.jumpStack.popForward(current)
+    if (!target) {
+      ctx.ui.showMessage(direction === "back" ? "No previous editor location" : "No next editor location")
+      return
+    }
+    deps.openFileInEditor(
+      target.fileUri,
+      fileUriToPath(target.fileUri),
+      target.line,
+      target.column,
+    )
   }
 
   function syncOpenBuffersFromPanels(): void {
@@ -477,43 +582,14 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     rename: ctx => runEditorAction(ctx, "editor.action.rename"),
     goToReferences: ctx => runEditorAction(ctx, "editor.action.goToReferences"),
     parameterHints: ctx => runEditorAction(ctx, "editor.action.triggerParameterHints"),
-    goToDefinition: async ctx => {
-      const editor = asMonaco(ctx.getActiveEditorView())
-      if (!editor) return
-      const model = editor.getModel()
-      const pos = editor.getPosition()
-      if (!model || !pos) return
-
-      const action = editor.getAction("editor.action.revealDefinition")
-      if (action?.isSupported()) {
-        await action.run()
-        return
-      }
-
-      // Monaco's revealDefinition is gated on hasDefinitionProvider. When that
-      // context key is stale/false, hit the LSP client directly and open the file.
-      const client = await deps.resolveLspClient?.(model.uri.toString())
-      if (!client) return
-      await client.ready
-      const result = await client.sendRequest<LspLocationLike | LspLocationLike[] | null>(
-        "textDocument/definition",
-        {
-          textDocument: { uri: model.uri.toString() },
-          position: { line: pos.lineNumber - 1, character: pos.column - 1 },
-        },
-      )
-      const target = firstDefinitionTarget(result)
-      if (!target) return
-      deps.openFileInEditor(
-        target.uri,
-        fileUriToPath(target.uri),
-        target.line,
-        target.column,
-      )
-    },
-    goToDeclaration: ctx => runEditorAction(ctx, "editor.action.revealDeclaration"),
-    goToTypeDefinition: ctx => runEditorAction(ctx, "editor.action.goToTypeDefinition"),
-    goToImplementation: ctx => runEditorAction(ctx, "editor.action.goToImplementation"),
+    goToDefinition: ctx => goToLspLocation(ctx, "textDocument/definition", "Definition"),
+    goToDeclaration: ctx => goToLspLocation(ctx, "textDocument/declaration", "Declaration"),
+    goToTypeDefinition: ctx =>
+      goToLspLocation(ctx, "textDocument/typeDefinition", "Type definition"),
+    goToImplementation: ctx =>
+      goToLspLocation(ctx, "textDocument/implementation", "Implementation"),
+    goBack: ctx => moveThroughJumpHistory(ctx, "back"),
+    goForward: ctx => moveThroughJumpHistory(ctx, "forward"),
     triggerSuggest: ctx => runEditorAction(ctx, "editor.action.triggerSuggest"),
     showHover: ctx => runEditorAction(ctx, "editor.action.showHover"),
   }
@@ -623,6 +699,8 @@ export const APP_COMMAND_REGISTRY = [
   { id: "editor.action.revealDeclaration", fn: "goToDeclaration", title: "Go to Declaration", category: "Editor" },
   { id: "editor.action.goToTypeDefinition", fn: "goToTypeDefinition", title: "Go to Type Definition", category: "Editor" },
   { id: "editor.action.goToImplementation", fn: "goToImplementation", title: "Go to Implementation", category: "Editor" },
+  { id: "editor.navigateBack", fn: "goBack", title: "Go Back", category: "Editor", aliases: ["previous location", "jump back"] },
+  { id: "editor.navigateForward", fn: "goForward", title: "Go Forward", category: "Editor", aliases: ["next location", "jump forward"] },
   { id: "editor.action.triggerSuggest", fn: "triggerSuggest", title: "Trigger Suggest", category: "Editor" },
   { id: "editor.action.showHover", fn: "showHover", title: "Show Hover", category: "Editor" },
   { id: "ui.zoomIn", fn: "zoomIn", title: "Zoom In", category: "UI", aliases: ["font larger"] },

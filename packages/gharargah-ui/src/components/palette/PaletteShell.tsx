@@ -33,9 +33,12 @@ export interface PaletteShellProps<T> {
   onQueryChange?: (query: string) => void
   items: PaletteShellItem<T>[]
   onSelect: (item: T, query: string) => void
+  onHighlightChange?: (item: T | null) => void
   renderItem: (item: T, query: string) => ReactNode
   emptyLabel: ReactNode
   statusRow?: ReactNode
+  /** Optional adjacent detail/action pane. */
+  sidecar?: ReactNode
   shouldFilter?: boolean
   /** Allow keyboard selection before the user types a query. */
   requireQueryForSelection?: boolean
@@ -69,9 +72,11 @@ export function PaletteShell<T>({
   onQueryChange,
   items,
   onSelect,
+  onHighlightChange,
   renderItem,
   emptyLabel,
   statusRow,
+  sidecar,
   shouldFilter,
   requireQueryForSelection = true,
   size = "picker",
@@ -149,41 +154,61 @@ export function PaletteShell<T>({
         showCloseButton={false}
       >
         <div className={cn(COMMAND_SHELL_CLASS, "flex min-h-0 flex-col")}>
-          <Lister
-            listId="gharargah:palette"
-            mode="flat"
-            flatVariant="palette"
-            showInput
-            placeholder={placeholder}
-            inputDisabled={disabled}
-            query={query}
-            onQueryChange={setQuery}
-            filter={filterMode}
-            requireQueryForSelection={requireQueryForSelection}
-            aria-label={title}
-            items={listerItems}
-            itemClassName={cn("mx-1.5 px-2.5 py-1.5", itemClassName)}
-            itemStyle={node => itemStyle?.(node.data)}
-            estimateSize={node =>
-              estimateSize?.(node.data) ?? readPaletteRowHeight(rowLayout)
-            }
-            contentWidthMono={contentWidthMono}
-            contentWidthChromePx={fitContent ? contentWidthChromePx : 0}
-            onContentWidthChange={fitContent ? onContentWidthChange : undefined}
-            betweenInputAndList={statusRow}
-            listClassName="min-h-0 max-h-[min(var(--gharargah-overlay-list-max),calc(100dvh-5rem))] px-0.5 pb-1.5"
-            className="min-h-0"
-            emptyState={
-              <div data-slot="command-empty" className="py-6 text-center text-sm text-muted-foreground">
-                {emptyLabel}
-              </div>
-            }
-            onActivate={node => {
-              onSelect(node.data, query)
-              onOpenChange(false)
-            }}
-            render={(node, ctx) => renderItem(node.data, ctx.query)}
-          />
+          <div
+            className={cn(
+              "flex min-h-0",
+              sidecar
+                ? "overflow-hidden divide-x divide-border/70"
+                : "flex-col",
+            )}
+          >
+            <div className={cn("min-h-0", sidecar ? "min-w-0 flex-1" : "flex-1")}>
+              <Lister
+                listId="gharargah:palette"
+                mode="flat"
+                flatVariant="palette"
+                showInput
+                placeholder={placeholder}
+                inputDisabled={disabled}
+                query={query}
+                onQueryChange={setQuery}
+                filter={filterMode}
+                requireQueryForSelection={requireQueryForSelection}
+                aria-label={title}
+                items={listerItems}
+                itemClassName={cn("mx-1.5 px-2.5 py-1.5", itemClassName)}
+                itemStyle={node => itemStyle?.(node.data)}
+                estimateSize={node =>
+                  estimateSize?.(node.data) ?? readPaletteRowHeight(rowLayout)
+                }
+                contentWidthMono={contentWidthMono}
+                contentWidthChromePx={fitContent ? contentWidthChromePx : 0}
+                onContentWidthChange={
+                  fitContent ? onContentWidthChange : undefined
+                }
+                betweenInputAndList={statusRow}
+                listClassName="min-h-0 max-h-[min(var(--gharargah-overlay-list-max),calc(100dvh-5rem))] px-0.5 pb-1.5"
+                className="min-h-0"
+                emptyState={
+                  <div
+                    data-slot="command-empty"
+                    className="py-6 text-center text-sm text-muted-foreground"
+                  >
+                    {emptyLabel}
+                  </div>
+                }
+                onActivate={node => {
+                  onSelect(node.data, query)
+                  onOpenChange(false)
+                }}
+                onSelectionChange={node =>
+                  onHighlightChange?.(node?.data ?? null)
+                }
+                render={(node, ctx) => renderItem(node.data, ctx.query)}
+              />
+            </div>
+            {sidecar}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

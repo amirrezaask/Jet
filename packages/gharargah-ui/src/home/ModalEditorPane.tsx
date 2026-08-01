@@ -54,6 +54,9 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
   const cursorPos = useSyncExternalStore(subscribeEditorCursor, getEditorCursor, getEditorCursor)
   const cursor = cursorPos ?? { line: 1, column: 1 }
   const activeFile = activeTabId ? workspace.fileForUri(activeTabId) : null
+  const activeTabDomId = activeTabId
+    ? `gharargah-editor-tab-${encodeURIComponent(activeTabId)}`
+    : undefined
 
   return (
     <div
@@ -95,7 +98,11 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
                 <button
                   type="button"
                   role="tab"
+                  id={`gharargah-editor-tab-${encodeURIComponent(buffer.tabId)}`}
+                  aria-controls="gharargah-modal-editor-tabpanel"
                   aria-selected={active}
+                  aria-label={`${buffer.label}${buffer.dirty ? ", unsaved changes" : ""}`}
+                  data-dirty={buffer.dirty ? "" : undefined}
                   tabIndex={active ? 0 : -1}
                   className="min-w-0 flex-1 truncate text-left text-2xs font-medium outline-none focus-visible:underline focus-visible:underline-offset-4"
                   onClick={() => onActivateBuffer(buffer.tabId)}
@@ -198,6 +205,9 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
         ) : null}
         <ResizablePanel id="editor-content" minSize="360px">
           <div
+            id="gharargah-modal-editor-tabpanel"
+            role="tabpanel"
+            aria-labelledby={activeTabDomId}
             data-gharargah-modal-editor-content=""
             className="relative h-full min-h-0 min-w-0 overflow-hidden"
           >

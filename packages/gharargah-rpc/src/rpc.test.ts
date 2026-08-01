@@ -12,6 +12,7 @@ import {
   decodeSessionRosterUnknown,
   EMPTY_SESSION_ROSTER,
   encodeSessionRoster,
+  MAX_ARCHIVED_TRANSCRIPT_CHARS,
 } from "./index.js"
 
 describe("gharargah-rpc schemas", () => {
@@ -84,6 +85,7 @@ describe("SessionRoster compat decode", () => {
           status: "running" as const,
           launchCommand: "codex",
           agentId: "codex",
+          agentTitle: "Review session state",
         },
       ],
       modal: { tabId: "gharargah:terminal:a", sessionMode: "terminal" as const },
@@ -108,6 +110,27 @@ describe("SessionRoster compat decode", () => {
     })
     assert.equal(decoded?.version, 2)
     assert.equal(decoded?.sessions.length, 1)
+  })
+
+  it("bounds archived transcript payloads", () => {
+    const decoded = tryDecodeSessionRoster({
+      version: 2,
+      sessions: [
+        {
+          tabId: "gharargah:terminal:archive",
+          cwdRootUri: "file:///tmp/archive",
+          label: "Archive",
+          status: "exited",
+          transcript: `prefix${"x".repeat(MAX_ARCHIVED_TRANSCRIPT_CHARS)}`,
+        },
+      ],
+      modal: null,
+    })
+    assert.equal(
+      decoded?.sessions[0]?.transcript?.length,
+      MAX_ARCHIVED_TRANSCRIPT_CHARS,
+    )
+    assert.equal(decoded?.sessions[0]?.transcript?.startsWith("prefix"), false)
   })
 
   it("returns null for corrupt structure; unknown decode yields empty", () => {

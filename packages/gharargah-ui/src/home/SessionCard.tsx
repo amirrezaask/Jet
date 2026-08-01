@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from "react"
-import { Check, MoreHorizontal, SquareTerminal, X } from "lucide-react"
+import { Archive, MoreHorizontal, SquareTerminal, X } from "lucide-react"
 import {
   ClaudeAI,
   CursorIcon,
@@ -30,7 +30,7 @@ export type SessionCardProps = {
   session: SessionCardModel
   onClick: () => void
   onKill?: () => void
-  onMarkDone?: () => void
+  onArchive?: () => void
   onReview?: () => void
   onReject?: () => void
   onViewNotifications?: () => void
@@ -66,14 +66,14 @@ function stopCardClick(e: MouseEvent) {
 }
 
 export function SessionCard(props: SessionCardProps) {
-  const { session, onClick, onKill, onMarkDone, onReview, onReject, onViewNotifications } =
+  const { session, onClick, onKill, onArchive, onReview, onReject, onViewNotifications } =
     props
   const showApprovalActions =
     session.status === "approval" || session.requiresApproval
-  const isDone = session.status === "done"
+  const isArchived = session.status === "archived"
 
   const overflow: ReactNode =
-    onKill || onMarkDone || onViewNotifications ? (
+    onKill || onArchive || onViewNotifications ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
@@ -99,10 +99,10 @@ export function SessionCard(props: SessionCardProps) {
             View notifications
           </DropdownMenuItem>
         ) : null}
-        {onMarkDone && !isDone ? (
-          <DropdownMenuItem onSelect={onMarkDone} data-gharargah-session-mark-done>
-            <Check className="size-4" />
-            Mark done
+        {onArchive && !isArchived ? (
+          <DropdownMenuItem onSelect={onArchive} data-gharargah-session-archive>
+            <Archive />
+            Archive
           </DropdownMenuItem>
         ) : null}
         {onKill ? (
@@ -218,16 +218,16 @@ export function SessionCard(props: SessionCardProps) {
     </div>
   )
 
-  if (!onKill && !onMarkDone) return card
+  if (!onKill && !onArchive) return card
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
       <ContextMenuContent data-gharargah-terminal-card-menu>
-        {onMarkDone && !isDone ? (
-          <ContextMenuItem onSelect={onMarkDone} data-gharargah-session-mark-done>
-            <Check className="size-4" />
-            Mark done
+        {onArchive && !isArchived ? (
+          <ContextMenuItem onSelect={onArchive} data-gharargah-session-archive>
+            <Archive />
+            Archive
           </ContextMenuItem>
         ) : null}
         {onKill ? (

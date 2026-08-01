@@ -12,14 +12,19 @@ import {
 import {
   applyAgentCliResumeLaunchArgs,
   ensureAgentCliProcess,
+  findExistingAgentCliHistorySession,
 } from "./agent-cli-resume.js"
 import {
   clearTerminalSession,
   hydrateTerminalSession,
   listTerminalSessions,
-  markSessionDone,
+  archiveSession,
   sessionHasResumableAgentCli,
   setAgentCliSessionId,
+  setAgentSessionTitle,
+  setTerminalCustomLabel,
+  recordTerminalOutput,
+  resumeArchivedSession,
   terminalSessionForTab,
 } from "./tabs/terminal-session.js"
 
@@ -124,6 +129,7 @@ describe("agentCliLaunch resume argv", () => {
   it("hydrate rebuilds resume argv when agentCliSessionId present", () => {
     const fields = prepareHydratedAgentCliFields({
       tabId: "gharargah:terminal:x",
+      cwdRootUri: "file:///tmp/proj",
       agentId: "codex",
       agentCliSessionId: UUID,
       launchCommand: "codex",
@@ -139,6 +145,7 @@ describe("agentCliLaunch resume argv", () => {
   it("hydrate recovers cli session id from launchArgs when column missing", () => {
     const fields = prepareHydratedAgentCliFields({
       tabId: "gharargah:terminal:cursor-race",
+      cwdRootUri: "file:///tmp/proj",
       agentId: "cursor",
       launchCommand: "cursor-agent",
       launchArgs: [`--resume=${UUID}`, "--trust"],
@@ -188,6 +195,7 @@ describe("agentCliLaunch resume argv", () => {
   it("prepareHydratedAgentCliFields leaves native sessions unchanged", () => {
     const fields = prepareHydratedAgentCliFields({
       tabId: "gharargah:terminal:native",
+      cwdRootUri: "file:///tmp/proj",
       agentId: "codex",
       agentDriverId: "codex:app-server",
       status: "running",
@@ -205,6 +213,37 @@ describe("ensureAgentCliProcess", () => {
     for (const session of listTerminalSessions()) {
       clearTerminalSession(session.tabId)
     }
+  })
+
+  it("updates provider title independently of the custom display label", () => {
+    const tabId = "gharargah:terminal:title"
+    hydrateTerminalSession({
+      tabId,
+      cwdRootUri: "file:///tmp/proj",
+      launchCommand: "codex",
+      status: "running",
+      agentId: "codex",
+    })
+    setTerminalCustomLabel(tabId, "My override")
+    setAgentSessionTitle(tabId, "Provider title")
+    assert.equal(terminalSessionForTab(tabId)?.customLabel, "My override")
+    assert.equal(terminalSessionForTab(tabId)?.agentTitle, "Provider title")
+  })
+
+  it("retains bounded output for archive playback and clears it on resume", () => {
+    const tabId = "gharargah:terminal:transcript"
+    hydrateTerminalSession({
+      tabId,
+      cwdRootUri: "file:///tmp/proj",
+      launchCommand: "codex",
+      status: "running",
+      agentId: "codex",
+    })
+    recordTerminalOutput(tabId, "ARCHIVE_OUTPUT")
+    archiveSession(tabId)
+    assert.equal(terminalSessionForTab(tabId)?.transcript, "ARCHIVE_OUTPUT")
+    resumeArchivedSession(tabId)
+    assert.equal(terminalSessionForTab(tabId)?.transcript, undefined)
   })
 
   it("respawns exited agent with resume argv", () => {
@@ -242,8 +281,8 @@ describe("ensureAgentCliProcess", () => {
     assert.equal(terminalSessionForTab(tabId)?.generation, gen)
   })
 
-  it("skips done sessions", () => {
-    const tabId = "gharargah:terminal:done"
+  it("skips archived sessions", () => {
+    const tabId = "gharargah:terminal:archived"
     hydrateTerminalSession({
       tabId,
       cwdRootUri: "file:///tmp/proj",
@@ -252,8 +291,29 @@ describe("ensureAgentCliProcess", () => {
       agentId: "codex",
       agentCliSessionId: UUID,
     })
-    markSessionDone(tabId)
+    archiveSession(tabId)
     assert.equal(ensureAgentCliProcess(tabId), false)
+  })
+
+  it("deduplicates provider history against archived sessions", () => {
+    const tabId = "gharargah:terminal:history-archive"
+    hydrateTerminalSession({
+      tabId,
+      cwdRootUri: "file:///tmp/proj",
+      launchCommand: "codex",
+      status: "exited",
+      agentId: "codex",
+      agentCliSessionId: UUID,
+      archivedAt: "2026-08-01T00:00:00.000Z",
+    })
+    assert.equal(
+      findExistingAgentCliHistorySession(
+        listTerminalSessions(),
+        "codex",
+        UUID,
+      )?.tabId,
+      tabId,
+    )
   })
 
   it("applyAgentCliResumeLaunchArgs writes opencode --session", () => {

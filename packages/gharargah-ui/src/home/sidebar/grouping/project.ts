@@ -9,12 +9,12 @@ function isActiveStatus(status: SidebarSession["status"]): boolean {
   return status === "running" || status === "waiting"
 }
 
-/** Sort sessions inside a project: open before done, then unread → active → recent. */
+/** Sort sessions inside a project: active before archived, then unread → running → recent. */
 export function sortSessionsInProject(sessions: SidebarSession[]): SidebarSession[] {
   return [...sessions].sort((a, b) => {
-    const aDone = Boolean(a.doneAt)
-    const bDone = Boolean(b.doneAt)
-    if (aDone !== bDone) return aDone ? 1 : -1
+    const aArchived = Boolean(a.archivedAt)
+    const bArchived = Boolean(b.archivedAt)
+    if (aArchived !== bArchived) return aArchived ? 1 : -1
     const aUnread = a.unreadCount > 0
     const bUnread = b.unreadCount > 0
     if (aUnread !== bUnread) return aUnread ? -1 : 1

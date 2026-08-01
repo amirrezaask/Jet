@@ -16,7 +16,7 @@ const ptyAvailable = hasPtySpawn()
 test.describe("session header", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
 
-  test("keeps project context without repeating the CLI provider", async () => {
+  test("shows project and agent identity without repeating the CLI provider", async () => {
     const { app, page } = await launchJet()
     try {
       const modal = await openNewCliSession(page, "codex")
@@ -42,8 +42,11 @@ test.describe("session header", () => {
         0,
       )
       await expect
-        .poll(async () => (await header.textContent()) ?? "")
-        .not.toMatch(/codex/i)
+        .poll(async () => {
+          const text = (await header.textContent()) ?? ""
+          return text.match(/codex/gi)?.length ?? 0
+        })
+        .toBe(1)
     } finally {
       await app.close()
     }

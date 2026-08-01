@@ -22,7 +22,8 @@ export type SessionLifecycleEvent =
   | { readonly _tag: "Failed" }
   | { readonly _tag: "AwaitResume" }
   | { readonly _tag: "Restart" }
-  | { readonly _tag: "MarkDone" }
+  | { readonly _tag: "ResumeArchived" }
+  | { readonly _tag: "Archive" }
   | { readonly _tag: "Hydrate"; readonly status: TerminalSessionStatus }
 
 export class InvalidSessionTransitionError extends Data.TaggedError("InvalidSessionTransition")<{
@@ -51,8 +52,9 @@ export function nextSessionStatus(
       return "failed"
     case "AwaitResume":
     case "Restart":
+    case "ResumeArchived":
       return "starting"
-    case "MarkDone":
+    case "Archive":
       return current === "starting" || current === "running" ? "exited" : current
     case "Hydrate":
       return event.status
@@ -70,7 +72,8 @@ const ALLOWED: ReadonlyMap<
   ["Failed", new Set(["starting", "running", "exited", "failed"])],
   ["AwaitResume", new Set(["starting", "running", "exited", "failed"])],
   ["Restart", new Set(["starting", "running", "exited", "failed"])],
-  ["MarkDone", new Set(["starting", "running", "exited", "failed"])],
+  ["ResumeArchived", new Set(["exited", "failed"])],
+  ["Archive", new Set(["starting", "running", "exited", "failed"])],
   ["Hydrate", new Set(["starting", "running", "exited", "failed"])],
 ])
 

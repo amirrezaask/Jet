@@ -4,23 +4,43 @@ import {
   createMessageConnection,
   type MessageConnection,
 } from "vscode-jsonrpc/browser.js"
+import {
+  CompletionItemKind,
+  DocumentHighlightKind,
+  InlayHintKind,
+  InsertTextFormat,
+  SymbolKind as LspSymbolKind,
+  TextDocumentSyncKind,
+} from "vscode-languageserver-protocol"
 import type {
+  CodeAction,
+  CodeActionContext,
+  CodeLens,
+  Command,
   CompletionItem,
   ConfigurationParams,
   Diagnostic,
+  DocumentHighlight,
+  DocumentSymbol,
   Hover,
+  InlayHint,
   Location,
   LocationLink,
   MarkupContent,
   Position,
+  PrepareRenameResult,
   PublishDiagnosticsParams,
   Range,
+  SemanticTokens,
   SignatureHelp,
+  SymbolInformation,
   TextDocumentIdentifier,
   WorkspaceEdit,
   InitializeResult,
+  InsertReplaceEdit,
+  ServerCapabilities,
+  TextEdit,
 } from "vscode-languageserver-protocol"
-import { TextDocumentSyncKind } from "vscode-languageserver-protocol"
 import {
   applyWorkspaceEdit,
   clearLspMarkers,
@@ -36,6 +56,11 @@ import { createWebSocketTransports } from "./transport.js"
 import { gharargahLspClientCapabilities } from "./client-capabilities.js"
 import { lspConnectionMatchesDocument } from "./connection-scope.js"
 import { defaultWorkspaceConfiguration } from "./client-configuration.js"
+import {
+  capabilityEnabled,
+  hasFullSemanticTokens,
+  serverSupports,
+} from "./server-capabilities.js"
 
 export type LspServerMessageKind = "info" | "warning" | "error"
 export type LspServerMessageHandler = (message: string, kind: LspServerMessageKind) => void
@@ -43,6 +68,7 @@ export type LspServerMessageHandler = (message: string, kind: LspServerMessageKi
 export type MonacoLspClient = {
   connectionId: string
   ready: Promise<void>
+  supports(method: string): boolean
   stop(): void
   disconnect(): void
   sendRequest<R>(method: string, params?: unknown): Promise<R>
@@ -96,12 +122,49 @@ function markupToString(value: string | MarkupContent | undefined): string {
 async function applyLspWorkspaceEdit(
   edit: WorkspaceEdit,
   deps: JetLspWorkspaceDeps,
-): Promise<boolean> {
+  options?: { allowDirty?: boolean; atomic?: boolean },
+): Promise<{ applied: boolean; reason?: string }> {
+  const uris = new Set<string>()
+  for (const uri of Object.keys(edit.changes ?? {})) {
+    uris.add(canonicalizeFileUri(uri))
+  }
+  for (const change of edit.documentChanges ?? []) {
+    if (!("textDocument" in change)) {
+      return {
+        applied: false,
+        reason: "This language server requested unsupported file create/rename/delete operations",
+      }
+    }
+    uris.add(canonicalizeFileUri(change.textDocument.uri))
+  }
+
+  for (const uri of uris) {
+    if (monacoModels.has(uri)) continue
+    let content: string
+    try {
+      content = await deps.readFile(uri)
+    } catch {
+      return { applied: false, reason: `Could not load ${fileUriToPath(uri)} for workspace edit` }
+    }
+    monacoModels.getOrCreate(uri, content, deps.getLanguageId(uri))
+    monacoModels.release(uri)
+  }
+
   const result = applyWorkspaceEdit(edit as LspWorkspaceEdit, {
     registry: monacoModels,
     isDirty: deps.isDirty,
+    getVersion: uri => monacoModels.get(uri)?.getVersionId(),
     getContent: uri => deps.getContent(uri) ?? monacoModels.getContent(uri),
+    allowDirty: options?.allowDirty,
+    atomic: options?.atomic,
   })
+
+  if (result.skipped.length > 0) {
+    return {
+      applied: false,
+      reason: result.skipped.map(entry => `${fileUriToPath(entry.uri)}: ${entry.reason}`).join("; "),
+    }
+  }
 
   for (const uri of result.applied) {
     const content = deps.getContent(uri) ?? monacoModels.getContent(uri)
@@ -126,7 +189,7 @@ async function applyLspWorkspaceEdit(
     }
   }
 
-  return result.applied.length > 0 || result.fileOperations.length > 0
+  return { applied: result.applied.length > 0 }
 }
 
 function completionLabel(item: CompletionItem): string {
@@ -134,6 +197,187 @@ function completionLabel(item: CompletionItem): string {
   if (typeof label === "string") return label
   if (label && typeof label === "object") return label.label
   return ""
+}
+
+function completionKind(kind: CompletionItemKind | undefined): monaco.languages.CompletionItemKind {
+  switch (kind) {
+    case CompletionItemKind.Method: return monaco.languages.CompletionItemKind.Method
+    case CompletionItemKind.Function: return monaco.languages.CompletionItemKind.Function
+    case CompletionItemKind.Constructor: return monaco.languages.CompletionItemKind.Constructor
+    case CompletionItemKind.Field: return monaco.languages.CompletionItemKind.Field
+    case CompletionItemKind.Variable: return monaco.languages.CompletionItemKind.Variable
+    case CompletionItemKind.Class: return monaco.languages.CompletionItemKind.Class
+    case CompletionItemKind.Interface: return monaco.languages.CompletionItemKind.Interface
+    case CompletionItemKind.Module: return monaco.languages.CompletionItemKind.Module
+    case CompletionItemKind.Property: return monaco.languages.CompletionItemKind.Property
+    case CompletionItemKind.Unit: return monaco.languages.CompletionItemKind.Unit
+    case CompletionItemKind.Value: return monaco.languages.CompletionItemKind.Value
+    case CompletionItemKind.Enum: return monaco.languages.CompletionItemKind.Enum
+    case CompletionItemKind.Keyword: return monaco.languages.CompletionItemKind.Keyword
+    case CompletionItemKind.Snippet: return monaco.languages.CompletionItemKind.Snippet
+    case CompletionItemKind.Color: return monaco.languages.CompletionItemKind.Color
+    case CompletionItemKind.File: return monaco.languages.CompletionItemKind.File
+    case CompletionItemKind.Reference: return monaco.languages.CompletionItemKind.Reference
+    case CompletionItemKind.Folder: return monaco.languages.CompletionItemKind.Folder
+    case CompletionItemKind.EnumMember: return monaco.languages.CompletionItemKind.EnumMember
+    case CompletionItemKind.Constant: return monaco.languages.CompletionItemKind.Constant
+    case CompletionItemKind.Struct: return monaco.languages.CompletionItemKind.Struct
+    case CompletionItemKind.Event: return monaco.languages.CompletionItemKind.Event
+    case CompletionItemKind.Operator: return monaco.languages.CompletionItemKind.Operator
+    case CompletionItemKind.TypeParameter: return monaco.languages.CompletionItemKind.TypeParameter
+    case CompletionItemKind.Text:
+    default:
+      return monaco.languages.CompletionItemKind.Text
+  }
+}
+
+function isInsertReplaceEdit(edit: TextEdit | InsertReplaceEdit): edit is InsertReplaceEdit {
+  return "insert" in edit && "replace" in edit
+}
+
+function completionRange(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  item: CompletionItem,
+): monaco.IRange | monaco.languages.CompletionItemRanges {
+  const edit = item.textEdit
+  if (edit) {
+    if (isInsertReplaceEdit(edit)) {
+      return { insert: monacoRange(edit.insert), replace: monacoRange(edit.replace) }
+    }
+    return monacoRange(edit.range)
+  }
+  const word = model.getWordUntilPosition(position)
+  return {
+    startLineNumber: position.lineNumber,
+    startColumn: word.startColumn,
+    endLineNumber: position.lineNumber,
+    endColumn: position.column,
+  }
+}
+
+function completionInsertText(item: CompletionItem): string {
+  return item.textEdit?.newText ?? item.insertText ?? completionLabel(item)
+}
+
+function completionSuggestion(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  item: CompletionItem,
+  index: number,
+): monaco.languages.CompletionItem {
+  return {
+    label: completionLabel(item),
+    kind: completionKind(item.kind),
+    insertText: completionInsertText(item),
+    insertTextRules:
+      item.insertTextFormat === InsertTextFormat.Snippet
+        ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+        : undefined,
+    range: completionRange(model, position, item),
+    sortText: item.sortText ?? String(index).padStart(5, "0"),
+    filterText: item.filterText,
+    preselect: item.preselect,
+    detail: item.detail,
+    documentation: markupToString(item.documentation as string | MarkupContent | undefined),
+    commitCharacters: item.commitCharacters,
+    additionalTextEdits: item.additionalTextEdits?.map(edit => ({
+      range: monacoRange(edit.range),
+      text: edit.newText,
+    })),
+  }
+}
+
+function symbolKind(kind: LspSymbolKind): monaco.languages.SymbolKind {
+  const kinds = monaco.languages.SymbolKind
+  switch (kind) {
+    case LspSymbolKind.File: return kinds.File
+    case LspSymbolKind.Module: return kinds.Module
+    case LspSymbolKind.Namespace: return kinds.Namespace
+    case LspSymbolKind.Package: return kinds.Package
+    case LspSymbolKind.Class: return kinds.Class
+    case LspSymbolKind.Method: return kinds.Method
+    case LspSymbolKind.Property: return kinds.Property
+    case LspSymbolKind.Field: return kinds.Field
+    case LspSymbolKind.Constructor: return kinds.Constructor
+    case LspSymbolKind.Enum: return kinds.Enum
+    case LspSymbolKind.Interface: return kinds.Interface
+    case LspSymbolKind.Function: return kinds.Function
+    case LspSymbolKind.Variable: return kinds.Variable
+    case LspSymbolKind.Constant: return kinds.Constant
+    case LspSymbolKind.String: return kinds.String
+    case LspSymbolKind.Number: return kinds.Number
+    case LspSymbolKind.Boolean: return kinds.Boolean
+    case LspSymbolKind.Array: return kinds.Array
+    case LspSymbolKind.Object: return kinds.Object
+    case LspSymbolKind.Key: return kinds.Key
+    case LspSymbolKind.Null: return kinds.Null
+    case LspSymbolKind.EnumMember: return kinds.EnumMember
+    case LspSymbolKind.Struct: return kinds.Struct
+    case LspSymbolKind.Event: return kinds.Event
+    case LspSymbolKind.Operator: return kinds.Operator
+    case LspSymbolKind.TypeParameter: return kinds.TypeParameter
+    default: return kinds.Variable
+  }
+}
+
+function documentSymbol(symbol: DocumentSymbol): monaco.languages.DocumentSymbol {
+  return {
+    name: symbol.name,
+    detail: symbol.detail ?? "",
+    kind: symbolKind(symbol.kind),
+    tags: [],
+    range: monacoRange(symbol.range),
+    selectionRange: monacoRange(symbol.selectionRange),
+    children: symbol.children?.map(documentSymbol),
+  }
+}
+
+function command(command: Command | undefined): monaco.languages.Command | undefined {
+  if (!command) return undefined
+  return { id: command.command, title: command.title, arguments: command.arguments }
+}
+
+function workspaceEdit(edit: WorkspaceEdit | undefined): monaco.languages.WorkspaceEdit | undefined {
+  if (!edit) return undefined
+  const edits: monaco.languages.IWorkspaceTextEdit[] = []
+  for (const [uri, textEdits] of Object.entries(edit.changes ?? {})) {
+    for (const textEdit of textEdits) {
+      edits.push({
+        resource: monaco.Uri.parse(uri),
+        versionId: undefined,
+        textEdit: { range: monacoRange(textEdit.range), text: textEdit.newText },
+      })
+    }
+  }
+  for (const change of edit.documentChanges ?? []) {
+    if (!("textDocument" in change)) return undefined
+    for (const textEdit of change.edits) {
+      if (!("range" in textEdit) || !("newText" in textEdit)) continue
+      edits.push({
+        resource: monaco.Uri.parse(change.textDocument.uri),
+        versionId: change.textDocument.version ?? undefined,
+        textEdit: { range: monacoRange(textEdit.range), text: textEdit.newText },
+      })
+    }
+  }
+  return { edits }
+}
+
+function codeActionDiagnostic(diagnostic: monaco.editor.IMarkerData): Diagnostic {
+  return {
+    range: {
+      start: { line: diagnostic.startLineNumber - 1, character: diagnostic.startColumn - 1 },
+      end: { line: diagnostic.endLineNumber - 1, character: diagnostic.endColumn - 1 },
+    },
+    message: diagnostic.message,
+    source: diagnostic.source,
+    code: typeof diagnostic.code === "object" ? diagnostic.code.value : diagnostic.code,
+  }
+}
+
+function isLspCommand(action: CodeAction | Command): action is Command {
+  return "command" in action && typeof action.command === "string"
 }
 
 function requestWithCancellation<R>(
@@ -173,7 +417,7 @@ export class LspClientPool {
   private ensureEditorOpener(): void {
     if (this.editorOpener) return
     this.editorOpener = monaco.editor.registerEditorOpener({
-      openCodeEditor: (_source, resource, selectionOrPosition) => {
+      openCodeEditor: (source, resource, selectionOrPosition) => {
         const deps = this.workspaceDeps
         if (!deps) return false
         if (resource.scheme !== "file") return false
@@ -189,6 +433,15 @@ export class LspClientPool {
             line = selectionOrPosition.lineNumber
             column = selectionOrPosition.column
           }
+        }
+        const sourceModel = source.getModel()
+        const sourcePosition = source.getPosition()
+        if (sourceModel && sourcePosition) {
+          deps.pushJumpLocation?.(
+            sourceModel.uri.toString(),
+            sourcePosition.lineNumber,
+            sourcePosition.column,
+          )
         }
         deps.openFile(uri, path, line, column)
         return true
@@ -262,8 +515,8 @@ export class LspClientPool {
     )
 
     connection.onRequest("workspace/applyEdit", async (params: { edit: WorkspaceEdit }) => {
-      const applied = await applyLspWorkspaceEdit(params.edit, deps)
-      return { applied }
+      const result = await applyLspWorkspaceEdit(params.edit, deps, { atomic: true })
+      return { applied: result.applied, failureReason: result.reason }
     })
     connection.onRequest("workspace/configuration", (params: ConfigurationParams) =>
       defaultWorkspaceConfiguration(params),
@@ -289,12 +542,13 @@ export class LspClientPool {
       typeof textDocumentSync === "number"
         ? textDocumentSync
         : (textDocumentSync?.change ?? TextDocumentSyncKind.None)
-    this.registerProviders(conn, connection, deps, syncKind)
+    this.registerProviders(conn, connection, deps, syncKind, initialized.capabilities)
 
     let disconnected = false
     const client: MonacoLspClient = {
       connectionId: conn.id,
       ready: Promise.resolve(),
+      supports: method => serverSupports(initialized.capabilities, method),
       stop: () => client.disconnect(),
       disconnect: () => {
         if (disconnected) return
@@ -365,6 +619,7 @@ export class LspClientPool {
     connection: MessageConnection,
     deps: JetLspWorkspaceDeps,
     syncKind: TextDocumentSyncKind,
+    capabilities: ServerCapabilities,
   ): void {
     // Monaco model language ids (tsx/jsx/mts/cts are aliased to ts/js at model create).
     const selector = [
@@ -385,6 +640,7 @@ export class LspClientPool {
     const registerModelChanges = (model: monaco.editor.ITextModel) => {
       disposables.push(
         model.onDidChangeContent(event => {
+          deps.updateContent(model.uri.toString(), model.getValue())
           if (syncKind === TextDocumentSyncKind.None) return
           const contentChanges =
             syncKind === TextDocumentSyncKind.Incremental
@@ -437,9 +693,18 @@ export class LspClientPool {
       registerModelChanges(model)
     }
 
-    disposables.push(
+    for (const commandId of capabilities.executeCommandProvider?.commands ?? []) {
+      disposables.push(monaco.editor.registerCommand(commandId, (_accessor, ...args: unknown[]) =>
+        connection.sendRequest("workspace/executeCommand", {
+          command: commandId,
+          arguments: args,
+        }),
+      ))
+    }
+
+    if (capabilities.completionProvider) disposables.push(
       monaco.languages.registerCompletionItemProvider(selector, {
-        triggerCharacters: [".", '"', "'", "/", "@", "<"],
+        triggerCharacters: capabilities.completionProvider.triggerCharacters ?? [],
         provideCompletionItems: async (model, position, _context, token) => {
           if (!this.matchesConnection(model, conn)) return { suggestions: [] }
           await this.didOpen(conn.id, connection, model)
@@ -452,24 +717,15 @@ export class LspClientPool {
           const items = Array.isArray(result) ? result : (result?.items ?? [])
           return {
             incomplete: !Array.isArray(result) && Boolean(result?.isIncomplete),
-            suggestions: items.map((item: CompletionItem, i: number) => {
-              const label = completionLabel(item)
-              return {
-                label,
-                kind: monaco.languages.CompletionItemKind.Variable,
-                insertText: item.insertText ?? label,
-                range: undefined as unknown as monaco.IRange,
-                sortText: item.sortText ?? String(i).padStart(5, "0"),
-                detail: item.detail,
-                documentation: markupToString(item.documentation as string | MarkupContent | undefined),
-              }
-            }),
+            suggestions: items.map((item, index) =>
+              completionSuggestion(model, position, item, index),
+            ),
           }
         },
       }),
     )
 
-    disposables.push(
+    if (capabilityEnabled(capabilities.hoverProvider)) disposables.push(
       monaco.languages.registerHoverProvider(selector, {
         provideHover: async (model, position, token) => {
           if (!this.matchesConnection(model, conn)) return null
@@ -490,7 +746,7 @@ export class LspClientPool {
       }),
     )
 
-    disposables.push(
+    if (capabilityEnabled(capabilities.definitionProvider)) disposables.push(
       monaco.languages.registerDefinitionProvider(selector, {
         provideDefinition: async (model, position, token) => {
           if (!this.matchesConnection(model, conn)) return null
@@ -506,7 +762,28 @@ export class LspClientPool {
       }),
     )
 
-    disposables.push(
+    if (capabilityEnabled(capabilities.declarationProvider)) {
+      disposables.push(monaco.languages.registerDeclarationProvider(selector, {
+        provideDeclaration: (model, position, token) =>
+          this.provideLocations(conn, connection, "textDocument/declaration", model, position, token),
+      }))
+    }
+
+    if (capabilityEnabled(capabilities.typeDefinitionProvider)) {
+      disposables.push(monaco.languages.registerTypeDefinitionProvider(selector, {
+        provideTypeDefinition: (model, position, token) =>
+          this.provideLocations(conn, connection, "textDocument/typeDefinition", model, position, token),
+      }))
+    }
+
+    if (capabilityEnabled(capabilities.implementationProvider)) {
+      disposables.push(monaco.languages.registerImplementationProvider(selector, {
+        provideImplementation: (model, position, token) =>
+          this.provideLocations(conn, connection, "textDocument/implementation", model, position, token),
+      }))
+    }
+
+    if (capabilityEnabled(capabilities.referencesProvider)) disposables.push(
       monaco.languages.registerReferenceProvider(selector, {
         provideReferences: async (model, position, context, token) => {
           if (!this.matchesConnection(model, conn)) return []
@@ -524,8 +801,52 @@ export class LspClientPool {
       }),
     )
 
-    disposables.push(
+    if (capabilityEnabled(capabilities.renameProvider)) disposables.push(
       monaco.languages.registerRenameProvider(selector, {
+        resolveRenameLocation:
+          typeof capabilities.renameProvider === "object" &&
+          capabilities.renameProvider.prepareProvider
+            ? async (model, position, token) => {
+                if (!this.matchesConnection(model, conn)) {
+                  return { range: monacoRange({ start: lspPos(position), end: lspPos(position) }), text: "" }
+                }
+                await this.didOpen(conn.id, connection, model)
+                const prepared = await requestWithCancellation<PrepareRenameResult | null>(
+                  connection,
+                  "textDocument/prepareRename",
+                  { textDocument: docId(model), position: lspPos(position) },
+                  token,
+                )
+                if (!prepared || "defaultBehavior" in prepared) {
+                  const word = model.getWordAtPosition(position)
+                  if (!word) {
+                    return {
+                      range: monacoRange({ start: lspPos(position), end: lspPos(position) }),
+                      text: "",
+                      rejectReason: "No symbol at the current position",
+                    }
+                  }
+                  return {
+                    range: {
+                      startLineNumber: position.lineNumber,
+                      startColumn: word.startColumn,
+                      endLineNumber: position.lineNumber,
+                      endColumn: word.endColumn,
+                    },
+                    text: word.word,
+                  }
+                }
+                const range = "range" in prepared ? prepared.range : prepared
+                const monacoPreparedRange = monacoRange(range)
+                return {
+                  range: monacoPreparedRange,
+                  text:
+                    "placeholder" in prepared
+                      ? prepared.placeholder
+                      : model.getValueInRange(monacoPreparedRange),
+                }
+              }
+            : undefined,
         provideRenameEdits: async (model, position, newName, token) => {
           if (!this.matchesConnection(model, conn)) return null
           await this.didOpen(conn.id, connection, model)
@@ -535,23 +856,32 @@ export class LspClientPool {
             newName,
           }, token)
           if (!edit) return null
-          await applyLspWorkspaceEdit(edit, deps)
-          return { edits: [] }
+          const result = await applyLspWorkspaceEdit(edit, deps, {
+            allowDirty: true,
+            atomic: true,
+          })
+          return result.applied
+            ? { edits: [] }
+            : { edits: [], rejectReason: result.reason ?? "Rename could not be applied" }
         },
       }),
     )
 
-    disposables.push(
+    if (capabilityEnabled(capabilities.documentFormattingProvider)) disposables.push(
       monaco.languages.registerDocumentFormattingEditProvider(selector, {
         provideDocumentFormattingEdits: async (model, _options, token) => {
           if (!this.matchesConnection(model, conn)) return []
           await this.didOpen(conn.id, connection, model)
+          const modelOptions = model.getOptions()
           const edits = await requestWithCancellation<{ range: Range; newText: string }[] | null>(
             connection,
             "textDocument/formatting",
             {
               textDocument: docId(model),
-              options: { tabSize: 2, insertSpaces: true },
+              options: {
+                tabSize: modelOptions.tabSize,
+                insertSpaces: modelOptions.insertSpaces,
+              },
             },
             token,
           )
@@ -563,9 +893,257 @@ export class LspClientPool {
       }),
     )
 
-    disposables.push(
+    if (capabilityEnabled(capabilities.documentRangeFormattingProvider)) disposables.push(
+      monaco.languages.registerDocumentRangeFormattingEditProvider(selector, {
+        provideDocumentRangeFormattingEdits: async (model, range, _options, token) => {
+          if (!this.matchesConnection(model, conn)) return []
+          await this.didOpen(conn.id, connection, model)
+          const modelOptions = model.getOptions()
+          const edits = await requestWithCancellation<TextEdit[] | null>(
+            connection,
+            "textDocument/rangeFormatting",
+            {
+              textDocument: docId(model),
+              range: {
+                start: lspPos({ lineNumber: range.startLineNumber, column: range.startColumn } as monaco.Position),
+                end: lspPos({ lineNumber: range.endLineNumber, column: range.endColumn } as monaco.Position),
+              },
+              options: {
+                tabSize: modelOptions.tabSize,
+                insertSpaces: modelOptions.insertSpaces,
+              },
+            },
+            token,
+          )
+          return (edits ?? []).map(edit => ({
+            range: monacoRange(edit.range),
+            text: edit.newText,
+          }))
+        },
+      }),
+    )
+
+    if (capabilityEnabled(capabilities.documentSymbolProvider)) disposables.push(
+      monaco.languages.registerDocumentSymbolProvider(selector, {
+        provideDocumentSymbols: async (model, token) => {
+          if (!this.matchesConnection(model, conn)) return []
+          await this.didOpen(conn.id, connection, model)
+          const symbols = await requestWithCancellation<
+            DocumentSymbol[] | SymbolInformation[] | null
+          >(connection, "textDocument/documentSymbol", { textDocument: docId(model) }, token)
+          return (symbols ?? []).map(symbol => {
+            if ("location" in symbol) {
+              return {
+                name: symbol.name,
+                detail: symbol.containerName ?? "",
+                kind: symbolKind(symbol.kind),
+                tags: [],
+                range: monacoRange(symbol.location.range),
+                selectionRange: monacoRange(symbol.location.range),
+              }
+            }
+            return documentSymbol(symbol)
+          })
+        },
+      }),
+    )
+
+    if (capabilityEnabled(capabilities.codeActionProvider)) disposables.push(
+      monaco.languages.registerCodeActionProvider(selector, {
+        provideCodeActions: async (model, range, context, token) => {
+          if (!this.matchesConnection(model, conn)) return { actions: [], dispose: () => {} }
+          await this.didOpen(conn.id, connection, model)
+          const lspContext: CodeActionContext = {
+            diagnostics: context.markers.map(codeActionDiagnostic),
+            only: context.only ? [context.only] : undefined,
+            triggerKind: context.trigger === monaco.languages.CodeActionTriggerType.Auto ? 2 : 1,
+          }
+          const actions = await requestWithCancellation<(CodeAction | Command)[] | null>(
+            connection,
+            "textDocument/codeAction",
+            {
+              textDocument: docId(model),
+              range: {
+                start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+                end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+              },
+              context: lspContext,
+            },
+            token,
+          )
+          return {
+            actions: (actions ?? []).map(action => {
+              if (isLspCommand(action)) {
+                return { title: action.title, command: command(action) }
+              }
+              const mappedEdit = workspaceEdit(action.edit)
+              return {
+                title: action.title,
+                kind: action.kind,
+                diagnostics: context.markers,
+                edit: mappedEdit,
+                command: command(action.command),
+                isPreferred: action.isPreferred,
+                disabled: action.edit && !mappedEdit
+                  ? "File create, rename, and delete code actions are not supported"
+                  : action.disabled?.reason,
+              }
+            }),
+            dispose: () => {},
+          }
+        },
+      }),
+    )
+
+    const semanticTokensProvider = capabilities.semanticTokensProvider
+    if (hasFullSemanticTokens(capabilities) && typeof semanticTokensProvider === "object" && semanticTokensProvider != null) {
+      disposables.push(monaco.languages.registerDocumentSemanticTokensProvider(selector, {
+        getLegend: () => ({
+          tokenTypes: semanticTokensProvider.legend.tokenTypes,
+          tokenModifiers: semanticTokensProvider.legend.tokenModifiers,
+        }),
+        provideDocumentSemanticTokens: async (model, _lastResultId, token) => {
+          if (!this.matchesConnection(model, conn)) return null
+          await this.didOpen(conn.id, connection, model)
+          const result = await requestWithCancellation<SemanticTokens | null>(
+            connection,
+            "textDocument/semanticTokens/full",
+            { textDocument: docId(model) },
+            token,
+          )
+          return result
+            ? { resultId: result.resultId, data: Uint32Array.from(result.data) }
+            : null
+        },
+        releaseDocumentSemanticTokens: () => {},
+      }))
+    }
+
+    if (capabilityEnabled(capabilities.inlayHintProvider)) disposables.push(
+      monaco.languages.registerInlayHintsProvider(selector, {
+        displayName: conn.descriptorId,
+        provideInlayHints: async (model, range, token) => {
+          if (!this.matchesConnection(model, conn)) return { hints: [], dispose: () => {} }
+          await this.didOpen(conn.id, connection, model)
+          const hints = await requestWithCancellation<InlayHint[] | null>(
+            connection,
+            "textDocument/inlayHint",
+            {
+              textDocument: docId(model),
+              range: {
+                start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+                end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+              },
+            },
+            token,
+          )
+          return {
+            hints: (hints ?? []).map(hint => ({
+              position: {
+                lineNumber: hint.position.line + 1,
+                column: hint.position.character + 1,
+              },
+              label: typeof hint.label === "string"
+                ? hint.label
+                : hint.label.map(part => ({
+                    label: part.value,
+                    tooltip: part.tooltip ? { value: markupToString(part.tooltip) } : undefined,
+                    command: command(part.command),
+                    location: part.location
+                      ? { uri: monaco.Uri.parse(part.location.uri), range: monacoRange(part.location.range) }
+                      : undefined,
+                  })),
+              kind: hint.kind === InlayHintKind.Parameter
+                ? monaco.languages.InlayHintKind.Parameter
+                : monaco.languages.InlayHintKind.Type,
+              tooltip: hint.tooltip ? { value: markupToString(hint.tooltip) } : undefined,
+              paddingLeft: hint.paddingLeft,
+              paddingRight: hint.paddingRight,
+              textEdits: hint.textEdits?.map(edit => ({
+                range: monacoRange(edit.range),
+                text: edit.newText,
+              })),
+            })),
+            dispose: () => {},
+          }
+        },
+      }),
+    )
+
+    if (capabilityEnabled(capabilities.documentHighlightProvider)) disposables.push(
+      monaco.languages.registerDocumentHighlightProvider(selector, {
+        provideDocumentHighlights: async (model, position, token) => {
+          if (!this.matchesConnection(model, conn)) return []
+          await this.didOpen(conn.id, connection, model)
+          const highlights = await requestWithCancellation<DocumentHighlight[] | null>(
+            connection,
+            "textDocument/documentHighlight",
+            { textDocument: docId(model), position: lspPos(position) },
+            token,
+          )
+          return (highlights ?? []).map(highlight => ({
+            range: monacoRange(highlight.range),
+            kind: highlight.kind === DocumentHighlightKind.Read
+              ? monaco.languages.DocumentHighlightKind.Read
+              : highlight.kind === DocumentHighlightKind.Write
+                ? monaco.languages.DocumentHighlightKind.Write
+                : monaco.languages.DocumentHighlightKind.Text,
+          }))
+        },
+      }),
+    )
+
+    if (capabilities.codeLensProvider) disposables.push(
+      monaco.languages.registerCodeLensProvider(selector, {
+        provideCodeLenses: async (model, token) => {
+          if (!this.matchesConnection(model, conn)) return { lenses: [], dispose: () => {} }
+          await this.didOpen(conn.id, connection, model)
+          const lenses = await requestWithCancellation<CodeLens[] | null>(
+            connection,
+            "textDocument/codeLens",
+            { textDocument: docId(model) },
+            token,
+          )
+          return {
+            lenses: (lenses ?? []).map(lens => ({
+              range: monacoRange(lens.range),
+              command: command(lens.command),
+            })),
+            dispose: () => {},
+          }
+        },
+        resolveCodeLens: capabilities.codeLensProvider.resolveProvider
+          ? async (_model, lens, token) => {
+              const resolved = await requestWithCancellation<CodeLens>(
+                connection,
+                "codeLens/resolve",
+                {
+                  range: {
+                    start: {
+                      line: lens.range.startLineNumber - 1,
+                      character: lens.range.startColumn - 1,
+                    },
+                    end: {
+                      line: lens.range.endLineNumber - 1,
+                      character: lens.range.endColumn - 1,
+                    },
+                  },
+                  command: lens.command
+                    ? { title: lens.command.title, command: lens.command.id, arguments: lens.command.arguments }
+                    : undefined,
+                },
+                token,
+              )
+              return { range: monacoRange(resolved.range), command: command(resolved.command) }
+            }
+          : undefined,
+      }),
+    )
+
+    if (capabilities.signatureHelpProvider) disposables.push(
       monaco.languages.registerSignatureHelpProvider(selector, {
-        signatureHelpTriggerCharacters: ["(", ","],
+        signatureHelpTriggerCharacters:
+          capabilities.signatureHelpProvider.triggerCharacters ?? [],
         provideSignatureHelp: async (model, position, token) => {
           if (!this.matchesConnection(model, conn)) return null
           await this.didOpen(conn.id, connection, model)
@@ -580,7 +1158,7 @@ export class LspClientPool {
                 label: s.label,
                 documentation: markupToString(s.documentation as string | MarkupContent | undefined),
                 parameters: (s.parameters ?? []).map((p: NonNullable<typeof s.parameters>[number]) => ({
-                  label: typeof p.label === "string" ? p.label : "",
+                  label: typeof p.label === "string" ? p.label : [p.label[0], p.label[1]],
                   documentation: markupToString(p.documentation as string | MarkupContent | undefined),
                 })),
               })),
@@ -596,6 +1174,32 @@ export class LspClientPool {
     this.disposables.set(conn.id, disposables)
   }
 
+  private async provideLocations(
+    conn: LspConnection,
+    connection: MessageConnection,
+    method:
+      | "textDocument/declaration"
+      | "textDocument/typeDefinition"
+      | "textDocument/implementation",
+    model: monaco.editor.ITextModel,
+    position: monaco.Position,
+    token: monaco.CancellationToken,
+  ): Promise<
+    monaco.languages.Location | monaco.languages.Location[] | monaco.languages.LocationLink[] | null
+  > {
+    if (!this.matchesConnection(model, conn)) return null
+    await this.didOpen(conn.id, connection, model)
+    const result = await requestWithCancellation<
+      Location | Location[] | LocationLink[] | null
+    >(
+      connection,
+      method,
+      { textDocument: { uri: model.uri.toString() }, position: lspPos(position) },
+      token,
+    )
+    return this.locationsToLinks(result)
+  }
+
   private locationsToLinks(
     result: Location | Location[] | LocationLink[] | null,
   ): monaco.languages.Location | monaco.languages.Location[] | monaco.languages.LocationLink[] | null {
@@ -605,7 +1209,11 @@ export class LspClientPool {
       if ("targetUri" in result[0]!) {
         return (result as LocationLink[]).map((l: LocationLink) => ({
           uri: monaco.Uri.parse(l.targetUri),
-          range: monacoRange(l.targetSelectionRange ?? l.targetRange),
+          range: monacoRange(l.targetRange),
+          targetSelectionRange: monacoRange(l.targetSelectionRange),
+          originSelectionRange: l.originSelectionRange
+            ? monacoRange(l.originSelectionRange)
+            : undefined,
         }))
       }
       return (result as Location[]).map((l: Location) => ({

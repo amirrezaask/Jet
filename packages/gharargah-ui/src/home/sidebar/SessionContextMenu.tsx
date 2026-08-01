@@ -19,7 +19,7 @@ export type SessionSidebarActions = {
   onOpen: (session: SidebarSession) => void
   onRename?: (session: SidebarSession) => void
   onMarkRead?: (session: SidebarSession) => void
-  onClose?: (session: SidebarSession) => void
+  onArchive?: (session: SidebarSession) => void
 }
 
 function SessionMenuItems({
@@ -45,10 +45,15 @@ function SessionMenuItems({
           <Item onSelect={() => actions.onMarkRead?.(session)}>Mark as read</Item>
         </>
       ) : null}
-      {actions.onClose ? (
+      {actions.onArchive && !session.archivedAt ? (
         <>
           <Separator />
-          <Item onSelect={() => actions.onClose?.(session)}>Close</Item>
+          <Item
+            onSelect={() => actions.onArchive?.(session)}
+            data-gharargah-sidebar-session-archive=""
+          >
+            Archive
+          </Item>
         </>
       ) : null}
     </>

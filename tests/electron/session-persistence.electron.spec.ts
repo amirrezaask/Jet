@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import {
   expectLocatorContainsText,
   expectLocatorCount,
@@ -6,7 +9,6 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 import {
-  hasCursorAgent,
   hasPtySpawn,
   launchJet,
   openNewAgentSession,
@@ -15,7 +17,6 @@ import {
 } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
-const cursorAgentAvailable = hasCursorAgent()
 
 const MOCK_CLI_SESSION_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -143,8 +144,25 @@ test.describe("session refresh persistence", () => {
   })
 
   test("cursor agent CLI opens instantly, stores after hook session id, resumes", async () => {
-    test.skip(!cursorAgentAvailable, "cursor-agent not on PATH")
-    const { app, page } = await launchJet()
+    const temporaryRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), "gharargah-cursor-session-e2e-"),
+    )
+    const binDir = path.join(temporaryRoot, "bin")
+    fs.mkdirSync(binDir)
+    fs.writeFileSync(
+      path.join(binDir, "cursor-agent"),
+      [
+        "#!/bin/sh",
+        `printf '{"session_id":"${MOCK_CLI_SESSION_ID}"}\\r\\n'`,
+        "trap 'exit 0' TERM INT",
+        "while :; do sleep 1; done",
+      ].join("\n"),
+      { mode: 0o755 },
+    )
+    const { app, page } = await launchJet({
+      userDataDir: path.join(temporaryRoot, "user-data"),
+      env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
+    })
     try {
       await ensureCardsLayout(page)
       await expectSelectorVisible(page, "[data-gharargah-home]")

@@ -64,6 +64,9 @@ export class LanguageServerManager {
   private connections = new Map<string, LspConnection>()
   private pendingConnections = new Map<string, Promise<LspConnection | null>>()
   private lastSpawnError: string | null = null
+  private readonly disposeCrashListener: (() => void) | null
+  private lifecycleGeneration = 0
+  private disposed = false
   readonly onDiagnostics = new Emitter<unknown>()
 
   constructor(
@@ -76,17 +79,18 @@ export class LanguageServerManager {
       onCrashed?(cb: (id: string) => void): () => void
     },
   ) {
-    lspApi.onCrashed?.(id => {
+    this.disposeCrashListener = lspApi.onCrashed?.(id => {
       for (const [key, conn] of this.connections) {
         if (conn.id === id) {
           this.connections.delete(key)
           break
         }
       }
-    })
+    }) ?? null
   }
 
   async ensureServerForFile(file: WorkspaceFile, workspaceRoot: string): Promise<LspConnection | null> {
+    if (this.disposed) return null
     const descriptor = this.descriptorForLanguage(file.languageId)
     if (!descriptor) return null
 
@@ -124,11 +128,16 @@ export class LanguageServerManager {
     const pending = this.pendingConnections.get(key)
     if (pending) return pending
 
+    const generation = this.lifecycleGeneration
     const starting = (async (): Promise<LspConnection | null> => {
       try {
         const conn = await this.lspApi.start(projectRootUri, descriptor.id)
         if (conn.error) {
           this.lastSpawnError = conn.error
+          return null
+        }
+        if (this.disposed || generation !== this.lifecycleGeneration) {
+          await this.lspApi.stop(conn.id).catch(() => {})
           return null
         }
         const connection: LspConnection = {
@@ -202,6 +211,23 @@ export class LanguageServerManager {
     }
     await Promise.all(toStop.map(conn => this.lspApi.stop(conn.id).catch(() => {})))
     return toStop.map(conn => conn.id)
+  }
+
+  async stopAll(): Promise<string[]> {
+    this.lifecycleGeneration++
+    const connections = [...this.connections.values()]
+    this.connections.clear()
+    this.pendingConnections.clear()
+    await Promise.all(
+      connections.map(connection => this.lspApi.stop(connection.id).catch(() => {})),
+    )
+    return connections.map(connection => connection.id)
+  }
+
+  dispose(): void {
+    this.disposed = true
+    this.lifecycleGeneration++
+    this.disposeCrashListener?.()
   }
 
   private descriptorForLanguage(languageId: string): LanguageServerDescriptor | null {

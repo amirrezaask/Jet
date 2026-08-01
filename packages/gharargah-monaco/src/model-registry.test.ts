@@ -9,6 +9,7 @@ type MockModel = {
   getValue: () => string
   setValue: (v: string) => void
   getLanguageId: () => string
+  getPositionAt: (offset: number) => { lineNumber: number; column: number }
   getFullModelRange: () => {
     startLineNumber: number
     startColumn: number
@@ -39,6 +40,9 @@ function createMockModel(uri: string, content: string, languageId: string): Mock
     },
     getLanguageId() {
       return this.languageId
+    },
+    getPositionAt(offset) {
+      return { lineNumber: 1, column: offset + 1 }
     },
     getFullModelRange() {
       return { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 }
@@ -87,12 +91,15 @@ mock.module("monaco-editor/esm/vs/editor/editor.api.js", {
 
 describe("MonacoModelRegistry", () => {
   let MonacoModelRegistry: typeof import("./model-registry.js").MonacoModelRegistry
+  let applyWorkspaceEdit: typeof import("./apply-edit.js").applyWorkspaceEdit
   let registry: InstanceType<typeof MonacoModelRegistry>
   const uri = "file:///tmp/test-registry.ts"
 
   before(async () => {
     const registryModule = await import("./model-registry.js")
+    const editModule = await import("./apply-edit.js")
     MonacoModelRegistry = registryModule.MonacoModelRegistry
+    applyWorkspaceEdit = editModule.applyWorkspaceEdit
   })
 
   beforeEach(() => {
@@ -183,5 +190,68 @@ describe("MonacoModelRegistry", () => {
     assert.equal(registry.get(testUri), model)
     registry.release(testUri)
     registry.disposeIfUnreferenced(testUri)
+  })
+
+  it("rejects an atomic multi-document edit before mutating any model", () => {
+    const otherUri = "file:///tmp/test-registry-other.ts"
+    registry.getOrCreate(uri, "alpha", "typescript")
+    registry.getOrCreate(otherUri, "beta", "typescript")
+
+    const result = applyWorkspaceEdit(
+      {
+        documentChanges: [
+          {
+            textDocument: { uri, version: 1 },
+            edits: [{
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+              newText: "changed-alpha",
+            }],
+          },
+          {
+            textDocument: { uri: otherUri, version: 99 },
+            edits: [{
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } },
+              newText: "changed-beta",
+            }],
+          },
+        ],
+      },
+      {
+        registry,
+        isDirty: () => false,
+        getVersion: target => target === otherUri ? 2 : 1,
+        atomic: true,
+      },
+    )
+
+    assert.equal(result.applied.length, 0)
+    assert.equal(result.skipped.length, 1)
+    assert.equal(registry.getContent(uri), "alpha")
+    assert.equal(registry.getContent(otherUri), "beta")
+    registry.dispose(otherUri)
+  })
+
+  it("can apply a synced rename edit to an unsaved model when explicitly allowed", () => {
+    registry.getOrCreate(uri, "alpha", "typescript")
+    const result = applyWorkspaceEdit(
+      {
+        changes: {
+          [uri]: [{
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+            newText: "renamed",
+          }],
+        },
+      },
+      {
+        registry,
+        isDirty: () => true,
+        allowDirty: true,
+        atomic: true,
+      },
+    )
+
+    assert.deepEqual(result.applied, [uri])
+    assert.equal(result.skipped.length, 0)
+    assert.equal(registry.getContent(uri), "renamed")
   })
 })

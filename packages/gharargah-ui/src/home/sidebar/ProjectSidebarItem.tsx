@@ -68,10 +68,15 @@ export function ProjectSidebarItem({
       ? `${project.unreadCount} unread message${project.unreadCount === 1 ? "" : "s"}`
       : undefined
 
-  const openSessions = project.sessions.filter(session => !session.doneAt)
-  const doneSessions = project.sessions.filter(session => Boolean(session.doneAt))
+  const activeSessions = project.sessions.filter(session => !session.archivedAt)
+  const archivedSessions = project.sessions.filter(session =>
+    Boolean(session.archivedAt),
+  )
 
-  const renderSessionList = (sessions: SidebarSession[], section: "open" | "done") => (
+  const renderSessionList = (
+    sessions: SidebarSession[],
+    section: "active" | "archived",
+  ) => (
     <SidebarMenu
       className="gap-0.5"
       data-gharargah-sidebar-session-section={section}
@@ -249,27 +254,27 @@ export function ProjectSidebarItem({
                 <div className="flex flex-col gap-0.5">
                   <div
                     className="px-2 pt-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground"
-                    data-gharargah-sidebar-section-label="open"
+                    data-gharargah-sidebar-section-label="active"
                   >
-                    Open
+                    Active
                   </div>
-                  {openSessions.length === 0 ? (
+                  {activeSessions.length === 0 ? (
                     <div className="px-2 py-1.5 text-3xs text-muted-foreground">
-                      No open sessions
+                      No active sessions
                     </div>
                   ) : (
-                    renderSessionList(openSessions, "open")
+                    renderSessionList(activeSessions, "active")
                   )}
                 </div>
-                {doneSessions.length > 0 ? (
+                {archivedSessions.length > 0 ? (
                   <div className="flex flex-col gap-0.5">
                     <div
                       className="px-2 pt-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground"
-                      data-gharargah-sidebar-section-label="done"
+                      data-gharargah-sidebar-section-label="archived"
                     >
-                      Done
+                      Archived
                     </div>
-                    {renderSessionList(doneSessions, "done")}
+                    {renderSessionList(archivedSessions, "archived")}
                   </div>
                 ) : null}
               </div>

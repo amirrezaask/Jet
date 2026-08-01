@@ -3,6 +3,7 @@ import {
   fileSearch,
   gitIsRepo,
   isSearchScanReady,
+  listAgentCliHistory,
   listProjectFiles,
   loadGlobalGharargahrcScanRoots,
   openInApp,
@@ -17,6 +18,8 @@ import {
   trackFileAccess,
   writeFile,
   writeTempDrop,
+  assertAllowedPath,
+  assertAllowedUri,
   type TerminalLaunch,
 } from "@gharargah/node-host"
 import {
@@ -33,6 +36,7 @@ import type {
   MarkAllNotificationsReadRequest,
   NotificationPreferences,
 } from "@gharargah/shared"
+import { fileUriToPath } from "@gharargah/shared"
 import { GitServiceLive, GitServiceTag } from "./effect/git.js"
 import { HostRuntimeTag } from "./effect/tags.js"
 import type { HostRuntime } from "./host-runtime.js"
@@ -228,11 +232,11 @@ function handleNotifications(
   }
 }
 
-function handleAgents(
+async function handleAgents(
   runtime: HostRuntime,
   channel: string,
   args: unknown[],
-): unknown {
+): Promise<unknown> {
   const agents = runtime.agents
   switch (channel) {
     case "agents:getSnapshot":
@@ -284,6 +288,23 @@ function handleAgents(
         runtime.config.dataDir,
       )
       return { written }
+    }
+    case "agents:listCliSessions": {
+      const body = args[0] as {
+        provider?: string
+        cwd?: string
+        limit?: number
+      }
+      if (!body?.provider || !body.cwd) {
+        throw new Error("agents:listCliSessions requires provider + cwd")
+      }
+      const provider = parseAgentProvider(body.provider)
+      if (!provider) throw new Error("invalid agent provider")
+      await assertAllowedPath(body.cwd, runtime.config.allowedRoots)
+      return await listAgentCliHistory(provider, {
+        cwd: body.cwd,
+        limit: body.limit,
+      })
     }
     default:
       throw new Error(`unknown agents channel: ${channel}`)
@@ -455,15 +476,16 @@ async function handleLsp(runtime: HostRuntime, channel: string, args: unknown[])
   throw new Error(`unknown lsp channel: ${channel}`)
 }
 
-function handleTerminal(
+async function handleTerminal(
   runtime: HostRuntime,
   channel: string,
   args: unknown[],
   clientId: string,
-): unknown {
+): Promise<unknown> {
   switch (channel) {
     case "terminal:create": {
       const cwdUri = str(args[0], "cwdUri")
+      await assertAllowedUri(cwdUri, runtime.config.allowedRoots, fileUriToPath)
       const launch = (args[1] as TerminalLaunch | null | undefined) ?? null
       const created = runtime.terminal.create(cwdUri, launch, clientId)
       runtime.db.recordSession(created.id, "terminal", "running", { title: created.title })

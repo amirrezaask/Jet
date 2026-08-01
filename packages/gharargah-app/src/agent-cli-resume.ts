@@ -10,7 +10,7 @@ import {
   syncAgentCliLaunchArgs,
 } from "./agent-cli-launch.js"
 import {
-  isSessionDone,
+  isSessionArchived,
   restartTerminalSession,
   terminalSessionForTab,
   updateTerminalLaunchArgs,
@@ -22,6 +22,19 @@ export function resolveAgentCliProvider(
 ): import("@gharargah/shared").AgentProvider | undefined {
   if (isAgentCliProvider(session.agentId)) return session.agentId
   return detectAgentCliProviderFromCommand(session.launchCommand)
+}
+
+/** Match provider history against the complete runtime roster, including archive. */
+export function findExistingAgentCliHistorySession(
+  sessions: readonly TerminalSessionState[],
+  provider: string,
+  cliSessionId: string,
+): TerminalSessionState | undefined {
+  const id = cliSessionId.trim()
+  if (!id) return undefined
+  return sessions.find(
+    session => session.agentId === provider && session.agentCliSessionId === id,
+  )
 }
 
 /** Sync resume launch args onto the session when a provider session id is known. */
@@ -55,12 +68,12 @@ function agentCliProcessNeedsRespawn(session: TerminalSessionState): boolean {
 /**
  * If this ADE agent session's CLI process is not usable, prepare resume argv
  * (when a provider session id is stored) and restart so TerminalPanel spawns
- * a fresh process. No-op for done sessions / blank shells without launch cmd.
+ * a fresh process. No-op for archived sessions / blank shells without launch cmd.
  *
  * @returns true when a respawn was requested
  */
 export function ensureAgentCliProcess(tabId: string): boolean {
-  if (isSessionDone(tabId)) return false
+  if (isSessionArchived(tabId)) return false
   const session = terminalSessionForTab(tabId)
   if (!session) return false
   if (!resolveAgentCliProvider(session) && !session.launchCommand?.trim()) {

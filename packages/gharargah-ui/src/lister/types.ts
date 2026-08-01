@@ -49,6 +49,8 @@ export type ListerProps<T> = {
   onQueryChange?: (query: string) => void
   filter?: ListerFilterMode
   onActivate: (node: ListerNode<T>) => void
+  /** Fires for keyboard and pointer highlight changes without activating the row. */
+  onSelectionChange?: (node: ListerNode<T> | null) => void
   emptyState?: ReactNode
   initiallyExpanded?: ListerNodeId[]
   syncExpanded?: boolean

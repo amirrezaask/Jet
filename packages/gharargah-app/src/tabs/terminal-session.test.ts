@@ -7,12 +7,13 @@ import {
   listSessionTerminals,
   listTerminalSessions,
   markTerminalExited,
-  markSessionDone,
+  archiveSession,
   recordTerminalOutput,
   recordTerminalUserInput,
   registerTerminalSession,
   removeSessionTerminal,
   restartTerminalSession,
+  resumeArchivedSession,
   terminalSessionForTab,
   terminalSessionNeedsCloseConfirmation,
   trackTerminalPtyId,
@@ -103,18 +104,71 @@ test("user input makes a running shell require close confirmation", () => {
   clearTerminalSession(tabId)
 })
 
-test("markSessionDone archives session without removing it", () => {
-  const tabId = "terminal:done-session"
-  registerTerminalSession(tabId, "file:///tmp", "codex")
-  trackTerminalPtyId(tabId, "pty:done-session")
+test("archiveSession keeps the full session record", () => {
+  const tabId = "terminal:archived-session"
+  registerTerminalSession(tabId, "file:///tmp", "codex", {
+    launchArgs: ["resume", "provider-session-id"],
+    customLabel: "Keep this session",
+    agentId: "codex",
+    agentDriverId: "codex:cli",
+    agentCliSessionId: "provider-session-id",
+  })
+  trackTerminalPtyId(tabId, "pty:archived-session")
 
-  markSessionDone(tabId)
+  archiveSession(tabId)
 
   const session = terminalSessionForTab(tabId)
-  assert.ok(session?.doneAt)
+  assert.ok(session?.archivedAt)
   assert.equal(session?.ptyId, undefined)
   assert.equal(session?.status, "exited")
+  assert.equal(session?.cwdRootUri, "file:///tmp")
+  assert.equal(session?.launchCommand, "codex")
+  assert.deepEqual(session?.launchArgs, ["resume", "provider-session-id"])
+  assert.equal(session?.customLabel, "Keep this session")
+  assert.equal(session?.agentId, "codex")
+  assert.equal(session?.agentDriverId, "codex:cli")
+  assert.equal(session?.agentCliSessionId, "provider-session-id")
   assert.equal(listTerminalSessions().length, 1)
+  clearTerminalSession(tabId)
+})
+
+test("resumeArchivedSession explicitly reactivates without losing identity", () => {
+  const tabId = "terminal:resume-archived"
+  registerTerminalSession(tabId, "file:///tmp", "codex", {
+    launchArgs: ["resume", "provider-session-id"],
+    agentId: "codex",
+    agentTitle: "Fix flaky session restore",
+    agentCliSessionId: "provider-session-id",
+  })
+  trackTerminalPtyId(tabId, "pty:before-archive")
+  archiveSession(tabId)
+
+  resumeArchivedSession(tabId)
+
+  const session = terminalSessionForTab(tabId)
+  assert.equal(session?.archivedAt, undefined)
+  assert.equal(session?.status, "starting")
+  assert.equal(session?.ptyId, undefined)
+  assert.equal(session?.agentTitle, "Fix flaky session restore")
+  assert.equal(session?.agentCliSessionId, "provider-session-id")
+  assert.deepEqual(session?.launchArgs, ["resume", "provider-session-id"])
+  clearTerminalSession(tabId)
+})
+
+test("late exit from an archived PTY does not leak into the next binding", () => {
+  const tabId = "terminal:archive-late-exit"
+  registerTerminalSession(tabId, "file:///tmp", "codex")
+  trackTerminalPtyId(tabId, "pty:retired")
+  archiveSession(tabId)
+
+  markTerminalExited("pty:retired", 143)
+  resumeArchivedSession(tabId)
+  trackTerminalPtyId(tabId, "pty:replacement")
+
+  const session = terminalSessionForTab(tabId)
+  assert.equal(session?.ptyId, "pty:replacement")
+  assert.equal(session?.status, "running")
+  assert.equal(session?.exitCode, undefined)
   clearTerminalSession(tabId)
 })
 

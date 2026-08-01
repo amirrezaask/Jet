@@ -20,9 +20,11 @@ export type OpenTerminalTabOpts = {
   launchArgs?: string[] | ((tabId: string) => string[])
   launchEnv?: Record<string, string> | ((tabId: string) => Record<string, string>)
   agentId?: string
+  agentTitle?: string
   agentDriverId?: string
   agentCliSessionId?: string
   pendingCliMint?: boolean
+  lastActivityAt?: string
 }
 
 export function listTerminalTabs(
@@ -88,9 +90,11 @@ export function openTerminalTab(
     launchArgs,
     launchEnv,
     agentId: opts.agentId,
+    agentTitle: opts.agentTitle,
     agentDriverId: opts.agentDriverId,
     agentCliSessionId: opts.agentCliSessionId,
     pendingCliMint: opts.pendingCliMint,
+    lastActivityAt: opts.lastActivityAt,
   })
   return workspace.openOrFocusTab(tree, panel, {
     id: tabId,

@@ -175,6 +175,7 @@ export function Lister<T>({
   onQueryChange,
   filter = "local",
   onActivate,
+  onSelectionChange,
   emptyState,
   initiallyExpanded,
   syncExpanded = false,
@@ -303,6 +304,12 @@ export function Lister<T>({
       loading: false,
     }))
   }, [mode, treeRows, items, filter, query])
+
+  const selectedNode =
+    selectedIndex >= 0 ? (visibleRows[selectedIndex]?.node ?? null) : null
+  useEffect(() => {
+    onSelectionChange?.(selectedNode)
+  }, [onSelectionChange, selectedNode])
 
   const lastContentWidthRef = useRef<number | null>(null)
   useLayoutEffect(() => {

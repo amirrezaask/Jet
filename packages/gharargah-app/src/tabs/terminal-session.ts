@@ -3,8 +3,8 @@
  * Callers keep Promise/imperative style; status transitions go through
  * `nextSessionStatus` in `effect/session-machine.ts`.
  *
- * Invariant: modal close / goHome does NOT call clear/markDone/dispose — only
- * UI detach. PTY lifetime is owned by host until explicit end/done/restart.
+ * Invariant: modal close / goHome does NOT call clear/archive/dispose — only
+ * UI detach. PTY lifetime is owned by host until explicit end/archive/restart.
  */
 import {
   detectAgentCliProviderFromCommand,
@@ -34,9 +34,11 @@ export function registerTerminalSession(
     parentSessionTabId?: string
     customLabel?: string
     agentId?: string
+    agentTitle?: string
     agentDriverId?: string
     agentCliSessionId?: string
     pendingCliMint?: boolean
+    lastActivityAt?: string
   },
 ): void {
   defaultSessionStore.register(tabId, cwdRootUri, launchCommand, options)
@@ -90,12 +92,16 @@ export function recordTerminalUserInput(tabId: string): void {
   defaultSessionStore.recordUserInput(tabId)
 }
 
-export function recordTerminalOutput(tabId: string): void {
-  defaultSessionStore.recordOutput(tabId)
+export function recordTerminalOutput(tabId: string, chunk?: string): void {
+  defaultSessionStore.recordOutput(tabId, chunk)
 }
 
 export function setTerminalCustomLabel(tabId: string, label: string): void {
   defaultSessionStore.setCustomLabel(tabId, label)
+}
+
+export function setAgentSessionTitle(tabId: string, title: string): void {
+  defaultSessionStore.setAgentTitle(tabId, title)
 }
 
 export function bindAgentToSession(
@@ -162,6 +168,10 @@ export function restartTerminalSession(tabId: string): void {
   defaultSessionStore.restart(tabId)
 }
 
+export function resumeArchivedSession(tabId: string): void {
+  defaultSessionStore.resumeArchived(tabId)
+}
+
 export function clearTerminalSession(tabId: string): void {
   defaultSessionStore.clear(tabId)
 }
@@ -170,13 +180,19 @@ export function listTerminalSessions(): TerminalSessionState[] {
   return defaultSessionStore.list()
 }
 
-export function isSessionDone(tabId: string): boolean {
-  return Boolean(defaultSessionStore.get(tabId)?.doneAt)
+export function isSessionArchived(tabId: string): boolean {
+  return Boolean(defaultSessionStore.get(tabId)?.archivedAt)
 }
 
-export function markSessionDone(tabId: string): void {
-  defaultSessionStore.markDone(tabId)
+export function archiveSession(tabId: string): void {
+  defaultSessionStore.archive(tabId)
 }
+
+/** @deprecated Use `isSessionArchived`. */
+export const isSessionDone = isSessionArchived
+
+/** @deprecated Use `archiveSession`. */
+export const markSessionDone = archiveSession
 
 /**
  * Create a regular shell that belongs to an ADE session. These shells are kept

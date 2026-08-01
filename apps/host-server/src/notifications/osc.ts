@@ -157,8 +157,12 @@ export function parseOscStreamChunk(
   buffered: string,
   chunk: string,
 ): { notifications: ParsedOscNotification[]; buffered: string } {
-  const combined = `${buffered}${chunk}`
+  const combined = buffered.length > 0 ? `${buffered}${chunk}` : chunk
   const start = combined.lastIndexOf("\x1b]")
+  // Nearly all PTY chunks are ordinary screen output. lastIndexOf above is the
+  // one required scan; do not run the notification regex across the same log
+  // data again when there cannot be an OSC payload.
+  if (start < 0) return { notifications: [], buffered: "" }
   let nextBuffer = ""
   if (start >= 0) {
     const bel = combined.indexOf("\x07", start + 2)

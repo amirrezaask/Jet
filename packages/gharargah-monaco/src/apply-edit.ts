@@ -63,6 +63,10 @@ export type ApplyWorkspaceEditOptions = {
   getVersion?: (uri: string) => number | undefined
   getContent?: (uri: string) => string | undefined
   defaultLanguageId?: string
+  /** Rename/refactor edits are based on the current synced buffer, including unsaved text. */
+  allowDirty?: boolean
+  /** Reject the whole edit when any document fails preflight validation. */
+  atomic?: boolean
 }
 
 export type SkippedEdit = {
@@ -190,7 +194,15 @@ export function applyWorkspaceEdit(
   const applied: string[] = []
   const skipped: SkippedEdit[] = []
   const fileOperations: FileOperation[] = []
-  const { registry, isDirty, getVersion, getContent, defaultLanguageId = "plaintext" } = options
+  const {
+    registry,
+    isDirty,
+    getVersion,
+    getContent,
+    defaultLanguageId = "plaintext",
+    allowDirty = false,
+    atomic = false,
+  } = options
 
   if (edit.documentChanges) {
     for (const change of edit.documentChanges) {
@@ -224,9 +236,19 @@ export function applyWorkspaceEdit(
 
   const documentEdits = collectDocumentEdits(edit)
 
-  for (const [uri, edits] of documentEdits) {
-    if (isDirty(uri)) {
+  for (const uri of documentEdits.keys()) {
+    if (!allowDirty && isDirty(uri)) {
       skipped.push({ uri, reason: "buffer has unsaved changes" })
+    }
+  }
+
+  if (atomic && skipped.length > 0) {
+    return { applied, skipped, fileOperations }
+  }
+
+  for (const [uri, edits] of documentEdits) {
+    if (skipped.some(entry => entry.uri === uri)) continue
+    if (!allowDirty && isDirty(uri)) {
       continue
     }
 

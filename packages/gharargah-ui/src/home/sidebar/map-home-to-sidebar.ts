@@ -24,7 +24,7 @@ function mapCardStatusToSidebar(status: SessionCardStatus): SidebarSessionStatus
       return "waiting"
     case "failed":
       return "failed"
-    case "done":
+    case "archived":
       return "completed"
     case "idle":
     default:
@@ -63,7 +63,7 @@ export function mapTerminalToSidebarSession(
     term.session?.agentId ?? term.agentId ?? detectSessionProvider(term.launchCommand)
   const cardStatus =
     term.session?.status ??
-    mapRuntimeStatusToCardStatus(term.status, Boolean(term.doneAt))
+    mapRuntimeStatusToCardStatus(term.status, Boolean(term.archivedAt))
   const status = term.session
     ? mapCardStatusToSidebar(cardStatus)
     : mapRuntimeToSidebar(term.status)
@@ -85,7 +85,7 @@ export function mapTerminalToSidebarSession(
     agent,
     agentLabel,
     status,
-    ...(term.doneAt ? { doneAt: term.doneAt } : {}),
+    ...(term.archivedAt ? { archivedAt: term.archivedAt } : {}),
     unreadCount: opts.unreadBySession?.[term.tabId] ?? 0,
     lastActivityAt,
     isPinned: false,

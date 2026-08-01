@@ -22,6 +22,8 @@ export type TerminalSessionState = {
   generation: number
   customLabel?: string
   agentId?: string
+  /** Stable provider/session title; terminal OSC title changes must not overwrite it. */
+  agentTitle?: string
   agentDriverId?: string
   agentThreadId?: string
   /** Provider-native CLI session id used to resume after host restart. */
@@ -38,7 +40,9 @@ export type TerminalSessionState = {
   /** ISO timestamp of last meaningful activity (status / notify). */
   lastActivityAt: string
   /** When set, session is archived for history — not removed from roster. */
-  doneAt?: string
+  archivedAt?: string
+  /** Bounded terminal output retained for archived read-only playback. */
+  transcript?: string
 }
 
 export type HydratedTerminalSession = {
@@ -52,13 +56,16 @@ export type HydratedTerminalSession = {
   signal?: number
   customLabel?: string
   agentId?: string
+  agentTitle?: string
   agentDriverId?: string
   agentThreadId?: string
   agentCliSessionId?: string
   hasUserInput?: boolean
   hasMeaningfulOutput?: boolean
   lastActivityAt?: string
-  doneAt?: string
+  archivedAt?: string
+  transcript?: string
+  launchEnv?: Record<string, string>
 }
 
 type SessionTerminalWorkspace = {
@@ -79,9 +86,11 @@ export type SessionRuntimeApi = {
       parentSessionTabId?: string
       customLabel?: string
       agentId?: string
+      agentTitle?: string
       agentDriverId?: string
       agentCliSessionId?: string
       pendingCliMint?: boolean
+      lastActivityAt?: string
     },
   ) => void
   readonly get: (tabId: string) => TerminalSessionState | undefined
@@ -92,12 +101,14 @@ export type SessionRuntimeApi = {
   readonly markFailed: (tabId: string) => void
   readonly markAwaitingResume: (tabId: string) => void
   readonly restart: (tabId: string) => void
-  readonly markDone: (tabId: string) => void
+  readonly resumeArchived: (tabId: string) => void
+  readonly archive: (tabId: string) => void
   readonly clear: (tabId: string) => void
   readonly hydrate: (entry: HydratedTerminalSession) => void
   readonly recordUserInput: (tabId: string) => void
-  readonly recordOutput: (tabId: string) => void
+  readonly recordOutput: (tabId: string, chunk?: string) => void
   readonly setCustomLabel: (tabId: string, label: string) => void
+  readonly setAgentTitle: (tabId: string, title: string) => void
   readonly bindAgent: (
     tabId: string,
     binding: { agentId: string; driverId: string; threadId?: string },
@@ -119,9 +130,11 @@ export type SessionRuntimeApi = {
 }
 
 export function createSessionStore(): SessionRuntimeApi {
+  const maxTranscriptChars = 262_144
   const sessions = new Map<string, TerminalSessionState>()
   const tabByPtyId = new Map<string, string>()
   const pendingExitByPtyId = new Map<string, { exitCode: number; signal?: number }>()
+  const retiredPtyIds = new Set<string>()
   const listeners = new Set<(tabId: string) => void>()
   const sessionTerminalWorkspaces = new Map<string, SessionTerminalWorkspace>()
   let nextSessionTerminalId = 0
@@ -137,6 +150,19 @@ export function createSessionStore(): SessionRuntimeApi {
   function applyStatus(session: TerminalSessionState, event: SessionLifecycleEvent): void {
     assertLegalSessionTransition(session.tabId, session.status, event)
     session.status = nextSessionStatus(session.status, event)
+  }
+
+  function retirePty(session: TerminalSessionState): void {
+    const ptyId = session.ptyId
+    if (!ptyId) return
+    tabByPtyId.delete(ptyId)
+    pendingExitByPtyId.delete(ptyId)
+    retiredPtyIds.add(ptyId)
+    if (retiredPtyIds.size > 256) {
+      const oldest = retiredPtyIds.values().next().value
+      if (oldest) retiredPtyIds.delete(oldest)
+    }
+    session.ptyId = undefined
   }
 
   const api: SessionRuntimeApi = {
@@ -163,6 +189,7 @@ export function createSessionStore(): SessionRuntimeApi {
         generation: existing?.generation ?? 0,
         customLabel: options?.customLabel ?? existing?.customLabel,
         agentId: options?.agentId ?? existing?.agentId,
+        agentTitle: options?.agentTitle ?? existing?.agentTitle,
         agentDriverId: options?.agentDriverId ?? existing?.agentDriverId,
         agentThreadId: existing?.agentThreadId,
         agentCliSessionId:
@@ -170,8 +197,9 @@ export function createSessionStore(): SessionRuntimeApi {
         pendingCliMint: options?.pendingCliMint ?? existing?.pendingCliMint,
         hasUserInput: existing?.hasUserInput ?? false,
         hasMeaningfulOutput: existing?.hasMeaningfulOutput ?? false,
-        lastActivityAt: existing?.lastActivityAt ?? now,
-        doneAt: existing?.doneAt,
+        lastActivityAt: options?.lastActivityAt ?? existing?.lastActivityAt ?? now,
+        archivedAt: existing?.archivedAt,
+        transcript: existing?.transcript,
       })
       notify(tabId)
     },
@@ -193,6 +221,7 @@ export function createSessionStore(): SessionRuntimeApi {
       if (!session) return
       if (session.ptyId) tabByPtyId.delete(session.ptyId)
       if (ptyId) {
+        retiredPtyIds.delete(ptyId)
         session.ptyId = ptyId
         tabByPtyId.set(ptyId, tabId)
         const pendingExit = pendingExitByPtyId.get(ptyId)
@@ -215,6 +244,7 @@ export function createSessionStore(): SessionRuntimeApi {
     },
 
     markExited(ptyId, exitCode, signal) {
+      if (retiredPtyIds.delete(ptyId)) return
       const tabId = tabByPtyId.get(ptyId)
       if (!tabId) {
         if (pendingExitByPtyId.size >= 256) {
@@ -236,8 +266,7 @@ export function createSessionStore(): SessionRuntimeApi {
     markFailed(tabId) {
       const session = sessions.get(tabId)
       if (!session) return
-      if (session.ptyId) tabByPtyId.delete(session.ptyId)
-      session.ptyId = undefined
+      retirePty(session)
       applyStatus(session, { _tag: "Failed" })
       session.exitCode = undefined
       session.signal = undefined
@@ -248,8 +277,7 @@ export function createSessionStore(): SessionRuntimeApi {
     markAwaitingResume(tabId) {
       const session = sessions.get(tabId)
       if (!session) return
-      if (session.ptyId) tabByPtyId.delete(session.ptyId)
-      session.ptyId = undefined
+      retirePty(session)
       applyStatus(session, { _tag: "AwaitResume" })
       session.exitCode = undefined
       session.signal = undefined
@@ -262,29 +290,41 @@ export function createSessionStore(): SessionRuntimeApi {
     restart(tabId) {
       const session = sessions.get(tabId)
       if (!session) return
-      if (session.ptyId) tabByPtyId.delete(session.ptyId)
-      session.ptyId = undefined
+      retirePty(session)
       applyStatus(session, { _tag: "Restart" })
       session.exitCode = undefined
       session.signal = undefined
       session.generation += 1
       session.hasUserInput = false
       session.hasMeaningfulOutput = false
-      session.doneAt = undefined
+      session.archivedAt = undefined
+      session.transcript = undefined
       touchActivity(session)
       notify(tabId)
     },
 
-    markDone(tabId) {
+    resumeArchived(tabId) {
       const session = sessions.get(tabId)
-      if (!session || session.doneAt) return
-      session.doneAt = new Date().toISOString()
-      if (session.ptyId) {
-        tabByPtyId.delete(session.ptyId)
-        pendingExitByPtyId.delete(session.ptyId)
-        session.ptyId = undefined
-      }
-      applyStatus(session, { _tag: "MarkDone" })
+      if (!session?.archivedAt) return
+      retirePty(session)
+      applyStatus(session, { _tag: "ResumeArchived" })
+      session.exitCode = undefined
+      session.signal = undefined
+      session.generation += 1
+      session.hasUserInput = false
+      session.hasMeaningfulOutput = false
+      session.archivedAt = undefined
+      session.transcript = undefined
+      touchActivity(session)
+      notify(tabId)
+    },
+
+    archive(tabId) {
+      const session = sessions.get(tabId)
+      if (!session || session.archivedAt) return
+      session.archivedAt = new Date().toISOString()
+      retirePty(session)
+      applyStatus(session, { _tag: "Archive" })
       if (session.status === "exited") {
         session.exitCode = session.exitCode ?? 0
       }
@@ -301,10 +341,7 @@ export function createSessionStore(): SessionRuntimeApi {
         sessionTerminalWorkspaces.delete(tabId)
       }
       const session = sessions.get(tabId)
-      if (session?.ptyId) {
-        tabByPtyId.delete(session.ptyId)
-        pendingExitByPtyId.delete(session.ptyId)
-      }
+      if (session) retirePty(session)
       sessions.delete(tabId)
       if (session?.parentSessionTabId) {
         const parentWorkspace = sessionTerminalWorkspaces.get(session.parentSessionTabId)
@@ -325,7 +362,7 @@ export function createSessionStore(): SessionRuntimeApi {
 
     hydrate(entry) {
       const existing = sessions.get(entry.tabId)
-      if (existing?.ptyId) tabByPtyId.delete(existing.ptyId)
+      if (existing) retirePty(existing)
       if (existing) {
         assertLegalSessionTransition(entry.tabId, existing.status, {
           _tag: "Hydrate",
@@ -341,6 +378,7 @@ export function createSessionStore(): SessionRuntimeApi {
         cwdRootUri: entry.cwdRootUri,
         launchCommand: entry.launchCommand,
         launchArgs: entry.launchArgs,
+        launchEnv: entry.launchEnv,
         parentSessionTabId: undefined,
         ptyId: entry.ptyId,
         status,
@@ -349,6 +387,7 @@ export function createSessionStore(): SessionRuntimeApi {
         generation: existing?.generation ?? 0,
         customLabel: entry.customLabel,
         agentId: entry.agentId,
+        agentTitle: entry.agentTitle,
         agentDriverId: entry.agentDriverId,
         agentThreadId: entry.agentThreadId,
         agentCliSessionId: entry.agentCliSessionId,
@@ -356,7 +395,8 @@ export function createSessionStore(): SessionRuntimeApi {
         hasMeaningfulOutput: entry.hasMeaningfulOutput ?? false,
         lastActivityAt:
           entry.lastActivityAt ?? existing?.lastActivityAt ?? new Date().toISOString(),
-        doneAt: entry.doneAt ?? existing?.doneAt,
+        archivedAt: entry.archivedAt ?? existing?.archivedAt,
+        transcript: entry.transcript ?? existing?.transcript,
       })
       if (entry.ptyId) tabByPtyId.set(entry.ptyId, entry.tabId)
       notify(entry.tabId)
@@ -370,9 +410,17 @@ export function createSessionStore(): SessionRuntimeApi {
       notify(tabId)
     },
 
-    recordOutput(tabId) {
+    recordOutput(tabId, chunk) {
       const session = sessions.get(tabId)
-      if (!session || session.hasMeaningfulOutput) return
+      if (!session) return
+      if (chunk) {
+        const next = `${session.transcript ?? ""}${chunk}`
+        session.transcript =
+          next.length > maxTranscriptChars
+            ? next.slice(next.length - maxTranscriptChars)
+            : next
+      }
+      if (session.hasMeaningfulOutput) return
       if (!session.launchCommand && !session.hasUserInput) return
       session.hasMeaningfulOutput = true
       touchActivity(session)
@@ -383,6 +431,16 @@ export function createSessionStore(): SessionRuntimeApi {
       const session = sessions.get(tabId)
       if (!session) return
       session.customLabel = label
+      notify(tabId)
+    },
+
+    setAgentTitle(tabId, title) {
+      const session = sessions.get(tabId)
+      if (!session) return
+      const next = title.trim()
+      if (!next || session.agentTitle === next) return
+      session.agentTitle = next
+      touchActivity(session)
       notify(tabId)
     },
 

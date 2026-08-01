@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test"
-import { resolve } from "node:path"
+import fs from "node:fs"
+import os from "node:os"
+import path, { resolve } from "node:path"
 import {
   expectLocatorCount,
   expectLocatorVisible,
@@ -13,7 +15,25 @@ test.describe("sidebar view", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
 
   test("project filter chips, selection, unread sticky, preference persistence", async () => {
-    const { app, page } = await launchJet()
+    const temporaryRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), "gharargah-sidebar-session-e2e-"),
+    )
+    const binDir = path.join(temporaryRoot, "bin")
+    fs.mkdirSync(binDir)
+    fs.writeFileSync(
+      path.join(binDir, "codex"),
+      [
+        "#!/bin/sh",
+        "printf 'GHARARGAH_SIDEBAR_AGENT_READY\\r\\n'",
+        "trap 'exit 0' TERM INT",
+        "while :; do sleep 1; done",
+      ].join("\n"),
+      { mode: 0o755 },
+    )
+    const { app, page } = await launchJet({
+      userDataDir: path.join(temporaryRoot, "user-data"),
+      env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
+    })
     try {
       await execCommand(page, "ui.setSessionLayout.sidebar")
       await expect
@@ -75,6 +95,12 @@ test.describe("sidebar view", () => {
         .toBe(true)
       const sessionRow = page.locator("[data-gharargah-sidebar-session]").first()
       await expectLocatorVisible(sessionRow, { timeout: 20_000 })
+      const activeSectionLabel = page.locator(
+        '[data-gharargah-sidebar-section-label="active"]',
+      )
+      await expect
+        .poll(() => activeSectionLabel.evaluate(element => element.textContent?.trim()))
+        .toBe("Active")
       const sessionId = await sessionRow.getAttribute(
         "data-gharargah-sidebar-session",
       )
@@ -101,6 +127,9 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() => projectChip.getAttribute("data-state"))
         .toBe("on")
+      await expect
+        .poll(() => activeSectionLabel.evaluate(element => element.textContent?.trim()))
+        .toBe("Active")
       await expect
         .poll(() => allChip.getAttribute("data-state"))
         .toBe("off")
@@ -150,10 +179,11 @@ test.describe("sidebar view", () => {
         .locator("[data-gharargah-sidebar-session]")
         .filter({ has: page.locator("[data-gharargah-sidebar-unread-badge]") })
         .first()
-      await unreadRow.click()
       const selectedId = await unreadRow.getAttribute(
         "data-gharargah-sidebar-session",
       )
+      expect(selectedId).toBeTruthy()
+      await unreadRow.click()
       await expect
         .poll(async () => {
           const counts = await page.evaluate(() =>

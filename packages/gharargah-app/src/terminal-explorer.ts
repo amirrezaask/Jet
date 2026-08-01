@@ -14,7 +14,7 @@ export type TerminalExplorerEntry = {
   exitCode?: number
   launchCommand?: string
   agentId?: "codex" | "claude" | "opencode" | "cursor" | "grok"
-  doneAt?: string
+  archivedAt?: string
 }
 
 export type TerminalExplorerGroup = {
@@ -69,7 +69,11 @@ export function buildTerminalExplorerGroups(
     const rawCwd = terminalCwdForTab(tabId) || workspace.root?.uri || ""
     const folder = resolveFolderForCwd(rawCwd, workspace)
     const cwdRootUri = folder?.root.uri ?? rawCwd
-    const label = workspace.tabRegistry.get(tabId)?.label ?? "Terminal"
+    const label =
+      session?.customLabel ??
+      session?.agentTitle ??
+      workspace.tabRegistry.get(tabId)?.label ??
+      "Terminal"
     const entry: TerminalExplorerEntry = {
       tabId,
       panelId,
@@ -81,7 +85,7 @@ export function buildTerminalExplorerGroups(
       agentId:
         (session?.agentId as TerminalExplorerEntry["agentId"] | undefined) ??
         detectSessionProvider(session?.launchCommand),
-      doneAt: session?.doneAt,
+      archivedAt: session?.archivedAt,
     }
 
     if (folder) {

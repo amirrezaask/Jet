@@ -4,22 +4,28 @@ import {
   SESSION_ROSTER_STORAGE_KEY,
   type PersistedSessionRoster,
 } from "./session-roster-store.js"
+import { tryDecodeSessionRoster } from "@gharargah/rpc"
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function requestRoster(
+  path: string,
+  init?: RequestInit,
+): Promise<PersistedSessionRoster> {
   const response = await fetch(path, init)
   if (!response.ok) throw new Error(`Jet session API failed (${response.status})`)
-  if (response.status === 204) return undefined as T
-  return response.json() as Promise<T>
+  const raw: unknown = await response.json()
+  const roster = tryDecodeSessionRoster(raw)
+  if (!roster) throw new Error("Jet session API returned an invalid roster")
+  return roster
 }
 
 export async function loadServerSessionRoster(): Promise<PersistedSessionRoster> {
-  return request<PersistedSessionRoster>("/api/v1/sessions")
+  return requestRoster("/api/v1/sessions")
 }
 
 export async function saveServerSessionRoster(
   roster: PersistedSessionRoster,
 ): Promise<PersistedSessionRoster> {
-  return request<PersistedSessionRoster>("/api/v1/sessions", {
+  return requestRoster("/api/v1/sessions", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(roster),

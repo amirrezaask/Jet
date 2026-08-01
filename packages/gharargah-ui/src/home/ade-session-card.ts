@@ -21,9 +21,9 @@ export type AdeSessionCardFields = {
 
 export function mapAgentStatusToCardStatus(
   status: AgentSessionSnapshot["status"],
-  done?: boolean,
+  archived?: boolean,
 ): SessionCardStatus {
-  if (done) return "done"
+  if (archived) return "archived"
   switch (status) {
     case "waiting_for_permission":
       return "approval"
@@ -31,7 +31,7 @@ export function mapAgentStatusToCardStatus(
     case "terminated":
       return "failed"
     case "completed":
-      return "done"
+      return "idle"
     case "waiting_for_user":
     case "idle":
     case "disconnected":
@@ -87,13 +87,13 @@ export function cardModelFromAdeSnapshot(input: {
   agentId?: SessionProvider
   snapshot?: Omit<AgentSessionSnapshot, "_internal"> | null
   runtimeStatus?: "starting" | "running" | "exited" | "failed"
-  done?: boolean
+  archived?: boolean
   nowMs?: number
 }): import("./session-card-model.js").SessionCardModel & AdeSessionCardFields {
   const ade = adeFieldsFromSnapshot(input.snapshot, input.nowMs)
   const status = input.snapshot
-    ? mapAgentStatusToCardStatus(input.snapshot.status, input.done)
-    : mapRuntimeStatusToCardStatus(input.runtimeStatus ?? "running", input.done)
+    ? mapAgentStatusToCardStatus(input.snapshot.status, input.archived)
+    : mapRuntimeStatusToCardStatus(input.runtimeStatus ?? "running", input.archived)
   return {
     id: input.id,
     projectId: input.projectId,

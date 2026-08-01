@@ -42,6 +42,7 @@ type RosterEntryRow = {
   exit_code: number | null
   custom_label: string | null
   agent_id: string | null
+  agent_title: string | null
   agent_driver_id: string | null
   agent_thread_id: string | null
   agent_cli_session_id: string | null
@@ -49,6 +50,7 @@ type RosterEntryRow = {
   has_meaningful_output: number
   last_activity_at: string | null
   done_at: string | null
+  transcript: string | null
 }
 
 type RosterModalRow = {
@@ -109,11 +111,15 @@ export class ProjectDatabase {
         exit_code INTEGER,
         custom_label TEXT,
         agent_id TEXT,
+        agent_title TEXT,
         agent_driver_id TEXT,
         agent_thread_id TEXT,
+        agent_cli_session_id TEXT,
         has_user_input INTEGER NOT NULL DEFAULT 0,
         has_meaningful_output INTEGER NOT NULL DEFAULT 0,
         last_activity_at TEXT,
+        done_at TEXT,
+        transcript TEXT,
         project_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -151,8 +157,25 @@ export class ProjectDatabase {
         "ALTER TABLE session_roster_entries ADD COLUMN agent_cli_session_id TEXT",
       )
     }
+    if (!columns.some(column => column.name === "agent_title")) {
+      this.db.exec(
+        "ALTER TABLE session_roster_entries ADD COLUMN agent_title TEXT",
+      )
+    }
+    if (!columns.some(column => column.name === "transcript")) {
+      this.db.exec(
+        "ALTER TABLE session_roster_entries ADD COLUMN transcript TEXT",
+      )
+    }
+    this.db.exec(`
+      UPDATE session_roster_entries
+         SET agent_title=COALESCE(NULLIF(TRIM(custom_label), ''), label)
+       WHERE agent_id IS NOT NULL
+         AND TRIM(COALESCE(agent_id, '')) != ''
+         AND (agent_title IS NULL OR TRIM(agent_title) = '');
+    `)
     this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES(4)")
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES(7)")
       .run()
     // Keep all roster rows across host restart (including blank shells).
     // Drop incomplete agent stubs only (agent_id set but no launch_command).
@@ -253,8 +276,8 @@ export class ProjectDatabase {
     const rows = this.db
       .prepare(
         `SELECT tab_id, cwd_root_uri, label, launch_command, launch_args_json, pty_id, status, exit_code,
-                custom_label, agent_id, agent_driver_id, agent_thread_id, agent_cli_session_id,
-                has_user_input, has_meaningful_output, last_activity_at, done_at
+                custom_label, agent_id, agent_title, agent_driver_id, agent_thread_id, agent_cli_session_id,
+                has_user_input, has_meaningful_output, last_activity_at, done_at, transcript
          FROM session_roster_entries
          ORDER BY updated_at ASC`,
       )
@@ -271,6 +294,7 @@ export class ProjectDatabase {
       exitCode: row.exit_code ?? undefined,
       customLabel: row.custom_label ?? undefined,
       agentId: row.agent_id ?? undefined,
+      agentTitle: row.agent_title ?? undefined,
       agentDriverId: row.agent_driver_id ?? undefined,
       agentThreadId: row.agent_thread_id ?? undefined,
       agentCliSessionId: row.agent_cli_session_id ?? undefined,
@@ -278,6 +302,7 @@ export class ProjectDatabase {
       hasMeaningfulOutput: row.has_meaningful_output === 1,
       lastActivityAt: row.last_activity_at ?? undefined,
       doneAt: row.done_at ?? undefined,
+      transcript: row.transcript ?? undefined,
     }))
 
     const modalRow = this.db
@@ -306,10 +331,10 @@ export class ProjectDatabase {
       const insert = this.db.prepare(
         `INSERT INTO session_roster_entries(
            tab_id, cwd_root_uri, label, launch_command, launch_args_json, pty_id, status, exit_code,
-           custom_label, agent_id, agent_driver_id, agent_thread_id, agent_cli_session_id,
-           has_user_input, has_meaningful_output, last_activity_at, done_at,
+           custom_label, agent_id, agent_title, agent_driver_id, agent_thread_id, agent_cli_session_id,
+           has_user_input, has_meaningful_output, last_activity_at, done_at, transcript,
            project_id, created_at, updated_at
-         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       for (const entry of normalized.sessions) {
         const cwdRootUri = this.canonicalizeCwdUri(entry.cwdRootUri)
@@ -325,6 +350,7 @@ export class ProjectDatabase {
           entry.exitCode ?? null,
           entry.customLabel ?? null,
           entry.agentId ?? null,
+          entry.agentTitle ?? null,
           entry.agentDriverId ?? null,
           entry.agentThreadId ?? null,
           entry.agentCliSessionId ?? null,
@@ -332,6 +358,7 @@ export class ProjectDatabase {
           entry.hasMeaningfulOutput ? 1 : 0,
           entry.lastActivityAt ?? null,
           entry.doneAt ?? null,
+          entry.doneAt ? entry.transcript ?? null : null,
           projectId,
           now,
           now,

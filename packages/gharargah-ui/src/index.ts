@@ -144,13 +144,15 @@ export { ProjectSwitcherOverlay } from "./components/ProjectSwitcherOverlay.js"
 export { PaletteOverlay } from "./components/PaletteOverlay.js"
 export {
   SettingsOverlay,
-  DEFAULT_UI_FONT_FAMILY,
-  DEFAULT_MONO_FONT_FAMILY,
   type JetAppearanceSettings,
   type DesktopServerConnection,
   type GharargahDesktopBridge,
   type SessionLayout,
 } from "./components/SettingsOverlay.js"
+export {
+  DEFAULT_UI_FONT_FAMILY,
+  DEFAULT_MONO_FONT_FAMILY,
+} from "./theme/appearance-defaults.js"
 export { StatusBar } from "./status/StatusBar.js"
 export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js"
 export { setEditorCursor as setEditorCursorStore, getEditorCursor as getEditorCursorStore, subscribeEditorCursor } from "./status/editor-cursor-store.js"

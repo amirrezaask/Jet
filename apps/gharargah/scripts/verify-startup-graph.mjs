@@ -29,6 +29,8 @@ const forbiddenMarkers = [
   "LegendList",
   "react-markdown",
   "rehype-raw",
+  "data-gharargah-settings-tabs",
+  "data-gharargah-todo-board-columns",
   'from"monaco-editor',
   "from'monaco-editor",
   "node_modules/monaco-editor",
@@ -45,7 +47,9 @@ const mandatoryGzipBytes = [...mandatoryChunks.values()].reduce(
   (total, source) => total + gzipSync(source).byteLength,
   0,
 )
-const mandatoryGzipBudget = 455 * 1024
+// Measured 343.6 KiB after isolating optional overlays and marking UI modules
+// side-effect-free. Keep ~7.7% headroom for product changes.
+const mandatoryGzipBudget = 370 * 1024
 if (mandatoryGzipBytes > mandatoryGzipBudget) {
   throw new Error(
     `mandatory startup JS is ${mandatoryGzipBytes} gzip bytes; budget is ${mandatoryGzipBudget}`,

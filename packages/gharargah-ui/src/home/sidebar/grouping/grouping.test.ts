@@ -141,13 +141,13 @@ describe("project grouping + sorting", () => {
     ])
   })
 
-  it("sorts sessions inside a project open before done, then unread → active → recent", () => {
+  it("sorts active sessions before archived, then unread → running → recent", () => {
     const sorted = sortSessionsInProject([
       session({
-        id: "done",
+        id: "archived",
         agent: "codex",
         status: "completed",
-        doneAt: "2026-07-28T13:00:00Z",
+        archivedAt: "2026-07-28T13:00:00Z",
         unreadCount: 0,
         lastActivityAt: "2026-07-28T13:00:00Z",
       }),
@@ -175,7 +175,7 @@ describe("project grouping + sorting", () => {
     ])
     assert.deepEqual(
       sorted.map(s => s.id),
-      ["unread", "run", "idle", "done"],
+      ["unread", "run", "idle", "archived"],
     )
   })
 

@@ -40,6 +40,13 @@ export { probeFffAvailable, isFffAvailable, disposeFffIndex } from "./fff-servic
 export { assertAllowedPath, assertAllowedUri, normalizeRoots } from "./sandbox.js"
 export { loadGlobalGharargahrcScanRoots } from "./global-gharargahrc.js"
 export {
+  listAgentCliHistory,
+  parseCodexThreadListResponse,
+  parseGrokSessionList,
+  parseOpenCodeSessionList,
+  type AgentCliHistoryAdapters,
+} from "./agent-cli-history.js"
+export {
   applyLoginShellEnv,
   enrichProcessPath,
   resolveLoginShellPath,

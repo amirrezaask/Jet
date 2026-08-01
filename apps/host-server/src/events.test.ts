@@ -12,3 +12,16 @@ test("event replay is bounded by both count and serialized bytes", () => {
   assert.ok(replay.length <= 3)
   assert.equal(replay.at(-1)?.sequence, 6)
 })
+
+test("event replay preserves sequence order after repeated queue compaction", () => {
+  const events = new EventHub(128, 1024 * 1024)
+  for (let index = 0; index < 10_000; index += 1) {
+    events.emit("terminal:data", ["pty", "output", index])
+  }
+
+  const replay = events.replayAfter(9_950)
+  assert.deepEqual(
+    replay.map(event => event.sequence),
+    Array.from({ length: 50 }, (_, index) => 9_951 + index),
+  )
+})

@@ -28,7 +28,7 @@ export type HomeTerminalEntry = {
   exitCode?: number
   launchCommand?: string
   agentId?: import("./session-card-model.js").SessionProvider
-  doneAt?: string
+  archivedAt?: string
   /** Precomputed presentation model when available. */
   session?: SessionCardModel
   /** Unread from ADE snapshot / notification center. */
@@ -53,7 +53,7 @@ export type HomeProjectSectionProps = {
   onOpenInApp?: (rootUri: string, appId: OpenInAppId) => void
   onRemoveProject?: (rootUri: string) => void
   onKillTerminal?: (panelId: PanelId, tabId: string) => void
-  onMarkSessionDone?: (panelId: PanelId, tabId: string) => void
+  onArchiveSession?: (panelId: PanelId, tabId: string) => void
   /** Open session modal on TODOs board for this project. */
   onOpenTodos?: (rootUri: string) => void
   onViewProjectNotifications?: (projectId: string) => void
@@ -74,7 +74,7 @@ export function ProjectSection(props: HomeProjectSectionProps) {
     onOpenInApp,
     onRemoveProject,
     onKillTerminal,
-    onMarkSessionDone,
+    onArchiveSession,
     onOpenTodos,
     onViewProjectNotifications,
     onViewSessionNotifications,
@@ -178,9 +178,9 @@ export function ProjectSection(props: HomeProjectSectionProps) {
                     ? () => onKillTerminal(term.panelId, term.tabId)
                     : undefined
                 }
-                onMarkDone={
-                  onMarkSessionDone && !term.doneAt
-                    ? () => onMarkSessionDone(term.panelId, term.tabId)
+                onArchive={
+                  onArchiveSession && !term.archivedAt
+                    ? () => onArchiveSession(term.panelId, term.tabId)
                     : undefined
                 }
                 onViewNotifications={

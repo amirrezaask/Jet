@@ -33,10 +33,10 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { SettingsField } from "@/components/SettingsField.js"
 import { themePreviewSwatches } from "@/theme/bundled.js"
-
-export const DEFAULT_UI_FONT_FAMILY =
-  '"Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif'
-export const DEFAULT_MONO_FONT_FAMILY = '"Commit Mono", ui-monospace, monospace'
+import {
+  DEFAULT_MONO_FONT_FAMILY,
+  DEFAULT_UI_FONT_FAMILY,
+} from "../theme/appearance-defaults.js"
 
 export type SessionLayout = "cards" | "tabs" | "sidebar"
 

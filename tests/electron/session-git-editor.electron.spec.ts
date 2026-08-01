@@ -241,10 +241,16 @@ test.describe("session Git and editor workspaces", () => {
       await page.keyboard.press("End")
       await page.keyboard.type(`\n${marker}`)
       await expectSelectorVisible(page, "[data-gharargah-buffer-dirty]")
+      await expect.poll(() =>
+        page.getByRole("tab", { name: "index.ts, unsaved changes" }).getAttribute("data-dirty"),
+      ).toBe("")
       await expectLocatorContainsText(page.locator("[data-gharargah-modal-editor-status]"), "dirty")
       await execCommand(page, "workspace.saveFile")
       await expect.poll(() => readFileSync(join(fixture.workspace, "src/index.ts"), "utf8"), { timeout: 20_000 }).toContain(marker)
       await expectLocatorCount(page.locator("[data-gharargah-buffer-dirty]"), 0, { timeout: 20_000 })
+      await expect.poll(() =>
+        page.getByRole("tab", { name: "index.ts", exact: true }).getAttribute("data-dirty"),
+      ).toBeNull()
 
       await openQuickFile(page, "utils", "src/utils.ts")
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")

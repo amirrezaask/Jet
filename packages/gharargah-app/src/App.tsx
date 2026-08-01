@@ -45,7 +45,11 @@ import {
 } from "@gharargah/workspace"
 import type { MonacoEditorHandle } from "@gharargah/monaco"
 import { agentDriverIdForMode } from "@gharargah/agents"
-import type { AppNotification, AgentProvider } from "@gharargah/shared"
+import type {
+  AgentCliHistorySession,
+  AppNotification,
+  AgentProvider,
+} from "@gharargah/shared"
 import { createAgentBridge } from "./agent-bridge.js"
 import { useNotificationCenter } from "./hooks/useNotificationCenter.js"
 import {
@@ -88,7 +92,6 @@ import {
   ProjectTodosPane,
   adeFieldsFromSnapshot,
   mapAgentStatusToCardStatus,
-  AgentActivityTimeline,
 } from "@gharargah/ui"
 import { SessionTerminalWorkspacePane } from "./SessionTerminalWorkspacePane.js"
 import {
@@ -119,11 +122,14 @@ import {
   terminalSessionForTab,
   terminalSessionNeedsCloseConfirmation,
   setTerminalCustomLabel,
+  setAgentSessionTitle,
   bumpTerminalActivity,
-  markSessionDone,
-  isSessionDone,
+  archiveSession,
+  resumeArchivedSession,
+  isSessionArchived,
   setAgentCliSessionId,
   updateTerminalLaunchArgs,
+  trackTerminalPtyId,
 } from "./tabs/terminal-session.js"
 import {
   buildAgentCliLaunchArgs,
@@ -137,17 +143,26 @@ import {
 import {
   applyAgentStreamUnknown,
   getAgentSnapshot,
-  getAgentEvents,
   getAgentTelemetryVersion,
   subscribeAgentTelemetryVersion,
 } from "./agent-snapshot-store.js"
-import { ensureAgentCliProcess, applyAgentCliResumeLaunchArgs } from "./agent-cli-resume.js"
+import {
+  ensureAgentCliProcess,
+  applyAgentCliResumeLaunchArgs,
+  findExistingAgentCliHistorySession,
+} from "./agent-cli-resume.js"
+import {
+  prioritizeActiveAgentWarmResume,
+  startActiveAgentCliWarmResume,
+  type ActiveAgentWarmResumeRun,
+} from "./background-agent-cli-resume.js"
 import { type PersistedSessionRoster } from "./session-roster-store.js"
 import {
   loadServerSessionRoster,
   migrateLegacyLocalSessionRoster,
   saveServerSessionRoster,
 } from "./server-sessions.js"
+import { SessionRosterWriter } from "./session-roster-writer.js"
 import { reconcileHydratedTerminalPtys } from "./probe-terminal-sessions.js"
 import {
   getAllLeafPanels,
@@ -358,6 +373,7 @@ export function GharargahApp() {
   const projectCatalogReadyRef = useRef(false)
   const sessionRosterReadyRef = useRef(false)
   const startupRecordedRef = useRef(false)
+  const activeAgentWarmResumeRef = useRef<ActiveAgentWarmResumeRun | null>(null)
   const openWorkspaceRef = useRef<
     (folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>
   >(() => {})
@@ -537,6 +553,7 @@ export function GharargahApp() {
 
   const focusTerminalTab = useCallback(
     (panelId: PanelId, tabId: string, mode?: SessionDialogMode) => {
+      prioritizeActiveAgentWarmResume(tabId)
       // Dead/exited agent CLI → respawn with provider resume flags before open.
       ensureAgentCliProcess(tabId)
       const focus = () => {
@@ -600,9 +617,11 @@ export function GharargahApp() {
         launchArgs?: string[] | ((tabId: string) => string[])
         launchEnv?: Record<string, string> | ((tabId: string) => Record<string, string>)
         agentId?: string
+        agentTitle?: string
         agentDriverId?: string
         agentCliSessionId?: string
         pendingCliMint?: boolean
+        lastActivityAt?: string
       },
     ) => {
       if (rootUri && rootUri !== workspace.root?.uri) {
@@ -624,9 +643,11 @@ export function GharargahApp() {
         launchArgs: opts?.launchArgs,
         launchEnv: opts?.launchEnv,
         agentId: opts?.agentId,
+        agentTitle: opts?.agentTitle,
         agentDriverId: opts?.agentDriverId,
         agentCliSessionId: opts?.agentCliSessionId,
         pendingCliMint: opts?.pendingCliMint,
+        lastActivityAt: opts?.lastActivityAt,
       },
       )
       setFocusedPanel(panelId)
@@ -666,6 +687,7 @@ export function GharargahApp() {
               projectRoot: fileUriToPath(rootUri),
             }),
           agentId: driver.id,
+          agentTitle: driver.label,
           agentDriverId: agentDriverIdForMode(driver.id, "cli"),
           pendingCliMint: deferRosterUntilCliId,
         })
@@ -690,6 +712,141 @@ export function GharargahApp() {
       }
     },
     [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
+  )
+
+  const loadAgentCliHistory = useCallback(
+    (driver: AgentCliDriver, rootUri: string, signal: AbortSignal) => {
+      const agents = window.gharargah?.agents
+      if (!agents?.listCliSessions) {
+        return Promise.reject(new Error("CLI session history is unavailable on this host"))
+      }
+      return agents.listCliSessions(
+        {
+          provider: driver.id,
+          cwd: fileUriToPath(rootUri),
+          limit: 50,
+        },
+        signal,
+      )
+    },
+    [],
+  )
+
+  const resumeAgentCliHistorySession = useCallback(
+    async (
+      fallbackRootUri: string,
+      driver: AgentCliDriver,
+      history: AgentCliHistorySession,
+    ) => {
+      try {
+        if (history.provider !== driver.id) {
+          throw new Error("Provider session does not match the selected CLI")
+        }
+
+        const existing = findExistingAgentCliHistorySession(
+          listTerminalSessions(),
+          driver.id,
+          history.id,
+        )
+        let existingPanel = existing
+          ? findPanelWithTab(appStateRef.current.panelTree, existing.tabId)
+          : null
+        if (existing && !existingPanel) {
+          const tree = cloneTree()
+          const sessionKey = existing.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
+            ? existing.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
+            : existing.tabId
+          const opened = openTerminalTab(
+            workspace,
+            tree,
+            appStateRef.current.focusedPanel,
+            {
+              sessionKey,
+              label:
+                existing.customLabel ??
+                existing.agentTitle ??
+                history.title ??
+                driver.label,
+              cwdRootUri: existing.cwdRootUri,
+              launchCommand: existing.launchCommand,
+              launchArgs: existing.launchArgs,
+              launchEnv: existing.launchEnv,
+              agentId: existing.agentId,
+              agentTitle: existing.agentTitle,
+              agentDriverId: existing.agentDriverId,
+              agentCliSessionId: existing.agentCliSessionId,
+              lastActivityAt: existing.lastActivityAt,
+            },
+          )
+          commitTree(tree, opened.panelId)
+          existingPanel = opened.panelId
+        }
+        if (existing && existingPanel) {
+          focusTerminalTab(existingPanel, existing.tabId, "agent")
+          return
+        }
+
+        const cwd = history.cwd?.trim() || fileUriToPath(fallbackRootUri)
+        const normalizedCwd = normalizeAbsPath(cwd)
+        const rootUri = pathToFileUri(normalizedCwd)
+        const knownProject = workspace.folders.some(
+          folder => normalizeAbsPath(folder.root.path) === normalizedCwd,
+        )
+        if (!knownProject) {
+          await openWorkspaceRef.current(normalizedCwd)
+        }
+
+        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
+          label: history.title || driver.label,
+          launchCommand: driver.command,
+          launchArgs: nextTabId =>
+            buildAgentCliLaunchArgs(
+              driver.id,
+              {
+                sessionId: nextTabId,
+                origin: window.location.origin,
+                projectRoot: normalizedCwd,
+              },
+              history.id,
+            ),
+          launchEnv: nextTabId =>
+            buildAgentCliLaunchEnv(driver.id, {
+              sessionId: nextTabId,
+              origin: window.location.origin,
+              projectRoot: normalizedCwd,
+            }),
+          agentId: driver.id,
+          agentTitle: history.title || driver.label,
+          agentDriverId: agentDriverIdForMode(driver.id, "cli"),
+          agentCliSessionId: history.id,
+          lastActivityAt: history.updatedAt ?? history.createdAt ?? undefined,
+        })
+        void window.gharargah?.agents
+          ?.installProjectHooks?.({
+            provider: driver.id,
+            projectRoot: normalizedCwd,
+          })
+          .catch(() => undefined)
+        bindAgentToSession(tabId, {
+          agentId: driver.id,
+          driverId: agentDriverIdForMode(driver.id, "cli"),
+        })
+        openTerminalModal(panelId, tabId, "agent")
+      } catch (error) {
+        console.error("[gharargah] resumeAgentCliHistorySession failed", error)
+        showGharargahToast(error instanceof Error ? error.message : String(error), {
+          variant: "destructive",
+        })
+      }
+    },
+    [
+      workspace,
+      cloneTree,
+      commitTree,
+      openTerminalInWorkspace,
+      openTerminalModal,
+      focusTerminalTab,
+    ],
   )
 
   const ensureSessionModalOpen = useCallback(
@@ -825,55 +982,40 @@ export function GharargahApp() {
     [],
   )
 
-  const rosterWriteActiveRef = useRef(false)
-  const pendingRosterWriteRef = useRef<PersistedSessionRoster | null>(null)
-  const latestRosterRef = useRef<PersistedSessionRoster | null>(null)
-  const flushSessionRosterWrites = useCallback(async () => {
-    if (rosterWriteActiveRef.current) return
-    rosterWriteActiveRef.current = true
-    try {
-      while (pendingRosterWriteRef.current) {
-        const next = pendingRosterWriteRef.current
-        pendingRosterWriteRef.current = null
-        try {
-          await saveServerSessionRoster(next)
-        } catch {
-          /* host may be down; a newer snapshot can still recover */
-        }
-      }
-    } finally {
-      rosterWriteActiveRef.current = false
-      if (pendingRosterWriteRef.current) void flushSessionRosterWrites()
-    }
-  }, [])
-  const persistSessionRoster = useCallback(() => {
-    if (!sessionRosterReadyRef.current) return
+  const rosterWriter = useMemo(
+    () => new SessionRosterWriter(saveServerSessionRoster),
+    [],
+  )
+  const buildPersistedSessionRoster = useCallback((): PersistedSessionRoster => {
     const sessions = listTerminalSessions()
       .filter(isPersistableAgentSession)
       .map(session => ({
-      tabId: session.tabId,
-      cwdRootUri: session.cwdRootUri,
-      label:
-        workspace.tabRegistry.get(session.tabId)?.label ??
-        session.customLabel ??
-        "Terminal",
-      launchCommand: session.launchCommand,
-      launchArgs: session.launchArgs,
-      status: session.status,
-      exitCode: session.exitCode,
-      customLabel: session.customLabel,
-      agentId: session.agentId,
-      agentDriverId: session.agentDriverId,
-      agentThreadId: session.agentThreadId,
-      agentCliSessionId: session.agentCliSessionId,
-      hasUserInput: session.hasUserInput,
-      hasMeaningfulOutput: session.hasMeaningfulOutput,
-      lastActivityAt: session.lastActivityAt,
-      doneAt: session.doneAt,
-    }))
+        tabId: session.tabId,
+        cwdRootUri: session.cwdRootUri,
+        label:
+          session.customLabel ??
+          session.agentTitle ??
+          workspace.tabRegistry.get(session.tabId)?.label ??
+          "Terminal",
+        launchCommand: session.launchCommand,
+        launchArgs: session.launchArgs,
+        status: session.status,
+        exitCode: session.exitCode,
+        customLabel: session.customLabel,
+        agentId: session.agentId,
+        agentTitle: session.agentTitle,
+        agentDriverId: session.agentDriverId,
+        agentThreadId: session.agentThreadId,
+        agentCliSessionId: session.agentCliSessionId,
+        hasUserInput: session.hasUserInput,
+        hasMeaningfulOutput: session.hasMeaningfulOutput,
+        lastActivityAt: session.lastActivityAt,
+        doneAt: session.archivedAt,
+        transcript: session.archivedAt ? session.transcript : undefined,
+      }))
     const persistedTabIds = new Set(sessions.map(session => session.tabId))
     const modalTabId = terminalModalTabIdRef.current
-    const roster: PersistedSessionRoster = {
+    return {
       version: 2,
       sessions,
       modal:
@@ -881,11 +1023,13 @@ export function GharargahApp() {
           ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
           : null,
     }
-    latestRosterRef.current = roster
-    pendingRosterWriteRef.current = roster
+  }, [workspace])
+  const persistSessionRoster = useCallback(() => {
+    if (!sessionRosterReadyRef.current) return
+    const roster = buildPersistedSessionRoster()
     atomRegistry.set(rosterAtom, roster)
-    void flushSessionRosterWrites()
-  }, [workspace, flushSessionRosterWrites, atomRegistry])
+    rosterWriter.enqueue(roster)
+  }, [buildPersistedSessionRoster, rosterWriter, atomRegistry])
 
   useEffect(() => {
     const api = window.gharargah?.notifications
@@ -905,6 +1049,13 @@ export function GharargahApp() {
       }
       if (event.type !== "notification.created") return
       const n = event.notification
+      if (n.sessionId && n.sessionTitle) {
+        setAgentSessionTitle(n.sessionId, n.sessionTitle)
+        const titledSession = terminalSessionForTab(n.sessionId)
+        if (!titledSession?.customLabel) {
+          workspace.tabRegistry.update(n.sessionId, { label: n.sessionTitle })
+        }
+      }
       if (!n.sessionId || !n.providerSessionId) return
       captureAgentCliSessionFromNotification(
         n.sessionId,
@@ -922,7 +1073,7 @@ export function GharargahApp() {
         },
       )
     })
-  }, [atomRegistry])
+  }, [atomRegistry, workspace])
 
   useEffect(() => {
     const agentsApi = window.gharargah?.agents
@@ -959,48 +1110,23 @@ export function GharargahApp() {
   useEffect(() => {
     const persistLatestOnPageHide = () => {
       if (!sessionRosterReadyRef.current) return
-      // Rebuild from live sessions so unload never clobbers a fresher server
-      // write (e.g. test/API seed) with a stale empty latestRosterRef.
-      const sessions = listTerminalSessions()
-        .filter(isPersistableAgentSession)
-        .map(session => ({
-          tabId: session.tabId,
-          cwdRootUri: session.cwdRootUri,
-          label:
-            workspace.tabRegistry.get(session.tabId)?.label ??
-            session.customLabel ??
-            "Terminal",
-          launchCommand: session.launchCommand,
-          launchArgs: session.launchArgs,
-          status: session.status,
-          exitCode: session.exitCode,
-          customLabel: session.customLabel,
-          agentId: session.agentId,
-          agentDriverId: session.agentDriverId,
-          agentThreadId: session.agentThreadId,
-          agentCliSessionId: session.agentCliSessionId,
-          hasUserInput: session.hasUserInput,
-          hasMeaningfulOutput: session.hasMeaningfulOutput,
-          lastActivityAt: session.lastActivityAt,
-          doneAt: session.doneAt,
-        }))
-      if (sessions.length === 0) return
-      const persistedTabIds = new Set(sessions.map(session => session.tabId))
-      const modalTabId = terminalModalTabIdRef.current
-      const roster: PersistedSessionRoster = {
-        version: 2,
-        sessions,
-        modal:
-          modalTabId && persistedTabIds.has(modalTabId)
-            ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
-            : null,
-      }
-      latestRosterRef.current = roster
-      void saveServerSessionRoster(roster)
+      const roster = buildPersistedSessionRoster()
+      // The normal state subscription already persists intentional removal of
+      // the final session. Do not let an unload-time empty snapshot overwrite
+      // a newer server-side roster written by another client/test fixture.
+      if (roster.sessions.length === 0) return
+      atomRegistry.set(rosterAtom, roster)
+      rosterWriter.enqueue(roster)
+      rosterWriter.flush()
     }
+    const retryWhenOnline = () => rosterWriter.flush()
     window.addEventListener("pagehide", persistLatestOnPageHide)
-    return () => window.removeEventListener("pagehide", persistLatestOnPageHide)
-  }, [workspace])
+    window.addEventListener("online", retryWhenOnline)
+    return () => {
+      window.removeEventListener("pagehide", persistLatestOnPageHide)
+      window.removeEventListener("online", retryWhenOnline)
+    }
+  }, [atomRegistry, buildPersistedSessionRoster, rosterWriter])
 
   const closeTerminalTab = useCallback(
     async (panelId: PanelId, tabId: string) => {
@@ -1048,17 +1174,37 @@ export function GharargahApp() {
     [cloneTree, commitTree, workspace, tabStore, activateProject],
   )
 
-  const markSessionDoneFromHome = useCallback(
+  const archiveSessionFromHome = useCallback(
     async (_panelId: PanelId, tabId: string) => {
       const session = terminalSessionForTab(tabId)
-      if (!session || isSessionDone(tabId)) return
+      if (!session || isSessionArchived(tabId)) return
       const ptyId = terminalPtyIdForTab(tabId)
+      if (session.agentId && !session.agentTitle) {
+        setAgentSessionTitle(
+          tabId,
+          session.customLabel ??
+            workspace.tabRegistry.get(tabId)?.label ??
+            session.agentId,
+        )
+      }
+      archiveSession(tabId)
       if (ptyId) void window.gharargah?.terminal?.dispose(ptyId)
-      markSessionDone(tabId)
       if (terminalModalTabIdRef.current === tabId) {
         setTerminalModalTabId(null)
         setTerminalModalPanelId(null)
       }
+      setTerminalSessionRevision(revision => revision + 1)
+      persistSessionRoster()
+    },
+    [persistSessionRoster, workspace],
+  )
+
+  const resumeArchivedSessionFromView = useCallback(
+    (tabId: string) => {
+      const session = terminalSessionForTab(tabId)
+      if (!session?.archivedAt) return
+      applyAgentCliResumeLaunchArgs(tabId)
+      resumeArchivedSession(tabId)
       setTerminalSessionRevision(revision => revision + 1)
       persistSessionRoster()
     },
@@ -1067,7 +1213,8 @@ export function GharargahApp() {
 
   const onTerminalTitleChange = useCallback(
     (tabId: string, title: string) => {
-      if (terminalSessionForTab(tabId)?.customLabel) return
+      const session = terminalSessionForTab(tabId)
+      if (session?.customLabel || session?.agentTitle) return
       const existing = workspace.tabRegistry.get(tabId)
       if (!existing || existing.label === title) return
       workspace.tabRegistry.update(tabId, { label: title })
@@ -1830,6 +1977,16 @@ export function GharargahApp() {
         appCommands.gotoLine,
         ctx => ctx.editorFocus && noOverlay(ctx),
       ),
+      bind(
+        "Alt-j",
+        appCommands.goBack,
+        ctx => ctx.editorFocus && noOverlay(ctx),
+      ),
+      bind(
+        "Alt-Shift-j",
+        appCommands.goForward,
+        ctx => ctx.editorFocus && noOverlay(ctx),
+      ),
       bind("Mod-Shift-b", appCommands.bufferList, whenWorkspace),
       bind("Mod-Shift-e", appCommands.showEditor, whenWorkspace),
       bind("Mod-Shift-t", appCommands.showTerminal, whenWorkspace),
@@ -2208,6 +2365,10 @@ export function GharargahApp() {
   ])
 
   useEffect(() => {
+    return () => activeAgentWarmResumeRef.current?.cancel()
+  }, [])
+
+  useEffect(() => {
     if (!layoutReady || queryBootstrapDone.current) return
     queryBootstrapDone.current = true
     void (async () => {
@@ -2265,6 +2426,7 @@ export function GharargahApp() {
         const tree = cloneTree()
         for (const entry of roster.sessions) {
           if (entry.agentId && !entry.launchCommand?.trim()) continue
+          if (entry.agentId && !isAgentCliProvider(entry.agentId)) continue
           if (findPanelWithTab(tree, entry.tabId)) continue
           const sessionKey = entry.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
             ? entry.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
@@ -2273,46 +2435,54 @@ export function GharargahApp() {
             entry.cwdRootUri,
             workspace.folders,
           )
-          openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
-            sessionKey,
-            label: entry.label,
-            cwdRootUri,
-            launchCommand: entry.launchCommand,
-            launchArgs: entry.launchArgs,
-          })
           const hydrated = prepareHydratedAgentCliFields({
             tabId: entry.tabId,
+            cwdRootUri,
             agentId: entry.agentId,
+            agentDriverId: entry.agentDriverId,
             agentCliSessionId: entry.agentCliSessionId,
             launchCommand: entry.launchCommand,
             launchArgs: entry.launchArgs,
             status: entry.status,
-            doneAt: entry.doneAt,
+            archivedAt: entry.doneAt,
+            origin: window.location.origin,
           })
           const cliSessionId =
             hydrated.agentCliSessionId ?? entry.agentCliSessionId
+          openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
+            sessionKey,
+            label: entry.label,
+            cwdRootUri,
+            launchCommand: hydrated.launchCommand,
+            launchArgs: hydrated.launchArgs,
+            launchEnv: hydrated.launchEnv,
+            agentId: entry.agentId,
+            agentTitle: entry.agentTitle ?? entry.label,
+            agentDriverId: entry.agentDriverId,
+            agentCliSessionId: cliSessionId,
+            lastActivityAt: entry.lastActivityAt,
+          })
           hydrateTerminalSession({
             tabId: entry.tabId,
             cwdRootUri,
             launchCommand: hydrated.launchCommand,
             launchArgs: hydrated.launchArgs,
+            launchEnv: hydrated.launchEnv,
             ptyId: hydrated.ptyId,
             status: hydrated.status,
             exitCode: entry.exitCode,
             customLabel: entry.customLabel,
             agentId: entry.agentId,
+            agentTitle: entry.agentTitle ?? entry.label,
             agentDriverId: entry.agentDriverId,
             agentThreadId: entry.agentThreadId,
             agentCliSessionId: cliSessionId,
             hasUserInput: entry.hasUserInput,
             hasMeaningfulOutput: entry.hasMeaningfulOutput,
             lastActivityAt: entry.lastActivityAt,
-            doneAt: entry.doneAt,
+            archivedAt: entry.doneAt,
+            transcript: entry.transcript,
           })
-          // Defensive: rebuild resume argv even if roster launchArgs were stale.
-          if (cliSessionId) {
-            applyAgentCliResumeLaunchArgs(entry.tabId)
-          }
         }
         commitTree(tree)
         setTerminalSessionRevision(revision => revision + 1)
@@ -2321,8 +2491,33 @@ export function GharargahApp() {
           window.gharargah?.terminal,
         )
         // Sessions are never pruned on reload — reconcile only marks missing PTYs
-        // unavailable so cards stay open / done. deadTabIds is always empty.
+        // unavailable so cards stay active / archived. deadTabIds is always empty.
         void deadTabIds
+
+        const terminalApi = window.gharargah?.terminal
+        if (terminalApi) {
+          const warmResume = startActiveAgentCliWarmResume({
+            terminal: terminalApi,
+            origin: window.location.origin,
+            sessions: listTerminalSessions(),
+            getSession: terminalSessionForTab,
+            onPtyCreated: trackTerminalPtyId,
+            onJobSettled: tabId => {
+              tabStore.update(tabId, previous => ({ ...(previous as object) }))
+            },
+          })
+          activeAgentWarmResumeRef.current = warmResume
+          void warmResume.done.then(summary => {
+            if (activeAgentWarmResumeRef.current === warmResume) {
+              activeAgentWarmResumeRef.current = null
+            }
+            performance.measure("gharargah:active-agent-warm-resume", {
+              start: performance.now() - summary.durationMs,
+              end: performance.now(),
+              detail: summary,
+            })
+          })
+        }
 
         if (roster.modal) {
           const panelId = findPanelWithTab(tree, roster.modal.tabId)
@@ -2602,7 +2797,7 @@ export function GharargahApp() {
           exitCode: t.exitCode,
           launchCommand: t.launchCommand,
           agentId: t.agentId,
-          doneAt: t.doneAt,
+          archivedAt: t.archivedAt,
         })),
       })),
     [terminalGroups],
@@ -2763,7 +2958,7 @@ export function GharargahApp() {
                       exitCode: t.exitCode,
                       launchCommand: t.launchCommand,
                       agentId: t.agentId,
-                      doneAt: t.doneAt,
+                      archivedAt: t.archivedAt,
                       unreadCount:
                         ade.unreadCount ??
                         notifications.unreadBySession?.[t.tabId],
@@ -2771,7 +2966,7 @@ export function GharargahApp() {
                       statsLine: ade.statsLine,
                       requiresApproval: ade.attentionKind === "permission_required",
                       adeStatus: snap
-                        ? mapAgentStatusToCardStatus(snap.status, Boolean(t.doneAt))
+                        ? mapAgentStatusToCardStatus(snap.status, Boolean(t.archivedAt))
                         : undefined,
                     }
                   }),
@@ -2783,7 +2978,7 @@ export function GharargahApp() {
                   }
                 onRemoveProject={removeProjectByRootUri}
                 onKillTerminal={closeTerminalTab}
-                onMarkSessionDone={markSessionDoneFromHome}
+                onArchiveSession={archiveSessionFromHome}
                 onOpenTodos={rootUri => void openTodosFromHome(rootUri)}
                 notificationBell={
                   <NotificationBell
@@ -2856,7 +3051,8 @@ export function GharargahApp() {
                         onRename: renameSidebarSession,
                         onMarkRead: s =>
                           void notifications.markSessionRead(s.id),
-                        onClose: s => closeTerminalTab(s.panelId, s.id),
+                        onArchive: s =>
+                          void archiveSessionFromHome(s.panelId, s.id),
                       }}
                       projectActions={{
                         onNewSession: project =>
@@ -2961,7 +3157,13 @@ export function GharargahApp() {
                         return formatSessionHeaderTitle(project, fileLabel)
                       }
                       if (sessionMode === "agent") {
-                        return project ?? "Session"
+                        const session = terminalSessionForTab(terminalModalTabId)
+                        const label =
+                          session?.customLabel ??
+                          session?.agentTitle ??
+                          workspace.tabRegistry.get(terminalModalTabId)?.label ??
+                          "Agent"
+                        return formatSessionHeaderTitle(project, label)
                       }
                       if (sessionMode === "git")
                         return formatSessionHeaderTitle(project, "Git")
@@ -2979,6 +3181,15 @@ export function GharargahApp() {
                     launchCommand={
                       terminalSessionForTab(terminalModalTabId)?.launchCommand ??
                       null
+                    }
+                    status={
+                      terminalSessionForTab(terminalModalTabId)?.status ?? null
+                    }
+                    archivedAt={
+                      terminalSessionForTab(terminalModalTabId)?.archivedAt ?? null
+                    }
+                    onResumeArchived={() =>
+                      resumeArchivedSessionFromView(terminalModalTabId)
                     }
                     mode={sessionMode}
                     showAgentTab={(() => {
@@ -2999,47 +3210,27 @@ export function GharargahApp() {
                   onOpenInApp={(rootUri, appId) =>
                     void openProjectInApp(rootUri, appId)
                   }
-                  onMarkDone={() =>
-                    void markSessionDoneFromHome(
-                      terminalModalPanelId!,
-                      terminalModalTabId,
-                    )
-                  }
-                  isDone={isSessionDone(terminalModalTabId)}
                 agent={
                   terminalSessionForTab(terminalModalTabId)?.agentId &&
                   terminalSessionForTab(terminalModalTabId)?.launchCommand ? (
                     <div
-                      className="flex h-full min-h-0 flex-col"
+                      key={`${terminalModalTabId}:${terminalSessionForTab(terminalModalTabId)?.archivedAt ?? "active"}`}
+                      className="h-full min-h-0 min-w-0"
                       data-gharargah-session-pane="agent"
                     >
-                      <div
-                        className="max-h-40 shrink-0 overflow-hidden border-b border-border/60"
-                        data-gharargah-agent-activity
-                      >
-                        <AgentActivityTimeline
-                          events={
-                            (void agentTelemetryRevision,
-                            getAgentEvents(terminalModalTabId))
-                          }
-                          className="max-h-40"
-                        />
-                      </div>
-                      <div className="min-h-0 flex-1">
-                        <PanelBody
-                          panelId={terminalModalPanelId}
-                          view={
-                            {
-                              kind: "tabs",
-                              activeTabId: terminalModalTabId,
-                              tabIds: [terminalModalTabId],
-                            } as PanelView
-                          }
-                          store={tabStore}
-                          registry={tabTypeRegistry}
-                          focused={sessionMode === "agent"}
-                        />
-                      </div>
+                      <PanelBody
+                        panelId={terminalModalPanelId}
+                        view={
+                          {
+                            kind: "tabs",
+                            activeTabId: terminalModalTabId,
+                            tabIds: [terminalModalTabId],
+                          } as PanelView
+                        }
+                        store={tabStore}
+                        registry={tabTypeRegistry}
+                        focused={sessionMode === "agent"}
+                      />
                     </div>
                   ) : null
                 }
@@ -3213,6 +3404,14 @@ export function GharargahApp() {
             selectedRootUri={agentCliPickerRootUri}
             onSelectedRootUriChange={setAgentCliPickerRootUri}
             onRemoveProject={removeProjectByRootUri}
+            onAddProject={() => setAddWorkspaceOpen(true)}
+            loadPreviousSessions={loadAgentCliHistory}
+            onResumeSession={(driver, history) => {
+              const rootUri = agentCliPickerRootUri
+              setAgentCliPickerRootUri(null)
+              if (!rootUri) return
+              void resumeAgentCliHistorySession(rootUri, driver, history)
+            }}
             onSelect={driver => {
               const rootUri = agentCliPickerRootUri
               setAgentCliPickerRootUri(null)

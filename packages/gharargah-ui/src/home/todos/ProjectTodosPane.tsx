@@ -1,8 +1,13 @@
-import { useCallback, useRef } from "react"
+import { lazy, Suspense, useCallback, useRef } from "react"
 import { getSharedRepository } from "./project-todos-repository.js"
 import type { ProjectTodoStatus } from "./project-todos-repository.js"
-import { ProjectTodoBoard } from "./ProjectTodoBoard.js"
 import { useProjectTodosLive } from "./useProjectTodos.js"
+
+const ProjectTodoBoard = lazy(() =>
+  import("./ProjectTodoBoard.js").then(module => ({
+    default: module.ProjectTodoBoard,
+  })),
+)
 
 export type ProjectTodosPaneProps = {
   projectId: string
@@ -33,36 +38,47 @@ export function ProjectTodosPane(props: ProjectTodosPaneProps) {
         aria-atomic="true"
         data-gharargah-todo-live
       />
-      <ProjectTodoBoard
-        projectId={projectKey}
-        projectName={projectName}
-        todos={todos}
-        onCreate={input => {
-          const created = getSharedRepository().createProjectTodo(projectKey, input)
-          refresh()
-          if (created) announce(`Card created: ${created.text}`)
-        }}
-        onUpdate={(id, patch) => {
-          getSharedRepository().updateProjectTodo(id, patch)
-          refresh()
-        }}
-        onDelete={id => {
-          const text = getSharedRepository()
-            .listProjectTodos(projectKey)
-            .find(t => t.id === id)?.text
-          const ok = getSharedRepository().deleteProjectTodo(id)
-          refresh()
-          if (ok && text) announce(`Card deleted: ${text}`)
-        }}
-        onMove={(id, toStatus, toIndex) => {
-          getSharedRepository().moveProjectTodo(id, toStatus, toIndex)
-          refresh()
-        }}
-        onReorderColumn={(status: ProjectTodoStatus, orderedIds) => {
-          getSharedRepository().reorderColumn(projectKey, status, orderedIds)
-          refresh()
-        }}
-      />
+      <Suspense
+        fallback={
+          <div
+            className="flex h-full items-center justify-center text-xs text-muted-foreground"
+            data-gharargah-todo-loading
+          >
+            Loading TODOs…
+          </div>
+        }
+      >
+        <ProjectTodoBoard
+          projectId={projectKey}
+          projectName={projectName}
+          todos={todos}
+          onCreate={input => {
+            const created = getSharedRepository().createProjectTodo(projectKey, input)
+            refresh()
+            if (created) announce(`Card created: ${created.text}`)
+          }}
+          onUpdate={(id, patch) => {
+            getSharedRepository().updateProjectTodo(id, patch)
+            refresh()
+          }}
+          onDelete={id => {
+            const text = getSharedRepository()
+              .listProjectTodos(projectKey)
+              .find(t => t.id === id)?.text
+            const ok = getSharedRepository().deleteProjectTodo(id)
+            refresh()
+            if (ok && text) announce(`Card deleted: ${text}`)
+          }}
+          onMove={(id, toStatus, toIndex) => {
+            getSharedRepository().moveProjectTodo(id, toStatus, toIndex)
+            refresh()
+          }}
+          onReorderColumn={(status: ProjectTodoStatus, orderedIds) => {
+            getSharedRepository().reorderColumn(projectKey, status, orderedIds)
+            refresh()
+          }}
+        />
+      </Suspense>
     </div>
   )
 }

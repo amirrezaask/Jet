@@ -73,7 +73,7 @@ async function ingestAde(
 test.describe("ADE telemetry", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
-  test("session start, permission, unread, failure cards + activity timeline", async () => {
+  test("session start, permission, unread, and failure update session cards", async () => {
     const { app, page } = await launchJet()
     try {
       await ensureCardsLayout(page)
@@ -107,8 +107,8 @@ test.describe("ADE telemetry", () => {
         { timeout: 15_000 })
         .toBe("ade-native-session-1")
 
-      // Lifecycle events are stored but hidden in the timeline UI — ingest a tool
-      // event so the activity pane has a visible row.
+      // Tool activity remains accepted by telemetry without adding a secondary
+      // activity surface beside the session terminal.
       expect(
         await ingestAde(page, sessionId, "claude", {
           hook_event_name: "PostToolUse",
@@ -118,20 +118,12 @@ test.describe("ADE telemetry", () => {
         }),
       ).toBe(204)
 
-      await expectSelectorVisible(page, "[data-gharargah-agent-activity-timeline]", {
-        timeout: 10_000,
-      })
-      await expect
-        .poll(
-          async () =>
-            page.locator("[data-gharargah-agent-activity-row]").count(),
-          { timeout: 10_000 },
-        )
-        .toBeGreaterThan(0)
       await expectLocatorCount(
-        page.locator(
-          '[data-gharargah-agent-activity-row][data-kind="process.started"]',
-        ),
+        page.locator("[data-gharargah-agent-activity-rail]"),
+        0,
+      )
+      await expectLocatorCount(
+        page.locator("[data-gharargah-agent-activity-timeline]"),
         0,
       )
 

@@ -18,32 +18,52 @@ const ROW_ESTIMATE = 48
 const SECTION_HEADER_ESTIMATE = 28
 
 type ListRow =
-  | { kind: "header"; id: string; label: string; section: "open" | "done" }
-  | { kind: "session"; id: string; session: SidebarSession; section: "open" | "done" }
-  | { kind: "empty"; id: string; label: string; section: "open" | "done" }
+  | {
+      kind: "header"
+      id: string
+      label: string
+      section: "active" | "archived"
+    }
+  | {
+      kind: "session"
+      id: string
+      session: SidebarSession
+      section: "active" | "archived"
+    }
+  | {
+      kind: "empty"
+      id: string
+      label: string
+      section: "active" | "archived"
+    }
 
 function buildRows(sessions: SidebarSession[]): ListRow[] {
-  const open = sessions.filter(session => !session.doneAt)
-  const done = sessions.filter(session => Boolean(session.doneAt))
+  const active = sessions.filter(session => !session.archivedAt)
+  const archived = sessions.filter(session => Boolean(session.archivedAt))
   const rows: ListRow[] = [
-    { kind: "header", id: "header:open", label: "Open", section: "open" },
+    { kind: "header", id: "header:active", label: "Active", section: "active" },
   ]
-  if (open.length === 0) {
+  if (active.length === 0) {
     rows.push({
       kind: "empty",
-      id: "empty:open",
-      label: "No open sessions",
-      section: "open",
+      id: "empty:active",
+      label: "No active sessions",
+      section: "active",
     })
   } else {
-    for (const session of open) {
-      rows.push({ kind: "session", id: session.id, session, section: "open" })
+    for (const session of active) {
+      rows.push({ kind: "session", id: session.id, session, section: "active" })
     }
   }
-  if (done.length > 0) {
-    rows.push({ kind: "header", id: "header:done", label: "Done", section: "done" })
-    for (const session of done) {
-      rows.push({ kind: "session", id: session.id, session, section: "done" })
+  if (archived.length > 0) {
+    rows.push({
+      kind: "header",
+      id: "header:archived",
+      label: "Archived",
+      section: "archived",
+    })
+    for (const session of archived) {
+      rows.push({ kind: "session", id: session.id, session, section: "archived" })
     }
   }
   return rows

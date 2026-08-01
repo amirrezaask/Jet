@@ -7,9 +7,10 @@ import {
   syncAgentCliLaunchArgs,
 } from "../agent-cli-launch.js"
 import { applyAgentCliResumeLaunchArgs } from "../agent-cli-resume.js"
+import { isActiveAgentWarmResumePending } from "../background-agent-cli-resume.js"
 import {
   clearTerminalSession,
-  isSessionDone,
+  isSessionArchived,
   registerTerminalSession,
   terminalCwdForTab,
   terminalLaunchCommandForTab,
@@ -57,6 +58,9 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         launchCommand: terminalLaunchCommandForTab(instance.id),
         launchArgs: terminalLaunchArgsForTab(instance.id),
         launchEnv: terminalLaunchEnvForTab(instance.id),
+        initialOutput: isSessionArchived(instance.id)
+          ? session?.transcript
+          : undefined,
         theme: deps.getTheme(),
         tabId: instance.id,
         focused: ctx.focused && ctx.isActive,
@@ -65,11 +69,13 @@ export function createTerminalTabType(deps: TabContributorDeps): TabType<Termina
         status: session?.status,
         exitCode: session?.exitCode,
         sessionGeneration: session?.generation,
-        readOnly: isSessionDone(instance.id),
+        readOnly: isSessionArchived(instance.id),
+        deferPty: isActiveAgentWarmResumePending(instance.id),
+        startingMessage: "Resuming agent session…",
         onPtyId: trackTerminalPtyId,
         onInput: recordTerminalUserInput,
         onOutput: (tabId, data) => {
-          recordTerminalOutput(tabId)
+          recordTerminalOutput(tabId, data)
           if (!data) return
           const current = terminalSessionForTab(tabId)
           if (!current?.agentId || current.agentCliSessionId) return

@@ -16,6 +16,8 @@ export type TerminalPanelProps = {
   launchCommand?: string
   launchArgs?: string[]
   launchEnv?: Record<string, string>
+  /** Persisted output rendered for an archived session without attaching a PTY. */
+  initialOutput?: string
   theme: GharargahTheme
   tabId: string
   focused: boolean
@@ -302,6 +304,7 @@ export function TerminalPanel({
   launchCommand,
   launchArgs,
   launchEnv,
+  initialOutput,
   theme,
   tabId,
   focused,
@@ -535,6 +538,11 @@ export function TerminalPanel({
         return
       }
       ptyStarted = true
+      if (initialOutput) {
+        term.write(initialOutput, () => {
+          syncFit()
+        })
+      }
       if (existingPtyId) {
         void terminalApi.attach(existingPtyId).then(attached => {
           if (cancelled) return
@@ -668,7 +676,15 @@ export function TerminalPanel({
       term.dispose()
       sessionRef.current = null
     }
-  }, [cwdRootUri, tabId, onPtyId, sessionGeneration, readOnly, deferPty])
+  }, [
+    cwdRootUri,
+    tabId,
+    onPtyId,
+    sessionGeneration,
+    readOnly,
+    deferPty,
+    initialOutput,
+  ])
 
   useEffect(() => {
     setDisplayStatus(status)
@@ -744,6 +760,15 @@ export function TerminalPanel({
           </span>
         </div>
       ) : null}
+      {readOnly ? (
+        <div
+          role="status"
+          data-gharargah-terminal-archived=""
+          className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-border/60 bg-background/90 px-2.5 py-1 text-center text-[11px] text-muted-foreground shadow-sm backdrop-blur"
+        >
+          Archived · read-only · Resume to reconnect
+        </div>
+      ) : null}
       {displayStatus === "exited" || displayStatus === "failed" ? (
         <div
           data-gharargah-terminal-exit-bar
@@ -755,10 +780,12 @@ export function TerminalPanel({
               ? "Terminal failed to start"
               : `Process exited${displayExitCode == null ? "" : ` with code ${displayExitCode}`}`}
           </span>
-          <Button type="button" size="xs" variant="ghost" onClick={onRestart}>
-            <RotateCcw className="size-3" />
-            Restart
-          </Button>
+          {!readOnly ? (
+            <Button type="button" size="xs" variant="ghost" onClick={onRestart}>
+              <RotateCcw className="size-3" />
+              Restart
+            </Button>
+          ) : null}
           <Button type="button" size="icon-xs" variant="ghost" aria-label="Close terminal" onClick={onClose}>
             <X className="size-3" />
           </Button>

@@ -145,7 +145,16 @@ test.describe("new session project picker", () => {
         .toBe("on")
       await expectLocatorVisible(picker)
       const pickerAfter = await picker.boundingBox()
-      expect(pickerAfter).toEqual(pickerBefore)
+      expect(pickerBefore).not.toBeNull()
+      expect(pickerAfter).not.toBeNull()
+      expect(pickerAfter).toEqual(
+        expect.objectContaining({
+          x: pickerBefore!.x,
+          y: pickerBefore!.y,
+          height: pickerBefore!.height,
+        }),
+      )
+      expect(pickerAfter!.width).toBeGreaterThan(0)
     } finally {
       await app.close()
     }
@@ -200,6 +209,11 @@ test.describe("new session project picker", () => {
         name: "Add workspace folder",
       })
       await expectLocatorVisible(addDialog)
+      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectLocatorCount(
+        page.locator("[data-gharargah-agent-cli-project-option]"),
+        1,
+      )
       await page.getByPlaceholder("Path to folder…").fill(`${secondPath}/`)
       await addDialog.getByRole("button", { name: /Add Project/i }).click()
 

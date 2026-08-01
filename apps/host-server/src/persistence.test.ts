@@ -41,6 +41,7 @@ describe("ProjectDatabase session roster", () => {
           status: "running",
           customLabel: "Codex",
           agentId: "codex",
+          agentTitle: "Review session persistence",
           agentDriverId: "codex:cli",
           hasUserInput: true,
           hasMeaningfulOutput: true,
@@ -60,14 +61,16 @@ describe("ProjectDatabase session roster", () => {
 
     const row = db.raw()
       .prepare(
-        "SELECT project_id, has_user_input, has_meaningful_output FROM session_roster_entries WHERE tab_id=?",
+        "SELECT project_id, agent_title, has_user_input, has_meaningful_output FROM session_roster_entries WHERE tab_id=?",
       )
       .get("gharargah:terminal:a") as {
         project_id: string | null
+        agent_title: string | null
         has_user_input: number
         has_meaningful_output: number
       }
     assert.equal(row.project_id, project.id)
+    assert.equal(row.agent_title, "Review session persistence")
     assert.equal(row.has_user_input, 1)
     assert.equal(row.has_meaningful_output, 1)
   })
@@ -105,6 +108,32 @@ describe("ProjectDatabase session roster", () => {
     assert.equal(next.sessions.length, 1)
     assert.equal(next.sessions[0]?.tabId, "gharargah:terminal:new")
     assert.equal(next.modal, null)
+  })
+
+  it("persists archived transcript and drops it for active sessions", () => {
+    const marker = "ARCHIVED_TRANSCRIPT_MARKER"
+    const base = {
+      tabId: "gharargah:terminal:archive-output",
+      cwdRootUri: `file://${dir}`,
+      label: "Codex archive",
+      launchCommand: "codex",
+      status: "exited" as const,
+      agentId: "codex",
+      transcript: marker,
+    }
+    const archived = db.replaceSessionRoster({
+      version: 2,
+      sessions: [{ ...base, doneAt: "2026-08-01T00:00:00.000Z" }],
+      modal: null,
+    })
+    assert.equal(archived.sessions[0]?.transcript, marker)
+
+    const active = db.replaceSessionRoster({
+      version: 2,
+      sessions: [{ ...base, status: "starting" }],
+      modal: null,
+    })
+    assert.equal(active.sessions[0]?.transcript, undefined)
   })
 
   it("accepts blank shells alongside agent sessions on replace", () => {
@@ -177,7 +206,7 @@ describe("ProjectDatabase session roster", () => {
     assert.equal(agent?.agentCliSessionId, "11111111-1111-4111-8111-111111111111")
   })
 
-  it("round-trips doneAt and agentCliSessionId", () => {
+  it("round-trips archive time, provider session id, and stable agent title", () => {
     db.replaceSessionRoster({
       version: 2,
       sessions: [
@@ -189,6 +218,7 @@ describe("ProjectDatabase session roster", () => {
           launchCommand: "claude",
           doneAt: "2026-07-30T00:00:00.000Z",
           agentId: "claude",
+          agentTitle: "Implement robust archive restore",
           agentCliSessionId: "22222222-2222-4222-8222-222222222222",
         },
       ],
@@ -199,6 +229,10 @@ describe("ProjectDatabase session roster", () => {
     assert.equal(
       roster.sessions[0]?.agentCliSessionId,
       "22222222-2222-4222-8222-222222222222",
+    )
+    assert.equal(
+      roster.sessions[0]?.agentTitle,
+      "Implement robust archive restore",
     )
   })
 
@@ -226,9 +260,10 @@ describe("ProjectDatabase session roster", () => {
         updated_at TEXT NOT NULL
       );
       INSERT INTO session_roster_entries(
-        tab_id, cwd_root_uri, label, status, created_at, updated_at
+        tab_id, cwd_root_uri, label, launch_command, agent_id, status, created_at, updated_at
       ) VALUES(
-        'gharargah:terminal:legacy', 'file:///tmp/legacy', 'Legacy', 'exited',
+        'gharargah:terminal:legacy', 'file:///tmp/legacy', 'Legacy agent title',
+        'codex', 'codex', 'exited',
         '2026-07-28T00:00:00.000Z', '2026-07-28T00:00:00.000Z'
       );
     `)
@@ -240,6 +275,7 @@ describe("ProjectDatabase session roster", () => {
       .prepare("PRAGMA table_info(session_roster_entries)")
       .all() as unknown as Array<{ name: string }>
     assert.equal(columns.some(column => column.name === "has_user_input"), true)
+    assert.equal(columns.some(column => column.name === "agent_title"), true)
     assert.equal(
       columns.some(column => column.name === "has_meaningful_output"),
       true,
@@ -247,7 +283,8 @@ describe("ProjectDatabase session roster", () => {
     const restored = db.getSessionRoster().sessions[0]
     // Blank shells survive host reopen; only incomplete agent stubs are stripped.
     assert.equal(restored?.tabId, "gharargah:terminal:legacy")
-    assert.equal(restored?.label, "Legacy")
+    assert.equal(restored?.label, "Legacy agent title")
+    assert.equal(restored?.agentTitle, "Legacy agent title")
     assert.equal(restored?.status, "exited")
   })
 

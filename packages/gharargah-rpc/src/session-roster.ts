@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 
 const MAX_LAUNCH_ARG_LEN = 32_768
+export const MAX_ARCHIVED_TRANSCRIPT_CHARS = 262_144
 
 /** Canonical ADE session PTY lifecycle status (persisted in roster). */
 export const TerminalSessionStatus = Schema.Literal("starting", "running", "exited", "failed")
@@ -20,6 +21,8 @@ export const SessionRosterEntry = Schema.Struct({
   exitCode: Schema.optional(Schema.Number),
   customLabel: Schema.optional(Schema.String),
   agentId: Schema.optional(Schema.String),
+  /** Stable provider/session title. Unlike `label`, OSC terminal titles do not mutate it. */
+  agentTitle: Schema.optional(Schema.String),
   agentDriverId: Schema.optional(Schema.String),
   agentThreadId: Schema.optional(Schema.String),
   agentCliSessionId: Schema.optional(Schema.String),
@@ -27,6 +30,7 @@ export const SessionRosterEntry = Schema.Struct({
   hasMeaningfulOutput: Schema.optional(Schema.Boolean),
   lastActivityAt: Schema.optional(Schema.String),
   doneAt: Schema.optional(Schema.String),
+  transcript: Schema.optional(Schema.String),
 })
 export type SessionRosterEntry = Schema.Schema.Type<typeof SessionRosterEntry>
 
@@ -98,6 +102,7 @@ function parseEntry(raw: unknown): SessionRosterEntry | null {
 
   const launchCommand = asNonEmptyString(item.launchCommand) ?? undefined
   const agentId = asNonEmptyString(item.agentId) ?? undefined
+  const agentTitle = asNonEmptyString(item.agentTitle) ?? undefined
   const agentDriverId = asNonEmptyString(item.agentDriverId) ?? undefined
   // CLI agents must have a launch command; agentId without one is an incomplete
   // stub (including legacy native-driver sessions). Blank shells are OK.
@@ -131,6 +136,7 @@ function parseEntry(raw: unknown): SessionRosterEntry | null {
       : {}),
     ...(exitCode !== undefined ? { exitCode } : {}),
     ...(agentId ? { agentId } : {}),
+    ...(agentTitle ? { agentTitle } : {}),
     ...(agentDriverId ? { agentDriverId } : {}),
     ...(asNonEmptyString(item.agentThreadId)
       ? { agentThreadId: asNonEmptyString(item.agentThreadId)! }
@@ -144,6 +150,11 @@ function parseEntry(raw: unknown): SessionRosterEntry | null {
       ? { lastActivityAt: asNonEmptyString(item.lastActivityAt)! }
       : {}),
     ...(asNonEmptyString(item.doneAt) ? { doneAt: asNonEmptyString(item.doneAt)! } : {}),
+    ...(typeof item.transcript === "string" && item.transcript.length > 0
+      ? {
+          transcript: item.transcript.slice(-MAX_ARCHIVED_TRANSCRIPT_CHARS),
+        }
+      : {}),
   }
 }
 

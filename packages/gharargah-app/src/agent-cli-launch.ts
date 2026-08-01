@@ -1,4 +1,4 @@
-import type { AgentProvider } from "@gharargah/shared"
+import { fileUriToPath, type AgentProvider } from "@gharargah/shared"
 import {
   notificationLaunchForProviderSync,
   type ProviderNotificationLaunchContext,
@@ -208,6 +208,7 @@ export function captureAgentCliSessionFromOutput(
 export type HydratedAgentCliFields = {
   launchCommand?: string
   launchArgs?: string[]
+  launchEnv?: Record<string, string>
   ptyId?: string
   status: TerminalSessionStatus
   /** Resolved id (column or extracted from launchArgs). */
@@ -222,22 +223,13 @@ export function prepareHydratedAgentCliFields(input: {
   launchCommand?: string
   launchArgs?: string[]
   status: TerminalSessionStatus
-  doneAt?: string
+  archivedAt?: string
+  cwdRootUri: string
   origin?: string
 }): HydratedAgentCliFields {
   const origin =
     input.origin ??
     (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:4747")
-  if (input.doneAt) {
-    return {
-      launchCommand: input.launchCommand,
-      launchArgs: input.launchArgs,
-      ptyId: undefined,
-      status: "exited",
-      agentCliSessionId: input.agentCliSessionId?.trim() || undefined,
-    }
-  }
-
   // Native sessions have no PTY to re-attach; the agent thread carries the
   // conversation, so the persisted status survives the reload untouched.
   if (isNativeAgentSession(input)) {
@@ -250,40 +242,112 @@ export function prepareHydratedAgentCliFields(input: {
     }
   }
 
-  const provider =
-    (isAgentCliProvider(input.agentId) ? input.agentId : undefined) ??
-    detectAgentCliProviderFromCommand(input.launchCommand)
+  const provider = isAgentCliProvider(input.agentId) ? input.agentId : undefined
 
   const cliSessionId =
     input.agentCliSessionId?.trim() ||
     extractAgentCliSessionIdFromLaunchArgs(provider, input.launchArgs) ||
     undefined
 
-  if (!cliSessionId || !provider) {
+  if (!provider) {
     return {
-      launchCommand: input.launchCommand,
-      launchArgs: input.launchArgs,
+      launchCommand: undefined,
+      launchArgs: undefined,
+      launchEnv: undefined,
       ptyId: undefined,
-      status:
-        input.status === "running" || input.status === "starting"
-          ? "starting"
-          : input.status,
+      status: input.archivedAt ? "exited" : "failed",
+      agentCliSessionId: undefined,
+    }
+  }
+
+  const trusted = deriveTrustedAgentCliLaunch({
+    tabId: input.tabId,
+    cwdRootUri: input.cwdRootUri,
+    agentId: provider,
+    agentCliSessionId: cliSessionId,
+    origin,
+  })
+  if (!trusted || !persistedAgentCliLaunchMatchesTrusted(input, trusted)) {
+    return {
+      launchCommand: undefined,
+      launchArgs: undefined,
+      launchEnv: undefined,
+      ptyId: undefined,
+      status: input.archivedAt ? "exited" : "failed",
       agentCliSessionId: cliSessionId,
     }
   }
 
   return {
-    launchCommand: input.launchCommand ?? agentCliCommandForProvider(provider),
-    launchArgs: syncAgentCliLaunchArgs(
-      input.tabId,
-      provider,
-      cliSessionId,
-      origin,
-    ),
+    launchCommand: trusted.command,
+    launchArgs: trusted.args,
+    launchEnv: trusted.env,
     ptyId: undefined,
-    status: "starting",
+    status: input.archivedAt ? "exited" : "starting",
     agentCliSessionId: cliSessionId,
   }
+}
+
+export type TrustedAgentCliLaunch = {
+  readonly provider: AgentProvider
+  readonly cliSessionId?: string
+  readonly command: string
+  readonly args: string[]
+  readonly env: Record<string, string>
+}
+
+/**
+ * Build executable metadata exclusively from validated provider identity and
+ * project context. Persisted command/argv/env are never executable authority.
+ */
+export function deriveTrustedAgentCliLaunch(input: {
+  tabId: string
+  cwdRootUri: string
+  agentId?: string
+  agentCliSessionId?: string
+  origin?: string
+}): TrustedAgentCliLaunch | null {
+  if (!isAgentCliProvider(input.agentId)) return null
+  let projectRoot: string
+  try {
+    projectRoot = fileUriToPath(input.cwdRootUri)
+  } catch {
+    return null
+  }
+  const cliSessionId = input.agentCliSessionId?.trim() || undefined
+  const context: ProviderNotificationLaunchContext = {
+    sessionId: input.tabId,
+    origin: input.origin ?? "http://127.0.0.1:4747",
+    projectRoot,
+  }
+  return {
+    provider: input.agentId,
+    cliSessionId,
+    command: agentCliCommandForProvider(input.agentId),
+    args: buildAgentCliLaunchArgs(input.agentId, context, cliSessionId),
+    env: buildAgentCliLaunchEnv(input.agentId, context),
+  }
+}
+
+/** Reject persisted provider/identity contradictions before a warm resume. */
+export function persistedAgentCliLaunchMatchesTrusted(
+  persisted: { launchCommand?: string; launchArgs?: string[] },
+  trusted: TrustedAgentCliLaunch,
+): boolean {
+  const persistedCommand = persisted.launchCommand?.trim()
+  if (persistedCommand && persistedCommand !== trusted.command) return false
+  const persistedResumeId = extractAgentCliSessionIdFromLaunchArgs(
+    trusted.provider,
+    persisted.launchArgs,
+  )
+  if (
+    trusted.cliSessionId &&
+    persisted.launchArgs?.length &&
+    !persistedResumeId
+  ) {
+    return false
+  }
+  return !persistedResumeId || persistedResumeId === trusted.cliSessionId
 }
 
 export function detectAgentCliProviderFromCommand(

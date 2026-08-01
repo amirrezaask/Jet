@@ -92,6 +92,7 @@ export type JetElectronTerminal = {
     launch?: {
       command?: string
       args?: string[]
+      env?: Record<string, string>
       cols?: number
       rows?: number
     },
@@ -204,6 +205,14 @@ export type JetElectronNotifications = {
 }
 
 export type JetElectronAgents = {
+  listCliSessions(
+    req: {
+      provider: import("@gharargah/shared").AgentCliHistoryProvider
+      cwd: string
+      limit?: number
+    },
+    signal?: AbortSignal,
+  ): Promise<import("@gharargah/shared").AgentCliHistoryResult>
   getSnapshot(
     sessionId: string,
   ): Promise<import("@gharargah/agents").AgentSessionSnapshot | null>

@@ -7,6 +7,11 @@ export type HostEvent = {
 
 type Listener = (event: HostEvent) => void
 
+type RetainedHostEvent = {
+  event: HostEvent
+  bytes: number
+}
+
 function estimateHostEventBytes(event: HostEvent): number {
   let bytes = 64 + Buffer.byteLength(event.channel, "utf8")
   for (const arg of event.args) {
@@ -24,7 +29,8 @@ function estimateHostEventBytes(event: HostEvent): number {
 
 export class EventHub {
   private sequence = 0
-  private readonly history: HostEvent[] = []
+  private history: Array<RetainedHostEvent | undefined> = []
+  private historyHead = 0
   private historyBytes = 0
   private readonly listeners = new Set<Listener>()
   private readonly capacity: number
@@ -44,14 +50,21 @@ export class EventHub {
       args,
     }
     const eventBytes = estimateHostEventBytes(event)
-    this.history.push(event)
+    this.history.push({ event, bytes: eventBytes })
     this.historyBytes += eventBytes
     while (
-      this.history.length > 1 &&
-      (this.history.length > this.capacity || this.historyBytes > this.maxHistoryBytes)
+      this.history.length - this.historyHead > 1 &&
+      (this.history.length - this.historyHead > this.capacity ||
+        this.historyBytes > this.maxHistoryBytes)
     ) {
-      const dropped = this.history.shift()!
-      this.historyBytes -= estimateHostEventBytes(dropped)
+      const dropped = this.history[this.historyHead]!
+      this.history[this.historyHead] = undefined
+      this.historyHead += 1
+      this.historyBytes -= dropped.bytes
+    }
+    if (this.historyHead > 1024 && this.historyHead * 2 > this.history.length) {
+      this.history = this.history.slice(this.historyHead)
+      this.historyHead = 0
     }
     for (const listener of this.listeners) {
       try {
@@ -64,7 +77,12 @@ export class EventHub {
   }
 
   replayAfter(since: number): HostEvent[] {
-    return this.history.filter(event => event.sequence > since)
+    const replay: HostEvent[] = []
+    for (let index = this.historyHead; index < this.history.length; index += 1) {
+      const retained = this.history[index]
+      if (retained && retained.event.sequence > since) replay.push(retained.event)
+    }
+    return replay
   }
 
   subscribe(listener: Listener): () => void {

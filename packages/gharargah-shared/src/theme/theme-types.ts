@@ -88,7 +88,7 @@ export type GharargahTheme = {
 
 export type ColorScheme = "dark" | "light"
 
-/** Default dark — shadcn/ui palette (see gharargah-ui/src/theme/shadcn.ts). */
+/** Default dark — shadcn semantics tuned for Gharargah (see gharargah-ui/src/theme/shadcn.ts). */
 export const defaultGharargahTheme: GharargahTheme = {
   id: "default-dark",
   name: "Default Dark",
@@ -160,6 +160,7 @@ export function applyGharargahThemeCss(theme: GharargahTheme): void {
     root.style.setProperty("--accent", c.hover)
     root.style.setProperty("--accent-foreground", c.text)
     root.style.setProperty("--destructive", c.error)
+    root.style.setProperty("--destructive-foreground", onAccent)
     root.style.setProperty("--border", c.border)
     root.style.setProperty("--input", c.border)
     root.style.setProperty("--ring", c.focusBorder)

@@ -103,6 +103,7 @@ function searchHaystack(n: AppNotification): string {
 export class NotificationService {
   private readonly emit: EmitFn
   private prefsCache: NotificationPreferences | null = null
+  private retentionScheduled = false
 
   constructor(
     private readonly db: DatabaseSync,
@@ -720,7 +721,7 @@ export class NotificationService {
     // Delete oldest dismissed/read first; never touch unresolved action or unread errors.
     const deletable = this.db
       .prepare(
-        `SELECT id FROM app_notifications
+        `SELECT id, created_at FROM app_notifications
          WHERE
            NOT (requires_action=1 AND action_resolved_at IS NULL)
            AND NOT (status='unread' AND (severity='error' OR type='failed'))
@@ -732,7 +733,7 @@ export class NotificationService {
            CASE status WHEN 'dismissed' THEN 0 WHEN 'read' THEN 1 ELSE 2 END,
            created_at ASC`,
       )
-      .all(cutoff) as unknown as { id: string }[]
+      .all(cutoff) as unknown as Array<{ id: string; created_at: string }>
 
     const total = (
       this.db.prepare(`SELECT COUNT(*) AS n FROM app_notifications`).get() as {
@@ -740,39 +741,54 @@ export class NotificationService {
       }
     ).n
 
-    let toDelete = deletable.filter(row => {
-      const n = this.get(row.id)
-      if (!n) return false
-      if (n.createdAt < cutoff) return true
-      return false
-    })
+    let toDeleteIds = deletable
+      .filter(row => row.created_at < cutoff)
+      .map(row => row.id)
 
     const over = Math.max(0, Number(total) - prefs.maxRetained)
     if (over > 0) {
-      const extras = deletable.slice(0, Math.max(over, toDelete.length))
-      const ids = new Set(toDelete.map(r => r.id))
+      const extras = deletable.slice(0, Math.max(over, toDeleteIds.length))
+      const ids = new Set(toDeleteIds)
       for (const row of extras) ids.add(row.id)
-      toDelete = [...ids].map(id => ({ id }))
+      toDeleteIds = [...ids]
     }
 
     let deleted = 0
-    const del = this.db.prepare(`DELETE FROM app_notifications WHERE id=?`)
-    for (const row of toDelete) {
-      // Cap batch
-      if (deleted >= 500) break
-      const result = del.run(row.id)
-      deleted += Number(result.changes) || 0
+    if (toDeleteIds.length > 0) {
+      const del = this.db.prepare(`DELETE FROM app_notifications WHERE id=?`)
+      this.db.exec("BEGIN")
+      try {
+        for (const id of toDeleteIds) {
+          // Bound each retention pass so notification ingestion cannot monopolize
+          // the host event loop even when upgrading an old, very large database.
+          if (deleted >= 500) break
+          const result = del.run(id)
+          deleted += Number(result.changes) || 0
+        }
+        this.db.exec("COMMIT")
+      } catch (error) {
+        try {
+          this.db.exec("ROLLBACK")
+        } catch {
+          /* preserve the original failure */
+        }
+        throw error
+      }
     }
     if (deleted > 0) this.emitCounts()
     return { deleted }
   }
 
   private runRetentionAsync(): void {
+    if (this.retentionScheduled) return
+    this.retentionScheduled = true
     queueMicrotask(() => {
       try {
         this.runRetention()
       } catch {
         /* ignore retention errors */
+      } finally {
+        this.retentionScheduled = false
       }
     })
   }

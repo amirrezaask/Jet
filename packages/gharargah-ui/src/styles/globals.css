@@ -68,29 +68,29 @@
   --color-agent-composer-surface: var(--agent-composer-surface);
 }
 
-/* shadcn/ui default light — aligned with packages/gharargah-ui/src/theme/default.ts */
+/* Gharargah default light — shadcn semantics with a cool, high-contrast control palette. */
 :root {
   color-scheme: light;
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.985 0.004 255);
+  --foreground: oklch(0.19 0.012 255);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.19 0.012 255);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.19 0.012 255);
+  --primary: oklch(0.48 0.16 255);
+  --primary-foreground: oklch(0.985 0.004 255);
+  --secondary: oklch(0.94 0.015 255);
+  --secondary-foreground: oklch(0.24 0.02 255);
+  --muted: oklch(0.95 0.01 255);
+  --muted-foreground: oklch(0.46 0.018 255);
+  --accent: oklch(0.925 0.03 255);
+  --accent-foreground: oklch(0.22 0.025 255);
+  --destructive: oklch(0.54 0.2 25);
+  --destructive-foreground: oklch(0.985 0.004 255);
+  --border: oklch(0.84 0.015 255);
+  --input: oklch(0.64 0.02 255);
+  --ring: oklch(0.48 0.16 255);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -125,6 +125,7 @@
    * Keep the virtual slot rem-scaled so appearance zoom cannot clip or overlap
    * the line boxes. Other palette rows retain their compact contract. */
   --gharargah-agent-cli-row-height: 3.5rem;
+  --gharargah-agent-cli-history-row-height: 5rem;
   /* Traffic-light clearance only — not a closed-sidebar placeholder. */
   --gharargah-traffic-light-inset: 5rem;
   --gharargah-overlay-list-max: 22rem;
@@ -141,7 +142,7 @@
   --gharargah-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --gharargah-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --gharargah-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --gharargah-cursor-color: oklch(0.145 0 0);
+  --gharargah-cursor-color: oklch(0.19 0.012 255);
   --gharargah-press-scale: 0.98;
   --gharargah-press-y: 0.5px;
   --gharargah-hl-keyword: oklch(0.577 0.245 27.325);
@@ -160,24 +161,24 @@
   --gharargah-hl-module: oklch(0.488 0.243 264.376);
   --gharargah-hl-label: oklch(0.577 0.245 27.325);
   --gharargah-hl-error: oklch(0.577 0.245 27.325);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.96 0.008 255);
+  --sidebar-foreground: oklch(0.19 0.012 255);
+  --sidebar-primary: oklch(0.48 0.16 255);
+  --sidebar-primary-foreground: oklch(0.985 0.004 255);
+  --sidebar-accent: oklch(0.91 0.025 255);
+  --sidebar-accent-foreground: oklch(0.22 0.025 255);
+  --sidebar-border: oklch(0.84 0.015 255);
+  --sidebar-ring: oklch(0.48 0.16 255);
 
   /* Agent chat — Cursor Composer density (semantic; no hex in components) */
   --agent-feed-bg: var(--background);
-  --agent-user-bubble: color-mix(in oklch, var(--secondary) 88%, var(--muted) 12%);
-  --agent-feed-muted: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  --agent-user-bubble: color-mix(in srgb, var(--accent) 88%, var(--sidebar) 12%);
+  --agent-feed-muted: var(--muted-foreground);
   --agent-feed-primary: var(--foreground);
   --agent-diff-add: oklch(0.62 0.12 155);
   --agent-diff-del: oklch(0.62 0.14 25);
-  --agent-composer-surface: color-mix(in oklch, var(--secondary) 70%, var(--card) 30%);
-  --agent-composer-border: color-mix(in oklch, var(--border) 80%, transparent);
+  --agent-composer-surface: color-mix(in srgb, var(--card) 65%, var(--background) 35%);
+  --agent-composer-border: color-mix(in srgb, var(--border) 80%, transparent);
   --agent-composer-radius: 1.5rem;
 }
 
@@ -260,28 +261,28 @@
   display: none;
 }
 
-/* shadcn/ui default dark */
+/* Gharargah default dark — same semantic hierarchy and blue interaction accent. */
 .dark {
   color-scheme: dark;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: oklch(0.145 0.008 255);
+  --foreground: oklch(0.94 0.008 255);
+  --card: oklch(0.19 0.012 255);
+  --card-foreground: oklch(0.94 0.008 255);
+  --popover: oklch(0.2 0.014 255);
+  --popover-foreground: oklch(0.94 0.008 255);
+  --primary: oklch(0.72 0.14 250);
+  --primary-foreground: oklch(0.18 0.015 255);
+  --secondary: oklch(0.255 0.018 255);
+  --secondary-foreground: oklch(0.94 0.008 255);
+  --muted: oklch(0.235 0.012 255);
+  --muted-foreground: oklch(0.72 0.015 255);
+  --accent: oklch(0.285 0.035 250);
+  --accent-foreground: oklch(0.95 0.008 255);
+  --destructive: oklch(0.7 0.17 25);
+  --destructive-foreground: oklch(0.145 0.008 255);
+  --border: oklch(0.32 0.015 255);
+  --input: oklch(0.48 0.02 255);
+  --ring: oklch(0.72 0.14 250);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -303,23 +304,23 @@
   --gharargah-hl-module: oklch(0.623 0.214 259.815);
   --gharargah-hl-label: oklch(0.704 0.191 22.216);
   --gharargah-hl-error: oklch(0.704 0.191 22.216);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.18 0.012 255);
+  --sidebar-foreground: oklch(0.94 0.008 255);
+  --sidebar-primary: oklch(0.72 0.14 250);
+  --sidebar-primary-foreground: oklch(0.18 0.015 255);
+  --sidebar-accent: oklch(0.27 0.03 250);
+  --sidebar-accent-foreground: oklch(0.95 0.008 255);
+  --sidebar-border: oklch(0.32 0.015 255);
+  --sidebar-ring: oklch(0.72 0.14 250);
 
   --agent-feed-bg: var(--background);
-  --agent-user-bubble: color-mix(in oklch, var(--secondary) 75%, oklch(0.22 0 0) 25%);
-  --agent-feed-muted: color-mix(in oklch, var(--muted-foreground) 78%, transparent);
-  --agent-feed-primary: oklch(0.92 0 0);
+  --agent-user-bubble: color-mix(in srgb, var(--accent) 75%, var(--sidebar) 25%);
+  --agent-feed-muted: var(--muted-foreground);
+  --agent-feed-primary: var(--foreground);
   --agent-diff-add: oklch(0.68 0.1 155);
   --agent-diff-del: oklch(0.68 0.12 25);
-  --agent-composer-surface: color-mix(in oklch, var(--secondary) 55%, oklch(0.18 0 0) 45%);
-  --agent-composer-border: oklch(1 0 0 / 8%);
+  --agent-composer-surface: color-mix(in srgb, var(--card) 72%, var(--background) 28%);
+  --agent-composer-border: color-mix(in srgb, var(--border) 80%, transparent);
   --agent-composer-radius: 1.5rem;
 }
 
@@ -1270,7 +1271,7 @@ body,
     background: color-mix(in srgb, var(--home-status-failed) 16%, transparent);
   }
 
-  [data-gharargah-home] .gharargah-home-status-badge[data-status="done"] {
+  [data-gharargah-home] .gharargah-home-status-badge[data-status="archived"] {
     color: var(--home-status-idle);
     border-color: color-mix(in srgb, var(--home-status-idle) 50%, transparent);
     background: color-mix(in srgb, var(--home-status-idle) 14%, transparent);
@@ -1636,57 +1637,46 @@ body,
     background: color-mix(in srgb, var(--background) 55%, rgb(0 0 0 / 45%));
   }
 
-  /* Soften default dialog overlay behind terminal stage */
+  /* Session stage keeps context visible without competing with terminal output. */
   .jet-dialog-overlay:has(+ * [data-gharargah-terminal-modal]),
   .jet-dialog-overlay:has(~ * [data-gharargah-terminal-modal]) {
-    background: color-mix(in srgb, var(--background) 35%, rgb(0 0 0 / 40%));
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
+    background: color-mix(in srgb, var(--background) 62%, rgb(0 0 0 / 38%));
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
   }
 
-  /* Terminal modal — optical-glass full-stage shell */
+  /* Terminal-first ADE stage: quiet chrome around an uninterrupted work surface. */
   [data-gharargah-terminal-modal] {
-    border: 0 !important;
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, white 5%, transparent) 0%,
-        transparent 14%
-      ),
-      var(--glass-fill) !important;
-    -webkit-backdrop-filter: blur(28px) saturate(1.15);
-    backdrop-filter: blur(28px) saturate(1.15);
+    border: 1px solid color-mix(in srgb, var(--border) 82%, transparent) !important;
+    background: var(--background) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(1.08);
+    backdrop-filter: blur(20px) saturate(1.08);
     box-shadow:
-      inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
-      inset 0 -1px 0 color-mix(in srgb, var(--primary) 10%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent),
-      0 24px 64px -24px rgb(0 0 0 / 65%),
-      0 0 36px -10px var(--glass-accent-faint) !important;
+      0 1px 0 color-mix(in srgb, white 7%, transparent) inset,
+      0 28px 70px -28px rgb(0 0 0 / 72%) !important;
   }
 
   [data-gharargah-terminal-modal][data-state="open"] {
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
-      inset 0 -1px 0 color-mix(in srgb, var(--primary) 14%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--primary) 14%, transparent),
-      0 24px 64px -24px rgb(0 0 0 / 65%),
-      0 0 40px -6px var(--glass-accent-glow) !important;
+    box-shadow: 0 28px 70px -28px rgb(0 0 0 / 72%) !important;
   }
 
   [data-gharargah-terminal-modal-header] {
     position: relative;
     z-index: 1;
-    border-top: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
-    border-bottom: 0;
-    background: color-mix(in srgb, var(--card) 28%, transparent);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    box-shadow: inset 0 -1px 0 color-mix(in srgb, white 8%, transparent);
+    border-top: 0;
+    border-bottom-color: color-mix(in srgb, var(--border) 76%, transparent);
+    background: color-mix(in srgb, var(--background) 90%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    backdrop-filter: blur(18px) saturate(1.15);
+    box-shadow: 0 1px 0 color-mix(in srgb, white 4%, transparent);
   }
 
   [data-gharargah-terminal-modal-header] [data-slot="dialog-title"] {
     color: var(--foreground);
-    text-shadow: 0 0 18px color-mix(in srgb, var(--primary) 16%, transparent);
+  }
+
+  [data-gharargah-session-identity-icon] {
+    box-shadow: 0 1px 0 color-mix(in srgb, white 7%, transparent) inset;
   }
 
   [data-gharargah-terminal-git-branch] {
@@ -1695,33 +1685,29 @@ body,
 
   [data-gharargah-terminal-modal-close] {
     border: 1px solid transparent;
-    border-radius: calc(var(--radius) + 2px);
+    border-radius: var(--radius);
     transition:
       border-color var(--glass-motion) var(--glass-ease),
-      box-shadow var(--glass-motion) var(--glass-ease),
       color var(--glass-motion) var(--glass-ease),
       background-color var(--glass-motion) var(--glass-ease);
   }
 
   [data-gharargah-terminal-modal-close]:hover {
-    border-color: var(--glass-rim);
-    background: color-mix(in srgb, var(--card) 40%, transparent);
-    box-shadow: 0 0 16px -6px var(--glass-accent-glow);
+    border-color: var(--border);
+    background: var(--accent);
   }
 
   [data-gharargah-terminal-modal-body] {
     position: relative;
     z-index: 0;
-    background: transparent;
+    background: var(--background);
   }
 
   [data-gharargah-terminal-modal-stage] {
     position: absolute;
     inset: 0;
     z-index: 0;
-    background: var(--glass-content);
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
+    background: var(--background);
   }
 
   [data-gharargah-session-mode-tab][data-active] {
@@ -1752,23 +1738,16 @@ body,
     font-family: var(--font-mono);
   }
 
-  /* Darker ink content well + faint scanline texture */
+  /* The terminal is the canvas, not a decorative material sample. */
   [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] {
     background: transparent;
   }
 
   [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .gharargah-terminal-surface,
   [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .jet-terminal-surface {
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--primary) 6%, transparent) 0%,
-        transparent 12%
-      ),
-      color-mix(in srgb, var(--background) 58%, transparent);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--background) 94%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
   }
 
   [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .xterm,
@@ -1779,30 +1758,12 @@ body,
 
   [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .gharargah-terminal-surface::after,
   [data-gharargah-terminal-modal] [data-gharargah-terminal-panel] .jet-terminal-surface::after {
-    content: "";
-    pointer-events: none;
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    opacity: 0.035;
-    mix-blend-mode: overlay;
-    background-image:
-      repeating-linear-gradient(
-        to bottom,
-        transparent 0,
-        transparent 2px,
-        rgb(255 255 255 / 18%) 2px,
-        rgb(255 255 255 / 18%) 3px
-      ),
-      url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: auto, 160px 160px;
+    display: none;
   }
 
   [data-gharargah-terminal-modal] [data-gharargah-terminal-exit-bar] {
-    border-top-color: color-mix(in srgb, var(--primary) 22%, transparent);
-    background: color-mix(in srgb, var(--card) 35%, transparent);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
+    border-top-color: var(--border);
+    background: var(--card);
   }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
