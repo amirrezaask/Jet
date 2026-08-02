@@ -140,6 +140,9 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
 
   const context = await chromium.launchPersistentContext(browserData, {
     headless: process.env.GHARARGAH_HEADED !== "1",
+    ...(process.env.GHARARGAH_PLAYWRIGHT_CHANNEL
+      ? { channel: process.env.GHARARGAH_PLAYWRIGHT_CHANNEL }
+      : {}),
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 1,
     locale: "en-US",

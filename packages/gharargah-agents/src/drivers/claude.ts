@@ -14,6 +14,7 @@ import {
   classifyGenericTool,
   detectBinary,
   extractNativeSessionId,
+  extractPromptMetadata,
   gharargahEnv,
   pickString,
 } from "./helpers.js"
@@ -170,12 +171,14 @@ export const claudeDriver: CliAgentDriver = {
       // Deterministic within normalize: use prompt hash salt from session+event
       const promptSalt = pickString(raw, ["prompt_id", "uuid"]) ?? "prompt"
       const derivedId = `${input.sessionId}:turn:${promptSalt}`
+      const promptMeta = extractPromptMetadata(raw)
       events.push(
         buildEvent({
           ...base,
           kind: "prompt.submitted",
           nativeEventName: name,
           salt: promptSalt,
+          ...(promptMeta ? { metadata: promptMeta } : {}),
         }),
       )
       events.push(

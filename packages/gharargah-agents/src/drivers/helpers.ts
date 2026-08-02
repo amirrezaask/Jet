@@ -108,6 +108,21 @@ export function buildEvent(b: EventBuildInput): AgentEvent {
   }
 }
 
+/** Bound user prompt text for session-title derivation in the app. */
+export function extractPromptMetadata(
+  raw: Record<string, unknown>,
+): Record<string, string> | undefined {
+  const prompt = pickString(raw, [
+    "prompt",
+    "user_prompt",
+    "userPrompt",
+    "text",
+    "message",
+  ])
+  if (!prompt) return undefined
+  return { prompt: prompt.slice(0, 500) }
+}
+
 export function extractNativeSessionId(
   raw: Record<string, unknown>,
   extras: Array<string | null | undefined> = [],

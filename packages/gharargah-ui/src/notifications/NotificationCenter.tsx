@@ -175,120 +175,126 @@ export function NotificationCenter(props: NotificationCenterProps) {
         aria-modal="true"
         aria-label="Notification center"
         data-gharargah-notification-center
-        data-gharargah-liquid-glass="panel"
         data-state="open"
         // z above session Dialog; pointer-events auto beats Radix body lock.
-        className="pointer-events-auto absolute inset-y-0 right-0 z-[1] flex h-full w-full max-w-md flex-col gap-0 border-l border-transparent bg-background shadow-lg"
+        // Liquid-glass stays on the INNER shell — its `position: relative` must
+        // not override this drawer's absolute right dock.
+        className="pointer-events-auto absolute inset-y-0 right-0 z-[1] flex h-full w-full max-w-md flex-col border-l border-transparent bg-transparent shadow-lg"
         onClick={e => e.stopPropagation()}
       >
-        <h2 className="sr-only">Notification center</h2>
         <div
-          data-gharargah-liquid-glass="chrome"
-          className="flex shrink-0 flex-col gap-1.5 border-b border-transparent bg-transparent px-3 py-2 text-left"
+          data-gharargah-liquid-glass="panel"
+          className="flex h-full min-h-0 w-full flex-col gap-0 bg-background"
         >
-          <div className="flex items-center gap-2">
-            <Input
-              ref={searchRef}
-              data-gharargah-notification-search
-              value={query}
-              onChange={e => onQueryChange(e.target.value)}
-              placeholder="Search notifications…"
-              className="h-8 min-w-0 flex-1 text-xs"
-              aria-label="Search notifications"
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-8 shrink-0 gap-1 px-2 text-3xs"
-              data-gharargah-notification-mark-all-read
-              onClick={onMarkAllRead}
-            >
-              <CheckCheck className="size-3.5" />
-              Mark all as read
-            </Button>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="size-8 shrink-0"
-              aria-label="Close notification center"
-              onClick={() => onOpenChange(false)}
-            >
-              <XIcon className="size-4" />
-            </Button>
-          </div>
-        </div>
-
-        <div className="relative min-h-0 flex-1">
-          {error ? (
-            <p
-              data-gharargah-notification-error
-              className="border-b border-border/50 bg-destructive/10 px-3 py-1.5 text-3xs text-destructive"
-              role="status"
-            >
-              {error}
-            </p>
-          ) : null}
-          <ScrollArea className="h-[calc(100vh-4.5rem)]">
-            <div
-              ref={listRef}
-              role="listbox"
-              aria-label="Unread notifications"
-              data-gharargah-notification-list
-              className="flex flex-col gap-3 px-2 py-2"
-            >
-              {loading && items.length === 0 ? (
-                <div className="flex items-center justify-center gap-2 py-10 text-3xs text-muted-foreground">
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                  Loading…
-                </div>
-              ) : items.length === 0 ? (
-                <div
-                  data-gharargah-notification-empty
-                  className="flex flex-col items-center gap-1 px-4 py-10 text-center"
-                >
-                  <Bell className="mb-1 size-5 text-muted-foreground/70" />
-                  <p className="text-xs font-medium text-foreground">No unread notifications</p>
-                  <p className="max-w-[16rem] text-3xs text-muted-foreground">
-                    You’re caught up.
-                  </p>
-                </div>
-              ) : (
-                groups.map(group => (
-                  <section key={group.id} data-gharargah-notification-group={group.id}>
-                    <h3 className="px-2 pb-1 text-4xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-                      {group.label}
-                    </h3>
-                    <div className="flex flex-col gap-0.5">
-                      {group.items.map(n => (
-                        <NotificationItem
-                          key={n.id}
-                          notification={n}
-                          selected={activeSelected === n.id}
-                          sessionMissing={
-                            Boolean(n.sessionId) &&
-                            isSessionAvailable != null &&
-                            !isSessionAvailable(n.sessionId!)
-                          }
-                          onOpen={() => {
-                            setSelected(n.id)
-                            onOpenNotification(n)
-                          }}
-                          onMarkRead={() => onMarkRead(n.id)}
-                          onMarkUnread={() => onMarkUnread(n.id)}
-                          onDismiss={() => onDismiss(n.id)}
-                          onAcknowledge={
-                            onAcknowledge ? () => onAcknowledge(n.id) : undefined
-                          }
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ))
-              )}
+          <h2 className="sr-only">Notification center</h2>
+          <div
+            data-gharargah-liquid-glass="chrome"
+            className="flex shrink-0 flex-col gap-1.5 border-b border-transparent bg-transparent px-3 py-2 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                ref={searchRef}
+                data-gharargah-notification-search
+                value={query}
+                onChange={e => onQueryChange(e.target.value)}
+                placeholder="Search notifications…"
+                className="h-8 min-w-0 flex-1 text-xs"
+                aria-label="Search notifications"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 gap-1 px-2 text-3xs"
+                data-gharargah-notification-mark-all-read
+                onClick={onMarkAllRead}
+              >
+                <CheckCheck className="size-3.5" />
+                Mark all as read
+              </Button>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                className="size-8 shrink-0"
+                aria-label="Close notification center"
+                onClick={() => onOpenChange(false)}
+              >
+                <XIcon className="size-4" />
+              </Button>
             </div>
-          </ScrollArea>
+          </div>
+
+          <div className="relative min-h-0 flex-1">
+            {error ? (
+              <p
+                data-gharargah-notification-error
+                className="border-b border-border/50 bg-destructive/10 px-3 py-1.5 text-3xs text-destructive"
+                role="status"
+              >
+                {error}
+              </p>
+            ) : null}
+            <ScrollArea className="h-[calc(100vh-4.5rem)]">
+              <div
+                ref={listRef}
+                role="listbox"
+                aria-label="Unread notifications"
+                data-gharargah-notification-list
+                className="flex flex-col gap-3 px-2 py-2"
+              >
+                {loading && items.length === 0 ? (
+                  <div className="flex items-center justify-center gap-2 py-10 text-3xs text-muted-foreground">
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                    Loading…
+                  </div>
+                ) : items.length === 0 ? (
+                  <div
+                    data-gharargah-notification-empty
+                    className="flex flex-col items-center gap-1 px-4 py-10 text-center"
+                  >
+                    <Bell className="mb-1 size-5 text-muted-foreground/70" />
+                    <p className="text-xs font-medium text-foreground">No unread notifications</p>
+                    <p className="max-w-[16rem] text-3xs text-muted-foreground">
+                      You’re caught up.
+                    </p>
+                  </div>
+                ) : (
+                  groups.map(group => (
+                    <section key={group.id} data-gharargah-notification-group={group.id}>
+                      <h3 className="px-2 pb-1 text-4xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                        {group.label}
+                      </h3>
+                      <div className="flex flex-col gap-0.5">
+                        {group.items.map(n => (
+                          <NotificationItem
+                            key={n.id}
+                            notification={n}
+                            selected={activeSelected === n.id}
+                            sessionMissing={
+                              Boolean(n.sessionId) &&
+                              isSessionAvailable != null &&
+                              !isSessionAvailable(n.sessionId!)
+                            }
+                            onOpen={() => {
+                              setSelected(n.id)
+                              onOpenNotification(n)
+                            }}
+                            onMarkRead={() => onMarkRead(n.id)}
+                            onMarkUnread={() => onMarkUnread(n.id)}
+                            onDismiss={() => onDismiss(n.id)}
+                            onAcknowledge={
+                              onAcknowledge ? () => onAcknowledge(n.id) : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </div>
         </div>
       </aside>
     </div>,

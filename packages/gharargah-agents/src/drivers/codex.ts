@@ -14,6 +14,7 @@ import {
   classifyGenericTool,
   detectBinary,
   extractNativeSessionId,
+  extractPromptMetadata,
   gharargahEnv,
   pickString,
 } from "./helpers.js"
@@ -120,7 +121,14 @@ export const codexDriver: CliAgentDriver = {
     }
 
     if (name === "userpromptsubmit") {
-      events.push(buildEvent({ ...base, kind: "prompt.submitted" }))
+      const promptMeta = extractPromptMetadata(raw)
+      events.push(
+        buildEvent({
+          ...base,
+          kind: "prompt.submitted",
+          ...(promptMeta ? { metadata: promptMeta } : {}),
+        }),
+      )
       if (turnId) {
         events.push(
           buildEvent({

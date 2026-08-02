@@ -13,6 +13,7 @@ import {
   classifyGenericTool,
   detectBinary,
   extractNativeSessionId,
+  extractPromptMetadata,
   gharargahEnv,
   pickString,
 } from "./helpers.js"
@@ -93,11 +94,13 @@ export const cursorDriver: CliAgentDriver = {
     if (name === "beforesubmitprompt" || name === "userpromptsubmit") {
       const salt = pickString(raw, ["generation_id", "request_id"]) ?? "prompt"
       const turnId = `${input.sessionId}:turn:${salt}`
+      const promptMeta = extractPromptMetadata(raw)
       events.push(
         buildEvent({
           ...base,
           kind: "prompt.submitted",
           salt,
+          ...(promptMeta ? { metadata: promptMeta } : {}),
         }),
       )
       events.push(

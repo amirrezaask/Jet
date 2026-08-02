@@ -53,6 +53,11 @@ test.describe("notification center", () => {
       expect(centerBox).toBeTruthy()
       expect(centerBox!.width).toBeGreaterThan(200)
       expect(centerBox!.height).toBeGreaterThan(200)
+      // Drawer must dock on the right, not the left (liquid-glass used to win position).
+      const viewport = page.viewportSize()
+      expect(viewport).toBeTruthy()
+      expect(centerBox!.x + centerBox!.width).toBeGreaterThan(viewport!.width - 8)
+      expect(centerBox!.x).toBeGreaterThan(viewport!.width / 2)
 
       // Session stage stays mounted underneath; center must not be covered.
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")

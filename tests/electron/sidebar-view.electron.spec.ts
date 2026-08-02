@@ -171,6 +171,10 @@ test.describe("sidebar view", () => {
         }, { timeout: 15_000 })
         .toBeGreaterThan(0)
 
+      await expect
+        .poll(() => sessionRow.textContent(), { timeout: 15_000 })
+        .toContain("Sidebar session")
+
       await expectLocatorVisible(
         page.locator("[data-gharargah-sidebar-unread-badge]").first(),
       )
@@ -677,6 +681,80 @@ test.describe("sidebar view", () => {
             .getAttribute("data-gharargah-sidebar-project-filter-active"),
         )
         .toBe("all")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Cursor first prompt upgrades sidebar session title", async () => {
+    const temporaryRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), "gharargah-sidebar-cursor-title-e2e-"),
+    )
+    const binDir = path.join(temporaryRoot, "bin")
+    fs.mkdirSync(binDir)
+    fs.writeFileSync(
+      path.join(binDir, "cursor-agent"),
+      [
+        "#!/bin/sh",
+        "printf 'GHARARGAH_CURSOR_TITLE_READY\\r\\n'",
+        "trap 'exit 0' TERM INT",
+        "while :; do sleep 1; done",
+      ].join("\n"),
+      { mode: 0o755 },
+    )
+    const { app, page } = await launchJet({
+      userDataDir: path.join(temporaryRoot, "user-data"),
+      env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
+    })
+    try {
+      await execCommand(page, "ui.setSessionLayout.sidebar")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+
+      await page.locator("[data-gharargah-sidebar-new-session]").click()
+      await page.locator('[data-gharargah-agent-cli-option="cursor"]').click()
+      await expectSelectorVisible(
+        page,
+        '[data-gharargah-terminal-modal][data-gharargah-session-presentation="inline"]',
+        { timeout: 20_000 },
+      )
+
+      const sessionRow = page.locator("[data-gharargah-sidebar-session]").first()
+      await expectLocatorVisible(sessionRow, { timeout: 20_000 })
+      const sessionId = await sessionRow.getAttribute(
+        "data-gharargah-sidebar-session",
+      )
+      expect(sessionId).toBeTruthy()
+
+      await expect
+        .poll(() => sessionRow.textContent(), { timeout: 10_000 })
+        .toMatch(/Cursor/i)
+
+      const status = await page.evaluate(
+        async ({ sid }) => {
+          const url = new URL(
+            "/api/v1/notifications/ingest",
+            window.location.origin,
+          )
+          url.searchParams.set("provider", "cursor")
+          url.searchParams.set("sessionId", sid!)
+          const response = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              hook_event_name: "beforeSubmitPrompt",
+              conversation_id: "cursor-title-e2e",
+              prompt: "Fix the sidebar title for Cursor",
+            }),
+          })
+          return response.status
+        },
+        { sid: sessionId },
+      )
+      expect(status).toBe(204)
+
+      await expect
+        .poll(() => sessionRow.textContent(), { timeout: 15_000 })
+        .toContain("Fix the sidebar title for Cursor")
     } finally {
       await app.close()
     }

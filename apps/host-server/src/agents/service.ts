@@ -224,6 +224,50 @@ export class AgentTelemetryService {
     const notifications: AgentNotification[] = projected ? [projected] : []
     const notificationResults: IngestResult[] = []
 
+    // First user prompt → durable session title for sidebar / roster.
+    if (event.kind === "prompt.submitted") {
+      const promptRaw = event.metadata?.prompt
+      if (typeof promptRaw === "string") {
+        const title = promptRaw.replace(/\s+/g, " ").trim().slice(0, 72)
+        const binding = this.notifications.bindingForSession(event.sessionId)
+        const current = (binding?.sessionTitle ?? ctx.sessionTitle ?? "").trim()
+        const generic =
+          !current ||
+          /^(cursor|claude|codex|opencode|grok|agent|terminal|cursor agent)$/i.test(
+            current,
+          )
+        if (title && generic) {
+          this.notifications.bindSession({
+            sessionId: event.sessionId,
+            projectId: binding?.projectId ?? event.projectId ?? null,
+            projectName: binding?.projectName ?? ctx.projectName ?? null,
+            sessionTitle: title,
+            provider: event.provider,
+            ptyId: binding?.ptyId ?? null,
+          })
+          // App listens for notification.created.sessionTitle to refresh sidebar.
+          notificationResults.push(
+            this.notifications.ingest({
+              source: "provider-hook",
+              provider: event.provider,
+              type: "provider-notification",
+              title,
+              message: null,
+              sessionId: event.sessionId,
+              projectId: binding?.projectId ?? event.projectId ?? null,
+              projectName: binding?.projectName ?? ctx.projectName ?? null,
+              sessionTitle: title,
+              eventId: `session-title:${event.id}`,
+              providerSessionId: event.nativeSessionId || null,
+              providerEvent: "session-title",
+              requiresAction: false,
+              metadata: { sessionTitleFrom: "prompt" },
+            }),
+          )
+        }
+      }
+    }
+
     // Resume path: surface native session id immediately on session start/resume
     // even when no attention notification is projected.
     if (

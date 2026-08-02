@@ -148,6 +148,14 @@ import {
   subscribeAgentTelemetryVersion,
 } from "./agent-snapshot-store.js"
 import {
+  isGenericAgentSessionTitle,
+  shouldApplyAgentSessionTitle,
+} from "./agent-session-title.js"
+import {
+  applySessionTitleFromAgentEvent,
+  setAgentSessionTitleTabUpdater,
+} from "./agent-session-title-bridge.js"
+import {
   ensureAgentCliProcess,
   applyAgentCliResumeLaunchArgs,
   findExistingAgentCliHistorySession,
@@ -1128,9 +1136,16 @@ export function GharargahApp() {
       if (event.type !== "notification.created") return
       const n = event.notification
       if (n.sessionId && n.sessionTitle) {
-        setAgentSessionTitle(n.sessionId, n.sessionTitle)
         const titledSession = terminalSessionForTab(n.sessionId)
-        if (!titledSession?.customLabel) {
+        if (
+          !titledSession?.customLabel &&
+          shouldApplyAgentSessionTitle(
+            n.sessionTitle,
+            titledSession?.agentTitle,
+            titledSession?.agentId ?? n.provider,
+          )
+        ) {
+          setAgentSessionTitle(n.sessionId, n.sessionTitle)
           workspace.tabRegistry.update(n.sessionId, { label: n.sessionTitle })
         }
       }
@@ -1154,10 +1169,19 @@ export function GharargahApp() {
   }, [atomRegistry, workspace])
 
   useEffect(() => {
+    setAgentSessionTitleTabUpdater((tabId, label) => {
+      workspace.tabRegistry.update(tabId, { label })
+      persistSessionRoster()
+    })
+    return () => setAgentSessionTitleTabUpdater(null)
+  }, [workspace, persistSessionRoster])
+
+  useEffect(() => {
     const agentsApi = window.gharargah?.agents
     if (!agentsApi?.onEvent) return
     return agentsApi.onEvent(payload => {
       applyAgentStreamUnknown(payload)
+      applySessionTitleFromAgentEvent(payload)
       if (
         payload.type === "agents.snapshot" &&
         payload.nativeSessionId &&
@@ -1183,7 +1207,7 @@ export function GharargahApp() {
         )
       }
     })
-  }, [])
+  }, [workspace])
 
   useEffect(() => {
     const persistLatestOnPageHide = () => {
@@ -1292,9 +1316,25 @@ export function GharargahApp() {
   const onTerminalTitleChange = useCallback(
     (tabId: string, title: string) => {
       const session = terminalSessionForTab(tabId)
-      if (session?.customLabel || session?.agentTitle) return
+      if (session?.customLabel) return
+      if (
+        session?.agentId &&
+        !shouldApplyAgentSessionTitle(title, session.agentTitle, session.agentId)
+      ) {
+        return
+      }
+      if (
+        !session?.agentId &&
+        session?.agentTitle &&
+        !isGenericAgentSessionTitle(session.agentTitle)
+      ) {
+        return
+      }
       const existing = workspace.tabRegistry.get(tabId)
       if (!existing || existing.label === title) return
+      if (session?.agentId) {
+        setAgentSessionTitle(tabId, title)
+      }
       workspace.tabRegistry.update(tabId, { label: title })
       if (terminalModalTabIdRef.current === tabId) {
         setTerminalModalTitleTick(tick => tick + 1)
@@ -1460,6 +1500,7 @@ export function GharargahApp() {
           projectName: folder?.root.name ?? null,
           sessionTitle:
             owningSession.customLabel ??
+            owningSession.agentTitle ??
             workspace.tabRegistry.get(owningSessionTabId)?.label ??
             null,
           provider,

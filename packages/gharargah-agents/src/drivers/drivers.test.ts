@@ -245,6 +245,21 @@ describe("codexDriver.normalizeHookEvent", () => {
 })
 
 describe("cursorDriver.normalizeHookEvent", () => {
+  it("attaches prompt text for session title derivation", () => {
+    const events = cursorDriver.normalizeHookEvent(
+      input("cursor", {
+        hook_event_name: "beforeSubmitPrompt",
+        conversation_id: "c1",
+        prompt: "Fix the sidebar title for Cursor",
+      }),
+    )
+    const submitted = events.find(e => e.kind === "prompt.submitted")
+    assert.equal(
+      submitted?.metadata?.prompt,
+      "Fix the sidebar title for Cursor",
+    )
+  })
+
   it("maps supported lifecycle and file edit", () => {
     assert.equal(
       cursorDriver.normalizeHookEvent(
