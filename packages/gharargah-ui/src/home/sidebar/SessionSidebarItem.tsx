@@ -84,23 +84,21 @@ export function SessionSidebarItem({
       ) : (
         <>
           <AgentProviderIcon agent={session.agent} />
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
             <span className="flex items-center gap-1.5">
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate text-xs",
-                  session.unreadCount > 0
-                    ? "font-semibold text-foreground"
-                    : "text-foreground",
+                  "min-w-0 flex-1 truncate text-xs text-sidebar-foreground",
+                  session.unreadCount > 0 && "font-semibold",
                 )}
               >
                 {session.title}
               </span>
-              <span className="shrink-0 text-3xs text-muted-foreground tabular-nums">
+              <span className="shrink-0 text-3xs text-sidebar-foreground/65 tabular-nums">
                 {relative}
               </span>
             </span>
-            <span className="flex items-center gap-1.5 text-3xs text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-3xs text-sidebar-foreground/65">
               <span className="truncate">
                 {showProjectMeta
                   ? `${session.agentLabel} · ${session.projectName}`

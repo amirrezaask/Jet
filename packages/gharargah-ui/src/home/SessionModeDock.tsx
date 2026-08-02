@@ -87,9 +87,10 @@ export function SessionModeDock(props: SessionModeDockProps) {
       <nav
         data-gharargah-session-mode-dock=""
         data-gharargah-session-mode-switch=""
+        data-gharargah-liquid-glass="island"
         aria-label="Session tools"
         className={cn(
-          "pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/80 bg-card/70 px-2 py-1.5 shadow-lg backdrop-blur-xl supports-[backdrop-filter]:bg-card/55",
+          "pointer-events-auto flex items-center gap-1.5 rounded-full px-2 py-1.5",
           className,
         )}
       >
@@ -141,9 +142,9 @@ function DockWell(props: {
           data-active={active ? "" : undefined}
           onClick={onSelect}
           className={cn(
-            "relative flex size-9 items-center justify-center rounded-[0.7rem] border text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--gharargah-motion-fast)] ease-[var(--gharargah-ease-out)] focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40",
+            "relative flex size-9 items-center justify-center rounded-[0.7rem] border text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--gharargah-motion-fast)] ease-[var(--gharargah-ease-out)] focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-[var(--gharargah-press-scale)] disabled:pointer-events-none disabled:opacity-40",
             active
-              ? "border-border bg-card text-foreground shadow-sm"
+              ? "border-border/80 bg-card/80 text-foreground shadow-sm"
               : "border-transparent bg-muted/40 hover:border-border/70 hover:bg-muted/70 hover:text-foreground",
           )}
         >

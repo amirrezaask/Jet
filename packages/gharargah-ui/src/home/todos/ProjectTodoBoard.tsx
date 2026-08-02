@@ -276,9 +276,10 @@ function TodoColumn(props: {
       ref={setNodeRef}
       data-gharargah-todo-column={status}
       data-todo-column-count={todos.length}
+      data-gharargah-liquid-glass="panel"
       className={cn(
-        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-muted",
-        isOver && "border-primary/40 bg-primary/5",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[var(--glass-radius-panel)] border-transparent bg-transparent",
+        isOver && "border-primary/40 ring-1 ring-primary/30",
       )}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/40 px-2.5 py-2">

@@ -183,6 +183,7 @@ export { createContextMenuHost, dispatchContextMenuAt } from "./components/Conte
 export { PromptDialog, type PromptDialogProps } from "./components/PromptDialog.js"
 export { Text, textVariants, type TextProps } from "./components/Text.js"
 export { Surface, surfaceVariants, type SurfaceProps } from "./components/Surface.js"
+export { LiquidGlassFilter } from "./components/LiquidGlassFilter.js"
 export {
   bundledThemes,
   bundledThemeList,

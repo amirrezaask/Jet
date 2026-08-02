@@ -87,11 +87,12 @@ export function ModalEditorTabBar(props: ModalEditorTabBarProps) {
               key={buffer.tabId}
               data-gharargah-modal-editor-tab={buffer.tabId}
               data-active={active ? "" : undefined}
+              data-gharargah-session-tab-pill=""
               className={cn(
-                "group relative flex max-w-48 min-w-0 shrink-0 items-center gap-1 rounded-md border px-2",
+                "group relative flex max-w-48 min-w-0 shrink-0 items-center gap-1 rounded-[0.65rem] border px-2",
                 active
-                  ? "border-border bg-card text-foreground shadow-sm"
-                  : "border-transparent text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
+                  ? "border-border/80 bg-card/75 text-foreground shadow-sm"
+                  : "border-transparent bg-muted/30 text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
               )}
               onMouseDown={event => {
                 if (event.button === 1) {
@@ -229,7 +230,10 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
         {tabBar}
       </SessionHeaderChromePortal>
       {!headerActive ? (
-        <div className="flex h-9 shrink-0 items-stretch border-b bg-muted px-1">
+        <div
+          data-gharargah-liquid-glass="chrome"
+          className="flex h-9 shrink-0 items-stretch border-b border-transparent bg-transparent px-1"
+        >
           {tabBar}
         </div>
       ) : null}
@@ -276,7 +280,8 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
 
       <div
         data-gharargah-modal-editor-status=""
-        className="flex h-7 shrink-0 items-center gap-3 border-t border-border/50 px-3 font-mono text-3xs text-muted-foreground"
+        data-gharargah-liquid-glass="chrome"
+        className="flex h-7 shrink-0 items-center gap-3 border-t border-transparent bg-transparent px-3 font-mono text-3xs text-muted-foreground"
       >
         <span data-gharargah-editor-cursor="">
           Ln {cursor.line}, Col {cursor.column}
@@ -336,7 +341,8 @@ function ModalProjectSearch({
       data-gharargah-editor-project-search=""
       data-gharargah-editor-project-search-drawer=""
       aria-label="Project search"
-      className="flex h-full min-h-0 w-full min-w-0 flex-col border-t border-border bg-background"
+      data-gharargah-liquid-glass="chrome"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col border-t border-transparent bg-transparent"
     >
       <div className="flex h-9 shrink-0 items-center border-b px-2">
         <h2 className="text-xs font-semibold">Search</h2>

@@ -345,7 +345,8 @@ export function CdOverlay({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="overflow-hidden p-0"
+        data-gharargah-liquid-glass="panel"
+        className="overflow-hidden border-transparent bg-transparent p-0 shadow-none"
         motion="instant"
         size="wide"
         showCloseButton={false}

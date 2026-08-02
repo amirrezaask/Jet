@@ -315,7 +315,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   return (
     <section
       data-gharargah-git-workspace=""
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent"
       aria-label="Git workspace"
     >
       <SessionHeaderChromePortal active>
@@ -349,7 +349,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
         <ResizablePanelGroup
           orientation="horizontal"
           data-gharargah-git-content=""
-          className="min-h-0 flex-1 bg-background"
+          className="min-h-0 flex-1 bg-transparent"
         >
           <ResizablePanel defaultSize="31%" minSize="220px" maxSize="48%">
             <FileNavigator
@@ -480,7 +480,8 @@ function GitToolbar(props: {
   return (
     <header
       data-gharargah-git-toolbar=""
-      className="flex h-9 shrink-0 items-center gap-2 border-b bg-background px-2"
+      data-gharargah-liquid-glass="chrome"
+      className="flex h-9 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-2"
     >
       <GitViewTabs
         view={view}
@@ -688,11 +689,13 @@ function GitViewTab(props: { active: boolean; label: string; onSelect: () => voi
       role="tab"
       aria-selected={props.active}
       tabIndex={props.active ? 0 : -1}
+      data-gharargah-session-tab-pill=""
+      data-active={props.active ? "" : undefined}
       className={cn(
-        "h-7 rounded-md border px-2.5 text-2xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+        "h-7 rounded-[0.65rem] border px-2.5 text-2xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
         props.active
-          ? "border-border bg-card text-foreground shadow-sm"
-          : "border-transparent text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
+          ? "border-border/80 bg-card/75 text-foreground shadow-sm"
+          : "border-transparent bg-muted/30 text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
       )}
       onClick={props.onSelect}
     >
@@ -755,8 +758,12 @@ function FileNavigator(props: {
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col bg-card" aria-label="Changed files">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/50 p-2">
+    <aside
+      data-gharargah-liquid-glass="chrome"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0 bg-transparent"
+      aria-label="Changed files"
+    >
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/40 p-2">
         <div className="relative min-w-0 flex-1">
           <label htmlFor="git-filter-files" className="sr-only">Filter changed files</label>
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -929,10 +936,11 @@ function DiffViewer(props: {
     diffContents != null &&
     (diffContents.original.length > 0 || diffContents.modified.length > 0)
   return (
-    <div data-gharargah-git-diff="" className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+    <div data-gharargah-git-diff="" className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
       <div
         data-gharargah-git-diff-toolbar=""
-        className="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-3"
+        data-gharargah-liquid-glass="chrome"
+        className="flex h-10 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-3"
       >
         <FileDiffIcon className="text-muted-foreground" aria-hidden />
         <span className="min-w-0 flex-1 truncate font-mono text-2xs">{selected.path}</span>

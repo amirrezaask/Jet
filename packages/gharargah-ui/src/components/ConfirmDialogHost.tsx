@@ -81,7 +81,10 @@ export function ConfirmDialogHost() {
         if (!next && request) finish(request, false)
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent
+        data-gharargah-liquid-glass="panel"
+        className="border-transparent bg-transparent shadow-none"
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{options?.title ?? ""}</AlertDialogTitle>
           <AlertDialogDescription>{options?.description ?? ""}</AlertDialogDescription>

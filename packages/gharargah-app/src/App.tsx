@@ -62,6 +62,7 @@ import {
   type WhichKeyEntry,
   TooltipProvider,
   ConfirmDialogHost,
+  LiquidGlassFilter,
   Toaster,
   showGharargahToast,
   requestConfirm,
@@ -2965,7 +2966,10 @@ export function GharargahApp() {
               />
             ) : null}
             {appearanceSettings.sessionLayout === "tabs" ? (
-              <div className="flex items-center gap-1 border-b border-border bg-muted/35 pe-2">
+              <div
+                data-gharargah-liquid-glass="chrome"
+                className="flex items-center gap-1 border-b border-transparent bg-transparent pe-2"
+              >
                 <div className="min-w-0 flex-1">
                   <Suspense
                     fallback={
@@ -3142,10 +3146,10 @@ export function GharargahApp() {
                           : window.location.host
                       }
                     />
-                    <SidebarInset className="flex min-h-0 flex-col overflow-hidden">
+                    <SidebarInset className="flex min-h-0 flex-col overflow-hidden bg-transparent">
                       <div
                         ref={setSidebarWorkspaceHost}
-                        className="relative min-h-0 flex-1 overflow-hidden"
+                        className="relative min-h-0 flex-1 overflow-hidden p-0"
                         data-gharargah-sidebar-workspace=""
                       />
                     </SidebarInset>
@@ -3486,6 +3490,7 @@ export function GharargahApp() {
             {showOverlayHost && <OverlayHost />}
           </Suspense>
           <ConfirmDialogHost />
+          <LiquidGlassFilter />
           <Toaster position="bottom-right" />
         </AppShell>
       </TooltipProvider>

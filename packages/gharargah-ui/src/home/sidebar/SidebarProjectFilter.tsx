@@ -54,8 +54,8 @@ const FilterChip = forwardRef<
         "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-3xs font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected
-          ? "border-transparent bg-muted text-foreground"
-          : "border-border/80 bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+          ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
+          : "border-sidebar-border/80 bg-sidebar/40 text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
         className,
       )}
       {...props}

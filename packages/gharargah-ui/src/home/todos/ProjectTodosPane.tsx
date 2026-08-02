@@ -30,7 +30,10 @@ export function ProjectTodosPane(props: ProjectTodosPaneProps) {
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-gharargah-todo-pane>
+    <div
+      className="flex h-full min-h-0 flex-col gap-2 bg-transparent p-2"
+      data-gharargah-todo-pane
+    >
       <div
         ref={liveRef}
         className="sr-only"

@@ -111,10 +111,11 @@ export function SessionCard(props: SessionCardProps) {
         onClick={onClick}
       />
       <Card
+        data-gharargah-liquid-glass="panel"
         className={cn(
-          "gharargah-home-session-card pointer-events-none flex h-full min-h-[5.5rem] flex-col gap-1.5 border-border bg-card py-2.5",
+          "gharargah-home-session-card pointer-events-none flex h-full min-h-[5.5rem] flex-col gap-1.5 border-transparent bg-transparent py-2.5 shadow-none",
           "transition-[border-color,box-shadow,background-color]",
-          "group-hover:border-primary/50 group-hover:bg-card",
+          "group-hover:border-primary/40",
         )}
       >
         <CardHeader className="gap-0 px-3 py-0 [.border-b]:pb-0">

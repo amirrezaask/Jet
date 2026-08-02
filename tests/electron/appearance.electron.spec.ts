@@ -52,10 +52,31 @@ test.describe("electron appearance and terminal-first UX", () => {
           }),
         )
         .toEqual([
-          { opaque: true, blurred: false },
-          { opaque: true, blurred: false },
-          { opaque: true, blurred: true }, // mode dock: frosted pill
+          { opaque: true, blurred: true }, // session modal: liquid glass
+          { opaque: true, blurred: true }, // session header: liquid glass chrome
+          { opaque: true, blurred: true }, // mode dock: liquid glass island
         ])
+
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const dock = document.querySelector(
+              "[data-gharargah-session-mode-dock]",
+            )
+            return dock?.getAttribute("data-gharargah-liquid-glass") ?? null
+          }),
+        )
+        .toBe("island")
+
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            Boolean(
+              document.querySelector("[data-gharargah-liquid-refract-defs]"),
+            ),
+          ),
+        )
+        .toBe(true)
 
       await page.evaluate(async () => {
         await window.__gharargahAgent!.executeCommand("ui.setTheme.glass-blue")

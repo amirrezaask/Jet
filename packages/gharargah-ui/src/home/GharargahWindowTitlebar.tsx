@@ -24,11 +24,14 @@ export function GharargahWindowTitlebar({
   sidebar = null,
 }: GharargahWindowTitlebarProps) {
   const hasTrafficLights = platform === "darwin"
+  // Match floating sidebar container border-box (padding is inside width).
+  const floatingCollapsedWidth =
+    "calc(var(--sidebar-width-icon, 3rem) + 1rem + 2px)"
   const sidebarWidth = sidebar
     ? sidebar.collapsed
       ? hasTrafficLights
-        ? "var(--gharargah-traffic-light-inset)"
-        : "3rem"
+        ? `max(var(--gharargah-traffic-light-inset), ${floatingCollapsedWidth})`
+        : floatingCollapsedWidth
       : `${sidebar.width}px`
     : null
 
@@ -40,14 +43,15 @@ export function GharargahWindowTitlebar({
       data-gharargah-titlebar-sidebar={
         sidebar ? (sidebar.collapsed ? "collapsed" : "expanded") : "none"
       }
-      className="relative z-20 flex h-[var(--gharargah-window-chrome-height)] min-h-[var(--gharargah-window-chrome-height)] w-full shrink-0 select-none items-stretch border-b border-border/70 bg-background text-foreground"
+      data-gharargah-liquid-glass="chrome"
+      className="relative z-20 flex h-[var(--gharargah-window-chrome-height)] min-h-[var(--gharargah-window-chrome-height)] w-full shrink-0 select-none items-stretch border-b border-transparent bg-transparent text-foreground"
       style={dragRegion}
     >
       {sidebar ? (
         <div
           data-gharargah-titlebar-sidebar-segment=""
           className={cn(
-            "flex shrink-0 items-center border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-[var(--gharargah-motion-panel)] ease-[var(--gharargah-ease-drawer)]",
+            "flex shrink-0 items-center border-r border-transparent bg-transparent text-sidebar-foreground transition-[width] duration-[var(--gharargah-motion-panel)] ease-[var(--gharargah-ease-drawer)]",
             sidebar.collapsed && "justify-start",
           )}
           style={{ ...dragRegion, width: sidebarWidth ?? undefined }}

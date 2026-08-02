@@ -68,12 +68,13 @@ export function SessionTerminalTabBar(props: SessionTerminalTabBarProps) {
             <div
               key={item.id}
               data-gharargah-session-terminal-tab-shell={item.id}
+              data-gharargah-session-tab-pill=""
               data-active={selected ? "" : undefined}
               className={cn(
-                "group relative flex max-w-40 min-w-20 shrink-0 items-center gap-0.5 rounded-md border px-1.5",
+                "group relative flex max-w-40 min-w-20 shrink-0 items-center gap-0.5 rounded-[0.65rem] border px-1.5",
                 selected
-                  ? "border-border bg-card text-foreground shadow-sm"
-                  : "border-transparent text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
+                  ? "border-border/80 bg-card/75 text-foreground shadow-sm"
+                  : "border-transparent bg-muted/30 text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
               )}
               onMouseDown={(event: MouseEvent<HTMLDivElement>) => {
                 if (event.button !== 1) return
@@ -171,7 +172,7 @@ export function SessionTerminalWorkspace(
     <section
       data-gharargah-session-terminal-workspace=""
       className={cn(
-        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent",
         className,
       )}
       aria-label="Session terminals"
@@ -180,7 +181,10 @@ export function SessionTerminalWorkspace(
         {tabBar}
       </SessionHeaderChromePortal>
       {!headerActive ? (
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b bg-muted/15 px-2">
+        <div
+          data-gharargah-liquid-glass="chrome"
+          className="flex h-9 shrink-0 items-center gap-1 border-b border-transparent bg-transparent px-2"
+        >
           {tabBar}
         </div>
       ) : null}

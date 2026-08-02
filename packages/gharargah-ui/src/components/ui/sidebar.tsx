@@ -40,6 +40,9 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
   toggleSidebar: () => void
+  /** Temporary full-width overlay while collapsed (hover/focus). Does not pin open. */
+  peek: boolean
+  setPeek: (peek: boolean) => void
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -70,6 +73,7 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
+  const [peek, setPeekState] = React.useState(false)
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -86,9 +90,16 @@ function SidebarProvider({
 
       // This sets the cookie to keep the sidebar state.
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+      if (openState) {
+        setPeekState(false)
+      }
     },
     [setOpenProp, open]
   )
+
+  const setPeek = React.useCallback((next: boolean) => {
+    setPeekState(next)
+  }, [])
 
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {
@@ -116,6 +127,12 @@ function SidebarProvider({
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = open ? "expanded" : "collapsed"
 
+  React.useEffect(() => {
+    if (state === "expanded" || isMobile) {
+      setPeekState(false)
+    }
+  }, [state, isMobile])
+
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
       state,
@@ -125,13 +142,25 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      peek: state === "collapsed" && !isMobile ? peek : false,
+      setPeek,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [
+      state,
+      open,
+      setOpen,
+      isMobile,
+      openMobile,
+      setOpenMobile,
+      toggleSidebar,
+      peek,
+      setPeek,
+    ]
   )
 
   return (
     <SidebarContext.Provider value={contextValue}>
-      <TooltipProvider>
+      <TooltipProvider delayDuration={200}>
         <div
           data-slot="sidebar-wrapper"
           style={
@@ -166,7 +195,95 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const { isMobile, state, openMobile, setOpenMobile, peek, setPeek } =
+    useSidebar()
+  const containerRef = React.useRef<HTMLDivElement | null>(null)
+  const peekRef = React.useRef(peek)
+  peekRef.current = peek
+  const peekLeaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
+  const peekEnterTimer = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
+  const floating = variant === "floating" || variant === "inset"
+  const peekActive = state === "collapsed" && peek && !isMobile
+
+  const clearPeekLeaveTimer = React.useCallback(() => {
+    if (peekLeaveTimer.current != null) {
+      clearTimeout(peekLeaveTimer.current)
+      peekLeaveTimer.current = null
+    }
+  }, [])
+
+  const clearPeekEnterTimer = React.useCallback(() => {
+    if (peekEnterTimer.current != null) {
+      clearTimeout(peekEnterTimer.current)
+      peekEnterTimer.current = null
+    }
+  }, [])
+
+  // Hit-test peek while collapsed — survives header remounts under the cursor
+  // that would otherwise fire spurious mouseleave and cancel the expand.
+  React.useEffect(() => {
+    if (state !== "collapsed" || isMobile) {
+      clearPeekEnterTimer()
+      clearPeekLeaveTimer()
+      return
+    }
+
+    const pointerInside = (clientX: number, clientY: number) => {
+      const el = containerRef.current
+      if (!el) return false
+      const r = el.getBoundingClientRect()
+      return (
+        clientX >= r.left &&
+        clientX <= r.right &&
+        clientY >= r.top &&
+        clientY <= r.bottom
+      )
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (pointerInside(event.clientX, event.clientY)) {
+        clearPeekLeaveTimer()
+        if (peekRef.current) return
+        if (peekEnterTimer.current != null) return
+        // Intentional dwell — longer than compact-rail tooltips (~200–700ms).
+        peekEnterTimer.current = setTimeout(() => {
+          setPeek(true)
+          peekEnterTimer.current = null
+        }, 700)
+        return
+      }
+      clearPeekEnterTimer()
+      if (!peekRef.current) return
+      if (peekLeaveTimer.current != null) return
+      peekLeaveTimer.current = setTimeout(() => {
+        setPeek(false)
+        peekLeaveTimer.current = null
+      }, 160)
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPeek(false)
+    }
+
+    window.addEventListener("pointermove", onPointerMove, { passive: true })
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove)
+      window.removeEventListener("keydown", onKeyDown)
+      clearPeekEnterTimer()
+      clearPeekLeaveTimer()
+    }
+  }, [
+    state,
+    isMobile,
+    setPeek,
+    clearPeekEnterTimer,
+    clearPeekLeaveTimer,
+  ])
 
   if (collapsible === "none") {
     return (
@@ -208,16 +325,22 @@ function Sidebar({
     )
   }
 
+  // While peeking, drop collapsible=icon so menu labels are not CSS-clipped to
+  // size-8 — gap width stays icon-sized via data-peek rules below.
+  const collapsibleAttr =
+    state === "collapsed" && !peekActive ? collapsible : ""
+
   return (
     <div
       className="group peer hidden text-sidebar-foreground md:block"
       data-state={state}
-      data-collapsible={state === "collapsed" ? collapsible : ""}
+      data-collapsible={collapsibleAttr}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
+      data-peek={peekActive ? "true" : "false"}
     >
-      {/* This is what handles the sidebar gap on desktop */}
+      {/* Gap stays at icon width while peeking so main content does not reflow. */}
       <div
         data-slot="sidebar-gap"
         className={cn(
@@ -225,12 +348,19 @@ function Sidebar({
           "group-data-[gharargah-sidebar-resizing]/sidebar-wrapper:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
-          variant === "floating" || variant === "inset"
+          floating
             ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
-            : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)"
+            : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
+          // Peek clears data-collapsible — keep icon gap explicitly.
+          peekActive && floating
+            ? "w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]!"
+            : peekActive
+              ? "w-(--sidebar-width-icon)!"
+              : null,
         )}
       />
       <div
+        ref={containerRef}
         data-slot="sidebar-container"
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[transform,width] duration-[var(--gharargah-motion-panel)] ease-[var(--gharargah-ease-drawer)] md:flex",
@@ -238,18 +368,45 @@ function Sidebar({
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:-translate-x-full"
             : "right-0 group-data-[collapsible=offcanvas]:translate-x-full",
-          // Adjust the padding for floating and inset variants.
-          variant === "floating" || variant === "inset"
-            ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
-            : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
+          floating
+            ? cn(
+                "p-2",
+                peekActive
+                  ? "w-[calc(var(--sidebar-width)+(--spacing(4))+2px)]"
+                  : "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]",
+              )
+            : cn(
+                "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
+                "group-data-[side=left]:border-r group-data-[side=right]:border-l",
+                peekActive && "w-(--sidebar-width)",
+              ),
           className
         )}
+        onFocusCapture={() => {
+          if (state === "collapsed" && !isMobile) setPeek(true)
+        }}
+        onBlurCapture={event => {
+          const next = event.relatedTarget
+          if (
+            next instanceof Node &&
+            event.currentTarget.contains(next)
+          ) {
+            return
+          }
+          if (state === "collapsed" && !isMobile) setPeek(false)
+        }}
         {...props}
       >
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm"
+          data-gharargah-liquid-glass={floating ? "panel" : undefined}
+          className={cn(
+            "flex h-full w-full flex-col bg-sidebar",
+            floating
+              ? "rounded-[var(--glass-radius-panel)] border border-transparent bg-transparent shadow-none"
+              : null,
+          )}
         >
           {children}
         </div>

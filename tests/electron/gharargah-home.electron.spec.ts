@@ -188,6 +188,13 @@ test.describe("gharargah mission home", () => {
         .toBe(4)
       await expectSelectorVisible(page, "[data-gharargah-session-mode-dock]")
       await expect
+        .poll(() =>
+          page
+            .locator("[data-gharargah-session-mode-dock]")
+            .getAttribute("data-gharargah-liquid-glass"),
+        )
+        .toBe("island")
+      await expect
         .poll(async () =>
           page.evaluate(() => {
             const body = document.querySelector(

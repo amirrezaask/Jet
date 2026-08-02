@@ -51,7 +51,12 @@ export function PromptDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="prompt" showCloseButton={false}>
+      <DialogContent
+        data-gharargah-liquid-glass="panel"
+        size="prompt"
+        showCloseButton={false}
+        className="border-transparent bg-transparent shadow-none"
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}

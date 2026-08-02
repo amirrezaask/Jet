@@ -135,11 +135,11 @@ export function UnreadFirstSessionList({
                       })}
               >
                 {row.kind === "header" ? (
-                  <div className="px-2 pt-1 text-3xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="px-2 pt-1 text-3xs font-medium uppercase tracking-wide text-sidebar-foreground/60">
                     {row.label}
                   </div>
                 ) : row.kind === "empty" ? (
-                  <div className="px-2 py-1.5 text-3xs text-muted-foreground">
+                  <div className="px-2 py-1.5 text-3xs text-sidebar-foreground/60">
                     {row.label}
                   </div>
                 ) : (

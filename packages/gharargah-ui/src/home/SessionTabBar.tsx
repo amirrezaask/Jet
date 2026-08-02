@@ -40,7 +40,8 @@ export function SessionTabBar(props: SessionTabBarProps) {
     <div
       data-gharargah-session-tabs
       data-gharargah-session-tabs-position="top"
-      className="flex h-10 w-full min-w-0 shrink-0 justify-start gap-0 overflow-x-auto border-b border-border bg-muted/35"
+      data-gharargah-liquid-glass="chrome"
+      className="flex h-10 w-full min-w-0 shrink-0 justify-start gap-0 overflow-x-auto border-b border-transparent bg-transparent"
     >
       <div
         role="tablist"

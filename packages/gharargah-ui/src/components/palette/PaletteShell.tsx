@@ -142,11 +142,12 @@ export function PaletteShell<T>({
         motion="instant"
         size={size}
         data-gharargah-glass=""
+        data-gharargah-liquid-glass="panel"
         data-gharargah-palette=""
         data-gharargah-palette-fit={fitContent ? "content" : undefined}
         style={fitStyle}
         className={[
-          "max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden border bg-popover p-0 shadow-xl",
+          "max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden border-transparent bg-transparent p-0 shadow-none",
           contentClassName,
         ]
           .filter(Boolean)

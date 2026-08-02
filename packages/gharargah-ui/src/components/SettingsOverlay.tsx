@@ -285,9 +285,10 @@ export function SettingsOverlay({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-gharargah-settings-overlay=""
+        data-gharargah-liquid-glass="panel"
         showCloseButton={false}
         size="wide"
-        className="h-[calc(100dvh-2rem)] gap-0 overflow-hidden p-0 sm:h-[min(44rem,calc(100dvh-2rem))] sm:max-w-[50rem]"
+        className="h-[calc(100dvh-2rem)] gap-0 overflow-hidden border-transparent bg-transparent p-0 shadow-none sm:h-[min(44rem,calc(100dvh-2rem))] sm:max-w-[50rem]"
         style={{
           width: "min(50rem, calc(100vw - 2rem))",
           maxWidth: "min(50rem, calc(100vw - 2rem))",
@@ -307,7 +308,10 @@ export function SettingsOverlay({
           className="min-h-0 flex-1 flex-col gap-0 md:flex-row"
           data-gharargah-settings-tabs=""
         >
-          <aside className="flex shrink-0 flex-col border-b border-border bg-muted/20 md:w-52 md:border-r md:border-b-0">
+          <aside
+            data-gharargah-liquid-glass="chrome"
+            className="flex shrink-0 flex-col border-b border-transparent bg-transparent md:w-52 md:border-r md:border-b-0"
+          >
             <div className="flex h-14 items-center justify-between gap-3 px-4">
               <div className="min-w-0">
                 <div className="text-sm font-semibold tracking-tight text-foreground">

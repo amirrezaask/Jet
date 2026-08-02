@@ -213,10 +213,11 @@ export function GharargahHome(props: GharargahHomeProps) {
                 <Input
                   ref={searchRef}
                   data-gharargah-home-search
+                  data-gharargah-liquid-glass="chrome"
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   placeholder="Search projects or sessions…"
-                  className="h-8 pe-8 ps-8 text-xs"
+                  className="h-8 rounded-full border-transparent bg-transparent pe-8 ps-8 text-xs shadow-none"
                   aria-label="Search projects and sessions"
                   aria-keyshortcuts="/"
                 />
@@ -234,7 +235,8 @@ export function GharargahHome(props: GharargahHomeProps) {
         {groups.length === 0 ? (
           <Empty
             data-gharargah-home-empty
-            className="border border-border/70 bg-card/20"
+            data-gharargah-liquid-glass="panel"
+            className="border-transparent bg-transparent"
           >
             <EmptyHeader>
               <EmptyMedia variant="icon">

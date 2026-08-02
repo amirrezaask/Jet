@@ -34,7 +34,7 @@ export type SessionRuntimeStatus = "starting" | "running" | "exited" | "failed"
 
 /** Clears the floating mode dock; keep in sync with `--gharargah-session-dock-clearance`. */
 const SESSION_STAGE_CLASS =
-  "absolute inset-x-0 top-0 bottom-[length:var(--gharargah-session-dock-clearance,3.75rem)] flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+  "absolute inset-x-0 top-0 bottom-[length:var(--gharargah-session-dock-clearance,3.75rem)] flex min-h-0 min-w-0 flex-col overflow-hidden bg-transparent"
 
 export type TerminalSessionModalProps = {
   sessionId: string
@@ -216,10 +216,11 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   const sessionHeader = (
     <DialogHeader
       data-gharargah-terminal-modal-header=""
+      data-gharargah-liquid-glass="chrome"
       {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
       data-gharargah-window-drag-region={ownsWindowChrome ? "" : undefined}
       className={cn(
-        "flex flex-row shrink-0 items-center gap-2 border-b bg-background px-2.5 py-0 text-left sm:text-left",
+        "flex flex-row shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-2.5 py-0 text-left sm:text-left",
         !ownsWindowChrome && "h-10",
       )}
       style={headerStyle}
@@ -399,12 +400,13 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     return (
       <section
         data-gharargah-glass=""
+        data-gharargah-liquid-glass="panel"
         data-gharargah-terminal-modal
         data-gharargah-session-id={sessionId}
         data-gharargah-session-presentation="inline"
         data-gharargah-session-mode={mode}
         aria-label={displayTitle}
-        className="flex h-full min-h-0 w-full flex-col gap-0 overflow-hidden bg-background"
+        className="flex h-full min-h-0 w-full flex-col gap-0 overflow-hidden bg-transparent"
       >
         {stage}
       </section>
@@ -456,11 +458,12 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           }
         }}
         data-gharargah-glass=""
+        data-gharargah-liquid-glass="panel"
         data-gharargah-terminal-modal
         data-gharargah-session-id={sessionId}
         data-gharargah-session-presentation="modal"
         data-gharargah-session-mode={mode}
-        className="flex flex-col gap-0 overflow-hidden border bg-background p-0 shadow-xl"
+        className="flex flex-col gap-0 overflow-hidden border-transparent bg-transparent p-0 shadow-none"
         aria-describedby={undefined}
         onOpenAutoFocus={event => {
           event.preventDefault()

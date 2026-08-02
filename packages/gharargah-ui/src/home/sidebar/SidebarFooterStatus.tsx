@@ -17,7 +17,7 @@ export function SidebarFooterStatus({
   return (
     <SidebarFooter className="gap-1 border-t border-sidebar-border p-2">
       <div
-        className="flex items-center gap-2 px-1 text-3xs text-muted-foreground"
+        className="flex items-center gap-2 px-1 text-3xs text-sidebar-foreground/70"
         data-gharargah-sidebar-connection=""
       >
         <span

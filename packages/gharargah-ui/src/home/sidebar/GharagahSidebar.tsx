@@ -87,8 +87,8 @@ export function GharagahSidebar({
   onRetry,
   className,
 }: GharagahSidebarProps) {
-  const { state, isMobile, setOpenMobile } = useSidebar()
-  const compact = state === "collapsed" && !isMobile
+  const { state, isMobile, setOpenMobile, peek } = useSidebar()
+  const compact = state === "collapsed" && !peek && !isMobile
   const searchRef = useRef<HTMLInputElement | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [stickyOrder, setStickyOrder] = useState<string[]>([])
@@ -177,8 +177,9 @@ export function GharagahSidebar({
 
   return (
     <Sidebar
+      variant="floating"
       collapsible="icon"
-      className={cn("border-r border-sidebar-border", className)}
+      className={cn(className)}
       style={
         showWindowChrome
           ? ({
@@ -190,6 +191,7 @@ export function GharagahSidebar({
       }
       data-gharargah-mission-sidebar=""
       data-gharargah-sidebar-state={state}
+      data-gharargah-sidebar-peek={peek ? "true" : "false"}
       data-gharargah-sidebar-project-filter-active={projectFilterId ?? "all"}
     >
       <SidebarHeader className="gap-1.5 border-b border-sidebar-border p-2">

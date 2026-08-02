@@ -311,6 +311,13 @@ test.describe("sidebar view", () => {
           monogramCentered: true,
           monogramSized: true,
         })
+      // Top-left (0,0) sits inside a left floating sidebar — park on the right.
+      const awayFromSidebar = async () => {
+        const width = await page.evaluate(() => window.innerWidth)
+        await page.mouse.move(Math.max(240, width - 24), 48)
+      }
+
+      await awayFromSidebar()
       await projectMonogram.hover()
       await expect
         .poll(() =>
@@ -321,6 +328,111 @@ test.describe("sidebar view", () => {
         )
         .toBe(true)
 
+      // Floating island + hover-peek: sustained dwell expands without pinning.
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const peer = document.querySelector(
+              '[data-slot="sidebar"][data-variant="floating"]',
+            )
+            return peer?.getAttribute("data-variant") ?? null
+          }),
+        )
+        .toBe("floating")
+      await awayFromSidebar()
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-gharargah-mission-sidebar]")
+            .getAttribute("data-gharargah-sidebar-peek"),
+        )
+        .toBe("false")
+
+      const sidebarContainer = page.locator(
+        "[data-gharargah-mission-sidebar][data-slot='sidebar-container']",
+      )
+      const peekBox = await sidebarContainer.boundingBox()
+      expect(peekBox).toBeTruthy()
+      await page.mouse.move(peekBox!.x + 12, peekBox!.y + 48, { steps: 8 })
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const container = document.querySelector(
+                "[data-gharargah-mission-sidebar]",
+              )
+              const peer = document.querySelector(
+                '[data-slot="sidebar"][data-variant="floating"]',
+              )
+              return {
+                attr: container?.getAttribute("data-gharargah-sidebar-peek"),
+                peerPeek: peer?.getAttribute("data-peek"),
+              }
+            }),
+          { timeout: 5_000 },
+        )
+        .toEqual({ attr: "true", peerPeek: "true" })
+      await expectSelectorVisible(page, "[data-gharargah-sidebar-search]")
+      // Peek clears collapsible=icon so session titles are not clipped to icon size.
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const peer = document.querySelector(
+              '[data-slot="sidebar"][data-peek="true"]',
+            )
+            const row = document.querySelector(
+              "[data-gharargah-sidebar-session-selected]",
+            )
+            if (!peer || !row) return null
+            const title = row.textContent?.trim() ?? ""
+            return {
+              collapsible: peer.getAttribute("data-collapsible") ?? "",
+              hasTitle: title.length > 2 && !/^SW$/i.test(title),
+              width: row.getBoundingClientRect().width,
+            }
+          }),
+        )
+        .toMatchObject({
+          collapsible: "",
+          hasTitle: true,
+        })
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-gharargah-mission-sidebar]")
+            .getAttribute("data-gharargah-sidebar-state"),
+        )
+        .toBe("collapsed")
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const raw = localStorage.getItem("jet-appearance-settings")
+            if (!raw) return null
+            return (JSON.parse(raw) as { sidebarCollapsed?: boolean })
+              .sidebarCollapsed
+          }),
+        )
+        .toBe(true)
+
+      // Leave the rail — peek clears; still collapsed.
+      await awayFromSidebar()
+      await expect
+        .poll(
+          () =>
+            page
+              .locator("[data-gharargah-mission-sidebar]")
+              .getAttribute("data-gharargah-sidebar-peek"),
+          { timeout: 5_000 },
+        )
+        .toBe("false")
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-gharargah-mission-sidebar]")
+            .getAttribute("data-gharargah-sidebar-state"),
+        )
+        .toBe("collapsed")
+
       await page.getByRole("button", { name: "Toggle sidebar" }).first().click()
       await expect
         .poll(() =>
@@ -329,6 +441,13 @@ test.describe("sidebar view", () => {
             .getAttribute("data-gharargah-sidebar-state"),
         )
         .toBe("expanded")
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-gharargah-mission-sidebar]")
+            .getAttribute("data-gharargah-sidebar-peek"),
+        )
+        .toBe("false")
 
       // Re-select project filter and persist (absolute path)
       await projectChip.click()

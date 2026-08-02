@@ -123,10 +123,14 @@ export function NotificationCenter(props: NotificationCenterProps) {
         side="right"
         showCloseButton={false}
         data-gharargah-notification-center
-        className="w-full gap-0 p-0 sm:max-w-md"
+        data-gharargah-liquid-glass="panel"
+        className="w-full gap-0 border-transparent bg-transparent p-0 shadow-none sm:max-w-md"
         aria-label="Notification center"
       >
-        <SheetHeader className="border-b border-border/60 px-3 py-2 text-left">
+        <SheetHeader
+          data-gharargah-liquid-glass="chrome"
+          className="border-b border-transparent bg-transparent px-3 py-2 text-left"
+        >
           <SheetTitle className="sr-only">Notification center</SheetTitle>
           <div className="flex items-center gap-2">
             <Input
