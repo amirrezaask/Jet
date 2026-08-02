@@ -217,10 +217,19 @@ export class WorkspaceManager {
   }
 
   folderStateForUri(uri: string): WorkspaceFolderState | undefined {
+    // Prefer the deepest (longest) root when folders nest — first-match
+    // would pin child files to a parent project root.
+    let best: WorkspaceFolderState | undefined
+    let bestLen = -1
     for (const entry of this.entries) {
-      if (entry.state.containsUri(uri)) return entry.state
+      if (!entry.state.containsUri(uri)) continue
+      const len = normalizeAbsPath(entry.folder.root.path).length
+      if (len > bestLen) {
+        best = entry.state
+        bestLen = len
+      }
     }
-    return undefined
+    return best
   }
 
   folderStateForPath(path: string): WorkspaceFolderState | undefined {
@@ -228,10 +237,17 @@ export class WorkspaceManager {
     for (const entry of this.entries) {
       if (normalizeAbsPath(entry.folder.root.path) === norm) return entry.state
     }
+    let best: WorkspaceFolderState | undefined
+    let bestLen = -1
     for (const entry of this.entries) {
-      if (entry.state.containsPath(path)) return entry.state
+      if (!entry.state.containsPath(path)) continue
+      const len = normalizeAbsPath(entry.folder.root.path).length
+      if (len > bestLen) {
+        best = entry.state
+        bestLen = len
+      }
     }
-    return undefined
+    return best
   }
 
   allFolderStates(): WorkspaceFolderState[] {

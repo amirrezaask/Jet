@@ -91,6 +91,8 @@ export type OverlayHandlers = {
   onQuickOpenSelect: (path: string, query: string, workspaceId: string | null) => void
   onBufferSelect: (uri: string) => void
   onOpenFile: (uri: string, path: string) => void
+  /** Prefer session project when Quick Open opens from a terminal modal. */
+  defaultQuickOpenWorkspaceId?: string | null
   searchSupported: boolean
   searchScanReady: boolean
 }

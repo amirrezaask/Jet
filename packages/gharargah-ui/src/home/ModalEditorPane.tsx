@@ -2,7 +2,11 @@ import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, 
 import { Command, FileSearch, SearchIcon, XIcon } from "lucide-react"
 import type { LspStatus } from "@gharargah/lsp"
 import { lspStatusIsActive, lspStatusShortLabel } from "@gharargah/lsp/status"
-import { type ListItem, type WorkspaceService } from "@gharargah/workspace"
+import {
+  type ListItem,
+  type WorkspaceFolder,
+  type WorkspaceService,
+} from "@gharargah/workspace"
 import { Button } from "@/components/ui/button.js"
 import {
   ResizableHandle,
@@ -45,6 +49,8 @@ export type ModalEditorPaneProps = {
   onProjectSearchOpenChange?: (open: boolean) => void
   onOpenSearchItem?: (item: ListItem) => void
   onCommandPalette?: () => void
+  /** Scope project search to the session's folder(s); defaults to all roots. */
+  getSearchFolders?: () => WorkspaceFolder[]
   /** When true, buffer tabs render in the session header via portal. */
   headerActive?: boolean
   children: ReactNode
@@ -197,6 +203,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
     onProjectSearchOpenChange,
     onOpenSearchItem,
     onCommandPalette,
+    getSearchFolders,
     headerActive = false,
     children,
   } = props
@@ -270,6 +277,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
             >
               <ModalProjectSearch
                 workspace={workspace}
+                getSearchFolders={getSearchFolders}
                 onOpenItem={onOpenSearchItem}
                 onDismiss={() => onProjectSearchOpenChange?.(false)}
               />
@@ -306,10 +314,12 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
 
 function ModalProjectSearch({
   workspace,
+  getSearchFolders,
   onOpenItem,
   onDismiss,
 }: {
   workspace: WorkspaceService
+  getSearchFolders?: () => WorkspaceFolder[]
   onOpenItem: (item: ListItem) => void
   onDismiss: () => void
 }) {
@@ -362,6 +372,7 @@ function ModalProjectSearch({
           <SearchLocationList
             listId={listIdRef.current}
             workspace={workspace}
+            getSearchFolders={getSearchFolders}
             onOpenItem={onOpenItem}
             onDismiss={onDismiss}
             autoFocus

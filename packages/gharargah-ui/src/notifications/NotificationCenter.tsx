@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import type { AppNotification } from "@gharargah/shared"
-import { Bell, CheckCheck, LoaderCircle } from "lucide-react"
+import { Bell, CheckCheck, LoaderCircle, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import { Input } from "@/components/ui/input.js"
 import { ScrollArea } from "@/components/ui/scroll-area.js"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet.js"
 import { groupNotificationsByTime } from "./group-by-time.js"
 import { NotificationItem } from "./NotificationItem.js"
 
@@ -33,6 +28,12 @@ export type NotificationCenterProps = {
   onSelectedIdChange?: (id: string | null) => void
 }
 
+/**
+ * Body-portaled drawer — not Radix Sheet/Dialog.
+ * Session stage is already a modal Dialog; a nested Dialog sheet opens then
+ * immediately dismisses (or stays inert under the stage). Plain portal + z-[60]
+ * stacks above the stage reliably.
+ */
 export function NotificationCenter(props: NotificationCenterProps) {
   const {
     open,
@@ -54,6 +55,8 @@ export function NotificationCenter(props: NotificationCenterProps) {
   } = props
 
   const listRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLElement>(null)
   const [localSelected, setLocalSelected] = useState<string | null>(null)
   const activeSelected = selectedId ?? localSelected
   const setSelected = (id: string | null) => {
@@ -73,8 +76,42 @@ export function NotificationCenter(props: NotificationCenterProps) {
 
   useEffect(() => {
     if (!open) return
+    const frame = requestAnimationFrame(() => searchRef.current?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [open])
+
+  // Session stage Dialog (Radix modal) marks other body portals inert/aria-hidden.
+  // Keep this layer interactive and visible while open.
+  useEffect(() => {
+    if (!open) return
+    const layer = document.querySelector<HTMLElement>(
+      "[data-gharargah-notification-layer]",
+    )
+    if (!layer) return
+    const unlock = () => {
+      if (layer.getAttribute("aria-hidden") != null) {
+        layer.removeAttribute("aria-hidden")
+      }
+      if (layer.getAttribute("data-aria-hidden") != null) {
+        layer.removeAttribute("data-aria-hidden")
+      }
+      if (layer.inert) layer.inert = false
+    }
+    unlock()
+    const observer = new MutationObserver(unlock)
+    observer.observe(layer, {
+      attributes: true,
+      attributeFilter: ["aria-hidden", "data-aria-hidden", "inert"],
+    })
+    return () => observer.disconnect()
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
         onOpenChange(false)
         return
       }
@@ -103,8 +140,9 @@ export function NotificationCenter(props: NotificationCenterProps) {
         onDismiss(activeSelected)
       }
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    // Capture so session Dialog Escape handler cannot swallow close.
+    window.addEventListener("keydown", onKey, true)
+    return () => window.removeEventListener("keydown", onKey, true)
   }, [
     open,
     flatIds,
@@ -117,23 +155,40 @@ export function NotificationCenter(props: NotificationCenterProps) {
     onDismiss,
   ])
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
+  if (!open || typeof document === "undefined") return null
+
+  return createPortal(
+    <div
+      data-gharargah-notification-layer
+      className="pointer-events-none fixed inset-0 z-[100]"
+    >
+      <button
+        type="button"
+        data-gharargah-notification-overlay
+        aria-label="Dismiss notification center"
+        className="pointer-events-auto absolute inset-0 bg-black/50"
+        onClick={() => onOpenChange(false)}
+      />
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Notification center"
         data-gharargah-notification-center
         data-gharargah-liquid-glass="panel"
-        className="w-full gap-0 border-transparent bg-transparent p-0 shadow-none sm:max-w-md"
-        aria-label="Notification center"
+        data-state="open"
+        // z above session Dialog; pointer-events auto beats Radix body lock.
+        className="pointer-events-auto absolute inset-y-0 right-0 z-[1] flex h-full w-full max-w-md flex-col gap-0 border-l border-transparent bg-background shadow-lg"
+        onClick={e => e.stopPropagation()}
       >
-        <SheetHeader
+        <h2 className="sr-only">Notification center</h2>
+        <div
           data-gharargah-liquid-glass="chrome"
-          className="border-b border-transparent bg-transparent px-3 py-2 text-left"
+          className="flex shrink-0 flex-col gap-1.5 border-b border-transparent bg-transparent px-3 py-2 text-left"
         >
-          <SheetTitle className="sr-only">Notification center</SheetTitle>
           <div className="flex items-center gap-2">
             <Input
+              ref={searchRef}
               data-gharargah-notification-search
               value={query}
               onChange={e => onQueryChange(e.target.value)}
@@ -152,8 +207,18 @@ export function NotificationCenter(props: NotificationCenterProps) {
               <CheckCheck className="size-3.5" />
               Mark all as read
             </Button>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="size-8 shrink-0"
+              aria-label="Close notification center"
+              onClick={() => onOpenChange(false)}
+            >
+              <XIcon className="size-4" />
+            </Button>
           </div>
-        </SheetHeader>
+        </div>
 
         <div className="relative min-h-0 flex-1">
           {error ? (
@@ -225,7 +290,8 @@ export function NotificationCenter(props: NotificationCenterProps) {
             </div>
           </ScrollArea>
         </div>
-      </SheetContent>
-    </Sheet>
+      </aside>
+    </div>,
+    document.body,
   )
 }

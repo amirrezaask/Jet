@@ -25,6 +25,50 @@ async function openCenter(page: import("./_launch.js").ShellDriver): Promise<voi
 }
 
 test.describe("notification center", () => {
+  test("opens above an active session stage", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await openNewAgentSession(page)
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+        timeout: 20_000,
+      })
+
+      await expectLocatorVisible(
+        page.locator(
+          "[data-gharargah-terminal-modal-header] [data-gharargah-notification-bell]",
+        ),
+      )
+      await page
+        .locator(
+          "[data-gharargah-terminal-modal-header] [data-gharargah-notification-bell]",
+        )
+        .click()
+      await expectSelectorVisible(page, "[data-gharargah-notification-center]", {
+        timeout: 10_000,
+      })
+      const centerBox = await page
+        .locator("[data-gharargah-notification-center]")
+        .boundingBox()
+      expect(centerBox).toBeTruthy()
+      expect(centerBox!.width).toBeGreaterThan(200)
+      expect(centerBox!.height).toBeGreaterThan(200)
+
+      // Session stage stays mounted underneath; center must not be covered.
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expect
+        .poll(async () =>
+          page.locator("[data-gharargah-notification-center]").evaluate(el => {
+            const style = window.getComputedStyle(el)
+            return style.visibility !== "hidden" && style.opacity !== "0"
+          }),
+        )
+        .toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("ingest creates unread badge, panel, and open-session flow", async () => {
     const { app, page } = await launchJet()
     try {

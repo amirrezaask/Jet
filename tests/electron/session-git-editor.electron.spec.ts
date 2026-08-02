@@ -305,6 +305,67 @@ test.describe("session Git and editor workspaces", () => {
       fixture.remove()
     }
   })
+
+  test("editor mode activates the session project root, not another catalog root", async () => {
+    const fixture = createGitFixture()
+    const { app, page } = await launchJet(fixture.workspace)
+    try {
+      await page.evaluate(async ({ primary, secondary }) => {
+        await window.__gharargahAgent!.addWorkspace(secondary)
+        await window.__gharargahAgent!.openWorkspace(secondary)
+        void primary
+      }, { primary: fixture.workspace, secondary: fixture.secondWorkspace })
+      await expect
+        .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
+        .toBe(2)
+      await expect
+        .poll(async () => {
+          const active = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace)
+          return active ? realpathSync(active) : null
+        })
+        .toBe(realpathSync(fixture.secondWorkspace))
+
+      // Session cwd = secondary.
+      await execCommand(page, "terminal.new")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+
+      // Steer active folder back to primary while the secondary session stays open.
+      await page.evaluate(async primary => {
+        await window.__gharargahAgent!.openWorkspace(primary)
+      }, fixture.workspace)
+      await expect
+        .poll(async () => {
+          const active = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace)
+          return active ? realpathSync(active) : null
+        })
+        .toBe(realpathSync(fixture.workspace))
+
+      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
+      await expectSelectorVisible(page, "[data-gharargah-modal-editor]")
+
+      // Editor must re-activate the session's project, not the stale catalog active.
+      await expect
+        .poll(async () => {
+          const active = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace)
+          return active ? realpathSync(active) : null
+        })
+        .toBe(realpathSync(fixture.secondWorkspace))
+
+      await page.getByRole("button", { name: "Quick Open" }).click()
+      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectLocatorVisible(
+        page.getByRole("button", { name: "Only other-workspace" }),
+      )
+      await expect
+        .poll(() =>
+          page.getByRole("button", { name: "Only other-workspace" }).getAttribute("aria-pressed"),
+        )
+        .toBe("true")
+    } finally {
+      await app.close()
+      fixture.remove()
+    }
+  })
 })
 
 type GitFixture = {
@@ -329,6 +390,12 @@ function createGitFixture(): GitFixture {
   writeFileSync(join(workspace, "README.md"), "# Gharargah E2E\n")
   git(workspace, "add", ".")
   git(workspace, "commit", "-m", "Initial fixture")
+
+  git(secondWorkspace, "init", "-b", "main")
+  git(secondWorkspace, "config", "user.name", "Gharargah E2E")
+  git(secondWorkspace, "config", "user.email", "gharargah-e2e@example.com")
+  git(secondWorkspace, "add", ".")
+  git(secondWorkspace, "commit", "-m", "Secondary fixture")
   execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" })
   git(workspace, "remote", "add", "origin", remote)
   git(workspace, "push", "-u", "origin", "main")

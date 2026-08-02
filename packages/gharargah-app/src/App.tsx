@@ -523,9 +523,43 @@ export function GharargahApp() {
       const folder = workspace.folders.find(
         candidate => candidate.root.uri === resolvedRootUri,
       )
-      if (folder) workspace.setActiveFolder(folder.id)
+      if (!folder) return
+      workspace.setActiveFolder(folder.id)
+      // Keep host index/watch rooted on the session project, not catalog[0].
+      if (window.gharargah?.workspace)
+        void window.gharargah.workspace.activate(folder.root.uri)
     },
     [workspace],
+  )
+
+  const folderForSessionTab = useCallback(
+    (tabId: string | null): WorkspaceFolder | null => {
+      if (!tabId) return null
+      const cwdRootUri = resolveWorkspaceRootUri(
+        terminalCwdForTab(tabId),
+        workspace.folders,
+      )
+      if (!cwdRootUri) return null
+      return (
+        workspace.folders.find(folder => folder.root.uri === cwdRootUri) ?? null
+      )
+    },
+    [workspace],
+  )
+
+  const setSessionModeSynced = useCallback(
+    (mode: SessionDialogMode, sessionTabId?: string | null) => {
+      const tabId =
+        sessionTabId !== undefined
+          ? sessionTabId
+          : terminalModalTabIdRef.current
+      const folder = folderForSessionTab(tabId)
+      if (folder && folder.root.uri !== workspace.root?.uri) {
+        activateProject(folder.root.uri)
+      }
+      setSessionMode(mode)
+    },
+    [activateProject, folderForSessionTab, workspace.root?.uri],
   )
 
   const getActiveTerminalTabId = useCallback((): string | null => {
@@ -550,12 +584,13 @@ export function GharargahApp() {
           : requestedMode
       // Modal view owns spawn — release warm-resume deferral for this tab.
       releaseActiveAgentWarmResumeToForeground(tabId)
+      terminalModalTabIdRef.current = tabId
       setTerminalModalPanelId(panelId)
       setTerminalModalTabId(tabId)
-      setSessionMode(resolvedMode)
+      setSessionModeSynced(resolvedMode, tabId)
       notificationsRef.current.setViewingSessionId(tabId)
     },
-    [],
+    [setSessionModeSynced],
   )
 
   const closeTerminalModal = useCallback(() => {
@@ -936,7 +971,7 @@ export function GharargahApp() {
           })
         }
         setFocusedPanel(panel)
-        setSessionMode("editor")
+        setSessionModeSynced("editor")
         commitTree(tree, panel)
         ensureSessionModalOpen(workspace.resolveRootUriForFile(uri))
         if (line != null) {
@@ -967,6 +1002,7 @@ export function GharargahApp() {
       workspace,
       editorPanelRef,
       setFocusedPanel,
+      setSessionModeSynced,
       ensureSessionModalOpen,
       ensureLspForFile,
     ],
@@ -1365,7 +1401,7 @@ export function GharargahApp() {
       const untitledUri = workspace.openUntitledInPanel(tree, panel, { label: name })
       setPendingInitialContent(untitledUri, content)
       setFocusedPanel(panel)
-      setSessionMode("editor")
+      setSessionModeSynced("editor")
       commitTree(tree, panel)
       ensureSessionModalOpen(workspace.root?.uri ?? null)
     },
@@ -1375,6 +1411,7 @@ export function GharargahApp() {
       commitTree,
       editorPanelRef,
       setFocusedPanel,
+      setSessionModeSynced,
       ensureSessionModalOpen,
     ],
   )
@@ -1829,8 +1866,10 @@ export function GharargahApp() {
         getTerminalExplorerGroups,
         focusTerminalTab,
         openTerminalModal,
-        setSessionMode,
-        getContextFolder: () => workspace.manager.activeFolder,
+        setSessionMode: setSessionModeSynced,
+        getContextFolder: () =>
+          folderForSessionTab(terminalModalTabIdRef.current) ??
+          workspace.manager.activeFolder,
         getSearchSupported: () => searchSupported,
         goHome,
         openSessionPicker: (rootUri: string) => {
@@ -1863,6 +1902,8 @@ export function GharargahApp() {
       getTerminalExplorerGroups,
       focusTerminalTab,
       openTerminalModal,
+      setSessionModeSynced,
+      folderForSessionTab,
       handlePanelEvent,
       openFileInEditor,
       searchSupported,
@@ -2580,7 +2621,7 @@ export function GharargahApp() {
             if (restoredMode === "agent" && !isCliAgent) {
               restoredMode = "terminal"
             }
-            setSessionMode(restoredMode)
+            setSessionModeSynced(restoredMode)
           }
         }
 
@@ -2599,6 +2640,7 @@ export function GharargahApp() {
     persistSessionRoster,
     tabStore,
     prefetchAgentCliHistoryForFolders,
+    setSessionModeSynced,
   ])
 
   useEffect(() => {
@@ -2756,6 +2798,10 @@ export function GharargahApp() {
         openFileInEditor(uri, path)
         setOpenFileOpen(false)
       },
+      defaultQuickOpenWorkspaceId:
+        folderForSessionTab(terminalModalTabId)?.id ??
+        workspace.manager.activeFolder?.id ??
+        null,
       searchSupported,
       searchScanReady,
     }),
@@ -2765,6 +2811,8 @@ export function GharargahApp() {
       focusTerminalTab,
       executeCommand,
       handleFolderPickerSelect,
+      folderForSessionTab,
+      terminalModalTabId,
       openWorkspaceFolder,
       agentCliPickerRootUri,
       resetAppearanceWithToast,
@@ -3157,24 +3205,6 @@ export function GharargahApp() {
                 </SidebarProvider>
               ) : null}
 
-            <NotificationCenter
-              open={notifications.open}
-              onOpenChange={notifications.setOpen}
-              items={notifications.items}
-              query={notifications.query}
-              onQueryChange={notifications.setQuery}
-              loading={notifications.loading}
-              error={notifications.error}
-              onMarkAllRead={() => void notifications.markAllVisibleRead()}
-              isSessionAvailable={id => Boolean(terminalSessionForTab(id))}
-              onOpenNotification={n => void openNotificationSession(n)}
-              onMarkRead={id => void notifications.markRead(id)}
-              onMarkUnread={id => void notifications.markUnread(id)}
-              onDismiss={id => void notifications.dismiss(id)}
-              onAcknowledge={id => void notifications.acknowledge(id)}
-              selectedId={notifications.selectedId}
-              onSelectedIdChange={notifications.setSelectedId}
-            />
             <div
               id="gharargah-notification-live"
               className="sr-only"
@@ -3192,6 +3222,13 @@ export function GharargahApp() {
                     open
                     presentation={isInlineWorkspace ? "inline" : "modal"}
                     windowChrome={desktopWindowChrome}
+                    headerEnd={
+                      <NotificationBell
+                        counts={notifications.counts}
+                        onClick={() => notifications.setOpen(true)}
+                        className="size-7 shrink-0 rounded-md"
+                      />
+                    }
                     onOpenChange={open => {
                       if (!open) closeTerminalModal()
                     }}
@@ -3269,7 +3306,7 @@ export function GharargahApp() {
                   if (mode === "agent" && !canShowAgent) {
                     return
                   }
-                  setSessionMode(mode)
+                  setSessionModeSynced(mode)
                 }}
                   onOpenInApp={(rootUri, appId) =>
                     void openProjectInApp(rootUri, appId)
@@ -3305,6 +3342,12 @@ export function GharargahApp() {
                     workspace={workspace}
                     lspStatus={lspStatus}
                     headerActive={sessionMode === "editor"}
+                    getSearchFolders={() => {
+                      const folder = folderForSessionTab(terminalModalTabId)
+                      if (folder) return [folder]
+                      const active = workspace.manager.activeFolder
+                      return active ? [active] : workspace.folders
+                    }}
                     onActivateBuffer={tabId => {
                       if (!editorPanelId) return
                         handlePanelEvent({
@@ -3449,6 +3492,26 @@ export function GharargahApp() {
               />,
                 )
               : null}
+
+            {/* After session modal so portal stacks above stage Dialog when z equal. */}
+            <NotificationCenter
+              open={notifications.open}
+              onOpenChange={notifications.setOpen}
+              items={notifications.items}
+              query={notifications.query}
+              onQueryChange={notifications.setQuery}
+              loading={notifications.loading}
+              error={notifications.error}
+              onMarkAllRead={() => void notifications.markAllVisibleRead()}
+              isSessionAvailable={id => Boolean(terminalSessionForTab(id))}
+              onOpenNotification={n => void openNotificationSession(n)}
+              onMarkRead={id => void notifications.markRead(id)}
+              onMarkUnread={id => void notifications.markUnread(id)}
+              onDismiss={id => void notifications.dismiss(id)}
+              onAcknowledge={id => void notifications.acknowledge(id)}
+              selectedId={notifications.selectedId}
+              onSelectedIdChange={notifications.setSelectedId}
+            />
             </div>
             {editorPanelId ? (
               <Suspense fallback={null}>

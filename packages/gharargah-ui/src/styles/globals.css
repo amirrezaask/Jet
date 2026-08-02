@@ -1931,6 +1931,28 @@ body,
     backdrop-filter: blur(8px);
   }
 
+  /* Notification drawer — above session stage; solid fill so it never "vanishes". */
+  [data-gharargah-notification-layer] {
+    z-index: 100 !important;
+  }
+
+  [data-gharargah-notification-center] {
+    border: 1px solid var(--glass-rim) !important;
+    background: var(--background) !important;
+    color: var(--foreground);
+    -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate))
+      brightness(var(--glass-brightness));
+    backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate))
+      brightness(var(--glass-brightness));
+    box-shadow:
+      0 1px 0 color-mix(in srgb, white 7%, transparent) inset,
+      -12px 0 40px -20px rgb(0 0 0 / 45%) !important;
+  }
+
+  .dark [data-gharargah-notification-center] {
+    background: color-mix(in srgb, var(--card) 92%, var(--background)) !important;
+  }
+
   /* Terminal-first ADE stage: quiet chrome around an uninterrupted work surface. */
   [data-gharargah-terminal-modal] {
     border: 1px solid color-mix(in srgb, var(--border) 82%, transparent) !important;

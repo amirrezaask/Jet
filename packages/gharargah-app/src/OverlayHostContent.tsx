@@ -40,7 +40,11 @@ export default function OverlayHostContent() {
           onOpenChange={v => handlers.setOverlayOpen("quickOpen", v)}
           scanReady={handlers.searchScanReady}
           workspaces={workspaceFolders.map(folder => ({ id: folder.id, name: folder.root.name }))}
-          defaultWorkspaceId={workspace.manager.activeFolder?.id ?? null}
+          defaultWorkspaceId={
+            handlers.defaultQuickOpenWorkspaceId ??
+            workspace.manager.activeFolder?.id ??
+            null
+          }
           onSearch={handlers.onQuickOpenSearch}
           onSelect={handlers.onQuickOpenSelect}
         />

@@ -41,6 +41,15 @@ describe("WorkspaceManager", () => {
     assert.equal(state.root.uri, rootUri)
   })
 
+  it("folderStateForUri prefers deepest root when folders nest", async () => {
+    const mgr = new WorkspaceManager(mockFs())
+    await mgr.addFolder("/proj")
+    await mgr.addFolder("/proj/child")
+    const state = mgr.folderStateForUri(pathToFileUri("/proj/child/src/a.ts"))
+    assert.ok(state)
+    assert.equal(state.root.path, "/proj/child")
+  })
+
   it("removeFolder rejects when dirty files exist", async () => {
     const mgr = new WorkspaceManager(mockFs())
     const folder = await mgr.addFolder("/proj/a")
