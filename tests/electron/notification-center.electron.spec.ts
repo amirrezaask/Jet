@@ -28,7 +28,7 @@ test.describe("notification center", () => {
   test("opens above an active session stage", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
         timeout: 20_000,
@@ -77,7 +77,7 @@ test.describe("notification center", () => {
   test("ingest creates unread badge, panel, and open-session flow", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       await expectSelectorVisible(page, "[data-gharargah-notification-bell]")
 
       await openNewAgentSession(page)
@@ -173,7 +173,7 @@ test.describe("notification center", () => {
   test("permission resolve + mark-all-read clears unread list", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       await openNewAgentSession(page)
       await closeOverlays(page)
 
@@ -256,7 +256,7 @@ test.describe("notification center", () => {
   test("hook + osc dedupe; refresh keeps counts", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       await openNewAgentSession(page)
       await closeOverlays(page)
 
@@ -340,7 +340,7 @@ test.describe("notification center", () => {
   test("two-finger horizontal scroll dismisses row", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       await openNewAgentSession(page)
       await closeOverlays(page)
 

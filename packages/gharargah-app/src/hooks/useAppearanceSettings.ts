@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   defaultThemeId,
   defaultThemeIdForScheme,
@@ -25,7 +25,7 @@ const MAX_SIDEBAR_WIDTH = 480
 export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   themeId: defaultThemeId,
   fontSize: DEFAULT_FONT_SIZE,
-  sessionLayout: "cards",
+  sessionLayout: "sidebar",
   sidebarCollapsed: false,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   sidebarProjectFilterPath: null,
@@ -41,9 +41,9 @@ function normalizeThemeId(value: unknown): string {
   return getThemeById(typeof value === "string" ? value : null).id
 }
 
-export function normalizeSessionLayout(value: unknown): SessionLayout {
-  if (value === "tabs" || value === "sidebar") return value
-  return "cards"
+export function normalizeSessionLayout(_value: unknown): SessionLayout {
+  // Legacy localStorage may hold "cards" | "tabs" — always coerce to sidebar.
+  return "sidebar"
 }
 
 function normalizeProjectFilterPath(value: unknown): string | null {
@@ -159,9 +159,20 @@ export function useAppearanceSettings() {
     syncNativeChromeFromTheme()
   }, [colorScheme, activeTheme])
 
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    persistAppearanceSettings(appearanceSettings)
     applyAppearanceCss(appearanceSettings)
+    if (persistTimerRef.current != null) clearTimeout(persistTimerRef.current)
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null
+      persistAppearanceSettings(appearanceSettings)
+    }, 250)
+    return () => {
+      if (persistTimerRef.current == null) return
+      clearTimeout(persistTimerRef.current)
+      persistTimerRef.current = null
+      persistAppearanceSettings(appearanceSettings)
+    }
   }, [appearanceSettings])
 
   const handleZoom = useCallback((delta: number) => {

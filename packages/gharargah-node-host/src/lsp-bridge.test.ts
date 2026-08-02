@@ -52,6 +52,18 @@ describe("LspFramingDecoder", () => {
     assert.equal(messages.length, 1)
     assert.equal(JSON.parse(messages[0]!).x.length, 10)
   })
+
+  it("resets on absurd Content-Length instead of buffering forever", () => {
+    const decoder = new LspFramingDecoder()
+    const header = Buffer.from("Content-Length: 999999999\r\n\r\n", "utf8")
+    const messages = decoder.feed(header)
+    assert.equal(messages.length, 0)
+    // Subsequent valid frame still works after reset.
+    const body = JSON.stringify({ ok: true })
+    const next = decoder.feed(Buffer.from(encodeLspMessage(body), "utf8"))
+    assert.equal(next.length, 1)
+    assert.equal(JSON.parse(next[0]!).ok, true)
+  })
 })
 
 describe("startLspSession", () => {

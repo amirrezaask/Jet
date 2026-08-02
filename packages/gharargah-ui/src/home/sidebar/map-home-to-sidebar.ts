@@ -1,5 +1,7 @@
-import type { HomeProjectGroup } from "../GharargahHome.js"
-import type { HomeTerminalEntry } from "../ProjectSection.js"
+import type {
+  HomeProjectGroup,
+  HomeTerminalEntry,
+} from "../home-session-types.js"
 import {
   detectSessionProvider,
   mapRuntimeStatusToCardStatus,

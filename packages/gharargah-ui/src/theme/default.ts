@@ -1,6 +1,5 @@
 import type { GharargahTheme } from "@gharargah/shared"
 import type { ColorScheme } from "./theme-palette.js"
-import { glassThemeList, glassThemes } from "./glass.js"
 import {
   defaultDark,
   defaultLight,
@@ -15,13 +14,9 @@ export const defaultThemeId = defaultDark.id
 
 export const bundledThemes: Record<string, GharargahTheme> = {
   ...shadcnThemes,
-  ...glassThemes,
 }
 
-export const bundledThemeList: GharargahTheme[] = [
-  ...shadcnThemeList,
-  ...glassThemeList,
-]
+export const bundledThemeList: GharargahTheme[] = [...shadcnThemeList]
 
 export function getThemeById(id: string | null | undefined): GharargahTheme {
   if (!id) return defaultDark
@@ -46,16 +41,11 @@ export function themeFamilyForId(id: string | null | undefined): string {
   return getThemeById(id).family ?? "Default"
 }
 
-/** Glass themes stay dark; Default family flips between dark/light siblings. */
+/** Default family flips between dark/light siblings. */
 export function siblingThemeForScheme(id: string, scheme: ColorScheme): GharargahTheme {
   const current = getThemeById(id)
   if (current.family === "Default") {
     return scheme === "light" ? defaultLight : defaultDark
   }
   return current
-}
-
-/** True when theme should enable optical-glass home / modal chrome. */
-export function themeUsesGlassSurface(theme: GharargahTheme): boolean {
-  return theme.family === "Glass"
 }

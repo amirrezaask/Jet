@@ -3,7 +3,7 @@ import { expectLocatorCount } from "../shell/assert.js"
 
 import {
   execCommand,
-  ensureCardsLayout,
+  ensureSidebarLayout,
   launchJet,
   openSettings,
   openThemePicker,
@@ -15,7 +15,7 @@ test.describe("electron shell settings", () => {
     try {
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
-      await ensureCardsLayout(page)
+      await ensureSidebarLayout(page)
 
       for (const theme of [
         { id: "default-dark", scheme: "dark" },
@@ -99,7 +99,7 @@ test.describe("electron shell settings", () => {
         expect(contrast.sidebar).toBeGreaterThanOrEqual(7)
         expect(contrast.primaryMatchesSidebar).toBe(true)
 
-        const search = page.locator("[data-gharargah-home-search]")
+        const search = page.locator("[data-gharargah-sidebar-search-input]")
         await search.focus()
         await expect
           .poll(() => search.evaluate(element => getComputedStyle(element).boxShadow))
@@ -119,17 +119,22 @@ test.describe("electron shell settings", () => {
     try {
       await page.evaluate(() => localStorage.clear())
       await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
-      await execCommand(page, "ui.setTheme.glass-blue")
+      await execCommand(page, "ui.setTheme.default-light")
       await openSettings(page)
       await page
         .locator("[data-gharargah-settings-category='appearance']")
         .click()
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 5)
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 2)
 
-      await page.locator("[data-gharargah-theme-option='glass-red']").click()
+      await page.locator("[data-gharargah-theme-option='default-dark']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
-        .toBe("glass-red")
+        .toBe("default-dark")
+
+      await page.locator("[data-gharargah-theme-option='default-light']").click()
+      await expect
+        .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
+        .toBe("default-light")
 
       await execCommand(page, "ui.resetAppearance")
       await expect
@@ -165,42 +170,42 @@ test.describe("electron shell settings", () => {
       await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
       await openSettings(page)
 
-      const general = page.locator(
-        "[data-gharargah-settings-category='general']",
-      )
       const appearance = page.locator(
         "[data-gharargah-settings-category='appearance']",
       )
-      await expect.poll(() => general.getAttribute("aria-selected")).toBe("true")
-      await general.focus()
-      await page.keyboard.press("ArrowDown")
+      const notifications = page.locator(
+        "[data-gharargah-settings-category='notifications']",
+      )
       await expect.poll(() => appearance.getAttribute("aria-selected")).toBe("true")
+      await appearance.focus()
+      await page.keyboard.press("ArrowDown")
+      await expect
+        .poll(() => notifications.getAttribute("aria-selected"))
+        .toBe("true")
       await page
-        .locator("[data-gharargah-settings-panel='appearance']")
+        .locator("[data-gharargah-settings-panel='notifications']")
         .waitFor({ state: "visible" })
 
-      await general.click()
-      await page
-        .locator("[data-gharargah-session-layout-option='tabs']")
-        .click()
+      await appearance.click()
+      await expectLocatorCount(
+        page.locator("[data-gharargah-session-layout-option]"),
+        0,
+      )
       await expect
         .poll(() =>
           page.evaluate(() => {
             const raw = localStorage.getItem("jet-appearance-settings")
-            return raw ? JSON.parse(raw).sessionLayout : null
+            if (!raw) return "sidebar"
+            return JSON.parse(raw).sessionLayout ?? "sidebar"
           }),
         )
-        .toBe("tabs")
+        .toBe("sidebar")
 
       await page.getByRole("button", { name: "Close settings" }).click()
       await openSettings(page)
       await expect
-        .poll(() =>
-          page
-            .locator("[data-gharargah-session-layout-option='tabs']")
-            .getAttribute("data-state"),
-        )
-        .toBe("on")
+        .poll(() => appearance.getAttribute("aria-selected"))
+        .toBe("true")
     } finally {
       await app.close()
     }

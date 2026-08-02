@@ -6,7 +6,14 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 
-import { hasPtySpawn, launchJet, openNewAgentSession, showTerminal, execCommand } from "./_launch.js"
+import {
+  hasPtySpawn,
+  launchJet,
+  openNewAgentSession,
+  showTerminal,
+  execCommand,
+  ensureSidebarLayout,
+} from "./_launch.js"
 import { expectListRows } from "../helpers/list.js"
 
 const ptyAvailable = hasPtySpawn()
@@ -14,9 +21,10 @@ const ptyAvailable = hasPtySpawn()
 test.describe("electron terminal explorer", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
-  test("terminal.new opens modal and home cards list sessions", async () => {
+  test("terminal.new opens modal and sidebar lists sessions", async () => {
     const { app, page } = await launchJet()
     try {
+      await ensureSidebarLayout(page)
       await showTerminal(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
@@ -24,12 +32,14 @@ test.describe("electron terminal explorer", () => {
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await execCommand(page, "terminal.new")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+        timeout: 20_000,
+      })
       await execCommand(page, "gharargah.goHome")
 
-      const cards = page.locator("[data-gharargah-terminal-card]")
-      await expectLocatorVisible(cards.first())
-      await expect.poll(async () => cards.count()).toBeGreaterThanOrEqual(2)
+      const sessions = page.locator("[data-gharargah-sidebar-session]")
+      await expectLocatorVisible(sessions.first())
+      await expect.poll(async () => sessions.count()).toBeGreaterThanOrEqual(2)
     } finally {
       await app.close()
     }
@@ -42,7 +52,7 @@ test.describe("electron terminal explorer", () => {
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
       await execCommand(page, "terminal.show")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
     } finally {
       await app.close()
     }
@@ -51,7 +61,9 @@ test.describe("electron terminal explorer", () => {
   test("terminal list labels and switches sessions without the sidebar", async () => {
     const { app, page } = await launchJet()
     try {
-      const workspaceName = await page.evaluate(() => window.__gharargahAgent!.listWorkspaces()[0]?.name ?? "")
+      const workspaceName = await page.evaluate(
+        () => window.__gharargahAgent!.listWorkspaces()[0]?.name ?? "",
+      )
       await execCommand(page, "terminal.new")
       await execCommand(page, "terminal.new")
       await execCommand(page, "terminal.list")
@@ -71,14 +83,11 @@ test.describe("electron terminal explorer", () => {
     }
   })
 
-  test("home New session opens session modal for project", async () => {
+  test("New session opens session workspace for project", async () => {
     const { app, page } = await launchJet()
     try {
-      const workspaceName = await page.evaluate(() => window.__gharargahAgent!.listWorkspaces()[0]?.name ?? "")
-      const section = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
-      )
-      await expectLocatorVisible(section)
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       const modal = await openNewAgentSession(page)
       await expectLocatorVisible(modal)
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")

@@ -3,7 +3,6 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import {
-  expectLocatorContainsText,
   expectLocatorCount,
   expectLocatorVisible,
   expectSelectorVisible,
@@ -13,7 +12,7 @@ import {
   launchJet,
   openNewAgentSession,
   openNewCliSession,
-  ensureCardsLayout,
+  ensureSidebarLayout,
   execCommand,
 } from "./_launch.js"
 
@@ -42,24 +41,19 @@ async function fetchSessionRoster(page: import("@playwright/test").Page): Promis
 test.describe("session refresh persistence", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
-  test("home agent session card survives reload and resumes CLI session", async () => {
+  test("sidebar agent session survives reload and resumes CLI session", async () => {
     const { app, page } = await launchJet()
     try {
-      await ensureCardsLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-home]")
-      const state = await page.evaluate(() => window.__gharargahAgent!.getState())
-      const workspaceName = state.workspaces[0]?.name ?? "sample-workspace"
-      const section = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
-      )
-      await expectLocatorVisible(section)
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
       await openNewAgentSession(page)
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]", { timeout: 20_000 })
-
-      const cards = section.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
-      await expectLocatorVisible(cards.first())
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+        timeout: 20_000,
+      })
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]", {
+        timeout: 20_000,
+      })
 
       let tabId = ""
       await expect
@@ -69,6 +63,11 @@ test.describe("session refresh persistence", () => {
           return tabId || null
         }, { timeout: 20_000 })
         .toBeTruthy()
+
+      const sessionRow = page.locator(
+        `[data-gharargah-sidebar-session="${tabId}"]`,
+      )
+      await expectLocatorVisible(sessionRow)
 
       await page.evaluate(
         async ({ sessionId, providerSessionId }) => {
@@ -108,24 +107,27 @@ test.describe("session refresh persistence", () => {
 
       await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
-      await expectLocatorVisible(cards.first())
+      await expectLocatorVisible(sessionRow)
 
       await page.reload()
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
+      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+        timeout: 30_000,
+      })
       await page.evaluate(() => window.__gharargahAgent!.waitForReady())
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
-      const sectionAfter = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
+      const sessionRowAfter = page.locator(
+        `[data-gharargah-sidebar-session="${tabId}"]`,
       )
-      const cardsAfter = sectionAfter.locator(
-        "[data-gharargah-terminal-card]:not([data-gharargah-new-session])",
-      )
-      await expectLocatorVisible(cardsAfter.first())
-      await expectLocatorContainsText(
-        cardsAfter.first().locator("[data-gharargah-status-badge]"),
-        /Running|Idle|Starting|Failed/,
-      )
+      await expectLocatorVisible(sessionRowAfter)
+      await expect
+        .poll(() =>
+          sessionRowAfter
+            .locator("[data-gharargah-session-status]")
+            .getAttribute("data-gharargah-session-status"),
+        )
+        .toMatch(/running|waiting|disconnected|failed|completed/)
 
       const rosterAfter = await fetchSessionRoster(page)
       expect(rosterAfter?.sessions[0]?.agentCliSessionId).toBe(MOCK_CLI_SESSION_ID)
@@ -135,10 +137,18 @@ test.describe("session refresh persistence", () => {
         MOCK_CLI_SESSION_ID,
       ])
 
-      await cardsAfter.first().click()
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]", { timeout: 20_000 })
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm", { timeout: 20_000 })
+      await sessionRowAfter.click()
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+        timeout: 20_000,
+      })
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]", {
+        timeout: 20_000,
+      })
+      await expectSelectorVisible(
+        page,
+        "[data-gharargah-terminal-panel] .xterm",
+        { timeout: 20_000 },
+      )
     } finally {
       await app.close()
     }
@@ -165,14 +175,8 @@ test.describe("session refresh persistence", () => {
       env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
     })
     try {
-      await ensureCardsLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-home]")
-      const state = await page.evaluate(() => window.__gharargahAgent!.getState())
-      const workspaceName = state.workspaces[0]?.name ?? "sample-workspace"
-      const section = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
-      )
-      await expectLocatorVisible(section)
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
       await openNewCliSession(page, "cursor")
       // Modal + interactive PTY open immediately — no create-chat defer gate.
@@ -189,6 +193,7 @@ test.describe("session refresh persistence", () => {
 
       // Roster deferred until hooks / native session id arrive.
       let chatId = ""
+      let tabId = ""
       await expect
         .poll(async () => {
           const roster = await fetchSessionRoster(page)
@@ -198,6 +203,7 @@ test.describe("session refresh persistence", () => {
           if (!args || !id) return null
           if (args[0] !== `--resume=${id}`) return null
           if (!args.includes("--trust")) return null
+          tabId = session?.tabId ?? ""
           return id
         }, { timeout: 45_000 })
         .toBeTruthy()
@@ -205,6 +211,7 @@ test.describe("session refresh persistence", () => {
       const rosterBefore = await fetchSessionRoster(page)
       chatId = rosterBefore?.sessions[0]?.agentCliSessionId ?? ""
       expect(chatId).toBeTruthy()
+      expect(tabId).toBeTruthy()
 
       // Trust prompt Quit used to surface as "Process exited with code 1".
       await page.waitForTimeout(1500)
@@ -218,15 +225,13 @@ test.describe("session refresh persistence", () => {
         timeout: 30_000,
       })
       await page.evaluate(() => window.__gharargahAgent!.waitForReady())
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
-      const sectionAfter = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
+      const sessionRowAfter = page.locator(
+        `[data-gharargah-sidebar-session="${tabId}"]`,
       )
-      const cardsAfter = sectionAfter.locator(
-        "[data-gharargah-terminal-card]:not([data-gharargah-new-session])",
-      )
-      await expectLocatorVisible(cardsAfter.first())
+      await expectLocatorVisible(sessionRowAfter)
 
       const rosterAfter = await fetchSessionRoster(page)
       expect(rosterAfter?.sessions[0]?.agentCliSessionId).toBe(chatId)
@@ -234,7 +239,7 @@ test.describe("session refresh persistence", () => {
       expect(rosterAfter?.sessions[0]?.launchArgs?.[0]).toBe(`--resume=${chatId}`)
       expect(rosterAfter?.sessions[0]?.launchArgs).toContain("--trust")
 
-      await cardsAfter.first().click()
+      await sessionRowAfter.click()
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
         timeout: 20_000,
       })

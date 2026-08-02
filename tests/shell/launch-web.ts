@@ -112,6 +112,8 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     ...process.env,
     JET_ALLOWED_ROOTS: `${REPO_ROOT},${temporaryRoot},${path.dirname(sourceWorkspace)}`,
     GHARARGAH_E2E: "1",
+    // Installed YAADE may export JET_STATIC_DIR; e2e must serve the repo build.
+    JET_STATIC_DIR: path.join(REPO_ROOT, "apps/gharargah/dist"),
     ...options.env,
   }
 

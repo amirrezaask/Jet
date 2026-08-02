@@ -8,7 +8,6 @@ import {
   getThemeById,
   siblingThemeForScheme,
   themePreviewSwatches,
-  themeUsesGlassSurface,
 } from "./default.js"
 
 type Rgb = readonly [number, number, number]
@@ -61,27 +60,22 @@ function contrastRatio(foreground: string, background: string): number {
   )
 }
 
-const themeIds = [
-  "default-dark",
-  "default-light",
-  "glass-blue",
-  "glass-red",
-  "glass-green",
-]
+const themeIds = ["default-dark", "default-light"]
 
 describe("bundled Gharargah themes", () => {
-  it("registers shadcn defaults first, then glass themes", () => {
+  it("registers Default dark/light only", () => {
     assert.equal(defaultThemeId, "default-dark")
     assert.deepEqual(
       bundledThemeList.map(theme => theme.id),
       themeIds,
     )
-    assert.equal(Object.keys(bundledThemes).length, 5)
+    assert.equal(Object.keys(bundledThemes).length, 2)
   })
 
   it("falls back to Default Dark for missing or invalid theme ids", () => {
     assert.equal(getThemeById(null).id, "default-dark")
     assert.equal(getThemeById("missing").id, "default-dark")
+    assert.equal(getThemeById("glass-blue").id, "default-dark")
     assert.equal(getThemeById("ayu-dark").id, "default-dark")
   })
 
@@ -89,19 +83,13 @@ describe("bundled Gharargah themes", () => {
     assert.equal(defaultThemeIdForScheme("dark"), "default-dark")
     assert.equal(defaultThemeIdForScheme("light"), "default-light")
     assert.equal(siblingThemeForScheme("default-dark", "light").id, "default-light")
-    assert.equal(siblingThemeForScheme("glass-blue", "light").id, "glass-blue")
-  })
-
-  it("marks only Glass family as optical-glass surface", () => {
-    assert.equal(themeUsesGlassSurface(getThemeById("default-dark")), false)
-    assert.equal(themeUsesGlassSurface(getThemeById("default-light")), false)
-    assert.equal(themeUsesGlassSurface(getThemeById("glass-blue")), true)
+    assert.equal(siblingThemeForScheme("default-light", "dark").id, "default-dark")
   })
 
   it("provides shell, editor, terminal, source, and swatch metadata for every theme", () => {
     for (const theme of bundledThemeList) {
       assert.ok(theme.scheme === "dark" || theme.scheme === "light")
-      assert.ok(theme.family === "Default" || theme.family === "Glass")
+      assert.equal(theme.family, "Default")
       assert.ok(theme.sourceUrl?.startsWith("https://"))
       assert.ok(theme.colors.bg)
       assert.ok(theme.colors.panel)
@@ -110,9 +98,7 @@ describe("bundled Gharargah themes", () => {
       assert.ok(theme.terminalAnsi?.red)
       assert.ok(theme.terminalAnsi?.brightWhite)
       assert.ok(themePreviewSwatches(theme).length >= 4)
-      if (theme.family === "Default") {
-        assert.ok(theme.shadcn)
-      }
+      assert.ok(theme.shadcn)
     }
   })
 

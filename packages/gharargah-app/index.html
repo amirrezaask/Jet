@@ -20,9 +20,7 @@
             ? raw
             : legacy && /light/i.test(legacy) ? "light" : "dark"
           if (scheme === "dark") document.documentElement.classList.add("dark")
-          document.documentElement.dataset.gharargahSurface = /^glass-/.test(themeId)
-            ? "glass"
-            : "default"
+          document.documentElement.dataset.gharargahSurface = "default"
         } catch (_) {
           document.documentElement.classList.add("dark")
           document.documentElement.dataset.gharargahSurface = "default"

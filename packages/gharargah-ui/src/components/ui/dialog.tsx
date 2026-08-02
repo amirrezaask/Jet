@@ -50,7 +50,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "jet-dialog-overlay fixed inset-0 z-50 bg-black/50 overscroll-contain",
+        "gharargah-dialog-overlay fixed inset-0 z-50 bg-black/50 overscroll-contain",
         className
       )}
       data-gharargah-dialog-motion={motion}

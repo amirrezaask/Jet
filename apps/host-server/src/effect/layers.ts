@@ -51,8 +51,9 @@ export function makeHostLayers(config: HostConfig): Layer.Layer<HostLayerService
       const db = yield* makeProjectDatabaseScoped(path.join(config.dataDir, "jet.sqlite3"))
       const terminal = yield* makeTerminalHostScoped
 
+      // Sliding: drop oldest under notification burst instead of unbounded growth.
       const pubsub = yield* Effect.acquireRelease(
-        PubSub.unbounded<NotificationStreamEvent>(),
+        PubSub.sliding<NotificationStreamEvent>(1024),
         hub => PubSub.shutdown(hub),
       )
 
@@ -118,7 +119,10 @@ export function NotificationServiceLive(
 /** PubSub fan-out for notification stream events (tests / custom bridges). */
 export const NotificationEventPubSubLive = Layer.scoped(
   NotificationEventPubSub,
-  Effect.acquireRelease(PubSub.unbounded<NotificationStreamEvent>(), hub => PubSub.shutdown(hub)),
+  Effect.acquireRelease(
+    PubSub.sliding<NotificationStreamEvent>(1024),
+    hub => PubSub.shutdown(hub),
+  ),
 )
 
 export const WorkspaceHostLive = Layer.sync(WorkspaceHostTag, () => new WorkspaceHost())

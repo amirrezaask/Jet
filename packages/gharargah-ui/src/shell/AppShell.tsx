@@ -1,5 +1,4 @@
 import type { ReactNode } from "react"
-import { HotGlowTracker } from "../motion/HotGlowTracker.js"
 
 /**
  * Full-viewport app chrome. Resizable splits live in {@link WorkspaceShell} and
@@ -18,7 +17,6 @@ export function AppShell({
       className="flex h-full w-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
       data-gharargah-app-shell
     >
-      <HotGlowTracker />
       <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       {footer}
     </div>

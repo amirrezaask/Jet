@@ -78,28 +78,17 @@ test.describe("electron appearance and terminal-first UX", () => {
         )
         .toBe(true)
 
-      await page.evaluate(async () => {
-        await window.__gharargahAgent!.executeCommand("ui.setTheme.glass-blue")
-      })
       await page.waitForSelector("[data-gharargah-terminal-panel] .xterm", { timeout: 30_000 })
       await page.waitForSelector("[data-gharargah-terminal-panel] .gharargah-terminal-surface", {
         timeout: 15_000,
       })
 
       await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
-        .toBe("glass-blue")
-
-      await expect
-        .poll(() =>
-          page.evaluate(() =>
-            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-bg").trim(),
-          ),
-        )
-        .toBe("#05070c")
+        .toBe("default-dark")
 
       await expect
         .poll(() =>
@@ -155,31 +144,20 @@ test.describe("electron appearance and terminal-first UX", () => {
 
       await expectSelectorVisible(page, "[data-gharargah-settings-overlay]")
       await page.locator("[data-gharargah-settings-category='appearance']").click()
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 5)
+      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 2)
       await expectSelectorVisible(page, "[data-gharargah-theme-option='default-dark']")
       await expectSelectorVisible(page, "[data-gharargah-theme-option='default-light']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-blue']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-red']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='glass-green']")
 
-      await page.locator("[data-gharargah-theme-option='glass-red']").click()
+      await page.locator("[data-gharargah-theme-option='default-light']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
-        .toBe("glass-red")
-
-      await expect
-        .poll(() =>
-          page.evaluate(() =>
-            getComputedStyle(document.documentElement).getPropertyValue("--gharargah-bg").trim(),
-          ),
-        )
-        .toBe("#0a0506")
+        .toBe("default-light")
 
       await expect
         .poll(() =>
           page.evaluate(() => document.documentElement.dataset.gharargahSurface),
         )
-        .toBe("glass")
+        .toBe("default")
 
       await page.locator("[data-gharargah-theme-option='default-dark']").click()
       await expect

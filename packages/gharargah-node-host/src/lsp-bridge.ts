@@ -8,6 +8,8 @@ import { uriToPath } from "./paths.js"
 const MAX_WS_MESSAGE_BYTES = 10 * 1024 * 1024
 const MAX_STDERR_BYTES = 32 * 1024
 const MAX_PENDING_SERVER_MESSAGES = 256
+/** Cap framing decoder buffer / Content-Length so malformed streams cannot grow forever. */
+const MAX_LSP_FRAME_BYTES = MAX_WS_MESSAGE_BYTES
 
 class StderrRingBuffer {
   private chunks: Buffer[] = []
@@ -34,10 +36,20 @@ export class LspFramingDecoder {
 
   feed(chunk: Buffer): string[] {
     this.buffer = Buffer.concat([this.buffer, chunk])
+    if (this.buffer.length > MAX_LSP_FRAME_BYTES * 2) {
+      // No complete frame and buffer already oversized — reset to avoid OOM.
+      this.buffer = Buffer.alloc(0)
+      return []
+    }
     const messages: string[] = []
     for (;;) {
       const headerEnd = this.buffer.indexOf("\r\n\r\n")
-      if (headerEnd < 0) break
+      if (headerEnd < 0) {
+        if (this.buffer.length > MAX_LSP_FRAME_BYTES) {
+          this.buffer = Buffer.alloc(0)
+        }
+        break
+      }
       const header = this.buffer.subarray(0, headerEnd).toString("latin1")
       const match = /Content-Length:\s*(\d+)/i.exec(header)
       if (!match) {
@@ -45,6 +57,10 @@ export class LspFramingDecoder {
         continue
       }
       const length = Number.parseInt(match[1]!, 10)
+      if (!Number.isFinite(length) || length < 0 || length > MAX_LSP_FRAME_BYTES) {
+        this.buffer = Buffer.alloc(0)
+        break
+      }
       const bodyStart = headerEnd + 4
       if (this.buffer.length < bodyStart + length) break
       messages.push(this.buffer.subarray(bodyStart, bodyStart + length).toString("utf8"))

@@ -35,7 +35,7 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
       className={cn(
-        "jet-dialog-overlay fixed inset-0 z-50 bg-black/50",
+        "gharargah-dialog-overlay fixed inset-0 z-50 bg-black/50",
         className
       )}
       data-gharargah-dialog-motion="standard"

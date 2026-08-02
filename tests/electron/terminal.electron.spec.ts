@@ -573,9 +573,9 @@ test.describe("electron terminal", () => {
 
       await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
-      await page.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])").first().click()
+      await page.locator("[data-gharargah-sidebar-session]").first().click()
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
 

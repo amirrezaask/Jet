@@ -259,6 +259,6 @@ export function applyColorScheme(scheme: ColorScheme, theme: GharargahTheme): vo
   const root = getDocumentElement()
   if (!root) return
   root.classList.toggle("dark", scheme === "dark")
-  root.dataset.gharargahSurface = theme.family === "Glass" ? "glass" : "default"
+  root.dataset.gharargahSurface = "default"
   applyGharargahThemeCss(theme)
 }

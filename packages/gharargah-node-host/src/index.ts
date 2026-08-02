@@ -1,4 +1,14 @@
-export { uriToPath, pathToUri, readFile, writeFile, writeTempDrop, readDir, stat } from "./fs.js"
+export {
+  uriToPath,
+  pathToUri,
+  readFile,
+  writeFile,
+  writeTempDrop,
+  readDir,
+  stat,
+  MAX_READ_BYTES,
+  MAX_WRITE_BYTES,
+} from "./fs.js"
 export {
   gitIsRepo,
   gitStatus,

@@ -46,10 +46,9 @@ export async function launchJet(
 }
 
 export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
-  await page.waitForSelector(
-    "[data-gharargah-home], [data-gharargah-mission-sidebar]",
-    { timeout: timeoutMs },
-  )
+  await page.waitForSelector("[data-gharargah-mission-sidebar]", {
+    timeout: timeoutMs,
+  })
   await page.waitForFunction(
     () => window.__gharargahAgent?.getState()?.shellView === "home",
     null,
@@ -57,10 +56,19 @@ export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promis
   )
 }
 
-/** Force Cards layout when a spec exercises Mission Control home UI. */
+/** Mission Control is sidebar-only — wait for the mission sidebar shell. */
+export async function ensureSidebarLayout(page: ShellDriver): Promise<void> {
+  await waitForHome(page, 15_000)
+  await page.waitForFunction(
+    () => window.__gharargahAgent?.getState()?.sessionLayout === "sidebar",
+    null,
+    { timeout: 15_000 },
+  )
+}
+
+/** @deprecated Use ensureSidebarLayout — cards layout removed. */
 export async function ensureCardsLayout(page: ShellDriver): Promise<void> {
-  await execCommand(page, "ui.setSessionLayout.cards")
-  await page.waitForSelector("[data-gharargah-home]", { timeout: 15_000 })
+  await ensureSidebarLayout(page)
 }
 
 export async function waitForDialog(page: ShellDriver, timeoutMs = 30_000): Promise<void> {

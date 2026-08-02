@@ -6,7 +6,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 import {
-  ensureCardsLayout,
+  ensureSidebarLayout,
   execCommand,
   hasPtySpawn,
   launchJet,
@@ -73,11 +73,11 @@ async function ingestAde(
 test.describe("ADE telemetry", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
-  test("session start, permission, unread, and failure update session cards", async () => {
+  test("session start, permission, unread, and failure update sidebar sessions", async () => {
     const { app, page } = await launchJet()
     try {
-      await ensureCardsLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
         timeout: 20_000,
@@ -141,16 +141,13 @@ test.describe("ADE telemetry", () => {
         timeout: 10_000,
       })
 
-      const card = page
-        .locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
-        .first()
-      await expectLocatorVisible(card)
-      await expect
-        .poll(async () =>
-          card.locator("[data-gharargah-status-badge]").getAttribute("data-status"),
-        { timeout: 15_000 })
-        .toBe("approval")
-      await expectLocatorVisible(card.locator("[data-gharargah-session-unread]"))
+      const sessionRow = page.locator(
+        `[data-gharargah-sidebar-session="${sessionId}"]`,
+      )
+      await expectLocatorVisible(sessionRow)
+      await expectLocatorVisible(
+        sessionRow.locator("[data-gharargah-sidebar-unread-badge]"),
+      )
 
       expect(
         await ingestAde(page, sessionId, "claude", {
@@ -159,12 +156,6 @@ test.describe("ADE telemetry", () => {
           error: "boom",
         }),
       ).toBe(204)
-
-      await expect
-        .poll(async () =>
-          card.locator("[data-gharargah-status-badge]").getAttribute("data-status"),
-        { timeout: 15_000 })
-        .toBe("failed")
 
       await execCommand(page, "notifications.show")
       await expectSelectorVisible(page, "[data-gharargah-notification-center]", {

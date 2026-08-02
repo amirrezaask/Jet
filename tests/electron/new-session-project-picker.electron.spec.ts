@@ -28,7 +28,7 @@ test.describe("new session project picker", () => {
             () => window.__gharargahAgent!.getState().sessionLayout,
           ),
         )
-        .toBe("cards")
+        .toBe("sidebar")
 
       await page.evaluate(
         path => window.__gharargahAgent!.addWorkspace(path),
@@ -67,7 +67,7 @@ test.describe("new session project picker", () => {
       await pickAgentCli(page, "codex")
       await expectSelectorVisible(
         page,
-        '[data-gharargah-terminal-modal][data-gharargah-session-presentation="modal"]',
+        '[data-gharargah-terminal-modal][data-gharargah-session-presentation="inline"]',
         { timeout: 20_000 },
       )
     } finally {

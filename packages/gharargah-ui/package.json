@@ -35,10 +35,6 @@
       "types": "./src/editor-entry.ts",
       "default": "./src/editor-entry.ts"
     },
-    "./session-tabs": {
-      "types": "./src/home/SessionTabBar.tsx",
-      "default": "./src/home/SessionTabBar.tsx"
-    },
     "./styles.css": "./src/styles/globals.css"
   },
   "scripts": {

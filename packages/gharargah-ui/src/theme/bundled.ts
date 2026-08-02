@@ -10,7 +10,6 @@ export {
   themeFamilyForId,
   themePreviewSwatches,
   themeForScheme,
-  themeUsesGlassSurface,
   type ColorScheme,
 } from "./default.js"
 export { defaultGharargahTheme, applyGharargahThemeCss, applyColorScheme } from "@gharargah/shared"

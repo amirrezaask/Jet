@@ -204,7 +204,7 @@ export function SessionTerminalWorkspace(
                 selected ? "z-10" : "pointer-events-none z-0",
               )}
             >
-              {item.content}
+              {selected ? item.content : null}
             </div>
           )
         })}

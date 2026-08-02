@@ -195,6 +195,9 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
     setViewportSize(size) {
       return page.setViewportSize(size)
     },
+    viewportSize() {
+      return page.viewportSize()
+    },
     async screenshot() {
       return (await page.screenshot({ type: "png" })).toString("base64")
     },

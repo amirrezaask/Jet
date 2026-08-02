@@ -51,7 +51,7 @@ export function GharargahWindowTitlebar({
         <div
           data-gharargah-titlebar-sidebar-segment=""
           className={cn(
-            "flex shrink-0 items-center border-r border-transparent bg-transparent text-sidebar-foreground transition-[width] duration-[var(--gharargah-motion-panel)] ease-[var(--gharargah-ease-drawer)]",
+            "flex shrink-0 items-center border-r border-transparent bg-transparent text-sidebar-foreground",
             sidebar.collapsed && "justify-start",
           )}
           style={{ ...dragRegion, width: sidebarWidth ?? undefined }}

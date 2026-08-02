@@ -69,4 +69,34 @@ describe("AgentTelemetryService", () => {
     db.close()
     rmSync(dir, { recursive: true, force: true })
   })
+
+  it("disposeSession drops snapshot and pruneEvents caps per-session rows", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ghar-ade-"))
+    const db = new DatabaseSync(join(dir, "t.sqlite"))
+    db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY)`)
+    ensureNotificationSchema(db)
+    const notifications = new NotificationService(db, () => undefined)
+    const agents = new AgentTelemetryService(db, notifications, () => undefined)
+
+    agents.ingestNative(
+      {
+        hook_event_name: "SessionStart",
+        session_id: "native-1",
+        source: "startup",
+      },
+      { provider: "claude", sessionId: "tab-dispose", processId: "pty-d" },
+    )
+    assert.ok(agents.getSnapshot("tab-dispose"))
+
+    agents.disposeSession("tab-dispose")
+    assert.equal(agents.getSnapshot("tab-dispose"), null)
+
+    const snapRow = db
+      .prepare(`SELECT COUNT(*) AS n FROM agent_session_snapshots WHERE session_id=?`)
+      .get("tab-dispose") as { n: number }
+    assert.equal(snapRow.n, 0)
+
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
 })

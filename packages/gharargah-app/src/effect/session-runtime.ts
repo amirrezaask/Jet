@@ -77,8 +77,13 @@ type SessionTerminalWorkspace = {
   nextOrdinal: number
 }
 
+/** `roster` = Mission Control sidebar / persist; `local` = modal workspace only. */
+export type SessionNotifyKind = "roster" | "local"
+
 export type SessionRuntimeApi = {
-  readonly subscribe: (listener: (tabId: string) => void) => () => void
+  readonly subscribe: (
+    listener: (tabId: string, kind: SessionNotifyKind) => void,
+  ) => () => void
   readonly register: (
     tabId: string,
     cwdRootUri: string,
@@ -138,12 +143,15 @@ export function createSessionStore(): SessionRuntimeApi {
   const tabByPtyId = new Map<string, string>()
   const pendingExitByPtyId = new Map<string, { exitCode: number; signal?: number }>()
   const retiredPtyIds = new Set<string>()
-  const listeners = new Set<(tabId: string) => void>()
+  const listeners = new Set<(tabId: string, kind: SessionNotifyKind) => void>()
   const sessionTerminalWorkspaces = new Map<string, SessionTerminalWorkspace>()
   let nextSessionTerminalId = 0
 
-  function notify(tabId: string): void {
-    for (const listener of listeners) listener(tabId)
+  function notify(tabId: string, kind?: SessionNotifyKind): void {
+    const session = sessions.get(tabId)
+    const resolved: SessionNotifyKind =
+      kind ?? (session?.parentSessionTabId ? "local" : "roster")
+    for (const listener of listeners) listener(tabId, resolved)
   }
 
   function touchActivity(session: TerminalSessionState): void {
@@ -374,7 +382,7 @@ export function createSessionStore(): SessionRuntimeApi {
                 Math.min(Math.max(0, removedIndex - 1), parentWorkspace.tabIds.length - 1)
               ] ?? session.parentSessionTabId
           }
-          notify(session.parentSessionTabId)
+          notify(session.parentSessionTabId, "local")
         }
       }
       notify(tabId)
@@ -541,7 +549,7 @@ export function createSessionStore(): SessionRuntimeApi {
       workspace.tabIds.push(tabId)
       workspace.activeTabId = tabId
       sessionTerminalWorkspaces.set(parentSessionTabId, workspace)
-      notify(parentSessionTabId)
+      notify(parentSessionTabId, "local")
       return sessions.get(tabId)
     },
 
@@ -568,7 +576,7 @@ export function createSessionStore(): SessionRuntimeApi {
       }
       workspace.activeTabId = tabId
       sessionTerminalWorkspaces.set(parentSessionTabId, workspace)
-      notify(parentSessionTabId)
+      notify(parentSessionTabId, "local")
     },
 
     removeSessionTerminal(parentSessionTabId, tabId) {

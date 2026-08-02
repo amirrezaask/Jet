@@ -16,14 +16,7 @@ export {
 } from "./tabs/registry.js"
 export { AppShell } from "./shell/AppShell.js"
 export {
-  GharargahHome,
   GharargahWindowTitlebar,
-  ProjectSection,
-  TerminalCard,
-  SessionCard,
-  EmptySessionCard,
-  StatusBadge,
-  SessionTabBar,
   TerminalSessionModal,
   formatSessionHeaderTitle,
   SessionTerminalWorkspace,
@@ -38,19 +31,16 @@ export {
   AgentCliPickerOverlay,
   AGENT_CLI_DRIVERS,
   detectSessionProvider,
-  timeOfDayGreeting,
   GharagahSidebar,
   sidebarWidthStyle,
   SIDEBAR_WIDTH_MIN,
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_DEFAULT,
   mapHomeGroupsToSidebar,
-  type GharargahHomeProps,
   type GharargahWindowTitlebarProps,
   type DesktopWindowPlatform,
   type HomeProjectGroup,
   type HomeTerminalEntry,
-  type TerminalCardStatus,
   type SessionDialogMode,
   type ModalEditorBuffer,
   type ModalEditorPaneProps,
@@ -63,9 +53,6 @@ export {
   type AgentSessionHeaderMeta,
   type SessionCardModel,
   type SessionCardStatus,
-  type SessionCardProps,
-  type SessionTabBarProps,
-  type SessionTabItem,
   type OpenInAppId,
   type OpenInAppMenuProps,
   type OpenInAppTarget,
@@ -88,11 +75,6 @@ export {
   type SidebarSession,
   type SessionSidebarActions,
   type ProjectSidebarActions,
-  adeFieldsFromSnapshot,
-  mapAgentStatusToCardStatus,
-  cardModelFromAdeSnapshot,
-  AgentActivityTimeline,
-  useSharedClockMs,
 } from "./home/index.js"
 export { SidebarProvider, SidebarInset, SidebarTrigger } from "./components/ui/sidebar.js"
 export {
@@ -196,12 +178,11 @@ export {
   themeFamilyForId,
   themePreviewSwatches,
   themeForScheme,
-  themeUsesGlassSurface,
   type ColorScheme,
 } from "./theme/bundled.js"
 export { syncNativeChromeFromTheme, readThemedNativeChrome } from "./theme/native-chrome.js"
 export { defaultGharargahTheme, applyGharargahThemeCss, applyColorScheme } from "@gharargah/shared"
-export { gharargahMotion, gharargahOverlayContentClass, gharargahPopoverContentClass, gharargahMenuContentClass, gharargahPressClass, gharargahHotGlowClass, type GharargahOverlayMotion } from "./motion/tokens.js"
+export { gharargahMotion, gharargahOverlayContentClass, gharargahPopoverContentClass, gharargahMenuContentClass, gharargahPressClass, type GharargahOverlayMotion } from "./motion/tokens.js"
 export { useReducedMotion } from "./motion/useReducedMotion.js"
 export { GharargahTabDragGhost } from "./motion/GharargahOverlayMotion.js"
 export {

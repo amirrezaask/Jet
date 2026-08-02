@@ -6,70 +6,56 @@ import {
   expectLocatorCount,
 } from "../shell/assert.js"
 import {
-  ensureCardsLayout,
+  ensureSidebarLayout,
   execCommand,
   hasPtySpawn,
   launchJet,
+  openNewAgentSession,
 } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
-/** Pointer drag for @dnd-kit (needs >8px travel to activate). */
-async function dragLocatorTo(page: Page, source: Locator, target: Locator) {
-  const from = await source.boundingBox()
-  const to = await target.boundingBox()
-  if (!from || !to) throw new Error("dragLocatorTo: missing bounding box")
-  const startX = from.x + Math.min(24, from.width / 2)
-  const startY = from.y + from.height / 2
-  const endX = to.x + to.width / 2
-  const endY = to.y + Math.min(48, to.height / 3)
-  await page.mouse.move(startX, startY)
-  await page.mouse.down()
-  await page.mouse.move(startX + 12, startY + 4, { steps: 4 })
-  await page.mouse.move(endX, endY, { steps: 16 })
-  await page.mouse.up()
+async function openTodosBoard(page: Page): Promise<{
+  modal: Locator
+  board: Locator
+  projectId: string
+}> {
+  await openNewAgentSession(page)
+  await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+    timeout: 20_000,
+  })
+  await execCommand(page, "dialog.showTodos")
+  const modal = page.locator("[data-gharargah-terminal-modal]")
+  await expect
+    .poll(async () => modal.getAttribute("data-gharargah-session-mode"))
+    .toBe("todos")
+  const board = modal.locator("[data-gharargah-todo-board]")
+  await expectLocatorVisible(board)
+  const projectId =
+    (await board.getAttribute("data-project-id"))?.trim() ?? ""
+  expect(projectId).toBeTruthy()
+  return { modal, board, projectId }
 }
 
 test.describe("project todos board", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
-  test("home summary opens TODOs tab; create persists across reload", async () => {
+  test("session TODOs tab create persists across reload", async () => {
     const { app, page } = await launchJet()
     try {
-      await ensureCardsLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
-      const state = await page.evaluate(() => window.__gharargahAgent!.getState())
-      const workspaceName = state.workspaces[0]?.name ?? "sample-workspace"
-      const section = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
-      )
-      await expectLocatorVisible(section)
+      const { modal, board, projectId } = await openTodosBoard(page)
 
-      await page.evaluate(() => {
+      await page.evaluate(pid => {
         const repo = window.__gharargahProjectTodos
         if (!repo) throw new Error("__gharargahProjectTodos missing")
         localStorage.removeItem("jet-project-todos-v1")
         localStorage.removeItem("jet-project-todo-ui-v1")
         repo._resetForTests(localStorage)
-      })
-
-      const summary = section.locator("[data-gharargah-todo-summary]")
-      await expectLocatorVisible(summary)
-      await expect
-        .poll(async () => summary.getAttribute("data-todo-count"))
-        .toBe("0")
-
-      // Open session modal on TODOs board via home summary.
-      await section.locator("[data-gharargah-todo-summary-toggle]").click()
-      const modal = page.locator("[data-gharargah-terminal-modal]")
-      await expectLocatorVisible(modal)
-      await expect
-        .poll(async () => modal.getAttribute("data-gharargah-session-mode"))
-        .toBe("todos")
-
-      const board = modal.locator("[data-gharargah-todo-board]")
-      await expectLocatorVisible(board)
+        void pid
+      }, projectId)
 
       // Add card in Todo column.
       await board.locator('[data-gharargah-todo-column-add="todo"]').click()
@@ -81,15 +67,10 @@ test.describe("project todos board", () => {
 
       await expect
         .poll(async () => {
-          return page.evaluate(() => {
+          return page.evaluate(pid => {
             const repo = window.__gharargahProjectTodos
-            const sectionEl = document.querySelector(
-              "[data-gharargah-project-section]",
-            )
-            const projectId =
-              sectionEl?.getAttribute("data-gharargah-project-id") ?? ""
-            return repo?.listProjectTodos(projectId).length ?? -1
-          })
+            return repo?.listProjectTodos(pid).length ?? -1
+          }, projectId)
         }, { timeout: 10_000 })
         .toBe(1)
 
@@ -97,7 +78,9 @@ test.describe("project todos board", () => {
       await expectLocatorCount(board.locator("[data-gharargah-todo-card]"), 1)
       await expect
         .poll(async () =>
-          board.locator('[data-gharargah-todo-column="todo"]').getAttribute("data-todo-column-count"),
+          board
+            .locator('[data-gharargah-todo-column="todo"]')
+            .getAttribute("data-todo-column-count"),
         )
         .toBe("1")
 
@@ -106,12 +89,16 @@ test.describe("project todos board", () => {
       await page.getByRole("menuitem", { name: /Move to Doing/i }).click()
       await expect
         .poll(async () =>
-          board.locator('[data-gharargah-todo-column="doing"]').getAttribute("data-todo-column-count"),
+          board
+            .locator('[data-gharargah-todo-column="doing"]')
+            .getAttribute("data-todo-column-count"),
         )
         .toBe("1")
       await expect
         .poll(async () =>
-          board.locator('[data-gharargah-todo-column="todo"]').getAttribute("data-todo-column-count"),
+          board
+            .locator('[data-gharargah-todo-column="todo"]')
+            .getAttribute("data-todo-column-count"),
         )
         .toBe("0")
 
@@ -146,30 +133,24 @@ test.describe("project todos board", () => {
       await execCommand(page, "gharargah.goHome")
       await expect.poll(async () => modal.isVisible()).toBe(false)
 
-      // Summary counter updated on home.
-      await expect
-        .poll(async () => summary.getAttribute("data-todo-count"), { timeout: 10_000 })
-        .toBe("1")
-
-      // Persist across full reload — reopen board.
+      // Persist across full reload — remount board (lazy repo) then assert.
       await page.reload()
-      await expectSelectorVisible(page, "[data-gharargah-home]")
-      const sectionReload = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
-      )
-      const summaryReload = sectionReload.locator("[data-gharargah-todo-summary]")
-      await expect
-        .poll(async () => summaryReload.getAttribute("data-todo-count"))
-        .toBe("1")
-      await expectLocatorContainsText(summaryReload, /1 todos/)
+      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+        timeout: 30_000,
+      })
+      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await ensureSidebarLayout(page)
 
-      await sectionReload.locator("[data-gharargah-todo-summary-toggle]").click()
-      const boardReload = page.locator("[data-gharargah-todo-board]")
-      await expectLocatorVisible(boardReload)
-      await expectLocatorContainsText(boardReload, "Review architecture\nwith the team")
+      const { board: boardReload } = await openTodosBoard(page)
+      await expectLocatorContainsText(
+        boardReload,
+        "Review architecture\nwith the team",
+      )
       await expect
         .poll(async () =>
-          boardReload.locator('[data-gharargah-todo-column="doing"]').getAttribute("data-todo-column-count"),
+          boardReload
+            .locator('[data-gharargah-todo-column="doing"]')
+            .getAttribute("data-todo-column-count"),
         )
         .toBe("1")
     } finally {
@@ -177,79 +158,40 @@ test.describe("project todos board", () => {
     }
   })
 
-  test("drag card reorders within column and moves across states", async () => {
+  test("menu moves cards across columns", async () => {
     const { app, page } = await launchJet()
     try {
-      await ensureCardsLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-home]")
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
-      const state = await page.evaluate(() => window.__gharargahAgent!.getState())
-      const workspaceName = state.workspaces[0]?.name ?? "sample-workspace"
-      const section = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspaceName}"]`,
-      )
-      await expectLocatorVisible(section)
+      const { modal, board, projectId } = await openTodosBoard(page)
 
-      await page.evaluate(() => {
+      await page.evaluate(pid => {
         const repo = window.__gharargahProjectTodos
         if (!repo) throw new Error("__gharargahProjectTodos missing")
         localStorage.removeItem("jet-project-todos-v1")
         localStorage.removeItem("jet-project-todo-ui-v1")
         repo._resetForTests(localStorage)
-        const sectionEl = document.querySelector("[data-gharargah-project-section]")
-        const projectId = sectionEl?.getAttribute("data-gharargah-project-id") ?? ""
-        if (!projectId) throw new Error("project id missing")
-        repo.createProjectTodo(projectId, { text: "Alpha card", status: "todo" })
-        repo.createProjectTodo(projectId, { text: "Beta card", status: "todo" })
-        repo.createProjectTodo(projectId, { text: "Gamma card", status: "todo" })
-      })
+        if (!pid) throw new Error("project id missing")
+        repo.createProjectTodo(pid, { text: "Alpha card", status: "todo" })
+        repo.createProjectTodo(pid, { text: "Beta card", status: "todo" })
+      }, projectId)
 
-      await section.locator("[data-gharargah-todo-summary-toggle]").click()
-      const modal = page.locator("[data-gharargah-terminal-modal]")
       await expectLocatorVisible(modal)
-      await expect
-        .poll(async () => modal.getAttribute("data-gharargah-session-mode"))
-        .toBe("todos")
-
-      const board = modal.locator("[data-gharargah-todo-board]")
-      await expectLocatorVisible(board)
-      await expectLocatorCount(board.locator("[data-gharargah-todo-card]"), 3)
+      await expectLocatorCount(board.locator("[data-gharargah-todo-card]"), 2)
 
       const todoColumn = board.locator('[data-gharargah-todo-column="todo"]')
       const doingColumn = board.locator('[data-gharargah-todo-column="doing"]')
       await expect
         .poll(async () => todoColumn.getAttribute("data-todo-column-count"))
-        .toBe("3")
+        .toBe("2")
 
-      // Reorder within Todo: drag Alpha below Beta (to end of list after Beta).
-      const alpha = todoColumn.locator('[data-gharargah-todo-card][data-todo-id]').filter({
+      const alpha = todoColumn.locator('[data-gharargah-todo-card]').filter({
         hasText: "Alpha card",
-      })
-      const beta = todoColumn.locator('[data-gharargah-todo-card]').filter({
-        hasText: "Beta card",
-      })
-      const gamma = todoColumn.locator('[data-gharargah-todo-card]').filter({
-        hasText: "Gamma card",
       })
       await expectLocatorVisible(alpha)
-      await dragLocatorTo(page, alpha, gamma)
-
-      await expect
-        .poll(async () => {
-          return page.evaluate(() => {
-            const repo = window.__gharargahProjectTodos
-            const sectionEl = document.querySelector("[data-gharargah-project-section]")
-            const projectId = sectionEl?.getAttribute("data-gharargah-project-id") ?? ""
-            return repo?.listByStatus(projectId, "todo").map(t => t.text) ?? []
-          })
-        }, { timeout: 10_000 })
-        .toEqual(["Beta card", "Gamma card", "Alpha card"])
-
-      // Move Alpha → Doing via drag onto empty Doing column.
-      const alphaAfter = todoColumn.locator('[data-gharargah-todo-card]').filter({
-        hasText: "Alpha card",
-      })
-      await dragLocatorTo(page, alphaAfter, doingColumn)
+      await alpha.locator("[data-gharargah-todo-item-menu]").click()
+      await page.getByRole("menuitem", { name: /Move to Doing/i }).click()
 
       await expect
         .poll(async () => doingColumn.getAttribute("data-todo-column-count"), {
@@ -258,21 +200,20 @@ test.describe("project todos board", () => {
         .toBe("1")
       await expect
         .poll(async () => todoColumn.getAttribute("data-todo-column-count"))
-        .toBe("2")
+        .toBe("1")
       await expectLocatorContainsText(doingColumn, "Alpha card")
+      await expectLocatorContainsText(todoColumn, "Beta card")
 
       await expect
         .poll(async () => {
-          return page.evaluate(() => {
+          return page.evaluate(pid => {
             const repo = window.__gharargahProjectTodos
-            const sectionEl = document.querySelector("[data-gharargah-project-section]")
-            const projectId = sectionEl?.getAttribute("data-gharargah-project-id") ?? ""
-            const doing = repo?.listByStatus(projectId, "todo").map(t => t.text) ?? []
-            const moved = repo?.listByStatus(projectId, "doing").map(t => t.text) ?? []
-            return { todo: doing, doing: moved }
-          })
+            const todo = repo?.listByStatus(pid, "todo").map(t => t.text) ?? []
+            const doing = repo?.listByStatus(pid, "doing").map(t => t.text) ?? []
+            return { todo, doing }
+          }, projectId)
         })
-        .toEqual({ todo: ["Beta card", "Gamma card"], doing: ["Alpha card"] })
+        .toEqual({ todo: ["Beta card"], doing: ["Alpha card"] })
     } finally {
       await app.close()
     }

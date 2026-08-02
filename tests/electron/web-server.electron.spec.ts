@@ -54,8 +54,13 @@ test.describe("single-binary web server", () => {
       })
       await page.reload()
       await waitForHome(page)
-      await page.waitForSelector('[data-gharargah-project-name="sample-workspace"]', { timeout: 10_000 })
-      expect(await page.count('[data-gharargah-project-name="sample-workspace"]')).toBeGreaterThan(0)
+      await page.waitForSelector("[data-gharargah-mission-sidebar]", {
+        timeout: 10_000,
+      })
+      await page.waitForSelector(
+        '[data-gharargah-sidebar-project-filter-option="all"]',
+        { timeout: 10_000 },
+      )
       await testInfo.attach("home-after-reload", {
         body: Buffer.from(await page.screenshot(), "base64"),
         contentType: "image/png",

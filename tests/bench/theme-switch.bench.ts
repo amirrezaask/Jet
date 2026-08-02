@@ -11,7 +11,7 @@ test("bench theme-switch", async () => {
       rounds: 9,
       measure: async () => {
         dark = !dark
-        const themeId = dark ? "glass-blue" : "glass-red"
+        const themeId = dark ? "default-dark" : "default-light"
         const t0 = Date.now()
         await page.evaluate(async (id: string) => {
           await window.__gharargahAgent!.executeCommand(`ui.setTheme.${id}`)

@@ -718,7 +718,7 @@ export class NotificationService {
       now.getTime() - prefs.retentionDays * 24 * 60 * 60 * 1000,
     ).toISOString()
 
-    // Delete oldest dismissed/read first; never touch unresolved action or unread errors.
+    // Bound SELECT — never load the full deletable set into memory.
     const deletable = this.db
       .prepare(
         `SELECT id, created_at FROM app_notifications
@@ -731,7 +731,8 @@ export class NotificationService {
            )
          ORDER BY
            CASE status WHEN 'dismissed' THEN 0 WHEN 'read' THEN 1 ELSE 2 END,
-           created_at ASC`,
+           created_at ASC
+         LIMIT 500`,
       )
       .all(cutoff) as unknown as Array<{ id: string; created_at: string }>
 

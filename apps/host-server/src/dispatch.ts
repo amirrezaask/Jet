@@ -419,9 +419,8 @@ async function handleSearch(
   const rootUri = str(args[0], "rootUri")
   switch (channel) {
     case "search:listFiles": {
-      const files = await listProjectFiles(rootUri)
-      runtime.events.emit("workspace:fileIndex", [{ rootUri, files }])
-      return files
+      // Return via RPC only — do not push up to 50k paths into EventHub/WS replay.
+      return listProjectFiles(rootUri)
     }
     case "search:project":
       return projectSearch(
@@ -515,6 +514,10 @@ async function handleTerminal(
       const id = str(args[0], "id")
       runtime.terminal.dispose(id)
       runtime.db.updateSessionStatus(id, "stopped")
+      const binding = runtime.notifications.bindingForPty(id)
+      if (binding?.sessionId) {
+        runtime.agents.disposeSession(binding.sessionId)
+      }
       return null
     }
     default:

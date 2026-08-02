@@ -43,24 +43,10 @@ export const gharargahMotion = {
   overlayTransition: { duration: 0.18 /* overlay */, ease: "easeOut" as const },
   quickFade: { duration: 0.12, ease: "easeOut" as const },
   tabGhostTransition: { duration: 0.18 /* overlay */, ease: "easeOut" as const },
-  overlayEnter: {
-    initial: { opacity: 0, scale: 0.9 },
-    animate: { opacity: 1, scale: 1 },
-    exit: { opacity: 0, scale: 0.9 },
-    transition: { duration: 0.18, ease: "easeOut" as const },
-  },
-  overlayEnterTop: {
-    initial: { opacity: 0, scale: 0.9, y: -8 },
-    animate: { opacity: 1, scale: 1, y: 0 },
-    exit: { opacity: 0, scale: 0.9, y: -4 },
-    transition: { duration: 0.18, ease: "easeOut" as const },
-  },
 }
 
-export const gharargahPressClass = "gharargah-press gharargah-hot-glow"
-export const gharargahInteractiveRowClass = "gharargah-interactive-row gharargah-hot-glow"
-/** RAD DrawHotEffects mouse soft-circle; usually baked into press/row/data-slots. */
-export const gharargahHotGlowClass = "gharargah-hot-glow"
+export const gharargahPressClass = "gharargah-press"
+export const gharargahInteractiveRowClass = "gharargah-interactive-row"
 export const gharargahFocusRingClass = "gharargah-focus-ring"
 export const gharargahDisabledClass = "gharargah-disabled"
 export const gharargahScrollFadeClass = "gharargah-scroll-fade"

@@ -3,9 +3,6 @@ import {
   Bell,
   Brush,
   Cable,
-  LayoutGrid,
-  PanelLeft,
-  PanelsTopLeft,
   RotateCcw,
   SlidersHorizontal,
   X,
@@ -30,7 +27,6 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs.js"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
 import { SettingsField } from "@/components/SettingsField.js"
 import { themePreviewSwatches } from "@/theme/bundled.js"
 import {
@@ -38,19 +34,20 @@ import {
   DEFAULT_UI_FONT_FAMILY,
 } from "../theme/appearance-defaults.js"
 
-export type SessionLayout = "cards" | "tabs" | "sidebar"
+/** Mission Control is sidebar-only; legacy `"cards"` / `"tabs"` normalize here. */
+export type SessionLayout = "sidebar"
 
 export type JetAppearanceSettings = {
   themeId: string
   fontSize: number
-  /** Mission Control cards, browser-style tabs, or sidebar navigation. */
+  /** Always `"sidebar"` — kept for persistence / agent-bridge compat. */
   sessionLayout: SessionLayout
   /** Whether the Mission Control sidebar is collapsed (icon mode). */
   sidebarCollapsed: boolean
   /** Sidebar expanded width in px (clamped 240–480). */
   sidebarWidth: number
   /**
-   * Project filter in sidebar layout (`null` = All).
+   * Project filter (`null` = All).
    * Persisted as absolute project path (stable across reloads).
    */
   sidebarProjectFilterPath: string | null
@@ -159,14 +156,9 @@ function ThemeButton({
   )
 }
 
-type SettingsCategory = "general" | "appearance" | "notifications" | "server"
+type SettingsCategory = "appearance" | "notifications" | "server"
 
 const SETTINGS_CATEGORIES = {
-  general: {
-    label: "General",
-    description: "Choose how sessions are arranged in Mission Control.",
-    icon: SlidersHorizontal,
-  },
   appearance: {
     label: "Appearance",
     description: "Tune the theme and typography across the app.",
@@ -234,7 +226,7 @@ export function SettingsOverlay({
   const [remoteServerUrl, setRemoteServerUrl] = useState("")
   const [serverPending, setServerPending] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
-  const [category, setCategory] = useState<SettingsCategory>("general")
+  const [category, setCategory] = useState<SettingsCategory>("appearance")
   const compactNavigation = useCompactSettingsNavigation()
 
   useEffect(() => {
@@ -277,7 +269,7 @@ export function SettingsOverlay({
     }
   }
 
-  const categories: SettingsCategory[] = ["general", "appearance"]
+  const categories: SettingsCategory[] = ["appearance"]
   if (notificationPrefs) categories.push("notifications")
   if (serverConnection && onServerConnect) categories.push("server")
 
@@ -297,8 +289,7 @@ export function SettingsOverlay({
         <DialogHeader className="sr-only">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Configure session layout, appearance, notifications, and server
-            connection.
+            Configure appearance, notifications, and server connection.
           </DialogDescription>
         </DialogHeader>
         <Tabs
@@ -382,72 +373,6 @@ export function SettingsOverlay({
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <TabsContent
-              value="general"
-              className="min-h-0 flex-1"
-              data-gharargah-settings-panel="general"
-            >
-              <ScrollArea className="size-full">
-                <section className="flex flex-col gap-6 p-5 sm:p-7">
-                  <SettingsSectionHeader category="general" />
-                  <Separator />
-                  <div className="flex flex-col gap-3">
-                    <div>
-                      <h3 className="text-sm font-medium text-foreground">
-                        Session layout
-                      </h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Switch between a visual overview and denser navigation.
-                      </p>
-                    </div>
-                    <ToggleGroup
-                      type="single"
-                      variant="outline"
-                      value={settings.sessionLayout}
-                      onValueChange={(value) => {
-                        if (
-                          value === "cards" ||
-                          value === "tabs" ||
-                          value === "sidebar"
-                        ) {
-                          onSettingsChange(
-                            settingPatch(settings, { sessionLayout: value }),
-                          )
-                        }
-                      }}
-                      aria-label="Session layout"
-                      className="w-full gap-0"
-                    >
-                      <ToggleGroupItem
-                        value="cards"
-                        data-gharargah-session-layout-option="cards"
-                        className="h-10 flex-1 gap-2"
-                      >
-                        <LayoutGrid aria-hidden />
-                        Cards
-                      </ToggleGroupItem>
-                      <ToggleGroupItem
-                        value="tabs"
-                        data-gharargah-session-layout-option="tabs"
-                        className="h-10 flex-1 gap-2"
-                      >
-                        <PanelsTopLeft aria-hidden />
-                        Tabs
-                      </ToggleGroupItem>
-                      <ToggleGroupItem
-                        value="sidebar"
-                        data-gharargah-session-layout-option="sidebar"
-                        className="h-10 flex-1 gap-2"
-                      >
-                        <PanelLeft aria-hidden />
-                        Sidebar
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  </div>
-                </section>
-              </ScrollArea>
-            </TabsContent>
-
-            <TabsContent
               value="appearance"
               className="min-h-0 flex-1"
               data-gharargah-settings-panel="appearance"
@@ -462,7 +387,7 @@ export function SettingsOverlay({
                         Theme
                       </h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Choose a glass palette.
+                        Choose a color palette.
                       </p>
                     </div>
                     <div className="grid gap-1.5 lg:grid-cols-2">

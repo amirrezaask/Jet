@@ -341,7 +341,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             mode === "editor" ? "z-10" : "pointer-events-none z-0",
           )}
         >
-          {editor}
+          {mode === "editor" ? editor : null}
         </div>
         <div
           id="gharargah-session-pane-terminal"
@@ -357,7 +357,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             mode === "terminal" ? "z-10" : "pointer-events-none z-0",
           )}
         >
-          {terminal}
+          {mode === "terminal" ? terminal : null}
         </div>
         <div
           id="gharargah-session-pane-git"
@@ -399,7 +399,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   if (presentation === "inline") {
     return (
       <section
-        data-gharargah-glass=""
         data-gharargah-liquid-glass="panel"
         data-gharargah-terminal-modal
         data-gharargah-session-id={sessionId}
@@ -457,12 +456,12 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             void window.gharargah?.terminal?.write(ptyId, "\u001b")
           }
         }}
-        data-gharargah-glass=""
         data-gharargah-liquid-glass="panel"
         data-gharargah-terminal-modal
         data-gharargah-session-id={sessionId}
         data-gharargah-session-presentation="modal"
         data-gharargah-session-mode={mode}
+        motion="instant"
         className="flex flex-col gap-0 overflow-hidden border-transparent bg-transparent p-0 shadow-none"
         aria-describedby={undefined}
         onOpenAutoFocus={event => {

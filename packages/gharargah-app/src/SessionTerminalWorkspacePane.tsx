@@ -59,8 +59,17 @@ export function SessionTerminalWorkspacePane(
   const [, refresh] = useReducer((value: number) => value + 1, 0)
 
   useEffect(
-    () => subscribeTerminalSessions(() => refresh()),
-    [],
+    () =>
+      subscribeTerminalSessions(tabId => {
+        if (tabId === sessionTabId) {
+          refresh()
+          return
+        }
+        if (terminalSessionForTab(tabId)?.parentSessionTabId === sessionTabId) {
+          refresh()
+        }
+      }),
+    [sessionTabId],
   )
 
   const includePrimary = primaryTerminal != null

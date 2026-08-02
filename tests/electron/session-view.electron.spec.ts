@@ -81,12 +81,15 @@ test.describe("terminal-first session workspace", () => {
       })
 
       expect(layout).not.toBeNull()
-      expect(layout?.pane).toEqual(layout?.body)
-      // Agent PTY fills the stage; floating mode dock overlays the bottom inset.
-      expect(layout?.terminal?.top).toBe(layout?.body?.top)
-      expect(layout?.terminal?.left).toBe(layout?.body?.left)
-      expect(layout?.terminal?.right).toBe(layout?.body?.right)
-      expect(layout?.terminal?.bottom).toBe(layout?.body?.bottom)
+      // Stages clear the floating mode dock via bottom inset (3.75rem).
+      expect(layout?.pane.top).toBe(layout?.body.top)
+      expect(layout?.pane.left).toBe(layout?.body.left)
+      expect(layout?.pane.right).toBe(layout?.body.right)
+      expect(layout?.pane.bottom).toBeLessThan(layout!.body.bottom)
+      expect(layout?.terminal?.top).toBe(layout?.pane.top)
+      expect(layout?.terminal?.left).toBe(layout?.pane.left)
+      expect(layout?.terminal?.right).toBe(layout?.pane.right)
+      expect(layout?.terminal?.bottom).toBe(layout?.pane.bottom)
     } finally {
       await app.close()
     }

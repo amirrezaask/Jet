@@ -54,6 +54,11 @@ export type AgentIngestResult = {
 
 type EmitFn = (event: AgentSnapshotStreamEvent) => void
 
+/** Keep recent telemetry; prune older rows so SQLite cannot grow forever. */
+const MAX_EVENTS_PER_SESSION = 2000
+const EVENT_TTL_MS = 14 * 24 * 60 * 60 * 1000
+const PRUNE_EVERY_N_PERSISTS = 32
+
 function nowIso(): string {
   return new Date().toISOString()
 }
@@ -122,6 +127,7 @@ function agentNotifToIngest(
 
 export class AgentTelemetryService {
   private readonly snapshots = new Map<string, AgentSessionSnapshot>()
+  private persistCount = 0
 
   constructor(
     private readonly db: DatabaseSync,
@@ -129,33 +135,31 @@ export class AgentTelemetryService {
     private readonly emit: EmitFn,
   ) {
     ensureAgentTelemetrySchema(db)
-    this.hydrateFromDb()
+    this.pruneEvents()
   }
 
-  private hydrateFromDb(): void {
+  private loadSnapshot(sessionId: string): AgentSessionSnapshot | undefined {
+    const cached = this.snapshots.get(sessionId)
+    if (cached) return cached
     try {
-      const rows = this.db
+      const row = this.db
         .prepare(
-          `SELECT session_id, snapshot_json FROM agent_session_snapshots`,
+          `SELECT snapshot_json FROM agent_session_snapshots WHERE session_id = ?`,
         )
-        .all() as Array<{ session_id: string; snapshot_json: string }>
-      for (const row of rows) {
-        try {
-          const snap = JSON.parse(row.snapshot_json) as AgentSessionSnapshot
-          this.snapshots.set(row.session_id, snap)
-        } catch {
-          /* skip */
-        }
-      }
+        .get(sessionId) as { snapshot_json: string } | undefined
+      if (!row) return undefined
+      const snap = JSON.parse(row.snapshot_json) as AgentSessionSnapshot
+      this.snapshots.set(sessionId, snap)
+      return snap
     } catch {
-      /* table may be empty */
+      return undefined
     }
   }
 
   getSnapshot(
     sessionId: string,
   ): Omit<AgentSessionSnapshot, "_internal"> | null {
-    const snap = this.snapshots.get(sessionId)
+    const snap = this.loadSnapshot(sessionId)
     return snap ? publicAgentSnapshot(snap) : null
   }
 
@@ -197,7 +201,7 @@ export class AgentTelemetryService {
     event: AgentEvent,
     projection?: NotificationProjectionContext,
   ): AgentIngestResult {
-    const prev = this.snapshots.get(event.sessionId)
+    const prev = this.loadSnapshot(event.sessionId)
     const driver = getCliAgentDriver(event.provider)
     const next = reduceAgentEvent(prev, event, {
       capabilities: driver.getCapabilities(),
@@ -408,6 +412,23 @@ export class AgentTelemetryService {
     return this.applyEvent(makeProcessExitedEvent(input))
   }
 
+  /**
+   * Drop in-memory + DB snapshot for a session (events pruned by retention).
+   * Call when the terminal/session is disposed from the roster.
+   */
+  disposeSession(sessionId: string): void {
+    if (!sessionId) return
+    this.snapshots.delete(sessionId)
+    try {
+      this.db
+        .prepare(`DELETE FROM agent_session_snapshots WHERE session_id = ?`)
+        .run(sessionId)
+    } catch {
+      /* ignore */
+    }
+    this.pruneEvents(sessionId)
+  }
+
   private persistEvent(event: AgentEvent): void {
     try {
       this.db
@@ -427,9 +448,44 @@ export class AgentTelemetryService {
           event.nativeSessionId || null,
           JSON.stringify(event),
         )
+      this.persistCount += 1
+      if (this.persistCount % PRUNE_EVERY_N_PERSISTS === 0) {
+        this.pruneEvents(event.sessionId)
+      }
     } catch {
       /* ignore persistence errors — in-memory still updated */
     }
+  }
+
+  /** Delete events older than TTL; when sessionId set, also cap that session. */
+  pruneEvents(sessionId?: string): { deleted: number } {
+    let deleted = 0
+    try {
+      const cutoff = new Date(Date.now() - EVENT_TTL_MS).toISOString()
+      const ttlResult = this.db
+        .prepare(`DELETE FROM agent_events WHERE occurred_at < ?`)
+        .run(cutoff)
+      deleted += Number(ttlResult.changes) || 0
+
+      if (sessionId) {
+        const result = this.db
+          .prepare(
+            `DELETE FROM agent_events
+             WHERE session_id = ?
+               AND id NOT IN (
+                 SELECT id FROM agent_events
+                 WHERE session_id = ?
+                 ORDER BY occurred_at DESC
+                 LIMIT ?
+               )`,
+          )
+          .run(sessionId, sessionId, MAX_EVENTS_PER_SESSION)
+        deleted += Number(result.changes) || 0
+      }
+    } catch {
+      /* ignore prune errors */
+    }
+    return { deleted }
   }
 
   private persistSnapshot(snap: AgentSessionSnapshot): void {

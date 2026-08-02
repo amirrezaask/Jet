@@ -7,7 +7,7 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { execCommand, hasPtySpawn, launchJet, REPO_ROOT } from "./_launch.js"
+import { hasPtySpawn, launchJet, REPO_ROOT } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -35,7 +35,6 @@ test.describe("sidebar view", () => {
       env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
     })
     try {
-      await execCommand(page, "ui.setSessionLayout.sidebar")
       await expect
         .poll(() =>
           page.evaluate(
@@ -324,11 +323,13 @@ test.describe("sidebar view", () => {
       await awayFromSidebar()
       await projectMonogram.hover()
       await expect
-        .poll(() =>
-          page
-            .getByRole("tooltip")
-            .filter({ hasText: projectName })
-            .isVisible(),
+        .poll(
+          () =>
+            page
+              .getByRole("tooltip")
+              .filter({ hasText: projectName })
+              .isVisible(),
+          { timeout: 15_000 },
         )
         .toBe(true)
 
@@ -551,7 +552,6 @@ test.describe("sidebar view", () => {
 
     const { app, page } = await launchJet()
     try {
-      await execCommand(page, "ui.setSessionLayout.sidebar")
       await expect
         .poll(() =>
           page.evaluate(
@@ -616,7 +616,6 @@ test.describe("sidebar view", () => {
     const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
     const { app, page } = await launchJet()
     try {
-      await execCommand(page, "ui.setSessionLayout.sidebar")
       await expect
         .poll(() =>
           page.evaluate(
@@ -707,7 +706,6 @@ test.describe("sidebar view", () => {
       env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
     })
     try {
-      await execCommand(page, "ui.setSessionLayout.sidebar")
       await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
       await page.locator("[data-gharargah-sidebar-new-session]").click()

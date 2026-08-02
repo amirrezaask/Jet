@@ -4,13 +4,13 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { execCommand, launchJet } from "./_launch.js"
+import { launchJet } from "./_launch.js"
 
 test.describe("desktop shell", () => {
   test("uses draggable custom chrome with platform controls kept clear", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       // Browser mode stays layout-neutral; then emulate the immutable preload
       // metadata to exercise the shared renderer's Electron chrome.
       await expectLocatorCount(page.locator("[data-gharargah-titlebar]"), 0)
@@ -33,7 +33,7 @@ test.describe("desktop shell", () => {
         })
       })
       await page.reload({ waitUntil: "domcontentloaded" })
-      await expectSelectorVisible(page, "[data-gharargah-home], [data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
 
       const titlebar = page.locator("[data-gharargah-titlebar]")
       await expectLocatorVisible(titlebar)
@@ -81,7 +81,6 @@ test.describe("desktop shell", () => {
         )
       }
 
-      await execCommand(page, "ui.setSessionLayout.sidebar")
       const sidebar = page.locator("[data-gharargah-mission-sidebar]")
       const sidebarSegment = page.locator(
         "[data-gharargah-titlebar-sidebar-segment]",

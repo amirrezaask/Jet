@@ -65,7 +65,7 @@ export type ListerProps<T> = {
   /**
    * flat chrome:
    * - plain — positioning only; render supplies focusable row (`data-gharargah-list-item`)
-   * - palette — CommandItem-like button wrapper (hot-glow + selected accent)
+   * - palette — CommandItem-like button wrapper (selected accent)
    */
   flatVariant?: "plain" | "palette"
   itemClassName?: string

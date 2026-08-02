@@ -52,9 +52,9 @@ const lightTheme: GharargahTheme = {
   },
 }
 
-const glassTheme: GharargahTheme = {
+const altDarkTheme: GharargahTheme = {
   ...defaultGharargahTheme,
-  id: "glass-blue",
+  id: "alt-dark",
   scheme: "dark",
   colors: {
     ...defaultGharargahTheme.colors,
@@ -76,15 +76,15 @@ describe("applyAgentChatCssVars", () => {
       assert.ok(lightSurface)
       assert.match(lightSurface, /#ffffff|#fafafa/i)
 
-      applyAgentChatCssVars(glassTheme)
-      const glassSurface = vars.get("--agent-composer-surface")
-      assert.ok(glassSurface)
-      assert.match(glassSurface, /#0e1622|#05070c/i)
+      applyAgentChatCssVars(altDarkTheme)
+      const altSurface = vars.get("--agent-composer-surface")
+      assert.ok(altSurface)
+      assert.match(altSurface, /#0e1622|#05070c/i)
 
       applyAgentChatCssVars(defaultGharargahTheme)
       const darkSurface = vars.get("--agent-composer-surface")
       assert.ok(darkSurface)
-      assert.notEqual(darkSurface, glassSurface)
+      assert.notEqual(darkSurface, altSurface)
     })
   })
 })

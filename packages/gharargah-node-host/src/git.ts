@@ -2,16 +2,60 @@ import { spawn } from "node:child_process"
 import type { GitStatusEntry, GitFileStatus } from "@gharargah/shared"
 import { uriToPath } from "./paths.js"
 
+/** Cap git stdout/stderr so huge diffs never build unbounded strings. */
+const MAX_GIT_STDOUT_BYTES = 32 * 1024 * 1024
+const MAX_GIT_STDERR_BYTES = 64 * 1024
+
+function appendBounded(current: string, chunk: Buffer, maxBytes: number): string | null {
+  if (current.length >= maxBytes) return null
+  try {
+    const next = current + chunk.toString("utf8")
+    return next.length <= maxBytes ? next : null
+  } catch {
+    return null
+  }
+}
+
 function runGit(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] })
     let stdout = ""
     let stderr = ""
-    proc.stdout.on("data", d => (stdout += d))
-    proc.stderr.on("data", d => (stderr += d))
+    let overflowed = false
+
+    const stopOverflow = (side: "stdout" | "stderr"): void => {
+      if (overflowed) return
+      overflowed = true
+      proc.kill()
+      reject(new Error(`git ${side} exceeded ${side === "stdout" ? MAX_GIT_STDOUT_BYTES : MAX_GIT_STDERR_BYTES} bytes`))
+    }
+
+    proc.stdout.on("data", (d: Buffer) => {
+      if (overflowed) return
+      const merged = appendBounded(stdout, d, MAX_GIT_STDOUT_BYTES)
+      if (merged === null) {
+        stopOverflow("stdout")
+        return
+      }
+      stdout = merged
+    })
+    proc.stderr.on("data", (d: Buffer) => {
+      if (overflowed) return
+      const merged = appendBounded(stderr, d, MAX_GIT_STDERR_BYTES)
+      if (merged === null) {
+        stopOverflow("stderr")
+        return
+      }
+      stderr = merged
+    })
     proc.on("close", code => {
+      if (overflowed) return
       if (code === 0) resolve(stdout)
       else reject(new Error(stderr || `git exit ${code}`))
+    })
+    proc.on("error", err => {
+      if (overflowed) return
+      reject(err)
     })
   })
 }

@@ -3,7 +3,12 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { expectLocatorVisible } from "../shell/assert.js"
-import { ensureCardsLayout, hasPtySpawn, launchJet, waitForTerminalText } from "./_launch.js"
+import {
+  ensureSidebarLayout,
+  hasPtySpawn,
+  launchJet,
+  waitForTerminalText,
+} from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 const CLI_ID = "11111111-1111-4111-8111-111111111111"
@@ -39,7 +44,7 @@ test.describe("active agent background resume", () => {
       },
     })
     try {
-      await ensureCardsLayout(page)
+      await ensureSidebarLayout(page)
       const workspace = await page.evaluate(() => {
         const item = window.__gharargahAgent!.getState().workspaces[0]
         if (!item?.path) throw new Error("workspace unavailable")
@@ -84,7 +89,7 @@ test.describe("active agent background resume", () => {
         timeout: 30_000,
       })
       await page.evaluate(() => window.__gharargahAgent!.waitForReady())
-      await ensureCardsLayout(page)
+      await ensureSidebarLayout(page)
 
       const summary = await expect
         .poll(
@@ -131,17 +136,13 @@ test.describe("active agent background resume", () => {
         .split("\n")
         .filter(Boolean).length
 
-      const project = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspace.name}"]`,
+      const warmRow = page.locator(
+        '[data-gharargah-sidebar-session="gharargah:terminal:warm-one"]',
       )
-      await expectLocatorVisible(project)
-      const warmCard = project
-        .locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
-        .filter({ hasText: "Warm one" })
-      await expectLocatorVisible(warmCard)
+      await expectLocatorVisible(warmRow)
 
       const openedAt = Date.now()
-      await warmCard.click()
+      await warmRow.click()
       const terminal = page.locator(
         '[data-gharargah-terminal-panel][data-gharargah-terminal-status="running"]',
       )
@@ -197,7 +198,7 @@ test.describe("active agent background resume", () => {
       },
     })
     try {
-      await ensureCardsLayout(page)
+      await ensureSidebarLayout(page)
       const workspace = await page.evaluate(() => {
         const item = window.__gharargahAgent!.getState().workspaces[0]
         if (!item?.path) throw new Error("workspace unavailable")
@@ -235,17 +236,13 @@ test.describe("active agent background resume", () => {
         timeout: 30_000,
       })
       await page.evaluate(() => window.__gharargahAgent!.waitForReady())
-      await ensureCardsLayout(page)
+      await ensureSidebarLayout(page)
 
-      const project = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${workspace.name}"]`,
+      const lateRow = page.locator(
+        '[data-gharargah-sidebar-session="gharargah:terminal:warm-open-4"]',
       )
-      await expectLocatorVisible(project)
-      const lateCard = project
-        .locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
-        .filter({ hasText: "Warm open 4" })
-      await expectLocatorVisible(lateCard)
-      await lateCard.click()
+      await expectLocatorVisible(lateRow)
+      await lateRow.click()
 
       const terminal = page.locator("[data-gharargah-terminal-panel]")
       await expectLocatorVisible(terminal, { timeout: 5_000 })
@@ -276,4 +273,3 @@ test.describe("active agent background resume", () => {
     }
   })
 })
-

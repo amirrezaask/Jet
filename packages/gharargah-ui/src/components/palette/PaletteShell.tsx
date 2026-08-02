@@ -141,7 +141,6 @@ export function PaletteShell<T>({
       <DialogContent
         motion="instant"
         size={size}
-        data-gharargah-glass=""
         data-gharargah-liquid-glass="panel"
         data-gharargah-palette=""
         data-gharargah-palette-fit={fitContent ? "content" : undefined}

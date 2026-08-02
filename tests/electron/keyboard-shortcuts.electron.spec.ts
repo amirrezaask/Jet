@@ -137,7 +137,6 @@ test.describe("keyboard shortcuts revamp", () => {
     const { app, page } = await launchJet()
     try {
       await waitForHome(page)
-      await execCommand(page, "ui.setSessionLayout.sidebar")
       await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
       await expect
         .poll(async () =>

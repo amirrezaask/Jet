@@ -7,15 +7,21 @@ import {
 } from "../shell/assert.js"
 
 import { resolve } from "node:path"
-import { launchJet, openNewAgentSession, ensureCardsLayout, REPO_ROOT, execCommand } from "./_launch.js"
+import {
+  launchJet,
+  openNewAgentSession,
+  ensureSidebarLayout,
+  REPO_ROOT,
+  execCommand,
+} from "./_launch.js"
 
 test.describe("electron project persistence", () => {
-  test("restores saved projects on home after reload", async () => {
+  test("restores saved projects in mission sidebar after reload", async () => {
     const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
 
     const { app, page } = await launchJet()
     try {
-      await ensureCardsLayout(page)
+      await ensureSidebarLayout(page)
       await page.evaluate(path => window.__gharargahAgent!.addWorkspace(path), secondPath)
       await expect
         .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
@@ -39,28 +45,35 @@ test.describe("electron project persistence", () => {
         )
         .toBeNull()
 
-      const secondName = "second-workspace"
-      const section = page.locator(
-        `[data-gharargah-project-section][data-gharargah-project-name="${secondName}"]`,
-      )
-      await expectLocatorVisible(section)
+      const secondChip = page
+        .locator("[data-gharargah-sidebar-project-filter-option]")
+        .filter({ hasText: "second-workspace" })
+      await expectLocatorVisible(secondChip)
       await openNewAgentSession(page)
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+        timeout: 20_000,
+      })
       await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
 
       await page.reload()
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
+      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+        timeout: 30_000,
+      })
       await page.evaluate(() => window.__gharargahAgent!.waitForReady())
       await expect
         .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
         .toBe(2)
 
-      await expectSelectorVisible(page, "[data-gharargah-home]")
-      const home = page.locator("[data-gharargah-home]")
-      await expectLocatorContainsText(home, "sample-workspace")
-      await expectLocatorContainsText(home, "second-workspace")
-      await expectLocatorCount(page.locator("[data-gharargah-monaco-editor], .monaco-editor"), 0)
+      await ensureSidebarLayout(page)
+      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      const filter = page.locator("[data-gharargah-sidebar-project-filter]")
+      await expectLocatorContainsText(filter, "sample-workspace")
+      await expectLocatorContainsText(filter, "second-workspace")
+      await expectLocatorCount(
+        page.locator("[data-gharargah-monaco-editor], .monaco-editor"),
+        0,
+      )
       await expectLocatorCount(page.locator("[data-gharargah-workspace-sidebar]"), 0)
     } finally {
       await app.close()

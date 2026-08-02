@@ -13,7 +13,7 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { RegistryContext } from "@effect-atom/atom-react"
-import { rosterAtom, notificationCenterAtom } from "./effect/atoms.js"
+import { rosterAtom } from "./effect/atoms.js"
 import type { PanelId, PanelView } from "@gharargah/shared"
 import { fileUriToPath, pathToFileUri } from "@gharargah/shared"
 import {
@@ -91,7 +91,6 @@ import {
   ProjectTodosPane,
 } from "@gharargah/ui"
 import { SessionTerminalWorkspacePane } from "./SessionTerminalWorkspacePane.js"
-import { HomeCardsWithAde } from "./HomeCardsWithAde.js"
 import {
   setPendingEditorNavigation,
   setPendingInitialContent,
@@ -145,10 +144,7 @@ import {
   isGenericAgentSessionTitle,
   shouldApplyAgentSessionTitle,
 } from "./agent-session-title.js"
-import {
-  applySessionTitleFromAgentEvent,
-  setAgentSessionTitleTabUpdater,
-} from "./agent-session-title-bridge.js"
+import { setAgentSessionTitleTabUpdater } from "./agent-session-title-bridge.js"
 import {
   ensureAgentCliProcess,
   applyAgentCliResumeLaunchArgs,
@@ -216,11 +212,6 @@ const GitWorkspace = lazy(async () => {
   await ensureMonacoWorkersConfigured()
   return import("@gharargah/ui/git")
 })
-const SessionTabBar = lazy(() =>
-  import("@gharargah/ui/session-tabs").then(module => ({
-    default: module.SessionTabBar,
-  })),
-)
 const FindReplacePopover = lazy(() =>
   import("@gharargah/ui/editor").then(module => ({
     default: module.FindReplacePopover,
@@ -1097,29 +1088,44 @@ export function GharargahApp() {
           : null,
     }
   }, [workspace])
+  const lastRosterJsonRef = useRef<string | null>(null)
   const persistSessionRoster = useCallback(() => {
     if (!sessionRosterReadyRef.current) return
     const roster = buildPersistedSessionRoster()
+    const json = JSON.stringify(roster)
+    if (json === lastRosterJsonRef.current) return
+    lastRosterJsonRef.current = json
     atomRegistry.set(rosterAtom, roster)
     rosterWriter.enqueue(roster)
   }, [buildPersistedSessionRoster, rosterWriter, atomRegistry])
 
+  const persistRosterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
+  const schedulePersistSessionRoster = useCallback(() => {
+    if (persistRosterTimerRef.current != null) {
+      clearTimeout(persistRosterTimerRef.current)
+    }
+    persistRosterTimerRef.current = setTimeout(() => {
+      persistRosterTimerRef.current = null
+      persistSessionRoster()
+    }, 400)
+  }, [persistSessionRoster])
+
+  useEffect(
+    () => () => {
+      if (persistRosterTimerRef.current != null) {
+        clearTimeout(persistRosterTimerRef.current)
+      }
+    },
+    [],
+  )
+
+  // Title / CLI capture only — list + counts owned by useNotificationCenter.
   useEffect(() => {
     const api = window.gharargah?.notifications
     if (!api?.onEvent) return
     return api.onEvent(event => {
-      if (event.type === "notification.counts-updated") {
-        atomRegistry.set(notificationCenterAtom, {
-          unreadCount: event.counts.totalUnread,
-          lastEventAt: new Date().toISOString(),
-        })
-      } else if (event.type === "notification.created") {
-        const prev = atomRegistry.get(notificationCenterAtom)
-        atomRegistry.set(notificationCenterAtom, {
-          unreadCount: prev.unreadCount + 1,
-          lastEventAt: new Date().toISOString(),
-        })
-      }
       if (event.type !== "notification.created") return
       const n = event.notification
       if (n.sessionId && n.sessionTitle) {
@@ -1153,7 +1159,7 @@ export function GharargahApp() {
         },
       )
     })
-  }, [atomRegistry, workspace])
+  }, [workspace])
 
   useEffect(() => {
     setAgentSessionTitleTabUpdater((tabId, label) => {
@@ -1163,12 +1169,12 @@ export function GharargahApp() {
     return () => setAgentSessionTitleTabUpdater(null)
   }, [workspace, persistSessionRoster])
 
+  // Telemetry + CLI id — session titles owned by installAgentSessionTitleBridge.
   useEffect(() => {
     const agentsApi = window.gharargah?.agents
     if (!agentsApi?.onEvent) return
     return agentsApi.onEvent(payload => {
       applyAgentStreamUnknown(payload)
-      applySessionTitleFromAgentEvent(payload)
       if (
         payload.type === "agents.snapshot" &&
         payload.nativeSessionId &&
@@ -1199,13 +1205,21 @@ export function GharargahApp() {
   useEffect(() => {
     const persistLatestOnPageHide = () => {
       if (!sessionRosterReadyRef.current) return
+      if (persistRosterTimerRef.current != null) {
+        clearTimeout(persistRosterTimerRef.current)
+        persistRosterTimerRef.current = null
+      }
       const roster = buildPersistedSessionRoster()
       // The normal state subscription already persists intentional removal of
       // the final session. Do not let an unload-time empty snapshot overwrite
       // a newer server-side roster written by another client/test fixture.
       if (roster.sessions.length === 0) return
-      atomRegistry.set(rosterAtom, roster)
-      rosterWriter.enqueue(roster)
+      const json = JSON.stringify(roster)
+      if (json !== lastRosterJsonRef.current) {
+        lastRosterJsonRef.current = json
+        atomRegistry.set(rosterAtom, roster)
+        rosterWriter.enqueue(roster)
+      }
       rosterWriter.flush()
     }
     const retryWhenOnline = () => rosterWriter.flush()
@@ -1464,37 +1478,45 @@ export function GharargahApp() {
     setMessage: showGharargahToast,
   })
 
+  const boundNotificationSessionsRef = useRef(
+    new Map<string, string>(),
+  )
   useEffect(
     () =>
-      subscribeTerminalSessions(tabId => {
+      subscribeTerminalSessions((tabId, kind) => {
+        if (kind !== "roster") return
         const session = terminalSessionForTab(tabId)
-        const owningSessionTabId = session?.parentSessionTabId ?? tabId
-        tabStore.update(owningSessionTabId, previous => ({
-          ...(previous as object),
-        }))
+        // Cleared top-level session — refresh sidebar; drop bind cache.
+        if (!session) {
+          boundNotificationSessionsRef.current.delete(tabId)
+          setTerminalSessionRevision(revision => revision + 1)
+          return
+        }
+        if (session.parentSessionTabId) return
         setTerminalSessionRevision(revision => revision + 1)
-        if (!session) return
-        const owningSession =
-          terminalSessionForTab(owningSessionTabId) ?? session
         const folder = workspace.folders.find(
-          f => f.root.uri === owningSession.cwdRootUri,
+          f => f.root.uri === session.cwdRootUri,
         )
-        const provider =
-          (owningSession.agentId as AgentProvider | undefined) ?? null
+        const projectId = folder?.id ?? session.cwdRootUri
+        const provider = (session.agentId as AgentProvider | undefined) ?? null
+        const sessionTitle =
+          session.customLabel ??
+          session.agentTitle ??
+          workspace.tabRegistry.get(tabId)?.label ??
+          null
+        const bindKey = `${session.ptyId ?? ""}|${projectId}|${sessionTitle ?? ""}|${provider ?? ""}`
+        if (boundNotificationSessionsRef.current.get(tabId) === bindKey) return
+        boundNotificationSessionsRef.current.set(tabId, bindKey)
         void notificationsRef.current.bindSession({
-          sessionId: owningSessionTabId,
-          projectId: folder?.id ?? owningSession.cwdRootUri,
+          sessionId: tabId,
+          projectId,
           projectName: folder?.root.name ?? null,
-          sessionTitle:
-            owningSession.customLabel ??
-            owningSession.agentTitle ??
-            workspace.tabRegistry.get(owningSessionTabId)?.label ??
-            null,
+          sessionTitle,
           provider,
           ptyId: session.ptyId ?? null,
         })
       }),
-    [tabStore, workspace],
+    [workspace],
   )
 
   const openNotificationSession = useCallback(
@@ -1527,9 +1549,9 @@ export function GharargahApp() {
   openNotificationSessionRef.current = openNotificationSession
 
   useEffect(() => {
-    persistSessionRoster()
+    schedulePersistSessionRoster()
   }, [
-    persistSessionRoster,
+    schedulePersistSessionRoster,
     terminalModalTabId,
     sessionMode,
     terminalSessionRevision,
@@ -1843,16 +1865,10 @@ export function GharargahApp() {
   }, [resetAppearanceSettings])
 
   const toggleSidebar = useCallback(() => {
-    setAppearanceSettings(prev => {
-      if (prev.sessionLayout !== "sidebar") {
-        return {
-          ...prev,
-          sessionLayout: "sidebar",
-          sidebarCollapsed: false,
-        }
-      }
-      return { ...prev, sidebarCollapsed: !prev.sidebarCollapsed }
-    })
+    setAppearanceSettings(prev => ({
+      ...prev,
+      sidebarCollapsed: !prev.sidebarCollapsed,
+    }))
   }, [setAppearanceSettings])
 
   const appCommands = useMemo(
@@ -2359,28 +2375,6 @@ export function GharargahApp() {
         aliases: ["collapse sidebar", "show sidebar", "hide sidebar"],
       }),
     )
-    for (const layout of ["cards", "tabs", "sidebar"] as const) {
-      const title =
-        layout === "cards" ? "Cards" : layout === "tabs" ? "Tabs" : "Sidebar"
-      disposables.push(
-        commands.register(
-          `ui.setSessionLayout.${layout}`,
-          () => {
-            setAppearanceSettings(previous => ({
-              ...previous,
-              sessionLayout: layout,
-            }))
-            showGharargahToast(`Session layout: ${title}`)
-          },
-          {
-            id: `ui.setSessionLayout.${layout}`,
-            title: `Session Layout: ${title}`,
-            category: "UI",
-            aliases: ["home layout", "sessions", layout],
-          },
-        ),
-      )
-    }
     return () => {
       for (const d of disposables) d?.dispose()
     }
@@ -2454,7 +2448,7 @@ export function GharargahApp() {
       })(),
       searchReady: searchScanReady,
       sessionMode: terminalModalTabId ? sessionMode : null,
-      sessionLayout: appearanceSettings.sessionLayout,
+      sessionLayout: "sidebar",
       agentChatEnabled: false,
     }))
     return () => {
@@ -2472,7 +2466,6 @@ export function GharargahApp() {
     searchScanReady,
     sessionMode,
     terminalModalTabId,
-    appearanceSettings.sessionLayout,
   ])
 
   useEffect(() => {
@@ -2720,20 +2713,9 @@ export function GharargahApp() {
 
   const handleAppearanceSettingsChange = useCallback(
     (next: JetAppearanceSettings) => {
-      const leavingInline =
-        (appearanceSettings.sessionLayout === "tabs" ||
-          appearanceSettings.sessionLayout === "sidebar") &&
-        next.sessionLayout === "cards"
-      if (leavingInline) {
-        closeTerminalModal()
-      }
       setAppearanceSettings(next)
     },
-    [
-      appearanceSettings.sessionLayout,
-      closeTerminalModal,
-      setAppearanceSettings,
-    ],
+    [setAppearanceSettings],
   )
 
   const overlayHandlers = useMemo(
@@ -2899,16 +2881,9 @@ export function GharargahApp() {
     editorPanelId && editorActiveTabId
     ? { kind: "tabs", activeTabId: editorActiveTabId, tabIds: editorTabIds }
     : null
-  const terminalGroups = getTerminalExplorerGroups()
-  const sessionTabs = terminalGroups.flatMap(group =>
-    group.terminals.map(terminal => ({
-      tabId: terminal.tabId,
-      panelId: terminal.panelId,
-      title: terminal.label,
-      projectName: group.name,
-      status: terminal.status,
-      agentId: terminal.agentId,
-    })),
+  const terminalGroups = useMemo(
+    () => getTerminalExplorerGroups(),
+    [getTerminalExplorerGroups, panelTree, terminalSessionRevision, workspace.folders],
   )
   const homeGroupsForSidebar = useMemo(
     () =>
@@ -2949,13 +2924,6 @@ export function GharargahApp() {
       lastActivityBySession,
     ],
   )
-  const newSessionRootUri =
-    (terminalModalTabId ? terminalCwdForTab(terminalModalTabId) : null) ??
-    workspace.manager.activeFolder?.root.uri ??
-    workspace.root?.uri ??
-    workspace.folders[0]?.root.uri ??
-    ""
-
   const openSidebarSession = useCallback(
     (session: SidebarSession) => {
       openTerminalFromHome(session.panelId, session.id)
@@ -2978,9 +2946,6 @@ export function GharargahApp() {
     [workspace],
   )
 
-  const isSidebarLayout = appearanceSettings.sessionLayout === "sidebar"
-  const isInlineWorkspace =
-    appearanceSettings.sessionLayout === "tabs" || isSidebarLayout
   const [sidebarWorkspaceHost, setSidebarWorkspaceHost] =
     useState<HTMLDivElement | null>(null)
   const desktopWindowChrome =
@@ -3018,7 +2983,7 @@ export function GharargahApp() {
           <div
             className="flex h-full min-h-0 w-full flex-col"
             data-gharargah-shell="home"
-            data-gharargah-session-layout={appearanceSettings.sessionLayout}
+            data-gharargah-session-layout="sidebar"
             style={
               desktopWindowChrome
                 ? ({
@@ -3031,193 +2996,117 @@ export function GharargahApp() {
               <GharargahWindowTitlebar
                 platform={desktopWindowChrome.platform}
                 title={windowTitle}
-                sidebar={
-                  isSidebarLayout
-                    ? {
-                        collapsed: appearanceSettings.sidebarCollapsed,
-                        width: appearanceSettings.sidebarWidth,
-                      }
-                    : null
-                }
+                sidebar={{
+                  collapsed: appearanceSettings.sidebarCollapsed,
+                  width: appearanceSettings.sidebarWidth,
+                }}
               />
-            ) : null}
-            {appearanceSettings.sessionLayout === "tabs" ? (
-              <div
-                data-gharargah-liquid-glass="chrome"
-                className="flex items-center gap-1 border-b border-transparent bg-transparent pe-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <Suspense
-                    fallback={
-                      <div className="h-10 shrink-0" />
-                    }
-                  >
-                    <SessionTabBar
-                      sessions={sessionTabs}
-                      activeTabId={terminalModalTabId}
-                      onSelect={openTerminalFromHome}
-                      onClose={closeTerminalTab}
-                      newSessionRootUri={newSessionRootUri}
-                      onNewTab={rootUri => void newSessionTab(rootUri)}
-                    />
-                  </Suspense>
-                </div>
-                <NotificationBell
-                  counts={notifications.counts}
-                  onClick={() => notifications.setOpen(true)}
-                />
-              </div>
             ) : null}
             <div className="min-h-0 flex-1 overflow-hidden">
-              {appearanceSettings.sessionLayout === "cards" ? (
-              <HomeCardsWithAde
-                  groups={terminalGroups.map(g => ({
-                  id: g.id,
-                  name: g.name,
-                  path: g.path,
-                  rootUri: g.rootUri,
-                  terminals: g.terminals.map(t => ({
-                      tabId: t.tabId,
-                      panelId: t.panelId,
-                      label: t.label,
-                      status: t.status,
-                      exitCode: t.exitCode,
-                      launchCommand: t.launchCommand,
-                      agentId: t.agentId,
-                      archivedAt: t.archivedAt,
-                  })),
-                }))}
-                unreadBySession={notifications.unreadBySession}
-                onOpenTerminal={openTerminalFromHome}
-                onNewSession={rootUri => void newAgentTabFromHome(rootUri)}
-                  onOpenInApp={(rootUri, appId) =>
-                    void openProjectInApp(rootUri, appId)
-                  }
-                onRemoveProject={removeProjectByRootUri}
-                onKillTerminal={closeTerminalTab}
-                onArchiveSession={archiveSessionFromHome}
-                onOpenTodos={rootUri => void openTodosFromHome(rootUri)}
-                notificationBell={
-                  <NotificationBell
-                    counts={notifications.counts}
-                    onClick={() => notifications.setOpen(true)}
-                  />
+              <SidebarProvider
+                open={!appearanceSettings.sidebarCollapsed}
+                onOpenChange={open =>
+                  setAppearanceSettings(prev => ({
+                    ...prev,
+                    sidebarCollapsed: !open,
+                  }))
                 }
-                onViewProjectNotifications={projectId =>
-                  notifications.openFiltered({ projectId })
-                }
-                onViewSessionNotifications={sessionId =>
-                  notifications.openFiltered({ sessionId })
-                }
-              />
-              ) : null}
-
-              {isSidebarLayout ? (
-                <SidebarProvider
-                  open={!appearanceSettings.sidebarCollapsed}
-                  onOpenChange={open =>
-                    setAppearanceSettings(prev => ({
-                      ...prev,
-                      sidebarCollapsed: !open,
-                    }))
-                  }
-                  style={sidebarWidthStyle(appearanceSettings.sidebarWidth)}
-                  className="h-full min-h-0"
-                >
-                  <div className="flex h-full min-h-0 w-full">
-                    <GharagahSidebar
-                      projects={sidebarProjects}
-                      sessions={sidebarSessions}
-                      projectFilterId={
-                        appearanceSettings.sidebarProjectFilterPath
+                style={sidebarWidthStyle(appearanceSettings.sidebarWidth)}
+                className="h-full min-h-0"
+              >
+                <div className="flex h-full min-h-0 w-full">
+                  <GharagahSidebar
+                    projects={sidebarProjects}
+                    sessions={sidebarSessions}
+                    projectFilterId={
+                      appearanceSettings.sidebarProjectFilterPath
+                    }
+                    onProjectFilterIdChange={id =>
+                      setAppearanceSettings(prev => ({
+                        ...prev,
+                        sidebarProjectFilterPath: id,
+                      }))
+                    }
+                    selectedSessionId={terminalModalTabId}
+                    onSelectSession={openSidebarSession}
+                    onNewSession={rootUri => {
+                      const target =
+                        rootUri ??
+                        workspace.manager.activeFolder?.root.uri ??
+                        workspace.folders[0]?.root.uri ??
+                        ""
+                      if (target) {
+                        void newAgentTabFromHome(target)
                       }
-                      onProjectFilterIdChange={id =>
-                        setAppearanceSettings(prev => ({
-                          ...prev,
-                          sidebarProjectFilterPath: id,
-                        }))
-                      }
-                      selectedSessionId={terminalModalTabId}
-                      onSelectSession={openSidebarSession}
-                      onNewSession={rootUri => {
-                        const target =
-                          rootUri ??
-                          workspace.manager.activeFolder?.root.uri ??
-                          workspace.folders[0]?.root.uri ??
-                          ""
-                        if (target) {
-                          void newAgentTabFromHome(target)
-                        }
-                      }}
-                      notificationBell={
-                        <NotificationBell
-                          counts={notifications.counts}
-                          onClick={() => notifications.setOpen(true)}
-                          className="size-8 shrink-0 rounded-lg"
-                        />
-                      }
-                      onSidebarWidthChange={widthPx =>
-                        setAppearanceSettings(prev => ({
-                          ...prev,
-                          sidebarWidth: widthPx,
-                        }))
-                      }
-                      showWindowChrome={desktopWindowChrome != null}
-                      sessionActions={{
-                        onOpen: openSidebarSession,
-                        onRename: renameSidebarSession,
-                        onMarkRead: s =>
-                          void notifications.markSessionRead(s.id),
-                        onArchive: s =>
-                          void archiveSessionFromHome(s.panelId, s.id),
-                      }}
-                      projectActions={{
-                        onNewSession: project =>
-                          void newAgentTabFromHome(project.rootUri),
-                        onOpenProject: project => {
-                          void openWorkspaceFolder(
-                            fileUriToPath(project.rootUri) ?? project.path,
-                            { replace: false },
-                          )
-                        },
-                        onRevealFolder: project => {
-                          void window.gharargah?.shell?.revealInFolder?.(
-                            project.rootUri,
-                          )
-                        },
-                        onRemoveProject: project => {
-                          const filterPath =
-                            appearanceSettings.sidebarProjectFilterPath
-                          if (
-                            filterPath != null &&
-                            normalizeAbsPath(filterPath) ===
-                              normalizeAbsPath(project.path)
-                          ) {
-                            setAppearanceSettings(prev => ({
-                              ...prev,
-                              sidebarProjectFilterPath: null,
-                            }))
-                          }
-                          void removeProjectByRootUri(project.rootUri)
-                        },
-                      }}
-                      onOpenSettings={() => setSettingsOpen(true)}
-                      serverLabel={
-                        /^(localhost|127\.0\.0\.1|\[::1\])(?::|$)/.test(window.location.host)
-                          ? "Local host"
-                          : window.location.host
-                      }
-                    />
-                    <SidebarInset className="flex min-h-0 flex-col overflow-hidden bg-transparent">
-                      <div
-                        ref={setSidebarWorkspaceHost}
-                        className="relative min-h-0 flex-1 overflow-hidden p-0"
-                        data-gharargah-sidebar-workspace=""
+                    }}
+                    notificationBell={
+                      <NotificationBell
+                        counts={notifications.counts}
+                        onClick={() => notifications.setOpen(true)}
+                        className="size-8 shrink-0 rounded-lg"
                       />
-                    </SidebarInset>
-                  </div>
-                </SidebarProvider>
-              ) : null}
+                    }
+                    onSidebarWidthChange={widthPx =>
+                      setAppearanceSettings(prev => ({
+                        ...prev,
+                        sidebarWidth: widthPx,
+                      }))
+                    }
+                    showWindowChrome={desktopWindowChrome != null}
+                    sessionActions={{
+                      onOpen: openSidebarSession,
+                      onRename: renameSidebarSession,
+                      onMarkRead: s =>
+                        void notifications.markSessionRead(s.id),
+                      onArchive: s =>
+                        void archiveSessionFromHome(s.panelId, s.id),
+                    }}
+                    projectActions={{
+                      onNewSession: project =>
+                        void newAgentTabFromHome(project.rootUri),
+                      onOpenProject: project => {
+                        void openWorkspaceFolder(
+                          fileUriToPath(project.rootUri) ?? project.path,
+                          { replace: false },
+                        )
+                      },
+                      onRevealFolder: project => {
+                        void window.gharargah?.shell?.revealInFolder?.(
+                          project.rootUri,
+                        )
+                      },
+                      onRemoveProject: project => {
+                        const filterPath =
+                          appearanceSettings.sidebarProjectFilterPath
+                        if (
+                          filterPath != null &&
+                          normalizeAbsPath(filterPath) ===
+                            normalizeAbsPath(project.path)
+                        ) {
+                          setAppearanceSettings(prev => ({
+                            ...prev,
+                            sidebarProjectFilterPath: null,
+                          }))
+                        }
+                        void removeProjectByRootUri(project.rootUri)
+                      },
+                    }}
+                    onOpenSettings={() => setSettingsOpen(true)}
+                    serverLabel={
+                      /^(localhost|127\.0\.0\.1|\[::1\])(?::|$)/.test(window.location.host)
+                        ? "Local host"
+                        : window.location.host
+                    }
+                  />
+                  <SidebarInset className="flex min-h-0 flex-col overflow-hidden bg-transparent">
+                    <div
+                      ref={setSidebarWorkspaceHost}
+                      className="relative min-h-0 flex-1 overflow-hidden p-0"
+                      data-gharargah-sidebar-workspace=""
+                    />
+                  </SidebarInset>
+                </div>
+              </SidebarProvider>
 
             <div
               id="gharargah-notification-live"
@@ -3228,13 +3117,13 @@ export function GharargahApp() {
 
             {terminalModalTabId && terminalModalPanelId
               ? ((node: ReactElement) =>
-                  isSidebarLayout && sidebarWorkspaceHost
+                  sidebarWorkspaceHost
                     ? createPortal(node, sidebarWorkspaceHost)
                     : node)(
                   <TerminalSessionModal
                     sessionId={terminalModalTabId}
                     open
-                    presentation={isInlineWorkspace ? "inline" : "modal"}
+                    presentation="inline"
                     windowChrome={desktopWindowChrome}
                     headerEnd={
                       <NotificationBell

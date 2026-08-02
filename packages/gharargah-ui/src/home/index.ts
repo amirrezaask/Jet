@@ -1,14 +1,12 @@
-export { GharargahHome, type GharargahHomeProps, type HomeProjectGroup } from "./GharargahHome.js"
 export {
   GharargahWindowTitlebar,
   type GharargahWindowTitlebarProps,
   type DesktopWindowPlatform,
 } from "./GharargahWindowTitlebar.js"
-export { ProjectSection, type HomeProjectSectionProps, type HomeTerminalEntry } from "./ProjectSection.js"
-export { TerminalCard, type TerminalCardProps, type TerminalCardStatus } from "./TerminalCard.js"
-export { SessionCard, type SessionCardProps } from "./SessionCard.js"
-export { EmptySessionCard, type EmptySessionCardProps } from "./EmptySessionCard.js"
-export { StatusBadge, type StatusBadgeProps } from "./StatusBadge.js"
+export {
+  type HomeProjectGroup,
+  type HomeTerminalEntry,
+} from "./home-session-types.js"
 export {
   NotificationBell,
   NotificationCenter,
@@ -20,31 +18,17 @@ export {
   type NotificationItemProps,
 } from "../notifications/index.js"
 export {
-  SessionTabBar,
-  type SessionTabBarProps,
-  type SessionTabItem,
-} from "./SessionTabBar.js"
-export {
   defaultSessionDescription,
   detectSessionProvider,
   mapRuntimeStatusToCardStatus,
   providerDisplayLabel,
   sessionStatusLabel,
+  sessionAgentLabel,
   type SessionCardModel,
   type SessionCardStatus,
   type SessionProvider,
   type TerminalRuntimeStatus,
 } from "./session-card-model.js"
-export {
-  adeFieldsFromSnapshot,
-  mapAgentStatusToCardStatus,
-  cardModelFromAdeSnapshot,
-} from "./ade-session-card.js"
-export {
-  AgentActivityTimeline,
-  useSharedClockMs,
-  type AgentActivityTimelineProps,
-} from "./AgentActivityTimeline.js"
 export {
   TerminalSessionModal,
   TERMINAL_MODAL_SESSION_LIST_ID,
@@ -86,7 +70,6 @@ export {
   type OpenInAppMenuProps,
   type OpenInAppTarget,
 } from "./OpenInAppMenu.js"
-export { timeOfDayGreeting, formatHomeDate } from "./greeting.js"
 export {
   GharagahSidebar,
   sidebarWidthStyle,

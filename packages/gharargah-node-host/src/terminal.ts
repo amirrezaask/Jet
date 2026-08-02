@@ -6,6 +6,10 @@ import { uriToPath } from "./paths.js"
 
 const MAX_TERMINAL_REPLAY = 2 * 1024 * 1024
 const MAX_WRITE_BYTES = 1024 * 1024
+/** Hard cap concurrent PTY entries (running + exited-but-not-disposed). */
+const MAX_TERMINAL_ENTRIES = 64
+/** Auto-dispose exited PTYs so replay buffers do not linger forever. */
+const EXITED_TERMINAL_DISPOSE_TTL_MS = 90_000
 /**
  * node-pty commonly delivers output in 1 KiB chunks. Sending each chunk as a
  * JSON/WebSocket event makes a log flood spend more time on framing, parsing,
@@ -60,6 +64,7 @@ type EmitFn = (channel: string, args: unknown[]) => void
 type TerminalEntry = {
   id: string
   title: string | null
+  titleKey: string | null
   clientId: string
   status: "running" | "exited"
   exitCode: number | null
@@ -71,6 +76,7 @@ type TerminalEntry = {
   pendingOutput: string[]
   pendingOutputBytes: number
   pendingOutputTimer: ReturnType<typeof setTimeout> | null
+  disposeTimer: ReturnType<typeof setTimeout> | null
   /** Chars emitted to the client that have not yet been ack'd as parsed. */
   unacknowledgedChars: number
   ptyPaused: boolean
@@ -230,6 +236,12 @@ export class TerminalHost {
   }
 
   create(cwdUri: string, launch: TerminalLaunch | null | undefined, clientId: string): TerminalCreateResult {
+    if (this.entries.size >= MAX_TERMINAL_ENTRIES) {
+      throw new Error(
+        `too many terminals (max ${MAX_TERMINAL_ENTRIES}); dispose unused sessions first`,
+      )
+    }
+
     let cwd = cwdUri.length <= 32_768 ? uriToPath(cwdUri) : os.homedir()
     try {
       if (!fs.statSync(cwd).isDirectory()) cwd = os.homedir()
@@ -275,17 +287,19 @@ export class TerminalHost {
 
     const id = `term-${Date.now()}-${++this.seqCounter}`
     let title: string | null = null
+    let titleKey: string | null = null
     if (!custom) {
       const base = path.basename(proc.process || defaultShell().command)
-      const key = `${cwd}\0${base}`
-      const n = (this.titleCounts.get(key) ?? 0) + 1
-      this.titleCounts.set(key, n)
+      titleKey = `${cwd}\0${base}`
+      const n = (this.titleCounts.get(titleKey) ?? 0) + 1
+      this.titleCounts.set(titleKey, n)
       title = n === 1 ? base : `${base} ${n}`
     }
 
     const entry: TerminalEntry = {
       id,
       title,
+      titleKey,
       clientId,
       status: "running",
       exitCode: null,
@@ -297,6 +311,7 @@ export class TerminalHost {
       pendingOutput: [],
       pendingOutputBytes: 0,
       pendingOutputTimer: null,
+      disposeTimer: null,
       unacknowledgedChars: 0,
       ptyPaused: false,
       proc,
@@ -327,9 +342,27 @@ export class TerminalHost {
       const args: unknown[] = [id, exitCode]
       if (entry.signal) args.push(entry.signal)
       this.emit("terminal:exit", args)
+      this.scheduleDisposeAfterExit(entry)
     })
 
     return { id, title }
+  }
+
+  private scheduleDisposeAfterExit(entry: TerminalEntry): void {
+    if (entry.disposeTimer || entry.disposed) return
+    entry.disposeTimer = setTimeout(() => {
+      entry.disposeTimer = null
+      if (entry.disposed) return
+      this.dispose(entry.id)
+    }, EXITED_TERMINAL_DISPOSE_TTL_MS)
+    // Do not keep the process alive solely for this timer.
+    entry.disposeTimer.unref?.()
+  }
+
+  private clearDisposeTimer(entry: TerminalEntry): void {
+    if (!entry.disposeTimer) return
+    clearTimeout(entry.disposeTimer)
+    entry.disposeTimer = null
   }
 
   write(id: string, data: string): null {
@@ -393,6 +426,8 @@ export class TerminalHost {
   attach(id: string, clientId: string): TerminalAttachSnapshot | null {
     const entry = this.entries.get(id)
     if (!entry) return null
+    // Client re-attached — cancel auto-dispose so replay stays available.
+    this.clearDisposeTimer(entry)
     // Establish a clean sequence boundary. Otherwise a batch containing both
     // pre- and post-attach bytes could be accepted in full and duplicate replay.
     flushPendingOutput(entry, this.emit)
@@ -401,6 +436,10 @@ export class TerminalHost {
     // previous session's unacked count cannot keep the PTY paused.
     entry.unacknowledgedChars = 0
     resumePtyForFlowControl(entry)
+    // If already exited, reschedule dispose after this attach window.
+    if (entry.status === "exited") {
+      this.scheduleDisposeAfterExit(entry)
+    }
     return {
       id: entry.id,
       title: entry.title,
@@ -417,6 +456,7 @@ export class TerminalHost {
     if (!entry) return null
     this.entries.delete(id)
     entry.disposed = true
+    this.clearDisposeTimer(entry)
     if (entry.pendingOutputTimer) clearTimeout(entry.pendingOutputTimer)
     entry.pendingOutputTimer = null
     entry.pendingOutput.length = 0
@@ -427,6 +467,11 @@ export class TerminalHost {
     entry.exitDisposable?.dispose()
     entry.dataDisposable = null
     entry.exitDisposable = null
+    if (entry.titleKey) {
+      const n = (this.titleCounts.get(entry.titleKey) ?? 1) - 1
+      if (n <= 0) this.titleCounts.delete(entry.titleKey)
+      else this.titleCounts.set(entry.titleKey, n)
+    }
     try {
       entry.proc?.kill()
     } catch {

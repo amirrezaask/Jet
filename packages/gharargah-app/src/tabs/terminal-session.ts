@@ -14,13 +14,22 @@ import {
 import {
   defaultSessionStore,
   type HydratedTerminalSession,
+  type SessionNotifyKind,
   type TerminalSessionState,
 } from "../effect/session-runtime.js"
 import type { TerminalSessionStatus } from "../effect/session-machine.js"
+import { clearAgentSessionTelemetry } from "../agent-snapshot-store.js"
 
-export type { TerminalSessionStatus, TerminalSessionState, HydratedTerminalSession }
+export type {
+  TerminalSessionStatus,
+  TerminalSessionState,
+  HydratedTerminalSession,
+  SessionNotifyKind,
+}
 
-export function subscribeTerminalSessions(listener: (tabId: string) => void): () => void {
+export function subscribeTerminalSessions(
+  listener: (tabId: string, kind: SessionNotifyKind) => void,
+): () => void {
   return defaultSessionStore.subscribe(listener)
 }
 
@@ -174,6 +183,7 @@ export function resumeArchivedSession(tabId: string): void {
 
 export function clearTerminalSession(tabId: string): void {
   defaultSessionStore.clear(tabId)
+  clearAgentSessionTelemetry(tabId)
 }
 
 export function listTerminalSessions(): TerminalSessionState[] {
@@ -186,6 +196,7 @@ export function isSessionArchived(tabId: string): boolean {
 
 export function archiveSession(tabId: string): void {
   defaultSessionStore.archive(tabId)
+  clearAgentSessionTelemetry(tabId)
 }
 
 /** @deprecated Use `isSessionArchived`. */

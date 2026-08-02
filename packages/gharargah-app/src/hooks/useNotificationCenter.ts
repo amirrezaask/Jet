@@ -140,6 +140,14 @@ export function useNotificationCenter(): NotificationCenterState {
           }
           return [n, ...prev]
         })
+        // Host emits create once per id; counts-updated corrects totals.
+        if (n.sessionId && n.status === "unread") {
+          const sid = n.sessionId
+          setUnreadBySession(prev => ({
+            ...prev,
+            [sid]: (prev[sid] ?? 0) + 1,
+          }))
+        }
         const decision = evaluateDesktopDeliveryClient({
           prefs,
           notification: n,
@@ -172,7 +180,6 @@ export function useNotificationCenter(): NotificationCenterState {
           const live = document.getElementById("gharargah-notification-live")
           if (live) live.textContent = `${n.title}. ${n.message ?? ""}`
         }
-        void refresh()
         return
       }
       if (

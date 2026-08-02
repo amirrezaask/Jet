@@ -4,7 +4,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { WebSocketServer, WebSocket } from "ws"
-import { getLspSession, uriToPath } from "@gharargah/node-host"
+import { getLspSession, MAX_READ_BYTES, uriToPath } from "@gharargah/node-host"
 import {
   HostRpcRequest,
   InvalidRpcPayloadError,
@@ -29,6 +29,8 @@ import { normalizeProviderHookRequest } from "./notifications/index.js"
 const VERSION = "0.0.1"
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
 const MAX_WEBSOCKET_BUFFERED_BYTES = 8 * 1024 * 1024
+/** Bound concurrent /api/v1/rpc handlers to avoid stampede spikes. */
+const MAX_INFLIGHT_RPC = 32
 
 class HttpError extends Error {
   constructor(
@@ -66,9 +68,21 @@ export async function startHostServer(config: HostConfig): Promise<{
     }),
   )
 
+  let inflightRpc = 0
+
   const server = createServer(async (req, res) => {
     try {
-      await handleHttp(runtime, managed, req, res)
+      await handleHttp(runtime, managed, req, res, {
+        getInflightRpc: () => inflightRpc,
+        beginRpc: () => {
+          if (inflightRpc >= MAX_INFLIGHT_RPC) return false
+          inflightRpc += 1
+          return true
+        },
+        endRpc: () => {
+          inflightRpc = Math.max(0, inflightRpc - 1)
+        },
+      })
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500
       sendJson(res, status, {
@@ -127,11 +141,18 @@ export async function startHostServer(config: HostConfig): Promise<{
   return { runtime, close }
 }
 
+type RpcGate = {
+  getInflightRpc: () => number
+  beginRpc: () => boolean
+  endRpc: () => void
+}
+
 async function handleHttp(
   runtime: HostRuntime,
   managed: ManagedRuntime.ManagedRuntime<HostLayerServices, never>,
   req: IncomingMessage,
   res: ServerResponse,
+  rpcGate: RpcGate,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
   const { pathname } = url
@@ -153,32 +174,46 @@ async function handleHttp(
   }
 
   if (req.method === "POST" && pathname === "/api/v1/rpc") {
-    const body = await readJson(req)
-    const decoded = Schema.decodeUnknownEither(HostRpcRequest)(body)
-    if (decoded._tag === "Left") {
-      const error = new InvalidRpcPayloadError({
-        message: "invalid rpc body",
-        cause: decoded.left,
+    if (!rpcGate.beginRpc()) {
+      sendJson(res, 503, {
+        error: {
+          code: "HOST_BUSY",
+          message: `too many in-flight RPCs (max ${MAX_INFLIGHT_RPC})`,
+          details: { inflight: rpcGate.getInflightRpc() },
+        },
       })
-      const wire = hostErrorWire(error)
-      sendJson(res, hostErrorHttpStatus(error), { error: wire })
       return
     }
-    const { channel, args, clientId } = decoded.right
-    const rpcArgs = [...args]
-    const pathError = validateRpcPaths(runtime.config, channel, rpcArgs)
-    if (pathError) {
-      const wire = hostErrorWire(pathError)
-      sendJson(res, hostErrorHttpStatus(pathError), { error: wire })
-      return
+    try {
+      const body = await readJson(req)
+      const decoded = Schema.decodeUnknownEither(HostRpcRequest)(body)
+      if (decoded._tag === "Left") {
+        const error = new InvalidRpcPayloadError({
+          message: "invalid rpc body",
+          cause: decoded.left,
+        })
+        const wire = hostErrorWire(error)
+        sendJson(res, hostErrorHttpStatus(error), { error: wire })
+        return
+      }
+      const { channel, args, clientId } = decoded.right
+      const rpcArgs = [...args]
+      const pathError = validateRpcPaths(runtime.config, channel, rpcArgs)
+      if (pathError) {
+        const wire = hostErrorWire(pathError)
+        sendJson(res, hostErrorHttpStatus(pathError), { error: wire })
+        return
+      }
+      const result = await runHostRpc(managed, channel, rpcArgs, clientId)
+      if (result.ok) {
+        sendJson(res, 200, { value: result.value })
+        return
+      }
+      const wire = hostErrorWire(result.error)
+      sendJson(res, hostErrorHttpStatus(result.error), { error: wire })
+    } finally {
+      rpcGate.endRpc()
     }
-    const result = await runHostRpc(managed, channel, rpcArgs, clientId)
-    if (result.ok) {
-      sendJson(res, 200, { value: result.value })
-      return
-    }
-    const wire = hostErrorWire(result.error)
-    sendJson(res, hostErrorHttpStatus(result.error), { error: wire })
     return
   }
 
@@ -354,6 +389,23 @@ async function handleHttp(
           return
         }
         try {
+          const st = fs.statSync(abs)
+          if (st.isDirectory()) {
+            sendJson(res, 404, {
+              error: { code: "FILE_NOT_FOUND", message: "not a file", details: {} },
+            })
+            return
+          }
+          if (st.size > MAX_READ_BYTES) {
+            sendJson(res, 413, {
+              error: {
+                code: "FILE_TOO_LARGE",
+                message: `file too large: ${st.size} bytes (max ${MAX_READ_BYTES})`,
+                details: { size: st.size, max: MAX_READ_BYTES },
+              },
+            })
+            return
+          }
           const content = fs.readFileSync(abs, "utf8")
           sendJson(res, 200, { path: rel, content, version: fileVersion(abs) })
         } catch {

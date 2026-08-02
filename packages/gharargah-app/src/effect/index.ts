@@ -20,6 +20,7 @@ export {
   createSessionStore,
   runSession,
   type SessionRuntimeApi,
+  type SessionNotifyKind,
   type TerminalSessionState,
   type HydratedTerminalSession,
 } from "./session-runtime.js"
