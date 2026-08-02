@@ -43,6 +43,9 @@ export type TerminalSessionState = {
   archivedAt?: string
   /** Bounded terminal output retained for archived read-only playback. */
   transcript?: string
+  /** Live ring of output chunks; joined into `transcript` on archive/read. */
+  transcriptParts?: string[]
+  transcriptBytes?: number
 }
 
 export type HydratedTerminalSession = {
@@ -145,6 +148,22 @@ export function createSessionStore(): SessionRuntimeApi {
 
   function touchActivity(session: TerminalSessionState): void {
     session.lastActivityAt = new Date().toISOString()
+  }
+
+  function clearTranscript(session: TerminalSessionState): void {
+    session.transcript = undefined
+    session.transcriptParts = undefined
+    session.transcriptBytes = undefined
+  }
+
+  function materializeTranscript(session: TerminalSessionState): string | undefined {
+    if (session.transcript != null) return session.transcript
+    const parts = session.transcriptParts
+    if (!parts || parts.length === 0) return undefined
+    session.transcript = parts.join("")
+    session.transcriptParts = undefined
+    session.transcriptBytes = undefined
+    return session.transcript
   }
 
   function applyStatus(session: TerminalSessionState, event: SessionLifecycleEvent): void {
@@ -298,7 +317,7 @@ export function createSessionStore(): SessionRuntimeApi {
       session.hasUserInput = false
       session.hasMeaningfulOutput = false
       session.archivedAt = undefined
-      session.transcript = undefined
+      clearTranscript(session)
       touchActivity(session)
       notify(tabId)
     },
@@ -314,7 +333,7 @@ export function createSessionStore(): SessionRuntimeApi {
       session.hasUserInput = false
       session.hasMeaningfulOutput = false
       session.archivedAt = undefined
-      session.transcript = undefined
+      clearTranscript(session)
       touchActivity(session)
       notify(tabId)
     },
@@ -323,6 +342,7 @@ export function createSessionStore(): SessionRuntimeApi {
       const session = sessions.get(tabId)
       if (!session || session.archivedAt) return
       session.archivedAt = new Date().toISOString()
+      materializeTranscript(session)
       retirePty(session)
       applyStatus(session, { _tag: "Archive" })
       if (session.status === "exited") {
@@ -414,11 +434,22 @@ export function createSessionStore(): SessionRuntimeApi {
       const session = sessions.get(tabId)
       if (!session) return
       if (chunk) {
-        const next = `${session.transcript ?? ""}${chunk}`
-        session.transcript =
-          next.length > maxTranscriptChars
-            ? next.slice(next.length - maxTranscriptChars)
-            : next
+        // Chunk ring — avoid O(n²) string rebuild on every PTY frame while
+        // Cursor Agent floods output (was a main-thread typing killer).
+        const parts = session.transcriptParts ?? []
+        parts.push(chunk)
+        let bytes = (session.transcriptBytes ?? 0) + chunk.length
+        while (bytes > maxTranscriptChars && parts.length > 1) {
+          bytes -= parts.shift()!.length
+        }
+        if (bytes > maxTranscriptChars && parts.length === 1) {
+          const only = parts[0]!
+          parts[0] = only.slice(only.length - maxTranscriptChars)
+          bytes = parts[0]!.length
+        }
+        session.transcriptParts = parts
+        session.transcriptBytes = bytes
+        session.transcript = undefined
       }
       if (session.hasMeaningfulOutput) return
       if (!session.launchCommand && !session.hasUserInput) return

@@ -10,6 +10,7 @@ import { Spinner } from "../components/ui/spinner.js"
 import { TerminalScrollMotion } from "./terminal-scroll-motion.js"
 import { registerTerminalPathLinks } from "./terminal-links.js"
 import { createTerminalInputWriter } from "./terminal-input-writer.js"
+import { createTerminalOutputWriter } from "./terminal-output-writer.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
@@ -267,20 +268,14 @@ function isTerminalCursorHidden(term: XTerm): boolean {
   )
 }
 
-/** True when chunk toggles DECCTCEM (CSI ? 25 h/l). */
-function chunkTouchesCursorVisibility(data: string): boolean {
-  return data.includes("\x1b[?25l") || data.includes("\x1b[?25h")
-}
-
 /**
- * Write PTY bytes into xterm. Cursor hide/show is a mode flag — without an
- * explicit refresh, DomRenderer can leave a stale bar at the TUI parked
- * position (Cursor Agent paints its own caret, parks hardware cursor at bottom).
+ * Write PTY bytes into xterm. Cursor hide/show is handled via
+ * `data-gharargah-terminal-cursor-hidden` + CSS — never full-viewport
+ * `term.refresh` on DECCTCEM (Cursor Agent toggles it constantly; that
+ * refresh was the main typing jank source).
  */
 function writeTerminalOutput(term: XTerm, data: string, onPainted?: () => void): void {
-  const needsCursorPaint = chunkTouchesCursorVisibility(data)
   term.write(data, () => {
-    if (needsCursorPaint) term.refresh(0, Math.max(0, term.rows - 1))
     onPainted?.()
   })
 }
@@ -413,6 +408,7 @@ export function TerminalPanel({
     let dataDispose: { dispose: () => void } | null = null
     let binaryDispose: { dispose: () => void } | null = null
     let inputWriter: ReturnType<typeof createTerminalInputWriter> | null = null
+    let panelVisible = true
     let ptyStarted = false
     const exitUnsubscribe = terminalApi.onExit((id, code) => {
       if (session.ptyId !== id) return
@@ -465,6 +461,21 @@ export function TerminalPanel({
         : "0"
     }
 
+    // One rAF-batched write path. Full DomRenderer refresh on every DECCTCEM
+    // used to run here and made typing unusable during Cursor Agent floods —
+    // CSS cursor-hidden attr is enough; optional single-row refresh only when
+    // the panel is actually on screen.
+    const outputWriter = createTerminalOutputWriter({
+      write: (data, onPainted) => writeTerminalOutput(term, data, onPainted),
+      onPainted: syncCursorHiddenAttr,
+      refreshAfterPaint: () => {
+        if (!panelVisible) return
+        // Cursor row only — never the whole viewport on TUI hide/show spam.
+        const row = Math.max(0, term.buffer.active.cursorY)
+        term.refresh(row, row)
+      },
+    })
+
     const connectPty = (id: string) => {
       session.ptyId = id
       setConnectedPtyId(id)
@@ -472,7 +483,7 @@ export function TerminalPanel({
       setDisplayExitCode(undefined)
       unsub = terminalApi.onData(id, data => {
         onOutputRef.current?.(tabId, data)
-        writeTerminalOutput(term, data, syncCursorHiddenAttr)
+        outputWriter.enqueue(data)
       })
       if (!readOnly) {
         inputWriter = createTerminalInputWriter(
@@ -567,7 +578,8 @@ export function TerminalPanel({
             }
             if (attached.output) {
               onOutputRef.current?.(tabId, attached.output)
-              writeTerminalOutput(term, attached.output, syncCursorHiddenAttr)
+              outputWriter.enqueue(attached.output)
+              outputWriter.flush()
             }
             setDisplayStatus("exited")
             setDisplayExitCode(attached.exitCode)
@@ -575,7 +587,8 @@ export function TerminalPanel({
           }
           if (attached.output) {
             onOutputRef.current?.(tabId, attached.output)
-            writeTerminalOutput(term, attached.output, syncCursorHiddenAttr)
+            outputWriter.enqueue(attached.output)
+            outputWriter.flush()
           }
           if (attached.title) onTitleChangeRef.current?.(tabId, attached.title)
           if (!readOnly) connectPty(existingPtyId)
@@ -644,6 +657,7 @@ export function TerminalPanel({
     let wasVisible = false
     const visibilityObserver = new IntersectionObserver(entries => {
       const visible = entries.some(e => e.isIntersecting)
+      panelVisible = visible
       if (!visible) {
         wasVisible = false
         return
@@ -671,6 +685,7 @@ export function TerminalPanel({
       dataDispose?.dispose()
       binaryDispose?.dispose()
       inputWriter?.dispose()
+      outputWriter.dispose()
       unsub?.()
       pathLinks?.dispose()
       session.scrollMotion.dispose()

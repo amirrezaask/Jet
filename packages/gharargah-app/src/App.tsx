@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   useDeferredValue,
-  useSyncExternalStore,
   type CSSProperties,
   type ReactElement,
 } from "react"
@@ -67,7 +66,6 @@ import {
   showGharargahToast,
   requestConfirm,
   AppShell,
-  GharargahHome,
   GharargahWindowTitlebar,
   GharagahSidebar,
   sidebarWidthStyle,
@@ -91,10 +89,9 @@ import {
   setEditorCursorStore,
   destroyEditorBuffer,
   ProjectTodosPane,
-  adeFieldsFromSnapshot,
-  mapAgentStatusToCardStatus,
 } from "@gharargah/ui"
 import { SessionTerminalWorkspacePane } from "./SessionTerminalWorkspacePane.js"
+import { HomeCardsWithAde } from "./HomeCardsWithAde.js"
 import {
   setPendingEditorNavigation,
   setPendingInitialContent,
@@ -143,9 +140,6 @@ import {
 } from "./agent-cli-launch.js"
 import {
   applyAgentStreamUnknown,
-  getAgentSnapshot,
-  getAgentTelemetryVersion,
-  subscribeAgentTelemetryVersion,
 } from "./agent-snapshot-store.js"
 import {
   isGenericAgentSessionTitle,
@@ -353,13 +347,6 @@ export function GharargahApp() {
     string | null
   >(null)
   const [terminalSessionRevision, setTerminalSessionRevision] = useState(0)
-  // ADE telemetry — separate from terminalSessionRevision so hook floods do not
-  // re-persist the session roster or rebuild PTY lists on every tool event.
-  const agentTelemetryRevision = useSyncExternalStore(
-    subscribeAgentTelemetryVersion,
-    getAgentTelemetryVersion,
-    getAgentTelemetryVersion,
-  )
   const notifications = useNotificationCenter()
   const notificationsRef = useRef(notifications)
   notificationsRef.current = notifications
@@ -3083,18 +3070,13 @@ export function GharargahApp() {
             ) : null}
             <div className="min-h-0 flex-1 overflow-hidden">
               {appearanceSettings.sessionLayout === "cards" ? (
-              <GharargahHome
+              <HomeCardsWithAde
                   groups={terminalGroups.map(g => ({
                   id: g.id,
                   name: g.name,
                   path: g.path,
                   rootUri: g.rootUri,
-                  terminals: g.terminals.map(t => {
-                    // Touch agentTelemetryRevision so card ADE fields refresh.
-                    void agentTelemetryRevision
-                    const snap = getAgentSnapshot(t.tabId)
-                    const ade = adeFieldsFromSnapshot(snap)
-                    return {
+                  terminals: g.terminals.map(t => ({
                       tabId: t.tabId,
                       panelId: t.panelId,
                       label: t.label,
@@ -3103,18 +3085,9 @@ export function GharargahApp() {
                       launchCommand: t.launchCommand,
                       agentId: t.agentId,
                       archivedAt: t.archivedAt,
-                      unreadCount:
-                        ade.unreadCount ??
-                        notifications.unreadBySession?.[t.tabId],
-                      activityLabel: ade.activityLabel,
-                      statsLine: ade.statsLine,
-                      requiresApproval: ade.attentionKind === "permission_required",
-                      adeStatus: snap
-                        ? mapAgentStatusToCardStatus(snap.status, Boolean(t.archivedAt))
-                        : undefined,
-                    }
-                  }),
+                  })),
                 }))}
+                unreadBySession={notifications.unreadBySession}
                 onOpenTerminal={openTerminalFromHome}
                 onNewSession={rootUri => void newAgentTabFromHome(rootUri)}
                   onOpenInApp={(rootUri, appId) =>
