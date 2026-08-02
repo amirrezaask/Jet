@@ -318,7 +318,7 @@ export function SettingsOverlay({
                   Settings
                 </div>
                 <div className="text-3xs text-muted-foreground">
-                  Gharargah preferences
+                  YAADE preferences
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -532,7 +532,7 @@ export function SettingsOverlay({
                           [
                             "desktopEnabled",
                             "Desktop notifications",
-                            "Show native notifications outside Gharargah.",
+                            "Show native notifications outside YAADE.",
                           ],
                           [
                             "soundEnabled",

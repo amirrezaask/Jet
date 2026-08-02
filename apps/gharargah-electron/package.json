@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "main": "src/main.mjs",
-  "description": "Gharargah Mission Control desktop shell",
-  "author": "Gharargah",
+  "description": "YAADE Mission Control desktop shell",
+  "author": "YAADE",
   "scripts": {
     "dev": "electron . --dev",
     "start": "electron .",
@@ -19,9 +19,9 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "app.gharargah.desktop",
-    "productName": "Gharargah",
-    "copyright": "Copyright © Gharargah",
+    "appId": "app.yaade.desktop",
+    "productName": "YAADE",
+    "copyright": "Copyright © YAADE",
     "directories": {
       "output": "dist",
       "buildResources": "assets"
@@ -34,7 +34,7 @@
     "extraResources": [
       {
         "from": "pack",
-        "to": "gharargah"
+        "to": "yaade"
       }
     ],
     "mac": {
@@ -48,8 +48,8 @@
       "identity": null
     },
     "dmg": {
-      "title": "Gharargah",
-      "artifactName": "Gharargah-${version}-${arch}.${ext}"
+      "title": "YAADE",
+      "artifactName": "YAADE-${version}-${arch}.${ext}"
     },
     "electronLanguages": [
       "en"

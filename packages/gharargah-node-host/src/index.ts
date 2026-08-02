@@ -21,7 +21,7 @@ export {
   type GitSummary,
   type GitHistoryCommit,
 } from "./git.js"
-export { TerminalHost, type TerminalLaunch, type TerminalAttachSnapshot } from "./terminal.js"
+export { TerminalHost, type TerminalLaunch, type TerminalAttachSnapshot, TERMINAL_FLOW_ACK_CHARS, TERMINAL_FLOW_HIGH_WATERMARK_CHARS, TERMINAL_FLOW_LOW_WATERMARK_CHARS } from "./terminal.js"
 export { makeTerminalHostScoped } from "./effect-terminal.js"
 export { openInApp, revealInFolder } from "./shell.js"
 export { spawnTask, type TaskSpawnRequest, type TaskSpawnResult } from "./tasks.js"

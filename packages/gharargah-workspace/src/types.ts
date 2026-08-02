@@ -109,6 +109,11 @@ export type JetElectronTerminal = {
   write(id: string, data: string): Promise<void>
   writeBinary(id: string, dataBase64: string): Promise<void>
   resize(id: string, cols: number, rows: number): Promise<void>
+  /**
+   * Acknowledge that `charCount` chars from `terminal:data` have been parsed
+   * by xterm. Host uses this for PTY pause/resume flow control.
+   */
+  acknowledgeData(id: string, charCount: number): Promise<void>
   onData(id: string, callback: (data: string) => void): () => void
   onExit(cb: (id: string, exitCode: number, signal?: number) => void): () => void
   dispose(id: string): Promise<void>

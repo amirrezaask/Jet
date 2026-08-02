@@ -1,8 +1,12 @@
 import type { GharargahHostTransport } from "./transport.js"
 import {
   HostDisconnectedError,
+  decodeTerminalDataFrame,
+  encodeTerminalWsCommand,
+  isTerminalWsHotOp,
   tryDecodeRealtimeHostEvent,
   type HostEvent,
+  type TerminalWsHotOp,
 } from "@gharargah/rpc"
 import { Duration, Effect, Fiber } from "effect"
 import { invokeHostRpc } from "./effect-host-client.js"
@@ -30,6 +34,8 @@ export function hostRealtimeReconnectDelay(attempt: number): Duration.Duration {
  *
  * - Reconnect owned by an Effect Fiber (interrupt on `close`)
  * - `terminal:data` / `terminal:exit` use structural decode (no Schema)
+ * - Binary `terminal:data` frames skip JSON.stringify/parse on the hot path
+ * - Hot terminal control (`write`/`ack`/`resize`) sent fire-and-forget on WS
  * - In-flight HTTP invokes aborted with `HostDisconnectedError` on WS drop / close
  */
 export class WebHostTransport implements GharargahHostTransport {
@@ -95,6 +101,18 @@ export class WebHostTransport implements GharargahHostTransport {
     }
   }
 
+  sendRealtime(channel: string, ...args: unknown[]): boolean {
+    if (this.closed || !isTerminalWsHotOp(channel)) return false
+    const socket = this.socket
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false
+    try {
+      socket.send(encodeTerminalWsCommand(channel as TerminalWsHotOp, args))
+      return true
+    } catch {
+      return false
+    }
+  }
+
   on(channel: string, listener: (...args: unknown[]) => void): () => void {
     let channelListeners = this.listeners.get(channel)
     if (!channelListeners) {
@@ -145,6 +163,7 @@ export class WebHostTransport implements GharargahHostTransport {
       Effect.acquireRelease(
         Effect.sync(() => {
           const socket = new WebSocket(websocketUrl(window.location, self.lastSequence))
+          socket.binaryType = "arraybuffer"
           self.socket = socket
           return socket
         }),
@@ -172,7 +191,10 @@ export class WebHostTransport implements GharargahHostTransport {
               self.dispatch("connection:status", "connected")
             })
             socket.addEventListener("message", event => {
-              if (typeof event.data !== "string") return
+              if (typeof event.data !== "string") {
+                self.handleBinaryMessage(event.data)
+                return
+              }
               let raw: unknown
               try {
                 raw = JSON.parse(event.data)
@@ -213,6 +235,35 @@ export class WebHostTransport implements GharargahHostTransport {
         ),
       ),
     )
+  }
+
+  private handleBinaryMessage(data: unknown): void {
+    let buffer: ArrayBuffer | null = null
+    if (data instanceof ArrayBuffer) buffer = data
+    else if (ArrayBuffer.isView(data)) {
+      buffer = data.buffer.slice(
+        data.byteOffset,
+        data.byteOffset + data.byteLength,
+      ) as ArrayBuffer
+    }
+    if (!buffer) {
+      this.dispatch("protocol:error", "Unsupported realtime binary message")
+      return
+    }
+    const decoded = decodeTerminalDataFrame(buffer)
+    if (!decoded) {
+      this.dispatch("protocol:error", "Unsupported realtime binary message")
+      return
+    }
+    const message: HostEvent = {
+      protocolVersion: 1,
+      sequence: decoded.eventSequence,
+      channel: "terminal:data",
+      args: [decoded.id, decoded.data, decoded.terminalSequence],
+    }
+    if (!acceptHostEvent(this.lastSequence, message)) return
+    this.lastSequence = message.sequence
+    this.dispatch(message.channel, ...message.args)
   }
 
   private rejectPending(error: HostDisconnectedError): void {

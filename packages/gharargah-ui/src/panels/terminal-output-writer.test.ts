@@ -15,6 +15,8 @@ test("coalesces multiple enqueues into one write per flush", () => {
       return scheduled.length
     },
     cancel: () => {},
+    // Force rAF path so this test owns the scheduler.
+    interactiveMaxChars: 0,
   })
 
   writer.enqueue("a")
@@ -41,6 +43,7 @@ test("marks cursor-visibility chunks for a single post-paint refresh", () => {
       return scheduled.length
     },
     cancel: () => {},
+    interactiveMaxChars: 0,
   })
 
   writer.enqueue("hello")
@@ -48,6 +51,108 @@ test("marks cursor-visibility chunks for a single post-paint refresh", () => {
   writer.enqueue("\x1b[?25h")
   scheduled[0]!()
   assert.equal(refreshes, 1)
+})
+
+test("optional maxCharsPerFlush still slices across frames for tests", () => {
+  const writes: string[] = []
+  const scheduled: Array<() => void> = []
+  const writer = createTerminalOutputWriter({
+    write: (data, onPainted) => {
+      writes.push(data)
+      onPainted?.()
+    },
+    schedule: cb => {
+      scheduled.push(cb)
+      return scheduled.length
+    },
+    cancel: () => {},
+    maxCharsPerFlush: 4,
+    interactiveMaxChars: 0,
+  })
+
+  writer.enqueue("abcdefgh")
+  assert.equal(scheduled.length, 1)
+  scheduled[0]!()
+  assert.deepEqual(writes, ["abcd"])
+  assert.equal(scheduled.length, 2)
+  scheduled[1]!()
+  assert.deepEqual(writes, ["abcd", "efgh"])
+})
+
+test("default flush feeds the full coalesced chunk (no 16KiB starve)", () => {
+  const writes: string[] = []
+  const scheduled: Array<() => void> = []
+  const parsed: number[] = []
+  const writer = createTerminalOutputWriter({
+    write: (data, onPainted) => {
+      writes.push(data)
+      onPainted?.()
+    },
+    onParsed: n => parsed.push(n),
+    schedule: cb => {
+      scheduled.push(cb)
+      return scheduled.length
+    },
+    cancel: () => {},
+    interactiveMaxChars: 0,
+  })
+
+  const flood = "x".repeat(64 * 1024)
+  writer.enqueue(flood)
+  scheduled[0]!()
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0]!.length, 64 * 1024)
+  assert.deepEqual(parsed, [64 * 1024])
+})
+
+test("does not gate the next flush on write callback (xterm queues itself)", () => {
+  const writes: string[] = []
+  const scheduled: Array<() => void> = []
+  const pendingCallbacks: Array<() => void> = []
+  const writer = createTerminalOutputWriter({
+    write: (data, onPainted) => {
+      writes.push(data)
+      if (onPainted) pendingCallbacks.push(onPainted)
+    },
+    schedule: cb => {
+      scheduled.push(cb)
+      return scheduled.length
+    },
+    cancel: () => {},
+    interactiveMaxChars: 0,
+  })
+
+  writer.enqueue("one")
+  scheduled[0]!()
+  assert.equal(writes.length, 1)
+  assert.equal(pendingCallbacks.length, 1)
+
+  // More data arrives while xterm is still parsing the first write.
+  writer.enqueue("two")
+  assert.equal(scheduled.length, 2)
+  scheduled[1]!()
+  assert.deepEqual(writes, ["one", "two"])
+
+  // Callbacks fire later — still only for ack/paint, not gating.
+  pendingCallbacks[0]!()
+  pendingCallbacks[1]!()
+})
+
+test("flush ignores per-frame cap for attach replay", () => {
+  const writes: string[] = []
+  const writer = createTerminalOutputWriter({
+    write: (data, onPainted) => {
+      writes.push(data)
+      onPainted?.()
+    },
+    schedule: () => 1,
+    cancel: () => {},
+    maxCharsPerFlush: 2,
+  })
+
+  writer.enqueue("attach-replay-full")
+  writer.flush()
+  assert.deepEqual(writes, ["attach-replay-full"])
 })
 
 test("flush drains pending bytes without waiting for schedule", () => {
@@ -64,4 +169,74 @@ test("flush drains pending bytes without waiting for schedule", () => {
   writer.enqueue("attach-replay")
   writer.flush()
   assert.deepEqual(writes, ["attach-replay"])
+})
+
+test("sheds oldest pending when over maxPendingChars", () => {
+  const writes: string[] = []
+  const scheduled: Array<() => void> = []
+  const writer = createTerminalOutputWriter({
+    write: (data, onPainted) => {
+      writes.push(data)
+      onPainted?.()
+    },
+    schedule: cb => {
+      scheduled.push(cb)
+      return scheduled.length
+    },
+    cancel: () => {},
+    maxPendingChars: 8,
+    interactiveMaxChars: 0,
+  })
+
+  writer.enqueue("AAAAAAAA") // 8
+  writer.enqueue("BBBB") // shed AAAAAAAA → BBBB
+  scheduled[0]!()
+  assert.deepEqual(writes, ["BBBB"])
+})
+
+test("joins parts without repeated string +=", () => {
+  const writes: string[] = []
+  const scheduled: Array<() => void> = []
+  const writer = createTerminalOutputWriter({
+    write: (data, onPainted) => {
+      writes.push(data)
+      onPainted?.()
+    },
+    schedule: cb => {
+      scheduled.push(cb)
+      return scheduled.length
+    },
+    cancel: () => {},
+    interactiveMaxChars: 0,
+  })
+
+  writer.enqueue("one")
+  writer.enqueue("two")
+  writer.enqueue("three")
+  scheduled[0]!()
+  assert.deepEqual(writes, ["onetwothree"])
+})
+
+test("interactive echoes flush on microtask without rAF", async () => {
+  const writes: string[] = []
+  let rafCalls = 0
+  const writer = createTerminalOutputWriter({
+    write: (data, onPainted) => {
+      writes.push(data)
+      onPainted?.()
+    },
+    schedule: cb => {
+      rafCalls += 1
+      queueMicrotask(cb)
+      return rafCalls
+    },
+    cancel: () => {},
+  })
+
+  writer.enqueue("x")
+  assert.equal(rafCalls, 0)
+  assert.equal(writes.length, 0)
+  await Promise.resolve()
+  assert.deepEqual(writes, ["x"])
+  assert.equal(rafCalls, 0)
 })

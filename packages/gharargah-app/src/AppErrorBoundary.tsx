@@ -20,7 +20,7 @@ export class AppErrorBoundary extends Component<
       <main className="flex min-h-screen items-center justify-center bg-background p-8 text-foreground">
         <section className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-xl">
           <p className="text-xs font-medium uppercase tracking-[0.14em] text-destructive">
-            Gharargah needs to recover
+            YAADE needs to recover
           </p>
           <h1 className="mt-2 text-lg font-semibold">The renderer hit an unexpected error.</h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -35,7 +35,7 @@ export class AppErrorBoundary extends Component<
             className="mt-4 h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors duration-[var(--gharargah-motion-fast)] hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => window.location.reload()}
           >
-            Reload Gharargah
+            Reload YAADE
           </button>
         </section>
       </main>

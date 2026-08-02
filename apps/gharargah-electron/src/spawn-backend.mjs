@@ -65,7 +65,7 @@ export function resolveViteBin(appDir) {
 }
 
 /**
- * Packaged layout (electron-builder extraResources → Resources/gharargah):
+ * Packaged layout (electron-builder extraResources → Resources/yaade):
  *   runtimeRoot/web          SPA dist
  *   runtimeRoot/backend/*.mjs bundled host/agent
  *   runtimeRoot/node/bin/node ABI-matched Node

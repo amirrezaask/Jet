@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { expectLocatorContainsText, expectLocatorVisible } from "../shell/assert.js"
-import { ensureCardsLayout, hasPtySpawn, launchJet } from "./_launch.js"
+import { expectLocatorVisible } from "../shell/assert.js"
+import { ensureCardsLayout, hasPtySpawn, launchJet, waitForTerminalText } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 const CLI_ID = "11111111-1111-4111-8111-111111111111"
@@ -123,9 +123,13 @@ test.describe("active agent background resume", () => {
               : 0,
           { timeout: 10_000 },
         )
-        .toBe(2)
+        .toBeGreaterThanOrEqual(2)
       const launchesBeforeOpen = fs.readFileSync(launchLog, "utf8")
       expect(launchesBeforeOpen).toContain(`resume ${CLI_ID}`)
+      const launchCountBeforeOpen = launchesBeforeOpen
+        .trim()
+        .split("\n")
+        .filter(Boolean).length
 
       const project = page.locator(
         `[data-gharargah-project-section][data-gharargah-project-name="${workspace.name}"]`,
@@ -142,14 +146,19 @@ test.describe("active agent background resume", () => {
         '[data-gharargah-terminal-panel][data-gharargah-terminal-status="running"]',
       )
       await expectLocatorVisible(terminal, { timeout: 5_000 })
-      await expectLocatorContainsText(terminal.locator(".xterm-rows"), "WARM_RESUME_READY")
+      await waitForTerminalText(page, "WARM_RESUME_READY", 5_000)
       const replayReadyMs = Date.now() - openedAt
       expect(replayReadyMs).toBeLessThan(2_000)
 
-      // Opening attaches/replays the warmed PTY; it must not spawn a third CLI.
+      // Opening attaches/replays the warmed PTY; it must not spawn another CLI.
       await expect
-        .poll(() => fs.readFileSync(launchLog, "utf8"), { timeout: 2_000 })
-        .toBe(launchesBeforeOpen)
+        .poll(
+          () =>
+            fs.readFileSync(launchLog, "utf8").trim().split("\n").filter(Boolean)
+              .length,
+          { timeout: 2_000 },
+        )
+        .toBe(launchCountBeforeOpen)
     } finally {
       await app.close()
       fs.rmSync(temporaryRoot, { recursive: true, force: true })

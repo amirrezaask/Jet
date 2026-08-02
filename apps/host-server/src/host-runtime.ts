@@ -130,7 +130,12 @@ function handleTerminalOsc(
   ptyId: string,
   data: string,
 ): void {
-  const result = parseOscStreamChunk(buffers.get(ptyId) ?? "", data)
+  const buffered = buffers.get(ptyId) ?? ""
+  // Hot path: almost all PTY frames are screen paint with no OSC. Skip the
+  // stream parser entirely when nothing is buffered and this chunk cannot start
+  // an OSC sequence.
+  if (buffered.length === 0 && !data.includes("\x1b]")) return
+  const result = parseOscStreamChunk(buffered, data)
   if (result.buffered) buffers.set(ptyId, result.buffered)
   else buffers.delete(ptyId)
   const parsed = result.notifications

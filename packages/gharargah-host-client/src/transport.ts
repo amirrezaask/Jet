@@ -7,5 +7,10 @@ export interface GharargahHostTransport {
     args: unknown[],
     signal: AbortSignal,
   ): Promise<T>
+  /**
+   * Fire-and-forget realtime send (WebSocket). Returns true when queued on an
+   * open socket; false means caller should fall back to `invoke` (HTTP RPC).
+   */
+  sendRealtime?(channel: string, ...args: unknown[]): boolean
   on(channel: string, listener: (...args: unknown[]) => void): () => void
 }

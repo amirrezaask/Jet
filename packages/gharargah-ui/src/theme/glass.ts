@@ -5,7 +5,7 @@ import {
   paletteHighlights,
 } from "./theme-palette.js"
 
-/** Original Gharargah glass sci-fi home accents — monochromatic dark variants. */
+/** Original YAADE glass sci-fi home accents — monochromatic dark variants. */
 const glassSource = "https://github.com/amirrezaask/jet"
 
 export const glassBlue = makeTheme({
@@ -13,7 +13,7 @@ export const glassBlue = makeTheme({
   name: "Glass Blue",
   family: "Glass",
   scheme: "dark",
-  sourceName: "Gharargah Glass",
+  sourceName: "YAADE Glass",
   sourceUrl: glassSource,
   license: "MIT",
   colors: paletteColors({
@@ -71,7 +71,7 @@ export const glassRed = makeTheme({
   name: "Glass Red",
   family: "Glass",
   scheme: "dark",
-  sourceName: "Gharargah Glass",
+  sourceName: "YAADE Glass",
   sourceUrl: glassSource,
   license: "MIT",
   colors: paletteColors({
@@ -129,7 +129,7 @@ export const glassGreen = makeTheme({
   name: "Glass Green",
   family: "Glass",
   scheme: "dark",
-  sourceName: "Gharargah Glass",
+  sourceName: "YAADE Glass",
   sourceUrl: glassSource,
   license: "MIT",
   colors: paletteColors({

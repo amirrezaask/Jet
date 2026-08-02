@@ -504,6 +504,11 @@ async function handleTerminal(
         typeof args[1] === "number" ? args[1] : undefined,
         typeof args[2] === "number" ? args[2] : undefined,
       )
+    case "terminal:ack":
+      return runtime.terminal.acknowledgeData(
+        str(args[0], "id"),
+        typeof args[1] === "number" ? args[1] : Number(args[1] ?? 0),
+      )
     case "terminal:attach":
       return runtime.terminal.attach(str(args[0], "id"), clientId)
     case "terminal:dispose": {

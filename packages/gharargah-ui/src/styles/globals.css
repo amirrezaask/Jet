@@ -644,7 +644,8 @@ body,
  * (symptoms: gray empty editor, scattered braces only).
  */
 .monaco-editor canvas,
-.monaco-diff-editor canvas {
+.monaco-diff-editor canvas,
+[data-gharargah-terminal-panel] canvas {
   max-width: none !important;
 }
 
@@ -1999,9 +2000,10 @@ body,
     padding-bottom: var(--gharargah-session-dock-clearance);
   }
 
-  /* Mode dock material comes from [data-gharargah-liquid-glass="island"]. */
+  /* Mode dock material comes from [data-gharargah-liquid-glass="island"].
+     Inactive wells stay transparent — only the active pill gets a fill. */
   [data-gharargah-session-mode-dock] [data-gharargah-session-mode-tab] {
-    background: color-mix(in srgb, var(--muted) 55%, transparent);
+    background: transparent;
   }
 
   [data-gharargah-session-mode-dock] [data-gharargah-session-mode-tab][data-active] {

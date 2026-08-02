@@ -1,10 +1,10 @@
-# AGENTS.md — Gharargah
+# AGENTS.md — YAADE
 
 Guide for AI agents and contributors working in this repo.
 
-## What Gharargah Is
+## What YAADE Is
 
-**Gharargah** is a **web Mission Control** app (React + Vite): a **home view** of projects and terminal session cards. Terminals open in **modal dialogs**. There is no editor workspace shell in the app today.
+**YAADE** is a **web Mission Control** app (React + Vite): a **home view** of projects and terminal session cards. Terminals open in **modal dialogs**. There is no editor workspace shell in the app today.
 
 **Hard policy: no Rust / no Tauri.** Host IPC is TypeScript (`apps/host-server` + `@gharargah/node-host`). Do not add `.rs`, `Cargo.toml`, or Tauri crates.
 
@@ -15,9 +15,9 @@ Guide for AI agents and contributors working in this repo.
 
 | Layer | Owns |
 | ----- | ---- |
-| **Gharargah App** | Home, terminal modals, project catalog, slim command/overlay set, notification center |
-| **Gharargah UI** | Home UI, TerminalSessionModal, TerminalPanel, overlays, themes, notification center |
-| **Gharargah Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
+| **YAADE App** | Home, terminal modals, project catalog, slim command/overlay set, notification center |
+| **YAADE UI** | Home UI, TerminalSessionModal, TerminalPanel, overlays, themes, notification center |
+| **YAADE Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
 | **Host server (Effect)** | FS, terminal PTY (`node-pty`), search/git/LSP/notifications over HTTP `/api/v1/rpc` + `/ws` (Schema + Layers) |
 
 Library packages `@gharargah/monaco`, `@gharargah/lsp`, and editor/sidebar UI components remain in the monorepo; the app uses Monaco inside the session-modal editor.
@@ -588,7 +588,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases above).
 
 
-| Feature                          | 4coder  | Fleury  | Nameless   | Gharargah today                              |
+| Feature                          | 4coder  | Fleury  | Nameless   | YAADE today                                  |
 | -------------------------------- | ------- | ------- | ---------- | -------------------------------------- |
 | Tab drag/drop + reorder          | ✓       | ✓       | ✓          | removed (no tab bar)                   |
 | Buffer list                      | —       | ✓       | ✓          | ✓ Cmd-Shift-b                          |

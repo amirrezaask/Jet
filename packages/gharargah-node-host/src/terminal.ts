@@ -14,6 +14,22 @@ const MAX_WRITE_BYTES = 1024 * 1024
  */
 const TERMINAL_EMIT_BATCH_BYTES = 64 * 1024
 const TERMINAL_EMIT_BATCH_DELAY_MS = 4
+/**
+ * Keystroke-sized PTY chunks flush immediately after idle (VS Code emits per
+ * onData). Larger chunks keep the 4ms / 64KiB coalesce for flood framing —
+ * threshold stays well below typical node-pty ~1KiB reads.
+ */
+const TERMINAL_EMIT_INTERACTIVE_BYTES = 32
+
+/**
+ * VS Code FlowControlConstants — pause the PTY when the renderer falls behind
+ * instead of flooding WS / shedding frames (which is what made agent TUIs choke).
+ * @see https://github.com/microsoft/vscode/blob/main/src/vs/platform/terminal/common/terminal.ts
+ */
+export const TERMINAL_FLOW_HIGH_WATERMARK_CHARS = 100_000
+export const TERMINAL_FLOW_LOW_WATERMARK_CHARS = 5_000
+/** Client should ack at least this often so the host can resume. */
+export const TERMINAL_FLOW_ACK_CHARS = 5_000
 
 export type TerminalLaunch = {
   command?: string
@@ -55,10 +71,33 @@ type TerminalEntry = {
   pendingOutput: string[]
   pendingOutputBytes: number
   pendingOutputTimer: ReturnType<typeof setTimeout> | null
+  /** Chars emitted to the client that have not yet been ack'd as parsed. */
+  unacknowledgedChars: number
+  ptyPaused: boolean
   proc: pty.IPty | null
   disposed: boolean
   dataDisposable: pty.IDisposable | null
   exitDisposable: pty.IDisposable | null
+}
+
+function pausePtyForFlowControl(entry: TerminalEntry): void {
+  if (entry.ptyPaused || !entry.proc) return
+  try {
+    entry.proc.pause()
+    entry.ptyPaused = true
+  } catch {
+    /* ignore — some platforms/adapters may not support pause */
+  }
+}
+
+function resumePtyForFlowControl(entry: TerminalEntry): void {
+  if (!entry.ptyPaused || !entry.proc) return
+  try {
+    entry.proc.resume()
+    entry.ptyPaused = false
+  } catch {
+    /* ignore */
+  }
 }
 
 function flushPendingOutput(entry: TerminalEntry, emit: EmitFn): void {
@@ -73,7 +112,15 @@ function flushPendingOutput(entry: TerminalEntry, emit: EmitFn): void {
       : entry.pendingOutput.join("")
   entry.pendingOutput.length = 0
   entry.pendingOutputBytes = 0
+  // Flow control counts chars (VS Code) — JS string length matches xterm write units.
+  entry.unacknowledgedChars += data.length
   emit("terminal:data", [entry.id, data, entry.sequence])
+  if (
+    !entry.ptyPaused &&
+    entry.unacknowledgedChars > TERMINAL_FLOW_HIGH_WATERMARK_CHARS
+  ) {
+    pausePtyForFlowControl(entry)
+  }
 }
 
 function queueOutput(
@@ -93,6 +140,15 @@ function queueOutput(
   entry.pendingOutput.push(data)
   entry.pendingOutputBytes += dataBytes
   if (entry.pendingOutputBytes >= TERMINAL_EMIT_BATCH_BYTES) {
+    flushPendingOutput(entry, emit)
+    return
+  }
+  // Interactive echo: first small chunk after idle must not wait 4ms.
+  if (
+    entry.pendingOutputBytes <= TERMINAL_EMIT_INTERACTIVE_BYTES &&
+    entry.pendingOutput.length === 1 &&
+    !entry.pendingOutputTimer
+  ) {
     flushPendingOutput(entry, emit)
     return
   }
@@ -241,6 +297,8 @@ export class TerminalHost {
       pendingOutput: [],
       pendingOutputBytes: 0,
       pendingOutputTimer: null,
+      unacknowledgedChars: 0,
+      ptyPaused: false,
       proc,
       disposed: false,
       dataDisposable: null,
@@ -304,6 +362,34 @@ export class TerminalHost {
     return null
   }
 
+  /**
+   * Renderer finished parsing `charCount` chars of previously emitted output.
+   * Drop below the low watermark → resume a paused PTY (VS Code pattern).
+   */
+  acknowledgeData(id: string, charCount: number): null {
+    if (id.length > 256) return null
+    const entry = this.entries.get(id)
+    if (!entry || entry.disposed) return null
+    const n = Number.isFinite(charCount) ? Math.max(0, Math.trunc(charCount)) : 0
+    entry.unacknowledgedChars = Math.max(0, entry.unacknowledgedChars - n)
+    if (
+      entry.ptyPaused &&
+      entry.unacknowledgedChars < TERMINAL_FLOW_LOW_WATERMARK_CHARS
+    ) {
+      resumePtyForFlowControl(entry)
+    }
+    return null
+  }
+
+  /** Force-resume after attach/reconnect so a stale pause cannot stick forever. */
+  clearUnacknowledgedChars(id: string): null {
+    const entry = this.entries.get(id)
+    if (!entry) return null
+    entry.unacknowledgedChars = 0
+    resumePtyForFlowControl(entry)
+    return null
+  }
+
   attach(id: string, clientId: string): TerminalAttachSnapshot | null {
     const entry = this.entries.get(id)
     if (!entry) return null
@@ -311,6 +397,10 @@ export class TerminalHost {
     // pre- and post-attach bytes could be accepted in full and duplicate replay.
     flushPendingOutput(entry, this.emit)
     entry.clientId = clientId
+    // Replay is applied synchronously on the client — reset flow control so a
+    // previous session's unacked count cannot keep the PTY paused.
+    entry.unacknowledgedChars = 0
+    resumePtyForFlowControl(entry)
     return {
       id: entry.id,
       title: entry.title,
@@ -331,6 +421,8 @@ export class TerminalHost {
     entry.pendingOutputTimer = null
     entry.pendingOutput.length = 0
     entry.pendingOutputBytes = 0
+    entry.unacknowledgedChars = 0
+    resumePtyForFlowControl(entry)
     entry.dataDisposable?.dispose()
     entry.exitDisposable?.dispose()
     entry.dataDisposable = null

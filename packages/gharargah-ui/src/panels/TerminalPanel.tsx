@@ -11,6 +11,11 @@ import { TerminalScrollMotion } from "./terminal-scroll-motion.js"
 import { registerTerminalPathLinks } from "./terminal-links.js"
 import { createTerminalInputWriter } from "./terminal-input-writer.js"
 import { createTerminalOutputWriter } from "./terminal-output-writer.js"
+import { attachTerminalGpuRenderer } from "./terminal-gpu-renderer.js"
+import {
+  registerTerminalInstance,
+  unregisterTerminalInstance,
+} from "./terminal-instance-registry.js"
 
 export type TerminalPanelProps = {
   cwdRootUri: string
@@ -357,7 +362,8 @@ export function TerminalPanel({
     const launchEnvAtStart = launchEnvRef.current
 
     const term = new XTerm({
-      allowTransparency: true,
+      // Opaque theme bg — transparency forces expensive alpha blends in WebGL.
+      allowTransparency: false,
       theme: themeOptions(theme),
       fontSize: readRootFontSize(),
       fontFamily: readTerminalFontFamily(),
@@ -375,6 +381,11 @@ export function TerminalPanel({
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(container)
+    // WebGL (Canvas fallback) — DomRenderer cannot keep up with agent TUI floods.
+    const gpuRenderer = attachTerminalGpuRenderer(term)
+    registerTerminalInstance(tabId, term)
+    const panelEl = container.closest<HTMLElement>("[data-gharargah-terminal-panel]")
+    if (panelEl) panelEl.dataset.gharargahTerminalRenderer = gpuRenderer.kind
 
     const pathLinks =
       onOpenPathRef.current != null
@@ -408,7 +419,6 @@ export function TerminalPanel({
     let dataDispose: { dispose: () => void } | null = null
     let binaryDispose: { dispose: () => void } | null = null
     let inputWriter: ReturnType<typeof createTerminalInputWriter> | null = null
-    let panelVisible = true
     let ptyStarted = false
     const exitUnsubscribe = terminalApi.onExit((id, code) => {
       if (session.ptyId !== id) return
@@ -453,26 +463,48 @@ export function TerminalPanel({
       term.refresh(0, Math.max(0, term.rows - 1))
     }
 
+    let lastCursorHiddenAttr = ""
     const syncCursorHiddenAttr = () => {
+      // Keep the data attr in sync for E2E + Dom CSS. GPU renderers already
+      // honor DECCTCEM in the canvas; Dom uses the CSS rule on `.xterm-cursor`.
+      // Skip writes when unchanged — attr churn forces style recalc.
       const panel = container.closest<HTMLElement>("[data-gharargah-terminal-panel]")
       if (!panel) return
-      panel.dataset.gharargahTerminalCursorHidden = isTerminalCursorHidden(term)
-        ? "1"
-        : "0"
+      const next = isTerminalCursorHidden(term) ? "1" : "0"
+      if (next === lastCursorHiddenAttr) return
+      lastCursorHiddenAttr = next
+      panel.dataset.gharargahTerminalCursorHidden = next
     }
 
-    // One rAF-batched write path. Full DomRenderer refresh on every DECCTCEM
-    // used to run here and made typing unusable during Cursor Agent floods —
-    // CSS cursor-hidden attr is enough; optional single-row refresh only when
-    // the panel is actually on screen.
+    // One rAF-batched write path. Feed full coalesced chunks to xterm — its
+    // WriteBuffer time-slices parse. Ack parsed chars so the host can pause
+    // the PTY when we fall behind (VS Code flow control).
+    let ackPendingChars = 0
+    let ackInFlight = false
+    const ACK_BATCH = 5_000
+    const flushAck = (ptyId: string | null) => {
+      if (!ptyId || ackPendingChars <= 0 || ackInFlight) return
+      const ack = terminalApi.acknowledgeData
+      if (!ack) {
+        ackPendingChars = 0
+        return
+      }
+      const chars = ackPendingChars
+      ackPendingChars = 0
+      ackInFlight = true
+      void Promise.resolve(ack.call(terminalApi, ptyId, chars)).finally(() => {
+        ackInFlight = false
+        if (ackPendingChars > 0) flushAck(sessionRef.current?.ptyId ?? ptyId)
+      })
+    }
     const outputWriter = createTerminalOutputWriter({
       write: (data, onPainted) => writeTerminalOutput(term, data, onPainted),
       onPainted: syncCursorHiddenAttr,
-      refreshAfterPaint: () => {
-        if (!panelVisible) return
-        // Cursor row only — never the whole viewport on TUI hide/show spam.
-        const row = Math.max(0, term.buffer.active.cursorY)
-        term.refresh(row, row)
+      onParsed: charCount => {
+        ackPendingChars += charCount
+        if (ackPendingChars >= ACK_BATCH) {
+          flushAck(sessionRef.current?.ptyId ?? null)
+        }
       },
     })
 
@@ -657,7 +689,6 @@ export function TerminalPanel({
     let wasVisible = false
     const visibilityObserver = new IntersectionObserver(entries => {
       const visible = entries.some(e => e.isIntersecting)
-      panelVisible = visible
       if (!visible) {
         wasVisible = false
         return
@@ -686,9 +717,13 @@ export function TerminalPanel({
       binaryDispose?.dispose()
       inputWriter?.dispose()
       outputWriter.dispose()
+      // Drain any remaining parse acks so a paused PTY is not left stuck.
+      flushAck(session.ptyId)
       unsub?.()
       pathLinks?.dispose()
       session.scrollMotion.dispose()
+      gpuRenderer.dispose()
+      unregisterTerminalInstance(tabId, term)
       term.dispose()
       sessionRef.current = null
     }
@@ -730,7 +765,7 @@ export function TerminalPanel({
         <TerminalIcon className="size-8 opacity-40" />
         <p className="text-sm">Integrated terminal</p>
         <p className="max-w-xs text-center text-xs opacity-70">
-          The terminal host is unavailable. Start or reconnect the Gharargah host.
+          The terminal host is unavailable. Start or reconnect the YAADE host.
         </p>
       </div>
     )

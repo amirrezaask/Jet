@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Stage self-contained Gharargah runtime (SPA + bundled host + Node).
+ * Stage self-contained YAADE runtime (SPA + bundled host + Node).
  *
- * Default output: dist/gharargah/
- *   gharargah              launcher → host-server on :4747 + static SPA
+ * Default output: dist/yaade/
+ *   yaade                  launcher → host-server on :4747 + static SPA
  *   web/                   Vite SPA dist
  *   backend/               esbuild bundles + native deps (node-pty, fff)
  *   node/                  official Node binary (ABI-matched for natives)
@@ -27,7 +27,7 @@ function resolvePackDir() {
   if (fromEnv?.trim()) return path.resolve(fromEnv.trim())
   const fromArg = process.argv[2]
   if (fromArg?.trim()) return path.resolve(fromArg.trim())
-  return path.join(repoRoot, "dist/gharargah")
+  return path.join(repoRoot, "dist/yaade")
 }
 
 function run(command, args, cwd = repoRoot) {
@@ -187,16 +187,17 @@ function copyWebDist(webDest) {
 function writeLauncherScripts(packDir) {
   const nodeRel = nodeBinRelative()
   const hostLauncher = `#!/bin/sh
-# Gharargah — self-contained Mission Control server (SPA + host API, default :4747)
+# YAADE — self-contained Mission Control server (SPA + host API, default :4747)
 set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 exec "$ROOT/node/${nodeRel}" "$ROOT/backend/host-server.mjs" \\
   --static-dir "$ROOT/web" \\
   "$@"
 `
-  const hostPath = path.join(packDir, "gharargah")
+  const hostPath = path.join(packDir, "yaade")
   fs.writeFileSync(hostPath, hostLauncher)
   fs.chmodSync(hostPath, 0o755)
+  fs.rmSync(path.join(packDir, "gharargah"), { force: true })
   fs.rmSync(path.join(packDir, "gharargah-agent"), { force: true })
   console.log(`Launchers: ${hostPath}`)
 }

@@ -1,4 +1,4 @@
-# Jet / Gharargah
+# YAADE
 
 Mission Control webapp: project home and terminal sessions (agent CLIs via PTY).
 
@@ -22,12 +22,12 @@ Open the Vite URL (proxies `/api` and `/ws` to the host).
 
 ```bash
 pnpm build        # Vite SPA + self-contained server + macOS DMG (on darwin)
-                  # → dist/gharargah/gharargah
-                  # → apps/gharargah-electron/dist/Gharargah-*.dmg (macOS)
+                  # → dist/yaade/yaade
+                  # → apps/gharargah-electron/dist/YAADE-*.dmg (macOS)
 
-./dist/gharargah/gharargah              # SPA + host API on http://127.0.0.1:4747
-./dist/gharargah/gharargah /path/repo   # same, open workspace at path
-./dist/gharargah/gharargah --open       # also open the default browser
+./dist/yaade/yaade              # SPA + host API on http://127.0.0.1:4747
+./dist/yaade/yaade /path/repo   # same, open workspace at path
+./dist/yaade/yaade --open       # also open the default browser
 
 # Dev (monorepo + tsx) — same servers, no bundle:
 pnpm --filter @gharargah/host-server start   # API + SPA on :4747 when dist exists

@@ -117,7 +117,7 @@ export async function showTerminal(page: ShellDriver): Promise<void> {
     try {
       await page.waitForFunction(
         () => {
-          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
+          const text = window.__gharargahAgent?.getTerminalText?.() ?? ""
           return text.trim().length > 0
         },
         null,
@@ -131,10 +131,26 @@ export async function showTerminal(page: ShellDriver): Promise<void> {
 }
 
 export async function readTerminalText(page: ShellDriver): Promise<string> {
-  return page.evaluate(() => {
-    const rows = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")
-    return rows?.textContent ?? ""
-  })
+  return page.evaluate(() => window.__gharargahAgent?.getTerminalText?.() ?? "")
+}
+
+/** Poll until the active terminal buffer contains `needle` (WebGL-safe). */
+export async function waitForTerminalText(
+  page: ShellDriver,
+  needle: string | RegExp,
+  timeoutMs = 15_000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const text = await readTerminalText(page)
+    if (typeof needle === "string" ? text.includes(needle) : needle.test(text)) {
+      return text
+    }
+    await page.waitForTimeout(50)
+  }
+  throw new Error(
+    `waitForTerminalText: timed out waiting for ${String(needle)}`,
+  )
 }
 
 export async function confirmOverlay(page: ShellDriver): Promise<void> {

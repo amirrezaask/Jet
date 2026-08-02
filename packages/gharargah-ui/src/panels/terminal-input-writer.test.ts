@@ -31,6 +31,9 @@ test("reports rejected writes without producing an unhandled rejection", async (
 
   writer.enqueue("input")
   await writer.flush()
+  // Fire-and-forget: rejection lands on a microtask after send.
+  await Promise.resolve()
+  await Promise.resolve()
   assert.equal(errors.length, 1)
 })
 

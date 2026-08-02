@@ -5,6 +5,16 @@ import type { GharargahHostTransport } from "./transport.js"
 // attach handshake, so keeping a second multi-megabyte copy is wasteful.
 const MAX_BUFFERED_TERMINAL_CHARS = 64 * 1024
 
+/** Prefer WS fire-and-forget for hot terminal I/O; fall back to HTTP RPC. */
+function invokeTerminalHot(
+  transport: GharargahHostTransport,
+  channel: string,
+  ...args: unknown[]
+): Promise<void> {
+  if (transport.sendRealtime?.(channel, ...args)) return Promise.resolve()
+  return transport.invoke(channel, ...args).then(() => undefined)
+}
+
 export function createGharargahApi(
   transport: GharargahHostTransport,
 ): GharargahHostAPI {
@@ -229,10 +239,14 @@ export function createGharargahApi(
         }
         return result
       },
-      write: (id, data) => transport.invoke("terminal:write", id, data),
+      write: (id, data) =>
+        invokeTerminalHot(transport, "terminal:write", id, data),
       writeBinary: (id, dataBase64) =>
-        transport.invoke("terminal:writeBinary", id, dataBase64),
-      resize: (id, cols, rows) => transport.invoke("terminal:resize", id, cols, rows),
+        invokeTerminalHot(transport, "terminal:writeBinary", id, dataBase64),
+      resize: (id, cols, rows) =>
+        invokeTerminalHot(transport, "terminal:resize", id, cols, rows),
+      acknowledgeData: (id, charCount) =>
+        invokeTerminalHot(transport, "terminal:ack", id, charCount),
       onData: (id, callback) => {
         let set = terminalDataListeners.get(id)
         if (!set) {

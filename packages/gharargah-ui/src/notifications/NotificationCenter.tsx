@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { AppNotification } from "@gharargah/shared"
-import { Bell, CheckCheck, LoaderCircle, XIcon } from "lucide-react"
+import { Bell, CheckCheck, LoaderCircle } from "lucide-react"
 import { Button } from "@/components/ui/button.js"
 import { Input } from "@/components/ui/input.js"
 import { ScrollArea } from "@/components/ui/scroll-area.js"
@@ -211,16 +211,6 @@ export function NotificationCenter(props: NotificationCenterProps) {
               >
                 <CheckCheck className="size-3.5" />
                 Mark all as read
-              </Button>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                className="size-8 shrink-0"
-                aria-label="Close notification center"
-                onClick={() => onOpenChange(false)}
-              >
-                <XIcon className="size-4" />
               </Button>
             </div>
           </div>

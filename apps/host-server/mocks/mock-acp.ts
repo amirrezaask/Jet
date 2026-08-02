@@ -580,7 +580,7 @@ function handleInitialize(state: MockState, params: JsonObject): JsonValue {
     authMethods: state.advertisesAuth() ? [{ id: "mock-token", name: "Mock token auth" }] : [],
     agentInfo: {
       name: "gharargah-mock-acp",
-      title: `Gharargah Mock ACP (${state.args.providerProfile})`,
+      title: `YAADE Mock ACP (${state.args.providerProfile})`,
       version: "0.1",
     },
   }

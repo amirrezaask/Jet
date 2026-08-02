@@ -46,7 +46,7 @@ export async function loadConfig(argv = process.argv.slice(2)): Promise<HostConf
   const host = String(args.host ?? process.env.JET_HOST ?? "127.0.0.1")
   if (!isLoopbackHostname(host)) {
     throw new Error(
-      `Refusing non-loopback host "${host}". Gharargah's host API must remain local.`,
+      `Refusing non-loopback host "${host}". YAADE's host API must remain local.`,
     )
   }
   const port = Number(args.port ?? process.env.JET_PORT ?? 4747)

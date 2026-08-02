@@ -1,8 +1,16 @@
 /**
- * Coalesce PTY → xterm writes onto one animation frame.
+ * Coalesce PTY → xterm writes onto animation frames for floods; flush
+ * interactive echoes on a microtask (skip rAF) so key→paint stays near one
+ * frame like VS Code's direct `raw.write`.
  *
- * Cursor Agent (and other TUIs) flood DECCTCEM + paint. Writing every WS chunk
- * synchronously + full DomRenderer refresh steals the main thread from typing.
+ * Design (match VS Code / xterm.js / t3code):
+ * - rAF-batch WS chunks so we call `term.write` ~once/frame under flood.
+ * - Hand **all** pending bytes to `term.write` each flush. xterm's internal
+ *   WriteBuffer already time-slices parse work (~12 ms) and yields to the
+ *   renderer — a second per-frame byte cap + wait-for-paint gate starves that
+ *   buffer and is what made agent TUIs visually choke.
+ * - Use the write callback only for cursor sync + flow-control ack, never to
+ *   block the next flush.
  */
 
 export type TerminalOutputWriter = {
@@ -17,13 +25,39 @@ export type TerminalOutputWriterOptions = {
   /** Called after a coalesced write paints (once per flush). */
   onPainted?: () => void
   /**
+   * Called with the char count once xterm has parsed the flushed chunk.
+   * Hosts use this for VS Code-style PTY flow-control acks.
+   */
+  onParsed?: (charCount: number) => void
+  /**
    * When true, after paint run a single viewport refresh. Callers should only
    * request this for cursor-visibility toggles, and at most once per frame.
    */
   refreshAfterPaint?: () => void
   schedule?: (cb: () => void) => number
   cancel?: (id: number) => void
+  /**
+   * Safety parachute only — with host PTY pause/resume, pending should stay
+   * near one frame. Oldest chunks shed if something else is broken.
+   */
+  maxPendingChars?: number
+  /**
+   * Optional test/debug cap. Production must leave this unset so xterm's own
+   * WriteBuffer owns throughput slicing.
+   */
+  maxCharsPerFlush?: number
+  /**
+   * Pending chars at or below this flush via microtask (skip rAF). Above this
+   * (or once a flood is in flight) use the animation-frame scheduler.
+   */
+  interactiveMaxChars?: number
 }
+
+/** Last-resort backlog before oldest pending output is dropped. */
+export const TERMINAL_OUTPUT_MAX_PENDING_CHARS = 2 * 1024 * 1024
+
+/** Idle / echo path — keep key→paint off the rAF clock. */
+export const TERMINAL_OUTPUT_INTERACTIVE_MAX_CHARS = 256
 
 export function createTerminalOutputWriter(
   options: TerminalOutputWriterOptions,
@@ -38,59 +72,149 @@ export function createTerminalOutputWriter(
     (typeof cancelAnimationFrame === "function"
       ? (id: number) => cancelAnimationFrame(id)
       : (id: number) => clearTimeout(id))
+  const maxPending = options.maxPendingChars ?? TERMINAL_OUTPUT_MAX_PENDING_CHARS
+  const maxPerFlush = options.maxCharsPerFlush ?? Number.POSITIVE_INFINITY
+  const interactiveMax =
+    options.interactiveMaxChars ?? TERMINAL_OUTPUT_INTERACTIVE_MAX_CHARS
 
-  let pending = ""
+  const pendingParts: string[] = []
+  let pendingChars = 0
   let needsRefresh = false
   let raf = 0
+  let microScheduled = false
   let disposed = false
-  let writing = false
+  /** Once true, stay on rAF until the queue drains (flood mode). */
+  let floodMode = false
 
-  const flushNow = () => {
+  const shedOldest = () => {
+    while (pendingChars > maxPending && pendingParts.length > 1) {
+      const dropped = pendingParts.shift()!
+      pendingChars -= dropped.length
+    }
+    if (pendingChars > maxPending && pendingParts.length === 1) {
+      const only = pendingParts[0]!
+      pendingParts[0] = only.slice(only.length - maxPending)
+      pendingChars = pendingParts[0]!.length
+    }
+  }
+
+  /** Take up to `limit` chars, leave the rest queued. */
+  const takePending = (limit: number): string => {
+    if (pendingParts.length === 0 || limit <= 0) return ""
+    if (pendingChars <= limit) {
+      const data =
+        pendingParts.length === 1 ? pendingParts[0]! : pendingParts.join("")
+      pendingParts.length = 0
+      pendingChars = 0
+      return data
+    }
+
+    const out: string[] = []
+    let taken = 0
+    while (pendingParts.length > 0 && taken < limit) {
+      const head = pendingParts[0]!
+      const room = limit - taken
+      if (head.length <= room) {
+        pendingParts.shift()
+        out.push(head)
+        taken += head.length
+        pendingChars -= head.length
+      } else {
+        out.push(head.slice(0, room))
+        pendingParts[0] = head.slice(room)
+        pendingChars -= room
+        taken += room
+      }
+    }
+    return out.length === 1 ? out[0]! : out.join("")
+  }
+
+  const flushNow = (unlimited = false) => {
     raf = 0
-    if (disposed || (pending.length === 0 && !needsRefresh)) return
-    const data = pending
-    pending = ""
-    const doRefresh = needsRefresh
-    needsRefresh = false
+    microScheduled = false
+    if (disposed || (pendingChars === 0 && !needsRefresh)) {
+      if (pendingChars === 0) floodMode = false
+      return
+    }
+    const data = takePending(unlimited ? Number.POSITIVE_INFINITY : maxPerFlush)
+    const doRefresh = needsRefresh && pendingChars === 0
+    if (doRefresh) needsRefresh = false
     if (data.length === 0) {
       if (doRefresh) options.refreshAfterPaint?.()
       options.onPainted?.()
+      if (pendingChars === 0) floodMode = false
       return
     }
-    writing = true
+    // term.write is non-blocking — do NOT gate the next flush on this callback.
+    // xterm's WriteBuffer time-slices parse; starving it was the TUI choke.
     options.write(data, () => {
-      writing = false
       if (disposed) return
+      options.onParsed?.(data.length)
       if (doRefresh) options.refreshAfterPaint?.()
       options.onPainted?.()
-      // Bytes arrived during write callback — schedule another frame.
-      if (pending.length > 0 || needsRefresh) scheduleFlush()
+    })
+    // Leftover from an optional test cap — schedule next frame without waiting.
+    if (pendingChars > 0 || needsRefresh) scheduleNext()
+    else floodMode = false
+  }
+
+  const scheduleRaf = () => {
+    if (disposed || raf) return
+    // Cancel a pending interactive microtask — flood wins.
+    microScheduled = false
+    raf = schedule(() => flushNow(false))
+  }
+
+  const scheduleMicro = () => {
+    if (disposed || raf || microScheduled) return
+    microScheduled = true
+    queueMicrotask(() => {
+      if (!microScheduled || disposed) return
+      microScheduled = false
+      // Flood may have armed rAF between schedule and run.
+      if (raf) return
+      flushNow(false)
     })
   }
 
-  const scheduleFlush = () => {
-    if (disposed || raf || writing) return
-    raf = schedule(flushNow)
+  const scheduleNext = () => {
+    if (
+      floodMode ||
+      pendingChars > interactiveMax ||
+      Number.isFinite(maxPerFlush)
+    ) {
+      floodMode = true
+      scheduleRaf()
+    } else {
+      scheduleMicro()
+    }
   }
+
+  const trackCursorRefresh = options.refreshAfterPaint != null
 
   return {
     enqueue(data) {
       if (disposed || data.length === 0) return
-      pending += data
+      pendingParts.push(data)
+      pendingChars += data.length
+      shedOldest()
+      // Only scan for DECCTCEM when a refresh hook is wired (Dom fallback).
       if (
-        data.includes("\x1b[?25l") ||
-        data.includes("\x1b[?25h")
+        trackCursorRefresh &&
+        (data.includes("\x1b[?25l") || data.includes("\x1b[?25h"))
       ) {
         needsRefresh = true
       }
-      scheduleFlush()
+      scheduleNext()
     },
     flush() {
       if (raf) {
         cancel(raf)
         raf = 0
       }
-      flushNow()
+      microScheduled = false
+      // Attach replay must land fully before connect — ignore per-frame cap.
+      flushNow(true)
     },
     dispose() {
       disposed = true
@@ -98,8 +222,11 @@ export function createTerminalOutputWriter(
         cancel(raf)
         raf = 0
       }
-      pending = ""
+      microScheduled = false
+      pendingParts.length = 0
+      pendingChars = 0
       needsRefresh = false
+      floodMode = false
     },
   }
 }

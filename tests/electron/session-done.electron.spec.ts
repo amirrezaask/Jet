@@ -8,7 +8,7 @@ import {
   expectLocatorVisible,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { hasPtySpawn, launchJet, openNewAgentSession, ensureCardsLayout, execCommand } from "./_launch.js"
+import { hasPtySpawn, launchJet, openNewAgentSession, ensureCardsLayout, execCommand, waitForTerminalText } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -73,10 +73,7 @@ test.describe("session archive persistence", () => {
 
       await openNewAgentSession(page)
       await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await expectLocatorContainsText(
-        page.locator("[data-gharargah-terminal-panel] .xterm-rows"),
-        transcriptMarker,
-      )
+      await waitForTerminalText(page, transcriptMarker)
 
       const cards = section.locator("[data-gharargah-terminal-card]:not([data-gharargah-new-session])")
       await expectLocatorVisible(cards.first())
@@ -164,10 +161,7 @@ test.describe("session archive persistence", () => {
       await expectLocatorVisible(
         page.locator("[data-gharargah-terminal-archived]"),
       )
-      await expectLocatorContainsText(
-        page.locator("[data-gharargah-terminal-panel] .xterm-rows"),
-        transcriptMarker,
-      )
+      await waitForTerminalText(page, transcriptMarker)
       await expectLocatorVisible(
         page.locator("[data-gharargah-session-resume-archived]"),
       )

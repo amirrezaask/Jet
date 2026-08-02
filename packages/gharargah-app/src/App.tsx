@@ -1537,7 +1537,7 @@ export function GharargahApp() {
 
   // Document title badge
   useEffect(() => {
-    const base = "Gharargah"
+    const base = "YAADE"
     const unread = notifications.counts.totalUnread
     document.title = unread > 0 ? `(${unread}) ${base}` : base
   }, [notifications.counts.totalUnread])

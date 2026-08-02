@@ -88,12 +88,7 @@ test.describe("session header", () => {
           ?.focus()
       })
       await page.waitForFunction(
-        () =>
-          (
-            document.querySelector(
-              "[data-gharargah-terminal-panel] .xterm-rows",
-            )?.textContent ?? ""
-          ).trim().length > 0,
+        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )

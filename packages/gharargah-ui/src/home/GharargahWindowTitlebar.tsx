@@ -78,7 +78,7 @@ export function GharargahWindowTitlebar({
       >
         {!sidebar ? (
           <span className="absolute left-3 truncate text-xs font-semibold tracking-tight text-muted-foreground">
-            Gharargah
+            YAADE
           </span>
         ) : null}
         <span

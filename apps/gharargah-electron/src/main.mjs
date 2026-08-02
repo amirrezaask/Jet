@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Thin Electron shell: spawn TS host/agent (+ Vite in --dev), load the shared web SPA.
- * A narrow preload bridge lets Settings select the bundled server or a remote Gharargah origin.
+ * A narrow preload bridge lets Settings select the bundled server or a remote YAADE origin.
  *
- * Packaged (DMG): backends + Node live under process.resourcesPath/gharargah.
+ * Packaged (DMG): backends + Node live under process.resourcesPath/yaade.
  * Dev / repo prod: spawn from monorepo via tsx (same as pnpm electron).
  */
 import path from "node:path"
@@ -65,8 +65,11 @@ function windowTitlebarOptions() {
 /** @returns {string | undefined} */
 function resolveRuntimeRoot() {
   if (app.isPackaged) {
-    const packaged = path.join(process.resourcesPath, "gharargah")
+    const packaged = path.join(process.resourcesPath, "yaade")
     if (isPackagedRuntime(packaged)) return packaged
+    // Legacy pack path from pre-YAADE builds
+    const legacy = path.join(process.resourcesPath, "gharargah")
+    if (isPackagedRuntime(legacy)) return legacy
   }
   // Local unpack smoke: GHARARGAH_RUNTIME_ROOT=/path/to/pack
   const fromEnv = process.env.GHARARGAH_RUNTIME_ROOT
@@ -165,7 +168,7 @@ async function waitForGharargahServer(serverUrl, timeoutMs) {
     await new Promise(resolve => setTimeout(resolve, 250))
   }
   const detail = lastError instanceof Error ? `: ${lastError.message}` : ""
-  throw new Error(`Could not reach a Gharargah server at ${serverUrl}${detail}`)
+  throw new Error(`Could not reach a YAADE server at ${serverUrl}${detail}`)
 }
 
 function serverConnection() {
@@ -233,7 +236,7 @@ function createWindow(url) {
     height: 800,
     minWidth: 800,
     minHeight: 560,
-    title: "Gharargah",
+    title: "YAADE",
     icon: iconPath,
     show: false,
     ...windowTitlebarOptions(),

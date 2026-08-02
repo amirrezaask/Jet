@@ -1,6 +1,6 @@
 # @gharargah/ui — Design System
 
-Unified UI primitives + shells for every Gharargah surface. Shadcn-derived, semantic tokens, single motion + typography scale.
+Unified UI primitives + shells for every YAADE surface. Shadcn-derived, semantic tokens, single motion + typography scale.
 
 ## Public surface
 

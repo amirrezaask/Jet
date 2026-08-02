@@ -258,7 +258,7 @@ export function createCodexHistoryHandshake(limit: number): {
     id: 1,
     method: "initialize",
     params: {
-      clientInfo: { name: "gharargah", title: "Gharargah", version: "0.1.0" },
+      clientInfo: { name: "yaade", title: "YAADE", version: "0.1.0" },
       capabilities: {},
     },
   })

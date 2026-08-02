@@ -160,10 +160,7 @@ test.describe("electron terminal", () => {
       })
 
       await page.waitForFunction(
-        () => {
-          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
-          return text.trim().length > 0
-        },
+        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )
@@ -177,7 +174,7 @@ test.describe("electron terminal", () => {
 
       await page.waitForFunction(
         () => {
-          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
+          const text = window.__gharargahAgent?.getTerminalText?.() ?? ""
           return text.includes("package.json") || text.includes("src")
         },
         null,
@@ -197,18 +194,14 @@ test.describe("electron terminal", () => {
       await showTerminal(page)
 
       await page.waitForFunction(
-        () => {
-          const row = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows > div") as HTMLElement | null
-          return row != null && row.getBoundingClientRect().height >= 10
-        },
+        () => (window.__gharargahAgent?.getTerminalCellHeight?.() ?? 0) >= 10,
         null,
         { timeout: 15_000 },
       )
 
-      const rowHeight = await page.evaluate(() => {
-        const row = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows > div") as HTMLElement | null
-        return row?.getBoundingClientRect().height ?? 0
-      })
+      const rowHeight = await page.evaluate(
+        () => window.__gharargahAgent?.getTerminalCellHeight?.() ?? 0,
+      )
       expect(rowHeight).toBeGreaterThanOrEqual(10)
     } finally {
       await app.close()
@@ -352,24 +345,23 @@ test.describe("electron terminal", () => {
         .toContain("STTY-SIZE-DONE")
 
       const sizes = await page.evaluate(() => {
-        const rowsEl = document.querySelector<HTMLElement>(
-          "[data-gharargah-terminal-panel] .xterm-rows",
-        )
-        if (!rowsEl) return null
-        const text = rowsEl.textContent ?? ""
+        const text = window.__gharargahAgent?.getTerminalText?.() ?? ""
         const match = text.match(/(\d+)\s+(\d+)[\s\S]*STTY-SIZE-DONE/)
-        if (!match) return null
+        const dims = window.__gharargahAgent?.getTerminalDims?.() ?? null
+        if (!match || !dims) return null
         return {
           ptyRows: Number(match[1]),
           ptyCols: Number(match[2]),
-          rowCount: rowsEl.querySelectorAll(":scope > div").length,
+          rowCount: dims.rows,
+          colCount: dims.cols,
         }
       })
       expect(sizes).toBeTruthy()
       expect(sizes!.ptyCols).toBeGreaterThan(40)
       expect(sizes!.ptyRows).toBeGreaterThan(10)
-      // Visible DomRenderer row count must match PTY rows (fit ↔ winsize).
+      // Fitted xterm geometry must match PTY winsize.
       expect(sizes!.rowCount).toBe(sizes!.ptyRows)
+      expect(sizes!.colCount).toBe(sizes!.ptyCols)
     } finally {
       await app.close()
     }
@@ -405,10 +397,13 @@ test.describe("electron terminal", () => {
         .poll(
           () =>
             page.evaluate(() => {
+              const hidden =
+                window.__gharargahAgent?.getTerminalCursor?.()?.hidden === true
               const panel = document.querySelector<HTMLElement>(
                 "[data-gharargah-terminal-panel]",
               )
-              return panel?.dataset.gharargahTerminalCursorHidden === "1"
+              const attr = panel?.dataset.gharargahTerminalCursorHidden === "1"
+              return hidden || attr
             }),
           { timeout: 5_000 },
         )
@@ -452,10 +447,7 @@ test.describe("electron terminal", () => {
       })
 
       await page.waitForFunction(
-        () => {
-          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
-          return text.trim().length > 0
-        },
+        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )
@@ -485,10 +477,7 @@ test.describe("electron terminal", () => {
       })
 
       await page.waitForFunction(
-        () => {
-          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
-          return text.trim().length > 0
-        },
+        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )
@@ -505,7 +494,7 @@ test.describe("electron terminal", () => {
       await expectLocatorVisible(exitBar, { timeout: 15_000 })
       await expectLocatorContainsText(exitBar, "Process exited")
       await expectLocatorVisible(exitBar.getByRole("button", { name: "Restart" }))
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm-rows")
+      await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm")
     } finally {
       await app.close()
     }
@@ -551,12 +540,25 @@ test.describe("electron terminal", () => {
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
 
       await expectLocatorCount(panel.locator("[data-gharargah-terminal-cursor-trail]"), 0)
-      await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
+      // WebGL/Canvas draw the caret on canvas — no DomRenderer `.xterm-cursor`.
+      // Dom fallback still exposes exactly one DOM caret.
+      const renderer = await panel.getAttribute("data-gharargah-terminal-renderer")
+      if (renderer === "dom" || renderer == null) {
+        await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
+      } else {
+        expect(["webgl", "canvas"]).toContain(renderer)
+        await expectLocatorCount(panel.locator(".xterm-helper-textarea"), 1)
+      }
 
       await panel.locator(".gharargah-terminal-surface").click()
       await page.keyboard.type("cursor")
-      await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
+      if (renderer === "dom" || renderer == null) {
+        await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
+      }
       await expectLocatorCount(panel.locator("[data-gharargah-terminal-cursor-ghost]"), 0)
+      const cursor = await page.evaluate(() => window.__gharargahAgent?.getTerminalCursor?.())
+      expect(cursor).toBeTruthy()
+      expect(cursor!.hidden).toBe(false)
     } finally {
       await app.close()
     }
@@ -568,7 +570,6 @@ test.describe("electron terminal", () => {
       await showTerminal(page)
       const panel = page.locator("[data-gharargah-terminal-panel]")
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
-      await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
 
       await execCommand(page, "gharargah.goHome")
       await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
@@ -579,46 +580,47 @@ test.describe("electron terminal", () => {
       await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
 
       await page.waitForFunction(() => {
-        const screen = document.querySelector<HTMLElement>(
-          "[data-gharargah-terminal-panel] .xterm-screen",
-        )
-        const cursor = document.querySelector<HTMLElement>(
-          "[data-gharargah-terminal-panel] .xterm-cursor",
-        )
-        if (!screen || !cursor) return false
-        const opacity = Number.parseFloat(getComputedStyle(cursor).opacity || "1")
-        if (opacity < 0.1) return false
-        const screenRect = screen.getBoundingClientRect()
-        const cursorRect = cursor.getBoundingClientRect()
-        if (screenRect.width < 8 || screenRect.height < 8 || cursorRect.width < 1) return false
+        const dims = window.__gharargahAgent?.getTerminalDims?.()
+        const cursor = window.__gharargahAgent?.getTerminalCursor?.()
+        if (!dims || !cursor || cursor.hidden) return false
         return (
-          cursorRect.left >= screenRect.left - 1 &&
-          cursorRect.top >= screenRect.top - 1 &&
-          cursorRect.right <= screenRect.right + 1 &&
-          cursorRect.bottom <= screenRect.bottom + 1
+          cursor.x >= 0 &&
+          cursor.y >= 0 &&
+          cursor.x < dims.cols &&
+          cursor.y < dims.rows
         )
       })
 
       const box = await page.evaluate(() => {
+        const dims = window.__gharargahAgent!.getTerminalDims!()!
+        const cursor = window.__gharargahAgent!.getTerminalCursor!()!
         const screen = document.querySelector<HTMLElement>(
           "[data-gharargah-terminal-panel] .xterm-screen",
-        )!
-        const cursor = document.querySelector<HTMLElement>(
-          "[data-gharargah-terminal-panel] .xterm-cursor",
-        )!
-        const screenRect = screen.getBoundingClientRect()
-        const cursorRect = cursor.getBoundingClientRect()
+        )
+        const canvas = document.querySelector<HTMLElement>(
+          "[data-gharargah-terminal-panel] canvas",
+        )
+        const screenRect = screen?.getBoundingClientRect()
+        const canvasRect = canvas?.getBoundingClientRect()
         return {
-          cursorTop: cursorRect.top - screenRect.top,
-          cursorLeft: cursorRect.left - screenRect.left,
-          screenHeight: screenRect.height,
-          screenWidth: screenRect.width,
+          cursorX: cursor.x,
+          cursorY: cursor.y,
+          cols: dims.cols,
+          rows: dims.rows,
+          canvasInsideScreen:
+            !screenRect ||
+            !canvasRect ||
+            (canvasRect.left >= screenRect.left - 2 &&
+              canvasRect.top >= screenRect.top - 2 &&
+              canvasRect.right <= screenRect.right + 2 &&
+              canvasRect.bottom <= screenRect.bottom + 2),
         }
       })
-      expect(box.cursorTop).toBeGreaterThanOrEqual(0)
-      expect(box.cursorTop).toBeLessThan(box.screenHeight)
-      expect(box.cursorLeft).toBeGreaterThanOrEqual(0)
-      expect(box.cursorLeft).toBeLessThan(box.screenWidth)
+      expect(box.cursorX).toBeGreaterThanOrEqual(0)
+      expect(box.cursorY).toBeGreaterThanOrEqual(0)
+      expect(box.cursorX).toBeLessThan(box.cols)
+      expect(box.cursorY).toBeLessThan(box.rows)
+      expect(box.canvasInsideScreen).toBe(true)
     } finally {
       await app.close()
     }
@@ -700,10 +702,7 @@ test.describe("electron terminal", () => {
       })
 
       await page.waitForFunction(
-        () => {
-          const text = document.querySelector("[data-gharargah-terminal-panel] .xterm-rows")?.textContent ?? ""
-          return text.trim().length > 0
-        },
+        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )

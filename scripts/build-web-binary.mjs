@@ -4,8 +4,8 @@
  *
  * Output:
  *   apps/gharargah/dist              SPA (intermediate)
- *   dist/gharargah/                  self-contained server (./gharargah to run)
- *   apps/gharargah-electron/pack     copy of dist/gharargah for electron-builder
+ *   dist/yaade/                      self-contained server (./yaade to run)
+ *   apps/gharargah-electron/pack     copy of dist/yaade for electron-builder
  *   apps/gharargah-electron/dist/*.dmg (macOS only)
  */
 import { spawnSync } from "node:child_process"
@@ -17,7 +17,7 @@ import { stageRuntimePack } from "./stage-electron-pack.mjs"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const electronDir = path.join(repoRoot, "apps/gharargah-electron")
-const serverDir = path.join(repoRoot, "dist/gharargah")
+const serverDir = path.join(repoRoot, "dist/yaade")
 const electronPackDir = path.join(electronDir, "pack")
 
 function run(command, args, cwd = repoRoot, env = process.env) {
@@ -41,7 +41,7 @@ console.log("Frontend built to apps/gharargah/dist")
 await stageRuntimePack(serverDir)
 syncElectronPack(serverDir)
 
-const serverLauncher = path.join(serverDir, "gharargah")
+const serverLauncher = path.join(serverDir, "yaade")
 console.log(`Server binary: ${serverLauncher}`)
 console.log(`  ${serverLauncher}              # serve SPA + API on http://127.0.0.1:4747`)
 console.log(`  ${serverLauncher} /path/to/repo  # open workspace at path`)

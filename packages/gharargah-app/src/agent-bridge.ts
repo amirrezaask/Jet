@@ -4,6 +4,12 @@ import type { CommandRegistry, GharargahPanelTree, WorkspaceService } from "@gha
 import type { PanelNode } from "@gharargah/panels"
 import type { PanelView } from "@gharargah/shared"
 import { handleTerminalFileDropAt } from "@gharargah/ui/terminal-file-drop"
+import {
+  readTerminalBufferText,
+  readTerminalCellHeight,
+  readTerminalCursor,
+  readTerminalDims,
+} from "@gharargah/ui/terminal-registry"
 
 export type JetAgentState = {
   /** @deprecated Use `activeWorkspace` + `workspaces` for multi-root. */
@@ -51,6 +57,14 @@ export type GharargahAgentAPI = {
   measurePerf(name: string, startMark: string, endMark?: string): void
   /** Insert shell-quoted paths into the running terminal under its center (E2E / DnD path). */
   dropFilesOnTerminal(paths: string[]): Promise<boolean>
+  /** Buffer-backed terminal text (WebGL/Canvas-safe; E2E). */
+  getTerminalText(tabId?: string): string
+  /** Cell height in CSS px from the active terminal renderer (E2E). */
+  getTerminalCellHeight(tabId?: string): number
+  /** Fitted xterm cols/rows (E2E). */
+  getTerminalDims(tabId?: string): { cols: number; rows: number } | null
+  /** Buffer cursor cell + hidden flag (WebGL-safe; E2E). */
+  getTerminalCursor(tabId?: string): { x: number; y: number; hidden: boolean } | null
   /** Ingest a notification (E2E / agent harness). */
   ingestNotification?(
     req: import("@gharargah/shared").IngestNotificationRequest,
@@ -166,7 +180,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
         }
         await new Promise(r => setTimeout(r, 50))
       }
-      throw new Error("Gharargah layout did not become ready in time")
+      throw new Error("YAADE layout did not become ready in time")
     },
     async waitForEditor(timeoutMs = 5000) {
       const deadline = Date.now() + timeoutMs
@@ -276,6 +290,18 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): GharargahAgent
         rect.left + rect.width / 2,
         rect.top + rect.height / 2,
       )
+    },
+    getTerminalText(tabId) {
+      return readTerminalBufferText(tabId)
+    },
+    getTerminalCellHeight(tabId) {
+      return readTerminalCellHeight(tabId)
+    },
+    getTerminalDims(tabId) {
+      return readTerminalDims(tabId)
+    },
+    getTerminalCursor(tabId) {
+      return readTerminalCursor(tabId)
     },
     async ingestNotification(req) {
       const api = window.gharargah?.notifications

@@ -145,7 +145,7 @@ function DockWell(props: {
             "relative flex size-9 items-center justify-center rounded-[0.7rem] border text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--gharargah-motion-fast)] ease-[var(--gharargah-ease-out)] focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-[var(--gharargah-press-scale)] disabled:pointer-events-none disabled:opacity-40",
             active
               ? "border-border/80 bg-card/80 text-foreground shadow-sm"
-              : "border-transparent bg-muted/40 hover:border-border/70 hover:bg-muted/70 hover:text-foreground",
+              : "border-transparent bg-transparent hover:border-border/70 hover:bg-muted/70 hover:text-foreground",
           )}
         >
           <Icon aria-hidden className="size-4" />

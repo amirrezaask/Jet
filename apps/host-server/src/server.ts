@@ -9,10 +9,13 @@ import {
   HostRpcRequest,
   InvalidRpcPayloadError,
   PathOutsideRootsError,
+  encodeTerminalDataFrame,
   hostErrorHttpStatus,
   hostErrorWire,
+  tryDecodeTerminalWsCommand,
   type HostRpcError,
 } from "@gharargah/rpc"
+import type { HostEvent } from "./events.js"
 import type { HostConfig } from "./config.js"
 import { dispatch } from "./dispatch.js"
 import { makeHostLayers, type HostLayerServices } from "./effect/layers.js"
@@ -85,7 +88,7 @@ export async function startHostServer(config: HostConfig): Promise<{
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
     if (url.pathname === "/ws") {
       wss.handleUpgrade(req, socket, head, ws => {
-        handleEventSocket(runtime, ws, url)
+        handleEventSocket(runtime, managed, ws, url)
       })
       return
     }
@@ -140,7 +143,7 @@ async function handleHttp(
 
   if (req.method === "GET" && pathname === "/api/v1/system") {
     sendJson(res, 200, {
-      name: "Jet",
+      name: "YAADE",
       version: VERSION,
       protocolVersion: 1,
       launchConfig: runtime.config.launchConfig,
@@ -399,8 +402,14 @@ async function handleHttp(
   })
 }
 
-function handleEventSocket(runtime: HostRuntime, ws: WebSocket, url: URL): void {
+function handleEventSocket(
+  runtime: HostRuntime,
+  managed: ManagedRuntime.ManagedRuntime<HostLayerServices, never>,
+  ws: WebSocket,
+  url: URL,
+): void {
   const since = Number(url.searchParams.get("since") ?? "0") || 0
+  const clientId = `ws-${randomUUID()}`
   for (const event of runtime.events.replayAfter(since)) {
     sendEventSocketMessage(ws, event)
   }
@@ -408,16 +417,48 @@ function handleEventSocket(runtime: HostRuntime, ws: WebSocket, url: URL): void 
     sendEventSocketMessage(ws, event)
   })
   ws.on("message", data => {
-    if (String(data) === "ping") ws.send("pong")
+    // Hot terminal control is JSON text; binary frames are host→client only.
+    const text = typeof data === "string" ? data : wsDataToText(data)
+    if (text === "ping") {
+      ws.send("pong")
+      return
+    }
+    let raw: unknown
+    try {
+      raw = JSON.parse(text)
+    } catch {
+      return
+    }
+    const cmd = tryDecodeTerminalWsCommand(raw)
+    if (!cmd) return
+    void runHostRpc(managed, cmd.op, cmd.args, clientId)
   })
   ws.on("close", () => unsubscribe())
 }
 
-function sendEventSocketMessage(ws: WebSocket, event: unknown): void {
+function sendEventSocketMessage(ws: WebSocket, event: HostEvent): void {
   if (ws.readyState !== WebSocket.OPEN) return
   if (ws.bufferedAmount > MAX_WEBSOCKET_BUFFERED_BYTES) {
     ws.close(1013, "client is not consuming events")
     return
+  }
+  if (event.channel === "terminal:data") {
+    const id = String(event.args[0] ?? "")
+    const data = String(event.args[1] ?? "")
+    const terminalSequence =
+      typeof event.args[2] === "number" && Number.isFinite(event.args[2])
+        ? event.args[2]
+        : 0
+    try {
+      ws.send(
+        Buffer.from(
+          encodeTerminalDataFrame(event.sequence, terminalSequence, id, data),
+        ),
+      )
+      return
+    } catch {
+      // Fall through to JSON if encoding fails (oversized id, etc.).
+    }
   }
   ws.send(JSON.stringify(event))
 }
