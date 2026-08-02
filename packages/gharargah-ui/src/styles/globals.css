@@ -210,17 +210,17 @@
   background:
     radial-gradient(
       120% 80% at 10% -8%,
-      color-mix(in srgb, var(--primary) 10%, transparent),
+      color-mix(in srgb, var(--primary) 4%, transparent),
       transparent 55%
     ),
     radial-gradient(
       90% 70% at 92% 6%,
-      color-mix(in srgb, var(--primary) 7%, transparent),
+      color-mix(in srgb, var(--primary) 5%, transparent),
       transparent 52%
     ),
     radial-gradient(
       70% 50% at 50% 112%,
-      color-mix(in srgb, var(--primary) 6%, transparent),
+      color-mix(in srgb, var(--primary) 5%, transparent),
       transparent 55%
     ),
     var(--background);
@@ -238,8 +238,8 @@
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, white 8%, transparent) 0%,
-      transparent 22%
+      color-mix(in srgb, white 5%, transparent) 0%,
+      transparent 18%
     ),
     var(--glass-fill);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
@@ -247,10 +247,10 @@
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
     brightness(var(--glass-brightness));
   box-shadow:
-    0 1px 0 color-mix(in srgb, white 55%, transparent) inset,
-    0 -1px 0 color-mix(in srgb, white 12%, transparent) inset,
-    1px 0 0 color-mix(in srgb, white 14%, transparent) inset,
-    -1px 0 0 color-mix(in srgb, white 10%, transparent) inset,
+    0 1px 0 color-mix(in srgb, white 28%, transparent) inset,
+    0 -1px 0 color-mix(in srgb, white 8%, transparent) inset,
+    1px 0 0 color-mix(in srgb, white 10%, transparent) inset,
+    -1px 0 0 color-mix(in srgb, white 6%, transparent) inset,
     0 12px 36px -14px rgb(0 0 0 / 28%),
     0 0 0 1px color-mix(in srgb, var(--primary) 6%, transparent);
 }
@@ -262,11 +262,12 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
+  /* Even top wash — avoid 135° corner hotspot on floating panels. */
   background: linear-gradient(
-    135deg,
-    color-mix(in srgb, white 42%, transparent),
-    color-mix(in srgb, white 8%, transparent) 28%,
-    transparent 58%
+    180deg,
+    color-mix(in srgb, white 22%, transparent),
+    color-mix(in srgb, white 6%, transparent) 22%,
+    transparent 48%
   );
   /* soft-light on light themes — screen washes labels to white */
   mix-blend-mode: soft-light;
@@ -274,7 +275,8 @@
 }
 
 .dark [data-gharargah-liquid-glass]::after {
-  mix-blend-mode: screen;
+  /* soft-light keeps frost without the screen hot-corner wash */
+  mix-blend-mode: soft-light;
 }
 
 [data-gharargah-liquid-glass="island"] {
@@ -379,12 +381,13 @@
   --glass-fill: color-mix(in srgb, var(--sidebar) 88%, transparent);
   --glass-fill-strong: color-mix(in srgb, var(--sidebar) 94%, transparent);
   --glass-rim: color-mix(in srgb, var(--sidebar-border) 80%, transparent);
+  --glass-sheen-opacity: 0.12;
   color: var(--sidebar-foreground);
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, white 6%, transparent) 0%,
-      transparent 20%
+      color-mix(in srgb, white 3%, transparent) 0%,
+      transparent 16%
     ),
     var(--glass-fill);
 }
@@ -393,11 +396,12 @@
   --glass-fill: color-mix(in srgb, var(--sidebar) 72%, transparent);
   --glass-fill-strong: color-mix(in srgb, var(--sidebar) 84%, transparent);
   --glass-rim: color-mix(in srgb, white 12%, var(--sidebar-border));
+  --glass-sheen-opacity: 0.1;
   box-shadow:
-    0 1px 0 color-mix(in srgb, white 40%, transparent) inset,
-    0 -1px 0 color-mix(in srgb, white 8%, transparent) inset,
+    0 1px 0 color-mix(in srgb, white 14%, transparent) inset,
+    0 -1px 0 color-mix(in srgb, white 5%, transparent) inset,
     0 14px 40px -16px rgb(0 0 0 / 55%),
-    0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--primary) 6%, transparent);
 }
 
 [data-slot="sidebar"][data-peek="true"] [data-slot="sidebar-gap"] {
@@ -598,14 +602,14 @@
   --agent-composer-border: color-mix(in srgb, var(--border) 80%, transparent);
   --agent-composer-radius: 1.5rem;
 
-  /* Dark glass — more translucent; specular sheen can be stronger. */
+  /* Dark glass — translucent frost; keep sheen restrained (no corner glare). */
   --glass-fill: color-mix(in srgb, var(--card) 52%, transparent);
   --glass-fill-strong: color-mix(in srgb, var(--card) 68%, transparent);
   --glass-content: color-mix(in srgb, var(--background) 55%, transparent);
   --glass-rim: color-mix(in srgb, white 14%, var(--border));
-  --glass-saturate: 1.35;
-  --glass-brightness: 1.06;
-  --glass-sheen-opacity: 0.5;
+  --glass-saturate: 1.28;
+  --glass-brightness: 1.02;
+  --glass-sheen-opacity: 0.22;
 }
 
 * {

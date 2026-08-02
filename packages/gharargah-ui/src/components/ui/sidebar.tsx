@@ -249,11 +249,11 @@ function Sidebar({
         clearPeekLeaveTimer()
         if (peekRef.current) return
         if (peekEnterTimer.current != null) return
-        // Intentional dwell — longer than compact-rail tooltips (~200–700ms).
+        // Short anti-jitter only — hover peek must feel instant (~hot motion).
         peekEnterTimer.current = setTimeout(() => {
           setPeek(true)
           peekEnterTimer.current = null
-        }, 700)
+        }, 80)
         return
       }
       clearPeekEnterTimer()
@@ -262,7 +262,7 @@ function Sidebar({
       peekLeaveTimer.current = setTimeout(() => {
         setPeek(false)
         peekLeaveTimer.current = null
-      }, 160)
+      }, 120)
     }
 
     const onKeyDown = (event: KeyboardEvent) => {

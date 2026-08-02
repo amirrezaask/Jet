@@ -328,7 +328,7 @@ test.describe("sidebar view", () => {
         )
         .toBe(true)
 
-      // Floating island + hover-peek: sustained dwell expands without pinning.
+      // Floating island + hover-peek: snappy dwell expands without pinning.
       await expect
         .poll(() =>
           page.evaluate(() => {
