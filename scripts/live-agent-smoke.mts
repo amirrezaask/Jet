@@ -1,7 +1,7 @@
 /**
  * Live provider smoke — hits Effect agent-server without MOCK.
  * Usage:
- *   GHARARGAH_LIVE_SMOKE=1 pnpm exec tsx scripts/live-agent-smoke.mts
+ *   YAADE_LIVE_SMOKE=1 pnpm exec tsx scripts/live-agent-smoke.mts
  */
 import { spawn } from "node:child_process"
 import { createServer } from "node:net"
@@ -9,7 +9,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { createEffectAgentsClient } from "../packages/gharargah-host-client/src/effect-agents-client.ts"
+import { createEffectAgentsClient } from "../packages/yaade-host-client/src/effect-agents-client.ts"
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const providers = [
@@ -50,17 +50,17 @@ async function waitHealth(port: number): Promise<void> {
 
 async function main(): Promise<void> {
   const port = await freePort()
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "gharargah-live-"))
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-live-"))
   fs.writeFileSync(path.join(workspace, "README.md"), "# live smoke\n")
   const tsx = path.join(REPO, "node_modules/tsx/dist/cli.mjs")
   const child = spawn(process.execPath, [tsx, path.join(REPO, "apps/agent-server/src/bin.ts")], {
     cwd: REPO,
     env: {
       ...process.env,
-      GHARARGAH_AGENT_HOST: "127.0.0.1",
-      GHARARGAH_AGENT_PORT: String(port),
+      YAADE_AGENT_HOST: "127.0.0.1",
+      YAADE_AGENT_PORT: String(port),
       // Explicitly off — this is the live path.
-      GHARARGAH_AGENT_MOCK: "0",
+      YAADE_AGENT_MOCK: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
   })

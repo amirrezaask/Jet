@@ -14,7 +14,7 @@ test.describe("electron shell settings", () => {
     const { app, page } = await launchJet()
     try {
       await page.setViewportSize({ width: 1440, height: 900 })
-      await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(async () => window.__yaadeAgent!.waitForReady())
       await ensureSidebarLayout(page)
 
       for (const theme of [
@@ -99,7 +99,7 @@ test.describe("electron shell settings", () => {
         expect(contrast.sidebar).toBeGreaterThanOrEqual(7)
         expect(contrast.primaryMatchesSidebar).toBe(true)
 
-        const search = page.locator("[data-gharargah-sidebar-search-input]")
+        const search = page.locator("[data-yaade-sidebar-search-input]")
         await search.focus()
         await expect
           .poll(() => search.evaluate(element => getComputedStyle(element).boxShadow))
@@ -118,20 +118,20 @@ test.describe("electron shell settings", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(() => localStorage.clear())
-      await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(async () => window.__yaadeAgent!.waitForReady())
       await execCommand(page, "ui.setTheme.default-light")
       await openSettings(page)
       await page
-        .locator("[data-gharargah-settings-category='appearance']")
+        .locator("[data-yaade-settings-category='appearance']")
         .click()
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 2)
+      await expectLocatorCount(page.locator("[data-yaade-theme-option]"), 2)
 
-      await page.locator("[data-gharargah-theme-option='default-dark']").click()
+      await page.locator("[data-yaade-theme-option='default-dark']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("default-dark")
 
-      await page.locator("[data-gharargah-theme-option='default-light']").click()
+      await page.locator("[data-yaade-theme-option='default-light']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("default-light")
@@ -167,14 +167,14 @@ test.describe("electron shell settings", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(() => localStorage.clear())
-      await page.evaluate(async () => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(async () => window.__yaadeAgent!.waitForReady())
       await openSettings(page)
 
       const appearance = page.locator(
-        "[data-gharargah-settings-category='appearance']",
+        "[data-yaade-settings-category='appearance']",
       )
       const notifications = page.locator(
-        "[data-gharargah-settings-category='notifications']",
+        "[data-yaade-settings-category='notifications']",
       )
       await expect.poll(() => appearance.getAttribute("aria-selected")).toBe("true")
       await appearance.focus()
@@ -183,12 +183,12 @@ test.describe("electron shell settings", () => {
         .poll(() => notifications.getAttribute("aria-selected"))
         .toBe("true")
       await page
-        .locator("[data-gharargah-settings-panel='notifications']")
+        .locator("[data-yaade-settings-panel='notifications']")
         .waitFor({ state: "visible" })
 
       await appearance.click()
       await expectLocatorCount(
-        page.locator("[data-gharargah-session-layout-option]"),
+        page.locator("[data-yaade-session-layout-option]"),
         0,
       )
       await expect
@@ -215,26 +215,26 @@ test.describe("electron shell settings", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(async () => {
-        await window.gharargah?.notifications?.setPreferences({
+        await window.yaade?.notifications?.setPreferences({
           desktopEnabled: false,
           soundEnabled: false,
         })
       })
       await openSettings(page)
       await page
-        .locator("[data-gharargah-settings-category='notifications']")
+        .locator("[data-yaade-settings-category='notifications']")
         .click()
 
       const desktop = page.locator(
-        "[data-gharargah-notification-pref='desktopEnabled']",
+        "[data-yaade-notification-pref='desktopEnabled']",
       )
       const sound = page.locator(
-        "[data-gharargah-notification-pref='soundEnabled']",
+        "[data-yaade-notification-pref='soundEnabled']",
       )
       const soundDisabled = () =>
         page.evaluate(() => {
           const control = document.querySelector(
-            "[data-gharargah-notification-pref='soundEnabled']",
+            "[data-yaade-notification-pref='soundEnabled']",
           )
           return control instanceof HTMLButtonElement && control.disabled
         })
@@ -247,7 +247,7 @@ test.describe("electron shell settings", () => {
         .poll(() =>
           page.evaluate(async () => {
             const prefs =
-              await window.gharargah?.notifications?.getPreferences()
+              await window.yaade?.notifications?.getPreferences()
             return prefs?.soundEnabled ?? null
           }),
         )
@@ -265,7 +265,7 @@ test.describe("electron shell settings", () => {
         ;(
           window as Window & { __serverCalls?: Array<string | null> }
         ).__serverCalls = calls
-        window.gharargahDesktop = {
+        window.yaadeDesktop = {
           getServerConnection: async () => ({
             activeUrl: "http://127.0.0.1:4747",
             localUrl: "http://127.0.0.1:4747",
@@ -285,21 +285,21 @@ test.describe("electron shell settings", () => {
       })
 
       await openSettings(page)
-      await page.locator("[data-gharargah-settings-category='server']").click()
+      await page.locator("[data-yaade-settings-category='server']").click()
       await expect
         .poll(() =>
-          page.locator("[data-gharargah-active-server]").textContent(),
+          page.locator("[data-yaade-active-server]").textContent(),
         )
         .toBe("http://127.0.0.1:4747")
       await page
         .getByRole("textbox", { name: "Remote server URL" })
-        .fill("https://gharargah.example")
-      await page.locator("[data-gharargah-connect-remote]").click()
+        .fill("https://yaade.example")
+      await page.locator("[data-yaade-connect-remote]").click()
       await expect
         .poll(() =>
-          page.locator("[data-gharargah-active-server]").textContent(),
+          page.locator("[data-yaade-active-server]").textContent(),
         )
-        .toBe("https://gharargah.example")
+        .toBe("https://yaade.example")
       await expect
         .poll(() =>
           page.evaluate(
@@ -308,12 +308,12 @@ test.describe("electron shell settings", () => {
                 .__serverCalls,
           ),
         )
-        .toEqual(["https://gharargah.example"])
+        .toEqual(["https://yaade.example"])
 
-      await page.locator("[data-gharargah-use-bundled-server]").click()
+      await page.locator("[data-yaade-use-bundled-server]").click()
       await expect
         .poll(() =>
-          page.locator("[data-gharargah-active-server]").textContent(),
+          page.locator("[data-yaade-active-server]").textContent(),
         )
         .toBe("http://127.0.0.1:4747")
       await expect
@@ -324,7 +324,7 @@ test.describe("electron shell settings", () => {
                 .__serverCalls,
           ),
         )
-        .toEqual(["https://gharargah.example", null])
+        .toEqual(["https://yaade.example", null])
     } finally {
       await app.close()
     }

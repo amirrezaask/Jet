@@ -16,7 +16,7 @@ export const SAMPLE = "fixtures/sample-workspace"
 
 /**
  * PTY availability. On macOS ensure node-pty spawn-helper is +x
- * (`packages/gharargah-node-host/scripts/fix-node-pty-perms.mjs`).
+ * (`packages/yaade-node-host/scripts/fix-node-pty-perms.mjs`).
  */
 export function hasPtySpawn(): boolean {
   return process.platform !== "win32"
@@ -46,11 +46,11 @@ export async function launchJet(
 }
 
 export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
-  await page.waitForSelector("[data-gharargah-mission-sidebar]", {
+  await page.waitForSelector("[data-yaade-mission-sidebar]", {
     timeout: timeoutMs,
   })
   await page.waitForFunction(
-    () => window.__gharargahAgent?.getState()?.shellView === "home",
+    () => window.__yaadeAgent?.getState()?.shellView === "home",
     null,
     { timeout: timeoutMs },
   )
@@ -60,7 +60,7 @@ export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promis
 export async function ensureSidebarLayout(page: ShellDriver): Promise<void> {
   await waitForHome(page, 15_000)
   await page.waitForFunction(
-    () => window.__gharargahAgent?.getState()?.sessionLayout === "sidebar",
+    () => window.__yaadeAgent?.getState()?.sessionLayout === "sidebar",
     null,
     { timeout: 15_000 },
   )
@@ -83,7 +83,7 @@ export async function openThemePicker(page: ShellDriver): Promise<void> {
   while (Date.now() < deadline) {
     await execCommand(page, "ui.showThemePicker")
     try {
-      await page.locator("[data-gharargah-settings-overlay]").waitFor({ state: "visible", timeout: 2_000 })
+      await page.locator("[data-yaade-settings-overlay]").waitFor({ state: "visible", timeout: 2_000 })
       return
     } catch {
       await page.waitForTimeout(250)
@@ -93,10 +93,10 @@ export async function openThemePicker(page: ShellDriver): Promise<void> {
 }
 
 export async function focusTerminal(page: ShellDriver): Promise<void> {
-  await page.locator("[data-gharargah-terminal-panel] .gharargah-terminal-surface").click()
+  await page.locator("[data-yaade-terminal-panel] .yaade-terminal-surface").click()
   await page.evaluate(() => {
     const textarea = document.querySelector(
-      "[data-gharargah-terminal-panel] .xterm-helper-textarea",
+      "[data-yaade-terminal-panel] .xterm-helper-textarea",
     ) as HTMLTextAreaElement | null
     textarea?.focus()
   })
@@ -107,7 +107,7 @@ export async function openSettings(page: ShellDriver): Promise<void> {
   while (Date.now() < deadline) {
     await execCommand(page, "settings.show")
     try {
-      await page.locator("[data-gharargah-settings-overlay]").waitFor({ state: "visible", timeout: 2_000 })
+      await page.locator("[data-yaade-settings-overlay]").waitFor({ state: "visible", timeout: 2_000 })
       return
     } catch {
       await page.waitForTimeout(250)
@@ -119,13 +119,13 @@ export async function openSettings(page: ShellDriver): Promise<void> {
 export async function showTerminal(page: ShellDriver): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
     await page.evaluate(async () => {
-      await window.__gharargahAgent!.executeCommand("terminal.show")
+      await window.__yaadeAgent!.executeCommand("terminal.show")
     })
-    await page.waitForSelector("[data-gharargah-terminal-panel] .xterm", { timeout: 30_000 })
+    await page.waitForSelector("[data-yaade-terminal-panel] .xterm", { timeout: 30_000 })
     try {
       await page.waitForFunction(
         () => {
-          const text = window.__gharargahAgent?.getTerminalText?.() ?? ""
+          const text = window.__yaadeAgent?.getTerminalText?.() ?? ""
           return text.trim().length > 0
         },
         null,
@@ -139,7 +139,7 @@ export async function showTerminal(page: ShellDriver): Promise<void> {
 }
 
 export async function readTerminalText(page: ShellDriver): Promise<string> {
-  return page.evaluate(() => window.__gharargahAgent?.getTerminalText?.() ?? "")
+  return page.evaluate(() => window.__yaadeAgent?.getTerminalText?.() ?? "")
 }
 
 /** Poll until the active terminal buffer contains `needle` (WebGL-safe). */
@@ -182,12 +182,12 @@ export async function pressMod(
 
 export async function execCommand(page: ShellDriver, commandId: string): Promise<void> {
   await page.evaluate(async (cmd: string) => {
-    await window.__gharargahAgent!.executeCommand(cmd)
+    await window.__yaadeAgent!.executeCommand(cmd)
   }, commandId)
 }
 
 export async function clickNewSession(page: ShellDriver): Promise<void> {
-  const sidebarNew = page.locator("[data-gharargah-sidebar-new-session]")
+  const sidebarNew = page.locator("[data-yaade-sidebar-new-session]")
   if ((await sidebarNew.count()) > 0 && (await sidebarNew.first().isVisible())) {
     await sidebarNew.first().click()
     return
@@ -200,7 +200,7 @@ export async function pickAgentCli(
   page: ShellDriver,
   agentId: string = "codex",
 ): Promise<void> {
-  const option = page.locator(`[data-gharargah-agent-cli-option="${agentId}"]`)
+  const option = page.locator(`[data-yaade-agent-cli-option="${agentId}"]`)
   await option.waitFor({ state: "visible", timeout: 20_000 })
   await option.click()
 }
@@ -212,13 +212,13 @@ export async function openNewCliSession(
 ): Promise<ReturnType<ShellDriver["locator"]>> {
   await clickNewSession(page)
   await pickAgentCli(page, agentId)
-  const modal = page.locator("[data-gharargah-terminal-modal]")
+  const modal = page.locator("[data-yaade-terminal-modal]")
   await modal.waitFor({ state: "visible", timeout: 20_000 })
   await page.waitForFunction(
     () =>
       document
-        .querySelector("[data-gharargah-terminal-modal]")
-        ?.getAttribute("data-gharargah-session-mode") === "agent",
+        .querySelector("[data-yaade-terminal-modal]")
+        ?.getAttribute("data-yaade-session-mode") === "agent",
     null,
     { timeout: 20_000 },
   )

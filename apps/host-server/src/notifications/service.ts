@@ -12,12 +12,12 @@ import type {
   NotificationSource,
   NotificationStreamEvent,
   NotificationType,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 import {
   NOTIFICATION_SOURCE_RANK,
   severityForNotificationType,
   typeRequiresAction,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 import {
   mergeNotificationPreferences,
   shouldCreateInAppNotification,

@@ -16,14 +16,14 @@ import { execCommand, hasPtySpawn, launchJet } from "./_launch.js"
 const ptyAvailable = hasPtySpawn()
 
 function createMockGopls(): { binDir: string; tracePath: string; remove(): void } {
-  const dir = mkdtempSync(join(tmpdir(), "gharargah-gopls-"))
+  const dir = mkdtempSync(join(tmpdir(), "yaade-gopls-"))
   const binDir = join(dir, "bin")
   const tracePath = join(dir, "trace.jsonl")
   mkdirSync(binDir)
   const executable = join(binDir, process.platform === "win32" ? "gopls.cmd" : "gopls")
   const script = `#!/usr/bin/env node
 const fs = require("node:fs")
-const tracePath = process.env.GHARARGAH_MOCK_GOPLS_TRACE
+const tracePath = process.env.YAADE_MOCK_GOPLS_TRACE
 let buffered = Buffer.alloc(0)
 const record = value => {
   if (!tracePath) return
@@ -105,29 +105,29 @@ test.describe("Go language server", () => {
     const { app, page } = await launchJet({
       env: {
         PATH: `${mock.binDir}${delimiter}${process.env.PATH ?? ""}`,
-        GHARARGAH_LSP_GOPLS_BIN: join(
+        YAADE_LSP_GOPLS_BIN: join(
           mock.binDir,
           process.platform === "win32" ? "gopls.cmd" : "gopls",
         ),
-        GHARARGAH_MOCK_GOPLS_TRACE: mock.tracePath,
+        YAADE_MOCK_GOPLS_TRACE: mock.tracePath,
       },
     })
     try {
       await execCommand(page, "terminal.new")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", { timeout: 20_000 })
+      await page.locator('[data-yaade-session-mode-tab="editor"]').click()
       await page.evaluate(async () => {
-        await window.__gharargahAgent!.openFile("src/example.go")
-        await window.__gharargahAgent!.waitForEditor()
+        await window.__yaadeAgent!.openFile("src/example.go")
+        await window.__yaadeAgent!.waitForEditor()
       })
 
       await expect
         .poll(
           () =>
             page
-              .locator("[data-gharargah-editor-lsp]")
+              .locator("[data-yaade-editor-lsp]")
               .first()
-              .getAttribute("data-gharargah-editor-lsp"),
+              .getAttribute("data-yaade-editor-lsp"),
           { timeout: 20_000 },
         )
         .toBe("ready")

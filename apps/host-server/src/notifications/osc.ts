@@ -2,7 +2,7 @@ import type {
   AgentProvider,
   IngestNotificationRequest,
   NotificationType,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 
 const MAX_OSC_BYTES = 64 * 1024
 const MAX_TITLE_LENGTH = 240
@@ -34,8 +34,8 @@ const TYPES = new Set<NotificationType>([
  * Supported:
  * - OSC 9 ; message ST/BEL  (iTerm2 notify)
  * - OSC 777 ; notify ; title ; body ST/BEL
- * - OSC 1337 ; Gharargah=notify;<json> ST/BEL
- * - OSC 1337 ; GharargahNotify=<type>|<title>|<message> ST/BEL
+ * - OSC 1337 ; Yaade=notify;<json> ST/BEL
+ * - OSC 1337 ; YaadeNotify=<type>|<title>|<message> ST/BEL
  */
 export type ParsedOscNotification = Omit<
   IngestNotificationRequest,
@@ -43,7 +43,7 @@ export type ParsedOscNotification = Omit<
 > & { source: "osc" }
 
 const OSC_RE =
-  /\x1b\](?:9;([^\x07\x1b]*)|777;notify;([^\x07\x1b]*);([^\x07\x1b]*)|1337;((?:Gharargah=notify;|GharargahNotify=)[^\x07\x1b]*))(?:\x07|\x1b\\)/g
+  /\x1b\](?:9;([^\x07\x1b]*)|777;notify;([^\x07\x1b]*);([^\x07\x1b]*)|1337;((?:Yaade=notify;|YaadeNotify=)[^\x07\x1b]*))(?:\x07|\x1b\\)/g
 
 function cleanText(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null
@@ -69,10 +69,10 @@ function asProvider(value: unknown): AgentProvider | null {
     : null
 }
 
-function parseGharargahPayload(payload: string): ParsedOscNotification | null {
-  // Gharargah=notify;{json} or GharargahNotify=type|title|message
-  if (payload.startsWith("Gharargah=notify;")) {
-    const json = payload.slice("Gharargah=notify;".length)
+function parseYaadePayload(payload: string): ParsedOscNotification | null {
+  // Yaade=notify;{json} or YaadeNotify=type|title|message
+  if (payload.startsWith("Yaade=notify;")) {
+    const json = payload.slice("Yaade=notify;".length)
     try {
       const data = JSON.parse(json) as Record<string, unknown>
       const type = asType(data.type)
@@ -98,8 +98,8 @@ function parseGharargahPayload(payload: string): ParsedOscNotification | null {
       return null
     }
   }
-  if (payload.startsWith("GharargahNotify=")) {
-    const rest = payload.slice("GharargahNotify=".length)
+  if (payload.startsWith("YaadeNotify=")) {
+    const rest = payload.slice("YaadeNotify=".length)
     const [typeRaw, titleRaw, ...messageParts] = rest.split("|")
     const type = asType(typeRaw)
     const title =
@@ -146,7 +146,7 @@ export function parseOscNotifications(chunk: string): ParsedOscNotification[] {
       continue
     }
     if (match[4]) {
-      const parsed = parseGharargahPayload(match[4])
+      const parsed = parseYaadePayload(match[4])
       if (parsed) out.push(parsed)
     }
   }

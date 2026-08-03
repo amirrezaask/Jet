@@ -11,8 +11,8 @@ async function modalTitle(page: { evaluate: (fn: () => string | null) => Promise
   return (
     (await page.evaluate(() => {
       return (
-        document.querySelector("[data-gharargah-terminal-modal] [data-slot='dialog-title']")?.textContent ??
-        document.querySelector("[data-gharargah-terminal-modal]")?.textContent?.slice(0, 80) ??
+        document.querySelector("[data-yaade-terminal-modal] [data-slot='dialog-title']")?.textContent ??
+        document.querySelector("[data-yaade-terminal-modal]")?.textContent?.slice(0, 80) ??
         null
       )
     })) ?? ""
@@ -29,8 +29,8 @@ test.describe("mac terminal quick switch", () => {
       const sessionIds: string[] = []
       const readModalSessionId = async () =>
         (await page
-          .locator("[data-gharargah-terminal-modal]")
-          .getAttribute("data-gharargah-session-id")) ?? ""
+          .locator("[data-yaade-terminal-modal]")
+          .getAttribute("data-yaade-session-id")) ?? ""
 
       sessionIds.push(await readModalSessionId())
       await execCommand(page, "terminal.new")
@@ -43,13 +43,13 @@ test.describe("mac terminal quick switch", () => {
 
       await page.keyboard.press("Meta+2")
 
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-terminal-modal]")
-            .getAttribute("data-gharargah-session-id"),
+            .locator("[data-yaade-terminal-modal]")
+            .getAttribute("data-yaade-session-id"),
         )
         .toBe(secondSessionId)
     } finally {
@@ -61,14 +61,14 @@ test.describe("mac terminal quick switch", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(async (p: string) => {
-        await window.__gharargahAgent!.addWorkspace(p)
+        await window.__yaadeAgent!.addWorkspace(p)
       }, SECOND)
 
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length))
         .toBe(2)
 
-      const workspaces = await page.evaluate(() => window.__gharargahAgent!.listWorkspaces())
+      const workspaces = await page.evaluate(() => window.__yaadeAgent!.listWorkspaces())
       const secondName = workspaces[1]?.name ?? ""
 
       await showTerminal(page)
@@ -76,7 +76,7 @@ test.describe("mac terminal quick switch", () => {
       await page.waitForTimeout(400)
 
       await page.evaluate(async () => {
-        await window.__gharargahAgent!.executeCommand("workspace.focusFolder")
+        await window.__yaadeAgent!.executeCommand("workspace.focusFolder")
       })
       await page.waitForTimeout(400)
       await execCommand(page, "terminal.new")
@@ -86,11 +86,11 @@ test.describe("mac terminal quick switch", () => {
       await page.waitForTimeout(500)
 
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.getState().activeWorkspace))
         .toContain(secondName)
 
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
       await expect
         .poll(async () => modalTitle(page), { timeout: 10_000 })
         .toContain(secondName)

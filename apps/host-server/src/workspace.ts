@@ -9,7 +9,7 @@ import {
   listProjectFiles,
   pathToUri,
   uriToPath,
-} from "@gharargah/node-host"
+} from "@yaade/node-host"
 import type { EventHub } from "./events.js"
 
 const WATCH_DEBOUNCE_MS = 300

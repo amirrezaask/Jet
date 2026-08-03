@@ -21,15 +21,15 @@ async function openTodosBoard(page: Page): Promise<{
   projectId: string
 }> {
   await openNewAgentSession(page)
-  await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+  await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
     timeout: 20_000,
   })
   await execCommand(page, "dialog.showTodos")
-  const modal = page.locator("[data-gharargah-terminal-modal]")
+  const modal = page.locator("[data-yaade-terminal-modal]")
   await expect
-    .poll(async () => modal.getAttribute("data-gharargah-session-mode"))
+    .poll(async () => modal.getAttribute("data-yaade-session-mode"))
     .toBe("todos")
-  const board = modal.locator("[data-gharargah-todo-board]")
+  const board = modal.locator("[data-yaade-todo-board]")
   await expectLocatorVisible(board)
   const projectId =
     (await board.getAttribute("data-project-id"))?.trim() ?? ""
@@ -44,13 +44,13 @@ test.describe("project todos board", () => {
     const { app, page } = await launchJet()
     try {
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
       const { modal, board, projectId } = await openTodosBoard(page)
 
       await page.evaluate(pid => {
-        const repo = window.__gharargahProjectTodos
-        if (!repo) throw new Error("__gharargahProjectTodos missing")
+        const repo = window.__yaadeProjectTodos
+        if (!repo) throw new Error("__yaadeProjectTodos missing")
         localStorage.removeItem("jet-project-todos-v1")
         localStorage.removeItem("jet-project-todo-ui-v1")
         repo._resetForTests(localStorage)
@@ -58,55 +58,55 @@ test.describe("project todos board", () => {
       }, projectId)
 
       // Add card in Todo column.
-      await board.locator('[data-gharargah-todo-column-add="todo"]').click()
-      const composer = board.locator("[data-gharargah-todo-composer-text]")
+      await board.locator('[data-yaade-todo-column-add="todo"]').click()
+      const composer = board.locator("[data-yaade-todo-composer-text]")
       await expectLocatorVisible(composer)
       await composer.click()
       await composer.fill("Review architecture")
-      await board.locator("[data-gharargah-todo-composer-submit]").click()
+      await board.locator("[data-yaade-todo-composer-submit]").click()
 
       await expect
         .poll(async () => {
           return page.evaluate(pid => {
-            const repo = window.__gharargahProjectTodos
+            const repo = window.__yaadeProjectTodos
             return repo?.listProjectTodos(pid).length ?? -1
           }, projectId)
         }, { timeout: 10_000 })
         .toBe(1)
 
       await expectLocatorContainsText(board, "Review architecture")
-      await expectLocatorCount(board.locator("[data-gharargah-todo-card]"), 1)
+      await expectLocatorCount(board.locator("[data-yaade-todo-card]"), 1)
       await expect
         .poll(async () =>
           board
-            .locator('[data-gharargah-todo-column="todo"]')
+            .locator('[data-yaade-todo-column="todo"]')
             .getAttribute("data-todo-column-count"),
         )
         .toBe("1")
 
       // Move to Doing via menu.
-      await board.locator("[data-gharargah-todo-item-menu]").click()
+      await board.locator("[data-yaade-todo-item-menu]").click()
       await page.getByRole("menuitem", { name: /Move to Doing/i }).click()
       await expect
         .poll(async () =>
           board
-            .locator('[data-gharargah-todo-column="doing"]')
+            .locator('[data-yaade-todo-column="doing"]')
             .getAttribute("data-todo-column-count"),
         )
         .toBe("1")
       await expect
         .poll(async () =>
           board
-            .locator('[data-gharargah-todo-column="todo"]')
+            .locator('[data-yaade-todo-column="todo"]')
             .getAttribute("data-todo-column-count"),
         )
         .toBe("0")
 
       // Editing is intentionally multiline: Enter inserts a newline and Mod+Enter saves.
-      await board.locator("[data-gharargah-todo-text]").evaluate(element => {
+      await board.locator("[data-yaade-todo-text]").evaluate(element => {
         element.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
       })
-      const editField = board.locator("[data-gharargah-todo-edit-input]")
+      const editField = board.locator("[data-yaade-todo-edit-input]")
       await expectLocatorVisible(editField)
       await expect.poll(() => editField.evaluate(element => element.tagName)).toBe("TEXTAREA")
       await editField.fill("Review architecture")
@@ -118,27 +118,27 @@ test.describe("project todos board", () => {
         .toBe("Review architecture\nwith the team")
       await expectLocatorVisible(editField)
       await editField.press("Control+Enter")
-      await expectLocatorCount(board.locator("[data-gharargah-todo-edit-input]"), 0)
+      await expectLocatorCount(board.locator("[data-yaade-todo-edit-input]"), 0)
       await expectLocatorContainsText(board, "Review architecture\nwith the team")
 
       // Session tools remain available; TODOs stays reachable as a command.
-      await modal.locator('[data-gharargah-session-mode-tab="terminal"]').click()
+      await modal.locator('[data-yaade-session-mode-tab="terminal"]').click()
       await expect
-        .poll(async () => modal.getAttribute("data-gharargah-session-mode"))
+        .poll(async () => modal.getAttribute("data-yaade-session-mode"))
         .toBe("terminal")
       await execCommand(page, "dialog.showTodos")
       await expectLocatorVisible(board)
       await expectLocatorContainsText(board, "Review architecture\nwith the team")
 
-      await execCommand(page, "gharargah.goHome")
+      await execCommand(page, "yaade.goHome")
       await expect.poll(async () => modal.isVisible()).toBe(false)
 
       // Persist across full reload — remount board (lazy repo) then assert.
       await page.reload()
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await ensureSidebarLayout(page)
 
       const { board: boardReload } = await openTodosBoard(page)
@@ -149,7 +149,7 @@ test.describe("project todos board", () => {
       await expect
         .poll(async () =>
           boardReload
-            .locator('[data-gharargah-todo-column="doing"]')
+            .locator('[data-yaade-todo-column="doing"]')
             .getAttribute("data-todo-column-count"),
         )
         .toBe("1")
@@ -162,13 +162,13 @@ test.describe("project todos board", () => {
     const { app, page } = await launchJet()
     try {
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
       const { modal, board, projectId } = await openTodosBoard(page)
 
       await page.evaluate(pid => {
-        const repo = window.__gharargahProjectTodos
-        if (!repo) throw new Error("__gharargahProjectTodos missing")
+        const repo = window.__yaadeProjectTodos
+        if (!repo) throw new Error("__yaadeProjectTodos missing")
         localStorage.removeItem("jet-project-todos-v1")
         localStorage.removeItem("jet-project-todo-ui-v1")
         repo._resetForTests(localStorage)
@@ -178,19 +178,19 @@ test.describe("project todos board", () => {
       }, projectId)
 
       await expectLocatorVisible(modal)
-      await expectLocatorCount(board.locator("[data-gharargah-todo-card]"), 2)
+      await expectLocatorCount(board.locator("[data-yaade-todo-card]"), 2)
 
-      const todoColumn = board.locator('[data-gharargah-todo-column="todo"]')
-      const doingColumn = board.locator('[data-gharargah-todo-column="doing"]')
+      const todoColumn = board.locator('[data-yaade-todo-column="todo"]')
+      const doingColumn = board.locator('[data-yaade-todo-column="doing"]')
       await expect
         .poll(async () => todoColumn.getAttribute("data-todo-column-count"))
         .toBe("2")
 
-      const alpha = todoColumn.locator('[data-gharargah-todo-card]').filter({
+      const alpha = todoColumn.locator('[data-yaade-todo-card]').filter({
         hasText: "Alpha card",
       })
       await expectLocatorVisible(alpha)
-      await alpha.locator("[data-gharargah-todo-item-menu]").click()
+      await alpha.locator("[data-yaade-todo-item-menu]").click()
       await page.getByRole("menuitem", { name: /Move to Doing/i }).click()
 
       await expect
@@ -207,7 +207,7 @@ test.describe("project todos board", () => {
       await expect
         .poll(async () => {
           return page.evaluate(pid => {
-            const repo = window.__gharargahProjectTodos
+            const repo = window.__yaadeProjectTodos
             const todo = repo?.listByStatus(pid, "todo").map(t => t.text) ?? []
             const doing = repo?.listByStatus(pid, "doing").map(t => t.text) ?? []
             return { todo, doing }

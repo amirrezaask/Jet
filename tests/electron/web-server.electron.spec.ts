@@ -54,11 +54,11 @@ test.describe("single-binary web server", () => {
       })
       await page.reload()
       await waitForHome(page)
-      await page.waitForSelector("[data-gharargah-mission-sidebar]", {
+      await page.waitForSelector("[data-yaade-mission-sidebar]", {
         timeout: 10_000,
       })
       await page.waitForSelector(
-        '[data-gharargah-sidebar-project-filter-option="all"]',
+        '[data-yaade-sidebar-project-filter-option="all"]',
         { timeout: 10_000 },
       )
       await testInfo.attach("home-after-reload", {

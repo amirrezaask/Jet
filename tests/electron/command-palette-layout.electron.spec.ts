@@ -8,7 +8,7 @@ import { expectLocatorVisible, expectSelectorVisible } from "../shell/assert.js"
 import { execCommand, launchJet, waitForHome } from "./_launch.js"
 
 const paletteRows =
-  '[data-gharargah-list-panel="gharargah:palette"] [data-gharargah-list-item]'
+  '[data-yaade-list-panel="yaade:palette"] [data-yaade-list-item]'
 
 test.describe("command palette row layout", () => {
   test("keeps title, metadata, badges, and keybindings aligned across UI font scales", async () => {
@@ -20,9 +20,9 @@ test.describe("command palette row layout", () => {
         await execCommand(page, "ui.zoomOut")
       }
       await execCommand(page, "ui.showCommandPalette")
-      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectSelectorVisible(page, "[data-yaade-palette]")
       await expectListRows(page, {
-        panel: "gharargah:palette",
+        panel: "yaade:palette",
         minItems: 3,
         minRowHeight: 25,
         noResultsText: "No results.",
@@ -42,14 +42,14 @@ test.describe("command palette row layout", () => {
         await execCommand(page, "ui.zoomIn")
       }
       await execCommand(page, "ui.showCommandPalette")
-      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectSelectorVisible(page, "[data-yaade-palette]")
       const row = page.locator(paletteRows).first()
       await expectLocatorVisible(row)
       await expect
         .poll(async () => (await row.boundingBox())?.height ?? 0)
         .toBeGreaterThanOrEqual(35)
       await expectListRows(page, {
-        panel: "gharargah:palette",
+        panel: "yaade:palette",
         minItems: 3,
         minRowHeight: 35,
         noResultsText: "No results.",
@@ -61,7 +61,7 @@ test.describe("command palette row layout", () => {
       await execCommand(page, "workspace.switchProject")
       await expectLocatorVisible(page.getByRole("dialog"))
       await expectLocatorVisible(page.locator('input[placeholder="Filter projects…"]'))
-      await expectSelectorVisible(page, '[data-gharargah-list-panel="gharargah:palette"]')
+      await expectSelectorVisible(page, '[data-yaade-list-panel="yaade:palette"]')
     } finally {
       await app.close()
     }

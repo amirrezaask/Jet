@@ -24,12 +24,12 @@ test.describe("keyboard shortcuts revamp", () => {
       await waitForHome(page)
 
       await pressMod(page, "n")
-      await expectSelectorVisible(page, "[data-gharargah-agent-cli-option]", {
+      await expectSelectorVisible(page, "[data-yaade-agent-cli-option]", {
         timeout: 15_000,
       })
       await expect
         .poll(async () =>
-          page.locator("[data-gharargah-agent-cli-option]").count(),
+          page.locator("[data-yaade-agent-cli-option]").count(),
         )
         .toBeGreaterThan(0)
 
@@ -41,15 +41,15 @@ test.describe("keyboard shortcuts revamp", () => {
         .poll(() => pickerInput.getAttribute("aria-activedescendant"))
         .not.toBeNull()
       await page.keyboard.press("Enter")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
-      await execCommand(page, "gharargah.goHome")
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+      await execCommand(page, "yaade.goHome")
+      await expectLocatorCount(page.locator("[data-yaade-terminal-modal]"), 0)
 
       await pressMod(page, "k")
       await expectListRows(page, {
-        panel: "gharargah:palette",
+        panel: "yaade:palette",
         minItems: 1,
         needle: ":",
         noResultsText: "No open terminals",
@@ -64,21 +64,21 @@ test.describe("keyboard shortcuts revamp", () => {
     try {
       await waitForHome(page)
       await openNewCliSession(page, "codex")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]")
 
       await pressMod(page, "p")
-      await expectSelectorVisible(page, '[data-gharargah-list-panel="gharargah:palette"]', {
+      await expectSelectorVisible(page, '[data-yaade-list-panel="yaade:palette"]', {
         timeout: 20_000,
       })
       await expectSelectorVisible(
         page,
-        '[data-gharargah-palette][data-gharargah-palette-fit="content"]',
+        '[data-yaade-palette][data-yaade-palette-fit="content"]',
       )
       const quickOpenInput = page.locator('[role="dialog"][data-state="open"] input').first()
       await quickOpenInput.waitFor({ state: "visible", timeout: 10_000 })
       await quickOpenInput.fill("index")
       await expectListRows(page, {
-        panel: "gharargah:palette",
+        panel: "yaade:palette",
         minItems: 1,
         needle: "index",
         noResultsText: "No matching files.",
@@ -88,12 +88,12 @@ test.describe("keyboard shortcuts revamp", () => {
         .poll(async () =>
           page.evaluate(() => {
             const dialog = document.querySelector<HTMLElement>(
-              '[data-gharargah-palette][data-gharargah-palette-fit="content"]',
+              '[data-yaade-palette][data-yaade-palette-fit="content"]',
             )
             if (!dialog) return null
             const rows = [
               ...document.querySelectorAll<HTMLElement>(
-                '[data-gharargah-list-panel="gharargah:palette"] [data-gharargah-list-item] .font-mono',
+                '[data-yaade-list-panel="yaade:palette"] [data-yaade-list-item] .font-mono',
               ),
             ]
             if (rows.length === 0) return null
@@ -107,7 +107,7 @@ test.describe("keyboard shortcuts revamp", () => {
         .toMatchObject({ truncated: false })
       await page.keyboard.press("Escape")
       await expectLocatorCount(
-        page.locator('[data-gharargah-list-panel="gharargah:palette"]'),
+        page.locator('[data-yaade-list-panel="yaade:palette"]'),
         0,
       )
 
@@ -116,17 +116,17 @@ test.describe("keyboard shortcuts revamp", () => {
         .poll(
           async () =>
             page.evaluate(
-              () => window.__gharargahAgent?.getState()?.sessionMode ?? null,
+              () => window.__yaadeAgent?.getState()?.sessionMode ?? null,
             ),
           { timeout: 15_000 },
         )
         .toBe("git")
-      await expectSelectorVisible(page, "[data-gharargah-git-workspace]", {
+      await expectSelectorVisible(page, "[data-yaade-git-workspace]", {
         timeout: 20_000,
       })
       await expectSelectorVisible(
         page,
-        '[data-gharargah-session-mode-tab="git"][data-active]',
+        '[data-yaade-session-mode-tab="git"][data-active]',
       )
     } finally {
       await app.close()
@@ -137,12 +137,12 @@ test.describe("keyboard shortcuts revamp", () => {
     const { app, page } = await launchJet()
     try {
       await waitForHome(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
       await expect
         .poll(async () =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-state"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-state"),
         )
         .toBe("expanded")
 
@@ -150,8 +150,8 @@ test.describe("keyboard shortcuts revamp", () => {
       await expect
         .poll(async () =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-state"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-state"),
         )
         .toBe("collapsed")
 
@@ -159,8 +159,8 @@ test.describe("keyboard shortcuts revamp", () => {
       await expect
         .poll(async () =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-state"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-state"),
         )
         .toBe("expanded")
     } finally {

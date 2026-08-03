@@ -54,14 +54,14 @@ test.describe("file drag and drop", () => {
     try {
       await showTerminal(page)
       await focusTerminal(page)
-      const workspace = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace)
+      const workspace = await page.evaluate(() => window.__yaadeAgent!.getState().activeWorkspace)
       expect(workspace).toBeTruthy()
       const dropPath = join(workspace!, "dnd-terminal-drop.txt")
       writeFileSync(dropPath, "terminal-drop-body\n")
       const needle = "dnd-terminal-drop.txt"
       const ok = await dispatchFileDrop(
         page,
-        "[data-gharargah-terminal-panel] .gharargah-terminal-surface, [data-gharargah-terminal-panel] .xterm",
+        "[data-yaade-terminal-panel] .yaade-terminal-surface, [data-yaade-terminal-panel] .xterm",
         dropPath,
       )
       expect(ok).toBe(true)
@@ -78,7 +78,7 @@ test.describe("file drag and drop", () => {
     try {
       await showTerminal(page)
       await focusTerminal(page)
-      const workspace = await page.evaluate(() => window.__gharargahAgent!.getState().activeWorkspace)
+      const workspace = await page.evaluate(() => window.__yaadeAgent!.getState().activeWorkspace)
       expect(workspace).toBeTruthy()
       const dropPath = join(workspace!, "src/index.ts")
       const needle = "index.ts"
@@ -104,7 +104,7 @@ test.describe("file drag and drop", () => {
           return true
         },
         {
-          sel: "[data-gharargah-terminal-panel] .gharargah-terminal-surface, [data-gharargah-terminal-panel] .xterm",
+          sel: "[data-yaade-terminal-panel] .yaade-terminal-surface, [data-yaade-terminal-panel] .xterm",
           name: needle,
           body: "ignored-body\n",
         },
@@ -129,7 +129,7 @@ test.describe("file drag and drop", () => {
       const needle = "finder-drop-materialize.txt"
       const ok = await page.evaluate(async name => {
         const el = document.querySelector(
-          "[data-gharargah-terminal-panel] .gharargah-terminal-surface, [data-gharargah-terminal-panel] .xterm",
+          "[data-yaade-terminal-panel] .yaade-terminal-surface, [data-yaade-terminal-panel] .xterm",
         )
         if (!el) return false
         const rect = el.getBoundingClientRect()
@@ -153,7 +153,7 @@ test.describe("file drag and drop", () => {
         .poll(async () => readTerminalText(page), { timeout: 15_000 })
         .toContain(needle)
       const text = await readTerminalText(page)
-      expect(text).toMatch(/gharargah-drops/)
+      expect(text).toMatch(/yaade-drops/)
     } finally {
       await app.close()
     }
@@ -164,35 +164,35 @@ test.describe("file drag and drop", () => {
     try {
       await showTerminal(page)
       // Switch to editor pane so the editor surface is hit-testable.
-      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
-      await expectLocatorVisible(page.locator("[data-gharargah-modal-editor]").first())
+      await page.locator('[data-yaade-session-mode-tab="editor"]').click()
+      await expectLocatorVisible(page.locator("[data-yaade-modal-editor]").first())
 
       const filePath = await page.evaluate(() => {
-        const root = window.__gharargahAgent!.getState().activeWorkspace
+        const root = window.__yaadeAgent!.getState().activeWorkspace
         if (!root) throw new Error("no workspace")
         return `${root}/src/index.ts`
       })
 
       const ok = await dispatchFileDrop(
         page,
-        "[data-gharargah-modal-editor]",
+        "[data-yaade-modal-editor]",
         filePath,
         "ignored-when-path-present\n",
       )
       expect(ok).toBe(true)
 
-      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
+      await page.evaluate(() => window.__yaadeAgent!.waitForEditor())
       await expect
-        .poll(async () => page.evaluate(() => window.__gharargahAgent!.getState().sessionMode), {
+        .poll(async () => page.evaluate(() => window.__yaadeAgent!.getState().sessionMode), {
           timeout: 10_000,
         })
         .toBe("editor")
       await expect
-        .poll(async () => page.evaluate(() => window.__gharargahAgent!.getEditorText() ?? ""), {
+        .poll(async () => page.evaluate(() => window.__yaadeAgent!.getEditorText() ?? ""), {
           timeout: 10_000,
         })
         .toMatch(/greet|export|function|const/)
-      const buffers = await page.evaluate(() => window.__gharargahAgent!.getState().openBuffers)
+      const buffers = await page.evaluate(() => window.__yaadeAgent!.getState().openBuffers)
       expect(buffers.some(b => b.includes("index.ts"))).toBe(true)
     } finally {
       await app.close()
@@ -203,11 +203,11 @@ test.describe("file drag and drop", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
-      await expectLocatorVisible(page.locator("[data-gharargah-modal-editor]").first())
+      await page.locator('[data-yaade-session-mode-tab="editor"]').click()
+      await expectLocatorVisible(page.locator("[data-yaade-modal-editor]").first())
 
       const ok = await page.evaluate(() => {
-        const el = document.querySelector("[data-gharargah-modal-editor]")
+        const el = document.querySelector("[data-yaade-modal-editor]")
         if (!el) return false
         const rect = el.getBoundingClientRect()
         const file = new File(["untitled-drop-marker-42\n"], "dropped-note.md", {
@@ -227,27 +227,27 @@ test.describe("file drag and drop", () => {
       })
       expect(ok).toBe(true)
 
-      await page.evaluate(() => window.__gharargahAgent!.waitForEditor())
+      await page.evaluate(() => window.__yaadeAgent!.waitForEditor())
       await expect
-        .poll(async () => page.evaluate(() => window.__gharargahAgent!.getEditorText() ?? ""), {
+        .poll(async () => page.evaluate(() => window.__yaadeAgent!.getEditorText() ?? ""), {
           timeout: 10_000,
         })
         .toContain("untitled-drop-marker-42")
 
       // Imported content has never been saved. Returning to the initial Monaco
       // revision through Undo must not make the untitled buffer discardable.
-      await expectLocatorVisible(page.locator("[data-gharargah-buffer-dirty]"))
+      await expectLocatorVisible(page.locator("[data-yaade-buffer-dirty]"))
       const initialText = await page.evaluate(
-        () => window.__gharargahAgent!.getEditorText() ?? "",
+        () => window.__yaadeAgent!.getEditorText() ?? "",
       )
-      await page.locator("[data-gharargah-monaco-editor] .monaco-editor").click()
+      await page.locator("[data-yaade-monaco-editor] .monaco-editor").click()
       await page.keyboard.press("End")
       await page.keyboard.type("x")
       await pressMod(page, "z")
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getEditorText() ?? ""))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.getEditorText() ?? ""))
         .toBe(initialText)
-      await expectLocatorVisible(page.locator("[data-gharargah-buffer-dirty]"))
+      await expectLocatorVisible(page.locator("[data-yaade-buffer-dirty]"))
     } finally {
       await app.close()
     }

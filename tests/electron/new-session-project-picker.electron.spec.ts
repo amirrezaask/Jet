@@ -25,37 +25,37 @@ test.describe("new session project picker", () => {
       await expect
         .poll(() =>
           page.evaluate(
-            () => window.__gharargahAgent!.getState().sessionLayout,
+            () => window.__yaadeAgent!.getState().sessionLayout,
           ),
         )
         .toBe("sidebar")
 
       await page.evaluate(
-        path => window.__gharargahAgent!.addWorkspace(path),
+        path => window.__yaadeAgent!.addWorkspace(path),
         secondPath,
       )
       await expect
         .poll(() =>
-          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+          page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length),
         )
         .toBeGreaterThanOrEqual(2)
 
       await clickNewSession(page)
-      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectSelectorVisible(page, "[data-yaade-palette]")
       await expectSelectorVisible(
         page,
-        "[data-gharargah-agent-cli-project-picker]",
+        "[data-yaade-agent-cli-project-picker]",
       )
       await expectSelectorVisible(
         page,
-        "[data-gharargah-agent-cli-add-project]",
+        "[data-yaade-agent-cli-add-project]",
       )
 
-      const chips = page.locator("[data-gharargah-agent-cli-project-option]")
+      const chips = page.locator("[data-yaade-agent-cli-project-option]")
       await expectLocatorCount(chips, 2)
 
       const secondChip = page
-        .locator("[data-gharargah-agent-cli-project-option]")
+        .locator("[data-yaade-agent-cli-project-option]")
         .filter({ hasText: "second-workspace" })
         .first()
       await expectLocatorVisible(secondChip)
@@ -67,7 +67,7 @@ test.describe("new session project picker", () => {
       await pickAgentCli(page, "codex")
       await expectSelectorVisible(
         page,
-        '[data-gharargah-terminal-modal][data-gharargah-session-presentation="inline"]',
+        '[data-yaade-terminal-modal][data-yaade-session-presentation="inline"]',
         { timeout: 20_000 },
       )
     } finally {
@@ -81,20 +81,20 @@ test.describe("new session project picker", () => {
     try {
       await page.evaluate(
         async ([second, repo]) => {
-          await window.__gharargahAgent!.addWorkspace(second)
-          await window.__gharargahAgent!.addWorkspace(repo)
+          await window.__yaadeAgent!.addWorkspace(second)
+          await window.__yaadeAgent!.addWorkspace(repo)
         },
         [secondPath, REPO_ROOT],
       )
       await expect
         .poll(() =>
-          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+          page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length),
         )
         .toBe(3)
 
       await clickNewSession(page)
       const picker = page.locator(
-        "[data-gharargah-agent-cli-project-picker]",
+        "[data-yaade-agent-cli-project-picker]",
       )
       await expectLocatorVisible(picker)
       const pickerBefore = await picker.boundingBox()
@@ -109,7 +109,7 @@ test.describe("new session project picker", () => {
       await removedChip.click({ button: "right" })
 
       const menu = page.locator(
-        "[data-gharargah-agent-cli-project-menu]",
+        "[data-yaade-agent-cli-project-menu]",
       )
       await expectLocatorVisible(menu)
       const removeItem = menu.getByRole("menuitem", {
@@ -121,18 +121,18 @@ test.describe("new session project picker", () => {
       await expect
         .poll(() =>
           page.evaluate(() =>
-            window.__gharargahAgent!.listWorkspaces().map(project => project.name),
+            window.__yaadeAgent!.listWorkspaces().map(project => project.name),
           ),
         )
         .not.toContain("second-workspace")
       await expectLocatorCount(removedChip, 0)
       await expectLocatorCount(
-        page.locator("[data-gharargah-agent-cli-project-option]"),
+        page.locator("[data-yaade-agent-cli-project-option]"),
         2,
       )
       await expectLocatorCount(
         page.locator(
-          '[data-gharargah-agent-cli-project-option][data-state="on"]',
+          '[data-yaade-agent-cli-project-option][data-state="on"]',
         ),
         1,
       )
@@ -165,28 +165,28 @@ test.describe("new session project picker", () => {
     try {
       await expect
         .poll(() =>
-          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+          page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length),
         )
         .toBe(1)
 
       await clickNewSession(page)
-      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectSelectorVisible(page, "[data-yaade-palette]")
       await expectSelectorVisible(
         page,
-        "[data-gharargah-agent-cli-project-picker]",
+        "[data-yaade-agent-cli-project-picker]",
       )
       await expectLocatorCount(
-        page.locator("[data-gharargah-agent-cli-project-option]"),
+        page.locator("[data-yaade-agent-cli-project-option]"),
         1,
       )
       await expectSelectorVisible(
         page,
-        "[data-gharargah-agent-cli-add-project]",
+        "[data-yaade-agent-cli-add-project]",
       )
       await pickAgentCli(page, "codex")
       await expectSelectorVisible(
         page,
-        "[data-gharargah-terminal-modal]",
+        "[data-yaade-terminal-modal]",
         { timeout: 20_000 },
       )
     } finally {
@@ -201,17 +201,17 @@ test.describe("new session project picker", () => {
       await clickNewSession(page)
       await expectSelectorVisible(
         page,
-        "[data-gharargah-agent-cli-add-project]",
+        "[data-yaade-agent-cli-add-project]",
       )
-      await page.locator("[data-gharargah-agent-cli-add-project]").click()
+      await page.locator("[data-yaade-agent-cli-add-project]").click()
 
       const addDialog = page.getByRole("dialog", {
         name: "Add workspace folder",
       })
       await expectLocatorVisible(addDialog)
-      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectSelectorVisible(page, "[data-yaade-palette]")
       await expectLocatorCount(
-        page.locator("[data-gharargah-agent-cli-project-option]"),
+        page.locator("[data-yaade-agent-cli-project-option]"),
         1,
       )
       await page.getByPlaceholder("Path to folder…").fill(`${secondPath}/`)
@@ -219,13 +219,13 @@ test.describe("new session project picker", () => {
 
       await expect
         .poll(() =>
-          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+          page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length),
         )
         .toBeGreaterThanOrEqual(2)
 
-      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectSelectorVisible(page, "[data-yaade-palette]")
       const secondChip = page
-        .locator("[data-gharargah-agent-cli-project-option]")
+        .locator("[data-yaade-agent-cli-project-option]")
         .filter({ hasText: "second-workspace" })
         .first()
       await expectLocatorVisible(secondChip)

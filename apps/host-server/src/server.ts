@@ -4,7 +4,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { WebSocketServer, WebSocket } from "ws"
-import { getLspSession, MAX_READ_BYTES, uriToPath } from "@gharargah/node-host"
+import { getLspSession, MAX_READ_BYTES, uriToPath } from "@yaade/node-host"
 import {
   HostRpcRequest,
   InvalidRpcPayloadError,
@@ -14,7 +14,7 @@ import {
   hostErrorWire,
   tryDecodeTerminalWsCommand,
   type HostRpcError,
-} from "@gharargah/rpc"
+} from "@yaade/rpc"
 import type { HostEvent } from "./events.js"
 import type { HostConfig } from "./config.js"
 import { dispatch } from "./dispatch.js"
@@ -251,7 +251,7 @@ async function handleHttp(
         return
       }
       // Hook consumers interpret response bodies as control output. An empty 2xx
-      // acknowledges delivery without accidentally feeding Gharargah data back
+      // acknowledges delivery without accidentally feeding Yaade data back
       // into the provider's conversation.
       res.writeHead(204)
       res.end()

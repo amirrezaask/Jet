@@ -22,9 +22,9 @@ test.describe("electron project persistence", () => {
     const { app, page } = await launchJet()
     try {
       await ensureSidebarLayout(page)
-      await page.evaluate(path => window.__gharargahAgent!.addWorkspace(path), secondPath)
+      await page.evaluate(path => window.__yaadeAgent!.addWorkspace(path), secondPath)
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length))
         .toBe(2)
 
       await expect
@@ -46,35 +46,35 @@ test.describe("electron project persistence", () => {
         .toBeNull()
 
       const secondChip = page
-        .locator("[data-gharargah-sidebar-project-filter-option]")
+        .locator("[data-yaade-sidebar-project-filter-option]")
         .filter({ hasText: "second-workspace" })
       await expectLocatorVisible(secondChip)
       await openNewAgentSession(page)
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
-      await execCommand(page, "gharargah.goHome")
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+      await execCommand(page, "yaade.goHome")
+      await expectLocatorCount(page.locator("[data-yaade-terminal-modal]"), 0)
 
       await page.reload()
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length))
         .toBe(2)
 
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
-      const filter = page.locator("[data-gharargah-sidebar-project-filter]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
+      const filter = page.locator("[data-yaade-sidebar-project-filter]")
       await expectLocatorContainsText(filter, "sample-workspace")
       await expectLocatorContainsText(filter, "second-workspace")
       await expectLocatorCount(
-        page.locator("[data-gharargah-monaco-editor], .monaco-editor"),
+        page.locator("[data-yaade-monaco-editor], .monaco-editor"),
         0,
       )
-      await expectLocatorCount(page.locator("[data-gharargah-workspace-sidebar]"), 0)
+      await expectLocatorCount(page.locator("[data-yaade-workspace-sidebar]"), 0)
     } finally {
       await app.close()
     }

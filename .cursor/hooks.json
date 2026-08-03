@@ -3,40 +3,64 @@
   "hooks": {
     "sessionStart": [
       {
+        "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
+      },
+      {
         "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
       }
     ],
     "sessionEnd": [
+      {
+        "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
+      },
       {
         "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
       }
     ],
     "beforeSubmitPrompt": [
       {
+        "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
+      },
+      {
         "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
       }
     ],
     "preToolUse": [
+      {
+        "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
+      },
       {
         "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
       }
     ],
     "postToolUse": [
       {
+        "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
+      },
+      {
         "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
       }
     ],
     "postToolUseFailure": [
+      {
+        "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
+      },
       {
         "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
       }
     ],
     "preCompact": [
       {
+        "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
+      },
+      {
         "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
       }
     ],
     "stop": [
+      {
+        "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
+      },
       {
         "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
       }

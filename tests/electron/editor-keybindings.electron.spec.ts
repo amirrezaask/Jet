@@ -11,15 +11,15 @@ test.describe("Monaco app shortcuts", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "terminal.new")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
-      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
+      await page.locator('[data-yaade-session-mode-tab="editor"]').click()
       await page.evaluate(async () => {
-        await window.__gharargahAgent!.openFile("src/index.ts")
-        await window.__gharargahAgent!.waitForEditor()
+        await window.__yaadeAgent!.openFile("src/index.ts")
+        await window.__yaadeAgent!.waitForEditor()
       })
-      await expectSelectorVisible(page, "[data-gharargah-monaco-editor]", {
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
         timeout: 20_000,
       })
 
@@ -27,14 +27,14 @@ test.describe("Monaco app shortcuts", () => {
       await expectLocatorVisible(page.getByPlaceholder("Type a file name…"), {
         timeout: 10_000,
       })
-      await expectLocatorCount(page.locator("[data-gharargah-palette]"), 1)
+      await expectLocatorCount(page.locator("[data-yaade-palette]"), 1)
       await page.keyboard.press("Escape")
 
       await execCommand(page, "ui.showCommandPalette")
       await expectLocatorVisible(page.getByPlaceholder("Search commands…"), {
         timeout: 10_000,
       })
-      await expectLocatorCount(page.locator("[data-gharargah-palette]"), 1)
+      await expectLocatorCount(page.locator("[data-yaade-palette]"), 1)
     } finally {
       await app.close()
     }

@@ -13,48 +13,48 @@ test.describe("terminal-first session workspace", () => {
       await openNewCliSession(page, "codex")
 
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-terminal-modal-title]"),
+        page.locator("[data-yaade-terminal-modal-title]"),
         "Codex",
       )
       await expect
         .poll(async () =>
-          (await page.locator("[data-gharargah-terminal-modal-title]").textContent()) ?? "",
+          (await page.locator("[data-yaade-terminal-modal-title]").textContent()) ?? "",
         )
         .not.toMatch(/sample-workspace/)
-      await expectSelectorVisible(page, "[data-gharargah-session-mode-dock]")
+      await expectSelectorVisible(page, "[data-yaade-session-mode-dock]")
       await expectLocatorCount(
-        page.locator("[data-gharargah-session-mode-tab]"),
+        page.locator("[data-yaade-session-mode-tab]"),
         4,
       )
       await expect
         .poll(() =>
           page
-            .locator('[data-gharargah-session-mode-tab="agent"]')
-            .getAttribute("data-gharargah-session-mode-agent"),
+            .locator('[data-yaade-session-mode-tab="agent"]')
+            .getAttribute("data-yaade-session-mode-agent"),
         )
         .toBe("codex")
       await expectLocatorCount(
-        page.locator("[data-gharargah-agent-activity-rail]"),
+        page.locator("[data-yaade-agent-activity-rail]"),
         0,
       )
       await expectLocatorCount(
-        page.locator("[data-gharargah-agent-activity-timeline]"),
+        page.locator("[data-yaade-agent-activity-timeline]"),
         0,
       )
       await expectSelectorVisible(
         page,
-        "[data-gharargah-session-pane='agent'] [data-gharargah-terminal-panel]",
+        "[data-yaade-session-pane='agent'] [data-yaade-terminal-panel]",
       )
 
       const layout = await page.evaluate(() => {
         const body = document.querySelector(
-          "[data-gharargah-terminal-modal-body]",
+          "[data-yaade-terminal-modal-body]",
         )?.getBoundingClientRect()
         const pane = document.querySelector(
-          "[data-gharargah-session-pane='agent'][data-active]",
+          "[data-yaade-session-pane='agent'][data-active]",
         )?.getBoundingClientRect()
         const terminal = document.querySelector(
-          "[data-gharargah-session-pane='agent'][data-active] [data-gharargah-terminal-panel]",
+          "[data-yaade-session-pane='agent'][data-active] [data-yaade-terminal-panel]",
         )?.getBoundingClientRect()
         return body && pane && terminal
           ? {

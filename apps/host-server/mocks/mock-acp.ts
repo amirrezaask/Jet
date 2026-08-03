@@ -1,8 +1,8 @@
 #!/usr/bin/env tsx
 /**
- * Deterministic ACP v1 stdio peer used for exercising Gharargah's agent transport.
+ * Deterministic ACP v1 stdio peer used for exercising Yaade's agent transport.
  *
- * TypeScript port of the Rust `gharargah-mock-acp` binary
+ * TypeScript port of the Rust `yaade-mock-acp` binary
  * (apps/server/src/mock_acp/{mod,cli,scenarios,cursor_ext}.rs). Wire format,
  * scenario names, message shapes and CLI flags are kept compatible so the ACP
  * matrix tests and E2E specs observe identical behavior.
@@ -62,7 +62,7 @@ type Args = {
   strict: boolean
 }
 
-const USAGE = `Deterministic ACP peer used for exercising Gharargah's agent transport.
+const USAGE = `Deterministic ACP peer used for exercising Yaade's agent transport.
 
 Usage: mock-acp [OPTIONS]
 
@@ -559,7 +559,7 @@ async function handleRequest(
 
 function handleInitialize(state: MockState, params: JsonObject): JsonValue {
   if (state.args.strict && params.protocolVersion !== 1) {
-    throw internalError("gharargah-mock-acp supports ACP protocol V1 only")
+    throw internalError("yaade-mock-acp supports ACP protocol V1 only")
   }
 
   const agentCapabilities: JsonObject = {
@@ -579,7 +579,7 @@ function handleInitialize(state: MockState, params: JsonObject): JsonValue {
     agentCapabilities,
     authMethods: state.advertisesAuth() ? [{ id: "mock-token", name: "Mock token auth" }] : [],
     agentInfo: {
-      name: "gharargah-mock-acp",
+      name: "yaade-mock-acp",
       title: `YAADE Mock ACP (${state.args.providerProfile})`,
       version: "0.1",
     },
@@ -1033,7 +1033,7 @@ function main(): void {
     args = parseArgs(process.argv.slice(2))
   } catch (error) {
     process.stderr.write(
-      `gharargah-mock-acp: ${error instanceof Error ? error.message : String(error)}\n`,
+      `yaade-mock-acp: ${error instanceof Error ? error.message : String(error)}\n`,
     )
     process.exit(1)
     return
@@ -1042,7 +1042,7 @@ function main(): void {
     run(args)
   } catch (error) {
     process.stderr.write(
-      `gharargah-mock-acp: ${error instanceof Error ? error.message : String(error)}\n`,
+      `yaade-mock-acp: ${error instanceof Error ? error.message : String(error)}\n`,
     )
     process.exit(1)
   }

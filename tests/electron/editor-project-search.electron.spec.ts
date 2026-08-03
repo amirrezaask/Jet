@@ -25,27 +25,27 @@ test.describe("editor project search", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "terminal.new")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
-      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
-      await expectSelectorVisible(page, "[data-gharargah-modal-editor]")
+      await page.locator('[data-yaade-session-mode-tab="editor"]').click()
+      await expectSelectorVisible(page, "[data-yaade-modal-editor]")
 
       await pressMod(page, "f", { shift: true })
-      await expectSelectorVisible(page, "[data-gharargah-editor-project-search]")
+      await expectSelectorVisible(page, "[data-yaade-editor-project-search]")
       await expectSelectorVisible(
         page,
-        "[data-gharargah-editor-project-search-drawer]",
+        "[data-yaade-editor-project-search-drawer]",
       )
       const input = page.locator('input[aria-label="Search project"]')
       await expect
         .poll(() => input.evaluate(element => element === document.activeElement))
         .toBe(true)
 
-      const searchPanel = page.locator("[data-gharargah-editor-project-search]")
-      const editorContent = page.locator("[data-gharargah-modal-editor-content]")
+      const searchPanel = page.locator("[data-yaade-editor-project-search]")
+      const editorContent = page.locator("[data-yaade-modal-editor-content]")
       const resizeHandle = page.locator(
-        "[data-gharargah-editor-project-search-resize]",
+        "[data-yaade-editor-project-search-resize]",
       )
       await expect.poll(() => resizeHandle.getAttribute("role")).toBe("separator")
 
@@ -60,7 +60,7 @@ test.describe("editor project search", () => {
       )
 
       await dragResizeHandle(page, {
-        selector: "[data-gharargah-editor-project-search-resize]",
+        selector: "[data-yaade-editor-project-search-resize]",
         // Drag handle upward into the editor to grow the bottom search drawer.
         deltaY: -120,
       })
@@ -77,7 +77,7 @@ test.describe("editor project search", () => {
       )
 
       await dragResizeHandle(page, {
-        selector: "[data-gharargah-editor-project-search-resize]",
+        selector: "[data-yaade-editor-project-search-resize]",
         // Drag handle downward into the search drawer to hit its min height.
         deltaY: 1_000,
       })
@@ -113,37 +113,37 @@ test.describe("editor project search", () => {
 
       const result = page
         .locator(
-          '[data-gharargah-list-panel="editor-project-search"] [data-gharargah-list-item]',
+          '[data-yaade-list-panel="editor-project-search"] [data-yaade-list-item]',
         )
         .filter({ hasText: "src/utils.ts:1:" })
         .first()
       await result.click()
 
-      await expectSelectorVisible(page, "[data-gharargah-monaco-editor]", {
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
         timeout: 20_000,
       })
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-modal-editor-tab][data-active]"),
+        page.locator("[data-yaade-modal-editor-tab][data-active]"),
         "utils.ts",
       )
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-editor-cursor]"),
+        page.locator("[data-yaade-editor-cursor]"),
         "Ln 1",
       )
 
       await page.getByRole("button", { name: "Close project search" }).click()
       await expectLocatorCount(
-        page.locator("[data-gharargah-editor-project-search]"),
+        page.locator("[data-yaade-editor-project-search]"),
         0,
       )
-      await expectSelectorVisible(page, "[data-gharargah-monaco-editor]")
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]")
     } finally {
       await app.close()
     }
   })
 
   test("a clean external file reload stays clean after Monaco receives the new text", async () => {
-    const root = mkdtempSync(join(tmpdir(), "gharargah-editor-reload-"))
+    const root = mkdtempSync(join(tmpdir(), "yaade-editor-reload-"))
     const workspace = join(root, "workspace")
     cpSync(join(REPO_ROOT, SAMPLE), workspace, { recursive: true })
     const file = join(workspace, "src/index.ts")
@@ -151,20 +151,20 @@ test.describe("editor project search", () => {
     const { app, page } = await launchJet(workspace)
     try {
       await execCommand(page, "terminal.new")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
-      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
-      await page.evaluate(() => window.__gharargahAgent!.openFile("src/index.ts"))
-      await expectSelectorVisible(page, "[data-gharargah-monaco-editor]", {
+      await page.locator('[data-yaade-session-mode-tab="editor"]').click()
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
         timeout: 20_000,
       })
-      await expectLocatorCount(page.locator("[data-gharargah-buffer-dirty]"), 0)
+      await expectLocatorCount(page.locator("[data-yaade-buffer-dirty]"), 0)
 
       await page.evaluate(() => {
         const state = window as Window & { __editorWatchReady?: boolean }
         state.__editorWatchReady = false
-        window.gharargah?.fs.onFileChanged?.(uri => {
+        window.yaade?.fs.onFileChanged?.(uri => {
           if (uri.endsWith("/watch-probe.txt")) state.__editorWatchReady = true
         })
       })
@@ -189,17 +189,17 @@ test.describe("editor project search", () => {
       writeFileSync(file, next)
 
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-monaco-editor] .view-lines"),
+        page.locator("[data-yaade-monaco-editor] .view-lines"),
         "external-clean-reload",
         { timeout: 20_000 },
       )
       await expectLocatorCount(
-        page.locator("[data-gharargah-buffer-dirty]"),
+        page.locator("[data-yaade-buffer-dirty]"),
         0,
         { timeout: 20_000 },
       )
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-modal-editor-status]"),
+        page.locator("[data-yaade-modal-editor-status]"),
         "typescript",
       )
     } finally {

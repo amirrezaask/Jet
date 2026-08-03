@@ -74,9 +74,9 @@ TypeScript only — **no Rust, no Tauri**.
 
 | Layer | Role |
 | ----- | ---- |
-| Vite SPA (`@gharargah/app` + `@gharargah/ui`) | Mission Control UI, session modals, themes |
-| `@gharargah/host-server` | Effect host — FS, PTY, git, search, LSP, notifications |
-| `@gharargah/node-host` | Node implementations (PTY, FS, git, …) |
+| Vite SPA (`@yaade/app` + `@yaade/ui`) | Mission Control UI, session modals, themes |
+| `@yaade/host-server` | Effect host — FS, PTY, git, search, LSP, notifications |
+| `@yaade/node-host` | Node implementations (PTY, FS, git, …) |
 | Optional Electron shell | Thin `BrowserWindow` that loads the same SPA |
 
 Renderer talks to the host over HTTP RPC (`/api/v1/rpc`) + WebSocket (`/ws`).
@@ -109,16 +109,24 @@ pnpm electron:dev   # same backends, Electron window
 pnpm build && pnpm electron
 ```
 
-### Production binary
+### Production build
 
 ```bash
-pnpm build
-./dist/yaade/yaade              # SPA + host on http://127.0.0.1:4747
-./dist/yaade/yaade /path/repo   # open a workspace
-./dist/yaade/yaade --open       # also open the browser
+pnpm build              # SPA + self-extracting server + macOS DMG
+pnpm build:server       # server binary only (skip DMG)
+pnpm build:dmg          # DMG only (requires existing dist/runtime)
+
+./dist/yaade              # SPA + host on http://127.0.0.1:4747
+./dist/yaade /path/repo   # open a workspace
+./dist/yaade --open       # also open the browser
 ```
 
-On macOS, `pnpm build` also produces a DMG under `apps/gharargah-electron/dist/`.
+Artifacts:
+- `dist/yaade` — single-file self-extracting server (scp + run)
+- `dist/runtime/` — unpacked runtime (used by Electron)
+- `dist/YAADE-*.dmg` — macOS desktop installer (darwin only)
+
+Host stays loopback-only; on a remote machine use SSH `-L 4747:127.0.0.1:4747`.
 
 ---
 
@@ -134,7 +142,7 @@ pnpm test:bench     # UX latency budgets
 Headed E2E:
 
 ```bash
-GHARARGAH_HEADED=1 pnpm test:e2e
+YAADE_HEADED=1 pnpm test:e2e
 ```
 
 ---
@@ -143,19 +151,19 @@ GHARARGAH_HEADED=1 pnpm test:e2e
 
 ```
 apps/
-  gharargah/            Vite frontend shell
-  gharargah-electron/   Thin Electron main
+  yaade/            Vite frontend shell
+  yaade-electron/   Thin Electron main
   host-server/          Effect host (HTTP/WS + PTY)
 packages/
-  gharargah-app/        React app wiring
-  gharargah-ui/         Home, modals, overlays, themes
-  gharargah-node-host/  Node FS / git / PTY / LSP bridge
-  gharargah-host-client/Effect client + Promise shim
-  gharargah-rpc/        Shared IPC schemas
-  gharargah-shared/     URIs, theme types, primitives
-  gharargah-workspace/  Workspace + tab registry
-  gharargah-monaco/     Monaco editor host (session modal)
-  gharargah-agents/     Agent CLI id helpers
+  yaade-app/        React app wiring
+  yaade-ui/         Home, modals, overlays, themes
+  yaade-node-host/  Node FS / git / PTY / LSP bridge
+  yaade-host-client/Effect client + Promise shim
+  yaade-rpc/        Shared IPC schemas
+  yaade-shared/     URIs, theme types, primitives
+  yaade-workspace/  Workspace + tab registry
+  yaade-monaco/     Monaco editor host (session modal)
+  yaade-agents/     Agent CLI id helpers
 tests/
   electron/             Shared Playwright UI specs
 ```

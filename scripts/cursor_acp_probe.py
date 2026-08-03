@@ -116,7 +116,7 @@ def main() -> int:
                     "fs": {"readTextFile": True, "writeTextFile": True},
                     "terminal": True,
                 },
-                "clientInfo": {"name": "gharargah-probe", "version": "0.0.0"},
+                "clientInfo": {"name": "yaade-probe", "version": "0.0.0"},
             },
         )
         summary["initialize"] = {

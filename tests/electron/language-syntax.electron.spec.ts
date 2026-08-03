@@ -31,38 +31,38 @@ test.describe("editor language syntax ids", () => {
     const { app, page } = await launchJet()
     try {
       await execCommand(page, "terminal.new")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", { timeout: 20_000 })
 
       for (const { path: rel, languageId } of CASES) {
         await page.evaluate(async file => {
-          await window.__gharargahAgent!.openFile(file)
-          await window.__gharargahAgent!.waitForEditor()
+          await window.__yaadeAgent!.openFile(file)
+          await window.__yaadeAgent!.waitForEditor()
         }, rel)
 
         await expect
-          .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().sessionMode), {
+          .poll(() => page.evaluate(() => window.__yaadeAgent!.getState().sessionMode), {
             timeout: 15_000,
           })
           .toBe("editor")
-        await expectLocatorVisible(page.locator("[data-gharargah-monaco-editor]").first(), {
+        await expectLocatorVisible(page.locator("[data-yaade-monaco-editor]").first(), {
           timeout: 20_000,
         })
         await expect
           .poll(
             () =>
               page
-                .locator("[data-gharargah-editor-language]")
+                .locator("[data-yaade-editor-language]")
                 .first()
-                .getAttribute("data-gharargah-editor-language"),
+                .getAttribute("data-yaade-editor-language"),
             { timeout: 15_000 },
           )
           .toBe(languageId)
 
-        await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+        await expectSelectorVisible(page, "[data-yaade-terminal-modal]")
         const lsp = await page
-          .locator("[data-gharargah-editor-lsp]")
+          .locator("[data-yaade-editor-lsp]")
           .first()
-          .getAttribute("data-gharargah-editor-lsp")
+          .getAttribute("data-yaade-editor-lsp")
         expect(LSP_STATUSES.has(lsp ?? "")).toBe(true)
       }
     } finally {

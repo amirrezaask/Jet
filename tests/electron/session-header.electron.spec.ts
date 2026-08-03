@@ -21,10 +21,10 @@ test.describe("session header", () => {
     try {
       const modal = await openNewCliSession(page, "codex")
       const header = modal.locator(
-        "[data-gharargah-terminal-modal-header]",
+        "[data-yaade-terminal-modal-header]",
       )
       const title = header.locator(
-        "[data-gharargah-terminal-modal-title]",
+        "[data-yaade-terminal-modal-title]",
       )
 
       await expectLocatorVisible(header)
@@ -40,19 +40,19 @@ test.describe("session header", () => {
         0,
       )
       await expectLocatorCount(
-        header.locator("[data-gharargah-terminal-launch-command]"),
+        header.locator("[data-yaade-terminal-launch-command]"),
         0,
       )
       await expectLocatorCount(
-        header.locator("[data-gharargah-session-status-label]"),
+        header.locator("[data-yaade-session-status-label]"),
         0,
       )
       await expectLocatorCount(
-        header.locator("[data-gharargah-session-status-indicator]"),
+        header.locator("[data-yaade-session-status-indicator]"),
         0,
       )
       await expectLocatorCount(
-        header.locator("[data-gharargah-session-project-name]"),
+        header.locator("[data-yaade-session-project-name]"),
         0,
       )
       await expectLocatorCount(
@@ -68,27 +68,27 @@ test.describe("session header", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      const modal = page.locator("[data-gharargah-terminal-modal]")
+      const modal = page.locator("[data-yaade-terminal-modal]")
       const title = modal.locator(
-        "[data-gharargah-terminal-modal-title]",
+        "[data-yaade-terminal-modal-title]",
       )
       const workspaceName = await page.evaluate(() => {
-        const workspace = window.__gharargahAgent!.getState().activeWorkspace!
+        const workspace = window.__yaadeAgent!.getState().activeWorkspace!
         return workspace.split("/").filter(Boolean).at(-1)!
       })
 
       await modal
-        .locator("[data-gharargah-terminal-panel] .gharargah-terminal-surface")
+        .locator("[data-yaade-terminal-panel] .yaade-terminal-surface")
         .click()
       await page.evaluate(() => {
         document
           .querySelector<HTMLTextAreaElement>(
-            "[data-gharargah-terminal-panel] .xterm-helper-textarea",
+            "[data-yaade-terminal-panel] .xterm-helper-textarea",
           )
           ?.focus()
       })
       await page.waitForFunction(
-        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
+        () => (window.__yaadeAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )

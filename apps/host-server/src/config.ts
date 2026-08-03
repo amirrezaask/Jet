@@ -2,7 +2,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { resolveLaunchTarget, type LaunchConfig } from "@gharargah/node-host"
+import { resolveLaunchTarget, type LaunchConfig } from "@yaade/node-host"
 import { isLoopbackHostname } from "./security.js"
 
 export type HostConfig = {
@@ -65,7 +65,7 @@ export async function loadConfig(argv = process.argv.slice(2)): Promise<HostConf
   const launchConfig = await resolveLaunchTarget([launchPath], process.cwd())
 
   const here = path.dirname(fileURLToPath(import.meta.url))
-  const repoDist = path.resolve(here, "../../gharargah/dist")
+  const repoDist = path.resolve(here, "../../yaade/dist")
   const staticOverride = args["static-dir"] ?? process.env.JET_STATIC_DIR
   const staticCandidate =
     typeof staticOverride === "string" && staticOverride.trim()

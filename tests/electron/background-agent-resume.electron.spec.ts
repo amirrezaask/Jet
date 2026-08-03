@@ -18,7 +18,7 @@ test.describe("active agent background resume", () => {
 
   test("warms active CLI sessions, excludes archived, and reuses the PTY on open", async () => {
     const temporaryRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), "gharargah-warm-resume-e2e-"),
+      path.join(os.tmpdir(), "yaade-warm-resume-e2e-"),
     )
     const binDir = path.join(temporaryRoot, "bin")
     const launchLog = path.join(temporaryRoot, "launches.log")
@@ -28,7 +28,7 @@ test.describe("active agent background resume", () => {
       mockCodex,
       [
         "#!/bin/sh",
-        'printf "%s\\n" "$*" >> "$GHARARGAH_WARM_RESUME_LOG"',
+        'printf "%s\\n" "$*" >> "$YAADE_WARM_RESUME_LOG"',
         'printf "WARM_RESUME_READY\\r\\n"',
         "trap 'exit 0' TERM INT",
         "while :; do sleep 1; done",
@@ -40,13 +40,13 @@ test.describe("active agent background resume", () => {
       userDataDir: path.join(temporaryRoot, "user-data"),
       env: {
         PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-        GHARARGAH_WARM_RESUME_LOG: launchLog,
+        YAADE_WARM_RESUME_LOG: launchLog,
       },
     })
     try {
       await ensureSidebarLayout(page)
       const workspace = await page.evaluate(() => {
-        const item = window.__gharargahAgent!.getState().workspaces[0]
+        const item = window.__yaadeAgent!.getState().workspaces[0]
         if (!item?.path) throw new Error("workspace unavailable")
         return {
           name: item.name,
@@ -57,10 +57,10 @@ test.describe("active agent background resume", () => {
       await page.evaluate(
         async ({ rootUri, cliSessionId }) => {
           const entries = [
-            { tabId: "gharargah:terminal:warm-one", label: "Warm one" },
-            { tabId: "gharargah:terminal:warm-two", label: "Warm two" },
+            { tabId: "yaade:terminal:warm-one", label: "Warm one" },
+            { tabId: "yaade:terminal:warm-two", label: "Warm two" },
             {
-              tabId: "gharargah:terminal:archived-cold",
+              tabId: "yaade:terminal:archived-cold",
               label: "Archived cold",
               doneAt: "2026-08-01T00:00:00.000Z",
             },
@@ -85,10 +85,10 @@ test.describe("active agent background resume", () => {
       )
 
       await page.reload({ waitUntil: "domcontentloaded" })
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await ensureSidebarLayout(page)
 
       const summary = await expect
@@ -96,7 +96,7 @@ test.describe("active agent background resume", () => {
           () =>
             page.evaluate(() => {
               const entry = performance
-                .getEntriesByName("gharargah:active-agent-warm-resume")
+                .getEntriesByName("yaade:active-agent-warm-resume")
                 .at(-1)
               if (!entry) return null
               const detail = Reflect.get(entry, "detail")
@@ -137,14 +137,14 @@ test.describe("active agent background resume", () => {
         .filter(Boolean).length
 
       const warmRow = page.locator(
-        '[data-gharargah-sidebar-session="gharargah:terminal:warm-one"]',
+        '[data-yaade-sidebar-session="yaade:terminal:warm-one"]',
       )
       await expectLocatorVisible(warmRow)
 
       const openedAt = Date.now()
       await warmRow.click()
       const terminal = page.locator(
-        '[data-gharargah-terminal-panel][data-gharargah-terminal-status="running"]',
+        '[data-yaade-terminal-panel][data-yaade-terminal-status="running"]',
       )
       await expectLocatorVisible(terminal, { timeout: 5_000 })
       await waitForTerminalText(page, "WARM_RESUME_READY", 5_000)
@@ -168,7 +168,7 @@ test.describe("active agent background resume", () => {
 
   test("opening during warm resume does not stick on Resuming overlay", async () => {
     const temporaryRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), "gharargah-warm-open-e2e-"),
+      path.join(os.tmpdir(), "yaade-warm-open-e2e-"),
     )
     const binDir = path.join(temporaryRoot, "bin")
     const launchLog = path.join(temporaryRoot, "launches.log")
@@ -180,10 +180,10 @@ test.describe("active agent background resume", () => {
       path.join(binDir, "codex"),
       [
         "#!/bin/sh",
-        'printf "%s\\n" "$*" >> "$GHARARGAH_WARM_RESUME_LOG"',
+        'printf "%s\\n" "$*" >> "$YAADE_WARM_RESUME_LOG"',
         'printf "WARM_RESUME_READY\\r\\n"',
         "trap 'exit 0' TERM INT",
-        'while [ ! -f "$GHARARGAH_WARM_RESUME_GATE" ]; do sleep 0.05; done',
+        'while [ ! -f "$YAADE_WARM_RESUME_GATE" ]; do sleep 0.05; done',
         "while :; do sleep 1; done",
       ].join("\n"),
       { mode: 0o755 },
@@ -193,14 +193,14 @@ test.describe("active agent background resume", () => {
       userDataDir: path.join(temporaryRoot, "user-data"),
       env: {
         PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-        GHARARGAH_WARM_RESUME_LOG: launchLog,
-        GHARARGAH_WARM_RESUME_GATE: gate,
+        YAADE_WARM_RESUME_LOG: launchLog,
+        YAADE_WARM_RESUME_GATE: gate,
       },
     })
     try {
       await ensureSidebarLayout(page)
       const workspace = await page.evaluate(() => {
-        const item = window.__gharargahAgent!.getState().workspaces[0]
+        const item = window.__yaadeAgent!.getState().workspaces[0]
         if (!item?.path) throw new Error("workspace unavailable")
         return {
           name: item.name,
@@ -211,7 +211,7 @@ test.describe("active agent background resume", () => {
       await page.evaluate(
         async ({ rootUri, cliSessionId }) => {
           const entries = [1, 2, 3, 4].map(n => ({
-            tabId: `gharargah:terminal:warm-open-${n}`,
+            tabId: `yaade:terminal:warm-open-${n}`,
             label: `Warm open ${n}`,
             cwdRootUri: rootUri,
             status: "running",
@@ -232,37 +232,37 @@ test.describe("active agent background resume", () => {
       )
 
       await page.reload({ waitUntil: "domcontentloaded" })
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await ensureSidebarLayout(page)
 
       const lateRow = page.locator(
-        '[data-gharargah-sidebar-session="gharargah:terminal:warm-open-4"]',
+        '[data-yaade-sidebar-session="yaade:terminal:warm-open-4"]',
       )
       await expectLocatorVisible(lateRow)
       await lateRow.click()
 
-      const terminal = page.locator("[data-gharargah-terminal-panel]")
+      const terminal = page.locator("[data-yaade-terminal-panel]")
       await expectLocatorVisible(terminal, { timeout: 5_000 })
       // Must not remain stuck on warm-resume deferral after open.
       await expect
         .poll(
           async () =>
-            terminal.getAttribute("data-gharargah-terminal-defer-pty"),
+            terminal.getAttribute("data-yaade-terminal-defer-pty"),
           { timeout: 3_000 },
         )
         .toBeNull()
       await expect
-        .poll(async () => terminal.getAttribute("data-gharargah-terminal-status"), {
+        .poll(async () => terminal.getAttribute("data-yaade-terminal-status"), {
           timeout: 8_000,
         })
         .toBe("running")
       await expect
         .poll(
           () =>
-            page.locator("[data-gharargah-terminal-starting]").count(),
+            page.locator("[data-yaade-terminal-starting]").count(),
           { timeout: 3_000 },
         )
         .toBe(0)

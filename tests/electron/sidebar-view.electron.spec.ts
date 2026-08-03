@@ -16,7 +16,7 @@ test.describe("sidebar view", () => {
 
   test("project filter chips, selection, unread sticky, preference persistence", async () => {
     const temporaryRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), "gharargah-sidebar-session-e2e-"),
+      path.join(os.tmpdir(), "yaade-sidebar-session-e2e-"),
     )
     const binDir = path.join(temporaryRoot, "bin")
     fs.mkdirSync(binDir)
@@ -24,7 +24,7 @@ test.describe("sidebar view", () => {
       path.join(binDir, "codex"),
       [
         "#!/bin/sh",
-        "printf 'GHARARGAH_SIDEBAR_AGENT_READY\\r\\n'",
+        "printf 'YAADE_SIDEBAR_AGENT_READY\\r\\n'",
         "trap 'exit 0' TERM INT",
         "while :; do sleep 1; done",
       ].join("\n"),
@@ -38,50 +38,50 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page.evaluate(
-            () => window.__gharargahAgent!.getState().sessionLayout,
+            () => window.__yaadeAgent!.getState().sessionLayout,
           ),
         )
         .toBe("sidebar")
       await expectSelectorVisible(
         page,
-        '[data-gharargah-session-layout="sidebar"]',
+        '[data-yaade-session-layout="sidebar"]',
       )
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
-      await expectSelectorVisible(page, "[data-gharargah-sidebar-project-filter]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-sidebar-project-filter]")
       await expectLocatorCount(
-        page.locator("[data-gharargah-sidebar-grouping]"),
+        page.locator("[data-yaade-sidebar-grouping]"),
         0,
       )
       await expectLocatorCount(
-        page.locator("[data-gharargah-sidebar-project-list]"),
+        page.locator("[data-yaade-sidebar-project-list]"),
         0,
       )
 
       const allChip = page.locator(
-        '[data-gharargah-sidebar-project-filter-option="all"]',
+        '[data-yaade-sidebar-project-filter-option="all"]',
       )
       await expect
         .poll(() => allChip.getAttribute("data-state"))
         .toBe("on")
 
-      await page.locator("[data-gharargah-sidebar-new-session]").click()
-      await page.locator('[data-gharargah-agent-cli-option="codex"]').click()
+      await page.locator("[data-yaade-sidebar-new-session]").click()
+      await page.locator('[data-yaade-agent-cli-option="codex"]').click()
       await expectSelectorVisible(
         page,
-        '[data-gharargah-terminal-modal][data-gharargah-session-presentation="inline"]',
+        '[data-yaade-terminal-modal][data-yaade-session-presentation="inline"]',
         { timeout: 20_000 },
       )
       await expect
         .poll(() =>
           page.evaluate(() => {
             const sidebar = document.querySelector(
-              "[data-gharargah-mission-sidebar]",
+              "[data-yaade-mission-sidebar]",
             )
             const bell = sidebar?.querySelector(
-              "[data-gharargah-notification-bell]",
+              "[data-yaade-notification-bell]",
             )
             const body = document.querySelector(
-              "[data-gharargah-terminal-modal-body]",
+              "[data-yaade-terminal-modal-body]",
             )
             if (!sidebar || !bell || !body) return false
             return (
@@ -92,33 +92,33 @@ test.describe("sidebar view", () => {
           }),
         )
         .toBe(true)
-      const sessionRow = page.locator("[data-gharargah-sidebar-session]").first()
+      const sessionRow = page.locator("[data-yaade-sidebar-session]").first()
       await expectLocatorVisible(sessionRow, { timeout: 20_000 })
       const activeSectionLabel = page.locator(
-        '[data-gharargah-sidebar-section-label="active"]',
+        '[data-yaade-sidebar-section-label="active"]',
       )
       await expect
         .poll(() => activeSectionLabel.evaluate(element => element.textContent?.trim()))
         .toBe("Active")
       const sessionId = await sessionRow.getAttribute(
-        "data-gharargah-sidebar-session",
+        "data-yaade-sidebar-session",
       )
       expect(sessionId).toBeTruthy()
 
       await sessionRow.click()
       await expect
         .poll(() =>
-          sessionRow.getAttribute("data-gharargah-sidebar-session-selected"),
+          sessionRow.getAttribute("data-yaade-sidebar-session-selected"),
         )
         .toBe("")
 
-      const state = await page.evaluate(() => window.__gharargahAgent!.getState())
+      const state = await page.evaluate(() => window.__yaadeAgent!.getState())
       const projectName = state.workspaces[0]?.name ?? "sample-workspace"
       const projectId =
         state.workspaces[0]?.id ?? state.workspaces[0]?.path ?? null
 
       const projectChip = page
-        .locator("[data-gharargah-sidebar-project-filter-option]")
+        .locator("[data-yaade-sidebar-project-filter-option]")
         .filter({ hasText: projectName })
         .first()
       await expectLocatorVisible(projectChip)
@@ -133,9 +133,9 @@ test.describe("sidebar view", () => {
         .poll(() => allChip.getAttribute("data-state"))
         .toBe("off")
 
-      await expectSelectorVisible(page, "[data-gharargah-sidebar-unread-list]")
+      await expectSelectorVisible(page, "[data-yaade-sidebar-unread-list]")
       await expectLocatorVisible(
-        page.locator("[data-gharargah-sidebar-session]").first(),
+        page.locator("[data-yaade-sidebar-session]").first(),
       )
 
       await allChip.click()
@@ -145,7 +145,7 @@ test.describe("sidebar view", () => {
 
       await page.evaluate(
         async ({ sessionId: sid, projectId: pid, projectName: pname }) => {
-          await window.__gharargahAgent!.ingestNotification!({
+          await window.__yaadeAgent!.ingestNotification!({
             source: "provider-hook",
             type: "turn-completed",
             title: "Sidebar unread seed",
@@ -164,7 +164,7 @@ test.describe("sidebar view", () => {
       await expect
         .poll(async () => {
           const counts = await page.evaluate(() =>
-            window.__gharargahAgent!.getNotificationCounts!(),
+            window.__yaadeAgent!.getNotificationCounts!(),
           )
           return counts.totalUnread
         }, { timeout: 15_000 })
@@ -175,29 +175,29 @@ test.describe("sidebar view", () => {
         .toContain("Sidebar session")
 
       await expectLocatorVisible(
-        page.locator("[data-gharargah-sidebar-unread-badge]").first(),
+        page.locator("[data-yaade-sidebar-unread-badge]").first(),
       )
 
       const unreadRow = page
-        .locator("[data-gharargah-sidebar-session]")
-        .filter({ has: page.locator("[data-gharargah-sidebar-unread-badge]") })
+        .locator("[data-yaade-sidebar-session]")
+        .filter({ has: page.locator("[data-yaade-sidebar-unread-badge]") })
         .first()
       const selectedId = await unreadRow.getAttribute(
-        "data-gharargah-sidebar-session",
+        "data-yaade-sidebar-session",
       )
       expect(selectedId).toBeTruthy()
       await unreadRow.click()
       await expect
         .poll(async () => {
           const counts = await page.evaluate(() =>
-            window.__gharargahAgent!.getNotificationCounts!(),
+            window.__yaadeAgent!.getNotificationCounts!(),
           )
           return counts.totalUnread
         }, { timeout: 15_000 })
         .toBe(0)
       await expectLocatorVisible(
         page.locator(
-          `[data-gharargah-sidebar-session="${selectedId}"][data-gharargah-sidebar-session-selected]`,
+          `[data-yaade-sidebar-session="${selectedId}"][data-yaade-sidebar-session-selected]`,
         ),
       )
 
@@ -206,10 +206,10 @@ test.describe("sidebar view", () => {
         .poll(() =>
           page.evaluate(() => {
             const trigger = document.querySelector(
-              '[data-gharargah-mission-sidebar] [data-slot="sidebar-trigger"]',
+              '[data-yaade-mission-sidebar] [data-slot="sidebar-trigger"]',
             )
             const search = document.querySelector(
-              "[data-gharargah-sidebar-search]",
+              "[data-yaade-sidebar-search]",
             )
             if (!trigger || !search) return false
             return (
@@ -253,22 +253,22 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-state"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-state"),
         )
         .toBe("collapsed")
 
       const selectedCompactRow = page.locator(
-        "[data-gharargah-sidebar-session-selected]",
+        "[data-yaade-sidebar-session-selected]",
       )
       const projectMonogram = selectedCompactRow.locator(
-        "[data-gharargah-sidebar-project-monogram]",
+        "[data-yaade-sidebar-project-monogram]",
       )
       await expectLocatorVisible(projectMonogram)
       await expect
         .poll(() =>
           projectMonogram.getAttribute(
-            "data-gharargah-sidebar-project-name",
+            "data-yaade-sidebar-project-name",
           ),
         )
         .toBe(projectName)
@@ -288,7 +288,7 @@ test.describe("sidebar view", () => {
         .poll(async () => {
           const [sidebarBox, rowBox, monogramBox] = await Promise.all([
             page
-              .locator("[data-gharargah-mission-sidebar]")
+              .locator("[data-yaade-mission-sidebar]")
               .boundingBox(),
             selectedCompactRow.boundingBox(),
             projectMonogram.boundingBox(),
@@ -348,13 +348,13 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-peek"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-peek"),
         )
         .toBe("false")
 
       const sidebarContainer = page.locator(
-        "[data-gharargah-mission-sidebar][data-slot='sidebar-container']",
+        "[data-yaade-mission-sidebar][data-slot='sidebar-container']",
       )
       const peekBox = await sidebarContainer.boundingBox()
       expect(peekBox).toBeTruthy()
@@ -364,20 +364,20 @@ test.describe("sidebar view", () => {
           () =>
             page.evaluate(() => {
               const container = document.querySelector(
-                "[data-gharargah-mission-sidebar]",
+                "[data-yaade-mission-sidebar]",
               )
               const peer = document.querySelector(
                 '[data-slot="sidebar"][data-variant="floating"]',
               )
               return {
-                attr: container?.getAttribute("data-gharargah-sidebar-peek"),
+                attr: container?.getAttribute("data-yaade-sidebar-peek"),
                 peerPeek: peer?.getAttribute("data-peek"),
               }
             }),
           { timeout: 5_000 },
         )
         .toEqual({ attr: "true", peerPeek: "true" })
-      await expectSelectorVisible(page, "[data-gharargah-sidebar-search]")
+      await expectSelectorVisible(page, "[data-yaade-sidebar-search]")
       // Peek clears collapsible=icon so session titles are not clipped to icon size.
       await expect
         .poll(() =>
@@ -386,7 +386,7 @@ test.describe("sidebar view", () => {
               '[data-slot="sidebar"][data-peek="true"]',
             )
             const row = document.querySelector(
-              "[data-gharargah-sidebar-session-selected]",
+              "[data-yaade-sidebar-session-selected]",
             )
             if (!peer || !row) return null
             const title = row.textContent?.trim() ?? ""
@@ -404,8 +404,8 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-state"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-state"),
         )
         .toBe("collapsed")
       await expect
@@ -425,16 +425,16 @@ test.describe("sidebar view", () => {
         .poll(
           () =>
             page
-              .locator("[data-gharargah-mission-sidebar]")
-              .getAttribute("data-gharargah-sidebar-peek"),
+              .locator("[data-yaade-mission-sidebar]")
+              .getAttribute("data-yaade-sidebar-peek"),
           { timeout: 5_000 },
         )
         .toBe("false")
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-state"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-state"),
         )
         .toBe("collapsed")
 
@@ -442,22 +442,22 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-state"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-state"),
         )
         .toBe("expanded")
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-peek"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-peek"),
         )
         .toBe("false")
 
       // Re-select project filter and persist (absolute path)
       await projectChip.click()
       const filterPath = await projectChip.getAttribute(
-        "data-gharargah-sidebar-project-filter-option",
+        "data-yaade-sidebar-project-filter-option",
       )
       expect(filterPath).toBeTruthy()
       expect(filterPath).not.toBe("all")
@@ -481,18 +481,18 @@ test.describe("sidebar view", () => {
         )
 
       await page.reload({ waitUntil: "domcontentloaded" })
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await expect
         .poll(() =>
           page.evaluate(
-            () => window.__gharargahAgent!.getState().sessionLayout,
+            () => window.__yaadeAgent!.getState().sessionLayout,
           ),
         )
         .toBe("sidebar")
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]", {
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]", {
         timeout: 30_000,
       })
       // Catalog restore is async — wait for projects before asserting list.
@@ -500,17 +500,17 @@ test.describe("sidebar view", () => {
         .poll(
           () =>
             page.evaluate(
-              () => window.__gharargahAgent!.listWorkspaces().length,
+              () => window.__yaadeAgent!.listWorkspaces().length,
             ),
           { timeout: 30_000 },
         )
         .toBeGreaterThan(0)
       await expectSelectorVisible(
         page,
-        "[data-gharargah-sidebar-project-filter]",
+        "[data-yaade-sidebar-project-filter]",
         { timeout: 30_000 },
       )
-      await expectSelectorVisible(page, "[data-gharargah-sidebar-unread-list]", {
+      await expectSelectorVisible(page, "[data-yaade-sidebar-unread-list]", {
         timeout: 30_000,
       })
       await expect
@@ -530,15 +530,15 @@ test.describe("sidebar view", () => {
         .poll(
           () =>
             page
-              .locator("[data-gharargah-mission-sidebar]")
-              .getAttribute("data-gharargah-sidebar-project-filter-active"),
+              .locator("[data-yaade-mission-sidebar]")
+              .getAttribute("data-yaade-sidebar-project-filter-active"),
           { timeout: 15_000 },
         )
         .toBe(filterPath)
       await expect
         .poll(() =>
           page
-            .locator('[data-gharargah-sidebar-project-filter-option="all"]')
+            .locator('[data-yaade-sidebar-project-filter-option="all"]')
             .getAttribute("data-state"),
         )
         .toBe("off")
@@ -555,17 +555,17 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page.evaluate(
-            () => window.__gharargahAgent!.getState().sessionLayout,
+            () => window.__yaadeAgent!.getState().sessionLayout,
           ),
         )
         .toBe("sidebar")
       await page.evaluate(
-        path => window.__gharargahAgent!.addWorkspace(path),
+        path => window.__yaadeAgent!.addWorkspace(path),
         secondPath,
       )
       await expect
         .poll(() =>
-          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+          page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length),
         )
         .toBe(2)
       await expect
@@ -587,23 +587,23 @@ test.describe("sidebar view", () => {
         .toBeNull()
 
       await page.reload({ waitUntil: "domcontentloaded" })
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await expect
         .poll(() =>
-          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+          page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length),
         )
         .toBe(2)
       await expectSelectorVisible(
         page,
-        '[data-gharargah-sidebar-project-filter-option]:not([data-gharargah-sidebar-project-filter-option="all"])',
+        '[data-yaade-sidebar-project-filter-option]:not([data-yaade-sidebar-project-filter-option="all"])',
         { timeout: 30_000 },
       )
       const chipCount = await page
         .locator(
-          '[data-gharargah-sidebar-project-filter-option]:not([data-gharargah-sidebar-project-filter-option="all"])',
+          '[data-yaade-sidebar-project-filter-option]:not([data-yaade-sidebar-project-filter-option="all"])',
         )
         .count()
       expect(chipCount).toBeGreaterThanOrEqual(2)
@@ -619,24 +619,24 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page.evaluate(
-            () => window.__gharargahAgent!.getState().sessionLayout,
+            () => window.__yaadeAgent!.getState().sessionLayout,
           ),
         )
         .toBe("sidebar")
 
       await page.evaluate(
-        path => window.__gharargahAgent!.addWorkspace(path),
+        path => window.__yaadeAgent!.addWorkspace(path),
         secondPath,
       )
       await expect
         .poll(() =>
-          page.evaluate(() => window.__gharargahAgent!.listWorkspaces().length),
+          page.evaluate(() => window.__yaadeAgent!.listWorkspaces().length),
         )
         .toBe(2)
 
-      await expectSelectorVisible(page, "[data-gharargah-sidebar-project-filter]")
+      await expectSelectorVisible(page, "[data-yaade-sidebar-project-filter]")
       const chip = page.locator(
-        '[data-gharargah-sidebar-project-filter-option]:not([data-gharargah-sidebar-project-filter-option="all"])',
+        '[data-yaade-sidebar-project-filter-option]:not([data-yaade-sidebar-project-filter-option="all"])',
       ).filter({ hasText: "second-workspace" })
       await expectLocatorVisible(chip)
       await chip.click()
@@ -646,14 +646,14 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-project-filter-active"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-project-filter-active"),
         )
         .toMatch(/second-workspace/)
 
       await chip.click({ button: "right" })
       const menu = page.locator(
-        "[data-gharargah-sidebar-project-filter-menu]",
+        "[data-yaade-sidebar-project-filter-menu]",
       )
       await expectLocatorVisible(menu)
       await menu.getByRole("menuitem", { name: "Remove project" }).click()
@@ -661,7 +661,7 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page.evaluate(() =>
-            window.__gharargahAgent!.listWorkspaces().map(p => p.name),
+            window.__yaadeAgent!.listWorkspaces().map(p => p.name),
           ),
         )
         .not.toContain("second-workspace")
@@ -669,15 +669,15 @@ test.describe("sidebar view", () => {
       await expect
         .poll(() =>
           page
-            .locator('[data-gharargah-sidebar-project-filter-option="all"]')
+            .locator('[data-yaade-sidebar-project-filter-option="all"]')
             .getAttribute("data-state"),
         )
         .toBe("on")
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-mission-sidebar]")
-            .getAttribute("data-gharargah-sidebar-project-filter-active"),
+            .locator("[data-yaade-mission-sidebar]")
+            .getAttribute("data-yaade-sidebar-project-filter-active"),
         )
         .toBe("all")
     } finally {
@@ -687,7 +687,7 @@ test.describe("sidebar view", () => {
 
   test("Cursor first prompt upgrades sidebar session title", async () => {
     const temporaryRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), "gharargah-sidebar-cursor-title-e2e-"),
+      path.join(os.tmpdir(), "yaade-sidebar-cursor-title-e2e-"),
     )
     const binDir = path.join(temporaryRoot, "bin")
     fs.mkdirSync(binDir)
@@ -695,7 +695,7 @@ test.describe("sidebar view", () => {
       path.join(binDir, "cursor-agent"),
       [
         "#!/bin/sh",
-        "printf 'GHARARGAH_CURSOR_TITLE_READY\\r\\n'",
+        "printf 'YAADE_CURSOR_TITLE_READY\\r\\n'",
         "trap 'exit 0' TERM INT",
         "while :; do sleep 1; done",
       ].join("\n"),
@@ -706,20 +706,20 @@ test.describe("sidebar view", () => {
       env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
     })
     try {
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
-      await page.locator("[data-gharargah-sidebar-new-session]").click()
-      await page.locator('[data-gharargah-agent-cli-option="cursor"]').click()
+      await page.locator("[data-yaade-sidebar-new-session]").click()
+      await page.locator('[data-yaade-agent-cli-option="cursor"]').click()
       await expectSelectorVisible(
         page,
-        '[data-gharargah-terminal-modal][data-gharargah-session-presentation="inline"]',
+        '[data-yaade-terminal-modal][data-yaade-session-presentation="inline"]',
         { timeout: 20_000 },
       )
 
-      const sessionRow = page.locator("[data-gharargah-sidebar-session]").first()
+      const sessionRow = page.locator("[data-yaade-sidebar-session]").first()
       await expectLocatorVisible(sessionRow, { timeout: 20_000 })
       const sessionId = await sessionRow.getAttribute(
-        "data-gharargah-sidebar-session",
+        "data-yaade-sidebar-session",
       )
       expect(sessionId).toBeTruthy()
 

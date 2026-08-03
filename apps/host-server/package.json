@@ -1,10 +1,10 @@
 {
-  "name": "@gharargah/host-server",
+  "name": "@yaade/host-server",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "bin": {
-    "gharargah-host-server": "./src/bin.ts"
+    "yaade-host-server": "./src/bin.ts"
   },
   "scripts": {
     "dev": "tsx watch src/bin.ts",
@@ -15,10 +15,10 @@
   "dependencies": {
     "@effect/platform": "0.97.1",
     "@effect/platform-node": "0.99.0",
-    "@gharargah/agents": "workspace:*",
-    "@gharargah/node-host": "workspace:*",
-    "@gharargah/rpc": "workspace:*",
-    "@gharargah/shared": "workspace:*",
+    "@yaade/agents": "workspace:*",
+    "@yaade/node-host": "workspace:*",
+    "@yaade/rpc": "workspace:*",
+    "@yaade/shared": "workspace:*",
     "effect": "3.22.1",
     "ws": "^8.18.0"
   },

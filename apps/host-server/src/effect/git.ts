@@ -19,9 +19,9 @@ import {
   type GitHistoryCommit,
   type GitShowRef,
   type GitSummary,
-} from "@gharargah/node-host"
-import { GitCommandFailedError } from "@gharargah/rpc"
-import type { GitStatusEntry } from "@gharargah/shared"
+} from "@yaade/node-host"
+import { GitCommandFailedError } from "@yaade/rpc"
+import type { GitStatusEntry } from "@yaade/shared"
 
 function toGitError(err: unknown): GitCommandFailedError {
   return new GitCommandFailedError({
@@ -88,7 +88,7 @@ export function makeGitService(): GitService {
   }
 }
 
-export class GitServiceTag extends Context.Tag("gharargah/GitService")<
+export class GitServiceTag extends Context.Tag("yaade/GitService")<
   GitServiceTag,
   GitService
 >() {}

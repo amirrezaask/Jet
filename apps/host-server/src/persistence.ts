@@ -9,8 +9,8 @@ import {
   type SessionRosterEntry,
   type SessionRosterMode,
   type TerminalSessionStatus,
-} from "@gharargah/rpc"
-import { fileUriToPath, pathToFileUri } from "@gharargah/shared"
+} from "@yaade/rpc"
+import { fileUriToPath, pathToFileUri } from "@yaade/shared"
 
 export type Project = {
   id: string

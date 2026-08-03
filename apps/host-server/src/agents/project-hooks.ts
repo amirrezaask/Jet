@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
-import type { AgentProvider } from "@gharargah/agents"
+import type { AgentProvider } from "@yaade/agents"
 
 /** Shared forwarder script invoked by Codex/Cursor project hooks. */
 export function ensureHookForwarderScript(dataDir?: string): string {
@@ -11,15 +11,15 @@ export function ensureHookForwarderScript(dataDir?: string): string {
     path.join(os.homedir(), ".local", "share", "jet")
   const binDir = path.join(root, "bin")
   fs.mkdirSync(binDir, { recursive: true })
-  const scriptPath = path.join(binDir, "gharargah-hook-forward.sh")
+  const scriptPath = path.join(binDir, "yaade-hook-forward.sh")
   const script = `#!/bin/sh
-# Gharargah ADE hook forwarder — fire-and-forget; never block Cursor/Codex.
+# Yaade ADE hook forwarder — fire-and-forget; never block Cursor/Codex.
 # Sync curl here made the IDE unusable (every tool/edit waited up to 5s).
 set -eu
-PROVIDER="\${GHARARGAH_PROVIDER:-}"
-SESSION_ID="\${GHARARGAH_SESSION_ID:-}"
-INGEST_URL="\${GHARARGAH_INGEST_URL:-}"
-QUEUE_DIR="\${GHARARGAH_HOOK_QUEUE:-$HOME/.local/share/jet/hook-queue}"
+PROVIDER="\${YAADE_PROVIDER:-}"
+SESSION_ID="\${YAADE_SESSION_ID:-}"
+INGEST_URL="\${YAADE_INGEST_URL:-}"
+QUEUE_DIR="\${YAADE_HOOK_QUEUE:-$HOME/.local/share/jet/hook-queue}"
 # Drain stdin immediately so the provider can continue.
 PAYLOAD="$(cat)"
 if [ -z "$INGEST_URL" ] || [ -z "$PROVIDER" ] || [ -z "$SESSION_ID" ]; then
@@ -54,7 +54,7 @@ function mergeHookCommand(
   const already = list.some((entry) => {
     if (!entry || typeof entry !== "object") return false
     const cmd = (entry as { command?: string }).command
-    return typeof cmd === "string" && cmd.includes("gharargah-hook-forward")
+    return typeof cmd === "string" && cmd.includes("yaade-hook-forward")
   })
   if (!already) {
     list.push({ command: forwarder })
@@ -62,7 +62,7 @@ function mergeHookCommand(
   return list
 }
 
-/** Idempotent merge of Gharargah forwarder into project `.codex/hooks.json`. */
+/** Idempotent merge of Yaade forwarder into project `.codex/hooks.json`. */
 export function installCodexProjectHooks(
   projectRoot: string,
   dataDir?: string,
@@ -156,7 +156,7 @@ export function installCursorProjectHooks(
     hooks[ev] = (hooks[ev] as unknown[]).filter(entry => {
       if (!entry || typeof entry !== "object") return true
       const cmd = (entry as { command?: string }).command
-      return !(typeof cmd === "string" && cmd.includes("gharargah-hook-forward"))
+      return !(typeof cmd === "string" && cmd.includes("yaade-hook-forward"))
     })
     if ((hooks[ev] as unknown[]).length === 0) delete hooks[ev]
   }
@@ -178,15 +178,15 @@ export function installOpenCodePlugin(
 ): string {
   const dir = path.join(projectRoot, ".opencode", "plugin")
   fs.mkdirSync(dir, { recursive: true })
-  const file = path.join(dir, "gharargah-telemetry.js")
-  const source = `// Gharargah ADE telemetry plugin — fire-and-forget, never block OpenCode.
-export const GharargahTelemetry = async () => {
+  const file = path.join(dir, "yaade-telemetry.js")
+  const source = `// Yaade ADE telemetry plugin — fire-and-forget, never block OpenCode.
+export const YaadeTelemetry = async () => {
   return {
     event: async ({ event }) => {
-      const url = process.env.GHARARGAH_INGEST_URL
+      const url = process.env.YAADE_INGEST_URL
       if (!url) return
       const body = JSON.stringify({ event })
-      // Do not await — OpenCode must not stall on Gharargah availability.
+      // Do not await — OpenCode must not stall on Yaade availability.
       void fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },

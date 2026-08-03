@@ -3,9 +3,9 @@ import {
   setLspCrashHandler,
   stopAllLspSessions,
   TerminalHost,
-} from "@gharargah/node-host"
-import type { NotificationStreamEvent } from "@gharargah/shared"
-import type { AgentProvider } from "@gharargah/agents"
+} from "@yaade/node-host"
+import type { NotificationStreamEvent } from "@yaade/shared"
+import type { AgentProvider } from "@yaade/agents"
 import type { HostConfig } from "./config.js"
 import type { EventHub } from "./events.js"
 import {

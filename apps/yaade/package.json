@@ -1,0 +1,29 @@
+{
+  "name": "yaade",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev-web.mjs",
+    "dev:frontend": "node scripts/dev-frontend.mjs",
+    "build": "vite build && node scripts/verify-startup-graph.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@yaade/agents": "workspace:*",
+    "@yaade/app": "workspace:*",
+    "@yaade/host-client": "workspace:*",
+    "@yaade/shared": "workspace:*",
+    "@yaade/workspace": "workspace:*"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.8",
+    "@types/node": "^22.15.29",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.5.2",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "tailwindcss": "^4.1.8",
+    "typescript": "^7.0.2",
+    "vite": "^6.3.5"
+  }
+}

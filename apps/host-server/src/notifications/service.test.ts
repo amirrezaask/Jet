@@ -19,7 +19,7 @@ import {
 import { contentHashFor } from "./schema.js"
 
 function tempDb(): { db: DatabaseSync; dir: string } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gharargah-notif-"))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-notif-"))
   const db = new DatabaseSync(path.join(dir, "t.sqlite3"))
   return { db, dir }
 }
@@ -438,9 +438,9 @@ describe("NotificationService", () => {
 })
 
 describe("OSC + hook normalize", () => {
-  it("parses gharargah notify OSC", () => {
+  it("parses yaade notify OSC", () => {
     const chunk =
-      "\x1b]1337;Gharargah=notify;" +
+      "\x1b]1337;Yaade=notify;" +
       JSON.stringify({
         type: "turn-completed",
         title: "Done",
@@ -460,9 +460,9 @@ describe("OSC + hook normalize", () => {
     assert.equal(parsed[0]?.message, "World")
   })
 
-  it("parses the compact GharargahNotify form and rejects invalid enums", () => {
+  it("parses the compact YaadeNotify form and rejects invalid enums", () => {
     const parsed = parseOscNotifications(
-      "\x1b]1337;GharargahNotify=not-a-type|Hello|World\x07",
+      "\x1b]1337;YaadeNotify=not-a-type|Hello|World\x07",
     )
     assert.equal(parsed.length, 1)
     assert.equal(parsed[0]?.type, "provider-notification")

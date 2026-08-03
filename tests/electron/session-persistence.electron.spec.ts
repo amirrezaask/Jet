@@ -45,13 +45,13 @@ test.describe("session refresh persistence", () => {
     const { app, page } = await launchJet()
     try {
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
       await openNewAgentSession(page)
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]", {
         timeout: 20_000,
       })
 
@@ -65,7 +65,7 @@ test.describe("session refresh persistence", () => {
         .toBeTruthy()
 
       const sessionRow = page.locator(
-        `[data-gharargah-sidebar-session="${tabId}"]`,
+        `[data-yaade-sidebar-session="${tabId}"]`,
       )
       await expectLocatorVisible(sessionRow)
 
@@ -85,7 +85,7 @@ test.describe("session refresh persistence", () => {
             },
           )
           if (!res.ok && res.status !== 204) {
-            await window.gharargah!.notifications.ingest({
+            await window.yaade!.notifications.ingest({
               source: "provider-hook",
               provider: "codex",
               type: "session-started",
@@ -105,27 +105,27 @@ test.describe("session refresh persistence", () => {
         }, { timeout: 20_000 })
         .toBe(MOCK_CLI_SESSION_ID)
 
-      await execCommand(page, "gharargah.goHome")
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+      await execCommand(page, "yaade.goHome")
+      await expectLocatorCount(page.locator("[data-yaade-terminal-modal]"), 0)
       await expectLocatorVisible(sessionRow)
 
       await page.reload()
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
       const sessionRowAfter = page.locator(
-        `[data-gharargah-sidebar-session="${tabId}"]`,
+        `[data-yaade-sidebar-session="${tabId}"]`,
       )
       await expectLocatorVisible(sessionRowAfter)
       await expect
         .poll(() =>
           sessionRowAfter
-            .locator("[data-gharargah-session-status]")
-            .getAttribute("data-gharargah-session-status"),
+            .locator("[data-yaade-session-status]")
+            .getAttribute("data-yaade-session-status"),
         )
         .toMatch(/running|waiting|disconnected|failed|completed/)
 
@@ -138,15 +138,15 @@ test.describe("session refresh persistence", () => {
       ])
 
       await sessionRowAfter.click()
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]", {
         timeout: 20_000,
       })
       await expectSelectorVisible(
         page,
-        "[data-gharargah-terminal-panel] .xterm",
+        "[data-yaade-terminal-panel] .xterm",
         { timeout: 20_000 },
       )
     } finally {
@@ -156,7 +156,7 @@ test.describe("session refresh persistence", () => {
 
   test("cursor agent CLI opens instantly, stores after hook session id, resumes", async () => {
     const temporaryRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), "gharargah-cursor-session-e2e-"),
+      path.join(os.tmpdir(), "yaade-cursor-session-e2e-"),
     )
     const binDir = path.join(temporaryRoot, "bin")
     fs.mkdirSync(binDir)
@@ -176,18 +176,18 @@ test.describe("session refresh persistence", () => {
     })
     try {
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
       await openNewCliSession(page, "cursor")
       // Modal + interactive PTY open immediately — no create-chat defer gate.
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 10_000,
       })
       await expectLocatorCount(
-        page.locator("[data-gharargah-terminal-defer-pty='1']"),
+        page.locator("[data-yaade-terminal-defer-pty='1']"),
         0,
       )
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel] .xterm", {
         timeout: 20_000,
       })
 
@@ -215,21 +215,21 @@ test.describe("session refresh persistence", () => {
 
       // Trust prompt Quit used to surface as "Process exited with code 1".
       await page.waitForTimeout(1500)
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-exit-bar]"), 0)
+      await expectLocatorCount(page.locator("[data-yaade-terminal-exit-bar]"), 0)
 
-      await execCommand(page, "gharargah.goHome")
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+      await execCommand(page, "yaade.goHome")
+      await expectLocatorCount(page.locator("[data-yaade-terminal-modal]"), 0)
 
       await page.reload()
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
       const sessionRowAfter = page.locator(
-        `[data-gharargah-sidebar-session="${tabId}"]`,
+        `[data-yaade-sidebar-session="${tabId}"]`,
       )
       await expectLocatorVisible(sessionRowAfter)
 
@@ -240,13 +240,13 @@ test.describe("session refresh persistence", () => {
       expect(rosterAfter?.sessions[0]?.launchArgs).toContain("--trust")
 
       await sessionRowAfter.click()
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel] .xterm", {
         timeout: 20_000,
       })
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-exit-bar]"), 0)
+      await expectLocatorCount(page.locator("[data-yaade-terminal-exit-bar]"), 0)
     } finally {
       await app.close()
     }

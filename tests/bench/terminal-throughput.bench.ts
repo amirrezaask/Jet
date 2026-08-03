@@ -13,7 +13,7 @@ async function waitForRunningTerminal(page: import("@playwright/test").Page): Pr
   await page.waitForFunction(
     () =>
       document.querySelector(
-        '[data-gharargah-terminal-panel][data-gharargah-terminal-status="running"]',
+        '[data-yaade-terminal-panel][data-yaade-terminal-status="running"]',
       ) != null,
     null,
     { timeout: 15_000 },
@@ -34,13 +34,13 @@ test("bench terminal-stream-throughput", async () => {
       warmup: 2,
       rounds: 5,
       measure: async () => {
-        const marker = `GHARARGAH-TERMINAL-BENCH-${round++}`
+        const marker = `YAADE-TERMINAL-BENCH-${round++}`
         return page.evaluate(async currentMarker => {
           const panel = document.querySelector<HTMLElement>(
-            '[data-gharargah-terminal-panel][data-gharargah-terminal-status="running"]',
+            '[data-yaade-terminal-panel][data-yaade-terminal-status="running"]',
           )
-          const ptyId = panel?.dataset.gharargahTerminalPtyId
-          const terminal = window.gharargah?.terminal
+          const ptyId = panel?.dataset.yaadeTerminalPtyId
+          const terminal = window.yaade?.terminal
           if (!ptyId || !terminal) throw new Error("running terminal unavailable")
 
           const startedAt = performance.now()
@@ -54,7 +54,7 @@ test("bench terminal-stream-throughput", async () => {
               30_000,
             )
             const poll = () => {
-              const text = window.__gharargahAgent?.getTerminalText?.() ?? ""
+              const text = window.__yaadeAgent?.getTerminalText?.() ?? ""
               if (text.includes(currentMarker)) {
                 window.clearTimeout(timeout)
                 requestAnimationFrame(() => resolve())
@@ -93,13 +93,13 @@ test("bench terminal-agent-flood-throughput", async () => {
       warmup: 2,
       rounds: 5,
       measure: async () => {
-        const marker = `GHARARGAH-AGENT-FLOOD-${round++}`
+        const marker = `YAADE-AGENT-FLOOD-${round++}`
         return page.evaluate(async currentMarker => {
           const panel = document.querySelector<HTMLElement>(
-            '[data-gharargah-terminal-panel][data-gharargah-terminal-status="running"]',
+            '[data-yaade-terminal-panel][data-yaade-terminal-status="running"]',
           )
-          const ptyId = panel?.dataset.gharargahTerminalPtyId
-          const terminal = window.gharargah?.terminal
+          const ptyId = panel?.dataset.yaadeTerminalPtyId
+          const terminal = window.yaade?.terminal
           if (!ptyId || !terminal) throw new Error("running terminal unavailable")
 
           // Generate the flood in the PTY so host batching matches real agent CLIs
@@ -126,7 +126,7 @@ test("bench terminal-agent-flood-throughput", async () => {
               30_000,
             )
             const poll = () => {
-              const text = window.__gharargahAgent?.getTerminalText?.() ?? ""
+              const text = window.__yaadeAgent?.getTerminalText?.() ?? ""
               if (text.includes(currentMarker)) {
                 window.clearTimeout(timeout)
                 requestAnimationFrame(() => resolve())
@@ -173,7 +173,7 @@ test("bench terminal-typing-idle", async () => {
         await page.keyboard.type(marker, { delay: 0 })
         await page.waitForFunction(
           needle =>
-            (window.__gharargahAgent?.getTerminalText?.() ?? "").includes(needle),
+            (window.__yaadeAgent?.getTerminalText?.() ?? "").includes(needle),
           marker,
           { timeout: 10_000 },
         )
@@ -209,9 +209,9 @@ test("bench terminal-typing-under-flood", async () => {
 
     const renderer = await page.evaluate(() => {
       const panel = document.querySelector<HTMLElement>(
-        "[data-gharargah-terminal-panel]",
+        "[data-yaade-terminal-panel]",
       )
-      return panel?.dataset.gharargahTerminalRenderer ?? "unknown"
+      return panel?.dataset.yaadeTerminalRenderer ?? "unknown"
     })
     // Prefer GPU; Dom is acceptable in headless CI without WebGL.
     expect(["webgl", "canvas", "dom"]).toContain(renderer)
@@ -223,10 +223,10 @@ test("bench terminal-typing-under-flood", async () => {
       measure: async () => {
         return page.evaluate(async () => {
           const panel = document.querySelector<HTMLElement>(
-            '[data-gharargah-terminal-panel][data-gharargah-terminal-status="running"]',
+            '[data-yaade-terminal-panel][data-yaade-terminal-status="running"]',
           )
-          const ptyId = panel?.dataset.gharargahTerminalPtyId
-          const terminal = window.gharargah?.terminal
+          const ptyId = panel?.dataset.yaadeTerminalPtyId
+          const terminal = window.yaade?.terminal
           const textarea = panel?.querySelector<HTMLTextAreaElement>(
             ".xterm-helper-textarea",
           )

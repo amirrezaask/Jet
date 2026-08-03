@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { NodeRuntime } from "@effect/platform-node"
 import { Effect } from "effect"
-import { applyLoginShellEnv } from "@gharargah/node-host"
+import { applyLoginShellEnv } from "@yaade/node-host"
 import { loadConfig } from "./config.js"
 import { startHostServer } from "./server.js"
 

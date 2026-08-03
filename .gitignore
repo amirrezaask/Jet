@@ -6,8 +6,8 @@ dist
 apps/jet-desktop/dist-electron
 apps/jet-desktop/release
 packages/jet-app/dist-electron
-apps/gharargah-electron/pack
-apps/gharargah-electron/dist
+apps/yaade-electron/pack
+apps/yaade-electron/dist
 .4coder
 .vscode
 .4coder_fleury
@@ -17,8 +17,8 @@ test-results
 .synara
 .pnpm-store
 **/target
-apps/gharargah/src-tauri/binaries
-apps/gharargah/src-tauri/generated
+apps/yaade/src-tauri/binaries
+apps/yaade/src-tauri/generated
 apps/jet-tauri/src-tauri/capabilities/e2e.json
-.gharargah
-.gharargah/**
+.yaade
+.yaade/**

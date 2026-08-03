@@ -42,23 +42,23 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  apps/gharargah:
+  apps/yaade:
     dependencies:
-      '@gharargah/agents':
+      '@yaade/agents':
         specifier: workspace:*
-        version: link:../../packages/gharargah-agents
-      '@gharargah/app':
+        version: link:../../packages/yaade-agents
+      '@yaade/app':
         specifier: workspace:*
-        version: link:../../packages/gharargah-app
-      '@gharargah/host-client':
+        version: link:../../packages/yaade-app
+      '@yaade/host-client':
         specifier: workspace:*
-        version: link:../../packages/gharargah-host-client
-      '@gharargah/shared':
+        version: link:../../packages/yaade-host-client
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../../packages/gharargah-shared
-      '@gharargah/workspace':
+        version: link:../../packages/yaade-shared
+      '@yaade/workspace':
         specifier: workspace:*
-        version: link:../../packages/gharargah-workspace
+        version: link:../../packages/yaade-workspace
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.1.8
@@ -88,7 +88,7 @@ importers:
         specifier: ^6.3.5
         version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
 
-  apps/gharargah-electron:
+  apps/yaade-electron:
     devDependencies:
       electron:
         specifier: ^37.2.0
@@ -105,18 +105,18 @@ importers:
       '@effect/platform-node':
         specifier: 0.99.0
         version: 0.99.0(@effect/cluster@0.51.0(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.73.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/sql@0.47.0(@effect/experimental@0.58.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/workflow@0.12.5(@effect/experimental@0.58.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.73.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(@effect/rpc@0.73.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/sql@0.47.0(@effect/experimental@0.58.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1))(effect@3.22.1)
-      '@gharargah/agents':
+      '@yaade/agents':
         specifier: workspace:*
-        version: link:../../packages/gharargah-agents
-      '@gharargah/node-host':
+        version: link:../../packages/yaade-agents
+      '@yaade/node-host':
         specifier: workspace:*
-        version: link:../../packages/gharargah-node-host
-      '@gharargah/rpc':
+        version: link:../../packages/yaade-node-host
+      '@yaade/rpc':
         specifier: workspace:*
-        version: link:../../packages/gharargah-rpc
-      '@gharargah/shared':
+        version: link:../../packages/yaade-rpc
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../../packages/gharargah-shared
+        version: link:../../packages/yaade-shared
       effect:
         specifier: 3.22.1
         version: 3.22.1
@@ -137,11 +137,11 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-agents:
+  packages/yaade-agents:
     dependencies:
-      '@gharargah/shared':
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
+        version: link:../yaade-shared
     devDependencies:
       tsx:
         specifier: ^4.23.0
@@ -150,7 +150,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-app:
+  packages/yaade-app:
     dependencies:
       '@effect-atom/atom':
         specifier: 0.5.3
@@ -167,33 +167,33 @@ importers:
       '@effect/rpc':
         specifier: 0.73.0
         version: 0.73.0(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1)
-      '@gharargah/agents':
+      '@yaade/agents':
         specifier: workspace:*
-        version: link:../gharargah-agents
-      '@gharargah/host-client':
+        version: link:../yaade-agents
+      '@yaade/host-client':
         specifier: workspace:*
-        version: link:../gharargah-host-client
-      '@gharargah/lsp':
+        version: link:../yaade-host-client
+      '@yaade/lsp':
         specifier: workspace:*
-        version: link:../gharargah-lsp
-      '@gharargah/monaco':
+        version: link:../yaade-lsp
+      '@yaade/monaco':
         specifier: workspace:*
-        version: link:../gharargah-monaco
-      '@gharargah/panels':
+        version: link:../yaade-monaco
+      '@yaade/panels':
         specifier: workspace:*
-        version: link:../gharargah-panels
-      '@gharargah/rpc':
+        version: link:../yaade-panels
+      '@yaade/rpc':
         specifier: workspace:*
-        version: link:../gharargah-rpc
-      '@gharargah/shared':
+        version: link:../yaade-rpc
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
-      '@gharargah/ui':
+        version: link:../yaade-shared
+      '@yaade/ui':
         specifier: workspace:*
-        version: link:../gharargah-ui
-      '@gharargah/workspace':
+        version: link:../yaade-ui
+      '@yaade/workspace':
         specifier: workspace:*
-        version: link:../gharargah-workspace
+        version: link:../yaade-workspace
       effect:
         specifier: 3.22.1
         version: 3.22.1
@@ -232,7 +232,7 @@ importers:
         specifier: ^6.3.5
         version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
 
-  packages/gharargah-host-client:
+  packages/yaade-host-client:
     dependencies:
       '@effect/platform':
         specifier: 0.97.1
@@ -240,18 +240,18 @@ importers:
       '@effect/platform-browser':
         specifier: 0.77.1
         version: 0.77.1(@effect/platform@0.97.1(effect@3.22.1))(effect@3.22.1)
-      '@gharargah/agents':
+      '@yaade/agents':
         specifier: workspace:*
-        version: link:../gharargah-agents
-      '@gharargah/rpc':
+        version: link:../yaade-agents
+      '@yaade/rpc':
         specifier: workspace:*
-        version: link:../gharargah-rpc
-      '@gharargah/shared':
+        version: link:../yaade-rpc
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
-      '@gharargah/workspace':
+        version: link:../yaade-shared
+      '@yaade/workspace':
         specifier: workspace:*
-        version: link:../gharargah-workspace
+        version: link:../yaade-workspace
       effect:
         specifier: 3.22.1
         version: 3.22.1
@@ -266,17 +266,17 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-lsp:
+  packages/yaade-lsp:
     dependencies:
-      '@gharargah/monaco':
+      '@yaade/monaco':
         specifier: workspace:*
-        version: link:../gharargah-monaco
-      '@gharargah/shared':
+        version: link:../yaade-monaco
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
-      '@gharargah/workspace':
+        version: link:../yaade-shared
+      '@yaade/workspace':
         specifier: workspace:*
-        version: link:../gharargah-workspace
+        version: link:../yaade-workspace
       monaco-editor:
         specifier: ^0.52.2
         version: 0.52.2
@@ -300,11 +300,11 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-monaco:
+  packages/yaade-monaco:
     dependencies:
-      '@gharargah/shared':
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
+        version: link:../yaade-shared
       monaco-editor:
         specifier: ^0.52.2
         version: 0.52.2
@@ -334,17 +334,17 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-node-host:
+  packages/yaade-node-host:
     dependencies:
       '@ff-labs/fff-node':
         specifier: ^0.9.6
         version: 0.9.6
-      '@gharargah/rpc':
+      '@yaade/rpc':
         specifier: workspace:*
-        version: link:../gharargah-rpc
-      '@gharargah/shared':
+        version: link:../yaade-rpc
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
+        version: link:../yaade-shared
       effect:
         specifier: 3.22.1
         version: 3.22.1
@@ -369,11 +369,11 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-panels:
+  packages/yaade-panels:
     dependencies:
-      '@gharargah/shared':
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
+        version: link:../yaade-shared
     devDependencies:
       tsx:
         specifier: ^4.19.4
@@ -382,7 +382,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-rpc:
+  packages/yaade-rpc:
     dependencies:
       effect:
         specifier: ^3.22.1
@@ -395,7 +395,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-shared:
+  packages/yaade-shared:
     devDependencies:
       tsx:
         specifier: ^4.23.0
@@ -404,7 +404,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-ui:
+  packages/yaade-ui:
     dependencies:
       '@base-ui/react':
         specifier: ^1.4.1
@@ -424,24 +424,24 @@ importers:
       '@fontsource/commit-mono':
         specifier: ^5.3.0
         version: 5.3.0
-      '@gharargah/agents':
+      '@yaade/agents':
         specifier: workspace:*
-        version: link:../gharargah-agents
-      '@gharargah/lsp':
+        version: link:../yaade-agents
+      '@yaade/lsp':
         specifier: workspace:*
-        version: link:../gharargah-lsp
-      '@gharargah/monaco':
+        version: link:../yaade-lsp
+      '@yaade/monaco':
         specifier: workspace:*
-        version: link:../gharargah-monaco
-      '@gharargah/panels':
+        version: link:../yaade-monaco
+      '@yaade/panels':
         specifier: workspace:*
-        version: link:../gharargah-panels
-      '@gharargah/shared':
+        version: link:../yaade-panels
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
-      '@gharargah/workspace':
+        version: link:../yaade-shared
+      '@yaade/workspace':
         specifier: workspace:*
-        version: link:../gharargah-workspace
+        version: link:../yaade-workspace
       '@legendapp/list':
         specifier: 3.2.0
         version: 3.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -564,17 +564,17 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/gharargah-workspace:
+  packages/yaade-workspace:
     dependencies:
-      '@gharargah/agents':
+      '@yaade/agents':
         specifier: workspace:*
-        version: link:../gharargah-agents
-      '@gharargah/panels':
+        version: link:../yaade-agents
+      '@yaade/panels':
         specifier: workspace:*
-        version: link:../gharargah-panels
-      '@gharargah/shared':
+        version: link:../yaade-panels
+      '@yaade/shared':
         specifier: workspace:*
-        version: link:../gharargah-shared
+        version: link:../yaade-shared
     devDependencies:
       tsx:
         specifier: ^4.19.4

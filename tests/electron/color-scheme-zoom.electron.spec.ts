@@ -9,24 +9,24 @@ test.describe("electron zoom", () => {
       await page.evaluate(() => {
         localStorage.removeItem("jet-font-size")
         localStorage.removeItem("jet-appearance-settings")
-        window.__gharargahAgent!.setFontSize(13)
+        window.__yaadeAgent!.setFontSize(13)
       })
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().fontSize))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.getState().fontSize))
         .toBe(13)
 
-      const before = await page.evaluate(() => window.__gharargahAgent!.getState().fontSize)
+      const before = await page.evaluate(() => window.__yaadeAgent!.getState().fontSize)
       await execCommand(page, "ui.zoomIn")
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().fontSize))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.getState().fontSize))
         .toBeGreaterThan(before)
-      const afterIn = await page.evaluate(() => window.__gharargahAgent!.getState().fontSize)
+      const afterIn = await page.evaluate(() => window.__yaadeAgent!.getState().fontSize)
 
       await execCommand(page, "ui.zoomOut")
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getState().fontSize))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.getState().fontSize))
         .toBeLessThanOrEqual(afterIn)
-      const afterOut = await page.evaluate(() => window.__gharargahAgent!.getState().fontSize)
+      const afterOut = await page.evaluate(() => window.__yaadeAgent!.getState().fontSize)
       expect(afterOut).toBeLessThanOrEqual(afterIn)
     } finally {
       await app.close()

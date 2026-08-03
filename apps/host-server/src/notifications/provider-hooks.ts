@@ -3,11 +3,11 @@ import type {
   IngestNotificationRequest,
   NotificationSeverity,
   NotificationType,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 import {
   severityForNotificationType,
   typeRequiresAction,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 import { normalizeHookEventName } from "./osc.js"
 
 const MAX_ID_LENGTH = 512
@@ -206,7 +206,7 @@ function defaultTitle(
 /**
  * Normalize provider-native hook payloads and the public v1 ingest payload into
  * one bounded request. URL context is authoritative so a provider cannot forge
- * another Gharargah session/project.
+ * another Yaade session/project.
  */
 export function normalizeProviderHookRequest(
   value: unknown,

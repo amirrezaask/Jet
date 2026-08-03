@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { Effect, Fiber, PubSub, Queue, Stream } from "effect"
-import type { NotificationStreamEvent } from "@gharargah/shared"
+import type { NotificationStreamEvent } from "@yaade/shared"
 import { EventHub } from "./events.js"
 
 test("notification PubSub bridge fans out to EventHub notifications:event", async () => {

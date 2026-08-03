@@ -1,0 +1,1030 @@
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource/commit-mono/400.css";
+@import "@fontsource/commit-mono/500.css";
+@import "@fontsource/commit-mono/600.css";
+@import "@fontsource/commit-mono/700.css";
+@import "@fontsource/commit-mono/400-italic.css";
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Tailwind v4 only auto-scans the Vite root (packages/yaade-app), so utility
+ * classes used in sibling workspace packages (jet-ui, jet-panels, …) are never
+ * generated. Without this, classes like `absolute`/`relative`/`inset-0` are
+ * dropped and absolutely-positioned panels collapse into static block flow.
+ */
+@source "../../../*/src/**/*.{ts,tsx}";
+@source "../../../../apps/*/src/**/*.{ts,tsx}";
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Commit Mono", ui-monospace, monospace;
+  --text-4xs: var(--yaade-fs-4xs);
+  --text-3xs: var(--yaade-fs-3xs);
+  --text-2xs: var(--yaade-fs-2xs);
+  --text-xs: var(--yaade-fs-xs);
+  --text-sm: var(--yaade-fs-sm);
+  --text-base: var(--yaade-fs-base);
+  --text-lg: var(--yaade-fs-lg);
+  --text-xl: var(--yaade-fs-xl);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-agent-user-bubble: var(--agent-user-bubble);
+  --color-agent-feed-muted: var(--agent-feed-muted);
+  --color-agent-feed-primary: var(--agent-feed-primary);
+  --color-agent-diff-add: var(--agent-diff-add);
+  --color-agent-diff-del: var(--agent-diff-del);
+  --color-agent-composer-surface: var(--agent-composer-surface);
+}
+
+/* Yaade default light — shadcn semantics with a cool, high-contrast control palette. */
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.004 255);
+  --foreground: oklch(0.19 0.012 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.012 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.012 255);
+  --primary: oklch(0.48 0.16 255);
+  --primary-foreground: oklch(0.985 0.004 255);
+  --secondary: oklch(0.94 0.015 255);
+  --secondary-foreground: oklch(0.24 0.02 255);
+  --muted: oklch(0.95 0.01 255);
+  --muted-foreground: oklch(0.46 0.018 255);
+  --accent: oklch(0.925 0.03 255);
+  --accent-foreground: oklch(0.22 0.025 255);
+  --destructive: oklch(0.54 0.2 25);
+  --destructive-foreground: oklch(0.985 0.004 255);
+  --border: oklch(0.84 0.015 255);
+  --input: oklch(0.64 0.02 255);
+  --ring: oklch(0.48 0.16 255);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+
+  /* Compact editor scale: dense, but never sub-10px for ordinary metadata. */
+  --yaade-fs-4xs: 0.69rem;
+  --yaade-fs-3xs: 0.77rem;
+  --yaade-fs-2xs: 0.82rem;
+  --yaade-fs-xs: 0.88rem;
+  --yaade-fs-sm: 0.95rem;
+  --yaade-fs-base: 1rem;
+  --yaade-fs-lg: 1.15rem;
+  --yaade-fs-xl: 1.85rem;
+  /* Row-height contract:
+   *   --yaade-row-height          → tree/dense rows (file explorer, terminal explorer,
+   *                                any Lister tree). Single-line label, one icon.
+   *   --yaade-location-row-height → flat lists with two-line label+path
+   *                                (LocationList: search, problems, references, defs).
+   * Do not merge. Trees are for navigation density; location lists are for
+   * click-to-jump readability. Defined only in :root — scheme-invariant. */
+  --yaade-project-row-height: calc(var(--yaade-fs-base) * 1.75);
+  --yaade-row-height: calc(var(--yaade-fs-base) * 1.5);
+  --yaade-window-chrome-height: calc(var(--yaade-fs-base) * 2.5);
+  --yaade-location-row-height: calc(var(--yaade-fs-base) * 2.5);
+  /* Palette virtualization and rendered slots share these rem-scaled contracts.
+   * Single-line pickers stay compact; detail rows reserve title + metadata. */
+  --yaade-palette-row-height: 2.5rem;
+  --yaade-palette-detail-row-height: 3.5rem;
+  /* Agent CLI picker rows contain a provider glyph plus two text lines.
+   * Keep the virtual slot rem-scaled so appearance zoom cannot clip or overlap
+   * the line boxes. Other palette rows retain their compact contract. */
+  --yaade-agent-cli-row-height: 3.5rem;
+  --yaade-agent-cli-history-row-height: 5rem;
+  /* Traffic-light clearance only — not a closed-sidebar placeholder. */
+  --yaade-traffic-light-inset: 5rem;
+  --yaade-overlay-list-max: 22rem;
+  --yaade-motion-fast: 120ms;
+  --yaade-motion-hot: 120ms;
+  --yaade-motion-menu: 160ms;
+  --yaade-motion-overlay: 180ms;
+  --yaade-motion-panel: 220ms;
+  --yaade-motion-slow-menu: 240ms;
+  --yaade-motion-scroll: 140ms;
+  --yaade-motion-entity: 240ms;
+  --yaade-motion-dnd-site: 220ms;
+  --yaade-motion-squish-scale: 0.9;
+  --yaade-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --yaade-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --yaade-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --yaade-cursor-color: oklch(0.19 0.012 255);
+  --yaade-press-scale: 0.97;
+  --yaade-press-y: 0.5px;
+  --yaade-hl-keyword: oklch(0.577 0.245 27.325);
+  --yaade-hl-control-keyword: oklch(0.577 0.245 27.325);
+  --yaade-hl-function: oklch(0.496 0.265 301.924);
+  --yaade-hl-type: oklch(0.488 0.243 264.376);
+  --yaade-hl-string: oklch(0.527 0.154 150.069);
+  --yaade-hl-number: oklch(0.666 0.179 58.318);
+  --yaade-hl-boolean: oklch(0.666 0.179 58.318);
+  --yaade-hl-comment: oklch(0.556 0 0);
+  --yaade-hl-operator: oklch(0.145 0 0);
+  --yaade-hl-variable: oklch(0.145 0 0);
+  --yaade-hl-attribute: oklch(0.496 0.265 301.924);
+  --yaade-hl-constant: oklch(0.488 0.243 264.376);
+  --yaade-hl-field: oklch(0.488 0.243 264.376);
+  --yaade-hl-module: oklch(0.488 0.243 264.376);
+  --yaade-hl-label: oklch(0.577 0.245 27.325);
+  --yaade-hl-error: oklch(0.577 0.245 27.325);
+  --sidebar: oklch(0.96 0.008 255);
+  --sidebar-foreground: oklch(0.19 0.012 255);
+  --sidebar-primary: oklch(0.48 0.16 255);
+  --sidebar-primary-foreground: oklch(0.985 0.004 255);
+  --sidebar-accent: oklch(0.91 0.025 255);
+  --sidebar-accent-foreground: oklch(0.22 0.025 255);
+  --sidebar-border: oklch(0.84 0.015 255);
+  --sidebar-ring: oklch(0.48 0.16 255);
+
+  /* Agent chat — Cursor Composer density (semantic; no hex in components) */
+  --agent-feed-bg: var(--background);
+  --agent-user-bubble: color-mix(in srgb, var(--accent) 88%, var(--sidebar) 12%);
+  --agent-feed-muted: var(--muted-foreground);
+  --agent-feed-primary: var(--foreground);
+  --agent-diff-add: oklch(0.62 0.12 155);
+  --agent-diff-del: oklch(0.62 0.14 25);
+  --agent-composer-surface: color-mix(in srgb, var(--card) 65%, var(--background) 35%);
+  --agent-composer-border: color-mix(in srgb, var(--border) 80%, transparent);
+  --agent-composer-radius: 1.5rem;
+
+  /* Liquid glass — always-on shell chrome material (accent from --primary). */
+  --glass-accent: var(--primary);
+  --glass-accent-soft: color-mix(in srgb, var(--primary) 42%, transparent);
+  --glass-accent-faint: color-mix(in srgb, var(--primary) 18%, transparent);
+  --glass-accent-glow: color-mix(in srgb, var(--primary) 55%, transparent);
+  /* Light: denser fill so labels stay readable over white workspaces. */
+  --glass-fill: color-mix(in srgb, var(--card) 82%, transparent);
+  --glass-fill-strong: color-mix(in srgb, var(--card) 92%, transparent);
+  --glass-content: color-mix(in srgb, var(--background) 70%, transparent);
+  --glass-rim: color-mix(in srgb, var(--border) 75%, transparent);
+  --glass-rim-hot: color-mix(in srgb, var(--primary) 40%, var(--border));
+  --glass-blur: 18px;
+  --glass-blur-strong: 22px;
+  --glass-saturate: 1.2;
+  --glass-brightness: 1.02;
+  --glass-sheen-opacity: 0.22;
+  --glass-radius-panel: 1.35rem;
+  --glass-radius-island: 9999px;
+  --glass-ease: var(--yaade-ease-out);
+  --glass-motion: var(--yaade-motion-menu);
+}
+
+/* Soft ambient haze so floating glass has something to sample (all themes). */
+[data-yaade-shell="home"] {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(
+      120% 80% at 10% -8%,
+      color-mix(in srgb, var(--primary) 4%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      90% 70% at 92% 6%,
+      color-mix(in srgb, var(--primary) 5%, transparent),
+      transparent 52%
+    ),
+    radial-gradient(
+      70% 50% at 50% 112%,
+      color-mix(in srgb, var(--primary) 5%, transparent),
+      transparent 55%
+    ),
+    var(--background);
+}
+
+/* ── Shared liquid-glass material ───────────────────────────────────────────
+ * Frost + rim + sheen. Optional Chromium refraction via #yaade-liquid-refract
+ * on island/panel only — never on Monaco/xterm/scroll lists.
+ */
+[data-yaade-liquid-glass] {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--glass-rim);
+  color: var(--foreground);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 5%, transparent) 0%,
+      transparent 18%
+    ),
+    var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+    brightness(var(--glass-brightness));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+    brightness(var(--glass-brightness));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 28%, transparent) inset,
+    0 -1px 0 color-mix(in srgb, white 8%, transparent) inset,
+    1px 0 0 color-mix(in srgb, white 10%, transparent) inset,
+    -1px 0 0 color-mix(in srgb, white 6%, transparent) inset,
+    0 12px 36px -14px rgb(0 0 0 / 28%),
+    0 0 0 1px color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+[data-yaade-liquid-glass]::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  /* Even top wash — avoid 135° corner hotspot on floating panels. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, white 22%, transparent),
+    color-mix(in srgb, white 6%, transparent) 22%,
+    transparent 48%
+  );
+  /* soft-light on light themes — screen washes labels to white */
+  mix-blend-mode: soft-light;
+  opacity: var(--glass-sheen-opacity);
+}
+
+.dark [data-yaade-liquid-glass]::after {
+  /* soft-light keeps frost without the screen hot-corner wash */
+  mix-blend-mode: soft-light;
+}
+
+[data-yaade-liquid-glass="island"] {
+  border-radius: var(--glass-radius-island);
+}
+
+[data-yaade-liquid-glass="panel"] {
+  border-radius: var(--glass-radius-panel);
+  --glass-blur: 20px;
+}
+
+/* Thin chrome strips — frost + rim, no refraction (headers, toolbars, status). */
+[data-yaade-liquid-glass="chrome"] {
+  border-radius: 0;
+  --glass-blur: 14px;
+  --glass-fill: color-mix(in srgb, var(--card) 70%, transparent);
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 40%, transparent) inset,
+    0 1px 0 color-mix(in srgb, var(--border) 40%, transparent);
+}
+
+.dark [data-yaade-liquid-glass="chrome"] {
+  --glass-fill: color-mix(in srgb, var(--card) 45%, transparent);
+}
+
+[data-yaade-liquid-glass="chrome"]::after {
+  opacity: calc(var(--glass-sheen-opacity) * 0.55);
+}
+
+/* Session island tab pills (editor / terminal / git header tabs). */
+[data-yaade-session-tab-pill] {
+  border-radius: 0.65rem;
+  transition:
+    color var(--yaade-motion-fast) var(--yaade-ease-out),
+    background-color var(--yaade-motion-fast) var(--yaade-ease-out),
+    border-color var(--yaade-motion-fast) var(--yaade-ease-out),
+    box-shadow var(--yaade-motion-fast) var(--yaade-ease-out),
+    transform var(--yaade-motion-fast) var(--yaade-ease-out);
+}
+
+[data-yaade-session-tab-pill][data-active] {
+  border-color: color-mix(in srgb, white 16%, var(--border));
+  background: color-mix(in srgb, var(--card) 78%, transparent);
+  color: var(--foreground);
+  box-shadow: 0 1px 0 color-mix(in srgb, white 10%, transparent) inset;
+}
+
+/* Session stage wells — content sits in a soft inset, shell stays glassy. */
+[data-yaade-terminal-modal-body] {
+  background: transparent;
+}
+
+[data-yaade-terminal-modal-stage] {
+  background: color-mix(in srgb, var(--background) 55%, transparent);
+}
+
+[data-yaade-sidebar-workspace] {
+  padding: 0.5rem;
+}
+
+[data-yaade-session-presentation="inline"][data-yaade-terminal-modal] {
+  height: 100%;
+  border-radius: var(--glass-radius-panel);
+  border: 1px solid var(--glass-rim);
+  overflow: hidden;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 6%, transparent) 0%,
+      transparent 18%
+    ),
+    color-mix(in srgb, var(--card) 55%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(var(--glass-saturate))
+    brightness(var(--glass-brightness));
+  backdrop-filter: blur(16px) saturate(var(--glass-saturate))
+    brightness(var(--glass-brightness));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 40%, transparent) inset,
+    0 14px 40px -18px rgb(0 0 0 / 35%);
+}
+
+[data-yaade-session-presentation="inline"][data-yaade-terminal-modal]::after {
+  display: none;
+}
+
+.dark [data-yaade-session-presentation="inline"][data-yaade-terminal-modal] {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 5%, transparent) 0%,
+      transparent 18%
+    ),
+    color-mix(in srgb, var(--card) 42%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 35%, transparent) inset,
+    0 16px 44px -18px rgb(0 0 0 / 55%);
+}
+
+/* Mission sidebar — chrome glass (no SVG refraction). */
+[data-slot="sidebar-inner"][data-yaade-liquid-glass="chrome"] {
+  --glass-fill: color-mix(in srgb, var(--sidebar) 88%, transparent);
+  --glass-fill-strong: color-mix(in srgb, var(--sidebar) 94%, transparent);
+  --glass-rim: color-mix(in srgb, var(--sidebar-border) 80%, transparent);
+  --glass-sheen-opacity: 0.12;
+  color: var(--sidebar-foreground);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 3%, transparent) 0%,
+      transparent 16%
+    ),
+    var(--glass-fill);
+}
+
+.dark [data-slot="sidebar-inner"][data-yaade-liquid-glass="chrome"] {
+  --glass-fill: color-mix(in srgb, var(--sidebar) 72%, transparent);
+  --glass-fill-strong: color-mix(in srgb, var(--sidebar) 84%, transparent);
+  --glass-rim: color-mix(in srgb, white 12%, var(--sidebar-border));
+  --glass-sheen-opacity: 0.1;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 14%, transparent) inset,
+    0 -1px 0 color-mix(in srgb, white 5%, transparent) inset,
+    0 14px 40px -16px rgb(0 0 0 / 55%),
+    0 0 0 1px color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+[data-slot="sidebar"][data-peek="true"] [data-slot="sidebar-gap"] {
+  /* Mirror floating icon gap when collapsible attr cleared for peek labels. */
+  width: calc(var(--sidebar-width-icon) + 1rem);
+}
+
+@supports (backdrop-filter: url(#yaade-liquid-refract)) {
+  /* Refraction only on floating islands (mode dock) — not every panel. */
+  [data-yaade-liquid-glass="island"] {
+    -webkit-backdrop-filter: blur(6px) saturate(var(--glass-saturate))
+      brightness(var(--glass-brightness)) url(#yaade-liquid-refract);
+    backdrop-filter: blur(6px) saturate(var(--glass-saturate))
+      brightness(var(--glass-brightness)) url(#yaade-liquid-refract);
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  [data-yaade-liquid-glass] {
+    background: var(--card) !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-yaade-liquid-glass] {
+    background: var(--card) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  [data-yaade-liquid-glass]::after {
+    display: none;
+  }
+}
+
+/* Floating mission sidebar — peek overlays content; gap stays icon-width. */
+[data-slot="sidebar"][data-variant="floating"][data-peek="true"]
+  [data-slot="sidebar-container"] {
+  z-index: 40;
+}
+
+/* Keep overflow visible so the absolute resize rail (-right-4) is not clipped. */
+[data-slot="sidebar"][data-variant="floating"] [data-slot="sidebar-inner"][data-yaade-liquid-glass] {
+  overflow: visible;
+}
+
+[data-slot="sidebar"][data-variant="floating"] [data-slot="sidebar-inner"][data-yaade-liquid-glass]
+  [data-slot="sidebar-content"] {
+  overflow: auto;
+  border-radius: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sidebar"]:has([data-yaade-mission-sidebar]) [data-slot="sidebar-container"],
+  [data-slot="sidebar"]:has([data-yaade-mission-sidebar]) [data-slot="sidebar-gap"] {
+    transition: none !important;
+  }
+}
+
+/* macOS window chrome — traffic-light spacer + sidebar/tab-bar drag. */
+[data-yaade-traffic-light-spacer] {
+  width: var(--yaade-traffic-light-inset);
+  min-width: var(--yaade-traffic-light-inset);
+  flex: 0 0 var(--yaade-traffic-light-inset);
+  align-self: stretch;
+  min-height: 100%;
+}
+
+/* Sidebar view tabs (Files / Terminals) share the native-chrome rhythm. */
+[data-yaade-sidebar-view-tabs] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: calc(var(--yaade-window-chrome-height) - 0.5rem);
+  min-width: 0;
+}
+
+[data-yaade-sidebar-view-tabs] [data-slot="tabs-list"] {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: calc(var(--yaade-window-chrome-height) - 0.5rem) !important;
+  gap: 0.125rem;
+  padding: 2px;
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in oklch, var(--sidebar-accent) 40%, transparent);
+  overflow: visible;
+}
+
+[data-yaade-sidebar-view-tabs] [data-slot="tabs-trigger"] {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100% !important;
+  min-width: 0;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  font-size: var(--yaade-fs-xs) !important;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-yaade-sidebar-view-tabs] [data-slot="tabs-trigger"]::after {
+  display: none;
+}
+
+[data-yaade-sidebar-view-tabs] [data-slot="tabs-trigger"][data-state="active"] {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
+[data-yaade-sidebar-view-tabs] [data-slot="tabs-trigger"]:hover {
+  color: var(--sidebar-accent-foreground);
+}
+
+/* Panel tab bar — horizontal scroll only; no vertical thumb from trigger ::after. */
+[data-yaade-tab-bar] [data-slot="tabs-list"] {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-yaade-tab-bar] [data-slot="tabs-list"]::-webkit-scrollbar {
+  display: none;
+}
+
+[data-yaade-tab-bar] [data-slot="tabs-trigger"]::after {
+  display: none;
+}
+
+/* Yaade default dark — same semantic hierarchy and blue interaction accent. */
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.145 0.008 255);
+  --foreground: oklch(0.94 0.008 255);
+  --card: oklch(0.19 0.012 255);
+  --card-foreground: oklch(0.94 0.008 255);
+  --popover: oklch(0.2 0.014 255);
+  --popover-foreground: oklch(0.94 0.008 255);
+  --primary: oklch(0.72 0.14 250);
+  --primary-foreground: oklch(0.18 0.015 255);
+  --secondary: oklch(0.255 0.018 255);
+  --secondary-foreground: oklch(0.94 0.008 255);
+  --muted: oklch(0.235 0.012 255);
+  --muted-foreground: oklch(0.72 0.015 255);
+  --accent: oklch(0.285 0.035 250);
+  --accent-foreground: oklch(0.95 0.008 255);
+  --destructive: oklch(0.7 0.17 25);
+  --destructive-foreground: oklch(0.145 0.008 255);
+  --border: oklch(0.32 0.015 255);
+  --input: oklch(0.48 0.02 255);
+  --ring: oklch(0.72 0.14 250);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --yaade-hl-keyword: oklch(0.704 0.191 22.216);
+  --yaade-hl-control-keyword: oklch(0.704 0.191 22.216);
+  --yaade-hl-function: oklch(0.792 0.209 303.407);
+  --yaade-hl-type: oklch(0.623 0.214 259.815);
+  --yaade-hl-string: oklch(0.696 0.17 162.48);
+  --yaade-hl-number: oklch(0.828 0.189 84.429);
+  --yaade-hl-boolean: oklch(0.828 0.189 84.429);
+  --yaade-hl-comment: oklch(0.708 0 0);
+  --yaade-hl-operator: oklch(0.985 0 0);
+  --yaade-hl-variable: oklch(0.985 0 0);
+  --yaade-hl-attribute: oklch(0.792 0.209 303.407);
+  --yaade-hl-constant: oklch(0.623 0.214 259.815);
+  --yaade-hl-field: oklch(0.623 0.214 259.815);
+  --yaade-hl-module: oklch(0.623 0.214 259.815);
+  --yaade-hl-label: oklch(0.704 0.191 22.216);
+  --yaade-hl-error: oklch(0.704 0.191 22.216);
+  --sidebar: oklch(0.18 0.012 255);
+  --sidebar-foreground: oklch(0.94 0.008 255);
+  --sidebar-primary: oklch(0.72 0.14 250);
+  --sidebar-primary-foreground: oklch(0.18 0.015 255);
+  --sidebar-accent: oklch(0.27 0.03 250);
+  --sidebar-accent-foreground: oklch(0.95 0.008 255);
+  --sidebar-border: oklch(0.32 0.015 255);
+  --sidebar-ring: oklch(0.72 0.14 250);
+
+  --agent-feed-bg: var(--background);
+  --agent-user-bubble: color-mix(in srgb, var(--accent) 75%, var(--sidebar) 25%);
+  --agent-feed-muted: var(--muted-foreground);
+  --agent-feed-primary: var(--foreground);
+  --agent-diff-add: oklch(0.68 0.1 155);
+  --agent-diff-del: oklch(0.68 0.12 25);
+  --agent-composer-surface: color-mix(in srgb, var(--card) 72%, var(--background) 28%);
+  --agent-composer-border: color-mix(in srgb, var(--border) 80%, transparent);
+  --agent-composer-radius: 1.5rem;
+
+  /* Dark glass — translucent frost; keep sheen restrained (no corner glare). */
+  --glass-fill: color-mix(in srgb, var(--card) 52%, transparent);
+  --glass-fill-strong: color-mix(in srgb, var(--card) 68%, transparent);
+  --glass-content: color-mix(in srgb, var(--background) 55%, transparent);
+  --glass-rim: color-mix(in srgb, white 14%, var(--border));
+  --glass-saturate: 1.28;
+  --glass-brightness: 1.02;
+  --glass-sheen-opacity: 0.22;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+html {
+  height: 100%;
+  font-size: 13px;
+}
+
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: inherit;
+}
+
+/* CodeMirror autocomplete — native tooltip hidden; Jet renders Radix ContextMenu in EditorTabHost. */
+
+/*
+ * Monaco + Tailwind preflight isolation.
+ * Preflight’s `canvas { max-width: 100% }` breaks Monaco’s absolute line layout
+ * (symptoms: gray empty editor, scattered braces only).
+ */
+.monaco-editor canvas,
+.monaco-diff-editor canvas,
+[data-yaade-terminal-panel] canvas {
+  max-width: none !important;
+}
+
+[data-yaade-monaco-editor],
+[data-yaade-monaco-diff-editor] {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Tactile press — buttons, tabs, menu rows, and other clickable controls */
+\.yaade-press,
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"]
+):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]) {
+  transform-origin: center;
+  transition-property: transform, filter, opacity, color, background-color, border-color, box-shadow;
+  transition-duration: var(--yaade-motion-hot);
+  transition-timing-function: var(--yaade-ease-out);
+}
+
+\.yaade-press:active:not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]),
+:is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="sidebar-menu-action"],
+  [data-slot="sidebar-group-action"],
+  [data-slot="sidebar-trigger"],
+  [data-slot="dialog-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="drawer-trigger"],
+  [data-slot="drawer-close"],
+  [data-slot="popover-trigger"],
+  [data-slot="context-menu-item"],
+  [data-slot="context-menu-sub-trigger"],
+  [data-slot="context-menu-checkbox-item"],
+  [data-slot="context-menu-radio-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="menubar-trigger"],
+  [data-slot="menubar-item"],
+  [data-slot="menubar-sub-trigger"],
+  [data-slot="menubar-checkbox-item"],
+  [data-slot="menubar-radio-item"],
+  [data-slot="accordion-trigger"],
+  [data-slot="collapsible-trigger"]
+):active:not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]) {
+  transition-duration: 0ms;
+  transform: scale(var(--yaade-press-scale)) translateY(var(--yaade-press-y));
+  filter: brightness(0.96);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.22);
+}
+
+/* List / sidebar row hover — RAD DrawHotEffects (flat accent, no press inset) */
+\.yaade-interactive-row {
+  transition-property: background-color, box-shadow, color;
+  transition-duration: var(--yaade-motion-hot);
+  transition-timing-function: ease-out;
+}
+
+\.yaade-interactive-row:hover:not(:active):not(:disabled):not([data-disabled="true"]):not([aria-disabled="true"]) {
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
+\.yaade-interactive-row:active {
+  transition-duration: 0ms;
+}
+
+/* Instant keyboard focus ring — RAD focus_active_t */
+\.yaade-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* Disabled wash — RAD disabled_t */
+\.yaade-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity var(--yaade-motion-menu) ease-out;
+}
+
+/* Scroll edge fade — RAD DrawFadeTop/Bottom */
+\.yaade-scroll-fade {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 5%,
+    black 95%,
+    transparent
+  );
+}
+
+@keyframes yaade-dialog-enter {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes yaade-dialog-exit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.97); }
+}
+
+@keyframes yaade-overlay-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes yaade-overlay-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+\.yaade-dialog-motion[data-yaade-dialog-motion="standard"][data-state="open"] {
+  animation: yaade-dialog-enter var(--yaade-motion-overlay) var(--yaade-ease-out);
+}
+
+\.yaade-dialog-motion[data-yaade-dialog-motion="standard"][data-state="closed"] {
+  animation: yaade-dialog-exit var(--yaade-motion-fast) var(--yaade-ease-out);
+}
+
+\.yaade-dialog-overlay[data-yaade-dialog-motion="standard"][data-state="open"] {
+  animation: yaade-overlay-enter var(--yaade-motion-overlay) var(--yaade-ease-out);
+}
+
+\.yaade-dialog-overlay[data-yaade-dialog-motion="standard"][data-state="closed"] {
+  animation: yaade-overlay-exit var(--yaade-motion-fast) var(--yaade-ease-out);
+}
+
+\.yaade-dialog-motion[data-yaade-dialog-motion="instant"],
+\.yaade-dialog-overlay[data-yaade-dialog-motion="instant"] {
+  animation: none;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  \.yaade-press:active,
+  :is(
+    [data-slot="button"],
+    [data-slot="tabs-trigger"],
+    [data-slot="toggle"],
+    [data-slot="toggle-group-item"],
+    [data-slot="command-item"],
+    [data-slot="item"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-group-action"],
+    [data-slot="sidebar-trigger"],
+    [data-slot="dialog-trigger"],
+    [data-slot="dialog-close"],
+    [data-slot="drawer-trigger"],
+    [data-slot="drawer-close"],
+    [data-slot="popover-trigger"],
+    [data-slot="context-menu-item"],
+    [data-slot="context-menu-sub-trigger"],
+    [data-slot="context-menu-checkbox-item"],
+    [data-slot="context-menu-radio-item"],
+    [data-slot="dropdown-menu-item"],
+    [data-slot="dropdown-menu-sub-trigger"],
+    [data-slot="dropdown-menu-checkbox-item"],
+    [data-slot="dropdown-menu-radio-item"],
+    [data-slot="menubar-trigger"],
+    [data-slot="menubar-item"],
+    [data-slot="menubar-sub-trigger"],
+    [data-slot="menubar-checkbox-item"],
+    [data-slot="menubar-radio-item"],
+    [data-slot="select-item"],
+    [data-slot="accordion-trigger"],
+    [data-slot="collapsible-trigger"]
+  ):active {
+    transform: none;
+    filter: none;
+  }
+}
+
+:root[data-yaade-reduced-motion="true"] \.yaade-press:active,
+:root[data-yaade-reduced-motion="true"] :is(
+  [data-slot="button"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"],
+  [data-slot="toggle-group-item"],
+  [data-slot="command-item"],
+  [data-slot="item"],
+  [data-slot="sidebar-menu-button"],
+  [data-slot="sidebar-menu-sub-button"],
+  [data-slot="context-menu-item"],
+  [data-slot="dropdown-menu-item"]
+):active {
+  transform: none;
+  filter: none;
+}
+
+:root[data-yaade-reduced-motion="true"] {
+  scroll-behavior: auto;
+}
+
+:root[data-yaade-reduced-motion="true"] \.yaade-dialog-motion[data-yaade-dialog-motion="standard"][data-state="open"] {
+  transform: none;
+  animation-name: yaade-overlay-enter;
+  animation-duration: var(--yaade-motion-fast);
+}
+
+:root[data-yaade-reduced-motion="true"] \.yaade-dialog-motion[data-yaade-dialog-motion="standard"][data-state="closed"] {
+  transform: none;
+  animation-name: yaade-overlay-exit;
+  animation-duration: var(--yaade-motion-fast);
+}
+
+:root[data-yaade-reduced-motion="true"] :is(.animate-spin, .animate-pulse) {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { scroll-behavior: auto; }
+
+  \.yaade-dialog-motion[data-yaade-dialog-motion="standard"][data-state="open"] {
+    transform: none;
+    animation-name: yaade-overlay-enter;
+    animation-duration: var(--yaade-motion-fast);
+  }
+
+  \.yaade-dialog-motion[data-yaade-dialog-motion="standard"][data-state="closed"] {
+    transform: none;
+    animation-name: yaade-overlay-exit;
+    animation-duration: var(--yaade-motion-fast);
+  }
+
+  :is(.animate-spin, .animate-pulse) {
+    animation: none;
+  }
+
+  :is([class*="slide-in-from"], [class*="slide-out-to"], [class*="zoom-in"], [class*="zoom-out"]) {
+    --tw-enter-translate-x: 0;
+    --tw-enter-translate-y: 0;
+    --tw-exit-translate-x: 0;
+    --tw-exit-translate-y: 0;
+    --tw-enter-scale: 1;
+    --tw-exit-scale: 1;
+  }
+}
+
+
+/* xterm must fill the terminal tab slot; fit addon reads container clientHeight */
+[data-yaade-terminal-panel] .yaade-terminal-surface,
+[data-yaade-terminal-panel] .jet-terminal-surface,
+[data-yaade-terminal-panel] [data-yaade-terminal-fit],
+[data-yaade-terminal-panel] .xterm,
+[data-yaade-terminal-panel] .xterm-viewport {
+  height: 100%;
+  width: 100%;
+}
+
+[data-yaade-terminal-panel] .yaade-terminal-surface,
+[data-yaade-terminal-panel] .jet-terminal-surface {
+  position: relative;
+  background: var(--yaade-bg, var(--background));
+}
+
+[data-yaade-terminal-panel] .xterm-screen {
+  position: relative;
+}
+
+/*
+  Defense for TUI apps (Cursor Agent): after CSI ?25l, DomRenderer can leave a
+  stale .xterm-cursor-bar at the parked bottom cell. Hide via attribute synced
+  from xterm's isCursorHidden after each paint.
+*/
+[data-yaade-terminal-panel][data-yaade-terminal-cursor-hidden="1"] .xterm-cursor,
+[data-yaade-terminal-panel][data-yaade-terminal-cursor-hidden="1"] .xterm-cursor-bar,
+[data-yaade-terminal-panel][data-yaade-terminal-cursor-hidden="1"] .xterm-cursor-block,
+[data-yaade-terminal-panel][data-yaade-terminal-cursor-hidden="1"] .xterm-cursor-underline,
+[data-yaade-terminal-panel][data-yaade-terminal-cursor-hidden="1"] .xterm-cursor-outline {
+  visibility: hidden !important;
+  box-shadow: none !important;
+  outline: none !important;
+  animation: none !important;
+  background-color: transparent !important;
+  border: none !important;
+  color: inherit !important;
+}
+
+[data-yaade-terminal-panel] .xterm,
+[data-yaade-terminal-panel] .xterm-viewport,
+[data-yaade-terminal-panel] .xterm-screen {
+  background: transparent !important;
+}
+
+/* Font comes only from xterm options (canvas/DOM measure). CSS font-family on
+   .xterm-rows desyncs glyph width from cell metrics → cursor drift. */
+
+.chat-composer-horizontal-inset {
+  padding-inline-start: calc(env(safe-area-inset-left) + 0.75rem);
+  padding-inline-end: calc(env(safe-area-inset-right) + 0.75rem);
+}
+
+.chat-composer-glass,
+.chat-composer-lower-chrome {
+  background: var(--agent-composer-surface);
+}
+
+.chat-composer-glass {
+  border-radius: var(--agent-composer-radius);
+  border-color: var(--agent-composer-border);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 4%);
+}
+
+.chat-composer-shared-blur {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (min-width: 40rem) {
+  .chat-composer-horizontal-inset {
+    padding-inline-start: calc(env(safe-area-inset-left) + 1.25rem);
+    padding-inline-end: calc(env(safe-area-inset-right) + 1.25rem);
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .chat-composer-glass,
+  .chat-composer-lower-chrome {
+    background: var(--card);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .chat-composer-glass,
+  .chat-composer-lower-chrome,
+  .chat-composer-shared-blur {
+    background: var(--card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .chat-composer-glass,
+  .chat-composer-lower-chrome {
+    background: var(--card);
+    border-color: var(--foreground);
+  }
+}

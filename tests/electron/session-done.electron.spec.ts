@@ -49,10 +49,10 @@ test.describe("session archive persistence", () => {
 
   test("archive preserves the session and moves it from Active to Archived", async () => {
     const temporaryRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), "gharargah-archive-transcript-e2e-"),
+      path.join(os.tmpdir(), "yaade-archive-transcript-e2e-"),
     )
     const binDir = path.join(temporaryRoot, "bin")
-    const transcriptMarker = "GHARARGAH_ARCHIVE_TRANSCRIPT_MARKER"
+    const transcriptMarker = "YAADE_ARCHIVE_TRANSCRIPT_MARKER"
     fs.mkdirSync(binDir)
     fs.writeFileSync(
       path.join(binDir, "codex"),
@@ -70,10 +70,10 @@ test.describe("session archive persistence", () => {
     })
     try {
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
       await openNewAgentSession(page)
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
       await waitForTerminalText(page, transcriptMarker)
@@ -87,18 +87,32 @@ test.describe("session archive persistence", () => {
         .toBeGreaterThan(0)
       const sessionBefore = rosterBefore!.sessions[0]!
 
-      await execCommand(page, "gharargah.goHome")
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
+      await execCommand(page, "yaade.goHome")
+      await expectLocatorCount(page.locator("[data-yaade-terminal-modal]"), 0)
 
       const activeRow = page.locator(
-        `[data-gharargah-sidebar-session-section="active"] [data-gharargah-sidebar-session="${sessionBefore.tabId}"]`,
+        `[data-yaade-sidebar-session-section="active"] [data-yaade-sidebar-session-row="${sessionBefore.tabId}"]`,
       )
-      await expectLocatorVisible(activeRow, { timeout: 15_000 })
-      await activeRow.locator('[aria-label="Session actions"]').click()
-      await page.locator("[data-gharargah-sidebar-session-archive]").click()
+      await expectLocatorVisible(
+        activeRow.locator(`[data-yaade-sidebar-session="${sessionBefore.tabId}"]`),
+        { timeout: 15_000 },
+      )
+      await activeRow.hover()
+      await activeRow.locator("[data-yaade-sidebar-session-archive]").click()
+      const archivedToggle = page.locator(
+        '[data-yaade-sidebar-section-toggle="archived"]',
+      )
+      await expectLocatorVisible(archivedToggle, { timeout: 15_000 })
+      await expect
+        .poll(() => archivedToggle.getAttribute("data-state"))
+        .toBe("closed")
+      await archivedToggle.click()
+      await expect
+        .poll(() => archivedToggle.getAttribute("data-state"))
+        .toBe("open")
       await expectLocatorVisible(
         page.locator(
-          `[data-gharargah-sidebar-session-section="archived"] [data-gharargah-sidebar-session="${sessionBefore.tabId}"]`,
+          `[data-yaade-sidebar-session-section="archived"] [data-yaade-sidebar-session="${sessionBefore.tabId}"]`,
         ),
       )
 
@@ -122,40 +136,48 @@ test.describe("session archive persistence", () => {
       )
 
       await page.reload()
-      await page.waitForFunction(() => window.__gharargahAgent != null, null, {
+      await page.waitForFunction(() => window.__yaadeAgent != null, null, {
         timeout: 30_000,
       })
-      await page.evaluate(() => window.__gharargahAgent!.waitForReady())
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
+      const archivedToggleAfterReload = page.locator(
+        '[data-yaade-sidebar-section-toggle="archived"]',
+      )
+      await expectLocatorVisible(archivedToggleAfterReload, { timeout: 15_000 })
+      await expect
+        .poll(() => archivedToggleAfterReload.getAttribute("data-state"))
+        .toBe("closed")
+      await archivedToggleAfterReload.click()
       const archivedRow = page.locator(
-        `[data-gharargah-sidebar-session-section="archived"] [data-gharargah-sidebar-session="${sessionBefore.tabId}"]`,
+        `[data-yaade-sidebar-session-section="archived"] [data-yaade-sidebar-session="${sessionBefore.tabId}"]`,
       )
       await expectLocatorVisible(archivedRow, { timeout: 15_000 })
       // Archived rows live under the archived section; runtime status stays
       // disconnected/exited until resume (ADE card statuses are gone).
 
       await archivedRow.click()
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-terminal-modal]")
-            .getAttribute("data-gharargah-session-mode"),
+            .locator("[data-yaade-terminal-modal]")
+            .getAttribute("data-yaade-session-mode"),
         )
         .toBe("agent")
       await expectLocatorVisible(
-        page.locator("[data-gharargah-terminal-archived]"),
+        page.locator("[data-yaade-terminal-archived]"),
       )
       await waitForTerminalText(page, transcriptMarker)
       await expectLocatorVisible(
-        page.locator("[data-gharargah-session-resume-archived]"),
+        page.locator("[data-yaade-session-resume-archived]"),
       )
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-terminal-modal-title]"),
+        page.locator("[data-yaade-terminal-modal-title]"),
         archivedRoster?.sessions[0]?.agentTitle ?? sessionBefore.label,
       )
       // Merely viewing history is read-only and must not reactivate/spawn it.
@@ -168,34 +190,41 @@ test.describe("session archive persistence", () => {
       await expect
         .poll(() =>
           page
-            .locator("[data-gharargah-terminal-panel]")
-            .getAttribute("data-gharargah-terminal-pty-id"),
+            .locator("[data-yaade-terminal-panel]")
+            .getAttribute("data-yaade-terminal-pty-id"),
         )
         .toBe("")
-      await expectLocatorCount(page.locator("[data-gharargah-session-archive]"), 0)
+      await expectLocatorCount(page.locator("[data-yaade-session-archive]"), 0)
 
-      await expectLocatorVisible(page.locator("[data-gharargah-mission-sidebar]"))
+      await expectLocatorVisible(page.locator("[data-yaade-mission-sidebar]"))
       const activeSection = page.locator(
-        '[data-gharargah-sidebar-section-label="active"]',
+        '[data-yaade-sidebar-section-label="active"]',
       )
       await expectLocatorVisible(activeSection, { timeout: 15_000 })
       await expectLocatorContainsText(activeSection, "Active")
       const archivedSection = page.locator(
-        '[data-gharargah-sidebar-section-label="archived"]',
+        '[data-yaade-sidebar-section-label="archived"]',
       )
       await expectLocatorVisible(archivedSection, { timeout: 15_000 })
       await expectLocatorContainsText(archivedSection, "Archived")
+      await expect
+        .poll(() =>
+          page
+            .locator('[data-yaade-sidebar-section-toggle="archived"]')
+            .getAttribute("data-state"),
+        )
+        .toBe("open")
       await expectLocatorVisible(
         page
           .locator(
-            '[data-gharargah-sidebar-session-section="archived"] [data-gharargah-sidebar-session]',
+            '[data-yaade-sidebar-session-section="archived"] [data-yaade-sidebar-session]',
           )
           .first(),
       )
 
-      await page.locator("[data-gharargah-session-resume-archived]").click()
+      await page.locator("[data-yaade-session-resume-archived]").click()
       await expectLocatorCount(
-        page.locator("[data-gharargah-terminal-archived]"),
+        page.locator("[data-yaade-terminal-archived]"),
         0,
       )
       await expect
@@ -205,7 +234,7 @@ test.describe("session archive persistence", () => {
         }, { timeout: 20_000 })
         .toBeNull()
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-terminal-modal-title]"),
+        page.locator("[data-yaade-terminal-modal-title]"),
         archivedRoster?.sessions[0]?.agentTitle ?? sessionBefore.label,
       )
     } finally {

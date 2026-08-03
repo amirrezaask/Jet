@@ -20,7 +20,7 @@ function createMockTypescriptLanguageServer(): {
   tracePath: string
   remove(): void
 } {
-  const dir = mkdtempSync(join(tmpdir(), "gharargah-tsls-"))
+  const dir = mkdtempSync(join(tmpdir(), "yaade-tsls-"))
   const binDir = join(dir, "bin")
   const tracePath = join(dir, "trace.jsonl")
   mkdirSync(binDir)
@@ -31,7 +31,7 @@ function createMockTypescriptLanguageServer(): {
   const script = `#!/usr/bin/env node
 const fs = require("node:fs")
 const path = require("node:path")
-const tracePath = process.env.GHARARGAH_MOCK_TSLS_TRACE
+const tracePath = process.env.YAADE_MOCK_TSLS_TRACE
 let buffered = Buffer.alloc(0)
 let rootUri = ""
 const record = value => {
@@ -171,29 +171,29 @@ test.describe("TypeScript language server", () => {
     const { app, page } = await launchJet({
       env: {
         PATH: `${mock.binDir}${delimiter}${process.env.PATH ?? ""}`,
-        GHARARGAH_LSP_TYPESCRIPT_LANGUAGE_SERVER_BIN: join(
+        YAADE_LSP_TYPESCRIPT_LANGUAGE_SERVER_BIN: join(
           mock.binDir,
           process.platform === "win32" ? "typescript-language-server.cmd" : "typescript-language-server",
         ),
-        GHARARGAH_MOCK_TSLS_TRACE: mock.tracePath,
+        YAADE_MOCK_TSLS_TRACE: mock.tracePath,
       },
     })
     try {
       await execCommand(page, "terminal.new")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", { timeout: 20_000 })
-      await page.locator('[data-gharargah-session-mode-tab="editor"]').click()
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", { timeout: 20_000 })
+      await page.locator('[data-yaade-session-mode-tab="editor"]').click()
       await page.evaluate(async () => {
-        await window.__gharargahAgent!.openFile("src/index.ts")
-        await window.__gharargahAgent!.waitForEditor()
+        await window.__yaadeAgent!.openFile("src/index.ts")
+        await window.__yaadeAgent!.waitForEditor()
       })
 
       await expect
         .poll(
           () =>
             page
-              .locator("[data-gharargah-editor-lsp]")
+              .locator("[data-yaade-editor-lsp]")
               .first()
-              .getAttribute("data-gharargah-editor-lsp"),
+              .getAttribute("data-yaade-editor-lsp"),
           { timeout: 20_000 },
         )
         .toBe("ready")
@@ -240,19 +240,19 @@ test.describe("TypeScript language server", () => {
       expect(opened?.document?.uri).toMatch(/src\/index\.ts$/)
       expect(configuration?.result).toEqual([{}])
 
-      const activeTab = page.locator('[data-gharargah-modal-editor-tab][data-active] button[role="tab"]')
+      const activeTab = page.locator('[data-yaade-modal-editor-tab][data-active] button[role="tab"]')
       await expect.poll(() => activeTab.getAttribute("aria-selected")).toBe("true")
       await expect.poll(() => activeTab.getAttribute("aria-controls"))
-        .toBe("gharargah-modal-editor-tabpanel")
+        .toBe("yaade-modal-editor-tabpanel")
       const activeTabId = await activeTab.getAttribute("id")
       await expect.poll(() =>
-        page.locator("#gharargah-modal-editor-tabpanel").getAttribute("aria-labelledby"),
+        page.locator("#yaade-modal-editor-tabpanel").getAttribute("aria-labelledby"),
       ).toBe(activeTabId)
 
       // Completion is server-backed and rendered by Monaco's suggest UI.
       await page.locator(".monaco-editor textarea.inputarea").click({ force: true })
       await page.evaluate(() => {
-        window.__gharargahAgent!.setEditorSelection(6, 1)
+        window.__yaadeAgent!.setEditorSelection(6, 1)
       })
       await page.keyboard.type("gree")
       await execCommand(page, "editor.action.triggerSuggest")
@@ -264,7 +264,7 @@ test.describe("TypeScript language server", () => {
         .toBeGreaterThan(0)
       await page.keyboard.press("Escape")
       await expect
-        .poll(() => page.locator("[data-gharargah-terminal-modal]").count(), {
+        .poll(() => page.locator("[data-yaade-terminal-modal]").count(), {
           timeout: 5_000,
         })
         .toBe(1)
@@ -284,10 +284,10 @@ test.describe("TypeScript language server", () => {
         .locator(".monaco-editor textarea.inputarea")
         .waitFor({ state: "attached", timeout: 5_000 })
       await page.evaluate(() => {
-        window.__gharargahAgent!.setEditorSelection(1, 10)
+        window.__yaadeAgent!.setEditorSelection(1, 10)
       })
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getCursorPosition()), {
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.getCursorPosition()), {
           timeout: 5_000,
         })
         .toEqual({ line: 1, column: 10 })
@@ -305,22 +305,22 @@ test.describe("TypeScript language server", () => {
         .toContain('"kind":"definition"')
 
       await expect
-        .poll(async () => page.evaluate(() => window.__gharargahAgent!.getEditorText()), {
+        .poll(async () => page.evaluate(() => window.__yaadeAgent!.getEditorText()), {
           timeout: 10_000,
         })
         .toContain("export function greet")
       await expect.poll(() =>
-        page.locator("[data-gharargah-modal-editor-tab][data-active]").textContent(),
+        page.locator("[data-yaade-modal-editor-tab][data-active]").textContent(),
       ).toContain("utils.ts")
-      await expect.poll(() => page.locator("[data-gharargah-modal-editor-tab]").count()).toBe(2)
+      await expect.poll(() => page.locator("[data-yaade-modal-editor-tab]").count()).toBe(2)
 
       // Definition jumps participate in the editor jump stack and restore the source tab.
       await execCommand(page, "editor.navigateBack")
       await expect.poll(() =>
-        page.locator("[data-gharargah-modal-editor-tab][data-active]").textContent(),
+        page.locator("[data-yaade-modal-editor-tab][data-active]").textContent(),
       ).toContain("index.ts")
       await expect
-        .poll(() => page.evaluate(() => window.__gharargahAgent!.getCursorPosition()), {
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.getCursorPosition()), {
           timeout: 10_000,
         })
         .toEqual({ line: 1, column: 10 })

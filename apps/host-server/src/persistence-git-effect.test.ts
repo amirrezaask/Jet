@@ -6,10 +6,10 @@ import test from "node:test"
 import { Effect } from "effect"
 import { makeProjectDatabaseScoped } from "./effect/layers.js"
 import { GitServiceLive, GitServiceTag, makeGitService } from "./effect/git.js"
-import { pathToFileUri } from "@gharargah/shared"
+import { pathToFileUri } from "@yaade/shared"
 
 test("makeProjectDatabaseScoped closes SQLite when scope ends", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gharargah-db-scope-"))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-db-scope-"))
   const dbPath = path.join(dir, "jet.sqlite3")
   let closed = false
 

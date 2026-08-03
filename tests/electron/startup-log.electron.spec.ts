@@ -6,7 +6,7 @@ test.describe("desktop startup telemetry", () => {
   test("persists a startup record for the active shell and build mode", async () => {
     const { app, page } = await launchJet()
     try {
-      const logPath = await page.evaluate(async () => window.gharargah?.getStartupLogPath?.())
+      const logPath = await page.evaluate(async () => window.yaade?.getStartupLogPath?.())
       expect(logPath).toBeTruthy()
       await expect
         .poll(async () => {

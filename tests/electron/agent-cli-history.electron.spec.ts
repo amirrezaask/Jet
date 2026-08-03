@@ -24,7 +24,7 @@ test.describe("provider CLI session history", () => {
   test.skip(!ptyAvailable, "PTY support required to resume a provider session")
 
   test("opens history on hover and keyboard highlight, then resumes into the roster", async () => {
-    const fakeBin = await mkdtemp(join(tmpdir(), "gharargah-cli-history-"))
+    const fakeBin = await mkdtemp(join(tmpdir(), "yaade-cli-history-"))
     const opencode = join(fakeBin, "opencode")
     const historyJson = JSON.stringify(
       Array.from({ length: EXTERNAL_SESSION_COUNT }, (_, index) => ({
@@ -70,7 +70,7 @@ sleep 1
           async () =>
             page.evaluate(() =>
               performance
-                .getEntriesByName("gharargah:agent-cli-history-prefetch")
+                .getEntriesByName("yaade:agent-cli-history-prefetch")
                 .some(entry => entry.entryType === "measure"),
             ),
           { timeout: 20_000, intervals: [100, 250, 500] },
@@ -85,16 +85,16 @@ sleep 1
       await openCodeRow.hover()
 
       const history = page.locator(
-        '[data-gharargah-agent-cli-history][data-provider="opencode"]',
+        '[data-yaade-agent-cli-history][data-provider="opencode"]',
       )
       await expectLocatorVisible(history)
       await expect
-        .poll(() => history.getAttribute("data-gharargah-agent-cli-history-state"))
+        .poll(() => history.getAttribute("data-yaade-agent-cli-history-state"))
         .toBe("loaded")
       await expectLocatorContainsText(history, "External OpenCode session")
       await expectNotContainsText(
         page,
-        '[data-gharargah-agent-cli-history][data-provider="opencode"]',
+        '[data-yaade-agent-cli-history][data-provider="opencode"]',
         "No previous sessions found",
       )
       await expectListRows(page, {
@@ -106,10 +106,10 @@ sleep 1
       })
 
       const historyList = history.locator(
-        '[data-gharargah-list-panel="agent-cli-history"]',
+        '[data-yaade-list-panel="agent-cli-history"]',
       )
       const initialRenderedRows = await historyList
-        .locator("[data-gharargah-list-item]")
+        .locator("[data-yaade-list-item]")
         .count()
       expect(initialRenderedRows).toBeLessThan(EXTERNAL_SESSION_COUNT)
       const scrollMetrics = await historyList.evaluate(element => ({
@@ -134,7 +134,7 @@ sleep 1
       await page.keyboard.press("ArrowUp")
       await expectLocatorContainsText(
         page.locator(
-          '[data-gharargah-agent-cli-history][data-provider="claude"]',
+          '[data-yaade-agent-cli-history][data-provider="claude"]',
         ),
         "interactive resume picker",
       )
@@ -143,10 +143,10 @@ sleep 1
 
       await history
         .locator(
-          `[data-gharargah-agent-cli-history-session="${EXTERNAL_SESSION_ID}"]`,
+          `[data-yaade-agent-cli-history-session="${EXTERNAL_SESSION_ID}"]`,
         )
         .click()
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]")
 
       await expect
         .poll(() =>

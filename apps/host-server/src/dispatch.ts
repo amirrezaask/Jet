@@ -5,7 +5,7 @@ import {
   isSearchScanReady,
   listAgentCliHistory,
   listProjectFiles,
-  loadGlobalGharargahrcScanRoots,
+  loadGlobalYaadercScanRoots,
   openInApp,
   revealInFolder,
   projectSearch,
@@ -21,22 +21,22 @@ import {
   assertAllowedPath,
   assertAllowedUri,
   type TerminalLaunch,
-} from "@gharargah/node-host"
+} from "@yaade/node-host"
 import {
   OperationFailedError,
   PathOutsideRootsError,
   UnknownChannelError,
   unknownChannel,
   type HostRpcError,
-} from "@gharargah/rpc"
+} from "@yaade/rpc"
 import type {
   BindNotificationSessionRequest,
   IngestNotificationRequest,
   ListNotificationsRequest,
   MarkAllNotificationsReadRequest,
   NotificationPreferences,
-} from "@gharargah/shared"
-import { fileUriToPath } from "@gharargah/shared"
+} from "@yaade/shared"
+import { fileUriToPath } from "@yaade/shared"
 import { GitServiceLive, GitServiceTag } from "./effect/git.js"
 import { HostRuntimeTag } from "./effect/tags.js"
 import type { HostRuntime } from "./host-runtime.js"
@@ -101,10 +101,10 @@ async function dispatchImpl(
 ): Promise<unknown> {
   if (channel === "ui:syncNativeChrome") return null
   if (channel === "fs:showOpenFolderDialog" || channel === "fs:showSaveFileDialog") return null
-  if (channel === "gharargah:getLaunchConfig") return runtime.config.launchConfig
-  if (channel === "gharargah:getHomeDir") return runtime.homeDir
-  if (channel === "gharargah:loadGlobalGharargahrcScanRoots") {
-    return loadGlobalGharargahrcScanRoots(runtime.homeDir)
+  if (channel === "yaade:getLaunchConfig") return runtime.config.launchConfig
+  if (channel === "yaade:getHomeDir") return runtime.homeDir
+  if (channel === "yaade:loadGlobalYaadercScanRoots") {
+    return loadGlobalYaadercScanRoots(runtime.homeDir)
   }
 
   if (channel.startsWith("agents:")) {

@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -13,7 +13,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -22,7 +22,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -31,7 +31,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -40,7 +40,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -49,7 +49,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -58,7 +58,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -67,7 +67,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -76,7 +76,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -85,7 +85,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }
@@ -94,7 +94,7 @@
       {
         "hooks": [
           {
-            "command": "/Users/amirrezaask/.local/share/jet/bin/gharargah-hook-forward.sh"
+            "command": "/Users/amirrezaask/.local/share/jet/bin/yaade-hook-forward.sh"
           }
         ]
       }

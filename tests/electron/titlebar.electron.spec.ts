@@ -10,10 +10,10 @@ test.describe("desktop shell", () => {
   test("uses draggable custom chrome with platform controls kept clear", async () => {
     const { app, page } = await launchJet()
     try {
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
       // Browser mode stays layout-neutral; then emulate the immutable preload
       // metadata to exercise the shared renderer's Electron chrome.
-      await expectLocatorCount(page.locator("[data-gharargah-titlebar]"), 0)
+      await expectLocatorCount(page.locator("[data-yaade-titlebar]"), 0)
       await page.addInitScript(() => {
         const connection = {
           activeUrl: window.location.origin,
@@ -21,7 +21,7 @@ test.describe("desktop shell", () => {
           mode: "local",
           startupError: null,
         }
-        window.gharargahDesktop = Object.freeze({
+        window.yaadeDesktop = Object.freeze({
           windowChrome: Object.freeze({
             customTitlebar: true,
             platform: "darwin",
@@ -33,17 +33,17 @@ test.describe("desktop shell", () => {
         })
       })
       await page.reload({ waitUntil: "domcontentloaded" })
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
-      const titlebar = page.locator("[data-gharargah-titlebar]")
+      const titlebar = page.locator("[data-yaade-titlebar]")
       await expectLocatorVisible(titlebar)
       await expectLocatorCount(titlebar, 1)
-      await expectLocatorCount(page.locator("[data-gharargah-home-button]"), 0)
+      await expectLocatorCount(page.locator("[data-yaade-home-button]"), 0)
 
       const chrome = await page.evaluate(() => {
-        const config = window.gharargahDesktop?.windowChrome
+        const config = window.yaadeDesktop?.windowChrome
         const titlebarEl = document.querySelector(
-          "[data-gharargah-titlebar]",
+          "[data-yaade-titlebar]",
         )
         const rect = titlebarEl?.getBoundingClientRect()
         return {
@@ -67,7 +67,7 @@ test.describe("desktop shell", () => {
 
       if (chrome.config?.trafficLights) {
         const spacer = page.locator(
-          "[data-gharargah-titlebar] [data-gharargah-traffic-light-spacer]",
+          "[data-yaade-titlebar] [data-yaade-traffic-light-spacer]",
         )
         await expectLocatorVisible(spacer)
         await expect
@@ -76,14 +76,14 @@ test.describe("desktop shell", () => {
       } else {
         await expectLocatorVisible(
           page.locator(
-            "[data-gharargah-titlebar] [data-gharargah-window-controls-spacer]",
+            "[data-yaade-titlebar] [data-yaade-window-controls-spacer]",
           ),
         )
       }
 
-      const sidebar = page.locator("[data-gharargah-mission-sidebar]")
+      const sidebar = page.locator("[data-yaade-mission-sidebar]")
       const sidebarSegment = page.locator(
-        "[data-gharargah-titlebar-sidebar-segment]",
+        "[data-yaade-titlebar-sidebar-segment]",
       )
       await expectLocatorVisible(sidebar)
       await expectLocatorVisible(sidebarSegment)

@@ -57,20 +57,20 @@ test("bench frontend cold startup and first overlay", async () => {
       startupSamples.push(snapshot.readyMs)
 
       const dispatchMs = await page.evaluate(async () => {
-        performance.mark("gharargah:overlay-cold-open:start")
+        performance.mark("yaade:overlay-cold-open:start")
         const startedAt = performance.now()
-        await window.__gharargahAgent!.executeCommand("settings.show")
+        await window.__yaadeAgent!.executeCommand("settings.show")
         return performance.now() - startedAt
       })
       overlayDispatchSamples.push(dispatchMs)
-      await page.waitForSelector("[data-gharargah-settings-overlay]", {
+      await page.waitForSelector("[data-yaade-settings-overlay]", {
         state: "visible",
         timeout: 10_000,
       })
       await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
       overlaySamples.push(
         await page.evaluate(() => {
-          const mark = performance.getEntriesByName("gharargah:overlay-cold-open:start").at(-1)
+          const mark = performance.getEntriesByName("yaade:overlay-cold-open:start").at(-1)
           return mark ? performance.now() - mark.startTime : 0
         }),
       )

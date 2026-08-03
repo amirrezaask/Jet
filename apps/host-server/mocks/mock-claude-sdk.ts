@@ -2,8 +2,8 @@
 /**
  * Deterministic Claude Agent SDK stream-json peer used by E2E specs.
  *
- * TypeScript port of the Rust `gharargah-mock-claude-sdk` binary
- * (apps/server/src/bin/gharargah-mock_claude_sdk.rs). Emits the same
+ * TypeScript port of the Rust `yaade-mock-claude-sdk` binary
+ * (apps/server/src/bin/yaade-mock_claude_sdk.rs). Emits the same
  * `control_request` / `control_response` / `stream_event` / `result` envelopes.
  *
  * Usage: tsx apps/host-server/mocks/mock-claude-sdk.ts

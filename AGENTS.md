@@ -6,9 +6,9 @@ Guide for AI agents and contributors working in this repo.
 
 **YAADE** is a **web Mission Control** app (React + Vite): a **home view** of projects and terminal session cards. Terminals open in **modal dialogs**. There is no editor workspace shell in the app today.
 
-**Hard policy: no Rust / no Tauri.** Host IPC is TypeScript (`apps/host-server` + `@gharargah/node-host`). Do not add `.rs`, `Cargo.toml`, or Tauri crates.
+**Hard policy: no Rust / no Tauri.** Host IPC is TypeScript (`apps/host-server` + `@yaade/node-host`). Do not add `.rs`, `Cargo.toml`, or Tauri crates.
 
-**Desktop:** optional thin Electron shell (`apps/gharargah-electron`) — process supervisor + `BrowserWindow` only. Same SPA entry (`packages/gharargah-app/src/main.tsx` + `createWebTransport()`); host spawns as Node child (not Electron Node). Dev: `pnpm electron:dev`. Prod (after `pnpm build`): `pnpm electron`.
+**Desktop:** optional thin Electron shell (`apps/yaade-electron`) — process supervisor + `BrowserWindow` only. Same SPA entry (`packages/yaade-app/src/main.tsx` + `createWebTransport()`); host spawns as Node child (not Electron Node). Dev: `pnpm electron:dev`. Prod (after `pnpm build`): `pnpm electron`.
 
 **Core split (current product):**
 
@@ -20,7 +20,7 @@ Guide for AI agents and contributors working in this repo.
 | **YAADE Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
 | **Host server (Effect)** | FS, terminal PTY (`node-pty`), search/git/LSP/notifications over HTTP `/api/v1/rpc` + `/ws` (Schema + Layers) |
 
-Library packages `@gharargah/monaco`, `@gharargah/lsp`, and editor/sidebar UI components remain in the monorepo; the app uses Monaco inside the session-modal editor.
+Library packages `@yaade/monaco`, `@yaade/lsp`, and editor/sidebar UI components remain in the monorepo; the app uses Monaco inside the session-modal editor.
 
 ## Reference Material (read-only)
 
@@ -30,7 +30,7 @@ Sibling / parent dirs are **design references**, not dependencies:
 - `.4coder*`, `.raddebugger/` — RAD/imui panel mental model
 - `Nameless_Editor/` — editor UX ideas
 
-Do **not** copy large chunks wholesale; match Gharargah’s architecture.
+Do **not** copy large chunks wholesale; match Yaade’s architecture.
 
 ---
 
@@ -41,23 +41,23 @@ Do **not** copy large chunks wholesale; match Gharargah’s architecture.
 ```
 jet/
 ├── apps/
-│   ├── gharargah/              Vite frontend shell (proxies to host)
-│   ├── gharargah-electron/     Thin Electron main (loads shared SPA URL)
+│   ├── yaade/              Vite frontend shell (proxies to host)
+│   ├── yaade-electron/     Thin Electron main (loads shared SPA URL)
 │   └── host-server/            Effect host (HTTP/WS RPC + PTY Layers)
 ├── fixtures/
 │   └── sample-workspace/       Fixture project for E2E smoke tests
 ├── packages/
-│   ├── gharargah-rpc/          Effect Schema IPC + TaggedErrors
-│   ├── gharargah-shared/       URIs, Emitter, panel primitives
-│   ├── gharargah-node-host/    Node FS/git/search/PTY (+ Effect terminal scope)
-│   ├── gharargah-host-client/  Effect HostClient + Promise shim → HTTP/WS
-│   ├── gharargah-panels/       PanelTree — splits, tabs, resize, serde
-│   ├── gharargah-workspace/    WorkspaceService, TabRegistry, commands, keymaps
-│   ├── gharargah-codemirror/   (library; unwired from app)
-│   ├── gharargah-lsp/          (library; unwired from app)
-│   ├── gharargah-agents/       CLI agent id helpers (`*:cli` driver ids)
-│   ├── gharargah-ui/           Home, terminal modal/panel, overlays, themes
-│   └── gharargah-app/          Root React app — atoms + home + terminal modals
+│   ├── yaade-rpc/          Effect Schema IPC + TaggedErrors
+│   ├── yaade-shared/       URIs, Emitter, panel primitives
+│   ├── yaade-node-host/    Node FS/git/search/PTY (+ Effect terminal scope)
+│   ├── yaade-host-client/  Effect HostClient + Promise shim → HTTP/WS
+│   ├── yaade-panels/       PanelTree — splits, tabs, resize, serde
+│   ├── yaade-workspace/    WorkspaceService, TabRegistry, commands, keymaps
+│   ├── yaade-codemirror/   (library; unwired from app)
+│   ├── yaade-lsp/          (library; unwired from app)
+│   ├── yaade-agents/       CLI agent id helpers (`*:cli` driver ids)
+│   ├── yaade-ui/           Home, terminal modal/panel, overlays, themes
+│   └── yaade-app/          Root React app — atoms + home + terminal modals
 ├── tests/
 │   ├── electron/               Shared UI E2E specs (Playwright web-e2e)
 │   ├── shell/                  launchWeb() against TS host
@@ -73,11 +73,11 @@ jet/
 ### Package dependency direction
 
 ```
-gharargah-rpc + gharargah-shared  ←  gharargah-node-host, host-client, host-server
-gharargah-shared  ←  gharargah-panels, gharargah-workspace, gharargah-node-host
-gharargah-workspace + gharargah-panels + gharargah-ui  ←  gharargah-app
-gharargah-app + gharargah-host-client  ←  apps/gharargah (Vite)
-gharargah-node-host  ←  apps/host-server
+yaade-rpc + yaade-shared  ←  yaade-node-host, host-client, host-server
+yaade-shared  ←  yaade-panels, yaade-workspace, yaade-node-host
+yaade-workspace + yaade-panels + yaade-ui  ←  yaade-app
+yaade-app + yaade-host-client  ←  apps/yaade (Vite)
+yaade-node-host  ←  apps/host-server
 ```
 
 Keep imports acyclic. Lower layers must not import React.
@@ -96,7 +96,9 @@ pnpm electron         # after pnpm build — Electron loads host-served dist
 pnpm typecheck        # all packages (TypeScript 7)
 pnpm test:e2e         # Playwright web E2E (headless Chromium)
 pnpm test:bench       # UX latency benchmarks (tests/bench/)
-pnpm build            # production frontend build (host serves dist)
+pnpm build            # SPA + dist/yaade server binary + macOS DMG
+pnpm build:server     # server binary only
+pnpm build:dmg        # DMG only (needs dist/runtime)
 ```
 
 Run typecheck from repo root before finishing a task:
@@ -119,7 +121,7 @@ Then validate with **`pnpm test:e2e`** (see Agent visual verification).
 
 ### Preferred: Playwright against TS host (headless)
 
-Specs live in `tests/electron/*.electron.spec.ts` (shared suite). `launchJet()` → `launchWeb()` starts `@gharargah/host-server` + Chromium. `GHARARGAH_E2E=1` unless `GHARARGAH_HEADED=1`.
+Specs live in `tests/electron/*.electron.spec.ts` (shared suite). `launchJet()` → `launchWeb()` starts `@yaade/host-server` + Chromium. `YAADE_E2E=1` unless `YAADE_HEADED=1`.
 
 1. Run shared UI specs: `pnpm test:e2e`
 2. Add or extend a spec under `tests/electron/` — helpers in `tests/helpers/` and `tests/electron/_launch.ts`. See `tests/README.md`.
@@ -130,8 +132,8 @@ Specs live in `tests/electron/*.electron.spec.ts` (shared suite). `launchJet()` 
 **Verification preference (strict):**
 
 1. DOM/text assertions via Playwright `expect` on scoped selectors (palette open, row content, panel visibility).
-2. `window.__gharargahAgent.getState()` — workspace path, palette flag, panel kinds, font size.
-3. List helpers — `expectLayout`, `expectNoOverlap`, `expectRowTextVisible` on `[data-gharargah-list-panel="…"] [data-gharargah-list-item]`.
+2. `window.__yaadeAgent.getState()` — workspace path, palette flag, panel kinds, font size.
+3. List helpers — `expectLayout`, `expectNoOverlap`, `expectRowTextVisible` on `[data-yaade-list-panel="…"] [data-yaade-list-item]`.
 4. Benchmarks — `pnpm test:bench` for latency regressions (median vs `tests/bench/budgets.json`).
 
 **Out of scope for automation (document explicitly if touched):** native OS folder/file dialogs, unimplemented git stage/revert chords.
@@ -140,13 +142,13 @@ Specs live in `tests/electron/*.electron.spec.ts` (shared suite). `launchJet()` 
 
 Query echoes are worthless as proof. Asserting `export` in `body` after typing `export` passes when the input value contains `export` — even if the result list is empty. Every list/search spec MUST include:
 
-1. **Row-count layout assertion** — `expectLayout` with `minItems >= 1` on `[data-gharargah-list-panel="…"] [data-gharargah-list-item]`.
+1. **Row-count layout assertion** — `expectLayout` with `minItems >= 1` on `[data-yaade-list-panel="…"] [data-yaade-list-item]`.
 2. **Positive result content** — `expect(locator).toContainText(...)` on the scoped panel with a needle that only appears in rendered rows (fixture filename, path segment, `:` line separator). Never assert the user-typed query alone.
 3. **Negative empty-state assertion** — `not.toContainText("No results")` when a hit is expected.
 4. **Spacing/overlap** — `expectNoOverlap` + `expectRowSpacing` when >=2 rows are expected.
 5. **Row text visibility** — `expectRowTextVisible` on the scoped selector.
 
-Scope every list assertion with the panel data attribute (`[data-gharargah-list-panel="locationlist"] [data-gharargah-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
+Scope every list assertion with the panel data attribute (`[data-yaade-list-panel="locationlist"] [data-yaade-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
 
 ### Native chrome & host IPC
 
@@ -155,7 +157,7 @@ Any change to host IPC (`fs:*`, `git:*`, `lsp:*`, `search:*`, `agents:*`, termin
 ### Headed debugging
 
 ```bash
-GHARARGAH_HEADED=1 pnpm test:e2e   # show Chromium on-screen
+YAADE_HEADED=1 pnpm test:e2e   # show Chromium on-screen
 ```
 
 ### Parallelism
@@ -164,10 +166,10 @@ GHARARGAH_HEADED=1 pnpm test:e2e   # show Chromium on-screen
 
 ### Disabled flaky E2E specs
 
-Twelve specs are temporarily skipped via `tests/electron/_flaky.ts` (`describeFlaky` / `skipFlakyTest`; re-enable with `GHARARGAH_E2E_RUN_FLAKY=1`). Re-enable all for triage:
+Twelve specs are temporarily skipped via `tests/electron/_flaky.ts` (`describeFlaky` / `skipFlakyTest`; re-enable with `YAADE_E2E_RUN_FLAKY=1`). Re-enable all for triage:
 
 ```bash
-GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:e2e
+YAADE_E2E_RUN_FLAKY=1 pnpm test:e2e
 ```
 
 | Spec file | Test | Likely fix |
@@ -183,25 +185,25 @@ GHARARGAH_E2E_RUN_FLAKY=1 pnpm test:e2e
 | `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
 | `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
 
-### Programmatic control (`window.__gharargahAgent`)
+### Programmatic control (`window.__yaadeAgent`)
 
 After `launchJet()`:
 
 ```javascript
-await window.__gharargahAgent.waitForReady()
-await window.__gharargahAgent.openWorkspace("fixtures/sample-workspace")
-await window.__gharargahAgent.openFile("src/index.ts")
-await window.__gharargahAgent.waitForEditor()
-await window.__gharargahAgent.executeCommand("ui.showCommandPalette")
-window.__gharargahAgent.getState()
-window.__gharargahAgent.getPerfMeasures()  // User Timing measures (jet:*)
+await window.__yaadeAgent.waitForReady()
+await window.__yaadeAgent.openWorkspace("fixtures/sample-workspace")
+await window.__yaadeAgent.openFile("src/index.ts")
+await window.__yaadeAgent.waitForEditor()
+await window.__yaadeAgent.executeCommand("ui.showCommandPalette")
+window.__yaadeAgent.getState()
+window.__yaadeAgent.getPerfMeasures()  // User Timing measures (jet:*)
 ```
 
 ### Dev gotchas (Vite + TS host)
 
 1. **Node** — `pnpm dev` / `pnpm test:e2e` need Node + pnpm (no Rust toolchain).
-2. **Vite frontend** — `apps/gharargah` builds from `packages/gharargah-app`.
-3. **Host** — `@gharargah/host-server` on `:4747`; rebuild `better-sqlite3` if Node ABI changes.
+2. **Vite frontend** — `apps/yaade` builds from `packages/yaade-app`.
+3. **Host** — `@yaade/host-server` on `:4747`; rebuild `better-sqlite3` if Node ABI changes.
 4. **Tailwind v4 position utilities missing** — Vite must scan sibling packages; `@source` in UI globals CSS.
 
 ---
@@ -218,13 +220,13 @@ Tauri Rust host resolves launch target from argv / cwd:
 
 - No args → open `cwd` as workspace
 - Directory arg → open that directory
-- File arg → open file; workspace = nearest project root (`.git`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `.gharargah`)
+- File arg → open file; workspace = nearest project root (`.git`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `.yaade`)
 
 Forwarded to renderer via `getLaunchConfig` / `jet:launch`; macOS open-file and single-instance reuse the same path.
 
-### Host IPC (`window.gharargah`)
+### Host IPC (`window.yaade`)
 
-Wired by `@gharargah/host-client` `createWebTransport()` → `createGharargahApi()`; types live in `@gharargah/workspace` (`GharargahHostAPI` name retained for API stability).
+Wired by `@yaade/host-client` `createWebTransport()` → `createYaadeApi()`; types live in `@yaade/workspace` (`YaadeHostAPI` name retained for API stability).
 
 
 | Channel                                                | Purpose                          |
@@ -238,15 +240,15 @@ Wired by `@gharargah/host-client` `createWebTransport()` → `createGharargahApi
 
 
 TS host: `apps/host-server/src/`  
-Node helpers: `packages/gharargah-node-host/src/`
+Node helpers: `packages/yaade-node-host/src/`
 
-### Panel docking (`@gharargah/panels`)
+### Panel docking (`@yaade/panels`)
 
 - `PanelTree` — row/column splits, tab groups, 5-way drop (edges + center)
 - `editorOnlyLayout()` / `defaultLayout()` — single full-width editor panel (no sidebar split by default)
 - `workspaceLayout()` — row split: sidebar left (~22%) + main editor right (~78%); used when splitting for explorer/git on demand
 - Serializable via `toJSON()` / `fromJSON()`; `sanitizeKnownTabs()` strips orphan tab ids when needed
-- UI: `PanelDock`, `TabRow`, `DropOverlay` in `@gharargah/ui`
+- UI: `PanelDock`, `TabRow`, `DropOverlay` in `@yaade/ui`
 - `resolveEditorPanel()` in `App.tsx` — new/open editor tabs route to main editor panel (not sidebar)
 
 **Panel model:** all leaf panels are equal — no "explorer panel" vs "editor panel". Tab kind differs (`explorer`, `editor`, `git`, …). View commands can target `focusedPanel`; editor open/new file targets main editor panel.
@@ -258,7 +260,7 @@ Node helpers: `packages/gharargah-node-host/src/`
 
 
 
-### Workspace (`@gharargah/workspace`)
+### Workspace (`@yaade/workspace`)
 
 - `WorkspaceService` — root folder, file cache, dirty tracking, open editor tabs
 - `TabRegistry` — maps `TabId` → tab kind + label + dirty flag
@@ -266,18 +268,18 @@ Node helpers: `packages/gharargah-node-host/src/`
 
 
 
-### Editor surface (`@gharargah/monaco` + `EditorTabHost`)
+### Editor surface (`@yaade/monaco` + `EditorTabHost`)
 
 - Monaco editor host — imperative mount; **never** put doc text in React state
 - URI-keyed models via `MonacoModelRegistry`; shared across editors
 - `revealPosition` / pending navigation for agent + terminal path opens
-- Languages via Monaco built-in IDs; LSP via `@gharargah/lsp` over `/ws/lsp/{id}`
+- Languages via Monaco built-in IDs; LSP via `@yaade/lsp` over `/ws/lsp/{id}`
 
 
 
 ### Commands & palette
 
-Registered in `packages/gharargah-app/src/App.tsx`:
+Registered in `packages/yaade-app/src/App.tsx`:
 
 
 | Command                 | Default key           |
@@ -303,16 +305,16 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 | `editor.gotoLine`       | Mod-g                 |
 | `layout.closeTab`       | Mod-w                 |
 | `terminal.show`         | Ctrl-`                |
-| `gharargah.goHome`      | Mod-Shift-h / Escape  |
+| `yaade.goHome`      | Mod-Shift-h / Escape  |
 | `ui.toggleColorScheme`  | — (palette)           |
 
 
 `CommandRegistry.execute()` receives `getActiveEditorView: () => unknown` — cast to `EditorView` in handlers that need `view.state.doc`.
 
-### Extension host (`@gharargah/extension-host`)
+### Extension host (`@yaade/extension-host`)
 
 - `createJetAPI()` — commands, keymaps, editor extensions, workspace, ui
-- `loadEditorRc(path, jet)` — dynamic import of `.gharargah/editorrc.ts` on folder open
+- `loadEditorRc(path, jet)` — dynamic import of `.yaade/editorrc.ts` on folder open
 - `registerExtensions()` — CodeMirror extensions applied via `extensionCompartment` in `EditorTabHost`
 
 
@@ -320,7 +322,7 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 ### LSP
 
 - Host spawns language servers over stdio and bridges them to `/ws/lsp/{id}` (WebSocket)
-- Renderer: `@gharargah/lsp` `LanguageServerManager` + Monaco providers
+- Renderer: `@yaade/lsp` `LanguageServerManager` + Monaco providers
 - Servers (binary must be on **PATH**):
 
 | Languages | Server ID | Binary candidates |
@@ -334,9 +336,9 @@ Registered in `packages/gharargah-app/src/App.tsx`:
 | html | `vscode-html-language-server` | `vscode-html-language-server` |
 | css | `vscode-css-language-server` | `vscode-css-language-server` |
 
-- Syntax highlighting uses Monaco Monarch (`basic-languages`); `languageIdFromPath` in `@gharargah/shared` maps extensions → language ids
+- Syntax highlighting uses Monaco Monarch (`basic-languages`); `languageIdFromPath` in `@yaade/shared` maps extensions → language ids
 - Project search uses ripgrep / host search on **PATH**
-- `findProjectRoot()` uses `pathToFileUri` from `@gharargah/shared`
+- `findProjectRoot()` uses `pathToFileUri` from `@yaade/shared`
 
 
 
@@ -369,10 +371,10 @@ Agents are **CLI processes in a PTY** — no in-app chat control plane.
 | Grok | `grok` | `grok:cli` |
 
 **Key files:**
-- `packages/gharargah-ui/src/home/AgentCliPickerOverlay.tsx` + `agent-cli-drivers.ts`
-- `packages/gharargah-app/src/agent-cli-launch.ts`, `agent-cli-resume.ts`, `cursor-cli-session.ts`
-- `packages/gharargah-agents/src/model.ts` — `normalizeAgentId` / `agentCliDriverId`
-- Session roster: `packages/gharargah-rpc/src/session-roster.ts` (requires `launchCommand` when `agentId` set)
+- `packages/yaade-ui/src/home/AgentCliPickerOverlay.tsx` + `agent-cli-drivers.ts`
+- `packages/yaade-app/src/agent-cli-launch.ts`, `agent-cli-resume.ts`, `cursor-cli-session.ts`
+- `packages/yaade-agents/src/model.ts` — `normalizeAgentId` / `agentCliDriverId`
+- Session roster: `packages/yaade-rpc/src/session-roster.ts` (requires `launchCommand` when `agentId` set)
 
 **Resume:** `agentCliSessionId` + provider-specific resume argv (notifications for Codex/Claude; Cursor pre-mint).
 
@@ -399,12 +401,12 @@ Manual smoke: `pnpm dev` → New session → pick CLI agent → terminal modal.
 
 1. **Minimal scope** — smallest correct diff; no drive-by refactors
 2. **Match existing style** — ESM `.js` extensions in TS imports, strict TS, no `@types/node` in `jet-shared`
-3. **URI discipline** — use `pathToFileUri` / `fileUriToPath` from `@gharargah/shared`; avoid `process.platform` in shared packages
+3. **URI discipline** — use `pathToFileUri` / `fileUriToPath` from `@yaade/shared`; avoid `process.platform` in shared packages
 4. **Panel mutations** — clone tree → mutate → `commitTree()` pattern in App (immutable-ish updates)
 5. **Exports** — packages expose `./src/index.ts` directly (no build step for libs); Vite bundles app.
    Every `exports` condition (`types`, `import`, `default`) must point at source. Pointing `import`/`default`
    at `./dist/*` silently ships stale JavaScript: `tsc` still checks `types` against source, so typecheck
-   stays green while the app runs whatever was last compiled. `@gharargah/shared` did exactly this and ran
+   stays green while the app runs whatever was last compiled. `@yaade/shared` did exactly this and ran
    3-day-old code for the whole app. `turbo typecheck` `dependsOn: ["^build"]`, so any package with a
    `build` script keeps regenerating a `dist/` — harmless only while nothing resolves to it.
 6. **Do not edit** the planning doc at `.cursor/plans/jet_editor_plan_*.plan.md`
@@ -416,7 +418,7 @@ Manual smoke: `pnpm dev` → New session → pick CLI agent → terminal modal.
 
 - Each package has `"typecheck": "tsc --noEmit"`
 - Packages `extends` root `tsconfig.base.json`; no project references (composite disabled)
-- `@gharargah/app` depends on `@gharargah/shared` explicitly when importing shared types
+- `@yaade/app` depends on `@yaade/shared` explicitly when importing shared types
 
 ---
 
@@ -432,9 +434,9 @@ Manual smoke: `pnpm dev` → New session → pick CLI agent → terminal modal.
 6. `workspace.cd` / add project / switch project overlays
 7. Settings / themes / zoom / color scheme
 8. Multi-root project catalog persistence across reload
-9. Escape / `gharargah.goHome` closes terminal modal
+9. Escape / `yaade.goHome` closes terminal modal
 
-Editor, sidebar, explorer, LSP, location list, and PanelDock are **not wired** in `@gharargah/app` (library packages remain on disk).
+Editor, sidebar, explorer, LSP, location list, and PanelDock are **not wired** in `@yaade/app` (library packages remain on disk).
 
 ---
 
@@ -504,14 +506,14 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 - [x] Tab bar reorder within panel (`insertIndex` + same-panel drag)
 - [x] `panelClose` handler in `App.tsx` + panel close button
-- [x] `__gharargahAgent.waitForEditor()` — poll until `.cm-editor` mounted
+- [x] `__yaadeAgent.waitForEditor()` — poll until `.cm-editor` mounted
 - [x] Bundled themes + theme picker commands (`ui.selectTheme.*`)
 - [x] Search tab shell + problems tab stub
 - [x] Status bar (LSP status, line/col, encoding)
 - [x] Welcome view when no folder open
 - [x] GitTab lazy import; PaletteOverlay
 - [x] Tab row overflow menu
-- [x] Playwright Tauri smoke tests wired to `pnpm test:tauri` + `__gharargahAgent`
+- [x] Playwright Tauri smoke tests wired to `pnpm test:tauri` + `__yaadeAgent`
 - [x] **Shell:** Vercel dark/light theme + `ui.toggleColorScheme`
 - [x] **Shell:** welcome view, status bar (L/C, LSP, message)
 - [x] Reduce main bundle — lazy Search/Problems tabs; Vite `manualChunks` for git-diff/shiki
@@ -556,7 +558,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **Platform**
 
-- [x] Tauri bundler / release scripts (`pnpm release`)
+- [x] Electron DMG + self-extracting server (`pnpm build`)
 - [x] LSP crash recovery (`lsp.onCrashed` + auto-retry on editor focus)
 - [x] Additional language servers (rust-analyzer descriptor registry)
 
@@ -570,7 +572,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **4coder-specific tier**
 
-- [ ] Expand `.gharargah/editorrc.ts` API toward Nameless-level extensibility
+- [ ] Expand `.yaade/editorrc.ts` API toward Nameless-level extensibility
 
 
 
@@ -599,7 +601,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | Fleury chrome                    | —       | ✓       | ✓          | brace guides + token highlight         |
 | LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Tauri + rust-analyzer                |
 | Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | partial (no macros/kill ring)          |
-| Extension / custom layer         | C hooks | C++     | Rust setup | `.gharargah/editorrc.ts`                     |
+| Extension / custom layer         | C hooks | C++     | Rust setup | `.yaade/editorrc.ts`                     |
 
 
 ---
@@ -617,8 +619,8 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 | `packages/jet-ui/src/tabs/EditorTabHost.tsx`      | CM mount lifecycle                                  |
 | `packages/jet-codemirror/src/createEditorView.ts` | Editor extensions + LSP attach                      |
 | `apps/host-server/src/bin.ts`                     | TS host bootstrap                                   |
-| `apps/gharargah/vite.config.ts`                   | Vite frontend + API proxy                           |
-| `packages/gharargah-app/src/main.tsx`             | `createWebTransport` → `window.gharargah`           |
+| `apps/yaade/vite.config.ts`                   | Vite frontend + API proxy                           |
+| `packages/yaade-app/src/main.tsx`             | `createWebTransport` → `window.yaade`           |
 
 
 ---
@@ -628,7 +630,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 ## Adding a Feature (checklist)
 
 1. Decide layer — shared / panels / workspace / ui / app / host-server
-2. Add types to `@gharargah/shared` or `@gharargah/workspace` if cross-cutting
+2. Add types to `@yaade/shared` or `@yaade/workspace` if cross-cutting
 3. Register command + keybinding if user-facing
 4. If new tab kind: extend `TabKind`, `TabRegistry`, `TabBody`, default registration in `App.tsx`
 5. Run `pnpm -r typecheck`
@@ -642,7 +644,7 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 
 - Shipping UI/UX changes without **`pnpm test:e2e`** validation
 - Putting editor document text in React `useState`
-- Calling Node/Tauri APIs from lower packages (use `window.gharargah` / `@gharargah/host-client`)
+- Calling Node/Tauri APIs from lower packages (use `window.yaade` / `@yaade/host-client`)
 - **Shell:** Web SPA + TS `host-server`. Optional Electron shell loads the same SPA URL. No Rust/Tauri. Renderer via `createWebTransport()`. Dev: `pnpm dev` / `pnpm electron:dev`. Tests: `pnpm test:e2e`.
 - Adding Rust / Cargo / Tauri back into the repo
 - Large shadcn default styling — keep RAD/custom theme direction
@@ -681,7 +683,7 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 - **Current state:** `packages/jet-codemirror/src/completion-context-menu.ts:11-25` still DOM-patches shadcn class strings (`CONTEXT_MENU_SURFACE_CLASS`, `CONTEXT_MENU_ITEM_SURFACE_CLASS`) onto CodeMirror's native `.cm-tooltip-autocomplete` after mount via `classList.add()` + `dataset.slot = "context-menu-content"`. Fake shadcn — no Radix root, no focus scope, no `ContextMenuPortal`, no keyboard-role parity, breaks if shadcn class strings drift.
 - **Also delete:** `packages/jet-codemirror/src/menu-surface.ts` (`CONTEXT_MENU_SURFACE_CLASS`, `CONTEXT_MENU_ITEM_SURFACE_CLASS`) and its re-export in `packages/jet-codemirror/src/index.ts:45`. Class-string sharing is the anti-pattern this rule bans.
 - **Fix plan:**
-  1. Replace CodeMirror's default `autocomplete` tooltip renderer. Register a completion source that emits Gharargah's own state; suppress the native tooltip via `tooltips: { position: "absolute" }` or by overriding `completionConfig({ tooltipClass })` and rendering an empty tooltip.
+  1. Replace CodeMirror's default `autocomplete` tooltip renderer. Register a completion source that emits Yaade's own state; suppress the native tooltip via `tooltips: { position: "absolute" }` or by overriding `completionConfig({ tooltipClass })` and rendering an empty tooltip.
   2. In `EditorTabHost.tsx`, mount a `<ContextMenu open={completionOpen}>` with `<ContextMenuContent>` portalled to `document.body`. Position via `EditorView.requestMeasure` → caret coords, forwarded as CSS vars.
   3. Bridge keymap: `ArrowUp`/`ArrowDown`/`Enter`/`Escape`/`Tab` — intercept in a CM keymap prec `Prec.highest`, dispatch to a React state store (or ref), so shadcn `ContextMenuItem` selection follows. Enter → `applyCompletion(view, item)` from `@codemirror/autocomplete`.
   4. Preserve `completionDetail` in a right-aligned span using existing `ContextMenuShortcut`.
@@ -689,10 +691,10 @@ Deferred items from shadcn-integration audit session. Each is scoped as a stand-
 
 ### Explorer virtualization for large repos (Medium)
 - `packages/jet-ui/src/tabs/ExplorerTab.tsx` — renders every visible file synchronously. `@tanstack/react-virtual` is already a dep (see `packages/jet-ui/package.json`).
-- **Fix:** virtualize `SidebarMenu` children. Preserve `data-gharargah-list-item` on rendered rows so visual scenarios still find them by selector.
+- **Fix:** virtualize `SidebarMenu` children. Preserve `data-yaade-list-item` on rendered rows so visual scenarios still find them by selector.
 
 ### Explorer `focusExplorerPanel` uses DOM `querySelector` (Low)
-- `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18` — imperative DOM query on `[data-gharargah-explorer-panel]` + `[data-sidebar="trigger"]`. Brittle to selector rename.
+- `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18` — imperative DOM query on `[data-yaade-explorer-panel]` + `[data-sidebar="trigger"]`. Brittle to selector rename.
 - **Fix:** expose a ref-based focus API via `useSidebar()` context or a ref forwarded from `ExplorerPanel`.
 
 ### Custom decoration follow-ups (Task #4 tail)
@@ -707,7 +709,7 @@ Global rule to apply everywhere below: **no custom components**. Every interacti
 
 #### `LocationListPanel` row = raw `<button>` (High)
 - `packages/jet-ui/src/panels/LocationListPanel.tsx:190-202` — virtualized row is a raw `<button type="button">` with hand-rolled `hover:bg-sidebar-accent` classes replicating `sidebarMenuButtonVariants`. Duplicates shadcn behavior without importing it.
-- **Fix:** render row through `SidebarMenuButton asChild size="sm"` from `ui/sidebar.tsx`, or wrap it in a shared `<ListRow>` primitive that composes `SidebarMenuButton`. Keep virtualization by rendering the button inside the absolute-positioned wrapper unchanged. Preserve `data-gharargah-list-item` on the rendered element.
+- **Fix:** render row through `SidebarMenuButton asChild size="sm"` from `ui/sidebar.tsx`, or wrap it in a shared `<ListRow>` primitive that composes `SidebarMenuButton`. Keep virtualization by rendering the button inside the absolute-positioned wrapper unchanged. Preserve `data-yaade-list-item` on the rendered element.
 
 #### `StatusBar` LSP trigger = raw `<button>` (Medium)
 - `packages/jet-ui/src/status/StatusBar.tsx:141-150` — `PopoverTrigger asChild` wraps a raw `<button>` with bespoke focus ring classes. Should use shadcn `Button variant="ghost" size="sm"` (or a new `variant="statusZone"`) to inherit ring/focus tokens.
@@ -721,8 +723,8 @@ Global rule to apply everywhere below: **no custom components**. Every interacti
 - Same as prior backlog. `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18`. Fix by exposing a ref or a `useSidebar()`-published handle.
 
 #### `App.tsx` list-navigation DOM `querySelector` (Medium)
-- `packages/jet-app/src/App.tsx:640-642` — `document.querySelector('[data-gharargah-list-panel=…]')` + `querySelectorAll('[data-gharargah-list-item]')` for keyboard nav. Mirrors the explorer-panel anti-pattern.
-- **Fix:** publish a list-registry from `WorkspaceService` (or a new `ListRegistry` in `@gharargah/workspace`) mapping panel kind → ref to focused-item state. Keyboard command reads from the registry, not the DOM.
+- `packages/jet-app/src/App.tsx:640-642` — `document.querySelector('[data-yaade-list-panel=…]')` + `querySelectorAll('[data-yaade-list-item]')` for keyboard nav. Mirrors the explorer-panel anti-pattern.
+- **Fix:** publish a list-registry from `WorkspaceService` (or a new `ListRegistry` in `@yaade/workspace`) mapping panel kind → ref to focused-item state. Keyboard command reads from the registry, not the DOM.
 
 #### `main.tsx` bootstraps dark class imperatively (Low)
 - `packages/jet-app/src/main.tsx:7` — `document.documentElement.classList.add("dark")` runs unconditionally, before the theme-scheme service reads `localStorage["jet-color-scheme"]`. Race: flash of dark on light-scheme startup.

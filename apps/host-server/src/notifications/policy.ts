@@ -1,10 +1,10 @@
 import type {
   NotificationPreferences,
   NotificationType,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 import {
   DEFAULT_NOTIFICATION_PREFERENCES as DEFAULTS,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 
 export function mergeNotificationPreferences(
   partial?: Partial<NotificationPreferences> | null,

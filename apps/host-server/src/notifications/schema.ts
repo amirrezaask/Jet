@@ -7,7 +7,7 @@ import type {
   NotificationSource,
   NotificationStatus,
   NotificationType,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 
 export type NotificationRow = {
   id: string

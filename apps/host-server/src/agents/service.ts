@@ -11,12 +11,12 @@ import {
   type AgentProvider,
   type AgentSessionSnapshot,
   type NotificationProjectionContext,
-} from "@gharargah/agents"
+} from "@yaade/agents"
 import type {
   AppNotification,
   IngestNotificationRequest,
   NotificationType,
-} from "@gharargah/shared"
+} from "@yaade/shared"
 import { ensureAgentTelemetrySchema } from "./schema.js"
 import type { NotificationService, IngestResult } from "../notifications/service.js"
 

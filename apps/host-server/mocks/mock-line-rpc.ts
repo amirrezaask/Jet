@@ -3,8 +3,8 @@
  * Deterministic newline-delimited JSON-RPC peer standing in for the Codex
  * app-server during tests.
  *
- * TypeScript port of the Rust `gharargah-mock-line-rpc` binary
- * (apps/server/src/bin/gharargah-mock_line_rpc.rs). Message shapes and control
+ * TypeScript port of the Rust `yaade-mock-line-rpc` binary
+ * (apps/server/src/bin/yaade-mock_line_rpc.rs). Message shapes and control
  * flow are preserved so E2E specs observe identical behavior.
  *
  * Usage: tsx apps/host-server/mocks/mock-line-rpc.ts
@@ -45,7 +45,7 @@ function main(): void {
       message = JSON.parse(line) as JsonObject
     } catch {
       // The Rust binary aborts on unparsable input; mirror that failure mode.
-      process.stderr.write("gharargah-mock-line-rpc: invalid JSON line\n")
+      process.stderr.write("yaade-mock-line-rpc: invalid JSON line\n")
       process.exit(1)
       return
     }
@@ -89,7 +89,7 @@ function main(): void {
           write({
             id,
             result: {
-              userAgent: "gharargah-mock-line-rpc",
+              userAgent: "yaade-mock-line-rpc",
               codexHome: "/tmp/mock-codex-home",
               platformFamily: "unix",
               platformOs: "test",

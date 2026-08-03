@@ -10,7 +10,7 @@ exec_tsx() {
   repo_root="$(cd "$BIN_DIR/../../../.." && pwd)"
 
   local candidates=(
-    "${GHARARGAH_TSX_CLI:-}"
+    "${YAADE_TSX_CLI:-}"
     "$repo_root/node_modules/tsx/dist/cli.mjs"
   )
   local pnpm_dir="$repo_root/node_modules/.pnpm"

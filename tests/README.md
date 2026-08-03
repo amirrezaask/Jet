@@ -4,7 +4,7 @@ The historical `tests/electron/` directory contains the shared product scenarios
 
 ```bash
 pnpm test:e2e
-GHARARGAH_HEADED=1 pnpm test:e2e
+YAADE_HEADED=1 pnpm test:e2e
 pnpm test:bench
 ```
 

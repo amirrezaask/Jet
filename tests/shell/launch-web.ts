@@ -12,7 +12,7 @@ const HOST_SERVER_ENTRY = path.join(REPO_ROOT, "apps/host-server/src/bin.ts")
 
 function resolveTsxCli(): string {
   const candidates = [
-    process.env.GHARARGAH_TSX_CLI,
+    process.env.YAADE_TSX_CLI,
     path.join(REPO_ROOT, "node_modules/tsx/dist/cli.mjs"),
   ]
   for (const c of candidates) {
@@ -111,9 +111,9 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   const sharedEnv = {
     ...process.env,
     JET_ALLOWED_ROOTS: `${REPO_ROOT},${temporaryRoot},${path.dirname(sourceWorkspace)}`,
-    GHARARGAH_E2E: "1",
+    YAADE_E2E: "1",
     // Installed YAADE may export JET_STATIC_DIR; e2e must serve the repo build.
-    JET_STATIC_DIR: path.join(REPO_ROOT, "apps/gharargah/dist"),
+    JET_STATIC_DIR: path.join(REPO_ROOT, "apps/yaade/dist"),
     ...options.env,
   }
 
@@ -141,9 +141,9 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   await waitForHttpOk(`${url}/health`, server, jetLogs)
 
   const context = await chromium.launchPersistentContext(browserData, {
-    headless: process.env.GHARARGAH_HEADED !== "1",
-    ...(process.env.GHARARGAH_PLAYWRIGHT_CHANNEL
-      ? { channel: process.env.GHARARGAH_PLAYWRIGHT_CHANNEL }
+    headless: process.env.YAADE_HEADED !== "1",
+    ...(process.env.YAADE_PLAYWRIGHT_CHANNEL
+      ? { channel: process.env.YAADE_PLAYWRIGHT_CHANNEL }
       : {}),
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 1,
@@ -165,11 +165,11 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   })
 
   await browserPage.goto(url, { waitUntil: "domcontentloaded" })
-  await browserPage.waitForFunction(() => window.__gharargahAgent != null, null, { timeout: 30_000 })
-  await browserPage.evaluate(() => window.__gharargahAgent!.waitForReady())
+  await browserPage.waitForFunction(() => window.__yaadeAgent != null, null, { timeout: 30_000 })
+  await browserPage.evaluate(() => window.__yaadeAgent!.waitForReady())
   if (!options.launchWithoutWorkspace) {
     await browserPage.waitForFunction(
-      () => (window.__gharargahAgent?.listWorkspaces().length ?? 0) > 0,
+      () => (window.__yaadeAgent?.listWorkspaces().length ?? 0) > 0,
       null,
       { timeout: 30_000 },
     )

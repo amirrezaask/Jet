@@ -18,7 +18,7 @@ const ptyAvailable = hasPtySpawn()
 async function closeOverlays(page: import("./_launch.js").ShellDriver): Promise<void> {
   await page
     .evaluate(async () => {
-      await window.__gharargahAgent?.executeCommand("gharargah.goHome")
+      await window.__yaadeAgent?.executeCommand("yaade.goHome")
     })
     .catch(() => {})
   for (let i = 0; i < 3; i++) {
@@ -77,9 +77,9 @@ test.describe("ADE telemetry", () => {
     const { app, page } = await launchJet()
     try {
       await ensureSidebarLayout(page)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
       await openNewAgentSession(page)
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]", {
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]", {
         timeout: 20_000,
       })
 
@@ -119,11 +119,11 @@ test.describe("ADE telemetry", () => {
       ).toBe(204)
 
       await expectLocatorCount(
-        page.locator("[data-gharargah-agent-activity-rail]"),
+        page.locator("[data-yaade-agent-activity-rail]"),
         0,
       )
       await expectLocatorCount(
-        page.locator("[data-gharargah-agent-activity-timeline]"),
+        page.locator("[data-yaade-agent-activity-timeline]"),
         0,
       )
 
@@ -137,16 +137,16 @@ test.describe("ADE telemetry", () => {
       ).toBe(204)
 
       await closeOverlays(page)
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0, {
+      await expectLocatorCount(page.locator("[data-yaade-terminal-modal]"), 0, {
         timeout: 10_000,
       })
 
       const sessionRow = page.locator(
-        `[data-gharargah-sidebar-session="${sessionId}"]`,
+        `[data-yaade-sidebar-session="${sessionId}"]`,
       )
       await expectLocatorVisible(sessionRow)
       await expectLocatorVisible(
-        sessionRow.locator("[data-gharargah-sidebar-unread-badge]"),
+        sessionRow.locator("[data-yaade-sidebar-unread-badge]"),
       )
 
       expect(
@@ -158,11 +158,11 @@ test.describe("ADE telemetry", () => {
       ).toBe(204)
 
       await execCommand(page, "notifications.show")
-      await expectSelectorVisible(page, "[data-gharargah-notification-center]", {
+      await expectSelectorVisible(page, "[data-yaade-notification-center]", {
         timeout: 10_000,
       })
       await expectLocatorContainsText(
-        page.locator("[data-gharargah-notification-item]").first(),
+        page.locator("[data-yaade-notification-item]").first(),
         /failed|error|terminated/i,
       )
     } finally {

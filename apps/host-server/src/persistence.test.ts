@@ -7,7 +7,7 @@ import { describe, it, beforeEach, afterEach } from "node:test"
 import { ProjectDatabase, type SessionRoster } from "./persistence.js"
 
 function tempDbPath(): { dir: string; dbPath: string } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gharargah-persist-"))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-persist-"))
   return { dir, dbPath: path.join(dir, "jet.sqlite3") }
 }
 
@@ -32,7 +32,7 @@ describe("ProjectDatabase session roster", () => {
       version: 2,
       sessions: [
         {
-          tabId: "gharargah:terminal:a",
+          tabId: "yaade:terminal:a",
           cwdRootUri: `file://${dir}`,
           label: "Codex",
           launchCommand: "codex",
@@ -48,11 +48,11 @@ describe("ProjectDatabase session roster", () => {
           lastActivityAt: "2026-07-28T00:00:00.000Z",
         },
       ],
-      modal: { tabId: "gharargah:terminal:a", sessionMode: "terminal" },
+      modal: { tabId: "yaade:terminal:a", sessionMode: "terminal" },
     }
     const saved = db.replaceSessionRoster(roster)
     assert.equal(saved.sessions.length, 1)
-    assert.equal(saved.sessions[0]?.tabId, "gharargah:terminal:a")
+    assert.equal(saved.sessions[0]?.tabId, "yaade:terminal:a")
     assert.equal(saved.sessions[0]?.ptyId, undefined)
     assert.equal(saved.sessions[0]?.hasUserInput, true)
     assert.equal(saved.sessions[0]?.hasMeaningfulOutput, true)
@@ -63,7 +63,7 @@ describe("ProjectDatabase session roster", () => {
       .prepare(
         "SELECT project_id, agent_title, has_user_input, has_meaningful_output FROM session_roster_entries WHERE tab_id=?",
       )
-      .get("gharargah:terminal:a") as {
+      .get("yaade:terminal:a") as {
         project_id: string | null
         agent_title: string | null
         has_user_input: number
@@ -80,7 +80,7 @@ describe("ProjectDatabase session roster", () => {
       version: 2,
       sessions: [
         {
-          tabId: "gharargah:terminal:old",
+          tabId: "yaade:terminal:old",
           cwdRootUri: "file:///tmp/old",
           label: "Old Codex",
           status: "running",
@@ -88,13 +88,13 @@ describe("ProjectDatabase session roster", () => {
           agentId: "codex",
         },
       ],
-      modal: { tabId: "gharargah:terminal:old", sessionMode: "agent" },
+      modal: { tabId: "yaade:terminal:old", sessionMode: "agent" },
     })
     const next = db.replaceSessionRoster({
       version: 2,
       sessions: [
         {
-          tabId: "gharargah:terminal:new",
+          tabId: "yaade:terminal:new",
           cwdRootUri: "file:///tmp/new",
           label: "New Claude",
           status: "exited",
@@ -106,14 +106,14 @@ describe("ProjectDatabase session roster", () => {
       modal: null,
     })
     assert.equal(next.sessions.length, 1)
-    assert.equal(next.sessions[0]?.tabId, "gharargah:terminal:new")
+    assert.equal(next.sessions[0]?.tabId, "yaade:terminal:new")
     assert.equal(next.modal, null)
   })
 
   it("persists archived transcript and drops it for active sessions", () => {
     const marker = "ARCHIVED_TRANSCRIPT_MARKER"
     const base = {
-      tabId: "gharargah:terminal:archive-output",
+      tabId: "yaade:terminal:archive-output",
       cwdRootUri: `file://${dir}`,
       label: "Codex archive",
       launchCommand: "codex",
@@ -141,14 +141,14 @@ describe("ProjectDatabase session roster", () => {
       version: 2,
       sessions: [
         {
-          tabId: "gharargah:terminal:shell",
+          tabId: "yaade:terminal:shell",
           cwdRootUri: "file:///tmp/shell",
           label: "Shell",
           status: "running",
           ptyId: "term-shell",
         },
         {
-          tabId: "gharargah:terminal:agent",
+          tabId: "yaade:terminal:agent",
           cwdRootUri: "file:///tmp/agent",
           label: "Codex",
           status: "running",
@@ -160,11 +160,11 @@ describe("ProjectDatabase session roster", () => {
     })
     assert.equal(saved.sessions.length, 2)
     assert.equal(
-      saved.sessions.some(s => s.tabId === "gharargah:terminal:shell"),
+      saved.sessions.some(s => s.tabId === "yaade:terminal:shell"),
       true,
     )
     assert.equal(
-      saved.sessions.some(s => s.tabId === "gharargah:terminal:agent"),
+      saved.sessions.some(s => s.tabId === "yaade:terminal:agent"),
       true,
     )
   })
@@ -174,14 +174,14 @@ describe("ProjectDatabase session roster", () => {
       version: 2,
       sessions: [
         {
-          tabId: "gharargah:terminal:live",
+          tabId: "yaade:terminal:live",
           cwdRootUri: "file:///tmp/live",
           label: "Live",
           status: "running",
           ptyId: "term-live",
         },
         {
-          tabId: "gharargah:terminal:agent",
+          tabId: "yaade:terminal:agent",
           cwdRootUri: "file:///tmp/agent",
           label: "Codex",
           status: "running",
@@ -196,8 +196,8 @@ describe("ProjectDatabase session roster", () => {
 
     db = new ProjectDatabase(dbPath)
     const roster = db.getSessionRoster()
-    const live = roster.sessions.find(s => s.tabId === "gharargah:terminal:live")
-    const agent = roster.sessions.find(s => s.tabId === "gharargah:terminal:agent")
+    const live = roster.sessions.find(s => s.tabId === "yaade:terminal:live")
+    const agent = roster.sessions.find(s => s.tabId === "yaade:terminal:agent")
     assert.equal(roster.sessions.length, 2)
     assert.equal(live?.status, "starting")
     assert.equal(live?.ptyId, undefined)
@@ -211,7 +211,7 @@ describe("ProjectDatabase session roster", () => {
       version: 2,
       sessions: [
         {
-          tabId: "gharargah:terminal:archived",
+          tabId: "yaade:terminal:archived",
           cwdRootUri: "file:///tmp/archived",
           label: "Archived",
           status: "exited",
@@ -262,7 +262,7 @@ describe("ProjectDatabase session roster", () => {
       INSERT INTO session_roster_entries(
         tab_id, cwd_root_uri, label, launch_command, agent_id, status, created_at, updated_at
       ) VALUES(
-        'gharargah:terminal:legacy', 'file:///tmp/legacy', 'Legacy agent title',
+        'yaade:terminal:legacy', 'file:///tmp/legacy', 'Legacy agent title',
         'codex', 'codex', 'exited',
         '2026-07-28T00:00:00.000Z', '2026-07-28T00:00:00.000Z'
       );
@@ -282,7 +282,7 @@ describe("ProjectDatabase session roster", () => {
     )
     const restored = db.getSessionRoster().sessions[0]
     // Blank shells survive host reopen; only incomplete agent stubs are stripped.
-    assert.equal(restored?.tabId, "gharargah:terminal:legacy")
+    assert.equal(restored?.tabId, "yaade:terminal:legacy")
     assert.equal(restored?.label, "Legacy agent title")
     assert.equal(restored?.agentTitle, "Legacy agent title")
     assert.equal(restored?.status, "exited")
@@ -293,13 +293,13 @@ describe("ProjectDatabase session roster", () => {
       version: 2,
       sessions: [
         {
-          tabId: "gharargah:terminal:blank",
+          tabId: "yaade:terminal:blank",
           cwdRootUri: "file:///tmp/blank",
           label: "Terminal",
           status: "running",
         },
       ],
-      modal: { tabId: "gharargah:terminal:blank", sessionMode: "terminal" },
+      modal: { tabId: "yaade:terminal:blank", sessionMode: "terminal" },
     })
     assert.equal(saved.sessions.length, 1)
     assert.equal(saved.sessions[0]?.agentId, undefined)

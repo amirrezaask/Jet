@@ -17,21 +17,21 @@ test.describe("electron appearance and terminal-first UX", () => {
     try {
       await page.evaluate(async () => {
         localStorage.clear()
-        await window.__gharargahAgent!.waitForReady()
-        await window.__gharargahAgent!.executeCommand("ui.setTheme.default-dark")
+        await window.__yaadeAgent!.waitForReady()
+        await window.__yaadeAgent!.executeCommand("ui.setTheme.default-dark")
       })
       await showTerminal(page)
 
       await expect
-        .poll(() => page.evaluate(() => document.documentElement.dataset.gharargahSurface))
+        .poll(() => page.evaluate(() => document.documentElement.dataset.yaadeSurface))
         .toBe("default")
       await expect
         .poll(() =>
           page.evaluate(() => {
             const selectors = [
-              "[data-gharargah-terminal-modal]",
-              "[data-gharargah-terminal-modal-header]",
-              "[data-gharargah-session-mode-switch]",
+              "[data-yaade-terminal-modal]",
+              "[data-yaade-terminal-modal-header]",
+              "[data-yaade-session-mode-switch]",
             ]
             return selectors.map(selector => {
               const element = document.querySelector(selector)
@@ -61,9 +61,9 @@ test.describe("electron appearance and terminal-first UX", () => {
         .poll(() =>
           page.evaluate(() => {
             const dock = document.querySelector(
-              "[data-gharargah-session-mode-dock]",
+              "[data-yaade-session-mode-dock]",
             )
-            return dock?.getAttribute("data-gharargah-liquid-glass") ?? null
+            return dock?.getAttribute("data-yaade-liquid-glass") ?? null
           }),
         )
         .toBe("island")
@@ -72,19 +72,19 @@ test.describe("electron appearance and terminal-first UX", () => {
         .poll(() =>
           page.evaluate(() =>
             Boolean(
-              document.querySelector("[data-gharargah-liquid-refract-defs]"),
+              document.querySelector("[data-yaade-liquid-refract-defs]"),
             ),
           ),
         )
         .toBe(true)
 
-      await page.waitForSelector("[data-gharargah-terminal-panel] .xterm", { timeout: 30_000 })
-      await page.waitForSelector("[data-gharargah-terminal-panel] .gharargah-terminal-surface", {
+      await page.waitForSelector("[data-yaade-terminal-panel] .xterm", { timeout: 30_000 })
+      await page.waitForSelector("[data-yaade-terminal-panel] .yaade-terminal-surface", {
         timeout: 15_000,
       })
 
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
@@ -99,9 +99,9 @@ test.describe("electron appearance and terminal-first UX", () => {
               return blur && blur !== "none" ? blur : ""
             }
             const surface = document.querySelector(
-              "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
+              "[data-yaade-terminal-panel] .yaade-terminal-surface",
             )
-            const modal = document.querySelector("[data-gharargah-terminal-modal]")
+            const modal = document.querySelector("[data-yaade-terminal-modal]")
             if (!surface || !modal) return ""
             return `${readBlur(surface)}|${readBlur(modal)}`
           }),
@@ -112,7 +112,7 @@ test.describe("electron appearance and terminal-first UX", () => {
         .poll(() =>
           page.evaluate(() => {
             const surface = document.querySelector<HTMLElement>(
-              "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
+              "[data-yaade-terminal-panel] .yaade-terminal-surface",
             )
             if (!surface) return null
             const bg = getComputedStyle(surface).backgroundColor
@@ -130,7 +130,7 @@ test.describe("electron appearance and terminal-first UX", () => {
         .poll(() =>
           page.evaluate(() => {
             const surface = document.querySelector<HTMLElement>(
-              "[data-gharargah-terminal-panel] .gharargah-terminal-surface",
+              "[data-yaade-terminal-panel] .yaade-terminal-surface",
             )
             if (!surface) return ""
             return getComputedStyle(surface).backgroundColor
@@ -139,33 +139,33 @@ test.describe("electron appearance and terminal-first UX", () => {
         .not.toBe("rgb(0, 0, 0)")
 
       await page.evaluate(async () => {
-        await window.__gharargahAgent!.executeCommand("settings.show")
+        await window.__yaadeAgent!.executeCommand("settings.show")
       })
 
-      await expectSelectorVisible(page, "[data-gharargah-settings-overlay]")
-      await page.locator("[data-gharargah-settings-category='appearance']").click()
-      await expectLocatorCount(page.locator("[data-gharargah-theme-option]"), 2)
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='default-dark']")
-      await expectSelectorVisible(page, "[data-gharargah-theme-option='default-light']")
+      await expectSelectorVisible(page, "[data-yaade-settings-overlay]")
+      await page.locator("[data-yaade-settings-category='appearance']").click()
+      await expectLocatorCount(page.locator("[data-yaade-theme-option]"), 2)
+      await expectSelectorVisible(page, "[data-yaade-theme-option='default-dark']")
+      await expectSelectorVisible(page, "[data-yaade-theme-option='default-light']")
 
-      await page.locator("[data-gharargah-theme-option='default-light']").click()
+      await page.locator("[data-yaade-theme-option='default-light']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("default-light")
 
       await expect
         .poll(() =>
-          page.evaluate(() => document.documentElement.dataset.gharargahSurface),
+          page.evaluate(() => document.documentElement.dataset.yaadeSurface),
         )
         .toBe("default")
 
-      await page.locator("[data-gharargah-theme-option='default-dark']").click()
+      await page.locator("[data-yaade-theme-option='default-dark']").click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("default-dark")
       await expect
         .poll(() =>
-          page.evaluate(() => document.documentElement.dataset.gharargahSurface),
+          page.evaluate(() => document.documentElement.dataset.yaadeSurface),
         )
         .toBe("default")
     } finally {
@@ -179,7 +179,7 @@ test.describe("electron appearance and terminal-first UX", () => {
       await waitForHome(page)
       const modal = await openNewCliSession(page, "codex")
       await expectLocatorVisible(modal)
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
       await expectLocatorCount(page.locator('[data-slot="dropdown-menu-content"]'), 0)
     } finally {
       await app.close()

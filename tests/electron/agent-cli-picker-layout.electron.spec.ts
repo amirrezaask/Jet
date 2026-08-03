@@ -23,9 +23,9 @@ test.describe("agent CLI picker layout", () => {
       }
       await clickNewSession(page)
 
-      await expectSelectorVisible(page, "[data-gharargah-palette]")
+      await expectSelectorVisible(page, "[data-yaade-palette]")
       await expectListRows(page, {
-        panel: "gharargah:palette",
+        panel: "yaade:palette",
         minItems: 5,
         minRowHeight: 80,
         needle: "Anthropic Claude Code CLI",

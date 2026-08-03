@@ -24,8 +24,8 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       const result = await page.evaluate(async () => {
-        const terminal = window.gharargah?.terminal
-        const workspacePath = window.__gharargahAgent?.getState().activeWorkspace
+        const terminal = window.yaade?.terminal
+        const workspacePath = window.__yaadeAgent?.getState().activeWorkspace
         if (!terminal || !workspacePath) throw new Error("Terminal API or workspace unavailable")
         const cwdUri = `file://${workspacePath}`
         const first = await terminal.create(cwdUri)
@@ -72,12 +72,12 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       const output = await page.evaluate(async () => {
-        const terminal = window.gharargah?.terminal
-        const workspacePath = window.__gharargahAgent?.getState().activeWorkspace
+        const terminal = window.yaade?.terminal
+        const workspacePath = window.__yaadeAgent?.getState().activeWorkspace
         if (!terminal || !workspacePath) throw new Error("Terminal API or workspace unavailable")
         const direct = await terminal.create(`file://${workspacePath}`, {
           command: "/bin/sh",
-          args: ["-c", "printf 'سلام🙂 gharargah-unicode-tail'"],
+          args: ["-c", "printf 'سلام🙂 yaade-unicode-tail'"],
         })
         const text = await new Promise<string>((resolve, reject) => {
           let received = ""
@@ -88,7 +88,7 @@ test.describe("electron terminal", () => {
           }, 5_000)
           unsubscribe = terminal.onData(direct.id, chunk => {
             received += chunk
-            if (!received.includes("gharargah-unicode-tail")) return
+            if (!received.includes("yaade-unicode-tail")) return
             window.clearTimeout(timeout)
             unsubscribe()
             resolve(received)
@@ -99,7 +99,7 @@ test.describe("electron terminal", () => {
       })
 
       expect(output).toContain("سلام🙂")
-      expect(output).toContain("gharargah-unicode-tail")
+      expect(output).toContain("yaade-unicode-tail")
     } finally {
       await app.close()
     }
@@ -109,8 +109,8 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       const output = await page.evaluate(async () => {
-        const terminal = window.gharargah?.terminal
-        const workspacePath = window.__gharargahAgent?.getState().activeWorkspace
+        const terminal = window.yaade?.terminal
+        const workspacePath = window.__yaadeAgent?.getState().activeWorkspace
         if (!terminal || !workspacePath) throw new Error("Terminal API or workspace unavailable")
         const direct = await terminal.create(`file://${workspacePath}`, {
           command: "/bin/sh",
@@ -151,16 +151,16 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
 
-      await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
+      await page.locator("[data-yaade-terminal-panel] \.yaade-terminal-surface").click()
       await page.evaluate(() => {
         const textarea = document.querySelector(
-          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
+          "[data-yaade-terminal-panel] .xterm-helper-textarea",
         ) as HTMLTextAreaElement | null
         textarea?.focus()
       })
 
       await page.waitForFunction(
-        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
+        () => (window.__yaadeAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )
@@ -174,7 +174,7 @@ test.describe("electron terminal", () => {
 
       await page.waitForFunction(
         () => {
-          const text = window.__gharargahAgent?.getTerminalText?.() ?? ""
+          const text = window.__yaadeAgent?.getTerminalText?.() ?? ""
           return text.includes("package.json") || text.includes("src")
         },
         null,
@@ -194,13 +194,13 @@ test.describe("electron terminal", () => {
       await showTerminal(page)
 
       await page.waitForFunction(
-        () => (window.__gharargahAgent?.getTerminalCellHeight?.() ?? 0) >= 10,
+        () => (window.__yaadeAgent?.getTerminalCellHeight?.() ?? 0) >= 10,
         null,
         { timeout: 15_000 },
       )
 
       const rowHeight = await page.evaluate(
-        () => window.__gharargahAgent?.getTerminalCellHeight?.() ?? 0,
+        () => window.__yaadeAgent?.getTerminalCellHeight?.() ?? 0,
       )
       expect(rowHeight).toBeGreaterThanOrEqual(10)
     } finally {
@@ -212,7 +212,7 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(() => {
-        const terminal = window.gharargah?.terminal
+        const terminal = window.yaade?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
         const originalResize = terminal.resize.bind(terminal)
         const originalCreate = terminal.create.bind(terminal)
@@ -228,15 +228,15 @@ test.describe("electron terminal", () => {
         }
         ;(
           window as unknown as {
-            __gharargahResizeCalls?: Array<{ cols: number; rows: number }>
-            __gharargahCreateCalls?: Array<{ cols?: number; rows?: number }>
+            __yaadeResizeCalls?: Array<{ cols: number; rows: number }>
+            __yaadeCreateCalls?: Array<{ cols?: number; rows?: number }>
           }
-        ).__gharargahResizeCalls = resizeCalls
+        ).__yaadeResizeCalls = resizeCalls
         ;(
           window as unknown as {
-            __gharargahCreateCalls?: Array<{ cols?: number; rows?: number }>
+            __yaadeCreateCalls?: Array<{ cols?: number; rows?: number }>
           }
-        ).__gharargahCreateCalls = createCalls
+        ).__yaadeCreateCalls = createCalls
       })
 
       await showTerminal(page)
@@ -247,12 +247,12 @@ test.describe("electron terminal", () => {
             () =>
               (
                 window as unknown as {
-                  __gharargahResizeCalls?: Array<{
+                  __yaadeResizeCalls?: Array<{
                     cols: number
                     rows: number
                   }>
                 }
-              ).__gharargahResizeCalls?.at(-1) ?? null,
+              ).__yaadeResizeCalls?.at(-1) ?? null,
           ),
         )
         .toEqual(
@@ -265,9 +265,9 @@ test.describe("electron terminal", () => {
         () =>
           (
             window as unknown as {
-              __gharargahResizeCalls?: Array<{ cols: number; rows: number }>
+              __yaadeResizeCalls?: Array<{ cols: number; rows: number }>
             }
-          ).__gharargahResizeCalls?.at(-1),
+          ).__yaadeResizeCalls?.at(-1),
       )
       expect(geometry!.cols).toBeGreaterThan(80)
       expect(geometry!.rows).toBeGreaterThan(24)
@@ -275,9 +275,9 @@ test.describe("electron terminal", () => {
         () =>
           (
             window as unknown as {
-              __gharargahCreateCalls?: Array<{ cols?: number; rows?: number }>
+              __yaadeCreateCalls?: Array<{ cols?: number; rows?: number }>
             }
-          ).__gharargahCreateCalls?.at(-1),
+          ).__yaadeCreateCalls?.at(-1),
       )
       expect(initialGeometry).toEqual(geometry)
     } finally {
@@ -292,12 +292,12 @@ test.describe("electron terminal", () => {
       await focusTerminal(page)
 
       const ptyId = await page
-        .locator("[data-gharargah-terminal-panel]")
-        .getAttribute("data-gharargah-terminal-pty-id")
+        .locator("[data-yaade-terminal-panel]")
+        .getAttribute("data-yaade-terminal-pty-id")
       expect(ptyId).toBeTruthy()
 
       await page.evaluate(async id => {
-        const terminal = window.gharargah?.terminal
+        const terminal = window.yaade?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
         // Run printf so CR is on the PTY → xterm display path (not shell line-edit).
         await terminal.write(
@@ -330,12 +330,12 @@ test.describe("electron terminal", () => {
       await focusTerminal(page)
 
       const ptyId = await page
-        .locator("[data-gharargah-terminal-panel]")
-        .getAttribute("data-gharargah-terminal-pty-id")
+        .locator("[data-yaade-terminal-panel]")
+        .getAttribute("data-yaade-terminal-pty-id")
       expect(ptyId).toBeTruthy()
 
       await page.evaluate(async id => {
-        const terminal = window.gharargah?.terminal
+        const terminal = window.yaade?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
         await terminal.write(id, "stty size; echo STTY-SIZE-DONE\n")
       }, ptyId!)
@@ -345,9 +345,9 @@ test.describe("electron terminal", () => {
         .toContain("STTY-SIZE-DONE")
 
       const sizes = await page.evaluate(() => {
-        const text = window.__gharargahAgent?.getTerminalText?.() ?? ""
+        const text = window.__yaadeAgent?.getTerminalText?.() ?? ""
         const match = text.match(/(\d+)\s+(\d+)[\s\S]*STTY-SIZE-DONE/)
-        const dims = window.__gharargahAgent?.getTerminalDims?.() ?? null
+        const dims = window.__yaadeAgent?.getTerminalDims?.() ?? null
         if (!match || !dims) return null
         return {
           ptyRows: Number(match[1]),
@@ -374,14 +374,14 @@ test.describe("electron terminal", () => {
       await focusTerminal(page)
 
       const ptyId = await page
-        .locator("[data-gharargah-terminal-panel]")
-        .getAttribute("data-gharargah-terminal-pty-id")
+        .locator("[data-yaade-terminal-panel]")
+        .getAttribute("data-yaade-terminal-pty-id")
       expect(ptyId).toBeTruthy()
 
       // Park caret on last row then hide — Cursor Agent pattern (fake UI caret elsewhere).
       // sleep keeps the shell from redrawing a prompt (which often sends ?25h).
       await page.evaluate(async id => {
-        const terminal = window.gharargah?.terminal
+        const terminal = window.yaade?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
         await terminal.write(
           id,
@@ -398,11 +398,11 @@ test.describe("electron terminal", () => {
           () =>
             page.evaluate(() => {
               const hidden =
-                window.__gharargahAgent?.getTerminalCursor?.()?.hidden === true
+                window.__yaadeAgent?.getTerminalCursor?.()?.hidden === true
               const panel = document.querySelector<HTMLElement>(
-                "[data-gharargah-terminal-panel]",
+                "[data-yaade-terminal-panel]",
               )
-              const attr = panel?.dataset.gharargahTerminalCursorHidden === "1"
+              const attr = panel?.dataset.yaadeTerminalCursorHidden === "1"
               return hidden || attr
             }),
           { timeout: 5_000 },
@@ -412,7 +412,7 @@ test.describe("electron terminal", () => {
       const visibleHardwareCaret = await page.evaluate(() => {
         const cursors = [
           ...document.querySelectorAll<HTMLElement>(
-            "[data-gharargah-terminal-panel] .xterm-cursor",
+            "[data-yaade-terminal-panel] .xterm-cursor",
           ),
         ]
         return cursors.some(el => {
@@ -438,16 +438,16 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
 
-      await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
+      await page.locator("[data-yaade-terminal-panel] \.yaade-terminal-surface").click()
       await page.evaluate(() => {
         const textarea = document.querySelector(
-          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
+          "[data-yaade-terminal-panel] .xterm-helper-textarea",
         ) as HTMLTextAreaElement | null
         textarea?.focus()
       })
 
       await page.waitForFunction(
-        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
+        () => (window.__yaadeAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )
@@ -455,7 +455,7 @@ test.describe("electron terminal", () => {
       await page.keyboard.type("echo -ne '\\033]0;JetTitleTest\\007'")
       await page.keyboard.press("Enter")
 
-      await expectContainsText(page, "[data-gharargah-terminal-modal]", "JetTitleTest", {
+      await expectContainsText(page, "[data-yaade-terminal-modal]", "JetTitleTest", {
         timeout: 15_000,
       })
     } finally {
@@ -468,16 +468,16 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
 
-      await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
+      await page.locator("[data-yaade-terminal-panel] \.yaade-terminal-surface").click()
       await page.evaluate(() => {
         const textarea = document.querySelector(
-          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
+          "[data-yaade-terminal-panel] .xterm-helper-textarea",
         ) as HTMLTextAreaElement | null
         textarea?.focus()
       })
 
       await page.waitForFunction(
-        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
+        () => (window.__yaadeAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )
@@ -485,16 +485,16 @@ test.describe("electron terminal", () => {
       await page.keyboard.type("exit")
       await page.keyboard.press("Enter")
 
-      await expectLocatorAttribute(page.locator("[data-gharargah-terminal-panel]"), 
-        "data-gharargah-terminal-status",
+      await expectLocatorAttribute(page.locator("[data-yaade-terminal-panel]"), 
+        "data-yaade-terminal-status",
         "exited",
         { timeout: 15_000 },
       )
-      const exitBar = page.locator("[data-gharargah-terminal-exit-bar]")
+      const exitBar = page.locator("[data-yaade-terminal-exit-bar]")
       await expectLocatorVisible(exitBar, { timeout: 15_000 })
       await expectLocatorContainsText(exitBar, "Process exited")
       await expectLocatorVisible(exitBar.getByRole("button", { name: "Restart" }))
-      await expectSelectorVisible(page, "[data-gharargah-terminal-panel] .xterm")
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel] .xterm")
     } finally {
       await app.close()
     }
@@ -507,10 +507,10 @@ test.describe("electron terminal", () => {
 
       const layout = await page.evaluate(() => {
         const surface = document.querySelector(
-          "[data-gharargah-terminal-panel] \.gharargah-terminal-surface",
+          "[data-yaade-terminal-panel] \.yaade-terminal-surface",
         ) as HTMLElement | null
         const viewport = document.querySelector(
-          "[data-gharargah-terminal-panel] .xterm-viewport",
+          "[data-yaade-terminal-panel] .xterm-viewport",
         ) as HTMLElement | null
         if (!surface || !viewport) return null
         const surfaceRect = surface.getBoundingClientRect()
@@ -536,13 +536,13 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      const panel = page.locator("[data-gharargah-terminal-panel]")
-      await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
+      const panel = page.locator("[data-yaade-terminal-panel]")
+      await expectLocatorAttribute(panel, "data-yaade-terminal-status", "running")
 
-      await expectLocatorCount(panel.locator("[data-gharargah-terminal-cursor-trail]"), 0)
+      await expectLocatorCount(panel.locator("[data-yaade-terminal-cursor-trail]"), 0)
       // WebGL/Canvas draw the caret on canvas — no DomRenderer `.xterm-cursor`.
       // Dom fallback still exposes exactly one DOM caret.
-      const renderer = await panel.getAttribute("data-gharargah-terminal-renderer")
+      const renderer = await panel.getAttribute("data-yaade-terminal-renderer")
       if (renderer === "dom" || renderer == null) {
         await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
       } else {
@@ -550,13 +550,13 @@ test.describe("electron terminal", () => {
         await expectLocatorCount(panel.locator(".xterm-helper-textarea"), 1)
       }
 
-      await panel.locator(".gharargah-terminal-surface").click()
+      await panel.locator(".yaade-terminal-surface").click()
       await page.keyboard.type("cursor")
       if (renderer === "dom" || renderer == null) {
         await expectLocatorCount(panel.locator(".xterm-cursor"), 1)
       }
-      await expectLocatorCount(panel.locator("[data-gharargah-terminal-cursor-ghost]"), 0)
-      const cursor = await page.evaluate(() => window.__gharargahAgent?.getTerminalCursor?.())
+      await expectLocatorCount(panel.locator("[data-yaade-terminal-cursor-ghost]"), 0)
+      const cursor = await page.evaluate(() => window.__yaadeAgent?.getTerminalCursor?.())
       expect(cursor).toBeTruthy()
       expect(cursor!.hidden).toBe(false)
     } finally {
@@ -568,20 +568,20 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      const panel = page.locator("[data-gharargah-terminal-panel]")
-      await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
+      const panel = page.locator("[data-yaade-terminal-panel]")
+      await expectLocatorAttribute(panel, "data-yaade-terminal-status", "running")
 
-      await execCommand(page, "gharargah.goHome")
-      await expectLocatorCount(page.locator("[data-gharargah-terminal-modal]"), 0)
-      await expectSelectorVisible(page, "[data-gharargah-mission-sidebar]")
+      await execCommand(page, "yaade.goHome")
+      await expectLocatorCount(page.locator("[data-yaade-terminal-modal]"), 0)
+      await expectSelectorVisible(page, "[data-yaade-mission-sidebar]")
 
-      await page.locator("[data-gharargah-sidebar-session]").first().click()
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
-      await expectLocatorAttribute(panel, "data-gharargah-terminal-status", "running")
+      await page.locator("[data-yaade-sidebar-session]").first().click()
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]")
+      await expectLocatorAttribute(panel, "data-yaade-terminal-status", "running")
 
       await page.waitForFunction(() => {
-        const dims = window.__gharargahAgent?.getTerminalDims?.()
-        const cursor = window.__gharargahAgent?.getTerminalCursor?.()
+        const dims = window.__yaadeAgent?.getTerminalDims?.()
+        const cursor = window.__yaadeAgent?.getTerminalCursor?.()
         if (!dims || !cursor || cursor.hidden) return false
         return (
           cursor.x >= 0 &&
@@ -592,13 +592,13 @@ test.describe("electron terminal", () => {
       })
 
       const box = await page.evaluate(() => {
-        const dims = window.__gharargahAgent!.getTerminalDims!()!
-        const cursor = window.__gharargahAgent!.getTerminalCursor!()!
+        const dims = window.__yaadeAgent!.getTerminalDims!()!
+        const cursor = window.__yaadeAgent!.getTerminalCursor!()!
         const screen = document.querySelector<HTMLElement>(
-          "[data-gharargah-terminal-panel] .xterm-screen",
+          "[data-yaade-terminal-panel] .xterm-screen",
         )
         const canvas = document.querySelector<HTMLElement>(
-          "[data-gharargah-terminal-panel] canvas",
+          "[data-yaade-terminal-panel] canvas",
         )
         const screenRect = screen?.getBoundingClientRect()
         const canvasRect = canvas?.getBoundingClientRect()
@@ -632,7 +632,7 @@ test.describe("electron terminal", () => {
       await showTerminal(page)
       await focusTerminal(page)
       await page.evaluate(() => {
-        const terminal = window.gharargah?.terminal
+        const terminal = window.yaade?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
         const target = window as Window & { __terminalEscapeWrites?: string[] }
         target.__terminalEscapeWrites = []
@@ -645,7 +645,7 @@ test.describe("electron terminal", () => {
 
       await page.keyboard.press("Escape")
 
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]")
       await expect
         .poll(() =>
           page.evaluate(
@@ -662,9 +662,9 @@ test.describe("electron terminal", () => {
 
       // The Terminal tool owns Escape even if a chrome control temporarily
       // holds focus; route the byte to the visible PTY and restore xterm focus.
-      await page.locator("[data-gharargah-session-mode-dock] button").first().focus()
+      await page.locator("[data-yaade-session-mode-dock] button").first().focus()
       await page.keyboard.press("Escape")
-      await expectSelectorVisible(page, "[data-gharargah-terminal-modal]")
+      await expectSelectorVisible(page, "[data-yaade-terminal-modal]")
       await expect
         .poll(() =>
           page.evaluate(
@@ -680,7 +680,7 @@ test.describe("electron terminal", () => {
         .toBe(2)
       await expectLocatorFocused(
         page.locator(
-          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
+          "[data-yaade-terminal-panel] .xterm-helper-textarea",
         ),
       )
     } finally {
@@ -693,22 +693,22 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
 
-      await page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface").click()
+      await page.locator("[data-yaade-terminal-panel] \.yaade-terminal-surface").click()
       await page.evaluate(() => {
         const textarea = document.querySelector(
-          "[data-gharargah-terminal-panel] .xterm-helper-textarea",
+          "[data-yaade-terminal-panel] .xterm-helper-textarea",
         ) as HTMLTextAreaElement | null
         textarea?.focus()
       })
 
       await page.waitForFunction(
-        () => (window.__gharargahAgent?.getTerminalText?.() ?? "").trim().length > 0,
+        () => (window.__yaadeAgent?.getTerminalText?.() ?? "").trim().length > 0,
         null,
         { timeout: 15_000 },
       )
 
       const written = await page.evaluate(async () => {
-        const terminal = window.gharargah?.terminal
+        const terminal = window.yaade?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
         const chunks: string[] = []
         const original = terminal.write.bind(terminal)
@@ -716,8 +716,8 @@ test.describe("electron terminal", () => {
           chunks.push(data)
           return original(id, data)
         }
-        ;(window as unknown as { __gharargahTermWriteChunks?: string[] }).__gharargahTermWriteChunks = chunks
-        ;(window as unknown as { __gharargahTermWriteRestore?: () => void }).__gharargahTermWriteRestore = () => {
+        ;(window as unknown as { __yaadeTermWriteChunks?: string[] }).__yaadeTermWriteChunks = chunks
+        ;(window as unknown as { __yaadeTermWriteRestore?: () => void }).__yaadeTermWriteRestore = () => {
           terminal.write = original
         }
         return null
@@ -729,8 +729,8 @@ test.describe("electron terminal", () => {
       await page.waitForTimeout(100)
 
       const bytes = await page.evaluate(() => {
-        const chunks = (window as unknown as { __gharargahTermWriteChunks?: string[] }).__gharargahTermWriteChunks ?? []
-        ;(window as unknown as { __gharargahTermWriteRestore?: () => void }).__gharargahTermWriteRestore?.()
+        const chunks = (window as unknown as { __yaadeTermWriteChunks?: string[] }).__yaadeTermWriteChunks ?? []
+        ;(window as unknown as { __yaadeTermWriteRestore?: () => void }).__yaadeTermWriteRestore?.()
         return chunks.join("")
       })
 
@@ -747,7 +747,7 @@ test.describe("electron terminal", () => {
       await showTerminal(page)
       await focusTerminal(page)
       await page.evaluate(() => {
-        const terminal = window.gharargah?.terminal
+        const terminal = window.yaade?.terminal
         if (!terminal) throw new Error("Terminal API unavailable")
         const target = window as Window & { __terminalNavigationWrites?: string[] }
         target.__terminalNavigationWrites = []
@@ -783,16 +783,16 @@ test.describe("electron terminal", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      const surface = page.locator("[data-gharargah-terminal-panel] \.gharargah-terminal-surface")
+      const surface = page.locator("[data-yaade-terminal-panel] \.yaade-terminal-surface")
       await surface.click()
       await page.keyboard.type("seq 1 240")
       await page.keyboard.press("Enter")
       await page.waitForFunction(() => {
-        const viewport = document.querySelector<HTMLElement>("[data-gharargah-terminal-panel] .xterm-viewport")
+        const viewport = document.querySelector<HTMLElement>("[data-yaade-terminal-panel] .xterm-viewport")
         return viewport != null && viewport.scrollHeight > viewport.clientHeight * 2
       }, null, { timeout: 15_000 })
 
-      const samples = await page.locator("[data-gharargah-terminal-panel] .xterm-viewport").evaluate(async viewport => {
+      const samples = await page.locator("[data-yaade-terminal-panel] .xterm-viewport").evaluate(async viewport => {
         viewport.scrollTop = viewport.scrollHeight
         viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -640, bubbles: true, cancelable: true }))
         const values: number[] = []
@@ -806,7 +806,7 @@ test.describe("electron terminal", () => {
       const moving = samples.filter((value, index) => index === 0 || value !== samples[index - 1])
       expect(moving.length).toBeGreaterThanOrEqual(1)
       if (samples.at(-1) === samples[0]) {
-        const jumped = await page.locator("[data-gharargah-terminal-panel] .xterm-viewport").evaluate(viewport => {
+        const jumped = await page.locator("[data-yaade-terminal-panel] .xterm-viewport").evaluate(viewport => {
           const before = viewport.scrollTop
           viewport.scrollTop = Math.max(0, before - 120)
           return viewport.scrollTop !== before
@@ -825,10 +825,10 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
       await focusTerminal(page)
-      const needle = "gharargah-drop-path-fixture"
+      const needle = "yaade-drop-path-fixture"
       const dropped = await page.evaluate(async pathNeedle => {
         const path = `/tmp/${pathNeedle} with spaces.txt`
-        const ok = await window.__gharargahAgent!.dropFilesOnTerminal([path])
+        const ok = await window.__yaadeAgent!.dropFilesOnTerminal([path])
         return { ok, path }
       }, needle)
       expect(dropped.ok).toBe(true)
