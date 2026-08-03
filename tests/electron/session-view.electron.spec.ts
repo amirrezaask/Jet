@@ -15,12 +15,12 @@ test.describe("terminal-first session workspace", () => {
       await expectSelectorVisible(page, "[data-yaade-session-workspace]")
       await expectSelectorVisible(page, "[data-yaade-session-window]")
       await expectLocatorContainsText(
-        page.locator("[data-yaade-terminal-modal-title]"),
+        page.locator("[data-yaade-session-pane-title]").first(),
         "Codex",
       )
       await expect
         .poll(async () =>
-          (await page.locator("[data-yaade-terminal-modal-title]").textContent()) ?? "",
+          (await page.locator("[data-yaade-session-pane-title]").first().textContent()) ?? "",
         )
         .not.toMatch(/sample-workspace/)
       await expectSelectorVisible(page, "[data-yaade-session-mode-dock]")

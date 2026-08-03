@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react"
-import { Command, FileSearch, SearchIcon, XIcon } from "lucide-react"
+import { XIcon } from "lucide-react"
 import type { LspStatus } from "@yaade/lsp"
 import { lspStatusIsActive, lspStatusShortLabel } from "@yaade/lsp/status"
 import {
@@ -14,7 +14,6 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable.js"
 import { cn } from "@/lib/utils.js"
-import { formatKeyBinding } from "@/lib/format-key.js"
 import { getEditorCursor, subscribeEditorCursor } from "@/status/editor-cursor-store.js"
 import { SearchLocationList } from "@/panels/location-list/SearchLocationList.js"
 import { SessionHeaderChromePortal } from "./session-header-chrome.js"
@@ -30,10 +29,6 @@ export type ModalEditorTabBarProps = {
   activeTabId: string | null
   onActivateBuffer: (tabId: string) => void
   onCloseBuffer: (tabId: string) => void
-  onQuickOpen?: () => void
-  projectSearchOpen?: boolean
-  onProjectSearchOpenChange?: (open: boolean) => void
-  onCommandPalette?: () => void
   className?: string
 }
 
@@ -44,11 +39,9 @@ export type ModalEditorPaneProps = {
   lspStatus: LspStatus
   onActivateBuffer: (tabId: string) => void
   onCloseBuffer: (tabId: string) => void
-  onQuickOpen?: () => void
   projectSearchOpen?: boolean
   onProjectSearchOpenChange?: (open: boolean) => void
   onOpenSearchItem?: (item: ListItem) => void
-  onCommandPalette?: () => void
   /** Scope project search to the session's folder(s); defaults to all roots. */
   getSearchFolders?: () => WorkspaceFolder[]
   /** When true, buffer tabs render in the session header via portal. */
@@ -62,10 +55,6 @@ export function ModalEditorTabBar(props: ModalEditorTabBarProps) {
     activeTabId,
     onActivateBuffer,
     onCloseBuffer,
-    onQuickOpen,
-    projectSearchOpen = false,
-    onProjectSearchOpenChange,
-    onCommandPalette,
     className,
   } = props
 
@@ -83,7 +72,7 @@ export function ModalEditorTabBar(props: ModalEditorTabBarProps) {
     >
       {buffers.length === 0 ? (
         <p className="flex items-center px-2 text-2xs text-muted-foreground">
-          No open buffers — Quick Open a file
+          No open buffers — {formatModPHint()}
         </p>
       ) : (
         buffers.map(buffer => {
@@ -144,50 +133,16 @@ export function ModalEditorTabBar(props: ModalEditorTabBarProps) {
           )
         })
       )}
-      <div className="ml-auto flex shrink-0 items-center gap-0.5 px-0.5">
-        {onQuickOpen ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            title={`Quick open (${formatKeyBinding("Mod-p")})`}
-            className="text-muted-foreground hover:text-foreground"
-            onClick={onQuickOpen}
-          >
-            <FileSearch data-icon="inline-start" />
-            <span className="hidden sm:inline">Quick Open</span>
-          </Button>
-        ) : null}
-        {onProjectSearchOpenChange ? (
-          <Button
-            type="button"
-            variant={projectSearchOpen ? "secondary" : "ghost"}
-            size="xs"
-            aria-pressed={projectSearchOpen}
-            title={`Search project (${formatKeyBinding("Mod-Shift-f")})`}
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => onProjectSearchOpenChange(!projectSearchOpen)}
-          >
-            <SearchIcon data-icon="inline-start" />
-            <span className="hidden sm:inline">Search</span>
-          </Button>
-        ) : null}
-        {onCommandPalette ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            title={`Command palette (${formatKeyBinding("Mod-Shift-p")})`}
-            className="text-muted-foreground hover:text-foreground"
-            onClick={onCommandPalette}
-          >
-            <Command data-icon="inline-start" />
-            <span className="hidden sm:inline">Commands</span>
-          </Button>
-        ) : null}
-      </div>
     </div>
   )
+}
+
+function formatModPHint(): string {
+  const mod =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+      ? "⌘"
+      : "Ctrl"
+  return `${mod}P to open a file`
 }
 
 export function ModalEditorPane(props: ModalEditorPaneProps) {
@@ -198,11 +153,9 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
     lspStatus,
     onActivateBuffer,
     onCloseBuffer,
-    onQuickOpen,
     projectSearchOpen = false,
     onProjectSearchOpenChange,
     onOpenSearchItem,
-    onCommandPalette,
     getSearchFolders,
     headerActive = false,
     children,
@@ -221,10 +174,6 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
       activeTabId={activeTabId}
       onActivateBuffer={onActivateBuffer}
       onCloseBuffer={onCloseBuffer}
-      onQuickOpen={onQuickOpen}
-      projectSearchOpen={projectSearchOpen}
-      onProjectSearchOpenChange={onProjectSearchOpenChange}
-      onCommandPalette={onCommandPalette}
     />
   )
 

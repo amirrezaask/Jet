@@ -58,11 +58,10 @@ export type SessionPaneHostProps = {
   notificationCounts: NotificationBellProps["counts"]
   onOpenNotifications: () => void
   onResumeArchived: (tabId: string) => void
+  onHideSession: (panelId: PanelId, tabId: string) => void
   onOpenInApp: (rootUri: string, appId: OpenInAppId) => void
   onActivateBuffer: (tabId: string) => void
   onCloseBuffer: (tabId: string) => void
-  onQuickOpen: () => void
-  onCommandPalette: () => void
   onOpenSearchItem: (item: {
     fileUri: string
     line: number
@@ -126,11 +125,10 @@ export function SessionPaneHost(props: SessionPaneHostProps) {
     notificationCounts,
     onOpenNotifications,
     onResumeArchived,
+    onHideSession,
     onOpenInApp,
     onActivateBuffer,
     onCloseBuffer,
-    onQuickOpen,
-    onCommandPalette,
     onOpenSearchItem,
     openFileInEditor,
     openFileInEditorRef,
@@ -177,6 +175,10 @@ export function SessionPaneHost(props: SessionPaneHostProps) {
       open
       presentation="inline"
       embedded
+      panelId={panelId}
+      tabStore={tabStore}
+      paneFocused={focused}
+      onHideSession={() => onHideSession(panelId, sessionTabId)}
       headerEnd={
         props.headerEnd ?? (
           <NotificationBell
@@ -190,6 +192,7 @@ export function SessionPaneHost(props: SessionPaneHostProps) {
       title={title}
       gitBranch={gitBranch}
       projectRootUri={rootUri || null}
+      projectName={canShowAgent ? null : (project ?? null)}
       launchCommand={session?.launchCommand ?? null}
       status={session?.status ?? null}
       archivedAt={session?.archivedAt ?? null}
@@ -240,11 +243,9 @@ export function SessionPaneHost(props: SessionPaneHostProps) {
           }}
           onActivateBuffer={onActivateBuffer}
           onCloseBuffer={onCloseBuffer}
-          onQuickOpen={onQuickOpen}
           projectSearchOpen={projectSearchOpen}
           onProjectSearchOpenChange={onProjectSearchOpenChange}
           onOpenSearchItem={onOpenSearchItem}
-          onCommandPalette={onCommandPalette}
         >
           {showLiveEditor && editorPanelId && modalMonacoEditorHandle ? (
             <PanelBody

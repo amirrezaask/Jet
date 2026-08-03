@@ -17,7 +17,7 @@ export function createDefaultKeybindings(cmd: JetCommands): JetKeyBinding[] {
   bind("Cmd-f", cmd.find, ctx => ctx.editorFocus && noOverlay(ctx)),
   bind("Cmd-Alt-f", cmd.replace, ctx => ctx.editorFocus && noOverlay(ctx)),
   bind("Ctrl-g", cmd.gotoLine, ctx => ctx.editorFocus && noOverlay(ctx)),
-  bind("Cmd-Shift-f", cmd.search, ctx => ctx.workspaceOpen && noOverlay(ctx)),
+  bind("Cmd-Shift-f", cmd.find, ctx => ctx.workspaceOpen && noOverlay(ctx)),
   bind("Ctrl-Shift-g", cmd.git, ctx => ctx.workspaceOpen && noOverlay(ctx)),
   bind("Cmd-Shift-e", cmd.explorer, ctx => ctx.workspaceOpen && noOverlay(ctx)),
   bind("Mod-Shift-`", cmd.terminalExplorer, ctx => ctx.workspaceOpen && noOverlay(ctx)),

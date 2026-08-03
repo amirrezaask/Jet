@@ -3,11 +3,8 @@ import type { PanelEvent, PanelTree } from "@yaade/panels"
 import type { PanelId, PanelView } from "@yaade/shared"
 import {
   PanelDock,
-  PanelTabBar,
   type PanelSlotMeta,
   type TabDndHandlers,
-  type TabStore,
-  type TabTypeRegistry,
 } from "@yaade/ui"
 import { isTerminalTabId } from "@yaade/workspace"
 import { terminalOnlyView } from "./session-layout.js"
@@ -20,10 +17,6 @@ export type SessionWorkspaceDockProps = {
   tabDnd: TabDndHandlers
   /** Parent owns TabDndRoot when false (default true for standalone docks). */
   wrapTabDnd?: boolean
-  tabStore: TabStore
-  tabRegistry: TabTypeRegistry
-  onHideSession: (panelId: PanelId, tabId: string) => void
-  onActivateSession: (panelId: PanelId, tabId: string) => void
   renderSession: (
     sessionTabId: string,
     panelId: PanelId,
@@ -40,45 +33,14 @@ export function SessionWorkspaceDock(props: SessionWorkspaceDockProps) {
     onEvent,
     tabDnd,
     wrapTabDnd = true,
-    tabStore,
-    tabRegistry,
-    onHideSession,
-    onActivateSession,
     renderSession,
     empty,
   } = props
 
+  // Titlebar lives inside the session host (single row: title + actions + close).
   const renderHeader = useCallback(
-    (view: PanelView, panelId: PanelId, meta: PanelSlotMeta) => {
-      const sessionView = terminalOnlyView(view)
-      if (sessionView.kind === "empty") {
-        return (
-          <div
-            data-yaade-session-window-chrome=""
-            data-yaade-liquid-glass="chrome"
-            className="flex h-9 shrink-0 items-center px-2"
-          />
-        )
-      }
-      return (
-        <div
-          data-yaade-session-window-chrome=""
-          data-yaade-liquid-glass="chrome"
-          className="shrink-0"
-        >
-          <PanelTabBar
-            panelId={panelId}
-            view={sessionView}
-            store={tabStore}
-            registry={tabRegistry}
-            focused={meta.focused}
-            onActivateTab={tabId => onActivateSession(panelId, tabId)}
-            onCloseTab={tabId => onHideSession(panelId, tabId)}
-          />
-        </div>
-      )
-    },
-    [onActivateSession, onHideSession, tabRegistry, tabStore],
+    (_view: PanelView, _panelId: PanelId, _meta: PanelSlotMeta) => null,
+    [],
   )
 
   const renderContent = useCallback(

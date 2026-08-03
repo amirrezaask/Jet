@@ -450,15 +450,29 @@ export function buildAppCommands(deps: BuildAppCommandsDeps): JetCommands {
     closeBuffer: closeTab,
     closeTab,
     find: ctx => {
-      const editor = asMonaco(ctx.getActiveEditorView())
-      if (!editor) return
-      void Promise.all([
-        import("@yaade/monaco"),
-        import("@yaade/ui/editor"),
-      ]).then(([monacoApi, editorUi]) => {
-        monacoApi.triggerFind(editor)
-        editorUi.openMonacoFind("find")
-      })
+      deps.setSessionMode("editor")
+      // Close project-search drawer so find targets the Monaco buffer.
+      deps.setProjectSearchOpen(false)
+      let attempts = 0
+      const runFind = () => {
+        void Promise.all([
+          import("@yaade/monaco"),
+          import("@yaade/ui/editor"),
+        ]).then(([monacoApi, editorUi]) => {
+          const editor =
+            asMonaco(ctx.getActiveEditorView()) ??
+            monacoApi.getActiveMonacoEditor()
+          if (!editor) {
+            if (attempts++ < 30) requestAnimationFrame(runFind)
+            return
+          }
+          editor.focus()
+          monacoApi.triggerFind(editor)
+          editorUi.openMonacoFind("find")
+        })
+      }
+      // Editor surface may mount on the next frame after mode switch.
+      requestAnimationFrame(runFind)
     },
     replace: ctx => {
       const editor = asMonaco(ctx.getActiveEditorView())
@@ -652,7 +666,7 @@ export function buildMacTerminalQuickSwitchBindings(opts: {
 export const APP_COMMAND_REGISTRY = [
   { id: "ui.showCommandPalette", fn: "palette", title: "Show Command Palette", category: "UI", aliases: ["commands", "palette", "help"] },
   { id: "workspace.quickOpen", fn: "quickOpen", title: "Quick Open File", category: "Workspace", aliases: ["files", "open quickly", "cmd-p"] },
-  { id: "workspace.search", fn: "search", title: "Search Project", category: "Workspace", aliases: ["find in files", "project search", "cmd-shift-f"] },
+  { id: "workspace.search", fn: "search", title: "Search Project", category: "Workspace", aliases: ["find in files", "project search"] },
   { id: "workspace.bufferList", fn: "bufferList", title: "Buffer List", category: "Workspace", aliases: ["open buffers", "switch buffer"] },
   { id: "terminal.list", fn: "terminalList", title: "Switch Session…", category: "View", aliases: ["switch terminal", "session switcher", "cmd-k", "switch session"] },
   { id: "session.new", fn: "sessionNew", title: "New Session…", category: "View", aliases: ["new agent", "agent cli", "cmd-n"] },
@@ -669,7 +683,7 @@ export const APP_COMMAND_REGISTRY = [
   { id: "workspace.newFile", fn: "newFile", title: "New File", category: "Workspace", aliases: ["untitled"] },
   { id: "workspace.closeBuffer", fn: "closeBuffer", title: "Close Buffer", category: "Workspace", aliases: ["close file"] },
   { id: "layout.closeTab", fn: "closeTab", title: "Close Tab", category: "Layout", aliases: ["close"] },
-  { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor" },
+  { id: "editor.find", fn: "find", title: "Find in Editor", category: "Editor", aliases: ["search", "cmd-shift-f", "cmd-f"] },
   { id: "editor.replace", fn: "replace", title: "Replace in Editor", category: "Editor" },
   { id: "editor.gotoLine", fn: "gotoLine", title: "Go to Line…", category: "Editor" },
   { id: "dialog.showEditor", fn: "showEditor", title: "Show Editor", category: "View", aliases: ["focus editor"] },

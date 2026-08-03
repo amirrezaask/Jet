@@ -35,6 +35,11 @@
     "key": "Cmd-f"
   },
   {
+    "jet": "editor.find",
+    "vscode": "actions.find",
+    "key": "Cmd-Shift-f"
+  },
+  {
     "jet": "editor.replace",
     "vscode": "editor.action.startFindReplaceAction",
     "key": "Cmd-Alt-f"
@@ -43,11 +48,6 @@
     "jet": "editor.gotoLine",
     "vscode": "editor.action.gotoLine",
     "key": "Ctrl-g"
-  },
-  {
-    "jet": "search.show",
-    "vscode": "workbench.view.search",
-    "key": "Cmd-Shift-f"
   },
   {
     "jet": "git.showChanges",

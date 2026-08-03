@@ -37,6 +37,9 @@ export function formatSessionHeaderTitle(
 
   if (!project) return context
   if (!context || sessionHeaderLabelsMatch(project, context)) return project
+  // Shell OSC cwd titles are often absolute/abbreviated paths ending in the project name.
+  const contextBase = context.split(/[/\\]/).filter(Boolean).at(-1) ?? ""
+  if (sessionHeaderLabelsMatch(project, contextBase)) return project
   return `${project} / ${context}`
 }
 

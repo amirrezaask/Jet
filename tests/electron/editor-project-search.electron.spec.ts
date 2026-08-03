@@ -31,7 +31,7 @@ test.describe("editor project search", () => {
       await page.locator('[data-yaade-session-mode-tab="editor"]').click()
       await expectSelectorVisible(page, "[data-yaade-modal-editor]")
 
-      await pressMod(page, "f", { shift: true })
+      await execCommand(page, "workspace.search")
       await expectSelectorVisible(page, "[data-yaade-editor-project-search]")
       await expectSelectorVisible(
         page,

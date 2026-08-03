@@ -99,7 +99,16 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       // those keys before the shell-level Escape → Home binding.
       if (target instanceof Element && target.closest('[data-slot="context-menu-content"]')) return
       const inXterm = target instanceof HTMLElement && target.closest(".xterm") != null
-      if (target instanceof HTMLInputElement || (target instanceof HTMLTextAreaElement && !inXterm)) {
+      // Monaco find/replace inputs stay focused after the widget hides; still
+      // allow shell chords (Mod-Shift-f → editor find, etc.) to run.
+      const inMonacoChrome =
+        target instanceof HTMLElement &&
+        target.closest(".monaco-editor, .find-widget, .replace-widget") != null
+      if (
+        !inMonacoChrome &&
+        (target instanceof HTMLInputElement ||
+          (target instanceof HTMLTextAreaElement && !inXterm))
+      ) {
         return
       }
 

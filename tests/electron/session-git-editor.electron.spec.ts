@@ -12,7 +12,7 @@ import {
   expectSelectorVisible,
 } from "../shell/assert.js"
 import { expectListRows } from "../helpers/list.js"
-import { execCommand, hasPtySpawn, launchJet, REPO_ROOT, SAMPLE } from "./_launch.js"
+import { execCommand, hasPtySpawn, launchJet, pressMod, REPO_ROOT, SAMPLE } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -32,12 +32,16 @@ test.describe("session Git and editor workspaces", () => {
       })
       const repositoryToolbar = page.locator("[data-yaade-git-toolbar]")
       const sessionHeader = page.locator("[data-yaade-terminal-modal-header]")
-      const session = page.locator("[data-yaade-terminal-modal]")
+      await expectLocatorVisible(sessionHeader)
+      await expectLocatorVisible(
+        sessionHeader.locator("[data-yaade-session-pane-title]"),
+      )
+      // Project/Git chrome lives in the portal / toolbar — not duplicated in the title.
       await expect
         .poll(async () =>
-          (await session.locator("[data-yaade-terminal-modal-title]").textContent())?.trim() ?? "",
+          (await sessionHeader.locator("[data-yaade-session-pane-title]").textContent()) ?? "",
         )
-        .toBe("workspace / Git")
+        .not.toMatch(/\/\s*Git/)
       await expectLocatorCount(repositoryToolbar.getByText("workspace", { exact: true }), 0)
       await expectLocatorCount(repositoryToolbar.getByText("main", { exact: true }), 0)
       await expectLocatorCount(repositoryToolbar.getByText(/^Commit \d+$/), 0)
@@ -272,8 +276,8 @@ test.describe("session Git and editor workspaces", () => {
       await page.getByRole("button", { name: "Close utils.ts" }).click()
       await expectLocatorCount(page.locator("[data-yaade-modal-editor-tab]"), 1, { timeout: 20_000 })
 
-      // A nested command palette may dismiss itself; it must never dismiss the session behind it.
-      await page.getByRole("button", { name: "Commands" }).click()
+      // Nested overlays must never dismiss the session behind them.
+      await pressMod(page, "p", { shift: true })
       await expectSelectorVisible(page, "[data-yaade-palette]")
       await page.keyboard.press("Escape")
       await expectLocatorCount(page.locator("[data-yaade-palette]"), 0, { timeout: 20_000 })
@@ -351,7 +355,7 @@ test.describe("session Git and editor workspaces", () => {
         })
         .toBe(realpathSync(fixture.secondWorkspace))
 
-      await page.getByRole("button", { name: "Quick Open" }).click()
+      await pressMod(page, "p")
       await expectSelectorVisible(page, "[data-yaade-palette]")
       await expectLocatorVisible(
         page.getByRole("button", { name: "Only other-workspace" }),
@@ -436,7 +440,7 @@ async function openQuickFile(
   query: string,
   expectedPath: string,
 ) {
-  await page.getByRole("button", { name: "Quick Open" }).click()
+  await pressMod(page, "p")
   await expectSelectorVisible(page, "[data-yaade-palette]")
   const input = page.locator("[data-yaade-palette] input")
   await input.fill(query)

@@ -16,47 +16,38 @@ const ptyAvailable = hasPtySpawn()
 test.describe("session header", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
 
-  test("shows the agent title in agent mode without project or provider chrome", async () => {
+  test("shows a single pane titlebar with agent title and actions", async () => {
     const { app, page } = await launchJet()
     try {
-      const modal = await openNewCliSession(page, "codex")
-      const header = modal.locator(
-        "[data-yaade-terminal-modal-header]",
-      )
-      const title = header.locator(
-        "[data-yaade-terminal-modal-title]",
-      )
+      await openNewCliSession(page, "codex")
+      const chrome = page.locator("[data-yaade-session-pane-chrome]").first()
+      const title = chrome.locator("[data-yaade-session-pane-title]")
 
-      await expectLocatorVisible(header)
-      await expect
-        .poll(() => title.evaluate(el => el.classList.contains("sr-only")))
-        .toBe(false)
+      await expectLocatorVisible(chrome)
       await expectLocatorContainsText(title, "Codex")
       await expect
         .poll(async () => (await title.textContent()) ?? "")
         .not.toMatch(/\//)
+      // One titlebar row — chrome is also the modal header.
+      await expectLocatorCount(page.locator("[data-yaade-terminal-modal-header]"), 1)
       await expectLocatorCount(
-        header.locator("[data-chat-header-provider]"),
+        chrome.locator("[data-yaade-open-in-app]"),
+        1,
+      )
+      await expectLocatorCount(
+        chrome.locator("[data-yaade-notification-bell]"),
+        1,
+      )
+      await expectLocatorCount(
+        chrome.locator("[data-chat-header-provider]"),
         0,
       )
       await expectLocatorCount(
-        header.locator("[data-yaade-terminal-launch-command]"),
+        chrome.locator("[data-yaade-terminal-launch-command]"),
         0,
       )
       await expectLocatorCount(
-        header.locator("[data-yaade-session-status-label]"),
-        0,
-      )
-      await expectLocatorCount(
-        header.locator("[data-yaade-session-status-indicator]"),
-        0,
-      )
-      await expectLocatorCount(
-        header.locator("[data-yaade-session-project-name]"),
-        0,
-      )
-      await expectLocatorCount(
-        header.locator("[data-chat-header-model]"),
+        chrome.locator("[data-yaade-session-project-name]"),
         0,
       )
     } finally {
@@ -68,16 +59,13 @@ test.describe("session header", () => {
     const { app, page } = await launchJet()
     try {
       await showTerminal(page)
-      const modal = page.locator("[data-yaade-terminal-modal]")
-      const title = modal.locator(
-        "[data-yaade-terminal-modal-title]",
-      )
+      const title = page.locator("[data-yaade-session-pane-title]").first()
       const workspaceName = await page.evaluate(() => {
         const workspace = window.__yaadeAgent!.getState().activeWorkspace!
         return workspace.split("/").filter(Boolean).at(-1)!
       })
 
-      await modal
+      await page
         .locator("[data-yaade-terminal-panel] .yaade-terminal-surface")
         .click()
       await page.evaluate(() => {

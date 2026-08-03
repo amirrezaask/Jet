@@ -31,6 +31,23 @@ describe("session header labels", () => {
     )
   })
 
+  it("collapses cwd/OSC path titles that end with the project name", () => {
+    assert.equal(
+      formatSessionHeaderTitle(
+        "sample-workspace",
+        "/var/folders/xx/T/j/sample-workspace",
+      ),
+      "sample-workspace",
+    )
+    assert.equal(
+      formatSessionHeaderTitle(
+        "sample-workspace",
+        "/v/f/l/4/T/j/sample-workspace",
+      ),
+      "sample-workspace",
+    )
+  })
+
   it("preserves context that adds information", () => {
     assert.equal(
       formatSessionHeaderTitle("sample-workspace", "index.ts"),

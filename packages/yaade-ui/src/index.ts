@@ -7,6 +7,10 @@ export {
 } from "./dock/PanelFloatingPopover.js"
 export { PanelBody } from "./dock/PanelBody.js"
 export { PanelTabBar, tabIdsOf, type PanelTab } from "./dock/PanelTabBar.js"
+export {
+  SessionPaneChrome,
+  type SessionPaneChromeProps,
+} from "./dock/SessionPaneChrome.js"
 export { TabHost } from "./tabs/TabHost.js"
 export {
   TabStore,

@@ -54,6 +54,14 @@ export function layoutEditor(editor: MonacoEditorHandle): void {
 }
 
 export function triggerFind(editor: MonacoEditorHandle, searchString?: string): void {
+  editor.focus()
+  const findAction =
+    editor.getAction("actions.find") ??
+    editor.getAction("editor.action.startFindReplaceAction")
+  if (findAction) {
+    void findAction.run()
+    return
+  }
   editor.trigger("yaade", "actions.find", searchString ?? null)
 }
 

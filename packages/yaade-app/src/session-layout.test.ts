@@ -3,8 +3,10 @@ import { describe, it } from "node:test"
 import { YaadePanelTree, WorkspaceService, WorkspaceManager } from "@yaade/workspace"
 import { registerTerminalSession, clearTerminalSession } from "./tabs/terminal-session.js"
 import {
+  applySessionPaneDrop,
   hideSessionFromLayout,
   openSessionInLayout,
+  placeSessionFromOutside,
   terminalOnlyView,
 } from "./session-layout.js"
 import { findPanelWithTab, panelTabIds } from "@yaade/workspace"
@@ -56,7 +58,7 @@ describe("session-layout", () => {
     assert.deepEqual(panelTabIds(view), ["yaade:terminal:x"])
   })
 
-  it("openSessionInLayout stacks same-label sessions as distinct tabs", () => {
+  it("openSessionInLayout splits when focused pane already has a session", () => {
     const workspace = makeWorkspace()
     const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
     registerTerminalSession("yaade:terminal:cursor-1", "file:///tmp/p")
@@ -84,17 +86,108 @@ describe("session-layout", () => {
       first.panelId,
     )
     assert.equal(second.created, true)
-    assert.equal(second.panelId.id, first.panelId.id)
-    const view = tree.getView(second.panelId)
-    assert.equal(view?.kind, "tabs")
-    if (view?.kind === "tabs") {
-      assert.deepEqual(panelTabIds(view).sort(), [
-        "yaade:terminal:cursor-1",
-        "yaade:terminal:cursor-2",
-      ])
-      assert.equal(view.activeTabId, "yaade:terminal:cursor-2")
+    assert.notEqual(second.panelId.id, first.panelId.id)
+    const firstView = tree.getView(first.panelId)
+    const secondView = tree.getView(second.panelId)
+    assert.equal(firstView?.kind, "tabs")
+    assert.equal(secondView?.kind, "tabs")
+    if (firstView?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(firstView), ["yaade:terminal:cursor-1"])
     }
+    if (secondView?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(secondView), ["yaade:terminal:cursor-2"])
+    }
+    assert.equal(tree.root.kind, "row")
     clearTerminalSession("yaade:terminal:cursor-1")
     clearTerminalSession("yaade:terminal:cursor-2")
+  })
+
+  it("applySessionPaneDrop swaps on center move", () => {
+    const workspace = makeWorkspace()
+    const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+    registerTerminalSession("yaade:terminal:left", "file:///tmp/a")
+    workspace.registerTab({
+      id: "yaade:terminal:left",
+      kind: "terminal",
+      label: "Left",
+    })
+    registerTerminalSession("yaade:terminal:right", "file:///tmp/b")
+    workspace.registerTab({
+      id: "yaade:terminal:right",
+      kind: "terminal",
+      label: "Right",
+    })
+    const left = openSessionInLayout(
+      workspace,
+      tree,
+      "yaade:terminal:left",
+      editorPanel,
+    )
+    const right = openSessionInLayout(
+      workspace,
+      tree,
+      "yaade:terminal:right",
+      left.panelId,
+    )
+    const result = applySessionPaneDrop(
+      tree,
+      left.panelId,
+      "yaade:terminal:left",
+      right.panelId,
+      { kind: "moveToPane" },
+    )
+    assert.equal(result.moved, true)
+    assert.equal(result.focusPanel.id, right.panelId.id)
+    const leftView = tree.getView(left.panelId)
+    const rightView = tree.getView(right.panelId)
+    assert.equal(leftView?.kind, "tabs")
+    assert.equal(rightView?.kind, "tabs")
+    if (leftView?.kind === "tabs") {
+      assert.equal(leftView.activeTabId, "yaade:terminal:right")
+    }
+    if (rightView?.kind === "tabs") {
+      assert.equal(rightView.activeTabId, "yaade:terminal:left")
+    }
+    clearTerminalSession("yaade:terminal:left")
+    clearTerminalSession("yaade:terminal:right")
+  })
+
+  it("placeSessionFromOutside replaces target on center drop", () => {
+    const workspace = makeWorkspace()
+    const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+    registerTerminalSession("yaade:terminal:old", "file:///tmp/a")
+    workspace.registerTab({
+      id: "yaade:terminal:old",
+      kind: "terminal",
+      label: "Old",
+    })
+    registerTerminalSession("yaade:terminal:new", "file:///tmp/b")
+    workspace.registerTab({
+      id: "yaade:terminal:new",
+      kind: "terminal",
+      label: "New",
+    })
+    const opened = openSessionInLayout(
+      workspace,
+      tree,
+      "yaade:terminal:old",
+      editorPanel,
+    )
+    const placed = placeSessionFromOutside(
+      workspace,
+      tree,
+      "yaade:terminal:new",
+      opened.panelId,
+      { kind: "moveToPane" },
+    )
+    assert.equal(placed.panelId.id, opened.panelId.id)
+    const view = tree.getView(opened.panelId)
+    assert.equal(view?.kind, "tabs")
+    if (view?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(view), ["yaade:terminal:new"])
+    }
+    assert.equal(findPanelWithTab(tree, "yaade:terminal:old"), null)
+    clearTerminalSession("yaade:terminal:old")
+    clearTerminalSession("yaade:terminal:new")
   })
 })

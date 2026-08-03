@@ -2,13 +2,13 @@ import type { YaadePanelTree, WorkspaceService } from "@yaade/workspace"
 import { normalizeAbsPath } from "@yaade/workspace"
 import { fileUriToPath } from "@yaade/shared"
 import {
-  findPanelWithTab,
   isTerminalTabId,
   panelTabIds,
   terminalTabId,
 } from "@yaade/workspace"
 import type { PanelId } from "@yaade/shared"
-import { resolveAuxiliaryPanel, getAllLeafPanels } from "./panel-routing.js"
+import { getAllLeafPanels } from "./panel-routing.js"
+import { openSessionInLayout } from "./session-layout.js"
 import { TERMINAL_TAB_TYPE_ID, registerTerminalSession } from "./tabs/terminal.tab.js"
 import { terminalCwdForTab } from "./tabs/terminal-session.js"
 
@@ -79,6 +79,10 @@ export function allocTerminalSessionKey(): string {
   return `session-${uuid}`
 }
 
+/**
+ * Create a new terminal/agent session and tile it: empty focused pane fills
+ * in-place; an occupied pane splits to the right (one session per pane).
+ */
 export function openTerminalTab(
   workspace: WorkspaceService,
   tree: YaadePanelTree,
@@ -89,7 +93,6 @@ export function openTerminalTab(
   const tabId = terminalTabId(sessionKey)
   const label = opts.label ?? "Terminal"
   const cwdRootUri = opts.cwdRootUri ?? workspace.root?.uri ?? ""
-  const panel = resolveAuxiliaryPanel(tree, focused, { splitEdge: "bottom" })
   const launchArgs =
     typeof opts.launchArgs === "function"
       ? opts.launchArgs(tabId)
@@ -102,15 +105,17 @@ export function openTerminalTab(
     launchArgs,
     launchEnv,
     agentId: opts.agentId,
-    agentTitle: opts.agentTitle,
+    agentTitle: opts.agentTitle ?? label,
     agentDriverId: opts.agentDriverId,
     agentCliSessionId: opts.agentCliSessionId,
     pendingCliMint: opts.pendingCliMint,
     lastActivityAt: opts.lastActivityAt,
   })
-  return workspace.openOrFocusTab(tree, panel, {
+  workspace.registerTab({
     id: tabId,
     kind: TERMINAL_TAB_TYPE_ID,
     label,
   })
+  const opened = openSessionInLayout(workspace, tree, tabId, focused)
+  return { panelId: opened.panelId, tabId: opened.tabId }
 }

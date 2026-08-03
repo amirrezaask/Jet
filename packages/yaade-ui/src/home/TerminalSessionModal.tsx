@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RotateCcw } from "lucide-react"
+import type { PanelId } from "@yaade/shared"
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,8 @@ import {
   sessionHeaderContextRef,
 } from "./session-header-chrome.js"
 import type { SessionProvider } from "./session-card-model.js"
+import { SessionPaneChrome } from "../dock/SessionPaneChrome.js"
+import type { TabStore } from "../tabs/registry.js"
 
 export type SessionDialogMode =
   | "agent"
@@ -43,6 +46,11 @@ export type TerminalSessionModalProps = {
   presentation?: "modal" | "inline"
   /** Nested inside a session window leaf — omit outer glass chrome (leaf provides it). */
   embedded?: boolean
+  /** Required when embedded — tiling DnD + close live on the pane titlebar. */
+  panelId?: PanelId | null
+  tabStore?: TabStore | null
+  paneFocused?: boolean
+  onHideSession?: () => void
   windowChrome?: {
     platform: DesktopWindowPlatform
     titlebarHeight: number
@@ -56,6 +64,8 @@ export type TerminalSessionModalProps = {
   onResumeArchived?: () => void
   gitBranch?: string | null
   projectRootUri: string | null
+  /** Project folder name for collapsing cwd titles in the pane chrome. */
+  projectName?: string | null
   mode: SessionDialogMode
   onModeChange: (mode: SessionDialogMode) => void
   /** Whether this session has an agent surface (CLI or in-app chat). */
@@ -153,6 +163,10 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     onOpenChange,
     presentation = "modal",
     embedded = false,
+    panelId = null,
+    tabStore = null,
+    paneFocused = false,
+    onHideSession,
     windowChrome = null,
     title,
     launchCommand: _launchCommand,
@@ -161,6 +175,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     onResumeArchived,
     gitBranch: _gitBranch,
     projectRootUri,
+    projectName = null,
     mode,
     onModeChange,
     showAgentTab = false,
@@ -214,9 +229,49 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       } as CSSProperties)
     : undefined
   const displayTitle = showAgentMeta ? agentSessionHeader.threadTitle : title
-  const showVisibleTitle = mode === "agent"
+  // Embedded panes use SessionPaneChrome for the visible title.
+  const showVisibleTitle = !embedded && mode === "agent"
+  const usePaneTitlebar = embedded && panelId != null && tabStore != null
 
-  const sessionHeader = (
+  const headerTrailing = (
+    <>
+      {projectRootUri && onOpenInApp ? (
+        <OpenInAppMenu
+          rootUri={projectRootUri}
+          onOpenInApp={onOpenInApp}
+          data-yaade-open-in-app="modal"
+          className="h-6 gap-0.5 px-1 text-muted-foreground hover:text-foreground"
+        />
+      ) : null}
+      {headerEnd}
+      {archivedAt && onResumeArchived ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          onClick={onResumeArchived}
+          data-yaade-session-resume-archived=""
+          title="Resume archived session"
+        >
+          <RotateCcw aria-hidden data-icon="inline-start" />
+          <span className="hidden min-[720px]:inline">Resume</span>
+        </Button>
+      ) : null}
+    </>
+  )
+
+  const sessionHeader = usePaneTitlebar ? (
+    <SessionPaneChrome
+      panelId={panelId}
+      tabId={sessionId}
+      store={tabStore}
+      projectName={projectName}
+      focused={paneFocused}
+      onClose={() => onHideSession?.()}
+      trailing={headerTrailing}
+      contextRef={sessionHeaderContextRef(setHeaderContextEl)}
+    />
+  ) : (
     <DialogHeader
       data-yaade-terminal-modal-header=""
       data-yaade-liquid-glass="chrome"
@@ -264,28 +319,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         className="flex shrink-0 items-center gap-0.5"
         style={noDragRegion}
       >
-        {projectRootUri && onOpenInApp ? (
-          <OpenInAppMenu
-            rootUri={projectRootUri}
-            onOpenInApp={onOpenInApp}
-            data-yaade-open-in-app="modal"
-            className="h-6 gap-0.5 px-1 text-muted-foreground hover:text-foreground"
-          />
-        ) : null}
-        {headerEnd}
-        {archivedAt && onResumeArchived ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            onClick={onResumeArchived}
-            data-yaade-session-resume-archived=""
-            title="Resume archived session"
-          >
-            <RotateCcw aria-hidden data-icon="inline-start" />
-            <span className="hidden min-[720px]:inline">Resume</span>
-          </Button>
-        ) : null}
+        {headerTrailing}
       </div>
     </DialogHeader>
   )

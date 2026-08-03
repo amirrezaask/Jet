@@ -166,7 +166,7 @@ import {
   closePanelIfEmpty,
 } from "./panel-routing.js"
 import { confirmCloseBuffer } from "./close-buffer.js"
-import { openTerminalTab } from "./tab-routing.js"
+import { openTerminalTab, listTerminalTabs } from "./tab-routing.js"
 import {
   buildTerminalExplorerGroups,
   nextTerminalLabel,
@@ -174,8 +174,10 @@ import {
 import { buildSessionSidebarGroups } from "./session-sidebar-groups.js"
 import {
   activeTerminalTabInPanel,
+  applySessionPaneDrop,
   hideSessionFromLayout,
   openSessionInLayout,
+  placeSessionFromOutside,
 } from "./session-layout.js"
 import { SessionWorkspaceDock } from "./SessionWorkspaceDock.js"
 import { SessionPaneHost } from "./SessionPaneHost.js"
@@ -656,9 +658,22 @@ export function YaadeApp() {
   )
 
   const goHome = useCallback(() => {
+    const tree = cloneTree()
+    for (const { panelId, tabId } of listTerminalTabs(tree)) {
+      hideSessionFromLayout(tree, panelId, tabId)
+    }
+    const nextFocus = getAllLeafPanels(tree)[0] ?? null
+    commitTree(tree, nextFocus)
+    setFocusedPanel(nextFocus)
     closeTerminalModal()
     workspace.clearActiveFolder()
-  }, [workspace, closeTerminalModal])
+  }, [
+    cloneTree,
+    commitTree,
+    setFocusedPanel,
+    workspace,
+    closeTerminalModal,
+  ])
 
   useEffect(() => {
     if (workspace.manager.activeFolder) {
@@ -1991,7 +2006,7 @@ export function YaadeApp() {
       bind("Mod-n", appCommands.sessionNew, noOverlay),
       bind("Mod-k", appCommands.terminalList, noOverlay),
       bind("Mod-p", appCommands.quickOpen, whenWorkspace),
-      bind("Mod-Shift-f", appCommands.search, whenWorkspace),
+      bind("Mod-Shift-f", appCommands.find, whenWorkspace),
       bind("Mod-b", toggleSidebar, noOverlay),
       bind("Mod-Shift-g", appCommands.showGit, whenWorkspace),
       bind("Mod-Shift-p", appCommands.palette, noOverlay),
@@ -2002,7 +2017,7 @@ export function YaadeApp() {
       bind("Mod--", appCommands.zoomOut, noOverlay),
       bind("Mod-Shift-o", appCommands.quickOpen, whenWorkspace),
       bind("Mod-s", appCommands.save, whenWorkspace),
-      bind("Mod-f", appCommands.find, ctx => ctx.editorFocus && noOverlay(ctx)),
+      bind("Mod-f", appCommands.find, whenWorkspace),
       bind(
         "Mod-h",
         appCommands.replace,
@@ -2931,33 +2946,30 @@ export function YaadeApp() {
           openTerminalModal(existing, tabId)
           return
         }
-        const result = tree.applyTabDrop(existing, tabId, target, action)
+        const result = applySessionPaneDrop(
+          tree,
+          existing,
+          tabId,
+          target,
+          action,
+        )
         if (result.moved) {
-          const focus = result.createdPanel ?? target
-          setFocusedPanel(focus)
-          commitTree(tree, focus)
-          openTerminalModal(focus, tabId)
+          setFocusedPanel(result.focusPanel)
+          commitTree(tree, result.focusPanel)
+          openTerminalModal(result.focusPanel, tabId)
         }
         return
       }
-      const session = terminalSessionForTab(tabId)
-      const label =
-        session?.customLabel ??
-        session?.agentTitle ??
-        workspace.tabRegistry.get(tabId)?.label ??
-        "Terminal"
-      let panelId = target
-      if (action.kind === "split") {
-        panelId = tree.splitAtEdge(target, action.edge)
-      }
-      workspace.openOrFocusTab(tree, panelId, {
-        id: tabId,
-        kind: "terminal",
-        label,
-      })
-      setFocusedPanel(panelId)
-      commitTree(tree, panelId)
-      openTerminalModal(panelId, tabId)
+      const placed = placeSessionFromOutside(
+        workspace,
+        tree,
+        tabId,
+        target,
+        action,
+      )
+      setFocusedPanel(placed.panelId)
+      commitTree(tree, placed.panelId)
+      openTerminalModal(placed.panelId, tabId)
     },
     [cloneTree, commitTree, workspace, setFocusedPanel, openTerminalModal],
   )
@@ -2965,6 +2977,25 @@ export function YaadeApp() {
   const sessionTabDndHandlers = useMemo(
     () => ({
       ...tabDndHandlers,
+      onTabDrop: (
+        source: PanelId,
+        sourceTabId: string,
+        target: PanelId,
+        action: DropAction,
+      ) => {
+        const tree = cloneTree()
+        const result = applySessionPaneDrop(
+          tree,
+          source,
+          sourceTabId,
+          target,
+          action,
+        )
+        if (!result.moved) return
+        setFocusedPanel(result.focusPanel)
+        commitTree(tree, result.focusPanel)
+        openTerminalModal(result.focusPanel, sourceTabId)
+      },
       tabIdsForPanel: (panelId: PanelId) => {
         const view = appStateRef.current.panelTree.getView(panelId)
         if (view?.kind !== "tabs") return []
@@ -2972,7 +3003,14 @@ export function YaadeApp() {
       },
       onSessionDrop: dropSessionIntoLayout,
     }),
-    [tabDndHandlers, dropSessionIntoLayout],
+    [
+      tabDndHandlers,
+      dropSessionIntoLayout,
+      cloneTree,
+      commitTree,
+      setFocusedPanel,
+      openTerminalModal,
+    ],
   )
 
   const renameSidebarSession = useCallback(
@@ -3157,17 +3195,6 @@ export function YaadeApp() {
                         onEvent={handlePanelEvent}
                         tabDnd={sessionTabDndHandlers}
                         wrapTabDnd={false}
-                        tabStore={tabStore}
-                        tabRegistry={tabTypeRegistry}
-                        onHideSession={hideSessionTab}
-                        onActivateSession={(panelId, tabId) => {
-                          handlePanelEvent({
-                            type: "tabActivate",
-                            panelId,
-                            tabId,
-                          })
-                          openTerminalModal(panelId, tabId)
-                        }}
                         empty={
                           <div
                             className="flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 text-center"
@@ -3224,6 +3251,7 @@ export function YaadeApp() {
                               notifications.setOpen(true)
                             }
                             onResumeArchived={resumeArchivedSessionFromView}
+                            onHideSession={hideSessionTab}
                             onOpenInApp={(rootUri, appId) =>
                               void openProjectInApp(rootUri, appId)
                             }
@@ -3251,12 +3279,6 @@ export function YaadeApp() {
                                 commitTree(tree)
                               })()
                             }}
-                            onQuickOpen={() =>
-                              void executeCommand("workspace.quickOpen")
-                            }
-                            onCommandPalette={() =>
-                              void executeCommand("ui.showCommandPalette")
-                            }
                             onOpenSearchItem={item => {
                               setPendingEditorNavigation(item.fileUri, {
                                 line: item.line,

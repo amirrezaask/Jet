@@ -23,7 +23,7 @@ describe("tab-routing", () => {
     assert.equal(keys.size, 200)
   })
 
-  it("openTerminalTab stacks same-label agents as distinct tabs", () => {
+  it("openTerminalTab splits same-label agents into distinct panes", () => {
     const workspace = makeWorkspace()
     const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
     const first = openTerminalTab(workspace, tree, editorPanel, {
@@ -32,18 +32,25 @@ describe("tab-routing", () => {
       agentTitle: "Cursor",
       cwdRootUri: "file:///tmp/p",
     })
-    const second = openTerminalTab(workspace, tree, editorPanel, {
+    const second = openTerminalTab(workspace, tree, first.panelId, {
       label: "Cursor",
       agentId: "cursor",
       agentTitle: "Cursor",
       cwdRootUri: "file:///tmp/p",
     })
     assert.notEqual(first.tabId, second.tabId)
-    const view = tree.getView(first.panelId)
-    assert.equal(view?.kind, "tabs")
-    if (view?.kind === "tabs") {
-      assert.deepEqual(panelTabIds(view).sort(), [first.tabId, second.tabId].sort())
+    assert.notEqual(first.panelId.id, second.panelId.id)
+    const firstView = tree.getView(first.panelId)
+    const secondView = tree.getView(second.panelId)
+    assert.equal(firstView?.kind, "tabs")
+    assert.equal(secondView?.kind, "tabs")
+    if (firstView?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(firstView), [first.tabId])
     }
+    if (secondView?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(secondView), [second.tabId])
+    }
+    assert.equal(tree.root.kind, "row")
     for (const session of listTerminalSessions()) {
       clearTerminalSession(session.tabId)
     }
