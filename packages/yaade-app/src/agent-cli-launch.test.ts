@@ -13,7 +13,6 @@ import {
 import {
   applyAgentCliResumeLaunchArgs,
   ensureAgentCliProcess,
-  findExistingAgentCliHistorySession,
 } from "./agent-cli-resume.js"
 import {
   clearTerminalSession,
@@ -300,27 +299,6 @@ describe("ensureAgentCliProcess", () => {
     })
     archiveSession(tabId)
     assert.equal(ensureAgentCliProcess(tabId), false)
-  })
-
-  it("deduplicates provider history against archived sessions", () => {
-    const tabId = "yaade:terminal:history-archive"
-    hydrateTerminalSession({
-      tabId,
-      cwdRootUri: "file:///tmp/proj",
-      launchCommand: "codex",
-      status: "exited",
-      agentId: "codex",
-      agentCliSessionId: UUID,
-      archivedAt: "2026-08-01T00:00:00.000Z",
-    })
-    assert.equal(
-      findExistingAgentCliHistorySession(
-        listTerminalSessions(),
-        "codex",
-        UUID,
-      )?.tabId,
-      tabId,
-    )
   })
 
   it("applyAgentCliResumeLaunchArgs writes opencode --session", () => {

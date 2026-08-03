@@ -195,10 +195,10 @@ exec "$ROOT/node/${nodeRel}" "$ROOT/backend/host-server.mjs" \\
   "$@"
 `
   const hostPath = path.join(packDir, "yaade")
+  // Drop legacy agent launcher; rewrite host launcher fresh.
+  fs.rmSync(path.join(packDir, "yaade-agent"), { force: true })
   fs.writeFileSync(hostPath, hostLauncher)
   fs.chmodSync(hostPath, 0o755)
-  fs.rmSync(path.join(packDir, "yaade"), { force: true })
-  fs.rmSync(path.join(packDir, "yaade-agent"), { force: true })
   console.log(`Launchers: ${hostPath}`)
 }
 

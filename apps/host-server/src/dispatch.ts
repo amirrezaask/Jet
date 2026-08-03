@@ -3,7 +3,6 @@ import {
   fileSearch,
   gitIsRepo,
   isSearchScanReady,
-  listAgentCliHistory,
   listProjectFiles,
   loadGlobalYaadercScanRoots,
   openInApp,
@@ -18,7 +17,6 @@ import {
   trackFileAccess,
   writeFile,
   writeTempDrop,
-  assertAllowedPath,
   assertAllowedUri,
   type TerminalLaunch,
 } from "@yaade/node-host"
@@ -288,23 +286,6 @@ async function handleAgents(
         runtime.config.dataDir,
       )
       return { written }
-    }
-    case "agents:listCliSessions": {
-      const body = args[0] as {
-        provider?: string
-        cwd?: string
-        limit?: number
-      }
-      if (!body?.provider || !body.cwd) {
-        throw new Error("agents:listCliSessions requires provider + cwd")
-      }
-      const provider = parseAgentProvider(body.provider)
-      if (!provider) throw new Error("invalid agent provider")
-      await assertAllowedPath(body.cwd, runtime.config.allowedRoots)
-      return await listAgentCliHistory(provider, {
-        cwd: body.cwd,
-        limit: body.limit,
-      })
     }
     default:
       throw new Error(`unknown agents channel: ${channel}`)

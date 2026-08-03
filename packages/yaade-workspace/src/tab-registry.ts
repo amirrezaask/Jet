@@ -22,12 +22,47 @@ export const OUTPUT_TAB_ID = "yaade:output"
 export const PROBLEMS_TAB_ID = "yaade:problems"
 export const TERMINAL_TAB_ID_PREFIX = "yaade:terminal:"
 
+/** Current + pre-rename prefixes. Nested prefixes unwrap (bad hydrate double-prefix). */
+export const TERMINAL_TAB_ID_PREFIXES = [
+  TERMINAL_TAB_ID_PREFIX,
+  "gharargah:terminal:",
+  "jet:terminal:",
+] as const
+
 export function terminalTabId(sessionKey: string): string {
   return `${TERMINAL_TAB_ID_PREFIX}${sessionKey}`
 }
 
+/**
+ * Strip known terminal prefixes (including nested legacy wrappers) → session key.
+ * `yaade:terminal:gharargah:terminal:session-1` → `session-1`.
+ */
+export function terminalSessionKeyFromTabId(tabId: string): string | null {
+  let rest = tabId
+  let matched = false
+  for (;;) {
+    let hit = false
+    for (const prefix of TERMINAL_TAB_ID_PREFIXES) {
+      if (rest.startsWith(prefix)) {
+        rest = rest.slice(prefix.length)
+        matched = true
+        hit = true
+        break
+      }
+    }
+    if (!hit) break
+  }
+  return matched && rest.length > 0 ? rest : null
+}
+
+/** Map any legacy/nested terminal tab id onto the canonical `yaade:terminal:` form. */
+export function canonicalizeTerminalTabId(tabId: string): string {
+  const sessionKey = terminalSessionKeyFromTabId(tabId)
+  return sessionKey ? terminalTabId(sessionKey) : tabId
+}
+
 export function isTerminalTabId(tabId: string): boolean {
-  return tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
+  return terminalSessionKeyFromTabId(tabId) != null
 }
 
 export type TabDescriptor = {

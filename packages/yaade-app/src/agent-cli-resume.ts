@@ -24,19 +24,6 @@ export function resolveAgentCliProvider(
   return detectAgentCliProviderFromCommand(session.launchCommand)
 }
 
-/** Match provider history against the complete runtime roster, including archive. */
-export function findExistingAgentCliHistorySession(
-  sessions: readonly TerminalSessionState[],
-  provider: string,
-  cliSessionId: string,
-): TerminalSessionState | undefined {
-  const id = cliSessionId.trim()
-  if (!id) return undefined
-  return sessions.find(
-    session => session.agentId === provider && session.agentCliSessionId === id,
-  )
-}
-
 /** Sync resume launch args onto the session when a provider session id is known. */
 export function applyAgentCliResumeLaunchArgs(tabId: string): boolean {
   const session = terminalSessionForTab(tabId)

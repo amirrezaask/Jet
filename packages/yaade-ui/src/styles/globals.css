@@ -125,7 +125,6 @@
    * Keep the virtual slot rem-scaled so appearance zoom cannot clip or overlap
    * the line boxes. Other palette rows retain their compact contract. */
   --yaade-agent-cli-row-height: 3.5rem;
-  --yaade-agent-cli-history-row-height: 5rem;
   /* Traffic-light clearance only — not a closed-sidebar placeholder. */
   --yaade-traffic-light-inset: 5rem;
   --yaade-overlay-list-max: 22rem;

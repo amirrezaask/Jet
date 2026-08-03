@@ -37,7 +37,9 @@ import {
   panelTabIds,
   findPanelWithTab,
   isTerminalTabId,
-  TERMINAL_TAB_ID_PREFIX,
+  canonicalizeTerminalTabId,
+  terminalSessionKeyFromTabId,
+  terminalTabId,
   fileSearchAcrossFolders,
   relativePathInFolder,
   resolveQuickOpenDisplayPath,
@@ -45,7 +47,6 @@ import {
 import type { MonacoEditorHandle } from "@yaade/monaco"
 import { agentDriverIdForMode } from "@yaade/agents"
 import type {
-  AgentCliHistorySession,
   AppNotification,
   AgentProvider,
 } from "@yaade/shared"
@@ -148,20 +149,12 @@ import { setAgentSessionTitleTabUpdater } from "./agent-session-title-bridge.js"
 import {
   ensureAgentCliProcess,
   applyAgentCliResumeLaunchArgs,
-  findExistingAgentCliHistorySession,
 } from "./agent-cli-resume.js"
 import {
   releaseActiveAgentWarmResumeToForeground,
   startActiveAgentCliWarmResume,
   type ActiveAgentWarmResumeRun,
 } from "./background-agent-cli-resume.js"
-import {
-  buildAgentCliHistoryPrefetchTargets,
-  ensureAgentCliHistory,
-  peekAgentCliHistory,
-  startAgentCliHistoryPrefetch,
-  type AgentCliHistoryPrefetchRun,
-} from "./background-agent-cli-history.js"
 import { type PersistedSessionRoster } from "./session-roster-store.js"
 import {
   loadServerSessionRoster,
@@ -368,9 +361,6 @@ export function YaadeApp() {
   const sessionRosterReadyRef = useRef(false)
   const startupRecordedRef = useRef(false)
   const activeAgentWarmResumeRef = useRef<ActiveAgentWarmResumeRun | null>(null)
-  const agentCliHistoryPrefetchRef = useRef<AgentCliHistoryPrefetchRun | null>(
-    null,
-  )
   const openWorkspaceRef = useRef<
     (folderPath: string, opts?: OpenWorkspaceOptions) => void | Promise<void>
   >(() => {})
@@ -746,170 +736,6 @@ export function YaadeApp() {
       }
     },
     [openTerminalInWorkspace, openTerminalModal, closeTerminalModal],
-  )
-
-  const loadAgentCliHistory = useCallback(
-    (driver: AgentCliDriver, rootUri: string, signal: AbortSignal) => {
-      const agents = window.yaade?.agents
-      if (!agents?.listCliSessions) {
-        return Promise.reject(new Error("CLI session history is unavailable on this host"))
-      }
-      return ensureAgentCliHistory({
-        listCliSessions: agents.listCliSessions.bind(agents),
-        provider: driver.id,
-        cwd: fileUriToPath(rootUri),
-        limit: 50,
-        signal,
-      })
-    },
-    [],
-  )
-
-  const peekAgentCliHistoryForPicker = useCallback(
-    (driver: AgentCliDriver, rootUri: string) =>
-      peekAgentCliHistory(driver.id, fileUriToPath(rootUri)),
-    [],
-  )
-
-  const prefetchAgentCliHistoryForFolders = useCallback(() => {
-    const listCliSessions = window.yaade?.agents?.listCliSessions
-    if (!listCliSessions) return
-    const targets = buildAgentCliHistoryPrefetchTargets(
-      workspace.folders.map(folder => folder.root.path),
-    )
-    if (targets.length === 0) return
-    const run = startAgentCliHistoryPrefetch({
-      listCliSessions: listCliSessions.bind(window.yaade!.agents!),
-      targets,
-    })
-    agentCliHistoryPrefetchRef.current = run
-    void run.done.then(summary => {
-      if (agentCliHistoryPrefetchRef.current === run) {
-        agentCliHistoryPrefetchRef.current = null
-      }
-      performance.measure("yaade:agent-cli-history-prefetch", {
-        start: performance.now() - summary.durationMs,
-        end: performance.now(),
-        detail: summary,
-      })
-    })
-  }, [workspace])
-
-  const resumeAgentCliHistorySession = useCallback(
-    async (
-      fallbackRootUri: string,
-      driver: AgentCliDriver,
-      history: AgentCliHistorySession,
-    ) => {
-      try {
-        if (history.provider !== driver.id) {
-          throw new Error("Provider session does not match the selected CLI")
-        }
-
-        const existing = findExistingAgentCliHistorySession(
-          listTerminalSessions(),
-          driver.id,
-          history.id,
-        )
-        let existingPanel = existing
-          ? findPanelWithTab(appStateRef.current.panelTree, existing.tabId)
-          : null
-        if (existing && !existingPanel) {
-          const tree = cloneTree()
-          const sessionKey = existing.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
-            ? existing.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
-            : existing.tabId
-          const opened = openTerminalTab(
-            workspace,
-            tree,
-            appStateRef.current.focusedPanel,
-            {
-              sessionKey,
-              label:
-                existing.customLabel ??
-                existing.agentTitle ??
-                history.title ??
-                driver.label,
-              cwdRootUri: existing.cwdRootUri,
-              launchCommand: existing.launchCommand,
-              launchArgs: existing.launchArgs,
-              launchEnv: existing.launchEnv,
-              agentId: existing.agentId,
-              agentTitle: existing.agentTitle,
-              agentDriverId: existing.agentDriverId,
-              agentCliSessionId: existing.agentCliSessionId,
-              lastActivityAt: existing.lastActivityAt,
-            },
-          )
-          commitTree(tree, opened.panelId)
-          existingPanel = opened.panelId
-        }
-        if (existing && existingPanel) {
-          focusTerminalTab(existingPanel, existing.tabId, "agent")
-          return
-        }
-
-        const cwd = history.cwd?.trim() || fileUriToPath(fallbackRootUri)
-        const normalizedCwd = normalizeAbsPath(cwd)
-        const rootUri = pathToFileUri(normalizedCwd)
-        const knownProject = workspace.folders.some(
-          folder => normalizeAbsPath(folder.root.path) === normalizedCwd,
-        )
-        if (!knownProject) {
-          await openWorkspaceRef.current(normalizedCwd)
-        }
-
-        const { panelId, tabId } = await openTerminalInWorkspace(rootUri, {
-          label: history.title || driver.label,
-          launchCommand: driver.command,
-          launchArgs: nextTabId =>
-            buildAgentCliLaunchArgs(
-              driver.id,
-              {
-                sessionId: nextTabId,
-                origin: window.location.origin,
-                projectRoot: normalizedCwd,
-              },
-              history.id,
-            ),
-          launchEnv: nextTabId =>
-            buildAgentCliLaunchEnv(driver.id, {
-              sessionId: nextTabId,
-              origin: window.location.origin,
-              projectRoot: normalizedCwd,
-            }),
-          agentId: driver.id,
-          agentTitle: history.title || driver.label,
-          agentDriverId: agentDriverIdForMode(driver.id, "cli"),
-          agentCliSessionId: history.id,
-          lastActivityAt: history.updatedAt ?? history.createdAt ?? undefined,
-        })
-        void window.yaade?.agents
-          ?.installProjectHooks?.({
-            provider: driver.id,
-            projectRoot: normalizedCwd,
-          })
-          .catch(() => undefined)
-        bindAgentToSession(tabId, {
-          agentId: driver.id,
-          driverId: agentDriverIdForMode(driver.id, "cli"),
-        })
-        openTerminalModal(panelId, tabId, "agent")
-      } catch (error) {
-        console.error("[yaade] resumeAgentCliHistorySession failed", error)
-        showYaadeToast(error instanceof Error ? error.message : String(error), {
-          variant: "destructive",
-        })
-      }
-    },
-    [
-      workspace,
-      cloneTree,
-      commitTree,
-      openTerminalInWorkspace,
-      openTerminalModal,
-      focusTerminalTab,
-    ],
   )
 
   const ensureSessionModalOpen = useCallback(
@@ -2471,7 +2297,6 @@ export function YaadeApp() {
   useEffect(() => {
     return () => {
       activeAgentWarmResumeRef.current?.cancel()
-      agentCliHistoryPrefetchRef.current?.cancel()
     }
   }, [])
 
@@ -2531,19 +2356,37 @@ export function YaadeApp() {
       )
       if (roster.sessions.length > 0) {
         const tree = cloneTree()
+        // Prefer archived row when legacy + canonical ids collide after rename.
+        const hydrateEntries = new Map<
+          string,
+          (typeof roster.sessions)[number]
+        >()
         for (const entry of roster.sessions) {
+          const sessionKey = terminalSessionKeyFromTabId(entry.tabId)
+          const canonicalTabId = sessionKey
+            ? terminalTabId(sessionKey)
+            : canonicalizeTerminalTabId(entry.tabId)
+          const prior = hydrateEntries.get(canonicalTabId)
+          if (!prior) {
+            hydrateEntries.set(canonicalTabId, entry)
+            continue
+          }
+          if (entry.doneAt && !prior.doneAt) {
+            hydrateEntries.set(canonicalTabId, entry)
+          }
+        }
+        for (const [canonicalTabId, entry] of hydrateEntries) {
           if (entry.agentId && !entry.launchCommand?.trim()) continue
           if (entry.agentId && !isAgentCliProvider(entry.agentId)) continue
-          if (findPanelWithTab(tree, entry.tabId)) continue
-          const sessionKey = entry.tabId.startsWith(TERMINAL_TAB_ID_PREFIX)
-            ? entry.tabId.slice(TERMINAL_TAB_ID_PREFIX.length)
-            : entry.tabId
+          if (findPanelWithTab(tree, canonicalTabId)) continue
+          const sessionKey =
+            terminalSessionKeyFromTabId(canonicalTabId) ?? canonicalTabId
           const cwdRootUri = resolveWorkspaceRootUri(
             entry.cwdRootUri,
             workspace.folders,
           )
           const hydrated = prepareHydratedAgentCliFields({
-            tabId: entry.tabId,
+            tabId: canonicalTabId,
             cwdRootUri,
             agentId: entry.agentId,
             agentDriverId: entry.agentDriverId,
@@ -2556,21 +2399,26 @@ export function YaadeApp() {
           })
           const cliSessionId =
             hydrated.agentCliSessionId ?? entry.agentCliSessionId
-          openTerminalTab(workspace, tree, appStateRef.current.focusedPanel, {
-            sessionKey,
-            label: entry.label,
-            cwdRootUri,
-            launchCommand: hydrated.launchCommand,
-            launchArgs: hydrated.launchArgs,
-            launchEnv: hydrated.launchEnv,
-            agentId: entry.agentId,
-            agentTitle: entry.agentTitle ?? entry.label,
-            agentDriverId: entry.agentDriverId,
-            agentCliSessionId: cliSessionId,
-            lastActivityAt: entry.lastActivityAt,
-          })
+          const opened = openTerminalTab(
+            workspace,
+            tree,
+            appStateRef.current.focusedPanel,
+            {
+              sessionKey,
+              label: entry.label,
+              cwdRootUri,
+              launchCommand: hydrated.launchCommand,
+              launchArgs: hydrated.launchArgs,
+              launchEnv: hydrated.launchEnv,
+              agentId: entry.agentId,
+              agentTitle: entry.agentTitle ?? entry.label,
+              agentDriverId: entry.agentDriverId,
+              agentCliSessionId: cliSessionId,
+              lastActivityAt: entry.lastActivityAt,
+            },
+          )
           hydrateTerminalSession({
-            tabId: entry.tabId,
+            tabId: opened.tabId,
             cwdRootUri,
             launchCommand: hydrated.launchCommand,
             launchArgs: hydrated.launchArgs,
@@ -2627,14 +2475,18 @@ export function YaadeApp() {
         }
 
         if (roster.modal) {
-          const panelId = findPanelWithTab(tree, roster.modal.tabId)
+          const modalTabId = canonicalizeTerminalTabId(roster.modal.tabId)
+          const panelId = findPanelWithTab(tree, modalTabId)
           if (panelId) {
             setTerminalModalPanelId(panelId)
-            setTerminalModalTabId(roster.modal.tabId)
-            releaseActiveAgentWarmResumeToForeground(roster.modal.tabId)
-            const restoredSession = roster.sessions.find(
-              entry => entry.tabId === roster.modal?.tabId,
-            )
+            setTerminalModalTabId(modalTabId)
+            releaseActiveAgentWarmResumeToForeground(modalTabId)
+            const restoredSession =
+              hydrateEntries.get(modalTabId) ??
+              roster.sessions.find(
+                entry =>
+                  canonicalizeTerminalTabId(entry.tabId) === modalTabId,
+              )
             let restoredMode = roster.modal.sessionMode
             const isCliAgent = Boolean(
               restoredSession?.agentId && restoredSession?.launchCommand,
@@ -2651,7 +2503,6 @@ export function YaadeApp() {
 
       sessionRosterReadyRef.current = true
       persistSessionRoster()
-      prefetchAgentCliHistoryForFolders()
     })()
   }, [
     layoutReady,
@@ -2660,14 +2511,9 @@ export function YaadeApp() {
     commitTree,
     persistSessionRoster,
     tabStore,
-    prefetchAgentCliHistoryForFolders,
     setSessionModeSynced,
   ])
 
-  useEffect(() => {
-    if (!layoutReady || !projectCatalogReadyRef.current) return
-    prefetchAgentCliHistoryForFolders()
-  }, [layoutReady, workspace.folders.length, prefetchAgentCliHistoryForFolders])
   useEffect(() => {
     if (
       startupRecordedRef.current ||
@@ -3437,14 +3283,6 @@ export function YaadeApp() {
             onSelectedRootUriChange={setAgentCliPickerRootUri}
             onRemoveProject={removeProjectByRootUri}
             onAddProject={() => setAddWorkspaceOpen(true)}
-            loadPreviousSessions={loadAgentCliHistory}
-            peekPreviousSessions={peekAgentCliHistoryForPicker}
-            onResumeSession={(driver, history) => {
-              const rootUri = agentCliPickerRootUri
-              setAgentCliPickerRootUri(null)
-              if (!rootUri) return
-              void resumeAgentCliHistorySession(rootUri, driver, history)
-            }}
             onSelect={driver => {
               const rootUri = agentCliPickerRootUri
               setAgentCliPickerRootUri(null)

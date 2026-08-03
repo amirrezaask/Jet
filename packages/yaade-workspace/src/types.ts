@@ -210,14 +210,6 @@ export type JetElectronNotifications = {
 }
 
 export type JetElectronAgents = {
-  listCliSessions(
-    req: {
-      provider: import("@yaade/shared").AgentCliHistoryProvider
-      cwd: string
-      limit?: number
-    },
-    signal?: AbortSignal,
-  ): Promise<import("@yaade/shared").AgentCliHistoryResult>
   getSnapshot(
     sessionId: string,
   ): Promise<import("@yaade/agents").AgentSessionSnapshot | null>
