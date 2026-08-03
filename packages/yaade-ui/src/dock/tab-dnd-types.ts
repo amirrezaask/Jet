@@ -13,6 +13,35 @@ export type TabDragData = {
   dirty?: boolean
 }
 
+/** Drag a session from the mission sidebar into the tiled workspace. */
+export type SessionDragData = {
+  type: "session"
+  tabId: string
+  label: string
+}
+
+export type DockDragData = TabDragData | SessionDragData
+
+export function isTabDragData(data: unknown): data is TabDragData {
+  return (
+    !!data &&
+    typeof data === "object" &&
+    (data as DockDragData).type === "tab"
+  )
+}
+
+export function isSessionDragData(data: unknown): data is SessionDragData {
+  return (
+    !!data &&
+    typeof data === "object" &&
+    (data as DockDragData).type === "session"
+  )
+}
+
+export function sessionDndId(tabId: string): string {
+  return `session:${tabId}`
+}
+
 export function tabDndId(panelId: PanelId, tabId: string): string {
   return `${TAB_DND_PREFIX}:${panelId.id}:${tabId}`
 }

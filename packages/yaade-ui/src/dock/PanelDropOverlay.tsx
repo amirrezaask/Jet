@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useDroppable } from "@dnd-kit/core"
 import {
   PanelLeftIcon,
@@ -223,7 +223,8 @@ export function PanelDropOverlay({
 
   const tabDrag = drag.tabSource
   const active = tabDrag != null
-  const samePanel = tabDrag?.panelId.id === panelId.id
+  const samePanel =
+    tabDrag?.panelId != null && tabDrag.panelId.id === panelId.id
 
   const sites = useMemo(
     () => computeDropSites(size.w, size.h, fontSize),
@@ -236,7 +237,7 @@ export function PanelDropOverlay({
       ? (effectiveSites.find(s => s.id === dropHot.zone) ?? null)
       : null
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
     if (active && effectiveSites.length > 0) {

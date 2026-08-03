@@ -40,12 +40,22 @@ export const SessionRosterModal = Schema.Struct({
 })
 export type SessionRosterModal = Schema.Schema.Type<typeof SessionRosterModal>
 
+/** Open tiled layout + per-session tool modes. Parsed loosely (see parseLayout). */
+export type SessionRosterLayout = {
+  tree: unknown
+  focusedPanelId: number | null
+  modesByTabId: Record<string, SessionRosterMode>
+}
+
 export const SessionRoster = Schema.Struct({
   version: Schema.Literal(2),
   sessions: Schema.Array(SessionRosterEntry),
   modal: Schema.NullOr(SessionRosterModal),
+  layout: Schema.optional(Schema.Unknown),
 })
-export type SessionRoster = Schema.Schema.Type<typeof SessionRoster>
+export type SessionRoster = Schema.Schema.Type<typeof SessionRoster> & {
+  layout?: SessionRosterLayout | null
+}
 
 /** @deprecated Use SessionRoster — kept for import stability during migration. */
 export const SessionRosterV2 = SessionRoster
@@ -167,6 +177,32 @@ function parseModal(raw: unknown): SessionRosterModal | null {
   return { tabId, sessionMode }
 }
 
+export function parseSessionRosterLayout(raw: unknown): SessionRosterLayout | null {
+  if (!raw || typeof raw !== "object") return null
+  const item = raw as Record<string, unknown>
+  if (item.tree == null || typeof item.tree !== "object") return null
+  const focusedPanelId =
+    typeof item.focusedPanelId === "number" && Number.isFinite(item.focusedPanelId)
+      ? item.focusedPanelId
+      : item.focusedPanelId === null
+        ? null
+        : null
+  const modesByTabId: Record<string, SessionRosterMode> = {}
+  if (item.modesByTabId && typeof item.modesByTabId === "object") {
+    for (const [tabId, mode] of Object.entries(
+      item.modesByTabId as Record<string, unknown>,
+    )) {
+      const parsed = asSessionMode(mode)
+      if (parsed) modesByTabId[tabId] = parsed
+    }
+  }
+  return {
+    tree: item.tree,
+    focusedPanelId,
+    modesByTabId,
+  }
+}
+
 /**
  * Validate + normalize a roster payload.
  * Returns `null` when structurally invalid (wrong version / missing sessions array).
@@ -174,7 +210,12 @@ function parseModal(raw: unknown): SessionRosterModal | null {
  */
 export function tryDecodeSessionRoster(raw: unknown): SessionRoster | null {
   if (!raw || typeof raw !== "object") return null
-  const body = raw as { version?: unknown; sessions?: unknown; modal?: unknown }
+  const body = raw as {
+    version?: unknown
+    sessions?: unknown
+    modal?: unknown
+    layout?: unknown
+  }
   if (body.version !== 1 && body.version !== 2) return null
   if (!Array.isArray(body.sessions)) return null
   const seen = new Set<string>()
@@ -186,10 +227,23 @@ export function tryDecodeSessionRoster(raw: unknown): SessionRoster | null {
     sessions.push(entry)
   }
   const modal = parseModal(body.modal)
+  const layout = parseSessionRosterLayout(body.layout)
   return {
     version: 2,
     sessions,
     modal: modal && seen.has(modal.tabId) ? modal : null,
+    ...(layout
+      ? {
+          layout: {
+            ...layout,
+            modesByTabId: Object.fromEntries(
+              Object.entries(layout.modesByTabId).filter(([tabId]) =>
+                seen.has(tabId),
+              ),
+            ),
+          },
+        }
+      : {}),
   }
 }
 

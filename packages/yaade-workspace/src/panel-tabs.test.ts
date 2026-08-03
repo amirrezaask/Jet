@@ -59,6 +59,21 @@ describe("panel tabs", () => {
     assert.deepEqual(next.tabIds, ["file://a", "file://b"])
     assert.equal(next.activeTabId, "file://b")
   })
+  it("push stacks multiple terminal tabs with the same label", () => {
+    const first = pushPanelTab(null, "yaade:terminal:session-a")
+    const second = pushPanelTab(first, "yaade:terminal:session-b")
+    assert.deepEqual(second.tabIds, [
+      "yaade:terminal:session-a",
+      "yaade:terminal:session-b",
+    ])
+    assert.equal(second.activeTabId, "yaade:terminal:session-b")
+  })
+
+  it("push does not collapse terminal ids via file-path equality", () => {
+    const view = buildTabsView("yaade:terminal:a", ["yaade:terminal:a"])
+    const next = pushPanelTab(view, "yaade:terminal:b")
+    assert.deepEqual(next.tabIds, ["yaade:terminal:a", "yaade:terminal:b"])
+  })
 })
 
 describe("YaadePanelTree tab stacks", () => {

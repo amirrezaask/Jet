@@ -8,7 +8,8 @@ import type {
 /** Terminal/session row used by Mission Control sidebar mapping. */
 export type HomeTerminalEntry = {
   tabId: string
-  panelId: PanelId
+  /** Null when the session exists but is not open in the tiled layout. */
+  panelId: PanelId | null
   label: string
   status: TerminalRuntimeStatus
   exitCode?: number

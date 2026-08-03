@@ -1,4 +1,5 @@
 import { CircleAlert } from "lucide-react"
+import { useDraggable } from "@dnd-kit/core"
 import {
   SidebarMenuAction,
   SidebarMenuBadge,
@@ -12,6 +13,10 @@ import {
 } from "@/components/ui/tooltip.js"
 import { cn } from "@/lib/utils.js"
 import { formatSidebarActivityTime } from "../../notifications/group-by-time.js"
+import {
+  sessionDndId,
+  type SessionDragData,
+} from "../../dock/tab-dnd-types.js"
 import {
   SessionContextMenu,
   type SessionSidebarActions,
@@ -51,11 +56,22 @@ export function SessionSidebarItem({
     unreadLabel ? `, ${unreadLabel}` : ""
   }`
 
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: sessionDndId(session.id),
+    data: {
+      type: "session",
+      tabId: session.id,
+      label: session.title,
+    } satisfies SessionDragData,
+    disabled: Boolean(session.archivedAt),
+  })
+
   const button = (
     <SidebarMenuButton
       isActive={selected}
       data-yaade-sidebar-session={session.id}
       data-yaade-sidebar-session-selected={selected ? "" : undefined}
+      data-yaade-sidebar-session-dragging={isDragging ? "" : undefined}
       data-yaade-list-item=""
       aria-current={selected ? "true" : undefined}
       aria-label={
@@ -67,13 +83,15 @@ export function SessionSidebarItem({
       }
       onClick={() => onSelect(session)}
       className={cn(
-        "h-auto min-h-8 items-start gap-2 py-1.5",
+        "h-auto min-h-8 items-start gap-2 py-1.5 touch-none",
+        !session.archivedAt && "cursor-grab active:cursor-grabbing",
         compact && "size-8! min-h-8 items-center justify-center gap-0 p-0!",
         showArchive && "group-has-data-[sidebar=menu-action]/menu-item:pr-14",
         selected && !compact &&
           "border-l-2 border-l-primary bg-primary/10 data-[active=true]:bg-primary/10",
         selected && compact && "bg-primary/10 data-[active=true]:bg-primary/10",
         session.unreadCount > 0 && "font-medium",
+        isDragging && "opacity-45",
       )}
     >
       {compact ? (
@@ -159,6 +177,12 @@ export function SessionSidebarItem({
     </SidebarMenuButton>
   )
 
+  const draggable = (
+    <div ref={setNodeRef} className="min-w-0" {...attributes} {...listeners}>
+      {button}
+    </div>
+  )
+
   return (
     <SidebarMenuItem
       className={cn("group/menu-item", compact && "flex justify-center")}
@@ -167,13 +191,13 @@ export function SessionSidebarItem({
       <SessionContextMenu session={session} actions={actions}>
         {compact ? (
           <Tooltip>
-            <TooltipTrigger asChild>{button}</TooltipTrigger>
+            <TooltipTrigger asChild>{draggable}</TooltipTrigger>
             <TooltipContent side="right" align="center">
               {session.projectName}
             </TooltipContent>
           </Tooltip>
         ) : (
-          button
+          draggable
         )}
       </SessionContextMenu>
       {!compact && showArchive ? (

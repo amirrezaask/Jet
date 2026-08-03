@@ -34,6 +34,10 @@ import {
   parseDropDndId,
   parseTabBarDndId,
   parseTabDndId,
+  isSessionDragData,
+  isTabDragData,
+  type DockDragData,
+  type SessionDragData,
   type TabDragData,
 } from "./tab-dnd-types.js"
 import { PanelDragProvider, usePanelDrag } from "./PanelDragContext.js"
@@ -43,6 +47,15 @@ export type TabDndHandlers = {
   onTabDrop: (
     source: PanelId,
     sourceTabId: string,
+    target: PanelId,
+    action: DropAction,
+  ) => void
+  /**
+   * Drop a session that is not currently open as a pane tab (sidebar drag).
+   * Opens into the target pane / split, then focuses it.
+   */
+  onSessionDrop?: (
+    tabId: string,
     target: PanelId,
     action: DropAction,
   ) => void
@@ -150,7 +163,7 @@ type OverlaySnapshot = {
 
 function TabDndInner({ children, handlers }: TabDndInnerProps) {
   const drag = usePanelDrag()
-  const [activeTab, setActiveTab] = useState<TabDragData | null>(null)
+  const [activeDrag, setActiveDrag] = useState<DockDragData | null>(null)
   const dropHotRef = useRef<DropHotState>(null)
   const dropAnimTargetRef = useRef<DropAnimTarget | null>(null)
   const dropAnimation = useMemo(() => createTabDropAnimation(dropAnimTargetRef), [])
@@ -190,35 +203,48 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
     setDropHotState(best)
   }, [])
 
+  const snapshotOverlays = useCallback(() => {
+    clearOverlaySnapshots()
+    const els = document.querySelectorAll<HTMLElement>("[data-yaade-panel-drop-overlay]")
+    const snapshots: OverlaySnapshot[] = []
+    for (const el of els) {
+      if (el.closest("[data-yaade-layout-morph-clone]")) continue
+      const panelId = Number(el.dataset.yaadeDropPanel)
+      if (!Number.isFinite(panelId)) continue
+      const rect = el.getBoundingClientRect()
+      const snap: OverlaySnapshot = {
+        el,
+        panelId,
+        rect,
+        ro: new ResizeObserver(() => {
+          snap.rect = el.getBoundingClientRect()
+        }),
+      }
+      snap.ro.observe(el)
+      snapshots.push(snap)
+    }
+    overlaysRef.current = snapshots
+  }, [clearOverlaySnapshots])
+
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
-      const data = event.active.data.current as TabDragData | undefined
-      if (!data || data.type !== "tab") return
-      setActiveTab(data)
-      drag.startTab({ panelId: data.panelId, tabId: data.tabId })
-
-      clearOverlaySnapshots()
-      const els = document.querySelectorAll<HTMLElement>("[data-yaade-panel-drop-overlay]")
-      const snapshots: OverlaySnapshot[] = []
-      for (const el of els) {
-        if (el.closest("[data-yaade-layout-morph-clone]")) continue
-        const panelId = Number(el.dataset.jetDropPanel)
-        if (!Number.isFinite(panelId)) continue
-        const rect = el.getBoundingClientRect()
-        const snap: OverlaySnapshot = {
-          el,
-          panelId,
-          rect,
-          ro: new ResizeObserver(() => {
-            snap.rect = el.getBoundingClientRect()
-          }),
-        }
-        snap.ro.observe(el)
-        snapshots.push(snap)
+      const data = event.active.data.current as DockDragData | undefined
+      if (isTabDragData(data)) {
+        setActiveDrag(data)
+        drag.startTab({ panelId: data.panelId, tabId: data.tabId })
+      } else if (isSessionDragData(data)) {
+        setActiveDrag(data)
+        drag.startTab({ panelId: null, tabId: data.tabId })
+      } else {
+        return
       }
-      overlaysRef.current = snapshots
+      // Re-snapshot after overlays flip to active and register drop sites.
+      requestAnimationFrame(() => {
+        snapshotOverlays()
+        if (pendingMoveRef.current) runMove()
+      })
     },
-    [drag, clearOverlaySnapshots],
+    [drag, snapshotOverlays, runMove],
   )
 
   const onDragMove = useCallback((event: DragMoveEvent) => {
@@ -237,12 +263,97 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
     }
   }, [runMove])
 
+  const applyHotOrOverDrop = useCallback(
+    (
+      tabId: string,
+      sourcePanel: PanelId | null,
+      hot: DropHotState,
+      overId: string | null,
+    ) => {
+      if (hot) {
+        if (sourcePanel && sourcePanel.id === hot.panelId.id && hot.zone === "center") {
+          // same-pane center is a no-op for tabs; for sidebar always open/focus
+        } else if (sourcePanel) {
+          handlers.onTabDrop(
+            sourcePanel,
+            tabId,
+            hot.panelId,
+            siteToAction(hot.zone),
+          )
+          return true
+        } else if (handlers.onSessionDrop) {
+          handlers.onSessionDrop(tabId, hot.panelId, siteToAction(hot.zone))
+          return true
+        }
+      }
+
+      if (!overId) return false
+
+      const dropTarget = parseDropDndId(overId)
+      if (dropTarget) {
+        if (sourcePanel) {
+          handlers.onTabDrop(
+            sourcePanel,
+            tabId,
+            dropTarget.panelId,
+            siteToAction(dropTarget.zone),
+          )
+        } else {
+          handlers.onSessionDrop?.(
+            tabId,
+            dropTarget.panelId,
+            siteToAction(dropTarget.zone),
+          )
+        }
+        return true
+      }
+
+      const tabBarTarget = parseTabBarDndId(overId)
+      if (tabBarTarget) {
+        if (sourcePanel && tabBarTarget.id === sourcePanel.id) return true
+        if (sourcePanel) {
+          handlers.onTabDrop(sourcePanel, tabId, tabBarTarget, { kind: "moveToPane" })
+        } else {
+          handlers.onSessionDrop?.(tabId, tabBarTarget, { kind: "moveToPane" })
+        }
+        return true
+      }
+
+      const tabTarget = parseTabDndId(overId)
+      if (!tabTarget) return false
+
+      if (sourcePanel && tabTarget.panelId.id === sourcePanel.id) {
+        const ids = handlers.tabIdsForPanel(sourcePanel)
+        const oldIndex = ids.indexOf(tabId)
+        const newIndex = ids.indexOf(tabTarget.tabId)
+        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return true
+        const next = arrayMove(ids, oldIndex, newIndex)
+        handlers.onTabReorder(sourcePanel, tabId, next.indexOf(tabId))
+        return true
+      }
+
+      const targetIds = handlers.tabIdsForPanel(tabTarget.panelId)
+      const insertIndex = targetIds.indexOf(tabTarget.tabId)
+      const action = {
+        kind: "moveToPane" as const,
+        insertIndex: insertIndex >= 0 ? insertIndex : undefined,
+      }
+      if (sourcePanel) {
+        handlers.onTabDrop(sourcePanel, tabId, tabTarget.panelId, action)
+      } else {
+        handlers.onSessionDrop?.(tabId, tabTarget.panelId, action)
+      }
+      return true
+    },
+    [handlers],
+  )
+
   const onDragEnd = useCallback(
     (event: DragEndEvent) => {
-      const data = event.active.data.current as TabDragData | undefined
+      const data = event.active.data.current as DockDragData | undefined
       const hot = dropHotRef.current
       dropAnimTargetRef.current = hot ? resolveDropAnimTarget(hot) : null
-      setActiveTab(null)
+      setActiveDrag(null)
       dropHotRef.current = null
       setDropHotState(null)
       drag.endTab()
@@ -252,65 +363,32 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
       }
       pendingMoveRef.current = null
       clearOverlaySnapshots()
-      if (!data || data.type !== "tab") return
+      if (!data) return
 
       const overId = event.over ? String(event.over.id) : null
 
-      if (hot && data.panelId.id !== hot.panelId.id) {
-        handlers.onTabDrop(data.panelId, data.tabId, hot.panelId, siteToAction(hot.zone))
+      if (isTabDragData(data)) {
+        if (hot && data.panelId.id !== hot.panelId.id) {
+          handlers.onTabDrop(data.panelId, data.tabId, hot.panelId, siteToAction(hot.zone))
+          return
+        }
+        if (hot && data.panelId.id === hot.panelId.id && hot.zone !== "center") {
+          handlers.onTabDrop(data.panelId, data.tabId, hot.panelId, siteToAction(hot.zone))
+          return
+        }
+        applyHotOrOverDrop(data.tabId, data.panelId, null, overId)
         return
       }
 
-      if (hot && data.panelId.id === hot.panelId.id && hot.zone !== "center") {
-        handlers.onTabDrop(data.panelId, data.tabId, hot.panelId, siteToAction(hot.zone))
-        return
+      if (isSessionDragData(data)) {
+        applyHotOrOverDrop(data.tabId, null, hot, overId)
       }
-
-      if (!overId) return
-
-      const dropTarget = parseDropDndId(overId)
-      if (dropTarget) {
-        handlers.onTabDrop(
-          data.panelId,
-          data.tabId,
-          dropTarget.panelId,
-          siteToAction(dropTarget.zone),
-        )
-        return
-      }
-
-      const tabBarTarget = parseTabBarDndId(overId)
-      if (tabBarTarget) {
-        if (tabBarTarget.id === data.panelId.id) return
-        handlers.onTabDrop(data.panelId, data.tabId, tabBarTarget, { kind: "moveToPane" })
-        return
-      }
-
-      const tabTarget = parseTabDndId(overId)
-      if (!tabTarget) return
-
-      if (tabTarget.panelId.id === data.panelId.id) {
-        const ids = handlers.tabIdsForPanel(data.panelId)
-        const oldIndex = ids.indexOf(data.tabId)
-        const newIndex = ids.indexOf(tabTarget.tabId)
-        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
-        const next = arrayMove(ids, oldIndex, newIndex)
-        handlers.onTabReorder(data.panelId, data.tabId, next.indexOf(data.tabId))
-        return
-      }
-
-      const targetIds = handlers.tabIdsForPanel(tabTarget.panelId)
-      const insertIndex = targetIds.indexOf(tabTarget.tabId)
-      handlers.onTabDrop(data.panelId, data.tabId, tabTarget.panelId, {
-        kind: "moveToPane",
-        insertIndex: insertIndex >= 0 ? insertIndex : undefined,
-      })
     },
-    [drag, handlers, clearOverlaySnapshots],
+    [drag, handlers, clearOverlaySnapshots, applyHotOrOverDrop],
   )
 
   const onDragCancel = useCallback(() => {
-    setActiveTab(null)
+    setActiveDrag(null)
     dropHotRef.current = null
     setDropHotState(null)
     drag.endTab()
@@ -321,6 +399,15 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
     pendingMoveRef.current = null
     clearOverlaySnapshots()
   }, [drag, clearOverlaySnapshots])
+
+  const ghostLabel =
+    activeDrag && isTabDragData(activeDrag)
+      ? activeDrag.label
+      : activeDrag && isSessionDragData(activeDrag)
+        ? activeDrag.label
+        : null
+  const ghostDirty =
+    activeDrag && isTabDragData(activeDrag) ? activeDrag.dirty : false
 
   return (
     <DndContext
@@ -333,8 +420,8 @@ function TabDndInner({ children, handlers }: TabDndInnerProps) {
     >
       {children}
       <DragOverlay dropAnimation={dropAnimation}>
-        {activeTab ? (
-          <YaadeTabDragGhost label={activeTab.label} dirty={activeTab.dirty} />
+        {ghostLabel != null ? (
+          <YaadeTabDragGhost label={ghostLabel} dirty={ghostDirty} />
         ) : null}
       </DragOverlay>
     </DndContext>

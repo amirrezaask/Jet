@@ -1,7 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react"
 import type { PanelId } from "@yaade/shared"
 
-export type TabDragSource = { panelId: PanelId; tabId: string }
+/** `panelId` is null when the drag starts from the session sidebar (not yet in a pane). */
+export type TabDragSource = { panelId: PanelId | null; tabId: string }
 
 type PanelDragState = {
   tabSource: TabDragSource | null

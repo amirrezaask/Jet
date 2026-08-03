@@ -97,7 +97,7 @@ export function mapTerminalToSidebarSession(
     unreadCount: opts.unreadBySession?.[term.tabId] ?? 0,
     lastActivityAt,
     isPinned: false,
-    panelId: term.panelId,
+    panelId: term.panelId ?? null,
   }
 }
 

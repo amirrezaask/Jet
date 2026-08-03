@@ -127,6 +127,16 @@ const SortableTabTrigger = memo(function SortableTabTrigger({
       style={style}
       {...attributes}
       {...listeners}
+      onAuxClick={e => {
+        if (e.button !== 1 || !tab.closable) return
+        e.preventDefault()
+        e.stopPropagation()
+        onClose(tab.id)
+      }}
+      onMouseDown={e => {
+        // Middle-click must not start a drag or activate the tab.
+        if (e.button === 1) e.preventDefault()
+      }}
       className="group max-w-[220px] flex-none cursor-grab touch-none active:cursor-grabbing"
       title={tab.id}
     >
@@ -264,7 +274,9 @@ export function PanelTabBar({
   }
 
   const isForeignDrag =
-    drag.tabSource != null && drag.tabSource.panelId.id !== panelId.id
+    drag.tabSource != null &&
+    (drag.tabSource.panelId == null ||
+      drag.tabSource.panelId.id !== panelId.id)
 
   return (
     <Tabs value={activeId} onValueChange={onActivateTab} className="w-full gap-0">

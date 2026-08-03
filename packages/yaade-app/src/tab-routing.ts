@@ -67,13 +67,25 @@ export function isActiveTerminalTab(tree: YaadePanelTree, focused: PanelId | nul
   return isTerminalTabId(view.activeTabId)
 }
 
+let nextSessionKeySeq = 0
+
+/** Unique opaque session key — never reuse Date.now alone (same-ms collisions). */
+export function allocTerminalSessionKey(): string {
+  nextSessionKeySeq += 1
+  const uuid =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${nextSessionKeySeq.toString(36)}`
+  return `session-${uuid}`
+}
+
 export function openTerminalTab(
   workspace: WorkspaceService,
   tree: YaadePanelTree,
   focused: PanelId | null,
   opts: OpenTerminalTabOpts = {},
 ): { panelId: PanelId; tabId: string } {
-  const sessionKey = opts.sessionKey ?? `session-${Date.now()}`
+  const sessionKey = opts.sessionKey ?? allocTerminalSessionKey()
   const tabId = terminalTabId(sessionKey)
   const label = opts.label ?? "Terminal"
   const cwdRootUri = opts.cwdRootUri ?? workspace.root?.uri ?? ""

@@ -24,6 +24,8 @@ export type PanelDockProps<TView> = {
   onFocusPanel: (id: PanelId) => void
   onEvent: (event: PanelEvent) => void
   tabDnd: TabDndHandlers
+  /** When false, parent owns TabDndRoot (e.g. sidebar + workspace share one context). */
+  wrapTabDnd?: boolean
   renderHeader: (view: TView, panelId: PanelId, meta: PanelSlotMeta) => ReactNode
   renderContent: (view: TView, panelId: PanelId, meta: PanelSlotMeta) => ReactNode
 }
@@ -63,7 +65,9 @@ function PanelLeaf<TView>({
   const onClose = () => onEvent({ type: "panelClose", panelId })
   const meta: PanelSlotMeta = { focused, onClose }
   const tabDrag = drag.tabSource
-  const isDropTarget = tabDrag != null && tabDrag.panelId.id !== panelId.id
+  const isDropTarget =
+    tabDrag != null &&
+    (tabDrag.panelId == null || tabDrag.panelId.id !== panelId.id)
 
   useEffect(() => {
     if (!tabDrag) setDragOver(false)
@@ -72,12 +76,15 @@ function PanelLeaf<TView>({
   return (
     <div
       className={cn(
-        "relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border bg-background",
+        "relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden",
+        "rounded-[var(--glass-radius-panel)] border border-[color:var(--glass-rim)]",
+        "bg-transparent shadow-[0_14px_40px_-18px_rgb(0_0_0_/_35%)]",
         dragOver && isDropTarget
-          ? "border-primary/50 ring-1 ring-primary/30"
-          : "border-border/80",
+          ? "ring-1 ring-primary/40"
+          : "",
       )}
       data-yaade-panel-leaf={panelId.id}
+      data-yaade-session-window=""
       data-yaade-panel-dragged-over={dragOver && isDropTarget ? "" : undefined}
       onPointerDownCapture={() => onFocusPanel(panelId)}
       onPointerEnter={() => {
@@ -86,7 +93,7 @@ function PanelLeaf<TView>({
       onPointerLeave={() => setDragOver(false)}
     >
       {renderHeader(view, panelId, meta)}
-      <div className="relative min-h-0 min-w-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {renderContent(view, panelId, meta)}
         <PanelDropOverlay panelId={panelId} />
       </div>
@@ -183,13 +190,13 @@ function PanelTreeNode<TView>({
 }
 
 function PanelDockInner<TView>(props: PanelDockProps<TView>) {
-  return (
-    <TabDndRoot handlers={props.tabDnd}>
-      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden" data-yaade-panel-dock>
-        <PanelTreeNode node={props.tree.root} path={[]} props={props} />
-      </div>
-    </TabDndRoot>
+  const dock = (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden" data-yaade-panel-dock>
+      <PanelTreeNode node={props.tree.root} path={[]} props={props} />
+    </div>
   )
+  if (props.wrapTabDnd === false) return dock
+  return <TabDndRoot handlers={props.tabDnd}>{dock}</TabDndRoot>
 }
 
 export const PanelDock = memo(PanelDockInner) as <TView>(

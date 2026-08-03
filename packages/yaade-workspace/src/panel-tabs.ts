@@ -20,7 +20,16 @@ export function panelHasTab(view: PanelView | null, tabId: string): boolean {
   return panelTabIds(view).includes(tabId)
 }
 
+function isFileLikeTabId(id: string): boolean {
+  return id.startsWith("file:") || id.startsWith("untitled:")
+}
+
+/**
+ * Editor tabs share identity by filesystem path (URI encoding variants).
+ * Terminal / tool tab ids are opaque — never collapse them via path equality.
+ */
 export function sameFileTab(a: string, b: string): boolean {
+  if (!isFileLikeTabId(a) || !isFileLikeTabId(b)) return a === b
   return fileUriToPath(a) === fileUriToPath(b)
 }
 

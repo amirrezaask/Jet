@@ -25,7 +25,8 @@ export type SidebarSession = {
   unreadCount: number
   lastActivityAt: string
   isPinned: boolean
-  panelId: PanelId
+  /** Set when the session is open in the tiled workspace; null when closed (still in sidebar). */
+  panelId: PanelId | null
 }
 
 export type SidebarProject = {

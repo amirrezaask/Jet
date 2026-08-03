@@ -9,12 +9,10 @@ import {
   useState,
   useDeferredValue,
   type CSSProperties,
-  type ReactElement,
 } from "react"
-import { createPortal } from "react-dom"
 import { RegistryContext } from "@effect-atom/atom-react"
 import { rosterAtom } from "./effect/atoms.js"
-import type { PanelId, PanelView } from "@yaade/shared"
+import type { DropAction, PanelId, PanelView } from "@yaade/shared"
 import { fileUriToPath, pathToFileUri } from "@yaade/shared"
 import {
   WorkspaceService,
@@ -55,7 +53,7 @@ import { useNotificationCenter } from "./hooks/useNotificationCenter.js"
 import {
   TabStore,
   TabTypeRegistry,
-  PanelBody,
+  TabDndRoot,
   bundledThemeList,
   formatKeyBinding,
   WhichKeyPanel,
@@ -71,8 +69,6 @@ import {
   GharagahSidebar,
   sidebarWidthStyle,
   mapHomeGroupsToSidebar,
-  TerminalSessionModal,
-  formatSessionHeaderTitle,
   AgentCliPickerOverlay,
   NotificationBell,
   NotificationCenter,
@@ -83,13 +79,11 @@ import {
   type JetAppearanceSettings,
   type SessionDialogMode,
   type SidebarSession,
-  ModalEditorPane,
   getEditorView,
   getEditorCursor,
   setEditorCursor,
   setEditorCursorStore,
   destroyEditorBuffer,
-  ProjectTodosPane,
 } from "@yaade/ui"
 import { SessionTerminalWorkspacePane } from "./SessionTerminalWorkspacePane.js"
 import {
@@ -114,6 +108,7 @@ import {
   hydrateTerminalSession,
   bindAgentToSession,
   listTerminalSessions,
+  registerTerminalSession,
   subscribeTerminalSessions,
   terminalCwdForTab,
   terminalPtyIdForTab,
@@ -176,6 +171,14 @@ import {
   buildTerminalExplorerGroups,
   nextTerminalLabel,
 } from "./terminal-explorer.js"
+import { buildSessionSidebarGroups } from "./session-sidebar-groups.js"
+import {
+  activeTerminalTabInPanel,
+  hideSessionFromLayout,
+  openSessionInLayout,
+} from "./session-layout.js"
+import { SessionWorkspaceDock } from "./SessionWorkspaceDock.js"
+import { SessionPaneHost } from "./SessionPaneHost.js"
 import { loadGlobalJetrc } from "./load-global-yaaderc.js"
 import { WorkspaceLayoutStore } from "./workspace-layout-store.js"
 import { swapWorkspaceLayout } from "./swap-workspace-layout.js"
@@ -201,10 +204,6 @@ import {
 
 const COMMAND_RECENTS_STORAGE_KEY = "jet-command-recents"
 
-const GitWorkspace = lazy(async () => {
-  await ensureMonacoWorkersConfigured()
-  return import("@yaade/ui/git")
-})
 const FindReplacePopover = lazy(() =>
   import("@yaade/ui/editor").then(module => ({
     default: module.FindReplacePopover,
@@ -335,6 +334,11 @@ export function YaadeApp() {
   const notificationsRef = useRef(notifications)
   notificationsRef.current = notifications
   const [, setWorkspaceRevision] = useState(0)
+  const [sessionModesByTabId, setSessionModesByTabId] = useState<
+    Record<string, SessionDialogMode>
+  >({})
+  const sessionModesByTabIdRef = useRef(sessionModesByTabId)
+  sessionModesByTabIdRef.current = sessionModesByTabId
   const [sessionMode, setSessionMode] = useState<SessionDialogMode>("terminal")
   const sessionModeRef = useRef(sessionMode)
   sessionModeRef.current = sessionMode
@@ -404,6 +408,7 @@ export function YaadeApp() {
     cloneTree,
     commitTree,
     handlePanelEvent,
+    tabDndHandlers,
   } = usePanelLayout(workspace, tabStore, appStateRef as never)
 
   const openFileInEditorRef = useRef<
@@ -490,6 +495,10 @@ export function YaadeApp() {
       return buildTerminalExplorerGroups(trees, workspace)
   }, [workspace])
 
+  const getSessionSidebarGroups = useCallback(() => {
+    return buildSessionSidebarGroups(appStateRef.current.panelTree, workspace)
+  }, [workspace])
+
   const activateProject = useCallback(
     (rootUri: string) => {
       const resolvedRootUri = resolveWorkspaceRootUri(
@@ -533,19 +542,29 @@ export function YaadeApp() {
       if (folder && folder.root.uri !== workspace.root?.uri) {
         activateProject(folder.root.uri)
       }
+      if (tabId) {
+        setSessionModesByTabId(prev =>
+          prev[tabId] === mode ? prev : { ...prev, [tabId]: mode },
+        )
+      }
       setSessionMode(mode)
     },
     [activateProject, folderForSessionTab, workspace.root?.uri],
+  )
+
+  const modeForSession = useCallback(
+    (tabId: string | null | undefined): SessionDialogMode => {
+      if (!tabId) return "terminal"
+      return sessionModesByTabId[tabId] ?? sessionMode
+    },
+    [sessionModesByTabId, sessionMode],
   )
 
   const getActiveTerminalTabId = useCallback((): string | null => {
     const modalTabId = terminalModalTabIdRef.current
     if (modalTabId && isTerminalTabId(modalTabId)) return modalTabId
     const focused = appStateRef.current.focusedPanel
-    if (!focused) return null
-    const tabId = getActiveTabId(appStateRef.current.panelTree, focused)
-    if (!tabId || !isTerminalTabId(tabId)) return null
-    return tabId
+    return activeTerminalTabInPanel(appStateRef.current.panelTree, focused)
   }, [])
 
   const openTerminalModal = useCallback(
@@ -553,12 +572,13 @@ export function YaadeApp() {
       const session = terminalSessionForTab(tabId)
       const canShowAgent = Boolean(session?.agentId && session?.launchCommand)
       const requestedMode =
-        mode ?? (canShowAgent && session?.agentId ? "agent" : "terminal")
+        mode ??
+        sessionModesByTabIdRef.current[tabId] ??
+        (canShowAgent && session?.agentId ? "agent" : "terminal")
       const resolvedMode =
         requestedMode === "agent" && !canShowAgent
           ? "terminal"
           : requestedMode
-      // Modal view owns spawn — release warm-resume deferral for this tab.
       releaseActiveAgentWarmResumeToForeground(tabId)
       terminalModalTabIdRef.current = tabId
       setTerminalModalPanelId(panelId)
@@ -576,17 +596,19 @@ export function YaadeApp() {
   }, [])
 
   const focusTerminalTab = useCallback(
-    (panelId: PanelId, tabId: string, mode?: SessionDialogMode) => {
-      // Dead/exited agent CLI → respawn with provider resume flags before open.
-      // (Warm-resume release happens in openTerminalModal.)
+    (panelId: PanelId | null, tabId: string, mode?: SessionDialogMode) => {
       ensureAgentCliProcess(tabId)
       const focus = () => {
         const tree = cloneTree()
-        const owningPanel = findPanelWithTab(tree, tabId) ?? panelId
-        workspace.focusTabInPanel(tree, owningPanel, tabId)
-        setFocusedPanel(owningPanel)
-        commitTree(tree, owningPanel)
-        openTerminalModal(owningPanel, tabId, mode)
+        const opened = openSessionInLayout(
+          workspace,
+          tree,
+          tabId,
+          appStateRef.current.focusedPanel ?? panelId,
+        )
+        setFocusedPanel(opened.panelId)
+        commitTree(tree, opened.panelId)
+        openTerminalModal(opened.panelId, tabId, mode)
       }
       const rootUri = resolveWorkspaceRootUri(
         terminalCwdForTab(tabId),
@@ -609,6 +631,30 @@ export function YaadeApp() {
     ],
   )
 
+  const hideSessionTab = useCallback(
+    (panelId: PanelId, tabId: string) => {
+      const tree = cloneTree()
+      hideSessionFromLayout(tree, panelId, tabId)
+      commitTree(tree, appStateRef.current.focusedPanel)
+      if (terminalModalTabIdRef.current === tabId) {
+        const active = activeTerminalTabInPanel(
+          tree,
+          appStateRef.current.focusedPanel,
+        )
+        if (active) {
+          const panel =
+            findPanelWithTab(tree, active) ?? appStateRef.current.focusedPanel
+          if (panel) openTerminalModal(panel, active)
+          else closeTerminalModal()
+        } else {
+          closeTerminalModal()
+        }
+      }
+      setTerminalSessionRevision(revision => revision + 1)
+    },
+    [cloneTree, commitTree, openTerminalModal, closeTerminalModal],
+  )
+
   const goHome = useCallback(() => {
     closeTerminalModal()
     workspace.clearActiveFolder()
@@ -621,7 +667,7 @@ export function YaadeApp() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openTerminalFromHome = useCallback(
-    (panelId: PanelId, tabId: string) => {
+    (panelId: PanelId | null, tabId: string) => {
       const session = terminalSessionForTab(tabId)
       const mode =
         Boolean(session?.agentId && session?.launchCommand)
@@ -632,6 +678,7 @@ export function YaadeApp() {
     [focusTerminalTab],
   )
 
+  const openTerminalInWorkspaceChainRef = useRef(Promise.resolve())
   const openTerminalInWorkspace = useCallback(
     async (
       rootUri: string,
@@ -648,35 +695,45 @@ export function YaadeApp() {
         lastActivityAt?: string
       },
     ) => {
-      if (rootUri && rootUri !== workspace.root?.uri) {
-        activateProject(rootUri)
-        await new Promise<void>(resolve =>
-          requestAnimationFrame(() => resolve()),
+      // Serialize opens so parallel createAgentSession calls cannot each
+      // cloneTree() then overwrite the other with commitTree().
+      const run = async () => {
+        if (rootUri && rootUri !== workspace.root?.uri) {
+          activateProject(rootUri)
+          await new Promise<void>(resolve =>
+            requestAnimationFrame(() => resolve()),
+          )
+        }
+        const tree = cloneTree()
+        const label = opts?.label ?? nextTerminalLabel(tree)
+        const { panelId, tabId } = openTerminalTab(
+          workspace,
+          tree,
+          appStateRef.current.focusedPanel,
+          {
+            cwdRootUri: rootUri,
+            label,
+            launchCommand: opts?.launchCommand,
+            launchArgs: opts?.launchArgs,
+            launchEnv: opts?.launchEnv,
+            agentId: opts?.agentId,
+            agentTitle: opts?.agentTitle,
+            agentDriverId: opts?.agentDriverId,
+            agentCliSessionId: opts?.agentCliSessionId,
+            pendingCliMint: opts?.pendingCliMint,
+            lastActivityAt: opts?.lastActivityAt,
+          },
         )
+        setFocusedPanel(panelId)
+        commitTree(tree, panelId)
+        return { panelId, tabId }
       }
-      const tree = cloneTree()
-      const label = opts?.label ?? nextTerminalLabel(tree)
-      const { panelId, tabId } = openTerminalTab(
-        workspace,
-        tree,
-        appStateRef.current.focusedPanel,
-        {
-        cwdRootUri: rootUri,
-        label,
-        launchCommand: opts?.launchCommand,
-        launchArgs: opts?.launchArgs,
-        launchEnv: opts?.launchEnv,
-        agentId: opts?.agentId,
-        agentTitle: opts?.agentTitle,
-        agentDriverId: opts?.agentDriverId,
-        agentCliSessionId: opts?.agentCliSessionId,
-        pendingCliMint: opts?.pendingCliMint,
-        lastActivityAt: opts?.lastActivityAt,
-      },
+      const next = openTerminalInWorkspaceChainRef.current.then(run, run)
+      openTerminalInWorkspaceChainRef.current = next.then(
+        () => undefined,
+        () => undefined,
       )
-      setFocusedPanel(panelId)
-      commitTree(tree, panelId)
-      return { panelId, tabId }
+      return next
     },
     [workspace, activateProject, cloneTree, commitTree, setFocusedPanel],
   )
@@ -905,13 +962,28 @@ export function YaadeApp() {
       }))
     const persistedTabIds = new Set(sessions.map(session => session.tabId))
     const modalTabId = terminalModalTabIdRef.current
+    const tree = appStateRef.current.panelTree
+    const modesByTabId: Record<string, SessionDialogMode> = {}
+    for (const [tabId, mode] of Object.entries(sessionModesByTabIdRef.current)) {
+      if (persistedTabIds.has(tabId)) modesByTabId[tabId] = mode
+    }
     return {
       version: 2,
       sessions,
       modal:
         modalTabId && persistedTabIds.has(modalTabId)
-          ? { tabId: modalTabId, sessionMode: sessionModeRef.current }
+          ? {
+              tabId: modalTabId,
+              sessionMode:
+                sessionModesByTabIdRef.current[modalTabId] ??
+                sessionModeRef.current,
+            }
           : null,
+      layout: {
+        tree: tree.toJSON(),
+        focusedPanelId: appStateRef.current.focusedPanel?.id ?? null,
+        modesByTabId,
+      },
     }
   }, [workspace])
   const lastRosterJsonRef = useRef<string | null>(null)
@@ -937,6 +1009,11 @@ export function YaadeApp() {
       persistSessionRoster()
     }, 400)
   }, [persistSessionRoster])
+
+  useEffect(() => {
+    if (!sessionRosterReadyRef.current) return
+    schedulePersistSessionRoster()
+  }, [panelTree, focusedPanel, sessionModesByTabId, schedulePersistSessionRoster])
 
   useEffect(
     () => () => {
@@ -1104,7 +1181,7 @@ export function YaadeApp() {
   )
 
   const archiveSessionFromHome = useCallback(
-    async (_panelId: PanelId, tabId: string) => {
+    async (_panelId: PanelId | null, tabId: string) => {
       const session = terminalSessionForTab(tabId)
       if (!session || isSessionArchived(tabId)) return
       const ptyId = terminalPtyIdForTab(tabId)
@@ -1118,6 +1195,12 @@ export function YaadeApp() {
       }
       archiveSession(tabId)
       if (ptyId) void window.yaade?.terminal?.dispose(ptyId)
+      const openPanel = findPanelWithTab(appStateRef.current.panelTree, tabId)
+      if (openPanel) {
+        const tree = cloneTree()
+        hideSessionFromLayout(tree, openPanel, tabId)
+        commitTree(tree)
+      }
       if (terminalModalTabIdRef.current === tabId) {
         setTerminalModalTabId(null)
         setTerminalModalPanelId(null)
@@ -1125,7 +1208,7 @@ export function YaadeApp() {
       setTerminalSessionRevision(revision => revision + 1)
       persistSessionRoster()
     },
-    [persistSessionRoster, workspace],
+    [persistSessionRoster, workspace, cloneTree, commitTree],
   )
 
   const resumeArchivedSessionFromView = useCallback(
@@ -2356,7 +2439,6 @@ export function YaadeApp() {
       )
       if (roster.sessions.length > 0) {
         const tree = cloneTree()
-        // Prefer archived row when legacy + canonical ids collide after rename.
         const hydrateEntries = new Map<
           string,
           (typeof roster.sessions)[number]
@@ -2375,12 +2457,10 @@ export function YaadeApp() {
             hydrateEntries.set(canonicalTabId, entry)
           }
         }
+        // Register all sessions (including archived) without opening them in the layout.
         for (const [canonicalTabId, entry] of hydrateEntries) {
           if (entry.agentId && !entry.launchCommand?.trim()) continue
           if (entry.agentId && !isAgentCliProvider(entry.agentId)) continue
-          if (findPanelWithTab(tree, canonicalTabId)) continue
-          const sessionKey =
-            terminalSessionKeyFromTabId(canonicalTabId) ?? canonicalTabId
           const cwdRootUri = resolveWorkspaceRootUri(
             entry.cwdRootUri,
             workspace.folders,
@@ -2399,26 +2479,22 @@ export function YaadeApp() {
           })
           const cliSessionId =
             hydrated.agentCliSessionId ?? entry.agentCliSessionId
-          const opened = openTerminalTab(
-            workspace,
-            tree,
-            appStateRef.current.focusedPanel,
-            {
-              sessionKey,
-              label: entry.label,
-              cwdRootUri,
-              launchCommand: hydrated.launchCommand,
-              launchArgs: hydrated.launchArgs,
-              launchEnv: hydrated.launchEnv,
-              agentId: entry.agentId,
-              agentTitle: entry.agentTitle ?? entry.label,
-              agentDriverId: entry.agentDriverId,
-              agentCliSessionId: cliSessionId,
-              lastActivityAt: entry.lastActivityAt,
-            },
-          )
+          registerTerminalSession(canonicalTabId, cwdRootUri, hydrated.launchCommand, {
+            launchArgs: hydrated.launchArgs,
+            launchEnv: hydrated.launchEnv,
+            agentId: entry.agentId,
+            agentTitle: entry.agentTitle ?? entry.label,
+            agentDriverId: entry.agentDriverId,
+            agentCliSessionId: cliSessionId,
+            lastActivityAt: entry.lastActivityAt,
+          })
+          workspace.registerTab({
+            id: canonicalTabId,
+            kind: "terminal",
+            label: entry.label,
+          })
           hydrateTerminalSession({
-            tabId: opened.tabId,
+            tabId: canonicalTabId,
             cwdRootUri,
             launchCommand: hydrated.launchCommand,
             launchArgs: hydrated.launchArgs,
@@ -2439,14 +2515,74 @@ export function YaadeApp() {
             transcript: entry.transcript,
           })
         }
-        commitTree(tree)
+
+        let layoutTree = tree
+        const layout = roster.layout
+        if (layout?.tree && typeof layout.tree === "object") {
+          try {
+            layoutTree = YaadePanelTree.jetFromJSON(
+              layout.tree as Parameters<typeof YaadePanelTree.jetFromJSON>[0],
+            )
+            // Keep only non-archived hydrated sessions that still exist.
+            layoutTree.visitLeaves(node => {
+              if (node.view.kind !== "tabs") return
+              const kept = panelTabIds(node.view).filter(id => {
+                const canonical = canonicalizeTerminalTabId(id)
+                const entry = hydrateEntries.get(canonical)
+                return Boolean(entry && !entry.doneAt)
+              })
+              if (kept.length === 0) {
+                node.view = { kind: "empty" }
+                return
+              }
+              const active = kept.includes(node.view.activeTabId)
+                ? node.view.activeTabId
+                : kept[0]!
+              node.view = { kind: "tabs", activeTabId: active, tabIds: kept }
+            })
+            layoutTree.pruneEmptyLeaves()
+            if (layout.modesByTabId) {
+              setSessionModesByTabId(layout.modesByTabId)
+            }
+          } catch {
+            layoutTree = tree
+          }
+        }
+
+        // Backward compat: open only the last focused/modal session (never archived).
+        const wantsOpenTabId = roster.modal
+          ? canonicalizeTerminalTabId(roster.modal.tabId)
+          : null
+        const canOpenModal =
+          wantsOpenTabId != null &&
+          hydrateEntries.has(wantsOpenTabId) &&
+          !hydrateEntries.get(wantsOpenTabId)?.doneAt
+        if (
+          canOpenModal &&
+          layoutTree.root.kind === "leaf" &&
+          layoutTree.root.view.kind === "empty" &&
+          wantsOpenTabId
+        ) {
+          openSessionInLayout(
+            workspace,
+            layoutTree,
+            wantsOpenTabId,
+            appStateRef.current.focusedPanel,
+          )
+        }
+
+        commitTree(layoutTree)
+        if (layout?.focusedPanelId != null) {
+          const leaves = getAllLeafPanels(layoutTree)
+          if (leaves.some(p => p.id === layout.focusedPanelId)) {
+            setFocusedPanel({ id: layout.focusedPanelId })
+          }
+        }
         setTerminalSessionRevision(revision => revision + 1)
 
         const deadTabIds = await reconcileHydratedTerminalPtys(
           window.yaade?.terminal,
         )
-        // Sessions are never pruned on reload — reconcile only marks missing PTYs
-        // unavailable so cards stay active / archived. deadTabIds is always empty.
         void deadTabIds
 
         const terminalApi = window.yaade?.terminal
@@ -2474,31 +2610,33 @@ export function YaadeApp() {
           })
         }
 
-        if (roster.modal) {
-          const modalTabId = canonicalizeTerminalTabId(roster.modal.tabId)
-          const panelId = findPanelWithTab(tree, modalTabId)
+        const focusTabId = (() => {
+          if (canOpenModal && wantsOpenTabId) return wantsOpenTabId
+          const focused = layout?.focusedPanelId
+            ? { id: layout.focusedPanelId }
+            : appStateRef.current.focusedPanel
+          return activeTerminalTabInPanel(layoutTree, focused)
+        })()
+        if (focusTabId && hydrateEntries.has(focusTabId) && !hydrateEntries.get(focusTabId)?.doneAt) {
+          const panelId = findPanelWithTab(layoutTree, focusTabId)
           if (panelId) {
             setTerminalModalPanelId(panelId)
-            setTerminalModalTabId(modalTabId)
-            releaseActiveAgentWarmResumeToForeground(modalTabId)
-            const restoredSession =
-              hydrateEntries.get(modalTabId) ??
-              roster.sessions.find(
-                entry =>
-                  canonicalizeTerminalTabId(entry.tabId) === modalTabId,
-              )
-            let restoredMode = roster.modal.sessionMode
+            setTerminalModalTabId(focusTabId)
+            releaseActiveAgentWarmResumeToForeground(focusTabId)
+            const restoredSession = hydrateEntries.get(focusTabId)
+            let restoredMode =
+              layout?.modesByTabId?.[focusTabId] ??
+              roster.modal?.sessionMode ??
+              "terminal"
             const isCliAgent = Boolean(
               restoredSession?.agentId && restoredSession?.launchCommand,
             )
             if (restoredMode === "agent" && !isCliAgent) {
               restoredMode = "terminal"
             }
-            setSessionModeSynced(restoredMode)
+            setSessionModeSynced(restoredMode, focusTabId)
           }
         }
-
-        setTerminalSessionRevision(revision => revision + 1)
       }
 
       sessionRosterReadyRef.current = true
@@ -2733,7 +2871,7 @@ export function YaadeApp() {
   )
   const homeGroupsForSidebar = useMemo(
     () =>
-      terminalGroups.map(g => ({
+      getSessionSidebarGroups().map(g => ({
         id: g.id,
         name: g.name,
         path: g.path,
@@ -2749,7 +2887,7 @@ export function YaadeApp() {
           archivedAt: t.archivedAt,
         })),
       })),
-    [terminalGroups],
+    [getSessionSidebarGroups, panelTree, terminalSessionRevision, workspace.folders],
   )
   const lastActivityBySession = useMemo(() => {
     const map: Record<string, string> = {}
@@ -2780,6 +2918,63 @@ export function YaadeApp() {
     [openTerminalFromHome, notifications],
   )
 
+  const dropSessionIntoLayout = useCallback(
+    (tabId: string, target: PanelId, action: DropAction) => {
+      ensureAgentCliProcess(tabId)
+      const tree = cloneTree()
+      const existing = findPanelWithTab(tree, tabId)
+      if (existing) {
+        if (action.kind === "moveToPane" && existing.id === target.id) {
+          workspace.focusTabInPanel(tree, existing, tabId)
+          setFocusedPanel(existing)
+          commitTree(tree, existing)
+          openTerminalModal(existing, tabId)
+          return
+        }
+        const result = tree.applyTabDrop(existing, tabId, target, action)
+        if (result.moved) {
+          const focus = result.createdPanel ?? target
+          setFocusedPanel(focus)
+          commitTree(tree, focus)
+          openTerminalModal(focus, tabId)
+        }
+        return
+      }
+      const session = terminalSessionForTab(tabId)
+      const label =
+        session?.customLabel ??
+        session?.agentTitle ??
+        workspace.tabRegistry.get(tabId)?.label ??
+        "Terminal"
+      let panelId = target
+      if (action.kind === "split") {
+        panelId = tree.splitAtEdge(target, action.edge)
+      }
+      workspace.openOrFocusTab(tree, panelId, {
+        id: tabId,
+        kind: "terminal",
+        label,
+      })
+      setFocusedPanel(panelId)
+      commitTree(tree, panelId)
+      openTerminalModal(panelId, tabId)
+    },
+    [cloneTree, commitTree, workspace, setFocusedPanel, openTerminalModal],
+  )
+
+  const sessionTabDndHandlers = useMemo(
+    () => ({
+      ...tabDndHandlers,
+      tabIdsForPanel: (panelId: PanelId) => {
+        const view = appStateRef.current.panelTree.getView(panelId)
+        if (view?.kind !== "tabs") return []
+        return panelTabIds(view).filter(isTerminalTabId)
+      },
+      onSessionDrop: dropSessionIntoLayout,
+    }),
+    [tabDndHandlers, dropSessionIntoLayout],
+  )
+
   const renameSidebarSession = useCallback(
     (session: SidebarSession) => {
       const next = window.prompt("Rename session", session.title)?.trim()
@@ -2792,8 +2987,6 @@ export function YaadeApp() {
     [workspace],
   )
 
-  const [sidebarWorkspaceHost, setSidebarWorkspaceHost] =
-    useState<HTMLDivElement | null>(null)
   const desktopWindowChrome =
     window.yaadeDesktop?.windowChrome?.customTitlebar === true
       ? window.yaadeDesktop.windowChrome
@@ -2849,6 +3042,7 @@ export function YaadeApp() {
               />
             ) : null}
             <div className="min-h-0 flex-1 overflow-hidden">
+              <TabDndRoot handlers={sessionTabDndHandlers}>
               <SidebarProvider
                 open={!appearanceSettings.sidebarCollapsed}
                 onOpenChange={open =>
@@ -2946,13 +3140,146 @@ export function YaadeApp() {
                   />
                   <SidebarInset className="flex min-h-0 flex-col overflow-hidden bg-transparent">
                     <div
-                      ref={setSidebarWorkspaceHost}
                       className="relative min-h-0 flex-1 overflow-hidden p-0"
                       data-yaade-sidebar-workspace=""
-                    />
+                    >
+                      <SessionWorkspaceDock
+                        tree={panelTree}
+                        focusedPanelId={focusedPanel}
+                        onFocusPanel={panelId => {
+                          setFocusedPanel(panelId)
+                          const tabId = activeTerminalTabInPanel(
+                            appStateRef.current.panelTree,
+                            panelId,
+                          )
+                          if (tabId) openTerminalModal(panelId, tabId)
+                        }}
+                        onEvent={handlePanelEvent}
+                        tabDnd={sessionTabDndHandlers}
+                        wrapTabDnd={false}
+                        tabStore={tabStore}
+                        tabRegistry={tabTypeRegistry}
+                        onHideSession={hideSessionTab}
+                        onActivateSession={(panelId, tabId) => {
+                          handlePanelEvent({
+                            type: "tabActivate",
+                            panelId,
+                            tabId,
+                          })
+                          openTerminalModal(panelId, tabId)
+                        }}
+                        empty={
+                          <div
+                            className="flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 text-center"
+                            data-yaade-session-workspace-empty-state=""
+                          >
+                            <p className="text-sm text-muted-foreground">
+                              Open a session from the sidebar, or start a new one.
+                            </p>
+                            <button
+                              type="button"
+                              className="rounded-md border border-border bg-card/70 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/70"
+                              onClick={() => {
+                                const target =
+                                  workspace.manager.activeFolder?.root.uri ??
+                                  workspace.folders[0]?.root.uri ??
+                                  ""
+                                if (target) void newAgentTabFromHome(target)
+                              }}
+                            >
+                              New session
+                            </button>
+                          </div>
+                        }
+                        renderSession={(sessionTabId, panelId, meta) => (
+                          <SessionPaneHost
+                            key={sessionTabId}
+                            sessionTabId={sessionTabId}
+                            panelId={panelId}
+                            focused={meta.focused}
+                            mode={modeForSession(sessionTabId)}
+                            onModeChange={mode =>
+                              setSessionModeSynced(mode, sessionTabId)
+                            }
+                            titleTick={terminalModalTitleTick}
+                            editorChromeTick={editorChromeTick}
+                            gitBranch={
+                              meta.focused ? terminalModalGitBranch : null
+                            }
+                            onGitBranchChange={setTerminalModalGitBranch}
+                            gitFocusPath={gitFocusPath}
+                            workspace={workspace}
+                            tabStore={tabStore}
+                            tabTypeRegistry={tabTypeRegistry}
+                            folderForSessionTab={folderForSessionTab}
+                            editorBuffers={editorBuffers}
+                            editorActiveTabId={editorActiveTabId}
+                            editorPanelId={editorPanelId}
+                            modalMonacoEditorHandle={modalMonacoEditorHandle}
+                            lspStatus={lspStatus}
+                            projectSearchOpen={projectSearchOpen}
+                            onProjectSearchOpenChange={setProjectSearchOpen}
+                            notificationCounts={notifications.counts}
+                            onOpenNotifications={() =>
+                              notifications.setOpen(true)
+                            }
+                            onResumeArchived={resumeArchivedSessionFromView}
+                            onOpenInApp={(rootUri, appId) =>
+                              void openProjectInApp(rootUri, appId)
+                            }
+                            onActivateBuffer={tabId => {
+                              if (!editorPanelId) return
+                              handlePanelEvent({
+                                type: "tabActivate",
+                                panelId: editorPanelId,
+                                tabId,
+                              })
+                            }}
+                            onCloseBuffer={tabId => {
+                              void (async () => {
+                                if (!(await confirmCloseBuffer(workspace, tabId)))
+                                  return
+                                const panel = editorPanelRef.current
+                                if (!panel) return
+                                workspace.clearDirtyState(tabId)
+                                destroyEditorBuffer(panel, tabId)
+                                workspace.closeBuffer(tabId)
+                                workspace.disposeTab(tabId)
+                                const tree = cloneTree()
+                                workspace.popPanelBuffer(tree, panel, tabId)
+                                closePanelIfEmpty(tree, panel)
+                                commitTree(tree)
+                              })()
+                            }}
+                            onQuickOpen={() =>
+                              void executeCommand("workspace.quickOpen")
+                            }
+                            onCommandPalette={() =>
+                              void executeCommand("ui.showCommandPalette")
+                            }
+                            onOpenSearchItem={item => {
+                              setPendingEditorNavigation(item.fileUri, {
+                                line: item.line,
+                                column: item.column,
+                              })
+                              openFileInEditor(
+                                item.fileUri,
+                                fileUriToPath(item.fileUri),
+                                item.line,
+                                item.column,
+                              )
+                            }}
+                            openFileInEditor={openFileInEditor}
+                            openFileInEditorRef={openFileInEditorRef}
+                            activeTheme={activeTheme}
+                          />
+                        )}
+                      />
+                    </div>
                   </SidebarInset>
                 </div>
               </SidebarProvider>
+              </TabDndRoot>
 
             <div
               id="yaade-notification-live"
@@ -2961,286 +3288,6 @@ export function YaadeApp() {
               aria-atomic="true"
             />
 
-            {terminalModalTabId && terminalModalPanelId
-              ? ((node: ReactElement) =>
-                  sidebarWorkspaceHost
-                    ? createPortal(node, sidebarWorkspaceHost)
-                    : node)(
-                  <TerminalSessionModal
-                    sessionId={terminalModalTabId}
-                    open
-                    presentation="inline"
-                    windowChrome={desktopWindowChrome}
-                    headerEnd={
-                      <NotificationBell
-                        counts={notifications.counts}
-                        onClick={() => notifications.setOpen(true)}
-                        className="size-7 shrink-0 rounded-md"
-                      />
-                    }
-                    onOpenChange={open => {
-                      if (!open) closeTerminalModal()
-                    }}
-                    title={(() => {
-                      void terminalModalTitleTick
-                      void editorChromeTick
-                      const rootUri = terminalCwdForTab(terminalModalTabId)
-                      const project = workspace.folders.find(
-                        f => f.root.uri === rootUri,
-                      )?.root.name
-                      if (sessionMode === "editor") {
-                        const fileLabel = editorActiveTabId
-                        ? (workspace.fileForUri(editorActiveTabId)?.name ??
-                          tabStore.title(editorActiveTabId))
-                          : "Editor"
-                        return formatSessionHeaderTitle(project, fileLabel)
-                      }
-                      if (sessionMode === "agent") {
-                        const session = terminalSessionForTab(terminalModalTabId)
-                        return (
-                          session?.customLabel ??
-                          session?.agentTitle ??
-                          workspace.tabRegistry.get(terminalModalTabId)?.label ??
-                          "Agent"
-                        )
-                      }
-                      if (sessionMode === "git")
-                        return formatSessionHeaderTitle(project, "Git")
-                      if (sessionMode === "todos")
-                        return formatSessionHeaderTitle(project, "TODOs")
-                      const label =
-                        workspace.tabRegistry.get(terminalModalTabId)?.label ??
-                        "Terminal"
-                      return formatSessionHeaderTitle(project, label)
-                    })()}
-                    gitBranch={terminalModalGitBranch}
-                    projectRootUri={
-                      terminalCwdForTab(terminalModalTabId) || null
-                    }
-                    launchCommand={
-                      terminalSessionForTab(terminalModalTabId)?.launchCommand ??
-                      null
-                    }
-                    status={
-                      terminalSessionForTab(terminalModalTabId)?.status ?? null
-                    }
-                    archivedAt={
-                      terminalSessionForTab(terminalModalTabId)?.archivedAt ?? null
-                    }
-                    onResumeArchived={() =>
-                      resumeArchivedSessionFromView(terminalModalTabId)
-                    }
-                    mode={sessionMode}
-                    showAgentTab={(() => {
-                      const session = terminalSessionForTab(terminalModalTabId)
-                      return Boolean(session?.agentId && session?.launchCommand)
-                    })()}
-                    agentId={(() => {
-                      const id =
-                        terminalSessionForTab(terminalModalTabId)?.agentId
-                      return id === "claude" ||
-                        id === "codex" ||
-                        id === "cursor" ||
-                        id === "opencode" ||
-                        id === "grok"
-                        ? id
-                        : null
-                    })()}
-                onModeChange={mode => {
-                  const terminalSession =
-                    terminalSessionForTab(terminalModalTabId)
-                  const canShowAgent = Boolean(
-                    terminalSession?.agentId && terminalSession?.launchCommand,
-                  )
-                  if (mode === "agent" && !canShowAgent) {
-                    return
-                  }
-                  setSessionModeSynced(mode)
-                }}
-                  onOpenInApp={(rootUri, appId) =>
-                    void openProjectInApp(rootUri, appId)
-                  }
-                agent={
-                  terminalSessionForTab(terminalModalTabId)?.agentId &&
-                  terminalSessionForTab(terminalModalTabId)?.launchCommand ? (
-                    <div
-                      key={`${terminalModalTabId}:${terminalSessionForTab(terminalModalTabId)?.archivedAt ?? "active"}`}
-                      className="h-full min-h-0 min-w-0"
-                      data-yaade-session-pane="agent"
-                    >
-                      <PanelBody
-                        panelId={terminalModalPanelId}
-                        view={
-                          {
-                            kind: "tabs",
-                            activeTabId: terminalModalTabId,
-                            tabIds: [terminalModalTabId],
-                          } as PanelView
-                        }
-                        store={tabStore}
-                        registry={tabTypeRegistry}
-                        focused={sessionMode === "agent"}
-                      />
-                    </div>
-                  ) : null
-                }
-                editor={
-                  <ModalEditorPane
-                    buffers={editorBuffers}
-                    activeTabId={editorActiveTabId}
-                    workspace={workspace}
-                    lspStatus={lspStatus}
-                    headerActive={sessionMode === "editor"}
-                    getSearchFolders={() => {
-                      const folder = folderForSessionTab(terminalModalTabId)
-                      if (folder) return [folder]
-                      const active = workspace.manager.activeFolder
-                      return active ? [active] : workspace.folders
-                    }}
-                    onActivateBuffer={tabId => {
-                      if (!editorPanelId) return
-                        handlePanelEvent({
-                          type: "tabActivate",
-                          panelId: editorPanelId,
-                          tabId,
-                        })
-                    }}
-                    onCloseBuffer={tabId => {
-                      void (async () => {
-                          if (!(await confirmCloseBuffer(workspace, tabId)))
-                            return
-                        const panel = editorPanelRef.current
-                        if (!panel) return
-                        workspace.clearDirtyState(tabId)
-                        destroyEditorBuffer(panel, tabId)
-                        workspace.closeBuffer(tabId)
-                        workspace.disposeTab(tabId)
-                        const tree = cloneTree()
-                        workspace.popPanelBuffer(tree, panel, tabId)
-                        closePanelIfEmpty(tree, panel)
-                        commitTree(tree)
-                      })()
-                    }}
-                    onQuickOpen={() =>
-                        void executeCommand("workspace.quickOpen")
-                      }
-                      projectSearchOpen={projectSearchOpen}
-                      onProjectSearchOpenChange={setProjectSearchOpen}
-                      onOpenSearchItem={item => {
-                        setPendingEditorNavigation(item.fileUri, {
-                          line: item.line,
-                          column: item.column,
-                        })
-                        openFileInEditor(
-                          item.fileUri,
-                          fileUriToPath(item.fileUri),
-                          item.line,
-                          item.column,
-                        )
-                      }}
-                      onCommandPalette={() =>
-                        void executeCommand("ui.showCommandPalette")
-                      }
-                  >
-                    {editorPanelId && modalMonacoEditorHandle ? (
-                      <PanelBody
-                        panelId={editorPanelId}
-                        view={modalMonacoEditorHandle}
-                        store={tabStore}
-                        registry={tabTypeRegistry}
-                        focused={sessionMode === "editor"}
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                        Open a file to start editing
-                      </div>
-                    )}
-                  </ModalEditorPane>
-                }
-                terminal={
-                  <SessionTerminalWorkspacePane
-                    sessionTabId={terminalModalTabId}
-                    theme={activeTheme}
-                    active={sessionMode === "terminal"}
-                    headerActive={sessionMode === "terminal"}
-                    primaryTerminal={
-                      terminalSessionForTab(terminalModalTabId)
-                        ?.agentId ? null : (
-                        <PanelBody
-                          panelId={terminalModalPanelId}
-                          view={
-                            {
-                              kind: "tabs",
-                              activeTabId: terminalModalTabId,
-                              tabIds: [terminalModalTabId],
-                            } as PanelView
-                          }
-                          store={tabStore}
-                          registry={tabTypeRegistry}
-                          focused={sessionMode === "terminal"}
-                        />
-                      )
-                    }
-                    onOpenPath={(rawPath, line, column) => {
-                      const rootUri =
-                        terminalCwdForTab(terminalModalTabId)
-                      const cwdPath = fileUriToPath(rootUri)
-                      const fullPath = resolvePathUnderRoot(cwdPath, rawPath)
-                      const fileUri = pathToFileUri(fullPath)
-                      if (!workspace.resolveRootUriForFile(fileUri)) return
-                      openPathFromTerminal(
-                        openFileInEditorRef.current,
-                        cwdPath,
-                        rawPath,
-                        line,
-                        column,
-                      )
-                    }}
-                  />
-                }
-                git={
-                  <Suspense
-                    fallback={
-                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                        Loading Git…
-                      </div>
-                    }
-                  >
-                    <GitWorkspace
-                      rootUri={terminalCwdForTab(terminalModalTabId) || null}
-                      theme={activeTheme}
-                      focusPath={gitFocusPath}
-                      onBranchChange={setTerminalModalGitBranch}
-                      onOpenFile={relativePath => {
-                        const rootUri = terminalCwdForTab(terminalModalTabId)
-                        if (!rootUri) return
-                          const rootPath = fileUriToPath(rootUri).replace(
-                            /[/\\]+$/,
-                            "",
-                          )
-                        const fullPath = `${rootPath}/${relativePath.replace(/^[/\\]+/, "")}`
-                        openFileInEditor(pathToFileUri(fullPath), fullPath)
-                      }}
-                    />
-                  </Suspense>
-                }
-                todos={(() => {
-                  const rootUri = terminalCwdForTab(terminalModalTabId)
-                    const folder = workspace.folders.find(
-                      f => f.root.uri === rootUri,
-                    )
-                  const projectId = folder?.root.path ?? rootUri ?? ""
-                  const projectName = folder?.root.name ?? "Project"
-                  return (
-                      <ProjectTodosPane
-                        projectId={projectId}
-                        projectName={projectName}
-                      />
-                  )
-                })()}
-              />,
-                )
-              : null}
 
             {/* After session modal so portal stacks above stage Dialog when z equal. */}
             <NotificationCenter

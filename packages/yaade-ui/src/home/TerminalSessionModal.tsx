@@ -41,6 +41,8 @@ export type TerminalSessionModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   presentation?: "modal" | "inline"
+  /** Nested inside a session window leaf — omit outer glass chrome (leaf provides it). */
+  embedded?: boolean
   windowChrome?: {
     platform: DesktopWindowPlatform
     titlebarHeight: number
@@ -150,6 +152,7 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     open,
     onOpenChange,
     presentation = "modal",
+    embedded = false,
     windowChrome = null,
     title,
     launchCommand: _launchCommand,
@@ -399,13 +402,17 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   if (presentation === "inline") {
     return (
       <section
-        data-yaade-liquid-glass="panel"
+        data-yaade-liquid-glass={embedded ? undefined : "panel"}
         data-yaade-terminal-modal
         data-yaade-session-id={sessionId}
         data-yaade-session-presentation="inline"
+        data-yaade-session-embedded={embedded ? "" : undefined}
         data-yaade-session-mode={mode}
         aria-label={displayTitle}
-        className="flex h-full min-h-0 w-full flex-col gap-0 overflow-hidden bg-transparent"
+        className={cn(
+          "flex h-full min-h-0 w-full flex-col gap-0 overflow-hidden bg-transparent",
+          embedded && "border-0 shadow-none",
+        )}
       >
         {stage}
       </section>

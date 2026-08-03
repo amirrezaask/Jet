@@ -12,6 +12,8 @@ test.describe("terminal-first session workspace", () => {
     try {
       await openNewCliSession(page, "codex")
 
+      await expectSelectorVisible(page, "[data-yaade-session-workspace]")
+      await expectSelectorVisible(page, "[data-yaade-session-window]")
       await expectLocatorContainsText(
         page.locator("[data-yaade-terminal-modal-title]"),
         "Codex",
