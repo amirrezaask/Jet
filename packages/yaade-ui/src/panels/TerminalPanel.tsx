@@ -47,6 +47,8 @@ export type TerminalPanelProps = {
   onRestart?: () => void
   onClose?: () => void
   onFailed?: () => void
+  /** Fired when the attached PTY process exits (not on attach-miss / start failure). */
+  onExit?: (tabId: string, exitCode: number) => void
   onOpenPath?: (path: string, line?: number, column?: number) => void
 }
 
@@ -324,6 +326,7 @@ export function TerminalPanel({
   onRestart,
   onClose,
   onFailed,
+  onExit,
   onOpenPath,
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -341,6 +344,8 @@ export function TerminalPanel({
   onOutputRef.current = onOutput
   const onFailedRef = useRef(onFailed)
   onFailedRef.current = onFailed
+  const onExitRef = useRef(onExit)
+  onExitRef.current = onExit
   const onOpenPathRef = useRef(onOpenPath)
   onOpenPathRef.current = onOpenPath
   // Launch command/args are create/restart-time only. Capturing a CLI session id
@@ -424,6 +429,7 @@ export function TerminalPanel({
       if (session.ptyId !== id) return
       setDisplayStatus("exited")
       setDisplayExitCode(code)
+      onExitRef.current?.(tabId, code)
     })
 
     const syncFit = () => {

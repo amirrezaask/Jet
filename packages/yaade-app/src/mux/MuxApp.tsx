@@ -93,6 +93,21 @@ const TerminalPanel = lazy(async () => {
 })
 
 const MuxOverlays = lazy(() => import("./MuxOverlays.js"))
+// Prefetch immediately so Mod-k / Mod-Shift-p never race an unloaded chunk.
+void import("./MuxOverlays.js")
+
+/** True when a pane was launched as Neovim/Vim (quit should close the pane). */
+function isNeovimLaunchCommand(command: string | undefined): boolean {
+  if (!command) return false
+  const base =
+    command
+      .trim()
+      .split(/[/\\\s]/)
+      .filter(Boolean)
+      .pop()
+      ?.toLowerCase() ?? ""
+  return base === "nvim" || base === "neovim" || base === "vim"
+}
 
 type LiveWindow = {
   id: string
@@ -327,23 +342,25 @@ export function MuxApp() {
   }, [createPaneInWindow])
 
   const closeWindow = useCallback(
-    async (windowId: string) => {
+    async (windowId: string, options?: { skipConfirm?: boolean }) => {
       const live = windowsRef.current.find(w => w.id === windowId)
       if (!live) return
       const panes = listPaneLeaves(live.tree)
-      for (const pane of panes) {
-        if (pane.kind !== "terminal") continue
-        const session = terminalSessionForTab(pane.ptyTabId)
-        if (terminalSessionNeedsCloseConfirmation(session)) {
-          const ok = await requestConfirm({
-            title: `Close ${paneTitle(pane.ptyTabId)}?`,
-            description: "Running shells in this window will be stopped.",
-            confirmLabel: "Close Window",
-            cancelLabel: "Keep Running",
-            destructive: true,
-          })
-          if (!ok) return
-          break
+      if (!options?.skipConfirm) {
+        for (const pane of panes) {
+          if (pane.kind !== "terminal") continue
+          const session = terminalSessionForTab(pane.ptyTabId)
+          if (terminalSessionNeedsCloseConfirmation(session)) {
+            const ok = await requestConfirm({
+              title: `Close ${paneTitle(pane.ptyTabId)}?`,
+              description: "Running shells in this window will be stopped.",
+              confirmLabel: "Close Window",
+              cancelLabel: "Keep Running",
+              destructive: true,
+            })
+            if (!ok) return
+            break
+          }
         }
       }
       for (const pane of panes) {
@@ -366,11 +383,21 @@ export function MuxApp() {
   )
 
   const closePane = useCallback(
-    async (windowId: string, panelId: PanelId, tabId: string) => {
+    async (
+      windowId: string,
+      panelId: PanelId,
+      tabId: string,
+      options?: { skipConfirm?: boolean },
+    ) => {
       const live = windowsRef.current.find(w => w.id === windowId)
       if (!live) return
+      const remaining = listPaneLeaves(live.tree).filter(
+        p => p.ptyTabId !== tabId,
+      )
+      // Last pane in the window → close the window with no consent prompt.
+      const skipConfirm = Boolean(options?.skipConfirm) || remaining.length === 0
       const isTerminal = isTerminalTabId(tabId)
-      if (isTerminal) {
+      if (!skipConfirm && isTerminal) {
         const session = terminalSessionForTab(tabId)
         if (terminalSessionNeedsCloseConfirmation(session)) {
           const ok = await requestConfirm({
@@ -383,11 +410,8 @@ export function MuxApp() {
           if (!ok) return
         }
       }
-      const remaining = listPaneLeaves(live.tree).filter(
-        p => p.ptyTabId !== tabId,
-      )
       if (remaining.length === 0) {
-        await closeWindow(windowId)
+        await closeWindow(windowId, { skipConfirm: true })
         return
       }
       if (isTerminal) {
@@ -916,12 +940,8 @@ export function MuxApp() {
         },
         noOverlay,
       ),
-      bind("Mod-k", () => {
-        void executeCommand("terminal.list")
-      }, noOverlay),
-      bind("Mod-Shift-p", () => {
-        void executeCommand("ui.showCommandPalette")
-      }, noOverlay),
+      bind("Mod-k", () => setTerminalListOpen(true), noOverlay),
+      bind("Mod-Shift-p", () => setPaletteOpen(true), noOverlay),
       bind("Mod-,", () => setSettingsOpen(true), noOverlay),
       bind(
         "Mod-Shift-Enter",
@@ -1027,12 +1047,6 @@ export function MuxApp() {
     workspace,
   ])
 
-  // Eagerly load overlays so Mod-k / Mod-Shift-p never race an unmounted tree.
-  useEffect(() => {
-    if (!layoutReady) return
-    void import("./MuxOverlays.js")
-  }, [layoutReady])
-
   const workspaceSurfaceRef = useRef<HTMLDivElement>(null)
   const activeLeaves = useMemo(
     () => (activeWindow ? listPaneLeaves(activeWindow.tree) : []),
@@ -1127,6 +1141,22 @@ export function MuxApp() {
               const ptyId = terminalPtyIdForTab(ptyTabId)
               if (ptyId) void window.yaade?.terminal?.dispose(ptyId)
               restartTerminalSession(ptyTabId)
+            }}
+            onExit={() => {
+              const session = terminalSessionForTab(ptyTabId)
+              if (!isNeovimLaunchCommand(session?.launchCommand)) return
+              const w = windowsRef.current.find(x =>
+                listPaneLeaves(x.tree).some(p => p.ptyTabId === ptyTabId),
+              )
+              if (!w) return
+              const leaf = listPaneLeaves(w.tree).find(
+                p => p.ptyTabId === ptyTabId,
+              )
+              if (leaf) {
+                void closePane(w.id, leaf.panelId, ptyTabId, {
+                  skipConfirm: true,
+                })
+              }
             }}
             onClose={() => {
               const w = windowsRef.current.find(
@@ -1328,45 +1358,43 @@ export function MuxApp() {
           </div>
         </TabDndRoot>
 
-        {layoutReady ? (
-          <Suspense fallback={null}>
-            <MuxOverlays
-              paletteOpen={paletteOpen}
-              onPaletteOpenChange={setPaletteOpen}
-              paletteCommands={paletteCommands}
-              onRunCommand={id => void executeCommand(id)}
-              terminalListOpen={terminalListOpen}
-              onTerminalListOpenChange={setTerminalListOpen}
-              switcherItems={switcherItems}
-              onSelectTerminal={entry => {
-                focusPane(
-                  entry.windowId,
-                  { id: entry.panelId },
-                  entry.ptyTabId,
-                )
-              }}
-              settingsOpen={settingsOpen}
-              onSettingsOpenChange={setSettingsOpen}
-              appearanceSettings={appearanceSettings}
-              onAppearanceChange={setAppearanceSettings}
-              onResetAppearance={resetAppearanceSettings}
-              cdOpen={cdOpen}
-              onCdOpenChange={setCdOpen}
-              cdInitialPath={
-                lastCwdUri
-                  ? fileUriToPath(lastCwdUri)
-                  : homeDirRef.current || null
+        <Suspense fallback={null}>
+          <MuxOverlays
+            paletteOpen={paletteOpen}
+            onPaletteOpenChange={setPaletteOpen}
+            paletteCommands={paletteCommands}
+            onRunCommand={id => void executeCommand(id)}
+            terminalListOpen={terminalListOpen}
+            onTerminalListOpenChange={setTerminalListOpen}
+            switcherItems={switcherItems}
+            onSelectTerminal={entry => {
+              focusPane(
+                entry.windowId,
+                { id: entry.panelId },
+                entry.ptyTabId,
+              )
+            }}
+            settingsOpen={settingsOpen}
+            onSettingsOpenChange={setSettingsOpen}
+            appearanceSettings={appearanceSettings}
+            onAppearanceChange={setAppearanceSettings}
+            onResetAppearance={resetAppearanceSettings}
+            cdOpen={cdOpen}
+            onCdOpenChange={setCdOpen}
+            cdInitialPath={
+              lastCwdUri
+                ? fileUriToPath(lastCwdUri)
+                : homeDirRef.current || null
+            }
+            onSelectFolder={openWorkspace}
+            resolveHomeDir={async () => {
+              if (window.yaade?.getHomeDir) {
+                return window.yaade.getHomeDir()
               }
-              onSelectFolder={openWorkspace}
-              resolveHomeDir={async () => {
-                if (window.yaade?.getHomeDir) {
-                  return window.yaade.getHomeDir()
-                }
-                return homeDirRef.current
-              }}
-            />
-          </Suspense>
-        ) : null}
+              return homeDirRef.current
+            }}
+          />
+        </Suspense>
 
         <ConfirmDialogHost />
         <LiquidGlassFilter />

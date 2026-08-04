@@ -123,6 +123,23 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
           closeActiveTab()
           return
         }
+        // Hard-wire shell chords so Mod-k / Mod-Shift-p never depend on the
+        // registerUser → revision → snapshot pipeline (repeated empty-map races).
+        if (keyEventMatchesBinding(e, "Mod-k") || keyEventMatchesBinding(e, "Cmd-k")) {
+          e.preventDefault()
+          e.stopPropagation()
+          void executeCommandRef.current("terminal.list")
+          return
+        }
+        if (
+          keyEventMatchesBinding(e, "Mod-Shift-p") ||
+          keyEventMatchesBinding(e, "Cmd-Shift-p")
+        ) {
+          e.preventDefault()
+          e.stopPropagation()
+          void executeCommandRef.current("ui.showCommandPalette")
+          return
+        }
         if (dispatchKeyBinding(e)) return
         if (
           keyEventMatchesBinding(e, "Mod-=") ||

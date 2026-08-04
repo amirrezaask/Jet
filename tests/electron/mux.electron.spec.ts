@@ -66,6 +66,16 @@ test.describe("mux tabs", () => {
         page,
         "[data-yaade-mux][data-orientation=vertical]",
       )
+      // Vertical strip uses the same frosted glass treatment as horizontal.
+      const verticalStrip = page.locator(
+        "[data-yaade-mux-tab-strip][data-orientation=vertical]",
+      )
+      await expect
+        .poll(async () => {
+          const cls = (await verticalStrip.getAttribute("class")) ?? ""
+          return cls.includes("backdrop-blur") || cls.includes("bg-background/50")
+        })
+        .toBe(true)
       await execCommand(page, "mux.toggleTabOrientation")
       await expectSelectorVisible(
         page,
@@ -193,6 +203,91 @@ test.describe("mux tiling", () => {
       await expect
         .poll(async () => page.locator("[data-yaade-terminal-panel]").count())
         .toBeGreaterThanOrEqual(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("quitting neovim closes its pane", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await page.locator("[data-yaade-mux-open-nvim]").first().click()
+      await expect
+        .poll(async () =>
+          page.locator('[data-yaade-mux-pane-title][aria-label="Neovim"]').count(),
+        )
+        .toBeGreaterThanOrEqual(1)
+
+      const nvimPaneId = await page
+        .locator('[data-yaade-mux-pane-title][aria-label="Neovim"]')
+        .first()
+        .evaluate(el => el.closest("[data-yaade-mux-pane]")?.getAttribute("data-yaade-mux-pane"))
+      expect(nvimPaneId).toBeTruthy()
+
+      let ptyId: string | null = null
+      await expect
+        .poll(async () => {
+          ptyId = await page.evaluate(paneId => {
+            const host = document.querySelector(
+              `[data-yaade-mux-terminal-host="${paneId}"] [data-yaade-terminal-panel]`,
+            )
+            const id = host?.getAttribute("data-yaade-terminal-pty-id") || ""
+            return id.length > 0 ? id : null
+          }, nvimPaneId!)
+          return ptyId
+        }, { timeout: 15_000 })
+        .toBeTruthy()
+
+      // Force-quit neovim (:qa!) so the PTY exits and the pane auto-closes.
+      await page.evaluate(async id => {
+        const api = (
+          window as Window & {
+            yaade?: { terminal?: { write: (ptyId: string, data: string) => Promise<unknown> } }
+          }
+        ).yaade?.terminal
+        if (!api?.write) throw new Error("terminal.write unavailable")
+        await api.write(id, "\x1b:qa!\r")
+      }, ptyId!)
+
+      await expect
+        .poll(
+          async () =>
+            page.locator('[data-yaade-mux-pane-title][aria-label="Neovim"]').count(),
+          { timeout: 15_000 },
+        )
+        .toBe(0)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(1)
+      await expect
+        .poll(async () => page.locator("[data-yaade-confirm=accept]").count())
+        .toBe(0)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("closing the last pane closes the window without confirm", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
+        .toBe(1)
+
+      await page.locator("[data-yaade-terminal-panel]").first().click()
+      await page.keyboard.type("echo yaade-last-pane")
+      await expectSelectorVisible(page, "[data-yaade-mux-close-pane]")
+      await page.locator("[data-yaade-mux-close-pane]").first().click()
+
+      await expect
+        .poll(async () => page.locator("[data-yaade-confirm=accept]").count())
+        .toBe(0)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
+        .toBe(0)
+      await expectSelectorVisible(page, "[data-yaade-mux-empty]")
     } finally {
       await app.close()
     }

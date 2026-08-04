@@ -139,19 +139,16 @@ function MuxTabDragShell({
             data-yaade-mux-tab-drag=""
             className={cn(
               "yaade-press min-w-0 flex-1 justify-start gap-1.5 text-xs after:hidden!",
+              // Glass capsule — horizontal + vertical share the same frosted pill.
               vertical
-                ? "w-full px-2 py-1.5"
-                : cn(
-                    // Capsule pill — !h overrides TabsTrigger's h-[calc(100%-1px)].
-                    "!h-8 max-w-56 min-w-0 gap-2 rounded-full border border-transparent pe-7 ps-3",
-                    "text-muted-foreground hover:text-foreground",
-                    // Active = frosted capsule; inactive = ghost (title-bar text only).
-                    "data-[state=active]:border-border/60 data-[state=active]:bg-foreground/20",
-                    "data-[state=active]:text-foreground data-[state=active]:shadow-none",
-                    "data-[state=active]:backdrop-blur-md",
-                    "dark:data-[state=active]:border-white/20 dark:data-[state=active]:bg-white/20",
-                    !active && "bg-transparent hover:bg-foreground/5",
-                  ),
+                ? "!h-auto w-full gap-2 rounded-full border border-transparent px-3 py-2 pe-8"
+                : "!h-8 max-w-56 min-w-0 gap-2 rounded-full border border-transparent pe-7 ps-3",
+              "text-muted-foreground hover:text-foreground",
+              "data-[state=active]:border-border/60 data-[state=active]:bg-foreground/20",
+              "data-[state=active]:text-foreground data-[state=active]:shadow-none",
+              "data-[state=active]:backdrop-blur-md",
+              "dark:data-[state=active]:border-white/20 dark:data-[state=active]:bg-white/20",
+              !active && "bg-transparent hover:bg-foreground/5",
               enableDrag && "cursor-grab active:cursor-grabbing",
             )}
             onMouseDown={event => {
@@ -176,9 +173,9 @@ function MuxTabDragShell({
             aria-label={`Close ${tab.title}`}
             data-yaade-mux-close-tab={tab.id}
             className={cn(
-              "absolute end-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-data-[active]:opacity-100",
+              "absolute end-1.5 top-1/2 size-5 -translate-y-1/2 rounded-full opacity-0",
+              "group-hover:opacity-100 group-data-[active]:opacity-100",
               "text-muted-foreground hover:text-foreground",
-              !vertical && "end-1.5 size-5 rounded-full",
             )}
             onClick={event => {
               event.preventDefault()
@@ -260,7 +257,8 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       data-yaade-mux-new-tab=""
       className={cn(
         "text-muted-foreground hover:text-foreground",
-        vertical && "w-full justify-start gap-1.5",
+        vertical &&
+          "w-full justify-start gap-1.5 rounded-full border border-transparent hover:bg-foreground/5",
         !vertical && "size-8 shrink-0 rounded-full",
       )}
       onClick={onNew}
@@ -278,7 +276,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       className={cn(
         "min-h-0 min-w-0",
         vertical
-          ? "flex flex-1 flex-col gap-1 p-1.5"
+          ? "flex flex-1 flex-col gap-1.5 p-2"
           : "flex flex-none flex-row items-center",
       )}
     >
@@ -289,7 +287,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
         className={cn(
           "min-h-0 min-w-0 justify-start bg-transparent p-0",
           vertical
-            ? "h-auto w-full flex-1 flex-col items-stretch overflow-y-auto"
+            ? "h-auto w-full flex-1 flex-col items-stretch gap-1 overflow-y-auto"
             : "h-8 w-auto flex-none flex-row items-center gap-1 overflow-x-auto",
         )}
       >
@@ -318,7 +316,10 @@ export function MuxTabStrip(props: MuxTabStripProps) {
         className={cn(
           "relative flex shrink-0 border-border/35",
           vertical
-            ? "h-full w-52 flex-col border-r bg-muted/20"
+            ? cn(
+                "h-full w-52 flex-col border-r",
+                "bg-background/50 backdrop-blur-xl",
+              )
             : cn(
                 "h-11 w-full flex-row items-center justify-center gap-1 border-b",
                 "bg-background/50 px-3 backdrop-blur-xl",
@@ -329,7 +330,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
         {vertical ? (
           <>
             {tabList}
-            <div className="flex shrink-0 items-center border-t border-border/50 p-1.5">
+            <div className="flex shrink-0 items-center border-t border-border/35 p-2">
               {newButton}
             </div>
           </>
