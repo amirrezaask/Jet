@@ -1,6 +1,6 @@
-import { LayoutGrid, Plus, SquareTerminal, X } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { useDraggable } from "@dnd-kit/core"
-import type { ReactNode } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { Button } from "@/components/ui/button.js"
 import {
   ContextMenu,
@@ -33,6 +33,59 @@ export type MuxTabStripProps = {
   /** When true, tabs can be dragged onto the tiled dock. */
   enableDragDock?: boolean
   className?: string
+}
+
+/** Hue wheel for Superlogical-style deck favicons (oklch, theme-agnostic). */
+const DECK_HUES = [230, 55, 155, 295, 25, 40, 195, 330] as const
+
+function deckHue(id: string): number {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0
+  }
+  return DECK_HUES[Math.abs(hash) % DECK_HUES.length]!
+}
+
+function deckStyle(id: string): CSSProperties {
+  const hue = deckHue(id)
+  return {
+    backgroundColor: `oklch(0.64 0.15 ${hue})`,
+    color: "oklch(0.98 0.01 255)",
+  }
+}
+
+/**
+ * Deck icon = favicon for a window (Superlogical).
+ * Colored tile + stacked-card glyph — lives inside each tab, not a separate strip.
+ */
+function DeckIcon({
+  tabId,
+  active,
+  className,
+}: {
+  tabId: string
+  active: boolean
+  className?: string
+}) {
+  return (
+    <span
+      data-yaade-mux-deck-icon={tabId}
+      data-active={active ? "" : undefined}
+      aria-hidden
+      style={deckStyle(tabId)}
+      className={cn(
+        "relative flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-[0.3rem]",
+        "shadow-sm ring-1 ring-black/25",
+        !active && "opacity-75",
+        className,
+      )}
+    >
+      <svg viewBox="0 0 16 16" className="size-2.5 fill-current opacity-95">
+        <rect x="3.5" y="5" width="7" height="7" rx="1.1" opacity="0.55" />
+        <rect x="5.5" y="3.5" width="7" height="7" rx="1.1" />
+      </svg>
+    </span>
+  )
 }
 
 function MuxTabDragShell({
@@ -74,7 +127,7 @@ function MuxTabDragShell({
           data-dragging={isDragging ? "" : undefined}
           className={cn(
             "group relative flex min-w-0 items-center",
-            vertical ? "w-full" : "shrink-0",
+            vertical ? "w-full" : "h-8 shrink-0",
             isDragging && "opacity-45",
             enableDrag && "touch-none",
           )}
@@ -85,14 +138,19 @@ function MuxTabDragShell({
             value={tab.id}
             data-yaade-mux-tab-drag=""
             className={cn(
-              "yaade-press min-w-0 flex-1 justify-start gap-1.5 text-xs",
+              "yaade-press min-w-0 flex-1 justify-start gap-1.5 text-xs after:hidden!",
               vertical
                 ? "w-full px-2 py-1.5"
                 : cn(
-                    "h-7 max-w-44 rounded-md border border-transparent px-2",
-                    "data-[state=active]:border-border/70 data-[state=active]:bg-card/80",
-                    "data-[state=active]:shadow-sm data-[state=active]:backdrop-blur-sm",
-                    "dark:data-[state=active]:bg-card/55",
+                    // Capsule pill — !h overrides TabsTrigger's h-[calc(100%-1px)].
+                    "!h-8 max-w-56 min-w-0 gap-2 rounded-full border border-transparent pe-7 ps-3",
+                    "text-muted-foreground hover:text-foreground",
+                    // Active = frosted capsule; inactive = ghost (title-bar text only).
+                    "data-[state=active]:border-border/60 data-[state=active]:bg-foreground/20",
+                    "data-[state=active]:text-foreground data-[state=active]:shadow-none",
+                    "data-[state=active]:backdrop-blur-md",
+                    "dark:data-[state=active]:border-white/20 dark:data-[state=active]:bg-white/20",
+                    !active && "bg-transparent hover:bg-foreground/5",
                   ),
               enableDrag && "cursor-grab active:cursor-grabbing",
             )}
@@ -106,13 +164,8 @@ function MuxTabDragShell({
               onSelect(tab.id)
             }}
           >
-            <SquareTerminal
-              className={cn(
-                "size-3.5 shrink-0",
-                active ? "text-foreground" : "text-muted-foreground",
-              )}
-            />
-            <span className="min-w-0 truncate" data-slot="row-label">
+            <DeckIcon tabId={tab.id} active={active} />
+            <span className="min-w-0 truncate font-medium" data-slot="row-label">
               {tab.title}
             </span>
           </TabsTrigger>
@@ -125,6 +178,7 @@ function MuxTabDragShell({
             className={cn(
               "absolute end-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-data-[active]:opacity-100",
               "text-muted-foreground hover:text-foreground",
+              !vertical && "end-1.5 size-5 rounded-full",
             )}
             onClick={event => {
               event.preventDefault()
@@ -207,7 +261,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       className={cn(
         "text-muted-foreground hover:text-foreground",
         vertical && "w-full justify-start gap-1.5",
-        !vertical && "size-7 shrink-0 rounded-md",
+        !vertical && "size-8 shrink-0 rounded-full",
       )}
       onClick={onNew}
     >
@@ -216,92 +270,74 @@ export function MuxTabStrip(props: MuxTabStripProps) {
     </Button>
   )
 
+  const tabList = (
+    <Tabs
+      orientation={orientation}
+      value={activeId ?? undefined}
+      onValueChange={onSelect}
+      className={cn(
+        "min-h-0 min-w-0",
+        vertical
+          ? "flex flex-1 flex-col gap-1 p-1.5"
+          : "flex flex-none flex-row items-center",
+      )}
+    >
+      <TabsList
+        variant="line"
+        aria-label="Terminal windows"
+        data-yaade-mux-icon-deck=""
+        className={cn(
+          "min-h-0 min-w-0 justify-start bg-transparent p-0",
+          vertical
+            ? "h-auto w-full flex-1 flex-col items-stretch overflow-y-auto"
+            : "h-8 w-auto flex-none flex-row items-center gap-1 overflow-x-auto",
+        )}
+      >
+        {tabs.map(tab => (
+          <MuxTabDragShell
+            key={tab.id}
+            tab={tab}
+            active={tab.id === activeId}
+            vertical={vertical}
+            enableDrag={enableDragDock}
+            onSelect={onSelect}
+            onClose={onClose}
+            onNew={onNew}
+            onToggleOrientation={onToggleOrientation}
+          />
+        ))}
+      </TabsList>
+    </Tabs>
+  )
+
   return (
     <StripContextMenu onNew={onNew} onToggleOrientation={onToggleOrientation}>
       <div
         data-yaade-mux-tab-strip=""
         data-orientation={orientation}
         className={cn(
-          "flex shrink-0 border-border/50",
+          "relative flex shrink-0 border-border/35",
           vertical
             ? "h-full w-52 flex-col border-r bg-muted/20"
-            : "h-10 w-full flex-row items-center justify-start gap-1 border-b bg-transparent px-2",
+            : cn(
+                "h-11 w-full flex-row items-center justify-center gap-1 border-b",
+                "bg-background/50 px-3 backdrop-blur-xl",
+              ),
           className,
         )}
       >
-        {!vertical ? (
-          <div
-            data-yaade-mux-icon-deck=""
-            className="flex shrink-0 items-center gap-0.5 rounded-md bg-muted/35 p-0.5 ring-1 ring-border/40"
-            aria-hidden
-          >
-            <LayoutGrid className="size-3.5 text-muted-foreground" />
-            {tabs.slice(0, 4).map(tab => (
-              <button
-                key={`deck-${tab.id}`}
-                type="button"
-                tabIndex={-1}
-                title={tab.title}
-                data-yaade-mux-deck-icon={tab.id}
-                data-active={tab.id === activeId ? "" : undefined}
-                className={cn(
-                  "flex size-5 items-center justify-center rounded-sm",
-                  "text-muted-foreground transition-colors",
-                  "hover:bg-background/60 hover:text-foreground",
-                  "active:scale-[0.97]",
-                  tab.id === activeId && "bg-background/70 text-foreground shadow-sm",
-                )}
-                onClick={() => onSelect(tab.id)}
-              >
-                <SquareTerminal className="size-3" />
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        <Tabs
-          orientation={orientation}
-          value={activeId ?? undefined}
-          onValueChange={onSelect}
-          className={cn(
-            "min-h-0 min-w-0",
-            vertical
-              ? "flex flex-1 flex-col gap-1 p-1.5"
-              : "flex flex-none flex-row items-center",
-          )}
-        >
-          <TabsList
-            variant="line"
-            aria-label="Terminal windows"
-            className={cn(
-              "min-h-0 min-w-0 justify-start bg-transparent p-0",
-              vertical
-                ? "h-auto w-full flex-1 flex-col items-stretch overflow-y-auto"
-                : "h-7 w-auto flex-none flex-row items-center gap-0.5 overflow-x-auto",
-            )}
-          >
-            {tabs.map(tab => (
-              <MuxTabDragShell
-                key={tab.id}
-                tab={tab}
-                active={tab.id === activeId}
-                vertical={vertical}
-                enableDrag={enableDragDock}
-                onSelect={onSelect}
-                onClose={onClose}
-                onNew={onNew}
-                onToggleOrientation={onToggleOrientation}
-              />
-            ))}
-          </TabsList>
-        </Tabs>
-
         {vertical ? (
-          <div className="flex shrink-0 items-center border-t border-border/50 p-1.5">
-            {newButton}
-          </div>
+          <>
+            {tabList}
+            <div className="flex shrink-0 items-center border-t border-border/50 p-1.5">
+              {newButton}
+            </div>
+          </>
         ) : (
-          <div className="flex shrink-0 items-center ps-0.5">{newButton}</div>
+          <>
+            {tabList}
+            {newButton}
+          </>
         )}
       </div>
     </StripContextMenu>

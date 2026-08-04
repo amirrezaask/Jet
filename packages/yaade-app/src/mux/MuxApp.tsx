@@ -66,7 +66,7 @@ import {
 import { allocTerminalSessionKey } from "../tab-routing.js"
 import { applySessionPaneDrop } from "../session-layout.js"
 import {
-  activePtyInPanel,
+  activeMuxTabInPanel,
   dockSourceLeavesIntoTree,
   emptyMuxTree,
   listPaneLeaves,
@@ -578,8 +578,8 @@ export function MuxApp() {
           x => x.id === activeWindowIdRef.current,
         )
         if (!w) return []
-        const pty = activePtyInPanel(w.tree, panelId)
-        return pty ? [pty] : []
+        const tab = activeMuxTabInPanel(w.tree, panelId)
+        return tab ? [tab] : []
       },
       onTabDrop: (source, sourceTabId, target, action) => {
         const windowId = activeWindowIdRef.current

@@ -3,6 +3,7 @@ import {
   YaadePanelTree,
   buildTabsView,
   findPanelWithTab,
+  isGitTabId,
   isTerminalTabId,
   panelTabIds,
   popPanelTab,
@@ -11,6 +12,11 @@ import {
 import { TERMINAL_TAB_TYPE_ID } from "./tabs/terminal.tab.js"
 import { resolveTargetPanel, closePanelIfEmpty, getAllLeafPanels } from "./panel-routing.js"
 import { terminalSessionForTab } from "./tabs/terminal-session.js"
+
+/** Terminal or git leaf — both are mux panes that participate in tile DnD. */
+function isMuxPaneTabId(tabId: string): boolean {
+  return isTerminalTabId(tabId) || isGitTabId(tabId)
+}
 
 /** Panel view filtered to terminal session tabs only (for session window chrome). */
 export function terminalOnlyView(view: PanelView | null): PanelView {
@@ -31,6 +37,17 @@ export function activeTerminalTabInPanel(
   const view = terminalOnlyView(tree.getView(panelId))
   if (view.kind !== "tabs") return null
   return view.activeTabId
+}
+
+/** Active terminal or git tab in a leaf (mux one-pane-per-leaf). */
+export function activeMuxPaneTabInPanel(
+  tree: YaadePanelTree,
+  panelId: PanelId | null,
+): string | null {
+  if (!panelId) return null
+  const view = tree.getView(panelId)
+  if (!view || view.kind !== "tabs") return null
+  return isMuxPaneTabId(view.activeTabId) ? view.activeTabId : null
 }
 
 function sessionLabel(
@@ -108,7 +125,7 @@ export function applySessionPaneDrop(
   target: PanelId,
   action: DropAction,
 ): { moved: boolean; createdPanel: PanelId | null; focusPanel: PanelId } {
-  if (!isTerminalTabId(sourceTabId)) {
+  if (!isMuxPaneTabId(sourceTabId)) {
     return { moved: false, createdPanel: null, focusPanel: source }
   }
   const sourceView = tree.getView(source)
@@ -136,11 +153,11 @@ export function applySessionPaneDrop(
     return { moved: false, createdPanel: null, focusPanel: source }
   }
 
-  const targetSession = activeTerminalTabInPanel(tree, target)
+  const targetSession = activeMuxPaneTabInPanel(tree, target)
   tree.setView(source, popPanelTab(sourceView, sourceTabId))
 
   if (targetSession && targetSession !== sourceTabId) {
-    // Swap: target session moves into the source leaf.
+    // Swap: target pane moves into the source leaf.
     tree.setView(target, buildTabsView(sourceTabId, [sourceTabId]))
     tree.setView(source, buildTabsView(targetSession, [targetSession]))
   } else {

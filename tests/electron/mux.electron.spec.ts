@@ -72,16 +72,23 @@ test.describe("mux tabs", () => {
         "[data-yaade-mux][data-orientation=horizontal]",
       )
       await expectSelectorVisible(page, "[data-yaade-mux-icon-deck]")
-      // Horizontal deck + tabs start from the left.
+      await expectSelectorVisible(page, "[data-yaade-mux-deck-icon]")
+      // Horizontal: centered capsule pills (deck favicon inside) + adjacent +.
       const strip = page.locator("[data-yaade-mux-tab-strip][data-orientation=horizontal]")
-      const deckBox = await strip.locator("[data-yaade-mux-icon-deck]").boundingBox()
+      const stripBox = await strip.boundingBox()
       const tabBox = await strip.locator("[data-yaade-mux-tab]").first().boundingBox()
       const newBox = await strip.locator("[data-yaade-mux-new-tab]").boundingBox()
-      expect(deckBox).toBeTruthy()
+      expect(stripBox).toBeTruthy()
       expect(tabBox).toBeTruthy()
       expect(newBox).toBeTruthy()
-      expect(deckBox!.x).toBeLessThan(tabBox!.x)
       expect(tabBox!.x).toBeLessThan(newBox!.x)
+      // Capsule pills use h-8 (~26px at Yaade's 13px root).
+      expect(tabBox!.height).toBeGreaterThanOrEqual(24)
+      expect(tabBox!.height).toBeLessThanOrEqual(stripBox!.height)
+      // Tab cluster is roughly centered in the title bar.
+      const tabCenter = tabBox!.x + tabBox!.width / 2
+      const stripCenter = stripBox!.x + stripBox!.width / 2
+      expect(Math.abs(tabCenter - stripCenter)).toBeLessThan(stripBox!.width * 0.28)
 
       await execCommand(page, "mux.toggleTabOrientation")
       await expectSelectorVisible(
@@ -450,6 +457,68 @@ test.describe("mux drag dock", () => {
         page,
         `[data-yaade-mux-terminal-host="${leftId}"]`,
       )
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("dragging a git pane onto a terminal pane edge retile", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await expectSelectorVisible(page, "[data-yaade-mux-open-git]")
+      await page.locator("[data-yaade-mux-open-git]").first().click()
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(2)
+      await expectSelectorVisible(page, "[data-yaade-mux-pane-kind=git]")
+
+      const gitPane = page.locator("[data-yaade-mux-pane-kind=git]")
+      const gitId = await gitPane.getAttribute("data-yaade-mux-pane")
+      expect(gitId).toBeTruthy()
+
+      const termPane = page.locator(
+        "[data-yaade-mux-pane-kind=terminal]",
+      ).first()
+      const termId = await termPane.getAttribute("data-yaade-mux-pane")
+      expect(termId).toBeTruthy()
+      expect(termId).not.toBe(gitId)
+
+      const source = page.locator(
+        `[data-yaade-mux-pane="${gitId}"] [data-yaade-mux-pane-drag]`,
+      )
+      const srcBox = await source.boundingBox()
+      const tgtBox = await termPane.boundingBox()
+      expect(srcBox).toBeTruthy()
+      expect(tgtBox).toBeTruthy()
+
+      await pointerDrag(
+        page,
+        {
+          x: srcBox!.x + srcBox!.width / 2,
+          y: srcBox!.y + srcBox!.height / 2,
+        },
+        {
+          // Bottom edge of the terminal pane → stack git under it
+          x: tgtBox!.x + tgtBox!.width / 2,
+          y: tgtBox!.y + tgtBox!.height * 0.9,
+        },
+      )
+
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(2)
+      await expectSelectorVisible(
+        page,
+        `[data-yaade-mux-pane="${gitId}"][data-yaade-mux-pane-kind=git]`,
+      )
+      await expectSelectorVisible(
+        page,
+        `[data-yaade-mux-pane="${termId}"][data-yaade-mux-pane-kind=terminal]`,
+      )
+      await expectSelectorVisible(page, "[data-yaade-git-workspace]")
     } finally {
       await app.close()
     }

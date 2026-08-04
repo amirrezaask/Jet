@@ -9,7 +9,7 @@ import {
   placeSessionFromOutside,
   terminalOnlyView,
 } from "./session-layout.js"
-import { findPanelWithTab, panelTabIds } from "@yaade/workspace"
+import { findPanelWithTab, panelTabIds, buildTabsView } from "@yaade/workspace"
 
 function makeWorkspace() {
   return new WorkspaceService(new WorkspaceManager())
@@ -189,5 +189,51 @@ describe("session-layout", () => {
     assert.equal(findPanelWithTab(tree, "yaade:terminal:old"), null)
     clearTerminalSession("yaade:terminal:old")
     clearTerminalSession("yaade:terminal:new")
+  })
+
+  it("applySessionPaneDrop moves git panes on edge split", () => {
+    const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+    const termId = "yaade:terminal:term"
+    const gitId = "yaade:git:pane-1"
+    tree.setView(editorPanel, buildTabsView(termId, [termId]))
+    const right = tree.splitAtEdge(editorPanel, "right")
+    tree.setView(right, buildTabsView(gitId, [gitId]))
+
+    const result = applySessionPaneDrop(
+      tree,
+      right,
+      gitId,
+      editorPanel,
+      { kind: "split", edge: "bottom" },
+    )
+    assert.equal(result.moved, true)
+    assert.ok(result.createdPanel)
+    assert.equal(findPanelWithTab(tree, gitId)?.id, result.createdPanel!.id)
+    assert.equal(findPanelWithTab(tree, termId)?.id, editorPanel.id)
+    assert.notEqual(result.createdPanel!.id, right.id)
+  })
+
+  it("applySessionPaneDrop swaps git with terminal on center move", () => {
+    const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+    const termId = "yaade:terminal:term"
+    const gitId = "yaade:git:pane-2"
+    tree.setView(editorPanel, buildTabsView(termId, [termId]))
+    const right = tree.splitAtEdge(editorPanel, "right")
+    tree.setView(right, buildTabsView(gitId, [gitId]))
+
+    const result = applySessionPaneDrop(
+      tree,
+      right,
+      gitId,
+      editorPanel,
+      { kind: "moveToPane" },
+    )
+    assert.equal(result.moved, true)
+    const leftView = tree.getView(editorPanel)
+    const rightView = tree.getView(right)
+    assert.equal(leftView?.kind, "tabs")
+    assert.equal(rightView?.kind, "tabs")
+    if (leftView?.kind === "tabs") assert.equal(leftView.activeTabId, gitId)
+    if (rightView?.kind === "tabs") assert.equal(rightView.activeTabId, termId)
   })
 })
