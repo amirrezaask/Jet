@@ -164,6 +164,33 @@ test.describe("mux tiling", () => {
     }
   })
 
+  test("neovim button opens nvim in a new terminal split", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(1)
+      await expectSelectorVisible(page, "[data-yaade-mux-open-nvim]")
+      await page.locator("[data-yaade-mux-open-nvim]").first().click()
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(2)
+      await expect
+        .poll(async () =>
+          page.locator('[data-yaade-mux-pane-title][aria-label="Neovim"]').count(),
+        )
+        .toBeGreaterThanOrEqual(1)
+      await expect
+        .poll(async () => page.locator("[data-yaade-terminal-panel]").count())
+        .toBeGreaterThanOrEqual(2)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("split down creates a stacked pane", async () => {
     const { app, page } = await launchJet()
     try {

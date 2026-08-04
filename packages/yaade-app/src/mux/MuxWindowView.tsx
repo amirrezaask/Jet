@@ -25,6 +25,7 @@ export type MuxWindowViewProps = {
   tabDnd: TabDndHandlers
   onSplit: (panelId: PanelId, edge: "right" | "bottom") => void
   onOpenGit: (panelId: PanelId) => void
+  onOpenNeovim: (panelId: PanelId) => void
   onZoom: (tabId: string) => void
   onClosePane: (panelId: PanelId, tabId: string) => void
   onNewWindow?: () => void
@@ -55,6 +56,7 @@ function PaneChromeShell(props: {
   onSplitRight: () => void
   onSplitDown: () => void
   onOpenGit: () => void
+  onOpenNeovim: () => void
   onZoom: () => void
   onClose: () => void
   children: ReactNode
@@ -69,6 +71,7 @@ function PaneChromeShell(props: {
     onSplitRight,
     onSplitDown,
     onOpenGit,
+    onOpenNeovim,
     onZoom,
     onClose,
     children,
@@ -91,6 +94,7 @@ function PaneChromeShell(props: {
         onSplitRight={onSplitRight}
         onSplitDown={onSplitDown}
         onOpenGit={onOpenGit}
+        onOpenNeovim={onOpenNeovim}
         onZoom={onZoom}
         onClose={onClose}
       />
@@ -142,6 +146,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     tabDnd,
     onSplit,
     onOpenGit,
+    onOpenNeovim,
     onZoom,
     onClosePane,
     gitRootUri,
@@ -187,6 +192,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
           onSplitRight={() => onSplit(panelId, "right")}
           onSplitDown={() => onSplit(panelId, "bottom")}
           onOpenGit={() => onOpenGit(panelId)}
+          onOpenNeovim={() => onOpenNeovim(panelId)}
           onZoom={() => onZoom(tabId)}
           onClose={() => onClosePane(panelId, tabId)}
         >
@@ -200,6 +206,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
       gitRootUri,
       onClosePane,
       onOpenGit,
+      onOpenNeovim,
       onSplit,
       onZoom,
       paneTitle,

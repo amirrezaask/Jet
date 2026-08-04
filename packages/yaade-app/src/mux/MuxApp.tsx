@@ -283,13 +283,17 @@ export function MuxApp() {
       live: LiveWindow,
       edge: Edge = "right",
       focusPanel: PanelId | null = live.focusedPaneId,
+      options?: { launchCommand?: string; label?: string },
     ): LiveWindow => {
       const tree = live.tree.clone()
       const sessionKey = allocTerminalSessionKey()
       const ptyTabId = terminalTabId(sessionKey)
-      const label = `Terminal ${listPaneLeaves(tree).length + 1}`
+      const label =
+        options?.label ?? `Terminal ${listPaneLeaves(tree).length + 1}`
       const rootUri = cwdUri()
-      registerTerminalSession(ptyTabId, rootUri)
+      registerTerminalSession(ptyTabId, rootUri, options?.launchCommand, {
+        customLabel: options?.label,
+      })
       workspace.registerTab({
         id: ptyTabId,
         kind: "terminal",
@@ -445,6 +449,18 @@ export function MuxApp() {
       updateWindow(windowId, w => openGitInWindow(w, panelId, "right"))
     },
     [openGitInWindow, updateWindow],
+  )
+
+  const openNeovimSplit = useCallback(
+    (windowId: string, panelId: PanelId) => {
+      updateWindow(windowId, w =>
+        createPaneInWindow(w, "right", panelId, {
+          launchCommand: "nvim",
+          label: "Neovim",
+        }),
+      )
+    },
+    [createPaneInWindow, updateWindow],
   )
 
   const zoomPane = useCallback(
@@ -668,6 +684,8 @@ export function MuxApp() {
   splitPaneRef.current = splitPane
   const openGitSplitRef = useRef(openGitSplit)
   openGitSplitRef.current = openGitSplit
+  const openNeovimSplitRef = useRef(openNeovimSplit)
+  openNeovimSplitRef.current = openNeovimSplit
   const zoomPaneRef = useRef(zoomPane)
   zoomPaneRef.current = zoomPane
 
@@ -767,6 +785,22 @@ export function MuxApp() {
           title: "Show Git",
           category: "View",
           aliases: ["git", "source control"],
+        },
+      ),
+      commands.register(
+        "mux.openNeovim",
+        run(() => {
+          const w = windowsRef.current.find(
+            x => x.id === activeWindowIdRef.current,
+          )
+          if (!w?.focusedPaneId) return
+          openNeovimSplitRef.current(w.id, w.focusedPaneId)
+        }),
+        {
+          id: "mux.openNeovim",
+          title: "Open Neovim",
+          category: "View",
+          aliases: ["nvim", "vim", "neovim"],
         },
       ),
       commands.register(
@@ -1061,6 +1095,9 @@ export function MuxApp() {
         <Suspense fallback={null}>
           <TerminalPanel
             cwdRootUri={session?.cwdRootUri ?? cwdUri()}
+            launchCommand={session?.launchCommand}
+            launchArgs={session?.launchArgs}
+            launchEnv={session?.launchEnv}
             theme={activeTheme as YaadeTheme}
             tabId={ptyTabId}
             focused={termFocused}
@@ -1137,6 +1174,11 @@ export function MuxApp() {
             >
               Open Git
             </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => openNeovimSplit(live.id, leaf.panelId)}
+            >
+              Open Neovim
+            </ContextMenuItem>
             {canZoom ? (
               <ContextMenuItem
                 onSelect={() => zoomPane(live.id, ptyTabId)}
@@ -1162,6 +1204,7 @@ export function MuxApp() {
       cwdUri,
       newWindow,
       openGitSplit,
+      openNeovimSplit,
       overlayBlocksTerminalFocus,
       splitPane,
       updateWindow,
@@ -1242,6 +1285,9 @@ export function MuxApp() {
                   }
                   onOpenGit={panelId =>
                     openGitSplit(activeWindow.id, panelId)
+                  }
+                  onOpenNeovim={panelId =>
+                    openNeovimSplit(activeWindow.id, panelId)
                   }
                   onZoom={ptyTabId => zoomPane(activeWindow.id, ptyTabId)}
                   onClosePane={(panelId, ptyTabId) =>

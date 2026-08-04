@@ -1,6 +1,6 @@
 import { Columns2, GitBranch, Maximize2, Minimize2, Rows2, X } from "lucide-react"
 import { useDraggable } from "@dnd-kit/core"
-import type { ReactNode } from "react"
+import type { ReactNode, SVGProps } from "react"
 import type { PanelId } from "@yaade/shared"
 import { Button } from "@/components/ui/button.js"
 import {
@@ -12,6 +12,22 @@ import {
 } from "@/components/ui/context-menu.js"
 import { cn } from "@/lib/utils.js"
 import { tabDndId, type TabDragData } from "../dock/tab-dnd-types.js"
+
+/** Simple Icons Neovim mark — monochrome via currentColor. */
+function NeovimIcon(props: SVGProps<SVGSVGElement>) {
+  const { className, ...rest } = props
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      role="img"
+      aria-hidden
+      className={cn("size-3.5 shrink-0 fill-current", className)}
+      {...rest}
+    >
+      <path d="M2.214 4.954v13.615L7.655 24V10.314L3.312 3.845 2.214 4.954zm4.999 17.98l-4.557-4.548V5.136l.59-.596 3.967 5.908v12.485zm14.573-4.457l-.862.937-4.24-6.376V0l5.068 5.092.034 13.385zM7.431.001l12.998 19.835-3.637 3.637L3.787 3.683 7.43 0z" />
+    </svg>
+  )
+}
 
 export type MuxPaneChromeProps = {
   /** Used for drag label / a11y; not shown in the chrome. */
@@ -27,6 +43,8 @@ export type MuxPaneChromeProps = {
   onSplitDown: () => void
   /** Open Git workspace in a new split beside this pane. */
   onOpenGit?: () => void
+  /** Open Neovim (PTY) in a new split beside this pane. */
+  onOpenNeovim?: () => void
   onZoom: () => void
   onClose: () => void
   className?: string
@@ -45,6 +63,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
     onSplitRight,
     onSplitDown,
     onOpenGit,
+    onOpenNeovim,
     onZoom,
     onClose,
     className,
@@ -113,6 +132,19 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           onClick={onOpenGit}
         >
           <GitBranch className="size-3.5" />
+        </Button>
+      ) : null}
+      {onOpenNeovim ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Open Neovim"
+          data-yaade-mux-open-nvim=""
+          className="text-muted-foreground hover:text-foreground"
+          onClick={onOpenNeovim}
+        >
+          <NeovimIcon />
         </Button>
       ) : null}
       {canZoom ? (
@@ -187,6 +219,9 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
         <ContextMenuItem onSelect={onSplitDown}>Split Down</ContextMenuItem>
         {onOpenGit ? (
           <ContextMenuItem onSelect={onOpenGit}>Open Git</ContextMenuItem>
+        ) : null}
+        {onOpenNeovim ? (
+          <ContextMenuItem onSelect={onOpenNeovim}>Open Neovim</ContextMenuItem>
         ) : null}
         {canZoom ? (
           <ContextMenuItem onSelect={onZoom}>
