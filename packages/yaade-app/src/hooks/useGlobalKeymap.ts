@@ -142,8 +142,8 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
         if (ctx.terminalFocus && !inXterm) {
           const panel = getFocusedPanelRef.current()
           const selector = panel
-            ? `[data-yaade-panel-leaf="${panel.id}"] [data-yaade-tab-slot][data-yaade-tab-active] [data-yaade-terminal-panel] .xterm-helper-textarea`
-            : "[data-yaade-tab-slot][data-yaade-tab-active] [data-yaade-terminal-panel] .xterm-helper-textarea"
+            ? `[data-yaade-panel-leaf="${panel.id}"] [data-yaade-tab-slot][data-yaade-tab-active] [data-yaade-terminal-panel] .xterm-helper-textarea, [data-yaade-mux-terminal-host][data-focused] [data-yaade-terminal-panel] .xterm-helper-textarea`
+            : "[data-yaade-tab-slot][data-yaade-tab-active] [data-yaade-terminal-panel] .xterm-helper-textarea, [data-yaade-mux-terminal-host][data-focused] [data-yaade-terminal-panel] .xterm-helper-textarea"
           const textarea = document.querySelector<HTMLTextAreaElement>(selector)
           if (textarea && document.activeElement !== textarea) textarea.focus()
         }

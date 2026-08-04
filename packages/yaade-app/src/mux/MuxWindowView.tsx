@@ -1,6 +1,6 @@
-import { useCallback, type ReactNode } from "react"
+import { lazy, Suspense, useCallback, type ReactNode } from "react"
 import type { PanelEvent } from "@yaade/panels"
-import type { PanelId, PanelView } from "@yaade/shared"
+import type { PanelId, PanelView, YaadeTheme } from "@yaade/shared"
 import {
   MuxPaneChrome,
   PanelDock,
@@ -8,32 +8,127 @@ import {
   type TabDndHandlers,
 } from "@yaade/ui"
 import type { YaadePanelTree } from "@yaade/workspace"
-import { isTerminalTabId, panelTabIds } from "@yaade/workspace"
-import { listPaneLeaves } from "./layout.js"
+import { isGitTabId, isTerminalTabId, panelTabIds } from "@yaade/workspace"
+import { listPaneLeaves, muxLeafKind } from "./layout.js"
+
+const GitWorkspace = lazy(() =>
+  import("@yaade/ui/git").then(m => ({ default: m.GitWorkspace })),
+)
 
 export type MuxWindowViewProps = {
   tree: YaadePanelTree
   focusedPanelId: PanelId | null
   zoomedPaneId: string | null
-  paneTitle: (ptyTabId: string) => string
+  paneTitle: (tabId: string) => string
   onFocusPanel: (id: PanelId) => void
   onEvent: (event: PanelEvent) => void
   tabDnd: TabDndHandlers
   onSplit: (panelId: PanelId, edge: "right" | "bottom") => void
-  onZoom: (ptyTabId: string) => void
-  onClosePane: (panelId: PanelId, ptyTabId: string) => void
-  renderTerminal: (ptyTabId: string, focused: boolean) => ReactNode
+  onOpenGit: (panelId: PanelId) => void
+  onZoom: (tabId: string) => void
+  onClosePane: (panelId: PanelId, tabId: string) => void
+  onNewWindow?: () => void
+  /** Git pane workspace root (cwd / active project). */
+  gitRootUri: string | null
+  theme: YaadeTheme
+  /** Terminals are painted by MuxTerminalLayer; slots are placeholders only. */
   empty: ReactNode
 }
 
-function terminalLeafView(view: PanelView | null): PanelView {
+function muxLeafView(view: PanelView | null): PanelView {
   if (!view || view.kind !== "tabs") return { kind: "empty" }
-  const tabIds = panelTabIds(view).filter(isTerminalTabId)
+  const tabIds = panelTabIds(view).filter(id => muxLeafKind(id) != null)
   if (tabIds.length === 0) return { kind: "empty" }
   const activeTabId = tabIds.includes(view.activeTabId)
     ? view.activeTabId
     : tabIds[0]!
   return { kind: "tabs", activeTabId, tabIds }
+}
+
+function PaneChromeShell(props: {
+  tabId: string
+  panelId: PanelId
+  title: string
+  focused: boolean
+  zoomed: boolean
+  canZoom: boolean
+  onSplitRight: () => void
+  onSplitDown: () => void
+  onOpenGit: () => void
+  onZoom: () => void
+  onClose: () => void
+  children: ReactNode
+}) {
+  const {
+    tabId,
+    panelId,
+    title,
+    focused,
+    zoomed,
+    canZoom,
+    onSplitRight,
+    onSplitDown,
+    onOpenGit,
+    onZoom,
+    onClose,
+    children,
+  } = props
+
+  return (
+    <div
+      className="group/mux-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+      data-yaade-mux-pane={tabId}
+      data-panel-id={panelId.id}
+      data-yaade-mux-pane-kind={muxLeafKind(tabId) ?? undefined}
+    >
+      <MuxPaneChrome
+        title={title}
+        focused={focused}
+        paneId={tabId}
+        panelId={panelId}
+        zoomed={zoomed}
+        canZoom={canZoom}
+        onSplitRight={onSplitRight}
+        onSplitDown={onSplitDown}
+        onOpenGit={onOpenGit}
+        onZoom={onZoom}
+        onClose={onClose}
+      />
+      {children}
+    </div>
+  )
+}
+
+function TerminalSlot(props: { tabId: string }) {
+  return (
+    <div
+      className="min-h-0 flex-1 overflow-hidden"
+      data-yaade-mux-terminal-slot={props.tabId}
+    />
+  )
+}
+
+function GitPaneBody(props: {
+  rootUri: string | null
+  theme: YaadeTheme
+}) {
+  return (
+    <div className="min-h-0 flex-1 overflow-hidden pt-8">
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+            Loading Git…
+          </div>
+        }
+      >
+        <GitWorkspace
+          rootUri={props.rootUri}
+          theme={props.theme}
+          onOpenFile={() => {}}
+        />
+      </Suspense>
+    </div>
+  )
 }
 
 export function MuxWindowView(props: MuxWindowViewProps) {
@@ -46,9 +141,11 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     onEvent,
     tabDnd,
     onSplit,
+    onOpenGit,
     onZoom,
     onClosePane,
-    renderTerminal,
+    gitRootUri,
+    theme,
     empty,
   } = props
 
@@ -64,37 +161,61 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     [],
   )
 
-  const renderContent = useCallback(
-    (view: PanelView, panelId: PanelId, meta: PanelSlotMeta) => {
-      const leaf = terminalLeafView(view)
-      if (leaf.kind !== "tabs") return empty
-      const ptyTabId = leaf.activeTabId
-      if (!isTerminalTabId(ptyTabId)) return empty
+  const renderPane = useCallback(
+    (
+      tabId: string,
+      panelId: PanelId,
+      focused: boolean,
+      zoomed: boolean,
+    ) => {
+      const body = isGitTabId(tabId) ? (
+        <GitPaneBody rootUri={gitRootUri} theme={theme} />
+      ) : isTerminalTabId(tabId) ? (
+        <TerminalSlot tabId={tabId} />
+      ) : (
+        empty
+      )
+
       return (
-        <div
-          className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
-          data-yaade-mux-pane={ptyTabId}
-          data-panel-id={panelId.id}
+        <PaneChromeShell
+          tabId={tabId}
+          panelId={panelId}
+          title={paneTitle(tabId)}
+          focused={focused}
+          zoomed={zoomed}
+          canZoom={canZoom}
+          onSplitRight={() => onSplit(panelId, "right")}
+          onSplitDown={() => onSplit(panelId, "bottom")}
+          onOpenGit={() => onOpenGit(panelId)}
+          onZoom={() => onZoom(tabId)}
+          onClose={() => onClosePane(panelId, tabId)}
         >
-          <MuxPaneChrome
-            title={paneTitle(ptyTabId)}
-            focused={meta.focused}
-            paneId={ptyTabId}
-            panelId={panelId}
-            zoomed={false}
-            canZoom={canZoom}
-            onSplitRight={() => onSplit(panelId, "right")}
-            onSplitDown={() => onSplit(panelId, "bottom")}
-            onZoom={() => onZoom(ptyTabId)}
-            onClose={() => onClosePane(panelId, ptyTabId)}
-          />
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {renderTerminal(ptyTabId, meta.focused)}
-          </div>
-        </div>
+          {body}
+        </PaneChromeShell>
       )
     },
-    [canZoom, empty, onClosePane, onSplit, onZoom, paneTitle, renderTerminal],
+    [
+      canZoom,
+      empty,
+      gitRootUri,
+      onClosePane,
+      onOpenGit,
+      onSplit,
+      onZoom,
+      paneTitle,
+      theme,
+    ],
+  )
+
+  const renderContent = useCallback(
+    (view: PanelView, panelId: PanelId, meta: PanelSlotMeta) => {
+      const leaf = muxLeafView(view)
+      if (leaf.kind !== "tabs") return empty
+      const tabId = leaf.activeTabId
+      if (muxLeafKind(tabId) == null) return empty
+      return renderPane(tabId, panelId, meta.focused, false)
+    },
+    [empty, renderPane],
   )
 
   if (zoomedLeaf) {
@@ -104,28 +225,8 @@ export function MuxWindowView(props: MuxWindowViewProps) {
         data-yaade-mux-window=""
         data-zoomed=""
       >
-        <div
-          className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[var(--glass-radius-panel)] border border-[color:var(--glass-rim)]"
-          data-yaade-mux-pane={zoomedLeaf.ptyTabId}
-          data-panel-id={zoomedLeaf.panelId.id}
-        >
-          <MuxPaneChrome
-            title={paneTitle(zoomedLeaf.ptyTabId)}
-            focused
-            paneId={zoomedLeaf.ptyTabId}
-            panelId={zoomedLeaf.panelId}
-            zoomed
-            canZoom
-            onSplitRight={() => onSplit(zoomedLeaf.panelId, "right")}
-            onSplitDown={() => onSplit(zoomedLeaf.panelId, "bottom")}
-            onZoom={() => onZoom(zoomedLeaf.ptyTabId)}
-            onClose={() =>
-              onClosePane(zoomedLeaf.panelId, zoomedLeaf.ptyTabId)
-            }
-          />
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {renderTerminal(zoomedLeaf.ptyTabId, true)}
-          </div>
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-[var(--glass-radius-panel)] border border-[color:var(--glass-rim)]">
+          {renderPane(zoomedLeaf.ptyTabId, zoomedLeaf.panelId, true, true)}
         </div>
       </div>
     )

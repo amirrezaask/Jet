@@ -55,6 +55,7 @@ export default function MuxOverlays(props: MuxOverlaysProps) {
           props.onSelectTerminal(entry)
         }}
         emptyLabel="No open terminals"
+        requireQueryForSelection={false}
         contentClassName="yaade-mux-switcher"
         renderItem={entry => (
           <span className="min-w-0 truncate" data-slot="row-label">

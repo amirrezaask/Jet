@@ -49,6 +49,7 @@ export function TerminalListOverlay({
       items={items}
       onSelect={onSelect}
       emptyLabel="No open terminals"
+      requireQueryForSelection={false}
       renderItem={entry => (
         <>
           <SquareTerminal className="size-4 shrink-0 text-muted-foreground" />

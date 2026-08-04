@@ -14,6 +14,7 @@ export type KnownTabKind =
   | "references"
   | "definitions"
   | "task-errors"
+  | "git"
 
 export type TabKind = KnownTabKind
 
@@ -21,6 +22,7 @@ export const EXPLORER_TAB_ID = "yaade:explorer"
 export const OUTPUT_TAB_ID = "yaade:output"
 export const PROBLEMS_TAB_ID = "yaade:problems"
 export const TERMINAL_TAB_ID_PREFIX = "yaade:terminal:"
+export const GIT_TAB_ID_PREFIX = "yaade:git:"
 
 /** Current + pre-rename prefixes. Nested prefixes unwrap (bad hydrate double-prefix). */
 export const TERMINAL_TAB_ID_PREFIXES = [
@@ -31,6 +33,14 @@ export const TERMINAL_TAB_ID_PREFIXES = [
 
 export function terminalTabId(sessionKey: string): string {
   return `${TERMINAL_TAB_ID_PREFIX}${sessionKey}`
+}
+
+export function gitTabId(key: string): string {
+  return `${GIT_TAB_ID_PREFIX}${key}`
+}
+
+export function isGitTabId(tabId: string): boolean {
+  return tabId.startsWith(GIT_TAB_ID_PREFIX)
 }
 
 /**

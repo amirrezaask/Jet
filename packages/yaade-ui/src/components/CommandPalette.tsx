@@ -43,6 +43,7 @@ export function CommandPalette({
       items={items}
       onSelect={cmd => onRun(cmd.id)}
       emptyLabel="No results."
+      requireQueryForSelection={false}
       rowLayout="detail"
       renderItem={cmd => (
         <span className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">

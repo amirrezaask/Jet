@@ -21,6 +21,16 @@ test.describe("mux tabs", () => {
         .toBeGreaterThanOrEqual(1)
       await expectSelectorVisible(page, "[data-yaade-mux-window]")
       await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
+      // Overlay chrome — no title text clutter, drag handle still present.
+      await expectSelectorVisible(page, "[data-yaade-mux-pane-chrome]")
+      await expectSelectorVisible(page, "[data-yaade-mux-pane-drag]")
+      const titleHandle = page.locator("[data-yaade-mux-pane-title]").first()
+      await expect
+        .poll(async () => titleHandle.getAttribute("aria-label"))
+        .toMatch(/.+/)
+      await expect
+        .poll(async () => ((await titleHandle.textContent()) ?? "").trim())
+        .toBe("")
     } finally {
       await app.close()
     }
@@ -61,11 +71,48 @@ test.describe("mux tabs", () => {
         page,
         "[data-yaade-mux][data-orientation=horizontal]",
       )
+      await expectSelectorVisible(page, "[data-yaade-mux-icon-deck]")
+      // Horizontal deck + tabs start from the left.
+      const strip = page.locator("[data-yaade-mux-tab-strip][data-orientation=horizontal]")
+      const deckBox = await strip.locator("[data-yaade-mux-icon-deck]").boundingBox()
+      const tabBox = await strip.locator("[data-yaade-mux-tab]").first().boundingBox()
+      const newBox = await strip.locator("[data-yaade-mux-new-tab]").boundingBox()
+      expect(deckBox).toBeTruthy()
+      expect(tabBox).toBeTruthy()
+      expect(newBox).toBeTruthy()
+      expect(deckBox!.x).toBeLessThan(tabBox!.x)
+      expect(tabBox!.x).toBeLessThan(newBox!.x)
+
       await execCommand(page, "mux.toggleTabOrientation")
       await expectSelectorVisible(
         page,
         "[data-yaade-mux][data-orientation=vertical]",
       )
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("context menus open on chrome, tabs, and terminal", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+
+      await page.locator("[data-yaade-mux-pane-drag]").first().click({
+        button: "right",
+      })
+      await expectSelectorVisible(page, "[data-yaade-mux-pane-context-menu]")
+      await page.keyboard.press("Escape")
+
+      await page.locator("[data-yaade-mux-tab]").first().click({ button: "right" })
+      await expectSelectorVisible(page, "[data-yaade-mux-tab-context-menu]")
+      await page.keyboard.press("Escape")
+
+      await page.locator("[data-yaade-terminal-panel]").first().click({
+        button: "right",
+      })
+      await expectSelectorVisible(page, "[data-yaade-mux-terminal-context-menu]")
+      await page.keyboard.press("Escape")
     } finally {
       await app.close()
     }
@@ -89,6 +136,29 @@ test.describe("mux tiling", () => {
       await expect
         .poll(async () => page.locator("[data-yaade-terminal-panel]").count())
         .toBeGreaterThanOrEqual(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("git button opens Git workspace in a new split", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(1)
+      await expectSelectorVisible(page, "[data-yaade-mux-open-git]")
+      await page.locator("[data-yaade-mux-open-git]").first().click()
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(2)
+      await expectSelectorVisible(page, "[data-yaade-mux-pane-kind=git]")
+      await expectSelectorVisible(page, "[data-yaade-git-workspace]")
+      // Terminal pane remains; git is an additional split.
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
     } finally {
       await app.close()
     }
@@ -140,12 +210,13 @@ test.describe("mux zoom", () => {
 })
 
 test.describe("mux switcher", () => {
-  test("command palette opens via Mod-Shift-p", async () => {
+  test("command palette opens via Mod-Shift-p with selectable commands", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
 
-      await page.locator("[data-yaade-mux-pane]").first().click()
+      // Click the terminal host (pane chrome center is covered by the terminal layer).
+      await page.locator("[data-yaade-terminal-panel]").first().click()
       await page.keyboard.press("Meta+Shift+KeyP")
       await expect
         .poll(async () => page.locator("[data-yaade-palette]").count(), {
@@ -153,8 +224,42 @@ test.describe("mux switcher", () => {
         })
         .toBeGreaterThan(0)
       await expectSelectorVisible(page, "[data-yaade-palette]")
+      await expect
+        .poll(
+          async () =>
+            page.locator('[data-yaade-list-panel="yaade:palette"] [data-yaade-list-item]').count(),
+        )
+        .toBeGreaterThan(0)
 
-      await page.keyboard.press("Escape")
+      await page.keyboard.type("Toggle Tab Orientation")
+      await page.keyboard.press("Enter")
+      await expect
+        .poll(async () => page.locator("[data-yaade-palette]").count())
+        .toBe(0)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Mod-k opens terminal switcher and Enter selects", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await page.locator("[data-yaade-terminal-panel]").first().click()
+      await page.keyboard.press("Meta+KeyK")
+      await expect
+        .poll(async () => page.locator("[data-yaade-palette]").count(), {
+          timeout: 10_000,
+        })
+        .toBeGreaterThan(0)
+      await expectSelectorVisible(page, "[data-yaade-palette]")
+      await expect
+        .poll(
+          async () =>
+            page.locator("[data-yaade-palette] [data-slot=row-label]").count(),
+        )
+        .toBeGreaterThan(0)
+      await page.keyboard.press("Enter")
       await expect
         .poll(async () => page.locator("[data-yaade-palette]").count())
         .toBe(0)
@@ -260,6 +365,13 @@ test.describe("mux drag dock", () => {
       expect(rightId).toBeTruthy()
       expect(leftId).not.toBe(rightId)
 
+      const leftPtyBefore = await page.evaluate(id => {
+        const host = document.querySelector(
+          `[data-yaade-mux-terminal-host="${id}"] [data-yaade-terminal-panel]`,
+        )
+        return host?.getAttribute("data-yaade-terminal-pty-id") ?? null
+      }, leftId!)
+
       const source = page.locator(
         `[data-yaade-mux-pane="${leftId}"] [data-yaade-mux-pane-drag]`,
       )
@@ -292,6 +404,24 @@ test.describe("mux drag dock", () => {
       await expectSelectorVisible(
         page,
         `[data-yaade-mux-pane="${rightId}"]`,
+      )
+
+      // Persistent terminal hosts — same PTY after retile (no shell reset).
+      if (leftPtyBefore) {
+        await expect
+          .poll(async () =>
+            page.evaluate(id => {
+              const host = document.querySelector(
+                `[data-yaade-mux-terminal-host="${id}"] [data-yaade-terminal-panel]`,
+              )
+              return host?.getAttribute("data-yaade-terminal-pty-id") ?? null
+            }, leftId!),
+          )
+          .toBe(leftPtyBefore)
+      }
+      await expectSelectorVisible(
+        page,
+        `[data-yaade-mux-terminal-host="${leftId}"]`,
       )
     } finally {
       await app.close()
