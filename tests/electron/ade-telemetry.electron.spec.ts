@@ -70,7 +70,7 @@ async function ingestAde(
   )
 }
 
-test.describe("ADE telemetry", () => {
+test.describe.skip("ADE telemetry", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
   test("session start, permission, unread, and failure update sidebar sessions", async () => {

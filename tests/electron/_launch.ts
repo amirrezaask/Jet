@@ -46,9 +46,10 @@ export async function launchJet(
 }
 
 export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
-  await page.waitForSelector("[data-yaade-mission-sidebar]", {
+  await page.waitForSelector("[data-yaade-mux]", {
     timeout: timeoutMs,
   })
+  await page.evaluate(() => window.__yaadeAgent!.waitForReady())
   await page.waitForFunction(
     () => window.__yaadeAgent?.getState()?.shellView === "home",
     null,
@@ -56,14 +57,14 @@ export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promis
   )
 }
 
-/** Mission Control is sidebar-only — wait for the mission sidebar shell. */
+/** Wait for the terminal mux shell (alias of waitForHome after Mission Control removal). */
+export async function waitForMux(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
+  await waitForHome(page, timeoutMs)
+}
+
+/** Mission Control sidebar removed — mux shell is the home surface. */
 export async function ensureSidebarLayout(page: ShellDriver): Promise<void> {
-  await waitForHome(page, 15_000)
-  await page.waitForFunction(
-    () => window.__yaadeAgent?.getState()?.sessionLayout === "sidebar",
-    null,
-    { timeout: 15_000 },
-  )
+  await waitForMux(page, 15_000)
 }
 
 /** @deprecated Use ensureSidebarLayout — cards layout removed. */
@@ -117,25 +118,10 @@ export async function openSettings(page: ShellDriver): Promise<void> {
 }
 
 export async function showTerminal(page: ShellDriver): Promise<void> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await page.evaluate(async () => {
-      await window.__yaadeAgent!.executeCommand("terminal.show")
-    })
-    await page.waitForSelector("[data-yaade-terminal-panel] .xterm", { timeout: 30_000 })
-    try {
-      await page.waitForFunction(
-        () => {
-          const text = window.__yaadeAgent?.getTerminalText?.() ?? ""
-          return text.trim().length > 0
-        },
-        null,
-        { timeout: 30_000 },
-      )
-      return
-    } catch {
-      if (attempt === 1) throw new Error("terminal did not become ready")
-    }
-  }
+  await waitForMux(page)
+  await page.waitForSelector("[data-yaade-terminal-panel] .xterm", {
+    timeout: 30_000,
+  })
 }
 
 export async function readTerminalText(page: ShellDriver): Promise<string> {

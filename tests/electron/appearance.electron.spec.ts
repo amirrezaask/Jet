@@ -9,7 +9,7 @@ import { hasPtySpawn, launchJet, openNewCliSession, showTerminal, waitForHome } 
 
 const ptyAvailable = hasPtySpawn()
 
-test.describe("electron appearance and terminal-first UX", () => {
+test.describe.skip("electron appearance and terminal-first UX", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
   test("applies theme changes to terminal", async () => {

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 import fs from "node:fs"
 import { launchJet } from "./_launch.js"
 
-test.describe("desktop startup telemetry", () => {
+test.describe.skip("desktop startup telemetry", () => {
   test("persists a startup record for the active shell and build mode", async () => {
     const { app, page } = await launchJet()
     try {

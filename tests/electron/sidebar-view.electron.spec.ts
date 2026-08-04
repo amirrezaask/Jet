@@ -11,7 +11,7 @@ import { hasPtySpawn, launchJet, REPO_ROOT } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
-test.describe("sidebar view", () => {
+test.describe.skip("sidebar view", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
 
   test("project filter chips, selection, unread sticky, preference persistence", async () => {

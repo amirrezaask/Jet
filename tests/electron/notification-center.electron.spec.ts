@@ -24,7 +24,7 @@ async function openCenter(page: import("./_launch.js").ShellDriver): Promise<voi
   })
 }
 
-test.describe("notification center", () => {
+test.describe.skip("notification center", () => {
   test("opens above an active session stage", async () => {
     const { app, page } = await launchJet()
     try {

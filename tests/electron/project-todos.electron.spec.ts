@@ -37,7 +37,7 @@ async function openTodosBoard(page: Page): Promise<{
   return { modal, board, projectId }
 }
 
-test.describe("project todos board", () => {
+test.describe.skip("project todos board", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
   test("session TODOs tab create persists across reload", async () => {

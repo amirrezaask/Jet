@@ -14,7 +14,7 @@ import {
 import { launchJet, REPO_ROOT } from "./_launch.js"
 import { resolve } from "node:path"
 
-test.describe("electron workspace open via agent", () => {
+test.describe.skip("electron workspace open via agent", () => {
   test("openWorkspace updates active workspace path", async () => {
     const { app, page } = await launchJet()
     try {

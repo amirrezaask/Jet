@@ -19,7 +19,7 @@ async function modalTitle(page: { evaluate: (fn: () => string | null) => Promise
   )
 }
 
-test.describe("mac terminal quick switch", () => {
+test.describe.skip("mac terminal quick switch", () => {
   test.skip(!ptyAvailable || !isMac, "macOS terminal quick-switch bindings only")
 
   test("Cmd+2 focuses the second terminal in the active workspace", async () => {

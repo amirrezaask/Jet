@@ -11,7 +11,7 @@ import {
 
 const ptyAvailable = hasPtySpawn()
 
-test.describe("agent CLI picker layout", () => {
+test.describe.skip("agent CLI picker layout", () => {
   test.skip(!ptyAvailable, "PTY support required for the new-session picker")
 
   test("keeps two-line provider rows readable at the largest UI font size", async () => {

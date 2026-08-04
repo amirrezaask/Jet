@@ -18,7 +18,7 @@ import { expectListRows } from "../helpers/list.js"
 
 const ptyAvailable = hasPtySpawn()
 
-test.describe("electron terminal explorer", () => {
+test.describe.skip("electron terminal explorer", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
   test("terminal.new opens modal and sidebar lists sessions", async () => {

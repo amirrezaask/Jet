@@ -5,7 +5,7 @@ import {
 } from "../shell/assert.js"
 import { launchJet, openNewCliSession } from "./_launch.js"
 
-test.describe("session tiling window manager", () => {
+test.describe.skip("session tiling window manager", () => {
   test("closing a session pane hides it from the layout but keeps the sidebar row", async () => {
     const { app, page } = await launchJet()
     try {

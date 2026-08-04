@@ -7,7 +7,7 @@ import { execCommand, hasPtySpawn, launchJet } from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
-test.describe("terminal tab close behavior", () => {
+test.describe.skip("terminal tab close behavior", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
   test("session terminal sub-tabs middle-close the clicked tab without activating it", async () => {

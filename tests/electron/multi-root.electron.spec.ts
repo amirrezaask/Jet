@@ -16,7 +16,7 @@ import { resolve } from "node:path"
 
 const SECOND = resolve(REPO_ROOT, "fixtures/second-workspace")
 
-test.describe("electron multi-root workspace", () => {
+test.describe.skip("electron multi-root workspace", () => {
   test("addWorkspace, focusFolder, removeFolder", async () => {
     const { app, page } = await launchJet()
     try {

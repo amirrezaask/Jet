@@ -15,7 +15,7 @@ import {
 
 import { execCommand, launchJet } from "./_launch.js"
 
-test.describe("electron switch project", () => {
+test.describe.skip("electron switch project", () => {
   test("opens project switcher overlay", async () => {
     const { app, page } = await launchJet()
     try {

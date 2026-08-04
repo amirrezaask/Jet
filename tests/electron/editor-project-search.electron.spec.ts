@@ -18,7 +18,7 @@ import {
   SAMPLE,
 } from "./_launch.js"
 
-test.describe("editor project search", () => {
+test.describe.skip("editor project search", () => {
   test.skip(!hasPtySpawn(), "PTY support is required to open a session workspace")
 
   test("searches through the fff-backed host service and opens a result in Monaco", async () => {

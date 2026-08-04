@@ -206,3 +206,11 @@ export { registerListPanel, getListPanel, getListItems, focusListPanel, focusFir
 export { ListRow, type ListRowProps } from "./components/ListRow.js"
 export { PanelEmpty } from "./components/PanelEmpty.js"
 export { SettingsField } from "./components/SettingsField.js"
+export {
+  MuxTabStrip,
+  MuxPaneChrome,
+  type MuxTabItem,
+  type MuxTabStripProps,
+  type MuxPaneChromeProps,
+  type TabOrientation,
+} from "./mux/index.js"

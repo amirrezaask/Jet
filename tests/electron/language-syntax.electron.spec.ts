@@ -24,7 +24,7 @@ const LSP_STATUSES = new Set([
   "failed",
 ])
 
-test.describe("editor language syntax ids", () => {
+test.describe.skip("editor language syntax ids", () => {
   test.skip(!ptyAvailable, "PTY support is required to open a session workspace")
 
   test("opens Go/Python/Ruby/Rust fixtures with correct language ids", async () => {

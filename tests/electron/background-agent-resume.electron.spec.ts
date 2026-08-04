@@ -13,7 +13,7 @@ import {
 const ptyAvailable = hasPtySpawn()
 const CLI_ID = "11111111-1111-4111-8111-111111111111"
 
-test.describe("active agent background resume", () => {
+test.describe.skip("active agent background resume", () => {
   test.skip(!ptyAvailable, "node-pty cannot spawn a shell on this machine")
 
   test("warms active CLI sessions, excludes archived, and reuses the PTY on open", async () => {

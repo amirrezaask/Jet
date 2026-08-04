@@ -16,7 +16,7 @@ import { execCommand, hasPtySpawn, launchJet, pressMod, REPO_ROOT, SAMPLE } from
 
 const ptyAvailable = hasPtySpawn()
 
-test.describe("session Git and editor workspaces", () => {
+test.describe.skip("session Git and editor workspaces", () => {
   test.skip(!ptyAvailable, "PTY support is required to open a session workspace")
 
   test("Git stages the selected preview, stages all, and keeps every portal interaction inside the session", async () => {

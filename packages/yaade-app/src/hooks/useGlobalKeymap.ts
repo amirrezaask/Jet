@@ -15,6 +15,8 @@ import {
 import { useLatest } from "./useLatest.js"
 
 export type GlobalKeymapRefs = {
+  /** Prefer a live getter so registerUser races can't leave an empty snapshot. */
+  getKeyBindings?: () => JetKeyBinding[]
   keymapBindings: JetKeyBinding[]
   keymapContext: KeymapContext
   workspace: WorkspaceService
@@ -27,6 +29,7 @@ export type GlobalKeymapRefs = {
 
 export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
   const bindingsRef = useLatest(refs.keymapBindings)
+  const getBindingsRef = useLatest(refs.getKeyBindings)
   const contextRef = useLatest(refs.keymapContext)
   const workspaceRef = useLatest(refs.workspace)
   const getFocusedPanelRef = useLatest(refs.getFocusedPanel)
@@ -58,7 +61,7 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
     const dispatchKeyBinding = (e: KeyboardEvent, opts?: { allowEditor?: boolean }): boolean => {
       const allowEditor = opts?.allowEditor ?? false
       const ctx = contextRef.current
-      const bindings = bindingsRef.current
+      const bindings = getBindingsRef.current?.() ?? bindingsRef.current
       const hadPendingChord = chordState.prefix != null
       const result = resolveKeydownBinding(e, bindings, ctx, chordState)
       if (result === "chord-started") {
@@ -168,6 +171,7 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
     }
   }, [
     bindingsRef,
+    getBindingsRef,
     contextRef,
     workspaceRef,
     getFocusedPanelRef,

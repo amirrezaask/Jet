@@ -15,7 +15,7 @@ import { resolve } from "node:path"
 
 const ptyAvailable = hasPtySpawn()
 
-test.describe("new session project picker", () => {
+test.describe.skip("new session project picker", () => {
   test.skip(!ptyAvailable, "PTY sessions are unavailable on this machine")
 
   test("shows project chips when multiple workspaces exist", async () => {

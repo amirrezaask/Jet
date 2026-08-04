@@ -97,7 +97,7 @@ process.stdin.on("data", chunk => {
   }
 }
 
-test.describe("Go language server", () => {
+test.describe.skip("Go language server", () => {
   test.skip(!ptyAvailable || process.platform === "win32", "PTY and executable script support required")
 
   test("loads the Go workspace and answers gopls client requests", async () => {

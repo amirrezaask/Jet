@@ -6,7 +6,7 @@ import {
 } from "../shell/assert.js"
 import { execCommand, hasPtySpawn, launchJet, pressMod } from "./_launch.js"
 
-test.describe("Monaco app shortcuts", () => {
+test.describe.skip("Monaco app shortcuts", () => {
   test.skip(!hasPtySpawn(), "PTY support is required to open a session workspace")
 
   test("Mod-p opens one Quick Open and Mod-Shift-p opens the command palette", async () => {

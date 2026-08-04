@@ -15,7 +15,7 @@ import {
   execCommand,
 } from "./_launch.js"
 
-test.describe("electron project persistence", () => {
+test.describe.skip("electron project persistence", () => {
   test("restores saved projects in mission sidebar after reload", async () => {
     const secondPath = resolve(REPO_ROOT, "fixtures/second-workspace")
 

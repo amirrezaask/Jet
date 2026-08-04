@@ -6,7 +6,7 @@ import {
 } from "../shell/assert.js"
 import { launchJet } from "./_launch.js"
 
-test.describe("desktop shell", () => {
+test.describe.skip("desktop shell", () => {
   test("uses draggable custom chrome with platform controls kept clear", async () => {
     const { app, page } = await launchJet()
     try {

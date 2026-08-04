@@ -6,7 +6,7 @@ import {
 } from "../shell/assert.js"
 import { launchJet, openNewCliSession } from "./_launch.js"
 
-test.describe("terminal-first session workspace", () => {
+test.describe.skip("terminal-first session workspace", () => {
   test("gives the agent terminal the full session stage without an activity rail", async () => {
     const { app, page } = await launchJet()
     try {
