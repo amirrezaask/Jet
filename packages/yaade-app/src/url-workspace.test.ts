@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import {
   isReservedWorkspacePathname,
+  joinProjectPath,
+  projectBreadcrumbs,
   projectRootFromLocation,
   resolveHomeRelativePath,
   urlPathForProjectRoot,
@@ -46,5 +48,45 @@ describe("url-workspace", () => {
     )
     assert.equal(urlPathForProjectRoot("/Users/me/dev/foo", "/Users/me"), "/dev/foo")
     assert.equal(urlPathForProjectRoot("/Users/me", "/Users/me"), "/")
+  })
+
+  it("builds home-relative breadcrumbs with sibling parents", () => {
+    const crumbs = projectBreadcrumbs("/Users/me/dev/yaade", "/Users/me")
+    assert.deepEqual(
+      crumbs.map(c => ({
+        label: c.label,
+        absolutePath: c.absolutePath,
+        parentPath: c.parentPath,
+      })),
+      [
+        {
+          label: "~",
+          absolutePath: "/Users/me",
+          parentPath: "/Users",
+        },
+        {
+          label: "dev",
+          absolutePath: "/Users/me/dev",
+          parentPath: "/Users/me",
+        },
+        {
+          label: "yaade",
+          absolutePath: "/Users/me/dev/yaade",
+          parentPath: "/Users/me/dev",
+        },
+      ],
+    )
+  })
+
+  it("builds a single home crumb", () => {
+    const crumbs = projectBreadcrumbs("/Users/me", "/Users/me")
+    assert.equal(crumbs.length, 1)
+    assert.equal(crumbs[0]?.label, "~")
+    assert.equal(crumbs[0]?.absolutePath, "/Users/me")
+  })
+
+  it("joins project paths", () => {
+    assert.equal(joinProjectPath("/Users/me/dev", "yaade"), "/Users/me/dev/yaade")
+    assert.equal(joinProjectPath("/", "tmp"), "/tmp")
   })
 })

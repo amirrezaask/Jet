@@ -1,5 +1,5 @@
 import type { ProjectSessionSummary } from "@yaade/rpc"
-import { Lister, type ListerNode } from "@yaade/ui"
+import { cn, yaadeInteractiveRowClass, yaadePressClass } from "@yaade/ui"
 import {
   Badge,
   DropdownMenu,
@@ -9,7 +9,6 @@ import {
   DropdownMenuTrigger,
 } from "@yaade/ui/primitives"
 import { GitBranchIcon, MoreHorizontalIcon } from "lucide-react"
-import { useMemo, useState } from "react"
 
 export type SessionListProps = {
   sessions: ProjectSessionSummary[]
@@ -28,53 +27,43 @@ export function SessionList({
   onArchive,
   onDelete,
 }: SessionListProps) {
-  const [query, setQuery] = useState("")
-  const items = useMemo(
-    () =>
-      sessions.map(
-        (session): ListerNode<ProjectSessionSummary> => ({
-          id: session.id,
-          searchText: `${session.title} ${session.worktreeBranch ?? ""} ${session.cwdPath}`,
-          data: session,
-        }),
-      ),
-    [sessions],
-  )
-
   return (
-    <div className="min-h-[12rem]" data-yaade-session-list="">
-      <Lister
-        listId="project-sessions"
-        mode="flat"
-        flatVariant="plain"
-        items={items}
-        query={query}
-        onQueryChange={setQuery}
-        showInput
-        placeholder="Filter sessions…"
-        emptyState="No matching sessions."
-        onActivate={node => onOpen(node.data.id)}
-        aria-label="Project sessions"
-        estimateSize={() => 56}
-        render={(node, _ctx) => {
-          const session = node.data
-          return (
+    <div
+      className="min-h-[12rem]"
+      data-yaade-session-list=""
+      data-yaade-list-panel="project-sessions"
+    >
+      <ul className="flex flex-col gap-0.5" aria-label="Project sessions">
+        {sessions.map(session => (
+          <li key={session.id}>
             <div
-              className="flex w-full shrink-0 items-center gap-3 px-2 py-2"
+              role="button"
+              tabIndex={0}
+              className={cn(
+                yaadeInteractiveRowClass,
+                yaadePressClass,
+                "flex w-full shrink-0 cursor-pointer items-center gap-3 rounded-md px-2 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              )}
               data-yaade-list-item=""
               data-yaade-session-row={session.id}
+              onClick={() => onOpen(session.id)}
+              onKeyDown={event => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault()
+                  onOpen(session.id)
+                }
+              }}
             >
-              <button
-                type="button"
-                className="min-w-0 flex-1 text-left"
-                onClick={() => onOpen(session.id)}
-              >
+              <div className="min-w-0 flex-1 text-left">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">
                     {session.title}
                   </span>
                   {session.worktreeBranch ? (
-                    <Badge variant="outline" className="gap-1 font-mono text-3xs">
+                    <Badge
+                      variant="outline"
+                      className="gap-1 font-mono text-3xs"
+                    >
                       <GitBranchIcon className="size-3" />
                       {session.worktreeBranch}
                     </Badge>
@@ -85,11 +74,13 @@ export function SessionList({
                   {" · "}
                   {formatRelative(session.updatedAt)}
                 </p>
-              </button>
+              </div>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                   aria-label={`Session actions for ${session.title}`}
+                  onClick={event => event.stopPropagation()}
+                  onPointerDown={event => event.stopPropagation()}
                 >
                   <MoreHorizontalIcon className="size-4" />
                 </DropdownMenuTrigger>
@@ -99,13 +90,18 @@ export function SessionList({
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {
-                      const next = window.prompt("Rename session", session.title)
+                      const next = window.prompt(
+                        "Rename session",
+                        session.title,
+                      )
                       if (next?.trim()) void onRename(session.id, next.trim())
                     }}
                   >
                     Rename
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void onArchive(session.id)}>
+                  <DropdownMenuItem
+                    onClick={() => void onArchive(session.id)}
+                  >
                     Archive
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -126,9 +122,9 @@ export function SessionList({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-          )
-        }}
-      />
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

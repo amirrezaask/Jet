@@ -1,12 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import type { ProjectSessionSummary } from "@yaade/rpc"
-import type { GitCommit, GitRepositorySummary, GitWorktree } from "@yaade/shared"
+import type { GitCommit, GitRepositorySummary } from "@yaade/shared"
 import { pathToFileUri } from "@yaade/shared"
 import {
   AppShell,
   SectionLabel,
   Text,
   bundledThemeList,
+  showYaadeToast,
 } from "@yaade/ui"
 import {
   Badge,
@@ -28,13 +29,23 @@ import {
   createProjectSession,
   deleteProjectSession,
   renameProjectSession,
+  saveProjectSessionPayload,
 } from "../project-session-client.js"
 import { NewSessionDialog } from "./NewSessionDialog.js"
-import { ProjectAboutRail } from "./ProjectAboutRail.js"
+import { ProjectPathSwitcher } from "./ProjectPathSwitcher.js"
+import { ProjectSearchBox } from "./ProjectSearchBox.js"
 import { SessionList } from "./SessionList.js"
+import {
+  buildNeovimQflistSessionPayload,
+  formatSearchHitsAsQuickfix,
+  writeQuickfixTempFile,
+} from "./search-session.js"
 
 const GitWorkspace = lazy(() =>
   import("@yaade/ui/git").then(m => ({ default: m.GitWorkspace })),
+)
+const CommitChangesDialog = lazy(() =>
+  import("@yaade/ui/git").then(m => ({ default: m.CommitChangesDialog })),
 )
 const SettingsOverlay = lazy(() =>
   import("@yaade/ui").then(m => ({ default: m.SettingsOverlay })),
@@ -45,6 +56,7 @@ export type ProjectPageProps = {
   homeDir: string
   machineHostname: string
   onOpenSession: (sessionId: string) => Promise<void>
+  onNavigateProject: (absolutePath: string) => void
   listSessions: () => Promise<ProjectSessionSummary[]>
 }
 
@@ -66,6 +78,7 @@ export function ProjectPage({
   projectPath,
   homeDir,
   onOpenSession,
+  onNavigateProject,
   listSessions,
 }: ProjectPageProps) {
   const {
@@ -82,17 +95,11 @@ export function ProjectPage({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [summary, setSummary] = useState<GitRepositorySummary | null>(null)
   const [dirtyCount, setDirtyCount] = useState(0)
-  const [worktrees, setWorktrees] = useState<GitWorktree[]>([])
   const [recentCommits, setRecentCommits] = useState<GitCommit[]>([])
+  const [viewingCommit, setViewingCommit] = useState<GitCommit | null>(null)
+  const [searchPending, setSearchPending] = useState(false)
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
   const title = workspaceDocumentTitle(projectPath, homeDir)
-  const crumbs = useMemo(() => {
-    const home = homeDir.replace(/\/+$/, "")
-    if (home && projectPath.startsWith(`${home}/`)) {
-      return ["~", ...projectPath.slice(home.length + 1).split("/").filter(Boolean)]
-    }
-    return projectPath.split("/").filter(Boolean)
-  }, [homeDir, projectPath])
 
   const refreshSessions = useCallback(async () => {
     setLoading(true)
@@ -115,19 +122,16 @@ export function ProjectPage({
       if (!isRepo) {
         setSummary(null)
         setDirtyCount(0)
-        setWorktrees([])
         setRecentCommits([])
         return
       }
-      const [sum, status, trees, history] = await Promise.all([
+      const [sum, status, history] = await Promise.all([
         git.summary(rootUri),
         git.status(rootUri),
-        git.worktreeList(rootUri).catch(() => [] as GitWorktree[]),
         git.history(rootUri, 5).catch(() => [] as GitCommit[]),
       ])
       setSummary(sum)
       setDirtyCount(status.length)
-      setWorktrees(trees)
       setRecentCommits(history)
     } catch {
       /* non-git project */
@@ -159,6 +163,43 @@ export function ProjectPage({
     [onOpenSession, projectPath],
   )
 
+  const handleProjectSearch = useCallback(
+    async (query: string) => {
+      const searchApi = window.yaade?.search
+      if (!searchApi?.project) {
+        showYaadeToast("Project search is unavailable", { variant: "destructive" })
+        return
+      }
+      setSearchPending(true)
+      try {
+        const hits = await searchApi.project(rootUri, query)
+        if (hits.length === 0) {
+          showYaadeToast(`No matches for “${query}”`, { variant: "destructive" })
+          return
+        }
+        const errorfile = await writeQuickfixTempFile(
+          formatSearchHitsAsQuickfix(hits),
+        )
+        const created = await createProjectSession({
+          rootPath: projectPath,
+          title: `Search: ${query}`.slice(0, 80),
+        })
+        await saveProjectSessionPayload(
+          created.id,
+          buildNeovimQflistSessionPayload(created.cwdPath, errorfile),
+        )
+        await onOpenSession(created.id)
+      } catch (err) {
+        showYaadeToast(err instanceof Error ? err.message : String(err), {
+          variant: "destructive",
+        })
+      } finally {
+        setSearchPending(false)
+      }
+    },
+    [onOpenSession, projectPath, rootUri],
+  )
+
   return (
     <AppShell>
       <div
@@ -167,28 +208,11 @@ export function ProjectPage({
         data-yaade-project-path={projectPath}
       >
         <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-          <nav
-            className="flex min-w-0 flex-1 items-center gap-1 text-sm"
-            aria-label="Project path"
-            data-yaade-project-breadcrumb=""
-          >
-            {crumbs.map((part, i) => (
-              <span key={`${part}-${i}`} className="flex items-center gap-1">
-                {i > 0 ? (
-                  <span className="text-muted-foreground">/</span>
-                ) : null}
-                <span
-                  className={
-                    i === crumbs.length - 1
-                      ? "truncate font-semibold text-foreground"
-                      : "truncate text-muted-foreground"
-                  }
-                >
-                  {part}
-                </span>
-              </span>
-            ))}
-          </nav>
+          <ProjectPathSwitcher
+            projectPath={projectPath}
+            homeDir={homeDir}
+            onNavigate={onNavigateProject}
+          />
           {summary?.branch ? (
             <Badge variant="secondary" className="gap-1 font-mono">
               <GitBranchIcon className="size-3" />
@@ -239,72 +263,78 @@ export function ProjectPage({
             value="sessions"
             className="min-h-0 flex-1 overflow-hidden p-0"
           >
-            <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_16rem]">
-              <main className="min-h-0 overflow-auto p-4 md:p-6">
-                <SectionLabel>Recent sessions</SectionLabel>
-                {loading ? (
-                  <p className="text-sm text-muted-foreground" role="status">
-                    Loading sessions…
-                  </p>
-                ) : error ? (
-                  <div role="alert" className="rounded-md border border-border p-4">
-                    <Text variant="label">Sessions unavailable</Text>
-                    <p className="mt-1 text-sm text-muted-foreground">{error}</p>
-                    <Button
-                      className="mt-3"
-                      size="sm"
-                      onClick={() => void refreshSessions()}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                ) : sessions.length === 0 ? (
-                  <Empty className="border border-dashed border-border">
-                    <EmptyHeader>
-                      <EmptyTitle>No sessions yet</EmptyTitle>
-                      <EmptyDescription>
-                        Create a session to start a tiling workspace on this
-                        project. Optionally back it with a git worktree.
-                      </EmptyDescription>
-                    </EmptyHeader>
-                    <Button
-                      className="mt-2"
-                      size="sm"
-                      onClick={() => setNewOpen(true)}
-                    >
-                      New session
-                    </Button>
-                  </Empty>
-                ) : (
-                  <SessionList
-                    sessions={sessions}
-                    formatRelative={formatRelative}
-                    onOpen={id => void onOpenSession(id)}
-                    onRename={async (id, nextTitle) => {
-                      await renameProjectSession(id, nextTitle)
-                      await refreshSessions()
-                    }}
-                    onArchive={async id => {
-                      await archiveProjectSession(id, true)
-                      await refreshSessions()
-                    }}
-                    onDelete={async (id, removeWorktree) => {
-                      await deleteProjectSession(id, { removeWorktree })
-                      await refreshSessions()
-                      void refreshGit()
-                    }}
-                  />
-                )}
+            <main className="h-full min-h-0 overflow-auto p-4 md:p-6">
+              <ProjectSearchBox
+                pending={searchPending}
+                onSubmit={handleProjectSearch}
+              />
+              <SectionLabel>Recent sessions</SectionLabel>
+              {loading ? (
+                <p className="text-sm text-muted-foreground" role="status">
+                  Loading sessions…
+                </p>
+              ) : error ? (
+                <div role="alert" className="rounded-md border border-border p-4">
+                  <Text variant="label">Sessions unavailable</Text>
+                  <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+                  <Button
+                    className="mt-3"
+                    size="sm"
+                    onClick={() => void refreshSessions()}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : sessions.length === 0 ? (
+                <Empty className="border border-dashed border-border">
+                  <EmptyHeader>
+                    <EmptyTitle>No sessions yet</EmptyTitle>
+                    <EmptyDescription>
+                      Create a session to start a tiling workspace on this
+                      project. Optionally back it with a git worktree.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <Button
+                    className="mt-2"
+                    size="sm"
+                    onClick={() => setNewOpen(true)}
+                  >
+                    New session
+                  </Button>
+                </Empty>
+              ) : (
+                <SessionList
+                  sessions={sessions}
+                  formatRelative={formatRelative}
+                  onOpen={id => void onOpenSession(id)}
+                  onRename={async (id, nextTitle) => {
+                    await renameProjectSession(id, nextTitle)
+                    await refreshSessions()
+                  }}
+                  onArchive={async id => {
+                    await archiveProjectSession(id, true)
+                    await refreshSessions()
+                  }}
+                  onDelete={async (id, removeWorktree) => {
+                    await deleteProjectSession(id, { removeWorktree })
+                    await refreshSessions()
+                    void refreshGit()
+                  }}
+                />
+              )}
 
-                {recentCommits.length > 0 ? (
-                  <div className="mt-8">
-                    <SectionLabel>Recent commits</SectionLabel>
-                    <ul className="divide-y divide-border rounded-md border border-border">
-                      {recentCommits.map(commit => (
-                        <li
-                          key={commit.hash}
-                          className="flex items-start gap-3 px-3 py-2"
+              {recentCommits.length > 0 ? (
+                <div className="mt-8">
+                  <SectionLabel>Recent commits</SectionLabel>
+                  <ul className="divide-y divide-border rounded-md border border-border">
+                    {recentCommits.map(commit => (
+                      <li key={commit.hash}>
+                        <button
+                          type="button"
+                          className="flex w-full items-start gap-3 px-3 py-2 text-left outline-none hover:bg-accent/30 focus-visible:bg-accent/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                           data-yaade-recent-commit=""
+                          data-yaade-commit-hash={commit.hash}
+                          onClick={() => setViewingCommit(commit)}
                         >
                           <span className="font-mono text-3xs text-muted-foreground">
                             {commit.shortHash}
@@ -315,19 +345,13 @@ export function ProjectPage({
                               {commit.author}
                             </p>
                           </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </main>
-              <ProjectAboutRail
-                summary={summary}
-                dirtyCount={dirtyCount}
-                worktrees={worktrees}
-                projectPath={projectPath}
-              />
-            </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </main>
           </TabsContent>
 
           <TabsContent
@@ -368,6 +392,22 @@ export function ProjectPage({
         defaultBranch={summary?.branch ?? "main"}
         onCreate={handleCreate}
       />
+
+      {viewingCommit ? (
+        <Suspense fallback={null}>
+          <CommitChangesDialog
+            open
+            onOpenChange={open => {
+              if (!open) setViewingCommit(null)
+            }}
+            rootUri={rootUri}
+            hash={viewingCommit.hash}
+            theme={activeTheme}
+            fontSize={appearanceSettings.fontSize}
+            commit={viewingCommit}
+          />
+        </Suspense>
+      ) : null}
 
       {settingsOpen ? (
         <Suspense fallback={null}>

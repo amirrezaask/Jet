@@ -27,6 +27,7 @@ export {
   gitPull,
   gitPush,
   gitShow,
+  gitCommitFileContents,
   gitNumstat,
   gitCommitFiles,
   gitApplyPatch,

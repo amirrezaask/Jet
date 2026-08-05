@@ -146,7 +146,12 @@ export type JetElectronGit = {
   isRepo(rootUri: string): Promise<boolean>
   status(rootUri: string): Promise<GitStatusEntry[]>
   diff(rootUri: string, opts?: { path?: string; staged?: boolean }): Promise<string>
-  show(rootUri: string, path: string, ref: "HEAD" | "INDEX"): Promise<string>
+  show(rootUri: string, path: string, ref: "HEAD" | "INDEX" | string): Promise<string>
+  commitFileContents(
+    rootUri: string,
+    hash: string,
+    file: { path: string; status: string; originalPath?: string },
+  ): Promise<{ original: string; modified: string }>
   branch(rootUri: string): Promise<string | null>
   summary(rootUri: string): Promise<GitRepositorySummary>
   branches(rootUri: string): Promise<string[]>

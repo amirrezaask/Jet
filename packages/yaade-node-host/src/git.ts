@@ -187,20 +187,64 @@ export async function gitDiff(
   return runGit(uriToPath(rootUri), args)
 }
 
-export type GitShowRef = "HEAD" | "INDEX"
+/** `HEAD` / `INDEX`, or a validated commit-ish (`abc123`, `abc123^`, `abc123~1`). */
+export type GitShowRef = "HEAD" | "INDEX" | string
 
-/** Read file content at HEAD or the index (`:`) for diff viewers. */
+function assertShowRev(rev: string): string {
+  if (rev === "HEAD" || rev === "INDEX") return rev
+  if (/^[0-9a-fA-F]{4,64}(?:\^|~\d+)?$/.test(rev)) return rev
+  throw new Error(`invalid git rev: ${rev}`)
+}
+
+/** Read file content at HEAD, the index (`:`), or a commit-ish for diff viewers. */
 export async function gitShow(
   rootUri: string,
   path: string,
   ref: GitShowRef,
 ): Promise<string> {
-  const spec = ref === "INDEX" ? `:${path}` : `HEAD:${path}`
+  const safe = assertShowRev(ref)
+  // Prefer `rev:./path` so paths are never ambiguous with revisions.
+  const normalized = path.replace(/^\.?\/+/, "")
+  const spec =
+    safe === "INDEX"
+      ? `:${normalized}`
+      : safe === "HEAD"
+        ? `HEAD:./${normalized}`
+        : `${safe}:./${normalized}`
   try {
-    return await runGit(uriToPath(rootUri), ["show", spec])
+    return await runGit(uriToPath(rootUri), ["show", "--textconv", spec])
   } catch {
-    return ""
+    // Retry without --textconv / ./ for bare trees and odd paths.
+    try {
+      const fallback =
+        safe === "INDEX" ? `:${normalized}` : safe === "HEAD" ? `HEAD:${normalized}` : `${safe}:${normalized}`
+      return await runGit(uriToPath(rootUri), ["show", fallback])
+    } catch {
+      return ""
+    }
   }
+}
+
+/** Parent vs commit contents for one path in a commit (for side-by-side diffs). */
+export async function gitCommitFileContents(
+  rootUri: string,
+  hash: string,
+  file: { path: string; status: string; originalPath?: string },
+): Promise<{ original: string; modified: string }> {
+  const safe = assertHash(hash)
+  const parent = `${safe}^`
+  const oldPath = file.originalPath ?? file.path
+  if (file.status === "added") {
+    return { original: "", modified: await gitShow(rootUri, file.path, safe) }
+  }
+  if (file.status === "deleted") {
+    return { original: await gitShow(rootUri, oldPath, parent), modified: "" }
+  }
+  const [original, modified] = await Promise.all([
+    gitShow(rootUri, oldPath, parent),
+    gitShow(rootUri, file.path, safe),
+  ])
+  return { original, modified }
 }
 
 export async function gitBranch(rootUri: string): Promise<string | null> {

@@ -10,6 +10,8 @@ export const HOST_CHANNELS = new Set([
   "git:isRepo",
   "git:status",
   "git:diff",
+  "git:show",
+  "git:commitFileContents",
   "git:branch",
   "git:summary",
   "git:branches",

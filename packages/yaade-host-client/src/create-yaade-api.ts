@@ -156,6 +156,8 @@ export function createYaadeApi(
       status: rootUri => transport.invoke("git:status", rootUri),
       diff: (rootUri, opts) => transport.invoke("git:diff", rootUri, opts),
       show: (rootUri, path, ref) => transport.invoke("git:show", rootUri, { path, ref }),
+      commitFileContents: (rootUri, hash, file) =>
+        transport.invoke("git:commitFileContents", rootUri, hash, file),
       branch: rootUri => transport.invoke("git:branch", rootUri),
       summary: rootUri => transport.invoke("git:summary", rootUri),
       branches: rootUri => transport.invoke("git:branches", rootUri),

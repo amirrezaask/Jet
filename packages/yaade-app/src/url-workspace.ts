@@ -67,6 +67,79 @@ export function workspaceDocumentTitle(
   return base || absolutePath || "YAADE"
 }
 
+/** One crumb in the project-page path bar (GitHub-style). */
+export type ProjectBreadcrumb = {
+  label: string
+  absolutePath: string
+  /** Parent dir for sibling listing; `null` at filesystem root. */
+  parentPath: string | null
+}
+
+function parentDirectory(absolutePath: string): string | null {
+  const trimmed = absolutePath.replace(/\/+$/, "") || "/"
+  if (trimmed === "/") return null
+  const idx = trimmed.lastIndexOf("/")
+  if (idx < 0) return null
+  if (idx === 0) return "/"
+  return trimmed.slice(0, idx)
+}
+
+/** Join a parent directory with a child name (POSIX). */
+export function joinProjectPath(parentPath: string, name: string): string {
+  if (parentPath === "/") return `/${name}`
+  return `${parentPath.replace(/\/+$/, "")}/${name}`
+}
+
+/**
+ * Breadcrumb segments for the project path bar.
+ * Under `$HOME` the first label is `~`; otherwise segments are absolute.
+ */
+export function projectBreadcrumbs(
+  projectPath: string,
+  homeDir: string,
+): ProjectBreadcrumb[] {
+  const home = homeDir.replace(/\/+$/, "")
+  const abs = projectPath.replace(/\/+$/, "") || "/"
+
+  if (home && (abs === home || abs.startsWith(`${home}/`))) {
+    const crumbs: ProjectBreadcrumb[] = [
+      {
+        label: "~",
+        absolutePath: home,
+        parentPath: parentDirectory(home),
+      },
+    ]
+    if (abs === home) return crumbs
+    let cur = home
+    for (const part of abs.slice(home.length + 1).split("/").filter(Boolean)) {
+      const parent = cur
+      cur = joinProjectPath(cur, part)
+      crumbs.push({ label: part, absolutePath: cur, parentPath: parent })
+    }
+    return crumbs
+  }
+
+  const parts = abs.split("/").filter(Boolean)
+  const crumbs: ProjectBreadcrumb[] = []
+  let cur = ""
+  for (const part of parts) {
+    const parent = cur === "" ? "/" : cur
+    cur = joinProjectPath(parent, part)
+    crumbs.push({ label: part, absolutePath: cur, parentPath: parent })
+  }
+  return crumbs.length > 0
+    ? crumbs
+    : [{ label: "/", absolutePath: "/", parentPath: null }]
+}
+
+/** Navigate to a project path (drops `?s=`). Caller must react to the URL change. */
+export function pushProjectUrl(pathname: string): void {
+  if (typeof history === "undefined") return
+  const next = pathname || "/"
+  if (`${location.pathname}${location.search}` === next) return
+  history.pushState({ sessionId: null }, "", next)
+}
+
 /**
  * Map the current location to an absolute project root.
  * Returns `null` when the pathname is reserved (asset/API) — caller should not navigate.

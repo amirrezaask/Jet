@@ -10,8 +10,10 @@ import {
 import {
   popToProjectUrl,
   projectRootFromLocation,
+  pushProjectUrl,
   pushSessionUrl,
   sessionIdFromSearch,
+  urlPathForProjectRoot,
   workspaceDocumentTitle,
 } from "./url-workspace.js"
 
@@ -174,6 +176,18 @@ export function AppRoot() {
     })
   }, [boot])
 
+  const navigateProject = useCallback(
+    (absolutePath: string) => {
+      if (boot.status !== "ready") return
+      const nextAbs = absolutePath.replace(/\/+$/, "") || "/"
+      const currentAbs = boot.projectPath.replace(/\/+$/, "") || "/"
+      if (nextAbs === currentAbs) return
+      pushProjectUrl(urlPathForProjectRoot(absolutePath, boot.homeDir))
+      readRoute()
+    },
+    [boot, readRoute],
+  )
+
   // Project-page agent bridge (MuxApp installs its own when a session is open).
   useEffect(() => {
     if (boot.status !== "ready" || boot.session) return
@@ -301,6 +315,7 @@ export function AppRoot() {
       homeDir={boot.homeDir}
       machineHostname={boot.machineHostname}
       onOpenSession={openSession}
+      onNavigateProject={navigateProject}
       listSessions={() => listProjectSessions(boot.projectPath)}
     />
   )

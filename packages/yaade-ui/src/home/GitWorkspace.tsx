@@ -73,6 +73,7 @@ import { cn } from "@/lib/utils.js"
 import { requestConfirm } from "@/components/ConfirmDialogHost.js"
 import { showYaadeToast } from "@/toast.js"
 import { SessionHeaderChromePortal } from "./session-header-chrome.js"
+import { loadCommitDiffContents } from "./commit-diff.js"
 
 type GitView = "changes" | "staged" | "history"
 type DiffStyle = "unified" | "split"
@@ -497,7 +498,9 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     <CommitDetailView
       detail={commitDetail}
       loading={commitLoading}
-      onOpenFile={onOpenFile}
+      rootUri={rootUri}
+      theme={theme}
+      fontSize={fontSize}
       onBack={narrow ? () => setMobileDetail(false) : undefined}
     />
   )
@@ -1374,16 +1377,205 @@ function HunkMenu(props: {
 function CommitDetailView(props: {
   detail: GitCommitDetail | null
   loading: boolean
-  onOpenFile: (path: string) => void
+  rootUri: string | null
+  theme: YaadeTheme
+  fontSize: number
   onBack?: () => void
 }) {
-  const { detail, loading, onOpenFile, onBack } = props
+  const { detail, loading, rootUri, theme, fontSize, onBack } = props
+  const api = window.yaade?.git
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [diffContents, setDiffContents] = useState<DiffContents | null>(null)
+  const [diffLoading, setDiffLoading] = useState(false)
+  const [diffError, setDiffError] = useState<string | null>(null)
+  const [mobileFileDiff, setMobileFileDiff] = useState(false)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const diffRequest = useRef(0)
+  const narrow = containerWidth > 0 && containerWidth < 520
+
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width ?? 0
+      setContainerWidth(width)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  useEffect(() => {
+    setSelectedPath(detail?.files[0]?.path ?? null)
+    setMobileFileDiff(false)
+    setDiffContents(null)
+    setDiffError(null)
+  }, [detail?.hash])
+
+  const selectedFile =
+    detail?.files.find(file => file.path === selectedPath) ?? detail?.files[0] ?? null
+
+  useEffect(() => {
+    if (!api || !rootUri || !detail || !selectedFile) {
+      setDiffContents(null)
+      setDiffError(null)
+      return
+    }
+    const file = selectedFile
+    const request = ++diffRequest.current
+    setDiffLoading(true)
+    setDiffError(null)
+    void loadCommitDiffContents(api, rootUri, detail.hash, file)
+      .then(contents => {
+        if (request !== diffRequest.current) return
+        setDiffContents(contents)
+      })
+      .catch(err => {
+        if (request !== diffRequest.current) return
+        setDiffContents(null)
+        setDiffError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (request === diffRequest.current) setDiffLoading(false)
+      })
+  }, [
+    api,
+    rootUri,
+    detail?.hash,
+    selectedFile?.path,
+    selectedFile?.status,
+    selectedFile?.originalPath,
+  ])
+
   if (loading && !detail) return <CenteredStatus label="Loading commit…" />
   if (!detail) {
-    return <CenteredEmpty title="Select a commit" description="Choose a commit to view its message and files." />
+    return (
+      <CenteredEmpty
+        title="Select a commit"
+        description="Choose a commit to view its message and files."
+      />
+    )
   }
+
+  const fileList = (
+    <div data-yaade-list-panel="git-commit-files" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {detail.body ? (
+        <pre className="mx-3 mt-2 max-h-24 shrink-0 overflow-auto rounded-md bg-muted/40 p-2 font-mono text-3xs whitespace-pre-wrap text-foreground/90">
+          {detail.body}
+        </pre>
+      ) : null}
+      <div className="shrink-0 px-3 py-2 font-mono text-3xs tracking-wide text-muted-foreground uppercase">
+        {detail.files.length} {detail.files.length === 1 ? "file" : "files"}
+      </div>
+      <ul className="min-h-0 flex-1 overflow-auto px-1 pb-2">
+        {detail.files.length === 0 ? (
+          <li className="px-2 py-3 text-2xs text-muted-foreground">
+            No files changed in this commit.
+          </li>
+        ) : (
+          detail.files.map(file => {
+            const active = file.path === selectedFile?.path
+            return (
+              <li key={`${file.status}:${file.path}`}>
+                <button
+                  type="button"
+                  data-yaade-list-item=""
+                  data-active={active ? "" : undefined}
+                  onClick={() => {
+                    setSelectedPath(file.path)
+                    if (narrow) setMobileFileDiff(true)
+                  }}
+                  className={cn(
+                    "flex w-full shrink-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-2xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    active
+                      ? "bg-primary/10 text-foreground"
+                      : "text-muted-foreground hover:bg-accent/35 hover:text-foreground",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "w-3 shrink-0 text-center font-mono font-medium",
+                      statusColor(file.status),
+                    )}
+                    title={file.status}
+                  >
+                    {statusLetter(file.status)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
+                </button>
+              </li>
+            )
+          })
+        )}
+      </ul>
+    </div>
+  )
+
+  const diffPane = (
+    <div data-yaade-git-diff="" className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {selectedFile ? (
+        <>
+          <div
+            data-yaade-liquid-glass="chrome"
+            className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent px-3"
+          >
+            {narrow && mobileFileDiff ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Back to file list"
+                onClick={() => setMobileFileDiff(false)}
+              >
+                <ArrowLeftIcon />
+              </Button>
+            ) : (
+              <FileDiffIcon className="text-muted-foreground" aria-hidden />
+            )}
+            <span className="min-w-0 flex-1 truncate font-mono text-2xs">{selectedFile.path}</span>
+            <span className="shrink-0 font-mono text-3xs text-muted-foreground">
+              {selectedFile.status}
+            </span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {diffLoading ? (
+              <CenteredStatus label="Loading diff…" />
+            ) : diffError ? (
+              <CenteredEmpty title="Failed to load diff" description={diffError} />
+            ) : diffContents &&
+              (diffContents.original.length > 0 || diffContents.modified.length > 0) ? (
+              <MonacoDiffEditorHost
+                originalUri={`git-commit://${detail.hash}/${selectedFile.path}?side=original`}
+                modifiedUri={`git-commit://${detail.hash}/${selectedFile.path}?side=modified`}
+                originalContent={diffContents.original}
+                modifiedContent={diffContents.modified}
+                languageId={monacoLanguageId(languageIdFromPath(selectedFile.path))}
+                theme={theme}
+                fontSize={fontSize}
+                readOnly
+                renderSideBySide={!narrow}
+                className="h-full min-h-0"
+              />
+            ) : (
+              <CenteredEmpty
+                title="No textual diff"
+                description="This file may be binary or empty in this commit."
+              />
+            )}
+          </div>
+        </>
+      ) : (
+        <CenteredEmpty
+          title="Select a file"
+          description="Choose a file from this commit to inspect its diff."
+        />
+      )}
+    </div>
+  )
+
   return (
     <div
+      ref={rootRef}
       data-yaade-git-commit-detail=""
       className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent"
     >
@@ -1392,42 +1584,41 @@ function CommitDetailView(props: {
         className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-3"
       >
         {onBack ? (
-          <Button type="button" variant="ghost" size="icon-xs" aria-label="Back to history" onClick={onBack}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Back to history"
+            onClick={onBack}
+          >
             <ArrowLeftIcon />
           </Button>
         ) : (
           <HistoryIcon className="text-muted-foreground" aria-hidden />
         )}
         <span className="min-w-0 flex-1 truncate text-2xs font-medium">{detail.subject}</span>
-        <span className="shrink-0 font-mono text-3xs text-muted-foreground">{detail.hash.slice(0, 7)}</span>
+        <span className="shrink-0 font-mono text-3xs text-muted-foreground">
+          {detail.hash.slice(0, 7)}
+        </span>
       </div>
-      <div data-yaade-list-panel="git-commit-files" className="min-h-0 flex-1 overflow-auto p-3">
-        {detail.body ? (
-          <pre className="mb-3 rounded-md bg-muted/40 p-2 font-mono text-2xs whitespace-pre-wrap text-foreground/90">
-            {detail.body}
-          </pre>
-        ) : null}
-        <div className="font-mono text-3xs tracking-wide text-muted-foreground uppercase">
-          {detail.files.length} {detail.files.length === 1 ? "file" : "files"}
+      {narrow ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {mobileFileDiff ? diffPane : fileList}
         </div>
-        <ul className="mt-1 flex flex-col">
-          {detail.files.map(file => (
-            <li key={`${file.status}:${file.path}`}>
-              <button
-                type="button"
-                data-yaade-list-item=""
-                onClick={() => onOpenFile(file.path)}
-                className="flex w-full items-center gap-2 rounded-sm px-1 py-1 text-left text-2xs text-muted-foreground outline-none hover:bg-accent/35 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
-              >
-                <span className={cn("w-3 shrink-0 text-center font-mono font-medium", statusColor(file.status))} title={file.status}>
-                  {statusLetter(file.status)}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{file.path}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+      ) : (
+        <ResizablePanelGroup
+          orientation="horizontal"
+          className="min-h-0 flex-1 bg-transparent"
+        >
+          <ResizablePanel defaultSize="34%" minSize="140px" maxSize="50%">
+            {fileList}
+          </ResizablePanel>
+          <ResizableHandle />
+          <ResizablePanel defaultSize="66%" minSize="180px">
+            {diffPane}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      )}
     </div>
   )
 }

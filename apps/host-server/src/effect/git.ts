@@ -13,6 +13,7 @@ import {
   gitPull,
   gitPush,
   gitShow,
+  gitCommitFileContents,
   gitStage,
   gitStatus,
   gitSummary,
@@ -53,6 +54,11 @@ export type GitService = {
     path: string,
     ref: GitShowRef,
   ) => Effect.Effect<string, GitCommandFailedError>
+  readonly commitFileContents: (
+    rootUri: string,
+    hash: string,
+    file: { path: string; status: string; originalPath?: string },
+  ) => Effect.Effect<{ original: string; modified: string }, GitCommandFailedError>
   readonly branch: (rootUri: string) => Effect.Effect<string | null>
   readonly summary: (rootUri: string) => Effect.Effect<GitSummary, GitCommandFailedError>
   readonly branches: (rootUri: string) => Effect.Effect<string[], GitCommandFailedError>
@@ -102,6 +108,8 @@ export function makeGitService(): GitService {
     status: rootUri => tryGit(() => gitStatus(rootUri)),
     diff: (rootUri, opts) => tryGit(() => gitDiff(rootUri, opts)),
     show: (rootUri, path, ref) => tryGit(() => gitShow(rootUri, path, ref)),
+    commitFileContents: (rootUri, hash, file) =>
+      tryGit(() => gitCommitFileContents(rootUri, hash, file)),
     branch: rootUri => Effect.promise(() => gitBranch(rootUri)),
     summary: rootUri => tryGit(() => gitSummary(rootUri)),
     branches: rootUri => tryGit(() => gitBranches(rootUri)),

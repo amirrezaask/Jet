@@ -341,10 +341,19 @@ function handleGitEffect(
         return yield* git.diff(rootUri, opts)
       }
       case "git:show": {
-        const opts = args[1] as { path?: string; ref?: "HEAD" | "INDEX" } | undefined
+        const opts = args[1] as { path?: string; ref?: string } | undefined
         const filePath = typeof opts?.path === "string" ? opts.path : ""
-        const ref = opts?.ref === "INDEX" ? "INDEX" : "HEAD"
+        const ref = typeof opts?.ref === "string" && opts.ref ? opts.ref : "HEAD"
         return yield* git.show(rootUri, filePath, ref)
+      }
+      case "git:commitFileContents": {
+        const hash = str(args[1], "hash")
+        const file = args[2] as { path?: string; status?: string; originalPath?: string } | undefined
+        const path = typeof file?.path === "string" ? file.path : ""
+        const status = typeof file?.status === "string" ? file.status : "modified"
+        const originalPath =
+          typeof file?.originalPath === "string" ? file.originalPath : undefined
+        return yield* git.commitFileContents(rootUri, hash, { path, status, originalPath })
       }
       case "git:branch":
         return yield* git.branch(rootUri)

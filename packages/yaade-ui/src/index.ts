@@ -189,7 +189,7 @@ export {
   type ColorScheme,
 } from "./theme/bundled.js"
 export { defaultYaadeTheme, applyYaadeThemeCss, applyColorScheme } from "@yaade/shared"
-export { yaadeMotion, yaadeOverlayContentClass, yaadePopoverContentClass, yaadeMenuContentClass, yaadePressClass, type YaadeOverlayMotion } from "./motion/tokens.js"
+export { yaadeMotion, yaadeOverlayContentClass, yaadePopoverContentClass, yaadeMenuContentClass, yaadePressClass, yaadeInteractiveRowClass, type YaadeOverlayMotion } from "./motion/tokens.js"
 export { useReducedMotion } from "./motion/useReducedMotion.js"
 export { YaadeTabDragGhost } from "./motion/YaadeOverlayMotion.js"
 export {

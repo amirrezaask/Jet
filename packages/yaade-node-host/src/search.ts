@@ -204,13 +204,14 @@ export async function projectSearch(
   opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
 ): Promise<ProjectSearchResult[]> {
   if (!query.trim()) return []
-  if (!(await isGitWorkspace(rootUri))) return []
 
-  try {
-    const fffResults = await fffGrep(rootUri, query, opts)
-    if (fffResults) return fffResults
-  } catch {
-    /* fall through */
+  if (await isGitWorkspace(rootUri)) {
+    try {
+      const fffResults = await fffGrep(rootUri, query, opts)
+      if (fffResults) return fffResults
+    } catch {
+      /* fall through to rg */
+    }
   }
 
   const cwd = uriToPath(rootUri)
