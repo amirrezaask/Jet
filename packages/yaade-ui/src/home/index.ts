@@ -1,9 +1,4 @@
 export {
-  YaadeWindowTitlebar,
-  type YaadeWindowTitlebarProps,
-  type DesktopWindowPlatform,
-} from "./YaadeWindowTitlebar.js"
-export {
   type HomeProjectGroup,
   type HomeTerminalEntry,
 } from "./home-session-types.js"

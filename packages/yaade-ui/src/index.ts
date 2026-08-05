@@ -21,7 +21,6 @@ export {
 } from "./tabs/registry.js"
 export { AppShell } from "./shell/AppShell.js"
 export {
-  YaadeWindowTitlebar,
   TerminalSessionModal,
   formatSessionHeaderTitle,
   SessionTerminalWorkspace,
@@ -42,8 +41,6 @@ export {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_DEFAULT,
   mapHomeGroupsToSidebar,
-  type YaadeWindowTitlebarProps,
-  type DesktopWindowPlatform,
   type HomeProjectGroup,
   type HomeTerminalEntry,
   type SessionDialogMode,
@@ -138,14 +135,16 @@ export { PaletteOverlay } from "./components/PaletteOverlay.js"
 export {
   SettingsOverlay,
   type JetAppearanceSettings,
-  type DesktopServerConnection,
-  type YaadeDesktopBridge,
   type SessionLayout,
 } from "./components/SettingsOverlay.js"
 export {
   DEFAULT_UI_FONT_FAMILY,
   DEFAULT_MONO_FONT_FAMILY,
+  DEFAULT_MONO_FONT_NAME,
+  buildMonoFontStack,
+  CURATED_MONO_FONT_NAMES,
 } from "./theme/appearance-defaults.js"
+export { listSystemMonoFonts, isMonospaceFontFamily } from "./theme/system-mono-fonts.js"
 export { StatusBar } from "./status/StatusBar.js"
 export { WhichKeyPanel, type WhichKeyEntry } from "./components/WhichKeyPanel.js"
 export { setEditorCursor as setEditorCursorStore, getEditorCursor as getEditorCursorStore, subscribeEditorCursor } from "./status/editor-cursor-store.js"
@@ -185,7 +184,6 @@ export {
   themeForScheme,
   type ColorScheme,
 } from "./theme/bundled.js"
-export { syncNativeChromeFromTheme, readThemedNativeChrome } from "./theme/native-chrome.js"
 export { defaultYaadeTheme, applyYaadeThemeCss, applyColorScheme } from "@yaade/shared"
 export { yaadeMotion, yaadeOverlayContentClass, yaadePopoverContentClass, yaadeMenuContentClass, yaadePressClass, type YaadeOverlayMotion } from "./motion/tokens.js"
 export { useReducedMotion } from "./motion/useReducedMotion.js"

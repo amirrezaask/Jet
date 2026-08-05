@@ -47,7 +47,6 @@ export const HOST_CHANNELS = new Set([
   "yaade:getLaunchConfig",
   "yaade:getHomeDir",
   "yaade:loadGlobalYaadercScanRoots",
-  "ui:syncNativeChrome",
 ])
 
 /** @deprecated Use HOST_CHANNELS */

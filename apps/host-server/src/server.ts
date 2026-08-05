@@ -22,6 +22,9 @@ import { makeHostLayers, type HostLayerServices } from "./effect/layers.js"
 import { HostRuntimeTag } from "./effect/tags.js"
 import { shutdownRuntime, type HostRuntime } from "./host-runtime.js"
 import { parseSessionRosterBody } from "./persistence.js"
+import {
+  tryDecodeWorkspaceSession,
+} from "@yaade/rpc"
 import { pathAllowed, pathStaysWithin } from "./sandbox.js"
 import { isAllowedWebSocketOrigin } from "./security.js"
 import { normalizeProviderHookRequest } from "./notifications/index.js"
@@ -58,6 +61,7 @@ function runHostRpc(
 export async function startHostServer(config: HostConfig): Promise<{
   runtime: HostRuntime
   close: () => Promise<void>
+  port: number
 }> {
   const hostLayer = makeHostLayers(config)
   /** Keeps the Layer scope open for the process lifetime (TerminalHost acquireRelease). */
@@ -116,10 +120,8 @@ export async function startHostServer(config: HostConfig): Promise<{
     socket.destroy()
   })
 
-  await new Promise<void>((resolve, reject) => {
-    server.listen(config.port, config.host, () => resolve())
-    server.on("error", reject)
-  })
+  const boundPort = await listenPreferringPort(server, config.host, config.port)
+  config.port = boundPort
 
   console.log(`[host-server] listening on http://${config.host}:${config.port}`)
 
@@ -138,7 +140,76 @@ export async function startHostServer(config: HostConfig): Promise<{
     return closePromise
   }
 
-  return { runtime, close }
+  return { runtime, close, port: boundPort }
+}
+
+const PORT_FALLBACK_ATTEMPTS = 50
+
+function isAddrInUse(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "EADDRINUSE"
+  )
+}
+
+function listenOnPort(
+  server: ReturnType<typeof createServer>,
+  port: number,
+  host: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error) => {
+      server.off("listening", onListening)
+      reject(error)
+    }
+    const onListening = () => {
+      server.off("error", onError)
+      resolve()
+    }
+    server.once("error", onError)
+    server.listen(port, host, onListening)
+  })
+}
+
+async function closeServerQuietly(
+  server: ReturnType<typeof createServer>,
+): Promise<void> {
+  await new Promise<void>(resolve => {
+    server.close(() => resolve())
+  })
+}
+
+/** Bind `preferredPort`, or the next free ports, instead of failing on EADDRINUSE. */
+async function listenPreferringPort(
+  server: ReturnType<typeof createServer>,
+  host: string,
+  preferredPort: number,
+  maxAttempts = PORT_FALLBACK_ATTEMPTS,
+): Promise<number> {
+  let port = preferredPort
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      await listenOnPort(server, port, host)
+      const address = server.address()
+      const bound =
+        address && typeof address === "object" ? address.port : port
+      if (bound !== preferredPort) {
+        console.warn(
+          `[host-server] port ${preferredPort} busy; listening on ${bound}`,
+        )
+      }
+      return bound
+    } catch (error) {
+      if (!isAddrInUse(error)) throw error
+      await closeServerQuietly(server)
+      port += 1
+    }
+  }
+  throw new Error(
+    `Could not bind host-server near port ${preferredPort} after ${maxAttempts} attempts`,
+  )
 }
 
 type RpcGate = {
@@ -169,6 +240,7 @@ async function handleHttp(
       protocolVersion: 1,
       launchConfig: runtime.config.launchConfig,
       homeDir: runtime.homeDir,
+      machineHostname: runtime.machineHostname,
     })
     return
   }
@@ -292,6 +364,78 @@ async function handleHttp(
         sendJson(res, 400, {
           error: {
             code: "INVALID_SESSION_ROSTER",
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          },
+        })
+      }
+      return
+    }
+  }
+
+  if (pathname === "/api/v1/workspace-session") {
+    if (req.method === "GET") {
+      const root = url.searchParams.get("root")?.trim() ?? ""
+      if (!root) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_WORKSPACE_ROOT",
+            message: "root query parameter required",
+            details: {},
+          },
+        })
+        return
+      }
+      if (!pathAllowed(root, runtime.config.allowedRoots)) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "workspace root outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+      sendJson(
+        res,
+        200,
+        runtime.db.getWorkspaceSession(runtime.machineHostname, root),
+      )
+      return
+    }
+    if (req.method === "PUT") {
+      const body = await readJson(req)
+      const parsed = tryDecodeWorkspaceSession(body)
+      if (!parsed) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_WORKSPACE_SESSION",
+            message: "workspace session body invalid",
+            details: {},
+          },
+        })
+        return
+      }
+      if (!pathAllowed(parsed.rootPath, runtime.config.allowedRoots)) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "workspace root outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+      try {
+        const saved = runtime.db.replaceWorkspaceSession({
+          ...parsed,
+          machine: runtime.machineHostname,
+        })
+        sendJson(res, 200, saved)
+      } catch (error) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_WORKSPACE_SESSION",
             message: error instanceof Error ? error.message : String(error),
             details: {},
           },

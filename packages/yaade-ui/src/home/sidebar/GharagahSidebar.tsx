@@ -56,8 +56,6 @@ export type GharagahSidebarProps = {
   onOpenSettings?: () => void
   /** Persist expanded sidebar width (px) after a drag resize. */
   onSidebarWidthChange?: (widthPx: number) => void
-  /** Offset the fixed desktop sidebar below the renderer-owned Electron titlebar. */
-  showWindowChrome?: boolean
   serverLabel?: string
   connected?: boolean
   loading?: boolean
@@ -79,7 +77,6 @@ export function GharagahSidebar({
   projectActions,
   onOpenSettings,
   onSidebarWidthChange,
-  showWindowChrome = false,
   serverLabel,
   connected = true,
   loading = false,
@@ -180,15 +177,6 @@ export function GharagahSidebar({
       variant="floating"
       collapsible="icon"
       className={cn(className)}
-      style={
-        showWindowChrome
-          ? ({
-              top: "var(--yaade-window-chrome-height)",
-              height:
-                "calc(100svh - var(--yaade-window-chrome-height))",
-            } as CSSProperties)
-          : undefined
-      }
       data-yaade-mission-sidebar=""
       data-yaade-sidebar-state={state}
       data-yaade-sidebar-peek={peek ? "true" : "false"}

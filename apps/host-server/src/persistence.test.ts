@@ -306,4 +306,35 @@ describe("ProjectDatabase session roster", () => {
     assert.equal(saved.sessions[0]?.launchCommand, undefined)
     assert.deepEqual(db.getSessionRoster(), saved)
   })
+
+  it("round-trips workspace sessions keyed by machine + root", () => {
+    const root = path.join(dir, "project")
+    fs.mkdirSync(root, { recursive: true })
+    const saved = db.replaceWorkspaceSession({
+      version: 1,
+      machine: "test-host",
+      rootPath: root,
+      layout: {
+        tree: { kind: "leaf", id: 1 },
+        focusedPaneId: 1,
+        zoomedPaneId: null,
+      },
+      sessions: [
+        {
+          ptyTabId: "yaade:terminal:session-1",
+          cwdRootUri: `file://${root}`,
+          ptyId: "term-stale",
+          label: "Shell",
+        },
+      ],
+    })
+    assert.equal(saved.machine, "test-host")
+    assert.equal(saved.sessions.length, 1)
+    assert.equal(saved.sessions[0]?.ptyId, undefined)
+    assert.deepEqual(db.getWorkspaceSession("test-host", root), saved)
+    assert.equal(
+      db.getWorkspaceSession("other-host", root).sessions.length,
+      0,
+    )
+  })
 })

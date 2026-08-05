@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react"
 import {
   CommandPalette,
   CdOverlay,
@@ -10,7 +9,6 @@ import {
   GotoLineModal,
   showYaadeToast,
   bundledThemeList,
-  type DesktopServerConnection,
 } from "@yaade/ui"
 import { useOverlayController } from "./hooks/OverlayController.js"
 
@@ -18,13 +16,6 @@ export default function OverlayHostContent() {
   const { state, workspace, handlers } = useOverlayController()
   const { open, appearanceSettings, projects, paletteCommands, terminalGroups } = state
   const workspaceFolders = workspace.folders
-  const desktopBridge = window.yaadeDesktop
-  const [serverConnection, setServerConnection] = useState<DesktopServerConnection | null>(null)
-
-  useEffect(() => {
-    if (!open.settings || !desktopBridge) return
-    void desktopBridge.getServerConnection().then(setServerConnection).catch(() => {})
-  }, [desktopBridge, open.settings])
 
   return (
     <>
@@ -161,16 +152,6 @@ export default function OverlayHostContent() {
           settings={appearanceSettings}
           onSettingsChange={handlers.onAppearanceSettingsChange}
           onReset={handlers.onResetAppearanceSettings}
-          serverConnection={serverConnection}
-          onServerConnect={
-            desktopBridge
-              ? async serverUrl => {
-                  const connection = await desktopBridge.connectToServer(serverUrl)
-                  setServerConnection(connection)
-                  return connection
-                }
-              : undefined
-          }
         />
       ) : null}
 

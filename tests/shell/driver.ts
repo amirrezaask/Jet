@@ -74,4 +74,8 @@ export type ShellApp = {
 export type LaunchShellResult = {
   app: ShellApp
   page: ShellDriver
+  /** Host HOME used for URL path resolution (when overridden in e2e). */
+  homeDir?: string
+  /** Base origin of the host (no path). */
+  baseUrl?: string
 }

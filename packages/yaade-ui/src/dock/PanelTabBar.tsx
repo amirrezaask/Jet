@@ -167,34 +167,18 @@ const SortableTabTrigger = memo(function SortableTabTrigger({
 })
 
 function TabBarLeadingChrome({
-  windowChrome,
-  windowChromeLeading,
   showSidebarToggle,
 }: {
-  windowChrome: boolean
-  windowChromeLeading: boolean
   showSidebarToggle: boolean
 }) {
-  if (!windowChromeLeading && !showSidebarToggle) return null
+  if (!showSidebarToggle) return null
   return (
-    <>
-      {windowChromeLeading ? (
-        <div
-          aria-hidden
-          data-yaade-traffic-light-spacer
-          className="shrink-0 self-stretch"
-          style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
-        />
-      ) : null}
-      {showSidebarToggle ? (
-        <div
-          className="flex shrink-0 items-center self-stretch pr-1"
-          style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
-        >
-          <SidebarTrigger data-yaade-sidebar-toggle className="size-7 text-muted-foreground" />
-        </div>
-      ) : null}
-    </>
+    <div
+      className="flex shrink-0 items-center self-stretch pr-1"
+      style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+    >
+      <SidebarTrigger data-yaade-sidebar-toggle className="size-7 text-muted-foreground" />
+    </div>
   )
 }
 
@@ -206,8 +190,6 @@ export function PanelTabBar({
   focused,
   onActivateTab,
   onCloseTab,
-  windowChrome = false,
-  windowChromeLeading = false,
   showSidebarToggle = false,
 }: {
   panelId: PanelId
@@ -217,10 +199,6 @@ export function PanelTabBar({
   focused: boolean
   onActivateTab: (tabId: string) => void
   onCloseTab: (tabId: string) => void
-  /** This bar touches the native window's top edge and may drag the window. */
-  windowChrome?: boolean
-  /** macOS Overlay: traffic-light clearance when this bar is top-left chrome. */
-  windowChromeLeading?: boolean
   /** Sidebar closed — compact reopen control at leading edge (no sidebar-width reserve). */
   showSidebarToggle?: boolean
   /** @deprecated handled by TabDndRoot */
@@ -248,27 +226,17 @@ export function PanelTabBar({
   })
 
   const leading = (
-    <TabBarLeadingChrome
-      windowChrome={windowChrome}
-      windowChromeLeading={windowChromeLeading}
-      showSidebarToggle={showSidebarToggle}
-    />
+    <TabBarLeadingChrome showSidebarToggle={showSidebarToggle} />
   )
 
   if (!hasTabs) {
     return (
       <div
         data-yaade-tab-bar
-        data-yaade-tab-bar-drag={windowChrome ? "true" : undefined}
         className="flex w-full min-h-[var(--yaade-window-chrome-height)] shrink-0 items-stretch px-2"
-        style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
       >
         {leading}
-        <div
-          aria-hidden
-          className="min-w-4 flex-1 self-stretch"
-          style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
-        />
+        <div aria-hidden className="min-w-4 flex-1 self-stretch" />
       </div>
     )
   }
@@ -288,12 +256,11 @@ export function PanelTabBar({
           "flex w-full min-h-[var(--yaade-window-chrome-height)] shrink-0 items-stretch px-2 transition-colors duration-[var(--yaade-motion-fast)]",
           (barOver || isForeignDrag) && isForeignDrag && "bg-muted/30",
         )}
-        style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
       >
         {leading}
         <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
           <TabsList
-            className="my-1 h-[calc(var(--yaade-window-chrome-height)-0.5rem)]! w-auto max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            className="my-px h-[calc(var(--yaade-window-chrome-height)-2px)]! w-auto max-w-full justify-start overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
           >
             {tabs.map((tab, i) => (
@@ -307,13 +274,7 @@ export function PanelTabBar({
             ))}
           </TabsList>
         </SortableContext>
-        {/* Empty remainder of the bar — drag the OS window. */}
-        <div
-          aria-hidden
-          data-yaade-tab-bar-drag={windowChrome ? "true" : undefined}
-          className="min-w-4 flex-1 self-stretch"
-          style={windowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined}
-        />
+        <div aria-hidden className="min-w-4 flex-1 self-stretch" />
       </div>
     </Tabs>
   )

@@ -267,7 +267,6 @@ export type YaadeHostAPI = {
   getHomeDir?(): Promise<string>
   loadGlobalYaadercScanRoots?(): Promise<string[]>
   onLaunch?(cb: (config: LaunchConfig) => void): () => void
-  syncNativeChrome?(colors: { background: string; foreground: string }): Promise<void>
   recordStartup?(record: Record<string, unknown>): Promise<string>
   getStartupLogPath?(): Promise<string>
 }

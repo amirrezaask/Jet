@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { RotateCcw } from "lucide-react"
 import type { PanelId } from "@yaade/shared"
 import {
@@ -10,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
 import { OpenInAppMenu, type OpenInAppId } from "./OpenInAppMenu.js"
-import type { DesktopWindowPlatform } from "./YaadeWindowTitlebar.js"
 import { SessionModeDock } from "./SessionModeDock.js"
 import {
   SessionHeaderChromeProvider,
@@ -51,11 +50,6 @@ export type TerminalSessionModalProps = {
   tabStore?: TabStore | null
   paneFocused?: boolean
   onHideSession?: () => void
-  windowChrome?: {
-    platform: DesktopWindowPlatform
-    titlebarHeight: number
-    trafficLights: boolean
-  } | null
   title: string
   /** CLI binary running in the PTY (shown under title). */
   launchCommand?: string | null
@@ -167,7 +161,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
     tabStore = null,
     paneFocused = false,
     onHideSession,
-    windowChrome = null,
     title,
     launchCommand: _launchCommand,
     status: _status = null,
@@ -214,20 +207,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   if (!open) return null
 
   const showAgentMeta = mode === "agent" && agentSessionHeader
-  const ownsWindowChrome = presentation === "modal" && windowChrome != null
-  const dragRegion = ownsWindowChrome
-    ? ({ WebkitAppRegion: "drag" } as CSSProperties)
-    : undefined
-  const noDragRegion = ownsWindowChrome
-    ? ({ WebkitAppRegion: "no-drag" } as CSSProperties)
-    : undefined
-  const headerStyle = ownsWindowChrome
-    ? ({
-        ...dragRegion,
-        height: `${windowChrome.titlebarHeight}px`,
-        minHeight: `${windowChrome.titlebarHeight}px`,
-      } as CSSProperties)
-    : undefined
   const displayTitle = showAgentMeta ? agentSessionHeader.threadTitle : title
   // Embedded panes use SessionPaneChrome for the visible title.
   const showVisibleTitle = !embedded && mode === "agent"
@@ -276,12 +255,9 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
       data-yaade-terminal-modal-header=""
       data-yaade-liquid-glass="chrome"
       {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
-      data-yaade-window-drag-region={ownsWindowChrome ? "" : undefined}
       className={cn(
-        "flex flex-row shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-2.5 py-0 text-left sm:text-left",
-        !ownsWindowChrome && "h-10",
+        "flex h-10 flex-row shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-2.5 py-0 text-left sm:text-left",
       )}
-      style={headerStyle}
     >
       <div
         className={cn(
@@ -289,13 +265,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
           showVisibleTitle ? "max-w-[42%] shrink" : "shrink-0",
         )}
       >
-        {windowChrome?.trafficLights && ownsWindowChrome ? (
-          <div
-            aria-hidden
-            data-yaade-traffic-light-spacer=""
-            style={dragRegion}
-          />
-        ) : null}
         <h2
           data-yaade-terminal-modal-title
           className={cn(
@@ -312,13 +281,9 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
         ref={sessionHeaderContextRef(setHeaderContextEl)}
         data-yaade-session-header-context=""
         className="flex min-h-0 min-w-0 flex-1 items-center overflow-hidden"
-        style={noDragRegion}
       />
 
-      <div
-        className="flex shrink-0 items-center gap-0.5"
-        style={noDragRegion}
-      >
+      <div className="flex shrink-0 items-center gap-0.5">
         {headerTrailing}
       </div>
     </DialogHeader>

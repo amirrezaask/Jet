@@ -284,7 +284,6 @@ export function createYaadeApi(
         cb(args[0] as import("@yaade/workspace").LaunchConfig)
       })
     },
-    syncNativeChrome: colors => transport.invoke("ui:syncNativeChrome", colors),
     recordStartup: record => transport.invoke("perf:recordStartup", record),
     getStartupLogPath: () => transport.invoke("perf:getStartupLogPath"),
   }

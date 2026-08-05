@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test"
-import { expectLocatorCount } from "../shell/assert.js"
+import {
+  expectLocatorCount,
+  expectLocatorVisible,
+} from "../shell/assert.js"
 
 import {
   execCommand,
@@ -9,7 +12,7 @@ import {
   openThemePicker,
 } from "./_launch.js"
 
-test.describe("electron shell settings", () => {
+test.describe("shell settings", () => {
   test("Default Dark and Light keep readable semantic colors and visible focus", async ({}, testInfo) => {
     const { app, page } = await launchJet()
     try {
@@ -119,7 +122,6 @@ test.describe("electron shell settings", () => {
     try {
       await page.evaluate(() => localStorage.clear())
       await page.evaluate(async () => window.__yaadeAgent!.waitForReady())
-      await execCommand(page, "ui.setTheme.default-light")
       await openSettings(page)
       await page
         .locator("[data-yaade-settings-category='appearance']")
@@ -136,10 +138,69 @@ test.describe("electron shell settings", () => {
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("default-light")
 
-      await execCommand(page, "ui.resetAppearance")
+      await page.getByRole("button", { name: "Reset appearance" }).click()
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("default-dark")
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--font-mono")
+              .trim(),
+          ),
+        )
+        .toContain("Commit Mono")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("monospace font picker lists system faces and applies selection", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await page.evaluate(() => localStorage.clear())
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await page.evaluate(async () => window.__yaadeAgent!.waitForReady())
+      await openSettings(page)
+      await page
+        .locator("[data-yaade-settings-category='appearance']")
+        .click()
+
+      await expectLocatorVisible(page.locator("[data-yaade-mono-font-picker]"))
+      await page.getByLabel("Monospace font").click()
+
+      const candidates = ["Menlo", "Monaco", "Consolas", "Courier New", "SF Mono"]
+      let family: string | null = null
+      for (const name of candidates) {
+        const option = page.getByRole("option", { name })
+        if ((await option.count()) > 0 && (await option.first().isVisible())) {
+          family = name
+          await option.first().click()
+          break
+        }
+      }
+      expect(family).toBeTruthy()
+
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const raw = localStorage.getItem("jet-appearance-settings")
+            return raw ? JSON.parse(raw).monoFontFamily : null
+          }),
+        )
+        .toBe(family)
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--font-mono")
+              .trim(),
+          ),
+        )
+        .toContain(family!)
+
+      await page.getByRole("button", { name: "Reset appearance" }).click()
       await expect
         .poll(() =>
           page.evaluate(() =>
@@ -252,79 +313,6 @@ test.describe("electron shell settings", () => {
           }),
         )
         .toBe(true)
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("Electron settings can select a remote server or return to the bundled server", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await page.evaluate(() => {
-        const calls: Array<string | null> = []
-        ;(
-          window as Window & { __serverCalls?: Array<string | null> }
-        ).__serverCalls = calls
-        window.yaadeDesktop = {
-          getServerConnection: async () => ({
-            activeUrl: "http://127.0.0.1:4747",
-            localUrl: "http://127.0.0.1:4747",
-            mode: "local",
-            startupError: null,
-          }),
-          connectToServer: async (serverUrl) => {
-            calls.push(serverUrl)
-            return {
-              activeUrl: serverUrl ?? "http://127.0.0.1:4747",
-              localUrl: "http://127.0.0.1:4747",
-              mode: serverUrl ? "remote" : "local",
-              startupError: null,
-            }
-          },
-        }
-      })
-
-      await openSettings(page)
-      await page.locator("[data-yaade-settings-category='server']").click()
-      await expect
-        .poll(() =>
-          page.locator("[data-yaade-active-server]").textContent(),
-        )
-        .toBe("http://127.0.0.1:4747")
-      await page
-        .getByRole("textbox", { name: "Remote server URL" })
-        .fill("https://yaade.example")
-      await page.locator("[data-yaade-connect-remote]").click()
-      await expect
-        .poll(() =>
-          page.locator("[data-yaade-active-server]").textContent(),
-        )
-        .toBe("https://yaade.example")
-      await expect
-        .poll(() =>
-          page.evaluate(
-            () =>
-              (window as Window & { __serverCalls?: Array<string | null> })
-                .__serverCalls,
-          ),
-        )
-        .toEqual(["https://yaade.example"])
-
-      await page.locator("[data-yaade-use-bundled-server]").click()
-      await expect
-        .poll(() =>
-          page.locator("[data-yaade-active-server]").textContent(),
-        )
-        .toBe("http://127.0.0.1:4747")
-      await expect
-        .poll(() =>
-          page.evaluate(
-            () =>
-              (window as Window & { __serverCalls?: Array<string | null> })
-                .__serverCalls,
-          ),
-        )
-        .toEqual(["https://yaade.example", null])
     } finally {
       await app.close()
     }

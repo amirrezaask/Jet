@@ -4,11 +4,13 @@ import {
   defaultThemeIdForScheme,
   getThemeById,
   DEFAULT_MONO_FONT_FAMILY,
+  DEFAULT_MONO_FONT_NAME,
   DEFAULT_UI_FONT_FAMILY,
+  buildMonoFontStack,
   type JetAppearanceSettings,
   type SessionLayout,
 } from "@yaade/ui"
-import { applyColorScheme, syncNativeChromeFromTheme } from "@yaade/ui"
+import { applyColorScheme } from "@yaade/ui"
 
 type ColorScheme = "dark" | "light"
 
@@ -25,6 +27,7 @@ const MAX_SIDEBAR_WIDTH = 480
 export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   themeId: defaultThemeId,
   fontSize: DEFAULT_FONT_SIZE,
+  monoFontFamily: DEFAULT_MONO_FONT_NAME,
   sessionLayout: "sidebar",
   sidebarCollapsed: false,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
@@ -89,6 +92,18 @@ function loadStoredThemeId(): string {
   return defaultThemeId
 }
 
+function normalizeMonoFontFamily(value: unknown): string {
+  if (typeof value !== "string") return DEFAULT_MONO_FONT_NAME
+  const trimmed = value.trim()
+  if (!trimmed) return DEFAULT_MONO_FONT_NAME
+  // Legacy builds may have persisted a full CSS stack.
+  if (trimmed.includes(",")) {
+    const primary = trimmed.split(",")[0]?.trim().replace(/^["']|["']$/g, "")
+    return primary || DEFAULT_MONO_FONT_NAME
+  }
+  return trimmed.replace(/^["']|["']$/g, "") || DEFAULT_MONO_FONT_NAME
+}
+
 function loadAppearanceSettings(): JetAppearanceSettings {
   const base: JetAppearanceSettings = {
     ...DEFAULT_APPEARANCE_SETTINGS,
@@ -102,6 +117,10 @@ function loadAppearanceSettings(): JetAppearanceSettings {
     return {
       themeId: normalizeThemeId(parsed.themeId ?? base.themeId),
       fontSize: clampNumber(parsed.fontSize, base.fontSize, 10, 24),
+      monoFontFamily: normalizeMonoFontFamily(
+        (parsed as { monoFontFamily?: unknown }).monoFontFamily ??
+          base.monoFontFamily,
+      ),
       sessionLayout: normalizeSessionLayout(parsed.sessionLayout),
       sidebarCollapsed: parsed.sidebarCollapsed === true,
       sidebarWidth: clampNumber(
@@ -138,7 +157,10 @@ function applyAppearanceCss(settings: JetAppearanceSettings): void {
   const root = document.documentElement
   root.style.fontSize = `${settings.fontSize}px`
   root.style.setProperty("--font-sans", DEFAULT_UI_FONT_FAMILY)
-  root.style.setProperty("--font-mono", DEFAULT_MONO_FONT_FAMILY)
+  root.style.setProperty(
+    "--font-mono",
+    buildMonoFontStack(settings.monoFontFamily) || DEFAULT_MONO_FONT_FAMILY,
+  )
   root.style.setProperty("--yaade-editor-line-height", "1.45")
   root.style.setProperty("--yaade-terminal-line-height", "1")
   root.style.setProperty("--yaade-terminal-cursor-blink", "1")
@@ -156,7 +178,6 @@ export function useAppearanceSettings() {
 
   useEffect(() => {
     applyColorScheme(colorScheme, activeTheme)
-    syncNativeChromeFromTheme()
   }, [colorScheme, activeTheme])
 
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)

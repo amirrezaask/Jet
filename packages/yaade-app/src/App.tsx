@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   useDeferredValue,
-  type CSSProperties,
 } from "react"
 import { RegistryContext } from "@effect-atom/atom-react"
 import { rosterAtom } from "./effect/atoms.js"
@@ -65,7 +64,6 @@ import {
   showYaadeToast,
   requestConfirm,
   AppShell,
-  YaadeWindowTitlebar,
   GharagahSidebar,
   sidebarWidthStyle,
   mapHomeGroupsToSidebar,
@@ -3025,14 +3023,6 @@ export function YaadeApp() {
     [workspace],
   )
 
-  const desktopWindowChrome =
-    window.yaadeDesktop?.windowChrome?.customTitlebar === true
-      ? window.yaadeDesktop.windowChrome
-      : null
-  const windowTitle = terminalModalTabId
-    ? (workspace.tabRegistry.get(terminalModalTabId)?.label ?? "Session")
-    : "Mission Control"
-
   return (
     <OverlayControllerProvider
       initialAppearanceSettings={appearanceSettings}
@@ -3061,24 +3051,7 @@ export function YaadeApp() {
             className="flex h-full min-h-0 w-full flex-col"
             data-yaade-shell="home"
             data-yaade-session-layout="sidebar"
-            style={
-              desktopWindowChrome
-                ? ({
-                    "--yaade-window-chrome-height": `${desktopWindowChrome.titlebarHeight}px`,
-                  } as CSSProperties)
-                : undefined
-            }
           >
-            {desktopWindowChrome ? (
-              <YaadeWindowTitlebar
-                platform={desktopWindowChrome.platform}
-                title={windowTitle}
-                sidebar={{
-                  collapsed: appearanceSettings.sidebarCollapsed,
-                  width: appearanceSettings.sidebarWidth,
-                }}
-              />
-            ) : null}
             <div className="min-h-0 flex-1 overflow-hidden">
               <TabDndRoot handlers={sessionTabDndHandlers}>
               <SidebarProvider
@@ -3130,7 +3103,6 @@ export function YaadeApp() {
                         sidebarWidth: widthPx,
                       }))
                     }
-                    showWindowChrome={desktopWindowChrome != null}
                     sessionActions={{
                       onOpen: openSidebarSession,
                       onRename: renameSidebarSession,

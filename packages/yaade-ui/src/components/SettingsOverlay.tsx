@@ -2,7 +2,6 @@ import type { YaadeTheme } from "@yaade/shared"
 import {
   Bell,
   Brush,
-  Cable,
   RotateCcw,
   SlidersHorizontal,
   X,
@@ -10,6 +9,14 @@ import {
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button.js"
 import { Checkbox } from "@/components/ui/checkbox.js"
+import {
+  Combobox,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxPopup,
+} from "@/components/ui/combobox.js"
 import {
   Dialog,
   DialogClose,
@@ -29,10 +36,8 @@ import {
 } from "@/components/ui/tabs.js"
 import { SettingsField } from "@/components/SettingsField.js"
 import { themePreviewSwatches } from "@/theme/bundled.js"
-import {
-  DEFAULT_MONO_FONT_FAMILY,
-  DEFAULT_UI_FONT_FAMILY,
-} from "../theme/appearance-defaults.js"
+import { DEFAULT_MONO_FONT_NAME } from "../theme/appearance-defaults.js"
+import { listSystemMonoFonts } from "../theme/system-mono-fonts.js"
 
 /** Mission Control is sidebar-only; legacy `"cards"` / `"tabs"` normalize here. */
 export type SessionLayout = "sidebar"
@@ -40,6 +45,8 @@ export type SessionLayout = "sidebar"
 export type JetAppearanceSettings = {
   themeId: string
   fontSize: number
+  /** Primary monospace face name (CSS stack built via `buildMonoFontStack`). */
+  monoFontFamily: string
   /** Always `"sidebar"` — kept for persistence / agent-bridge compat. */
   sessionLayout: SessionLayout
   /** Whether the Mission Control sidebar is collapsed (icon mode). */
@@ -60,40 +67,10 @@ export type SettingsOverlayProps = {
   settings: JetAppearanceSettings
   onSettingsChange: (settings: JetAppearanceSettings) => void
   onReset: () => void
-  serverConnection?: DesktopServerConnection | null
-  onServerConnect?: (
-    serverUrl: string | null,
-  ) => Promise<DesktopServerConnection>
   notificationPrefs?: import("@yaade/shared").NotificationPreferences | null
   onNotificationPrefsChange?: (
     patch: Partial<import("@yaade/shared").NotificationPreferences>,
   ) => void
-}
-
-export type DesktopServerConnection = {
-  activeUrl: string
-  localUrl: string
-  mode: "local" | "remote"
-  startupError?: string | null
-}
-
-export type YaadeDesktopBridge = {
-  windowChrome?: Readonly<{
-    customTitlebar: true
-    platform: "darwin" | "win32" | "linux"
-    titlebarHeight: number
-    trafficLights: boolean
-  }>
-  getServerConnection: () => Promise<DesktopServerConnection>
-  connectToServer: (
-    serverUrl: string | null,
-  ) => Promise<DesktopServerConnection>
-}
-
-declare global {
-  interface Window {
-    yaadeDesktop?: YaadeDesktopBridge
-  }
 }
 
 function parseNumber(
@@ -112,6 +89,73 @@ function settingPatch(
   patch: Partial<JetAppearanceSettings>,
 ): JetAppearanceSettings {
   return { ...settings, ...patch }
+}
+
+function MonoFontPicker({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (family: string) => void
+}) {
+  const [fonts, setFonts] = useState<string[]>([DEFAULT_MONO_FONT_NAME])
+
+  useEffect(() => {
+    let cancelled = false
+    void listSystemMonoFonts().then(list => {
+      if (cancelled) return
+      setFonts(list)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const items = (() => {
+    const set = new Set(fonts)
+    const current = value.trim() || DEFAULT_MONO_FONT_NAME
+    set.add(current)
+    return [...set].sort((a, b) => a.localeCompare(b))
+  })()
+
+  return (
+    <div data-yaade-mono-font-picker="" className="w-full min-w-0">
+      <Combobox
+        items={items}
+        value={value.trim() || DEFAULT_MONO_FONT_NAME}
+        onValueChange={next => {
+          if (typeof next === "string" && next.trim()) onChange(next.trim())
+        }}
+        itemToStringValue={item => String(item)}
+      >
+        <ComboboxInput
+          id="yaade-mono-font"
+          placeholder="Select monospace font…"
+          showClear={false}
+          size="sm"
+          className="w-full min-w-0"
+          inputClassName="font-mono"
+          aria-label="Monospace font"
+        />
+        <ComboboxPopup className="w-(--anchor-width)">
+          <ComboboxEmpty>No monospace fonts found.</ComboboxEmpty>
+          <ComboboxList>
+            {(item: string) => (
+              <ComboboxItem
+                key={item}
+                value={item}
+                style={{
+                  fontFamily: `"${item.replaceAll('"', '\\"')}", monospace`,
+                }}
+              >
+                <span data-yaade-mono-font-option={item}>{item}</span>
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxPopup>
+      </Combobox>
+    </div>
+  )
 }
 
 function ThemeButton({
@@ -156,7 +200,7 @@ function ThemeButton({
   )
 }
 
-type SettingsCategory = "appearance" | "notifications" | "server"
+type SettingsCategory = "appearance" | "notifications"
 
 const SETTINGS_CATEGORIES = {
   appearance: {
@@ -168,11 +212,6 @@ const SETTINGS_CATEGORIES = {
     label: "Notifications",
     description: "Choose which events can interrupt you.",
     icon: Bell,
-  },
-  server: {
-    label: "Server",
-    description: "Manage the host that this desktop app connects to.",
-    icon: Cable,
   },
 } satisfies Record<
   SettingsCategory,
@@ -215,27 +254,14 @@ export function SettingsOverlay({
   settings,
   onSettingsChange,
   onReset,
-  serverConnection,
-  onServerConnect,
   notificationPrefs: notificationPrefsProp,
   onNotificationPrefsChange: onNotificationPrefsChangeProp,
 }: SettingsOverlayProps) {
   const [localPrefs, setLocalPrefs] = useState<
     import("@yaade/shared").NotificationPreferences | null
   >(null)
-  const [remoteServerUrl, setRemoteServerUrl] = useState("")
-  const [serverPending, setServerPending] = useState(false)
-  const [serverError, setServerError] = useState<string | null>(null)
   const [category, setCategory] = useState<SettingsCategory>("appearance")
   const compactNavigation = useCompactSettingsNavigation()
-
-  useEffect(() => {
-    if (!open || !serverConnection) return
-    setRemoteServerUrl(
-      serverConnection.mode === "remote" ? serverConnection.activeUrl : "",
-    )
-    setServerError(serverConnection.startupError ?? null)
-  }, [open, serverConnection])
 
   useEffect(() => {
     if (!open || notificationPrefsProp) return
@@ -256,22 +282,8 @@ export function SettingsOverlay({
       void api.setPreferences(patch).then(setLocalPrefs)
     })
 
-  const connectServer = async (serverUrl: string | null) => {
-    if (!onServerConnect || serverPending) return
-    setServerPending(true)
-    setServerError(null)
-    try {
-      await onServerConnect(serverUrl)
-    } catch (error) {
-      setServerError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setServerPending(false)
-    }
-  }
-
   const categories: SettingsCategory[] = ["appearance"]
   if (notificationPrefs) categories.push("notifications")
-  if (serverConnection && onServerConnect) categories.push("server")
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -289,7 +301,7 @@ export function SettingsOverlay({
         <DialogHeader className="sr-only">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Configure appearance, notifications, and server connection.
+            Configure appearance and notifications.
           </DialogDescription>
         </DialogHeader>
         <Tabs
@@ -433,6 +445,20 @@ export function SettingsOverlay({
                         className="h-8 font-mono"
                       />
                     </SettingsField>
+                    <SettingsField
+                      label="Monospace font"
+                      detail="Terminal, editor, and code UI. Lists monospace faces available on this system."
+                      htmlFor="yaade-mono-font"
+                    >
+                      <MonoFontPicker
+                        value={settings.monoFontFamily || DEFAULT_MONO_FONT_NAME}
+                        onChange={family =>
+                          onSettingsChange(
+                            settingPatch(settings, { monoFontFamily: family }),
+                          )
+                        }
+                      />
+                    </SettingsField>
                   </div>
                 </section>
               </ScrollArea>
@@ -518,104 +544,6 @@ export function SettingsOverlay({
                           </SettingsField>
                         )
                       })}
-                    </div>
-                  </section>
-                </ScrollArea>
-              </TabsContent>
-            ) : null}
-
-            {serverConnection && onServerConnect ? (
-              <TabsContent
-                value="server"
-                className="min-h-0 flex-1"
-                data-yaade-settings-panel="server"
-              >
-                <ScrollArea className="size-full">
-                  <section
-                    className="flex flex-col gap-6 p-5 sm:p-7"
-                    data-yaade-server-settings=""
-                  >
-                    <SettingsSectionHeader category="server" />
-                    <Separator />
-                    <div className="divide-y divide-border">
-                      <SettingsField
-                        label="Current server"
-                        detail={
-                          serverConnection.mode === "local"
-                            ? "Bundled with this app"
-                            : "Remote"
-                        }
-                      >
-                        <div
-                          className="truncate rounded-md border border-border bg-muted/30 px-2.5 py-2 font-mono text-3xs text-foreground"
-                          data-yaade-active-server=""
-                        >
-                          {serverConnection.activeUrl}
-                        </div>
-                      </SettingsField>
-                      <SettingsField
-                        label="Remote server URL"
-                        detail="Enter the root HTTP or HTTPS address."
-                        htmlFor="yaade-remote-server-url"
-                      >
-                        <div className="flex gap-2">
-                          <Input
-                            id="yaade-remote-server-url"
-                            type="url"
-                            inputMode="url"
-                            spellCheck={false}
-                            aria-label="Remote server URL"
-                            placeholder="https://yaade.example"
-                            value={remoteServerUrl}
-                            onChange={(event) =>
-                              setRemoteServerUrl(event.target.value)
-                            }
-                            onKeyDown={(event) => {
-                              if (
-                                event.key === "Enter" &&
-                                remoteServerUrl.trim()
-                              ) {
-                                event.preventDefault()
-                                void connectServer(remoteServerUrl)
-                              }
-                            }}
-                            className="h-8 min-w-0 flex-1 font-mono text-3xs"
-                          />
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={serverPending || !remoteServerUrl.trim()}
-                            onClick={() => void connectServer(remoteServerUrl)}
-                            data-yaade-connect-remote=""
-                          >
-                            {serverPending ? "Connecting…" : "Connect"}
-                          </Button>
-                        </div>
-                      </SettingsField>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <p
-                        className="min-w-0 text-xs text-destructive"
-                        role={serverError ? "alert" : undefined}
-                        data-yaade-server-error=""
-                      >
-                        {serverError}
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          serverPending ||
-                          (serverConnection.mode === "local" &&
-                            !serverConnection.startupError)
-                        }
-                        onClick={() => void connectServer(null)}
-                        data-yaade-use-bundled-server=""
-                        className="shrink-0"
-                      >
-                        Use bundled server
-                      </Button>
                     </div>
                   </section>
                 </ScrollArea>

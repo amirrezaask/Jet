@@ -1,6 +1,6 @@
 import { LayoutGrid, Plus, X } from "lucide-react"
 import { useDraggable } from "@dnd-kit/core"
-import type { CSSProperties, ReactNode } from "react"
+import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button.js"
 import {
   ContextMenu,
@@ -35,18 +35,8 @@ export type MuxTabStripProps = {
   onToggleOrientation?: () => void
   /** When true, tabs can be dragged onto the tiled dock. */
   enableDragDock?: boolean
-  /**
-   * Electron custom titlebar — clear macOS traffic lights and expose a
-   * drag region so the strip does not collide with native window controls.
-   */
-  windowChrome?: {
-    trafficLights: boolean
-  } | null
   className?: string
 }
-
-const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
-const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
 /**
  * Deck icon = favicon for a window (Superlogical).
@@ -265,12 +255,9 @@ export function MuxTabStrip(props: MuxTabStripProps) {
     onNew,
     onToggleOrientation,
     enableDragDock = true,
-    windowChrome = null,
     className,
   } = props
   const vertical = orientation === "vertical"
-  const trafficLights = windowChrome?.trafficLights === true
-  const chromeDrag = windowChrome != null
 
   const deckLibraryButton = (
     <Button
@@ -280,7 +267,6 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       aria-label="Toggle tab orientation"
       data-yaade-mux-deck-library=""
       className="size-6 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-      style={chromeDrag ? noDragRegion : undefined}
       onClick={onToggleOrientation}
     >
       <LayoutGrid className="size-3" />
@@ -300,7 +286,6 @@ export function MuxTabStrip(props: MuxTabStripProps) {
           "h-7 w-full justify-start gap-1.5 rounded-full border border-transparent px-2.5 hover:bg-foreground/5",
         !vertical && "size-6 shrink-0 rounded-full",
       )}
-      style={chromeDrag ? noDragRegion : undefined}
       onClick={onNew}
     >
       <Plus className="size-3" />
@@ -319,7 +304,6 @@ export function MuxTabStrip(props: MuxTabStripProps) {
           ? "flex flex-1 flex-col gap-1 p-1.5"
           : "flex flex-none flex-row items-center",
       )}
-      style={chromeDrag ? noDragRegion : undefined}
     >
       <TabsList
         variant="line"
@@ -361,7 +345,6 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       <div
         data-yaade-mux-tab-strip=""
         data-orientation={orientation}
-        data-yaade-window-drag-region={chromeDrag ? "" : undefined}
         className={cn(
           "relative flex shrink-0 border-border/35",
           vertical
@@ -375,30 +358,11 @@ export function MuxTabStrip(props: MuxTabStripProps) {
               ),
           className,
         )}
-        style={chromeDrag ? dragRegion : undefined}
       >
-        {vertical && trafficLights ? (
-          <div
-            aria-hidden
-            data-yaade-traffic-light-top-spacer=""
-            style={dragRegion}
-          />
-        ) : null}
-        {!vertical && trafficLights ? (
-          <div
-            aria-hidden
-            data-yaade-traffic-light-spacer=""
-            className="shrink-0 self-stretch"
-            style={dragRegion}
-          />
-        ) : null}
         {vertical ? (
           <>
             {tabList}
-            <div
-              className="flex shrink-0 items-center border-t border-border/35 p-1.5"
-              style={chromeDrag ? noDragRegion : undefined}
-            >
+            <div className="flex shrink-0 items-center border-t border-border/35 p-1.5">
               {newButton}
             </div>
           </>
@@ -407,7 +371,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
             {onToggleOrientation ? deckLibraryButton : null}
             {tabList}
             {newButton}
-            <div className="min-w-0 flex-1" style={dragRegion} aria-hidden />
+            <div className="min-w-0 flex-1" aria-hidden />
           </>
         )}
       </div>

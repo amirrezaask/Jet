@@ -58,12 +58,16 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.JET_WEB_PORT ?? 5174),
-    strictPort: true,
+    // Prefer the configured port; if busy, Vite picks the next free one.
+    strictPort: false,
     host: "127.0.0.1",
     proxy: {
-      "/api": "http://127.0.0.1:4747",
-      "/health": "http://127.0.0.1:4747",
-      "/ws": { target: "ws://127.0.0.1:4747", ws: true },
+      "/api": `http://127.0.0.1:${process.env.JET_PORT ?? 4747}`,
+      "/health": `http://127.0.0.1:${process.env.JET_PORT ?? 4747}`,
+      "/ws": {
+        target: `ws://127.0.0.1:${process.env.JET_PORT ?? 4747}`,
+        ws: true,
+      },
     },
   },
   clearScreen: false,

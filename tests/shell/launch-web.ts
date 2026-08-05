@@ -34,6 +34,13 @@ type LaunchWebOptions = {
   env?: Record<string, string>
   userDataDir?: string
   launchWithoutWorkspace?: boolean
+  /** Browser pathname to open (e.g. `/dev/consultation`). Defaults to `/`. */
+  startPath?: string
+  /**
+   * When set, host `HOME` is this directory so URL paths resolve under it.
+   * Defaults to a temp dir under the e2e root when `startPath` is non-root.
+   */
+  homeDir?: string
 }
 
 async function freePort(): Promise<number> {
@@ -117,6 +124,17 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     ...options.env,
   }
 
+  const homeDir =
+    options.homeDir ??
+    (options.startPath && options.startPath !== "/"
+      ? path.join(temporaryRoot, "home")
+      : undefined)
+  if (homeDir) {
+    fs.mkdirSync(homeDir, { recursive: true })
+    sharedEnv.HOME = homeDir
+    sharedEnv.JET_ALLOWED_ROOTS = `${sharedEnv.JET_ALLOWED_ROOTS},${homeDir}`
+  }
+
   const server = spawn(
     process.execPath,
     [
@@ -128,7 +146,7 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
       String(port),
       "--data-dir",
       serverData,
-      workspace,
+      ...(options.launchWithoutWorkspace ? [] : [workspace]),
     ],
     {
       cwd: REPO_ROOT,
@@ -164,7 +182,9 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     }
   })
 
-  await browserPage.goto(url, { waitUntil: "domcontentloaded" })
+  const startPath = options.startPath ?? "/"
+  const startUrl = `${url}${startPath.startsWith("/") ? startPath : `/${startPath}`}`
+  await browserPage.goto(startUrl, { waitUntil: "domcontentloaded" })
   await browserPage.waitForFunction(() => window.__yaadeAgent != null, null, { timeout: 30_000 })
   await browserPage.evaluate(() => window.__yaadeAgent!.waitForReady())
   if (!options.launchWithoutWorkspace) {
@@ -184,5 +204,7 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
         if (errors.length) process.stderr.write(`Browser console errors:\n${errors.join("\n")}\n`)
       },
     },
+    homeDir: homeDir ?? process.env.HOME ?? os.homedir(),
+    baseUrl: url,
   }
 }

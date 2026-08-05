@@ -10,16 +10,18 @@ import {
   waitForMux,
 } from "./_launch.js"
 
-test.describe("mux tabs", () => {
-  test("boots with horizontal tab strip and one window", async () => {
+test.describe("mux shell", () => {
+  test("boots with one tiled window and no in-app tab strip", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
-      await expectSelectorVisible(page, "[data-yaade-mux][data-orientation=horizontal]")
-      await expectSelectorVisible(page, "[data-yaade-mux-tab-strip]")
+      await expectSelectorVisible(page, "[data-yaade-mux]")
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-tab-strip]").count())
+        .toBe(0)
       await expect
         .poll(async () => page.locator("[data-yaade-mux-tab]").count())
-        .toBeGreaterThanOrEqual(1)
+        .toBe(0)
       await expectSelectorVisible(page, "[data-yaade-mux-window]")
       await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
       // Persistent pane header — title text visible without hover.
@@ -37,133 +39,7 @@ test.describe("mux tabs", () => {
     }
   })
 
-  test("clears macOS traffic lights beside horizontal tabs", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await waitForMux(page)
-      await page.addInitScript(() => {
-        const connection = {
-          activeUrl: window.location.origin,
-          localUrl: window.location.origin,
-          mode: "local" as const,
-          startupError: null,
-        }
-        window.yaadeDesktop = Object.freeze({
-          windowChrome: Object.freeze({
-            customTitlebar: true as const,
-            platform: "darwin" as const,
-            titlebarHeight: 40,
-            trafficLights: true,
-          }),
-          getServerConnection: async () => connection,
-          connectToServer: async () => connection,
-        })
-      })
-      await page.reload({ waitUntil: "domcontentloaded" })
-      await waitForMux(page)
-
-      const spacer = page.locator(
-        "[data-yaade-mux-tab-strip] [data-yaade-traffic-light-spacer]",
-      )
-      await expectLocatorVisible(spacer)
-
-      const firstTab = page.locator("[data-yaade-mux-tab]").first()
-      await expectLocatorVisible(firstTab)
-      await expect
-        .poll(async () => {
-          const [tabBox, spacerBox] = await Promise.all([
-            firstTab.boundingBox(),
-            spacer.boundingBox(),
-          ])
-          if (!tabBox || !spacerBox) return null
-          return {
-            tabAfterSpacer: tabBox.x >= spacerBox.x + spacerBox.width - 1,
-          }
-        })
-        .toEqual({ tabAfterSpacer: true })
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("creates and closes windows from the strip", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await waitForMux(page)
-      const before = await page.locator("[data-yaade-mux-tab]").count()
-      await page.locator("[data-yaade-mux-new-tab]").first().click()
-      await expect
-        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
-        .toBe(before + 1)
-
-      const lastTab = page.locator("[data-yaade-mux-tab]").last()
-      const tabId = await lastTab.getAttribute("data-yaade-mux-tab")
-      expect(tabId).toBeTruthy()
-      await page.locator(`[data-yaade-mux-close-tab="${tabId}"]`).click()
-      await expect
-        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
-        .toBe(before)
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("toggles tab strip orientation", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await waitForMux(page)
-      await expectSelectorVisible(
-        page,
-        "[data-yaade-mux][data-orientation=horizontal]",
-      )
-      await expectSelectorVisible(page, "[data-yaade-mux-icon-deck]")
-      await expectSelectorVisible(page, "[data-yaade-mux-deck-icon]")
-      await expectSelectorVisible(page, "[data-yaade-mux-deck-library]")
-      // Horizontal: left-aligned capsule pills + deck library + +.
-      const strip = page.locator("[data-yaade-mux-tab-strip][data-orientation=horizontal]")
-      const stripBox = await strip.boundingBox()
-      const tabBox = await strip.locator("[data-yaade-mux-tab]").first().boundingBox()
-      const newBox = await strip.locator("[data-yaade-mux-new-tab]").boundingBox()
-      expect(stripBox).toBeTruthy()
-      expect(tabBox).toBeTruthy()
-      expect(newBox).toBeTruthy()
-      expect(tabBox!.x).toBeLessThan(newBox!.x)
-      // Capsule pills use h-6; strip uses compact chrome (~2rem).
-      expect(tabBox!.height).toBeGreaterThanOrEqual(18)
-      expect(tabBox!.height).toBeLessThanOrEqual(24)
-      expect(tabBox!.height).toBeLessThanOrEqual(stripBox!.height)
-      expect(stripBox!.height).toBeLessThanOrEqual(34)
-      // Tabs sit in the left half after traffic lights / deck library.
-      const tabCenter = tabBox!.x + tabBox!.width / 2
-      expect(tabCenter).toBeLessThan(stripBox!.x + stripBox!.width * 0.55)
-
-      await execCommand(page, "mux.toggleTabOrientation")
-      await expectSelectorVisible(
-        page,
-        "[data-yaade-mux][data-orientation=vertical]",
-      )
-      // Vertical strip uses the same frosted glass treatment.
-      const verticalStrip = page.locator(
-        "[data-yaade-mux-tab-strip][data-orientation=vertical]",
-      )
-      await expect
-        .poll(async () => {
-          const cls = (await verticalStrip.getAttribute("class")) ?? ""
-          return cls.includes("backdrop-blur") || cls.includes("bg-background/50")
-        })
-        .toBe(true)
-
-      await execCommand(page, "mux.toggleTabOrientation")
-      await expectSelectorVisible(
-        page,
-        "[data-yaade-mux][data-orientation=horizontal]",
-      )
-    } finally {
-      await app.close()
-    }
-  })
-
-  test("context menus open on chrome, tabs, and terminal", async () => {
+  test("context menus open on pane chrome and terminal", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
@@ -172,10 +48,6 @@ test.describe("mux tabs", () => {
         button: "right",
       })
       await expectSelectorVisible(page, "[data-yaade-mux-pane-context-menu]")
-      await page.keyboard.press("Escape")
-
-      await page.locator("[data-yaade-mux-tab]").first().click({ button: "right" })
-      await expectSelectorVisible(page, "[data-yaade-mux-tab-context-menu]")
       await page.keyboard.press("Escape")
 
       await page.locator("[data-yaade-terminal-panel]").first().click({
@@ -607,12 +479,12 @@ test.describe("mux tiling", () => {
     }
   })
 
-  test("closing the last pane closes the window without confirm", async () => {
+  test("closing the last pane recreates a blank terminal without confirm", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
       await expect
-        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
         .toBe(1)
 
       await page.locator("[data-yaade-terminal-panel]").first().click()
@@ -623,10 +495,14 @@ test.describe("mux tiling", () => {
       await expect
         .poll(async () => page.locator("[data-yaade-confirm=accept]").count())
         .toBe(0)
+      // Single-window model: closing the last pane resets to one fresh terminal.
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(1)
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-tab]").count())
         .toBe(0)
-      await expectSelectorVisible(page, "[data-yaade-mux-empty]")
     } finally {
       await app.close()
     }
@@ -727,7 +603,7 @@ test.describe("mux switcher", () => {
         )
         .toBeGreaterThan(0)
 
-      await page.keyboard.type("Toggle Tab Orientation")
+      await page.keyboard.type("Split Right")
       await page.keyboard.press("Enter")
       await expect
         .poll(async () => page.locator("[data-yaade-palette]").count())
@@ -768,9 +644,9 @@ test.describe("mux switcher", () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
-      await execCommand(page, "mux.newWindow")
+      await execCommand(page, "mux.splitRight")
       await expect
-        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
         .toBeGreaterThanOrEqual(2)
 
       const hasCommand = await page.evaluate(() =>
@@ -827,7 +703,7 @@ async function pointerDrag(
 }
 
 test.describe("mux drag dock", () => {
-  test("pane chrome and window tabs expose drag handles", async () => {
+  test("pane chrome exposes drag handles", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
@@ -839,7 +715,6 @@ test.describe("mux drag dock", () => {
       await expect
         .poll(async () => page.locator("[data-yaade-mux-pane-drag]").count())
         .toBeGreaterThanOrEqual(2)
-      await expectSelectorVisible(page, "[data-yaade-mux-tab-drag]")
     } finally {
       await app.close()
     }
@@ -985,140 +860,34 @@ test.describe("mux drag dock", () => {
       await app.close()
     }
   })
-
-  test("dragging a window tab docks into the active window", async () => {
-    const { app, page } = await launchJet()
-    try {
-      await waitForMux(page)
-      await page.locator("[data-yaade-mux-new-tab]").first().click()
-      await expect
-        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
-        .toBe(2)
-
-      const firstTab = page.locator("[data-yaade-mux-tab]").first()
-      const secondTab = page.locator("[data-yaade-mux-tab]").nth(1)
-      const firstId = await firstTab.getAttribute("data-yaade-mux-tab")
-      const secondId = await secondTab.getAttribute("data-yaade-mux-tab")
-      expect(firstId).toBeTruthy()
-      expect(secondId).toBeTruthy()
-
-      // Keep first window active; dock the second into it.
-      await firstTab.click()
-      await expectSelectorVisible(
-        page,
-        `[data-yaade-mux-tab="${firstId}"][data-active]`,
-      )
-
-      const dragHandle = page.locator(`[data-yaade-mux-tab="${secondId}"]`)
-      const pane = page.locator("[data-yaade-mux-pane]").first()
-      const srcBox = await dragHandle.boundingBox()
-      const paneBox = await pane.boundingBox()
-      expect(srcBox).toBeTruthy()
-      expect(paneBox).toBeTruthy()
-
-      const from = {
-        x: srcBox!.x + srcBox!.width / 2,
-        y: srcBox!.y + srcBox!.height / 2,
-      }
-      const to = {
-        x: paneBox!.x + paneBox!.width * 0.85,
-        y: paneBox!.y + paneBox!.height / 2,
-      }
-
-      await page.mouse.move(from.x, from.y)
-      await page.mouse.down()
-      await page.mouse.move(from.x + 16, from.y + 4, { steps: 6 })
-      await expect
-        .poll(
-          async () =>
-            page
-              .locator(`[data-yaade-mux-tab="${secondId}"][data-dragging]`)
-              .count(),
-          { timeout: 5_000 },
-        )
-        .toBe(1)
-      // Drop overlays should register sites while a dock drag is active.
-      await expect
-        .poll(
-          async () =>
-            page.evaluate(() => {
-              const el = document.querySelector(
-                "[data-yaade-panel-drop-overlay]",
-              )
-              return el?.childElementCount ?? 0
-            }),
-          { timeout: 5_000 },
-        )
-        .toBeGreaterThan(0)
-      await page.mouse.move(to.x, to.y, { steps: 24 })
-      await page.waitForTimeout(40)
-      await page.mouse.up()
-
-      await expect
-        .poll(async () => page.locator("[data-yaade-mux-tab]").count(), {
-          timeout: 10_000,
-        })
-        .toBe(1)
-      await expect
-        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
-        .toBeGreaterThanOrEqual(2)
-      await expect
-        .poll(
-          async () =>
-            page.locator(`[data-yaade-mux-tab="${secondId}"]`).count(),
-        )
-        .toBe(0)
-      await expectSelectorVisible(
-        page,
-        `[data-yaade-mux-tab="${firstId}"]`,
-      )
-    } finally {
-      await app.close()
-    }
-  })
 })
 
 test.describe("mux persistence", () => {
-  test("reload reattaches the existing PTY instead of spawning a new one", async () => {
+  test("reload restores tiled layout from the server", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
       await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
-
+      await execCommand(page, "mux.splitRight")
       await expect
-        .poll(async () => {
-          return page.evaluate(() => {
-            const panel = document.querySelector(
-              "[data-yaade-terminal-panel][data-yaade-terminal-pty-id]",
-            )
-            return panel?.getAttribute("data-yaade-terminal-pty-id") ?? null
-          })
-        }, { timeout: 15_000 })
-        .toBeTruthy()
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(2)
 
-      const ptyId = await page.evaluate(() => {
-        const panel = document.querySelector(
-          "[data-yaade-terminal-panel][data-yaade-terminal-pty-id]",
-        )
-        return panel?.getAttribute("data-yaade-terminal-pty-id") ?? null
-      })
-      expect(ptyId).toBeTruthy()
-
+      // Give the debounced server writer time to flush.
+      await page.waitForTimeout(500)
       await page.reload({ waitUntil: "domcontentloaded" })
       await waitForMux(page)
 
       await expect
-        .poll(async () => {
-          return page.evaluate(expected => {
-            const panel = document.querySelector(
-              "[data-yaade-terminal-panel][data-yaade-terminal-pty-id]",
-            )
-            return panel?.getAttribute("data-yaade-terminal-pty-id") === expected
-              ? expected
-              : null
-          }, ptyId)
-        }, { timeout: 15_000 })
-        .toBe(ptyId)
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(2)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
+        .toBe(0)
     } finally {
       await app.close()
     }

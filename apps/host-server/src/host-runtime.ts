@@ -1,3 +1,4 @@
+import os from "node:os"
 import {
   PerfHost,
   setLspCrashHandler,
@@ -29,6 +30,8 @@ export type HostRuntime = {
   workspace: WorkspaceHost
   perf: PerfHost
   homeDir: string
+  /** `os.hostname()` — workspace session identity with root path. */
+  machineHostname: string
   notifications: NotificationService
   agents: AgentTelemetryService
 }
@@ -93,6 +96,7 @@ export function createRuntime(
     workspace,
     perf: new PerfHost(homeDir, Date.now()),
     homeDir,
+    machineHostname: os.hostname(),
     notifications,
     agents,
   }

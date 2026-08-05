@@ -6,8 +6,6 @@ dist
 apps/jet-desktop/dist-electron
 apps/jet-desktop/release
 packages/jet-app/dist-electron
-apps/yaade-electron/pack
-apps/yaade-electron/dist
 .4coder
 .vscode
 .4coder_fleury

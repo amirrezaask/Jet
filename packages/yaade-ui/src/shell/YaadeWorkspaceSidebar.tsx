@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react"
 import type { WorkspaceManager } from "@yaade/workspace"
 import type { PanelId } from "@yaade/shared"
 import { Plus } from "lucide-react"
@@ -44,8 +43,6 @@ export type YaadeWorkspaceSidebarProps = {
   onRestartTerminal: (tabId: string) => void
   onRemoveProject: (rootUri: string) => void
   onSidebarFocusChange?: (focused: boolean) => void
-  /** macOS Overlay chrome: traffic-light clearance + drag on this header. */
-  showWindowChrome?: boolean
 }
 
 export function JetSidebarViewTabs({
@@ -90,7 +87,6 @@ export function YaadeWorkspaceSidebar({
   onRestartTerminal,
   onRemoveProject,
   onSidebarFocusChange,
-  showWindowChrome = false,
 }: YaadeWorkspaceSidebarProps) {
   const { state } = useSidebar()
   return (
@@ -109,24 +105,8 @@ export function YaadeWorkspaceSidebar({
       <div
         data-yaade-sidebar-chrome
         className="flex min-h-[var(--yaade-window-chrome-height)] shrink-0 items-stretch border-b border-sidebar-border px-2"
-        style={
-          showWindowChrome ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined
-        }
       >
-        {showWindowChrome ? (
-          <div
-            aria-hidden
-            data-yaade-traffic-light-spacer
-            className="shrink-0 self-stretch"
-            style={{ WebkitAppRegion: "drag" } as CSSProperties}
-          />
-        ) : null}
-        <div
-          className="flex min-w-0 flex-1 items-center gap-1 py-1 pl-1"
-          style={
-            showWindowChrome ? ({ WebkitAppRegion: "no-drag" } as CSSProperties) : undefined
-          }
-        >
+        <div className="flex min-w-0 flex-1 items-center gap-1 py-1 pl-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <SidebarTrigger

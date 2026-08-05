@@ -125,8 +125,6 @@
    * Keep the virtual slot rem-scaled so appearance zoom cannot clip or overlap
    * the line boxes. Other palette rows retain their compact contract. */
   --yaade-agent-cli-row-height: 3.5rem;
-  /* Traffic-light clearance only — not a closed-sidebar placeholder. */
-  --yaade-traffic-light-inset: 5rem;
   --yaade-overlay-list-max: 22rem;
   --yaade-motion-fast: 120ms;
   --yaade-motion-hot: 120ms;
@@ -478,29 +476,12 @@
   }
 }
 
-/* macOS window chrome — traffic-light spacer + sidebar/tab-bar drag. */
-[data-yaade-traffic-light-spacer] {
-  width: var(--yaade-traffic-light-inset);
-  min-width: var(--yaade-traffic-light-inset);
-  flex: 0 0 var(--yaade-traffic-light-inset);
-  align-self: stretch;
-  min-height: 100%;
-}
-
-/* Vertical mux strip: push tabs below native traffic lights. */
-[data-yaade-traffic-light-top-spacer] {
-  width: 100%;
-  height: var(--yaade-window-chrome-height);
-  min-height: var(--yaade-window-chrome-height);
-  flex: 0 0 var(--yaade-window-chrome-height);
-}
-
-/* Sidebar view tabs (Files / Terminals) share the native-chrome rhythm. */
+/* Sidebar view tabs (Files / Terminals) share the tab-bar rhythm. */
 [data-yaade-sidebar-view-tabs] {
   display: flex;
   flex-direction: row;
   align-items: center;
-  height: calc(var(--yaade-window-chrome-height) - 0.5rem);
+  height: calc(var(--yaade-window-chrome-height) - 2px);
   min-width: 0;
 }
 
@@ -508,7 +489,7 @@
   display: flex;
   align-items: center;
   width: 100%;
-  height: calc(var(--yaade-window-chrome-height) - 0.5rem) !important;
+  height: calc(var(--yaade-window-chrome-height) - 2px) !important;
   gap: 0.125rem;
   padding: 2px;
   border-radius: calc(var(--radius) - 2px);

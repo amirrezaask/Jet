@@ -6,9 +6,7 @@ Guide for AI agents and contributors working in this repo.
 
 **YAADE** is a **web Mission Control** app (React + Vite): a **home view** of projects and terminal session cards. Terminals open in **modal dialogs**. There is no editor workspace shell in the app today.
 
-**Hard policy: no Rust / no Tauri.** Host IPC is TypeScript (`apps/host-server` + `@yaade/node-host`). Do not add `.rs`, `Cargo.toml`, or Tauri crates.
-
-**Desktop:** optional thin Electron shell (`apps/yaade-electron`) — process supervisor + `BrowserWindow` only. Same SPA entry (`packages/yaade-app/src/main.tsx` + `createWebTransport()`); host spawns as Node child (not Electron Node). Dev: `pnpm electron:dev`. Prod (after `pnpm build`): `pnpm electron`.
+**Hard policy: no Rust / no Tauri / no Electron.** Host IPC is TypeScript (`apps/host-server` + `@yaade/node-host`). Do not add `.rs`, `Cargo.toml`, Tauri crates, or an Electron shell.
 
 **Core split (current product):**
 
@@ -42,7 +40,6 @@ Do **not** copy large chunks wholesale; match Yaade’s architecture.
 jet/
 ├── apps/
 │   ├── yaade/              Vite frontend shell (proxies to host)
-│   ├── yaade-electron/     Thin Electron main (loads shared SPA URL)
 │   └── host-server/            Effect host (HTTP/WS RPC + PTY Layers)
 ├── fixtures/
 │   └── sample-workspace/       Fixture project for E2E smoke tests
@@ -91,14 +88,11 @@ Keep imports acyclic. Lower layers must not import React.
 ```bash
 pnpm install          # workspace install
 pnpm dev              # host-server + Vite
-pnpm electron:dev     # same backends + Vite inside Electron window
-pnpm electron         # after pnpm build — Electron loads host-served dist
 pnpm typecheck        # all packages (TypeScript 7)
 pnpm test:e2e         # Playwright web E2E (headless Chromium)
 pnpm test:bench       # UX latency benchmarks (tests/bench/)
-pnpm build            # SPA + dist/yaade server binary + macOS DMG
-pnpm build:server     # server binary only
-pnpm build:dmg        # DMG only (needs dist/runtime)
+pnpm build            # SPA + dist/yaade server binary
+pnpm build:server     # same (compatibility alias)
 ```
 
 Run typecheck from repo root before finishing a task:
@@ -183,7 +177,6 @@ YAADE_E2E_RUN_FLAKY=1 pnpm test:e2e
 | `switch-project.electron.spec.ts` | project switcher | Register `workspace.switchProject` command + overlay |
 | `terminal.electron.spec.ts` | xterm row height | Wait for PTY output before measuring `.xterm-row` |
 | `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
-| `titlebar.electron.spec.ts` | View → Show Explorer | Radix menubar submenu open + click timing |
 
 ### Programmatic control (`window.__yaadeAgent`)
 
@@ -558,7 +551,7 @@ Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific
 
 **Platform**
 
-- [x] Electron DMG + self-extracting server (`pnpm build`)
+- [x] Self-extracting server binary (`pnpm build`)
 - [x] LSP crash recovery (`lsp.onCrashed` + auto-retry on editor focus)
 - [x] Additional language servers (rust-analyzer descriptor registry)
 
@@ -645,8 +638,8 @@ Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases 
 - Shipping UI/UX changes without **`pnpm test:e2e`** validation
 - Putting editor document text in React `useState`
 - Calling Node/Tauri APIs from lower packages (use `window.yaade` / `@yaade/host-client`)
-- **Shell:** Web SPA + TS `host-server`. Optional Electron shell loads the same SPA URL. No Rust/Tauri. Renderer via `createWebTransport()`. Dev: `pnpm dev` / `pnpm electron:dev`. Tests: `pnpm test:e2e`.
-- Adding Rust / Cargo / Tauri back into the repo
+- **Shell:** Web SPA + TS `host-server`. No Rust/Tauri/Electron. Renderer via `createWebTransport()`. Dev: `pnpm dev`. Tests: `pnpm test:e2e`.
+- Adding Rust / Cargo / Tauri / Electron back into the repo
 - Large shadcn default styling — keep RAD/custom theme direction
 
 ## Open Backlog (updated 2026-07-05)

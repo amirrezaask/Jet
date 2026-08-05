@@ -6,7 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts src/session-roster-writer.test.ts src/server-sessions.test.ts src/probe-terminal-sessions.test.ts src/agent-cli-launch.test.ts src/background-agent-cli-resume.test.ts src/editor/code-editor-service.test.ts src/hooks/notification-provider-launch.test.ts src/tabs/terminal-session.test.ts src/effect/atoms.test.ts src/effect/session-machine.test.ts src/session-layout.test.ts"
+    "test": "tsx --test src/resolve-tab-workspace.test.ts src/drop-files.test.ts src/session-roster-store.test.ts src/session-roster-writer.test.ts src/server-sessions.test.ts src/probe-terminal-sessions.test.ts src/agent-cli-launch.test.ts src/background-agent-cli-resume.test.ts src/editor/code-editor-service.test.ts src/hooks/notification-provider-launch.test.ts src/tabs/terminal-session.test.ts src/effect/atoms.test.ts src/effect/session-machine.test.ts src/session-layout.test.ts src/url-workspace.test.ts"
   },
   "dependencies": {
     "@effect-atom/atom": "0.5.3",

@@ -97,7 +97,6 @@ async function dispatchImpl(
   args: unknown[],
   clientId: string,
 ): Promise<unknown> {
-  if (channel === "ui:syncNativeChrome") return null
   if (channel === "fs:showOpenFolderDialog" || channel === "fs:showSaveFileDialog") return null
   if (channel === "yaade:getLaunchConfig") return runtime.config.launchConfig
   if (channel === "yaade:getHomeDir") return runtime.homeDir

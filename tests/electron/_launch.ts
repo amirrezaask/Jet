@@ -9,6 +9,8 @@ export type LaunchJetOptions = {
   env?: Record<string, string>
   userDataDir?: string
   launchWithoutWorkspace?: boolean
+  startPath?: string
+  homeDir?: string
 }
 
 export const REPO_ROOT = resolve(__dirname, "..", "..")

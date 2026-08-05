@@ -77,12 +77,11 @@ TypeScript only — **no Rust, no Tauri**.
 | Vite SPA (`@yaade/app` + `@yaade/ui`) | Mission Control UI, session modals, themes |
 | `@yaade/host-server` | Effect host — FS, PTY, git, search, LSP, notifications |
 | `@yaade/node-host` | Node implementations (PTY, FS, git, …) |
-| Optional Electron shell | Thin `BrowserWindow` that loads the same SPA |
 
 Renderer talks to the host over HTTP RPC (`/api/v1/rpc`) + WebSocket (`/ws`).
 
 ```
-Browser / Electron
+Browser
         │  HTTP + WS
         ▼
   host-server (:4747)
@@ -102,29 +101,24 @@ pnpm dev          # host-server + Vite
 
 Open the Vite URL (proxies `/api` and `/ws` to the host).
 
-### Desktop (optional)
+**Browser-first projects:** each browser tab is one project. Pathnames are home-relative — `http://localhost:5174/dev/consultation` opens `~/dev/consultation` as the initial terminal cwd (you can still `cd` freely). Layout and panes persist on the host keyed by machine hostname + absolute path. There is no in-app window tab strip — use browser tabs to juggle projects.
 
-```bash
-pnpm electron:dev   # same backends, Electron window
-pnpm build && pnpm electron
-```
+Some OS/browser-reserved shortcuts (`Mod-t`, `Mod-n`, `Mod-w`, `Mod-k`, `Mod-,`) may not reach the page in a normal Chrome tab.
 
 ### Production build
 
 ```bash
-pnpm build              # SPA + self-extracting server + macOS DMG
-pnpm build:server       # server binary only (skip DMG)
-pnpm build:dmg          # DMG only (requires existing dist/runtime)
+pnpm build              # SPA + self-extracting server binary
+pnpm build:server       # same (compatibility alias)
 
-./dist/yaade              # SPA + host on http://127.0.0.1:4747
-./dist/yaade /path/repo   # open a workspace
-./dist/yaade --open       # also open the browser
+./dist/yaade              # serve SPA + API on http://127.0.0.1:4747
+./dist/yaade /path/repo   # open workspace at path
+./dist/yaade --open       # also open the default browser
 ```
 
 Artifacts:
 - `dist/yaade` — single-file self-extracting server (scp + run)
-- `dist/runtime/` — unpacked runtime (used by Electron)
-- `dist/YAADE-*.dmg` — macOS desktop installer (darwin only)
+- `dist/runtime/` — unpacked runtime (SEF source)
 
 Host stays loopback-only; on a remote machine use SSH `-L 4747:127.0.0.1:4747`.
 
@@ -152,8 +146,7 @@ YAADE_HEADED=1 pnpm test:e2e
 ```
 apps/
   yaade/            Vite frontend shell
-  yaade-electron/   Thin Electron main
-  host-server/          Effect host (HTTP/WS + PTY)
+  host-server/      Effect host (HTTP/WS + PTY)
 packages/
   yaade-app/        React app wiring
   yaade-ui/         Home, modals, overlays, themes
@@ -165,7 +158,7 @@ packages/
   yaade-monaco/     Monaco editor host (session modal)
   yaade-agents/     Agent CLI id helpers
 tests/
-  electron/             Shared Playwright UI specs
+  electron/             Shared Playwright UI specs (web E2E)
 ```
 
 ---

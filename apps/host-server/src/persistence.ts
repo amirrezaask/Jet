@@ -4,11 +4,14 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import {
   EMPTY_SESSION_ROSTER,
+  emptyWorkspaceSession,
   tryDecodeSessionRoster,
+  tryDecodeWorkspaceSession,
   type SessionRoster,
   type SessionRosterEntry,
   type SessionRosterMode,
   type TerminalSessionStatus,
+  type WorkspaceSession,
 } from "@yaade/rpc"
 import { fileUriToPath, pathToFileUri } from "@yaade/shared"
 
@@ -96,6 +99,19 @@ export class ProjectDatabase {
         WHERE status IN ('starting','running','waiting');
     `)
     this.ensureSessionRosterSchema()
+    this.ensureWorkspaceSessionSchema()
+  }
+
+  private ensureWorkspaceSessionSchema(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS workspace_sessions(
+        machine TEXT NOT NULL,
+        root_path TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (machine, root_path)
+      );
+    `)
   }
 
   private ensureSessionRosterSchema(): void {
@@ -397,6 +413,79 @@ export class ProjectDatabase {
     }
 
     return this.getSessionRoster()
+  }
+
+  private canonicalizeRootPath(rootPath: string): string {
+    try {
+      return fs.realpathSync(path.resolve(rootPath))
+    } catch {
+      return path.resolve(rootPath)
+    }
+  }
+
+  getWorkspaceSession(machine: string, rootPath: string): WorkspaceSession {
+    const root = this.canonicalizeRootPath(rootPath)
+    const row = this.db
+      .prepare(
+        "SELECT payload_json FROM workspace_sessions WHERE machine=? AND root_path=?",
+      )
+      .get(machine, root) as { payload_json: string } | undefined
+    if (!row?.payload_json) {
+      return emptyWorkspaceSession(machine, root)
+    }
+    try {
+      const decoded = tryDecodeWorkspaceSession(JSON.parse(row.payload_json))
+      if (decoded) {
+        return {
+          ...decoded,
+          machine,
+          rootPath: root,
+        }
+      }
+    } catch {
+      /* corrupt row */
+    }
+    return emptyWorkspaceSession(machine, root)
+  }
+
+  replaceWorkspaceSession(session: WorkspaceSession): WorkspaceSession {
+    const normalized = tryDecodeWorkspaceSession(session)
+    if (!normalized) throw new Error("invalid workspace session")
+    const root = this.canonicalizeRootPath(normalized.rootPath)
+    const machine = normalized.machine.trim()
+    if (!machine) throw new Error("invalid workspace session machine")
+
+    // Never persist live PTY ids — host restart invalidates them.
+    const sessions = normalized.sessions.map(leaf => {
+      const { ptyId: _ptyId, ...rest } = leaf
+      return {
+        ...rest,
+        cwdRootUri: this.canonicalizeCwdUri(leaf.cwdRootUri),
+        ...(leaf.liveCwdUri
+          ? { liveCwdUri: this.canonicalizeCwdUri(leaf.liveCwdUri) }
+          : {}),
+      }
+    })
+
+    const payload: WorkspaceSession = {
+      version: 1,
+      machine,
+      rootPath: root,
+      layout: normalized.layout,
+      sessions,
+      ...(normalized.gitRoots ? { gitRoots: normalized.gitRoots } : {}),
+    }
+    const now = new Date().toISOString()
+    this.db
+      .prepare(
+        `INSERT INTO workspace_sessions(machine, root_path, payload_json, updated_at)
+         VALUES(?,?,?,?)
+         ON CONFLICT(machine, root_path) DO UPDATE SET
+           payload_json=excluded.payload_json,
+           updated_at=excluded.updated_at`,
+      )
+      .run(machine, root, JSON.stringify(payload), now)
+    return payload
   }
 
   close(): void {

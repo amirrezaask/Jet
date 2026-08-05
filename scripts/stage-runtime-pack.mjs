@@ -8,7 +8,7 @@
  *   backend/               esbuild bundles + native deps (node-pty, fff)
  *   node/                  official Node binary (ABI-matched for natives)
  *
- * Override output: YAADE_PACK_DIR or first CLI arg (e.g. apps/yaade-electron/pack).
+ * Override output: YAADE_PACK_DIR or first CLI arg.
  */
 import { spawnSync } from "node:child_process"
 import { createRequire } from "node:module"
