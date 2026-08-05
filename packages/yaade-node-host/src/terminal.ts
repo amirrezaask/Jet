@@ -10,6 +10,8 @@ import {
 } from "./terminal-osc7.js"
 
 const MAX_TERMINAL_REPLAY = 2 * 1024 * 1024
+/** Shrink ring after exit so disposed-but-reattachable PTYs do not keep 2 MB. */
+const EXITED_TERMINAL_REPLAY = 256 * 1024
 const MAX_WRITE_BYTES = 1024 * 1024
 /** Hard cap concurrent PTY entries (running + exited-but-not-disposed). */
 const MAX_TERMINAL_ENTRIES = 64
@@ -57,6 +59,15 @@ export type TerminalCreateResult = {
 export type TerminalAttachSnapshot = {
   id: string
   title: string | null
+  /**
+   * Ring segments for attach replay. Prefer enqueueing these one-by-one so
+   * neither host nor client materializes a single 2 MB contiguous string.
+   */
+  outputChunks: string[]
+  /**
+   * Joined form kept for older callers. Prefer {@link outputChunks}; may be
+   * empty when chunks are provided to avoid a peak allocation.
+   */
   output: string
   lastSequence: number
   status: "running" | "exited"
@@ -188,9 +199,9 @@ function shellFallbacks(): string[] {
   return ["/bin/zsh", "/bin/bash", "/bin/sh"]
 }
 
-function trimReplay(entry: TerminalEntry): void {
+function trimReplay(entry: TerminalEntry, maxBytes = MAX_TERMINAL_REPLAY): void {
   while (
-    entry.outputBytes > MAX_TERMINAL_REPLAY &&
+    entry.outputBytes > maxBytes &&
     entry.output.length - entry.outputHead > 1
   ) {
     const dropped = entry.output[entry.outputHead]!
@@ -199,11 +210,11 @@ function trimReplay(entry: TerminalEntry): void {
     entry.outputBytes -= Buffer.byteLength(dropped, "utf8")
   }
   if (
-    entry.outputBytes > MAX_TERMINAL_REPLAY &&
+    entry.outputBytes > maxBytes &&
     entry.output.length - entry.outputHead === 1
   ) {
     const bytes = Buffer.from(entry.output[entry.outputHead]!, "utf8")
-    let start = bytes.length - MAX_TERMINAL_REPLAY
+    let start = bytes.length - maxBytes
     while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start += 1
     entry.output[entry.outputHead] = bytes.subarray(start).toString("utf8")
     entry.outputBytes = Buffer.byteLength(entry.output[entry.outputHead], "utf8")
@@ -391,6 +402,7 @@ export class TerminalHost {
       entry.exitCode = exitCode
       entry.signal = signal ?? null
       entry.proc = null
+      trimReplay(entry, EXITED_TERMINAL_REPLAY)
       const args: unknown[] = [id, exitCode]
       if (entry.signal) args.push(entry.signal)
       this.emit("terminal:exit", args)
@@ -531,7 +543,9 @@ export class TerminalHost {
     return {
       id: entry.id,
       title: entry.title,
-      output: entry.output.slice(entry.outputHead).join(""),
+      // Slice the ring segments — do not join into one 2 MB string here.
+      outputChunks: entry.output.slice(entry.outputHead),
+      output: "",
       lastSequence: entry.sequence,
       status: entry.status,
       exitCode: entry.exitCode,

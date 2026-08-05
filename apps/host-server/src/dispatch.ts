@@ -441,7 +441,7 @@ async function handleSearch(
   const rootUri = str(args[0], "rootUri")
   switch (channel) {
     case "search:listFiles": {
-      // Return via RPC only — do not push up to 50k paths into EventHub/WS replay.
+  // Return via RPC only — do not push tens of thousands of paths into EventHub/WS replay.
       return listProjectFiles(rootUri)
     }
     case "search:project":

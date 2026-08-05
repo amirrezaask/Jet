@@ -43,12 +43,12 @@ export function monacoLanguageId(languageId: string): string {
   return LANGUAGE_ALIASES[normalized] ?? normalized
 }
 
-/** Skip expensive editor features for very large buffers. */
+/** Skip expensive editor features for large buffers (earlier threshold to cut RAM). */
 export function isLargeFile(content: string): boolean {
-  if (content.length > 4 * 1024 * 1024) return true
+  if (content.length > 1 * 1024 * 1024) return true
   let lines = 0
   for (let i = 0; i < content.length; i++) {
-    if (content.charCodeAt(i) === 10 && ++lines > 200_000) return true
+    if (content.charCodeAt(i) === 10 && ++lines > 20_000) return true
   }
   return false
 }

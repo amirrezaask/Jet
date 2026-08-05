@@ -216,11 +216,13 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   useEffect(() => {
     if (!rootUri || !api || !fsApi || !selected) {
       setDiffContents(null)
+      setHunks(null)
       return
     }
     const entry = entries.find(item => item.path === selected.path)
     const request = ++diffRequest.current
     setDiffLoading(true)
+    setDiffContents(null)
     void loadGitDiffContents(rootUri, selected, entry, api, fsApi)
       .then(contents => {
         if (request === diffRequest.current) setDiffContents(contents)
@@ -868,7 +870,7 @@ function GitViewTab(props: { active: boolean; label: string; onSelect: () => voi
       data-yaade-session-tab-pill=""
       data-active={props.active ? "" : undefined}
       className={cn(
-        "h-7 rounded-[0.65rem] border px-2.5 text-2xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+        "h-5 rounded-sm border px-1.5 text-3xs font-medium leading-none outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring/50",
         props.active
           ? "border-border/80 bg-card/75 text-foreground shadow-sm"
           : "border-transparent bg-muted/30 text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
@@ -1364,9 +1366,15 @@ async function loadGitDiffContents(
   const fullPath = `${rootPath}/${selected.path.replace(/^[/\\]+/, "")}`
   const fileUri = pathToFileUri(fullPath)
 
+  const truncate = (text: string): string => {
+    const max = 1 * 1024 * 1024
+    if (text.length <= max) return text
+    return `${text.slice(0, max)}\n\n… truncated for UI (${text.length} chars total)`
+  }
+
   if (entry?.status === "untracked") {
     try {
-      return { original: "", modified: await fsApi.readFile(fileUri) }
+      return { original: "", modified: truncate(await fsApi.readFile(fileUri)) }
     } catch {
       return { original: "", modified: "" }
     }
@@ -1376,7 +1384,7 @@ async function loadGitDiffContents(
     const original = selected.staged
       ? await api.show(rootUri, selected.path, "HEAD")
       : await api.show(rootUri, selected.path, "INDEX")
-    return { original, modified: "" }
+    return { original: truncate(original), modified: "" }
   }
 
   if (selected.staged) {
@@ -1384,7 +1392,7 @@ async function loadGitDiffContents(
       api.show(rootUri, selected.path, "HEAD"),
       api.show(rootUri, selected.path, "INDEX"),
     ])
-    return { original, modified }
+    return { original: truncate(original), modified: truncate(modified) }
   }
 
   const [original, modified] = await Promise.all([
@@ -1393,7 +1401,7 @@ async function loadGitDiffContents(
     ),
     fsApi.readFile(fileUri).catch(() => ""),
   ])
-  return { original, modified }
+  return { original: truncate(original), modified: truncate(modified) }
 }
 
 function HistoryList(props: {

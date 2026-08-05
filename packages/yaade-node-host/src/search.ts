@@ -21,9 +21,11 @@ const IGNORE_GLOBS = [
 ]
 
 /** Cap ripgrep stdout so V8 never builds a multi-hundred-MB string (RangeError). */
-const MAX_RG_STDOUT_BYTES = 32 * 1024 * 1024
+const MAX_RG_STDOUT_BYTES = 8 * 1024 * 1024
 const MAX_RG_STDERR_BYTES = 64 * 1024
 const MAX_RG_MATCH_RESULTS = 200
+/** Default cap for project file lists returned to the UI / fuzzy open. */
+export const DEFAULT_LIST_PROJECT_FILES = 20_000
 
 function appendBounded(current: string, chunk: Buffer, maxBytes: number): string | null {
   if (current.length >= maxBytes) return null
@@ -108,7 +110,10 @@ function pushIgnoreGlobs(args: string[]): void {
   for (const glob of IGNORE_GLOBS) args.push("--glob", glob)
 }
 
-async function rgListProjectFiles(rootUri: string, maxFiles = 50_000): Promise<string[]> {
+async function rgListProjectFiles(
+  rootUri: string,
+  maxFiles = DEFAULT_LIST_PROJECT_FILES,
+): Promise<string[]> {
   const cwd = uriToPath(rootUri)
   const args = ["--files"]
   pushIgnoreGlobs(args)
@@ -169,7 +174,10 @@ function fuzzyMatchFilesFallback(query: string, files: string[], limit = 100): s
   return scored.slice(0, limit).map(s => s.path)
 }
 
-export async function listProjectFiles(rootUri: string, maxFiles = 50_000): Promise<string[]> {
+export async function listProjectFiles(
+  rootUri: string,
+  maxFiles = DEFAULT_LIST_PROJECT_FILES,
+): Promise<string[]> {
   if (!(await isGitWorkspace(rootUri))) return []
 
   try {
@@ -188,14 +196,16 @@ export async function fileSearch(
 ): Promise<string[]> {
   if (!(await isGitWorkspace(rootUri))) return []
 
+  const pageSize = opts?.pageSize ?? 100
   try {
     const fffResults = await fffFileSearch(rootUri, query, opts)
     if (fffResults) return fffResults
   } catch {
     /* fall through */
   }
-  const files = await rgListProjectFiles(rootUri)
-  return fuzzyMatchFilesFallback(query, files, opts?.pageSize ?? 100)
+  // Cap the fallback scan — do not pull 50k paths into memory for a top-N fuzzy.
+  const files = await rgListProjectFiles(rootUri, DEFAULT_LIST_PROJECT_FILES)
+  return fuzzyMatchFilesFallback(query, files, pageSize)
 }
 
 export async function projectSearch(

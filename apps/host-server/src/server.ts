@@ -32,7 +32,8 @@ import { pathToFileUri } from "@yaade/shared"
 
 const VERSION = "0.0.1"
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
-const MAX_WEBSOCKET_BUFFERED_BYTES = 8 * 1024 * 1024
+/** Slow clients get closed 1013. Lowered now that terminal:data is live-only. */
+const MAX_WEBSOCKET_BUFFERED_BYTES = 2 * 1024 * 1024
 /** Bound concurrent /api/v1/rpc handlers to avoid stampede spikes. */
 const MAX_INFLIGHT_RPC = 32
 

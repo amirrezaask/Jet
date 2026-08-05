@@ -207,7 +207,7 @@ export function ProjectPathSwitcher({
 
   return (
     <nav
-      className="flex min-w-0 shrink items-center gap-0.5 text-sm"
+      className="flex min-w-0 shrink items-center gap-0 text-xs"
       aria-label="Project path"
       data-yaade-project-breadcrumb=""
     >

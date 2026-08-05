@@ -1,4 +1,5 @@
 import {
+  memo,
   useLayoutEffect,
   useState,
   type ReactNode,
@@ -25,9 +26,10 @@ function slotSelector(ptyTabId: string): string {
  * Keep terminal hosts mounted across PanelDock remounts (split/retile/DnD).
  * Slots are empty placeholders in the dock; this layer paints terminals over them.
  *
- * Geometry is measured relative to `containerRef`. MutationObserver watches
- * `dockRef` only (panel tree), never the xterm hosts, so terminal DOM churn
- * cannot thrash layout.
+ * Geometry is measured relative to `containerRef`. Primary signal is ResizeObserver
+ * on the container, dock, and each slot. A childList-only MutationObserver on the
+ * dock catches PanelDock remounts that do not resize the outer box. Never observe
+ * the xterm hosts — terminal DOM churn must not thrash layout.
  */
 export function useMuxTerminalSlotBoxes(
   containerRef: RefObject<HTMLElement | null>,
@@ -97,16 +99,19 @@ export function useMuxTerminalSlotBoxes(
     syncNow()
     const ro = new ResizeObserver(() => sync())
     ro.observe(container)
+    const dock = dockRef.current
+    if (dock) ro.observe(dock)
     for (const id of ptyTabIds) {
       const slot = container.querySelector<HTMLElement>(slotSelector(id))
       if (slot) ro.observe(slot)
     }
-    // Observe dock subtree only — not the terminal layer — so xterm mutations
-    // never force layout. layoutEpoch already covers structural tree edits.
-    const dock = dockRef.current
+
+    // childList only — attribute/characterData churn from panel chrome is ignored.
     let mo: MutationObserver | null = null
     if (dock) {
-      mo = new MutationObserver(() => sync())
+      mo = new MutationObserver(mutations => {
+        if (mutations.some(m => m.type === "childList")) sync()
+      })
       mo.observe(dock, { childList: true, subtree: true })
     }
     window.addEventListener("resize", sync)
@@ -121,7 +126,7 @@ export function useMuxTerminalSlotBoxes(
   return boxes
 }
 
-export function MuxTerminalLayer(props: {
+export const MuxTerminalLayer = memo(function MuxTerminalLayer(props: {
   ptyTabIds: string[]
   boxes: Map<string, MuxTerminalSlotBox>
   focusedPtyTabId: string | null
@@ -169,4 +174,4 @@ export function MuxTerminalLayer(props: {
       })}
     </div>
   )
-}
+})

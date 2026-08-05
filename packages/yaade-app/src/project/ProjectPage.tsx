@@ -161,15 +161,19 @@ export function ProjectPage({
           }}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+          <header className="flex h-7 shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-2.5">
             <ProjectPathSwitcher
               projectPath={projectPath}
               homeDir={homeDir}
               onNavigate={onNavigateProject}
             />
-            <div className="flex h-8 shrink-0 items-center gap-0.5">
-              <TabsList variant="line" className="h-8">
-                <TabsTrigger value="overview" data-yaade-project-tab="overview">
+            <div className="flex h-6 shrink-0 items-center gap-0">
+              <TabsList variant="line" className="h-6 gap-0 p-0">
+                <TabsTrigger
+                  value="overview"
+                  data-yaade-project-tab="overview"
+                  className="px-1.5 text-xs"
+                >
                   Overview
                 </TabsTrigger>
               </TabsList>
@@ -190,20 +194,24 @@ export function ProjectPage({
                 onSelectCheckout={handleSelectCheckout}
                 onCreateWorktree={handleCreateWorktree}
               />
-              <TabsList variant="line" className="h-8">
-                <TabsTrigger value="history" data-yaade-project-tab="history">
+              <TabsList variant="line" className="h-6 gap-0 p-0">
+                <TabsTrigger
+                  value="history"
+                  data-yaade-project-tab="history"
+                  className="px-1.5 text-xs"
+                >
                   History
                 </TabsTrigger>
               </TabsList>
             </div>
-            <div className="ml-auto flex shrink-0 items-center gap-1">
+            <div className="ml-auto flex shrink-0 items-center gap-0.5">
               <Button
                 variant="ghost"
-                size="icon"
+                size="icon-xs"
                 aria-label="Settings"
                 onClick={() => setSettingsOpen(true)}
               >
-                <SettingsIcon className="size-4" />
+                <SettingsIcon className="size-3.5" />
               </Button>
             </div>
           </header>
@@ -220,7 +228,6 @@ export function ProjectPage({
             >
               <ProjectOverview
                 projectPath={projectPath}
-                homeDir={homeDir}
                 theme={activeTheme}
                 fontSize={fontSize}
               />

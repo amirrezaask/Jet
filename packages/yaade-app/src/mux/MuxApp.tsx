@@ -478,10 +478,11 @@ export function MuxApp({
   const machineHostnameRef = useRef<string>(machineHostname)
   const persistWriterRef = useRef(new ProjectSessionPersistWriter())
   const serverHydratedRef = useRef(false)
+  /** Skip network persist when only focusedPaneId changed (tree unchanged). */
+  const lastPersistStructureRef = useRef<string>("")
   /** Foreground process basename per terminal tab (Deck icons / titles). */
-  const [processByTab, setProcessByTab] = useState<Record<string, string>>({})
-  const processByTabRef = useRef(processByTab)
-  processByTabRef.current = processByTab
+  const processByTabRef = useRef<Record<string, string>>({})
+  const focusedPtyTabIdRef = useRef<string | null>(null)
 
   const windowsRef = useRef(windows)
   windowsRef.current = windows
@@ -505,7 +506,7 @@ export function MuxApp({
   const slotBoxesRef = useRef(new Map<string, import("./MuxTerminalLayer.js").MuxTerminalSlotBox>())
   /** LRU of recently focused terminal tab ids (beyond the active window). */
   const terminalLruRef = useRef<string[]>([])
-  const MAX_MOUNTED_TERMINALS = 8
+  const MAX_MOUNTED_TERMINALS = 6
 
   const activeWindow =
     windows.find(w => w.id === activeWindowId) ?? windows[0] ?? null
@@ -566,6 +567,16 @@ export function MuxApp({
     const snapshot = buildServerPayload()
     const id = sessionIdRef.current
     if (!snapshot || !id) return
+    // Focus-only updates must not enqueue — tree/sessions unchanged.
+    const structureKey = JSON.stringify({
+      tree: snapshot.layout.tree,
+      zoomedPaneId: snapshot.layout.zoomedPaneId,
+      sessions: snapshot.sessions,
+      gitRoots: snapshot.gitRoots ?? null,
+      editorFiles: snapshot.editorFiles ?? null,
+    })
+    if (structureKey === lastPersistStructureRef.current) return
+    lastPersistStructureRef.current = structureKey
     persistWriterRef.current.enqueue(id, snapshot)
   }, [buildServerPayload])
 
@@ -636,9 +647,10 @@ export function MuxApp({
     try {
       const name = await window.yaade.terminal.getForegroundProcess(ptyId)
       if (!name) return
-      setProcessByTab(prev =>
-        prev[ptyTabId] === name ? prev : { ...prev, [ptyTabId]: name },
-      )
+      if (processByTabRef.current[ptyTabId] === name) return
+      processByTabRef.current = { ...processByTabRef.current, [ptyTabId]: name }
+      // Only re-render mux chrome when the focused pane's process name changes.
+      if (focusedPtyTabIdRef.current === ptyTabId) bumpSessions()
     } catch {
       /* ignore */
     }
@@ -1546,8 +1558,6 @@ export function MuxApp({
   focusNeighborRef.current = focusNeighbor
   const ensureProjectWindowRef = useRef(ensureProjectWindow)
   ensureProjectWindowRef.current = ensureProjectWindow
-  /** Assigned once `focusedPtyTabId` is derived, below. */
-  const focusedPtyTabIdRef = useRef<string | null>(null)
 
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [commandRevision, setCommandRevision] = useState(0)
@@ -2120,12 +2130,20 @@ export function MuxApp({
     return out
   }, [activePtyIds, allPtyIds, focusedPtyTabId])
 
-  // Poll foreground process for mounted terminals (Deck icons / titles).
+  // Poll foreground process for focused terminal + mounted agent panes.
   useEffect(() => {
     let cancelled = false
+    const pollIds = (): string[] => {
+      const ids = new Set<string>()
+      if (focusedPtyTabId) ids.add(focusedPtyTabId)
+      for (const id of mountedPtyIds) {
+        if (terminalSessionForTab(id)?.agentId) ids.add(id)
+      }
+      return [...ids]
+    }
     const tick = () => {
       if (cancelled) return
-      for (const id of mountedPtyIds) {
+      for (const id of pollIds()) {
         void refreshForegroundProcess(id)
       }
     }
@@ -2135,7 +2153,7 @@ export function MuxApp({
       cancelled = true
       window.clearInterval(handle)
     }
-  }, [mountedPtyIds, refreshForegroundProcess])
+  }, [mountedPtyIds, focusedPtyTabId, refreshForegroundProcess])
 
   const overlayBlocksTerminalFocus =
     paletteOpen ||
@@ -2568,7 +2586,7 @@ export function MuxApp({
                   aria-label="Loading workspace"
                 >
                   <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/20">
-                    <div className="flex h-6 shrink-0 items-center gap-1.5 border-b border-border/35 bg-background/40 px-1.5">
+                    <div className="flex h-5 shrink-0 items-center gap-1.5 border-b border-border/35 bg-background/40 px-1">
                       <div className="size-3 shrink-0 animate-pulse rounded-[0.2rem] bg-muted/50" />
                       <div className="h-2.5 w-24 animate-pulse rounded bg-muted/40" />
                     </div>

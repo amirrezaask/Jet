@@ -43,12 +43,12 @@ describe("isLargeFile", () => {
     assert.equal(isLargeFile("hello\nworld"), false)
   })
 
-  it("returns true when content exceeds 4MB", () => {
-    assert.equal(isLargeFile("x".repeat(4 * 1024 * 1024 + 1)), true)
+  it("returns true when content exceeds 1MB", () => {
+    assert.equal(isLargeFile("x".repeat(1 * 1024 * 1024 + 1)), true)
   })
 
-  it("returns true when line count exceeds 200k", () => {
-    const lines = Array.from({ length: 200_002 }, () => "a").join("\n")
+  it("returns true when line count exceeds 20k", () => {
+    const lines = Array.from({ length: 20_002 }, () => "a").join("\n")
     assert.equal(isLargeFile(lines), true)
   })
 })

@@ -53,6 +53,7 @@ export {
   isFffScanReady,
   isGitWorkspace,
   isSearchScanReady,
+  DEFAULT_LIST_PROJECT_FILES,
 } from "./search.js"
 export { probeFffAvailable, isFffAvailable, disposeFffIndex } from "./fff-service.js"
 export { assertAllowedPath, assertAllowedUri, normalizeRoots } from "./sandbox.js"

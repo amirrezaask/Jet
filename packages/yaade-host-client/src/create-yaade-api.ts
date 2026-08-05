@@ -226,6 +226,7 @@ export function createYaadeApi(
         const result = await transport.invoke<{
           id: string
           title?: string
+          outputChunks?: string[]
           output: string
           lastSequence: number
           status: "running" | "exited"

@@ -11,11 +11,18 @@ test("bench server event replay ingestion", async () => {
     rounds: 7,
     measure: async () => {
       const events = new EventHub(1_024, 16 * 1024 * 1024)
-      const payload = "x".repeat(1_024)
+      // terminal:data is live-only; measure retained-channel ingest + prove a
+      // terminal flood does not evict notification history.
+      const payload = "x".repeat(64)
       const startedAt = performance.now()
-      for (let index = 0; index < 200_000; index += 1) {
-        events.emit("terminal:data", ["pty", payload, index])
+      for (let index = 0; index < 50_000; index += 1) {
+        events.emit("fs:changed", [`file://p-${index}-${payload}`])
+        if (index % 10 === 0) {
+          events.emit("terminal:data", ["pty", payload.repeat(16), index])
+        }
       }
+      events.emit("notifications:event", [{ type: "marker" }])
+      void events.replayAfter(0)
       return performance.now() - startedAt
     },
   })

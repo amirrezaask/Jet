@@ -204,7 +204,7 @@ terminal DOM churn cannot thrash layout.
 
 - Layout model is `YaadePanelTree` (`@yaade/workspace`) over
   `PanelTree` (`@yaade/panels`) — the same model the legacy shell used.
-- `MAX_MOUNTED_TERMINALS = 8`, LRU over focused panes. Panes beyond that stay
+- `MAX_MOUNTED_TERMINALS = 6`, LRU over focused panes. Panes beyond that stay
   registered as sessions but their xterm is unmounted; unmeasured panes render
   at 0×0.
 - Pane kinds are `terminal`, `git`, and `editor`. Zoom is a toggle (`mux.zoomPane`).
@@ -342,8 +342,8 @@ Deliberately engineered; do not "simplify" it:
 | Process exit | `terminal:exit`, auto-disposed after 90 s |
 | Host shutdown | All killed |
 
-Caps: 64 PTY entries, 8 MB WS buffered bytes (slow clients get closed 1013),
-`EventHub` history 1024 events / 16 MB.
+Caps: 64 PTY entries, 2 MB WS buffered bytes (slow clients get closed 1013),
+`EventHub` history 1024 events / 16 MB (`terminal:data` is live-only — not retained).
 
 ### Security posture (remote is NOT ready)
 
@@ -488,10 +488,8 @@ Ordered by severity. Items reflect an August 2026 review after the session pivot
 
 ### P1 — correctness
 
-- [ ] `terminal:data` is stored in the global `EventHub` history *and* in each
-      PTY's 2 MB ring. A busy terminal evicts every other channel's history
-      within seconds, so reconnects lose git/LSP/notification events. Exclude
-      terminal data from hub history.
+- [x] `terminal:data` excluded from `EventHub` history (live fan-out only;
+      reconnect uses per-PTY `attach()` replay).
 - [ ] WS terminal commands are fire-and-forget (`void runHostRpc` in
       `server.ts`) — a failed write or resize is invisible to the client.
 - [ ] No timeout on HTTP RPC invokes; a wedged host leaves promises pending.

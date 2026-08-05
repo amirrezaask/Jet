@@ -311,6 +311,30 @@ function focusTerminalInput(tabId: string): void {
   textarea?.focus()
 }
 
+function applyAttachReplay(
+  attached: {
+    output?: string
+    outputChunks?: string[]
+  },
+  tabId: string,
+  onOutput: ((tabId: string, data?: string) => void) | undefined,
+  outputWriter: ReturnType<typeof createTerminalOutputWriter>,
+): void {
+  const chunks =
+    attached.outputChunks && attached.outputChunks.length > 0
+      ? attached.outputChunks
+      : attached.output
+        ? [attached.output]
+        : []
+  if (chunks.length === 0) return
+  // Mark meaningful output once without joining the full replay.
+  onOutput?.(tabId, chunks.find(c => c.length > 0))
+  for (const chunk of chunks) {
+    if (chunk) outputWriter.enqueue(chunk)
+  }
+  outputWriter.flush()
+}
+
 export function TerminalPanel({
   cwdRootUri,
   launchCommand,
@@ -341,6 +365,9 @@ export function TerminalPanel({
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sessionRef = useRef<TerminalSession | null>(null)
+  const gpuRendererRef = useRef<ReturnType<typeof attachTerminalGpuRenderer> | null>(
+    null,
+  )
   const [displayStatus, setDisplayStatus] = useState(status)
   const [displayExitCode, setDisplayExitCode] = useState(exitCode)
   const [connectedPtyId, setConnectedPtyId] = useState<string | null>(existingPtyId ?? null)
@@ -393,7 +420,7 @@ export function TerminalPanel({
       // TUIs (Cursor Agent) park the hardware caret off-prompt; never draw an
       // inactive outline/bar while the pane is blurred.
       cursorInactiveStyle: "none",
-      scrollback: 5000,
+      scrollback: 5_000,
       // Never convert LF→CRLF; progress bars and TUI apps rely on raw \\r.
       convertEol: false,
       // OSC 8 hyperlinks — Cmd/Ctrl-click opens (same as scanned http(s) URLs).
@@ -403,7 +430,10 @@ export function TerminalPanel({
     term.loadAddon(fit)
     term.open(container)
     // WebGL (Canvas fallback) — DomRenderer cannot keep up with agent TUI floods.
+    // Downgrade to Canvas when the pane is off-screen / unfocused to free GPU memory.
     const gpuRenderer = attachTerminalGpuRenderer(term)
+    gpuRenderer.setHighPerformance(visibleRef.current)
+    gpuRendererRef.current = gpuRenderer
     registerTerminalInstance(tabId, term)
     const panelEl = container.closest<HTMLElement>("[data-yaade-terminal-panel]")
     if (panelEl) panelEl.dataset.yaadeTerminalRenderer = gpuRenderer.kind
@@ -636,20 +666,22 @@ export function TerminalPanel({
               createFreshPty()
               return
             }
-            if (attached.output) {
-              onOutputRef.current?.(tabId, attached.output)
-              outputWriter.enqueue(attached.output)
-              outputWriter.flush()
-            }
+            applyAttachReplay(
+              attached,
+              tabId,
+              onOutputRef.current,
+              outputWriter,
+            )
             setDisplayStatus("exited")
             setDisplayExitCode(attached.exitCode)
             return
           }
-          if (attached.output) {
-            onOutputRef.current?.(tabId, attached.output)
-            outputWriter.enqueue(attached.output)
-            outputWriter.flush()
-          }
+          applyAttachReplay(
+            attached,
+            tabId,
+            onOutputRef.current,
+            outputWriter,
+          )
           if (attached.title) onTitleChangeRef.current?.(tabId, attached.title)
           if (!readOnly) connectPty(existingPtyId)
           if (readOnly) {
@@ -752,6 +784,7 @@ export function TerminalPanel({
       pathLinks?.dispose()
       session.scrollMotion.dispose()
       gpuRenderer.dispose()
+      gpuRendererRef.current = null
       unregisterTerminalInstance(tabId, term)
       term.dispose()
       sessionRef.current = null
@@ -771,6 +804,15 @@ export function TerminalPanel({
     setDisplayStatus(status)
     setDisplayExitCode(exitCode)
   }, [status, exitCode, sessionGeneration])
+
+  // Off-screen / LRU-evicted panes: Canvas renderer + shorter scrollback to cut GPU/RAM.
+  // Keep WebGL while the slot is on-screen even if unfocused — swapping renderers on
+  // every focus change disrupts input and TUI state.
+  useEffect(() => {
+    gpuRendererRef.current?.setHighPerformance(visible)
+    const term = sessionRef.current?.term
+    if (term) term.options.scrollback = visible ? 5_000 : 1_000
+  }, [visible])
 
   useEffect(() => {
     const session = sessionRef.current

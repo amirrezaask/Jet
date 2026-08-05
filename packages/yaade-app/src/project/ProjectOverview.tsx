@@ -26,7 +26,6 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 export type ProjectOverviewProps = {
   projectPath: string
-  homeDir: string
   theme: YaadeTheme
   fontSize?: number
 }
@@ -72,7 +71,6 @@ async function loadRecentCommits(projectPath: string): Promise<GitCommit[] | nul
 
 export function ProjectOverview({
   projectPath,
-  homeDir,
   theme,
   fontSize = 13,
 }: ProjectOverviewProps) {
@@ -83,17 +81,6 @@ export function ProjectOverview({
   )
   const [dialogCommit, setDialogCommit] = useState<GitCommit | null>(null)
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
-  const projectName = useMemo(
-    () => projectPath.split("/").filter(Boolean).pop() ?? projectPath,
-    [projectPath],
-  )
-  const displayPath = useMemo(() => {
-    if (homeDir && projectPath.startsWith(homeDir)) {
-      const rest = projectPath.slice(homeDir.length)
-      return `~${rest || ""}`
-    }
-    return projectPath
-  }, [homeDir, projectPath])
 
   const readmeParts = useMemo(
     () => (typeof readme === "string" ? splitReadmeHead(readme) : null),
@@ -122,19 +109,7 @@ export function ProjectOverview({
       className="h-full min-h-0 overflow-auto p-4 md:p-6"
       data-yaade-project-overview=""
     >
-      <header className="mb-6">
-        <h1
-          className="text-xl font-semibold tracking-tight text-foreground"
-          data-yaade-project-name=""
-        >
-          {projectName}
-        </h1>
-        <p className="mt-1 font-mono text-xs text-muted-foreground">
-          {displayPath}
-        </p>
-      </header>
-
-      <div className="mx-auto flex max-w-3xl flex-col gap-8">
+      <div className="flex max-w-3xl flex-col gap-8">
         <section aria-labelledby="yaade-overview-commits-heading">
           <h2
             id="yaade-overview-commits-heading"

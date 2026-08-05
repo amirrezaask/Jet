@@ -160,21 +160,21 @@ export function WorktreeSwitcher({
             disabled={busy}
             className={cn(
               yaadePressClass,
-              "relative inline-flex h-[calc(100%-1px)] items-center justify-center gap-1 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground/60 outline-none",
+              "relative inline-flex h-[calc(100%-1px)] items-center justify-center gap-0.5 rounded-md border border-transparent px-1.5 py-0 text-xs font-medium whitespace-nowrap text-foreground/60 outline-none",
               "hover:text-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/60",
               "dark:text-muted-foreground dark:hover:text-foreground",
-              "after:absolute after:inset-x-0 after:bottom-[-5px] after:h-0.5 after:bg-foreground after:opacity-0 after:transition-opacity",
+              "after:absolute after:inset-x-0 after:bottom-0.5 after:h-0.5 after:bg-foreground after:opacity-0 after:transition-opacity",
               (open || active) && "text-foreground",
               active && "after:opacity-100",
             )}
           >
             Worktrees
             {activeLabel ? (
-              <span className="max-w-[8rem] truncate font-normal text-foreground/80">
+              <span className="max-w-[7rem] truncate font-normal text-foreground/80">
                 · {activeLabel}
               </span>
             ) : null}
-            <ChevronDownIcon className="size-3 opacity-70" aria-hidden />
+            <ChevronDownIcon className="size-2.5 opacity-70" aria-hidden />
           </button>
         </PopoverTrigger>
         <PopoverContent

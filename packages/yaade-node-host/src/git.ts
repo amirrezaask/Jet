@@ -11,7 +11,7 @@ import type {
 import { uriToPath } from "./paths.js"
 
 /** Cap git stdout/stderr so huge diffs never build unbounded strings. */
-const MAX_GIT_STDOUT_BYTES = 32 * 1024 * 1024
+const MAX_GIT_STDOUT_BYTES = 2 * 1024 * 1024
 const MAX_GIT_STDERR_BYTES = 64 * 1024
 
 function appendBounded(current: string, chunk: Buffer, maxBytes: number): string | null {

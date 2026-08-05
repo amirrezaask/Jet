@@ -12,6 +12,13 @@ type RetainedHostEvent = {
   bytes: number
 }
 
+/**
+ * Hot PTY paint frames. Still sequenced + fan-out live to WS subscribers, but
+ * never retained in EventHub history — reconnect uses per-PTY `attach()` replay.
+ * Keeping them in history filled the 1024/16MB ring and evicted every other channel.
+ */
+const EPHEMERAL_CHANNELS = new Set(["terminal:data"])
+
 function estimateHostEventBytes(event: HostEvent): number {
   let bytes = 64 + Buffer.byteLength(event.channel, "utf8")
   for (const arg of event.args) {
@@ -49,22 +56,24 @@ export class EventHub {
       channel,
       args,
     }
-    const eventBytes = estimateHostEventBytes(event)
-    this.history.push({ event, bytes: eventBytes })
-    this.historyBytes += eventBytes
-    while (
-      this.history.length - this.historyHead > 1 &&
-      (this.history.length - this.historyHead > this.capacity ||
-        this.historyBytes > this.maxHistoryBytes)
-    ) {
-      const dropped = this.history[this.historyHead]!
-      this.history[this.historyHead] = undefined
-      this.historyHead += 1
-      this.historyBytes -= dropped.bytes
-    }
-    if (this.historyHead > 1024 && this.historyHead * 2 > this.history.length) {
-      this.history = this.history.slice(this.historyHead)
-      this.historyHead = 0
+    if (!EPHEMERAL_CHANNELS.has(channel)) {
+      const eventBytes = estimateHostEventBytes(event)
+      this.history.push({ event, bytes: eventBytes })
+      this.historyBytes += eventBytes
+      while (
+        this.history.length - this.historyHead > 1 &&
+        (this.history.length - this.historyHead > this.capacity ||
+          this.historyBytes > this.maxHistoryBytes)
+      ) {
+        const dropped = this.history[this.historyHead]!
+        this.history[this.historyHead] = undefined
+        this.historyHead += 1
+        this.historyBytes -= dropped.bytes
+      }
+      if (this.historyHead > 1024 && this.historyHead * 2 > this.history.length) {
+        this.history = this.history.slice(this.historyHead)
+        this.historyHead = 0
+      }
     }
     for (const listener of this.listeners) {
       try {

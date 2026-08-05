@@ -214,7 +214,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           data-zoomed={zoomed ? "" : undefined}
           data-dragging={isDragging ? "" : undefined}
           className={cn(
-            "group/mux-chrome flex h-6 shrink-0 items-center gap-1 border-b px-1.5",
+            "group/mux-chrome flex h-5 shrink-0 items-center gap-0.5 border-b px-1",
             "border-border/35 bg-background/40 backdrop-blur-md",
             focused && "border-border/55 bg-background/55",
             isDragging && "opacity-45",

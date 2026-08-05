@@ -34,14 +34,6 @@ test.describe("project page", () => {
       await expect
         .poll(
           async () =>
-            (await page.locator("[data-yaade-project-name]").textContent())?.trim() ??
-            "",
-          { timeout: 5_000 },
-        )
-        .toBe("repo")
-      await expect
-        .poll(
-          async () =>
             (await page.locator("[data-yaade-project-readme-head]").textContent()) ??
             "",
           { timeout: 10_000 },

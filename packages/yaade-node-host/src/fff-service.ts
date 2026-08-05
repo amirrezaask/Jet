@@ -150,7 +150,7 @@ export async function fffFileSearch(
   return result.value.items.map(item => item.relativePath)
 }
 
-export async function fffListFiles(rootUri: string, maxFiles = 50_000): Promise<string[] | null> {
+export async function fffListFiles(rootUri: string, maxFiles = 20_000): Promise<string[] | null> {
   const finder = await ensureFffIndex(rootUri)
   if (!finder) return null
 

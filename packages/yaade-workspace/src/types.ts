@@ -103,6 +103,9 @@ export type JetElectronTerminal = {
   attach(id: string): Promise<{
     id: string
     title?: string
+    /** Ring segments for attach replay (preferred). */
+    outputChunks?: string[]
+    /** Legacy joined form; may be empty when outputChunks is set. */
     output: string
     lastSequence: number
     status: "running" | "exited"

@@ -7,11 +7,18 @@ const execFileAsync = promisify(execFile)
 const DARWIN_LSOF_CANDIDATES = ["/usr/sbin/lsof", "/usr/bin/lsof", "lsof"] as const
 /** Short TTL so repeated splits reuse one lsof/ps walk. */
 const CWD_CACHE_TTL_MS = 250
+/** Share one `ps` snapshot across concurrent foreground lookups (≤1/s). */
+const PROCESS_TABLE_TTL_MS = 1_000
 
 type CacheEntry = { value: string | null; expiresAt: number }
 
 const cwdCache = new Map<number, CacheEntry>()
 const fgCache = new Map<number, CacheEntry>()
+
+type ProcRow = { pid: number; ppid: number; comm: string }
+
+let processTableCache: { rows: ProcRow[]; expiresAt: number } | null = null
+let processTableInflight: Promise<ProcRow[]> | null = null
 
 function cached(
   map: Map<number, CacheEntry>,
@@ -38,6 +45,8 @@ function putCache(
 export function clearTerminalCwdCaches(): void {
   cwdCache.clear()
   fgCache.clear()
+  processTableCache = null
+  processTableInflight = null
 }
 
 function parseLsofCwd(out: string): string | null {
@@ -149,9 +158,7 @@ export function cwdOfPidSync(pid: number): string | null {
   return null
 }
 
-type ProcRow = { pid: number; ppid: number; comm: string }
-
-async function listProcesses(): Promise<ProcRow[]> {
+async function listProcessesUncached(): Promise<ProcRow[]> {
   if (process.platform !== "darwin" && process.platform !== "linux") return []
   try {
     const { stdout } = await execFileAsync(
@@ -183,6 +190,23 @@ async function listProcesses(): Promise<ProcRow[]> {
   } catch {
     return []
   }
+}
+
+async function listProcesses(): Promise<ProcRow[]> {
+  const now = Date.now()
+  if (processTableCache && now <= processTableCache.expiresAt) {
+    return processTableCache.rows
+  }
+  if (processTableInflight) return processTableInflight
+  processTableInflight = listProcessesUncached()
+    .then(rows => {
+      processTableCache = { rows, expiresAt: Date.now() + PROCESS_TABLE_TTL_MS }
+      return rows
+    })
+    .finally(() => {
+      processTableInflight = null
+    })
+  return processTableInflight
 }
 
 /**

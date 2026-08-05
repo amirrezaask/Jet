@@ -53,8 +53,9 @@ export type TerminalOutputWriterOptions = {
   interactiveMaxChars?: number
 }
 
-/** Last-resort backlog before oldest pending output is dropped. */
-export const TERMINAL_OUTPUT_MAX_PENDING_CHARS = 2 * 1024 * 1024
+/** Last-resort backlog before oldest pending output is dropped. Host PTY
+ *  pause/resume should keep pending near one frame; this is a safety net. */
+export const TERMINAL_OUTPUT_MAX_PENDING_CHARS = 512 * 1024
 
 /** Idle / echo path — keep key→paint off the rAF clock. */
 export const TERMINAL_OUTPUT_INTERACTIVE_MAX_CHARS = 256
