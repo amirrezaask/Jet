@@ -582,7 +582,7 @@ test.describe("mux tiling", () => {
     }
   })
 
-  test("closing the last pane recreates a blank terminal without confirm", async () => {
+  test("closing the last pane shows the empty picker without recreating a terminal", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
@@ -595,17 +595,23 @@ test.describe("mux tiling", () => {
       await expectSelectorVisible(page, "[data-yaade-mux-close-pane]")
       await page.locator("[data-yaade-mux-close-pane]").first().click()
 
+      // Typing marks the shell as used → confirm before dispose.
+      await expectSelectorVisible(page, "[data-yaade-confirm=accept]")
+      await page.locator("[data-yaade-confirm=accept]").click()
+
+      await expectSelectorVisible(page, "[data-yaade-mux-empty-panes]")
       await expect
-        .poll(async () => page.locator("[data-yaade-confirm=accept]").count())
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
         .toBe(0)
-      // Single-window model: closing the last pane resets to one fresh terminal.
+      await expect
+        .poll(async () => page.locator("[data-yaade-terminal-panel]").count())
+        .toBe(0)
+
+      await page.locator('[data-yaade-mux-empty-action="terminal"]').click()
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-pane]").count())
         .toBe(1)
-      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
-      await expect
-        .poll(async () => page.locator("[data-yaade-mux-tab]").count())
-        .toBe(0)
     } finally {
       await app.close()
     }

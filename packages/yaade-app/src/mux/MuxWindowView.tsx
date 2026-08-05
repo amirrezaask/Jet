@@ -3,6 +3,7 @@ import type { PanelEvent } from "@yaade/panels"
 import type { PanelId, PanelView, YaadeTheme } from "@yaade/shared"
 import { fileUriToPath } from "@yaade/shared"
 import {
+  MuxEmptyState,
   MuxPaneChrome,
   PanelDock,
   SessionHeaderChromeProvider,
@@ -37,6 +38,11 @@ export type MuxWindowViewProps = {
   onZoom: (tabId: string) => void
   onClosePane: (panelId: PanelId, tabId: string) => void
   onNewWindow?: () => void
+  /** Empty-workspace actions (no panes). */
+  onEmptyOpenTerminal?: () => void
+  onEmptyOpenNeovim?: () => void
+  onEmptyOpenGit?: () => void
+  onEmptyOpenEditor?: () => void
   /** Resolve git pane workspace root (source shell cwd at open time). */
   gitRootForTab: (tabId: string) => string | null
   /** Resolve editor pane file URI. */
@@ -230,6 +236,10 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     onOpenFile,
     onZoom,
     onClosePane,
+    onEmptyOpenTerminal,
+    onEmptyOpenNeovim,
+    onEmptyOpenGit,
+    onEmptyOpenEditor,
     gitRootForTab,
     editorDirtyForTab,
     shortcutFor,
@@ -245,6 +255,25 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     zoomedPaneId != null
       ? listPaneLeaves(tree).find(p => p.ptyTabId === zoomedPaneId)
       : null
+
+  if (paneCount === 0) {
+    return (
+      <div
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden p-1"
+        data-yaade-mux-window=""
+      >
+        <div className="h-full min-h-0 w-full overflow-hidden rounded-md border border-border/40 bg-background/20">
+          <MuxEmptyState
+            onOpenTerminal={() => onEmptyOpenTerminal?.()}
+            onOpenNeovim={() => onEmptyOpenNeovim?.()}
+            onOpenGit={() => onEmptyOpenGit?.()}
+            onOpenEditor={() => onEmptyOpenEditor?.()}
+            shortcutFor={shortcutFor}
+          />
+        </div>
+      </div>
+    )
+  }
 
   const renderHeader = useCallback(
     (_view: PanelView, _panelId: PanelId, _meta: PanelSlotMeta) => null,

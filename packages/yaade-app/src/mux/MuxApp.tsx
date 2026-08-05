@@ -777,13 +777,8 @@ export function MuxApp({
     ) => {
       const live = windowsRef.current.find(w => w.id === windowId)
       if (!live) return
-      const remaining = listPaneLeaves(live.tree).filter(
-        p => p.ptyTabId !== tabId,
-      )
-      // Last pane in the window → close the window with no consent prompt.
-      const skipConfirm = Boolean(options?.skipConfirm) || remaining.length === 0
       const isTerminal = isTerminalTabId(tabId)
-      if (!skipConfirm && isTerminal) {
+      if (!options?.skipConfirm && isTerminal) {
         const session = terminalSessionForTab(tabId)
         if (terminalSessionNeedsCloseConfirmation(session)) {
           const ok = await requestConfirm({
@@ -795,10 +790,6 @@ export function MuxApp({
           })
           if (!ok) return
         }
-      }
-      if (remaining.length === 0) {
-        await closeWindow(windowId, { skipConfirm: true })
-        return
       }
       if (isTerminal) {
         const ptyId = terminalPtyIdForTab(tabId)
@@ -840,7 +831,7 @@ export function MuxApp({
         }
       })
     },
-    [closeWindow, paneTitle, updateWindow, workspace],
+    [paneTitle, updateWindow, workspace],
   )
 
   /** Prefer the source pane's live shell cwd when opening splits. */
@@ -893,21 +884,25 @@ export function MuxApp({
   )
 
   const openGitSplit = useCallback(
-    async (windowId: string, panelId: PanelId) => {
-      const rootUri = await resolveSplitCwdUri(windowId, panelId)
+    async (windowId: string, panelId: PanelId | null) => {
+      const rootUri = panelId
+        ? await resolveSplitCwdUri(windowId, panelId)
+        : cwdUri()
       const pane = allocGitPane(rootUri)
       updateWindow(windowId, w => placeGitPane(w, pane, "right", panelId))
     },
-    [allocGitPane, resolveSplitCwdUri, updateWindow],
+    [allocGitPane, cwdUri, resolveSplitCwdUri, updateWindow],
   )
 
   const openNeovimSplit = useCallback(
     async (
       windowId: string,
-      panelId: PanelId,
+      panelId: PanelId | null,
       options?: { filePath?: string; line?: number },
     ) => {
-      const rootUri = await resolveSplitCwdUri(windowId, panelId)
+      const rootUri = panelId
+        ? await resolveSplitCwdUri(windowId, panelId)
+        : cwdUri()
       const launchArgs: string[] = []
       if (options?.filePath) {
         if (options.line != null && options.line > 0) {
@@ -923,7 +918,7 @@ export function MuxApp({
       })
       updateWindow(windowId, w => placeTerminalPane(w, pane, "right", panelId))
     },
-    [allocTerminalPane, resolveSplitCwdUri, updateWindow],
+    [allocTerminalPane, cwdUri, resolveSplitCwdUri, updateWindow],
   )
 
   const openEditorSplit = useCallback(
@@ -1130,16 +1125,6 @@ export function MuxApp({
     // Boot once per mount for this session id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
-
-  const hasTerminalPane = windows.some(
-    w => listTerminalLeaves(w.tree).length > 0,
-  )
-
-  useEffect(() => {
-    if (!layoutReady) return
-    if (hasTerminalPane) return
-    ensureProjectWindow()
-  }, [layoutReady, ensureProjectWindow, hasTerminalPane])
 
   const handlePanelEvent = useCallback(
     (windowId: string, event: PanelEvent) => {
@@ -1381,7 +1366,10 @@ export function MuxApp({
           const w = windowsRef.current.find(
             x => x.id === activeWindowIdRef.current,
           )
-          if (!w?.focusedPaneId) return
+          if (!w) {
+            ensureProjectWindowRef.current()
+            return
+          }
           openGitSplitRef.current(w.id, w.focusedPaneId)
         }),
         {
@@ -1397,7 +1385,10 @@ export function MuxApp({
           const w = windowsRef.current.find(
             x => x.id === activeWindowIdRef.current,
           )
-          if (!w?.focusedPaneId) return
+          if (!w) {
+            ensureProjectWindowRef.current()
+            return
+          }
           openGitSplitRef.current(w.id, w.focusedPaneId)
         }),
         {
@@ -1413,7 +1404,10 @@ export function MuxApp({
           const w = windowsRef.current.find(
             x => x.id === activeWindowIdRef.current,
           )
-          if (!w?.focusedPaneId) return
+          if (!w) {
+            ensureProjectWindowRef.current()
+            return
+          }
           openNeovimSplitRef.current(w.id, w.focusedPaneId)
         }),
         {
@@ -2267,6 +2261,18 @@ export function MuxApp({
                   onClosePane={(panelId, ptyTabId) =>
                     void closePane(activeWindow.id, panelId, ptyTabId)
                   }
+                  onEmptyOpenTerminal={() => {
+                    void executeCommand("terminal.new")
+                  }}
+                  onEmptyOpenNeovim={() => {
+                    void executeCommand("mux.openNeovim")
+                  }}
+                  onEmptyOpenGit={() => {
+                    void executeCommand("mux.openGit")
+                  }}
+                  onEmptyOpenEditor={() => {
+                    void executeCommand("mux.openEditor")
+                  }}
                   onNewWindow={() => openBrowserProjectTab()}
                   gitRootForTab={tabId =>
                     (gitRoots[tabId] ?? cwdUri()) || null
@@ -2279,7 +2285,7 @@ export function MuxApp({
                   fontSize={fontSize}
                   empty={
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                      No terminal panes
+                      Empty pane
                     </div>
                   }
                 />
