@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react"
 import type { GitCommit, GitCommitDetail, GitCommitFile, YaadeTheme } from "@yaade/shared"
-import { languageIdFromPath } from "@yaade/shared"
-import { MonacoDiffEditorHost, monacoLanguageId } from "@yaade/monaco"
 import { FileDiffIcon, HistoryIcon } from "lucide-react"
 
 import {
@@ -21,6 +19,7 @@ import {
 import { Spinner } from "@/components/ui/spinner.js"
 import { cn } from "@/lib/utils.js"
 import { loadCommitDiffContents } from "./commit-diff.js"
+import { YaadeDiffViewer } from "./YaadeDiffViewer.js"
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -188,7 +187,7 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
                             data-active={active ? "" : undefined}
                             onClick={() => setSelectedPath(file.path)}
                             className={cn(
-                                "flex w-full shrink-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-2xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                              "flex w-full shrink-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-2xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                               active
                                 ? "bg-primary/10 text-foreground"
                                 : "text-muted-foreground hover:bg-accent/35 hover:text-foreground",
@@ -212,7 +211,7 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
                 </ul>
               </aside>
 
-              <div data-yaade-git-diff="" className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div data-yaade-git-diff="" className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 {selectedFile ? (
                   <>
                     <div
@@ -236,17 +235,13 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
                         <CenteredEmpty title="Failed to load diff" description={diffError} />
                       ) : diffContents &&
                         (diffContents.original.length > 0 || diffContents.modified.length > 0) ? (
-                        <MonacoDiffEditorHost
-                          originalUri={`git-commit://${hash}/${selectedFile.path}?side=original`}
-                          modifiedUri={`git-commit://${hash}/${selectedFile.path}?side=modified`}
-                          originalContent={diffContents.original}
-                          modifiedContent={diffContents.modified}
-                          languageId={monacoLanguageId(languageIdFromPath(selectedFile.path))}
+                        <YaadeDiffViewer
+                          path={selectedFile.path}
+                          original={diffContents.original}
+                          modified={diffContents.modified}
+                          mode="split"
                           theme={theme}
                           fontSize={fontSize}
-                          readOnly
-                          renderSideBySide
-                          className="h-full min-h-0"
                         />
                       ) : (
                         <CenteredEmpty

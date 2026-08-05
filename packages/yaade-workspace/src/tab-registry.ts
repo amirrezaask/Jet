@@ -48,8 +48,18 @@ export function editorTabId(key: string): string {
   return `${EDITOR_TAB_ID_PREFIX}${key}`
 }
 
+/** File / untitled buffers, plus legacy synthetic `yaade:editor:…` pane ids. */
 export function isEditorTabId(tabId: string): boolean {
-  return tabId.startsWith(EDITOR_TAB_ID_PREFIX)
+  return (
+    tabId.startsWith(EDITOR_TAB_ID_PREFIX) ||
+    tabId.startsWith("file:") ||
+    tabId.startsWith("untitled:")
+  )
+}
+
+/** True when the tab id is a filesystem or untitled buffer URI (not a synthetic pane key). */
+export function isFileEditorTabId(tabId: string): boolean {
+  return tabId.startsWith("file:") || tabId.startsWith("untitled:")
 }
 
 /**

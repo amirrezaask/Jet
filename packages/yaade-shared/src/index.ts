@@ -21,6 +21,7 @@ export {
   pathToFileUri,
   fileUriToPath,
   canonicalizeFileUri,
+  normalizeFsPath,
 } from "./uri.js"
 
 export function basename(uriOrPath: string): string {

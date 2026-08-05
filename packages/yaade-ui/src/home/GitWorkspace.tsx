@@ -8,8 +8,7 @@ import type {
   GitStatusEntry,
   YaadeTheme,
 } from "@yaade/shared"
-import { fileUriToPath, languageIdFromPath, pathToFileUri } from "@yaade/shared"
-import { MonacoDiffEditorHost, monacoLanguageId } from "@yaade/monaco"
+import { fileUriToPath, pathToFileUri } from "@yaade/shared"
 import {
   ArrowDownIcon,
   ArrowLeftIcon,
@@ -74,6 +73,7 @@ import { requestConfirm } from "@/components/ConfirmDialogHost.js"
 import { showYaadeToast } from "@/toast.js"
 import { SessionHeaderChromePortal } from "./session-header-chrome.js"
 import { loadCommitDiffContents } from "./commit-diff.js"
+import { YaadeDiffViewer } from "./YaadeDiffViewer.js"
 
 type GitView = "changes" | "staged" | "history"
 type DiffStyle = "unified" | "split"
@@ -82,6 +82,9 @@ type NavigationRow =
   | { kind: "section"; id: string; label: string; count: number }
   | { kind: "file"; id: string; entry: GitStatusEntry; staged: boolean }
 
+/** Synthetic history-row id for uncommitted working-tree changes. */
+export const GIT_WORKING_TREE_ID = "working-tree"
+
 type GitWorkspaceProps = {
   rootUri: string | null
   theme: YaadeTheme
@@ -89,10 +92,15 @@ type GitWorkspaceProps = {
   onBranchChange?: (branch: string | null) => void
   /** When set, select this path in Changes (agent openDiff / deep-link). */
   focusPath?: string | null
-  /** Monaco diff font size in px (default 13). */
+  /** Diff font size in px (default 13). */
   fontSize?: number
   /** Initial view tab (default "changes"). */
   initialView?: GitView
+  /**
+   * Project-page History: hide Changes/Staged/History pills and prepend a
+   * “Current changes” row that shows the working-tree diff in the detail pane.
+   */
+  unifiedHistory?: boolean
 }
 
 type DiffContents = {
@@ -121,6 +129,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     focusPath,
     fontSize = 13,
     initialView = "changes",
+    unifiedHistory = false,
   } = props
   const api = window.yaade?.git
   const fsApi = window.yaade?.fs
@@ -129,7 +138,9 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const [summary, setSummary] = useState<GitRepositorySummary>(EMPTY_SUMMARY)
   const [branches, setBranches] = useState<string[]>([])
   const [history, setHistory] = useState<GitCommit[]>([])
-  const [view, setView] = useState<GitView>(initialView)
+  const [view, setView] = useState<GitView>(
+    unifiedHistory ? "history" : initialView,
+  )
   const [selected, setSelected] = useState<SelectedChange | null>(null)
   const [filter, setFilter] = useState("")
   const [diffContents, setDiffContents] = useState<DiffContents | null>(null)
@@ -140,7 +151,9 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const [diffLoading, setDiffLoading] = useState(false)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const [numstat, setNumstat] = useState<Record<string, GitNumstatEntry>>({})
-  const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
+  const [selectedCommit, setSelectedCommit] = useState<string | null>(
+    unifiedHistory ? GIT_WORKING_TREE_ID : null,
+  )
   const [commitDetail, setCommitDetail] = useState<GitCommitDetail | null>(null)
   const [commitLoading, setCommitLoading] = useState(false)
   const [mobileDetail, setMobileDetail] = useState(false)
@@ -241,7 +254,13 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   }, [])
 
   useEffect(() => {
-    if (!rootUri || !api || view !== "history" || !selectedCommit) {
+    if (
+      !rootUri ||
+      !api ||
+      view !== "history" ||
+      !selectedCommit ||
+      selectedCommit === GIT_WORKING_TREE_ID
+    ) {
       setCommitDetail(null)
       return
     }
@@ -271,9 +290,15 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     return entries.filter(entry => entry.path.toLocaleLowerCase().includes(needle))
   }, [entries, filter])
 
+  const showingWorkingTree =
+    unifiedHistory &&
+    view === "history" &&
+    selectedCommit === GIT_WORKING_TREE_ID
+  const navigatorView: GitView = showingWorkingTree ? "changes" : view
+
   const navigationRows = useMemo(
-    () => buildNavigationRows(filteredEntries, view),
-    [filteredEntries, view],
+    () => buildNavigationRows(filteredEntries, navigatorView),
+    [filteredEntries, navigatorView],
   )
   const stagedCount = entries.filter(entry => entry.staged).length
   const unstagedPaths = entries.filter(entry => entry.unstaged).map(entry => entry.path)
@@ -312,6 +337,14 @@ export function GitWorkspace(props: GitWorkspaceProps) {
 
   useEffect(() => {
     if (view !== "history") return
+    if (unifiedHistory) {
+      setSelectedCommit(current => {
+        if (current === GIT_WORKING_TREE_ID) return current
+        if (current && history.some(commit => commit.hash === current)) return current
+        return GIT_WORKING_TREE_ID
+      })
+      return
+    }
     if (history.length === 0) {
       setSelectedCommit(null)
       return
@@ -319,7 +352,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     setSelectedCommit(current =>
       current && history.some(commit => commit.hash === current) ? current : history[0]!.hash,
     )
-  }, [view, history])
+  }, [view, history, unifiedHistory])
 
   const runAction = useCallback(
     async (label: string, task: () => Promise<void>, success?: string): Promise<boolean> => {
@@ -445,7 +478,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       filter={filter}
       selected={selected}
       pending={pendingAction !== null}
-      stageAllCount={view === "changes" ? unstagedPaths.length : 0}
+      stageAllCount={navigatorView === "changes" ? unstagedPaths.length : 0}
       unstageAllCount={stagedCount}
       numstat={numstat}
       onFilterChange={setFilter}
@@ -483,10 +516,13 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     />
   )
 
+  const dirtyCount = entries.length
   const historyList = (
     <HistoryList
       commits={history}
       selectedHash={selectedCommit}
+      includeWorkingTree={unifiedHistory}
+      dirtyCount={dirtyCount}
       onSelect={hash => {
         setSelectedCommit(hash)
         if (narrow) setMobileDetail(true)
@@ -505,10 +541,35 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     />
   )
 
+  const workingTreeDetail = narrow ? (
+    mobileDetail ? (
+      diffViewer
+    ) : (
+      navigatorPane
+    )
+  ) : (
+    <ResizablePanelGroup
+      orientation="horizontal"
+      className="min-h-0 flex-1 bg-transparent"
+    >
+      <ResizablePanel defaultSize="38%" minSize="140px" maxSize="55%">
+        {navigatorPane}
+      </ResizablePanel>
+      <ResizableHandle />
+      <ResizablePanel defaultSize="62%" minSize="160px">
+        {diffViewer}
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  )
+
+  const historyDetailPane = showingWorkingTree
+    ? workingTreeDetail
+    : commitDetailPane
+
   const body =
     view === "history" ? (
       narrow ? (
-        mobileDetail ? commitDetailPane : historyList
+        mobileDetail ? historyDetailPane : historyList
       ) : (
         <ResizablePanelGroup
           orientation="horizontal"
@@ -520,7 +581,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize="62%" minSize="200px">
-            {commitDetailPane}
+            {historyDetailPane}
           </ResizablePanel>
         </ResizablePanelGroup>
       )
@@ -559,6 +620,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
           branches={branches}
           pending={pendingAction !== null}
           onCheckout={onCheckout}
+          hideViewTabs={unifiedHistory}
         />
       </SessionHeaderChromePortal>
 
@@ -589,8 +651,18 @@ function GitPaneHeaderControls(props: {
   branches: string[]
   pending: boolean
   onCheckout: (branch: string) => void
+  hideViewTabs?: boolean
 }) {
-  const { view, stagedCount, onViewChange, summary, branches, pending, onCheckout } = props
+  const {
+    view,
+    stagedCount,
+    onViewChange,
+    summary,
+    branches,
+    pending,
+    onCheckout,
+    hideViewTabs,
+  } = props
   const branchOptions =
     summary.branch && !branches.includes(summary.branch)
       ? [summary.branch, ...branches]
@@ -600,7 +672,9 @@ function GitPaneHeaderControls(props: {
       data-yaade-session-header-tabs="git"
       className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"
     >
-      <GitViewTabs view={view} stagedCount={stagedCount} onChange={onViewChange} />
+      {hideViewTabs ? null : (
+        <GitViewTabs view={view} stagedCount={stagedCount} onChange={onViewChange} />
+      )}
       <div className="ml-auto flex shrink-0 items-center gap-2 overflow-hidden">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -1170,9 +1244,6 @@ function DiffViewer(props: {
   if (!selected) {
     return <CenteredEmpty title="Select a changed file" description="Choose a file to inspect its diff." />
   }
-  const languageId = monacoLanguageId(languageIdFromPath(selected.path))
-  const originalUri = `git-diff://${selected.path}?side=original&staged=${selected.staged ? "1" : "0"}`
-  const modifiedUri = `git-diff://${selected.path}?side=modified&staged=${selected.staged ? "1" : "0"}`
   const hasDiff =
     diffContents != null &&
     (diffContents.original.length > 0 || diffContents.modified.length > 0)
@@ -1257,17 +1328,13 @@ function DiffViewer(props: {
         {loading ? (
           <CenteredStatus label="Loading diff…" />
         ) : hasDiff && diffContents ? (
-          <MonacoDiffEditorHost
-            originalUri={originalUri}
-            modifiedUri={modifiedUri}
-            originalContent={diffContents.original}
-            modifiedContent={diffContents.modified}
-            languageId={languageId}
+          <YaadeDiffViewer
+            path={selected.path}
+            original={diffContents.original}
+            modified={diffContents.modified}
+            mode={diffStyle}
             theme={theme}
             fontSize={fontSize}
-            readOnly
-            renderSideBySide={diffStyle === "split"}
-            className="h-full min-h-0"
           />
         ) : (
           <CenteredEmpty
@@ -1458,7 +1525,7 @@ function CommitDetailView(props: {
   }
 
   const fileList = (
-    <div data-yaade-list-panel="git-commit-files" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div data-yaade-list-panel="git-commit-files" className="flex h-full min-h-0 flex-col overflow-hidden">
       {detail.body ? (
         <pre className="mx-3 mt-2 max-h-24 shrink-0 overflow-auto rounded-md bg-muted/40 p-2 font-mono text-3xs whitespace-pre-wrap text-foreground/90">
           {detail.body}
@@ -1512,7 +1579,7 @@ function CommitDetailView(props: {
   )
 
   const diffPane = (
-    <div data-yaade-git-diff="" className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div data-yaade-git-diff="" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       {selectedFile ? (
         <>
           <div
@@ -1544,17 +1611,13 @@ function CommitDetailView(props: {
               <CenteredEmpty title="Failed to load diff" description={diffError} />
             ) : diffContents &&
               (diffContents.original.length > 0 || diffContents.modified.length > 0) ? (
-              <MonacoDiffEditorHost
-                originalUri={`git-commit://${detail.hash}/${selectedFile.path}?side=original`}
-                modifiedUri={`git-commit://${detail.hash}/${selectedFile.path}?side=modified`}
-                originalContent={diffContents.original}
-                modifiedContent={diffContents.modified}
-                languageId={monacoLanguageId(languageIdFromPath(selectedFile.path))}
+              <YaadeDiffViewer
+                path={selectedFile.path}
+                original={diffContents.original}
+                modified={diffContents.modified}
+                mode={narrow ? "unified" : "split"}
                 theme={theme}
                 fontSize={fontSize}
-                readOnly
-                renderSideBySide={!narrow}
-                className="h-full min-h-0"
               />
             ) : (
               <CenteredEmpty
@@ -1670,23 +1733,67 @@ function HistoryList(props: {
   commits: GitCommit[]
   selectedHash: string | null
   onSelect: (hash: string) => void
+  includeWorkingTree?: boolean
+  dirtyCount?: number
 }) {
-  const { commits, selectedHash, onSelect } = props
+  const {
+    commits,
+    selectedHash,
+    onSelect,
+    includeWorkingTree = false,
+    dirtyCount = 0,
+  } = props
+  const rowCount = commits.length + (includeWorkingTree ? 1 : 0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
-    count: commits.length,
+    count: rowCount,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 54,
     overscan: 10,
   })
   return (
     <div ref={scrollRef} data-yaade-list-panel="git-history" className="min-h-0 flex-1 overflow-auto p-2">
-      {commits.length === 0 ? (
+      {rowCount === 0 ? (
         <CenteredEmpty title="No commit history" description="Commits will appear here once this repository has history." />
       ) : (
         <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map(item => {
-            const commit = commits[item.index]
+            if (includeWorkingTree && item.index === 0) {
+              const active = selectedHash === GIT_WORKING_TREE_ID
+              return (
+                <button
+                  type="button"
+                  key={GIT_WORKING_TREE_ID}
+                  data-yaade-list-item=""
+                  data-yaade-git-working-tree=""
+                  data-active={active ? "" : undefined}
+                  onClick={() => onSelect(GIT_WORKING_TREE_ID)}
+                  className={cn(
+                    "absolute top-0 left-0 grid w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border/35 px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                    active
+                      ? "bg-primary/10 before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:bg-primary"
+                      : "hover:bg-accent/25",
+                  )}
+                  style={{ height: item.size, transform: `translateY(${item.start}px)` }}
+                >
+                  <FileDiffIcon className="text-primary/80" aria-hidden />
+                  <div className="min-w-0">
+                    <span className="block truncate text-xs text-foreground">
+                      Current changes
+                    </span>
+                    <span className="mt-0.5 block truncate text-3xs text-muted-foreground">
+                      {dirtyCount === 0
+                        ? "Working tree clean"
+                        : `${dirtyCount} file${dirtyCount === 1 ? "" : "s"} changed`}
+                    </span>
+                  </div>
+                  <div className="text-right font-mono text-3xs tabular-nums text-muted-foreground">
+                    <span className="block text-primary/90">HEAD</span>
+                  </div>
+                </button>
+              )
+            }
+            const commit = commits[includeWorkingTree ? item.index - 1 : item.index]
             if (!commit) return null
             const active = commit.hash === selectedHash
             return (

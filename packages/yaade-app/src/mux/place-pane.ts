@@ -1,6 +1,10 @@
 import type { Edge, PanelId } from "@yaade/shared"
 import type { YaadePanelTree } from "@yaade/workspace"
-import { listPaneLeaves, placePtyInTree } from "./layout.js"
+import {
+  listPaneLeaves,
+  placeOrPushEditorTab,
+  placePtyInTree,
+} from "./layout.js"
 
 export type AllocatedTerminalPane = {
   ptyTabId: string
@@ -70,7 +74,11 @@ export function placeGitPane(
   }
 }
 
-/** Pure: place an already-registered editor tab into the window tree. */
+/**
+ * Pure: place/activate/push an editor buffer tab.
+ * By default reuses an existing tab or pushes into the focused editor group.
+ * Pass `forceNewGroup` to always open a new editor pane (split when needed).
+ */
 export function placeEditorPane(
   live: {
     id: string
@@ -82,9 +90,16 @@ export function placeEditorPane(
   pane: AllocatedEditorPane,
   edge: Edge = "right",
   focusPanel: PanelId | null = live.focusedPaneId,
+  options?: { forceNewGroup?: boolean },
 ): typeof live {
   const tree = live.tree.clone()
-  const panelId = placePtyInTree(tree, pane.tabId, focusPanel, edge)
+  const panelId = placeOrPushEditorTab(
+    tree,
+    pane.tabId,
+    focusPanel,
+    edge,
+    options,
+  )
   return {
     ...live,
     tree,

@@ -1,5 +1,5 @@
 import type { PanelId, PanelView } from "@yaade/shared"
-import { fileUriToPath } from "@yaade/shared"
+import { canonicalizeFileUri, fileUriToPath } from "@yaade/shared"
 import type { YaadePanelTree } from "./panel-tree.js"
 
 export type TabsPanelView = Extract<PanelView, { kind: "tabs" }>
@@ -24,19 +24,25 @@ function isFileLikeTabId(id: string): boolean {
   return id.startsWith("file:") || id.startsWith("untitled:")
 }
 
+function fileTabPath(id: string): string {
+  if (!id.startsWith("file:")) return id
+  return fileUriToPath(canonicalizeFileUri(id))
+}
+
 /**
- * Editor tabs share identity by filesystem path (URI encoding variants).
+ * Editor tabs share identity by filesystem path (URI encoding / `..` variants).
  * Terminal / tool tab ids are opaque — never collapse them via path equality.
  */
 export function sameFileTab(a: string, b: string): boolean {
   if (!isFileLikeTabId(a) || !isFileLikeTabId(b)) return a === b
-  return fileUriToPath(a) === fileUriToPath(b)
+  if (a.startsWith("untitled:") || b.startsWith("untitled:")) return a === b
+  return fileTabPath(a) === fileTabPath(b)
 }
 
 export function findTabIdForFile(view: PanelView | null, fileUri: string): string | null {
   if (!view || view.kind !== "tabs") return null
-  const path = fileUriToPath(fileUri)
-  return panelTabIds(view).find(id => fileUriToPath(id) === path) ?? null
+  const path = fileTabPath(fileUri)
+  return panelTabIds(view).find(id => fileTabPath(id) === path) ?? null
 }
 
 export function panelHasTabForFile(view: PanelView | null, fileUri: string): boolean {
@@ -48,17 +54,19 @@ export function pushPanelTab(
   tabId: string,
   replaceTabId?: string,
 ): TabsPanelView {
+  const canonical =
+    tabId.startsWith("file://") ? canonicalizeFileUri(tabId) : tabId
   if (current?.kind === "tabs") {
     let existing = panelTabIds(current)
-    if (replaceTabId) existing = existing.map(id => (id === replaceTabId ? tabId : id))
-    const pathMatch = existing.find(id => sameFileTab(id, tabId))
+    if (replaceTabId) existing = existing.map(id => (id === replaceTabId ? canonical : id))
+    const pathMatch = existing.find(id => sameFileTab(id, canonical))
     if (pathMatch) {
       return { kind: "tabs", activeTabId: pathMatch, tabIds: existing }
     }
-    if (!existing.includes(tabId)) existing = [...existing, tabId]
-    return { kind: "tabs", activeTabId: tabId, tabIds: existing }
+    if (!existing.includes(canonical)) existing = [...existing, canonical]
+    return { kind: "tabs", activeTabId: canonical, tabIds: existing }
   }
-  return { kind: "tabs", activeTabId: tabId, tabIds: [tabId] }
+  return { kind: "tabs", activeTabId: canonical, tabIds: [canonical] }
 }
 
 export function popPanelTab(current: TabsPanelView, tabId: string): PanelView {

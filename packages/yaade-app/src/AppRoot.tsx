@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
 import type { ProjectSession } from "@yaade/rpc"
-import { MuxApp } from "./mux/MuxApp.js"
 import { ProjectPage } from "./project/ProjectPage.js"
 import {
   createProjectSession,
@@ -188,7 +187,8 @@ export function AppRoot() {
     [boot, readRoute],
   )
 
-  // Project-page agent bridge (MuxApp installs its own when a session is open).
+  // Project-page agent bridge. MuxApp owns the bridge while a session is
+  // embedded in ProjectPage.
   useEffect(() => {
     if (boot.status !== "ready" || boot.session) return
     const projectPath = boot.projectPath
@@ -263,8 +263,6 @@ export function AppRoot() {
       },
     }
     return () => {
-      // Only clear our project stub — MuxApp installs its own bridge when a
-      // session opens; do not race-delete that instance.
       if (window.__yaadeAgent?.getState?.().route === "project") {
         delete window.__yaadeAgent
       }
@@ -297,24 +295,14 @@ export function AppRoot() {
     )
   }
 
-  if (boot.session && boot.sessionId) {
-    return (
-      <MuxApp
-        key={boot.sessionId}
-        session={boot.session}
-        homeDir={boot.homeDir}
-        machineHostname={boot.machineHostname}
-        onBackToProject={backToProject}
-      />
-    )
-  }
-
   return (
     <ProjectPage
       projectPath={boot.projectPath}
       homeDir={boot.homeDir}
       machineHostname={boot.machineHostname}
+      session={boot.session}
       onOpenSession={openSession}
+      onClearSession={backToProject}
       onNavigateProject={navigateProject}
       listSessions={() => listProjectSessions(boot.projectPath)}
     />

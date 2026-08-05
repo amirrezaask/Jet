@@ -443,6 +443,19 @@ export class LspClientPool {
             sourcePosition.column,
           )
         }
+        // Same buffer: reveal in place so we never open a duplicate tab for a
+        // URI-variant of the file already under the cursor.
+        if (sourceModel) {
+          const sourceUri = canonicalizeFileUri(sourceModel.uri.toString())
+          if (sourceUri === uri && line != null) {
+            const col = column ?? 1
+            source.setPosition({ lineNumber: line, column: col })
+            source.revealPositionInCenter({ lineNumber: line, column: col })
+            source.focus()
+            deps.openFile(uri, path, line, column)
+            return true
+          }
+        }
         deps.openFile(uri, path, line, column)
         return true
       },

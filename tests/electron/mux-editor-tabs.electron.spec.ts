@@ -1,0 +1,162 @@
+import { expect, test } from "@playwright/test"
+import {
+  expectLocatorContainsText,
+  expectLocatorCount,
+  expectSelectorVisible,
+} from "../shell/assert.js"
+import { execCommand, hasPtySpawn, launchJet, waitForMux } from "./_launch.js"
+
+test.describe("mux editor tabs", () => {
+  test.skip(!hasPtySpawn(), "node-pty spawn unavailable")
+
+  test("openFile opens tabs in one editor pane, not new splits", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.openFile("src/index.ts")
+      })
+      await expectSelectorVisible(page, "[data-yaade-mux-editor-pane]", {
+        timeout: 15_000,
+      })
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+
+      await expectLocatorCount(
+        page.locator('[data-yaade-mux-pane-kind="editor"]'),
+        1,
+      )
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        1,
+      )
+
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.openFile("src/utils.ts")
+      })
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        2,
+        { timeout: 10_000 },
+      )
+      await expectLocatorCount(
+        page.locator('[data-yaade-mux-pane-kind="editor"]'),
+        1,
+      )
+      await expect
+        .poll(async () => {
+          const uri = await page
+            .locator("[data-yaade-mux-editor-uri]")
+            .evaluate(el => el.getAttribute("data-yaade-mux-editor-uri") ?? "")
+          return /utils\.ts/.test(uri)
+        }, { timeout: 10_000 })
+        .toBe(true)
+
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.openFile("src/index.ts")
+      })
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        2,
+      )
+      await expectLocatorCount(
+        page.locator('[data-yaade-mux-pane-kind="editor"]'),
+        1,
+      )
+      await expect
+        .poll(async () => {
+          const uri = await page
+            .locator("[data-yaade-mux-editor-uri]")
+            .evaluate(el => el.getAttribute("data-yaade-mux-editor-uri") ?? "")
+          return /index\.ts/.test(uri)
+        }, { timeout: 10_000 })
+        .toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("close buffer tab keeps pane until last tab; close pane removes group", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.openFile("src/index.ts")
+        await window.__yaadeAgent!.openFile("src/utils.ts")
+      })
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        2,
+        { timeout: 15_000 },
+      )
+
+      await expectLocatorContainsText(
+        page.locator('[data-yaade-modal-editor-tab][data-active] [role="tab"]'),
+        "utils.ts",
+      )
+      await page
+        .locator(
+          '[data-yaade-modal-editor-tab][data-active] button[aria-label^="Close"]',
+        )
+        .click()
+
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        1,
+        { timeout: 10_000 },
+      )
+      await expectLocatorCount(
+        page.locator('[data-yaade-mux-pane-kind="editor"]'),
+        1,
+      )
+
+      // Focus the editor group, then close the whole pane (not a single buffer).
+      await page.locator('[data-yaade-mux-pane-kind="editor"]').click()
+      await page
+        .locator('[data-yaade-mux-pane-kind="editor"] [data-yaade-mux-close-pane]')
+        .click()
+      await expectLocatorCount(
+        page.locator('[data-yaade-mux-pane-kind="editor"]'),
+        0,
+        { timeout: 10_000 },
+      )
+      await expectLocatorCount(page.locator("[data-yaade-mux-editor-pane]"), 0)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("quick open places a file as an editor tab", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await execCommand(page, "editor.quickOpen")
+      const input = page.locator(
+        '[role="dialog"] input, [data-yaade-palette] input',
+      )
+      await expectSelectorVisible(page, "[data-yaade-palette], [role='dialog']", {
+        timeout: 10_000,
+      })
+      await input.first().fill("index.ts")
+      await page.waitForTimeout(400)
+      await page.keyboard.press("Enter")
+
+      await expectSelectorVisible(page, "[data-yaade-mux-editor-pane]", {
+        timeout: 15_000,
+      })
+      await expectLocatorCount(
+        page.locator('[data-yaade-mux-pane-kind="editor"]'),
+        1,
+      )
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        1,
+      )
+    } finally {
+      await app.close()
+    }
+  })
+})

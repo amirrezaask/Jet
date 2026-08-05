@@ -128,6 +128,7 @@ export type AgentBridgeContext = {
   route?: "project" | "session"
   sessionId?: string | null
   sessionCwd?: string | null
+  backToProject?: () => void | Promise<void>
 }
 
 function toWorkspaceFileUri(workspacePath: string, relativeOrUri: string): string {
@@ -355,6 +356,11 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
       const api = window.yaade?.notifications
       if (!api) throw new Error("notifications API unavailable")
       return api.counts()
+    },
+    async backToProject() {
+      const fn = ctx().backToProject
+      if (!fn) throw new Error("backToProject not available")
+      await fn()
     },
   }
 }

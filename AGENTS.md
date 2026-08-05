@@ -12,7 +12,7 @@ paned workspace — terminals, Neovim, git — optionally backed by a git worktr
 Layouts persist server-side per session and restore on reload.
 
 ```
-http://localhost:5174/dev/yaade              → project page (session list)
+http://localhost:5174/dev/yaade              → project page (Overview / Worktrees / History)
 http://localhost:5174/dev/yaade?s=ses-…      → that session's mux workspace
 ```
 
@@ -20,7 +20,8 @@ Three consequences drive every design decision in this repo:
 
 1. **The URL is the project; `?s=` is the session.** One browser tab = one
    project. Sessions are first-class: N per project, each with its own cwd
-   (project root or worktree), layout, and PTYs. To open a second project you
+   (project root or worktree), layout, and PTYs. Enter a session from the
+   Worktrees picker (Main / existing / create). To open a second project you
    open a second browser tab.
 2. **The browser is a hostile host.** It owns most keyboard chords, it can kill
    the tab at any moment, and it gives us no native window. See
@@ -42,13 +43,13 @@ page + session workspaces). Consequences you will trip over:
 | Thing | Status |
 | --- | --- |
 | `packages/yaade-app/src/AppRoot.tsx` | **Router.** Mounted by `main.tsx`; chooses ProjectPage vs MuxApp. |
-| `packages/yaade-app/src/project/` | GitHub-style project landing (Sessions / Changes / History). |
+| `packages/yaade-app/src/project/` | Project landing (Overview / Worktrees picker / History). |
 | `packages/yaade-app/src/mux/MuxApp.tsx` | **Session workspace.** Session-scoped; cwd from `session.cwdPath`. |
 | `packages/yaade-app/src/App.tsx` (~3.3k lines) | **Legacy Mission Control. Not mounted.** Kept for reference; do not extend. |
 | `packages/yaade-app/src/index.ts` | Exports `MuxApp as YaadeApp` — the name is legacy. |
 | ~29 specs under `tests/electron/` | `describe.skip` — they target the removed Mission Control shell. |
 | `MuxTabStrip`, `PanelTabBar` | Built, exported, **zero imports**. Dead. |
-| `@yaade/monaco`, `@yaade/lsp` | Wired for editor/git panes; keep optional chunks out of the startup graph (lazy). |
+| `@yaade/monaco`, `@yaade/lsp` | **Wired in mux** via lazy `MuxEditorPane` + `MuxLspHost`. Keep optional chunks out of the startup graph. |
 
 When a task touches something in the "legacy / dead" rows, ask before
 extending it — deleting is usually the right answer.
@@ -72,8 +73,8 @@ yaade/
 │   ├── yaade-panels/           PanelTree — splits, tabs, resize, serde
 │   ├── yaade-workspace/        WorkspaceService, commands, keymaps, browser-reserved keys
 │   ├── yaade-agents/           CLI agent id helpers (`*:cli` driver ids)
-│   ├── yaade-monaco/           (library; unwired from the mux shell)
-│   ├── yaade-lsp/              (library; unwired from the mux shell)
+│   ├── yaade-monaco/           Monaco editor host + model registry (lazy in mux)
+│   ├── yaade-lsp/              Language server client pool → Monaco providers (lazy)
 │   ├── yaade-ui/               Panel dock, TerminalPanel, overlays, themes
 │   └── yaade-app/              Root React app — MuxApp shell
 ├── tests/
@@ -183,14 +184,14 @@ Render tree, root to a terminal:
 
 ```
 main.tsx → RegistryProvider → AppErrorBoundary → AppRoot
-  ├─ ProjectPage          (?s= absent) — session list + git Changes/History
-  └─ MuxApp               (?s= present) — session-scoped workspace
+  ├─ ProjectPage          (?s= absent or present) — Overview / Worktrees menu / History; mux embeds in-page
+  └─ MuxApp               embedded in ProjectPage when a worktree/Main session is open
        └─ TooltipProvider → AppShell (footer = WhichKeyPanel when a prefix is pending)
           └─ TabDndRoot → [data-yaade-shell="mux"]
              ├─ MuxWindowView → PanelDock → PanelLeaf
-             │    ├─ MuxPaneChrome        (title, drag handle, split/zoom/close)
+             │    ├─ MuxPaneChrome        (title / editor buffer tabs, drag, split/zoom/close)
              │    └─ TerminalSlot         ← empty placeholder, measured only
-             │       OR GitWorkspace / editor (lazy)
+             │       OR GitWorkspace / MuxEditorPane (lazy Monaco)
              └─ MuxTerminalLayer          ← absolutely positioned over the slots
                   └─ TerminalPanel → xterm
 ```
@@ -206,7 +207,11 @@ terminal DOM churn cannot thrash layout.
 - `MAX_MOUNTED_TERMINALS = 8`, LRU over focused panes. Panes beyond that stay
   registered as sessions but their xterm is unmounted; unmeasured panes render
   at 0×0.
-- Pane kinds are `terminal` and `git`. Zoom is a toggle (`mux.zoomPane`).
+- Pane kinds are `terminal`, `git`, and `editor`. Zoom is a toggle (`mux.zoomPane`).
+- **Editor panes are multi-tab groups.** Tab ids are `file://` / `untitled:` URIs.
+  Quick open, project search, and LSP goto-definition activate or push a tab in
+  the focused editor group (they do not always split a new pane). Terminal/git
+  panes stay one tab each. Close buffer ≠ close pane; last buffer empties the group.
 - Keyboard pane focus is geometric (`findFocusNeighbor` over measured slot boxes).
 
 ---
@@ -521,8 +526,10 @@ Backlog items that referenced `jet-codemirror`, `LocationListPanel`, or
 | --- | --- |
 | `packages/yaade-app/src/main.tsx` | Entry: `createWebTransport` → `window.yaade`, mounts `AppRoot` |
 | `packages/yaade-app/src/AppRoot.tsx` | Project vs session routing, `?s=`, project-page agent stub |
-| `packages/yaade-app/src/project/ProjectPage.tsx` | GitHub-style project landing |
+| `packages/yaade-app/src/project/ProjectPage.tsx` | Project landing: Overview / Worktrees / History |
 | `packages/yaade-app/src/mux/MuxApp.tsx` | Session shell: commands, keymap, layout, persistence |
+| `packages/yaade-app/src/mux/MuxEditorPane.tsx` | Monaco host per editor group; model reuse across tabs |
+| `packages/yaade-app/src/mux/layout.ts` | `placeOrPushEditorTab` — tab vs new editor group |
 | `packages/yaade-app/src/project-session-client.ts` | Debounced PUT `/api/v1/project-sessions/:id` |
 | `packages/yaade-app/src/mux/mux-keymap.ts` | Prefix key + binding table (single source of truth) |
 | `packages/yaade-app/src/url-workspace.ts` | URL ↔ project root + session search helpers |

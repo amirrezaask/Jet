@@ -10,6 +10,10 @@ const browserTargets = ["chrome107", "edge107", "firefox104", "safari16"]
 
 export default defineConfig({
   base: "/",
+  // Pierre @pierre/diffs worker is an ES module (code-splitting); iife fails the build.
+  worker: {
+    format: "es",
+  },
   build: {
     target: browserTargets,
     cssTarget: browserTargets,

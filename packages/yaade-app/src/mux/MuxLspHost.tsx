@@ -8,7 +8,12 @@ import { useLspLifecycle } from "../hooks/useLspLifecycle.js"
  */
 export function MuxLspHost(props: {
   workspace: WorkspaceService
-  onOpenFile: (uri: string, path: string, line?: number) => void
+  onOpenFile: (
+    uri: string,
+    path: string,
+    line?: number,
+    column?: number,
+  ) => void
   onReady: (ensureLspForFile: (uri: string) => Promise<void>) => void
 }) {
   const { ensureLspForFile } = useLspLifecycle(props.workspace, props.onOpenFile)

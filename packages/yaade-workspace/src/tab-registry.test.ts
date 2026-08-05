@@ -2,10 +2,31 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import {
   canonicalizeTerminalTabId,
+  isEditorTabId,
+  isFileEditorTabId,
   isTerminalTabId,
   terminalSessionKeyFromTabId,
   terminalTabId,
 } from "./tab-registry.js"
+
+describe("editor tab id", () => {
+  it("treats file and untitled uris as editor tabs", () => {
+    assert.equal(isEditorTabId("file:///tmp/a.ts"), true)
+    assert.equal(isEditorTabId("untitled:1"), true)
+    assert.equal(isFileEditorTabId("file:///tmp/a.ts"), true)
+    assert.equal(isFileEditorTabId("untitled:1"), true)
+  })
+
+  it("keeps legacy synthetic yaade:editor ids", () => {
+    assert.equal(isEditorTabId("yaade:editor:pane-1"), true)
+    assert.equal(isFileEditorTabId("yaade:editor:pane-1"), false)
+  })
+
+  it("rejects terminal / git ids", () => {
+    assert.equal(isEditorTabId("yaade:terminal:session-1"), false)
+    assert.equal(isEditorTabId("yaade:git:main"), false)
+  })
+})
 
 describe("terminal tab id canonicalize", () => {
   it("keeps canonical yaade ids stable", () => {

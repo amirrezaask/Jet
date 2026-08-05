@@ -9,3 +9,9 @@ declare module "*.png" {
 }
 
 declare module "@xterm/xterm/css/xterm.css" {}
+
+/** Vite `?worker&url` → URL string for `new Worker(url, { type: "module" })`. */
+declare module "@pierre/diffs/worker/worker.js?worker&url" {
+  const workerUrl: string
+  export default workerUrl
+}

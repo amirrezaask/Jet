@@ -12,21 +12,50 @@ async function locationHref(page: {
 }
 
 test.describe("session routing", () => {
-  test("create session adds ?s= and back returns to project page", async () => {
+  test("worktrees Main opens embedded mux; switch via menu only", async () => {
     const { app, page } = await launchJet({ projectPage: true })
     try {
       await waitForProjectPage(page)
-      await page.locator("[data-yaade-new-session]").click()
-      await page.locator("[data-yaade-new-session-dialog]").waitFor({
+      await page.locator("[data-yaade-worktree-switcher]").click()
+      await page.locator("[data-yaade-worktree-switcher-menu]").waitFor({
         state: "visible",
         timeout: 5_000,
       })
-      await page.locator("[data-yaade-create-session]").click()
+      await page.locator("[data-yaade-worktree-main]").click()
       await page.locator("[data-yaade-mux]").waitFor({
         state: "visible",
         timeout: 30_000,
       })
       await waitForMux(page)
+
+      // Project chrome stays; no Workspace tab; mux is in-page.
+      await expect
+        .poll(
+          async () => page.locator("[data-yaade-shell='project']").count(),
+          { timeout: 5_000 },
+        )
+        .toBe(1)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux]").count(), {
+          timeout: 5_000,
+        })
+        .toBe(1)
+      await expect
+        .poll(
+          async () =>
+            page.locator("[data-yaade-project-tab='workspace']").count(),
+          { timeout: 3_000 },
+        )
+        .toBe(0)
+      await expect
+        .poll(
+          async () =>
+            page.locator("[data-yaade-project-panel='worktree']").evaluate(el => {
+              return !el.classList.contains("invisible")
+            }),
+          { timeout: 5_000 },
+        )
+        .toBe(true)
 
       await expect
         .poll(async () => new URL(await locationHref(page)).searchParams.get("s"), {
@@ -38,13 +67,45 @@ test.describe("session routing", () => {
       expect(state.route).toBe("session")
       expect(state.sessionId).toMatch(/^ses-/)
 
-      await page.locator("[data-yaade-session-back]").click()
+      // Overview is still reachable without a Workspace tab.
+      await page.locator("[data-yaade-project-tab='overview']").click()
+      await expect
+        .poll(
+          async () =>
+            page.locator("[data-yaade-project-panel='overview']").evaluate(el => {
+              return !el.classList.contains("invisible")
+            }),
+          { timeout: 5_000 },
+        )
+        .toBe(true)
+
+      // Worktrees menu returns to the tiling view for Main.
+      await page.locator("[data-yaade-worktree-switcher]").click()
+      await page.locator("[data-yaade-worktree-main]").click()
+      await expect
+        .poll(
+          async () =>
+            page.locator("[data-yaade-project-panel='worktree']").evaluate(el => {
+              return !el.classList.contains("invisible")
+            }),
+          { timeout: 5_000 },
+        )
+        .toBe(true)
+
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.backToProject?.()
+      })
       await waitForProjectPage(page)
       await expect
         .poll(async () => new URL(await locationHref(page)).searchParams.get("s"), {
           timeout: 10_000,
         })
         .toBeNull()
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux]").count(), {
+          timeout: 5_000,
+        })
+        .toBe(0)
     } finally {
       await app.close()
     }
@@ -71,6 +132,12 @@ test.describe("session routing", () => {
         state: "visible",
         timeout: 15_000,
       })
+      await expect
+        .poll(
+          async () => page.locator("[data-yaade-shell='project']").count(),
+          { timeout: 5_000 },
+        )
+        .toBe(1)
     } finally {
       await app.close()
     }

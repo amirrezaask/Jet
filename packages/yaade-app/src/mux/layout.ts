@@ -1,13 +1,17 @@
 import type { DropAction, Edge, PanelId, PanelView } from "@yaade/shared"
+import { canonicalizeFileUri } from "@yaade/shared"
 import {
   YaadePanelTree,
+  activatePanelTab,
   buildTabsView,
   findPanelWithTab,
+  findTabIdForFile,
   isEditorTabId,
   isGitTabId,
   isTerminalTabId,
   panelTabIds,
   popPanelTab,
+  pushPanelTab,
 } from "@yaade/workspace"
 import { closePanelIfEmpty, getAllLeafPanels } from "../panel-routing.js"
 
@@ -89,6 +93,82 @@ export function placePtyInTree(
   const target = occupied ? tree.splitAtEdge(anchor, splitEdge) : anchor
   tree.setView(target, paneView(tabId))
   return target
+}
+
+/**
+ * Open a file buffer in an editor group: activate existing tab, push into the
+ * focused editor pane, or create a new editor group (split when the anchor is
+ * occupied by a terminal/git/other editor group).
+ */
+export function placeOrPushEditorTab(
+  tree: YaadePanelTree,
+  fileUri: string,
+  focused: PanelId | null,
+  splitEdge: Edge = "right",
+  options?: { forceNewGroup?: boolean },
+): PanelId {
+  const uri = fileUri.startsWith("file://")
+    ? canonicalizeFileUri(fileUri)
+    : fileUri
+  if (!options?.forceNewGroup) {
+    const existingPanel = tree.findEditorPanelForFile(uri)
+    if (existingPanel) {
+      const view = tree.getView(existingPanel)
+      if (view?.kind === "tabs") {
+        const existingId = findTabIdForFile(view, uri)
+        if (existingId && existingId !== uri) {
+          // Normalize a URI-variant tab id to the canonical form.
+          const tabIds = panelTabIds(view).map(id =>
+            id === existingId ? uri : id,
+          )
+          tree.setView(existingPanel, buildTabsView(uri, tabIds))
+        } else {
+          tree.setView(
+            existingPanel,
+            activatePanelTab(view, existingId ?? uri),
+          )
+        }
+      }
+      return existingPanel
+    }
+  }
+
+  const leaves = getAllLeafPanels(tree)
+  const anchor =
+    (focused && leaves.some(p => p.id === focused.id) ? focused : null) ??
+    leaves[0] ??
+    (tree.root.kind === "leaf" ? tree.root.panelId : tree.allocPanelId())
+
+  if (!options?.forceNewGroup) {
+    const active = activeMuxTabInPanel(tree, anchor)
+    if (active && muxLeafKind(active) === "editor") {
+      const view = tree.getView(anchor)
+      tree.setView(anchor, pushPanelTab(view, uri))
+      return anchor
+    }
+  }
+
+  const occupied = activeMuxTabInPanel(tree, anchor) != null
+  const target = occupied ? tree.splitAtEdge(anchor, splitEdge) : anchor
+  tree.setView(target, paneView(uri))
+  return target
+}
+
+/** Close every editor buffer tab in a panel (whole editor group). */
+export function clearEditorTabsFromPanel(
+  tree: YaadePanelTree,
+  panelId: PanelId,
+): void {
+  const view = tree.getView(panelId)
+  if (!view || view.kind !== "tabs") return
+  let next: PanelView = view
+  for (const tabId of [...panelTabIds(view)]) {
+    if (!isEditorTabId(tabId)) continue
+    if (next.kind !== "tabs") break
+    next = popPanelTab(next, tabId)
+  }
+  tree.setView(panelId, next)
+  closePanelIfEmpty(tree, panelId)
 }
 
 export function removePtyFromTree(

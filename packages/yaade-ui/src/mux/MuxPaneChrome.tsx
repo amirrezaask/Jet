@@ -64,6 +64,8 @@ export type MuxPaneChromeProps = {
   /** Portal target for pane-specific header chrome (e.g. Git view tabs). */
   contextRef?: RefCallback<HTMLElement | null>
   className?: string
+  /** Content in the flexible center of the chrome (e.g. editor buffer tabs). */
+  center?: ReactNode
   trailing?: ReactNode
   /** Dirty indicator for editor panes. */
   dirty?: boolean
@@ -89,6 +91,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
     shortcutFor,
     contextRef,
     className,
+    center,
     trailing,
     dirty = false,
   } = props
@@ -227,12 +230,13 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
         >
           <button
             type="button"
-            aria-label={title}
-            title={title}
+            aria-label={title || "Pane"}
+            title={title || undefined}
             data-yaade-mux-pane-title=""
             data-yaade-mux-pane-drag=""
             className={cn(
-              "flex max-w-[28%] shrink items-center gap-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              "flex shrink items-center gap-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              title ? "max-w-[28%]" : "max-w-8",
               draggable && !zoomed
                 ? "cursor-grab touch-none active:cursor-grabbing"
                 : "",
@@ -254,20 +258,24 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
                 className="size-1.5 shrink-0 rounded-full bg-primary"
               />
             ) : null}
-            <span
-              className={cn(
-                "min-w-0 truncate text-xs font-medium",
-                focused ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {title}
-            </span>
+            {title ? (
+              <span
+                className={cn(
+                  "min-w-0 truncate text-xs font-medium",
+                  focused ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {title}
+              </span>
+            ) : null}
           </button>
           <div
             ref={contextRef}
             data-yaade-session-header-context=""
             className="flex min-h-0 min-w-0 flex-1 items-center overflow-hidden"
-          />
+          >
+            {center}
+          </div>
           <div
             className="flex shrink-0 items-center gap-0.5"
             onPointerDown={event => event.stopPropagation()}

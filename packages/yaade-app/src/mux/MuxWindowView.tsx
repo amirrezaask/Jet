@@ -3,11 +3,13 @@ import type { PanelEvent } from "@yaade/panels"
 import type { PanelId, PanelView, YaadeTheme } from "@yaade/shared"
 import { fileUriToPath } from "@yaade/shared"
 import {
+  ModalEditorTabBar,
   MuxEmptyState,
   MuxPaneChrome,
   PanelDock,
   SessionHeaderChromeProvider,
   sessionHeaderContextRef,
+  type ModalEditorBuffer,
   type PanelSlotMeta,
   type TabDndHandlers,
 } from "@yaade/ui"
@@ -37,6 +39,10 @@ export type MuxWindowViewProps = {
   onOpenFile?: (panelId: PanelId, filePath: string, line?: number) => void
   onZoom: (tabId: string) => void
   onClosePane: (panelId: PanelId, tabId: string) => void
+  /** Activate a buffer tab inside an editor pane. */
+  onActivateEditorTab?: (panelId: PanelId, tabId: string) => void
+  /** Close a single buffer tab (not the whole editor group). */
+  onCloseEditorTab?: (panelId: PanelId, tabId: string) => void
   onNewWindow?: () => void
   /** Empty-workspace actions (no panes). */
   onEmptyOpenTerminal?: () => void
@@ -49,6 +55,8 @@ export type MuxWindowViewProps = {
   editorFileForTab?: (tabId: string) => { uri: string; line?: number } | null
   /** Dirty state for editor panes. */
   editorDirtyForTab?: (tabId: string) => boolean
+  /** Buffer list for an editor panel (multi-tab). */
+  editorBuffersForPanel?: (panelId: PanelId) => ModalEditorBuffer[]
   /** Shortcut display for a command id (from mux binding table). */
   shortcutFor?: (commandId: string) => string | undefined
   theme: YaadeTheme
@@ -87,6 +95,9 @@ function PaneChromeShell(props: {
   onClose: () => void
   shortcutFor?: (commandId: string) => string | undefined
   dirty?: boolean
+  editorBuffers?: ModalEditorBuffer[]
+  onActivateEditorTab?: (tabId: string) => void
+  onCloseEditorTab?: (tabId: string) => void
   children: ReactNode
 }) {
   const {
@@ -106,11 +117,16 @@ function PaneChromeShell(props: {
     onClose,
     shortcutFor,
     dirty,
+    editorBuffers,
+    onActivateEditorTab,
+    onCloseEditorTab,
     children,
   } = props
   const [headerContextEl, setHeaderContextEl] = useState<HTMLElement | null>(null)
   const isGitPane = muxLeafKind(tabId) === "git"
   const isEditorPane = muxLeafKind(tabId) === "editor"
+  const showEditorTabs =
+    isEditorPane && editorBuffers != null && editorBuffers.length > 0
 
   const body = isGitPane ? (
     <SessionHeaderChromeProvider target={headerContextEl}>
@@ -137,16 +153,27 @@ function PaneChromeShell(props: {
       data-focused={focused ? "" : undefined}
     >
       <MuxPaneChrome
-        title={title}
+        title={showEditorTabs ? "" : title}
         processName={processName}
         focused={focused}
         paneId={tabId}
         panelId={panelId}
         zoomed={zoomed}
         canZoom={canZoom}
-        dirty={dirty}
+        dirty={showEditorTabs ? false : dirty}
         shortcutFor={shortcutFor}
         contextRef={isGitPane ? sessionHeaderContextRef(setHeaderContextEl) : undefined}
+        center={
+          showEditorTabs ? (
+            <ModalEditorTabBar
+              buffers={editorBuffers}
+              activeTabId={tabId}
+              onActivateBuffer={id => onActivateEditorTab?.(id)}
+              onCloseBuffer={id => onCloseEditorTab?.(id)}
+              className="min-h-0 w-full"
+            />
+          ) : undefined
+        }
         onSplitRight={onSplitRight}
         onSplitDown={onSplitDown}
         onOpenGit={isGitPane ? undefined : onOpenGit}
@@ -236,12 +263,15 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     onOpenFile,
     onZoom,
     onClosePane,
+    onActivateEditorTab,
+    onCloseEditorTab,
     onEmptyOpenTerminal,
     onEmptyOpenNeovim,
     onEmptyOpenGit,
     onEmptyOpenEditor,
     gitRootForTab,
     editorDirtyForTab,
+    editorBuffersForPanel,
     shortcutFor,
     theme,
     fontSize,
@@ -314,6 +344,11 @@ export function MuxWindowView(props: MuxWindowViewProps) {
           zoomed={zoomed}
           canZoom={canZoom}
           dirty={editorDirtyForTab?.(tabId)}
+          editorBuffers={
+            kind === "editor" ? editorBuffersForPanel?.(panelId) : undefined
+          }
+          onActivateEditorTab={id => onActivateEditorTab?.(panelId, id)}
+          onCloseEditorTab={id => onCloseEditorTab?.(panelId, id)}
           shortcutFor={shortcutFor}
           onSplitRight={() => onSplit(panelId, "right")}
           onSplitDown={() => onSplit(panelId, "bottom")}
@@ -330,8 +365,11 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     [
       canZoom,
       empty,
+      editorBuffersForPanel,
       editorDirtyForTab,
       gitRootForTab,
+      onActivateEditorTab,
+      onCloseEditorTab,
       onClosePane,
       onOpenEditor,
       onOpenFile,

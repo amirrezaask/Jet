@@ -480,6 +480,10 @@ async function handleHttp(
       const body = (await readJson(req)) as {
         rootPath?: string
         title?: string
+        /** Attach an existing checkout without running `git worktree add`. */
+        cwdPath?: string
+        worktreeBranch?: string | null
+        worktreePath?: string | null
         worktree?: { branch?: string; baseRef?: string; createBranch?: boolean }
       }
       const rootPath = typeof body.rootPath === "string" ? body.rootPath.trim() : ""
@@ -507,6 +511,7 @@ async function handleHttp(
       let cwdPath = rootPath
       let worktreeBranch: string | null = null
       let worktreePath: string | null = null
+      let createdWorktree = false
       const worktree = body.worktree
       if (worktree && typeof worktree.branch === "string" && worktree.branch.trim()) {
         const branch = worktree.branch.trim()
@@ -548,6 +553,7 @@ async function handleHttp(
           })
           cwdPath = worktreePath
           worktreeBranch = branch
+          createdWorktree = true
         } catch (error) {
           sendJson(res, 400, {
             error: {
@@ -557,6 +563,38 @@ async function handleHttp(
             },
           })
           return
+        }
+      } else if (typeof body.cwdPath === "string" && body.cwdPath.trim()) {
+        const attachCwd = body.cwdPath.trim()
+        if (!pathAllowed(attachCwd, runtime.config.allowedRoots)) {
+          sendJson(res, 403, {
+            error: {
+              code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+              message: "cwdPath outside allowed roots",
+              details: {},
+            },
+          })
+          return
+        }
+        cwdPath = attachCwd
+        if (typeof body.worktreeBranch === "string" && body.worktreeBranch.trim()) {
+          worktreeBranch = body.worktreeBranch.trim()
+        }
+        if (typeof body.worktreePath === "string" && body.worktreePath.trim()) {
+          const attachWt = body.worktreePath.trim()
+          if (!pathAllowed(attachWt, runtime.config.allowedRoots)) {
+            sendJson(res, 403, {
+              error: {
+                code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+                message: "worktreePath outside allowed roots",
+                details: {},
+              },
+            })
+            return
+          }
+          worktreePath = attachWt
+        } else if (attachCwd !== rootPath) {
+          worktreePath = attachCwd
         }
       }
 
@@ -576,7 +614,7 @@ async function handleHttp(
         })
         sendJson(res, 201, created)
       } catch (error) {
-        if (worktreePath) {
+        if (createdWorktree && worktreePath) {
           try {
             await gitWorktreeRemove(pathToFileUri(rootPath), worktreePath, {
               force: true,
@@ -1039,6 +1077,10 @@ function validateRpcPathsOrThrow(config: HostConfig, channel: string, args: unkn
   }
   if (channel.startsWith("notifications:")) return
   if (!/^(fs|git|search|workspace|lsp|terminal):/.test(channel)) return
+  // Read-only FS: allow absolute paths outside allowedRoots so goto-def can
+  // open language stdlib / module cache files (e.g. GOROOT, node_modules
+  // outside $HOME). Writes and directory listing stay sandboxed.
+  if (channel === "fs:readFile" || channel === "fs:stat") return
   if (channel === "fs:writeTempDrop") return
   if (channel.startsWith("terminal:") && typeof args[0] === "string" && !args[0].startsWith("file:")) {
     return

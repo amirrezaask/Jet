@@ -83,52 +83,121 @@ export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promis
 /** Wait for the terminal mux shell, creating a session from the project page if needed. */
 export async function waitForMux(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
+  let attemptedOpen = false
+  let sessionParamWaitStarted: number | null = null
   while (Date.now() < deadline) {
-    const mux = await page.locator("[data-yaade-mux]").count()
-    if (mux > 0) {
-      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
-      return
+    if ((await page.locator("[data-yaade-mux]").count()) > 0) {
+      try {
+        await page.evaluate(() => window.__yaadeAgent!.waitForReady())
+        return
+      } catch {
+        // Mux DOM can mount before the agent bridge is ready — retry.
+        await page.waitForTimeout(150)
+        continue
+      }
     }
-    const project = await page.locator("[data-yaade-shell='project']").count()
-    if (project > 0) {
-      // A create dialog may already be in flight (caller clicked Create).
-      const dialogOpen =
-        (await page.locator("[data-yaade-new-session-dialog]").count()) > 0
-      if (dialogOpen) {
+    if ((await page.locator("[data-yaade-boot='loading']").count()) > 0) {
+      await page.waitForTimeout(50)
+      continue
+    }
+    const onProject =
+      (await page.locator("[data-yaade-shell='project']").count()) > 0
+    if (!onProject) {
+      await page.waitForTimeout(100)
+      continue
+    }
+
+    const sessionId = await page.evaluate(
+      () => new URL(location.href).searchParams.get("s"),
+    )
+    if (sessionId) {
+      // AppRoot is still mounting MuxApp from ?s=, or fell back to project.
+      if (sessionParamWaitStarted == null) sessionParamWaitStarted = Date.now()
+      if (Date.now() - sessionParamWaitStarted < 2_500) {
         await page.waitForTimeout(100)
         continue
       }
-      // Prefer an existing session row; otherwise create one.
-      const row = page.locator("[data-yaade-session-row]").first()
-      if ((await row.count()) > 0) {
-        await row.click()
-      } else {
-        await page.locator("[data-yaade-new-session]").click()
-        await page.locator("[data-yaade-new-session-dialog]").waitFor({
-          state: "visible",
-          timeout: 5_000,
-        })
-        await page.locator("[data-yaade-create-session]").click()
+      if (!attemptedOpen) {
+        const agentReady = await page.evaluate(
+          () => Boolean(window.__yaadeAgent?.openProjectSession),
+        )
+        if (!agentReady) {
+          await page.waitForTimeout(100)
+          continue
+        }
+        attemptedOpen = true
+        await page.evaluate(async id => {
+          await window.__yaadeAgent!.openProjectSession!(id)
+        }, sessionId)
       }
-      await page.locator("[data-yaade-mux]").waitFor({
-        state: "visible",
-        timeout: Math.max(1_000, deadline - Date.now()),
+      await page.waitForTimeout(100)
+      continue
+    }
+    sessionParamWaitStarted = null
+
+    if (attemptedOpen) {
+      await page.waitForTimeout(100)
+      continue
+    }
+
+    const createDialogOpen =
+      (await page.locator("[data-yaade-create-worktree-dialog]").count()) > 0 ||
+      (await page.locator("[data-yaade-new-session-dialog]").count()) > 0
+    if (createDialogOpen) {
+      await page.waitForTimeout(100)
+      continue
+    }
+
+    const agentReady = await page.evaluate(
+      () => Boolean(window.__yaadeAgent?.createProjectSession),
+    )
+    if (!agentReady) {
+      await page.waitForTimeout(100)
+      continue
+    }
+
+    attemptedOpen = true
+    try {
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.createProjectSession!({ title: "E2E session" })
       })
+    } catch {
+      // Fall back to Worktrees → Main.
+      attemptedOpen = false
+      await page.locator("[data-yaade-worktree-switcher]").click()
+      await page.locator("[data-yaade-worktree-switcher-menu]").waitFor({
+        state: "visible",
+        timeout: 5_000,
+      })
+      await page.locator("[data-yaade-worktree-main]").click()
+      attemptedOpen = true
+    }
+    await page.locator("[data-yaade-mux]").waitFor({
+      state: "visible",
+      timeout: Math.max(1_000, deadline - Date.now()),
+    })
+    try {
       await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       return
+    } catch {
+      attemptedOpen = false
+      await page.waitForTimeout(150)
+      continue
     }
-    await page.waitForTimeout(100)
   }
   throw new Error("waitForMux: timed out waiting for project page or mux shell")
 }
 
-/** Wait for the GitHub-style project landing page (session list). */
+/** Wait for the GitHub-style project landing page (Overview). */
 export async function waitForProjectPage(
   page: ShellDriver,
   timeoutMs = 30_000,
 ): Promise<void> {
   await page.waitForSelector("[data-yaade-shell='project']", {
     timeout: timeoutMs,
+  })
+  await page.waitForSelector("[data-yaade-project-overview], [data-yaade-project-tab='overview']", {
+    timeout: Math.min(timeoutMs, 10_000),
   })
 }
 

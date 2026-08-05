@@ -58,6 +58,10 @@ export async function loadProjectSession(
 export async function createProjectSession(input: {
   rootPath: string
   title?: string
+  /** Attach an existing checkout (main or worktree) without `git worktree add`. */
+  cwdPath?: string
+  worktreeBranch?: string | null
+  worktreePath?: string | null
   worktree?: { branch: string; baseRef?: string; createBranch?: boolean }
 }): Promise<ProjectSession> {
   const raw = await requestJson<ProjectSession>("/api/v1/project-sessions", {
@@ -66,6 +70,43 @@ export async function createProjectSession(input: {
     body: JSON.stringify(input),
   })
   return normalizeSession(raw)
+}
+
+/**
+ * Reopen the newest non-archived session for a checkout, or create one.
+ * Used by the Worktrees picker to enter MuxApp for Main / an existing worktree.
+ */
+export async function openCheckoutSession(input: {
+  rootPath: string
+  cwdPath: string
+  title?: string
+  worktreeBranch?: string | null
+  worktreePath?: string | null
+}): Promise<ProjectSession> {
+  const sessions = await listProjectSessions(input.rootPath)
+  const match = sessions
+    .filter(s => !s.archivedAt && s.cwdPath === input.cwdPath)
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0]
+  if (match) return loadProjectSession(match.id)
+
+  const isMain = input.cwdPath === input.rootPath
+  return createProjectSession({
+    rootPath: input.rootPath,
+    title:
+      input.title ??
+      (input.worktreeBranch?.trim()
+        ? input.worktreeBranch.trim()
+        : isMain
+          ? "Main"
+          : "Session"),
+    ...(isMain
+      ? {}
+      : {
+          cwdPath: input.cwdPath,
+          worktreeBranch: input.worktreeBranch ?? null,
+          worktreePath: input.worktreePath ?? input.cwdPath,
+        }),
+  })
 }
 
 export async function saveProjectSessionPayload(

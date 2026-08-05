@@ -11,7 +11,7 @@ import {
 } from "react"
 import type { PanelEvent } from "@yaade/panels"
 import type { PanelId, ProjectSearchResult, YaadeTheme } from "@yaade/shared"
-import { pathToFileUri, fileUriToPath } from "@yaade/shared"
+import { pathToFileUri, fileUriToPath, canonicalizeFileUri } from "@yaade/shared"
 import {
   AppShell,
   ConfirmDialogHost,
@@ -45,13 +45,16 @@ import {
   WorkspaceManager,
   WorkspaceService,
   YaadePanelTree,
+  activatePanelTab,
   anyOverlayOpen,
   bind,
   gitTabId,
-  editorTabId,
   isEditorTabId,
+  isFileEditorTabId,
   isGitTabId,
   isTerminalTabId,
+  panelTabIds,
+  sameFileTab,
   terminalTabId,
   type JetCommandContext,
   type JetKeyBinding,
@@ -79,8 +82,10 @@ import {
 } from "../tabs/terminal-session.js"
 import { allocTerminalSessionKey } from "../tab-routing.js"
 import { applySessionPaneDrop } from "../session-layout.js"
+import { getAllLeafPanels } from "../panel-routing.js"
 import {
   activeMuxTabInPanel,
+  clearEditorTabsFromPanel,
   dockSourceLeavesIntoTree,
   emptyMuxTree,
   listPaneLeaves,
@@ -146,7 +151,7 @@ function editorLabelFromUri(uri: string): string {
 
 /** Resolve a file uri from an absolute/relative path or an existing uri. */
 function resolveEditorUri(rootUri: string, target: string): string {
-  if (target.startsWith("file://")) return target
+  if (target.startsWith("file://")) return canonicalizeFileUri(target)
   let rootPath = ""
   try {
     rootPath = fileUriToPath(rootUri)
@@ -159,16 +164,62 @@ function resolveEditorUri(rootUri: string, target: string): string {
     : rootPath
       ? `${rootPath.replace(/\/+$/, "")}/${clean}`
       : clean
-  return pathToFileUri(abs)
+  return canonicalizeFileUri(pathToFileUri(abs))
 }
 
-/** Unique-ish key for a new editor tab id. */
-function allocEditorTabKey(): string {
-  const rand =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  return `pane-${rand}`
+/**
+ * Rewrite legacy `yaade:editor:pane-*` tab ids in a persisted tree to file URIs
+ * using the companion `editorFiles` map. Returns remapped editorFiles keyed by URI.
+ */
+function migrateLegacyEditorTabs(
+  tree: YaadePanelTree,
+  editorFiles: Record<string, { uri: string; line?: number }>,
+): Record<string, { uri: string; line?: number }> {
+  const nextFiles: Record<string, { uri: string; line?: number }> = {}
+  const remap = new Map<string, string>()
+
+  for (const [tabId, entry] of Object.entries(editorFiles)) {
+    if (isFileEditorTabId(tabId)) {
+      nextFiles[tabId] = {
+        uri: entry.uri || tabId,
+        ...(entry.line != null ? { line: entry.line } : {}),
+      }
+      continue
+    }
+    if (tabId.startsWith("yaade:editor:") && entry.uri) {
+      remap.set(tabId, entry.uri)
+      nextFiles[entry.uri] = {
+        uri: entry.uri,
+        ...(entry.line != null ? { line: entry.line } : {}),
+      }
+      continue
+    }
+    if (entry.uri) {
+      const key = isFileEditorTabId(entry.uri) ? entry.uri : tabId
+      nextFiles[key] = {
+        uri: entry.uri,
+        ...(entry.line != null ? { line: entry.line } : {}),
+      }
+    }
+  }
+
+  if (remap.size === 0) return nextFiles
+
+  for (const panelId of getAllLeafPanels(tree)) {
+    const view = tree.getView(panelId)
+    if (!view || view.kind !== "tabs") continue
+    const tabIds = panelTabIds(view).map(id => remap.get(id) ?? id)
+    const activeTabId = remap.get(view.activeTabId) ?? view.activeTabId
+    const unique = tabIds.filter((id, i, arr) => arr.indexOf(id) === i)
+    if (unique.length === 0) continue
+    tree.setView(panelId, {
+      kind: "tabs",
+      activeTabId: unique.includes(activeTabId) ? activeTabId : unique[0]!,
+      tabIds: unique,
+    })
+  }
+
+  return nextFiles
 }
 
 /** True when a pane was launched as Neovim/Vim (quit should close the pane). */
@@ -338,6 +389,11 @@ export type MuxAppProps = {
   homeDir: string
   machineHostname: string
   onBackToProject?: () => void
+  /**
+   * Render inside ProjectPage content (no nested AppShell / session chrome).
+   * Footer (WhichKey / status) stays at the bottom of this pane.
+   */
+  embedded?: boolean
 }
 
 export function MuxApp({
@@ -345,6 +401,7 @@ export function MuxApp({
   homeDir,
   machineHostname,
   onBackToProject,
+  embedded = false,
 }: MuxAppProps) {
   const {
     appearanceSettings,
@@ -375,7 +432,13 @@ export function MuxApp({
 
   /** Filled after `openEditorInFocused` is defined — used by LSP go-to-def. */
   const openEditorInFocusedRef = useRef<
-    (options?: { uri?: string; filePath?: string; line?: number }) => void
+    (options?: {
+      uri?: string
+      filePath?: string
+      line?: number
+      column?: number
+      forceNewGroup?: boolean
+    }) => void
   >(() => {})
   const ensureLspForFileRef = useRef<(uri: string) => Promise<void>>(async () => {})
 
@@ -397,7 +460,7 @@ export function MuxApp({
   const [gitRoots, setGitRoots] = useState<Record<string, string>>({})
   /** Per editor-pane file target (uri + optional 1-based line). */
   const [editorFiles, setEditorFiles] = useState<
-    Record<string, { uri: string; line?: number }>
+    Record<string, { uri: string; line?: number; column?: number }>
   >({})
   /** Per editor-pane unsaved-changes flag. */
   const [editorDirty, setEditorDirty] = useState<Record<string, boolean>>({})
@@ -521,6 +584,11 @@ export function MuxApp({
       if (isGitTabId(tabId)) {
         return workspace.tabRegistry.get(tabId)?.label ?? "Git"
       }
+      if (isEditorTabId(tabId)) {
+        return (
+          workspace.tabRegistry.get(tabId)?.label ?? editorLabelFromUri(tabId)
+        )
+      }
       const session = terminalSessionForTab(tabId)
       if (session?.customLabel) return session.customLabel
       const cwdPath = (() => {
@@ -628,14 +696,30 @@ export function MuxApp({
   )
 
   const allocEditorPane = useCallback(
-    (uri: string, line?: number): AllocatedEditorPane => {
-      const tabId = editorTabId(allocEditorTabKey())
-      const label = editorLabelFromUri(uri)
-      const entry = { uri, ...(line != null ? { line } : {}) }
+    (
+      uri: string,
+      line?: number,
+      column?: number,
+    ): AllocatedEditorPane => {
+      const canonical = uri.startsWith("file://")
+        ? canonicalizeFileUri(uri)
+        : uri
+      // Reuse the existing tab id when the same file is already open under a
+      // URI variant (encoding / `..` segments) so goto-def does not duplicate.
+      const existingKey = Object.keys(editorFilesRef.current).find(k =>
+        sameFileTab(k, canonical),
+      )
+      const tabId = existingKey ?? canonical
+      const label = editorLabelFromUri(tabId)
+      const entry = {
+        uri: tabId,
+        ...(line != null ? { line } : {}),
+        ...(column != null && column > 0 ? { column } : {}),
+      }
       editorFilesRef.current = { ...editorFilesRef.current, [tabId]: entry }
       setEditorFiles(prev => ({ ...prev, [tabId]: entry }))
       workspace.registerTab({ id: tabId, kind: "editor", label })
-      return { tabId, uri, line, label }
+      return { tabId, uri: tabId, line, label }
     },
     [workspace],
   )
@@ -803,18 +887,51 @@ export function MuxApp({
           return next
         })
       } else if (isEditorTabId(tabId)) {
+        const liveNow = windowsRef.current.find(w => w.id === windowId)
+        const view = liveNow?.tree.getView(panelId)
+        const editorTabs =
+          view?.kind === "tabs"
+            ? panelTabIds(view).filter(id => isEditorTabId(id))
+            : [tabId]
         setEditorFiles(prev => {
-          if (!(tabId in prev)) return prev
+          let changed = false
           const next = { ...prev }
-          delete next[tabId]
-          return next
+          for (const id of editorTabs) {
+            if (id in next) {
+              delete next[id]
+              changed = true
+            }
+          }
+          return changed ? next : prev
         })
         setEditorDirty(prev => {
-          if (!(tabId in prev)) return prev
+          let changed = false
           const next = { ...prev }
-          delete next[tabId]
-          return next
+          for (const id of editorTabs) {
+            if (id in next) {
+              delete next[id]
+              changed = true
+            }
+          }
+          return changed ? next : prev
         })
+        for (const id of editorTabs) workspace.disposeTab(id)
+        updateWindow(windowId, w => {
+          const tree = w.tree.clone()
+          clearEditorTabsFromPanel(tree, panelId)
+          return {
+            ...w,
+            tree,
+            zoomedPaneId: editorTabs.includes(w.zoomedPaneId ?? "")
+              ? null
+              : w.zoomedPaneId,
+            focusedPaneId:
+              w.focusedPaneId?.id === panelId.id
+                ? (listPaneLeaves(tree)[0]?.panelId ?? null)
+                : w.focusedPaneId,
+          }
+        })
+        return
       }
       workspace.disposeTab(tabId)
       updateWindow(windowId, w => {
@@ -832,6 +949,58 @@ export function MuxApp({
       })
     },
     [paneTitle, updateWindow, workspace],
+  )
+
+  /** Close a single editor buffer tab (keeps the pane until the last tab). */
+  const closeEditorTab = useCallback(
+    (windowId: string, panelId: PanelId, tabId: string) => {
+      if (!isEditorTabId(tabId)) return
+      setEditorFiles(prev => {
+        if (!(tabId in prev)) return prev
+        const next = { ...prev }
+        delete next[tabId]
+        return next
+      })
+      setEditorDirty(prev => {
+        if (!(tabId in prev)) return prev
+        const next = { ...prev }
+        delete next[tabId]
+        return next
+      })
+      workspace.disposeTab(tabId)
+      updateWindow(windowId, w => {
+        const tree = w.tree.clone()
+        removePtyFromTree(tree, panelId, tabId)
+        const remaining = listPaneLeaves(tree)
+        return {
+          ...w,
+          tree,
+          zoomedPaneId: w.zoomedPaneId === tabId ? null : w.zoomedPaneId,
+          focusedPaneId:
+            w.focusedPaneId?.id === panelId.id
+              ? remaining.find(l => l.panelId.id === panelId.id)?.panelId ??
+                remaining[0]?.panelId ??
+                null
+              : w.focusedPaneId,
+        }
+      })
+    },
+    [updateWindow, workspace],
+  )
+
+  /** Activate an editor buffer tab inside a panel. */
+  const activateEditorTab = useCallback(
+    (windowId: string, panelId: PanelId, tabId: string) => {
+      updateWindow(windowId, w => {
+        const view = w.tree.getView(panelId)
+        if (!view || view.kind !== "tabs") return w
+        if (!panelTabIds(view).includes(tabId)) return w
+        const tree = w.tree.clone()
+        tree.setView(panelId, activatePanelTab(view, tabId))
+        return { ...w, tree, focusedPaneId: panelId }
+      })
+    },
+    [updateWindow],
   )
 
   /** Prefer the source pane's live shell cwd when opening splits. */
@@ -925,7 +1094,13 @@ export function MuxApp({
     async (
       windowId: string,
       panelId: PanelId | null,
-      options?: { uri?: string; filePath?: string; line?: number },
+      options?: {
+        uri?: string
+        filePath?: string
+        line?: number
+        column?: number
+        forceNewGroup?: boolean
+      },
     ) => {
       let uri = options?.uri
       if (!uri && options?.filePath) {
@@ -936,14 +1111,25 @@ export function MuxApp({
         setQuickOpenOpen(true)
         return
       }
-      const pane = allocEditorPane(uri, options?.line)
-      updateWindow(windowId, w => placeEditorPane(w, pane, "right", panelId))
+      if (uri.startsWith("file://")) uri = canonicalizeFileUri(uri)
+      const pane = allocEditorPane(uri, options?.line, options?.column)
+      updateWindow(windowId, w =>
+        placeEditorPane(w, pane, "right", panelId, {
+          forceNewGroup: options?.forceNewGroup === true,
+        }),
+      )
     },
     [allocEditorPane, cwdUri, updateWindow],
   )
 
   const openEditorInFocused = useCallback(
-    (options?: { uri?: string; filePath?: string; line?: number }) => {
+    (options?: {
+      uri?: string
+      filePath?: string
+      line?: number
+      column?: number
+      forceNewGroup?: boolean
+    }) => {
       const w =
         windowsRef.current.find(x => x.id === activeWindowIdRef.current) ??
         windowsRef.current[0]
@@ -953,7 +1139,10 @@ export function MuxApp({
       }
       const panelId =
         w.focusedPaneId ?? listPaneLeaves(w.tree)[0]?.panelId ?? null
-      void openEditorSplit(w.id, panelId, options)
+      void openEditorSplit(w.id, panelId, {
+        ...options,
+        forceNewGroup: options?.forceNewGroup === true,
+      })
     },
     [ensureProjectWindow, openEditorSplit],
   )
@@ -1033,23 +1222,25 @@ export function MuxApp({
         setGitRoots(payload.gitRoots)
         gitRootsRef.current = payload.gitRoots
       }
-      if (payload.editorFiles) {
-        const next: Record<string, { uri: string; line?: number }> = {}
-        for (const [k, v] of Object.entries(payload.editorFiles)) {
-          next[k] = { uri: v.uri, ...(v.line != null ? { line: v.line } : {}) }
-          if (isEditorTabId(k) && !workspace.tabRegistry.get(k)) {
-            workspace.registerTab({
-              id: k,
-              kind: "editor",
-              label: editorLabelFromUri(v.uri),
-            })
-          }
-        }
-        setEditorFiles(next)
-        editorFilesRef.current = next
-      }
       const hasLeaves = payload.sessions.length > 0
       if (!hasLeaves) {
+        if (payload.editorFiles) {
+          const migrated = migrateLegacyEditorTabs(
+            emptyMuxTree(),
+            payload.editorFiles,
+          )
+          setEditorFiles(migrated)
+          editorFilesRef.current = migrated
+          for (const [k, v] of Object.entries(migrated)) {
+            if (!workspace.tabRegistry.get(k)) {
+              workspace.registerTab({
+                id: k,
+                kind: "editor",
+                label: editorLabelFromUri(v.uri),
+              })
+            }
+          }
+        }
         ensureProjectWindow()
         return
       }
@@ -1079,6 +1270,23 @@ export function MuxApp({
         if (!live) {
           ensureProjectWindow()
           return
+        }
+        if (payload.editorFiles) {
+          const migrated = migrateLegacyEditorTabs(
+            live.tree,
+            payload.editorFiles,
+          )
+          setEditorFiles(migrated)
+          editorFilesRef.current = migrated
+          for (const [k, v] of Object.entries(migrated)) {
+            if (!workspace.tabRegistry.get(k)) {
+              workspace.registerTab({
+                id: k,
+                kind: "editor",
+                label: editorLabelFromUri(v.uri),
+              })
+            }
+          }
         }
         if (listTerminalLeaves(live.tree).length === 0) {
           const pane = allocTerminalPane()
@@ -1772,13 +1980,16 @@ export function MuxApp({
           name: folder.root.name,
         })),
       setFontSize,
-      openFile: () => {},
+      openFile: (uri, _path) => {
+        openEditorInFocusedRef.current({ uri })
+      },
       sessionMode: "terminal",
       sessionLayout: "sidebar",
       agentChatEnabled: false,
       route: "session",
       sessionId,
       sessionCwd: sessionCwdPath,
+      backToProject: onBackToProject,
     }))
     return () => {
       delete window.__yaadeAgent
@@ -1789,6 +2000,7 @@ export function MuxApp({
     executeCommand,
     fontSize,
     layoutReady,
+    onBackToProject,
     openWorkspace,
     paletteOpen,
     sessionCwdPath,
@@ -2065,8 +2277,10 @@ export function MuxApp({
   )
 
   const renderEditor = useCallback(
-    (tabId: string, _panelId: PanelId, focused: boolean): ReactNode => {
-      const file = editorFiles[tabId]
+    (tabId: string, panelId: PanelId, focused: boolean): ReactNode => {
+      const file =
+        editorFiles[tabId] ??
+        (isFileEditorTabId(tabId) ? { uri: tabId } : null)
       if (!file) return null
       return (
         <Suspense
@@ -2077,8 +2291,10 @@ export function MuxApp({
           <MuxEditorPane
             uri={file.uri}
             line={file.line}
+            column={file.column}
             theme={activeTheme as YaadeTheme}
             focused={focused}
+            viewStateId={`mux-editor-${panelId.id}`}
             onDirtyChange={dirty =>
               setEditorDirty(prev =>
                 prev[tabId] === dirty ? prev : { ...prev, [tabId]: dirty },
@@ -2161,61 +2377,57 @@ export function MuxApp({
     [switcherEntries],
   )
 
-  return (
-    <TooltipProvider>
-      <AppShell
-        footer={
-          pendingChordPrefix ? (
-            <WhichKeyPanel
-              prefix={formatKeyBinding(pendingChordPrefix)}
-              entries={whichKeyEntries}
-            />
-          ) : (
-            <MuxStatusStrip
-              prefixLabel={formatKeyBinding(MUX_PREFIX)}
-              actions={statusStripActions}
-            />
-          )
-        }
+  const footer = pendingChordPrefix ? (
+    <WhichKeyPanel
+      prefix={formatKeyBinding(pendingChordPrefix)}
+      entries={whichKeyEntries}
+    />
+  ) : (
+    <MuxStatusStrip
+      prefixLabel={formatKeyBinding(MUX_PREFIX)}
+      actions={statusStripActions}
+    />
+  )
+
+  const muxBody = (
+    <TabDndRoot handlers={tabDnd}>
+      <div
+        className="flex h-full min-h-0 w-full flex-col"
+        data-yaade-shell={embedded ? "mux-embedded" : "mux"}
+        data-yaade-mux=""
+        data-yaade-session-id={sessionId}
+        data-yaade-session-cwd={sessionCwdPath}
+        data-yaade-worktree-branch={sessionWorktreeBranch ?? undefined}
       >
-        <TabDndRoot handlers={tabDnd}>
+        {!embedded && (onBackToProject || sessionTitle) ? (
           <div
-            className="flex h-full min-h-0 w-full flex-col"
-            data-yaade-shell="mux"
-            data-yaade-mux=""
-            data-yaade-session-id={sessionId}
-            data-yaade-session-cwd={sessionCwdPath}
-            data-yaade-worktree-branch={sessionWorktreeBranch ?? undefined}
+            className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-3"
+            data-yaade-session-chrome=""
           >
-            {(onBackToProject || sessionTitle) && (
-              <div
-                className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-3"
-                data-yaade-session-chrome=""
+            {onBackToProject ? (
+              <button
+                type="button"
+                className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                data-yaade-session-back=""
+                onClick={onBackToProject}
               >
-                {onBackToProject ? (
-                  <button
-                    type="button"
-                    className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-                    data-yaade-session-back=""
-                    onClick={onBackToProject}
-                  >
-                    ← Project
-                  </button>
-                ) : null}
-                <span className="truncate text-xs font-medium text-foreground">
-                  {sessionTitle}
-                </span>
-                {sessionWorktreeBranch ? (
-                  <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
-                    {sessionWorktreeBranch}
-                  </span>
-                ) : null}
-              </div>
-            )}
-            <div
-              ref={workspaceSurfaceRef}
-              className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-            >
+                ← Project
+              </button>
+            ) : null}
+            <span className="truncate text-xs font-medium text-foreground">
+              {sessionTitle}
+            </span>
+            {sessionWorktreeBranch ? (
+              <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
+                {sessionWorktreeBranch}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <div
+          ref={workspaceSurfaceRef}
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+        >
               {activeWindow ? (
                 <div ref={dockSurfaceRef} className="h-full min-h-0 w-full">
                 <MuxWindowView
@@ -2243,7 +2455,9 @@ export function MuxApp({
                     void openNeovimSplit(activeWindow.id, panelId)
                   }
                   onOpenEditor={panelId =>
-                    void openEditorSplit(activeWindow.id, panelId)
+                    void openEditorSplit(activeWindow.id, panelId, {
+                      forceNewGroup: true,
+                    })
                   }
                   onOpenFile={(panelId, filePath, line) => {
                     const leaf = listPaneLeaves(activeWindow.tree).find(
@@ -2261,6 +2475,12 @@ export function MuxApp({
                   onClosePane={(panelId, ptyTabId) =>
                     void closePane(activeWindow.id, panelId, ptyTabId)
                   }
+                  onActivateEditorTab={(panelId, tabId) =>
+                    activateEditorTab(activeWindow.id, panelId, tabId)
+                  }
+                  onCloseEditorTab={(panelId, tabId) =>
+                    closeEditorTab(activeWindow.id, panelId, tabId)
+                  }
                   onEmptyOpenTerminal={() => {
                     void executeCommand("terminal.new")
                   }}
@@ -2277,8 +2497,24 @@ export function MuxApp({
                   gitRootForTab={tabId =>
                     (gitRoots[tabId] ?? cwdUri()) || null
                   }
-                  editorFileForTab={tabId => editorFiles[tabId] ?? null}
+                  editorFileForTab={tabId =>
+                    editorFiles[tabId] ??
+                    (isFileEditorTabId(tabId) ? { uri: tabId } : null)
+                  }
                   editorDirtyForTab={tabId => editorDirty[tabId] ?? false}
+                  editorBuffersForPanel={panelId => {
+                    const view = activeWindow.tree.getView(panelId)
+                    if (!view || view.kind !== "tabs") return []
+                    return panelTabIds(view)
+                      .filter(id => isEditorTabId(id))
+                      .map(tabId => ({
+                        tabId,
+                        label:
+                          workspace.tabRegistry.get(tabId)?.label ??
+                          editorLabelFromUri(tabId),
+                        dirty: editorDirty[tabId] ?? false,
+                      }))
+                  }}
                   shortcutFor={shortcutFor}
                   renderEditor={renderEditor}
                   theme={activeTheme as YaadeTheme}
@@ -2315,69 +2551,88 @@ export function MuxApp({
             </div>
           </div>
         </TabDndRoot>
+  )
 
-        <Suspense fallback={null}>
-          <MuxOverlays
-            paletteOpen={paletteOpen}
-            onPaletteOpenChange={setPaletteOpen}
-            paletteCommands={paletteCommands}
-            onRunCommand={id => void executeCommand(id)}
-            terminalListOpen={terminalListOpen}
-            onTerminalListOpenChange={setTerminalListOpen}
-            switcherItems={switcherItems}
-            onSelectTerminal={entry => {
-              focusPane(
-                entry.windowId,
-                { id: entry.panelId },
-                entry.ptyTabId,
-              )
-            }}
-            settingsOpen={settingsOpen}
-            onSettingsOpenChange={setSettingsOpen}
-            appearanceSettings={appearanceSettings}
-            onAppearanceChange={setAppearanceSettings}
-            onResetAppearance={resetAppearanceSettings}
-            cdOpen={cdOpen}
-            onCdOpenChange={setCdOpen}
-            cdInitialPath={
-              lastCwdUri
-                ? fileUriToPath(lastCwdUri)
-                : homeDirRef.current || null
+  const chrome = (
+    <>
+      {muxBody}
+      <Suspense fallback={null}>
+        <MuxOverlays
+          paletteOpen={paletteOpen}
+          onPaletteOpenChange={setPaletteOpen}
+          paletteCommands={paletteCommands}
+          onRunCommand={id => void executeCommand(id)}
+          terminalListOpen={terminalListOpen}
+          onTerminalListOpenChange={setTerminalListOpen}
+          switcherItems={switcherItems}
+          onSelectTerminal={entry => {
+            focusPane(
+              entry.windowId,
+              { id: entry.panelId },
+              entry.ptyTabId,
+            )
+          }}
+          settingsOpen={settingsOpen}
+          onSettingsOpenChange={setSettingsOpen}
+          appearanceSettings={appearanceSettings}
+          onAppearanceChange={setAppearanceSettings}
+          onResetAppearance={resetAppearanceSettings}
+          cdOpen={cdOpen}
+          onCdOpenChange={setCdOpen}
+          cdInitialPath={
+            lastCwdUri
+              ? fileUriToPath(lastCwdUri)
+              : homeDirRef.current || null
+          }
+          onSelectFolder={openWorkspace}
+          resolveHomeDir={async () => {
+            if (window.yaade?.getHomeDir) {
+              return window.yaade.getHomeDir()
             }
-            onSelectFolder={openWorkspace}
-            resolveHomeDir={async () => {
-              if (window.yaade?.getHomeDir) {
-                return window.yaade.getHomeDir()
-              }
-              return homeDirRef.current
-            }}
-            quickOpenOpen={quickOpenOpen}
-            onQuickOpenOpenChange={setQuickOpenOpen}
-            onQuickOpenSearch={onQuickOpenSearch}
-            onQuickOpenSelect={onQuickOpenSelect}
-            projectSearchOpen={projectSearchOpen}
-            onProjectSearchOpenChange={setProjectSearchOpen}
-            onProjectSearch={onProjectSearch}
-            onProjectSearchSelect={onProjectSearchSelect}
-          />
-        </Suspense>
+            return homeDirRef.current
+          }}
+          quickOpenOpen={quickOpenOpen}
+          onQuickOpenOpenChange={setQuickOpenOpen}
+          onQuickOpenSearch={onQuickOpenSearch}
+          onQuickOpenSelect={onQuickOpenSelect}
+          projectSearchOpen={projectSearchOpen}
+          onProjectSearchOpenChange={setProjectSearchOpen}
+          onProjectSearch={onProjectSearch}
+          onProjectSearchSelect={onProjectSearchSelect}
+        />
+      </Suspense>
 
-        <ConfirmDialogHost />
-        <LiquidGlassFilter />
-        {windows.some(w => listPaneLeaves(w.tree).some(l => l.kind === "editor")) ||
-        Object.keys(editorFiles).length > 0 ? (
-          <MuxLspHost
-            workspace={workspace}
-            onOpenFile={(uri, _path, line) => {
-              openEditorInFocusedRef.current({ uri, line })
-            }}
-            onReady={ensure => {
-              ensureLspForFileRef.current = ensure
-            }}
-          />
-        ) : null}
-        <Toaster position="bottom-right" />
-      </AppShell>
+      <ConfirmDialogHost />
+      <LiquidGlassFilter />
+      {windows.some(w => listPaneLeaves(w.tree).some(l => l.kind === "editor")) ||
+      Object.keys(editorFiles).length > 0 ? (
+        <MuxLspHost
+          workspace={workspace}
+          onOpenFile={(uri, _path, line, column) => {
+            openEditorInFocusedRef.current({ uri, line, column })
+          }}
+          onReady={ensure => {
+            ensureLspForFileRef.current = ensure
+          }}
+        />
+      ) : null}
+      <Toaster position="bottom-right" />
+    </>
+  )
+
+  return (
+    <TooltipProvider>
+      {embedded ? (
+        <div
+          className="flex h-full min-h-0 w-full flex-col overflow-hidden"
+          data-yaade-app-shell=""
+        >
+          <div className="min-h-0 flex-1 overflow-hidden">{chrome}</div>
+          {footer}
+        </div>
+      ) : (
+        <AppShell footer={footer}>{chrome}</AppShell>
+      )}
     </TooltipProvider>
   )
 }
