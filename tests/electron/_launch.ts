@@ -16,6 +16,12 @@ export type LaunchJetOptions = {
    * session workspace. Default false — most mux/terminal E2E specs need a session.
    */
   projectPage?: boolean
+  /**
+   * After mux mounts, open a terminal pane. Default true so historical specs
+   * keep working; product default for new sessions is empty (pass false to
+   * assert the empty picker).
+   */
+  withTerminal?: boolean
 }
 
 export const REPO_ROOT = resolve(__dirname, "..", "..")
@@ -70,6 +76,9 @@ export async function launchJet(
   const result = await launchWeb(opts)
   if (!opts.projectPage) {
     await waitForMux(result.page)
+    if (opts.withTerminal !== false) {
+      await openMuxTerminal(result.page)
+    }
   } else {
     await waitForProjectPage(result.page)
   }
@@ -186,6 +195,20 @@ export async function waitForMux(page: ShellDriver, timeoutMs = 30_000): Promise
     }
   }
   throw new Error("waitForMux: timed out waiting for project page or mux shell")
+}
+
+/** Open a terminal pane from the empty-state picker (or no-op if one exists). */
+export async function openMuxTerminal(
+  page: ShellDriver,
+  timeoutMs = 15_000,
+): Promise<void> {
+  if ((await page.locator("[data-yaade-terminal-panel]").count()) > 0) return
+  const emptyTile = page.locator('[data-yaade-mux-empty-action="terminal"]')
+  await emptyTile.waitFor({ state: "visible", timeout: timeoutMs })
+  await emptyTile.click()
+  await page.waitForSelector("[data-yaade-terminal-panel]", {
+    timeout: timeoutMs,
+  })
 }
 
 /** Wait for the GitHub-style project landing page (Overview). */

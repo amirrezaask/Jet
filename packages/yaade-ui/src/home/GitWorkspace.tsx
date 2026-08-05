@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type {
   GitCommit,
-  GitCommitDetail,
   GitNumstatEntry,
   GitRepositorySummary,
   GitStatusEntry,
@@ -72,7 +71,7 @@ import { cn } from "@/lib/utils.js"
 import { requestConfirm } from "@/components/ConfirmDialogHost.js"
 import { showYaadeToast } from "@/toast.js"
 import { SessionHeaderChromePortal } from "./session-header-chrome.js"
-import { loadCommitDiffContents } from "./commit-diff.js"
+import { CommitChangesDialog } from "./CommitChangesDialog.js"
 import { YaadeDiffViewer } from "./YaadeDiffViewer.js"
 
 type GitView = "changes" | "staged" | "history"
@@ -98,7 +97,7 @@ type GitWorkspaceProps = {
   initialView?: GitView
   /**
    * Project-page History: hide Changes/Staged/History pills and prepend a
-   * “Current changes” row that shows the working-tree diff in the detail pane.
+   * “Current changes” status row. Commit clicks open CommitChangesDialog.
    */
   unifiedHistory?: boolean
 }
@@ -154,15 +153,13 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const [selectedCommit, setSelectedCommit] = useState<string | null>(
     unifiedHistory ? GIT_WORKING_TREE_ID : null,
   )
-  const [commitDetail, setCommitDetail] = useState<GitCommitDetail | null>(null)
-  const [commitLoading, setCommitLoading] = useState(false)
+  const [dialogCommit, setDialogCommit] = useState<GitCommit | null>(null)
   const [mobileDetail, setMobileDetail] = useState(false)
   const [hunks, setHunks] = useState<DiffHunk[] | null>(null)
   const [hunksLoading, setHunksLoading] = useState(false)
   const [containerWidth, setContainerWidth] = useState(0)
   const rootRef = useRef<HTMLElement>(null)
   const diffRequest = useRef(0)
-  const commitRequest = useRef(0)
   const narrow = containerWidth > 0 && containerWidth < 560
 
   const refresh = useCallback(async () => {
@@ -253,52 +250,15 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     return () => observer.disconnect()
   }, [])
 
-  useEffect(() => {
-    if (
-      !rootUri ||
-      !api ||
-      view !== "history" ||
-      !selectedCommit ||
-      selectedCommit === GIT_WORKING_TREE_ID
-    ) {
-      setCommitDetail(null)
-      return
-    }
-    const request = ++commitRequest.current
-    setCommitLoading(true)
-    void api
-      .commitFiles(rootUri, selectedCommit)
-      .then(detail => {
-        if (request === commitRequest.current) setCommitDetail(detail)
-      })
-      .catch(error => {
-        if (request !== commitRequest.current) return
-        setCommitDetail(null)
-        showYaadeToast("Could not load commit", {
-          variant: "destructive",
-          description: errorMessage(error),
-        })
-      })
-      .finally(() => {
-        if (request === commitRequest.current) setCommitLoading(false)
-      })
-  }, [api, rootUri, view, selectedCommit])
-
   const filteredEntries = useMemo(() => {
     const needle = filter.trim().toLocaleLowerCase()
     if (!needle) return entries
     return entries.filter(entry => entry.path.toLocaleLowerCase().includes(needle))
   }, [entries, filter])
 
-  const showingWorkingTree =
-    unifiedHistory &&
-    view === "history" &&
-    selectedCommit === GIT_WORKING_TREE_ID
-  const navigatorView: GitView = showingWorkingTree ? "changes" : view
-
   const navigationRows = useMemo(
-    () => buildNavigationRows(filteredEntries, navigatorView),
-    [filteredEntries, navigatorView],
+    () => buildNavigationRows(filteredEntries, view),
+    [filteredEntries, view],
   )
   const stagedCount = entries.filter(entry => entry.staged).length
   const unstagedPaths = entries.filter(entry => entry.unstaged).map(entry => entry.path)
@@ -337,22 +297,8 @@ export function GitWorkspace(props: GitWorkspaceProps) {
 
   useEffect(() => {
     if (view !== "history") return
-    if (unifiedHistory) {
-      setSelectedCommit(current => {
-        if (current === GIT_WORKING_TREE_ID) return current
-        if (current && history.some(commit => commit.hash === current)) return current
-        return GIT_WORKING_TREE_ID
-      })
-      return
-    }
-    if (history.length === 0) {
-      setSelectedCommit(null)
-      return
-    }
-    setSelectedCommit(current =>
-      current && history.some(commit => commit.hash === current) ? current : history[0]!.hash,
-    )
-  }, [view, history, unifiedHistory])
+    setSelectedCommit(unifiedHistory ? GIT_WORKING_TREE_ID : null)
+  }, [view, unifiedHistory])
 
   const runAction = useCallback(
     async (label: string, task: () => Promise<void>, success?: string): Promise<boolean> => {
@@ -478,7 +424,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       filter={filter}
       selected={selected}
       pending={pendingAction !== null}
-      stageAllCount={navigatorView === "changes" ? unstagedPaths.length : 0}
+      stageAllCount={view === "changes" ? unstagedPaths.length : 0}
       unstageAllCount={stagedCount}
       numstat={numstat}
       onFilterChange={setFilter}
@@ -520,71 +466,23 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const historyList = (
     <HistoryList
       commits={history}
-      selectedHash={selectedCommit}
+      selectedHash={dialogCommit?.hash ?? selectedCommit}
       includeWorkingTree={unifiedHistory}
       dirtyCount={dirtyCount}
       onSelect={hash => {
-        setSelectedCommit(hash)
-        if (narrow) setMobileDetail(true)
+        if (hash === GIT_WORKING_TREE_ID) {
+          setSelectedCommit(GIT_WORKING_TREE_ID)
+          return
+        }
+        const commit = history.find(row => row.hash === hash)
+        if (commit) setDialogCommit(commit)
       }}
     />
   )
 
-  const commitDetailPane = (
-    <CommitDetailView
-      detail={commitDetail}
-      loading={commitLoading}
-      rootUri={rootUri}
-      theme={theme}
-      fontSize={fontSize}
-      onBack={narrow ? () => setMobileDetail(false) : undefined}
-    />
-  )
-
-  const workingTreeDetail = narrow ? (
-    mobileDetail ? (
-      diffViewer
-    ) : (
-      navigatorPane
-    )
-  ) : (
-    <ResizablePanelGroup
-      orientation="horizontal"
-      className="min-h-0 flex-1 bg-transparent"
-    >
-      <ResizablePanel defaultSize="38%" minSize="140px" maxSize="55%">
-        {navigatorPane}
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel defaultSize="62%" minSize="160px">
-        {diffViewer}
-      </ResizablePanel>
-    </ResizablePanelGroup>
-  )
-
-  const historyDetailPane = showingWorkingTree
-    ? workingTreeDetail
-    : commitDetailPane
-
   const body =
     view === "history" ? (
-      narrow ? (
-        mobileDetail ? historyDetailPane : historyList
-      ) : (
-        <ResizablePanelGroup
-          orientation="horizontal"
-          data-yaade-git-content=""
-          className="min-h-0 flex-1 bg-transparent"
-        >
-          <ResizablePanel defaultSize="38%" minSize="200px" maxSize="60%">
-            {historyList}
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel defaultSize="62%" minSize="200px">
-            {historyDetailPane}
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      )
+      historyList
     ) : narrow ? (
       mobileDetail ? diffViewer : navigatorPane
     ) : (
@@ -639,6 +537,20 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       />
 
       {body}
+
+      {dialogCommit ? (
+        <CommitChangesDialog
+          open
+          onOpenChange={open => {
+            if (!open) setDialogCommit(null)
+          }}
+          rootUri={rootUri}
+          hash={dialogCommit.hash}
+          theme={theme}
+          fontSize={fontSize}
+          commit={dialogCommit}
+        />
+      ) : null}
     </section>
   )
 }
@@ -1438,251 +1350,6 @@ function HunkMenu(props: {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-function CommitDetailView(props: {
-  detail: GitCommitDetail | null
-  loading: boolean
-  rootUri: string | null
-  theme: YaadeTheme
-  fontSize: number
-  onBack?: () => void
-}) {
-  const { detail, loading, rootUri, theme, fontSize, onBack } = props
-  const api = window.yaade?.git
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [diffContents, setDiffContents] = useState<DiffContents | null>(null)
-  const [diffLoading, setDiffLoading] = useState(false)
-  const [diffError, setDiffError] = useState<string | null>(null)
-  const [mobileFileDiff, setMobileFileDiff] = useState(false)
-  const [containerWidth, setContainerWidth] = useState(0)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const diffRequest = useRef(0)
-  const narrow = containerWidth > 0 && containerWidth < 520
-
-  useEffect(() => {
-    const el = rootRef.current
-    if (!el || typeof ResizeObserver === "undefined") return
-    const ro = new ResizeObserver(entries => {
-      const width = entries[0]?.contentRect.width ?? 0
-      setContainerWidth(width)
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  useEffect(() => {
-    setSelectedPath(detail?.files[0]?.path ?? null)
-    setMobileFileDiff(false)
-    setDiffContents(null)
-    setDiffError(null)
-  }, [detail?.hash])
-
-  const selectedFile =
-    detail?.files.find(file => file.path === selectedPath) ?? detail?.files[0] ?? null
-
-  useEffect(() => {
-    if (!api || !rootUri || !detail || !selectedFile) {
-      setDiffContents(null)
-      setDiffError(null)
-      return
-    }
-    const file = selectedFile
-    const request = ++diffRequest.current
-    setDiffLoading(true)
-    setDiffError(null)
-    void loadCommitDiffContents(api, rootUri, detail.hash, file)
-      .then(contents => {
-        if (request !== diffRequest.current) return
-        setDiffContents(contents)
-      })
-      .catch(err => {
-        if (request !== diffRequest.current) return
-        setDiffContents(null)
-        setDiffError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        if (request === diffRequest.current) setDiffLoading(false)
-      })
-  }, [
-    api,
-    rootUri,
-    detail?.hash,
-    selectedFile?.path,
-    selectedFile?.status,
-    selectedFile?.originalPath,
-  ])
-
-  if (loading && !detail) return <CenteredStatus label="Loading commit…" />
-  if (!detail) {
-    return (
-      <CenteredEmpty
-        title="Select a commit"
-        description="Choose a commit to view its message and files."
-      />
-    )
-  }
-
-  const fileList = (
-    <div data-yaade-list-panel="git-commit-files" className="flex h-full min-h-0 flex-col overflow-hidden">
-      {detail.body ? (
-        <pre className="mx-3 mt-2 max-h-24 shrink-0 overflow-auto rounded-md bg-muted/40 p-2 font-mono text-3xs whitespace-pre-wrap text-foreground/90">
-          {detail.body}
-        </pre>
-      ) : null}
-      <div className="shrink-0 px-3 py-2 font-mono text-3xs tracking-wide text-muted-foreground uppercase">
-        {detail.files.length} {detail.files.length === 1 ? "file" : "files"}
-      </div>
-      <ul className="min-h-0 flex-1 overflow-auto px-1 pb-2">
-        {detail.files.length === 0 ? (
-          <li className="px-2 py-3 text-2xs text-muted-foreground">
-            No files changed in this commit.
-          </li>
-        ) : (
-          detail.files.map(file => {
-            const active = file.path === selectedFile?.path
-            return (
-              <li key={`${file.status}:${file.path}`}>
-                <button
-                  type="button"
-                  data-yaade-list-item=""
-                  data-active={active ? "" : undefined}
-                  onClick={() => {
-                    setSelectedPath(file.path)
-                    if (narrow) setMobileFileDiff(true)
-                  }}
-                  className={cn(
-                    "flex w-full shrink-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-2xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    active
-                      ? "bg-primary/10 text-foreground"
-                      : "text-muted-foreground hover:bg-accent/35 hover:text-foreground",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "w-3 shrink-0 text-center font-mono font-medium",
-                      statusColor(file.status),
-                    )}
-                    title={file.status}
-                  >
-                    {statusLetter(file.status)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
-                </button>
-              </li>
-            )
-          })
-        )}
-      </ul>
-    </div>
-  )
-
-  const diffPane = (
-    <div data-yaade-git-diff="" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-      {selectedFile ? (
-        <>
-          <div
-            data-yaade-liquid-glass="chrome"
-            className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent px-3"
-          >
-            {narrow && mobileFileDiff ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Back to file list"
-                onClick={() => setMobileFileDiff(false)}
-              >
-                <ArrowLeftIcon />
-              </Button>
-            ) : (
-              <FileDiffIcon className="text-muted-foreground" aria-hidden />
-            )}
-            <span className="min-w-0 flex-1 truncate font-mono text-2xs">{selectedFile.path}</span>
-            <span className="shrink-0 font-mono text-3xs text-muted-foreground">
-              {selectedFile.status}
-            </span>
-          </div>
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {diffLoading ? (
-              <CenteredStatus label="Loading diff…" />
-            ) : diffError ? (
-              <CenteredEmpty title="Failed to load diff" description={diffError} />
-            ) : diffContents &&
-              (diffContents.original.length > 0 || diffContents.modified.length > 0) ? (
-              <YaadeDiffViewer
-                path={selectedFile.path}
-                original={diffContents.original}
-                modified={diffContents.modified}
-                mode={narrow ? "unified" : "split"}
-                theme={theme}
-                fontSize={fontSize}
-              />
-            ) : (
-              <CenteredEmpty
-                title="No textual diff"
-                description="This file may be binary or empty in this commit."
-              />
-            )}
-          </div>
-        </>
-      ) : (
-        <CenteredEmpty
-          title="Select a file"
-          description="Choose a file from this commit to inspect its diff."
-        />
-      )}
-    </div>
-  )
-
-  return (
-    <div
-      ref={rootRef}
-      data-yaade-git-commit-detail=""
-      className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent"
-    >
-      <div
-        data-yaade-liquid-glass="chrome"
-        className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-3"
-      >
-        {onBack ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Back to history"
-            onClick={onBack}
-          >
-            <ArrowLeftIcon />
-          </Button>
-        ) : (
-          <HistoryIcon className="text-muted-foreground" aria-hidden />
-        )}
-        <span className="min-w-0 flex-1 truncate text-2xs font-medium">{detail.subject}</span>
-        <span className="shrink-0 font-mono text-3xs text-muted-foreground">
-          {detail.hash.slice(0, 7)}
-        </span>
-      </div>
-      {narrow ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {mobileFileDiff ? diffPane : fileList}
-        </div>
-      ) : (
-        <ResizablePanelGroup
-          orientation="horizontal"
-          className="min-h-0 flex-1 bg-transparent"
-        >
-          <ResizablePanel defaultSize="34%" minSize="140px" maxSize="50%">
-            {fileList}
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel defaultSize="66%" minSize="180px">
-            {diffPane}
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      )}
-    </div>
   )
 }
 

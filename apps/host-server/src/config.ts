@@ -63,8 +63,8 @@ export async function loadConfig(argv = process.argv.slice(2)): Promise<HostConf
   const homeRoot = path.resolve(home)
   if (allowedRoots.length === 0) allowedRoots.push(homeRoot)
 
-  // Explicit CLI/desktop path may live outside $HOME (external volume, etc.).
-  // Packaged Electron hosts often start with cwd under Resources/ — that must
+  // Explicit CLI path may live outside $HOME (external volume, etc.).
+  // Packaged hosts often start with cwd under the extract cache — that must
   // NOT become the default workspace (it fails PATH_OUTSIDE_ALLOWED_ROOTS).
   const explicitPath =
     typeof args.path === "string" && String(args.path).trim()

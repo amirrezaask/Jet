@@ -44,8 +44,9 @@ describe("url-workspace", () => {
   it("builds titles and reverse URL paths", () => {
     assert.equal(
       workspaceDocumentTitle("/Users/me/dev/foo", "/Users/me"),
-      "~/dev/foo",
+      "foo",
     )
+    assert.equal(workspaceDocumentTitle("/Users/me", "/Users/me"), "me")
     assert.equal(urlPathForProjectRoot("/Users/me/dev/foo", "/Users/me"), "/dev/foo")
     assert.equal(urlPathForProjectRoot("/Users/me", "/Users/me"), "/")
   })

@@ -13,7 +13,6 @@ import {
   AppShell,
   bundledThemeList,
   cn,
-  showYaadeToast,
 } from "@yaade/ui"
 import {
   Button,
@@ -28,16 +27,10 @@ import { workspaceDocumentTitle } from "../url-workspace.js"
 import {
   createProjectSession,
   openCheckoutSession,
-  saveProjectSessionPayload,
 } from "../project-session-client.js"
 import { ProjectOverview } from "./ProjectOverview.js"
 import { ProjectPathSwitcher } from "./ProjectPathSwitcher.js"
 import { WorktreeSwitcher } from "./WorktreeSwitcher.js"
-import {
-  buildNeovimQflistSessionPayload,
-  formatSearchHitsAsQuickfix,
-  writeQuickfixTempFile,
-} from "./search-session.js"
 
 const GitWorkspace = lazy(() =>
   import("@yaade/ui/git").then(m => ({ default: m.GitWorkspace })),
@@ -75,6 +68,7 @@ export function ProjectPage({
     appearanceSettings,
     setAppearanceSettings,
     activeTheme,
+    fontSize,
     resetAppearanceSettings,
   } = useAppearanceSettings()
   const [view, setView] = useState<ProjectView>(
@@ -82,7 +76,6 @@ export function ProjectPage({
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [summary, setSummary] = useState<GitRepositorySummary | null>(null)
-  const [searchPending, setSearchPending] = useState(false)
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
   const title = workspaceDocumentTitle(projectPath, homeDir)
 
@@ -149,48 +142,6 @@ export function ProjectPage({
       await onOpenSession(created.id)
     },
     [onOpenSession, projectPath],
-  )
-
-  const handleProjectSearch = useCallback(
-    async (query: string) => {
-      const searchApi = window.yaade?.search
-      if (!searchApi?.project) {
-        showYaadeToast("Project search is unavailable", {
-          variant: "destructive",
-        })
-        return
-      }
-      setSearchPending(true)
-      try {
-        const hits = await searchApi.project(rootUri, query)
-        if (hits.length === 0) {
-          showYaadeToast(`No matches for “${query}”`, {
-            variant: "destructive",
-          })
-          return
-        }
-        const errorfile = await writeQuickfixTempFile(
-          formatSearchHitsAsQuickfix(hits),
-        )
-        const created = await createProjectSession({
-          rootPath: projectPath,
-          title: `Search: ${query}`.slice(0, 80),
-        })
-        await saveProjectSessionPayload(
-          created.id,
-          buildNeovimQflistSessionPayload(created.cwdPath, errorfile),
-        )
-        setView("worktree")
-        await onOpenSession(created.id)
-      } catch (err) {
-        showYaadeToast(err instanceof Error ? err.message : String(err), {
-          variant: "destructive",
-        })
-      } finally {
-        setSearchPending(false)
-      }
-    },
-    [onOpenSession, projectPath, rootUri],
   )
 
   // Radix Tabs only knows Overview / History; worktree view leaves both inactive.
@@ -270,8 +221,8 @@ export function ProjectPage({
               <ProjectOverview
                 projectPath={projectPath}
                 homeDir={homeDir}
-                searchPending={searchPending}
-                onProjectSearch={handleProjectSearch}
+                theme={activeTheme}
+                fontSize={fontSize}
               />
             </div>
 

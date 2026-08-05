@@ -26,6 +26,7 @@ import {
   formatMuxTitle,
   requestConfirm,
   showYaadeToast,
+  type AgentCliDriver,
   type MuxStatusStripAction,
   type PaletteShellItem,
   type TabDndHandlers,
@@ -61,6 +62,11 @@ import {
   type KeymapContext,
 } from "@yaade/workspace"
 import { createAgentBridge } from "../agent-bridge.js"
+import {
+  buildAgentCliLaunchArgs,
+  buildAgentCliLaunchEnv,
+} from "../agent-cli-launch.js"
+import { agentDriverIdForMode } from "@yaade/agents"
 import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
 import { useGlobalKeymap } from "../hooks/useGlobalKeymap.js"
 import { MuxLspHost } from "./MuxLspHost.js"
@@ -650,8 +656,12 @@ export function MuxApp({
     (options?: {
       launchCommand?: string
       launchArgs?: string[]
+      launchEnv?: Record<string, string>
       label?: string
       rootUri?: string
+      agentId?: string
+      agentTitle?: string
+      agentDriverId?: string
     }): AllocatedTerminalPane => {
       const sessionKey = allocTerminalSessionKey()
       const ptyTabId = terminalTabId(sessionKey)
@@ -660,6 +670,11 @@ export function MuxApp({
       registerTerminalSession(ptyTabId, rootUri, options?.launchCommand, {
         customLabel: options?.label,
         launchArgs: options?.launchArgs,
+        launchEnv: options?.launchEnv,
+        agentId: options?.agentId,
+        agentTitle: options?.agentTitle,
+        agentDriverId: options?.agentDriverId,
+        pendingCliMint: options?.agentId === "cursor",
       })
       workspace.registerTab({
         id: ptyTabId,
@@ -734,42 +749,34 @@ export function MuxApp({
   }, [])
 
   /**
-   * Ensure the page has a project window with at least one terminal pane.
-   * Empty / git-only layouts get a blank shell so new browser tabs are never blank.
+   * Ensure the page has a project window. New sessions start empty — no PTY
+   * until the user opens Terminal / Neovim / Git / Editor from the empty state.
    */
-  const ensureProjectWindow = useCallback(() => {
+  const ensureProjectWindow = useCallback((): LiveWindow => {
     const existing =
       windowsRef.current.find(w => w.id === activeWindowIdRef.current) ??
       windowsRef.current[0] ??
       null
 
-    if (!existing) {
-      const id = allocWindowId()
-      const base: LiveWindow = {
-        id,
-        title: "Window",
-        tree: emptyMuxTree(),
-        focusedPaneId: null,
-        zoomedPaneId: null,
+    if (existing) {
+      if (activeWindowIdRef.current !== existing.id) {
+        setActiveWindowId(existing.id)
       }
-      const pane = allocTerminalPane()
-      const live = placeTerminalPane(base, pane)
-      setWindows([live])
-      setActiveWindowId(id)
-      return
+      return existing
     }
 
-    if (listTerminalLeaves(existing.tree).length > 0) return
-
-    const pane = allocTerminalPane()
-    const live = placeTerminalPane(existing, pane)
-    setWindows(prev =>
-      prev.length === 0
-        ? [live]
-        : prev.map(w => (w.id === live.id ? live : w)),
-    )
-    setActiveWindowId(live.id)
-  }, [allocTerminalPane])
+    const id = allocWindowId()
+    const base: LiveWindow = {
+      id,
+      title: "Window",
+      tree: emptyMuxTree(),
+      focusedPaneId: null,
+      zoomedPaneId: null,
+    }
+    setWindows([base])
+    setActiveWindowId(id)
+    return base
+  }, [])
 
   const closeWindow = useCallback(
     async (windowId: string, options?: { skipConfirm?: boolean }) => {
@@ -835,21 +842,19 @@ export function MuxApp({
         setEditorFiles(prev => prune(prev) as typeof prev)
         setEditorDirty(prev => prune(prev) as typeof prev)
       }
-      // Single-window model: replace with a fresh blank terminal, do not leave empty.
+      // Single-window model: reset to an empty window (no auto-spawned PTY).
       const id = allocWindowId()
-      const base: LiveWindow = {
+      const next: LiveWindow = {
         id,
         title: "Window",
         tree: emptyMuxTree(),
         focusedPaneId: null,
         zoomedPaneId: null,
       }
-      const pane = allocTerminalPane()
-      const next = placeTerminalPane(base, pane)
       setWindows([next])
       setActiveWindowId(id)
     },
-    [allocTerminalPane, paneTitle, workspace],
+    [paneTitle, workspace],
   )
 
   const closePane = useCallback(
@@ -1052,6 +1057,77 @@ export function MuxApp({
     [allocTerminalPane, resolveSplitCwdUri, updateWindow],
   )
 
+  /** Open a terminal in the active window (fill empty, else split). */
+  const openTerminalInActiveWindow = useCallback(
+    async (edge: "right" | "bottom" = "right") => {
+      const w = ensureProjectWindow()
+      if (listPaneLeaves(w.tree).length === 0 || !w.focusedPaneId) {
+        const pane = allocTerminalPane()
+        updateWindow(w.id, live => placeTerminalPane(live, pane))
+        return
+      }
+      await splitPane(w.id, w.focusedPaneId, edge)
+    },
+    [allocTerminalPane, ensureProjectWindow, splitPane, updateWindow],
+  )
+
+  /** Launch a known agent CLI into the active (or empty) window. */
+  const openAgentCliPane = useCallback(
+    (driver: AgentCliDriver) => {
+      const w = ensureProjectWindow()
+      const rootUri = cwdUri()
+      const projectRoot = rootUri ? fileUriToPath(rootUri) : ""
+      const launchContext = {
+        sessionId: "pending",
+        origin: window.location.origin,
+        projectRoot,
+      }
+      // Args/env need the real tab id — allocate first with placeholders, then
+      // the session store already holds the tab id for build* helpers below.
+      const sessionKey = allocTerminalSessionKey()
+      const ptyTabId = terminalTabId(sessionKey)
+      const launchArgs = buildAgentCliLaunchArgs(driver.id, {
+        ...launchContext,
+        sessionId: ptyTabId,
+      })
+      const launchEnv = buildAgentCliLaunchEnv(driver.id, {
+        ...launchContext,
+        sessionId: ptyTabId,
+      })
+      registerTerminalSession(ptyTabId, rootUri, driver.command, {
+        customLabel: driver.label,
+        launchArgs,
+        launchEnv,
+        agentId: driver.id,
+        agentTitle: driver.label,
+        agentDriverId: agentDriverIdForMode(driver.id, "cli"),
+        pendingCliMint: driver.id === "cursor",
+      })
+      workspace.registerTab({
+        id: ptyTabId,
+        kind: "terminal",
+        label: driver.label,
+      })
+      const pane: AllocatedTerminalPane = {
+        ptyTabId,
+        label: driver.label,
+        rootUri,
+        launchCommand: driver.command,
+        launchArgs,
+      }
+      updateWindow(w.id, live => placeTerminalPane(live, pane))
+      if (projectRoot) {
+        void window.yaade?.agents
+          ?.installProjectHooks?.({
+            provider: driver.id,
+            projectRoot,
+          })
+          .catch(() => undefined)
+      }
+    },
+    [cwdUri, ensureProjectWindow, updateWindow, workspace],
+  )
+
   const openGitSplit = useCallback(
     async (windowId: string, panelId: PanelId | null) => {
       const rootUri = panelId
@@ -1130,13 +1206,7 @@ export function MuxApp({
       column?: number
       forceNewGroup?: boolean
     }) => {
-      const w =
-        windowsRef.current.find(x => x.id === activeWindowIdRef.current) ??
-        windowsRef.current[0]
-      if (!w) {
-        ensureProjectWindow()
-        return
-      }
+      const w = ensureProjectWindow()
       const panelId =
         w.focusedPaneId ?? listPaneLeaves(w.tree)[0]?.panelId ?? null
       void openEditorSplit(w.id, panelId, {
@@ -1208,12 +1278,10 @@ export function MuxApp({
         projectPathRef.current || folderPath,
         homeDirRef.current,
       )
-      document.title = sessionTitle
-        ? `${sessionTitle} · ${titleBase}`
-        : titleBase
+      document.title = titleBase
       setLayoutReady(true)
     },
-    [sessionTitle, workspace],
+    [workspace],
   )
 
   const applyServerPayload = useCallback(
@@ -1266,7 +1334,7 @@ export function MuxApp({
       try {
         hydratePersistedSessions([windowPersisted], workspace)
         const hydrated = hydrateWindows([windowPersisted])
-        let live = hydrated[0]
+        const live = hydrated[0]
         if (!live) {
           ensureProjectWindow()
           return
@@ -1288,17 +1356,13 @@ export function MuxApp({
             }
           }
         }
-        if (listTerminalLeaves(live.tree).length === 0) {
-          const pane = allocTerminalPane()
-          live = placeTerminalPane(live, pane)
-        }
         setWindows([live])
         setActiveWindowId(live.id)
       } catch {
         ensureProjectWindow()
       }
     },
-    [allocTerminalPane, ensureProjectWindow, workspace],
+    [ensureProjectWindow, workspace],
   )
 
   useEffect(() => {
@@ -1469,8 +1533,8 @@ export function MuxApp({
   closeWindowRef.current = closeWindow
   const closePaneRef = useRef(closePane)
   closePaneRef.current = closePane
-  const splitPaneRef = useRef(splitPane)
-  splitPaneRef.current = splitPane
+  const openTerminalInActiveWindowRef = useRef(openTerminalInActiveWindow)
+  openTerminalInActiveWindowRef.current = openTerminalInActiveWindow
   const openGitSplitRef = useRef(openGitSplit)
   openGitSplitRef.current = openGitSplit
   const openNeovimSplitRef = useRef(openNeovimSplit)
@@ -1523,14 +1587,7 @@ export function MuxApp({
       commands.register(
         "terminal.new",
         run(() => {
-          const w = windowsRef.current.find(
-            x => x.id === activeWindowIdRef.current,
-          )
-          if (!w?.focusedPaneId) {
-            ensureProjectWindowRef.current()
-            return
-          }
-          splitPaneRef.current(w.id, w.focusedPaneId, "right")
+          void openTerminalInActiveWindowRef.current("right")
         }),
         { id: "terminal.new", title: "New Terminal Pane", category: "Terminal" },
       ),
@@ -1549,36 +1606,22 @@ export function MuxApp({
       commands.register(
         "mux.splitRight",
         run(() => {
-          const w = windowsRef.current.find(
-            x => x.id === activeWindowIdRef.current,
-          )
-          if (!w?.focusedPaneId) return
-          splitPaneRef.current(w.id, w.focusedPaneId, "right")
+          void openTerminalInActiveWindowRef.current("right")
         }),
         { id: "mux.splitRight", title: "Split Right", category: "Terminal" },
       ),
       commands.register(
         "mux.splitDown",
         run(() => {
-          const w = windowsRef.current.find(
-            x => x.id === activeWindowIdRef.current,
-          )
-          if (!w?.focusedPaneId) return
-          splitPaneRef.current(w.id, w.focusedPaneId, "bottom")
+          void openTerminalInActiveWindowRef.current("bottom")
         }),
         { id: "mux.splitDown", title: "Split Down", category: "Terminal" },
       ),
       commands.register(
         "mux.openGit",
         run(() => {
-          const w = windowsRef.current.find(
-            x => x.id === activeWindowIdRef.current,
-          )
-          if (!w) {
-            ensureProjectWindowRef.current()
-            return
-          }
-          openGitSplitRef.current(w.id, w.focusedPaneId)
+          const w = ensureProjectWindowRef.current()
+          void openGitSplitRef.current(w.id, w.focusedPaneId)
         }),
         {
           id: "mux.openGit",
@@ -1590,14 +1633,8 @@ export function MuxApp({
       commands.register(
         "dialog.showGit",
         run(() => {
-          const w = windowsRef.current.find(
-            x => x.id === activeWindowIdRef.current,
-          )
-          if (!w) {
-            ensureProjectWindowRef.current()
-            return
-          }
-          openGitSplitRef.current(w.id, w.focusedPaneId)
+          const w = ensureProjectWindowRef.current()
+          void openGitSplitRef.current(w.id, w.focusedPaneId)
         }),
         {
           id: "dialog.showGit",
@@ -1609,14 +1646,8 @@ export function MuxApp({
       commands.register(
         "mux.openNeovim",
         run(() => {
-          const w = windowsRef.current.find(
-            x => x.id === activeWindowIdRef.current,
-          )
-          if (!w) {
-            ensureProjectWindowRef.current()
-            return
-          }
-          openNeovimSplitRef.current(w.id, w.focusedPaneId)
+          const w = ensureProjectWindowRef.current()
+          void openNeovimSplitRef.current(w.id, w.focusedPaneId)
         }),
         {
           id: "mux.openNeovim",
@@ -2492,6 +2523,9 @@ export function MuxApp({
                   }}
                   onEmptyOpenEditor={() => {
                     void executeCommand("mux.openEditor")
+                  }}
+                  onEmptyOpenAgent={driver => {
+                    openAgentCliPane(driver)
                   }}
                   onNewWindow={() => openBrowserProjectTab()}
                   gitRootForTab={tabId =>

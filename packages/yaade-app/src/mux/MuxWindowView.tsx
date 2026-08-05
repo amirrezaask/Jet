@@ -9,6 +9,7 @@ import {
   PanelDock,
   SessionHeaderChromeProvider,
   sessionHeaderContextRef,
+  type AgentCliDriver,
   type ModalEditorBuffer,
   type PanelSlotMeta,
   type TabDndHandlers,
@@ -49,6 +50,7 @@ export type MuxWindowViewProps = {
   onEmptyOpenNeovim?: () => void
   onEmptyOpenGit?: () => void
   onEmptyOpenEditor?: () => void
+  onEmptyOpenAgent?: (driver: AgentCliDriver) => void
   /** Resolve git pane workspace root (source shell cwd at open time). */
   gitRootForTab: (tabId: string) => string | null
   /** Resolve editor pane file URI. */
@@ -269,6 +271,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     onEmptyOpenNeovim,
     onEmptyOpenGit,
     onEmptyOpenEditor,
+    onEmptyOpenAgent,
     gitRootForTab,
     editorDirtyForTab,
     editorBuffersForPanel,
@@ -298,6 +301,11 @@ export function MuxWindowView(props: MuxWindowViewProps) {
             onOpenNeovim={() => onEmptyOpenNeovim?.()}
             onOpenGit={() => onEmptyOpenGit?.()}
             onOpenEditor={() => onEmptyOpenEditor?.()}
+            onOpenAgent={
+              onEmptyOpenAgent
+                ? driver => onEmptyOpenAgent(driver)
+                : undefined
+            }
             shortcutFor={shortcutFor}
           />
         </div>

@@ -53,16 +53,11 @@ export function resolveHomeRelativePath(
   return `${home}/${safe.join("/")}`
 }
 
-/** Short document title for a project root. */
+/** Short document title for a project root — just the directory name. */
 export function workspaceDocumentTitle(
   absolutePath: string,
-  homeDir: string,
+  _homeDir?: string,
 ): string {
-  const home = homeDir.replace(/\/+$/, "")
-  if (home && (absolutePath === home || absolutePath.startsWith(`${home}/`))) {
-    const rel = absolutePath.slice(home.length).replace(/^\//, "")
-    return rel ? `~/${rel}` : "~"
-  }
   const base = absolutePath.split("/").filter(Boolean).pop()
   return base || absolutePath || "YAADE"
 }

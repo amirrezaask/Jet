@@ -318,7 +318,7 @@ test.describe("project page", () => {
     }
   })
 
-  test("history tab shows current changes then commit diffs", async () => {
+  test("history tab shows current changes; commit opens changes dialog", async () => {
     test.skip(
       (() => {
         try {
@@ -368,19 +368,19 @@ test.describe("project page", () => {
         .filter({ hasText: "beta" })
         .click()
 
-      await page.locator("[data-yaade-git-commit-detail]").waitFor({
+      await page.locator("[data-yaade-commit-changes-dialog]").waitFor({
         state: "visible",
         timeout: 10_000,
       })
       await expectListRows(page, {
-        panel: "git-commit-files",
+        panel: "commit-changes-files",
         minItems: 1,
         needle: "note.txt",
         noResultsText: "No files changed",
       })
 
       await page
-        .locator('[data-yaade-list-panel="git-commit-files"] [data-yaade-list-item]')
+        .locator('[data-yaade-list-panel="commit-changes-files"] [data-yaade-list-item]')
         .first()
         .click()
 
@@ -389,14 +389,14 @@ test.describe("project page", () => {
           async () =>
             page
               .locator(
-                "[data-yaade-git-commit-detail] [data-yaade-git-diff] [data-yaade-pierre-diff] diffs-container",
+                "[data-yaade-commit-changes-dialog] [data-yaade-git-diff] [data-yaade-pierre-diff] diffs-container",
               )
               .count(),
           { timeout: 15_000 },
         )
         .toBeGreaterThan(0)
       const historyDiff = page.locator(
-        "[data-yaade-git-commit-detail] [data-yaade-git-diff] [data-yaade-pierre-diff]",
+        "[data-yaade-commit-changes-dialog] [data-yaade-git-diff] [data-yaade-pierre-diff]",
       )
       await expect
         .poll(async () => (await historyDiff.boundingBox())?.height ?? 0, { timeout: 10_000 })
@@ -407,24 +407,27 @@ test.describe("project page", () => {
     }
   })
 
-  test("project search opens a Neovim session with quickfix hits", async () => {
+  test("overview commit opens changes dialog with file diff", async () => {
     test.skip(
       (() => {
         try {
-          execSync("which nvim", { stdio: "ignore" })
+          execSync("which git", { stdio: "ignore" })
           return false
         } catch {
           return true
         }
       })(),
-      "nvim not available",
+      "git not available",
     )
 
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-proj-search-"))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-overview-commit-"))
     const project = path.join(home, "repo")
     fs.mkdirSync(project, { recursive: true })
+    // Long line so the split diff must scroll horizontally inside [data-code].
+    const longLine = ` cons ${"x".repeat(240)}`
+    fs.writeFileSync(path.join(project, "note.txt"), `one\n${longLine}\n`)
     execSync(
-      "git init && git config user.email t@t && git config user.name t && echo 'hello yaade-search-needle world' > readme.txt && git add . && git commit -m init",
+      "git init && git config user.email t@t && git config user.name t && git add . && git commit -m 'feat: overview commit dialog'",
       { cwd: project, stdio: "ignore" },
     )
 
@@ -436,36 +439,61 @@ test.describe("project page", () => {
     })
     try {
       await waitForProjectPage(page)
-      await page.locator("[data-yaade-project-search-input]").waitFor({
-        state: "visible",
-        timeout: 5_000,
-      })
-      await page
-        .locator("[data-yaade-project-search-input]")
-        .fill("yaade-search-needle")
-      await page.locator("[data-yaade-project-search-input]").press("Enter")
-
-      await page.locator("[data-yaade-mux]").waitFor({
-        state: "visible",
-        timeout: 20_000,
-      })
-      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
       await expect
         .poll(
-          async () =>
-            page
-              .locator('[data-yaade-mux-pane-title][aria-label="Neovim"]')
-              .count(),
-          { timeout: 15_000 },
+          async () => page.locator("[data-yaade-project-commits] [data-yaade-list-item]").count(),
+          { timeout: 10_000 },
         )
+        .toBeGreaterThanOrEqual(1)
+
+      await page
+        .locator("[data-yaade-project-commits] [data-yaade-list-item]")
+        .filter({ hasText: "feat: overview commit dialog" })
+        .click()
+
+      await page.locator("[data-yaade-commit-changes-dialog]").waitFor({
+        state: "visible",
+        timeout: 10_000,
+      })
+      await expectListRows(page, {
+        panel: "commit-changes-files",
+        minItems: 1,
+        needle: "note.txt",
+        noResultsText: "No files changed",
+      })
+
+      const diffHost = page.locator(
+        "[data-yaade-commit-changes-dialog] [data-yaade-git-diff] [data-yaade-pierre-diff] diffs-container",
+      )
+      await expect
+        .poll(async () => diffHost.count(), { timeout: 15_000 })
         .toBeGreaterThan(0)
 
       await expect
-        .poll(async () => {
-          const state = await page.evaluate(() => window.__yaadeAgent!.getState())
-          return state.route === "session" && Boolean(state.sessionId)
-        })
-        .toBe(true)
+        .poll(
+          async () =>
+            diffHost.evaluate(host => {
+              const code = host.shadowRoot?.querySelector<HTMLElement>("[data-code]")
+              if (!code) return { ok: false as const, reason: "no-code" }
+              const overflow = code.scrollWidth - code.clientWidth
+              if (overflow < 24) {
+                return {
+                  ok: false as const,
+                  reason: "no-overflow",
+                  scrollWidth: code.scrollWidth,
+                  clientWidth: code.clientWidth,
+                }
+              }
+              code.scrollLeft = Math.min(120, overflow)
+              return {
+                ok: code.scrollLeft > 0,
+                scrollLeft: code.scrollLeft,
+                overflow,
+              }
+            }),
+          { timeout: 10_000 },
+        )
+        .toMatchObject({ ok: true })
     } finally {
       await app.close()
       fs.rmSync(home, { recursive: true, force: true })

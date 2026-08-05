@@ -43,9 +43,17 @@ console.log("Frontend built to apps/yaade/dist")
 await stageRuntimePack(runtimeDir)
 // Replace legacy directory artifact (old builds wrote dist/yaade/ as a pack).
 fs.rmSync(sefOut, { recursive: true, force: true })
+// Drop leftover Electron DMGs from older releases.
+for (const name of fs.existsSync(path.join(repoRoot, "dist"))
+  ? fs.readdirSync(path.join(repoRoot, "dist"))
+  : []) {
+  if (name.startsWith("YAADE-") && name.endsWith(".dmg")) {
+    fs.rmSync(path.join(repoRoot, "dist", name), { force: true })
+  }
+}
 packSelfExtracting(runtimeDir, sefOut)
 
-console.log(`Server binary: ${sefOut}`)
+console.log(`Standalone binary: ${sefOut}`)
 console.log(`  ${sefOut}              # serve SPA + API on http://127.0.0.1:4747`)
 console.log(`  ${sefOut} /path/to/repo  # open workspace at path`)
 console.log(`  ${sefOut} --open         # also open the default browser`)

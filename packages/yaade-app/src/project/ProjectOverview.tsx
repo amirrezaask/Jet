@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
-import type { GitCommit } from "@yaade/shared"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
+import type { GitCommit, YaadeTheme } from "@yaade/shared"
 import { pathToFileUri } from "@yaade/shared"
 import {
   Collapsible,
@@ -11,7 +11,10 @@ import {
   EmptyTitle,
 } from "@yaade/ui/primitives"
 import { ChevronRight } from "lucide-react"
-import { ProjectSearchBox } from "./ProjectSearchBox.js"
+
+const CommitChangesDialog = lazy(() =>
+  import("@yaade/ui/git").then(m => ({ default: m.CommitChangesDialog })),
+)
 
 const README_HEAD_LINES = 16
 const RECENT_COMMIT_LIMIT = 12
@@ -24,8 +27,8 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 export type ProjectOverviewProps = {
   projectPath: string
   homeDir: string
-  searchPending?: boolean
-  onProjectSearch: (query: string) => void | Promise<void>
+  theme: YaadeTheme
+  fontSize?: number
 }
 
 async function readReadme(projectPath: string): Promise<string | null> {
@@ -70,14 +73,16 @@ async function loadRecentCommits(projectPath: string): Promise<GitCommit[] | nul
 export function ProjectOverview({
   projectPath,
   homeDir,
-  searchPending,
-  onProjectSearch,
+  theme,
+  fontSize = 13,
 }: ProjectOverviewProps) {
   const [readme, setReadme] = useState<string | null | undefined>(undefined)
   const [readmeOpen, setReadmeOpen] = useState(false)
   const [commits, setCommits] = useState<GitCommit[] | null | undefined>(
     undefined,
   )
+  const [dialogCommit, setDialogCommit] = useState<GitCommit | null>(null)
+  const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
   const projectName = useMemo(
     () => projectPath.split("/").filter(Boolean).pop() ?? projectPath,
     [projectPath],
@@ -100,6 +105,7 @@ export function ProjectOverview({
     setReadme(undefined)
     setReadmeOpen(false)
     setCommits(undefined)
+    setDialogCommit(null)
     void readReadme(projectPath).then(text => {
       if (!cancelled) setReadme(text)
     })
@@ -116,8 +122,6 @@ export function ProjectOverview({
       className="h-full min-h-0 overflow-auto p-4 md:p-6"
       data-yaade-project-overview=""
     >
-      <ProjectSearchBox pending={searchPending} onSubmit={onProjectSearch} />
-
       <header className="mb-6">
         <h1
           className="text-xl font-semibold tracking-tight text-foreground"
@@ -163,29 +167,32 @@ export function ProjectOverview({
               data-yaade-list-panel="project-commits"
             >
               {commits.map(commit => (
-                <li
-                  key={commit.hash}
-                  data-yaade-list-item=""
-                  data-yaade-project-commit={commit.shortHash}
-                  className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-2.5"
-                >
-                  <span className="font-mono text-3xs text-primary/90">
-                    {commit.shortHash}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-xs text-foreground">
-                      {commit.subject}
-                    </p>
-                    <p className="mt-0.5 truncate text-3xs text-muted-foreground">
-                      {commit.author}
-                    </p>
-                  </div>
-                  <time
-                    className="shrink-0 text-right font-mono text-3xs tabular-nums text-muted-foreground"
-                    dateTime={new Date(commit.authoredAt).toISOString()}
+                <li key={commit.hash} className="shrink-0">
+                  <button
+                    type="button"
+                    data-yaade-list-item=""
+                    data-yaade-project-commit={commit.shortHash}
+                    onClick={() => setDialogCommit(commit)}
+                    className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-2.5 text-left outline-none transition-colors hover:bg-accent/25 focus-visible:bg-accent/25 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 active:scale-[0.99]"
                   >
-                    {dateFormatter.format(new Date(commit.authoredAt))}
-                  </time>
+                    <span className="font-mono text-3xs text-primary/90">
+                      {commit.shortHash}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs text-foreground">
+                        {commit.subject}
+                      </p>
+                      <p className="mt-0.5 truncate text-3xs text-muted-foreground">
+                        {commit.author}
+                      </p>
+                    </div>
+                    <time
+                      className="shrink-0 text-right font-mono text-3xs tabular-nums text-muted-foreground"
+                      dateTime={new Date(commit.authoredAt).toISOString()}
+                    >
+                      {dateFormatter.format(new Date(commit.authoredAt))}
+                    </time>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -252,6 +259,22 @@ export function ProjectOverview({
           )}
         </section>
       </div>
+
+      {dialogCommit ? (
+        <Suspense fallback={null}>
+          <CommitChangesDialog
+            open
+            onOpenChange={open => {
+              if (!open) setDialogCommit(null)
+            }}
+            rootUri={rootUri}
+            hash={dialogCommit.hash}
+            theme={theme}
+            fontSize={fontSize}
+            commit={dialogCommit}
+          />
+        </Suspense>
+      ) : null}
     </main>
   )
 }

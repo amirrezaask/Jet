@@ -72,9 +72,18 @@ export function YaadeDiffViewer(props: YaadeDiffViewerProps) {
       theme: DEFAULT_THEMES,
       themeType: themeType as "light" | "dark",
       diffStyle: mode,
+      // Keep long lines on one row; scroll inside [data-code], not wrap.
+      overflow: "scroll" as const,
       disableFileHeader: true,
       diffIndicators: "classic" as const,
       unsafeCSS: [
+        // Custom element host defaults to inline — block + bounded width so
+        // Pierre's overflow-x:scroll on [data-code] can engage.
+        `:host { display: block; width: 100%; max-width: 100%; min-width: 0; overflow-x: hidden; }`,
+        // Default `1fr` tracks are minmax(auto, 1fr) and grow with long lines,
+        // which expands the host and gets clipped by our overflow-hidden parents.
+        `[data-diff], [data-file] { --diffs-code-grid: var(--diffs-grid-number-column-width) minmax(0, 1fr); }`,
+        `[data-diff-type="split"][data-overflow="scroll"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }`,
         `pre, code { font-size: ${fontSize}px; font-family: var(--font-mono, 'Commit Mono', ui-monospace, monospace); }`,
       ].join("\n"),
     }),
@@ -108,15 +117,25 @@ export function YaadeDiffViewer(props: YaadeDiffViewerProps) {
   )
 
   const diff = (
-    <Virtualizer className="h-full min-h-0 w-full min-w-0 overflow-auto">
-      <FileDiff fileDiff={fileDiff} options={options} metrics={metrics} />
+    // Vertical scroll on Virtualizer; horizontal scroll stays on Pierre's
+    // [data-code] panes (overflow-x:hidden here so trackpad swipes aren't eaten).
+    <Virtualizer className="h-full min-h-0 w-full min-w-0 overflow-x-hidden overflow-y-auto">
+      <FileDiff
+        fileDiff={fileDiff}
+        options={options}
+        metrics={metrics}
+        className="block h-full w-full min-w-0 max-w-full"
+      />
     </Virtualizer>
   )
 
   return (
     <div
       data-yaade-pierre-diff=""
-      className={cn("h-full min-h-0 w-full min-w-0", className)}
+      className={cn(
+        "h-full min-h-0 w-full min-w-0 [&_diffs-container]:block [&_diffs-container]:h-full [&_diffs-container]:w-full [&_diffs-container]:min-w-0 [&_diffs-container]:max-w-full",
+        className,
+      )}
     >
       {workerPoolAvailable ? (
         <WorkerPoolContextProvider

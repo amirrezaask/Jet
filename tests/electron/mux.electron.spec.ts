@@ -13,8 +13,8 @@ import {
 } from "./_launch.js"
 
 test.describe("mux shell", () => {
-  test("boots with one tiled window and no in-app tab strip", async () => {
-    const { app, page } = await launchJet()
+  test("boots with an empty pane picker and no in-app tab strip", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
     try {
       await waitForMux(page)
       await expectSelectorVisible(page, "[data-yaade-mux]")
@@ -25,17 +25,20 @@ test.describe("mux shell", () => {
         .poll(async () => page.locator("[data-yaade-mux-tab]").count())
         .toBe(0)
       await expectSelectorVisible(page, "[data-yaade-mux-window]")
-      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
-      // Persistent pane header — title text visible without hover.
-      await expectSelectorVisible(page, "[data-yaade-mux-pane-chrome]")
-      await expectSelectorVisible(page, "[data-yaade-mux-pane-drag]")
-      const titleHandle = page.locator("[data-yaade-mux-pane-title]").first()
+      await expectSelectorVisible(page, "[data-yaade-mux-empty-panes]")
       await expect
-        .poll(async () => titleHandle.getAttribute("aria-label"))
-        .toMatch(/.+/)
+        .poll(async () => page.locator("[data-yaade-terminal-panel]").count())
+        .toBe(0)
       await expect
-        .poll(async () => ((await titleHandle.textContent()) ?? "").trim().length)
-        .toBeGreaterThan(0)
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(0)
+      // Known agent CLI shortcuts on the empty picker.
+      for (const id of ["codex", "claude", "opencode", "cursor", "grok"]) {
+        await expectSelectorVisible(
+          page,
+          `[data-yaade-mux-empty-action="agent-${id}"]`,
+        )
+      }
     } finally {
       await app.close()
     }

@@ -187,7 +187,7 @@ function copyWebDist(webDest) {
 function writeLauncherScripts(packDir) {
   const nodeRel = nodeBinRelative()
   const hostLauncher = `#!/bin/sh
-# YAADE — self-contained Mission Control server (SPA + host API, default :4747)
+# YAADE — self-contained server (release SPA + host API, default :4747)
 set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 exec "$ROOT/node/${nodeRel}" "$ROOT/backend/host-server.mjs" \\

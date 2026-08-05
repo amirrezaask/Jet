@@ -19,11 +19,6 @@ function die(msg) {
   process.exit(1)
 }
 
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, stdio: "inherit", env: process.env })
-  if (result.status !== 0) process.exit(result.status ?? 1)
-}
-
 /** Count newline-terminated lines in a UTF-8 script that ends with `\n`. */
 function countLines(text) {
   if (!text.endsWith("\n")) throw new Error("stub must end with newline")
@@ -50,13 +45,21 @@ export function packSelfExtracting(runtimeDir, outfile) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-sef-"))
   const tarball = path.join(tmpDir, "runtime.tar.gz")
   try {
-    run("tar", ["-czf", tarball, "-C", resolved, "."])
+    // COPYFILE_DISABLE avoids macOS AppleDouble (._*) junk in the archive.
+    const tarEnv = { ...process.env, COPYFILE_DISABLE: "1" }
+    const tarResult = spawnSync("tar", ["-czf", tarball, "-C", resolved, "."], {
+      cwd: process.cwd(),
+      stdio: "inherit",
+      env: tarEnv,
+    })
+    if (tarResult.status !== 0) process.exit(tarResult.status ?? 1)
     const archive = fs.readFileSync(tarball)
     const hash = crypto.createHash("sha256").update(archive).digest("hex").slice(0, 16)
 
-    // Fixed-width LINES so substituting the real count never changes line count.
+    // Do NOT zero-pad LINES — `$((00000025 + 1))` is octal in sh (→ wrong offset).
+    // Placeholder width is irrelevant: substitution stays on one line either way.
     const stubTemplate = `#!/bin/sh
-# YAADE self-extracting server — extracts once, then runs Mission Control host.
+# YAADE self-extracting server — extracts once, then runs the host + SPA.
 set -eu
 HASH="${hash}"
 LINES=XXXXXXXX
@@ -85,7 +88,7 @@ exec "$CACHE/yaade" "$@"
       die("internal: stub template must end with newline")
     }
     const lines = countLines(stubTemplate)
-    const stub = stubTemplate.replace("LINES=XXXXXXXX", `LINES=${String(lines).padStart(8, "0")}`)
+    const stub = stubTemplate.replace("LINES=XXXXXXXX", `LINES=${lines}`)
     if (countLines(stub) !== lines) {
       die(`internal: stub line count drifted (${countLines(stub)} vs ${lines})`)
     }
