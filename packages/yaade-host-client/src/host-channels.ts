@@ -38,6 +38,8 @@ export const HOST_CHANNELS = new Set([
   "terminal:resize",
   "terminal:ack",
   "terminal:attach",
+  "terminal:getCwd",
+  "terminal:getForegroundProcess",
   "terminal:dispose",
   "tasks:spawn",
   "perf:recordStartup",

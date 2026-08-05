@@ -491,6 +491,10 @@ async function handleTerminal(
       )
     case "terminal:attach":
       return runtime.terminal.attach(str(args[0], "id"), clientId)
+    case "terminal:getCwd":
+      return runtime.terminal.getCwd(str(args[0], "id"))
+    case "terminal:getForegroundProcess":
+      return runtime.terminal.getForegroundProcess(str(args[0], "id"))
     case "terminal:dispose": {
       const id = str(args[0], "id")
       runtime.terminal.dispose(id)

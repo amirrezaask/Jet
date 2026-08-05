@@ -487,6 +487,14 @@
   min-height: 100%;
 }
 
+/* Vertical mux strip: push tabs below native traffic lights. */
+[data-yaade-traffic-light-top-spacer] {
+  width: 100%;
+  height: var(--yaade-window-chrome-height);
+  min-height: var(--yaade-window-chrome-height);
+  flex: 0 0 var(--yaade-window-chrome-height);
+}
+
 /* Sidebar view tabs (Files / Terminals) share the native-chrome rhythm. */
 [data-yaade-sidebar-view-tabs] {
   display: flex;
@@ -959,6 +967,38 @@ body,
 [data-yaade-terminal-panel] .jet-terminal-surface {
   position: relative;
   background: var(--yaade-bg, var(--background));
+}
+
+/* Mux shell — window-wide gradient; panes sit translucent over it. */
+[data-yaade-shell="mux"],
+[data-yaade-mux] {
+  background:
+    radial-gradient(
+      120% 80% at 10% -8%,
+      color-mix(in srgb, var(--primary) 6%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      90% 70% at 92% 6%,
+      color-mix(in srgb, var(--primary) 7%, transparent),
+      transparent 52%
+    ),
+    radial-gradient(
+      70% 50% at 50% 112%,
+      color-mix(in srgb, var(--primary) 5%, transparent),
+      transparent 55%
+    ),
+    var(--background);
+}
+
+[data-yaade-mux] [data-yaade-terminal-panel] .yaade-terminal-surface,
+[data-yaade-mux] [data-yaade-terminal-panel] .jet-terminal-surface {
+  background: color-mix(in srgb, var(--yaade-bg, var(--background)) 72%, transparent);
+}
+
+.dark [data-yaade-mux] [data-yaade-terminal-panel] .yaade-terminal-surface,
+.dark [data-yaade-mux] [data-yaade-terminal-panel] .jet-terminal-surface {
+  background: color-mix(in srgb, var(--yaade-bg, var(--background)) 55%, transparent);
 }
 
 [data-yaade-terminal-panel] .xterm-screen {

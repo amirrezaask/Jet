@@ -243,6 +243,9 @@ export function createYaadeApi(
         invokeTerminalHot(transport, "terminal:resize", id, cols, rows),
       acknowledgeData: (id, charCount) =>
         invokeTerminalHot(transport, "terminal:ack", id, charCount),
+      getCwd: id => transport.invoke<string | null>("terminal:getCwd", id),
+      getForegroundProcess: id =>
+        transport.invoke<string | null>("terminal:getForegroundProcess", id),
       onData: (id, callback) => {
         let set = terminalDataListeners.get(id)
         if (!set) {

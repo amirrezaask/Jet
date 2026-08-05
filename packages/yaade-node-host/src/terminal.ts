@@ -2,7 +2,12 @@ import * as pty from "node-pty"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { uriToPath } from "./paths.js"
+import { pathToUri, uriToPath } from "./paths.js"
+import { cwdOfForeground, foregroundProcessOf } from "./terminal-cwd.js"
+import {
+  applyShellCwdReporting,
+  parseOsc7Cwd,
+} from "./terminal-osc7.js"
 
 const MAX_TERMINAL_REPLAY = 2 * 1024 * 1024
 const MAX_WRITE_BYTES = 1024 * 1024
@@ -66,6 +71,10 @@ type TerminalEntry = {
   title: string | null
   titleKey: string | null
   clientId: string
+  /** Absolute spawn-time cwd (fallback when live process cwd is unavailable). */
+  spawnCwd: string
+  /** Last cwd reported via OSC 7 (preferred when present). */
+  liveCwd: string | null
   status: "running" | "exited"
   exitCode: number | null
   signal: number | null
@@ -245,6 +254,7 @@ export class TerminalHost {
     let cwd = cwdUri.length <= 32_768 ? uriToPath(cwdUri) : os.homedir()
     try {
       if (!fs.statSync(cwd).isDirectory()) cwd = os.homedir()
+      else cwd = fs.realpathSync(cwd)
     } catch {
       cwd = os.homedir()
     }
@@ -263,20 +273,25 @@ export class TerminalHost {
 
     let proc: pty.IPty | null = null
     let lastError: unknown
+    const baseEnv: Record<string, string> = {
+      ...process.env,
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+      HOME: process.env.HOME ?? os.homedir(),
+      ...(launch?.env ?? {}),
+    } as Record<string, string>
+
     for (const candidate of candidates) {
       try {
-        proc = pty.spawn(candidate.command, candidate.args, {
+        const launchSpec = custom
+          ? { command: candidate.command, args: candidate.args, env: baseEnv }
+          : applyShellCwdReporting(candidate.command, candidate.args, baseEnv)
+        proc = pty.spawn(launchSpec.command, launchSpec.args, {
           name: "xterm-256color",
           cols: initialSize.cols,
           rows: initialSize.rows,
           cwd,
-          env: {
-            ...process.env,
-            TERM: "xterm-256color",
-            COLORTERM: "truecolor",
-            HOME: process.env.HOME ?? os.homedir(),
-            ...(launch?.env ?? {}),
-          } as Record<string, string>,
+          env: launchSpec.env,
         })
         break
       } catch (error) {
@@ -301,6 +316,8 @@ export class TerminalHost {
       title,
       titleKey,
       clientId,
+      spawnCwd: cwd,
+      liveCwd: null,
       status: "running",
       exitCode: null,
       signal: null,
@@ -323,6 +340,14 @@ export class TerminalHost {
 
     entry.dataDisposable = proc.onData(data => {
       if (entry.disposed) return
+      const oscCwd = parseOsc7Cwd(data)
+      if (oscCwd) {
+        try {
+          entry.liveCwd = fs.realpathSync(oscCwd)
+        } catch {
+          entry.liveCwd = oscCwd
+        }
+      }
       entry.sequence += 1
       const dataBytes = Buffer.byteLength(data, "utf8")
       entry.output.push(data)
@@ -363,6 +388,42 @@ export class TerminalHost {
     if (!entry.disposeTimer) return
     clearTimeout(entry.disposeTimer)
     entry.disposeTimer = null
+  }
+
+  /**
+   * Live working directory of the PTY process as a `file://` URI.
+   * Prefers OS introspection of the foreground process, then OSC 7, then spawn cwd.
+   */
+  async getCwd(id: string): Promise<string | null> {
+    if (id.length > 256) return null
+    const entry = this.entries.get(id)
+    if (!entry || entry.disposed) return null
+    const pid = entry.proc?.pid
+    const osCwd =
+      typeof pid === "number" ? await cwdOfForeground(pid) : null
+    let cwd = osCwd ?? entry.liveCwd ?? entry.spawnCwd
+    if (!cwd) return null
+    try {
+      cwd = fs.realpathSync(cwd)
+      if (!fs.statSync(cwd).isDirectory()) return pathToUri(entry.spawnCwd)
+    } catch {
+      return pathToUri(entry.spawnCwd)
+    }
+    return pathToUri(cwd)
+  }
+
+  /**
+   * Basename of the foreground process under this PTY (e.g. `nvim`, `fish`).
+   * Used for Deck icons / tab titles.
+   */
+  async getForegroundProcess(id: string): Promise<string | null> {
+    if (id.length > 256) return null
+    const entry = this.entries.get(id)
+    if (!entry || entry.disposed) return null
+    const pid = entry.proc?.pid
+    if (typeof pid !== "number") return null
+    const fg = await foregroundProcessOf(pid)
+    return fg?.name ?? null
   }
 
   write(id: string, data: string): null {

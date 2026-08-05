@@ -9,6 +9,11 @@ import {
 export type TerminalSessionState = {
   tabId: string
   cwdRootUri: string
+  /**
+   * Live shell cwd after `cd` (OSC title / host getCwd). Must NOT replace
+   * `cwdRootUri` — TerminalPanel remounts when spawn cwd props change.
+   */
+  liveCwdUri?: string
   launchCommand?: string
   launchArgs?: string[]
   /** Env injected into the PTY for ADE hook forwarders. */
@@ -51,6 +56,7 @@ export type TerminalSessionState = {
 export type HydratedTerminalSession = {
   tabId: string
   cwdRootUri: string
+  liveCwdUri?: string
   launchCommand?: string
   launchArgs?: string[]
   ptyId?: string
@@ -116,6 +122,8 @@ export type SessionRuntimeApi = {
   readonly recordUserInput: (tabId: string) => void
   readonly recordOutput: (tabId: string, chunk?: string) => void
   readonly setCustomLabel: (tabId: string, label: string) => void
+  /** Update live shell cwd after `cd` without remounting the PTY. */
+  readonly updateLiveCwd: (tabId: string, cwdUri: string) => void
   readonly setAgentTitle: (tabId: string, title: string) => void
   readonly bindAgent: (
     tabId: string,
@@ -204,6 +212,8 @@ export function createSessionStore(): SessionRuntimeApi {
       sessions.set(tabId, {
         tabId,
         cwdRootUri,
+        liveCwdUri:
+          existing?.cwdRootUri === cwdRootUri ? existing?.liveCwdUri : undefined,
         launchCommand,
         launchArgs: options?.launchArgs ?? existing?.launchArgs,
         launchEnv: options?.launchEnv ?? existing?.launchEnv,
@@ -404,6 +414,7 @@ export function createSessionStore(): SessionRuntimeApi {
       sessions.set(entry.tabId, {
         tabId: entry.tabId,
         cwdRootUri: entry.cwdRootUri,
+        liveCwdUri: entry.liveCwdUri,
         launchCommand: entry.launchCommand,
         launchArgs: entry.launchArgs,
         launchEnv: entry.launchEnv,
@@ -471,6 +482,14 @@ export function createSessionStore(): SessionRuntimeApi {
       if (!session) return
       session.customLabel = label
       notify(tabId)
+    },
+
+    updateLiveCwd(tabId, cwdUri) {
+      const session = sessions.get(tabId)
+      const next = cwdUri.trim()
+      if (!session || !next || session.liveCwdUri === next) return
+      session.liveCwdUri = next
+      // Do not notify — live cwd is read at split time; notifying remounts UI.
     },
 
     setAgentTitle(tabId, title) {

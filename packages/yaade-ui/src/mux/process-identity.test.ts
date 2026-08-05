@@ -1,0 +1,32 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+import {
+  formatMuxTitle,
+  processIdentity,
+} from "./process-identity.js"
+
+test("processIdentity maps known tools", () => {
+  assert.equal(processIdentity("nvim").label, "Neovim")
+  assert.equal(processIdentity("zsh").glyph, ">_")
+  assert.equal(processIdentity("btop").hue, 230)
+  assert.ok(processIdentity("claude").glyph.length > 0)
+})
+
+test("formatMuxTitle abbreviates home paths", () => {
+  assert.equal(
+    formatMuxTitle({
+      cwdPath: "/Users/me/dev/yaade",
+      homeDir: "/Users/me",
+      processName: "zsh",
+    }),
+    "~/dev/yaade - shell",
+  )
+  assert.equal(
+    formatMuxTitle({
+      cwdPath: "/Users/me/a/b/c/d",
+      homeDir: "/Users/me",
+      processName: "nvim",
+    }),
+    "~/a/…/c/d - Neovim",
+  )
+})

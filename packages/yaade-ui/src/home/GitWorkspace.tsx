@@ -315,6 +315,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   return (
     <section
       data-yaade-git-workspace=""
+      data-yaade-git-root={rootUri ? fileUriToPath(rootUri) : undefined}
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent"
       aria-label="Git workspace"
     >

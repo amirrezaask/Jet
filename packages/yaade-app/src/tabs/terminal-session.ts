@@ -58,6 +58,11 @@ export function terminalSessionForTab(tabId: string): TerminalSessionState | und
 }
 
 export function terminalCwdForTab(tabId: string): string {
+  const session = defaultSessionStore.get(tabId)
+  return session?.liveCwdUri || session?.cwdRootUri || ""
+}
+
+export function terminalSpawnCwdForTab(tabId: string): string {
   return defaultSessionStore.get(tabId)?.cwdRootUri ?? ""
 }
 
@@ -107,6 +112,10 @@ export function recordTerminalOutput(tabId: string, chunk?: string): void {
 
 export function setTerminalCustomLabel(tabId: string, label: string): void {
   defaultSessionStore.setCustomLabel(tabId, label)
+}
+
+export function updateTerminalLiveCwd(tabId: string, cwdUri: string): void {
+  defaultSessionStore.updateLiveCwd(tabId, cwdUri)
 }
 
 export function setAgentSessionTitle(tabId: string, title: string): void {

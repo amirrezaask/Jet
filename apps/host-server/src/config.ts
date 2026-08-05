@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { resolveLaunchTarget, type LaunchConfig } from "@yaade/node-host"
+import { pathAllowed } from "./sandbox.js"
 import { isLoopbackHostname } from "./security.js"
 
 export type HostConfig = {
@@ -59,10 +60,31 @@ export async function loadConfig(argv = process.argv.slice(2)): Promise<HostConf
     .filter(Boolean)
   const allowedArg = typeof args["allowed-roots"] === "string" ? args["allowed-roots"].split(",") : []
   const allowedRoots = [...allowedArg, ...allowedFromEnv].map(p => path.resolve(p.trim())).filter(Boolean)
-  if (allowedRoots.length === 0) allowedRoots.push(path.resolve(home))
+  const homeRoot = path.resolve(home)
+  if (allowedRoots.length === 0) allowedRoots.push(homeRoot)
 
-  const launchPath = path.resolve(String(args.path ?? process.cwd()))
-  const launchConfig = await resolveLaunchTarget([launchPath], process.cwd())
+  // Explicit CLI/desktop path may live outside $HOME (external volume, etc.).
+  // Packaged Electron hosts often start with cwd under Resources/ — that must
+  // NOT become the default workspace (it fails PATH_OUTSIDE_ALLOWED_ROOTS).
+  const explicitPath =
+    typeof args.path === "string" && String(args.path).trim()
+      ? path.resolve(String(args.path).trim())
+      : null
+  const cwd = path.resolve(process.cwd())
+  const defaultWorkspace = pathAllowed(cwd, allowedRoots) ? cwd : homeRoot
+  const launchPath = explicitPath ?? defaultWorkspace
+  let launchConfig = await resolveLaunchTarget(
+    explicitPath ? [explicitPath] : [],
+    cwd,
+    explicitPath ? undefined : { defaultCwd: defaultWorkspace },
+  )
+  if (!pathAllowed(launchConfig.workspacePath, allowedRoots)) {
+    if (explicitPath) {
+      allowedRoots.push(path.resolve(launchConfig.workspacePath))
+    } else {
+      launchConfig = { workspacePath: homeRoot, source: "default" }
+    }
+  }
 
   const here = path.dirname(fileURLToPath(import.meta.url))
   const repoDist = path.resolve(here, "../../yaade/dist")

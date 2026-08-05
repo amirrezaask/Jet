@@ -38,6 +38,11 @@ export type TerminalPanelProps = {
    * in the starting overlay until this clears and the effect remounts.
    */
   deferPty?: boolean
+  /**
+   * When false the pane has no on-screen slot (background window / LRU eviction).
+   * Skip expensive full refreshes; PTY still receives data + acks.
+   */
+  visible?: boolean
   /** Override for the starting overlay copy. */
   startingMessage?: string
   onPtyId?: (tabId: string, ptyId: string | null) => void
@@ -318,6 +323,7 @@ export function TerminalPanel({
   sessionGeneration = 0,
   readOnly = false,
   deferPty = false,
+  visible = true,
   startingMessage,
   onPtyId,
   onInput,
@@ -336,8 +342,12 @@ export function TerminalPanel({
   const [connectedPtyId, setConnectedPtyId] = useState<string | null>(existingPtyId ?? null)
   const themeRef = useRef(theme)
   themeRef.current = theme
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
   const onTitleChangeRef = useRef(onTitleChange)
   onTitleChangeRef.current = onTitleChange
+  const onPtyIdRef = useRef(onPtyId)
+  onPtyIdRef.current = onPtyId
   const onInputRef = useRef(onInput)
   onInputRef.current = onInput
   const onOutputRef = useRef(onOutput)
@@ -466,6 +476,9 @@ export function TerminalPanel({
 
     const syncTheme = () => {
       term.options.theme = liveThemeOptions(themeRef.current)
+      // Skip full refresh when the pane is off-screen — options still apply
+      // on the next paint / visibility refit.
+      if (!visibleRef.current) return
       term.refresh(0, Math.max(0, term.rows - 1))
     }
 
@@ -566,7 +579,7 @@ export function TerminalPanel({
             void terminalApi.dispose(id)
             return
           }
-          onPtyId?.(tabId, id)
+          onPtyIdRef.current?.(tabId, id)
           if (title) onTitleChangeRef.current?.(tabId, title)
           connectPty(id)
         })
@@ -736,7 +749,8 @@ export function TerminalPanel({
   }, [
     cwdRootUri,
     tabId,
-    onPtyId,
+    // onPtyId is read via ref — never remount xterm because the parent
+    // passed a fresh inline callback (mux slot-box updates used to thrash).
     sessionGeneration,
     readOnly,
     deferPty,

@@ -19,6 +19,7 @@ import {
   waitForUrl,
   wireChildLifecycle,
 } from "./spawn-backend.mjs"
+import { defaultHostLaunchPath, launchPathFromArgv } from "./launch-path.mjs"
 import {
   normalizeServerUrl,
   readServerSelection,
@@ -77,27 +78,6 @@ function resolveRuntimeRoot() {
   return undefined
 }
 
-/**
- * Optional folder/file path after flags → host-server launch config.
- * With no path, host uses its cwd (repo root) via spawnHostServer.
- */
-function launchPathFromArgv() {
-  const skip = new Set(["--dev"])
-  for (const arg of process.argv.slice(1)) {
-    if (arg.startsWith("-")) {
-      if (skip.has(arg)) continue
-      continue
-    }
-    // Skip electron binary path and the app entry (package dir / main.mjs).
-    if (arg === "." || arg === packageDir) continue
-    if (arg.endsWith("main.mjs") || arg.includes(`${path.sep}electron`)) continue
-    if (path.isAbsolute(arg) || arg.includes("/") || arg.includes("\\")) {
-      return path.resolve(arg)
-    }
-  }
-  return undefined
-}
-
 async function urlReady(url) {
   try {
     const res = await fetch(url)
@@ -122,7 +102,9 @@ async function ensureLocalBackends() {
   const runtimeRoot = resolveRuntimeRoot()
 
   if (!hostUp) {
-    const launchPath = launchPathFromArgv()
+    const launchPath =
+      launchPathFromArgv(process.argv, { packageDir }) ??
+      defaultHostLaunchPath(runtimeRoot)
     children.push(
       spawnHostServer({
         repoRoot,

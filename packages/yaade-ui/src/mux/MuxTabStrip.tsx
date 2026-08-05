@@ -1,4 +1,4 @@
-import { Plus, X } from "lucide-react"
+import { LayoutGrid, Plus, X } from "lucide-react"
 import { useDraggable } from "@dnd-kit/core"
 import type { CSSProperties, ReactNode } from "react"
 import { Button } from "@/components/ui/button.js"
@@ -15,11 +15,14 @@ import {
   sessionDndId,
   type SessionDragData,
 } from "../dock/tab-dnd-types.js"
+import { deckTileStyle, processIdentity } from "./process-identity.js"
 import type { TabOrientation } from "./types.js"
 
 export type MuxTabItem = {
   id: string
   title: string
+  /** Foreground process names for panes in this window (deck composition). */
+  processNames?: string[]
 }
 
 export type MuxTabStripProps = {
@@ -32,58 +35,75 @@ export type MuxTabStripProps = {
   onToggleOrientation?: () => void
   /** When true, tabs can be dragged onto the tiled dock. */
   enableDragDock?: boolean
+  /**
+   * Electron custom titlebar — clear macOS traffic lights and expose a
+   * drag region so the strip does not collide with native window controls.
+   */
+  windowChrome?: {
+    trafficLights: boolean
+  } | null
   className?: string
 }
 
-/** Hue wheel for Superlogical-style deck favicons (oklch, theme-agnostic). */
-const DECK_HUES = [230, 55, 155, 295, 25, 40, 195, 330] as const
-
-function deckHue(id: string): number {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) | 0
-  }
-  return DECK_HUES[Math.abs(hash) % DECK_HUES.length]!
-}
-
-function deckStyle(id: string): CSSProperties {
-  const hue = deckHue(id)
-  return {
-    backgroundColor: `oklch(0.64 0.15 ${hue})`,
-    color: "oklch(0.98 0.01 255)",
-  }
-}
+const dragRegion = { WebkitAppRegion: "drag" } as CSSProperties
+const noDragRegion = { WebkitAppRegion: "no-drag" } as CSSProperties
 
 /**
  * Deck icon = favicon for a window (Superlogical).
- * Colored tile + stacked-card glyph — lives inside each tab, not a separate strip.
+ * Colored tile(s) from process identity — stacked when the window has multiple panes.
  */
 function DeckIcon({
   tabId,
+  processNames,
   active,
   className,
 }: {
   tabId: string
+  processNames?: string[]
   active: boolean
   className?: string
 }) {
+  const names =
+    processNames && processNames.length > 0 ? processNames.slice(0, 3) : [null]
+  const primary = processIdentity(names[0])
   return (
     <span
       data-yaade-mux-deck-icon={tabId}
       data-active={active ? "" : undefined}
       aria-hidden
-      style={deckStyle(tabId)}
       className={cn(
-        "relative flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-[0.3rem]",
-        "shadow-sm ring-1 ring-black/25",
+        "relative flex size-4 shrink-0 items-center justify-center",
         !active && "opacity-75",
         className,
       )}
     >
-      <svg viewBox="0 0 16 16" className="size-2.5 fill-current opacity-95">
-        <rect x="3.5" y="5" width="7" height="7" rx="1.1" opacity="0.55" />
-        <rect x="5.5" y="3.5" width="7" height="7" rx="1.1" />
-      </svg>
+      {names.length > 1 ? (
+        <>
+          {names.map((name, i) => {
+            const id = processIdentity(name)
+            return (
+              <span
+                key={`${tabId}-${i}`}
+                style={{
+                  ...deckTileStyle(id),
+                  transform: `translate(${i * 2}px, ${i * -1.5}px)`,
+                  zIndex: names.length - i,
+                }}
+                className="absolute flex size-3 items-center justify-center rounded-[0.25rem] text-[0.45rem] font-semibold leading-none shadow-sm ring-1 ring-black/25"
+              >
+                {id.glyph}
+              </span>
+            )
+          })}
+        </>
+      ) : (
+        <span
+          style={deckTileStyle(primary)}
+          className="flex size-4 items-center justify-center overflow-hidden rounded-[0.3rem] text-[0.55rem] font-semibold leading-none shadow-sm ring-1 ring-black/25"
+        >
+          {primary.glyph}
+        </span>
+      )}
     </span>
   )
 }
@@ -139,21 +159,18 @@ function MuxTabDragShell({
             data-yaade-mux-tab-drag=""
             className={cn(
               "yaade-press min-w-0 flex-1 justify-start gap-1.5 text-xs after:hidden!",
-              // Glass capsule — horizontal + vertical share the same frosted pill.
               vertical
                 ? "!h-auto w-full gap-2 rounded-full border border-transparent px-3 py-2 pe-8"
                 : "!h-8 max-w-56 min-w-0 gap-2 rounded-full border border-transparent pe-7 ps-3",
               "text-muted-foreground hover:text-foreground",
-              "data-[state=active]:border-border/60 data-[state=active]:bg-foreground/20",
-              "data-[state=active]:text-foreground data-[state=active]:shadow-none",
+              "data-[state=active]:border-border/70 data-[state=active]:bg-foreground/25",
+              "data-[state=active]:text-foreground data-[state=active]:shadow-sm",
               "data-[state=active]:backdrop-blur-md",
-              "dark:data-[state=active]:border-white/20 dark:data-[state=active]:bg-white/20",
+              "dark:data-[state=active]:border-white/25 dark:data-[state=active]:bg-white/25",
               !active && "bg-transparent hover:bg-foreground/5",
               enableDrag && "cursor-grab active:cursor-grabbing",
             )}
             onMouseDown={event => {
-              // Radix Tabs selects on mousedown. Block that without preventDefault on
-              // pointerdown — dnd-kit PointerSensor ignores defaultPrevented events.
               if (enableDrag) event.preventDefault()
             }}
             onClick={event => {
@@ -161,7 +178,11 @@ function MuxTabDragShell({
               onSelect(tab.id)
             }}
           >
-            <DeckIcon tabId={tab.id} active={active} />
+            <DeckIcon
+              tabId={tab.id}
+              processNames={tab.processNames}
+              active={active}
+            />
             <span className="min-w-0 truncate font-medium" data-slot="row-label">
               {tab.title}
             </span>
@@ -244,9 +265,27 @@ export function MuxTabStrip(props: MuxTabStripProps) {
     onNew,
     onToggleOrientation,
     enableDragDock = true,
+    windowChrome = null,
     className,
   } = props
   const vertical = orientation === "vertical"
+  const trafficLights = windowChrome?.trafficLights === true
+  const chromeDrag = windowChrome != null
+
+  const deckLibraryButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      aria-label="Toggle tab orientation"
+      data-yaade-mux-deck-library=""
+      className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+      style={chromeDrag ? noDragRegion : undefined}
+      onClick={onToggleOrientation}
+    >
+      <LayoutGrid className="size-3.5" />
+    </Button>
+  )
 
   const newButton = (
     <Button
@@ -261,6 +300,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
           "w-full justify-start gap-1.5 rounded-full border border-transparent hover:bg-foreground/5",
         !vertical && "size-8 shrink-0 rounded-full",
       )}
+      style={chromeDrag ? noDragRegion : undefined}
       onClick={onNew}
     >
       <Plus className="size-3.5" />
@@ -279,6 +319,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
           ? "flex flex-1 flex-col gap-1.5 p-2"
           : "flex flex-none flex-row items-center",
       )}
+      style={chromeDrag ? noDragRegion : undefined}
     >
       <TabsList
         variant="line"
@@ -291,18 +332,25 @@ export function MuxTabStrip(props: MuxTabStripProps) {
             : "h-8 w-auto flex-none flex-row items-center gap-1 overflow-x-auto",
         )}
       >
-        {tabs.map(tab => (
-          <MuxTabDragShell
-            key={tab.id}
-            tab={tab}
-            active={tab.id === activeId}
-            vertical={vertical}
-            enableDrag={enableDragDock}
-            onSelect={onSelect}
-            onClose={onClose}
-            onNew={onNew}
-            onToggleOrientation={onToggleOrientation}
-          />
+        {tabs.map((tab, index) => (
+          <div key={tab.id} className="flex items-center gap-1">
+            {!vertical && index > 0 ? (
+              <span
+                aria-hidden
+                className="mx-0.5 h-3 w-px shrink-0 bg-border/50"
+              />
+            ) : null}
+            <MuxTabDragShell
+              tab={tab}
+              active={tab.id === activeId}
+              vertical={vertical}
+              enableDrag={enableDragDock}
+              onSelect={onSelect}
+              onClose={onClose}
+              onNew={onNew}
+              onToggleOrientation={onToggleOrientation}
+            />
+          </div>
         ))}
       </TabsList>
     </Tabs>
@@ -313,6 +361,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       <div
         data-yaade-mux-tab-strip=""
         data-orientation={orientation}
+        data-yaade-window-drag-region={chromeDrag ? "" : undefined}
         className={cn(
           "relative flex shrink-0 border-border/35",
           vertical
@@ -321,23 +370,44 @@ export function MuxTabStrip(props: MuxTabStripProps) {
                 "bg-background/50 backdrop-blur-xl",
               )
             : cn(
-                "h-11 w-full flex-row items-center justify-center gap-1 border-b",
+                "h-[var(--yaade-window-chrome-height)] min-h-[var(--yaade-window-chrome-height)] w-full flex-row items-center justify-start gap-1 border-b",
                 "bg-background/50 px-3 backdrop-blur-xl",
               ),
           className,
         )}
+        style={chromeDrag ? dragRegion : undefined}
       >
+        {vertical && trafficLights ? (
+          <div
+            aria-hidden
+            data-yaade-traffic-light-top-spacer=""
+            style={dragRegion}
+          />
+        ) : null}
+        {!vertical && trafficLights ? (
+          <div
+            aria-hidden
+            data-yaade-traffic-light-spacer=""
+            className="shrink-0 self-stretch"
+            style={dragRegion}
+          />
+        ) : null}
         {vertical ? (
           <>
             {tabList}
-            <div className="flex shrink-0 items-center border-t border-border/35 p-2">
+            <div
+              className="flex shrink-0 items-center border-t border-border/35 p-2"
+              style={chromeDrag ? noDragRegion : undefined}
+            >
               {newButton}
             </div>
           </>
         ) : (
           <>
+            {onToggleOrientation ? deckLibraryButton : null}
             {tabList}
             {newButton}
+            <div className="min-w-0 flex-1" style={dragRegion} aria-hidden />
           </>
         )}
       </div>

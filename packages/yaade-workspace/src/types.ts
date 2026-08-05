@@ -114,6 +114,13 @@ export type JetElectronTerminal = {
    * by xterm. Host uses this for PTY pause/resume flow control.
    */
   acknowledgeData(id: string, charCount: number): Promise<void>
+  /**
+   * Live working directory of the PTY process as a `file://` URI.
+   * Prefers OS introspection of the foreground process, then OSC 7, then spawn cwd.
+   */
+  getCwd(id: string): Promise<string | null>
+  /** Basename of the foreground process under this PTY (e.g. `nvim`, `fish`). */
+  getForegroundProcess(id: string): Promise<string | null>
   onData(id: string, callback: (data: string) => void): () => void
   onExit(cb: (id: string, exitCode: number, signal?: number) => void): () => void
   dispose(id: string): Promise<void>

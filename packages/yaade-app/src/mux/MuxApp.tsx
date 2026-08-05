@@ -7,10 +7,11 @@ import {
   useReducer,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react"
 import type { PanelEvent } from "@yaade/panels"
-import type { Edge, PanelId, YaadeTheme } from "@yaade/shared"
+import type { PanelId, YaadeTheme } from "@yaade/shared"
 import { pathToFileUri, fileUriToPath } from "@yaade/shared"
 import {
   AppShell,
@@ -20,6 +21,7 @@ import {
   TabDndRoot,
   Toaster,
   TooltipProvider,
+  formatMuxTitle,
   requestConfirm,
   type PaletteShellItem,
   type TabDndHandlers,
@@ -52,16 +54,19 @@ import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
 import { useGlobalKeymap } from "../hooks/useGlobalKeymap.js"
 import {
   clearTerminalSession,
+  hydrateTerminalSession,
   markTerminalFailed,
   recordTerminalOutput,
   recordTerminalUserInput,
   registerTerminalSession,
   restartTerminalSession,
   subscribeTerminalSessions,
+  terminalCwdForTab,
   terminalPtyIdForTab,
   terminalSessionForTab,
   terminalSessionNeedsCloseConfirmation,
   trackTerminalPtyId,
+  updateTerminalLiveCwd,
 } from "../tabs/terminal-session.js"
 import { allocTerminalSessionKey } from "../tab-routing.js"
 import { applySessionPaneDrop } from "../session-layout.js"
@@ -71,16 +76,24 @@ import {
   emptyMuxTree,
   listPaneLeaves,
   listTerminalLeaves,
-  placePtyInTree,
   removePtyFromTree,
 } from "./layout.js"
+import { findFocusNeighbor, type FocusDirection } from "./focus-neighbor.js"
+import {
+  placeGitPane,
+  placeTerminalPane,
+  type AllocatedGitPane,
+  type AllocatedTerminalPane,
+} from "./place-pane.js"
 import { MuxWindowView } from "./MuxWindowView.js"
 import {
   MuxTerminalLayer,
   useMuxTerminalSlotBoxes,
 } from "./MuxTerminalLayer.js"
 import { readMuxState, writeMuxState } from "./store.js"
+import { cwdUriFromTerminalTitle } from "./cwd-from-title.js"
 import type {
+  MuxSessionLeafPersisted,
   MuxStatePersisted,
   MuxSwitcherEntry,
   MuxWindowPersisted,
@@ -140,14 +153,30 @@ function allocWindowId(): string {
 }
 
 function persistWindows(windows: LiveWindow[]): MuxWindowPersisted[] {
-  return windows.map(w => ({
-    id: w.id,
-    title: w.title,
-    tree: w.tree.toJSON(),
-    focusedPaneId: w.focusedPaneId?.id ?? null,
-    zoomedPaneId: w.zoomedPaneId,
-    paneOrder: listPaneLeaves(w.tree).map(p => p.ptyTabId),
-  }))
+  return windows.map(w => {
+    const sessions: MuxSessionLeafPersisted[] = []
+    for (const leaf of listTerminalLeaves(w.tree)) {
+      const session = terminalSessionForTab(leaf.ptyTabId)
+      if (!session) continue
+      sessions.push({
+        ptyTabId: leaf.ptyTabId,
+        ptyId: session.ptyId,
+        cwdRootUri: session.cwdRootUri,
+        liveCwdUri: session.liveCwdUri,
+        launchCommand: session.launchCommand,
+        launchArgs: session.launchArgs,
+        label: session.customLabel,
+      })
+    }
+    return {
+      id: w.id,
+      title: w.title,
+      tree: w.tree.toJSON(),
+      focusedPaneId: w.focusedPaneId?.id ?? null,
+      zoomedPaneId: w.zoomedPaneId,
+      sessions,
+    }
+  })
 }
 
 function hydrateWindows(persisted: MuxWindowPersisted[]): LiveWindow[] {
@@ -170,6 +199,61 @@ function hydrateWindows(persisted: MuxWindowPersisted[]): LiveWindow[] {
       }
     }
   })
+}
+
+/** Re-register terminal sessions from persisted leaf metadata so attach works. */
+function hydratePersistedSessions(
+  persisted: MuxWindowPersisted[],
+  workspace: WorkspaceService,
+): void {
+  for (const w of persisted) {
+    const sessions = w.sessions ?? []
+    for (const entry of sessions) {
+      if (!isTerminalTabId(entry.ptyTabId)) continue
+      hydrateTerminalSession({
+        tabId: entry.ptyTabId,
+        cwdRootUri: entry.cwdRootUri,
+        liveCwdUri: entry.liveCwdUri,
+        launchCommand: entry.launchCommand,
+        launchArgs: entry.launchArgs,
+        ptyId: entry.ptyId,
+        status: entry.ptyId ? "running" : "starting",
+        customLabel: entry.label,
+      })
+      if (!workspace.tabRegistry.get(entry.ptyTabId)) {
+        workspace.registerTab({
+          id: entry.ptyTabId,
+          kind: "terminal",
+          label: entry.label ?? "Terminal",
+        })
+      }
+    }
+    // Also register any terminal/git leaves present in the tree without session meta.
+    try {
+      const tree = YaadePanelTree.jetFromJSON(w.tree)
+      for (const leaf of listPaneLeaves(tree)) {
+        if (workspace.tabRegistry.get(leaf.ptyTabId)) continue
+        if (leaf.kind === "terminal") {
+          workspace.registerTab({
+            id: leaf.ptyTabId,
+            kind: "terminal",
+            label: "Terminal",
+          })
+          if (!terminalSessionForTab(leaf.ptyTabId)) {
+            registerTerminalSession(leaf.ptyTabId, "")
+          }
+        } else if (leaf.kind === "git") {
+          workspace.registerTab({
+            id: leaf.ptyTabId,
+            kind: "git",
+            label: "Git",
+          })
+        }
+      }
+    } catch {
+      /* ignore corrupt tree */
+    }
+  }
 }
 
 const EMPTY_KEYMAP_OVERLAYS = {
@@ -218,6 +302,16 @@ export function MuxApp() {
   const [, bumpSessions] = useReducer((n: number) => n + 1, 0)
 
   const initial = useMemo(() => readMuxState(), [])
+  // Re-register sessions from localStorage before first paint of terminals.
+  const sessionsHydratedRef = useRef(false)
+  if (!sessionsHydratedRef.current) {
+    sessionsHydratedRef.current = true
+    try {
+      hydratePersistedSessions(initial.windows, workspace)
+    } catch {
+      /* corrupt persistence must not block boot */
+    }
+  }
   const [orientation, setOrientation] = useState<TabOrientation>(
     initial.orientation,
   )
@@ -230,6 +324,14 @@ export function MuxApp() {
   const [lastCwdUri, setLastCwdUri] = useState<string | null>(
     initial.lastCwdUri,
   )
+  /** Per git-pane workspace root (source shell cwd at open time). */
+  const [gitRoots, setGitRoots] = useState<Record<string, string>>(
+    () => initial.gitRoots ?? {},
+  )
+  /** Foreground process basename per terminal tab (Deck icons / titles). */
+  const [processByTab, setProcessByTab] = useState<Record<string, string>>({})
+  const processByTabRef = useRef(processByTab)
+  processByTabRef.current = processByTab
 
   const windowsRef = useRef(windows)
   windowsRef.current = windows
@@ -237,10 +339,16 @@ export function MuxApp() {
   activeWindowIdRef.current = activeWindowId
   const lastCwdUriRef = useRef(lastCwdUri)
   lastCwdUriRef.current = lastCwdUri
+  const gitRootsRef = useRef(gitRoots)
+  gitRootsRef.current = gitRoots
   const orientationRef = useRef(orientation)
   orientationRef.current = orientation
   const homeDirRef = useRef("")
   const bootstrappedRef = useRef(false)
+  const slotBoxesRef = useRef(new Map<string, import("./MuxTerminalLayer.js").MuxTerminalSlotBox>())
+  /** LRU of recently focused terminal tab ids (beyond the active window). */
+  const terminalLruRef = useRef<string[]>([])
+  const MAX_MOUNTED_TERMINALS = 8
 
   const activeWindow =
     windows.find(w => w.id === activeWindowId) ?? windows[0] ?? null
@@ -249,18 +357,19 @@ export function MuxApp() {
 
   const persist = useCallback(() => {
     const state: MuxStatePersisted = {
-      version: 1,
+      version: 2,
       orientation: orientationRef.current,
       windows: persistWindows(windowsRef.current),
       activeWindowId: activeWindowIdRef.current,
       lastCwdUri: lastCwdUriRef.current,
+      gitRoots: gitRootsRef.current,
     }
     writeMuxState(state)
   }, [])
 
   useEffect(() => {
     persist()
-  }, [windows, activeWindowId, orientation, lastCwdUri, persist])
+  }, [windows, activeWindowId, orientation, lastCwdUri, gitRoots, persist])
 
   const cwdUri = useCallback((): string => {
     return (
@@ -277,14 +386,53 @@ export function MuxApp() {
         return workspace.tabRegistry.get(tabId)?.label ?? "Git"
       }
       const session = terminalSessionForTab(tabId)
-      return (
-        session?.customLabel ??
-        workspace.tabRegistry.get(tabId)?.label ??
-        "Terminal"
-      )
+      if (session?.customLabel) return session.customLabel
+      const cwdPath = (() => {
+        const uri = terminalCwdForTab(tabId)
+        if (!uri) return null
+        try {
+          return fileUriToPath(uri)
+        } catch {
+          return null
+        }
+      })()
+      const processName =
+        processByTabRef.current[tabId] ??
+        session?.launchCommand?.split(/[/\\\s]/).pop() ??
+        null
+      return formatMuxTitle({
+        cwdPath,
+        homeDir: homeDirRef.current || null,
+        processName,
+        fallback: workspace.tabRegistry.get(tabId)?.label ?? "Terminal",
+      })
     },
     [workspace],
   )
+
+  const paneProcessName = useCallback((tabId: string): string | null => {
+    if (isGitTabId(tabId)) return "git"
+    const session = terminalSessionForTab(tabId)
+    return (
+      processByTabRef.current[tabId] ??
+      session?.launchCommand?.split(/[/\\\s]/).pop() ??
+      null
+    )
+  }, [])
+
+  const refreshForegroundProcess = useCallback(async (ptyTabId: string) => {
+    const ptyId = terminalPtyIdForTab(ptyTabId)
+    if (!ptyId || !window.yaade?.terminal?.getForegroundProcess) return
+    try {
+      const name = await window.yaade.terminal.getForegroundProcess(ptyId)
+      if (!name) return
+      setProcessByTab(prev =>
+        prev[ptyTabId] === name ? prev : { ...prev, [ptyTabId]: name },
+      )
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const updateWindow = useCallback(
     (windowId: string, mutate: (w: LiveWindow) => LiveWindow) => {
@@ -293,36 +441,52 @@ export function MuxApp() {
     [],
   )
 
-  const createPaneInWindow = useCallback(
-    (
-      live: LiveWindow,
-      edge: Edge = "right",
-      focusPanel: PanelId | null = live.focusedPaneId,
-      options?: { launchCommand?: string; label?: string },
-    ): LiveWindow => {
-      const tree = live.tree.clone()
+  /** Side effects: register session + tab. Call OUTSIDE setState updaters. */
+  const allocTerminalPane = useCallback(
+    (options?: {
+      launchCommand?: string
+      launchArgs?: string[]
+      label?: string
+      rootUri?: string
+    }): AllocatedTerminalPane => {
       const sessionKey = allocTerminalSessionKey()
       const ptyTabId = terminalTabId(sessionKey)
-      const label =
-        options?.label ?? `Terminal ${listPaneLeaves(tree).length + 1}`
-      const rootUri = cwdUri()
+      const rootUri = options?.rootUri ?? cwdUri()
+      const label = options?.label ?? "Terminal"
       registerTerminalSession(ptyTabId, rootUri, options?.launchCommand, {
         customLabel: options?.label,
+        launchArgs: options?.launchArgs,
       })
       workspace.registerTab({
         id: ptyTabId,
         kind: "terminal",
         label,
       })
-      const panelId = placePtyInTree(tree, ptyTabId, focusPanel, edge)
-      const sole = listPaneLeaves(tree).length === 1
       return {
-        ...live,
-        tree,
-        focusedPaneId: panelId,
-        zoomedPaneId: null,
-        title: sole ? label : live.title,
+        ptyTabId,
+        label,
+        rootUri,
+        launchCommand: options?.launchCommand,
+        launchArgs: options?.launchArgs,
       }
+    },
+    [cwdUri, workspace],
+  )
+
+  const allocGitPane = useCallback(
+    (rootUri?: string): AllocatedGitPane => {
+      const tabId = gitTabId(`pane-${Date.now().toString(36)}`)
+      const gitRoot = rootUri || cwdUri()
+      if (gitRoot) {
+        gitRootsRef.current = { ...gitRootsRef.current, [tabId]: gitRoot }
+        setGitRoots(prev => ({ ...prev, [tabId]: gitRoot }))
+      }
+      workspace.registerTab({
+        id: tabId,
+        kind: "git",
+        label: "Git",
+      })
+      return { tabId, rootUri: gitRoot }
     },
     [cwdUri, workspace],
   )
@@ -336,10 +500,11 @@ export function MuxApp() {
       focusedPaneId: null,
       zoomedPaneId: null,
     }
-    const live = createPaneInWindow(base)
+    const pane = allocTerminalPane()
+    const live = placeTerminalPane(base, pane)
     setWindows(prev => [...prev, live])
     setActiveWindowId(id)
-  }, [createPaneInWindow])
+  }, [allocTerminalPane])
 
   const closeWindow = useCallback(
     async (windowId: string, options?: { skipConfirm?: boolean }) => {
@@ -370,6 +535,22 @@ export function MuxApp() {
           clearTerminalSession(pane.ptyTabId)
         }
         workspace.disposeTab(pane.ptyTabId)
+      }
+      const closedGitIds = panes
+        .filter(p => p.kind === "git")
+        .map(p => p.ptyTabId)
+      if (closedGitIds.length > 0) {
+        setGitRoots(prev => {
+          let changed = false
+          const next = { ...prev }
+          for (const id of closedGitIds) {
+            if (id in next) {
+              delete next[id]
+              changed = true
+            }
+          }
+          return changed ? next : prev
+        })
       }
       setWindows(prev => {
         const next = prev.filter(w => w.id !== windowId)
@@ -418,6 +599,13 @@ export function MuxApp() {
         const ptyId = terminalPtyIdForTab(tabId)
         if (ptyId) void window.yaade?.terminal?.dispose(ptyId)
         clearTerminalSession(tabId)
+      } else if (isGitTabId(tabId)) {
+        setGitRoots(prev => {
+          if (!(tabId in prev)) return prev
+          const next = { ...prev }
+          delete next[tabId]
+          return next
+        })
       }
       workspace.disposeTab(tabId)
       updateWindow(windowId, w => {
@@ -437,54 +625,87 @@ export function MuxApp() {
     [closeWindow, paneTitle, updateWindow, workspace],
   )
 
-  const splitPane = useCallback(
-    (windowId: string, panelId: PanelId, edge: "right" | "bottom") => {
-      updateWindow(windowId, w => createPaneInWindow(w, edge, panelId))
+  /** Prefer the source pane's live shell cwd when opening splits. */
+  const resolveSplitCwdUri = useCallback(
+    async (windowId: string, panelId: PanelId): Promise<string> => {
+      const live = windowsRef.current.find(w => w.id === windowId)
+      const leaf = live
+        ? listPaneLeaves(live.tree).find(p => p.panelId.id === panelId.id)
+        : undefined
+      if (leaf?.kind === "git") {
+        return gitRootsRef.current[leaf.ptyTabId] || cwdUri()
+      }
+      if (leaf?.kind === "terminal") {
+        const ptyId = terminalPtyIdForTab(leaf.ptyTabId)
+        if (ptyId) {
+          try {
+            const liveCwd = await window.yaade?.terminal?.getCwd?.(ptyId)
+            if (liveCwd) {
+              updateTerminalLiveCwd(leaf.ptyTabId, liveCwd)
+              return liveCwd
+            }
+          } catch {
+            /* fall through — title / spawn-time cwd */
+          }
+        }
+        const title = workspace.tabRegistry.get(leaf.ptyTabId)?.label ?? ""
+        const fromTitle = cwdUriFromTerminalTitle(
+          title,
+          homeDirRef.current || "",
+        )
+        if (fromTitle) {
+          updateTerminalLiveCwd(leaf.ptyTabId, fromTitle)
+          return fromTitle
+        }
+        const sessionCwd = terminalCwdForTab(leaf.ptyTabId)
+        if (sessionCwd) return sessionCwd
+      }
+      return cwdUri()
     },
-    [createPaneInWindow, updateWindow],
+    [cwdUri, workspace],
   )
 
-  const openGitInWindow = useCallback(
-    (
-      live: LiveWindow,
-      focusPanel: PanelId | null = live.focusedPaneId,
-      edge: Edge = "right",
-    ): LiveWindow => {
-      const tree = live.tree.clone()
-      const tabId = gitTabId(`pane-${Date.now().toString(36)}`)
-      workspace.registerTab({
-        id: tabId,
-        kind: "git",
-        label: "Git",
-      })
-      const panelId = placePtyInTree(tree, tabId, focusPanel, edge)
-      return {
-        ...live,
-        tree,
-        focusedPaneId: panelId,
-        zoomedPaneId: null,
-      }
+  const splitPane = useCallback(
+    async (windowId: string, panelId: PanelId, edge: "right" | "bottom") => {
+      const rootUri = await resolveSplitCwdUri(windowId, panelId)
+      const pane = allocTerminalPane({ rootUri })
+      updateWindow(windowId, w => placeTerminalPane(w, pane, edge, panelId))
     },
-    [workspace],
+    [allocTerminalPane, resolveSplitCwdUri, updateWindow],
   )
 
   const openGitSplit = useCallback(
-    (windowId: string, panelId: PanelId) => {
-      updateWindow(windowId, w => openGitInWindow(w, panelId, "right"))
+    async (windowId: string, panelId: PanelId) => {
+      const rootUri = await resolveSplitCwdUri(windowId, panelId)
+      const pane = allocGitPane(rootUri)
+      updateWindow(windowId, w => placeGitPane(w, pane, "right", panelId))
     },
-    [openGitInWindow, updateWindow],
+    [allocGitPane, resolveSplitCwdUri, updateWindow],
   )
 
   const openNeovimSplit = useCallback(
-    (windowId: string, panelId: PanelId) => {
-      updateWindow(windowId, w =>
-        createPaneInWindow(w, "right", panelId, {
-          launchCommand: "nvim",
-          label: "Neovim",
-        }),
-      )
+    async (
+      windowId: string,
+      panelId: PanelId,
+      options?: { filePath?: string; line?: number },
+    ) => {
+      const rootUri = await resolveSplitCwdUri(windowId, panelId)
+      const launchArgs: string[] = []
+      if (options?.filePath) {
+        if (options.line != null && options.line > 0) {
+          launchArgs.push(`+${options.line}`)
+        }
+        launchArgs.push(options.filePath)
+      }
+      const pane = allocTerminalPane({
+        launchCommand: "nvim",
+        launchArgs: launchArgs.length > 0 ? launchArgs : undefined,
+        label: "Neovim",
+        rootUri,
+      })
+      updateWindow(windowId, w => placeTerminalPane(w, pane, "right", panelId))
     },
-    [createPaneInWindow, updateWindow],
+    [allocTerminalPane, resolveSplitCwdUri, updateWindow],
   )
 
   const zoomPane = useCallback(
@@ -517,6 +738,24 @@ export function MuxApp() {
       }))
     },
     [updateWindow],
+  )
+
+  const focusNeighbor = useCallback(
+    (direction: FocusDirection) => {
+      const w = windowsRef.current.find(x => x.id === activeWindowIdRef.current)
+      if (!w?.focusedPaneId) return
+      const leaves = listPaneLeaves(w.tree)
+      const panes = leaves
+        .map(leaf => {
+          const box = slotBoxesRef.current.get(leaf.ptyTabId)
+          if (!box) return null
+          return { panelId: leaf.panelId, ptyTabId: leaf.ptyTabId, box }
+        })
+        .filter((p): p is NonNullable<typeof p> => p != null)
+      const next = findFocusNeighbor(panes, w.focusedPaneId, direction)
+      if (next) focusPane(w.id, next.panelId, next.ptyTabId)
+    },
+    [focusPane],
   )
 
   const openWorkspace = useCallback(
@@ -712,6 +951,8 @@ export function MuxApp() {
   openNeovimSplitRef.current = openNeovimSplit
   const zoomPaneRef = useRef(zoomPane)
   zoomPaneRef.current = zoomPane
+  const focusNeighborRef = useRef(focusNeighbor)
+  focusNeighborRef.current = focusNeighbor
 
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [commandRevision, setCommandRevision] = useState(0)
@@ -842,6 +1083,30 @@ export function MuxApp() {
         { id: "mux.closePane", title: "Close Pane", category: "Terminal" },
       ),
       commands.register(
+        "mux.focusLeft",
+        run(() => focusNeighborRef.current("left")),
+        { id: "mux.focusLeft", title: "Focus Pane Left", category: "Terminal" },
+      ),
+      commands.register(
+        "mux.focusRight",
+        run(() => focusNeighborRef.current("right")),
+        {
+          id: "mux.focusRight",
+          title: "Focus Pane Right",
+          category: "Terminal",
+        },
+      ),
+      commands.register(
+        "mux.focusUp",
+        run(() => focusNeighborRef.current("up")),
+        { id: "mux.focusUp", title: "Focus Pane Up", category: "Terminal" },
+      ),
+      commands.register(
+        "mux.focusDown",
+        run(() => focusNeighborRef.current("down")),
+        { id: "mux.focusDown", title: "Focus Pane Down", category: "Terminal" },
+      ),
+      commands.register(
         "mux.zoomPane",
         run(() => {
           const w = windowsRef.current.find(
@@ -865,11 +1130,6 @@ export function MuxApp() {
           title: "Toggle Tab Orientation",
           category: "View",
         },
-      ),
-      commands.register(
-        "terminal.show",
-        run(() => {}),
-        { id: "terminal.show", title: "Show Terminal", category: "Terminal" },
       ),
       commands.register(
         "terminal.list",
@@ -965,6 +1225,34 @@ export function MuxApp() {
         noOverlay,
       ),
       bind(
+        "Mod-Alt-ArrowLeft",
+        () => {
+          void executeCommand("mux.focusLeft")
+        },
+        noOverlay,
+      ),
+      bind(
+        "Mod-Alt-ArrowRight",
+        () => {
+          void executeCommand("mux.focusRight")
+        },
+        noOverlay,
+      ),
+      bind(
+        "Mod-Alt-ArrowUp",
+        () => {
+          void executeCommand("mux.focusUp")
+        },
+        noOverlay,
+      ),
+      bind(
+        "Mod-Alt-ArrowDown",
+        () => {
+          void executeCommand("mux.focusDown")
+        },
+        noOverlay,
+      ),
+      bind(
         "Escape",
         () => {
           unzoomIfNeeded()
@@ -1048,6 +1336,7 @@ export function MuxApp() {
   ])
 
   const workspaceSurfaceRef = useRef<HTMLDivElement>(null)
+  const dockSurfaceRef = useRef<HTMLDivElement>(null)
   const activeLeaves = useMemo(
     () => (activeWindow ? listPaneLeaves(activeWindow.tree) : []),
     [activeWindow],
@@ -1059,7 +1348,6 @@ export function MuxApp() {
         .map(l => l.ptyTabId),
     [activeLeaves],
   )
-  // Keep hosts for every window so switching tabs doesn't remount PTYs.
   const allPtyIds = useMemo(() => {
     const ids: string[] = []
     const seen = new Set<string>()
@@ -1080,16 +1368,6 @@ export function MuxApp() {
     return `${leaves}#${activeWindow.zoomedPaneId ?? ""}`
   }, [activeWindow])
 
-  const slotBoxes = useMuxTerminalSlotBoxes(
-    workspaceSurfaceRef,
-    activeWindow?.zoomedPaneId
-      ? isTerminalTabId(activeWindow.zoomedPaneId)
-        ? [activeWindow.zoomedPaneId]
-        : []
-      : activePtyIds,
-    layoutEpoch,
-  )
-
   const focusedPtyTabId = useMemo(() => {
     if (!activeWindow?.focusedPaneId) return null
     const leaf = activeLeaves.find(
@@ -1098,11 +1376,62 @@ export function MuxApp() {
     return leaf?.kind === "terminal" ? leaf.ptyTabId : null
   }, [activeWindow, activeLeaves])
 
+  const slotBoxes = useMuxTerminalSlotBoxes(
+    workspaceSurfaceRef,
+    dockSurfaceRef,
+    activeWindow?.zoomedPaneId
+      ? isTerminalTabId(activeWindow.zoomedPaneId)
+        ? [activeWindow.zoomedPaneId]
+        : []
+      : activePtyIds,
+    layoutEpoch,
+  )
+  slotBoxesRef.current = slotBoxes
+
+  // Touch LRU when focus changes so background windows stay warm briefly.
+  useEffect(() => {
+    if (!focusedPtyTabId) return
+    const lru = terminalLruRef.current.filter(id => id !== focusedPtyTabId)
+    lru.unshift(focusedPtyTabId)
+    terminalLruRef.current = lru.slice(0, MAX_MOUNTED_TERMINALS)
+  }, [focusedPtyTabId])
+
+  const mountedPtyIds = useMemo(() => {
+    const active = new Set(activePtyIds)
+    const out: string[] = [...activePtyIds]
+    for (const id of terminalLruRef.current) {
+      if (active.has(id)) continue
+      if (out.length >= MAX_MOUNTED_TERMINALS) break
+      if (allPtyIds.includes(id)) {
+        out.push(id)
+        active.add(id)
+      }
+    }
+    return out
+  }, [activePtyIds, allPtyIds, focusedPtyTabId])
+
+  // Poll foreground process for mounted terminals (Deck icons / titles).
+  useEffect(() => {
+    let cancelled = false
+    const tick = () => {
+      if (cancelled) return
+      for (const id of mountedPtyIds) {
+        void refreshForegroundProcess(id)
+      }
+    }
+    tick()
+    const handle = window.setInterval(tick, 2_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(handle)
+    }
+  }, [mountedPtyIds, refreshForegroundProcess])
+
   const overlayBlocksTerminalFocus =
     paletteOpen || terminalListOpen || settingsOpen || cdOpen
 
   const renderTerminal = useCallback(
-    (ptyTabId: string, focused: boolean): ReactNode => {
+    (ptyTabId: string, focused: boolean, slotVisible: boolean): ReactNode => {
       const session = terminalSessionForTab(ptyTabId)
       const termFocused = focused && !overlayBlocksTerminalFocus
       const host = (
@@ -1120,22 +1449,37 @@ export function MuxApp() {
             status={session?.status}
             exitCode={session?.exitCode}
             sessionGeneration={session?.generation}
-            onPtyId={trackTerminalPtyId}
+            onPtyId={(tabId, ptyId) => {
+              trackTerminalPtyId(tabId, ptyId)
+              // Persist promptly so reload can reattach this PTY id.
+              persist()
+            }}
             onInput={recordTerminalUserInput}
             onOutput={recordTerminalOutput}
             onTitleChange={(id, title) => {
-              workspace.tabRegistry.update(id, { label: title })
-              bumpSessions()
+              const prevLabel = workspace.tabRegistry.get(id)?.label
+              if (prevLabel !== title) {
+                workspace.tabRegistry.update(id, { label: title })
+              }
+              const fromTitle = cwdUriFromTerminalTitle(
+                title,
+                homeDirRef.current || "",
+              )
+              if (fromTitle) updateTerminalLiveCwd(id, fromTitle)
+              void refreshForegroundProcess(id)
+              // Only re-render mux chrome when the visible title actually changes.
+              if (prevLabel !== title) bumpSessions()
               const winId = activeWindowIdRef.current
               if (!winId) return
               updateWindow(winId, w => {
                 const leaves = listPaneLeaves(w.tree)
-                if (leaves.length === 1 && leaves[0]?.ptyTabId === id) {
-                  return { ...w, title }
-                }
-                return w
+                if (leaves.length !== 1 || leaves[0]?.ptyTabId !== id) return w
+                const nextTitle = paneTitle(id)
+                if (w.title === nextTitle) return w
+                return { ...w, title: nextTitle }
               })
             }}
+            visible={slotVisible}
             onFailed={() => markTerminalFailed(ptyTabId)}
             onRestart={() => {
               const ptyId = terminalPtyIdForTab(ptyTabId)
@@ -1190,22 +1534,22 @@ export function MuxApp() {
           </ContextMenuTrigger>
           <ContextMenuContent data-yaade-mux-terminal-context-menu="">
             <ContextMenuItem
-              onSelect={() => splitPane(live.id, leaf.panelId, "right")}
+              onSelect={() => void splitPane(live.id, leaf.panelId, "right")}
             >
               Split Right
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => splitPane(live.id, leaf.panelId, "bottom")}
+              onSelect={() => void splitPane(live.id, leaf.panelId, "bottom")}
             >
               Split Down
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => openGitSplit(live.id, leaf.panelId)}
+              onSelect={() => void openGitSplit(live.id, leaf.panelId)}
             >
               Open Git
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => openNeovimSplit(live.id, leaf.panelId)}
+              onSelect={() => void openNeovimSplit(live.id, leaf.panelId)}
             >
               Open Neovim
             </ContextMenuItem>
@@ -1236,6 +1580,9 @@ export function MuxApp() {
       openGitSplit,
       openNeovimSplit,
       overlayBlocksTerminalFocus,
+      paneTitle,
+      persist,
+      refreshForegroundProcess,
       splitPane,
       updateWindow,
       workspace,
@@ -1261,7 +1608,19 @@ export function MuxApp() {
     [switcherEntries],
   )
 
-  const tabItems = windows.map(w => ({ id: w.id, title: w.title }))
+  const tabItems = windows.map(w => ({
+    id: w.id,
+    title: w.title,
+    processNames: listPaneLeaves(w.tree).map(
+      leaf =>
+        processByTab[leaf.ptyTabId] ??
+        (isGitTabId(leaf.ptyTabId) ? "git" : "zsh"),
+    ),
+  }))
+  const desktopWindowChrome =
+    window.yaadeDesktop?.windowChrome?.customTitlebar === true
+      ? window.yaadeDesktop.windowChrome
+      : null
 
   return (
     <TooltipProvider>
@@ -1276,6 +1635,13 @@ export function MuxApp() {
             data-yaade-shell="mux"
             data-yaade-mux=""
             data-orientation={orientation}
+            style={
+              desktopWindowChrome
+                ? ({
+                    "--yaade-window-chrome-height": `${desktopWindowChrome.titlebarHeight}px`,
+                  } as CSSProperties)
+                : undefined
+            }
           >
             <MuxTabStrip
               orientation={orientation}
@@ -1290,18 +1656,25 @@ export function MuxApp() {
                 )
               }
               enableDragDock
+              windowChrome={
+                desktopWindowChrome
+                  ? { trafficLights: desktopWindowChrome.trafficLights }
+                  : null
+              }
             />
             <div
               ref={workspaceSurfaceRef}
               className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
             >
               {activeWindow ? (
+                <div ref={dockSurfaceRef} className="h-full min-h-0 w-full">
                 <MuxWindowView
                   key={activeWindow.id}
                   tree={activeWindow.tree}
                   focusedPanelId={activeWindow.focusedPaneId}
                   zoomedPaneId={activeWindow.zoomedPaneId}
                   paneTitle={paneTitle}
+                  paneProcessName={paneProcessName}
                   onFocusPanel={panelId => {
                     const pty = listPaneLeaves(activeWindow.tree).find(
                       p => p.panelId.id === panelId.id,
@@ -1311,20 +1684,28 @@ export function MuxApp() {
                   onEvent={event => handlePanelEvent(activeWindow.id, event)}
                   tabDnd={tabDnd}
                   onSplit={(panelId, edge) =>
-                    splitPane(activeWindow.id, panelId, edge)
+                    void splitPane(activeWindow.id, panelId, edge)
                   }
                   onOpenGit={panelId =>
-                    openGitSplit(activeWindow.id, panelId)
+                    void openGitSplit(activeWindow.id, panelId)
                   }
                   onOpenNeovim={panelId =>
-                    openNeovimSplit(activeWindow.id, panelId)
+                    void openNeovimSplit(activeWindow.id, panelId)
+                  }
+                  onOpenFile={(panelId, filePath, line) =>
+                    void openNeovimSplit(activeWindow.id, panelId, {
+                      filePath,
+                      line,
+                    })
                   }
                   onZoom={ptyTabId => zoomPane(activeWindow.id, ptyTabId)}
                   onClosePane={(panelId, ptyTabId) =>
                     void closePane(activeWindow.id, panelId, ptyTabId)
                   }
                   onNewWindow={newWindow}
-                  gitRootUri={cwdUri() || null}
+                  gitRootForTab={tabId =>
+                    (gitRoots[tabId] ?? cwdUri()) || null
+                  }
                   theme={activeTheme as YaadeTheme}
                   empty={
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -1332,6 +1713,7 @@ export function MuxApp() {
                     </div>
                   }
                 />
+                </div>
               ) : (
                 <div
                   className="flex h-full flex-col items-center justify-center gap-3"
@@ -1349,7 +1731,7 @@ export function MuxApp() {
                 </div>
               )}
               <MuxTerminalLayer
-                ptyTabIds={allPtyIds}
+                ptyTabIds={mountedPtyIds}
                 boxes={slotBoxes}
                 focusedPtyTabId={focusedPtyTabId}
                 renderTerminal={renderTerminal}

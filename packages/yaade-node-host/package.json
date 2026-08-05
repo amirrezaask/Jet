@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
     "postinstall": "node scripts/fix-node-pty-perms.mjs",
-    "test": "tsx --test src/fs.test.ts src/lsp-bridge.test.ts src/lsp-registry.test.ts src/search.test.ts src/shell-env.test.ts src/tasks.test.ts src/terminal.test.ts src/effect-terminal.test.ts"
+    "test": "tsx --test src/fs.test.ts src/lsp-bridge.test.ts src/lsp-registry.test.ts src/search.test.ts src/shell-env.test.ts src/tasks.test.ts src/terminal.test.ts src/terminal-cwd.test.ts src/terminal-osc7.test.ts src/effect-terminal.test.ts"
   },
   "devDependencies": {
     "@yaade/shared": "workspace:*",

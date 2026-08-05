@@ -209,8 +209,12 @@ export { SettingsField } from "./components/SettingsField.js"
 export {
   MuxTabStrip,
   MuxPaneChrome,
+  processIdentity,
+  deckTileStyle,
+  formatMuxTitle,
   type MuxTabItem,
   type MuxTabStripProps,
   type MuxPaneChromeProps,
+  type ProcessIdentity,
   type TabOrientation,
 } from "./mux/index.js"

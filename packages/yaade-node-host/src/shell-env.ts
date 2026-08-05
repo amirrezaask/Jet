@@ -62,6 +62,8 @@ export function resolveLoginShellPath(): string | undefined {
 
 const USER_BIN_RELS = [".local/bin", ".cargo/bin", "bin", ".opencode/bin"] as const
 const SYSTEM_BIN_DIRS = [
+  "/usr/sbin",
+  "/sbin",
   "/opt/homebrew/bin",
   "/opt/homebrew/sbin",
   "/usr/local/bin",

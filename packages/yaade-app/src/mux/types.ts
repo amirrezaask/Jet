@@ -11,22 +11,40 @@ export type MuxPane = {
   cwd?: string
 }
 
+/** Persisted metadata for a terminal leaf so reload can reattach. */
+export type MuxSessionLeafPersisted = {
+  ptyTabId: string
+  ptyId?: string
+  cwdRootUri: string
+  liveCwdUri?: string
+  launchCommand?: string
+  launchArgs?: string[]
+  label?: string
+}
+
 export type MuxWindowPersisted = {
   id: string
   title: string
   tree: PanelTreeSnapshot<PanelView>
   focusedPaneId: number | null
   zoomedPaneId: string | null
-  paneOrder: string[]
+  /** @deprecated v1 write-only; ignored on read. */
+  paneOrder?: string[]
+  sessions?: MuxSessionLeafPersisted[]
 }
 
 export type MuxStatePersisted = {
-  version: 1
+  version: 1 | 2
   orientation: TabOrientation
   windows: MuxWindowPersisted[]
   activeWindowId: string | null
-  /** Last cwd used for new panes (file:// URI). */
+  /**
+   * Boot-only default cwd (launch config / workspace folder).
+   * Per-pane live cwd is authoritative for splits — do not overwrite on resolve.
+   */
   lastCwdUri: string | null
+  /** Per git-pane workspace root (file:// URI). */
+  gitRoots?: Record<string, string>
 }
 
 export type MuxSwitcherEntry = {

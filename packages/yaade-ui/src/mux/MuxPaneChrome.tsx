@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/context-menu.js"
 import { cn } from "@/lib/utils.js"
 import { tabDndId, type TabDragData } from "../dock/tab-dnd-types.js"
+import { deckTileStyle, processIdentity } from "./process-identity.js"
 
 /** Simple Icons Neovim mark — monochrome via currentColor. */
 function NeovimIcon(props: SVGProps<SVGSVGElement>) {
@@ -30,13 +31,14 @@ function NeovimIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 export type MuxPaneChromeProps = {
-  /** Used for drag label / a11y; not shown in the chrome. */
   title: string
   focused: boolean
   paneId: string
   panelId: PanelId
   zoomed: boolean
   canZoom: boolean
+  /** Foreground process basename for the deck tile. */
+  processName?: string | null
   /** When false, title is not a drag handle (e.g. zoomed solo). */
   draggable?: boolean
   onSplitRight: () => void
@@ -59,6 +61,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
     panelId,
     zoomed,
     canZoom,
+    processName,
     draggable = true,
     onSplitRight,
     onSplitDown,
@@ -86,41 +89,12 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
     } satisfies TabDragData,
   })
 
-  const controls = (
-    <div
-      className={cn(
-        "pointer-events-auto flex shrink-0 items-center gap-0.5 rounded-md",
-        "bg-background/55 px-0.5 py-0.5 shadow-sm backdrop-blur-md",
-        "ring-1 ring-border/40",
-        "opacity-0 transition-opacity duration-[var(--yaade-motion-fast)] ease-[var(--yaade-ease-out)]",
-        "group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100",
-        focused && "opacity-100",
-      )}
-      onPointerDown={event => event.stopPropagation()}
-    >
+  const identity = processIdentity(processName)
+  const tileStyle = deckTileStyle(identity)
+
+  const secondaryControls = (
+    <>
       {trailing}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        aria-label="Split right"
-        data-yaade-mux-split="right"
-        className="text-muted-foreground hover:text-foreground"
-        onClick={onSplitRight}
-      >
-        <Columns2 className="size-3.5" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        aria-label="Split down"
-        data-yaade-mux-split="down"
-        className="text-muted-foreground hover:text-foreground"
-        onClick={onSplitDown}
-      >
-        <Rows2 className="size-3.5" />
-      </Button>
       {onOpenGit ? (
         <Button
           type="button"
@@ -128,7 +102,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           size="icon-xs"
           aria-label="Open Git"
           data-yaade-mux-open-git=""
-          className="text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
           onClick={onOpenGit}
         >
           <GitBranch className="size-3.5" />
@@ -141,7 +115,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           size="icon-xs"
           aria-label="Open Neovim"
           data-yaade-mux-open-nvim=""
-          className="text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
           onClick={onOpenNeovim}
         >
           <NeovimIcon />
@@ -154,7 +128,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           size="icon-xs"
           aria-label={zoomed ? "Restore pane" : "Zoom pane"}
           data-yaade-mux-zoom=""
-          className="text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
           onClick={onZoom}
         >
           {zoomed ? (
@@ -170,12 +144,12 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
         size="icon-xs"
         aria-label="Close pane"
         data-yaade-mux-close-pane=""
-        className="text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
         onClick={onClose}
       >
         <X className="size-3.5" />
       </Button>
-    </div>
+    </>
   )
 
   return (
@@ -189,8 +163,9 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           data-zoomed={zoomed ? "" : undefined}
           data-dragging={isDragging ? "" : undefined}
           className={cn(
-            "pointer-events-none absolute inset-x-0 top-0 z-20 flex h-8 items-stretch",
-            "bg-gradient-to-b from-background/35 via-background/10 to-transparent",
+            "group/mux-chrome flex h-7 shrink-0 items-center gap-1.5 border-b px-2",
+            "border-border/35 bg-background/40 backdrop-blur-md",
+            focused && "border-border/55 bg-background/55",
             isDragging && "opacity-45",
             className,
           )}
@@ -202,15 +177,57 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
             data-yaade-mux-pane-title=""
             data-yaade-mux-pane-drag=""
             className={cn(
-              "pointer-events-auto min-w-0 flex-1 outline-none",
+              "flex min-w-0 flex-1 items-center gap-1.5 outline-none",
               draggable && !zoomed
                 ? "cursor-grab touch-none active:cursor-grabbing"
                 : "",
             )}
             {...(draggable && !zoomed ? { ...attributes, ...listeners } : {})}
-          />
-          <div className="pointer-events-none flex items-center pe-1.5 ps-1">
-            {controls}
+          >
+            <span
+              aria-hidden
+              data-yaade-mux-pane-process={processName ?? ""}
+              style={tileStyle}
+              className="flex size-3.5 shrink-0 items-center justify-center rounded-[0.25rem] text-[0.55rem] font-semibold leading-none shadow-sm ring-1 ring-black/25"
+            >
+              {identity.glyph}
+            </span>
+            <span
+              className={cn(
+                "min-w-0 truncate text-xs font-medium",
+                focused ? "text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {title}
+            </span>
+          </button>
+          <div
+            className="flex shrink-0 items-center gap-0.5"
+            onPointerDown={event => event.stopPropagation()}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Split right"
+              data-yaade-mux-split="right"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onSplitRight}
+            >
+              <Columns2 className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Split down"
+              data-yaade-mux-split="down"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onSplitDown}
+            >
+              <Rows2 className="size-3.5" />
+            </Button>
+            {secondaryControls}
           </div>
         </div>
       </ContextMenuTrigger>

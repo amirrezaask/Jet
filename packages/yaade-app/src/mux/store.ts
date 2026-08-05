@@ -3,11 +3,12 @@ import type { MuxStatePersisted, TabOrientation } from "./types.js"
 export const MUX_STORAGE_KEY = "yaade-mux-v1"
 
 export const DEFAULT_MUX_STATE: MuxStatePersisted = {
-  version: 1,
-  orientation: "vertical",
+  version: 2,
+  orientation: "horizontal",
   windows: [],
   activeWindowId: null,
   lastCwdUri: null,
+  gitRoots: {},
 }
 
 function isOrientation(value: unknown): value is TabOrientation {
@@ -19,16 +20,23 @@ export function readMuxState(
 ): MuxStatePersisted {
   try {
     const raw = storage.getItem(MUX_STORAGE_KEY)
-    if (!raw) return { ...DEFAULT_MUX_STATE }
+    if (!raw) return { ...DEFAULT_MUX_STATE, gitRoots: {} }
     const parsed = JSON.parse(raw) as Partial<MuxStatePersisted>
-    if (parsed.version !== 1 || !Array.isArray(parsed.windows)) {
-      return { ...DEFAULT_MUX_STATE }
+    if (
+      (parsed.version !== 1 && parsed.version !== 2) ||
+      !Array.isArray(parsed.windows)
+    ) {
+      return { ...DEFAULT_MUX_STATE, gitRoots: {} }
     }
+    // v1 → v2: keep windows; default orientation was vertical — migrate to
+    // horizontal only when the stored value was the old implicit default and
+    // the user never toggled. Preserve an explicit vertical choice.
+    const orientation = isOrientation(parsed.orientation)
+      ? parsed.orientation
+      : "horizontal"
     return {
-      version: 1,
-      orientation: isOrientation(parsed.orientation)
-        ? parsed.orientation
-        : "vertical",
+      version: 2,
+      orientation,
       windows: parsed.windows,
       activeWindowId:
         typeof parsed.activeWindowId === "string"
@@ -36,9 +44,13 @@ export function readMuxState(
           : null,
       lastCwdUri:
         typeof parsed.lastCwdUri === "string" ? parsed.lastCwdUri : null,
+      gitRoots:
+        parsed.gitRoots && typeof parsed.gitRoots === "object"
+          ? (parsed.gitRoots as Record<string, string>)
+          : {},
     }
   } catch {
-    return { ...DEFAULT_MUX_STATE }
+    return { ...DEFAULT_MUX_STATE, gitRoots: {} }
   }
 }
 
@@ -52,7 +64,10 @@ export function writeMuxState(
       ? localStorage
       : ({ setItem() {} } as Pick<Storage, "setItem">))
   try {
-    store.setItem(MUX_STORAGE_KEY, JSON.stringify(state))
+    store.setItem(
+      MUX_STORAGE_KEY,
+      JSON.stringify({ ...state, version: 2 } satisfies MuxStatePersisted),
+    )
   } catch {
     /* localStorage may be disabled */
   }

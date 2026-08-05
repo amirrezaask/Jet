@@ -162,3 +162,50 @@ test("pauses PTY when unacked chars exceed high watermark and resumes on ack", a
     terminal.stopAll()
   }
 })
+
+test("getCwd returns spawn cwd and tracks process cd", async () => {
+  const terminal = new TerminalHost()
+  const fs = await import("node:fs")
+  const os = await import("node:os")
+  const path = await import("node:path")
+  const { uriToPath } = await import("./paths.js")
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "yaade-term-cwd-")))
+  const nested = path.join(tmp, "nested")
+  fs.mkdirSync(nested)
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    const created = terminal.create(
+      pathToFileURL(tmp).href,
+      {
+        command: process.execPath,
+        args: [
+          "-e",
+          `process.chdir(${JSON.stringify(nested)}); setInterval(() => {}, 1000)`,
+        ],
+      },
+      "terminal-getcwd-test",
+    )
+    // Give the child a moment to chdir.
+    await new Promise<void>((resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error("chdir wait timed out")), 5_000)
+      const tick = () => {
+        void terminal.getCwd(created.id).then(cwd => {
+          if (cwd && fs.realpathSync(uriToPath(cwd)) === nested) {
+            clearTimeout(timeout)
+            resolve()
+            return
+          }
+          setTimeout(tick, 50)
+        })
+      }
+      tick()
+    })
+    const cwdUri = await terminal.getCwd(created.id)
+    assert.ok(cwdUri)
+    assert.equal(fs.realpathSync(uriToPath(cwdUri)), nested)
+  } finally {
+    if (timeout) clearTimeout(timeout)
+    terminal.stopAll()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})

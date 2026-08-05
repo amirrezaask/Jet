@@ -24,9 +24,14 @@ function slotSelector(ptyTabId: string): string {
 /**
  * Keep terminal hosts mounted across PanelDock remounts (split/retile/DnD).
  * Slots are empty placeholders in the dock; this layer paints terminals over them.
+ *
+ * Geometry is measured relative to `containerRef`. MutationObserver watches
+ * `dockRef` only (panel tree), never the xterm hosts, so terminal DOM churn
+ * cannot thrash layout.
  */
 export function useMuxTerminalSlotBoxes(
   containerRef: RefObject<HTMLElement | null>,
+  dockRef: RefObject<HTMLElement | null>,
   ptyTabIds: string[],
   /** Bump when panel tree structure changes so we re-query slots. */
   layoutEpoch: string | number,
@@ -41,7 +46,8 @@ export function useMuxTerminalSlotBoxes(
       return
     }
 
-    const sync = () => {
+    let raf = 0
+    const syncNow = () => {
       const cbox = container.getBoundingClientRect()
       const next = new Map<string, MuxTerminalSlotBox>()
       for (const id of ptyTabIds) {
@@ -49,11 +55,13 @@ export function useMuxTerminalSlotBoxes(
         if (!slot) continue
         const r = slot.getBoundingClientRect()
         if (r.width < 1 || r.height < 1) continue
+        // Integer CSS px — subpixel getBoundingClientRect noise must not
+        // churn React state every animation frame.
         next.set(id, {
-          top: r.top - cbox.top,
-          left: r.left - cbox.left,
-          width: r.width,
-          height: r.height,
+          top: Math.round(r.top - cbox.top),
+          left: Math.round(r.left - cbox.left),
+          width: Math.round(r.width),
+          height: Math.round(r.height),
         })
       }
       setBoxes(prev => {
@@ -78,22 +86,37 @@ export function useMuxTerminalSlotBoxes(
       })
     }
 
-    sync()
+    const sync = () => {
+      if (raf) cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        syncNow()
+      })
+    }
+
+    syncNow()
     const ro = new ResizeObserver(() => sync())
     ro.observe(container)
     for (const id of ptyTabIds) {
       const slot = container.querySelector<HTMLElement>(slotSelector(id))
       if (slot) ro.observe(slot)
     }
-    const mo = new MutationObserver(() => sync())
-    mo.observe(container, { childList: true, subtree: true })
+    // Observe dock subtree only — not the terminal layer — so xterm mutations
+    // never force layout. layoutEpoch already covers structural tree edits.
+    const dock = dockRef.current
+    let mo: MutationObserver | null = null
+    if (dock) {
+      mo = new MutationObserver(() => sync())
+      mo.observe(dock, { childList: true, subtree: true })
+    }
     window.addEventListener("resize", sync)
     return () => {
+      if (raf) cancelAnimationFrame(raf)
       ro.disconnect()
-      mo.disconnect()
+      mo?.disconnect()
       window.removeEventListener("resize", sync)
     }
-  }, [containerRef, idKey, layoutEpoch, ptyTabIds])
+  }, [containerRef, dockRef, idKey, layoutEpoch, ptyTabIds])
 
   return boxes
 }
@@ -102,7 +125,11 @@ export function MuxTerminalLayer(props: {
   ptyTabIds: string[]
   boxes: Map<string, MuxTerminalSlotBox>
   focusedPtyTabId: string | null
-  renderTerminal: (ptyTabId: string, focused: boolean) => ReactNode
+  renderTerminal: (
+    ptyTabId: string,
+    focused: boolean,
+    slotVisible: boolean,
+  ) => ReactNode
 }) {
   const { ptyTabIds, boxes, focusedPtyTabId, renderTerminal } = props
   return (
@@ -136,7 +163,7 @@ export function MuxTerminalLayer(props: {
                 : undefined
             }
           >
-            {renderTerminal(id, focused)}
+            {renderTerminal(id, focused, Boolean(box))}
           </div>
         )
       })}

@@ -10,18 +10,18 @@ import {
 } from "./_launch.js"
 
 test.describe("mux tabs", () => {
-  test("boots with vertical tab strip and one window", async () => {
+  test("boots with horizontal tab strip and one window", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
-      await expectSelectorVisible(page, "[data-yaade-mux][data-orientation=vertical]")
+      await expectSelectorVisible(page, "[data-yaade-mux][data-orientation=horizontal]")
       await expectSelectorVisible(page, "[data-yaade-mux-tab-strip]")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-tab]").count())
         .toBeGreaterThanOrEqual(1)
       await expectSelectorVisible(page, "[data-yaade-mux-window]")
       await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
-      // Overlay chrome — no title text clutter, drag handle still present.
+      // Persistent pane header — title text visible without hover.
       await expectSelectorVisible(page, "[data-yaade-mux-pane-chrome]")
       await expectSelectorVisible(page, "[data-yaade-mux-pane-drag]")
       const titleHandle = page.locator("[data-yaade-mux-pane-title]").first()
@@ -29,8 +29,57 @@ test.describe("mux tabs", () => {
         .poll(async () => titleHandle.getAttribute("aria-label"))
         .toMatch(/.+/)
       await expect
-        .poll(async () => ((await titleHandle.textContent()) ?? "").trim())
-        .toBe("")
+        .poll(async () => ((await titleHandle.textContent()) ?? "").trim().length)
+        .toBeGreaterThan(0)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("clears macOS traffic lights beside horizontal tabs", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await page.addInitScript(() => {
+        const connection = {
+          activeUrl: window.location.origin,
+          localUrl: window.location.origin,
+          mode: "local" as const,
+          startupError: null,
+        }
+        window.yaadeDesktop = Object.freeze({
+          windowChrome: Object.freeze({
+            customTitlebar: true as const,
+            platform: "darwin" as const,
+            titlebarHeight: 40,
+            trafficLights: true,
+          }),
+          getServerConnection: async () => connection,
+          connectToServer: async () => connection,
+        })
+      })
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await waitForMux(page)
+
+      const spacer = page.locator(
+        "[data-yaade-mux-tab-strip] [data-yaade-traffic-light-spacer]",
+      )
+      await expectLocatorVisible(spacer)
+
+      const firstTab = page.locator("[data-yaade-mux-tab]").first()
+      await expectLocatorVisible(firstTab)
+      await expect
+        .poll(async () => {
+          const [tabBox, spacerBox] = await Promise.all([
+            firstTab.boundingBox(),
+            spacer.boundingBox(),
+          ])
+          if (!tabBox || !spacerBox) return null
+          return {
+            tabAfterSpacer: tabBox.x >= spacerBox.x + spacerBox.width - 1,
+          }
+        })
+        .toEqual({ tabAfterSpacer: true })
     } finally {
       await app.close()
     }
@@ -64,26 +113,12 @@ test.describe("mux tabs", () => {
       await waitForMux(page)
       await expectSelectorVisible(
         page,
-        "[data-yaade-mux][data-orientation=vertical]",
-      )
-      // Vertical strip uses the same frosted glass treatment as horizontal.
-      const verticalStrip = page.locator(
-        "[data-yaade-mux-tab-strip][data-orientation=vertical]",
-      )
-      await expect
-        .poll(async () => {
-          const cls = (await verticalStrip.getAttribute("class")) ?? ""
-          return cls.includes("backdrop-blur") || cls.includes("bg-background/50")
-        })
-        .toBe(true)
-      await execCommand(page, "mux.toggleTabOrientation")
-      await expectSelectorVisible(
-        page,
         "[data-yaade-mux][data-orientation=horizontal]",
       )
       await expectSelectorVisible(page, "[data-yaade-mux-icon-deck]")
       await expectSelectorVisible(page, "[data-yaade-mux-deck-icon]")
-      // Horizontal: centered capsule pills (deck favicon inside) + adjacent +.
+      await expectSelectorVisible(page, "[data-yaade-mux-deck-library]")
+      // Horizontal: left-aligned capsule pills + deck library + +.
       const strip = page.locator("[data-yaade-mux-tab-strip][data-orientation=horizontal]")
       const stripBox = await strip.boundingBox()
       const tabBox = await strip.locator("[data-yaade-mux-tab]").first().boundingBox()
@@ -95,15 +130,30 @@ test.describe("mux tabs", () => {
       // Capsule pills use h-8 (~26px at Yaade's 13px root).
       expect(tabBox!.height).toBeGreaterThanOrEqual(24)
       expect(tabBox!.height).toBeLessThanOrEqual(stripBox!.height)
-      // Tab cluster is roughly centered in the title bar.
+      // Tabs sit in the left half after traffic lights / deck library.
       const tabCenter = tabBox!.x + tabBox!.width / 2
-      const stripCenter = stripBox!.x + stripBox!.width / 2
-      expect(Math.abs(tabCenter - stripCenter)).toBeLessThan(stripBox!.width * 0.28)
+      expect(tabCenter).toBeLessThan(stripBox!.x + stripBox!.width * 0.55)
 
       await execCommand(page, "mux.toggleTabOrientation")
       await expectSelectorVisible(
         page,
         "[data-yaade-mux][data-orientation=vertical]",
+      )
+      // Vertical strip uses the same frosted glass treatment.
+      const verticalStrip = page.locator(
+        "[data-yaade-mux-tab-strip][data-orientation=vertical]",
+      )
+      await expect
+        .poll(async () => {
+          const cls = (await verticalStrip.getAttribute("class")) ?? ""
+          return cls.includes("backdrop-blur") || cls.includes("bg-background/50")
+        })
+        .toBe(true)
+
+      await execCommand(page, "mux.toggleTabOrientation")
+      await expectSelectorVisible(
+        page,
+        "[data-yaade-mux][data-orientation=horizontal]",
       )
     } finally {
       await app.close()
@@ -158,6 +208,34 @@ test.describe("mux tiling", () => {
     }
   })
 
+  test("focus neighbor moves between split panes", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await page.locator("[data-yaade-mux-split=right]").first().click()
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBeGreaterThanOrEqual(2)
+
+      const focusedBefore = await page
+        .locator("[data-yaade-mux-pane][data-focused]")
+        .getAttribute("data-yaade-mux-pane")
+      expect(focusedBefore).toBeTruthy()
+
+      await execCommand(page, "mux.focusLeft")
+      await expect
+        .poll(async () => {
+          const focused = await page
+            .locator("[data-yaade-mux-pane][data-focused]")
+            .getAttribute("data-yaade-mux-pane")
+          return focused && focused !== focusedBefore ? focused : null
+        })
+        .toBeTruthy()
+    } finally {
+      await app.close()
+    }
+  })
+
   test("git button opens Git workspace in a new split", async () => {
     const { app, page } = await launchJet()
     try {
@@ -176,6 +254,233 @@ test.describe("mux tiling", () => {
       await expectSelectorVisible(page, "[data-yaade-git-workspace]")
       // Terminal pane remains; git is an additional split.
       await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Mod-d shell split inherits the source pane cwd", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
+
+      const shellPaneId = await page
+        .locator("[data-yaade-mux-pane-kind=terminal]")
+        .first()
+        .getAttribute("data-yaade-mux-pane")
+      expect(shellPaneId).toBeTruthy()
+
+      let shellPtyId: string | null = null
+      await expect
+        .poll(
+          async () => {
+            shellPtyId = await page.evaluate(paneId => {
+              const host = document.querySelector(
+                `[data-yaade-mux-terminal-host="${paneId}"] [data-yaade-terminal-panel]`,
+              )
+              const id = host?.getAttribute("data-yaade-terminal-pty-id") || ""
+              return id.length > 0 ? id : null
+            }, shellPaneId!)
+            return shellPtyId
+          },
+          { timeout: 15_000 },
+        )
+        .toBeTruthy()
+
+      const nestedName = `cwd-modd-${Date.now().toString(36)}`
+      await page.evaluate(
+        async ({ id, dir }) => {
+          const terminal = (
+            window as Window & {
+              yaade?: {
+                terminal?: {
+                  write: (ptyId: string, data: string) => Promise<unknown>
+                  getCwd: (ptyId: string) => Promise<string | null>
+                }
+              }
+            }
+          ).yaade?.terminal
+          if (!terminal?.write || !terminal.getCwd) {
+            throw new Error("terminal write/getCwd unavailable")
+          }
+          await terminal.write(id, `mkdir -p ${dir} && cd ${dir}\n`)
+          const deadline = Date.now() + 10_000
+          while (Date.now() < deadline) {
+            const live = await terminal.getCwd(id)
+            if (live && (live.includes(`/${dir}`) || live.includes(`%2F${dir}`))) {
+              return
+            }
+            await new Promise(r => setTimeout(r, 50))
+          }
+          throw new Error(`shell did not cd into ${dir}`)
+        },
+        { id: shellPtyId!, dir: nestedName },
+      )
+
+      await page
+        .locator(`[data-yaade-mux-pane="${shellPaneId}"] [data-yaade-mux-pane-drag]`)
+        .click()
+      await execCommand(page, "mux.splitRight")
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane-kind=terminal]").count())
+        .toBeGreaterThanOrEqual(2)
+
+      await expect
+        .poll(
+          async () => {
+            const panes = page.locator("[data-yaade-mux-pane-kind=terminal]")
+            const count = await panes.count()
+            for (let i = 0; i < count; i++) {
+              const paneId = await panes.nth(i).getAttribute("data-yaade-mux-pane")
+              if (!paneId || paneId === shellPaneId) continue
+              const cwdLeaf = await page.evaluate(async id => {
+                const host = document.querySelector(
+                  `[data-yaade-mux-terminal-host="${id}"] [data-yaade-terminal-panel]`,
+                )
+                const ptyId = host?.getAttribute("data-yaade-terminal-pty-id") || ""
+                if (!ptyId) return null
+                const terminal = (
+                  window as Window & {
+                    yaade?: {
+                      terminal?: { getCwd: (ptyId: string) => Promise<string | null> }
+                    }
+                  }
+                ).yaade?.terminal
+                const cwd = await terminal?.getCwd?.(ptyId)
+                if (!cwd) return null
+                const path = decodeURIComponent(cwd.replace(/^file:\/\//, ""))
+                return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? null
+              }, paneId)
+              if (cwdLeaf === nestedName) return cwdLeaf
+            }
+            return null
+          },
+          { timeout: 15_000 },
+        )
+        .toBe(nestedName)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("git and neovim splits use the shell process cwd", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
+
+      const shellPaneId = await page
+        .locator("[data-yaade-mux-pane-kind=terminal]")
+        .first()
+        .getAttribute("data-yaade-mux-pane")
+      expect(shellPaneId).toBeTruthy()
+
+      let shellPtyId: string | null = null
+      await expect
+        .poll(
+          async () => {
+            shellPtyId = await page.evaluate(paneId => {
+              const host = document.querySelector(
+                `[data-yaade-mux-terminal-host="${paneId}"] [data-yaade-terminal-panel]`,
+              )
+              const id = host?.getAttribute("data-yaade-terminal-pty-id") || ""
+              return id.length > 0 ? id : null
+            }, shellPaneId!)
+            return shellPtyId
+          },
+          { timeout: 15_000 },
+        )
+        .toBeTruthy()
+
+      const nestedName = `cwd-split-${Date.now().toString(36)}`
+      await page.evaluate(
+        async ({ id, dir }) => {
+          const terminal = (
+            window as Window & {
+              yaade?: {
+                terminal?: {
+                  write: (ptyId: string, data: string) => Promise<unknown>
+                  getCwd: (ptyId: string) => Promise<string | null>
+                }
+              }
+            }
+          ).yaade?.terminal
+          if (!terminal?.write || !terminal.getCwd) {
+            throw new Error("terminal write/getCwd unavailable")
+          }
+          if (!(await terminal.getCwd(id))) throw new Error("missing spawn cwd")
+          await terminal.write(id, `mkdir -p ${dir} && cd ${dir}\n`)
+          const deadline = Date.now() + 10_000
+          while (Date.now() < deadline) {
+            const live = await terminal.getCwd(id)
+            if (live && (live.includes(`/${dir}`) || live.includes(`%2F${dir}`))) {
+              return
+            }
+            await new Promise(r => setTimeout(r, 50))
+          }
+          throw new Error(`shell did not cd into ${dir}`)
+        },
+        { id: shellPtyId!, dir: nestedName },
+      )
+
+      await page.locator("[data-yaade-mux-open-git]").first().click()
+      await expectSelectorVisible(page, "[data-yaade-mux-pane-kind=git]")
+      await expect
+        .poll(async () => {
+          const root = await page
+            .locator("[data-yaade-mux-pane-kind=git] [data-yaade-git-root]")
+            .getAttribute("data-yaade-git-root")
+          return root?.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? null
+        }, { timeout: 10_000 })
+        .toBe(nestedName)
+
+      await page.locator("[data-yaade-mux-pane-kind=git] [data-yaade-mux-close-pane]").click()
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane-kind=git]").count())
+        .toBe(0)
+
+      await page
+        .locator(`[data-yaade-mux-pane="${shellPaneId}"] [data-yaade-mux-pane-drag]`)
+        .click()
+      await page.locator("[data-yaade-mux-open-nvim]").first().click()
+      await expect
+        .poll(async () =>
+          page.locator('[data-yaade-mux-pane-title][aria-label="Neovim"]').count(),
+        )
+        .toBeGreaterThanOrEqual(1)
+
+      const nvimPaneId = await page
+        .locator('[data-yaade-mux-pane-title][aria-label="Neovim"]')
+        .first()
+        .evaluate(el => el.closest("[data-yaade-mux-pane]")?.getAttribute("data-yaade-mux-pane") ?? null)
+      expect(nvimPaneId).toBeTruthy()
+
+      await expect
+        .poll(async () => {
+          const nvimPty = await page.evaluate(paneId => {
+            const host = document.querySelector(
+              `[data-yaade-mux-terminal-host="${paneId}"] [data-yaade-terminal-panel]`,
+            )
+            const id = host?.getAttribute("data-yaade-terminal-pty-id") || ""
+            return id.length > 0 ? id : null
+          }, nvimPaneId!)
+          if (!nvimPty) return null
+          return page.evaluate(async id => {
+            const terminal = (
+              window as Window & {
+                yaade?: {
+                  terminal?: { getCwd: (ptyId: string) => Promise<string | null> }
+                }
+              }
+            ).yaade?.terminal
+            const cwd = await terminal?.getCwd?.(id)
+            if (!cwd) return null
+            const path = decodeURIComponent(cwd.replace(/^file:\/\//, ""))
+            return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? null
+          }, nvimPty)
+        }, { timeout: 15_000 })
+        .toBe(nestedName)
     } finally {
       await app.close()
     }
@@ -710,3 +1015,51 @@ test.describe("mux drag dock", () => {
     }
   })
 })
+
+test.describe("mux persistence", () => {
+  test("reload reattaches the existing PTY instead of spawning a new one", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
+
+      await expect
+        .poll(async () => {
+          return page.evaluate(() => {
+            const panel = document.querySelector(
+              "[data-yaade-terminal-panel][data-yaade-terminal-pty-id]",
+            )
+            return panel?.getAttribute("data-yaade-terminal-pty-id") ?? null
+          })
+        }, { timeout: 15_000 })
+        .toBeTruthy()
+
+      const ptyId = await page.evaluate(() => {
+        const panel = document.querySelector(
+          "[data-yaade-terminal-panel][data-yaade-terminal-pty-id]",
+        )
+        return panel?.getAttribute("data-yaade-terminal-pty-id") ?? null
+      })
+      expect(ptyId).toBeTruthy()
+
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await waitForMux(page)
+
+      await expect
+        .poll(async () => {
+          return page.evaluate(expected => {
+            const panel = document.querySelector(
+              "[data-yaade-terminal-panel][data-yaade-terminal-pty-id]",
+            )
+            return panel?.getAttribute("data-yaade-terminal-pty-id") === expected
+              ? expected
+              : null
+          }, ptyId)
+        }, { timeout: 15_000 })
+        .toBe(ptyId)
+    } finally {
+      await app.close()
+    }
+  })
+})
+
