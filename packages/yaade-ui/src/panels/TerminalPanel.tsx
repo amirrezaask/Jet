@@ -8,7 +8,11 @@ import { subscribeRootStyle } from "./root-style-observer.js"
 import { Button } from "../components/ui/button.js"
 import { Spinner } from "../components/ui/spinner.js"
 import { TerminalScrollMotion } from "./terminal-scroll-motion.js"
-import { registerTerminalPathLinks } from "./terminal-links.js"
+import {
+  createTerminalOscLinkHandler,
+  registerTerminalPathLinks,
+  registerTerminalUrlLinks,
+} from "./terminal-links.js"
 import { createTerminalInputWriter } from "./terminal-input-writer.js"
 import { createTerminalOutputWriter } from "./terminal-output-writer.js"
 import { attachTerminalGpuRenderer } from "./terminal-gpu-renderer.js"
@@ -392,6 +396,8 @@ export function TerminalPanel({
       scrollback: 5000,
       // Never convert LF→CRLF; progress bars and TUI apps rely on raw \\r.
       convertEol: false,
+      // OSC 8 hyperlinks — Cmd/Ctrl-click opens (same as scanned http(s) URLs).
+      linkHandler: createTerminalOscLinkHandler(),
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -402,6 +408,8 @@ export function TerminalPanel({
     const panelEl = container.closest<HTMLElement>("[data-yaade-terminal-panel]")
     if (panelEl) panelEl.dataset.yaadeTerminalRenderer = gpuRenderer.kind
 
+    // URL provider first so http(s) wins over path false-positives on the same span.
+    const urlLinks = registerTerminalUrlLinks(term)
     const pathLinks =
       onOpenPathRef.current != null
         ? registerTerminalPathLinks(term, (path, line, column) => {
@@ -739,6 +747,7 @@ export function TerminalPanel({
       // Drain any remaining parse acks so a paused PTY is not left stuck.
       flushAck(session.ptyId)
       unsub?.()
+      urlLinks.dispose()
       pathLinks?.dispose()
       session.scrollMotion.dispose()
       gpuRenderer.dispose()

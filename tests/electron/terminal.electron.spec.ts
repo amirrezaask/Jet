@@ -842,4 +842,104 @@ test.describe("electron terminal", () => {
       await app.close()
     }
   })
+
+  test("underlines http links and opens them with Cmd-click", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+
+      const url = "https://example.com/yaade-term-link"
+      const ptyId = await page
+        .locator("[data-yaade-terminal-panel]")
+        .getAttribute("data-yaade-terminal-pty-id")
+      expect(ptyId).toBeTruthy()
+
+      await page.evaluate(
+        async ({ id, href }) => {
+          const terminal = window.yaade?.terminal
+          if (!terminal) throw new Error("Terminal API unavailable")
+          await terminal.write(id, `printf '%s\\n' '${href}'\n`)
+        },
+        { id: ptyId!, href: url },
+      )
+
+      await expect
+        .poll(async () => readTerminalText(page), { timeout: 10_000 })
+        .toContain(url)
+
+      await page.evaluate(() => {
+        const w = window as Window & { __yaadeOpenedUrls?: string[] }
+        w.__yaadeOpenedUrls = []
+        w.open = (() => {
+          const fake = {
+            opener: null as unknown,
+            location: { href: "" },
+          }
+          Object.defineProperty(fake.location, "href", {
+            set(value: string) {
+              w.__yaadeOpenedUrls!.push(value)
+            },
+            get() {
+              return ""
+            },
+          })
+          return fake
+        }) as typeof window.open
+      })
+
+      let hit: { x: number; y: number } | null = null
+      await expect
+        .poll(async () => {
+          hit = await page.evaluate(needle => {
+            const match = window.__yaadeAgent?.findTerminalText?.(needle)
+            const cell = window.__yaadeAgent?.getTerminalCellSize?.()
+            const screen = document.querySelector<HTMLElement>(
+              "[data-yaade-terminal-panel] .xterm-screen",
+            )
+            if (!match || !cell || !screen) return null
+            const rect = screen.getBoundingClientRect()
+            const style = getComputedStyle(screen)
+            const padX = Number.parseFloat(style.paddingLeft) || 0
+            const padY = Number.parseFloat(style.paddingTop) || 0
+            const x = rect.left + padX + (match.col + 0.5) * cell.width
+            const y = rect.top + padY + (match.viewportRow + 0.5) * cell.height
+            if (![x, y].every(Number.isFinite)) return null
+            return { x, y }
+          }, url)
+          return hit != null
+        })
+        .toBe(true)
+
+      // Hover → underline + pointer (xterm draws underline on the link render layer).
+      await page.mouse.move(hit!.x, hit!.y)
+      await expect
+        .poll(async () =>
+          page.locator("[data-yaade-terminal-panel] .xterm-screen.xterm-cursor-pointer").count(),
+        )
+        .toBeGreaterThan(0)
+
+      // Plain click must not navigate.
+      await page.mouse.click(hit!.x, hit!.y)
+      expect(
+        await page.evaluate(
+          () => (window as Window & { __yaadeOpenedUrls?: string[] }).__yaadeOpenedUrls ?? [],
+        ),
+      ).toEqual([])
+
+      // Cmd-click opens in a new browsing context.
+      await page.keyboard.down("Meta")
+      await page.mouse.click(hit!.x, hit!.y)
+      await page.keyboard.up("Meta")
+      await expect
+        .poll(async () =>
+          page.evaluate(
+            () => (window as Window & { __yaadeOpenedUrls?: string[] }).__yaadeOpenedUrls ?? [],
+          ),
+        )
+        .toEqual(expect.arrayContaining([expect.stringContaining("example.com/yaade-term-link")]))
+    } finally {
+      await app.close()
+    }
+  })
 })

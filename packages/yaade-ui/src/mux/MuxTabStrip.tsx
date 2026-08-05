@@ -72,7 +72,7 @@ function DeckIcon({
       data-active={active ? "" : undefined}
       aria-hidden
       className={cn(
-        "relative flex size-4 shrink-0 items-center justify-center",
+        "relative flex size-3.5 shrink-0 items-center justify-center",
         !active && "opacity-75",
         className,
       )}
@@ -86,10 +86,10 @@ function DeckIcon({
                 key={`${tabId}-${i}`}
                 style={{
                   ...deckTileStyle(id),
-                  transform: `translate(${i * 2}px, ${i * -1.5}px)`,
+                  transform: `translate(${i * 1.5}px, ${i * -1}px)`,
                   zIndex: names.length - i,
                 }}
-                className="absolute flex size-3 items-center justify-center rounded-[0.25rem] text-[0.45rem] font-semibold leading-none shadow-sm ring-1 ring-black/25"
+                className="absolute flex size-2.5 items-center justify-center rounded-[0.2rem] text-[0.4rem] font-semibold leading-none shadow-sm ring-1 ring-black/25"
               >
                 {id.glyph}
               </span>
@@ -99,7 +99,7 @@ function DeckIcon({
       ) : (
         <span
           style={deckTileStyle(primary)}
-          className="flex size-4 items-center justify-center overflow-hidden rounded-[0.3rem] text-[0.55rem] font-semibold leading-none shadow-sm ring-1 ring-black/25"
+          className="flex size-3.5 items-center justify-center overflow-hidden rounded-[0.25rem] text-[0.5rem] font-semibold leading-none shadow-sm ring-1 ring-black/25"
         >
           {primary.glyph}
         </span>
@@ -147,7 +147,7 @@ function MuxTabDragShell({
           data-dragging={isDragging ? "" : undefined}
           className={cn(
             "group relative flex min-w-0 items-center",
-            vertical ? "w-full" : "h-8 shrink-0",
+            vertical ? "w-full" : "h-6 shrink-0",
             isDragging && "opacity-45",
             enableDrag && "touch-none",
           )}
@@ -158,10 +158,10 @@ function MuxTabDragShell({
             value={tab.id}
             data-yaade-mux-tab-drag=""
             className={cn(
-              "yaade-press min-w-0 flex-1 justify-start gap-1.5 text-xs after:hidden!",
+              "yaade-press min-w-0 flex-1 justify-start gap-1 text-2xs after:hidden!",
               vertical
-                ? "!h-auto w-full gap-2 rounded-full border border-transparent px-3 py-2 pe-8"
-                : "!h-8 max-w-56 min-w-0 gap-2 rounded-full border border-transparent pe-7 ps-3",
+                ? "!h-auto w-full gap-1.5 rounded-full border border-transparent px-2.5 py-1.5 pe-7"
+                : "!h-6 max-w-48 min-w-0 gap-1.5 rounded-full border border-transparent pe-6 ps-2",
               "text-muted-foreground hover:text-foreground",
               "data-[state=active]:border-border/70 data-[state=active]:bg-foreground/25",
               "data-[state=active]:text-foreground data-[state=active]:shadow-sm",
@@ -194,7 +194,7 @@ function MuxTabDragShell({
             aria-label={`Close ${tab.title}`}
             data-yaade-mux-close-tab={tab.id}
             className={cn(
-              "absolute end-1.5 top-1/2 size-5 -translate-y-1/2 rounded-full opacity-0",
+              "absolute end-1 top-1/2 size-4 -translate-y-1/2 rounded-full opacity-0",
               "group-hover:opacity-100 group-data-[active]:opacity-100",
               "text-muted-foreground hover:text-foreground",
             )}
@@ -205,7 +205,7 @@ function MuxTabDragShell({
             }}
             onPointerDown={event => event.stopPropagation()}
           >
-            <X className="size-3" />
+            <X className="size-2.5" />
           </Button>
         </div>
       </ContextMenuTrigger>
@@ -279,11 +279,11 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       size="icon-xs"
       aria-label="Toggle tab orientation"
       data-yaade-mux-deck-library=""
-      className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+      className="size-6 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
       style={chromeDrag ? noDragRegion : undefined}
       onClick={onToggleOrientation}
     >
-      <LayoutGrid className="size-3.5" />
+      <LayoutGrid className="size-3" />
     </Button>
   )
 
@@ -297,14 +297,14 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       className={cn(
         "text-muted-foreground hover:text-foreground",
         vertical &&
-          "w-full justify-start gap-1.5 rounded-full border border-transparent hover:bg-foreground/5",
-        !vertical && "size-8 shrink-0 rounded-full",
+          "h-7 w-full justify-start gap-1.5 rounded-full border border-transparent px-2.5 hover:bg-foreground/5",
+        !vertical && "size-6 shrink-0 rounded-full",
       )}
       style={chromeDrag ? noDragRegion : undefined}
       onClick={onNew}
     >
-      <Plus className="size-3.5" />
-      {vertical ? <span className="text-xs">New window</span> : null}
+      <Plus className="size-3" />
+      {vertical ? <span className="text-2xs">New window</span> : null}
     </Button>
   )
 
@@ -316,7 +316,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
       className={cn(
         "min-h-0 min-w-0",
         vertical
-          ? "flex flex-1 flex-col gap-1.5 p-2"
+          ? "flex flex-1 flex-col gap-1 p-1.5"
           : "flex flex-none flex-row items-center",
       )}
       style={chromeDrag ? noDragRegion : undefined}
@@ -328,8 +328,8 @@ export function MuxTabStrip(props: MuxTabStripProps) {
         className={cn(
           "min-h-0 min-w-0 justify-start bg-transparent p-0",
           vertical
-            ? "h-auto w-full flex-1 flex-col items-stretch gap-1 overflow-y-auto"
-            : "h-8 w-auto flex-none flex-row items-center gap-1 overflow-x-auto",
+            ? "h-auto w-full flex-1 flex-col items-stretch gap-0.5 overflow-y-auto"
+            : "h-6 w-auto flex-none flex-row items-center gap-0.5 overflow-x-auto",
         )}
       >
         {tabs.map((tab, index) => (
@@ -337,7 +337,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
             {!vertical && index > 0 ? (
               <span
                 aria-hidden
-                className="mx-0.5 h-3 w-px shrink-0 bg-border/50"
+                className="mx-px h-2.5 w-px shrink-0 bg-border/50"
               />
             ) : null}
             <MuxTabDragShell
@@ -366,12 +366,12 @@ export function MuxTabStrip(props: MuxTabStripProps) {
           "relative flex shrink-0 border-border/35",
           vertical
             ? cn(
-                "h-full w-52 flex-col border-r",
+                "h-full w-44 flex-col border-r",
                 "bg-background/50 backdrop-blur-xl",
               )
             : cn(
-                "h-[var(--yaade-window-chrome-height)] min-h-[var(--yaade-window-chrome-height)] w-full flex-row items-center justify-start gap-1 border-b",
-                "bg-background/50 px-3 backdrop-blur-xl",
+                "h-[var(--yaade-window-chrome-height)] min-h-[var(--yaade-window-chrome-height)] w-full flex-row items-center justify-start gap-0.5 border-b",
+                "bg-background/50 px-1.5 backdrop-blur-xl",
               ),
           className,
         )}
@@ -396,7 +396,7 @@ export function MuxTabStrip(props: MuxTabStripProps) {
           <>
             {tabList}
             <div
-              className="flex shrink-0 items-center border-t border-border/35 p-2"
+              className="flex shrink-0 items-center border-t border-border/35 p-1.5"
               style={chromeDrag ? noDragRegion : undefined}
             >
               {newButton}

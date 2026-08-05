@@ -5,8 +5,10 @@ import type { PanelNode } from "@yaade/panels"
 import type { PanelView } from "@yaade/shared"
 import { handleTerminalFileDropAt } from "@yaade/ui/terminal-file-drop"
 import {
+  findTerminalBufferMatch,
   readTerminalBufferText,
   readTerminalCellHeight,
+  readTerminalCellSize,
   readTerminalCursor,
   readTerminalDims,
 } from "@yaade/ui/terminal-registry"
@@ -61,10 +63,17 @@ export type YaadeAgentAPI = {
   getTerminalText(tabId?: string): string
   /** Cell height in CSS px from the active terminal renderer (E2E). */
   getTerminalCellHeight(tabId?: string): number
+  /** Cell width/height in CSS px from the active terminal renderer (E2E). */
+  getTerminalCellSize(tabId?: string): { width: number; height: number } | null
   /** Fitted xterm cols/rows (E2E). */
   getTerminalDims(tabId?: string): { cols: number; rows: number } | null
   /** Buffer cursor cell + hidden flag (WebGL-safe; E2E). */
   getTerminalCursor(tabId?: string): { x: number; y: number; hidden: boolean } | null
+  /** Visible buffer match for click/hover targeting (E2E). */
+  findTerminalText(
+    needle: string,
+    tabId?: string,
+  ): { col: number; viewportRow: number; cols: number; rows: number } | null
   /** Ingest a notification (E2E / agent harness). */
   ingestNotification?(
     req: import("@yaade/shared").IngestNotificationRequest,
@@ -297,11 +306,17 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
     getTerminalCellHeight(tabId) {
       return readTerminalCellHeight(tabId)
     },
+    getTerminalCellSize(tabId) {
+      return readTerminalCellSize(tabId)
+    },
     getTerminalDims(tabId) {
       return readTerminalDims(tabId)
     },
     getTerminalCursor(tabId) {
       return readTerminalCursor(tabId)
+    },
+    findTerminalText(needle, tabId) {
+      return findTerminalBufferMatch(needle, tabId)
     },
     async ingestNotification(req) {
       const api = window.yaade?.notifications

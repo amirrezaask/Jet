@@ -1192,7 +1192,20 @@ export function MuxApp() {
     const noOverlay = (ctx: KeymapContext) => !anyOverlayOpen(ctx)
     keymaps.registerUser([
       bind("Mod-t", () => newWindow(), noOverlay),
-      bind("Mod-n", () => newWindow(), noOverlay),
+      bind(
+        "Mod-n",
+        () => {
+          void executeCommand("mux.openNeovim")
+        },
+        noOverlay,
+      ),
+      bind(
+        "Mod-g",
+        () => {
+          void executeCommand("mux.openGit")
+        },
+        noOverlay,
+      ),
       bind(
         "Mod-w",
         () => {
@@ -1204,7 +1217,7 @@ export function MuxApp() {
       bind("Mod-Shift-p", () => setPaletteOpen(true), noOverlay),
       bind("Mod-,", () => setSettingsOpen(true), noOverlay),
       bind(
-        "Mod-Shift-Enter",
+        "Mod-f",
         () => {
           void executeCommand("mux.zoomPane")
         },

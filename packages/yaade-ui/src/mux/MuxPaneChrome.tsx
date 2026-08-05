@@ -8,8 +8,10 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu.js"
+import { formatKeyBinding } from "@/lib/format-key.js"
 import { cn } from "@/lib/utils.js"
 import { tabDndId, type TabDragData } from "../dock/tab-dnd-types.js"
 import { deckTileStyle, processIdentity } from "./process-identity.js"
@@ -100,7 +102,8 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          aria-label="Open Git"
+          aria-label={`Open Git (${formatKeyBinding("Mod-g")})`}
+          title={`Open Git (${formatKeyBinding("Mod-g")})`}
           data-yaade-mux-open-git=""
           className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
           onClick={onOpenGit}
@@ -113,7 +116,8 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          aria-label="Open Neovim"
+          aria-label={`Open Neovim (${formatKeyBinding("Mod-n")})`}
+          title={`Open Neovim (${formatKeyBinding("Mod-n")})`}
           data-yaade-mux-open-nvim=""
           className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
           onClick={onOpenNeovim}
@@ -235,10 +239,16 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
         <ContextMenuItem onSelect={onSplitRight}>Split Right</ContextMenuItem>
         <ContextMenuItem onSelect={onSplitDown}>Split Down</ContextMenuItem>
         {onOpenGit ? (
-          <ContextMenuItem onSelect={onOpenGit}>Open Git</ContextMenuItem>
+          <ContextMenuItem onSelect={onOpenGit}>
+            Open Git
+            <ContextMenuShortcut>{formatKeyBinding("Mod-g")}</ContextMenuShortcut>
+          </ContextMenuItem>
         ) : null}
         {onOpenNeovim ? (
-          <ContextMenuItem onSelect={onOpenNeovim}>Open Neovim</ContextMenuItem>
+          <ContextMenuItem onSelect={onOpenNeovim}>
+            Open Neovim
+            <ContextMenuShortcut>{formatKeyBinding("Mod-n")}</ContextMenuShortcut>
+          </ContextMenuItem>
         ) : null}
         {canZoom ? (
           <ContextMenuItem onSelect={onZoom}>

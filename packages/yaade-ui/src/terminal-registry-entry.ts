@@ -1,6 +1,8 @@
 export {
+  findTerminalBufferMatch,
   readTerminalBufferText,
   readTerminalCellHeight,
+  readTerminalCellSize,
   readTerminalCursor,
   readTerminalDims,
   registerTerminalInstance,

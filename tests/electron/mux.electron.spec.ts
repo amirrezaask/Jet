@@ -6,6 +6,7 @@ import {
 import {
   execCommand,
   launchJet,
+  pressMod,
   waitForMux,
 } from "./_launch.js"
 
@@ -127,9 +128,11 @@ test.describe("mux tabs", () => {
       expect(tabBox).toBeTruthy()
       expect(newBox).toBeTruthy()
       expect(tabBox!.x).toBeLessThan(newBox!.x)
-      // Capsule pills use h-8 (~26px at Yaade's 13px root).
-      expect(tabBox!.height).toBeGreaterThanOrEqual(24)
+      // Capsule pills use h-6; strip uses compact chrome (~2rem).
+      expect(tabBox!.height).toBeGreaterThanOrEqual(18)
+      expect(tabBox!.height).toBeLessThanOrEqual(24)
       expect(tabBox!.height).toBeLessThanOrEqual(stripBox!.height)
+      expect(stripBox!.height).toBeLessThanOrEqual(34)
       // Tabs sit in the left half after traffic lights / deck library.
       const tabCenter = tabBox!.x + tabBox!.width / 2
       expect(tabCenter).toBeLessThan(stripBox!.x + stripBox!.width * 0.55)
@@ -253,6 +256,37 @@ test.describe("mux tiling", () => {
       await expectSelectorVisible(page, "[data-yaade-mux-pane-kind=git]")
       await expectSelectorVisible(page, "[data-yaade-git-workspace]")
       // Terminal pane remains; git is an additional split.
+      await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Mod-n opens neovim; Mod-g opens git", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(1)
+
+      await pressMod(page, "n")
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(2)
+      await expect
+        .poll(async () =>
+          page.locator('[data-yaade-mux-pane-title][aria-label="Neovim"]').count(),
+        )
+        .toBeGreaterThanOrEqual(1)
+
+      await pressMod(page, "g")
+      await expectSelectorVisible(page, "[data-yaade-mux-pane-kind=git]", {
+        timeout: 15_000,
+      })
+      await expectSelectorVisible(page, "[data-yaade-git-workspace]")
       await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
     } finally {
       await app.close()
@@ -631,6 +665,34 @@ test.describe("mux zoom", () => {
         .toBe(1)
 
       await page.locator("[data-yaade-mux-zoom]").first().click()
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-window][data-zoomed]").count())
+        .toBe(0)
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBeGreaterThanOrEqual(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Mod-f toggles pane zoom", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await execCommand(page, "mux.splitRight")
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBeGreaterThanOrEqual(2)
+
+      await page.locator("[data-yaade-terminal-panel]").first().click()
+      await page.keyboard.press("Meta+KeyF")
+      await expectSelectorVisible(page, "[data-yaade-mux-window][data-zoomed]")
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(1)
+
+      await page.keyboard.press("Meta+KeyF")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-window][data-zoomed]").count())
         .toBe(0)

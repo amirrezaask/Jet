@@ -71,28 +71,53 @@ export function readTerminalCursor(
   }
 }
 
-/** Cell height in CSS px from the active renderer, or 0 when unavailable. */
-export function readTerminalCellHeight(tabId?: string): number {
+/** Locate visible needle for E2E click/hover (viewport-relative row). */
+export function findTerminalBufferMatch(
+  needle: string,
+  tabId?: string,
+): {
+  col: number
+  viewportRow: number
+  cols: number
+  rows: number
+} | null {
   const term = resolveTerminal(tabId)
-  if (!term) return 0
-  const dims = (
+  if (!term || !needle) return null
+  const buf = term.buffer.active
+  const viewportY = buf.viewportY
+  for (let i = buf.length - 1; i >= 0; i--) {
+    const line = buf.getLine(i)?.translateToString(true) ?? ""
+    const col = line.indexOf(needle)
+    if (col < 0) continue
+    const viewportRow = i - viewportY
+    if (viewportRow < 0 || viewportRow >= term.rows) continue
+    return { col, viewportRow, cols: term.cols, rows: term.rows }
+  }
+  return null
+}
+
+/** Cell width/height in CSS px from the active renderer (E2E hit-testing). */
+export function readTerminalCellSize(
+  tabId?: string,
+): { width: number; height: number } | null {
+  const term = resolveTerminal(tabId)
+  if (!term) return null
+  const cell = (
     term as Terminal & {
       _core?: {
-        _renderService?: { dimensions?: { css?: { cell?: { height?: number } } } }
+        _renderService?: {
+          dimensions?: { css?: { cell?: { width?: number; height?: number } } }
+        }
       }
     }
   )._core?._renderService?.dimensions?.css?.cell
-  const height = dims?.height ?? 0
-  if (height >= 4) return height
-  const canvas = document
-    .querySelector<HTMLElement>(
-      tabId
-        ? `[data-yaade-terminal-panel][data-yaade-terminal-tab-id="${tabId}"] canvas`
-        : "[data-yaade-terminal-panel] canvas",
-    )
-  if (canvas && term.rows > 0) {
-    const rect = canvas.getBoundingClientRect()
-    if (rect.height > 0) return rect.height / term.rows
-  }
-  return 0
+  const width = cell?.width ?? 0
+  const height = cell?.height ?? 0
+  if (width < 1 || height < 4) return null
+  return { width, height }
+}
+
+/** Cell height in CSS px from the active renderer, or 0 when unavailable. */
+export function readTerminalCellHeight(tabId?: string): number {
+  return readTerminalCellSize(tabId)?.height ?? 0
 }
