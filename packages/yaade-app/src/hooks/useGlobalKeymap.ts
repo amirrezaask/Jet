@@ -65,7 +65,10 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       const hadPendingChord = chordState.prefix != null
       const result = resolveKeydownBinding(e, bindings, ctx, chordState)
       if (result === "chord-started") {
+        // stopPropagation matters as much as preventDefault here: without it a
+        // prefix like Ctrl-a still reaches xterm and moves the shell cursor.
         e.preventDefault()
+        e.stopPropagation()
         setPendingChordPrefixRef.current(chordState.prefix)
         if (chordTimeout != null) window.clearTimeout(chordTimeout)
         chordTimeout = window.setTimeout(clearPendingChord, CHORD_TIMEOUT_MS)
@@ -74,6 +77,7 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       if (hadPendingChord && chordState.prefix == null) clearPendingChord()
       if (result && isChordBinding(result.key)) {
         e.preventDefault()
+        e.stopPropagation()
         runKeyBindingRef.current(result)
         return true
       }
@@ -116,21 +120,10 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
       }
 
       if (ctx.terminalFocus || inXterm) {
-        if (keyEventMatchesBinding(e, "Mod-w") || keyEventMatchesBinding(e, "Cmd-w")) {
-          if (!workspaceRef.current.manager.hasFolders() || anyOverlayOpen(ctx)) return
-          e.preventDefault()
-          e.stopPropagation()
-          closeActiveTab()
-          return
-        }
-        // Hard-wire shell chords so Mod-k / Mod-Shift-p never depend on the
-        // registerUser → revision → snapshot pipeline (repeated empty-map races).
-        if (keyEventMatchesBinding(e, "Mod-k") || keyEventMatchesBinding(e, "Cmd-k")) {
-          e.preventDefault()
-          e.stopPropagation()
-          void executeCommandRef.current("terminal.list")
-          return
-        }
+        // Hard-wire the palette so it never depends on the registerUser →
+        // revision → snapshot pipeline (repeated empty-map races). Everything
+        // else reaches the terminal through the prefix key, which the browser
+        // has no claim on.
         if (
           keyEventMatchesBinding(e, "Mod-Shift-p") ||
           keyEventMatchesBinding(e, "Cmd-Shift-p")
@@ -141,21 +134,6 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
           return
         }
         if (dispatchKeyBinding(e)) return
-        if (
-          keyEventMatchesBinding(e, "Mod-=") ||
-          keyEventMatchesBinding(e, "Mod--") ||
-          keyEventMatchesBinding(e, "Cmd-=") ||
-          keyEventMatchesBinding(e, "Cmd--")
-        ) {
-          e.preventDefault()
-          e.stopPropagation()
-          void executeCommandRef.current(
-            keyEventMatchesBinding(e, "Mod--") || keyEventMatchesBinding(e, "Cmd--")
-              ? "ui.zoomOut"
-              : "ui.zoomIn",
-          )
-          return
-        }
         if (ctx.terminalFocus && !inXterm) {
           const panel = getFocusedPanelRef.current()
           const selector = panel
@@ -167,13 +145,6 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
         return
       }
 
-      if (keyEventMatchesBinding(e, "Mod-w") || keyEventMatchesBinding(e, "Cmd-w")) {
-        if (!workspaceRef.current.manager.hasFolders()) return
-        e.preventDefault()
-        e.stopPropagation()
-        closeActiveTab()
-        return
-      }
       dispatchKeyBinding(e, { allowEditor: true })
     }
 

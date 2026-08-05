@@ -1,3 +1,10 @@
+/** Minimal HTTP response surface exposed to browser tests. */
+export type ShellResponse = {
+  url(): string
+  status(): number
+  request(): { method(): string }
+}
+
 /** Minimal page surface used by browser tests. */
 export type ShellDriver = {
   evaluate<R, Arg>(pageFunction: (arg: Arg) => R | Promise<R>, arg: Arg): Promise<R>
@@ -10,6 +17,11 @@ export type ShellDriver = {
   waitForSelector(selector: string, options?: { timeout?: number; state?: "attached" | "visible" }): Promise<void>
   waitForTimeout(ms: number): Promise<void>
   waitForLoadState(state?: "load" | "domcontentloaded"): Promise<void>
+  /** Resolve when a network response matching the predicate is observed. */
+  waitForResponse(
+    predicate: (response: ShellResponse) => boolean,
+    options?: { timeout?: number },
+  ): Promise<void>
   keyboard: {
     press(key: string): Promise<void>
     type(text: string): Promise<void>

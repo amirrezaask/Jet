@@ -26,6 +26,9 @@ export {
   SessionTerminalWorkspace,
   SessionTerminalTabBar,
   SessionModeDock,
+  SessionHeaderChromeProvider,
+  SessionHeaderChromePortal,
+  sessionHeaderContextRef,
   TERMINAL_MODAL_SESSION_LIST_ID,
   ModalEditorPane,
   ModalEditorTabBar,
@@ -168,6 +171,7 @@ export { showEditorContextMenuAt } from "./components/EditorContextMenu.js"
 export { createContextMenuHost, dispatchContextMenuAt } from "./components/ContextMenuHost.js"
 export { PromptDialog, type PromptDialogProps } from "./components/PromptDialog.js"
 export { Text, textVariants, type TextProps } from "./components/Text.js"
+export { SectionLabel, type SectionLabelProps } from "./components/SectionLabel.js"
 export { Surface, surfaceVariants, type SurfaceProps } from "./components/Surface.js"
 export { LiquidGlassFilter } from "./components/LiquidGlassFilter.js"
 export {
@@ -207,12 +211,15 @@ export { SettingsField } from "./components/SettingsField.js"
 export {
   MuxTabStrip,
   MuxPaneChrome,
+  MuxStatusStrip,
   processIdentity,
   deckTileStyle,
   formatMuxTitle,
   type MuxTabItem,
   type MuxTabStripProps,
   type MuxPaneChromeProps,
+  type MuxStatusStripAction,
+  type MuxStatusStripProps,
   type ProcessIdentity,
   type TabOrientation,
 } from "./mux/index.js"

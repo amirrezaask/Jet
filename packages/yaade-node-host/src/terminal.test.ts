@@ -163,6 +163,114 @@ test("pauses PTY when unacked chars exceed high watermark and resumes on ack", a
   }
 })
 
+test("create at capacity reclaims oldest entry instead of throwing", async () => {
+  const max = 3
+  const terminal = new TerminalHost(max)
+  const ids: string[] = []
+  try {
+    for (let i = 0; i < max; i++) {
+      const created = terminal.create(
+        pathToFileURL(process.cwd()).href,
+        {
+          command: process.execPath,
+          args: [
+            "-e",
+            "process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{}, 1e9)",
+          ],
+        },
+        `reclaim-test-${i}`,
+      )
+      ids.push(created.id)
+    }
+    assert.equal(ids.length, max)
+
+    const next = terminal.create(
+      pathToFileURL(process.cwd()).href,
+      {
+        command: process.execPath,
+        args: [
+          "-e",
+          "process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{}, 1e9)",
+        ],
+      },
+      "reclaim-test-overflow",
+    )
+    // Oldest (ids[0]) was reclaimed; newest create succeeded.
+    assert.equal(terminal.attach(ids[0]!, "probe"), null)
+    assert.ok(terminal.attach(ids[1]!, "probe"))
+    assert.ok(terminal.attach(ids[2]!, "probe"))
+    assert.ok(terminal.attach(next.id, "probe"))
+  } finally {
+    terminal.stopAll()
+  }
+})
+
+test("create at capacity prefers reclaiming exited over running", async () => {
+  const max = 2
+  const terminal = new TerminalHost(max)
+  try {
+    const exited = terminal.create(
+      pathToFileURL(process.cwd()).href,
+      {
+        command: process.execPath,
+        args: ["-e", "process.exit(0)"],
+      },
+      "reclaim-exited",
+    )
+    // Wait until the child exits so status flips.
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("exit wait timed out")), 5_000)
+      terminal.setEmit((channel, args) => {
+        if (channel === "terminal:exit" && args[0] === exited.id) {
+          clearTimeout(timeout)
+          resolve()
+        }
+      })
+      // Already exited before we subscribed? Poll attach.
+      const poll = () => {
+        const snap = terminal.attach(exited.id, "poll")
+        if (snap?.status === "exited") {
+          clearTimeout(timeout)
+          resolve()
+          return
+        }
+        setTimeout(poll, 20)
+      }
+      poll()
+    })
+
+    const running = terminal.create(
+      pathToFileURL(process.cwd()).href,
+      {
+        command: process.execPath,
+        args: [
+          "-e",
+          "process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{}, 1e9)",
+        ],
+      },
+      "reclaim-running",
+    )
+
+    const next = terminal.create(
+      pathToFileURL(process.cwd()).href,
+      {
+        command: process.execPath,
+        args: [
+          "-e",
+          "process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{}, 1e9)",
+        ],
+      },
+      "reclaim-overflow",
+    )
+
+    assert.equal(terminal.attach(exited.id, "probe"), null)
+    assert.ok(terminal.attach(running.id, "probe"))
+    assert.ok(terminal.attach(next.id, "probe"))
+  } finally {
+    terminal.stopAll()
+  }
+})
+
 test("getCwd returns spawn cwd and tracks process cd", async () => {
   const terminal = new TerminalHost()
   const fs = await import("node:fs")
@@ -180,7 +288,7 @@ test("getCwd returns spawn cwd and tracks process cd", async () => {
         command: process.execPath,
         args: [
           "-e",
-          `process.chdir(${JSON.stringify(nested)}); setInterval(() => {}, 1000)`,
+          `process.chdir(${JSON.stringify(nested)}); process.on('SIGTERM',()=>process.exit(0)); setInterval(() => {}, 1000)`,
         ],
       },
       "terminal-getcwd-test",

@@ -5,7 +5,7 @@ import { projectMonogram } from "./project-monogram.js"
 describe("project monogram", () => {
   it("uses two initials for separated project names", () => {
     assert.equal(projectMonogram("sample-workspace"), "SW")
-    assert.equal(projectMonogram("Yaade Core"), "GC")
+    assert.equal(projectMonogram("Yaade Core"), "YC")
     assert.equal(projectMonogram("api_v2"), "AV")
   })
 

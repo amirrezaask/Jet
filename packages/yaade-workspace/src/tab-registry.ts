@@ -23,6 +23,7 @@ export const OUTPUT_TAB_ID = "yaade:output"
 export const PROBLEMS_TAB_ID = "yaade:problems"
 export const TERMINAL_TAB_ID_PREFIX = "yaade:terminal:"
 export const GIT_TAB_ID_PREFIX = "yaade:git:"
+export const EDITOR_TAB_ID_PREFIX = "yaade:editor:"
 
 /** Current + pre-rename prefixes. Nested prefixes unwrap (bad hydrate double-prefix). */
 export const TERMINAL_TAB_ID_PREFIXES = [
@@ -41,6 +42,14 @@ export function gitTabId(key: string): string {
 
 export function isGitTabId(tabId: string): boolean {
   return tabId.startsWith(GIT_TAB_ID_PREFIX)
+}
+
+export function editorTabId(key: string): string {
+  return `${EDITOR_TAB_ID_PREFIX}${key}`
+}
+
+export function isEditorTabId(tabId: string): boolean {
+  return tabId.startsWith(EDITOR_TAB_ID_PREFIX)
 }
 
 /**

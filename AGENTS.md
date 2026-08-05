@@ -4,730 +4,553 @@ Guide for AI agents and contributors working in this repo.
 
 ## What YAADE Is
 
-**YAADE** is a **web Mission Control** app (React + Vite): a **home view** of projects and terminal session cards. Terminals open in **modal dialogs**. There is no editor workspace shell in the app today.
+**YAADE is a browser-only IDE for a local or remote machine.**
 
-**Hard policy: no Rust / no Tauri / no Electron.** Host IPC is TypeScript (`apps/host-server` + `@yaade/node-host`). Do not add `.rs`, `Cargo.toml`, Tauri crates, or an Electron shell.
+The user points a browser at a host and a project path. That tab opens a
+**project landing page** (recent sessions). Opening a session mounts a tiling,
+paned workspace — terminals, Neovim, git — optionally backed by a git worktree.
+Layouts persist server-side per session and restore on reload.
 
-**Core split (current product):**
+```
+http://localhost:5174/dev/yaade              → project page (session list)
+http://localhost:5174/dev/yaade?s=ses-…      → that session's mux workspace
+```
 
+Three consequences drive every design decision in this repo:
 
-| Layer | Owns |
-| ----- | ---- |
-| **YAADE App** | Home, terminal modals, project catalog, slim command/overlay set, notification center |
-| **YAADE UI** | Home UI, TerminalSessionModal, TerminalPanel, overlays, themes, notification center |
-| **YAADE Workspace** | Folders, tab registry, panel tree (stores terminal tabs under the hood) |
-| **Host server (Effect)** | FS, terminal PTY (`node-pty`), search/git/LSP/notifications over HTTP `/api/v1/rpc` + `/ws` (Schema + Layers) |
+1. **The URL is the project; `?s=` is the session.** One browser tab = one
+   project. Sessions are first-class: N per project, each with its own cwd
+   (project root or worktree), layout, and PTYs. To open a second project you
+   open a second browser tab.
+2. **The browser is a hostile host.** It owns most keyboard chords, it can kill
+   the tab at any moment, and it gives us no native window. See
+   [Keyboard architecture](#keyboard-architecture) — this is the single most
+   common source of bugs in this codebase.
+3. **The host outlives the tab.** PTYs live in the host process, not the page.
+   Closing or reloading a tab must not kill a shell. Project ↔ session
+   transitions use `pushState`/`popstate` so PTYs survive SPA navigation.
 
-Library packages `@yaade/monaco`, `@yaade/lsp`, and editor/sidebar UI components remain in the monorepo; the app uses Monaco inside the session-modal editor.
+**Hard policy: no Rust / no Tauri / no Electron.** The host is TypeScript
+(`apps/host-server` + `@yaade/node-host`). Do not add `.rs`, `Cargo.toml`, Tauri
+crates, or an Electron shell.
 
-## Reference Material (read-only)
+### Product status (2026-08)
 
-Sibling / parent dirs are **design references**, not dependencies:
+The app pivoted from Mission Control → bare mux → **session-based IDE** (project
+page + session workspaces). Consequences you will trip over:
 
-- `.vscode/` — UX patterns
-- `.4coder*`, `.raddebugger/` — RAD/imui panel mental model
-- `Nameless_Editor/` — editor UX ideas
+| Thing | Status |
+| --- | --- |
+| `packages/yaade-app/src/AppRoot.tsx` | **Router.** Mounted by `main.tsx`; chooses ProjectPage vs MuxApp. |
+| `packages/yaade-app/src/project/` | GitHub-style project landing (Sessions / Changes / History). |
+| `packages/yaade-app/src/mux/MuxApp.tsx` | **Session workspace.** Session-scoped; cwd from `session.cwdPath`. |
+| `packages/yaade-app/src/App.tsx` (~3.3k lines) | **Legacy Mission Control. Not mounted.** Kept for reference; do not extend. |
+| `packages/yaade-app/src/index.ts` | Exports `MuxApp as YaadeApp` — the name is legacy. |
+| ~29 specs under `tests/electron/` | `describe.skip` — they target the removed Mission Control shell. |
+| `MuxTabStrip`, `PanelTabBar` | Built, exported, **zero imports**. Dead. |
+| `@yaade/monaco`, `@yaade/lsp` | Wired for editor/git panes; keep optional chunks out of the startup graph (lazy). |
 
-Do **not** copy large chunks wholesale; match Yaade’s architecture.
+When a task touches something in the "legacy / dead" rows, ask before
+extending it — deleting is usually the right answer.
 
 ---
-
-
 
 ## Monorepo Layout
 
 ```
-jet/
+yaade/
 ├── apps/
-│   ├── yaade/              Vite frontend shell (proxies to host)
+│   ├── yaade/                  Vite frontend shell (proxies /api, /ws to host)
 │   └── host-server/            Effect host (HTTP/WS RPC + PTY Layers)
 ├── fixtures/
-│   └── sample-workspace/       Fixture project for E2E smoke tests
+│   └── sample-workspace/       Fixture project for E2E
 ├── packages/
-│   ├── yaade-rpc/          Effect Schema IPC + TaggedErrors
-│   ├── yaade-shared/       URIs, Emitter, panel primitives
-│   ├── yaade-node-host/    Node FS/git/search/PTY (+ Effect terminal scope)
-│   ├── yaade-host-client/  Effect HostClient + Promise shim → HTTP/WS
-│   ├── yaade-panels/       PanelTree — splits, tabs, resize, serde
-│   ├── yaade-workspace/    WorkspaceService, TabRegistry, commands, keymaps
-│   ├── yaade-codemirror/   (library; unwired from app)
-│   ├── yaade-lsp/          (library; unwired from app)
-│   ├── yaade-agents/       CLI agent id helpers (`*:cli` driver ids)
-│   ├── yaade-ui/           Home, terminal modal/panel, overlays, themes
-│   └── yaade-app/          Root React app — atoms + home + terminal modals
+│   ├── yaade-rpc/              Effect Schema IPC + TaggedErrors + WorkspaceSession
+│   ├── yaade-shared/           URIs, Emitter, panel primitives
+│   ├── yaade-node-host/        Node FS/git/search/PTY (+ Effect terminal scope)
+│   ├── yaade-host-client/      Effect HostClient + Promise shim → HTTP/WS
+│   ├── yaade-panels/           PanelTree — splits, tabs, resize, serde
+│   ├── yaade-workspace/        WorkspaceService, commands, keymaps, browser-reserved keys
+│   ├── yaade-agents/           CLI agent id helpers (`*:cli` driver ids)
+│   ├── yaade-monaco/           (library; unwired from the mux shell)
+│   ├── yaade-lsp/              (library; unwired from the mux shell)
+│   ├── yaade-ui/               Panel dock, TerminalPanel, overlays, themes
+│   └── yaade-app/              Root React app — MuxApp shell
 ├── tests/
-│   ├── electron/               Shared UI E2E specs (Playwright web-e2e)
-│   ├── shell/                  launchWeb() against TS host
+│   ├── electron/               E2E specs (Playwright `web-e2e` project)
+│   ├── shell/                  launchWeb() against the TS host
 │   └── bench/                  UX latency benchmarks
 ├── package.json                turbo scripts
 ├── pnpm-workspace.yaml
-├── turbo.json
 └── tsconfig.base.json
 ```
 
-
+`tests/electron/` is a historical directory name — there is no Electron. The
+specs run in headless Chromium against the TS host.
 
 ### Package dependency direction
 
 ```
 yaade-rpc + yaade-shared  ←  yaade-node-host, host-client, host-server
-yaade-shared  ←  yaade-panels, yaade-workspace, yaade-node-host
+yaade-shared              ←  yaade-panels, yaade-workspace, yaade-node-host
 yaade-workspace + yaade-panels + yaade-ui  ←  yaade-app
-yaade-app + yaade-host-client  ←  apps/yaade (Vite)
-yaade-node-host  ←  apps/host-server
+yaade-app + yaade-host-client              ←  apps/yaade (Vite)
+yaade-node-host           ←  apps/host-server
 ```
 
 Keep imports acyclic. Lower layers must not import React.
 
 ---
 
-
-
 ## Commands
 
 ```bash
 pnpm install          # workspace install
 pnpm dev              # host-server + Vite
-pnpm typecheck        # all packages (TypeScript 7)
+pnpm -r typecheck     # all packages (TypeScript 7)
+pnpm test             # unit tests (node:test via tsx) across packages
 pnpm test:e2e         # Playwright web E2E (headless Chromium)
 pnpm test:bench       # UX latency benchmarks (tests/bench/)
 pnpm build            # SPA + dist/yaade server binary
-pnpm build:server     # same (compatibility alias)
 ```
 
-Run typecheck from repo root before finishing a task:
+Unit tests use **`node:test` + `node:assert/strict`**, run through `tsx --test`
+— *not* vitest. `@yaade/app` lists its test files explicitly in `package.json`;
+add new ones there or they will not run.
 
-```bash
-pnpm -r typecheck
-```
-
-Monorepo uses **TypeScript 7** (`^7.0.2` at root; `pnpm.overrides` in `pnpm-workspace.yaml` pins one version).
-
-Then validate with **`pnpm test:e2e`** (see Agent visual verification).
+Monorepo uses **TypeScript 7** (`^7.0.2` at root; `pnpm.overrides` in
+`pnpm-workspace.yaml` pins one version).
 
 ---
 
+## The URL → workspace contract
 
+`packages/yaade-app/src/url-workspace.ts` is the routing layer.
+
+- The **project path** is `location.pathname`, interpreted **relative to `$HOME`**.
+  `/dev/foo` → `{home}/dev/foo`. `/` → `$HOME`, unless the host `launchConfig`
+  names a workspace.
+- The **session id** is `?s=<id>` (`sessionIdFromSearch` / `pushSessionUrl` /
+  `popToProjectUrl`). Bare pathname → ProjectPage; with `?s=` → SessionWorkspace
+  (`MuxApp`). History API keeps PTYs alive across project ↔ session transitions.
+- `isReservedWorkspacePathname()` excludes `/api`, `/ws`, `/health`, `/@`,
+  `/node_modules`, `/src`, `/assets`, and single-segment asset filenames.
+- `resolveHomeRelativePath()` collapses `..` so a pathname can never escape
+  `$HOME`. The host independently enforces `allowedRoots` — do not rely on the
+  client check alone.
+- `urlPathForProjectRoot()` is the reverse, used by "open in new browser tab".
+- SPA fallback: Vite in dev, `serveStatic` → `index.html` in prod
+  (`apps/host-server/src/server.ts`).
+
+**Known gaps (do not assume these work):**
+
+- Paths **outside `$HOME` cannot be expressed in the URL** — `urlPathForProjectRoot`
+  returns `/` for them, so "open in new tab" silently opens home instead.
+- Changing the project via the CD overlay does not rewrite `pathname` (only
+  session `?s=` uses history today), so a CD away from the URL project leaves
+  the address bar stale for the project root.
+- A nonexistent path is not validated at boot: the project page may load empty
+  or MuxApp may fail to open the workspace folder.
+
+### Session persistence
+
+Primary store: SQLite `project_sessions` (see `apps/host-server/src/persistence.ts`).
+
+Schema/types: `packages/yaade-rpc/src/project-session.ts`. Client:
+`packages/yaade-app/src/project-session-client.ts` (debounced single-writer queue,
+400 ms, backoff retry, `flush()` on `pagehide`).
+
+- Keyed by session `id` (`ses-…`). Indexed by `(machine, project_path, updated_at)`.
+- Each row has `cwd_path` (project root or worktree), optional
+  `worktree_branch` / `worktree_path`, and a layout `payload_json`.
+- The server **strips `ptyId` from every leaf on save** — a host restart
+  invalidates them. Reattach across a reload only works while the PTY is still
+  alive in host memory.
+- Routes under `/api/v1/project-sessions` validate `project_path` and `cwd_path`
+  with `pathAllowed()` (403 otherwise).
+- One-time migration copies legacy `workspace_sessions` rows into
+  `project_sessions` (`title = "Session 1"`). Legacy `GET/PUT /api/v1/workspace-session`
+  remains for older clients but the mux shell writes project sessions only.
+
+Worktrees live at `~/.yaade/worktrees/<project>/<branch>/`
+(`apps/host-server/src/worktree-path.ts`). Creation is worktree-first, row-second.
+
+---
+
+## Shell architecture (mux)
+
+Render tree, root to a terminal:
+
+```
+main.tsx → RegistryProvider → AppErrorBoundary → AppRoot
+  ├─ ProjectPage          (?s= absent) — session list + git Changes/History
+  └─ MuxApp               (?s= present) — session-scoped workspace
+       └─ TooltipProvider → AppShell (footer = WhichKeyPanel when a prefix is pending)
+          └─ TabDndRoot → [data-yaade-shell="mux"]
+             ├─ MuxWindowView → PanelDock → PanelLeaf
+             │    ├─ MuxPaneChrome        (title, drag handle, split/zoom/close)
+             │    └─ TerminalSlot         ← empty placeholder, measured only
+             │       OR GitWorkspace / editor (lazy)
+             └─ MuxTerminalLayer          ← absolutely positioned over the slots
+                  └─ TerminalPanel → xterm
+```
+
+**Terminals are not in the dock tree.** The dock renders empty measured slots;
+`MuxTerminalLayer` paints real `TerminalPanel` hosts over them. This keeps xterm
+mounted across `PanelDock` remounts (split, retile, drag) so a shell never
+resets. A `MutationObserver` watches the dock only — never the xterm hosts — so
+terminal DOM churn cannot thrash layout.
+
+- Layout model is `YaadePanelTree` (`@yaade/workspace`) over
+  `PanelTree` (`@yaade/panels`) — the same model the legacy shell used.
+- `MAX_MOUNTED_TERMINALS = 8`, LRU over focused panes. Panes beyond that stay
+  registered as sessions but their xterm is unmounted; unmeasured panes render
+  at 0×0.
+- Pane kinds are `terminal` and `git`. Zoom is a toggle (`mux.zoomPane`).
+- Keyboard pane focus is geometric (`findFocusNeighbor` over measured slot boxes).
+
+---
+
+## Keyboard architecture
+
+**Read this before touching any keybinding.** Getting it wrong produces
+shortcuts that silently do nothing for real users while passing E2E.
+
+### The three buckets
+
+| Bucket | Examples | Rule |
+| --- | --- | --- |
+| **Reserved** — browser consumes it before the page sees a `keydown`, or ignores `preventDefault()` | `Mod-T/N/W/Q`, `Mod-Shift-N/T/W`, `Mod-L`, `Mod-1..9`, `Ctrl-Tab`, `Cmd-Opt-←/→`, `Mod-+/-/0`, F11, F12, `Mod-Opt-I` | **Never bind.** Binding one is a silent no-op. |
+| **Risky** — Chromium delivers it, another browser or an expected behaviour takes it | `Mod-k` (Chrome omnibox), `Mod-Shift-p` (Firefox private window), `Mod-s/p/f/d/o/r/g` | Bind only with a deliberate reason. |
+| **Free** | prefix chords, `Mod-,`, `Alt-*` | Fine. |
+
+`packages/yaade-workspace/src/browser-reserved-keys.ts` encodes this.
+`KeymapService.registerUser` / `registerExtension` **throw** on a reserved chord
+outside production. If you hit that error, do not work around it — move the
+action behind the prefix.
+
+> **Playwright cannot catch this class of bug.** CDP `Input.dispatchKeyEvent`
+> bypasses browser chrome, so a spec pressing `Meta+KeyT` passes while the real
+> app does nothing. Never validate a chord's *availability* with an E2E test;
+> that is what the reserved-key guard is for.
+
+### The prefix key
+
+Because nearly every chord a multiplexer wants is reserved, mux actions live
+behind a tmux-style prefix. Source of truth:
+`packages/yaade-app/src/mux/mux-keymap.ts`.
+
+Prefix: **`Ctrl-a`**. Press it twice to send a literal `^A` to the shell
+(tmux `send-prefix`).
+
+| `Ctrl-a` + | Action | | `Ctrl-a` + | Action |
+| --- | --- | --- | --- | --- |
+| `c` | New pane | | `w` | Switch pane (list) |
+| `d` | Split right | | `t` | New browser tab |
+| `Shift-D` | Split down | | `n` | Open Neovim |
+| `x` | Close pane | | `g` | Open Git |
+| `z` | Zoom pane (toggle) | | `p` | Command palette |
+| `h` `j` `k` `l` | Focus left/down/up/right | | `.` | Change directory |
+| arrows | Focus left/down/up/right | | `,` | Settings |
+| | | | `=` `-` | Font bigger / smaller |
+
+Direct (non-prefix) chords are deliberately limited to two:
+`Mod-Shift-p` (palette) and `Mod-,` (settings).
+
+`MUX_PREFIX_BINDINGS` feeds both `registerUser` and the `WhichKeyPanel` hint
+footer, so the on-screen hints can never drift from what is bound.
+
+### Dispatch pipeline
+
+`packages/yaade-app/src/hooks/useGlobalKeymap.ts` — a **window capture-phase**
+`keydown` listener.
+
+1. Any overlay open → bail (overlays own their own keys).
+2. Radix context-menu content → bail.
+3. Inputs/textareas → bail, except the xterm textarea and Monaco chrome.
+4. Terminal branch (`terminalFocus || inXterm`, and `terminalFocus` is always
+   `true` in mux): `Mod-Shift-p` is hard-wired so the palette never depends on
+   the `registerUser` → revision → snapshot pipeline; everything else goes
+   through `dispatchKeyBinding`.
+5. Otherwise `dispatchKeyBinding(e, { allowEditor: true })`.
+
+Chord resolution lives in `context-keys.ts` (`resolveKeydownBinding`,
+`startChord`, `CHORD_TIMEOUT_MS = 2500`).
+
+**Invariants:**
+
+- A matched binding calls `preventDefault()` **and** `stopPropagation()`. Without
+  the latter, a capture-phase match still reaches xterm — that is how `Ctrl-a`
+  would leak through as readline `beginning-of-line`.
+- **Never bind bare `Escape` globally.** vim, less and fzf all need it. A global
+  Escape binding (mux unzoom) previously swallowed it for every pane; the
+  surviving binding is gated on *a pane being zoomed* **and** focus being outside
+  `.xterm`. Regression test: `tests/electron/mux.electron.spec.ts` →
+  "Escape reaches the terminal".
+- Do not re-add `Mod-=` / `Mod--` font-zoom hard-wiring. Browser zoom is not
+  cancellable; use the prefix.
+
+---
+
+## Host server & IPC
+
+Wired by `@yaade/host-client` `createWebTransport()` → `createYaadeApi()`;
+types in `@yaade/workspace` (`YaadeHostAPI` name retained for stability).
+
+| Channel | Purpose |
+| --- | --- |
+| `fs:readFile`, `fs:writeFile`, `fs:readDir`, `fs:stat` | File URIs (`file://...`) |
+| `git:isRepo`, `git:status`, `git:diff` | Git CLI wrappers |
+| `git:worktreeList`, `git:worktreeAdd`, `git:worktreeRemove` | Git worktree lifecycle |
+| `git:defaultBranch` | Resolve HEAD / default branch |
+| `lsp:start`, `lsp:stop` | Spawn language server, WS bridge |
+| `terminal:create/attach/write/resize/dispose` | PTY lifecycle |
+| `notifications:*` | Notification center CRUD + WS `notifications:event` |
+| `POST /api/v1/notifications/ingest` | Provider hook ingest (Claude/Codex Stop) |
+| `GET/POST /api/v1/project-sessions` | List / create project sessions |
+| `GET/PUT/DELETE /api/v1/project-sessions/:id` | Load / save layout / delete (+ optional worktree remove) |
+| `GET/PUT /api/v1/workspace-session` | Legacy single-layout persistence (migrated → project_sessions) |
+| `GET /api/v1/system` | `homeDir`, `machineHostname`, `launchConfig` |
+
+Transport: HTTP `POST /api/v1/rpc` for requests, `/ws` for events and hot
+terminal ops. Reconnect uses `?since=${lastSequence}` with exponential backoff.
+
+### Terminal streaming
+
+Deliberately engineered; do not "simplify" it:
+
+- Host batches PTY output at 64 KiB / 4 ms, with an immediate flush for the
+  first ≤32-byte interactive chunk.
+- Binary WS frames for `terminal:data`.
+- VS Code-style flow control: pause above 100k unacked chars, resume below 5k.
+- Per-PTY 2 MB replay ring; `attach()` returns replay + `lastSequence`, and the
+  client applies a replay floor to drop duplicates.
+- Client coalesces writes with rAF, microtask for ≤256-char interactive chunks.
+- PTY output **never** flows through React state.
+
+### Lifetime rules
+
+| Event | PTY |
+| --- | --- |
+| WS close / tab closed | **Survives** (unsubscribe only) |
+| `terminal.dispose` (close pane) | Killed |
+| Process exit | `terminal:exit`, auto-disposed after 90 s |
+| Host shutdown | All killed |
+
+Caps: 64 PTY entries, 8 MB WS buffered bytes (slow clients get closed 1013),
+`EventHub` history 1024 events / 16 MB.
+
+### Security posture (remote is NOT ready)
+
+- **No authentication on HTTP or WS.** None. No tokens, no sessions.
+- Protection is only: startup refuses a non-loopback bind, `pathAllowed()` against
+  `JET_ALLOWED_ROOTS` (default `$HOME`), and a WS origin check that allows
+  loopback or an exact `Origin.host === Host` match.
+- Putting this behind a reverse proxy to make it "remote" removes both, and any
+  reachable client gets a shell as the host user.
+
+**A shared-secret token checked on both HTTP and the WS upgrade is a hard
+prerequisite before shipping remote.**
+
+---
+
+## Theming
+
+- `defaultJetTheme` + CSS vars via `applyJetThemeCss()`; `applyColorScheme`
+  toggles `.dark` and sets `--yaade-*` vars.
+- Tailwind v4 with `@source` in `packages/yaade-ui/src/styles/globals.css` — it
+  must scan sibling packages or position/layout utilities are not emitted.
+- Bundled themes in `packages/yaade-ui/src/theme/bundled.ts`.
+- Appearance state (`jet-theme-id`, `jet-font-size`, `jet-color-scheme`) persists
+  in `localStorage` via `useAppearanceSettings.ts`.
+- Design-system rules (tokens, typography scale, motion, shadcn primitives) live
+  in `packages/yaade-ui/AGENTS.md`. Read it before adding UI.
+
+---
 
 ## Agent visual verification (MANDATORY)
 
-**Non-negotiable for every agent:** any change that can affect what the user sees — UI, layout, theming, commands, keybindings, shell, panels, editor surface, palette, welcome, explorer views, error/status messages — MUST be verified with Playwright web specs before the task is reported done. Typecheck / lint / unit tests are necessary but NOT sufficient.
+Any change that can affect what the user sees — UI, layout, theming, commands,
+keybindings, panes, palette, error/status messages — MUST be verified with
+Playwright before the task is reported done. Typecheck and unit tests are
+necessary but not sufficient.
 
-### Preferred: Playwright against TS host (headless)
-
-Specs live in `tests/electron/*.electron.spec.ts` (shared suite). `launchJet()` → `launchWeb()` starts `@yaade/host-server` + Chromium. `YAADE_E2E=1` unless `YAADE_HEADED=1`.
-
-1. Run shared UI specs: `pnpm test:e2e`
-2. Add or extend a spec under `tests/electron/` — helpers in `tests/helpers/` and `tests/electron/_launch.ts`. See `tests/README.md`.
-3. Perf-sensitive changes (startup, editor mount, palette, search, theme) → also `pnpm test:bench`
-4. New feature → new spec with structural assertions (`expect`, `expectLayout`, scoped panel selectors). Do not rely on unrelated specs to cover new paths.
-5. Run `pnpm test:e2e` before declaring a broad UI change complete.
+Specs live in `tests/electron/*.electron.spec.ts`. `launchJet()` → `launchWeb()`
+starts `@yaade/host-server` + Chromium. `YAADE_E2E=1` unless `YAADE_HEADED=1`.
+Playwright runs `workers: 1`, `fullyParallel: false`; override with
+`PLAYWRIGHT_WORKERS=N`. Headed: `YAADE_HEADED=1 pnpm test:e2e`.
 
 **Verification preference (strict):**
 
-1. DOM/text assertions via Playwright `expect` on scoped selectors (palette open, row content, panel visibility).
-2. `window.__yaadeAgent.getState()` — workspace path, palette flag, panel kinds, font size.
-3. List helpers — `expectLayout`, `expectNoOverlap`, `expectRowTextVisible` on `[data-yaade-list-panel="…"] [data-yaade-list-item]`.
-4. Benchmarks — `pnpm test:bench` for latency regressions (median vs `tests/bench/budgets.json`).
-
-**Out of scope for automation (document explicitly if touched):** native OS folder/file dialogs, unimplemented git stage/revert chords.
+1. DOM/text assertions on scoped selectors.
+2. `window.__yaadeAgent.getState()` — workspace path, palette flag, pane kinds,
+   font size.
+3. List helpers — `expectLayout`, `expectNoOverlap`, `expectRowTextVisible` on
+   `[data-yaade-list-panel="…"] [data-yaade-list-item]`.
+4. `pnpm test:bench` for latency-sensitive changes.
 
 ### Anti-tautology rules for list/search UIs (MANDATORY)
 
-Query echoes are worthless as proof. Asserting `export` in `body` after typing `export` passes when the input value contains `export` — even if the result list is empty. Every list/search spec MUST include:
+Query echoes are worthless as proof: asserting `export` in `body` after typing
+`export` passes even when the result list is empty. Every list/search spec MUST
+include:
 
-1. **Row-count layout assertion** — `expectLayout` with `minItems >= 1` on `[data-yaade-list-panel="…"] [data-yaade-list-item]`.
-2. **Positive result content** — `expect(locator).toContainText(...)` on the scoped panel with a needle that only appears in rendered rows (fixture filename, path segment, `:` line separator). Never assert the user-typed query alone.
-3. **Negative empty-state assertion** — `not.toContainText("No results")` when a hit is expected.
-4. **Spacing/overlap** — `expectNoOverlap` + `expectRowSpacing` when >=2 rows are expected.
-5. **Row text visibility** — `expectRowTextVisible` on the scoped selector.
+1. Row-count assertion — `expectLayout` with `minItems >= 1` on the scoped panel.
+2. Positive content — a needle that only appears in rendered rows (fixture
+   filename, path segment, `:` line separator). Never the typed query alone.
+3. Negative empty-state — `not.toContainText("No results")` when a hit is expected.
+4. `expectNoOverlap` + `expectRowSpacing` when ≥2 rows are expected.
+5. `expectRowTextVisible` on the scoped selector.
 
-Scope every list assertion with the panel data attribute (`[data-yaade-list-panel="locationlist"] [data-yaade-list-item]`) so unrelated lists in the shell (tabs, sidebar) don't satisfy the assertion by accident.
+Always scope with the panel data attribute so unrelated lists cannot satisfy the
+assertion by accident.
 
-### Native chrome & host IPC
+### Keyboard specs
 
-Any change to host IPC (`fs:*`, `git:*`, `lsp:*`, `search:*`, `agents:*`, terminal PTY) MUST have a sibling spec in `tests/electron/` (run via `web-e2e`). Run `pnpm test:e2e`.
+Drive mux actions through `pressMuxPrefix(page, "KeyZ")` from
+`tests/electron/_launch.ts`, never a raw `Meta+…` chord. Assert *effects on the
+PTY* (via `waitForTerminalText`) when testing that a key does or does not reach
+the terminal — that is the only assertion that would have caught the Escape bug.
 
-### Headed debugging
+### Host IPC
 
-```bash
-YAADE_HEADED=1 pnpm test:e2e   # show Chromium on-screen
-```
-
-### Parallelism
-
-`tauri` project runs in parallel (`fullyParallel: true`). `tauri-e2e` (shared UI specs) runs with `workers: 1`. Override with `PLAYWRIGHT_WORKERS=N`.
-
-### Disabled flaky E2E specs
-
-Twelve specs are temporarily skipped via `tests/electron/_flaky.ts` (`describeFlaky` / `skipFlakyTest`; re-enable with `YAADE_E2E_RUN_FLAKY=1`). Re-enable all for triage:
-
-```bash
-YAADE_E2E_RUN_FLAKY=1 pnpm test:e2e
-```
-
-| Spec file | Test | Likely fix |
-| --------- | ---- | ---------- |
-| `dirty-close-confirm.electron.spec.ts` | dismiss/accept close | Ensure `workspace.closeBuffer` targets focused dirty buffer |
-| `editor-save.electron.spec.ts` | save persists to disk | Per-test temp copy of fixture file (avoid shared `index.ts` races) |
-| `locationlist-commands.electron.spec.ts` | both | Use `getByLabel("Search project")`; wait for scan-ready |
-| `lsp.electron.spec.ts` | go to definition | Place cursor on `greet` symbol reliably; wait for definition response |
-| `open-file-overlay.electron.spec.ts` | open file overlay | Confirm overlay with `Meta+Enter`; retry `waitForEditor` |
-| `search-show.electron.spec.ts` | search.show hits | Wait for FFF/rg index; assert scoped list rows |
-| `switch-project.electron.spec.ts` | project switcher | Register `workspace.switchProject` command + overlay |
-| `terminal.electron.spec.ts` | xterm row height | Wait for PTY output before measuring `.xterm-row` |
-| `terminal.electron.spec.ts` | OSC title → tab label | Wire xterm title handler to tab registry label |
+Any change to `fs:*`, `git:*`, `lsp:*`, `search:*`, `agents:*`, or terminal PTY
+MUST have a sibling spec in `tests/electron/`.
 
 ### Programmatic control (`window.__yaadeAgent`)
 
-After `launchJet()`:
-
 ```javascript
 await window.__yaadeAgent.waitForReady()
-await window.__yaadeAgent.openWorkspace("fixtures/sample-workspace")
-await window.__yaadeAgent.openFile("src/index.ts")
-await window.__yaadeAgent.waitForEditor()
-await window.__yaadeAgent.executeCommand("ui.showCommandPalette")
-window.__yaadeAgent.getState()
-window.__yaadeAgent.getPerfMeasures()  // User Timing measures (jet:*)
+await window.__yaadeAgent.createProjectSession?.({ title: "…" })
+await window.__yaadeAgent.openProjectSession?.(id)
+await window.__yaadeAgent.backToProject?.()
+await window.__yaadeAgent.executeCommand("mux.splitRight")
+window.__yaadeAgent.getState() // includes route, sessionId, sessionCwd
+window.__yaadeAgent.getPerfMeasures() // User Timing measures (jet:*)
 ```
 
-### Dev gotchas (Vite + TS host)
-
-1. **Node** — `pnpm dev` / `pnpm test:e2e` need Node + pnpm (no Rust toolchain).
-2. **Vite frontend** — `apps/yaade` builds from `packages/yaade-app`.
-3. **Host** — `@yaade/host-server` on `:4747`; rebuild `better-sqlite3` if Node ABI changes.
-4. **Tailwind v4 position utilities missing** — Vite must scan sibling packages; `@source` in UI globals CSS.
+`launchJet()` opens a session by default (`waitForMux`). Pass
+`{ projectPage: true }` for specs that assert the project landing page.
 
 ---
-
-
-
-## Architecture Details
-
-
-
-### Desktop CLI startup
-
-Tauri Rust host resolves launch target from argv / cwd:
-
-- No args → open `cwd` as workspace
-- Directory arg → open that directory
-- File arg → open file; workspace = nearest project root (`.git`, `package.json`, `tsconfig.json`, `Cargo.toml`, `go.mod`, `.yaade`)
-
-Forwarded to renderer via `getLaunchConfig` / `jet:launch`; macOS open-file and single-instance reuse the same path.
-
-### Host IPC (`window.yaade`)
-
-Wired by `@yaade/host-client` `createWebTransport()` → `createYaadeApi()`; types live in `@yaade/workspace` (`YaadeHostAPI` name retained for API stability).
-
-
-| Channel                                                | Purpose                          |
-| ------------------------------------------------------ | -------------------------------- |
-| `fs:readFile`, `fs:writeFile`, `fs:readDir`, `fs:stat` | File URIs (`file://...`)         |
-| `fs:showOpenFolderDialog`                              | Native folder picker             |
-| `git:isRepo`, `git:status`, `git:diff`                 | Git CLI wrappers                 |
-| `lsp:start`, `lsp:stop`                                | Spawn language server, WS bridge |
-| `notifications:*`                                      | Notification center CRUD + WS `notifications:event` |
-| `POST /api/v1/notifications/ingest`                    | Provider hook ingest (Claude/Codex Stop, etc.) |
-
-
-TS host: `apps/host-server/src/`  
-Node helpers: `packages/yaade-node-host/src/`
-
-### Panel docking (`@yaade/panels`)
-
-- `PanelTree` — row/column splits, tab groups, 5-way drop (edges + center)
-- `editorOnlyLayout()` / `defaultLayout()` — single full-width editor panel (no sidebar split by default)
-- `workspaceLayout()` — row split: sidebar left (~22%) + main editor right (~78%); used when splitting for explorer/git on demand
-- Serializable via `toJSON()` / `fromJSON()`; `sanitizeKnownTabs()` strips orphan tab ids when needed
-- UI: `PanelDock`, `TabRow`, `DropOverlay` in `@yaade/ui`
-- `resolveEditorPanel()` in `App.tsx` — new/open editor tabs route to main editor panel (not sidebar)
-
-**Panel model:** all leaf panels are equal — no "explorer panel" vs "editor panel". Tab kind differs (`explorer`, `editor`, `git`, …). View commands can target `focusedPanel`; editor open/new file targets main editor panel.
-
-**Known gaps:**
-
-- **Tab drag/drop** — same-panel reorder works; cross-panel move / edge-split mostly works but needs polish (drop hit targets, registry sync). OK for now; not P0 blocker.
-- Split resize works (pointer capture + 12px hit slop); may feel laggy during layout animation
-
-
-
-### Workspace (`@yaade/workspace`)
-
-- `WorkspaceService` — root folder, file cache, dirty tracking, open editor tabs
-- `TabRegistry` — maps `TabId` → tab kind + label + dirty flag
-- Tab kinds: `editor`, `explorer`, `git`, `terminal` (stub), `search` (shell), `problems` (stub), `agent-explorer`, `agent-chat`
-
-
-
-### Editor surface (`@yaade/monaco` + `EditorTabHost`)
-
-- Monaco editor host — imperative mount; **never** put doc text in React state
-- URI-keyed models via `MonacoModelRegistry`; shared across editors
-- `revealPosition` / pending navigation for agent + terminal path opens
-- Languages via Monaco built-in IDs; LSP via `@yaade/lsp` over `/ws/lsp/{id}`
-
-
-
-### Commands & palette
-
-Registered in `packages/yaade-app/src/App.tsx`:
-
-
-| Command                 | Default key           |
-| ----------------------- | --------------------- |
-| `session.new`           | Mod-n                 |
-| `terminal.list`         | Mod-k (session switch)|
-| `workspace.quickOpen`   | Mod-p                 |
-| `ui.showCommandPalette` | Mod-Shift-p           |
-| `dialog.showGit`        | Mod-Shift-g           |
-| `dialog.showEditor`     | Mod-Shift-e           |
-| `dialog.showTerminal`   | Mod-Shift-t           |
-| `dialog.showTodos`      | Mod-Shift-d           |
-| `ui.toggleSidebar`      | Mod-b                 |
-| `settings.show`         | Mod-,                 |
-| `workspace.openFile`    | Mod-o (path CdOverlay)|
-| `workspace.openFolder`  | — (palette)           |
-| `workspace.cd`          | — (palette: Change Directory) |
-| `workspace.saveFile`    | Mod-s                 |
-| `workspace.newFile`     | — (palette)           |
-| `workspace.bufferList`  | Mod-Shift-b           |
-| `editor.find`           | Mod-f                 |
-| `editor.replace`        | Mod-h                 |
-| `editor.gotoLine`       | Mod-g                 |
-| `layout.closeTab`       | Mod-w                 |
-| `terminal.show`         | Ctrl-`                |
-| `yaade.goHome`      | Mod-Shift-h / Escape  |
-| `ui.toggleColorScheme`  | — (palette)           |
-
-
-`CommandRegistry.execute()` receives `getActiveEditorView: () => unknown` — cast to `EditorView` in handlers that need `view.state.doc`.
-
-### Extension host (`@yaade/extension-host`)
-
-- `createJetAPI()` — commands, keymaps, editor extensions, workspace, ui
-- `loadEditorRc(path, jet)` — dynamic import of `.yaade/editorrc.ts` on folder open
-- `registerExtensions()` — CodeMirror extensions applied via `extensionCompartment` in `EditorTabHost`
-
-
-
-### LSP
-
-- Host spawns language servers over stdio and bridges them to `/ws/lsp/{id}` (WebSocket)
-- Renderer: `@yaade/lsp` `LanguageServerManager` + Monaco providers
-- Servers (binary must be on **PATH**):
-
-| Languages | Server ID | Binary candidates |
-|-----------|-----------|-------------------|
-| typescript, javascript, tsx, jsx, mts, cts | `typescript-language-server` | `typescript-language-server` |
-| go | `gopls` | `gopls` |
-| rust | `rust-analyzer` | `rust-analyzer` |
-| python | `pyright` | `pyright-langserver`, `pyright`, `basedpyright-langserver`, `basedpyright` |
-| ruby | `ruby-lsp` | `ruby-lsp`, `solargraph` |
-| json, jsonc | `vscode-json-language-server` | `vscode-json-language-server`, `vscode-json-languageserver` |
-| html | `vscode-html-language-server` | `vscode-html-language-server` |
-| css | `vscode-css-language-server` | `vscode-css-language-server` |
-
-- Syntax highlighting uses Monaco Monarch (`basic-languages`); `languageIdFromPath` in `@yaade/shared` maps extensions → language ids
-- Project search uses ripgrep / host search on **PATH**
-- `findProjectRoot()` uses `pathToFileUri` from `@yaade/shared`
-
-
-
-### UI tabs
-
-
-| Tab      | Status                                                     |
-| -------- | ---------------------------------------------------------- |
-| Explorer | shadcn Sidebar + Collapsible file tree                 |
-| Git      | `@pierre/diffs` patch view + git status list (lazy-loaded) |
-| Editor   | CodeMirror host + in-buffer find                           |
-| Search   | Project ripgrep search + in-buffer find                    |
-| Problems | LSP/CM lint diagnostics list + jump                        |
-| Terminal | xterm + host PTY — primary ADE surface via session modal |
-
-
-
-### Agents (CLI PTY only)
-
-Agents are **CLI processes in a PTY** — no in-app chat control plane.
-
-**Flow:** Mission Control → New session → pick project chip (or `+`) → pick agent from `AGENT_CLI_DRIVERS` → `createAgentSession` builds `launchCommand` / args → host `terminal:create` → `TerminalSessionModal` agent tab shows the same PTY.
-
-| Agent | Binary | Driver id |
-| ----- | ------ | --------- |
-| Codex | `codex` | `codex:cli` |
-| Claude | `claude` | `claude:cli` |
-| OpenCode | `opencode` | `opencode:cli` |
-| Cursor | `cursor-agent` | `cursor:cli` |
-| Grok | `grok` | `grok:cli` |
-
-**Key files:**
-- `packages/yaade-ui/src/home/AgentCliPickerOverlay.tsx` + `agent-cli-drivers.ts`
-- `packages/yaade-app/src/agent-cli-launch.ts`, `agent-cli-resume.ts`, `cursor-cli-session.ts`
-- `packages/yaade-agents/src/model.ts` — `normalizeAgentId` / `agentCliDriverId`
-- Session roster: `packages/yaade-rpc/src/session-roster.ts` (requires `launchCommand` when `agentId` set)
-
-**Resume:** `agentCliSessionId` + provider-specific resume argv (notifications for Codex/Claude; Cursor pre-mint).
-
-Manual smoke: `pnpm dev` → New session → pick CLI agent → terminal modal.
-
-
-
-
-### Theming
-
-- `defaultJetTheme` + CSS vars via `applyJetThemeCss()`
-- Tailwind v4 + custom RAD-ish tokens in `jet-ui/src/styles/globals.css`
-- `@source` **in globals.css** — must scan all workspace packages so position/layout utilities emit for `jet-ui` components
-- Bundled themes in `jet-ui/src/theme/bundled.ts` (default, 4coder, Catppuccin Mocha, One Dark, Gruvbox Dark, Nord)
-- Dark/light Vercel theme via `ui.toggleColorScheme` / `ui.setColorScheme.dark|light`; persisted in `localStorage` (`jet-color-scheme`)
-- Shell UI: shadcn/ui primitives in `packages/jet-ui/src/components/ui/`
-- Command palette — `createPortal` to `document.body`; inline styles for centering (layout-critical)
-
----
-
-
 
 ## Coding Conventions
 
-1. **Minimal scope** — smallest correct diff; no drive-by refactors
-2. **Match existing style** — ESM `.js` extensions in TS imports, strict TS, no `@types/node` in `jet-shared`
-3. **URI discipline** — use `pathToFileUri` / `fileUriToPath` from `@yaade/shared`; avoid `process.platform` in shared packages
-4. **Panel mutations** — clone tree → mutate → `commitTree()` pattern in App (immutable-ish updates)
-5. **Exports** — packages expose `./src/index.ts` directly (no build step for libs); Vite bundles app.
-   Every `exports` condition (`types`, `import`, `default`) must point at source. Pointing `import`/`default`
-   at `./dist/*` silently ships stale JavaScript: `tsc` still checks `types` against source, so typecheck
-   stays green while the app runs whatever was last compiled. `@yaade/shared` did exactly this and ran
-   3-day-old code for the whole app. `turbo typecheck` `dependsOn: ["^build"]`, so any package with a
-   `build` script keeps regenerating a `dist/` — harmless only while nothing resolves to it.
-6. **Do not edit** the planning doc at `.cursor/plans/jet_editor_plan_*.plan.md`
-7. **Commits** — only when user asks
-
-
-
-### TypeScript
-
-- Each package has `"typecheck": "tsc --noEmit"`
-- Packages `extends` root `tsconfig.base.json`; no project references (composite disabled)
-- `@yaade/app` depends on `@yaade/shared` explicitly when importing shared types
+1. **Minimal scope** — smallest correct diff; no drive-by refactors.
+2. **Match existing style** — ESM `.js` extensions in TS imports, strict TS, no
+   `@types/node` in `@yaade/shared` or `@yaade/workspace` (reach `process` via
+   `globalThis` if you must).
+3. **URI discipline** — `pathToFileUri` / `fileUriToPath` from `@yaade/shared`;
+   avoid `process.platform` in shared packages.
+4. **Panel mutations** — clone tree → mutate → commit (immutable-ish updates).
+5. **Exports** — packages expose `./src/index.ts` directly. Every `exports`
+   condition (`types`, `import`, `default`) must point at source. Pointing
+   `import`/`default` at `./dist/*` silently ships stale JavaScript: `tsc` checks
+   `types` against source, so typecheck stays green while the app runs whatever
+   was last compiled. If a typecheck error mentions a symbol that clearly exists,
+   suspect a stale `dist/` before editing the export list.
+6. **Commits** — only when the user asks.
 
 ---
-
-
-
-## What Works Today (smoke test)
-
-1. `pnpm dev` → Mission Control **home** with projects from cwd/CLI / catalog
-2. Project cards + **New session** (Blank / Codex / Claude / OpenCode / Cursor CLIs) → `TerminalSessionModal`
-3. Click terminal card → reopen that session in the modal
-4. `terminal.new` / `terminal.show` / `terminal.list` — create, toggle modal, switch sessions
-5. **Mod-Shift-p** command palette (slim command set); **Mod-n** new session; **Mod-k** switch session; **Mod-p** quick open
-6. `workspace.cd` / add project / switch project overlays
-7. Settings / themes / zoom / color scheme
-8. Multi-root project catalog persistence across reload
-9. Escape / `yaade.goHome` closes terminal modal
-
-Editor, sidebar, explorer, LSP, location list, and PanelDock are **not wired** in `@yaade/app` (library packages remain on disk).
-
----
-
-
-
-## Prioritized Next Work
-
-Historical editor-parity roadmap below is largely **deferred** while the product is home + terminal modals. Prefer home/terminal polish over re-wiring CodeMirror unless explicitly asked.
-
-Parity work is grouped by **tier** (Shell / Editor / Workspace / 4coder-specific) inside each phase.
-
-
-| Tier                | Scope                                                     |
-| ------------------- | --------------------------------------------------------- |
-| **Shell**           | Panels, chrome, palette, themes, status bar, layout       |
-| **Editor**          | Buffer UX — find, goto, multi-cursor, guides              |
-| **Workspace**       | Project tools — search, git, terminal, quick-open         |
-| **4coder-specific** | Dual cursor+mark, virtual whitespace, code index, C layer |
-
-
-
-
-### P0 — Stability & correctness
-
-**Done**
-
-- [x] Pass real viewport from `PanelDock` into `splitResized` handler
-- [x] Wire extension host extensions into `createJetEditorView`
-- [x] Fix `findProjectRoot()` URI building in `jet-lsp`
-- [x] Re-apply keymaps when extension host registers new bindings
-- [x] Clean up stale `packages/jet-app/dist-electron/`
-- [x] Move `pnpm.onlyBuiltDependencies` to `.npmrc`
-- [x] Query-param bootstrap runs once; `openEditorTab` dedupes by URI
-- [x] Explorer tree expands root on workspace open
-- [x] Editor input stability — `executeCommand` ref, autofocus, no remount on layout change
-- [x] Session tree sanitize — `sanitizeKnownTabs()` on `PanelTree.fromJSON` (legacy; session restore removed)
-- [x] **Shell:** tab drag/drop polish — same-panel edge-split, cross-panel insert index, `TabRegistry.setPanel` on drag
-- [x] **Shell:** dirty-tab close confirm — `tabClose`, `closeAllTabs`, `panelClose` (product); MCP `window.confirm` may need user handoff
-- [x] **Shell:** default row layout — sidebar left, main editor right (`workspaceLayout`)
-- [x] **Shell:** editor open/new file routes to main panel (`resolveEditorPanel`)
-- [x] **Shell:** command palette centered (`createPortal` + fixed overlay)
-- [x] **Shell:** Tailwind `@source` — position utilities for panel dock / palette
-
-**Remaining (Shell tier)**
-
-- [x] **Shell:** tab drag/drop automated test (removed with tab bar — buffer list covers switcher)
-
-
-
-### P1 — Core editor & shell features
-
-**Done**
-
-- [x] Terminal tab stub + `terminal.show` command
-- [x] Untitled / new file flow (`workspace.newFile`, save-promote; Mod-n when workspace open)
-- [x] Tab dirty indicator + confirm on close with unsaved changes
-- [x] `when` clauses in KeymapService — `editorFocus`, `paletteOpen`, `workspaceOpen`, tab-kind focus keys
-- [x] **Editor:** in-buffer find (`editor.find` / Mod-f)
-- [x] **Editor:** find/replace (`editor.replace` / Mod-h, CM search panel)
-- [x] **Editor:** goto-line (`editor.gotoLine` / Mod-g, modal)
-
-
-
-### P2 — UX & polish
-
-**Done**
-
-- [x] Tab bar reorder within panel (`insertIndex` + same-panel drag)
-- [x] `panelClose` handler in `App.tsx` + panel close button
-- [x] `__yaadeAgent.waitForEditor()` — poll until `.cm-editor` mounted
-- [x] Bundled themes + theme picker commands (`ui.selectTheme.*`)
-- [x] Search tab shell + problems tab stub
-- [x] Status bar (LSP status, line/col, encoding)
-- [x] Welcome view when no folder open
-- [x] GitTab lazy import; PaletteOverlay
-- [x] Tab row overflow menu
-- [x] Playwright Tauri smoke tests wired to `pnpm test:tauri` + `__yaadeAgent`
-- [x] **Shell:** Vercel dark/light theme + `ui.toggleColorScheme`
-- [x] **Shell:** welcome view, status bar (L/C, LSP, message)
-- [x] Reduce main bundle — lazy Search/Problems tabs; Vite `manualChunks` for git-diff/shiki
-- [x] **Shell:** status bar — workspace path + git branch
-- [x] **Shell:** more bundled themes (One Dark, Gruvbox Dark, Nord — 6 total)
-- [x] **Editor:** bracket matching + search panel theming
-- [x] **Editor:** Fleury-style indent guide columns (`@replit/codemirror-indentation-markers`)
-- [x] **Workspace:** project search tab (ripgrep) + result navigation
-
-**Remaining**
-
-- (none in P2 tier)
-
-
-
-### P1½ — VS Code keybinding parity (in progress)
-
-**Done**
-
-- [x] Tier 1 editor commands — comment, line ops, indent, undo/redo, smart select, multi-cursor CM commands
-- [x] Tier 2 layout — tab cycle, close all, focus sidebar/editor, split, zoom, overlays
-- [x] Tier 3 LSP — format, rename, references, parameter hints, document outline (Tauri host)
-- [x] Tier 4 list nav — PageUp/Down/Home/End scroll on explorer/git/search/problems
-- [x] Git chord placeholders — message stubs (not bound to `undo`)
-
-**Remaining**
-
-- [ ] Git chord implementations (stage/revert selected ranges from editor selection)
-- [ ] List panel item focus (arrow-key selection), not just scroll
-
-
-
-### P3 — Platform, workspace & distribution
-
-**Workspace tier**
-
-- [x] Quick-open files (`workspace.quickOpen` / Mod-Shift-o)
-- [x] Full git panel (stage, commit, branch checkout)
-- [x] Terminal PTY (Tauri Rust PTY + xterm; browser stub)
-- [x] Problems panel — diagnostics list + jump to source (CM lint aggregation)
-- [x] Watch mode / file change reload from disk (Tauri host watch; dirty-tab confirm)
-
-**Platform**
-
-- [x] Self-extracting server binary (`pnpm build`)
-- [x] LSP crash recovery (`lsp.onCrashed` + auto-retry on editor focus)
-- [x] Additional language servers (rust-analyzer descriptor registry)
-
-
-
-### P4 — Reference editor identity (long-term)
-
-**Editor tier**
-
-- [x] Multi-cursor — partial: `addCursorAbove/Below`, `selectNextOccurrence`, Alt+click, `rectangularSelection` (Shift+Alt+drag column)
-
-**4coder-specific tier**
-
-- [ ] Expand `.yaade/editorrc.ts` API toward Nameless-level extensibility
-
-
-
-### Out of scope (documented gaps)
-
-- Nameless-level command registry (~50+ commands), vim mode, tree-sitter tag index
-- Full parity port of any single reference editor
-
----
-
-
-
-## Reference parity snapshot
-
-Quick comparison vs `.4coder`, Fleury, Nameless (not a task list — see phases above).
-
-
-| Feature                          | 4coder  | Fleury  | Nameless   | YAADE today                                  |
-| -------------------------------- | ------- | ------- | ---------- | -------------------------------------- |
-| Tab drag/drop + reorder          | ✓       | ✓       | ✓          | removed (no tab bar)                   |
-| Buffer list                      | —       | ✓       | ✓          | ✓ Cmd-Shift-b                          |
-| Jump stack                       | ✓       | —       | ✓          | ✓ Alt-j                                |
-| Location list panel              | partial | ✓       | ✓          | ✓ search/problems/refs feeds           |
-| Output / tasks                   | build   | ✓       | ✓          | ✓ minimal task runner                  |
-| Git / terminal                   | —       | ✓       | ✓          | removed                                |
-| Fleury chrome                    | —       | ✓       | ✓          | brace guides + token highlight         |
-| LSP (TS/JS)                      | ✗       | partial | ✓          | ✓ Tauri + rust-analyzer                |
-| Multi-cursor, macros, kill ring  | ✓       | —       | ✓          | partial (no macros/kill ring)          |
-| Extension / custom layer         | C hooks | C++     | Rust setup | `.yaade/editorrc.ts`                     |
-
-
----
-
-
-
-## Key Files (start here)
-
-
-| File                                              | Why                                                 |
-| ------------------------------------------------- | --------------------------------------------------- |
-| `packages/jet-app/src/App.tsx`                    | Shell wiring: commands, layout, LSP, extension host |
-| `packages/jet-ui/src/dock/PanelDock.tsx`          | Docking UI + viewport measure                       |
-| `packages/jet-panels/src/tree.ts`                 | Split/tab model                                     |
-| `packages/jet-ui/src/tabs/EditorTabHost.tsx`      | CM mount lifecycle                                  |
-| `packages/jet-codemirror/src/createEditorView.ts` | Editor extensions + LSP attach                      |
-| `apps/host-server/src/bin.ts`                     | TS host bootstrap                                   |
-| `apps/yaade/vite.config.ts`                   | Vite frontend + API proxy                           |
-| `packages/yaade-app/src/main.tsx`             | `createWebTransport` → `window.yaade`           |
-
-
----
-
-
 
 ## Adding a Feature (checklist)
 
-1. Decide layer — shared / panels / workspace / ui / app / host-server
-2. Add types to `@yaade/shared` or `@yaade/workspace` if cross-cutting
-3. Register command + keybinding if user-facing
-4. If new tab kind: extend `TabKind`, `TabRegistry`, `TabBody`, default registration in `App.tsx`
-5. Run `pnpm -r typecheck`
-6. **Playwright** — `pnpm test:e2e` (+ `pnpm test:bench` when perf-sensitive); cover changed behavior
+1. Decide layer — shared / panels / workspace / ui / app / host-server.
+2. Add types to `@yaade/shared` or `@yaade/rpc` if cross-cutting.
+3. Register the command in `MuxApp`'s command effect.
+4. If it needs a shortcut, add it to `MUX_PREFIX_BINDINGS` — do **not** invent a
+   new `Mod-` chord.
+5. `pnpm -r typecheck`.
+6. Unit test with `node:test`; register the file in `package.json` for
+   `@yaade/app`.
+7. `pnpm test:e2e` (+ `pnpm test:bench` when perf-sensitive).
 
 ---
 
+## Known gaps / next work
 
+Ordered by severity. Items reflect an August 2026 review after the session pivot.
+
+### P0 — blocks the product promise
+
+- [ ] **Auth for remote.** Token on HTTP + WS upgrade. Nothing else about
+      "remote IDE" is safe to ship first.
+- [ ] **Entry UX.** Path still comes from the address bar (plus host
+      `launchConfig`). Needs resolve → validate → error-or-open, plus a
+      recent-projects list for first-run when the URL is `/`.
+- [ ] **URL cannot express paths outside `$HOME`.** CD away from the URL
+      project still leaves `pathname` stale.
+
+### P1 — correctness
+
+- [ ] `terminal:data` is stored in the global `EventHub` history *and* in each
+      PTY's 2 MB ring. A busy terminal evicts every other channel's history
+      within seconds, so reconnects lose git/LSP/notification events. Exclude
+      terminal data from hub history.
+- [ ] WS terminal commands are fire-and-forget (`void runHostRpc` in
+      `server.ts`) — a failed write or resize is invisible to the client.
+- [ ] No timeout on HTTP RPC invokes; a wedged host leaves promises pending.
+
+### P2 — UI/UX
+
+- [ ] No roving tabindex across the tile grid (active pane has a focus ring;
+      chrome controls reveal on `focus-visible`).
+- [ ] Boot state is a bare "Loading…".
+- [ ] Delete the dead shells: `App.tsx`, `MuxTabStrip`, `PanelTabBar`, and the
+      ~29 skipped Mission Control specs.
+- [ ] Optional README / recent-commits polish on the project page main column.
+
+### P3 — hygiene (carried over, still valid)
+
+- [ ] Virtualize `packages/yaade-ui/src/tabs/ExplorerTab.tsx`
+      (`@tanstack/react-virtual` is already a dependency). Preserve
+      `data-yaade-list-item` on rendered rows.
+- [ ] `StatusBar` LSP trigger is a raw `<button>`; should use the shadcn `Button`
+      ghost variant to inherit ring/focus tokens.
+- [ ] `packages/yaade-ui/src/components/ui/sidebar.tsx` is ~730 LOC with most
+      exports dead. Tree-shaken at build; delete only for source hygiene.
+
+Backlog items that referenced `jet-codemirror`, `LocationListPanel`, or
+`ExplorerPanel` were dropped — those files no longer exist.
+
+---
+
+## Key Files (start here)
+
+| File | Why |
+| --- | --- |
+| `packages/yaade-app/src/main.tsx` | Entry: `createWebTransport` → `window.yaade`, mounts `AppRoot` |
+| `packages/yaade-app/src/AppRoot.tsx` | Project vs session routing, `?s=`, project-page agent stub |
+| `packages/yaade-app/src/project/ProjectPage.tsx` | GitHub-style project landing |
+| `packages/yaade-app/src/mux/MuxApp.tsx` | Session shell: commands, keymap, layout, persistence |
+| `packages/yaade-app/src/project-session-client.ts` | Debounced PUT `/api/v1/project-sessions/:id` |
+| `packages/yaade-app/src/mux/mux-keymap.ts` | Prefix key + binding table (single source of truth) |
+| `packages/yaade-app/src/url-workspace.ts` | URL ↔ project root + session search helpers |
+| `packages/yaade-app/src/hooks/useGlobalKeymap.ts` | Global key dispatch |
+| `packages/yaade-workspace/src/browser-reserved-keys.ts` | Which chords the browser steals |
+| `packages/yaade-workspace/src/context-keys.ts` | Chord matching, `when` clauses |
+| `packages/yaade-app/src/mux/MuxTerminalLayer.tsx` | Why terminals survive retiling |
+| `packages/yaade-ui/src/panels/TerminalPanel.tsx` | xterm mount, fit, PTY attach |
+| `packages/yaade-ui/src/dock/PanelDock.tsx` | Docking UI + viewport measure |
+| `packages/yaade-panels/src/tree.ts` | Split/tab model |
+| `apps/host-server/src/server.ts` | HTTP + WS routing, project-sessions API |
+| `apps/host-server/src/persistence.ts` | SQLite schema, `ptyId` stripping, migration |
+| `apps/host-server/src/worktree-path.ts` | `~/.yaade/worktrees/…` path derivation |
+| `packages/yaade-node-host/src/terminal.ts` | PTY batching, flow control, replay |
+| `packages/yaade-node-host/src/git.ts` | Git + worktree CLI wrappers |
+
+---
 
 ## Agent Anti-patterns
 
-- Shipping UI/UX changes without **`pnpm test:e2e`** validation
-- Putting editor document text in React `useState`
-- Calling Node/Tauri APIs from lower packages (use `window.yaade` / `@yaade/host-client`)
-- **Shell:** Web SPA + TS `host-server`. No Rust/Tauri/Electron. Renderer via `createWebTransport()`. Dev: `pnpm dev`. Tests: `pnpm test:e2e`.
-- Adding Rust / Cargo / Tauri / Electron back into the repo
-- Large shadcn default styling — keep RAD/custom theme direction
-
-## Open Backlog (updated 2026-07-05)
-
-Deferred items from shadcn-integration audit session. Each is scoped as a stand-alone task; pick top-down.
-
-### Recently closed (2026-07-05)
-- [x] **StatusBar tooltip `sideOffset`** — added `sideOffset={6}` to workspace tooltip + LSP popover in `packages/jet-ui/src/status/StatusBar.tsx`.
-- [x] **LocationList row vs Explorer row hover/focus drift** — LocationList row now uses `sidebar-accent` tokens matching `sidebarMenuButtonVariants` (`packages/jet-ui/src/panels/LocationListPanel.tsx:193`).
-- [x] **Toast + confirm dialog unification** — `showJetToast(msg, { variant, description })` maps to `sonner`'s `error`/`warning`/`info`/`success`; `ConfirmDialogHost` accepts shared `JetVariant` string (destructive/warning) alongside legacy `destructive?: boolean`.
-- [x] **CdOverlay rewrite to shadcn `Command`** — completion list now uses `Command`/`CommandList`/`CommandItem` with `shouldFilter={false}`, manual value + a11y `aria-controls`/`aria-activedescendant` on `Input`. Alt-Backspace segment delete, Tab/Enter apply completion, Cmd-Enter confirms — preserved. `ScrollArea` dropped in favor of `CommandList` scroll region.
-- [x] **`EditorContextMenu.tsx` root/trigger** — verified `EditorTabHost.tsx:415` already wraps content in `<ContextMenu>` root + `<ContextMenuTrigger asChild>` around the host `<div>`. External `showEditorContextMenuAt(x, y)` dispatches synthetic `contextmenu` on trigger — Radix opens via native event so focus-trap + z-index are correct. No change needed; backlog note was stale.
-- [x] **`JetApp` unused imports** — removed unused `JetTheme` type import and stale `currentTree` local in `packages/jet-app/src/App.tsx`.
-
-### Syntax highlighting for Rust (desktop)
-- **Symptom:** User reports Rust files render with zero syntax colors when opening real repos (`loki/`) in the **Tauri desktop app**. Fixture-based `.rs` files under `fixtures/sample-workspace` are covered by `tests/electron/syntax-rust.electron.spec.ts`.
-- **Investigated:** `@lezer/rust` styleTags map `t.definitionKeyword`/`t.moduleKeyword`/`t.modifier`/`t.integer`/`t.lineComment`/`t.paren` etc. All inherit from parent tags (`keyword`, `number`, `comment`, `bracket`) — theme should still color via inheritance. `packages/jet-codemirror/src/theme.ts` covers `t.keyword`, `t.controlKeyword+t.modifier`, `t.number`, `t.comment`, `t.operator`, `t.punctuation`, `t.string`. `t.bracket` is NOT mapped — but that only affects `{}`, `()`, `[]`.
-- **Repro path:** Originally reported in desktop app with real user workspace. Browser scenario runner cannot reproduce.
-- **Hypothesis to test next:** (a) `import("@codemirror/lang-rust")` dynamic import fails silently under production/hot-reload → `loadLanguage` never resolves, view boots with no language extension. (b) `@replit/codemirror-indentation-markers` or another plugin's CSS is overriding token colors. (c) Race between `attachView` calling `reconfigureLanguage` and initial `createJetEditorView` when session cache hits.
-- **Suggested attack:** open a Rust file in Tauri, run `getComputedStyle` on `.cm-line span` in devtools to check whether spans get `.ͼNN` classes at all. If not → language load failed. If classes present but color=inherit → CSS override.
-- **Also add** explicit tag mappings even though inheritance should cover: `t.bracket`, `t.self`, `t.character`, `t.macroName`, `t.meta` in `packages/jet-codemirror/src/theme.ts` — defense in depth.
-
-### Indent-marker colors don't toggle theme (Task #14)
-- `packages/jet-codemirror/src/createEditorView.ts:88-113` — `indentationMarkers({colors:{light,dark,...}})` is baked in at view creation. `@replit/codemirror-indentation-markers` doesn't take reactive colors.
-- **Fix:** wrap in a Compartment; on theme change, reconfigure with fresh colors object. OR patch the plugin to read from CSS var `var(--jet-indent-marker)`.
-- Currently both light/dark values equal `theme.colors.border` for the ACTIVE theme, so single-view works; only broken across theme toggle without view rebuild.
-
-### Dead `Sidebar` wrapper in `ui/sidebar.tsx` (Task #7)
-- File is 730 LOC of shadcn boilerplate; only `SidebarProvider` + `SidebarTrigger` + `SidebarMenu*` + `useSidebar` are imported by app code. `Sidebar`, `SidebarInset`, `SidebarRail`, `SidebarInput`, `SidebarHeader`, `SidebarFooter`, `SidebarSeparator` are dead exports.
-- **Deferred, not urgent:** Vite tree-shakes them from the ship bundle. Delete only if source dead-code hygiene matters.
-
-### Autocomplete popup MUST use shadcn `ContextMenu` (High — hard rule)
-- **Rule:** no custom components allowed. Autocomplete popup MUST be built from `@/components/ui/context-menu.tsx` (`ContextMenu` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuGroup` / `ContextMenuLabel`). Not a raw CM tooltip, not a custom portal, not a `Popover`+`Command` hybrid.
-- **Current state:** `packages/jet-codemirror/src/completion-context-menu.ts:11-25` still DOM-patches shadcn class strings (`CONTEXT_MENU_SURFACE_CLASS`, `CONTEXT_MENU_ITEM_SURFACE_CLASS`) onto CodeMirror's native `.cm-tooltip-autocomplete` after mount via `classList.add()` + `dataset.slot = "context-menu-content"`. Fake shadcn — no Radix root, no focus scope, no `ContextMenuPortal`, no keyboard-role parity, breaks if shadcn class strings drift.
-- **Also delete:** `packages/jet-codemirror/src/menu-surface.ts` (`CONTEXT_MENU_SURFACE_CLASS`, `CONTEXT_MENU_ITEM_SURFACE_CLASS`) and its re-export in `packages/jet-codemirror/src/index.ts:45`. Class-string sharing is the anti-pattern this rule bans.
-- **Fix plan:**
-  1. Replace CodeMirror's default `autocomplete` tooltip renderer. Register a completion source that emits Yaade's own state; suppress the native tooltip via `tooltips: { position: "absolute" }` or by overriding `completionConfig({ tooltipClass })` and rendering an empty tooltip.
-  2. In `EditorTabHost.tsx`, mount a `<ContextMenu open={completionOpen}>` with `<ContextMenuContent>` portalled to `document.body`. Position via `EditorView.requestMeasure` → caret coords, forwarded as CSS vars.
-  3. Bridge keymap: `ArrowUp`/`ArrowDown`/`Enter`/`Escape`/`Tab` — intercept in a CM keymap prec `Prec.highest`, dispatch to a React state store (or ref), so shadcn `ContextMenuItem` selection follows. Enter → `applyCompletion(view, item)` from `@codemirror/autocomplete`.
-  4. Preserve `completionDetail` in a right-aligned span using existing `ContextMenuShortcut`.
-- **Acceptance:** grep for `.cm-tooltip-autocomplete` in `packages/jet-codemirror/src/` returns only the theme-side hide rule; no `classList.add`, no `dataset.slot` patching. Visual scenario asserts `role="menu"` present in a11y snapshot when completion open.
-
-### Explorer virtualization for large repos (Medium)
-- `packages/jet-ui/src/tabs/ExplorerTab.tsx` — renders every visible file synchronously. `@tanstack/react-virtual` is already a dep (see `packages/jet-ui/package.json`).
-- **Fix:** virtualize `SidebarMenu` children. Preserve `data-yaade-list-item` on rendered rows so visual scenarios still find them by selector.
-
-### Explorer `focusExplorerPanel` uses DOM `querySelector` (Low)
-- `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18` — imperative DOM query on `[data-yaade-explorer-panel]` + `[data-sidebar="trigger"]`. Brittle to selector rename.
-- **Fix:** expose a ref-based focus API via `useSidebar()` context or a ref forwarded from `ExplorerPanel`.
-
-### Custom decoration follow-ups (Task #4 tail)
-- macOS shipped with `hiddenInset` + `JetTitleBar` component. Verified via `?titlebar=1` browser query + `tests/visual/scenarios/titlebar.json`.
-- **Not yet done:** Windows/Linux custom decoration (title bar drag region + min/max/close buttons via shadcn Button + custom SVG icons). Would use `titleBarStyle:'hidden'` on those platforms and `WindowControls` sub-component. Currently they fall back to native window frame / OS chrome.
-- **Not yet done:** wire `checkbox`/`radio` states in menubar (e.g. "Toggle Color Scheme" should be a `CheckboxItem` showing current scheme). Currently a plain `Item`.
-- **Not yet done:** window title (center label) currently derives from workspace + file; if `activeEditorFile.isDirty`, uses `•` marker. Consider dedicated dirty-badge component.
-
-### Pass 2 (2026-07-05) — shadcn re-audit findings
-
-Global rule to apply everywhere below: **no custom components**. Every interactive widget must resolve to a primitive in `packages/jet-ui/src/components/ui/`. Raw `<button>` / `<input>` / class-string patching count as custom.
-
-#### `LocationListPanel` row = raw `<button>` (High)
-- `packages/jet-ui/src/panels/LocationListPanel.tsx:190-202` — virtualized row is a raw `<button type="button">` with hand-rolled `hover:bg-sidebar-accent` classes replicating `sidebarMenuButtonVariants`. Duplicates shadcn behavior without importing it.
-- **Fix:** render row through `SidebarMenuButton asChild size="sm"` from `ui/sidebar.tsx`, or wrap it in a shared `<ListRow>` primitive that composes `SidebarMenuButton`. Keep virtualization by rendering the button inside the absolute-positioned wrapper unchanged. Preserve `data-yaade-list-item` on the rendered element.
-
-#### `StatusBar` LSP trigger = raw `<button>` (Medium)
-- `packages/jet-ui/src/status/StatusBar.tsx:141-150` — `PopoverTrigger asChild` wraps a raw `<button>` with bespoke focus ring classes. Should use shadcn `Button variant="ghost" size="sm"` (or a new `variant="statusZone"`) to inherit ring/focus tokens.
-- **Fix:** replace with `<Button variant="ghost" size="sm" className="jet-status-zone jet-mono-data …">` — retains status-zone typography via className, drops hand-rolled `focus-visible:ring-2 ring-ring` (Button already has it).
-
-#### `ExplorerTab` file row = raw `<button>` inside `SidebarMenuSubButton asChild` (Low)
-- `packages/jet-ui/src/tabs/ExplorerTab.tsx:72-81` — the file rendering inside `SidebarMenuSubButton asChild` uses a raw `<button type="button">`. This is technically fine (`asChild` requires exactly one child element), but the class `shrink-0` alone is not enough — `SidebarMenuSubButton` styles apply via `asChild`. Verify that `size="sm"` variant fires; if not, drop `asChild` and let `SidebarMenuSubButton` render its own element.
-- **Investigate:** whether `asChild` on sub-button still applies `sidebarMenuSubButtonVariants` classes to the child — if the child has to spell them out, we lost the shadcn variant contract.
-
-#### Explorer `focusExplorerPanel` DOM `querySelector` (still open, restated)
-- Same as prior backlog. `packages/jet-ui/src/explorer/ExplorerPanel.tsx:7-18`. Fix by exposing a ref or a `useSidebar()`-published handle.
-
-#### `App.tsx` list-navigation DOM `querySelector` (Medium)
-- `packages/jet-app/src/App.tsx:640-642` — `document.querySelector('[data-yaade-list-panel=…]')` + `querySelectorAll('[data-yaade-list-item]')` for keyboard nav. Mirrors the explorer-panel anti-pattern.
-- **Fix:** publish a list-registry from `WorkspaceService` (or a new `ListRegistry` in `@yaade/workspace`) mapping panel kind → ref to focused-item state. Keyboard command reads from the registry, not the DOM.
-
-#### `main.tsx` bootstraps dark class imperatively (Low)
-- `packages/jet-app/src/main.tsx:7` — `document.documentElement.classList.add("dark")` runs unconditionally, before the theme-scheme service reads `localStorage["jet-color-scheme"]`. Race: flash of dark on light-scheme startup.
-- **Fix:** move to a synchronous inline script in `packages/jet-app/index.html` (before React mounts) that reads `localStorage` and sets the class. Standard shadcn/Tailwind theme-flash-prevention.
-
-#### `motion-cursor.ts` `querySelector` on synthetic DOM (Info, no action)
-- `packages/jet-codemirror/src/motion-cursor.ts:262-265` — reads its own inserted bracket-cursor children by class. Not shadcn territory; internal DOM owned by the plugin. Leave as-is.
-
-#### Dead exports beyond `Sidebar` (Low — hygiene)
-- Full audit of `packages/jet-ui/src/components/ui/*.tsx` for unused named exports would tighten source but is tree-shaken at build. Only worth doing if we tighten `no-unused-exports` lint. Skip until then.
-
-#### Shared `<ListRow>` primitive (Medium — enables above fixes)
-- LocationList, Search results, Problems, Explorer files, Git changes all render a similar row: label + subtitle + optional shortcut/kbd. Right now each panel spells out its own classes. Extract one shared component in `packages/jet-ui/src/components/ListRow.tsx` that wraps `SidebarMenuButton asChild` with a `label`/`subtitle`/`trailing` slot. Feeds all above high/medium items with a single fix.
+- Binding a browser-reserved chord (the guard will throw — heed it).
+- Binding bare `Escape`, or matching a key without `stopPropagation()` in the
+  terminal path.
+- Using an E2E test to prove a keyboard shortcut is *available* — CDP bypasses
+  browser chrome.
+- Shipping UI/UX changes without `pnpm test:e2e`.
+- Writing new tests with vitest; this repo uses `node:test`.
+- Extending `App.tsx` or anything in the legacy Mission Control surface.
+- Putting terminal output or editor document text in React state.
+- Calling Node APIs from lower packages (use `window.yaade` / `@yaade/host-client`).
+- Adding Rust / Cargo / Tauri / Electron back into the repo.

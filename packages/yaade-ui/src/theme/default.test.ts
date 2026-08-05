@@ -60,16 +60,25 @@ function contrastRatio(foreground: string, background: string): number {
   )
 }
 
-const themeIds = ["default-dark", "default-light"]
+const themeIds = [
+  "default-dark",
+  "default-light",
+  "catppuccin-mocha",
+  "catppuccin-macchiato",
+  "catppuccin-latte",
+  "tokyonight-night",
+  "tokyonight-storm",
+  "tokyonight-day",
+]
 
 describe("bundled Yaade themes", () => {
-  it("registers Default dark/light only", () => {
+  it("registers Default, Catppuccin, and Tokyo Night families", () => {
     assert.equal(defaultThemeId, "default-dark")
     assert.deepEqual(
       bundledThemeList.map(theme => theme.id),
       themeIds,
     )
-    assert.equal(Object.keys(bundledThemes).length, 2)
+    assert.equal(Object.keys(bundledThemes).length, themeIds.length)
   })
 
   it("falls back to Default Dark for missing or invalid theme ids", () => {
@@ -84,12 +93,20 @@ describe("bundled Yaade themes", () => {
     assert.equal(defaultThemeIdForScheme("light"), "default-light")
     assert.equal(siblingThemeForScheme("default-dark", "light").id, "default-light")
     assert.equal(siblingThemeForScheme("default-light", "dark").id, "default-dark")
+    assert.equal(
+      siblingThemeForScheme("catppuccin-mocha", "light").id,
+      "catppuccin-latte",
+    )
+    assert.equal(
+      siblingThemeForScheme("tokyonight-night", "light").id,
+      "tokyonight-day",
+    )
   })
 
   it("provides shell, editor, terminal, source, and swatch metadata for every theme", () => {
     for (const theme of bundledThemeList) {
       assert.ok(theme.scheme === "dark" || theme.scheme === "light")
-      assert.equal(theme.family, "Default")
+      assert.ok(theme.family)
       assert.ok(theme.sourceUrl?.startsWith("https://"))
       assert.ok(theme.colors.bg)
       assert.ok(theme.colors.panel)

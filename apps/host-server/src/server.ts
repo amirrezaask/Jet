@@ -4,7 +4,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { WebSocketServer, WebSocket } from "ws"
-import { getLspSession, MAX_READ_BYTES, uriToPath } from "@yaade/node-host"
+import { getLspSession, MAX_READ_BYTES, uriToPath, gitWorktreeAdd, gitWorktreeRemove } from "@yaade/node-host"
 import {
   HostRpcRequest,
   InvalidRpcPayloadError,
@@ -13,6 +13,8 @@ import {
   hostErrorHttpStatus,
   hostErrorWire,
   tryDecodeTerminalWsCommand,
+  tryDecodeProjectSessionPayload,
+  tryDecodeWorkspaceSession,
   type HostRpcError,
 } from "@yaade/rpc"
 import type { HostEvent } from "./events.js"
@@ -22,12 +24,11 @@ import { makeHostLayers, type HostLayerServices } from "./effect/layers.js"
 import { HostRuntimeTag } from "./effect/tags.js"
 import { shutdownRuntime, type HostRuntime } from "./host-runtime.js"
 import { parseSessionRosterBody } from "./persistence.js"
-import {
-  tryDecodeWorkspaceSession,
-} from "@yaade/rpc"
 import { pathAllowed, pathStaysWithin } from "./sandbox.js"
 import { isAllowedWebSocketOrigin } from "./security.js"
 import { normalizeProviderHookRequest } from "./notifications/index.js"
+import { resolveWorktreePath } from "./worktree-path.js"
+import { pathToFileUri } from "@yaade/shared"
 
 const VERSION = "0.0.1"
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
@@ -441,6 +442,306 @@ async function handleHttp(
           },
         })
       }
+      return
+    }
+  }
+
+  if (pathname === "/api/v1/project-sessions") {
+    if (req.method === "GET") {
+      const root = url.searchParams.get("root")?.trim() ?? ""
+      if (!root) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_PROJECT_ROOT",
+            message: "root query parameter required",
+            details: {},
+          },
+        })
+        return
+      }
+      if (!pathAllowed(root, runtime.config.allowedRoots)) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "project root outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+      sendJson(
+        res,
+        200,
+        runtime.db.listProjectSessions(runtime.machineHostname, root),
+      )
+      return
+    }
+    if (req.method === "POST") {
+      const body = (await readJson(req)) as {
+        rootPath?: string
+        title?: string
+        worktree?: { branch?: string; baseRef?: string; createBranch?: boolean }
+      }
+      const rootPath = typeof body.rootPath === "string" ? body.rootPath.trim() : ""
+      if (!rootPath) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_PROJECT_ROOT",
+            message: "rootPath required",
+            details: {},
+          },
+        })
+        return
+      }
+      if (!pathAllowed(rootPath, runtime.config.allowedRoots)) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "project root outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+
+      let cwdPath = rootPath
+      let worktreeBranch: string | null = null
+      let worktreePath: string | null = null
+      const worktree = body.worktree
+      if (worktree && typeof worktree.branch === "string" && worktree.branch.trim()) {
+        const branch = worktree.branch.trim()
+        try {
+          worktreePath = resolveWorktreePath({
+            homeDir: runtime.homeDir,
+            projectPath: rootPath,
+            branch,
+          })
+        } catch (error) {
+          sendJson(res, 400, {
+            error: {
+              code: "INVALID_WORKTREE",
+              message: error instanceof Error ? error.message : String(error),
+              details: {},
+            },
+          })
+          return
+        }
+        if (!pathAllowed(worktreePath, runtime.config.allowedRoots)) {
+          sendJson(res, 403, {
+            error: {
+              code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+              message: "worktree path outside allowed roots",
+              details: {},
+            },
+          })
+          return
+        }
+        try {
+          fs.mkdirSync(path.dirname(worktreePath), { recursive: true })
+          await gitWorktreeAdd(pathToFileUri(rootPath), worktreePath, {
+            branch,
+            baseRef:
+              typeof worktree.baseRef === "string" && worktree.baseRef.trim()
+                ? worktree.baseRef.trim()
+                : undefined,
+            createBranch: worktree.createBranch !== false,
+          })
+          cwdPath = worktreePath
+          worktreeBranch = branch
+        } catch (error) {
+          sendJson(res, 400, {
+            error: {
+              code: "WORKTREE_CREATE_FAILED",
+              message: error instanceof Error ? error.message : String(error),
+              details: {},
+            },
+          })
+          return
+        }
+      }
+
+      try {
+        const created = runtime.db.createProjectSession({
+          machine: runtime.machineHostname,
+          projectPath: rootPath,
+          cwdPath,
+          title:
+            typeof body.title === "string" && body.title.trim()
+              ? body.title.trim()
+              : worktreeBranch
+                ? worktreeBranch
+                : "Session",
+          worktreeBranch,
+          worktreePath,
+        })
+        sendJson(res, 201, created)
+      } catch (error) {
+        if (worktreePath) {
+          try {
+            await gitWorktreeRemove(pathToFileUri(rootPath), worktreePath, {
+              force: true,
+            })
+          } catch {
+            /* best-effort cleanup */
+          }
+        }
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_PROJECT_SESSION",
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          },
+        })
+      }
+      return
+    }
+  }
+
+  const projectSessionMatch = pathname.match(
+    /^\/api\/v1\/project-sessions\/([^/]+)$/,
+  )
+  if (projectSessionMatch) {
+    const sessionId = decodeURIComponent(projectSessionMatch[1] ?? "")
+    if (req.method === "GET") {
+      const session = runtime.db.getProjectSession(sessionId)
+      if (!session) {
+        sendJson(res, 404, {
+          error: {
+            code: "PROJECT_SESSION_NOT_FOUND",
+            message: "project session not found",
+            details: {},
+          },
+        })
+        return
+      }
+      if (
+        !pathAllowed(session.projectPath, runtime.config.allowedRoots) ||
+        !pathAllowed(session.cwdPath, runtime.config.allowedRoots)
+      ) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "project session path outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+      sendJson(res, 200, session)
+      return
+    }
+    if (req.method === "PUT") {
+      const body = (await readJson(req)) as {
+        title?: string
+        archived?: boolean
+        payload?: unknown
+      }
+      const existing = runtime.db.getProjectSession(sessionId)
+      if (!existing) {
+        sendJson(res, 404, {
+          error: {
+            code: "PROJECT_SESSION_NOT_FOUND",
+            message: "project session not found",
+            details: {},
+          },
+        })
+        return
+      }
+      if (
+        !pathAllowed(existing.projectPath, runtime.config.allowedRoots) ||
+        !pathAllowed(existing.cwdPath, runtime.config.allowedRoots)
+      ) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "project session path outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+      try {
+        let updated = existing
+        if (typeof body.title === "string") {
+          updated = runtime.db.renameProjectSession(sessionId, body.title)
+        }
+        if (typeof body.archived === "boolean") {
+          updated = runtime.db.archiveProjectSession(sessionId, body.archived)
+        }
+        if (body.payload !== undefined) {
+          const payload = tryDecodeProjectSessionPayload(body.payload)
+          if (!payload) {
+            sendJson(res, 400, {
+              error: {
+                code: "INVALID_PROJECT_SESSION",
+                message: "project session payload invalid",
+                details: {},
+              },
+            })
+            return
+          }
+          updated = runtime.db.updateProjectSessionPayload(sessionId, payload)
+        } else if (body.title === undefined && body.archived === undefined) {
+          updated = runtime.db.touchProjectSession(sessionId)
+        }
+        sendJson(res, 200, updated)
+      } catch (error) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_PROJECT_SESSION",
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          },
+        })
+      }
+      return
+    }
+    if (req.method === "DELETE") {
+      const existing = runtime.db.getProjectSession(sessionId)
+      if (!existing) {
+        sendJson(res, 404, {
+          error: {
+            code: "PROJECT_SESSION_NOT_FOUND",
+            message: "project session not found",
+            details: {},
+          },
+        })
+        return
+      }
+      if (
+        !pathAllowed(existing.projectPath, runtime.config.allowedRoots) ||
+        !pathAllowed(existing.cwdPath, runtime.config.allowedRoots)
+      ) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "project session path outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+      const removeWorktree = url.searchParams.get("removeWorktree") === "1"
+      if (removeWorktree && existing.worktreePath) {
+        try {
+          await gitWorktreeRemove(
+            pathToFileUri(existing.projectPath),
+            existing.worktreePath,
+            { force: true },
+          )
+        } catch (error) {
+          sendJson(res, 400, {
+            error: {
+              code: "WORKTREE_REMOVE_FAILED",
+              message: error instanceof Error ? error.message : String(error),
+              details: {},
+            },
+          })
+          return
+        }
+      }
+      runtime.db.deleteProjectSession(sessionId)
+      sendJson(res, 200, { ok: true })
       return
     }
   }

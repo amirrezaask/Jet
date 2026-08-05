@@ -53,6 +53,7 @@ export {
 export {
   SessionHeaderChromeProvider,
   SessionHeaderChromePortal,
+  sessionHeaderContextRef,
 } from "./session-header-chrome.js"
 export {
   NewSessionButton,

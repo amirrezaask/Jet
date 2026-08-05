@@ -4,9 +4,14 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import {
   EMPTY_SESSION_ROSTER,
+  emptyProjectSessionPayload,
   emptyWorkspaceSession,
+  tryDecodeProjectSessionPayload,
   tryDecodeSessionRoster,
   tryDecodeWorkspaceSession,
+  type ProjectSession,
+  type ProjectSessionPayload,
+  type ProjectSessionSummary,
   type SessionRoster,
   type SessionRosterEntry,
   type SessionRosterMode,
@@ -100,6 +105,7 @@ export class ProjectDatabase {
     `)
     this.ensureSessionRosterSchema()
     this.ensureWorkspaceSessionSchema()
+    this.ensureProjectSessionSchema()
   }
 
   private ensureWorkspaceSessionSchema(): void {
@@ -112,6 +118,87 @@ export class ProjectDatabase {
         PRIMARY KEY (machine, root_path)
       );
     `)
+  }
+
+  private ensureProjectSessionSchema(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS project_sessions(
+        id TEXT PRIMARY KEY,
+        machine TEXT NOT NULL,
+        project_path TEXT NOT NULL,
+        cwd_path TEXT NOT NULL,
+        title TEXT NOT NULL,
+        worktree_branch TEXT,
+        worktree_path TEXT,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        archived_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS project_sessions_by_project
+        ON project_sessions (machine, project_path, updated_at DESC);
+    `)
+    this.migrateWorkspaceSessionsToProjectSessions()
+  }
+
+  /** One-time: copy legacy workspace_sessions rows into project_sessions. */
+  private migrateWorkspaceSessionsToProjectSessions(): void {
+    const migrated = this.db
+      .prepare("SELECT version FROM schema_migrations WHERE version=8")
+      .get() as { version: number } | undefined
+    if (migrated) return
+
+    const rows = this.db
+      .prepare(
+        "SELECT machine, root_path, payload_json, updated_at FROM workspace_sessions",
+      )
+      .all() as unknown as Array<{
+      machine: string
+      root_path: string
+      payload_json: string
+      updated_at: string
+    }>
+
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO project_sessions(
+         id, machine, project_path, cwd_path, title,
+         worktree_branch, worktree_path, payload_json,
+         created_at, updated_at, archived_at
+       ) VALUES(?,?,?,?,?,?,?,?,?,?,NULL)`,
+    )
+
+    for (const row of rows) {
+      let payload = emptyProjectSessionPayload()
+      try {
+        const decoded = tryDecodeWorkspaceSession(JSON.parse(row.payload_json))
+        if (decoded) {
+          payload = {
+            version: 1,
+            layout: decoded.layout,
+            sessions: decoded.sessions,
+            ...(decoded.gitRoots ? { gitRoots: decoded.gitRoots } : {}),
+            ...(decoded.editorFiles ? { editorFiles: decoded.editorFiles } : {}),
+          }
+        }
+      } catch {
+        /* keep empty payload */
+      }
+      const root = this.canonicalizeRootPath(row.root_path)
+      insert.run(
+        `ses-${randomUUID()}`,
+        row.machine,
+        root,
+        root,
+        "Session 1",
+        null,
+        null,
+        JSON.stringify(payload),
+        row.updated_at,
+        row.updated_at,
+      )
+    }
+
+    this.db.prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES(8)").run()
   }
 
   private ensureSessionRosterSchema(): void {
@@ -455,17 +542,15 @@ export class ProjectDatabase {
     const machine = normalized.machine.trim()
     if (!machine) throw new Error("invalid workspace session machine")
 
-    // Never persist live PTY ids — host restart invalidates them.
-    const sessions = normalized.sessions.map(leaf => {
-      const { ptyId: _ptyId, ...rest } = leaf
-      return {
-        ...rest,
-        cwdRootUri: this.canonicalizeCwdUri(leaf.cwdRootUri),
-        ...(leaf.liveCwdUri
-          ? { liveCwdUri: this.canonicalizeCwdUri(leaf.liveCwdUri) }
-          : {}),
-      }
-    })
+    // Keep ptyId so a same-host reload can reattach. After a host restart the
+    // client attach fails and TerminalPanel spawns a fresh shell.
+    const sessions = normalized.sessions.map(leaf => ({
+      ...leaf,
+      cwdRootUri: this.canonicalizeCwdUri(leaf.cwdRootUri),
+      ...(leaf.liveCwdUri
+        ? { liveCwdUri: this.canonicalizeCwdUri(leaf.liveCwdUri) }
+        : {}),
+    }))
 
     const payload: WorkspaceSession = {
       version: 1,
@@ -486,6 +571,247 @@ export class ProjectDatabase {
       )
       .run(machine, root, JSON.stringify(payload), now)
     return payload
+  }
+
+  listProjectSessions(
+    machine: string,
+    projectPath: string,
+  ): ProjectSessionSummary[] {
+    const root = this.canonicalizeRootPath(projectPath)
+    const rows = this.db
+      .prepare(
+        `SELECT id, machine, project_path, cwd_path, title,
+                worktree_branch, worktree_path, created_at, updated_at, archived_at
+           FROM project_sessions
+          WHERE machine=? AND project_path=?
+          ORDER BY updated_at DESC`,
+      )
+      .all(machine, root) as unknown as Array<{
+      id: string
+      machine: string
+      project_path: string
+      cwd_path: string
+      title: string
+      worktree_branch: string | null
+      worktree_path: string | null
+      created_at: string
+      updated_at: string
+      archived_at: string | null
+    }>
+    return rows.map(row => this.mapProjectSessionSummary(row))
+  }
+
+  getProjectSession(id: string): ProjectSession | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, machine, project_path, cwd_path, title,
+                worktree_branch, worktree_path, payload_json,
+                created_at, updated_at, archived_at
+           FROM project_sessions WHERE id=?`,
+      )
+      .get(id) as
+      | {
+          id: string
+          machine: string
+          project_path: string
+          cwd_path: string
+          title: string
+          worktree_branch: string | null
+          worktree_path: string | null
+          payload_json: string
+          created_at: string
+          updated_at: string
+          archived_at: string | null
+        }
+      | undefined
+    if (!row) return null
+    return this.mapProjectSession(row)
+  }
+
+  createProjectSession(input: {
+    machine: string
+    projectPath: string
+    cwdPath: string
+    title: string
+    worktreeBranch?: string | null
+    worktreePath?: string | null
+    payload?: ProjectSessionPayload
+  }): ProjectSession {
+    const machine = input.machine.trim()
+    if (!machine) throw new Error("invalid project session machine")
+    const projectPath = this.canonicalizeRootPath(input.projectPath)
+    const cwdPath = this.canonicalizeRootPath(input.cwdPath)
+    const title = input.title.trim() || "Session"
+    const payload = tryDecodeProjectSessionPayload(
+      input.payload ?? emptyProjectSessionPayload(),
+    )
+    if (!payload) throw new Error("invalid project session payload")
+    const id = `ses-${randomUUID()}`
+    const now = new Date().toISOString()
+    this.db
+      .prepare(
+        `INSERT INTO project_sessions(
+           id, machine, project_path, cwd_path, title,
+           worktree_branch, worktree_path, payload_json,
+           created_at, updated_at, archived_at
+         ) VALUES(?,?,?,?,?,?,?,?,?,?,NULL)`,
+      )
+      .run(
+        id,
+        machine,
+        projectPath,
+        cwdPath,
+        title,
+        input.worktreeBranch ?? null,
+        input.worktreePath ?? null,
+        JSON.stringify(this.normalizePayload(payload)),
+        now,
+        now,
+      )
+    const created = this.getProjectSession(id)
+    if (!created) throw new Error("failed to create project session")
+    return created
+  }
+
+  updateProjectSessionPayload(
+    id: string,
+    payload: ProjectSessionPayload,
+  ): ProjectSession {
+    const normalized = tryDecodeProjectSessionPayload(payload)
+    if (!normalized) throw new Error("invalid project session payload")
+    const existing = this.getProjectSession(id)
+    if (!existing) throw new Error("project session not found")
+    const now = new Date().toISOString()
+    this.db
+      .prepare(
+        `UPDATE project_sessions
+            SET payload_json=?, updated_at=?
+          WHERE id=?`,
+      )
+      .run(JSON.stringify(this.normalizePayload(normalized)), now, id)
+    const updated = this.getProjectSession(id)
+    if (!updated) throw new Error("project session not found")
+    return updated
+  }
+
+  renameProjectSession(id: string, title: string): ProjectSession {
+    const trimmed = title.trim()
+    if (!trimmed) throw new Error("invalid project session title")
+    const existing = this.getProjectSession(id)
+    if (!existing) throw new Error("project session not found")
+    const now = new Date().toISOString()
+    this.db
+      .prepare(
+        `UPDATE project_sessions SET title=?, updated_at=? WHERE id=?`,
+      )
+      .run(trimmed, now, id)
+    const updated = this.getProjectSession(id)
+    if (!updated) throw new Error("project session not found")
+    return updated
+  }
+
+  touchProjectSession(id: string): ProjectSession {
+    const existing = this.getProjectSession(id)
+    if (!existing) throw new Error("project session not found")
+    const now = new Date().toISOString()
+    this.db
+      .prepare(`UPDATE project_sessions SET updated_at=? WHERE id=?`)
+      .run(now, id)
+    const updated = this.getProjectSession(id)
+    if (!updated) throw new Error("project session not found")
+    return updated
+  }
+
+  archiveProjectSession(id: string, archived = true): ProjectSession {
+    const existing = this.getProjectSession(id)
+    if (!existing) throw new Error("project session not found")
+    const now = new Date().toISOString()
+    this.db
+      .prepare(
+        `UPDATE project_sessions
+            SET archived_at=?, updated_at=?
+          WHERE id=?`,
+      )
+      .run(archived ? now : null, now, id)
+    const updated = this.getProjectSession(id)
+    if (!updated) throw new Error("project session not found")
+    return updated
+  }
+
+  deleteProjectSession(id: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM project_sessions WHERE id=?")
+      .run(id)
+    return Number(result.changes ?? 0) > 0
+  }
+
+  private normalizePayload(payload: ProjectSessionPayload): ProjectSessionPayload {
+    const sessions = payload.sessions.map(leaf => ({
+      ...leaf,
+      cwdRootUri: this.canonicalizeCwdUri(leaf.cwdRootUri),
+      ...(leaf.liveCwdUri
+        ? { liveCwdUri: this.canonicalizeCwdUri(leaf.liveCwdUri) }
+        : {}),
+    }))
+    return {
+      version: 1,
+      layout: payload.layout,
+      sessions,
+      ...(payload.gitRoots ? { gitRoots: payload.gitRoots } : {}),
+      ...(payload.editorFiles ? { editorFiles: payload.editorFiles } : {}),
+    }
+  }
+
+  private mapProjectSessionSummary(row: {
+    id: string
+    machine: string
+    project_path: string
+    cwd_path: string
+    title: string
+    worktree_branch: string | null
+    worktree_path: string | null
+    created_at: string
+    updated_at: string
+    archived_at: string | null
+  }): ProjectSessionSummary {
+    return {
+      id: row.id,
+      machine: row.machine,
+      projectPath: row.project_path,
+      cwdPath: row.cwd_path,
+      title: row.title,
+      worktreeBranch: row.worktree_branch,
+      worktreePath: row.worktree_path,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      archivedAt: row.archived_at,
+    }
+  }
+
+  private mapProjectSession(row: {
+    id: string
+    machine: string
+    project_path: string
+    cwd_path: string
+    title: string
+    worktree_branch: string | null
+    worktree_path: string | null
+    payload_json: string
+    created_at: string
+    updated_at: string
+    archived_at: string | null
+  }): ProjectSession {
+    let payload = emptyProjectSessionPayload()
+    try {
+      const decoded = tryDecodeProjectSessionPayload(JSON.parse(row.payload_json))
+      if (decoded) payload = decoded
+    } catch {
+      /* corrupt payload */
+    }
+    return {
+      ...this.mapProjectSessionSummary(row),
+      payload,
+    }
   }
 
   close(): void {

@@ -32,3 +32,34 @@ export type GitCommit = {
   authoredAt: number
   subject: string
 }
+
+export type GitNumstatEntry = {
+  path: string
+  /** null when the file is binary (git prints `-` for added/deleted). */
+  added: number | null
+  deleted: number | null
+}
+
+export type GitCommitFile = {
+  path: string
+  status: GitFileStatus
+  originalPath?: string
+}
+
+export type GitCommitDetail = {
+  hash: string
+  subject: string
+  body: string
+  files: GitCommitFile[]
+}
+
+/** One entry from `git worktree list --porcelain`. */
+export type GitWorktree = {
+  path: string
+  head: string | null
+  branch: string | null
+  bare: boolean
+  detached: boolean
+  locked: boolean
+  prunable: boolean
+}

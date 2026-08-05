@@ -15,8 +15,14 @@ export type MonacoDiffEditorHostProps = {
   theme: YaadeTheme
   readOnly?: boolean
   renderSideBySide?: boolean
+  /** Editor font size in px (default 13). Line height is derived from it. */
+  fontSize?: number
   onReady?: (editor: monaco.editor.IStandaloneDiffEditor) => void
   className?: string
+}
+
+function lineHeightForFontSize(fontSize: number): number {
+  return Math.round(fontSize * 1.6)
 }
 
 function largeFileOptions(large: boolean): monaco.editor.IDiffEditorConstructionOptions {
@@ -37,6 +43,7 @@ export function MonacoDiffEditorHost({
   theme,
   readOnly = true,
   renderSideBySide = true,
+  fontSize = 13,
   onReady,
   className,
 }: MonacoDiffEditorHostProps) {
@@ -62,8 +69,8 @@ export function MonacoDiffEditorHost({
       scrollBeyondLastLine: false,
       minimap: { enabled: false },
       fontFamily: "var(--font-mono, 'Commit Mono', ui-monospace, monospace)",
-      fontSize: 14,
-      lineHeight: 22,
+      fontSize,
+      lineHeight: lineHeightForFontSize(fontSize),
       ...largeFileOptions(large),
     })
 
@@ -106,8 +113,13 @@ export function MonacoDiffEditorHost({
     monacoModels.updateContent(modifiedUri, modifiedContent, { preserveCursor: true })
     monacoModels.setLanguage(originalUri, languageId)
     monacoModels.setLanguage(modifiedUri, languageId)
-    editor.updateOptions({ readOnly, renderSideBySide })
-  }, [originalUri, modifiedUri, originalContent, modifiedContent, languageId, readOnly, renderSideBySide])
+    editor.updateOptions({
+      readOnly,
+      renderSideBySide,
+      fontSize,
+      lineHeight: lineHeightForFontSize(fontSize),
+    })
+  }, [originalUri, modifiedUri, originalContent, modifiedContent, languageId, readOnly, renderSideBySide, fontSize])
 
   return (
     <div

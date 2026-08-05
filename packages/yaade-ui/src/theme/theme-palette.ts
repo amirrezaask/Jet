@@ -9,6 +9,7 @@ export type ColorScheme = "dark" | "light"
 
 type ThemeFamily =
   | "Default"
+  | "Catppuccin"
   | "Ayu"
   | "Everforest"
   | "Gruvbox"

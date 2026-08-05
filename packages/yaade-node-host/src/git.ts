@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process"
-import type { GitStatusEntry, GitFileStatus } from "@yaade/shared"
+import path from "node:path"
+import type {
+  GitStatusEntry,
+  GitFileStatus,
+  GitNumstatEntry,
+  GitCommitFile,
+  GitCommitDetail,
+  GitWorktree,
+} from "@yaade/shared"
 import { uriToPath } from "./paths.js"
 
 /** Cap git stdout/stderr so huge diffs never build unbounded strings. */
@@ -57,6 +65,55 @@ function runGit(cwd: string, args: string[]): Promise<string> {
       if (overflowed) return
       reject(err)
     })
+  })
+}
+
+/** Run git feeding `input` on stdin (used by `git apply` for hunk staging). */
+function runGitWithStdin(cwd: string, args: string[], input: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("git", args, { cwd, stdio: ["pipe", "pipe", "pipe"] })
+    let stdout = ""
+    let stderr = ""
+    let overflowed = false
+
+    const stopOverflow = (side: "stdout" | "stderr"): void => {
+      if (overflowed) return
+      overflowed = true
+      proc.kill()
+      reject(new Error(`git ${side} exceeded ${side === "stdout" ? MAX_GIT_STDOUT_BYTES : MAX_GIT_STDERR_BYTES} bytes`))
+    }
+
+    proc.stdout.on("data", (d: Buffer) => {
+      if (overflowed) return
+      const merged = appendBounded(stdout, d, MAX_GIT_STDOUT_BYTES)
+      if (merged === null) {
+        stopOverflow("stdout")
+        return
+      }
+      stdout = merged
+    })
+    proc.stderr.on("data", (d: Buffer) => {
+      if (overflowed) return
+      const merged = appendBounded(stderr, d, MAX_GIT_STDERR_BYTES)
+      if (merged === null) {
+        stopOverflow("stderr")
+        return
+      }
+      stderr = merged
+    })
+    proc.on("close", code => {
+      if (overflowed) return
+      if (code === 0) resolve(stdout)
+      else reject(new Error(stderr || `git exit ${code}`))
+    })
+    proc.on("error", err => {
+      if (overflowed) return
+      reject(err)
+    })
+    proc.stdin.on("error", () => {
+      /* EPIPE if git rejects early; the close handler reports the real error. */
+    })
+    proc.stdin.end(input)
   })
 }
 
@@ -276,4 +333,221 @@ export async function gitHistory(rootUri: string, limit = 50): Promise<GitHistor
     commits.push({ hash, shortHash, author, authoredAt, subject })
   }
   return commits
+}
+
+/** Resolve a numstat rename path (`old => new`, `dir/{old => new}/f`) to the new path. */
+function numstatPath(raw: string): string {
+  if (!raw.includes("=>")) return raw
+  const brace = raw.match(/^(.*)\{(.*) => (.*)\}(.*)$/)
+  if (brace) {
+    return `${brace[1] ?? ""}${brace[3] ?? ""}${brace[4] ?? ""}`.replace(/\/{2,}/g, "/")
+  }
+  const parts = raw.split(" => ")
+  return parts[parts.length - 1] ?? raw
+}
+
+function sumNullable(a: number | null, b: number | null): number | null {
+  if (a === null || b === null) return null
+  return a + b
+}
+
+/** Per-path `+added/-deleted` line counts across the worktree and the index. */
+export async function gitNumstat(rootUri: string): Promise<GitNumstatEntry[]> {
+  const cwd = uriToPath(rootUri)
+  const [unstaged, staged] = await Promise.all([
+    runGit(cwd, ["diff", "--numstat"]).catch(() => ""),
+    runGit(cwd, ["diff", "--cached", "--numstat"]).catch(() => ""),
+  ])
+  const map = new Map<string, GitNumstatEntry>()
+  const merge = (out: string): void => {
+    for (const line of out.split("\n")) {
+      if (!line.trim()) continue
+      const parts = line.split("\t")
+      if (parts.length < 3) continue
+      const added = parts[0] === "-" ? null : Number.parseInt(parts[0] ?? "0", 10) || 0
+      const deleted = parts[1] === "-" ? null : Number.parseInt(parts[1] ?? "0", 10) || 0
+      const path = numstatPath(parts.slice(2).join("\t"))
+      const existing = map.get(path)
+      if (existing) {
+        existing.added = sumNullable(existing.added, added)
+        existing.deleted = sumNullable(existing.deleted, deleted)
+      } else {
+        map.set(path, { path, added, deleted })
+      }
+    }
+  }
+  merge(unstaged)
+  merge(staged)
+  return [...map.values()]
+}
+
+function assertHash(hash: string): string {
+  if (!/^[0-9a-fA-F]{4,64}$/.test(hash)) throw new Error(`invalid commit hash: ${hash}`)
+  return hash
+}
+
+function commitFileStatus(code: string): GitFileStatus {
+  const c = code[0] ?? ""
+  if (c === "A") return "added"
+  if (c === "D") return "deleted"
+  if (c === "R") return "renamed"
+  if (c === "C") return "renamed"
+  if (c === "U") return "conflict"
+  return "modified"
+}
+
+/** Subject/body plus the file list touched by a single commit. */
+export async function gitCommitFiles(rootUri: string, hash: string): Promise<GitCommitDetail> {
+  const cwd = uriToPath(rootUri)
+  const safe = assertHash(hash)
+  const [message, nameStatus] = await Promise.all([
+    runGit(cwd, ["show", "--no-patch", "--format=%s%x1f%b", safe]),
+    runGit(cwd, ["show", "--name-status", "--format=", "-M", safe]),
+  ])
+  const sep = message.indexOf("\u001f")
+  const subject = (sep >= 0 ? message.slice(0, sep) : message).trim()
+  const body = (sep >= 0 ? message.slice(sep + 1) : "").trim()
+  const files: GitCommitFile[] = []
+  for (const line of nameStatus.split("\n")) {
+    if (!line.trim()) continue
+    const parts = line.split("\t")
+    const code = parts[0] ?? ""
+    if (!code) continue
+    const status = commitFileStatus(code)
+    if (code.startsWith("R") || code.startsWith("C")) {
+      const originalPath = parts[1]
+      const path = parts[2] ?? parts[1] ?? ""
+      if (path) files.push({ path, status, originalPath })
+    } else {
+      const path = parts[1] ?? ""
+      if (path) files.push({ path, status })
+    }
+  }
+  return { hash: safe, subject, body, files }
+}
+
+/** Apply a unified-diff patch to the index (hunk staging). */
+export async function gitApplyPatch(
+  rootUri: string,
+  patch: string,
+  opts?: { reverse?: boolean },
+): Promise<void> {
+  if (!patch.trim()) return
+  const args = ["apply", "--cached", "--whitespace=nowarn", "--recount"]
+  if (opts?.reverse) args.push("--reverse")
+  await runGitWithStdin(uriToPath(rootUri), args, patch)
+}
+
+function parseWorktreePorcelain(out: string): GitWorktree[] {
+  const trees: GitWorktree[] = []
+  let current: GitWorktree | null = null
+  const flush = (): void => {
+    if (current) trees.push(current)
+    current = null
+  }
+  for (const line of out.split("\n")) {
+    const trimmed = line.trimEnd()
+    if (!trimmed) {
+      flush()
+      continue
+    }
+    if (trimmed.startsWith("worktree ")) {
+      flush()
+      current = {
+        path: trimmed.slice("worktree ".length),
+        head: null,
+        branch: null,
+        bare: false,
+        detached: false,
+        locked: false,
+        prunable: false,
+      }
+      continue
+    }
+    if (!current) continue
+    if (trimmed.startsWith("HEAD ")) {
+      current.head = trimmed.slice("HEAD ".length) || null
+    } else if (trimmed.startsWith("branch ")) {
+      const ref = trimmed.slice("branch ".length)
+      current.branch = ref.startsWith("refs/heads/")
+        ? ref.slice("refs/heads/".length)
+        : ref
+    } else if (trimmed === "bare") {
+      current.bare = true
+    } else if (trimmed === "detached") {
+      current.detached = true
+    } else if (trimmed.startsWith("locked")) {
+      current.locked = true
+    } else if (trimmed.startsWith("prunable")) {
+      current.prunable = true
+    }
+  }
+  flush()
+  return trees
+}
+
+export async function gitWorktreeList(rootUri: string): Promise<GitWorktree[]> {
+  const out = await runGit(uriToPath(rootUri), ["worktree", "list", "--porcelain"])
+  return parseWorktreePorcelain(out)
+}
+
+export async function gitWorktreeAdd(
+  rootUri: string,
+  worktreePath: string,
+  opts: { branch: string; baseRef?: string; createBranch?: boolean },
+): Promise<GitWorktree> {
+  const cwd = uriToPath(rootUri)
+  const args = ["worktree", "add"]
+  if (opts.createBranch !== false) {
+    args.push("-b", opts.branch, worktreePath)
+    if (opts.baseRef) args.push(opts.baseRef)
+  } else {
+    args.push(worktreePath, opts.branch)
+  }
+  await runGit(cwd, args)
+  const trees = await gitWorktreeList(rootUri)
+  const match = trees.find(t => path.resolve(t.path) === path.resolve(worktreePath))
+  if (match) return match
+  return {
+    path: worktreePath,
+    head: null,
+    branch: opts.branch,
+    bare: false,
+    detached: false,
+    locked: false,
+    prunable: false,
+  }
+}
+
+export async function gitWorktreeRemove(
+  rootUri: string,
+  worktreePath: string,
+  opts?: { force?: boolean },
+): Promise<void> {
+  const args = ["worktree", "remove"]
+  if (opts?.force) args.push("--force")
+  args.push(worktreePath)
+  await runGit(uriToPath(rootUri), args)
+}
+
+export async function gitDefaultBranch(rootUri: string): Promise<string | null> {
+  const cwd = uriToPath(rootUri)
+  try {
+    const out = await runGit(cwd, ["symbolic-ref", "refs/remotes/origin/HEAD"])
+    const ref = out.trim()
+    if (ref.startsWith("refs/remotes/origin/")) {
+      return ref.slice("refs/remotes/origin/".length) || null
+    }
+  } catch {
+    /* fall through */
+  }
+  for (const candidate of ["main", "master"]) {
+    try {
+      await runGit(cwd, ["rev-parse", "--verify", `refs/heads/${candidate}`])
+      return candidate
+    } catch {
+      /* try next */
+    }
+  }
+  return gitBranch(rootUri)
 }

@@ -168,6 +168,16 @@ export function createYaadeApi(
       pull: rootUri => transport.invoke("git:pull", rootUri),
       push: rootUri => transport.invoke("git:push", rootUri),
       history: (rootUri, limit) => transport.invoke("git:history", rootUri, limit),
+      numstat: rootUri => transport.invoke("git:numstat", rootUri),
+      commitFiles: (rootUri, hash) => transport.invoke("git:commitFiles", rootUri, hash),
+      applyPatch: (rootUri, patch, opts) =>
+        transport.invoke("git:applyPatch", rootUri, patch, opts),
+      worktreeList: rootUri => transport.invoke("git:worktreeList", rootUri),
+      worktreeAdd: (rootUri, worktreePath, opts) =>
+        transport.invoke("git:worktreeAdd", rootUri, worktreePath, opts),
+      worktreeRemove: (rootUri, worktreePath, opts) =>
+        transport.invoke("git:worktreeRemove", rootUri, worktreePath, opts),
+      defaultBranch: rootUri => transport.invoke("git:defaultBranch", rootUri),
     },
     shell: {
       openInApp: (appId, rootUri) => transport.invoke("shell:openInApp", appId, rootUri),

@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { expect, test } from "@playwright/test"
 import { expectSelectorVisible } from "../shell/assert.js"
-import { execCommand, launchJet, waitForMux } from "./_launch.js"
+import { execCommand, launchJet, waitForMux, waitForTerminalText } from "./_launch.js"
 
 test.describe("browser URL workspace sessions", () => {
   test("pathname under home opens that project with no mux tab strip", async () => {
@@ -62,6 +62,16 @@ test.describe("browser URL workspace sessions", () => {
         recursive: true,
       })
       await waitForMux(page)
+      // Capture the persistence write triggered by the split so we can reload
+      // only once the server has stored the new layout.
+      const layoutSaved = page
+        .waitForResponse(
+          r =>
+            r.url().includes("/api/v1/workspace-session") &&
+            r.request().method() === "PUT",
+          { timeout: 15_000 },
+        )
+        .catch(() => null)
       await execCommand(page, "mux.splitRight")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
@@ -72,7 +82,7 @@ test.describe("browser URL workspace sessions", () => {
       await page.evaluate(() => {
         window.dispatchEvent(new Event("pagehide"))
       })
-      await page.waitForTimeout(300)
+      await layoutSaved
       await page.reload({ waitUntil: "domcontentloaded" })
       await waitForMux(page)
 
@@ -122,7 +132,9 @@ test.describe("browser URL workspace sessions", () => {
         await terminal.write(id, "cd /\n")
       }, ptyId!)
 
-      await page.waitForTimeout(400)
+      // Wait until the PTY has actually processed the cd (its echo shows up)
+      // before asserting the URL was unaffected, instead of a blind sleep.
+      await waitForTerminalText(page, "cd /")
       await expect
         .poll(async () => page.evaluate(() => location.pathname))
         .toBe("/dev/consultation")

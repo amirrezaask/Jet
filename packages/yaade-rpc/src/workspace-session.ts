@@ -19,6 +19,15 @@ export const WorkspaceSessionLayout = Schema.Struct({
 })
 export type WorkspaceSessionLayout = Schema.Schema.Type<typeof WorkspaceSessionLayout>
 
+/** One Monaco editor pane persisted for a workspace session (keyed by tab id). */
+export const WorkspaceSessionEditorFile = Schema.Struct({
+  uri: Schema.String,
+  line: Schema.optional(Schema.Number),
+})
+export type WorkspaceSessionEditorFile = Schema.Schema.Type<
+  typeof WorkspaceSessionEditorFile
+>
+
 export const WorkspaceSession = Schema.Struct({
   version: Schema.Literal(1),
   machine: Schema.String,
@@ -27,6 +36,9 @@ export const WorkspaceSession = Schema.Struct({
   sessions: Schema.Array(WorkspaceSessionLeaf),
   gitRoots: Schema.optional(
     Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
+  editorFiles: Schema.optional(
+    Schema.Record({ key: Schema.String, value: WorkspaceSessionEditorFile }),
   ),
 })
 export type WorkspaceSession = Schema.Schema.Type<typeof WorkspaceSession>
@@ -114,6 +126,23 @@ export function tryDecodeWorkspaceSession(raw: unknown): WorkspaceSession | null
       if (typeof v === "string" && v.length > 0) gitRoots[k] = v
     }
   }
+  let editorFiles: Record<string, WorkspaceSessionEditorFile> | undefined
+  if (body.editorFiles && typeof body.editorFiles === "object") {
+    editorFiles = {}
+    for (const [k, v] of Object.entries(
+      body.editorFiles as Record<string, unknown>,
+    )) {
+      if (!v || typeof v !== "object") continue
+      const entry = v as Record<string, unknown>
+      const uri = asNonEmptyString(entry.uri)
+      if (!uri) continue
+      const line =
+        typeof entry.line === "number" && Number.isFinite(entry.line)
+          ? entry.line
+          : undefined
+      editorFiles[k] = { uri, ...(line != null ? { line } : {}) }
+    }
+  }
   return {
     version: 1,
     machine,
@@ -121,6 +150,9 @@ export function tryDecodeWorkspaceSession(raw: unknown): WorkspaceSession | null
     layout,
     sessions,
     ...(gitRoots && Object.keys(gitRoots).length > 0 ? { gitRoots } : {}),
+    ...(editorFiles && Object.keys(editorFiles).length > 0
+      ? { editorFiles }
+      : {}),
   }
 }
 

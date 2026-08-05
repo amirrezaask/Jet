@@ -330,11 +330,102 @@ describe("ProjectDatabase session roster", () => {
     })
     assert.equal(saved.machine, "test-host")
     assert.equal(saved.sessions.length, 1)
-    assert.equal(saved.sessions[0]?.ptyId, undefined)
+    assert.equal(saved.sessions[0]?.ptyId, "term-stale")
     assert.deepEqual(db.getWorkspaceSession("test-host", root), saved)
     assert.equal(
       db.getWorkspaceSession("other-host", root).sessions.length,
       0,
     )
+  })
+
+  it("round-trips project sessions", () => {
+    const root = path.join(dir, "project-sessions")
+    fs.mkdirSync(root, { recursive: true })
+
+    const created = db.createProjectSession({
+      machine: "test-host",
+      projectPath: root,
+      cwdPath: root,
+      title: "Feature work",
+      worktreeBranch: "feat/x",
+      worktreePath: path.join(root, ".worktrees", "feat-x"),
+    })
+    assert.equal(created.title, "Feature work")
+    assert.equal(created.worktreeBranch, "feat/x")
+
+    const listed = db.listProjectSessions("test-host", root)
+    assert.ok(listed.some(s => s.id === created.id))
+
+    const updated = db.updateProjectSessionPayload(created.id, {
+      version: 1,
+      layout: {
+        tree: { kind: "leaf", id: 2 },
+        focusedPaneId: 2,
+        zoomedPaneId: null,
+      },
+      sessions: [
+        {
+          ptyTabId: "yaade:terminal:session-2",
+          cwdRootUri: `file://${root}`,
+          label: "nvim",
+          launchCommand: "nvim",
+        },
+      ],
+    })
+    assert.equal(updated.payload.sessions.length, 1)
+    assert.equal(updated.payload.sessions[0]?.launchCommand, "nvim")
+
+    const renamed = db.renameProjectSession(created.id, "Renamed")
+    assert.equal(renamed.title, "Renamed")
+    assert.equal(db.deleteProjectSession(created.id), true)
+    assert.equal(db.getProjectSession(created.id), null)
+  })
+
+  it("migrates workspace_sessions into project_sessions once", () => {
+    const root = path.join(dir, "migrate-root")
+    fs.mkdirSync(root, { recursive: true })
+    const migrateDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-migrate-"))
+    const migrateDbPath = path.join(migrateDir, "jet.sqlite3")
+    fs.mkdirSync(path.dirname(migrateDbPath), { recursive: true })
+    const raw = new DatabaseSync(migrateDbPath)
+    raw.exec(`
+      CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY);
+      CREATE TABLE workspace_sessions(
+        machine TEXT NOT NULL,
+        root_path TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (machine, root_path)
+      );
+    `)
+    const payload = JSON.stringify({
+      version: 1,
+      machine: "mig-host",
+      rootPath: root,
+      layout: { tree: { root: null }, focusedPaneId: null, zoomedPaneId: null },
+      sessions: [
+        {
+          ptyTabId: "yaade:terminal:session-legacy",
+          cwdRootUri: `file://${root}`,
+          label: "Shell",
+        },
+      ],
+    })
+    raw
+      .prepare(
+        `INSERT INTO workspace_sessions(machine, root_path, payload_json, updated_at)
+         VALUES(?,?,?,?)`,
+      )
+      .run("mig-host", root, payload, new Date().toISOString())
+    raw.close()
+
+    const migratedDb = new ProjectDatabase(migrateDbPath)
+    const rows = migratedDb.listProjectSessions("mig-host", root)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0]?.title, "Session 1")
+    const full = migratedDb.getProjectSession(rows[0]!.id)
+    assert.equal(full?.payload.sessions[0]?.ptyTabId, "yaade:terminal:session-legacy")
+    migratedDb.close()
+    fs.rmSync(migrateDir, { recursive: true, force: true })
   })
 })

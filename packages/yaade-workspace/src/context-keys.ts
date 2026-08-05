@@ -170,7 +170,12 @@ export type ChordState = {
   expiresAt: number
 }
 
-export const CHORD_TIMEOUT_MS = 1000
+/**
+ * Long enough for a prefix key to double as a menu (the which-key panel is
+ * visible for this window), short enough that a stray prefix press does not
+ * leave the shell swallowing input.
+ */
+export const CHORD_TIMEOUT_MS = 2500
 
 export function createChordState(): ChordState {
   return { prefix: null, expiresAt: 0 }

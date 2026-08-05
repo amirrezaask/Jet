@@ -31,6 +31,10 @@ export type JetAgentState = {
   sessionMode: "agent" | "terminal" | "editor" | "git" | "todos" | null
   /** Always false — in-app native agent chat removed; CLI PTY only. */
   agentChatEnabled: boolean
+  /** Current SPA route: project landing vs session workspace. */
+  route: "project" | "session"
+  sessionId: string | null
+  sessionCwd: string | null
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -84,6 +88,17 @@ export type YaadeAgentAPI = {
     sessionId?: string
   }): Promise<void>
   getNotificationCounts?(): Promise<import("@yaade/shared").NotificationCounts>
+  /** Create a project session (E2E). */
+  createProjectSession?(input?: {
+    title?: string
+    worktree?: { branch: string; baseRef?: string }
+  }): Promise<{ id: string }>
+  /** List project sessions for the current project (E2E). */
+  listProjectSessions?(): Promise<Array<{ id: string; title: string }>>
+  /** Open a project session by id (E2E). */
+  openProjectSession?(sessionId: string): Promise<void>
+  /** Return to the project page (E2E). */
+  backToProject?(): Promise<void>
 }
 
 export type AgentBridgeContext = {
@@ -110,6 +125,9 @@ export type AgentBridgeContext = {
   sessionMode?: "agent" | "terminal" | "editor" | "git" | "todos" | null
   sessionLayout?: "sidebar"
   agentChatEnabled?: boolean
+  route?: "project" | "session"
+  sessionId?: string | null
+  sessionCwd?: string | null
 }
 
 function toWorkspaceFileUri(workspacePath: string, relativeOrUri: string): string {
@@ -167,13 +185,16 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
         sessionLayout: "sidebar",
         sessionMode: current.sessionMode ?? null,
         agentChatEnabled: current.agentChatEnabled ?? false,
+        route: current.route ?? "session",
+        sessionId: current.sessionId ?? null,
+        sessionCwd: current.sessionCwd ?? null,
       }
     },
     async waitForReady() {
       if (typeof performance?.mark === "function") {
         performance.mark("yaade:ready:start")
       }
-      const deadline = Date.now() + 10_000
+      const deadline = Date.now() + 30_000
       while (Date.now() < deadline) {
         const current = ctx()
         if (current.layoutReady && current.commands.has("terminal.new")) {

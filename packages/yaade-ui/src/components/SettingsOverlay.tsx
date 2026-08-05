@@ -402,18 +402,37 @@ export function SettingsOverlay({
                         Choose a color palette.
                       </p>
                     </div>
-                    <div className="grid gap-1.5 lg:grid-cols-2">
-                      {themes.map((theme) => (
-                        <ThemeButton
-                          key={theme.id}
-                          theme={theme}
-                          active={settings.themeId === theme.id}
-                          onSelect={() =>
-                            onSettingsChange(
-                              settingPatch(settings, { themeId: theme.id }),
-                            )
-                          }
-                        />
+                    <div className="grid gap-4">
+                      {Array.from(
+                        themes.reduce((map, theme) => {
+                          const family = theme.family ?? "Default"
+                          const list = map.get(family) ?? []
+                          list.push(theme)
+                          map.set(family, list)
+                          return map
+                        }, new Map<string, typeof themes>()),
+                      ).map(([family, familyThemes]) => (
+                        <div key={family} className="grid gap-1.5">
+                          <p className="text-3xs font-bold uppercase tracking-[0.09em] text-muted-foreground">
+                            {family}
+                          </p>
+                          <div className="grid gap-1.5 lg:grid-cols-2">
+                            {familyThemes.map(theme => (
+                              <ThemeButton
+                                key={theme.id}
+                                theme={theme}
+                                active={settings.themeId === theme.id}
+                                onSelect={() =>
+                                  onSettingsChange(
+                                    settingPatch(settings, {
+                                      themeId: theme.id,
+                                    }),
+                                  )
+                                }
+                              />
+                            ))}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>

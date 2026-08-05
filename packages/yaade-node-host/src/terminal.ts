@@ -239,15 +239,42 @@ export class TerminalHost {
   private seqCounter = 0
   private readonly titleCounts = new Map<string, number>()
   private emit: EmitFn = () => {}
+  /** Cap concurrent entries; overridable in tests. */
+  private readonly maxEntries: number
+
+  constructor(maxEntries: number = MAX_TERMINAL_ENTRIES) {
+    this.maxEntries = Math.max(1, Math.trunc(maxEntries))
+  }
 
   setEmit(emit: EmitFn): void {
     this.emit = emit
   }
 
+  /**
+   * Free slots for a new create. Prefers exited shells, then oldest (Map
+   * insertion order) — reload orphans land oldest while live panes stay newest.
+   */
+  private reclaimSlots(needed: number): void {
+    if (needed <= 0 || this.entries.size === 0) return
+    const exited: string[] = []
+    const running: string[] = []
+    for (const [id, entry] of this.entries) {
+      if (entry.status === "exited") exited.push(id)
+      else running.push(id)
+    }
+    const victims = [...exited, ...running].slice(0, needed)
+    for (const id of victims) this.dispose(id)
+  }
+
   create(cwdUri: string, launch: TerminalLaunch | null | undefined, clientId: string): TerminalCreateResult {
-    if (this.entries.size >= MAX_TERMINAL_ENTRIES) {
+    if (this.entries.size >= this.maxEntries) {
+      // Orphans (e.g. pre-reattach reloads) and exited shells fill the cap —
+      // reclaim instead of hard-failing so create always has a slot.
+      this.reclaimSlots(this.entries.size - this.maxEntries + 1)
+    }
+    if (this.entries.size >= this.maxEntries) {
       throw new Error(
-        `too many terminals (max ${MAX_TERMINAL_ENTRIES}); dispose unused sessions first`,
+        `too many terminals (max ${this.maxEntries}); dispose unused sessions first`,
       )
     }
 

@@ -7,7 +7,9 @@ import {
   execCommand,
   launchJet,
   pressMod,
+  pressMuxPrefix,
   waitForMux,
+  waitForTerminalText,
 } from "./_launch.js"
 
 test.describe("mux shell", () => {
@@ -55,6 +57,106 @@ test.describe("mux shell", () => {
       })
       await expectSelectorVisible(page, "[data-yaade-mux-terminal-context-menu]")
       await page.keyboard.press("Escape")
+    } finally {
+      await app.close()
+    }
+  })
+})
+
+test.describe("mux keyboard", () => {
+  // Regression: a global Escape binding (mux unzoom) used to preventDefault +
+  // stopPropagation on a window capture listener, so Escape never reached the
+  // PTY and every TUI — vim, less, fzf — was unusable inside a pane.
+  test("Escape reaches the terminal", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await page.locator("[data-yaade-terminal-panel]").first().click()
+
+      // readline: type a word, then Escape-b (move back one word) and insert a
+      // marker. The marker only lands mid-word if Escape got through.
+      await page.keyboard.type("echo yaadeESC")
+      await page.keyboard.press("Escape")
+      await page.keyboard.press("KeyB")
+      await page.keyboard.type("XX")
+      await page.keyboard.press("Enter")
+
+      await waitForTerminalText(page, "XXyaadeESC")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("prefix shows the which-key panel and splits the pane", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await page.locator("[data-yaade-terminal-panel]").first().click()
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count())
+        .toBe(1)
+
+      await page.keyboard.press("Control+KeyA")
+      const whichKey = page.getByText("waiting for key")
+      await expectLocatorVisible(whichKey)
+
+      await page.keyboard.press("KeyD")
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
+          timeout: 15_000,
+        })
+        .toBeGreaterThanOrEqual(2)
+      await expect
+        .poll(async () => page.getByText("waiting for key").count())
+        .toBe(0)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("the prefix key itself never leaks to the shell", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await page.locator("[data-yaade-terminal-panel]").first().click()
+
+      // Ctrl-a is readline beginning-of-line. If the prefix leaked through, the
+      // suffix would land before `echo` and the command would not run.
+      await page.keyboard.type("echo yaade-prefix")
+      await page.keyboard.press("Control+KeyA")
+      // The which-key hint appears while the prefix is pending; poll for it to
+      // disappear (the chord lapsing) instead of sleeping a fixed interval.
+      await expect
+        .poll(async () => page.getByText("waiting for key").count())
+        .toBeGreaterThan(0)
+      await expect
+        .poll(async () => page.getByText("waiting for key").count(), {
+          timeout: 15_000,
+        })
+        .toBe(0)
+      await page.keyboard.type("-tail")
+      await page.keyboard.press("Enter")
+
+      await waitForTerminalText(page, "yaade-prefix-tail")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("double-tapping the prefix sends it to the shell", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      await page.locator("[data-yaade-terminal-panel]").first().click()
+
+      await page.keyboard.type("yaade-tail echo")
+      // Ctrl-a Ctrl-a → literal ^A → readline jumps to the start of the line.
+      await page.keyboard.press("Control+KeyA")
+      await page.keyboard.press("Control+KeyA")
+      await page.keyboard.type("echo yaade-head ")
+      await page.keyboard.press("Enter")
+
+      await waitForTerminalText(page, "yaade-head")
     } finally {
       await app.close()
     }
@@ -134,15 +236,16 @@ test.describe("mux tiling", () => {
     }
   })
 
-  test("Mod-n opens neovim; Mod-g opens git", async () => {
+  test("prefix n opens neovim; prefix g opens git", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
+      await page.locator("[data-yaade-terminal-panel]").first().click()
       await expect
         .poll(async () => page.locator("[data-yaade-mux-pane]").count())
         .toBe(1)
 
-      await pressMod(page, "n")
+      await pressMuxPrefix(page, "KeyN")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
           timeout: 15_000,
@@ -154,7 +257,7 @@ test.describe("mux tiling", () => {
         )
         .toBeGreaterThanOrEqual(1)
 
-      await pressMod(page, "g")
+      await pressMuxPrefix(page, "KeyG")
       await expectSelectorVisible(page, "[data-yaade-mux-pane-kind=git]", {
         timeout: 15_000,
       })
@@ -165,7 +268,7 @@ test.describe("mux tiling", () => {
     }
   })
 
-  test("Mod-d shell split inherits the source pane cwd", async () => {
+  test("prefix d shell split inherits the source pane cwd", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
@@ -552,7 +655,7 @@ test.describe("mux zoom", () => {
     }
   })
 
-  test("Mod-f toggles pane zoom", async () => {
+  test("prefix z toggles pane zoom", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
@@ -562,13 +665,13 @@ test.describe("mux zoom", () => {
         .toBeGreaterThanOrEqual(2)
 
       await page.locator("[data-yaade-terminal-panel]").first().click()
-      await page.keyboard.press("Meta+KeyF")
+      await pressMuxPrefix(page, "KeyZ")
       await expectSelectorVisible(page, "[data-yaade-mux-window][data-zoomed]")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-pane]").count())
         .toBe(1)
 
-      await page.keyboard.press("Meta+KeyF")
+      await pressMuxPrefix(page, "KeyZ")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-window][data-zoomed]").count())
         .toBe(0)
@@ -613,12 +716,12 @@ test.describe("mux switcher", () => {
     }
   })
 
-  test("Mod-k opens terminal switcher and Enter selects", async () => {
+  test("prefix w opens terminal switcher and Enter selects", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
       await page.locator("[data-yaade-terminal-panel]").first().click()
-      await page.keyboard.press("Meta+KeyK")
+      await pressMuxPrefix(page, "KeyW")
       await expect
         .poll(async () => page.locator("[data-yaade-palette]").count(), {
           timeout: 10_000,
@@ -868,6 +971,16 @@ test.describe("mux persistence", () => {
     try {
       await waitForMux(page)
       await expectSelectorVisible(page, "[data-yaade-terminal-panel]")
+      // Wait for the layout write to actually reach the server rather than
+      // sleeping a fixed interval for the debounced writer.
+      const layoutSaved = page
+        .waitForResponse(
+          r =>
+            r.url().includes("/api/v1/workspace-session") &&
+            r.request().method() === "PUT",
+          { timeout: 15_000 },
+        )
+        .catch(() => null)
       await execCommand(page, "mux.splitRight")
       await expect
         .poll(async () => page.locator("[data-yaade-mux-pane]").count(), {
@@ -875,8 +988,7 @@ test.describe("mux persistence", () => {
         })
         .toBeGreaterThanOrEqual(2)
 
-      // Give the debounced server writer time to flush.
-      await page.waitForTimeout(500)
+      await layoutSaved
       await page.reload({ waitUntil: "domcontentloaded" })
       await waitForMux(page)
 

@@ -153,6 +153,14 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
     waitForLoadState(state) {
       return page.waitForLoadState(state)
     },
+    waitForResponse(predicate, options) {
+      return page
+        .waitForResponse(
+          predicate as Parameters<Page["waitForResponse"]>[0],
+          options,
+        )
+        .then(() => undefined)
+    },
     keyboard: page.keyboard,
     mouse: page.mouse,
     locator(selector) {

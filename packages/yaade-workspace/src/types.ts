@@ -1,7 +1,10 @@
 import type {
   GitCommit,
+  GitCommitDetail,
+  GitNumstatEntry,
   GitRepositorySummary,
   GitStatusEntry,
+  GitWorktree,
   PanelId,
   PanelView,
   ProjectSearchResult,
@@ -156,6 +159,21 @@ export type JetElectronGit = {
   pull(rootUri: string): Promise<void>
   push(rootUri: string): Promise<void>
   history(rootUri: string, limit?: number): Promise<GitCommit[]>
+  numstat(rootUri: string): Promise<GitNumstatEntry[]>
+  commitFiles(rootUri: string, hash: string): Promise<GitCommitDetail>
+  applyPatch(rootUri: string, patch: string, opts?: { reverse?: boolean }): Promise<void>
+  worktreeList(rootUri: string): Promise<GitWorktree[]>
+  worktreeAdd(
+    rootUri: string,
+    worktreePath: string,
+    opts: { branch: string; baseRef?: string; createBranch?: boolean },
+  ): Promise<GitWorktree>
+  worktreeRemove(
+    rootUri: string,
+    worktreePath: string,
+    opts?: { force?: boolean },
+  ): Promise<void>
+  defaultBranch(rootUri: string): Promise<string | null>
 }
 
 export type OpenInAppId =

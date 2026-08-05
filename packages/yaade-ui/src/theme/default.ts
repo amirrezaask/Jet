@@ -6,6 +6,14 @@ import {
   shadcnThemeList,
   shadcnThemes,
 } from "./shadcn.js"
+import {
+  catppuccinThemeList,
+  catppuccinThemes,
+} from "./catppuccin.js"
+import {
+  tokyoNightThemeList,
+  tokyoNightThemes,
+} from "./tokyonight.js"
 
 export type { ColorScheme } from "./theme-palette.js"
 export { defaultDark, defaultLight } from "./shadcn.js"
@@ -14,9 +22,15 @@ export const defaultThemeId = defaultDark.id
 
 export const bundledThemes: Record<string, YaadeTheme> = {
   ...shadcnThemes,
+  ...catppuccinThemes,
+  ...tokyoNightThemes,
 }
 
-export const bundledThemeList: YaadeTheme[] = [...shadcnThemeList]
+export const bundledThemeList: YaadeTheme[] = [
+  ...shadcnThemeList,
+  ...catppuccinThemeList,
+  ...tokyoNightThemeList,
+]
 
 export function getThemeById(id: string | null | undefined): YaadeTheme {
   if (!id) return defaultDark
@@ -41,11 +55,11 @@ export function themeFamilyForId(id: string | null | undefined): string {
   return getThemeById(id).family ?? "Default"
 }
 
-/** Default family flips between dark/light siblings. */
+/** Flip between dark/light siblings within the same theme family. */
 export function siblingThemeForScheme(id: string, scheme: ColorScheme): YaadeTheme {
   const current = getThemeById(id)
-  if (current.family === "Default") {
-    return scheme === "light" ? defaultLight : defaultDark
-  }
-  return current
+  const family = current.family ?? "Default"
+  const siblings = bundledThemeList.filter(t => (t.family ?? "Default") === family)
+  const match = siblings.find(t => (t.scheme ?? "dark") === scheme)
+  return match ?? current
 }

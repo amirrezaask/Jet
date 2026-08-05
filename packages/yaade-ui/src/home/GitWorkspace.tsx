@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import type { GitCommit, GitRepositorySummary, GitStatusEntry, YaadeTheme } from "@yaade/shared"
+import type {
+  GitCommit,
+  GitCommitDetail,
+  GitNumstatEntry,
+  GitRepositorySummary,
+  GitStatusEntry,
+  YaadeTheme,
+} from "@yaade/shared"
 import { fileUriToPath, languageIdFromPath, pathToFileUri } from "@yaade/shared"
 import { MonacoDiffEditorHost, monacoLanguageId } from "@yaade/monaco"
 import {
   ArrowDownIcon,
+  ArrowLeftIcon,
   ArrowUpIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -17,6 +25,7 @@ import {
   MoreHorizontalIcon,
   RefreshCwIcon,
   RotateCcwIcon,
+  ScissorsIcon,
   SearchIcon,
   UploadIcon,
 } from "lucide-react"
@@ -65,6 +74,13 @@ import { requestConfirm } from "@/components/ConfirmDialogHost.js"
 import { showYaadeToast } from "@/toast.js"
 import { SessionHeaderChromePortal } from "./session-header-chrome.js"
 
+type GitView = "changes" | "staged" | "history"
+type DiffStyle = "unified" | "split"
+type SelectedChange = { path: string; staged: boolean }
+type NavigationRow =
+  | { kind: "section"; id: string; label: string; count: number }
+  | { kind: "file"; id: string; entry: GitStatusEntry; staged: boolean }
+
 type GitWorkspaceProps = {
   rootUri: string | null
   theme: YaadeTheme
@@ -72,19 +88,16 @@ type GitWorkspaceProps = {
   onBranchChange?: (branch: string | null) => void
   /** When set, select this path in Changes (agent openDiff / deep-link). */
   focusPath?: string | null
+  /** Monaco diff font size in px (default 13). */
+  fontSize?: number
+  /** Initial view tab (default "changes"). */
+  initialView?: GitView
 }
 
 type DiffContents = {
   original: string
   modified: string
 }
-
-type GitView = "changes" | "staged" | "history"
-type DiffStyle = "unified" | "split"
-type SelectedChange = { path: string; staged: boolean }
-type NavigationRow =
-  | { kind: "section"; id: string; label: string; count: number }
-  | { kind: "file"; id: string; entry: GitStatusEntry; staged: boolean }
 
 const EMPTY_SUMMARY: GitRepositorySummary = {
   branch: null,
@@ -99,7 +112,15 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 export function GitWorkspace(props: GitWorkspaceProps) {
-  const { rootUri, theme, onOpenFile, onBranchChange, focusPath } = props
+  const {
+    rootUri,
+    theme,
+    onOpenFile,
+    onBranchChange,
+    focusPath,
+    fontSize = 13,
+    initialView = "changes",
+  } = props
   const api = window.yaade?.git
   const fsApi = window.yaade?.fs
   const [isRepo, setIsRepo] = useState<boolean | null>(null)
@@ -107,7 +128,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const [summary, setSummary] = useState<GitRepositorySummary>(EMPTY_SUMMARY)
   const [branches, setBranches] = useState<string[]>([])
   const [history, setHistory] = useState<GitCommit[]>([])
-  const [view, setView] = useState<GitView>("changes")
+  const [view, setView] = useState<GitView>(initialView)
   const [selected, setSelected] = useState<SelectedChange | null>(null)
   const [filter, setFilter] = useState("")
   const [diffContents, setDiffContents] = useState<DiffContents | null>(null)
@@ -117,7 +138,18 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const [loading, setLoading] = useState(true)
   const [diffLoading, setDiffLoading] = useState(false)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const [numstat, setNumstat] = useState<Record<string, GitNumstatEntry>>({})
+  const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
+  const [commitDetail, setCommitDetail] = useState<GitCommitDetail | null>(null)
+  const [commitLoading, setCommitLoading] = useState(false)
+  const [mobileDetail, setMobileDetail] = useState(false)
+  const [hunks, setHunks] = useState<DiffHunk[] | null>(null)
+  const [hunksLoading, setHunksLoading] = useState(false)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const rootRef = useRef<HTMLElement>(null)
   const diffRequest = useRef(0)
+  const commitRequest = useRef(0)
+  const narrow = containerWidth > 0 && containerWidth < 560
 
   const refresh = useCallback(async () => {
     if (!rootUri || !api) {
@@ -130,16 +162,18 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       const repository = await api.isRepo(rootUri)
       setIsRepo(repository)
       if (!repository) return
-      const [nextEntries, nextSummary, nextBranches, nextHistory] = await Promise.all([
+      const [nextEntries, nextSummary, nextBranches, nextHistory, nextNumstat] = await Promise.all([
         api.status(rootUri),
         api.summary(rootUri),
         api.branches(rootUri),
         api.history(rootUri, 60).catch(() => []),
+        api.numstat(rootUri).catch(() => [] as GitNumstatEntry[]),
       ])
       setEntries(nextEntries)
       setSummary(nextSummary)
       setBranches(nextBranches)
       setHistory(nextHistory)
+      setNumstat(Object.fromEntries(nextNumstat.map(stat => [stat.path, stat])))
       onBranchChange?.(nextSummary.branch)
       setSelected(current => {
         if (current) {
@@ -193,6 +227,43 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       })
   }, [api, fsApi, rootUri, selected, entries])
 
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const observer = new ResizeObserver(observed => {
+      const width = observed[0]?.contentRect.width ?? el.clientWidth
+      setContainerWidth(width)
+    })
+    observer.observe(el)
+    setContainerWidth(el.clientWidth)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!rootUri || !api || view !== "history" || !selectedCommit) {
+      setCommitDetail(null)
+      return
+    }
+    const request = ++commitRequest.current
+    setCommitLoading(true)
+    void api
+      .commitFiles(rootUri, selectedCommit)
+      .then(detail => {
+        if (request === commitRequest.current) setCommitDetail(detail)
+      })
+      .catch(error => {
+        if (request !== commitRequest.current) return
+        setCommitDetail(null)
+        showYaadeToast("Could not load commit", {
+          variant: "destructive",
+          description: errorMessage(error),
+        })
+      })
+      .finally(() => {
+        if (request === commitRequest.current) setCommitLoading(false)
+      })
+  }, [api, rootUri, view, selectedCommit])
+
   const filteredEntries = useMemo(() => {
     const needle = filter.trim().toLocaleLowerCase()
     if (!needle) return entries
@@ -205,6 +276,7 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   )
   const stagedCount = entries.filter(entry => entry.staged).length
   const unstagedPaths = entries.filter(entry => entry.unstaged).map(entry => entry.path)
+  const stagedPaths = entries.filter(entry => entry.staged).map(entry => entry.path)
   const selectedEntry = selected ? entries.find(entry => entry.path === selected.path) : undefined
 
   useEffect(() => {
@@ -226,6 +298,27 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     setView(match.staged && !match.unstaged ? "staged" : "changes")
     setSelected({ path: match.path, staged: Boolean(match.staged && !match.unstaged) })
   }, [focusPath, entries])
+
+  // Hunk list is per-file; drop it whenever the selection changes so the
+  // dropdown re-fetches against the correct path/side on next open.
+  useEffect(() => {
+    setHunks(null)
+  }, [selected])
+
+  useEffect(() => {
+    setMobileDetail(false)
+  }, [view])
+
+  useEffect(() => {
+    if (view !== "history") return
+    if (history.length === 0) {
+      setSelectedCommit(null)
+      return
+    }
+    setSelectedCommit(current =>
+      current && history.some(commit => commit.hash === current) ? current : history[0]!.hash,
+    )
+  }, [view, history])
 
   const runAction = useCallback(
     async (label: string, task: () => Promise<void>, success?: string): Promise<boolean> => {
@@ -264,6 +357,39 @@ export function GitWorkspace(props: GitWorkspaceProps) {
   const stageAll = () => {
     if (!rootUri || !api || unstagedPaths.length === 0) return
     void runAction("Stage all", () => api.stage(rootUri, unstagedPaths))
+  }
+
+  const unstageAll = () => {
+    if (!rootUri || !api || stagedPaths.length === 0) return
+    void runAction("Unstage all", () => api.unstage(rootUri, stagedPaths))
+  }
+
+  const loadHunks = useCallback(async () => {
+    if (!rootUri || !api || !selected) {
+      setHunks(null)
+      return
+    }
+    setHunksLoading(true)
+    try {
+      const patch = await api.diff(rootUri, { path: selected.path, staged: selected.staged })
+      setHunks(parseDiffHunks(patch))
+    } catch (error) {
+      setHunks([])
+      showYaadeToast("Could not load hunks", {
+        variant: "destructive",
+        description: errorMessage(error),
+      })
+    } finally {
+      setHunksLoading(false)
+    }
+  }, [api, rootUri, selected])
+
+  const applyHunk = (hunk: DiffHunk) => {
+    if (!rootUri || !api || !selected) return
+    const reverse = selected.staged
+    void runAction(reverse ? "Unstage hunk" : "Stage hunk", () =>
+      api.applyPatch(rootUri, hunk.patch, { reverse }),
+    )
   }
 
   const discardSelection = async (entry: GitStatusEntry) => {
@@ -312,15 +438,120 @@ export function GitWorkspace(props: GitWorkspaceProps) {
     void runAction("Switch branch", () => api.checkout(rootUri, branch), `Switched to ${branch}`)
   }
 
+  const navigatorPane = (
+    <FileNavigator
+      rows={navigationRows}
+      filter={filter}
+      selected={selected}
+      pending={pendingAction !== null}
+      stageAllCount={view === "changes" ? unstagedPaths.length : 0}
+      unstageAllCount={stagedCount}
+      numstat={numstat}
+      onFilterChange={setFilter}
+      onSelect={next => {
+        setSelected(next)
+        if (narrow) setMobileDetail(true)
+      }}
+      onToggleStage={stageSelection}
+      onStageAll={stageAll}
+      onUnstageAll={unstageAll}
+      onOpenFile={onOpenFile}
+      onDiscard={entry => void discardSelection(entry)}
+    />
+  )
+
+  const diffViewer = (
+    <DiffViewer
+      selected={selected}
+      selectedEntry={selectedEntry}
+      diffContents={diffContents}
+      loading={diffLoading}
+      diffStyle={diffStyle}
+      theme={theme}
+      fontSize={fontSize}
+      pending={pendingAction !== null}
+      hunks={hunks}
+      hunksLoading={hunksLoading}
+      onLoadHunks={() => void loadHunks()}
+      onApplyHunk={applyHunk}
+      onBack={narrow ? () => setMobileDetail(false) : undefined}
+      onDiffStyleChange={setAndPersistDiffStyle}
+      onOpenFile={onOpenFile}
+      onToggleStage={stageSelection}
+      onDiscard={entry => void discardSelection(entry)}
+    />
+  )
+
+  const historyList = (
+    <HistoryList
+      commits={history}
+      selectedHash={selectedCommit}
+      onSelect={hash => {
+        setSelectedCommit(hash)
+        if (narrow) setMobileDetail(true)
+      }}
+    />
+  )
+
+  const commitDetailPane = (
+    <CommitDetailView
+      detail={commitDetail}
+      loading={commitLoading}
+      onOpenFile={onOpenFile}
+      onBack={narrow ? () => setMobileDetail(false) : undefined}
+    />
+  )
+
+  const body =
+    view === "history" ? (
+      narrow ? (
+        mobileDetail ? commitDetailPane : historyList
+      ) : (
+        <ResizablePanelGroup
+          orientation="horizontal"
+          data-yaade-git-content=""
+          className="min-h-0 flex-1 bg-transparent"
+        >
+          <ResizablePanel defaultSize="38%" minSize="200px" maxSize="60%">
+            {historyList}
+          </ResizablePanel>
+          <ResizableHandle />
+          <ResizablePanel defaultSize="62%" minSize="200px">
+            {commitDetailPane}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      )
+    ) : narrow ? (
+      mobileDetail ? diffViewer : navigatorPane
+    ) : (
+      <ResizablePanelGroup
+        orientation="horizontal"
+        data-yaade-git-content=""
+        className="min-h-0 flex-1 bg-transparent"
+      >
+        <ResizablePanel defaultSize="31%" minSize="160px" maxSize="48%">
+          {navigatorPane}
+        </ResizablePanel>
+        <ResizableHandle />
+        <ResizablePanel defaultSize="69%" minSize="200px">
+          {diffViewer}
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    )
+
   return (
     <section
+      ref={rootRef}
       data-yaade-git-workspace=""
       data-yaade-git-root={rootUri ? fileUriToPath(rootUri) : undefined}
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent"
       aria-label="Git workspace"
     >
       <SessionHeaderChromePortal active>
-        <GitBranchHeaderControls
+        <GitPaneHeaderControls
+          view={view}
+          stagedCount={stagedCount}
+          onViewChange={setView}
           summary={summary}
           branches={branches}
           pending={pendingAction !== null}
@@ -331,10 +562,8 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       <GitToolbar
         repositoryKey={rootUri}
         summary={summary}
-        view={view}
         stagedCount={stagedCount}
         pendingAction={pendingAction}
-        onViewChange={setView}
         onCommit={commit}
         onRemoteAction={action => {
           if (!rootUri || !api) return
@@ -344,58 +573,21 @@ export function GitWorkspace(props: GitWorkspaceProps) {
         onRefresh={() => void refresh()}
       />
 
-      {view === "history" ? (
-        <HistoryList commits={history} />
-      ) : (
-        <ResizablePanelGroup
-          orientation="horizontal"
-          data-yaade-git-content=""
-          className="min-h-0 flex-1 bg-transparent"
-        >
-          <ResizablePanel defaultSize="31%" minSize="220px" maxSize="48%">
-            <FileNavigator
-              rows={navigationRows}
-              filter={filter}
-              selected={selected}
-              pending={pendingAction !== null}
-              stageAllCount={view === "changes" ? unstagedPaths.length : 0}
-              onFilterChange={setFilter}
-              onSelect={setSelected}
-              onToggleStage={stageSelection}
-              onStageAll={stageAll}
-              onOpenFile={onOpenFile}
-              onDiscard={entry => void discardSelection(entry)}
-            />
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel defaultSize="69%" minSize="360px">
-            <DiffViewer
-              selected={selected}
-              selectedEntry={selectedEntry}
-              diffContents={diffContents}
-              loading={diffLoading}
-              diffStyle={diffStyle}
-              theme={theme}
-              pending={pendingAction !== null}
-              onDiffStyleChange={setAndPersistDiffStyle}
-              onOpenFile={onOpenFile}
-              onToggleStage={stageSelection}
-              onDiscard={entry => void discardSelection(entry)}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      )}
+      {body}
     </section>
   )
 }
 
-function GitBranchHeaderControls(props: {
+function GitPaneHeaderControls(props: {
+  view: GitView
+  stagedCount: number
+  onViewChange: (view: GitView) => void
   summary: GitRepositorySummary
   branches: string[]
   pending: boolean
   onCheckout: (branch: string) => void
 }) {
-  const { summary, branches, pending, onCheckout } = props
+  const { view, stagedCount, onViewChange, summary, branches, pending, onCheckout } = props
   const branchOptions =
     summary.branch && !branches.includes(summary.branch)
       ? [summary.branch, ...branches]
@@ -405,6 +597,8 @@ function GitBranchHeaderControls(props: {
       data-yaade-session-header-tabs="git"
       className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"
     >
+      <GitViewTabs view={view} stagedCount={stagedCount} onChange={onViewChange} />
+      <div className="ml-auto flex shrink-0 items-center gap-2 overflow-hidden">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -451,6 +645,7 @@ function GitBranchHeaderControls(props: {
           <ArrowDownIcon className="inline size-3" aria-hidden /> {summary.behind}
         </span>
       </div>
+      </div>
     </div>
   )
 }
@@ -458,10 +653,8 @@ function GitBranchHeaderControls(props: {
 function GitToolbar(props: {
   repositoryKey: string
   summary: GitRepositorySummary
-  view: GitView
   stagedCount: number
   pendingAction: string | null
-  onViewChange: (view: GitView) => void
   onCommit: (summary: string, body: string) => Promise<boolean>
   onRemoteAction: (action: "fetch" | "pull" | "push") => void
   onRefresh: () => void
@@ -469,10 +662,8 @@ function GitToolbar(props: {
   const {
     repositoryKey,
     summary,
-    view,
     stagedCount,
     pendingAction,
-    onViewChange,
     onCommit,
     onRemoteAction,
     onRefresh,
@@ -482,14 +673,9 @@ function GitToolbar(props: {
     <header
       data-yaade-git-toolbar=""
       data-yaade-liquid-glass="chrome"
-      className="flex h-9 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-2"
+      className="flex h-7 shrink-0 items-center justify-end gap-2 border-b border-transparent bg-transparent px-2"
     >
-      <GitViewTabs
-        view={view}
-        stagedCount={stagedCount}
-        onChange={onViewChange}
-      />
-      <div className="ml-auto flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <GitCommitDialog
           key={repositoryKey}
           branch={summary.branch}
@@ -711,14 +897,17 @@ function FileNavigator(props: {
   selected: SelectedChange | null
   pending: boolean
   stageAllCount: number
+  unstageAllCount: number
+  numstat: Record<string, GitNumstatEntry>
   onFilterChange: (value: string) => void
   onSelect: (selected: SelectedChange) => void
   onToggleStage: (selected: SelectedChange) => void
   onStageAll: () => void
+  onUnstageAll: () => void
   onOpenFile: (path: string) => void
   onDiscard: (entry: GitStatusEntry) => void
 }) {
-  const { rows, filter, selected, pending, stageAllCount, onFilterChange, onSelect, onToggleStage, onStageAll, onOpenFile, onDiscard } = props
+  const { rows, filter, selected, pending, stageAllCount, unstageAllCount, numstat, onFilterChange, onSelect, onToggleStage, onStageAll, onUnstageAll, onOpenFile, onDiscard } = props
   const scrollRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -779,17 +968,32 @@ function FileNavigator(props: {
             className="h-8 bg-background pl-7 text-xs"
           />
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          disabled={pending || stageAllCount === 0}
-          aria-label={`Stage all ${stageAllCount} changed ${stageAllCount === 1 ? "file" : "files"}`}
-          data-yaade-git-stage-all
-          onClick={onStageAll}
-        >
-          Stage all
-        </Button>
+        {unstageAllCount > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            disabled={pending}
+            aria-label={`Unstage all ${unstageAllCount} staged ${unstageAllCount === 1 ? "file" : "files"}`}
+            data-yaade-git-unstage-all
+            onClick={onUnstageAll}
+          >
+            Unstage all
+          </Button>
+        ) : null}
+        {stageAllCount > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            disabled={pending}
+            aria-label={`Stage all ${stageAllCount} changed ${stageAllCount === 1 ? "file" : "files"}`}
+            data-yaade-git-stage-all
+            onClick={onStageAll}
+          >
+            Stage all
+          </Button>
+        ) : null}
       </div>
       <div
         ref={scrollRef}
@@ -800,7 +1004,7 @@ function FileNavigator(props: {
         className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
       >
         {rows.length === 0 ? (
-          <Empty className="h-full rounded-none border-0 p-6">
+          <Empty className="h-full rounded-none border-0 p-3">
             <EmptyHeader>
               <EmptyMedia variant="icon"><CheckIcon aria-hidden /></EmptyMedia>
               <EmptyTitle className="text-sm">No matching changes</EmptyTitle>
@@ -819,13 +1023,14 @@ function FileNavigator(props: {
                   style={{ height: item.size, transform: `translateY(${item.start}px)` }}
                 >
                   {row.kind === "section" ? (
-                    <div className="flex h-full items-center justify-between border-b border-border/30 px-3 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
+                    <div className="flex h-full items-center justify-between border-b border-border/30 px-3 font-mono text-3xs tracking-wide text-muted-foreground uppercase">
                       <span>{row.label}</span><span className="tabular-nums">{row.count}</span>
                     </div>
                   ) : (
                     <GitFileRow
                       entry={row.entry}
                       staged={row.staged}
+                      stats={numstat[row.entry.path]}
                       active={selected?.path === row.entry.path && selected.staged === row.staged}
                       pending={pending}
                       onSelect={() => onSelect({ path: row.entry.path, staged: row.staged })}
@@ -847,6 +1052,7 @@ function FileNavigator(props: {
 function GitFileRow(props: {
   entry: GitStatusEntry
   staged: boolean
+  stats?: GitNumstatEntry
   active: boolean
   pending: boolean
   onSelect: () => void
@@ -854,7 +1060,7 @@ function GitFileRow(props: {
   onOpenFile: () => void
   onDiscard: () => void
 }) {
-  const { entry, staged, active, pending, onSelect, onToggleStage, onOpenFile, onDiscard } = props
+  const { entry, staged, stats, active, pending, onSelect, onToggleStage, onOpenFile, onDiscard } = props
   return (
     <div
       data-yaade-list-item=""
@@ -875,12 +1081,13 @@ function GitFileRow(props: {
       <button type="button" className="min-w-0 flex-1 truncate text-left outline-none focus-visible:underline" onClick={onSelect} onDoubleClick={onOpenFile}>
         <span className="truncate">{entry.path}</span>
       </button>
-      <span className={cn("shrink-0 font-mono text-[10px] font-medium", statusColor(entry.status))} title={entry.status}>
+      <NumstatBadge stats={stats} />
+      <span className={cn("shrink-0 font-mono text-3xs font-medium", statusColor(entry.status))} title={entry.status}>
         {statusLetter(entry.status)}
       </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="icon-xs" aria-label={`Actions for ${entry.path}`} className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100">
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={`Actions for ${entry.path}`} className="opacity-70 hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100">
             <MoreHorizontalIcon />
           </Button>
         </DropdownMenuTrigger>
@@ -901,6 +1108,24 @@ function GitFileRow(props: {
   )
 }
 
+function NumstatBadge({ stats }: { stats?: GitNumstatEntry }) {
+  if (!stats) return null
+  if (stats.added === null || stats.deleted === null) {
+    return <span className="shrink-0 font-mono text-3xs text-muted-foreground tabular-nums">bin</span>
+  }
+  if (stats.added === 0 && stats.deleted === 0) return null
+  return (
+    <span className="flex shrink-0 items-center gap-1 font-mono text-3xs tabular-nums" aria-hidden>
+      {stats.added > 0 ? (
+        <span className="text-[color:var(--yaade-git-added)]">+{stats.added}</span>
+      ) : null}
+      {stats.deleted > 0 ? (
+        <span className="text-[color:var(--yaade-git-deleted)]">−{stats.deleted}</span>
+      ) : null}
+    </span>
+  )
+}
+
 function DiffViewer(props: {
   selected: SelectedChange | null
   selectedEntry?: GitStatusEntry
@@ -908,7 +1133,13 @@ function DiffViewer(props: {
   loading: boolean
   diffStyle: DiffStyle
   theme: YaadeTheme
+  fontSize: number
   pending: boolean
+  hunks: DiffHunk[] | null
+  hunksLoading: boolean
+  onLoadHunks: () => void
+  onApplyHunk: (hunk: DiffHunk) => void
+  onBack?: () => void
   onDiffStyleChange: (style: DiffStyle) => void
   onOpenFile: (path: string) => void
   onToggleStage: (selected: SelectedChange) => void
@@ -921,7 +1152,13 @@ function DiffViewer(props: {
     loading,
     diffStyle,
     theme,
+    fontSize,
     pending,
+    hunks,
+    hunksLoading,
+    onLoadHunks,
+    onApplyHunk,
+    onBack,
     onDiffStyleChange,
     onOpenFile,
     onToggleStage,
@@ -936,15 +1173,38 @@ function DiffViewer(props: {
   const hasDiff =
     diffContents != null &&
     (diffContents.original.length > 0 || diffContents.modified.length > 0)
+  const canStageHunks = selectedEntry != null && selectedEntry.status !== "untracked" && hasDiff
   return (
     <div data-yaade-git-diff="" className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
       <div
         data-yaade-git-diff-toolbar=""
         data-yaade-liquid-glass="chrome"
-        className="flex h-10 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-3"
+        className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-3"
       >
-        <FileDiffIcon className="text-muted-foreground" aria-hidden />
+        {onBack ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Back to file list"
+            onClick={onBack}
+          >
+            <ArrowLeftIcon />
+          </Button>
+        ) : (
+          <FileDiffIcon className="text-muted-foreground" aria-hidden />
+        )}
         <span className="min-w-0 flex-1 truncate font-mono text-2xs">{selected.path}</span>
+        {canStageHunks ? (
+          <HunkMenu
+            staged={selected.staged}
+            hunks={hunks}
+            loading={hunksLoading}
+            pending={pending}
+            onOpen={onLoadHunks}
+            onApply={onApplyHunk}
+          />
+        ) : null}
         <Button type="button" variant="secondary" size="xs" disabled={pending} onClick={() => onToggleStage(selected)}>
           {selected.staged ? "Unstage file" : "Stage file"}
         </Button>
@@ -1001,6 +1261,7 @@ function DiffViewer(props: {
             modifiedContent={diffContents.modified}
             languageId={languageId}
             theme={theme}
+            fontSize={fontSize}
             readOnly
             renderSideBySide={diffStyle === "split"}
             className="h-full min-h-0"
@@ -1015,6 +1276,157 @@ function DiffViewer(props: {
             }
           />
         )}
+      </div>
+    </div>
+  )
+}
+
+type DiffHunk = { header: string; patch: string; added: number; deleted: number }
+
+/** Split a single-file unified diff into per-hunk patches ready for `git apply`. */
+function parseDiffHunks(patch: string): DiffHunk[] {
+  const lines = patch.split("\n")
+  const headerEnd = lines.findIndex(line => line.startsWith("@@"))
+  if (headerEnd < 0) return []
+  const fileHeader = lines.slice(0, headerEnd).join("\n")
+  const hunks: DiffHunk[] = []
+  let start = -1
+  const flush = (end: number) => {
+    if (start < 0) return
+    const hunkLines = lines.slice(start, end)
+    const header = (hunkLines[0] ?? "").trim()
+    let added = 0
+    let deleted = 0
+    for (const line of hunkLines) {
+      if (line.startsWith("+") && !line.startsWith("+++")) added++
+      else if (line.startsWith("-") && !line.startsWith("---")) deleted++
+    }
+    let body = `${fileHeader}\n${hunkLines.join("\n")}`
+    if (!body.endsWith("\n")) body += "\n"
+    hunks.push({ header, patch: body, added, deleted })
+  }
+  for (let i = headerEnd; i < lines.length; i++) {
+    if (lines[i]!.startsWith("@@")) {
+      flush(i)
+      start = i
+    }
+  }
+  flush(lines.length)
+  return hunks
+}
+
+function HunkMenu(props: {
+  staged: boolean
+  hunks: DiffHunk[] | null
+  loading: boolean
+  pending: boolean
+  onOpen: () => void
+  onApply: (hunk: DiffHunk) => void
+}) {
+  const { staged, hunks, loading, pending, onOpen, onApply } = props
+  const verb = staged ? "Unstage" : "Stage"
+  return (
+    <DropdownMenu
+      onOpenChange={open => {
+        if (open) onOpen()
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="ghost" size="xs" disabled={pending} aria-label={`${verb} hunks`}>
+          <ScissorsIcon data-icon="inline-start" />
+          Hunks
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-auto">
+        <DropdownMenuLabel>{verb} hunks</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {loading ? (
+          <div className="flex items-center gap-2 px-2 py-1.5 text-2xs text-muted-foreground">
+            <Spinner /> Loading hunks…
+          </div>
+        ) : !hunks || hunks.length === 0 ? (
+          <div className="px-2 py-1.5 text-2xs text-muted-foreground">
+            No hunks to {verb.toLowerCase()}.
+          </div>
+        ) : (
+          hunks.map((hunk, index) => (
+            <DropdownMenuItem
+              key={`${index}:${hunk.header}`}
+              className="flex flex-col items-start gap-0.5"
+              onSelect={() => onApply(hunk)}
+            >
+              <span className="flex w-full items-center justify-between gap-2 font-mono text-3xs">
+                <span className="min-w-0 truncate">{hunk.header}</span>
+                <span className="shrink-0 tabular-nums">
+                  <span className="text-[color:var(--yaade-git-added)]">+{hunk.added}</span>{" "}
+                  <span className="text-[color:var(--yaade-git-deleted)]">−{hunk.deleted}</span>
+                </span>
+              </span>
+              <span className="text-3xs text-muted-foreground">{verb} this hunk</span>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function CommitDetailView(props: {
+  detail: GitCommitDetail | null
+  loading: boolean
+  onOpenFile: (path: string) => void
+  onBack?: () => void
+}) {
+  const { detail, loading, onOpenFile, onBack } = props
+  if (loading && !detail) return <CenteredStatus label="Loading commit…" />
+  if (!detail) {
+    return <CenteredEmpty title="Select a commit" description="Choose a commit to view its message and files." />
+  }
+  return (
+    <div
+      data-yaade-git-commit-detail=""
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent"
+    >
+      <div
+        data-yaade-liquid-glass="chrome"
+        className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-3"
+      >
+        {onBack ? (
+          <Button type="button" variant="ghost" size="icon-xs" aria-label="Back to history" onClick={onBack}>
+            <ArrowLeftIcon />
+          </Button>
+        ) : (
+          <HistoryIcon className="text-muted-foreground" aria-hidden />
+        )}
+        <span className="min-w-0 flex-1 truncate text-2xs font-medium">{detail.subject}</span>
+        <span className="shrink-0 font-mono text-3xs text-muted-foreground">{detail.hash.slice(0, 7)}</span>
+      </div>
+      <div data-yaade-list-panel="git-commit-files" className="min-h-0 flex-1 overflow-auto p-3">
+        {detail.body ? (
+          <pre className="mb-3 rounded-md bg-muted/40 p-2 font-mono text-2xs whitespace-pre-wrap text-foreground/90">
+            {detail.body}
+          </pre>
+        ) : null}
+        <div className="font-mono text-3xs tracking-wide text-muted-foreground uppercase">
+          {detail.files.length} {detail.files.length === 1 ? "file" : "files"}
+        </div>
+        <ul className="mt-1 flex flex-col">
+          {detail.files.map(file => (
+            <li key={`${file.status}:${file.path}`}>
+              <button
+                type="button"
+                data-yaade-list-item=""
+                onClick={() => onOpenFile(file.path)}
+                className="flex w-full items-center gap-2 rounded-sm px-1 py-1 text-left text-2xs text-muted-foreground outline-none hover:bg-accent/35 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <span className={cn("w-3 shrink-0 text-center font-mono font-medium", statusColor(file.status))} title={file.status}>
+                  {statusLetter(file.status)}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{file.path}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   )
@@ -1063,7 +1475,12 @@ async function loadGitDiffContents(
   return { original, modified }
 }
 
-function HistoryList({ commits }: { commits: GitCommit[] }) {
+function HistoryList(props: {
+  commits: GitCommit[]
+  selectedHash: string | null
+  onSelect: (hash: string) => void
+}) {
+  const { commits, selectedHash, onSelect } = props
   const scrollRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
     count: commits.length,
@@ -1080,23 +1497,32 @@ function HistoryList({ commits }: { commits: GitCommit[] }) {
           {virtualizer.getVirtualItems().map(item => {
             const commit = commits[item.index]
             if (!commit) return null
+            const active = commit.hash === selectedHash
             return (
-              <article
+              <button
+                type="button"
                 key={commit.hash}
                 data-yaade-list-item=""
-                className="absolute top-0 left-0 grid w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border/35 px-3 py-2 hover:bg-accent/25"
+                data-active={active ? "" : undefined}
+                onClick={() => onSelect(commit.hash)}
+                className={cn(
+                  "absolute top-0 left-0 grid w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border/35 px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                  active
+                    ? "bg-primary/10 before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:bg-primary"
+                    : "hover:bg-accent/25",
+                )}
                 style={{ height: item.size, transform: `translateY(${item.start}px)` }}
               >
                 <HistoryIcon className="text-primary/80" aria-hidden />
                 <div className="min-w-0">
                   <span className="block truncate text-xs text-foreground">{commit.subject}</span>
-                  <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{commit.author}</span>
+                  <span className="mt-0.5 block truncate text-3xs text-muted-foreground">{commit.author}</span>
                 </div>
-                <div className="text-right font-mono text-[10px] tabular-nums text-muted-foreground">
+                <div className="text-right font-mono text-3xs tabular-nums text-muted-foreground">
                   <span className="block text-primary/90">{commit.shortHash}</span>
                   <span className="block">{dateFormatter.format(new Date(commit.authoredAt))}</span>
                 </div>
-              </article>
+              </button>
             )
           })}
         </div>
@@ -1143,9 +1569,10 @@ function statusLetter(status: GitStatusEntry["status"]): string {
 }
 
 function statusColor(status: GitStatusEntry["status"]): string {
-  if (status === "deleted" || status === "conflict") return "text-rose-400"
-  if (status === "added" || status === "untracked") return "text-emerald-400"
-  return "text-sky-400"
+  if (status === "conflict") return "text-[color:var(--yaade-git-conflict)]"
+  if (status === "deleted") return "text-[color:var(--yaade-git-deleted)]"
+  if (status === "added" || status === "untracked") return "text-[color:var(--yaade-git-added)]"
+  return "text-[color:var(--yaade-git-modified)]"
 }
 
 function errorMessage(error: unknown): string {

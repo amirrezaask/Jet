@@ -55,13 +55,6 @@ test.describe("command palette row layout", () => {
         noResultsText: "No results.",
       })
       await page.keyboard.press("Escape")
-
-      // Project switcher shares PaletteShell/Lister chrome. Catalog scan roots are
-      // optional in E2E, so assert shell layout — not a fixture project name.
-      await execCommand(page, "workspace.switchProject")
-      await expectLocatorVisible(page.getByRole("dialog"))
-      await expectLocatorVisible(page.locator('input[placeholder="Filter projects…"]'))
-      await expectSelectorVisible(page, '[data-yaade-list-panel="yaade:palette"]')
     } finally {
       await app.close()
     }

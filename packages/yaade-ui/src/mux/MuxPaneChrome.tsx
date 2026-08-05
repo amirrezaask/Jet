@@ -1,6 +1,6 @@
 import { Columns2, GitBranch, Maximize2, Minimize2, Rows2, X } from "lucide-react"
 import { useDraggable } from "@dnd-kit/core"
-import type { ReactNode, SVGProps } from "react"
+import type { ReactNode, RefCallback, SVGProps } from "react"
 import type { PanelId } from "@yaade/shared"
 import { Button } from "@/components/ui/button.js"
 import {
@@ -11,7 +11,6 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu.js"
-import { formatKeyBinding } from "@/lib/format-key.js"
 import { cn } from "@/lib/utils.js"
 import { tabDndId, type TabDragData } from "../dock/tab-dnd-types.js"
 import { deckTileStyle, processIdentity } from "./process-identity.js"
@@ -24,13 +23,17 @@ function NeovimIcon(props: SVGProps<SVGSVGElement>) {
       viewBox="0 0 24 24"
       role="img"
       aria-hidden
-      className={cn("size-3.5 shrink-0 fill-current", className)}
+      className={cn("size-3 shrink-0 fill-current", className)}
       {...rest}
     >
       <path d="M2.214 4.954v13.615L7.655 24V10.314L3.312 3.845 2.214 4.954zm4.999 17.98l-4.557-4.548V5.136l.59-.596 3.967 5.908v12.485zm14.573-4.457l-.862.937-4.24-6.376V0l5.068 5.092.034 13.385zM7.431.001l12.998 19.835-3.637 3.637L3.787 3.683 7.43 0z" />
     </svg>
   )
 }
+
+/** Secondary chrome: always visible at reduced opacity; full on hover/focus-visible. */
+const secondaryControlClass =
+  "text-muted-foreground/70 hover:text-foreground opacity-70 hover:opacity-100 focus-visible:opacity-100 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
 
 export type MuxPaneChromeProps = {
   title: string
@@ -49,10 +52,21 @@ export type MuxPaneChromeProps = {
   onOpenGit?: () => void
   /** Open Neovim (PTY) in a new split beside this pane. */
   onOpenNeovim?: () => void
+  /** Open Monaco editor in a new split beside this pane. */
+  onOpenEditor?: () => void
   onZoom: () => void
   onClose: () => void
+  /**
+   * Resolve a display shortcut for a command id (e.g. `mux.openGit` → `Ctrl-a g`).
+   * App layer owns the binding table; UI must not import mux-keymap.
+   */
+  shortcutFor?: (commandId: string) => string | undefined
+  /** Portal target for pane-specific header chrome (e.g. Git view tabs). */
+  contextRef?: RefCallback<HTMLElement | null>
   className?: string
   trailing?: ReactNode
+  /** Dirty indicator for editor panes. */
+  dirty?: boolean
 }
 
 export function MuxPaneChrome(props: MuxPaneChromeProps) {
@@ -69,10 +83,14 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
     onSplitDown,
     onOpenGit,
     onOpenNeovim,
+    onOpenEditor,
     onZoom,
     onClose,
+    shortcutFor,
+    contextRef,
     className,
     trailing,
+    dirty = false,
   } = props
 
   const {
@@ -93,6 +111,10 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
 
   const identity = processIdentity(processName)
   const tileStyle = deckTileStyle(identity)
+  const gitShortcut = shortcutFor?.("mux.openGit")
+  const nvimShortcut = shortcutFor?.("mux.openNeovim")
+  const editorShortcut = shortcutFor?.("mux.openEditor")
+  const zoomShortcut = shortcutFor?.("mux.zoomPane")
 
   const secondaryControls = (
     <>
@@ -102,13 +124,27 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          aria-label={`Open Git (${formatKeyBinding("Mod-g")})`}
-          title={`Open Git (${formatKeyBinding("Mod-g")})`}
+          aria-label={gitShortcut ? `Open Git (${gitShortcut})` : "Open Git"}
+          title={gitShortcut ? `Open Git (${gitShortcut})` : "Open Git"}
           data-yaade-mux-open-git=""
-          className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
+          className={secondaryControlClass}
           onClick={onOpenGit}
         >
-          <GitBranch className="size-3.5" />
+          <GitBranch className="size-3" />
+        </Button>
+      ) : null}
+      {onOpenEditor ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={editorShortcut ? `Open Editor (${editorShortcut})` : "Open Editor"}
+          title={editorShortcut ? `Open Editor (${editorShortcut})` : "Open Editor"}
+          data-yaade-mux-open-editor=""
+          className={secondaryControlClass}
+          onClick={onOpenEditor}
+        >
+          <span className="font-mono text-3xs font-semibold leading-none">M</span>
         </Button>
       ) : null}
       {onOpenNeovim ? (
@@ -116,10 +152,10 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          aria-label={`Open Neovim (${formatKeyBinding("Mod-n")})`}
-          title={`Open Neovim (${formatKeyBinding("Mod-n")})`}
+          aria-label={nvimShortcut ? `Open Neovim (${nvimShortcut})` : "Open Neovim"}
+          title={nvimShortcut ? `Open Neovim (${nvimShortcut})` : "Open Neovim"}
           data-yaade-mux-open-nvim=""
-          className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
+          className={secondaryControlClass}
           onClick={onOpenNeovim}
         >
           <NeovimIcon />
@@ -131,14 +167,21 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           variant="ghost"
           size="icon-xs"
           aria-label={zoomed ? "Restore pane" : "Zoom pane"}
+          title={
+            zoomShortcut
+              ? `${zoomed ? "Restore" : "Zoom"} (${zoomShortcut})`
+              : zoomed
+                ? "Restore pane"
+                : "Zoom pane"
+          }
           data-yaade-mux-zoom=""
-          className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
+          className={secondaryControlClass}
           onClick={onZoom}
         >
           {zoomed ? (
-            <Minimize2 className="size-3.5" />
+            <Minimize2 className="size-3" />
           ) : (
-            <Maximize2 className="size-3.5" />
+            <Maximize2 className="size-3" />
           )}
         </Button>
       ) : null}
@@ -147,11 +190,12 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
         variant="ghost"
         size="icon-xs"
         aria-label="Close pane"
+        title="Close pane"
         data-yaade-mux-close-pane=""
-        className="text-muted-foreground hover:text-foreground opacity-0 group-hover/mux-pane:opacity-100 group-focus-within/mux-pane:opacity-100"
+        className={secondaryControlClass}
         onClick={onClose}
       >
-        <X className="size-3.5" />
+        <X className="size-3" />
       </Button>
     </>
   )
@@ -167,12 +211,19 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           data-zoomed={zoomed ? "" : undefined}
           data-dragging={isDragging ? "" : undefined}
           className={cn(
-            "group/mux-chrome flex h-7 shrink-0 items-center gap-1.5 border-b px-2",
+            "group/mux-chrome flex h-6 shrink-0 items-center gap-1 border-b px-1.5",
             "border-border/35 bg-background/40 backdrop-blur-md",
             focused && "border-border/55 bg-background/55",
             isDragging && "opacity-45",
             className,
           )}
+          onDoubleClick={event => {
+            // Ignore double-clicks on buttons / controls.
+            if ((event.target as HTMLElement).closest("button") && !(event.target as HTMLElement).closest("[data-yaade-mux-pane-title]")) {
+              return
+            }
+            if (canZoom) onZoom()
+          }}
         >
           <button
             type="button"
@@ -181,7 +232,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
             data-yaade-mux-pane-title=""
             data-yaade-mux-pane-drag=""
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-1.5 outline-none",
+              "flex max-w-[28%] shrink items-center gap-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring",
               draggable && !zoomed
                 ? "cursor-grab touch-none active:cursor-grabbing"
                 : "",
@@ -192,10 +243,17 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
               aria-hidden
               data-yaade-mux-pane-process={processName ?? ""}
               style={tileStyle}
-              className="flex size-3.5 shrink-0 items-center justify-center rounded-[0.25rem] text-[0.55rem] font-semibold leading-none shadow-sm ring-1 ring-black/25"
+              className="flex size-3 shrink-0 items-center justify-center rounded-[0.2rem] text-4xs font-semibold leading-none shadow-sm ring-1 ring-black/25"
             >
               {identity.glyph}
             </span>
+            {dirty ? (
+              <span
+                aria-label="Unsaved changes"
+                data-yaade-mux-pane-dirty=""
+                className="size-1.5 shrink-0 rounded-full bg-primary"
+              />
+            ) : null}
             <span
               className={cn(
                 "min-w-0 truncate text-xs font-medium",
@@ -205,6 +263,11 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
               {title}
             </span>
           </button>
+          <div
+            ref={contextRef}
+            data-yaade-session-header-context=""
+            className="flex min-h-0 min-w-0 flex-1 items-center overflow-hidden"
+          />
           <div
             className="flex shrink-0 items-center gap-0.5"
             onPointerDown={event => event.stopPropagation()}
@@ -218,7 +281,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
               className="text-muted-foreground hover:text-foreground"
               onClick={onSplitRight}
             >
-              <Columns2 className="size-3.5" />
+              <Columns2 className="size-3" />
             </Button>
             <Button
               type="button"
@@ -229,7 +292,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
               className="text-muted-foreground hover:text-foreground"
               onClick={onSplitDown}
             >
-              <Rows2 className="size-3.5" />
+              <Rows2 className="size-3" />
             </Button>
             {secondaryControls}
           </div>
@@ -241,18 +304,25 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
         {onOpenGit ? (
           <ContextMenuItem onSelect={onOpenGit}>
             Open Git
-            <ContextMenuShortcut>{formatKeyBinding("Mod-g")}</ContextMenuShortcut>
+            {gitShortcut ? <ContextMenuShortcut>{gitShortcut}</ContextMenuShortcut> : null}
+          </ContextMenuItem>
+        ) : null}
+        {onOpenEditor ? (
+          <ContextMenuItem onSelect={onOpenEditor}>
+            Open Editor
+            {editorShortcut ? <ContextMenuShortcut>{editorShortcut}</ContextMenuShortcut> : null}
           </ContextMenuItem>
         ) : null}
         {onOpenNeovim ? (
           <ContextMenuItem onSelect={onOpenNeovim}>
             Open Neovim
-            <ContextMenuShortcut>{formatKeyBinding("Mod-n")}</ContextMenuShortcut>
+            {nvimShortcut ? <ContextMenuShortcut>{nvimShortcut}</ContextMenuShortcut> : null}
           </ContextMenuItem>
         ) : null}
         {canZoom ? (
           <ContextMenuItem onSelect={onZoom}>
             {zoomed ? "Restore Pane" : "Zoom Pane"}
+            {zoomShortcut ? <ContextMenuShortcut>{zoomShortcut}</ContextMenuShortcut> : null}
           </ContextMenuItem>
         ) : null}
         <ContextMenuSeparator />

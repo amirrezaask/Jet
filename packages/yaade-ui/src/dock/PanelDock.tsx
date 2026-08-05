@@ -77,14 +77,18 @@ function PanelLeaf<TView>({
     <div
       className={cn(
         "relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden",
-        "rounded-[var(--glass-radius-panel)] border border-[color:var(--glass-rim)]",
-        "bg-transparent shadow-[0_14px_40px_-18px_rgb(0_0_0_/_35%)]",
+        "rounded-[var(--glass-radius-pane)] border bg-transparent",
+        "shadow-[0_14px_40px_-18px_rgb(0_0_0_/_35%)]",
+        focused
+          ? "border-[color:var(--glass-rim-hot)] ring-1 ring-inset ring-[color:var(--glass-rim-hot)]"
+          : "border-[color:var(--glass-rim)]",
         dragOver && isDropTarget
           ? "ring-1 ring-primary/40"
           : "",
       )}
       data-yaade-panel-leaf={panelId.id}
       data-yaade-session-window=""
+      data-focused={focused ? "" : undefined}
       data-yaade-panel-dragged-over={dragOver && isDropTarget ? "" : undefined}
       onPointerDownCapture={() => onFocusPanel(panelId)}
       onPointerEnter={() => {
@@ -145,6 +149,10 @@ function PanelSplitNode<TView>({
             <ResizableHandle
               withHandle
               className="transition-colors duration-[var(--yaade-motion-fast)] hover:bg-primary/20"
+              onDoubleClick={() => {
+                const equal = children.map(() => 1 / children.length)
+                props.onEvent({ type: "splitRatiosChanged", path, ratios: equal })
+              }}
             />
           ) : null}
           <ResizablePanel

@@ -3,6 +3,7 @@ import {
   YaadePanelTree,
   buildTabsView,
   findPanelWithTab,
+  isEditorTabId,
   isGitTabId,
   isTerminalTabId,
   panelTabIds,
@@ -10,11 +11,11 @@ import {
 } from "@yaade/workspace"
 import { closePanelIfEmpty, getAllLeafPanels } from "../panel-routing.js"
 
-export type MuxLeafKind = "terminal" | "git"
+export type MuxLeafKind = "terminal" | "git" | "editor"
 
 export type MuxLeaf = {
   panelId: PanelId
-  /** Terminal or git tab id (legacy field name kept for call-site churn). */
+  /** Terminal, git, or editor tab id (legacy field name kept for call-site churn). */
   ptyTabId: string
   kind: MuxLeafKind
 }
@@ -27,6 +28,7 @@ export function paneView(tabId: string): PanelView {
 export function muxLeafKind(tabId: string): MuxLeafKind | null {
   if (isTerminalTabId(tabId)) return "terminal"
   if (isGitTabId(tabId)) return "git"
+  if (isEditorTabId(tabId)) return "editor"
   return null
 }
 

@@ -2,7 +2,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { RegistryProvider } from "@effect-atom/atom-react"
 import "@yaade/ui/styles.css"
-import { MuxApp } from "./mux/MuxApp.js"
+import { AppRoot } from "./AppRoot.js"
 import { AppErrorBoundary } from "./AppErrorBoundary.js"
 import { createYaadeApi, createWebTransport, HostClient, HostClientLive } from "@yaade/host-client"
 import { Layer } from "effect"
@@ -22,7 +22,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RegistryProvider>
       <AppErrorBoundary>
-        <MuxApp />
+        <AppRoot />
       </AppErrorBoundary>
     </RegistryProvider>
   </StrictMode>,

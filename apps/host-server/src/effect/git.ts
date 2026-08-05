@@ -4,6 +4,7 @@ import {
   gitBranches,
   gitCheckout,
   gitCommitWithBody,
+  gitDefaultBranch,
   gitDiff,
   gitDiscard,
   gitFetch,
@@ -16,12 +17,18 @@ import {
   gitStatus,
   gitSummary,
   gitUnstage,
+  gitNumstat,
+  gitCommitFiles,
+  gitApplyPatch,
+  gitWorktreeAdd,
+  gitWorktreeList,
+  gitWorktreeRemove,
   type GitHistoryCommit,
   type GitShowRef,
   type GitSummary,
 } from "@yaade/node-host"
 import { GitCommandFailedError } from "@yaade/rpc"
-import type { GitStatusEntry } from "@yaade/shared"
+import type { GitStatusEntry, GitNumstatEntry, GitCommitDetail, GitWorktree } from "@yaade/shared"
 
 function toGitError(err: unknown): GitCommandFailedError {
   return new GitCommandFailedError({
@@ -65,6 +72,28 @@ export type GitService = {
     rootUri: string,
     limit?: number,
   ) => Effect.Effect<GitHistoryCommit[], GitCommandFailedError>
+  readonly numstat: (rootUri: string) => Effect.Effect<GitNumstatEntry[], GitCommandFailedError>
+  readonly commitFiles: (
+    rootUri: string,
+    hash: string,
+  ) => Effect.Effect<GitCommitDetail, GitCommandFailedError>
+  readonly applyPatch: (
+    rootUri: string,
+    patch: string,
+    opts?: { reverse?: boolean },
+  ) => Effect.Effect<void, GitCommandFailedError>
+  readonly worktreeList: (rootUri: string) => Effect.Effect<GitWorktree[], GitCommandFailedError>
+  readonly worktreeAdd: (
+    rootUri: string,
+    worktreePath: string,
+    opts: { branch: string; baseRef?: string; createBranch?: boolean },
+  ) => Effect.Effect<GitWorktree, GitCommandFailedError>
+  readonly worktreeRemove: (
+    rootUri: string,
+    worktreePath: string,
+    opts?: { force?: boolean },
+  ) => Effect.Effect<void, GitCommandFailedError>
+  readonly defaultBranch: (rootUri: string) => Effect.Effect<string | null>
 }
 
 export function makeGitService(): GitService {
@@ -85,6 +114,15 @@ export function makeGitService(): GitService {
     pull: rootUri => tryGit(() => gitPull(rootUri)),
     push: rootUri => tryGit(() => gitPush(rootUri)),
     history: (rootUri, limit) => tryGit(() => gitHistory(rootUri, limit)),
+    numstat: rootUri => tryGit(() => gitNumstat(rootUri)),
+    commitFiles: (rootUri, hash) => tryGit(() => gitCommitFiles(rootUri, hash)),
+    applyPatch: (rootUri, patch, opts) => tryGit(() => gitApplyPatch(rootUri, patch, opts)),
+    worktreeList: rootUri => tryGit(() => gitWorktreeList(rootUri)),
+    worktreeAdd: (rootUri, worktreePath, opts) =>
+      tryGit(() => gitWorktreeAdd(rootUri, worktreePath, opts)),
+    worktreeRemove: (rootUri, worktreePath, opts) =>
+      tryGit(() => gitWorktreeRemove(rootUri, worktreePath, opts)),
+    defaultBranch: rootUri => Effect.promise(() => gitDefaultBranch(rootUri)),
   }
 }
 

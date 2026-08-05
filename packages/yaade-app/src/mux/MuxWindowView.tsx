@@ -1,15 +1,17 @@
-import { lazy, Suspense, useCallback, type ReactNode } from "react"
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react"
 import type { PanelEvent } from "@yaade/panels"
 import type { PanelId, PanelView, YaadeTheme } from "@yaade/shared"
 import { fileUriToPath } from "@yaade/shared"
 import {
   MuxPaneChrome,
   PanelDock,
+  SessionHeaderChromeProvider,
+  sessionHeaderContextRef,
   type PanelSlotMeta,
   type TabDndHandlers,
 } from "@yaade/ui"
 import type { YaadePanelTree } from "@yaade/workspace"
-import { isGitTabId, isTerminalTabId, panelTabIds } from "@yaade/workspace"
+import { panelTabIds } from "@yaade/workspace"
 import { listPaneLeaves, muxLeafKind } from "./layout.js"
 
 const GitWorkspace = lazy(() =>
@@ -29,16 +31,27 @@ export type MuxWindowViewProps = {
   onSplit: (panelId: PanelId, edge: "right" | "bottom") => void
   onOpenGit: (panelId: PanelId) => void
   onOpenNeovim: (panelId: PanelId) => void
-  /** Open a file (from git pane) in a neovim split. */
+  onOpenEditor?: (panelId: PanelId) => void
+  /** Open a file (from git pane) in an editor split. */
   onOpenFile?: (panelId: PanelId, filePath: string, line?: number) => void
   onZoom: (tabId: string) => void
   onClosePane: (panelId: PanelId, tabId: string) => void
   onNewWindow?: () => void
   /** Resolve git pane workspace root (source shell cwd at open time). */
   gitRootForTab: (tabId: string) => string | null
+  /** Resolve editor pane file URI. */
+  editorFileForTab?: (tabId: string) => { uri: string; line?: number } | null
+  /** Dirty state for editor panes. */
+  editorDirtyForTab?: (tabId: string) => boolean
+  /** Shortcut display for a command id (from mux binding table). */
+  shortcutFor?: (commandId: string) => string | undefined
   theme: YaadeTheme
+  /** App font size for git diff / editor chrome. */
+  fontSize?: number
   /** Terminals are painted by MuxTerminalLayer; slots are placeholders only. */
   empty: ReactNode
+  /** Optional editor pane body renderer (lazy monaco). */
+  renderEditor?: (tabId: string, panelId: PanelId, focused: boolean) => ReactNode
 }
 
 function muxLeafView(view: PanelView | null): PanelView {
@@ -63,8 +76,11 @@ function PaneChromeShell(props: {
   onSplitDown: () => void
   onOpenGit: () => void
   onOpenNeovim: () => void
+  onOpenEditor?: () => void
   onZoom: () => void
   onClose: () => void
+  shortcutFor?: (commandId: string) => string | undefined
+  dirty?: boolean
   children: ReactNode
 }) {
   const {
@@ -79,18 +95,36 @@ function PaneChromeShell(props: {
     onSplitDown,
     onOpenGit,
     onOpenNeovim,
+    onOpenEditor,
     onZoom,
     onClose,
+    shortcutFor,
+    dirty,
     children,
   } = props
+  const [headerContextEl, setHeaderContextEl] = useState<HTMLElement | null>(null)
+  const isGitPane = muxLeafKind(tabId) === "git"
+  const isEditorPane = muxLeafKind(tabId) === "editor"
+
+  const body = isGitPane ? (
+    <SessionHeaderChromeProvider target={headerContextEl}>
+      {children}
+    </SessionHeaderChromeProvider>
+  ) : (
+    children
+  )
 
   return (
     <div
       className={
         focused
-          ? "group/mux-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[var(--glass-radius-panel)] border border-[color:var(--glass-rim-hot)] bg-background/30 shadow-sm"
-          : "group/mux-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[var(--glass-radius-panel)] border border-[color:var(--glass-rim)] bg-background/20"
+          ? "group/mux-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background/30 ring-1 ring-inset ring-ring/60"
+          : "group/mux-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background/20"
       }
+      role="group"
+      aria-label={title}
+      aria-current={focused ? "true" : undefined}
+      tabIndex={focused ? 0 : -1}
       data-yaade-mux-pane={tabId}
       data-panel-id={panelId.id}
       data-yaade-mux-pane-kind={muxLeafKind(tabId) ?? undefined}
@@ -104,14 +138,18 @@ function PaneChromeShell(props: {
         panelId={panelId}
         zoomed={zoomed}
         canZoom={canZoom}
+        dirty={dirty}
+        shortcutFor={shortcutFor}
+        contextRef={isGitPane ? sessionHeaderContextRef(setHeaderContextEl) : undefined}
         onSplitRight={onSplitRight}
         onSplitDown={onSplitDown}
-        onOpenGit={onOpenGit}
+        onOpenGit={isGitPane ? undefined : onOpenGit}
         onOpenNeovim={onOpenNeovim}
+        onOpenEditor={isEditorPane ? undefined : onOpenEditor}
         onZoom={onZoom}
         onClose={onClose}
       />
-      {children}
+      {body}
     </div>
   )
 }
@@ -128,27 +166,49 @@ function TerminalSlot(props: { tabId: string }) {
 function GitPaneBody(props: {
   rootUri: string | null
   theme: YaadeTheme
+  fontSize?: number
   onOpenFile?: (path: string, line?: number) => void
 }) {
   const rootPath = props.rootUri ? fileUriToPath(props.rootUri) : undefined
+  const [monacoReady, setMonacoReady] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void import("../editor/monaco-workers.js").then(({ ensureMonacoWorkersConfigured }) =>
+      ensureMonacoWorkersConfigured(),
+    ).then(() => {
+      if (!cancelled) setMonacoReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <div
       className="min-h-0 flex-1 overflow-hidden"
       data-yaade-git-root={rootPath}
     >
-      <Suspense
-        fallback={
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            Loading Git…
-          </div>
-        }
-      >
-        <GitWorkspace
-          rootUri={props.rootUri}
-          theme={props.theme}
-          onOpenFile={path => props.onOpenFile?.(path)}
-        />
-      </Suspense>
+      {!monacoReady ? (
+        <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+          Loading Git…
+        </div>
+      ) : (
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              Loading Git…
+            </div>
+          }
+        >
+          <GitWorkspace
+            rootUri={props.rootUri}
+            theme={props.theme}
+            fontSize={props.fontSize}
+            onOpenFile={path => props.onOpenFile?.(path)}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
@@ -166,12 +226,17 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     onSplit,
     onOpenGit,
     onOpenNeovim,
+    onOpenEditor,
     onOpenFile,
     onZoom,
     onClosePane,
     gitRootForTab,
+    editorDirtyForTab,
+    shortcutFor,
     theme,
+    fontSize,
     empty,
+    renderEditor,
   } = props
 
   const paneCount = listPaneLeaves(tree).length
@@ -193,17 +258,22 @@ export function MuxWindowView(props: MuxWindowViewProps) {
       focused: boolean,
       zoomed: boolean,
     ) => {
-      const body = isGitTabId(tabId) ? (
-        <GitPaneBody
-          rootUri={gitRootForTab(tabId)}
-          theme={theme}
-          onOpenFile={(path, line) => onOpenFile?.(panelId, path, line)}
-        />
-      ) : isTerminalTabId(tabId) ? (
-        <TerminalSlot tabId={tabId} />
-      ) : (
-        empty
-      )
+      const kind = muxLeafKind(tabId)
+      const body =
+        kind === "git" ? (
+          <GitPaneBody
+            rootUri={gitRootForTab(tabId)}
+            theme={theme}
+            fontSize={fontSize}
+            onOpenFile={(path, line) => onOpenFile?.(panelId, path, line)}
+          />
+        ) : kind === "terminal" ? (
+          <TerminalSlot tabId={tabId} />
+        ) : kind === "editor" ? (
+          (renderEditor?.(tabId, panelId, focused) ?? empty)
+        ) : (
+          empty
+        )
 
       return (
         <PaneChromeShell
@@ -214,10 +284,13 @@ export function MuxWindowView(props: MuxWindowViewProps) {
           focused={focused}
           zoomed={zoomed}
           canZoom={canZoom}
+          dirty={editorDirtyForTab?.(tabId)}
+          shortcutFor={shortcutFor}
           onSplitRight={() => onSplit(panelId, "right")}
           onSplitDown={() => onSplit(panelId, "bottom")}
           onOpenGit={() => onOpenGit(panelId)}
           onOpenNeovim={() => onOpenNeovim(panelId)}
+          onOpenEditor={onOpenEditor ? () => onOpenEditor(panelId) : undefined}
           onZoom={() => onZoom(tabId)}
           onClose={() => onClosePane(panelId, tabId)}
         >
@@ -228,8 +301,10 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     [
       canZoom,
       empty,
+      editorDirtyForTab,
       gitRootForTab,
       onClosePane,
+      onOpenEditor,
       onOpenFile,
       onOpenGit,
       onOpenNeovim,
@@ -237,7 +312,10 @@ export function MuxWindowView(props: MuxWindowViewProps) {
       onZoom,
       paneProcessName,
       paneTitle,
+      renderEditor,
+      shortcutFor,
       theme,
+      fontSize,
     ],
   )
 
@@ -255,7 +333,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
   if (zoomedLeaf) {
     return (
       <div
-        className="flex h-full min-h-0 w-full flex-col overflow-hidden p-1.5"
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden p-1"
         data-yaade-mux-window=""
         data-zoomed=""
       >
@@ -266,7 +344,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
 
   return (
     <div
-      className="h-full min-h-0 w-full gap-1.5 p-1.5 [&_[data-slot=resizable-panel-group]]:gap-1.5"
+      className="h-full min-h-0 w-full gap-1 p-1 [&_[data-slot=resizable-panel-group]]:gap-1"
       data-yaade-mux-window=""
     >
       <PanelDock

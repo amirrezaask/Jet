@@ -381,6 +381,39 @@ function handleGitEffect(
         return null
       case "git:history":
         return yield* git.history(rootUri, typeof args[1] === "number" ? args[1] : 50)
+      case "git:numstat":
+        return yield* git.numstat(rootUri)
+      case "git:commitFiles":
+        return yield* git.commitFiles(rootUri, str(args[1], "hash"))
+      case "git:applyPatch": {
+        const patch = String(args[1] ?? "")
+        const opts = (args[2] as { reverse?: boolean } | undefined) ?? undefined
+        yield* git.applyPatch(rootUri, patch, opts)
+        return null
+      }
+      case "git:worktreeList":
+        return yield* git.worktreeList(rootUri)
+      case "git:worktreeAdd": {
+        const worktreePath = str(args[1], "worktreePath")
+        const opts = (args[2] as
+          | { branch?: string; baseRef?: string; createBranch?: boolean }
+          | undefined) ?? {}
+        const branch = typeof opts.branch === "string" ? opts.branch : ""
+        if (!branch.trim()) throw new Error("branch is required")
+        return yield* git.worktreeAdd(rootUri, worktreePath, {
+          branch: branch.trim(),
+          baseRef: typeof opts.baseRef === "string" ? opts.baseRef : undefined,
+          createBranch: opts.createBranch,
+        })
+      }
+      case "git:worktreeRemove": {
+        const worktreePath = str(args[1], "worktreePath")
+        const opts = (args[2] as { force?: boolean } | undefined) ?? undefined
+        yield* git.worktreeRemove(rootUri, worktreePath, opts)
+        return null
+      }
+      case "git:defaultBranch":
+        return yield* git.defaultBranch(rootUri)
       default:
         return yield* Effect.fail(unknownChannel(channel))
     }

@@ -15,6 +15,13 @@ export type AllocatedGitPane = {
   rootUri: string
 }
 
+export type AllocatedEditorPane = {
+  tabId: string
+  uri: string
+  line?: number
+  label: string
+}
+
 /** Pure: place an already-registered terminal tab into the window tree. */
 export function placeTerminalPane(
   live: {
@@ -50,6 +57,29 @@ export function placeGitPane(
     zoomedPaneId: string | null
   },
   pane: AllocatedGitPane,
+  edge: Edge = "right",
+  focusPanel: PanelId | null = live.focusedPaneId,
+): typeof live {
+  const tree = live.tree.clone()
+  const panelId = placePtyInTree(tree, pane.tabId, focusPanel, edge)
+  return {
+    ...live,
+    tree,
+    focusedPaneId: panelId,
+    zoomedPaneId: null,
+  }
+}
+
+/** Pure: place an already-registered editor tab into the window tree. */
+export function placeEditorPane(
+  live: {
+    id: string
+    title: string
+    tree: YaadePanelTree
+    focusedPaneId: PanelId | null
+    zoomedPaneId: string | null
+  },
+  pane: AllocatedEditorPane,
   edge: Edge = "right",
   focusPanel: PanelId | null = live.focusedPaneId,
 ): typeof live {

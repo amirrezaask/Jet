@@ -618,7 +618,8 @@ export function TerminalPanel({
         void terminalApi.attach(existingPtyId).then(attached => {
           if (cancelled) return
           if (!attached) {
-            if (!readOnly && launchCommandAtStart) {
+            // Stale id after host restart (or reclaim) — spawn fresh.
+            if (!readOnly) {
               createFreshPty()
               return
             }
@@ -811,7 +812,7 @@ export function TerminalPanel({
         focusTerminalInput(tabId)
       }}
     >
-      <div className="yaade-terminal-surface jet-terminal-surface relative min-h-0 flex-1 overflow-hidden p-1.5">
+      <div className="yaade-terminal-surface jet-terminal-surface relative min-h-0 flex-1 overflow-hidden">
         {/*
           FitAddon measures this element's parent box and does NOT subtract parent
           padding. Keep padding on the chrome wrapper; fit target stays unpadded so
@@ -853,7 +854,7 @@ export function TerminalPanel({
         <div
           data-yaade-terminal-exit-bar
           role={displayStatus === "failed" ? "alert" : "status"}
-          className="flex h-9 shrink-0 items-center gap-2 border-t border-border/50 bg-muted/25 px-2.5 text-xs text-muted-foreground"
+          className="flex h-7 shrink-0 items-center gap-2 border-t border-border/50 bg-muted/25 px-2 text-xs text-muted-foreground"
         >
           <span className="min-w-0 flex-1 truncate">
             {displayStatus === "failed"

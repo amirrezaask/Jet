@@ -11,6 +11,11 @@ export type LaunchJetOptions = {
   launchWithoutWorkspace?: boolean
   startPath?: string
   homeDir?: string
+  /**
+   * Stay on the GitHub-style project page (session list) instead of opening a
+   * session workspace. Default false — most mux/terminal E2E specs need a session.
+   */
+  projectPage?: boolean
 }
 
 export const REPO_ROOT = resolve(__dirname, "..", "..")
@@ -38,30 +43,98 @@ export function hasCursorAgent(): boolean {
   }
 }
 
-/** Shared E2E entry. Historical specs remain under tests/electron/. */
+/**
+ * Shared E2E entry. Historical specs remain under tests/electron/.
+ *
+ * Parallelism note: speed now comes from Playwright `fullyParallel: true`, which
+ * runs distinct spec *files* concurrently across workers (see
+ * `playwright.config.ts`). Each `launchJet()` call still spins up its own
+ * `@yaade/host-server` + browser context and tears it down in the test's
+ * `finally` via `app.close()`.
+ *
+ * A shared host-per-worker fixture was intentionally NOT adopted: several active
+ * specs assert against fresh host state — e.g. `mux.electron.spec.ts` /
+ * `url-session.electron.spec.ts` reload to restore persisted layouts and expect
+ * to start from a single pane, and PTYs/workspace-sessions would leak between
+ * tests sharing a host. Reusing one host across tests in a worker would make
+ * these order-dependent and flaky. Keep the per-test host lifecycle; parallelize
+ * at the file level instead. If a shared host is ever revisited, migrate one
+ * spec (mux) as a pilot behind a worker-scoped Playwright fixture and prove
+ * isolation (reset sessions + dispose PTYs between tests) before expanding.
+ */
 export async function launchJet(
   workspaceRelOrOpts: string | LaunchJetOptions = SAMPLE,
 ): Promise<LaunchShellResult> {
   const opts: LaunchJetOptions =
     typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
-  return launchWeb(opts)
+  const result = await launchWeb(opts)
+  if (!opts.projectPage) {
+    await waitForMux(result.page)
+  } else {
+    await waitForProjectPage(result.page)
+  }
+  return result
 }
 
 export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
-  await page.waitForSelector("[data-yaade-mux]", {
-    timeout: timeoutMs,
-  })
-  await page.evaluate(() => window.__yaadeAgent!.waitForReady())
-  await page.waitForFunction(
-    () => window.__yaadeAgent?.getState()?.shellView === "home",
-    null,
-    { timeout: timeoutMs },
-  )
+  await waitForMux(page, timeoutMs)
 }
 
-/** Wait for the terminal mux shell (alias of waitForHome after Mission Control removal). */
+/** Wait for the terminal mux shell, creating a session from the project page if needed. */
 export async function waitForMux(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
-  await waitForHome(page, timeoutMs)
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const mux = await page.locator("[data-yaade-mux]").count()
+    if (mux > 0) {
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
+      return
+    }
+    const project = await page.locator("[data-yaade-shell='project']").count()
+    if (project > 0) {
+      // A create dialog may already be in flight (caller clicked Create).
+      const dialogOpen =
+        (await page.locator("[data-yaade-new-session-dialog]").count()) > 0
+      if (dialogOpen) {
+        await page.waitForTimeout(100)
+        continue
+      }
+      // Prefer an existing session row; otherwise create one.
+      const row = page.locator("[data-yaade-session-row]").first()
+      if ((await row.count()) > 0) {
+        await row.click()
+      } else {
+        await page.locator("[data-yaade-new-session]").click()
+        await page.locator("[data-yaade-new-session-dialog]").waitFor({
+          state: "visible",
+          timeout: 5_000,
+        })
+        await page.locator("[data-yaade-create-session]").click()
+      }
+      await page.locator("[data-yaade-mux]").waitFor({
+        state: "visible",
+        timeout: Math.max(1_000, deadline - Date.now()),
+      })
+      await page.evaluate(() => window.__yaadeAgent!.waitForReady())
+      return
+    }
+    await page.waitForTimeout(100)
+  }
+  throw new Error("waitForMux: timed out waiting for project page or mux shell")
+}
+
+/** Wait for the GitHub-style project landing page (session list). */
+export async function waitForProjectPage(
+  page: ShellDriver,
+  timeoutMs = 30_000,
+): Promise<void> {
+  await page.waitForSelector("[data-yaade-shell='project']", {
+    timeout: timeoutMs,
+  })
+}
+
+/** @deprecated Alias — mux shell is the session workspace. */
+export async function waitForMuxAlias(page: ShellDriver, timeoutMs = 30_000): Promise<void> {
+  await waitForMux(page, timeoutMs)
 }
 
 /** Mission Control sidebar removed — mux shell is the home surface. */
@@ -166,6 +239,20 @@ export async function pressMod(
   const mods = [modChord()]
   if (opts?.shift) mods.push("Shift")
   await page.keyboard.press(`${mods.join("+")}+${key}`)
+}
+
+/**
+ * Mux actions live behind a tmux-style prefix because the browser owns nearly
+ * every `Mod-` chord a multiplexer wants. Playwright's CDP input bypasses
+ * browser chrome, so a spec pressing `Meta+KeyT` would pass while the same key
+ * does nothing for a real user — always drive mux actions through the prefix.
+ */
+export async function pressMuxPrefix(
+  page: ShellDriver,
+  key: string,
+): Promise<void> {
+  await page.keyboard.press("Control+KeyA")
+  await page.keyboard.press(key)
 }
 
 export async function execCommand(page: ShellDriver, commandId: string): Promise<void> {

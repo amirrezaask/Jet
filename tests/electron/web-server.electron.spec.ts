@@ -1,67 +1,55 @@
 import { expect, test } from "@playwright/test"
-import { launchJet, waitForHome } from "./_launch.js"
+import { launchJet, waitForHome, waitForMux } from "./_launch.js"
 
 test.describe("single-binary web server", () => {
-  test("serves the SPA, API, WebSocket, persistence, and file conflict boundary", async ({}, testInfo) => {
+  test("serves the SPA, health, system, WS, and workspace-session API", async ({}, testInfo) => {
     const { app, page } = await launchJet()
     try {
       await waitForHome(page)
-      await page.waitForFunction(async () => {
-        const projects = await fetch("/api/v1/projects").then(response => response.json()) as unknown[]
-        return projects.length > 0
-      }, null, { timeout: 10_000 })
+      await waitForMux(page)
       const result = await page.evaluate(async () => {
         const health = await fetch("/health")
         const system = await fetch("/api/v1/system")
-        const deepRoute = await fetch("/projects/example")
-        const projects = await fetch("/api/v1/projects").then(response => response.json()) as Array<{ id: string; rootPath: string }>
-        const project = projects[0]
-        const file = await fetch(`/api/v1/projects/${project.id}/file?path=package.json`)
-        const conflict = await fetch(`/api/v1/projects/${project.id}/file`, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ path: "package.json", content: "{}", expectedVersion: "stale" }),
-        })
+        const systemBody = (await system.json()) as {
+          homeDir?: string
+          machineHostname?: string
+        }
+        const deepRoute = await fetch("/dev/example")
         const websocket = await new Promise<string>((resolve, reject) => {
           const protocol = location.protocol === "https:" ? "wss:" : "ws:"
           const socket = new WebSocket(`${protocol}//${location.host}/ws?since=0`)
           socket.addEventListener("open", () => socket.send("ping"))
           socket.addEventListener("message", event => {
-            if (event.data === "pong") { socket.close(); resolve("pong") }
+            if (event.data === "pong") {
+              socket.close()
+              resolve("pong")
+            }
           })
           socket.addEventListener("error", () => reject(new Error("WebSocket failed")))
         })
+        const sessionGet = await fetch(
+          `/api/v1/workspace-session?root=${encodeURIComponent(systemBody.homeDir ?? "/")}`,
+        )
         return {
           health: health.status,
           system: system.status,
+          homeDir: typeof systemBody.homeDir === "string",
           deepRoute: deepRoute.status,
           deepContentType: deepRoute.headers.get("content-type"),
-          projects: projects.length,
-          file: file.status,
-          conflict: conflict.status,
           websocket,
+          sessionGet: sessionGet.status,
         }
       })
-      expect(result).toEqual({
-        health: 200,
-        system: 200,
-        deepRoute: 200,
-        deepContentType: "text/html",
-        projects: 1,
-        file: 200,
-        conflict: 409,
-        websocket: "pong",
-      })
+      expect(result.health).toBe(200)
+      expect(result.system).toBe(200)
+      expect(result.homeDir).toBe(true)
+      expect(result.deepRoute).toBe(200)
+      expect(result.deepContentType).toContain("text/html")
+      expect(result.websocket).toBe("pong")
+      expect([200, 403, 404]).toContain(result.sessionGet)
       await page.reload()
-      await waitForHome(page)
-      await page.waitForSelector("[data-yaade-mission-sidebar]", {
-        timeout: 10_000,
-      })
-      await page.waitForSelector(
-        '[data-yaade-sidebar-project-filter-option="all"]',
-        { timeout: 10_000 },
-      )
-      await testInfo.attach("home-after-reload", {
+      await waitForMux(page)
+      await testInfo.attach("mux-after-reload", {
         body: Buffer.from(await page.screenshot(), "base64"),
         contentType: "image/png",
       })

@@ -158,6 +158,12 @@
   --yaade-hl-module: oklch(0.488 0.243 264.376);
   --yaade-hl-label: oklch(0.577 0.245 27.325);
   --yaade-hl-error: oklch(0.577 0.245 27.325);
+  /* Semantic git status colors — one hue per change class, scheme-tuned. */
+  --yaade-git-added: oklch(0.55 0.15 155);
+  --yaade-git-modified: color-mix(in oklch, var(--primary) 88%, var(--foreground));
+  --yaade-git-deleted: var(--destructive);
+  --yaade-git-conflict: oklch(0.66 0.16 70);
+
   --sidebar: oklch(0.96 0.008 255);
   --sidebar-foreground: oklch(0.19 0.012 255);
   --sidebar-primary: oklch(0.48 0.16 255);
@@ -194,7 +200,9 @@
   --glass-saturate: 1.2;
   --glass-brightness: 1.02;
   --glass-sheen-opacity: 0.22;
-  --glass-radius-panel: 1.35rem;
+  --glass-radius-panel: 0.625rem;
+  /* Mux tiled panes — slightly tighter than floating overlay panels. */
+  --glass-radius-pane: 0.625rem;
   --glass-radius-island: 9999px;
   --glass-ease: var(--yaade-ease-out);
   --glass-motion: var(--yaade-motion-menu);
@@ -589,6 +597,11 @@
   --yaade-hl-module: oklch(0.623 0.214 259.815);
   --yaade-hl-label: oklch(0.704 0.191 22.216);
   --yaade-hl-error: oklch(0.704 0.191 22.216);
+  --yaade-git-added: oklch(0.72 0.16 158);
+  --yaade-git-modified: color-mix(in oklch, var(--primary) 90%, var(--foreground));
+  --yaade-git-deleted: var(--destructive);
+  --yaade-git-conflict: oklch(0.82 0.15 80);
+
   --sidebar: oklch(0.18 0.012 255);
   --sidebar-foreground: oklch(0.94 0.008 255);
   --sidebar-primary: oklch(0.72 0.14 250);
@@ -980,6 +993,12 @@ body,
 .dark [data-yaade-mux] [data-yaade-terminal-panel] .yaade-terminal-surface,
 .dark [data-yaade-mux] [data-yaade-terminal-panel] .jet-terminal-surface {
   background: color-mix(in srgb, var(--yaade-bg, var(--background)) 55%, transparent);
+}
+
+/* Compact inset so glyphs clear the pane rim without shrinking the fit target. */
+[data-yaade-mux] [data-yaade-terminal-panel] .xterm-screen {
+  padding: 2px;
+  box-sizing: border-box;
 }
 
 [data-yaade-terminal-panel] .xterm-screen {

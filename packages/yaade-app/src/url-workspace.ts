@@ -3,6 +3,7 @@
  *
  * `http://localhost:5174/dev/consultation` → `{home}/dev/consultation`
  * `/` → home itself (caller may fall back to launchConfig).
+ * `?s=<sessionId>` → open that project session.
  */
 
 const RESERVED_PREFIXES = [
@@ -92,4 +93,54 @@ export function urlPathForProjectRoot(
   }
   // Outside home — still open `/` (caller may use a different affordance).
   return "/"
+}
+
+/** Read `?s=` session id from a search string (`?s=ses-…` or `s=ses-…`). */
+export function sessionIdFromSearch(
+  search: string = typeof location !== "undefined" ? location.search : "",
+): string | null {
+  const raw = search.startsWith("?") ? search.slice(1) : search
+  const params = new URLSearchParams(raw)
+  const id = params.get("s")?.trim() ?? ""
+  return id.length > 0 ? id : null
+}
+
+/** Build `pathname?s=<sessionId>` (or bare pathname when sessionId is null). */
+export function sessionSearchUrl(
+  pathname: string,
+  sessionId: string | null,
+): string {
+  const path = pathname || "/"
+  if (!sessionId) return path
+  const params = new URLSearchParams()
+  params.set("s", sessionId)
+  return `${path}?${params.toString()}`
+}
+
+/** Navigate into a session without remounting the SPA (keeps PTYs alive). */
+export function pushSessionUrl(pathname: string, sessionId: string): void {
+  const next = sessionSearchUrl(pathname, sessionId)
+  if (typeof history === "undefined") return
+  if (`${location.pathname}${location.search}` === next) return
+  history.pushState({ sessionId }, "", next)
+}
+
+/** Return to the project page (drop `?s=`). */
+export function popToProjectUrl(pathname?: string): void {
+  if (typeof history === "undefined") return
+  const path = pathname ?? location.pathname
+  const next = sessionSearchUrl(path, null)
+  if (`${location.pathname}${location.search}` === next) return
+  history.pushState({ sessionId: null }, "", next)
+}
+
+/** Replace the current URL's session id without adding a history entry. */
+export function replaceSessionUrl(
+  pathname: string,
+  sessionId: string | null,
+): void {
+  if (typeof history === "undefined") return
+  const next = sessionSearchUrl(pathname, sessionId)
+  if (`${location.pathname}${location.search}` === next) return
+  history.replaceState({ sessionId }, "", next)
 }

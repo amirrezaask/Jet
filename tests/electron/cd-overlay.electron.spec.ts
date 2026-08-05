@@ -24,10 +24,11 @@ test.describe("electron cd overlay", () => {
       const input = page.getByRole("dialog").locator("input").first()
       await input.fill(target)
       await confirmOverlay(page)
-      await page.waitForTimeout(1000)
 
       await expect
-        .poll(() => page.evaluate(() => window.__yaadeAgent!.getState().activeWorkspace))
+        .poll(() => page.evaluate(() => window.__yaadeAgent!.getState().activeWorkspace), {
+          timeout: 15_000,
+        })
         .toContain("sample-workspace")
     } finally {
       await app.close()
