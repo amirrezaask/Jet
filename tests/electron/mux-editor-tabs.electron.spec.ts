@@ -159,4 +159,42 @@ test.describe("mux editor tabs", () => {
       await app.close()
     }
   })
+
+  test("OS file-drop listeners install; drop opens file in monaco", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await waitForMux(page)
+
+      await expect
+        .poll(
+          async () =>
+            page.evaluate(() => Boolean(window.__yaadeOsFileDropInstalled)),
+          { timeout: 10_000 },
+        )
+        .toBe(true)
+
+      const dropped = await page.evaluate(async () => {
+        const root = window.__yaadeAgent!.getState().workspace
+        if (!root) throw new Error("no workspace")
+        const path = `${root}/src/utils.ts`
+        const ok = await window.__yaadeAgent!.dropFilesOnEditor([path])
+        return { ok, path }
+      })
+      expect(dropped.ok).toBe(true)
+
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      await expect
+        .poll(async () => {
+          const uri = await page
+            .locator("[data-yaade-mux-editor-uri]")
+            .evaluate(el => el.getAttribute("data-yaade-mux-editor-uri") ?? "")
+          return /utils\.ts/.test(uri)
+        }, { timeout: 10_000 })
+        .toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
 })

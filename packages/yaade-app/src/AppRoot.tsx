@@ -236,6 +236,7 @@ export function AppRoot() {
       markPerf: () => undefined,
       measurePerf: () => undefined,
       dropFilesOnTerminal: async () => false,
+      dropFilesOnEditor: async () => false,
       getTerminalText: () => "",
       getTerminalCellHeight: () => 0,
       getTerminalCellSize: () => null,

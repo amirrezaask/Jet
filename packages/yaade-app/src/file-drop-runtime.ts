@@ -38,6 +38,9 @@ export type FileDropOptions = {
 /** Install HTML5 OS file-drop listeners. Returns disposer. */
 export function installFileDrop(getOpts: () => FileDropOptions): () => void {
   let dragDepth = 0
+  if (typeof window !== "undefined") {
+    window.__yaadeOsFileDropInstalled = true
+  }
   const isAgentDrop = (target: EventTarget | null) =>
     target instanceof Element &&
     Boolean(target.closest("[data-yaade-agent-drop-zone]"))
@@ -113,8 +116,9 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
           activeRoot: ctx.activeWorkspacePath ?? null,
         })
       }
-      // Browser Finder drops have no absolute path — materialize into OS temp for PTY paste.
-      if (paths.length === 0 && files.length > 0 && zone === "terminal") {
+      // Browser Finder drops have no absolute path — materialize into OS temp so
+      // terminals can paste a real path and editors can open any file type (incl. images).
+      if (paths.length === 0 && files.length > 0) {
         paths = await materializeDroppedFilesToTemp(files)
       }
 
@@ -167,6 +171,16 @@ export function installFileDrop(getOpts: () => FileDropOptions): () => void {
     window.removeEventListener("dragleave", onDragLeave, true)
     window.removeEventListener("dragover", onDragOver, true)
     window.removeEventListener("drop", onDrop, true)
+    if (typeof window !== "undefined") {
+      delete window.__yaadeOsFileDropInstalled
+    }
+  }
+}
+
+declare global {
+  interface Window {
+    /** Set while mux/legacy OS file-drop listeners are installed (E2E). */
+    __yaadeOsFileDropInstalled?: boolean
   }
 }
 

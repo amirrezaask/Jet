@@ -5,6 +5,7 @@ import {
   monacoLanguageId,
   monacoModels,
   revealPosition,
+  consumePendingInitialContent,
   type MonacoEditorHandle,
 } from "@yaade/monaco"
 import { setPendingEditorNavigation } from "@yaade/monaco/pending"
@@ -115,6 +116,15 @@ export default function MuxEditorPane(props: MuxEditorPaneProps) {
     if (existing) {
       const baseline = muxEditorBaselines.get(uri) ?? existing.getValue()
       applyLoaded(uri, existing.getValue(), baseline)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    // Untitled / pathless drops seed content via setPendingInitialContent — no FS.
+    if (uri.startsWith("untitled:")) {
+      const pending = consumePendingInitialContent(uri)
+      applyLoaded(uri, pending ?? "", "")
       return () => {
         cancelled = true
       }

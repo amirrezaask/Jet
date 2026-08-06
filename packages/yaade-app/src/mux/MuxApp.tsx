@@ -54,12 +54,14 @@ import {
   isFileEditorTabId,
   isGitTabId,
   isTerminalTabId,
+  normalizeAbsPath,
   panelTabIds,
   sameFileTab,
   terminalTabId,
   type JetCommandContext,
   type JetKeyBinding,
   type KeymapContext,
+  type LaunchConfig,
 } from "@yaade/workspace"
 import { createAgentBridge } from "../agent-bridge.js"
 import {
@@ -69,6 +71,7 @@ import {
 import { agentDriverIdForMode } from "@yaade/agents"
 import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
 import { useGlobalKeymap } from "../hooks/useGlobalKeymap.js"
+import { useFileDrop } from "../use-file-drop.js"
 import { MuxLspHost } from "./MuxLspHost.js"
 import {
   clearTerminalSession,
@@ -148,6 +151,10 @@ const MUX_EDITOR_SAVE_EVENT = "yaade:mux-editor-save"
 
 /** Basename display label for an editor pane from its file uri. */
 function editorLabelFromUri(uri: string): string {
+  if (uri.startsWith("untitled:")) {
+    const rest = uri.slice("untitled:".length).trim()
+    return rest || "Untitled"
+  }
   try {
     return fileUriToPath(uri).split(/[/\\]/).filter(Boolean).pop() ?? uri
   } catch {
@@ -1228,6 +1235,52 @@ export function MuxApp({
     },
     [ensureProjectWindow, openEditorSplit],
   )
+
+  const untitledDropCounterRef = useRef(0)
+  const openUntitledFromDrop = useCallback(
+    (name: string, content: string) => {
+      untitledDropCounterRef.current += 1
+      const safe = name.replace(/[/\\]/g, "_").trim() || "Untitled"
+      const uri = `untitled:${safe}-${untitledDropCounterRef.current}`
+      // Lazy: keep monaco editor out of the mux startup graph.
+      void import("@yaade/monaco/pending").then(({ setPendingInitialContent }) => {
+        setPendingInitialContent(uri, content)
+        openEditorInFocused({ uri })
+      })
+    },
+    [openEditorInFocused],
+  )
+
+  const knownDropWorkspacePaths = useMemo(() => {
+    const roots = [sessionCwdPath, sessionProjectPath]
+      .map(p => normalizeAbsPath(p))
+      .filter(Boolean)
+    return [...new Set(roots)]
+  }, [sessionCwdPath, sessionProjectPath])
+
+  useFileDrop({
+    fs: jetPlatformFS(),
+    knownWorkspacePaths: knownDropWorkspacePaths,
+    activeWorkspacePath: normalizeAbsPath(sessionCwdPath),
+    normalizePath: normalizeAbsPath,
+    openWorkspace: path => openBrowserProjectTab(path),
+    // Mux is single-project; still open dropped files outside the root.
+    addWorkspaceFolder: () => {},
+    openFile: (uri, _path) => {
+      openEditorInFocusedRef.current({ uri })
+    },
+    bootstrapFromLaunch: (config: LaunchConfig) => {
+      if (config.filePath) {
+        openEditorInFocusedRef.current({
+          uri: pathToFileUri(config.filePath),
+        })
+      } else if (config.workspacePath) {
+        openBrowserProjectTab(config.workspacePath)
+      }
+    },
+    openUntitledFromDrop,
+    setMessage: showYaadeToast,
+  })
 
   const zoomPane = useCallback(
     (windowId: string, ptyTabId: string) => {

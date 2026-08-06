@@ -4,6 +4,8 @@ import type { CommandRegistry, YaadePanelTree, WorkspaceService } from "@yaade/w
 import type { PanelNode } from "@yaade/panels"
 import type { PanelView } from "@yaade/shared"
 import { handleTerminalFileDropAt } from "@yaade/ui/terminal-file-drop"
+import { normalizeAbsPath } from "@yaade/workspace"
+import { handleDroppedPaths } from "./drop-files.js"
 import {
   findTerminalBufferMatch,
   readTerminalBufferText,
@@ -63,6 +65,8 @@ export type YaadeAgentAPI = {
   measurePerf(name: string, startMark: string, endMark?: string): void
   /** Insert shell-quoted paths into the running terminal under its center (E2E / DnD path). */
   dropFilesOnTerminal(paths: string[]): Promise<boolean>
+  /** Open dropped absolute paths in the editor (same path as OS file-drop → editor zone). */
+  dropFilesOnEditor(paths: string[]): Promise<boolean>
   /** Buffer-backed terminal text (WebGL/Canvas-safe; E2E). */
   getTerminalText(tabId?: string): string
   /** Cell height in CSS px from the active terminal renderer (E2E). */
@@ -321,6 +325,48 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
         rect.left + rect.width / 2,
         rect.top + rect.height / 2,
       )
+    },
+    async dropFilesOnEditor(paths: string[]) {
+      if (paths.length === 0) return false
+      const jet = window.yaade
+      if (!jet?.fs) return false
+      const current = ctx()
+      const known = (current.listWorkspaces?.() ?? []).map(w =>
+        normalizeAbsPath(w.path),
+      )
+      const target =
+        document.querySelector("[data-yaade-monaco-editor]") ??
+        document.querySelector("[data-yaade-mux-editor-pane]")
+      await handleDroppedPaths(
+        paths,
+        "editor",
+        target instanceof Element ? target : null,
+        {
+          fs: {
+            readFile: uri => jet.fs.readFile(uri),
+            writeFile: (uri, content) => jet.fs.writeFile(uri, content),
+            readDir: uri => jet.fs.readDir(uri),
+            stat: uri => jet.fs.stat(uri),
+          },
+          normalizePath: normalizeAbsPath,
+          knownWorkspacePaths: known,
+          openWorkspace: path => current.openWorkspace(path),
+          addWorkspaceFolder: path => {
+            void current.addWorkspace?.(path)
+          },
+          openFile: (uri, _path) => {
+            current.openFile(uri, uri)
+          },
+          bootstrapFromLaunch: config => {
+            if (config.filePath) {
+              const uri = pathToFileUri(config.filePath)
+              current.openFile(uri, config.filePath)
+            }
+          },
+          setMessage: () => {},
+        },
+      )
+      return true
     },
     getTerminalText(tabId) {
       return readTerminalBufferText(tabId)

@@ -859,6 +859,15 @@ test.describe("electron terminal", () => {
     try {
       await showTerminal(page)
       await focusTerminal(page)
+
+      await expect
+        .poll(
+          async () =>
+            page.evaluate(() => Boolean(window.__yaadeOsFileDropInstalled)),
+          { timeout: 10_000 },
+        )
+        .toBe(true)
+
       const needle = "yaade-drop-path-fixture"
       const dropped = await page.evaluate(async pathNeedle => {
         const path = `/tmp/${pathNeedle} with spaces.txt`
@@ -872,6 +881,28 @@ test.describe("electron terminal", () => {
       const text = await readTerminalText(page)
       expect(text).toContain("'")
       expect(text).toContain("with spaces")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("inserts dropped image paths into the PTY", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await showTerminal(page)
+      await focusTerminal(page)
+      const needle = "yaade-drop-image-fixture"
+      const dropped = await page.evaluate(async pathNeedle => {
+        const path = `/tmp/${pathNeedle}.png`
+        const ok = await window.__yaadeAgent!.dropFilesOnTerminal([path])
+        return { ok, path }
+      }, needle)
+      expect(dropped.ok).toBe(true)
+      await expect
+        .poll(async () => readTerminalText(page), { timeout: 10_000 })
+        .toContain(needle)
+      const text = await readTerminalText(page)
+      expect(text).toContain(".png")
     } finally {
       await app.close()
     }
