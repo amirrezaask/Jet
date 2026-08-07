@@ -21,6 +21,14 @@ test("websocket URL follows the page origin and carries replay sequence", () => 
     websocketUrl({ protocol: "https:", host: "jet.example" } as Location),
     "wss://jet.example/ws?since=0",
   )
+  assert.equal(
+    websocketUrl(
+      { protocol: "https:", host: "jet.example" } as Location,
+      9,
+      "client id/with reserved chars",
+    ),
+    "wss://jet.example/ws?since=9&clientId=client%20id%2Fwith%20reserved%20chars",
+  )
 })
 
 test("protocol gate rejects duplicates and incompatible messages", () => {

@@ -261,31 +261,26 @@ export class TerminalHost {
     this.emit = emit
   }
 
-  /**
-   * Free slots for a new create. Prefers exited shells, then oldest (Map
-   * insertion order) — reload orphans land oldest while live panes stay newest.
-   */
+  /** Free exited slots for a new create. Never evict a live user shell. */
   private reclaimSlots(needed: number): void {
     if (needed <= 0 || this.entries.size === 0) return
     const exited: string[] = []
-    const running: string[] = []
     for (const [id, entry] of this.entries) {
       if (entry.status === "exited") exited.push(id)
-      else running.push(id)
     }
-    const victims = [...exited, ...running].slice(0, needed)
+    const victims = exited.slice(0, needed)
     for (const id of victims) this.dispose(id)
   }
 
   create(cwdUri: string, launch: TerminalLaunch | null | undefined, clientId: string): TerminalCreateResult {
     if (this.entries.size >= this.maxEntries) {
-      // Orphans (e.g. pre-reattach reloads) and exited shells fill the cap —
-      // reclaim instead of hard-failing so create always has a slot.
+      // Reclaim retained exit snapshots, but never kill a running terminal to
+      // make room for a new one.
       this.reclaimSlots(this.entries.size - this.maxEntries + 1)
     }
     if (this.entries.size >= this.maxEntries) {
       throw new Error(
-        `too many terminals (max ${this.maxEntries}); dispose unused sessions first`,
+        `too many terminals (max ${this.maxEntries}); close a terminal before creating another`,
       )
     }
 
@@ -521,6 +516,21 @@ export class TerminalHost {
     entry.unacknowledgedChars = 0
     resumePtyForFlowControl(entry)
     return null
+  }
+
+  /**
+   * A websocket can disappear after the client has received terminal output
+   * but before its acknowledgement reaches the host. Clear that stale debt for
+   * every PTY owned by the reconnecting client so flow control cannot leave a
+   * shell suspended indefinitely.
+   */
+  resumeForClient(clientId: string): void {
+    if (clientId.length > 256) return
+    for (const entry of this.entries.values()) {
+      if (entry.clientId !== clientId) continue
+      entry.unacknowledgedChars = 0
+      resumePtyForFlowControl(entry)
+    }
   }
 
   attach(id: string, clientId: string): TerminalAttachSnapshot | null {

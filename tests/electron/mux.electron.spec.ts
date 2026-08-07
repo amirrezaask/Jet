@@ -64,6 +64,31 @@ test.describe("mux shell", () => {
       await app.close()
     }
   })
+
+  test("caps a workspace at six live terminal panes", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      for (let expected = 2; expected <= 6; expected += 1) {
+        await execCommand(page, "mux.splitRight")
+        await expect
+          .poll(async () => page.locator("[data-yaade-mux-pane-kind=terminal]").count(), {
+            timeout: 15_000,
+          })
+          .toBe(expected)
+      }
+
+      await execCommand(page, "mux.splitRight")
+      await expect
+        .poll(async () => page.locator("[data-yaade-mux-pane-kind=terminal]").count())
+        .toBe(6)
+      await expectLocatorVisible(
+        page.getByText("Terminal pane limit reached (6). Close a terminal or use another session."),
+      )
+    } finally {
+      await app.close()
+    }
+  })
 })
 
 test.describe("mux keyboard", () => {
@@ -1014,4 +1039,3 @@ test.describe("mux persistence", () => {
     }
   })
 })
-

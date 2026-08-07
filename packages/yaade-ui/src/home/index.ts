@@ -104,7 +104,6 @@ export {
   useProjectTodosLive,
   useProjectTodosBundle,
   ProjectTodosPane,
-  ProjectTodoBoard,
   type ProjectTodo,
   type ProjectTodoStatus,
   type ProjectTodosApi,

@@ -117,42 +117,45 @@ test("flushes small interactive PTY output without waiting on the 4ms batch time
   }
 })
 
-test("pauses PTY when unacked chars exceed high watermark and resumes on ack", async () => {
+test("resumes a paused PTY when its websocket client reconnects", async () => {
   const terminal = new TerminalHost()
   let timeout: ReturnType<typeof setTimeout> | undefined
-  const firstBatch = new Promise<string>((resolve, reject) => {
-    timeout = setTimeout(() => reject(new Error("no terminal:data")), 10_000)
+  let emittedChars = 0
+  let resumed = false
+  const resumedOutput = new Promise<void>((resolve, reject) => {
+    timeout = setTimeout(() => reject(new Error("flow-controlled PTY did not resume")), 10_000)
     terminal.setEmit((channel, args) => {
-      if (channel === "terminal:data") {
+      if (channel !== "terminal:data") return
+      const data = String(args[1] ?? "")
+      emittedChars += data.length
+      if (!resumed && emittedChars > TERMINAL_FLOW_HIGH_WATERMARK_CHARS) {
+        resumed = true
+        // flushPendingOutput pauses after emitting this batch, so resume in the
+        // following microtask just as a lost websocket acknowledgement would.
+        queueMicrotask(() => terminal.resumeForClient("terminal-flow-control-test"))
+      }
+      if (data.includes("flow-control-resumed")) {
         if (timeout) clearTimeout(timeout)
-        resolve(String(args[0] ?? ""))
+        resolve()
       }
     })
   })
 
   try {
-    // Slow producer that keeps writing — without pause this would race ahead.
-    // We drive flow control by emitting large batches via a fast writer, then
-    // checking that ack resumes by verifying acknowledgeData does not throw
-    // and subsequent attach clears the pause.
     const created = terminal.create(
       pathToFileURL(process.cwd()).href,
       {
         command: process.execPath,
         args: [
           "-e",
-          // Write more than the high watermark, then wait so pause can stick.
-          `process.stdout.write('y'.repeat(${TERMINAL_FLOW_HIGH_WATERMARK_CHARS + 10_000})); setTimeout(() => {}, 500)`,
+          // The marker is held behind the high-watermark pause unless the
+          // reconnect path resumes this client's PTY.
+          `process.stdout.write('y'.repeat(${TERMINAL_FLOW_HIGH_WATERMARK_CHARS + 10_000})); setTimeout(() => process.stdout.write('flow-control-resumed'), 150)`,
         ],
       },
       "terminal-flow-control-test",
     )
-    const id = await firstBatch
-    assert.equal(id, created.id)
-
-    // Ack enough to drop below the low watermark — must resume cleanly.
-    terminal.acknowledgeData(created.id, TERMINAL_FLOW_HIGH_WATERMARK_CHARS + 10_000)
-    terminal.clearUnacknowledgedChars(created.id)
+    await resumedOutput
 
     const attached = terminal.attach(created.id, "terminal-flow-control-test")
     assert.ok(attached)
@@ -163,7 +166,7 @@ test("pauses PTY when unacked chars exceed high watermark and resumes on ack", a
   }
 })
 
-test("create at capacity reclaims oldest entry instead of throwing", async () => {
+test("create at capacity preserves every running terminal", async () => {
   const max = 3
   const terminal = new TerminalHost(max)
   const ids: string[] = []
@@ -184,22 +187,24 @@ test("create at capacity reclaims oldest entry instead of throwing", async () =>
     }
     assert.equal(ids.length, max)
 
-    const next = terminal.create(
-      pathToFileURL(process.cwd()).href,
-      {
-        command: process.execPath,
-        args: [
-          "-e",
-          "process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{}, 1e9)",
-        ],
-      },
-      "reclaim-test-overflow",
+    assert.throws(
+      () =>
+        terminal.create(
+          pathToFileURL(process.cwd()).href,
+          {
+            command: process.execPath,
+            args: [
+              "-e",
+              "process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{}, 1e9)",
+            ],
+          },
+          "reclaim-test-overflow",
+        ),
+      /too many terminals/,
     )
-    // Oldest (ids[0]) was reclaimed; newest create succeeded.
-    assert.equal(terminal.attach(ids[0]!, "probe"), null)
+    assert.ok(terminal.attach(ids[0]!, "probe"))
     assert.ok(terminal.attach(ids[1]!, "probe"))
     assert.ok(terminal.attach(ids[2]!, "probe"))
-    assert.ok(terminal.attach(next.id, "probe"))
   } finally {
     terminal.stopAll()
   }

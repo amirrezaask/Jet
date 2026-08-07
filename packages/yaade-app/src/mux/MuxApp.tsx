@@ -513,7 +513,7 @@ export function MuxApp({
   const slotBoxesRef = useRef(new Map<string, import("./MuxTerminalLayer.js").MuxTerminalSlotBox>())
   /** LRU of recently focused terminal tab ids (beyond the active window). */
   const terminalLruRef = useRef<string[]>([])
-  const MAX_MOUNTED_TERMINALS = 6
+  const MAX_TERMINAL_PANES_PER_WORKSPACE = 6
 
   const activeWindow =
     windows.find(w => w.id === activeWindowId) ?? windows[0] ?? null
@@ -669,6 +669,21 @@ export function MuxApp({
     },
     [],
   )
+
+  /** Keep every visible terminal live; cap panes before the mount budget is exceeded. */
+  const canAddTerminalPane = useCallback((windowId: string): boolean => {
+    const live = windowsRef.current.find(window => window.id === windowId)
+    if (
+      !live ||
+      listTerminalLeaves(live.tree).length < MAX_TERMINAL_PANES_PER_WORKSPACE
+    ) {
+      return true
+    }
+    showYaadeToast(
+      `Terminal pane limit reached (${MAX_TERMINAL_PANES_PER_WORKSPACE}). Close a terminal or use another session.`,
+    )
+    return false
+  }, [])
 
   /** Side effects: register session + tab. Call OUTSIDE setState updaters. */
   const allocTerminalPane = useCallback(
@@ -1069,11 +1084,12 @@ export function MuxApp({
 
   const splitPane = useCallback(
     async (windowId: string, panelId: PanelId, edge: "right" | "bottom") => {
+      if (!canAddTerminalPane(windowId)) return
       const rootUri = await resolveSplitCwdUri(windowId, panelId)
       const pane = allocTerminalPane({ rootUri })
       updateWindow(windowId, w => placeTerminalPane(w, pane, edge, panelId))
     },
-    [allocTerminalPane, resolveSplitCwdUri, updateWindow],
+    [allocTerminalPane, canAddTerminalPane, resolveSplitCwdUri, updateWindow],
   )
 
   /** Open a terminal in the active window (fill empty, else split). */
@@ -1081,19 +1097,21 @@ export function MuxApp({
     async (edge: "right" | "bottom" = "right") => {
       const w = ensureProjectWindow()
       if (listPaneLeaves(w.tree).length === 0 || !w.focusedPaneId) {
+        if (!canAddTerminalPane(w.id)) return
         const pane = allocTerminalPane()
         updateWindow(w.id, live => placeTerminalPane(live, pane))
         return
       }
       await splitPane(w.id, w.focusedPaneId, edge)
     },
-    [allocTerminalPane, ensureProjectWindow, splitPane, updateWindow],
+    [allocTerminalPane, canAddTerminalPane, ensureProjectWindow, splitPane, updateWindow],
   )
 
   /** Launch a known agent CLI into the active (or empty) window. */
   const openAgentCliPane = useCallback(
     (driver: AgentCliDriver) => {
       const w = ensureProjectWindow()
+      if (!canAddTerminalPane(w.id)) return
       const rootUri = cwdUri()
       const projectRoot = rootUri ? fileUriToPath(rootUri) : ""
       const launchContext = {
@@ -1144,7 +1162,7 @@ export function MuxApp({
           .catch(() => undefined)
       }
     },
-    [cwdUri, ensureProjectWindow, updateWindow, workspace],
+    [canAddTerminalPane, cwdUri, ensureProjectWindow, updateWindow, workspace],
   )
 
   const openGitSplit = useCallback(
@@ -1164,6 +1182,7 @@ export function MuxApp({
       panelId: PanelId | null,
       options?: { filePath?: string; line?: number },
     ) => {
+      if (!canAddTerminalPane(windowId)) return
       const rootUri = panelId
         ? await resolveSplitCwdUri(windowId, panelId)
         : cwdUri()
@@ -1182,7 +1201,7 @@ export function MuxApp({
       })
       updateWindow(windowId, w => placeTerminalPane(w, pane, "right", panelId))
     },
-    [allocTerminalPane, cwdUri, resolveSplitCwdUri, updateWindow],
+    [allocTerminalPane, canAddTerminalPane, cwdUri, resolveSplitCwdUri, updateWindow],
   )
 
   const openEditorSplit = useCallback(
@@ -2166,7 +2185,7 @@ export function MuxApp({
     if (!focusedPtyTabId) return
     const lru = terminalLruRef.current.filter(id => id !== focusedPtyTabId)
     lru.unshift(focusedPtyTabId)
-    terminalLruRef.current = lru.slice(0, MAX_MOUNTED_TERMINALS)
+    terminalLruRef.current = lru.slice(0, MAX_TERMINAL_PANES_PER_WORKSPACE)
   }, [focusedPtyTabId])
 
   const mountedPtyIds = useMemo(() => {
@@ -2174,7 +2193,7 @@ export function MuxApp({
     const out: string[] = [...activePtyIds]
     for (const id of terminalLruRef.current) {
       if (active.has(id)) continue
-      if (out.length >= MAX_MOUNTED_TERMINALS) break
+      if (out.length >= MAX_TERMINAL_PANES_PER_WORKSPACE) break
       if (allPtyIds.includes(id)) {
         out.push(id)
         active.add(id)

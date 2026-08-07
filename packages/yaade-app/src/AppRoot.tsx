@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import type { ProjectSession } from "@yaade/rpc"
 import { ProjectPage } from "./project/ProjectPage.js"
+import { preloadMuxApp } from "./mux/preload.js"
 import {
   createProjectSession,
   loadProjectSession,
@@ -28,6 +29,12 @@ type BootState =
       session: ProjectSession | null
     }
 
+type SystemInfo = {
+  homeDir?: string
+  machineHostname?: string
+  launchConfig?: { workspacePath?: string }
+}
+
 export function AppRoot() {
   const [boot, setBoot] = useState<BootState>({ status: "loading" })
   const [routeEpoch, setRouteEpoch] = useState(0)
@@ -45,25 +52,25 @@ export function AppRoot() {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      let homeDir = ""
+      let systemInfo: SystemInfo | null = null
       try {
-        homeDir = (await window.yaade?.getHomeDir?.()) ?? ""
+        const response = await fetch("/api/v1/system")
+        if (response.ok) systemInfo = (await response.json()) as SystemInfo
       } catch {
-        homeDir = ""
+        /* fall through to the compatibility calls below */
       }
 
-      let machineHostname = "local"
-      try {
-        const sys = await fetch("/api/v1/system")
-        if (sys.ok) {
-          const body = (await sys.json()) as { machineHostname?: string }
-          if (typeof body.machineHostname === "string") {
-            machineHostname = body.machineHostname
-          }
+      // The system endpoint carries all boot metadata in one request. Keep the
+      // RPC calls as a fallback for older hosts without that endpoint shape.
+      let homeDir = systemInfo?.homeDir ?? ""
+      if (!homeDir) {
+        try {
+          homeDir = (await window.yaade?.getHomeDir?.()) ?? ""
+        } catch {
+          homeDir = ""
         }
-      } catch {
-        /* keep local */
       }
+      const machineHostname = systemInfo?.machineHostname ?? "local"
 
       const pathname =
         typeof location !== "undefined" ? location.pathname : "/"
@@ -73,11 +80,16 @@ export function AppRoot() {
         homeDir &&
         (pathname === "/" || pathname === "")
       ) {
-        try {
-          const cfg = await window.yaade?.getLaunchConfig?.()
-          if (cfg?.workspacePath) projectPath = cfg.workspacePath
-        } catch {
-          /* keep home */
+        const workspacePath = systemInfo?.launchConfig?.workspacePath
+        if (workspacePath) {
+          projectPath = workspacePath
+        } else if (!systemInfo) {
+          try {
+            const cfg = await window.yaade?.getLaunchConfig?.()
+            if (cfg?.workspacePath) projectPath = cfg.workspacePath
+          } catch {
+            /* keep home */
+          }
         }
       }
 
@@ -109,7 +121,10 @@ export function AppRoot() {
       }
 
       try {
-        const session = await loadProjectSession(sessionId)
+        const [session] = await Promise.all([
+          loadProjectSession(sessionId),
+          preloadMuxApp(),
+        ])
         if (cancelled) return
         if (session.projectPath !== projectPath) {
           setBoot({
@@ -154,7 +169,10 @@ export function AppRoot() {
   const openSession = useCallback(
     async (sessionId: string) => {
       if (boot.status !== "ready") return
-      const session = await loadProjectSession(sessionId)
+      const [session] = await Promise.all([
+        loadProjectSession(sessionId),
+        preloadMuxApp(),
+      ])
       pushSessionUrl(location.pathname, sessionId)
       setBoot({
         ...boot,
@@ -244,11 +262,13 @@ export function AppRoot() {
       getTerminalCursor: () => null,
       findTerminalText: () => null,
       createProjectSession: async input => {
+        const muxReady = preloadMuxApp()
         const created = await createProjectSession({
           rootPath: projectPath,
           title: input?.title,
           worktree: input?.worktree,
         })
+        await muxReady
         await openSession(created.id)
         return { id: created.id }
       },
@@ -273,10 +293,24 @@ export function AppRoot() {
   if (boot.status === "loading") {
     return (
       <div
-        className="grid h-full place-items-center bg-background text-muted-foreground"
+        className="flex h-full flex-col bg-background"
         data-yaade-boot="loading"
+        role="status"
       >
-        Loading…
+        <span className="sr-only">Loading workspace…</span>
+        <div className="h-8 shrink-0 border-b border-border px-3 py-2">
+          <div className="h-3 w-48 rounded-sm bg-muted" />
+        </div>
+        <div className="grid w-full max-w-7xl gap-8 p-4 sm:p-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,0.75fr)]">
+          <div className="space-y-3">
+            <div className="h-4 w-28 rounded-sm bg-muted" />
+            <div className="h-40 rounded-md border border-border/60 bg-muted/30" />
+          </div>
+          <div className="space-y-3 xl:border-l xl:border-border/60 xl:pl-8">
+            <div className="h-4 w-20 rounded-sm bg-muted" />
+            <div className="h-28 rounded-md border border-border/60 bg-muted/20" />
+          </div>
+        </div>
       </div>
     )
   }

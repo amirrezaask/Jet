@@ -70,7 +70,6 @@ export {
   type ProjectTodosApi,
   type ProjectTodosRepository,
   ProjectTodosPane,
-  ProjectTodoBoard,
   NotificationBell,
   NotificationCenter,
   type NotificationBellProps,

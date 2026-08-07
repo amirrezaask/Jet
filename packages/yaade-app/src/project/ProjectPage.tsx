@@ -11,9 +11,9 @@ import type { GitRepositorySummary } from "@yaade/shared"
 import { pathToFileUri } from "@yaade/shared"
 import {
   AppShell,
-  bundledThemeList,
   cn,
-} from "@yaade/ui"
+} from "@yaade/ui/project"
+import { bundledThemeList } from "@yaade/ui/appearance"
 import {
   Button,
   Tabs,
@@ -22,7 +22,7 @@ import {
 } from "@yaade/ui/primitives"
 import { SettingsIcon } from "lucide-react"
 import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
-import { MuxApp } from "../mux/MuxApp.js"
+import { preloadMuxApp } from "../mux/preload.js"
 import { workspaceDocumentTitle } from "../url-workspace.js"
 import {
   createProjectSession,
@@ -35,8 +35,16 @@ import { WorktreeSwitcher } from "./WorktreeSwitcher.js"
 const GitWorkspace = lazy(() =>
   import("@yaade/ui/git").then(m => ({ default: m.GitWorkspace })),
 )
+
+function preloadSettingsOverlay() {
+  return import("@yaade/ui/settings")
+}
+
+const MuxApp = lazy(() =>
+  preloadMuxApp().then(m => ({ default: m.MuxApp })),
+)
 const SettingsOverlay = lazy(() =>
-  import("@yaade/ui").then(m => ({ default: m.SettingsOverlay })),
+  preloadSettingsOverlay().then(m => ({ default: m.SettingsOverlay })),
 )
 
 export type ProjectPageProps = {
@@ -75,6 +83,7 @@ export function ProjectPage({
     session ? "worktree" : "overview",
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [historyMounted, setHistoryMounted] = useState(false)
   const [summary, setSummary] = useState<GitRepositorySummary | null>(null)
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
   const title = workspaceDocumentTitle(projectPath, homeDir)
@@ -115,6 +124,7 @@ export function ProjectPage({
       worktreeBranch?: string | null
       worktreePath?: string | null
     }) => {
+      const muxReady = preloadMuxApp()
       const next = await openCheckoutSession({
         rootPath: projectPath,
         cwdPath: input.cwdPath,
@@ -122,6 +132,7 @@ export function ProjectPage({
         worktreeBranch: input.worktreeBranch,
         worktreePath: input.worktreePath,
       })
+      await muxReady
       setView("worktree")
       await onOpenSession(next.id)
     },
@@ -130,6 +141,7 @@ export function ProjectPage({
 
   const handleCreateWorktree = useCallback(
     async (input: { branch: string; baseRef?: string }) => {
+      const muxReady = preloadMuxApp()
       const created = await createProjectSession({
         rootPath: projectPath,
         title: input.branch,
@@ -138,6 +150,7 @@ export function ProjectPage({
           baseRef: input.baseRef,
         },
       })
+      await muxReady
       setView("worktree")
       await onOpenSession(created.id)
     },
@@ -157,11 +170,14 @@ export function ProjectPage({
         <Tabs
           value={tabsValue}
           onValueChange={value => {
-            if (value === "overview" || value === "history") setView(value)
+            if (value === "overview" || value === "history") {
+              if (value === "history") setHistoryMounted(true)
+              setView(value)
+            }
           }}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <header className="flex h-7 shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-2.5">
+          <header className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-2.5">
             <ProjectPathSwitcher
               projectPath={projectPath}
               homeDir={homeDir}
@@ -191,6 +207,7 @@ export function ProjectPage({
                     : null
                 }
                 activeCwdPath={session?.cwdPath ?? null}
+                onIntent={() => void preloadMuxApp()}
                 onSelectCheckout={handleSelectCheckout}
                 onCreateWorktree={handleCreateWorktree}
               />
@@ -209,6 +226,8 @@ export function ProjectPage({
                 variant="ghost"
                 size="icon-xs"
                 aria-label="Settings"
+                onPointerEnter={() => void preloadSettingsOverlay()}
+                onFocus={() => void preloadSettingsOverlay()}
                 onClick={() => setSettingsOpen(true)}
               >
                 <SettingsIcon className="size-3.5" />
@@ -233,24 +252,35 @@ export function ProjectPage({
               />
             </div>
 
-            <div
-              className={cn(
-                "absolute inset-0 overflow-hidden",
-                view !== "history" && "pointer-events-none invisible",
-              )}
-              aria-hidden={view !== "history"}
-              data-yaade-project-panel="history"
-            >
-              <Suspense fallback={null}>
-                <GitWorkspace
-                  rootUri={rootUri}
-                  theme={activeTheme}
-                  initialView="history"
-                  unifiedHistory
-                  onOpenFile={() => undefined}
-                />
-              </Suspense>
-            </div>
+            {historyMounted ? (
+              <div
+                className={cn(
+                  "absolute inset-0 overflow-hidden",
+                  view !== "history" && "pointer-events-none invisible",
+                )}
+                aria-hidden={view !== "history"}
+                data-yaade-project-panel="history"
+              >
+                <Suspense
+                  fallback={
+                    <div
+                      className="grid h-full place-items-center text-xs text-muted-foreground"
+                      role="status"
+                    >
+                      Loading history…
+                    </div>
+                  }
+                >
+                  <GitWorkspace
+                    rootUri={rootUri}
+                    theme={activeTheme}
+                    initialView="history"
+                    unifiedHistory
+                    onOpenFile={() => undefined}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
 
             {session ? (
               <div
@@ -261,14 +291,25 @@ export function ProjectPage({
                 aria-hidden={view !== "worktree"}
                 data-yaade-project-panel="worktree"
               >
-                <MuxApp
-                  key={session.id}
-                  session={session}
-                  homeDir={homeDir}
-                  machineHostname={machineHostname}
-                  embedded
-                  onBackToProject={onClearSession}
-                />
+                <Suspense
+                  fallback={
+                    <div
+                      className="grid h-full place-items-center text-xs text-muted-foreground"
+                      role="status"
+                    >
+                      Opening workspace…
+                    </div>
+                  }
+                >
+                  <MuxApp
+                    key={session.id}
+                    session={session}
+                    homeDir={homeDir}
+                    machineHostname={machineHostname}
+                    embedded
+                    onBackToProject={onClearSession}
+                  />
+                </Suspense>
               </div>
             ) : null}
           </div>

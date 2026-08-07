@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.js"
+import { Button } from "@/components/ui/button.js"
 import {
   Empty,
   EmptyDescription,
@@ -43,6 +44,26 @@ export type CommitChangesDialogProps = {
 }
 
 type DiffContents = { original: string; modified: string }
+type DiffStyle = "unified" | "split"
+
+function storedDiffStyle(): DiffStyle {
+  try {
+    return localStorage.getItem("yaade:git-diff-style") === "split"
+      ? "split"
+      : "unified"
+  } catch {
+    return "unified"
+  }
+}
+
+function displayPath(path: string): { name: string; parent: string } {
+  const separator = path.lastIndexOf("/")
+  if (separator < 0) return { name: path, parent: "" }
+  return {
+    name: path.slice(separator + 1),
+    parent: path.slice(0, separator),
+  }
+}
 
 export function CommitChangesDialog(props: CommitChangesDialogProps) {
   const { open, onOpenChange, rootUri, hash, theme, fontSize = 13, commit } = props
@@ -54,8 +75,27 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
   const [diffContents, setDiffContents] = useState<DiffContents | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
   const [diffError, setDiffError] = useState<string | null>(null)
+  const [diffStyle, setDiffStyle] = useState<DiffStyle>(storedDiffStyle)
+  const [compactLayout, setCompactLayout] = useState(false)
   const detailRequest = useRef(0)
   const diffRequest = useRef(0)
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)")
+    const sync = () => setCompactLayout(query.matches)
+    sync()
+    query.addEventListener("change", sync)
+    return () => query.removeEventListener("change", sync)
+  }, [])
+
+  const changeDiffStyle = (style: DiffStyle) => {
+    setDiffStyle(style)
+    try {
+      localStorage.setItem("yaade:git-diff-style", style)
+    } catch {
+      /* keep the in-memory preference */
+    }
+  }
 
   useEffect(() => {
     if (!open || !api || !hash) {
@@ -129,6 +169,7 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
   const shortHash = commit?.shortHash ?? hash.slice(0, 7)
   const author = commit?.author
   const authoredAt = commit?.authoredAt
+  const effectiveDiffStyle = compactLayout ? "unified" : diffStyle
 
   const fileList = detail ? (
     <aside
@@ -151,15 +192,18 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
         ) : (
           detail.files.map(file => {
             const active = file.path === selectedFile?.path
+            const visiblePath = displayPath(file.path)
             return (
               <li key={`${file.status}:${file.path}`}>
                 <button
                   type="button"
                   data-yaade-list-item=""
                   data-active={active ? "" : undefined}
+                  aria-pressed={active}
+                  title={file.path}
                   onClick={() => setSelectedPath(file.path)}
                   className={cn(
-                    "flex w-full shrink-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left text-2xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    "flex w-full shrink-0 items-start gap-2 rounded-sm px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                     active
                       ? "bg-primary/10 text-foreground"
                       : "text-muted-foreground hover:bg-accent/35 hover:text-foreground",
@@ -174,7 +218,16 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
                   >
                     {statusLetter(file.status)}
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
+                  <span className="min-w-0 flex-1 font-mono">
+                    <span className="block truncate text-xs text-foreground">
+                      {visiblePath.name}
+                    </span>
+                    {visiblePath.parent ? (
+                      <span className="block truncate text-3xs text-muted-foreground">
+                        {visiblePath.parent}/
+                      </span>
+                    ) : null}
+                  </span>
                 </button>
               </li>
             )
@@ -192,7 +245,7 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
             data-yaade-liquid-glass="chrome"
             className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent px-3"
           >
-            <FileDiffIcon className="text-muted-foreground" aria-hidden />
+            <FileDiffIcon className="size-3.5 text-muted-foreground" aria-hidden />
             <span className="min-w-0 flex-1 truncate font-mono text-2xs">
               {selectedFile.path}
             </span>
@@ -213,7 +266,7 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
                 path={selectedFile.path}
                 original={diffContents.original}
                 modified={diffContents.modified}
-                mode="split"
+                mode={effectiveDiffStyle}
                 theme={theme}
                 fontSize={fontSize}
               />
@@ -239,17 +292,45 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
       <DialogContent
         size="wide"
         data-yaade-commit-changes-dialog=""
-        className="flex h-[92dvh] max-h-[92dvh] w-[94vw] max-w-[94vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[94vw]"
+        className="flex h-[94dvh] max-h-[94dvh] w-[96vw] max-w-[96vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[96vw]"
       >
-        <DialogHeader className="shrink-0 gap-1 border-b border-border px-4 py-3 pr-12 text-left">
-          <DialogTitle className="truncate text-base">{subject}</DialogTitle>
-          <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-2xs text-muted-foreground">
-            <span>{shortHash}</span>
-            {author ? <span>· {author}</span> : null}
-            {authoredAt != null ? (
-              <span>· {dateFormatter.format(new Date(authoredAt))}</span>
-            ) : null}
-          </DialogDescription>
+        <DialogHeader className="shrink-0 gap-2 border-b border-border px-4 py-3 pr-12 text-left sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <DialogTitle className="truncate text-base">{subject}</DialogTitle>
+            <DialogDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-2xs text-muted-foreground">
+              <span>{shortHash}</span>
+              {author ? <span>· {author}</span> : null}
+              {authoredAt != null ? (
+                <span>· {dateFormatter.format(new Date(authoredAt))}</span>
+              ) : null}
+            </DialogDescription>
+          </div>
+          <div
+            className="flex w-fit shrink-0 items-center rounded-md border border-border bg-muted/30 p-0.5"
+            role="group"
+            aria-label="Diff layout"
+          >
+            <Button
+              type="button"
+              size="xs"
+              variant={effectiveDiffStyle === "unified" ? "secondary" : "ghost"}
+              aria-pressed={effectiveDiffStyle === "unified"}
+              onClick={() => changeDiffStyle("unified")}
+            >
+              Unified
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant={effectiveDiffStyle === "split" ? "secondary" : "ghost"}
+              aria-pressed={effectiveDiffStyle === "split"}
+              disabled={compactLayout}
+              title={compactLayout ? "Split view needs a wider window" : undefined}
+              onClick={() => changeDiffStyle("split")}
+            >
+              Split
+            </Button>
+          </div>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -268,14 +349,22 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
             />
           ) : (
             <ResizablePanelGroup
-              orientation="horizontal"
+              key={compactLayout ? "compact" : "wide"}
+              orientation={compactLayout ? "vertical" : "horizontal"}
               className="min-h-0 flex-1 bg-transparent"
             >
-              <ResizablePanel defaultSize="28%" minSize="160px" maxSize="50%">
+              <ResizablePanel
+                defaultSize={compactLayout ? "34%" : "24%"}
+                minSize={compactLayout ? "128px" : "180px"}
+                maxSize={compactLayout ? "45%" : "38%"}
+              >
                 {fileList}
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize="72%" minSize="240px">
+              <ResizablePanel
+                defaultSize={compactLayout ? "66%" : "76%"}
+                minSize={compactLayout ? "220px" : "320px"}
+              >
                 {diffPane}
               </ResizablePanel>
             </ResizablePanelGroup>

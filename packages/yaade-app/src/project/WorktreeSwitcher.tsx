@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import type { GitWorktree } from "@yaade/shared"
 import { pathToFileUri } from "@yaade/shared"
-import { cn, yaadePressClass } from "@yaade/ui"
+import { cn, yaadePressClass } from "@yaade/ui/project"
 import {
-  Button,
   Command,
   CommandEmpty,
   CommandGroup,
@@ -43,6 +42,8 @@ export type WorktreeSwitcherProps = {
     branch: string
     baseRef?: string
   }) => Promise<void>
+  /** Warm the session workspace when the user signals intent to open it. */
+  onIntent?: () => void
 }
 
 function branchLabel(wt: GitWorktree): string {
@@ -60,6 +61,7 @@ export function WorktreeSwitcher({
   activeCwdPath,
   onSelectCheckout,
   onCreateWorktree,
+  onIntent,
 }: WorktreeSwitcherProps) {
   const [open, setOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -143,6 +145,7 @@ export function WorktreeSwitcher({
       <Popover
         open={open}
         onOpenChange={next => {
+          if (next) onIntent?.()
           setOpen(next)
           if (!next) {
             setError(null)
@@ -158,6 +161,8 @@ export function WorktreeSwitcher({
             aria-label="Worktrees"
             aria-expanded={open}
             disabled={busy}
+            onPointerEnter={onIntent}
+            onFocus={onIntent}
             className={cn(
               yaadePressClass,
               "relative inline-flex h-[calc(100%-1px)] items-center justify-center gap-0.5 rounded-md border border-transparent px-1.5 py-0 text-xs font-medium whitespace-nowrap text-foreground/60 outline-none",
@@ -170,7 +175,7 @@ export function WorktreeSwitcher({
           >
             Worktrees
             {activeLabel ? (
-              <span className="max-w-[7rem] truncate font-normal text-foreground/80">
+              <span className="hidden max-w-[7rem] truncate font-normal text-foreground/80 sm:inline">
                 · {activeLabel}
               </span>
             ) : null}
@@ -293,23 +298,6 @@ export function WorktreeSwitcher({
               )}
             </CommandList>
           </Command>
-          {!loading && !error ? (
-            <div className="border-t border-border p-2 sm:hidden">
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                data-yaade-worktree-create=""
-                onClick={() => {
-                  setOpen(false)
-                  setCreateOpen(true)
-                }}
-              >
-                <PlusIcon className="size-3.5" />
-                Create worktree…
-              </Button>
-            </div>
-          ) : null}
         </PopoverContent>
       </Popover>
 

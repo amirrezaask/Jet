@@ -5,11 +5,13 @@ import {
   CdOverlay,
   PaletteShell,
   QuickOpenOverlay,
-  SettingsOverlay,
-  bundledThemeList,
-  type JetAppearanceSettings,
   type PaletteShellItem,
 } from "@yaade/ui"
+import {
+  bundledThemeList,
+  type JetAppearanceSettings,
+} from "@yaade/ui/appearance"
+import { SettingsOverlay } from "@yaade/ui/settings"
 import type { MuxSwitcherEntry } from "./types.js"
 
 export type MuxOverlaysProps = {
@@ -76,14 +78,16 @@ export default function MuxOverlays(props: MuxOverlaysProps) {
         )}
       />
 
-      <SettingsOverlay
-        open={props.settingsOpen}
-        onOpenChange={props.onSettingsOpenChange}
-        settings={props.appearanceSettings}
-        onSettingsChange={props.onAppearanceChange}
-        themes={bundledThemeList}
-        onReset={props.onResetAppearance}
-      />
+      {props.settingsOpen ? (
+        <SettingsOverlay
+          open
+          onOpenChange={props.onSettingsOpenChange}
+          settings={props.appearanceSettings}
+          onSettingsChange={props.onAppearanceChange}
+          themes={bundledThemeList}
+          onReset={props.onResetAppearance}
+        />
+      ) : null}
 
       <CdOverlay
         open={props.cdOpen}

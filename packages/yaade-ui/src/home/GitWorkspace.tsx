@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type {
   GitCommit,
@@ -71,8 +80,16 @@ import { cn } from "@/lib/utils.js"
 import { requestConfirm } from "@/components/ConfirmDialogHost.js"
 import { showYaadeToast } from "@/toast.js"
 import { SessionHeaderChromePortal } from "./session-header-chrome.js"
-import { CommitChangesDialog } from "./CommitChangesDialog.js"
-import { YaadeDiffViewer } from "./YaadeDiffViewer.js"
+const CommitChangesDialog = lazy(() =>
+  import("./CommitChangesDialog.js").then(module => ({
+    default: module.CommitChangesDialog,
+  })),
+)
+const YaadeDiffViewer = lazy(() =>
+  import("./YaadeDiffViewer.js").then(module => ({
+    default: module.YaadeDiffViewer,
+  })),
+)
 
 type GitView = "changes" | "staged" | "history"
 type DiffStyle = "unified" | "split"
@@ -541,17 +558,19 @@ export function GitWorkspace(props: GitWorkspaceProps) {
       {body}
 
       {dialogCommit ? (
-        <CommitChangesDialog
-          open
-          onOpenChange={open => {
-            if (!open) setDialogCommit(null)
-          }}
-          rootUri={rootUri}
-          hash={dialogCommit.hash}
-          theme={theme}
-          fontSize={fontSize}
-          commit={dialogCommit}
-        />
+        <Suspense fallback={null}>
+          <CommitChangesDialog
+            open
+            onOpenChange={open => {
+              if (!open) setDialogCommit(null)
+            }}
+            rootUri={rootUri}
+            hash={dialogCommit.hash}
+            theme={theme}
+            fontSize={fontSize}
+            commit={dialogCommit}
+          />
+        </Suspense>
       ) : null}
     </section>
   )
@@ -1242,14 +1261,16 @@ function DiffViewer(props: {
         {loading ? (
           <CenteredStatus label="Loading diff…" />
         ) : hasDiff && diffContents ? (
-          <YaadeDiffViewer
-            path={selected.path}
-            original={diffContents.original}
-            modified={diffContents.modified}
-            mode={diffStyle}
-            theme={theme}
-            fontSize={fontSize}
-          />
+          <Suspense fallback={<CenteredStatus label="Preparing diff…" />}>
+            <YaadeDiffViewer
+              path={selected.path}
+              original={diffContents.original}
+              modified={diffContents.modified}
+              mode={diffStyle}
+              theme={theme}
+              fontSize={fontSize}
+            />
+          </Suspense>
         ) : (
           <CenteredEmpty
             title={selectedEntry?.status === "untracked" ? "Untracked file" : "No textual diff"}

@@ -29,6 +29,8 @@ function pierreWorkerFactory(): Worker {
 }
 
 const workerPoolAvailable = typeof Worker !== "undefined"
+const PIERRE_WORKER_POOL_SIZE = 2
+const PIERRE_AST_CACHE_SIZE = 16
 
 /** Cheap stable content identity for Worker Pool AST LRU. */
 function contentCacheKey(side: "old" | "new", path: string, contents: string): string {
@@ -112,6 +114,8 @@ export function YaadeDiffViewer(props: YaadeDiffViewerProps) {
   const poolOptions = useMemo(
     () => ({
       workerFactory: pierreWorkerFactory,
+      poolSize: PIERRE_WORKER_POOL_SIZE,
+      totalASTLRUCacheSize: PIERRE_AST_CACHE_SIZE,
     }),
     [],
   )

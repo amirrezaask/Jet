@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { pathToFileUri } from "@yaade/shared"
-import { cn, yaadePressClass } from "@yaade/ui"
+import { cn, yaadePressClass } from "@yaade/ui/project"
 import {
   Command,
   CommandEmpty,
@@ -41,6 +41,7 @@ function PathSegment({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [highlight, setHighlight] = useState(crumb.label)
+  const [query, setQuery] = useState("")
   const canSwitch = crumb.parentPath != null
 
   useEffect(() => {
@@ -87,8 +88,14 @@ function PathSegment({
       setSiblings(null)
       setError(null)
       setHighlight(crumb.label)
+      setQuery("")
     }
   }
+
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const filteredSiblings = (siblings ?? []).filter(name =>
+    name.toLocaleLowerCase().includes(normalizedQuery),
+  )
 
   const labelClass = cn(
     yaadePressClass,
@@ -152,6 +159,19 @@ function PathSegment({
             placeholder="Filter directories…"
             aria-label="Filter directories"
             data-yaade-path-switcher-search=""
+            value={query}
+            onValueChange={setQuery}
+            onKeyDown={event => {
+              if (event.key !== "Enter") return
+              const target = filteredSiblings.includes(highlight)
+                ? highlight
+                : filteredSiblings.length === 1
+                  ? filteredSiblings[0]
+                  : null
+              if (!target) return
+              event.preventDefault()
+              navigateSibling(target)
+            }}
           />
           <CommandList className="max-h-64">
             {loading ? (
@@ -214,7 +234,10 @@ export function ProjectPathSwitcher({
       {crumbs.map((crumb, i) => (
         <span
           key={`${crumb.absolutePath}-${i}`}
-          className="flex min-w-0 items-center gap-0.5"
+          className={cn(
+            "min-w-0 items-center gap-0.5",
+            i < crumbs.length - 1 ? "hidden sm:flex" : "flex",
+          )}
         >
           {i > 0 ? (
             <span className="select-none text-muted-foreground" aria-hidden>

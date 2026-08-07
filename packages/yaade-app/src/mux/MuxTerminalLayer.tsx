@@ -152,6 +152,8 @@ export const MuxTerminalLayer = memo(function MuxTerminalLayer(props: {
             data-yaade-tab-slot=""
             data-yaade-tab-active={focused ? "" : undefined}
             data-focused={focused ? "" : undefined}
+            aria-hidden={box ? undefined : true}
+            inert={box ? undefined : true}
             className={
               box
                 ? "pointer-events-auto absolute overflow-hidden"

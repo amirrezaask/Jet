@@ -12,7 +12,15 @@ import {
   expectNotContainsText,
 } from "../shell/assert.js"
 
-import { focusTerminal, hasPtySpawn, launchJet, readTerminalText, showTerminal, execCommand } from "./_launch.js"
+import {
+  execCommand,
+  focusTerminal,
+  hasPtySpawn,
+  launchJet,
+  openMuxTerminal,
+  readTerminalText,
+  showTerminal,
+} from "./_launch.js"
 
 const ptyAvailable = hasPtySpawn()
 
@@ -208,7 +216,7 @@ test.describe("electron terminal", () => {
   })
 
   test("sends fitted geometry immediately after PTY creation", async () => {
-    const { app, page } = await launchJet()
+    const { app, page } = await launchJet({ withTerminal: false })
     try {
       await page.evaluate(() => {
         const terminal = window.yaade?.terminal
@@ -238,7 +246,7 @@ test.describe("electron terminal", () => {
         ).__yaadeCreateCalls = createCalls
       })
 
-      await showTerminal(page)
+      await openMuxTerminal(page)
 
       await expect
         .poll(() =>

@@ -9,8 +9,8 @@ import {
   buildMonoFontStack,
   type JetAppearanceSettings,
   type SessionLayout,
-} from "@yaade/ui"
-import { applyColorScheme } from "@yaade/ui"
+  applyColorScheme,
+} from "@yaade/ui/appearance"
 
 type ColorScheme = "dark" | "light"
 

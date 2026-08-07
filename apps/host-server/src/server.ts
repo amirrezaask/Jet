@@ -945,7 +945,11 @@ function handleEventSocket(
   url: URL,
 ): void {
   const since = Number(url.searchParams.get("since") ?? "0") || 0
-  const clientId = `ws-${randomUUID()}`
+  const requestedClientId = url.searchParams.get("clientId")
+  const clientId =
+    requestedClientId && /^[A-Za-z0-9-]{1,128}$/.test(requestedClientId)
+      ? requestedClientId
+      : `ws-${randomUUID()}`
   for (const event of runtime.events.replayAfter(since)) {
     sendEventSocketMessage(ws, event)
   }
@@ -969,7 +973,10 @@ function handleEventSocket(
     if (!cmd) return
     void runHostRpc(managed, cmd.op, cmd.args, clientId)
   })
-  ws.on("close", () => unsubscribe())
+  ws.on("close", () => {
+    unsubscribe()
+    runtime.terminal.resumeForClient(clientId)
+  })
 }
 
 function sendEventSocketMessage(ws: WebSocket, event: HostEvent): void {

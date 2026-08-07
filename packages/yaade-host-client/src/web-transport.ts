@@ -19,9 +19,14 @@ export function acceptHostEvent(lastSequence: number, message: HostEvent): boole
   )
 }
 
-export function websocketUrl(location: Pick<Location, "protocol" | "host">, since = 0): string {
+export function websocketUrl(
+  location: Pick<Location, "protocol" | "host">,
+  since = 0,
+  clientId?: string,
+): string {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:"
-  return `${protocol}//${location.host}/ws?since=${since}`
+  const client = clientId ? `&clientId=${encodeURIComponent(clientId)}` : ""
+  return `${protocol}//${location.host}/ws?since=${since}${client}`
 }
 
 /** Reconnect backoff matching legacy setTimeout: 250ms × 2^n, cap 10s. */
@@ -162,7 +167,9 @@ export class WebHostTransport implements YaadeHostTransport {
     return Effect.scoped(
       Effect.acquireRelease(
         Effect.sync(() => {
-          const socket = new WebSocket(websocketUrl(window.location, self.lastSequence))
+          const socket = new WebSocket(
+            websocketUrl(window.location, self.lastSequence, self.clientId),
+          )
           socket.binaryType = "arraybuffer"
           self.socket = socket
           return socket

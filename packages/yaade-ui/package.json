@@ -15,6 +15,22 @@
       "types": "./src/primitives.ts",
       "default": "./src/primitives.ts"
     },
+    "./project": {
+      "types": "./src/project-entry.ts",
+      "default": "./src/project-entry.ts"
+    },
+    "./appearance": {
+      "types": "./src/appearance-entry.ts",
+      "default": "./src/appearance-entry.ts"
+    },
+    "./settings": {
+      "types": "./src/settings-entry.ts",
+      "default": "./src/settings-entry.ts"
+    },
+    "./commit-changes": {
+      "types": "./src/commit-changes-entry.ts",
+      "default": "./src/commit-changes-entry.ts"
+    },
     "./terminal": {
       "types": "./src/terminal-entry.ts",
       "default": "./src/terminal-entry.ts"

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { SectionLabel } from "@yaade/ui"
+import { SectionLabel } from "@yaade/ui/project"
 import {
   Button,
   Dialog,

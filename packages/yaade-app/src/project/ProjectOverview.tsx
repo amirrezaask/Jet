@@ -13,11 +13,12 @@ import {
 import { ChevronRight } from "lucide-react"
 
 const CommitChangesDialog = lazy(() =>
-  import("@yaade/ui/git").then(m => ({ default: m.CommitChangesDialog })),
+  import("@yaade/ui/commit-changes").then(m => ({ default: m.CommitChangesDialog })),
 )
 
 const README_HEAD_LINES = 16
 const RECENT_COMMIT_LIMIT = 12
+const README_NAMES = new Set(["readme.md", "readme"])
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -32,16 +33,25 @@ export type ProjectOverviewProps = {
 
 async function readReadme(projectPath: string): Promise<string | null> {
   const fs = window.yaade?.fs
-  if (!fs?.readFile) return null
-  for (const name of ["README.md", "README", "Readme.md", "readme.md"]) {
-    try {
-      const text = await fs.readFile(
-        pathToFileUri(`${projectPath.replace(/\/+$/, "")}/${name}`),
-      )
-      if (typeof text === "string" && text.length > 0) return text
-    } catch {
-      /* try next */
-    }
+  if (!fs?.readFile || !fs.readDir) return null
+  const rootUri = pathToFileUri(projectPath)
+  let name: string | null = null
+  try {
+    name =
+      (await fs.readDir(rootUri)).find(
+        entry => !entry.isDirectory && README_NAMES.has(entry.name.toLowerCase()),
+      )?.name ?? null
+  } catch {
+    return null
+  }
+  if (!name) return null
+  try {
+    const text = await fs.readFile(
+      pathToFileUri(`${projectPath.replace(/\/+$/, "")}/${name}`),
+    )
+    if (typeof text === "string" && text.length > 0) return text
+  } catch {
+    return null
   }
   return null
 }
@@ -106,10 +116,10 @@ export function ProjectOverview({
 
   return (
     <main
-      className="h-full min-h-0 overflow-auto p-4 md:p-6"
+      className="h-full min-h-0 overflow-auto p-4 sm:p-6"
       data-yaade-project-overview=""
     >
-      <div className="flex max-w-3xl flex-col gap-8">
+      <div className="grid w-full max-w-7xl gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,0.75fr)] xl:gap-10">
         <section aria-labelledby="yaade-overview-commits-heading">
           <h2
             id="yaade-overview-commits-heading"
@@ -148,7 +158,7 @@ export function ProjectOverview({
                     data-yaade-list-item=""
                     data-yaade-project-commit={commit.shortHash}
                     onClick={() => setDialogCommit(commit)}
-                    className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-2.5 text-left outline-none transition-colors hover:bg-accent/25 focus-visible:bg-accent/25 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 active:scale-[0.99]"
+                    className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-1 py-2.5 text-left outline-none transition-colors hover:bg-accent/25 focus-visible:bg-accent/25 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 active:scale-[0.99]"
                   >
                     <span className="font-mono text-3xs text-primary/90">
                       {commit.shortHash}
@@ -157,16 +167,17 @@ export function ProjectOverview({
                       <p className="truncate text-xs text-foreground">
                         {commit.subject}
                       </p>
-                      <p className="mt-0.5 truncate text-3xs text-muted-foreground">
-                        {commit.author}
+                      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground">
+                        <span className="truncate">{commit.author}</span>
+                        <span aria-hidden>·</span>
+                        <time
+                          className="shrink-0 font-mono tabular-nums"
+                          dateTime={new Date(commit.authoredAt).toISOString()}
+                        >
+                          {dateFormatter.format(new Date(commit.authoredAt))}
+                        </time>
                       </p>
                     </div>
-                    <time
-                      className="shrink-0 text-right font-mono text-3xs tabular-nums text-muted-foreground"
-                      dateTime={new Date(commit.authoredAt).toISOString()}
-                    >
-                      {dateFormatter.format(new Date(commit.authoredAt))}
-                    </time>
                   </button>
                 </li>
               ))}
@@ -174,7 +185,10 @@ export function ProjectOverview({
           )}
         </section>
 
-        <section aria-labelledby="yaade-overview-readme-heading">
+        <section
+          className="min-w-0 xl:border-l xl:border-border/60 xl:pl-8"
+          aria-labelledby="yaade-overview-readme-heading"
+        >
           <h2
             id="yaade-overview-readme-heading"
             className="mb-3 text-sm font-medium text-foreground"
