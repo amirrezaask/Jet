@@ -1,6 +1,12 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { applyAgentChatCssVars, defaultYaadeTheme, type YaadeTheme } from "./theme-types.js"
+import {
+  applyAgentChatCssVars,
+  applyYaadeThemeCss,
+  defaultYaadeTheme,
+  jetColorsFromTokens,
+  type YaadeTheme,
+} from "./theme-types.js"
 
 type MockRoot = {
   style: {
@@ -86,5 +92,29 @@ describe("applyAgentChatCssVars", () => {
       assert.ok(darkSurface)
       assert.notEqual(darkSurface, altSurface)
     })
+  })
+
+  it("applies the complete semantic contract and derives compatibility colors", () => {
+    withMockDocument(vars => {
+      applyYaadeThemeCss(defaultYaadeTheme)
+      assert.equal(vars.get("--background"), defaultYaadeTheme.tokens.background)
+      assert.equal(vars.get("--success"), defaultYaadeTheme.tokens.success)
+      assert.equal(vars.get("--warning"), defaultYaadeTheme.tokens.warning)
+      assert.equal(vars.get("--info"), defaultYaadeTheme.tokens.info)
+      assert.equal(vars.get("--git-added"), defaultYaadeTheme.tokens.gitAdded)
+      assert.equal(
+        vars.get("--git-conflict-foreground"),
+        defaultYaadeTheme.tokens.gitConflictForeground,
+      )
+      assert.equal(vars.get("--yaade-bg"), defaultYaadeTheme.colors.bg)
+    })
+
+    assert.deepEqual(
+      defaultYaadeTheme.colors,
+      jetColorsFromTokens(defaultYaadeTheme.tokens),
+    )
+    assert.match(defaultYaadeTheme.colors.bg, /^#[\da-f]{6}$/i)
+    assert.match(defaultYaadeTheme.colors.text, /^#[\da-f]{6}$/i)
+    assert.match(defaultYaadeTheme.colors.backdrop, /^rgba\(/)
   })
 })

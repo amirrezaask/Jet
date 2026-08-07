@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react"
 import type { ProjectSession, ProjectSessionSummary } from "@yaade/rpc"
@@ -20,9 +21,14 @@ import {
   TabsList,
   TabsTrigger,
 } from "@yaade/ui/primitives"
+import { showYaadeToast, Toaster } from "@yaade/ui/toast"
 import { SettingsIcon } from "lucide-react"
 import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
 import { preloadMuxApp } from "../mux/preload.js"
+import type {
+  MuxLaunchAction,
+  MuxLaunchRequest,
+} from "../mux/MuxApp.js"
 import { workspaceDocumentTitle } from "../url-workspace.js"
 import {
   createProjectSession,
@@ -45,6 +51,11 @@ const MuxApp = lazy(() =>
 )
 const SettingsOverlay = lazy(() =>
   preloadSettingsOverlay().then(m => ({ default: m.SettingsOverlay })),
+)
+const AgentCliPickerOverlay = lazy(() =>
+  import("@yaade/ui/agent-picker").then(m => ({
+    default: m.AgentCliPickerOverlay,
+  })),
 )
 
 export type ProjectPageProps = {
@@ -71,12 +82,12 @@ export function ProjectPage({
   onOpenSession,
   onClearSession,
   onNavigateProject,
+  listSessions,
 }: ProjectPageProps) {
   const {
     appearanceSettings,
     setAppearanceSettings,
     activeTheme,
-    fontSize,
     resetAppearanceSettings,
   } = useAppearanceSettings()
   const [view, setView] = useState<ProjectView>(
@@ -85,27 +96,11 @@ export function ProjectPage({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyMounted, setHistoryMounted] = useState(false)
   const [summary, setSummary] = useState<GitRepositorySummary | null>(null)
+  const [launchRequest, setLaunchRequest] = useState<MuxLaunchRequest | null>(null)
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false)
+  const launchSequenceRef = useRef(0)
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
   const title = workspaceDocumentTitle(projectPath, homeDir)
-
-  const refreshGit = useCallback(async () => {
-    const git = window.yaade?.git
-    if (!git) return
-    try {
-      const isRepo = await git.isRepo(rootUri)
-      if (!isRepo) {
-        setSummary(null)
-        return
-      }
-      setSummary(await git.summary(rootUri))
-    } catch {
-      /* non-git project */
-    }
-  }, [rootUri])
-
-  useEffect(() => {
-    void refreshGit()
-  }, [refreshGit])
 
   useEffect(() => {
     document.title = title
@@ -155,6 +150,53 @@ export function ProjectPage({
       await onOpenSession(created.id)
     },
     [onOpenSession, projectPath],
+  )
+
+  const resumeWorkspace = useCallback(async () => {
+    if (session) {
+      setView("worktree")
+      return
+    }
+    await handleSelectCheckout({ cwdPath: projectPath, title: "Main" })
+  }, [handleSelectCheckout, projectPath, session])
+
+  const handleLaunchAction = useCallback(
+    async (action: MuxLaunchAction) => {
+      launchSequenceRef.current += 1
+      const request: MuxLaunchRequest = {
+        id: `launch-${Date.now()}-${launchSequenceRef.current}`,
+        action,
+      }
+      setLaunchRequest(request)
+      try {
+        if (session) {
+          setView("worktree")
+          return
+        }
+        await handleSelectCheckout({ cwdPath: projectPath, title: "Main" })
+      } catch (error) {
+        setLaunchRequest(current => (current?.id === request.id ? null : current))
+        showYaadeToast(
+          error instanceof Error ? error.message : "Could not open the workspace.",
+          { variant: "destructive" },
+        )
+      }
+    },
+    [handleSelectCheckout, projectPath, session],
+  )
+
+  const handleLaunchRequestHandled = useCallback((requestId: string) => {
+    setLaunchRequest(current => (current?.id === requestId ? null : current))
+  }, [])
+
+  const handleResumeSession = useCallback(
+    async (sessionId: string) => {
+      const muxReady = preloadMuxApp()
+      await muxReady
+      setView("worktree")
+      await onOpenSession(sessionId)
+    },
+    [onOpenSession],
   )
 
   // Radix Tabs only knows Overview / History; worktree view leaves both inactive.
@@ -247,8 +289,16 @@ export function ProjectPage({
             >
               <ProjectOverview
                 projectPath={projectPath}
-                theme={activeTheme}
-                fontSize={fontSize}
+                homeDir={homeDir}
+                active={view === "overview"}
+                listSessions={listSessions}
+                onLaunchAgent={() => setAgentPickerOpen(true)}
+                onLaunchAction={handleLaunchAction}
+                onResumeWorkspace={resumeWorkspace}
+                onResumeSession={handleResumeSession}
+                onOpenCheckout={handleSelectCheckout}
+                onCreateWorktree={handleCreateWorktree}
+                onRepositorySummary={setSummary}
               />
             </div>
 
@@ -308,6 +358,8 @@ export function ProjectPage({
                     machineHostname={machineHostname}
                     embedded
                     onBackToProject={onClearSession}
+                    launchRequest={launchRequest}
+                    onLaunchRequestHandled={handleLaunchRequestHandled}
                   />
                 </Suspense>
               </div>
@@ -328,6 +380,20 @@ export function ProjectPage({
           />
         </Suspense>
       ) : null}
+
+      {agentPickerOpen ? (
+        <Suspense fallback={null}>
+          <AgentCliPickerOverlay
+            open={agentPickerOpen}
+            onOpenChange={setAgentPickerOpen}
+            onSelect={driver => {
+              setAgentPickerOpen(false)
+              void handleLaunchAction({ kind: "agent", driverId: driver.id })
+            }}
+          />
+        </Suspense>
+      ) : null}
+      {!session ? <Toaster position="bottom-right" /> : null}
     </AppShell>
   )
 }

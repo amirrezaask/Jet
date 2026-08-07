@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
+import { toSrgbColor } from "@yaade/shared"
 import {
   bundledThemeList,
   bundledThemes,
@@ -63,16 +64,10 @@ function contrastRatio(foreground: string, background: string): number {
 const themeIds = [
   "default-dark",
   "default-light",
-  "catppuccin-mocha",
-  "catppuccin-macchiato",
-  "catppuccin-latte",
-  "tokyonight-night",
-  "tokyonight-storm",
-  "tokyonight-day",
 ]
 
 describe("bundled Yaade themes", () => {
-  it("registers Default, Catppuccin, and Tokyo Night families", () => {
+  it("registers only the Default light and dark themes", () => {
     assert.equal(defaultThemeId, "default-dark")
     assert.deepEqual(
       bundledThemeList.map(theme => theme.id),
@@ -93,14 +88,8 @@ describe("bundled Yaade themes", () => {
     assert.equal(defaultThemeIdForScheme("light"), "default-light")
     assert.equal(siblingThemeForScheme("default-dark", "light").id, "default-light")
     assert.equal(siblingThemeForScheme("default-light", "dark").id, "default-dark")
-    assert.equal(
-      siblingThemeForScheme("catppuccin-mocha", "light").id,
-      "catppuccin-latte",
-    )
-    assert.equal(
-      siblingThemeForScheme("tokyonight-night", "light").id,
-      "tokyonight-day",
-    )
+    assert.equal(siblingThemeForScheme("catppuccin-mocha", "light").id, "default-light")
+    assert.equal(siblingThemeForScheme("tokyonight-night", "light").id, "default-light")
   })
 
   it("provides shell, editor, terminal, source, and swatch metadata for every theme", () => {
@@ -114,15 +103,21 @@ describe("bundled Yaade themes", () => {
       assert.ok(theme.highlights.string)
       assert.ok(theme.terminalAnsi?.red)
       assert.ok(theme.terminalAnsi?.brightWhite)
+      assert.match(theme.terminalAnsi!.red, /^#[\da-f]{6}$/i)
+      assert.match(theme.highlights.keyword, /^#[\da-f]{6}$/i)
       assert.ok(themePreviewSwatches(theme).length >= 4)
-      assert.ok(theme.shadcn)
+      assert.ok(theme.tokens)
+      assert.deepEqual(
+        Object.keys(theme.tokens).sort(),
+        Object.keys(getThemeById("default-dark").tokens).sort(),
+      )
     }
   })
 
   it("keeps both Default palettes readable and interaction colors consistent", () => {
     for (const themeId of ["default-dark", "default-light"]) {
-      const tokens = getThemeById(themeId).shadcn
-      assert.ok(tokens)
+      const theme = getThemeById(themeId)
+      const tokens = theme.tokens
 
       const textPairs = [
         ["foreground", tokens.foreground, tokens.background, 7],
@@ -135,6 +130,13 @@ describe("bundled Yaade themes", () => {
           tokens.destructive,
           4.5,
         ],
+        ["success", tokens.successForeground, tokens.success, 4.5],
+        ["warning", tokens.warningForeground, tokens.warning, 4.5],
+        ["info", tokens.infoForeground, tokens.info, 4.5],
+        ["git added", tokens.gitAddedForeground, tokens.gitAdded, 4.5],
+        ["git modified", tokens.gitModifiedForeground, tokens.gitModified, 4.5],
+        ["git deleted", tokens.gitDeletedForeground, tokens.gitDeleted, 4.5],
+        ["git conflict", tokens.gitConflictForeground, tokens.gitConflict, 4.5],
         ["sidebar", tokens.sidebarForeground, tokens.sidebar, 7],
         [
           "sidebar primary",
@@ -168,6 +170,11 @@ describe("bundled Yaade themes", () => {
       assert.equal(tokens.ring, tokens.primary)
       assert.equal(tokens.sidebarRing, tokens.primary)
       assert.notEqual(tokens.card, tokens.background)
+      assert.equal(theme.colors.bg, toSrgbColor(tokens.background))
+      assert.equal(theme.colors.panelRaised, toSrgbColor(tokens.card))
+      assert.equal(theme.colors.error, toSrgbColor(tokens.destructive))
+      assert.equal(theme.colors.warning, toSrgbColor(tokens.warning))
+      assert.equal(theme.colors.success, toSrgbColor(tokens.success))
     }
   })
 })

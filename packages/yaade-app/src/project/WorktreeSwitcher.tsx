@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 import type { GitWorktree } from "@yaade/shared"
 import { pathToFileUri } from "@yaade/shared"
-import { cn, yaadePressClass } from "@yaade/ui/project"
+import { cn } from "@yaade/ui/project"
 import {
+  Button,
   Command,
   CommandEmpty,
   CommandGroup,
@@ -154,8 +155,10 @@ export function WorktreeSwitcher({
         }}
       >
         <PopoverTrigger asChild>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             data-yaade-worktree-switcher=""
             data-yaade-project-tab="worktrees"
             aria-label="Worktrees"
@@ -164,10 +167,8 @@ export function WorktreeSwitcher({
             onPointerEnter={onIntent}
             onFocus={onIntent}
             className={cn(
-              yaadePressClass,
-              "relative inline-flex h-[calc(100%-1px)] items-center justify-center gap-0.5 rounded-md border border-transparent px-1.5 py-0 text-xs font-medium whitespace-nowrap text-foreground/60 outline-none",
-              "hover:text-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/60",
-              "dark:text-muted-foreground dark:hover:text-foreground",
+              "relative h-[calc(100%-1px)] gap-0.5 border border-transparent px-1.5 py-0 text-xs text-muted-foreground",
+              "hover:text-foreground",
               "after:absolute after:inset-x-0 after:bottom-0.5 after:h-0.5 after:bg-foreground after:opacity-0 after:transition-opacity",
               (open || active) && "text-foreground",
               active && "after:opacity-100",
@@ -180,7 +181,7 @@ export function WorktreeSwitcher({
               </span>
             ) : null}
             <ChevronDownIcon className="size-2.5 opacity-70" aria-hidden />
-          </button>
+          </Button>
         </PopoverTrigger>
         <PopoverContent
           align="start"

@@ -195,15 +195,16 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
             const visiblePath = displayPath(file.path)
             return (
               <li key={`${file.status}:${file.path}`}>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   data-yaade-list-item=""
                   data-active={active ? "" : undefined}
                   aria-pressed={active}
                   title={file.path}
                   onClick={() => setSelectedPath(file.path)}
                   className={cn(
-                    "flex w-full shrink-0 items-start gap-2 rounded-sm px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    "h-auto w-full shrink-0 items-start justify-start gap-2 rounded-sm px-2 py-1.5 text-left font-normal",
                     active
                       ? "bg-primary/10 text-foreground"
                       : "text-muted-foreground hover:bg-accent/35 hover:text-foreground",
@@ -228,7 +229,7 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
                       </span>
                     ) : null}
                   </span>
-                </button>
+                </Button>
               </li>
             )
           })
@@ -242,8 +243,7 @@ export function CommitChangesDialog(props: CommitChangesDialogProps) {
       {selectedFile ? (
         <>
           <div
-            data-yaade-liquid-glass="chrome"
-            className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent px-3"
+            className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-card px-3"
           >
             <FileDiffIcon className="size-3.5 text-muted-foreground" aria-hidden />
             <span className="min-w-0 flex-1 truncate font-mono text-2xs">
@@ -404,8 +404,8 @@ function statusLetter(status: GitCommitFile["status"]): string {
 }
 
 function statusColor(status: GitCommitFile["status"]): string {
-  if (status === "conflict") return "text-[color:var(--yaade-git-conflict)]"
-  if (status === "deleted") return "text-[color:var(--yaade-git-deleted)]"
-  if (status === "added" || status === "untracked") return "text-[color:var(--yaade-git-added)]"
-  return "text-[color:var(--yaade-git-modified)]"
+  if (status === "conflict") return "text-git-conflict"
+  if (status === "deleted") return "text-git-deleted"
+  if (status === "added" || status === "untracked") return "text-git-added"
+  return "text-git-modified"
 }

@@ -276,9 +276,8 @@ function TodoColumn(props: {
       ref={setNodeRef}
       data-yaade-todo-column={status}
       data-todo-column-count={todos.length}
-      data-yaade-liquid-glass="panel"
       className={cn(
-        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[var(--glass-radius-panel)] border-transparent bg-transparent",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card",
         isOver && "border-primary/40 ring-1 ring-primary/30",
       )}
     >

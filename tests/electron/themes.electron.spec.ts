@@ -6,7 +6,7 @@ import {
 } from "./_launch.js"
 
 test.describe("themes", () => {
-  test("Catppuccin Mocha and Tokyo Night change terminal background", async () => {
+  test("Default Light and Dark change terminal background", async () => {
     const { app, page } = await launchJet()
     try {
       await waitForMux(page)
@@ -19,15 +19,18 @@ test.describe("themes", () => {
         )
 
       await openThemePicker(page)
-      await page.locator('[data-yaade-theme-option="catppuccin-mocha"]').click()
+      const darkBackground = await readBg()
+      await page.locator('[data-yaade-theme-option="default-light"]').click()
+      await expect.poll(readBg).not.toBe(darkBackground)
       await expect
-        .poll(readBg)
-        .toBe("#1e1e2e")
+        .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+        .toBe(false)
 
-      await page.locator('[data-yaade-theme-option="tokyonight-night"]').click()
+      await page.locator('[data-yaade-theme-option="default-dark"]').click()
+      await expect.poll(readBg).toBe(darkBackground)
       await expect
-        .poll(readBg)
-        .toBe("#1a1b26")
+        .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")))
+        .toBe(true)
     } finally {
       await app.close()
     }

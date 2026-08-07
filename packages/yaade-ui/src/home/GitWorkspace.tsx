@@ -682,8 +682,7 @@ function GitToolbar(props: {
   return (
     <header
       data-yaade-git-toolbar=""
-      data-yaade-liquid-glass="chrome"
-      className="flex h-7 shrink-0 items-center justify-end gap-2 border-b border-transparent bg-transparent px-2"
+      className="flex h-7 shrink-0 items-center justify-end gap-2 border-b border-border bg-card px-2"
     >
       <div className="flex shrink-0 items-center gap-1">
         <GitCommitDialog
@@ -881,15 +880,17 @@ function GitViewTabs(props: {
 
 function GitViewTab(props: { active: boolean; label: string; onSelect: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="xs"
       role="tab"
       aria-selected={props.active}
       tabIndex={props.active ? 0 : -1}
       data-yaade-session-tab-pill=""
       data-active={props.active ? "" : undefined}
       className={cn(
-        "h-5 rounded-sm border px-1.5 text-3xs font-medium leading-none outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring/50",
+        "h-5 rounded-sm border px-1.5 text-3xs leading-none",
         props.active
           ? "border-border/80 bg-card/75 text-foreground shadow-sm"
           : "border-transparent bg-muted/30 text-foreground/70 hover:border-border/60 hover:bg-muted/55 hover:text-foreground",
@@ -897,7 +898,7 @@ function GitViewTab(props: { active: boolean; label: string; onSelect: () => voi
       onClick={props.onSelect}
     >
       {props.label.trim()}
-    </button>
+    </Button>
   )
 }
 
@@ -959,8 +960,7 @@ function FileNavigator(props: {
 
   return (
     <aside
-      data-yaade-liquid-glass="chrome"
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0 bg-transparent"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0 bg-card"
       aria-label="Changed files"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-border/40 p-2">
@@ -1088,9 +1088,9 @@ function GitFileRow(props: {
         onCheckedChange={onToggleStage}
         className="size-3.5"
       />
-      <button type="button" className="min-w-0 flex-1 truncate text-left outline-none focus-visible:underline" onClick={onSelect} onDoubleClick={onOpenFile}>
+      <Button type="button" variant="ghost" className="h-auto min-w-0 flex-1 justify-start truncate p-0 text-left font-normal focus-visible:underline" onClick={onSelect} onDoubleClick={onOpenFile}>
         <span className="truncate">{entry.path}</span>
-      </button>
+      </Button>
       <NumstatBadge stats={stats} />
       <span className={cn("shrink-0 font-mono text-3xs font-medium", statusColor(entry.status))} title={entry.status}>
         {statusLetter(entry.status)}
@@ -1127,10 +1127,10 @@ function NumstatBadge({ stats }: { stats?: GitNumstatEntry }) {
   return (
     <span className="flex shrink-0 items-center gap-1 font-mono text-3xs tabular-nums" aria-hidden>
       {stats.added > 0 ? (
-        <span className="text-[color:var(--yaade-git-added)]">+{stats.added}</span>
+        <span className="text-git-added">+{stats.added}</span>
       ) : null}
       {stats.deleted > 0 ? (
-        <span className="text-[color:var(--yaade-git-deleted)]">−{stats.deleted}</span>
+        <span className="text-git-deleted">−{stats.deleted}</span>
       ) : null}
     </span>
   )
@@ -1185,8 +1185,7 @@ function DiffViewer(props: {
     <div data-yaade-git-diff="" className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
       <div
         data-yaade-git-diff-toolbar=""
-        data-yaade-liquid-glass="chrome"
-        className="flex h-7 shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-3"
+        className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-card px-3"
       >
         {onBack ? (
           <Button
@@ -1363,8 +1362,8 @@ function HunkMenu(props: {
               <span className="flex w-full items-center justify-between gap-2 font-mono text-3xs">
                 <span className="min-w-0 truncate">{hunk.header}</span>
                 <span className="shrink-0 tabular-nums">
-                  <span className="text-[color:var(--yaade-git-added)]">+{hunk.added}</span>{" "}
-                  <span className="text-[color:var(--yaade-git-deleted)]">−{hunk.deleted}</span>
+                  <span className="text-git-added">+{hunk.added}</span>{" "}
+                  <span className="text-git-deleted">−{hunk.deleted}</span>
                 </span>
               </span>
               <span className="text-3xs text-muted-foreground">{verb} this hunk</span>
@@ -1457,15 +1456,16 @@ function HistoryList(props: {
             if (includeWorkingTree && item.index === 0) {
               const active = selectedHash === GIT_WORKING_TREE_ID
               return (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   key={GIT_WORKING_TREE_ID}
                   data-yaade-list-item=""
                   data-yaade-git-working-tree=""
                   data-active={active ? "" : undefined}
                   onClick={() => onSelect(GIT_WORKING_TREE_ID)}
                   className={cn(
-                    "absolute top-0 left-0 grid w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border/35 px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                    "absolute top-0 left-0 grid w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center justify-normal gap-3 rounded-none border-b border-border/35 px-3 py-2 text-left font-normal",
                     active
                       ? "bg-primary/10 before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:bg-primary"
                       : "hover:bg-accent/25",
@@ -1486,21 +1486,22 @@ function HistoryList(props: {
                   <div className="text-right font-mono text-3xs tabular-nums text-muted-foreground">
                     <span className="block text-primary/90">HEAD</span>
                   </div>
-                </button>
+                </Button>
               )
             }
             const commit = commits[includeWorkingTree ? item.index - 1 : item.index]
             if (!commit) return null
             const active = commit.hash === selectedHash
             return (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 key={commit.hash}
                 data-yaade-list-item=""
                 data-active={active ? "" : undefined}
                 onClick={() => onSelect(commit.hash)}
                 className={cn(
-                  "absolute top-0 left-0 grid w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border/35 px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                  "absolute top-0 left-0 grid w-full shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center justify-normal gap-3 rounded-none border-b border-border/35 px-3 py-2 text-left font-normal",
                   active
                     ? "bg-primary/10 before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:bg-primary"
                     : "hover:bg-accent/25",
@@ -1516,7 +1517,7 @@ function HistoryList(props: {
                   <span className="block text-primary/90">{commit.shortHash}</span>
                   <span className="block">{dateFormatter.format(new Date(commit.authoredAt))}</span>
                 </div>
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -1563,10 +1564,10 @@ function statusLetter(status: GitStatusEntry["status"]): string {
 }
 
 function statusColor(status: GitStatusEntry["status"]): string {
-  if (status === "conflict") return "text-[color:var(--yaade-git-conflict)]"
-  if (status === "deleted") return "text-[color:var(--yaade-git-deleted)]"
-  if (status === "added" || status === "untracked") return "text-[color:var(--yaade-git-added)]"
-  return "text-[color:var(--yaade-git-modified)]"
+  if (status === "conflict") return "text-git-conflict"
+  if (status === "deleted") return "text-git-deleted"
+  if (status === "added" || status === "untracked") return "text-git-added"
+  return "text-git-modified"
 }
 
 function errorMessage(error: unknown): string {

@@ -215,8 +215,8 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           data-dragging={isDragging ? "" : undefined}
           className={cn(
             "group/mux-chrome flex h-5 shrink-0 items-center gap-0.5 border-b px-1",
-            "border-border/35 bg-background/40 backdrop-blur-md",
-            focused && "border-border/55 bg-background/55",
+            "border-border bg-card",
+            focused && "border-primary/40 bg-card",
             isDragging && "opacity-45",
             className,
           )}
@@ -228,14 +228,16 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
             if (canZoom) onZoom()
           }}
         >
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             aria-label={title || "Pane"}
             title={title || undefined}
             data-yaade-mux-pane-title=""
             data-yaade-mux-pane-drag=""
             className={cn(
-              "flex shrink items-center gap-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              "h-4 shrink justify-start gap-1 rounded-sm px-0.5",
               title ? "max-w-[28%]" : "max-w-8",
               draggable && !zoomed
                 ? "cursor-grab touch-none active:cursor-grabbing"
@@ -268,7 +270,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
                 {title}
               </span>
             ) : null}
-          </button>
+          </Button>
           <div
             ref={contextRef}
             data-yaade-session-header-context=""

@@ -4,9 +4,11 @@ import "@yaade/ui/styles.css"
 import { AppRoot } from "./AppRoot.js"
 import { AppErrorBoundary } from "./AppErrorBoundary.js"
 import { createYaadeApi, createWebTransport } from "@yaade/host-client"
+import { applyInitialAppearance } from "./hooks/useAppearanceSettings.js"
 
 const startupWindow = window as Window & { __yaadeStartupBootstrapAt?: number }
 startupWindow.__yaadeStartupBootstrapAt ??= performance.now()
+applyInitialAppearance()
 
 const transport = createWebTransport()
 /** Promise shim over Effect HostClient — kept for Electron / legacy call sites. */

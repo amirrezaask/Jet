@@ -179,17 +179,15 @@ export function NotificationCenter(props: NotificationCenterProps) {
         // z above session Dialog; pointer-events auto beats Radix body lock.
         // Liquid-glass stays on the INNER shell — its `position: relative` must
         // not override this drawer's absolute right dock.
-        className="pointer-events-auto absolute inset-y-0 right-0 z-[1] flex h-full w-full max-w-md flex-col border-l border-transparent bg-transparent shadow-lg"
+        className="pointer-events-auto absolute inset-y-0 right-0 z-[1] flex h-full w-full max-w-md flex-col border-l bg-background shadow-lg"
         onClick={e => e.stopPropagation()}
       >
         <div
-          data-yaade-liquid-glass="panel"
           className="flex h-full min-h-0 w-full flex-col gap-0 bg-background"
         >
           <h2 className="sr-only">Notification center</h2>
           <div
-            data-yaade-liquid-glass="chrome"
-            className="flex shrink-0 flex-col gap-1.5 border-b border-transparent bg-transparent px-3 py-2 text-left"
+            className="flex shrink-0 flex-col gap-1.5 border-b bg-card px-3 py-2 text-left"
           >
             <div className="flex items-center gap-2">
               <Input

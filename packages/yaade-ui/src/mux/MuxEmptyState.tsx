@@ -6,6 +6,7 @@ import {
 } from "lucide-react"
 import type { SVGProps } from "react"
 import { KeyBindingKbd } from "@/components/KeyBindingKbd.js"
+import { Button } from "@/components/ui/button.js"
 import { cn } from "@/lib/utils.js"
 import { AGENT_CLI_DRIVERS, type AgentCliDriver } from "../home/agent-cli-drivers.js"
 import { sessionProviderIcon } from "../home/provider-icons.js"
@@ -160,14 +161,15 @@ function TileGrid(props: {
         const Icon = tile.Icon
         if (!Icon) return null
         return (
-          <button
+          <Button
             key={tile.id}
             type="button"
+            variant="outline"
             data-yaade-mux-empty-action={tile.testId}
             aria-label={tile.label}
             onClick={tile.onSelect}
             className={cn(
-              "group/empty-tile yaade-press flex flex-col items-center gap-2.5 rounded-lg border border-border/50 bg-background/40 px-3 py-4",
+              "group/empty-tile h-auto flex-col gap-2.5 px-3 py-4",
               "text-center outline-none transition-[border-color,background-color,color] duration-[var(--yaade-motion-hot)]",
               "hover:border-border hover:bg-accent/60 hover:text-accent-foreground",
               "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
@@ -197,7 +199,7 @@ function TileGrid(props: {
                 className="opacity-70 group-hover/empty-tile:opacity-100"
               />
             ) : null}
-          </button>
+          </Button>
         )
       })}
     </div>

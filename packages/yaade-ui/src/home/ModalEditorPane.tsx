@@ -187,8 +187,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
       </SessionHeaderChromePortal>
       {!headerActive ? (
         <div
-          data-yaade-liquid-glass="chrome"
-          className="flex h-6 shrink-0 items-stretch border-b border-transparent bg-transparent px-0.5"
+          className="flex h-6 shrink-0 items-stretch border-b bg-card px-0.5"
         >
           {tabBar}
         </div>
@@ -237,8 +236,7 @@ export function ModalEditorPane(props: ModalEditorPaneProps) {
 
       <div
         data-yaade-modal-editor-status=""
-        data-yaade-liquid-glass="chrome"
-        className="flex h-7 shrink-0 items-center gap-3 border-t border-transparent bg-transparent px-3 font-mono text-3xs text-muted-foreground"
+        className="flex h-7 shrink-0 items-center gap-3 border-t bg-card px-3 font-mono text-3xs text-muted-foreground"
       >
         <span data-yaade-editor-cursor="">
           Ln {cursor.line}, Col {cursor.column}
@@ -300,8 +298,7 @@ function ModalProjectSearch({
       data-yaade-editor-project-search=""
       data-yaade-editor-project-search-drawer=""
       aria-label="Project search"
-      data-yaade-liquid-glass="chrome"
-      className="flex h-full min-h-0 w-full min-w-0 flex-col border-t border-transparent bg-transparent"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col border-t bg-card"
     >
       <div className="flex h-9 shrink-0 items-center border-b px-2">
         <h2 className="text-xs font-semibold">Search</h2>

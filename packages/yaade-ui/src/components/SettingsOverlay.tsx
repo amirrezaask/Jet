@@ -289,10 +289,9 @@ export function SettingsOverlay({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-yaade-settings-overlay=""
-        data-yaade-liquid-glass="panel"
         showCloseButton={false}
         size="wide"
-        className="h-[calc(100dvh-2rem)] gap-0 overflow-hidden border-transparent bg-transparent p-0 shadow-none sm:h-[min(44rem,calc(100dvh-2rem))] sm:max-w-[50rem]"
+        className="h-[calc(100dvh-2rem)] gap-0 overflow-hidden border-border bg-popover p-0 text-popover-foreground sm:h-[min(44rem,calc(100dvh-2rem))] sm:max-w-[50rem]"
         style={{
           width: "min(50rem, calc(100vw - 2rem))",
           maxWidth: "min(50rem, calc(100vw - 2rem))",
@@ -311,10 +310,7 @@ export function SettingsOverlay({
           className="min-h-0 flex-1 flex-col gap-0 md:flex-row"
           data-yaade-settings-tabs=""
         >
-          <aside
-            data-yaade-liquid-glass="chrome"
-            className="flex shrink-0 flex-col border-b border-transparent bg-transparent md:w-52 md:border-r md:border-b-0"
-          >
+          <aside className="flex shrink-0 flex-col border-b border-border bg-muted/35 md:w-52 md:border-r md:border-b-0">
             <div className="flex h-14 items-center justify-between gap-3 px-4">
               <div className="min-w-0">
                 <div className="text-sm font-semibold tracking-tight text-foreground">

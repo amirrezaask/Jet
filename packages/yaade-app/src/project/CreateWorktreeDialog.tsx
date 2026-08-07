@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { SectionLabel } from "@yaade/ui/project"
 import {
   Button,
   Dialog,
@@ -94,7 +93,7 @@ export function CreateWorktreeDialog({
 
         <div className="grid gap-3">
           <div className="grid gap-3 rounded-md border border-border p-3">
-            <SectionLabel className="mb-0">Worktree</SectionLabel>
+            <p className="text-xs font-semibold text-foreground">Worktree</p>
             <div className="grid gap-1.5">
               <Label htmlFor="worktree-branch">Branch</Label>
               <Input

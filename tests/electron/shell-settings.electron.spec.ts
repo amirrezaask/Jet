@@ -135,7 +135,7 @@ test.describe("shell settings", () => {
       await page
         .locator("[data-yaade-settings-category='appearance']")
         .click()
-      await expectLocatorCount(page.locator("[data-yaade-theme-option]"), 8)
+      await expectLocatorCount(page.locator("[data-yaade-theme-option]"), 2)
 
       await page.locator("[data-yaade-theme-option='default-dark']").click()
       await expect

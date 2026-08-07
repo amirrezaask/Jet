@@ -50,7 +50,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "yaade-dialog-overlay fixed inset-0 z-50 bg-black/50 overscroll-contain",
+        "yaade-dialog-overlay fixed inset-0 z-50 bg-backdrop overscroll-contain",
         className
       )}
       data-yaade-dialog-motion={motion}

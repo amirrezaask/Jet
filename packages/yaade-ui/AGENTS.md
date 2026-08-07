@@ -5,20 +5,20 @@ Unified UI primitives + shells for every YAADE surface. Shadcn-derived, semantic
 ## Public surface
 
 - `@yaade/ui` — high-level shells (overlays, dialogs, panels, tabs, editor host).
-- `@yaade/ui/primitives` — shadcn primitives (`Button`, `Input`, `Badge`, `Dialog`, `Popover`, `Tooltip`, `DropdownMenu`, `ContextMenu`, `Kbd`, `Card`, `Empty`, `Item`, `Tabs`, `Separator`, `ScrollArea`, `AlertDialog`, `Drawer`, `Sheet`, `Sidebar`, `Resizable`, `Checkbox`, `Toggle`, `Menubar`, `Skeleton`, `Sonner`, `Spinner`, `Collapsible`, `Label`).
+- `@yaade/ui/primitives` — shadcn primitives. Live chrome is composed from `Button`, `Card`, `Item`, `Badge`, `Tabs`, `Dialog`, `Popover`, `Command`, `Input`, `Checkbox`, `Empty`, `Skeleton`, `Alert`, `Separator`, `Tooltip`, and `Sonner`.
 - `@yaade/ui/styles.css` — theme tokens + globals.
 
 **Apps must never import shadcn primitives from `@yaade/ui/src/components/ui/*` directly.** Import from `@yaade/ui/primitives`.
 
 ## Design tokens
 
-Defined in `src/styles/globals.css` under `@theme inline` + `:root` / `.dark`.
+The required `YaadeTheme.tokens: YaadeSemanticTokens` object is the authored color source. `applySemanticTokens()` publishes it to CSS before React mounts; `globals.css` maps those properties through Tailwind's `@theme inline`. `JetColors` is an sRGB compatibility view derived for canvas/editor consumers and must not be authored independently.
 
 ### Color
-Semantic: `background`, `foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`, `destructive`, `border`, `input`, `ring`, `sidebar-*`. Never hardcode hex outside these files.
+Semantic: shadcn roles plus `success`, `warning`, `info`, `backdrop`, Git added/modified/deleted/conflict foreground pairs, and `sidebar-*`. Never hardcode palette colors outside token/theme files. Exact provider-brand and language-file-icon colors are the documented exceptions.
 
 ### Radius
-`--radius: 0.375rem` → `radius-sm`, `radius-md`, `radius-lg`, `radius-xl`. Tailwind: `rounded-sm/md/lg/xl`.
+`--radius: 0.375rem` (6px at default zoom). Use `rounded-md` for controls and surfaces; reserve full pills for badges.
 
 ### Typography
 Scale (rem, ~px):
@@ -36,11 +36,11 @@ Never write `text-[Npx]`. If a size is missing from the scale, add a token — d
 Fonts: `--font-sans` Geist, `--font-mono` Commit Mono.
 
 ### Motion
-`yaadeMotion` (from `@yaade/ui`) is the single source of animation timings. CSS vars: `--yaade-motion-fast/hot/menu/overlay/panel/slow-menu/scroll/entity`; easing vars: `--yaade-ease-out/in-out/drawer`. Never hardcode `duration-150` / `.15s`; reference the token.
+`yaadeMotion` (from `@yaade/ui`) is the single source of animation timings: 100ms interaction, 160ms menus, and 200ms panels. CSS vars: `--yaade-motion-fast/hot/menu/overlay/panel/slow-menu/scroll/entity`; easing vars: `--yaade-ease-out/in-out/drawer`. Never hardcode durations; reference the token. Press feedback is the restrained global `0.98` scale.
 
-High-frequency palette surfaces use `<DialogContent motion="instant" size="picker" />`. Standard prompts and dialogs retain restrained 180ms enter / 120ms exit motion. Dialog sizes are semantic: `prompt` (24rem), `picker` (32rem), `wide` (42rem), and `default`.
+High-frequency palette surfaces use `<DialogContent motion="instant" size="picker" />`. Standard prompts and dialogs use the menu/panel motion tokens. Dialog sizes are semantic: `prompt` (24rem), `picker` (32rem), `wide` (42rem), and `default`.
 
-Reduced motion handled globally via `prefers-reduced-motion` in `globals.css`.
+Reduced motion is handled globally by `data-yaade-reduced-motion` and `prefers-reduced-motion` in `globals.css`.
 
 ### Icons
 Only `lucide-react`. Default size class: `size-4`. Do not import other icon libraries.
@@ -110,10 +110,9 @@ Only path for destructive confirms. Never `window.confirm`.
 
 `createContextMenuHost()` + `dispatchContextMenuAt()` from `@yaade/ui`. Used by `EditorContextMenu` (via `registerEditorContextMenuHandler` / `showEditorContextMenuAt`).
 
-## Surface primitives
+## Surface composition
 
-- `Text` — variants: `body | label | caption | micro | nano | code`. Replaces arbitrary `text-[Npx]`.
-- `Surface` — variants: `flat | raised | overlay | inset`. Base for panels, cards, agent message rows.
+Use full shadcn `Card` anatomy for grouped surfaces and `Item`/`ItemGroup` for compact data rows. Background, card, and sidebar layers stay flat; shadows belong only to floating popovers and dialogs. The removed `Surface`, `Text`, `SectionLabel`, and liquid-glass abstractions must not be reintroduced.
 
 ## Rules
 

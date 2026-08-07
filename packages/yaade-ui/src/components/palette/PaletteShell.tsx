@@ -141,12 +141,11 @@ export function PaletteShell<T>({
       <DialogContent
         motion="instant"
         size={size}
-        data-yaade-liquid-glass="panel"
         data-yaade-palette=""
         data-yaade-palette-fit={fitContent ? "content" : undefined}
         style={fitStyle}
         className={[
-          "max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden border-transparent bg-transparent p-0 shadow-none",
+          "max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden border-border bg-popover p-0 text-popover-foreground shadow-lg",
           contentClassName,
         ]
           .filter(Boolean)

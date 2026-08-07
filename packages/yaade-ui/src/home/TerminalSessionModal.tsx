@@ -253,7 +253,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   ) : (
     <DialogHeader
       data-yaade-terminal-modal-header=""
-      data-yaade-liquid-glass="chrome"
       {...(showAgentMeta ? { "data-chat-header": "true" } : {})}
       className={cn(
         "flex h-10 flex-row shrink-0 items-center gap-2 border-b border-transparent bg-transparent px-2.5 py-0 text-left sm:text-left",
@@ -401,7 +400,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
   if (presentation === "inline") {
     return (
       <section
-        data-yaade-liquid-glass={embedded ? undefined : "panel"}
         data-yaade-terminal-modal
         data-yaade-session-id={sessionId}
         data-yaade-session-presentation="inline"
@@ -462,7 +460,6 @@ export function TerminalSessionModal(props: TerminalSessionModalProps) {
             void window.yaade?.terminal?.write(ptyId, "\u001b")
           }
         }}
-        data-yaade-liquid-glass="panel"
         data-yaade-terminal-modal
         data-yaade-session-id={sessionId}
         data-yaade-session-presentation="modal"

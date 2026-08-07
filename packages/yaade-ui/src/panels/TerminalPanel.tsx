@@ -887,7 +887,7 @@ export function TerminalPanel({
         <div
           role="status"
           data-yaade-terminal-archived=""
-          className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-border/60 bg-background/90 px-2.5 py-1 text-center text-[11px] text-muted-foreground shadow-sm backdrop-blur"
+          className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border bg-popover px-2.5 py-1 text-center text-xs text-popover-foreground shadow-md"
         >
           Archived · read-only · Resume to reconnect
         </div>

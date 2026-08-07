@@ -35,7 +35,7 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
       className={cn(
-        "yaade-dialog-overlay fixed inset-0 z-50 bg-black/50",
+        "yaade-dialog-overlay fixed inset-0 z-50 bg-backdrop",
         className
       )}
       data-yaade-dialog-motion="standard"

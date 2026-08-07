@@ -47,6 +47,11 @@ test.describe("git worktree sessions", () => {
         })
       }, branch)
       await waitForMux(page)
+      await page.evaluate(() => window.__yaadeAgent!.executeCommand("terminal.new"))
+      await page.locator("[data-yaade-terminal-panel]").waitFor({
+        state: "visible",
+        timeout: 15_000,
+      })
 
       const state = await page.evaluate(() => window.__yaadeAgent!.getState())
       expect(state.sessionCwd).toContain(".yaade/worktrees")

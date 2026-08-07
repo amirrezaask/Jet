@@ -102,7 +102,7 @@ function DropSiteTarget({
         entered ? "opacity-100" : "opacity-0",
         hot
           ? "border-primary bg-primary/20 text-primary"
-          : "border-border/70 bg-muted/70 text-muted-foreground backdrop-blur-sm",
+          : "border-border bg-muted text-muted-foreground",
       )}
       style={{
         left: site.rect.x,

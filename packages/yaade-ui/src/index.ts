@@ -169,10 +169,6 @@ export { OutputPanel } from "./panels/OutputPanel.js"
 export { showEditorContextMenuAt } from "./components/EditorContextMenu.js"
 export { createContextMenuHost, dispatchContextMenuAt } from "./components/ContextMenuHost.js"
 export { PromptDialog, type PromptDialogProps } from "./components/PromptDialog.js"
-export { Text, textVariants, type TextProps } from "./components/Text.js"
-export { SectionLabel, type SectionLabelProps } from "./components/SectionLabel.js"
-export { Surface, surfaceVariants, type SurfaceProps } from "./components/Surface.js"
-export { LiquidGlassFilter } from "./components/LiquidGlassFilter.js"
 export {
   bundledThemes,
   bundledThemeList,

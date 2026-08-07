@@ -180,7 +180,16 @@ test.describe("mux keyboard", () => {
       await page.keyboard.type("yaade-tail echo")
       // Ctrl-a Ctrl-a → literal ^A → readline jumps to the start of the line.
       await page.keyboard.press("Control+KeyA")
+      await expect
+        .poll(async () => page.getByText("waiting for key").count())
+        .toBeGreaterThan(0)
       await page.keyboard.press("Control+KeyA")
+      // The second prefix clears the chord synchronously, while the footer
+      // leaves on React's next commit. Wait for that commit before typing so
+      // CDP cannot race the next `e` into the still-visible prefix namespace.
+      await expect
+        .poll(async () => page.getByText("waiting for key").count())
+        .toBe(0)
       await page.keyboard.type("echo yaade-head ")
       await page.keyboard.press("Enter")
 

@@ -8,8 +8,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog.js"
 import type { YaadeVariant } from "../toast.js"
-import { buttonVariants } from "@/components/ui/button.js"
-import { cn } from "@/lib/utils.js"
+import { Button } from "@/components/ui/button.js"
 
 export type ConfirmOptions = {
   title: string
@@ -20,15 +19,18 @@ export type ConfirmOptions = {
   variant?: YaadeVariant
 }
 
-function actionClassForVariant(variant: YaadeVariant | undefined, destructive: boolean | undefined): string {
+function actionVariant(
+  variant: YaadeVariant | undefined,
+  destructive: boolean | undefined,
+): "default" | "destructive" | "warning" {
   const resolved = variant ?? (destructive ? "destructive" : "default")
   switch (resolved) {
     case "destructive":
-      return cn(buttonVariants({ variant: "destructive" }))
+      return "destructive"
     case "warning":
-      return cn(buttonVariants({ variant: "warning" }))
+      return "warning"
     default:
-      return cn(buttonVariants())
+      return "default"
   }
 }
 
@@ -81,31 +83,28 @@ export function ConfirmDialogHost() {
         if (!next && request) finish(request, false)
       }}
     >
-      <AlertDialogContent
-        data-yaade-liquid-glass="panel"
-        className="border-transparent bg-transparent shadow-none"
-      >
+      <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{options?.title ?? ""}</AlertDialogTitle>
           <AlertDialogDescription>{options?.description ?? ""}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <button
+          <Button
             type="button"
             data-yaade-confirm="cancel"
-            className={buttonVariants({ variant: "outline" })}
+            variant="outline"
             onClick={() => finishCurrent(false)}
           >
             {options?.cancelLabel ?? "Cancel"}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             data-yaade-confirm="accept"
-            className={actionClassForVariant(options?.variant, options?.destructive)}
+            variant={actionVariant(options?.variant, options?.destructive)}
             onClick={() => finishCurrent(true)}
           >
             {options?.confirmLabel ?? "Continue"}
-          </button>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

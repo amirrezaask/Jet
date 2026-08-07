@@ -345,8 +345,7 @@ export function CdOverlay({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        data-yaade-liquid-glass="panel"
-        className="overflow-hidden border-transparent bg-transparent p-0 shadow-none"
+        className="overflow-hidden border-border bg-popover p-0 text-popover-foreground shadow-lg"
         motion="instant"
         size="wide"
         showCloseButton={false}

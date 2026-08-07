@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
-import { SectionLabel } from "@yaade/ui"
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -114,10 +114,9 @@ export function NewSessionDialog({
           </div>
 
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={useWorktree}
-              onChange={e => setUseWorktree(e.target.checked)}
+              onCheckedChange={checked => setUseWorktree(checked === true)}
               data-yaade-use-worktree=""
             />
             Use a git worktree
@@ -125,7 +124,7 @@ export function NewSessionDialog({
 
           {useWorktree ? (
             <div className="grid gap-3 rounded-md border border-border p-3">
-              <SectionLabel className="mb-0">Worktree</SectionLabel>
+              <p className="text-xs font-semibold text-foreground">Worktree</p>
               <div className="grid gap-1.5">
                 <Label htmlFor="session-branch">Branch</Label>
                 <Input

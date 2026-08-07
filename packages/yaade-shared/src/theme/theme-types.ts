@@ -1,8 +1,10 @@
 import {
-  applyShadcnTokens,
-  jetColorsFromShadcn,
+  applySemanticTokens,
+  jetColorsFromTokens,
   shadcnDefaultDark,
+  toSrgbColor,
   type JetShadcnTokens,
+  type YaadeSemanticTokens,
 } from "./shadcn-tokens.js"
 import { getDocumentElement } from "./dom-root.js"
 
@@ -67,8 +69,16 @@ export type JetTerminalAnsiColors = {
   brightWhite: string
 }
 
-export type { JetShadcnTokens }
-export { shadcnDefaultDark, shadcnDefaultLight, jetColorsFromShadcn, applyShadcnTokens } from "./shadcn-tokens.js"
+export type { JetShadcnTokens, YaadeSemanticTokens }
+export {
+  shadcnDefaultDark,
+  shadcnDefaultLight,
+  jetColorsFromShadcn,
+  jetColorsFromTokens,
+  toSrgbColor,
+  applyShadcnTokens,
+  applySemanticTokens,
+} from "./shadcn-tokens.js"
 
 export type YaadeTheme = {
   id: string
@@ -82,8 +92,8 @@ export type YaadeTheme = {
   terminalAnsi?: JetTerminalAnsiColors
   colors: JetColors
   highlights: JetHighlightColors
-  /** When set, shell tokens use exact shadcn CSS variables. */
-  shadcn?: JetShadcnTokens
+  /** Canonical shell, interaction, status, and source-control tokens. */
+  tokens: YaadeSemanticTokens
 }
 
 export type ColorScheme = "dark" | "light"
@@ -94,24 +104,24 @@ export const defaultYaadeTheme: YaadeTheme = {
   name: "Default Dark",
   family: "Default",
   scheme: "dark",
-  colors: jetColorsFromShadcn(shadcnDefaultDark, "dark"),
-  shadcn: shadcnDefaultDark,
+  colors: jetColorsFromTokens(shadcnDefaultDark),
+  tokens: shadcnDefaultDark,
   highlights: {
-    keyword: "oklch(0.704 0.191 22.216)",
-    controlKeyword: "oklch(0.704 0.191 22.216)",
-    function: "oklch(0.792 0.209 303.407)",
-    type: "oklch(0.623 0.214 259.815)",
-    string: "oklch(0.696 0.17 162.48)",
-    number: "oklch(0.828 0.189 84.429)",
-    boolean: "oklch(0.828 0.189 84.429)",
-    comment: "oklch(0.708 0 0)",
-    operator: "oklch(0.985 0 0)",
-    variable: "oklch(0.985 0 0)",
-    attribute: "oklch(0.792 0.209 303.407)",
-    constant: "oklch(0.623 0.214 259.815)",
-    field: "oklch(0.623 0.214 259.815)",
-    module: "oklch(0.623 0.214 259.815)",
-    label: "oklch(0.704 0.191 22.216)",
+    keyword: toSrgbColor("oklch(0.704 0.191 22.216)"),
+    controlKeyword: toSrgbColor("oklch(0.704 0.191 22.216)"),
+    function: toSrgbColor("oklch(0.792 0.209 303.407)"),
+    type: toSrgbColor("oklch(0.623 0.214 259.815)"),
+    string: toSrgbColor("oklch(0.696 0.17 162.48)"),
+    number: toSrgbColor("oklch(0.828 0.189 84.429)"),
+    boolean: toSrgbColor("oklch(0.828 0.189 84.429)"),
+    comment: toSrgbColor("oklch(0.708 0 0)"),
+    operator: toSrgbColor("oklch(0.985 0 0)"),
+    variable: toSrgbColor("oklch(0.985 0 0)"),
+    attribute: toSrgbColor("oklch(0.792 0.209 303.407)"),
+    constant: toSrgbColor("oklch(0.623 0.214 259.815)"),
+    field: toSrgbColor("oklch(0.623 0.214 259.815)"),
+    module: toSrgbColor("oklch(0.623 0.214 259.815)"),
+    label: toSrgbColor("oklch(0.704 0.191 22.216)"),
   },
 }
 
@@ -124,7 +134,6 @@ export function applyYaadeThemeCss(theme: YaadeTheme): void {
   const root = getDocumentElement()
   if (!root) return
   const c = theme.colors
-  const onAccent = isDarkTheme(theme) ? "#000000" : "#fafafa"
 
   root.style.setProperty("--yaade-bg", c.bg)
   root.style.setProperty("--yaade-panel", c.panel)
@@ -142,37 +151,7 @@ export function applyYaadeThemeCss(theme: YaadeTheme): void {
   root.style.setProperty("--yaade-backdrop", c.backdrop)
   root.style.setProperty("--yaade-cursor-color", c.text)
 
-  if (theme.shadcn) {
-    applyShadcnTokens(theme.shadcn)
-  } else {
-    root.style.setProperty("--background", c.bg)
-    root.style.setProperty("--foreground", c.text)
-    root.style.setProperty("--card", c.panelRaised)
-    root.style.setProperty("--card-foreground", c.text)
-    root.style.setProperty("--popover", c.panelRaised)
-    root.style.setProperty("--popover-foreground", c.text)
-    root.style.setProperty("--primary", c.accent)
-    root.style.setProperty("--primary-foreground", onAccent)
-    root.style.setProperty("--secondary", c.hover)
-    root.style.setProperty("--secondary-foreground", c.text)
-    root.style.setProperty("--muted", c.panel)
-    root.style.setProperty("--muted-foreground", c.textMuted)
-    root.style.setProperty("--accent", c.hover)
-    root.style.setProperty("--accent-foreground", c.text)
-    root.style.setProperty("--destructive", c.error)
-    root.style.setProperty("--destructive-foreground", onAccent)
-    root.style.setProperty("--border", c.border)
-    root.style.setProperty("--input", c.border)
-    root.style.setProperty("--ring", c.focusBorder)
-    root.style.setProperty("--sidebar", c.panel)
-    root.style.setProperty("--sidebar-foreground", c.text)
-    root.style.setProperty("--sidebar-primary", c.accent)
-    root.style.setProperty("--sidebar-primary-foreground", onAccent)
-    root.style.setProperty("--sidebar-accent", c.hover)
-    root.style.setProperty("--sidebar-accent-foreground", c.text)
-    root.style.setProperty("--sidebar-border", c.border)
-    root.style.setProperty("--sidebar-ring", c.focusBorder)
-  }
+  applySemanticTokens(theme.tokens)
   applyJetHighlightCssVars(theme)
   applyYaadeTerminalAnsiCssVars(theme)
   applyAgentChatCssVars(theme)

@@ -23,6 +23,16 @@ const FONT_SIZE_STEP = 2
 const DEFAULT_SIDEBAR_WIDTH = 300
 const MIN_SIDEBAR_WIDTH = 240
 const MAX_SIDEBAR_WIDTH = 480
+const LEGACY_LIGHT_THEME_IDS = new Set([
+  "catppuccin-latte",
+  "tokyonight-day",
+])
+const LEGACY_DARK_THEME_IDS = new Set([
+  "catppuccin-mocha",
+  "catppuccin-macchiato",
+  "tokyonight-night",
+  "tokyonight-storm",
+])
 
 export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   themeId: defaultThemeId,
@@ -40,8 +50,17 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Math.max(min, Math.min(max, n))
 }
 
-function normalizeThemeId(value: unknown): string {
-  return getThemeById(typeof value === "string" ? value : null).id
+export function normalizeThemeId(
+  value: unknown,
+  fallbackScheme: ColorScheme = "dark",
+): string {
+  if (typeof value === "string") {
+    if (LEGACY_LIGHT_THEME_IDS.has(value)) return defaultThemeIdForScheme("light")
+    if (LEGACY_DARK_THEME_IDS.has(value)) return defaultThemeIdForScheme("dark")
+    const resolved = getThemeById(value)
+    if (resolved.id === value) return resolved.id
+  }
+  return defaultThemeIdForScheme(fallbackScheme)
 }
 
 export function normalizeSessionLayout(_value: unknown): SessionLayout {
@@ -81,8 +100,9 @@ function loadStoredFontSize(): number {
 function loadStoredThemeId(): string {
   try {
     const rawTheme = localStorage.getItem(THEME_ID_STORAGE_KEY)
-    if (rawTheme) return normalizeThemeId(rawTheme)
     const rawScheme = localStorage.getItem(COLOR_SCHEME_KEY)
+    const scheme = rawScheme === "light" ? "light" : "dark"
+    if (rawTheme) return normalizeThemeId(rawTheme, scheme)
     if (rawScheme === "light" || rawScheme === "dark") {
       return defaultThemeIdForScheme(rawScheme)
     }
@@ -104,7 +124,7 @@ function normalizeMonoFontFamily(value: unknown): string {
   return trimmed.replace(/^["']|["']$/g, "") || DEFAULT_MONO_FONT_NAME
 }
 
-function loadAppearanceSettings(): JetAppearanceSettings {
+export function loadAppearanceSettings(): JetAppearanceSettings {
   const base: JetAppearanceSettings = {
     ...DEFAULT_APPEARANCE_SETTINGS,
     themeId: loadStoredThemeId(),
@@ -115,7 +135,10 @@ function loadAppearanceSettings(): JetAppearanceSettings {
     if (!raw) return base
     const parsed = JSON.parse(raw) as Partial<JetAppearanceSettings>
     return {
-      themeId: normalizeThemeId(parsed.themeId ?? base.themeId),
+      themeId: normalizeThemeId(
+        parsed.themeId ?? base.themeId,
+        getThemeById(base.themeId).scheme ?? "dark",
+      ),
       fontSize: clampNumber(parsed.fontSize, base.fontSize, 10, 24),
       monoFontFamily: normalizeMonoFontFamily(
         (parsed as { monoFontFamily?: unknown }).monoFontFamily ??
@@ -153,7 +176,7 @@ function persistAppearanceSettings(settings: JetAppearanceSettings): void {
 }
 
 /** Apply persisted appearance tokens onto :root. */
-function applyAppearanceCss(settings: JetAppearanceSettings): void {
+export function applyAppearanceCss(settings: JetAppearanceSettings): void {
   const root = document.documentElement
   root.style.fontSize = `${settings.fontSize}px`
   root.style.setProperty("--font-sans", DEFAULT_UI_FONT_FAMILY)
@@ -165,8 +188,17 @@ function applyAppearanceCss(settings: JetAppearanceSettings): void {
   root.style.setProperty("--yaade-terminal-line-height", "1")
   root.style.setProperty("--yaade-terminal-cursor-blink", "1")
   root.dataset.jetDensity = "compact"
-  root.dataset.jetReducedMotion = "false"
+  root.dataset.yaadeReducedMotion = "false"
   root.dataset.yaadeSessionLayout = settings.sessionLayout
+}
+
+/** Apply persisted appearance before React mounts to avoid a theme flash. */
+export function applyInitialAppearance(): JetAppearanceSettings {
+  const settings = loadAppearanceSettings()
+  const theme = getThemeById(settings.themeId)
+  applyColorScheme(theme.scheme ?? "dark", theme)
+  applyAppearanceCss(settings)
+  return settings
 }
 
 export function useAppearanceSettings() {

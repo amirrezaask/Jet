@@ -400,11 +400,10 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          data-yaade-liquid-glass={floating ? "chrome" : undefined}
           className={cn(
             "flex h-full w-full flex-col bg-sidebar",
             floating
-              ? "rounded-[var(--glass-radius-panel)] border border-transparent bg-transparent shadow-none"
+              ? "rounded-lg border bg-sidebar shadow-none"
               : null,
           )}
         >

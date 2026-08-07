@@ -1,9 +1,11 @@
 import type {
-  JetColors,
   JetHighlightColors,
   JetTerminalAnsiColors,
+  YaadeSemanticTokens,
   YaadeTheme,
 } from "@yaade/shared"
+import { jetColorsFromTokens } from "@yaade/shared"
+import { toSrgbColor } from "@yaade/shared"
 
 export type ColorScheme = "dark" | "light"
 
@@ -24,53 +26,43 @@ export type PaletteThemeInput = {
   sourceName?: string
   sourceUrl?: string
   license?: string
-  colors: JetColors
+  tokens: YaadeSemanticTokens
   highlights: JetHighlightColors
   terminalAnsi: JetTerminalAnsiColors
 }
 
-function swatches(theme: Pick<PaletteThemeInput, "colors" | "highlights" | "terminalAnsi">): string[] {
+function swatches(theme: Pick<PaletteThemeInput, "tokens" | "highlights" | "terminalAnsi">): string[] {
   return [
-    theme.colors.bg,
-    theme.colors.panel,
-    theme.colors.text,
-    theme.colors.accent,
+    theme.tokens.background,
+    theme.tokens.card,
+    theme.tokens.foreground,
+    theme.tokens.primary,
     theme.highlights.keyword,
     theme.highlights.function,
     theme.highlights.string,
     theme.terminalAnsi.yellow,
     theme.terminalAnsi.cyan,
-    theme.colors.error,
+    theme.tokens.destructive,
   ]
 }
 
 export function makeTheme(input: PaletteThemeInput): YaadeTheme {
   return {
     ...input,
+    highlights: mapCompatibilityColors(input.highlights),
+    terminalAnsi: mapCompatibilityColors(input.terminalAnsi),
+    colors: jetColorsFromTokens(input.tokens),
     previewSwatches: swatches(input),
   }
 }
 
-export function paletteColors(input: {
-  bg: string
-  panel: string
-  panelRaised: string
-  text: string
-  textMuted: string
-  accent: string
-  hover: string
-  selection: string
-  border: string
-  focusBorder?: string
-  error: string
-  warning: string
-  success: string
-}): JetColors {
-  return {
-    ...input,
-    focusBorder: input.focusBorder ?? input.accent,
-    backdrop: "#00000080",
-  }
+function mapCompatibilityColors<T extends { [K in keyof T]: string }>(colors: T): T {
+  return Object.fromEntries(
+    Object.entries(colors as Record<string, string>).map(([key, value]) => [
+      key,
+      toSrgbColor(value),
+    ]),
+  ) as T
 }
 
 export function paletteHighlights(input: {

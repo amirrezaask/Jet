@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { pathToFileUri } from "@yaade/shared"
-import { cn, yaadePressClass } from "@yaade/ui/project"
+import { cn } from "@yaade/ui/project"
 import {
+  Button,
   Command,
   CommandEmpty,
   CommandGroup,
@@ -98,10 +99,7 @@ function PathSegment({
   )
 
   const labelClass = cn(
-    yaadePressClass,
-    "max-w-[12rem] truncate rounded-sm px-1 py-0.5 text-left outline-none",
-    "hover:bg-accent hover:text-accent-foreground",
-    "focus-visible:ring-1 focus-visible:ring-ring",
+    "h-6 max-w-[12rem] truncate px-1.5 text-left text-xs",
     isLast
       ? "font-semibold text-foreground"
       : "font-normal text-muted-foreground hover:text-foreground",
@@ -127,8 +125,10 @@ function PathSegment({
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="xs"
           data-yaade-path-segment={crumb.label}
           data-yaade-path-switcher={crumb.label}
           aria-label={`Switch from ${crumb.label}`}
@@ -136,7 +136,7 @@ function PathSegment({
           className={labelClass}
         >
           {crumb.label}
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent
         align="start"

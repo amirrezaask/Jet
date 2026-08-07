@@ -1,24 +1,55 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react"
-import type { GitCommit, YaadeTheme } from "@yaade/shared"
-import { pathToFileUri } from "@yaade/shared"
+import type { ProjectSessionSummary } from "@yaade/rpc"
+import type { GitRepositorySummary, GitWorktree } from "@yaade/shared"
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
   Empty,
   EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+  Skeleton,
 } from "@yaade/ui/primitives"
-import { ChevronRight } from "lucide-react"
+import {
+  AlertCircle,
+  Bot,
+  ChevronDown,
+  Clock3,
+  FileCode2,
+  FileText,
+  FolderGit2,
+  GitBranch,
+  Play,
+  Plus,
+  RefreshCw,
+  Terminal,
+} from "lucide-react"
+import type { MuxLaunchAction } from "../mux/MuxApp.js"
+import { CreateWorktreeDialog } from "./CreateWorktreeDialog.js"
+import {
+  loadProjectDashboard,
+  recentProjectSessions,
+  resolveProjectFilePath,
+  visibleLinkedWorktrees,
+  type ProjectDashboard,
+} from "./project-dashboard.js"
 
-const CommitChangesDialog = lazy(() =>
-  import("@yaade/ui/commit-changes").then(m => ({ default: m.CommitChangesDialog })),
+const ProjectReadme = lazy(() =>
+  import("@yaade/ui/markdown").then(module => ({
+    default: module.ProjectReadme,
+  })),
 )
 
 const README_HEAD_LINES = 16
-const RECENT_COMMIT_LIMIT = 12
-const README_NAMES = new Set(["readme.md", "readme"])
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -27,243 +58,384 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 export type ProjectOverviewProps = {
   projectPath: string
-  theme: YaadeTheme
-  fontSize?: number
+  homeDir: string
+  active: boolean
+  listSessions: () => Promise<ProjectSessionSummary[]>
+  onLaunchAgent: () => void
+  onLaunchAction: (action: MuxLaunchAction) => void | Promise<void>
+  onResumeWorkspace: () => void | Promise<void>
+  onResumeSession: (sessionId: string) => void | Promise<void>
+  onOpenCheckout: (input: {
+    cwdPath: string
+    title?: string
+    worktreeBranch?: string | null
+    worktreePath?: string | null
+  }) => Promise<void>
+  onCreateWorktree: (input: {
+    branch: string
+    baseRef?: string
+  }) => Promise<void>
+  onRepositorySummary?: (summary: GitRepositorySummary | null) => void
 }
 
-async function readReadme(projectPath: string): Promise<string | null> {
-  const fs = window.yaade?.fs
-  if (!fs?.readFile || !fs.readDir) return null
-  const rootUri = pathToFileUri(projectPath)
-  let name: string | null = null
-  try {
-    name =
-      (await fs.readDir(rootUri)).find(
-        entry => !entry.isDirectory && README_NAMES.has(entry.name.toLowerCase()),
-      )?.name ?? null
-  } catch {
-    return null
-  }
-  if (!name) return null
-  try {
-    const text = await fs.readFile(
-      pathToFileUri(`${projectPath.replace(/\/+$/, "")}/${name}`),
-    )
-    if (typeof text === "string" && text.length > 0) return text
-  } catch {
-    return null
-  }
-  return null
+function projectName(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? path
 }
 
-function splitReadmeHead(text: string): { head: string; hasMore: boolean } {
+function branchLabel(worktree: GitWorktree): string {
+  if (worktree.branch) return worktree.branch.replace(/^refs\/heads\//, "")
+  if (worktree.detached && worktree.head) {
+    return `detached@${worktree.head.slice(0, 7)}`
+  }
+  return projectName(worktree.path)
+}
+
+function checkoutLabel(session: ProjectSessionSummary): string {
+  if (session.worktreeBranch) return session.worktreeBranch
+  return session.cwdPath === session.projectPath
+    ? "Main"
+    : projectName(session.cwdPath)
+}
+
+function ErrorNotice({ title, message }: { title: string; message: string }) {
+  return (
+    <Alert variant="destructive">
+      <AlertCircle aria-hidden />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>{message}</AlertDescription>
+    </Alert>
+  )
+}
+
+function DashboardSkeleton() {
+  return (
+    <div
+      className="grid min-w-0 gap-8 lg:grid-cols-[minmax(18rem,0.7fr)_minmax(0,1.3fr)]"
+      role="status"
+      aria-label="Loading project overview"
+    >
+      {[0, 1].map(index => (
+        <section key={index} className="min-w-0 space-y-3 py-2">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-3 w-48" />
+          <div className="grid gap-2 pt-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-4/5" />
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function splitReadme(text: string): { head: string; hasMore: boolean } {
   const lines = text.split("\n")
-  if (lines.length <= README_HEAD_LINES) {
-    return { head: text, hasMore: false }
-  }
-  return {
-    head: lines.slice(0, README_HEAD_LINES).join("\n").trimEnd(),
-    hasMore: true,
-  }
-}
-
-async function loadRecentCommits(projectPath: string): Promise<GitCommit[] | null> {
-  const git = window.yaade?.git
-  if (!git?.isRepo || !git.history) return null
-  const rootUri = pathToFileUri(projectPath)
-  try {
-    if (!(await git.isRepo(rootUri))) return null
-    return await git.history(rootUri, RECENT_COMMIT_LIMIT)
-  } catch {
-    return null
-  }
+  return lines.length > README_HEAD_LINES
+    ? {
+        head: lines.slice(0, README_HEAD_LINES).join("\n").trimEnd(),
+        hasMore: true,
+      }
+    : { head: text, hasMore: false }
 }
 
 export function ProjectOverview({
   projectPath,
-  theme,
-  fontSize = 13,
+  homeDir,
+  active,
+  listSessions,
+  onLaunchAgent,
+  onLaunchAction,
+  onResumeWorkspace,
+  onResumeSession,
+  onOpenCheckout,
+  onCreateWorktree,
+  onRepositorySummary,
 }: ProjectOverviewProps) {
-  const [readme, setReadme] = useState<string | null | undefined>(undefined)
+  const [dashboard, setDashboard] = useState<ProjectDashboard | null>(null)
+  const [refreshRevision, setRefreshRevision] = useState(0)
   const [readmeOpen, setReadmeOpen] = useState(false)
-  const [commits, setCommits] = useState<GitCommit[] | null | undefined>(
-    undefined,
-  )
-  const [dialogCommit, setDialogCommit] = useState<GitCommit | null>(null)
-  const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
-
-  const readmeParts = useMemo(
-    () => (typeof readme === "string" ? splitReadmeHead(readme) : null),
-    [readme],
-  )
+  const [createWorktreeOpen, setCreateWorktreeOpen] = useState(false)
 
   useEffect(() => {
+    if (!active) return
     let cancelled = false
-    setReadme(undefined)
+    setDashboard(null)
     setReadmeOpen(false)
-    setCommits(undefined)
-    setDialogCommit(null)
-    void readReadme(projectPath).then(text => {
-      if (!cancelled) setReadme(text)
-    })
-    void loadRecentCommits(projectPath).then(list => {
-      if (!cancelled) setCommits(list)
+    void loadProjectDashboard(projectPath, {
+      fs: window.yaade?.fs,
+      git: window.yaade?.git,
+      listSessions,
+    }).then(result => {
+      if (cancelled) return
+      setDashboard(result)
+      onRepositorySummary?.(result.summary.value)
     })
     return () => {
       cancelled = true
     }
-  }, [projectPath])
+  }, [active, listSessions, onRepositorySummary, projectPath, refreshRevision])
+
+  const sessions = useMemo(
+    () => recentProjectSessions(dashboard?.sessions.value ?? []),
+    [dashboard?.sessions.value],
+  )
+  const linkedWorktrees = useMemo(
+    () => visibleLinkedWorktrees(dashboard?.worktrees.value ?? [], projectPath),
+    [dashboard?.worktrees.value, projectPath],
+  )
+  const readmeParts = useMemo(
+    () => (dashboard?.readme.value ? splitReadme(dashboard.readme.value) : null),
+    [dashboard?.readme.value],
+  )
+  const defaultBranch =
+    dashboard?.defaultBranch.value ?? dashboard?.summary.value?.branch ?? "main"
+
+  const openFile = (target: string) => {
+    const filePath = resolveProjectFilePath(projectPath, target)
+    if (filePath) void onLaunchAction({ kind: "editor", filePath })
+  }
 
   return (
     <main
-      className="h-full min-h-0 overflow-auto p-4 sm:p-6"
+      className="h-full min-h-0 overflow-auto overflow-x-hidden px-3 py-5 sm:px-6 lg:px-8"
       data-yaade-project-overview=""
     >
-      <div className="grid w-full max-w-7xl gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,0.75fr)] xl:gap-10">
-        <section aria-labelledby="yaade-overview-commits-heading">
-          <h2
-            id="yaade-overview-commits-heading"
-            className="mb-3 text-sm font-medium text-foreground"
-          >
-            Recent commits
-          </h2>
-          {commits === undefined ? (
-            <p className="text-sm text-muted-foreground" role="status">
-              Loading…
-            </p>
-          ) : commits === null ? (
-            <p
-              className="text-sm text-muted-foreground"
-              data-yaade-project-commits-empty=""
-            >
-              Not a git repository.
-            </p>
-          ) : commits.length === 0 ? (
-            <p
-              className="text-sm text-muted-foreground"
-              data-yaade-project-commits-empty=""
-            >
-              No commits yet.
-            </p>
-          ) : (
-            <ul
-              className="divide-y divide-border/60 border-y border-border/60"
-              data-yaade-project-commits=""
-              data-yaade-list-panel="project-commits"
-            >
-              {commits.map(commit => (
-                <li key={commit.hash} className="shrink-0">
-                  <button
-                    type="button"
-                    data-yaade-list-item=""
-                    data-yaade-project-commit={commit.shortHash}
-                    onClick={() => setDialogCommit(commit)}
-                    className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-1 py-2.5 text-left outline-none transition-colors hover:bg-accent/25 focus-visible:bg-accent/25 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 active:scale-[0.99]"
-                  >
-                    <span className="font-mono text-3xs text-primary/90">
-                      {commit.shortHash}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-xs text-foreground">
-                        {commit.subject}
-                      </p>
-                      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground">
-                        <span className="truncate">{commit.author}</span>
-                        <span aria-hidden>·</span>
-                        <time
-                          className="shrink-0 font-mono tabular-nums"
-                          dateTime={new Date(commit.authoredAt).toISOString()}
-                        >
-                          {dateFormatter.format(new Date(commit.authoredAt))}
-                        </time>
-                      </p>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section
-          className="min-w-0 xl:border-l xl:border-border/60 xl:pl-8"
-          aria-labelledby="yaade-overview-readme-heading"
-        >
-          <h2
-            id="yaade-overview-readme-heading"
-            className="mb-3 text-sm font-medium text-foreground"
-          >
-            README
-          </h2>
-          {readme === undefined ? (
-            <p className="text-sm text-muted-foreground" role="status">
-              Loading…
-            </p>
-          ) : readme === null || !readmeParts ? (
-            <Empty className="border border-dashed border-border">
-              <EmptyHeader>
-                <EmptyTitle>No README</EmptyTitle>
-                <EmptyDescription>
-                  Add a README.md in this project, or open a worktree to start a
-                  tiling workspace.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <div data-yaade-project-readme="">
-              <pre
-                className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground/90"
-                data-yaade-project-readme-head=""
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-8">
+        <section className="flex min-w-0 flex-col gap-5">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">
+                  {projectName(projectPath)}
+                </h1>
+                {dashboard?.isGitRepo.value && dashboard.summary.value?.branch ? (
+                  <Badge variant="secondary">
+                    <GitBranch aria-hidden />
+                    {dashboard.summary.value.branch}
+                  </Badge>
+                ) : null}
+                {dashboard?.summary.value?.upstream ? (
+                  <Badge variant="outline">{dashboard.summary.value.upstream}</Badge>
+                ) : null}
+                {dashboard?.summary.value?.ahead ? (
+                  <Badge variant="info">↑ {dashboard.summary.value.ahead}</Badge>
+                ) : null}
+                {dashboard?.summary.value?.behind ? (
+                  <Badge variant="warning">↓ {dashboard.summary.value.behind}</Badge>
+                ) : null}
+                {dashboard?.status.value?.length ? (
+                  <Badge variant="warning">{dashboard.status.value.length} changed</Badge>
+                ) : dashboard?.isGitRepo.value ? (
+                  <Badge variant="success">Clean</Badge>
+                ) : null}
+              </div>
+              <p
+                className="mt-1 truncate font-mono text-xs text-muted-foreground"
+                title={projectPath}
               >
-                {readmeParts.head}
-              </pre>
-              {readmeParts.hasMore ? (
-                <Collapsible
-                  open={readmeOpen}
-                  onOpenChange={setReadmeOpen}
-                  className="group/readme mt-3"
-                  data-yaade-project-readme-accordion=""
-                >
-                  <CollapsibleTrigger
-                    className="flex w-full items-center gap-1.5 rounded-md px-1 py-1.5 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-accent/30 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
-                    data-yaade-project-readme-expand=""
-                  >
-                    <ChevronRight
-                      className="size-3.5 shrink-0 transition-transform duration-[var(--yaade-motion-fast)] group-data-[state=open]/readme:rotate-90"
-                      aria-hidden
-                    />
-                    {readmeOpen ? "Hide full README" : "Show full README"}
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <pre
-                      className="mt-2 overflow-x-auto whitespace-pre-wrap break-words border-t border-border/60 pt-3 font-mono text-xs leading-relaxed text-foreground/90"
-                      data-yaade-project-readme-full=""
-                    >
-                      {readme}
-                    </pre>
-                  </CollapsibleContent>
-                </Collapsible>
+                {projectPath}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRefreshRevision(value => value + 1)}
+              aria-label="Refresh project overview"
+              data-yaade-project-refresh=""
+            >
+              <RefreshCw aria-hidden />
+              Refresh
+            </Button>
+          </div>
+
+          <div
+            className="flex flex-wrap items-center gap-1.5"
+            data-yaade-command-deck=""
+          >
+            <Button
+              className="w-full justify-center sm:w-auto"
+              onClick={onLaunchAgent}
+              data-yaade-launch-agent=""
+            >
+              <Bot aria-hidden />
+              Launch agent
+            </Button>
+            <Button variant="ghost" onClick={() => void onLaunchAction({ kind: "terminal" })} data-yaade-launch-tool="terminal">
+              <Terminal aria-hidden />
+              Terminal
+            </Button>
+            <Button variant="ghost" onClick={() => void onLaunchAction({ kind: "editor" })} data-yaade-launch-tool="editor">
+              <FileCode2 aria-hidden />
+              Editor
+            </Button>
+            <Button variant="ghost" onClick={() => void onLaunchAction({ kind: "neovim" })} data-yaade-launch-tool="neovim">
+              <Terminal aria-hidden />
+              Neovim
+            </Button>
+            <Button variant="ghost" onClick={() => void onLaunchAction({ kind: "git" })} data-yaade-launch-tool="git">
+              <GitBranch aria-hidden />
+              Git
+            </Button>
+            <Button variant="ghost" onClick={() => void onResumeWorkspace()} data-yaade-resume-workspace="">
+              <Play aria-hidden />
+              Resume
+            </Button>
+          </div>
+
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">Worktrees</h2>
+                <p className="text-xs text-muted-foreground">Choose the checkout to open.</p>
+              </div>
+              {dashboard?.isGitRepo.value ? (
+                <Button variant="ghost" size="sm" onClick={() => setCreateWorktreeOpen(true)} data-yaade-project-create-worktree="">
+                  <Plus aria-hidden />
+                  Create
+                </Button>
               ) : null}
             </div>
-          )}
+            {!dashboard ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </div>
+            ) : dashboard.isGitRepo.error || dashboard.worktrees.error ? (
+              <ErrorNotice
+                title="Worktrees unavailable"
+                message={dashboard.worktrees.error ?? dashboard.isGitRepo.error!}
+              />
+            ) : (
+              <ItemGroup
+                className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3"
+                data-yaade-list-panel="project-worktrees"
+                data-yaade-project-worktrees=""
+              >
+                <Item size="sm" className="min-w-0 flex-nowrap hover:bg-muted/40" data-yaade-list-item="" data-yaade-project-worktree="main">
+                  <FolderGit2 className="size-4 text-muted-foreground" aria-hidden />
+                  <ItemContent>
+                    <ItemTitle><span>Main</span></ItemTitle>
+                    <ItemDescription className="truncate font-mono text-xs"><span>{projectPath}</span></ItemDescription>
+                  </ItemContent>
+                  <Button variant="ghost" size="sm" onClick={() => void onOpenCheckout({ cwdPath: projectPath, title: "Main" })}>Open</Button>
+                </Item>
+                {linkedWorktrees.map(worktree => (
+                  <Item key={worktree.path} size="sm" className="min-w-0 flex-nowrap hover:bg-muted/40" data-yaade-list-item="" data-yaade-project-worktree={worktree.path}>
+                    <GitBranch className="size-4 text-muted-foreground" aria-hidden />
+                    <ItemContent>
+                      <ItemTitle><span>{branchLabel(worktree)}</span></ItemTitle>
+                      <ItemDescription className="truncate font-mono text-xs"><span>{worktree.path}</span></ItemDescription>
+                    </ItemContent>
+                    <Button variant="ghost" size="sm" onClick={() => void onOpenCheckout({
+                      cwdPath: worktree.path,
+                      title: branchLabel(worktree),
+                      worktreeBranch: worktree.branch?.replace(/^refs\/heads\//, "") ?? null,
+                      worktreePath: worktree.path,
+                    })}>Open</Button>
+                  </Item>
+                ))}
+              </ItemGroup>
+            )}
+          </div>
         </section>
+
+        {!dashboard ? (
+          <DashboardSkeleton />
+        ) : (
+          <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(18rem,0.7fr)_minmax(0,1.3fr)] lg:gap-12">
+            <section className="min-w-0 py-2" aria-labelledby="recent-sessions-heading">
+              <h2 id="recent-sessions-heading" className="text-base font-semibold">Recent sessions</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">Your five most recently active workspaces.</p>
+              <div className="mt-3">
+                {dashboard.sessions.error ? (
+                  <ErrorNotice title="Sessions unavailable" message={dashboard.sessions.error} />
+                ) : sessions.length === 0 ? (
+                  <Empty className="min-h-32 bg-muted/20">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><Clock3 aria-hidden /></EmptyMedia>
+                      <EmptyTitle>No sessions yet</EmptyTitle>
+                      <EmptyDescription>Launch a tool to create the Main workspace.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  <ItemGroup className="gap-1" data-yaade-list-panel="project-sessions" data-yaade-project-sessions="">
+                    {sessions.map(item => (
+                      <Item key={item.id} size="sm" className="flex-nowrap hover:bg-muted/40" data-yaade-list-item="" data-yaade-project-session={item.id}>
+                        <ItemContent>
+                          <ItemTitle>{item.title}</ItemTitle>
+                          <ItemDescription className="flex flex-wrap items-center gap-x-2 font-mono text-xs">
+                            <span>{checkoutLabel(item)}</span>
+                            <time dateTime={item.updatedAt}>{dateFormatter.format(new Date(item.updatedAt))}</time>
+                          </ItemDescription>
+                        </ItemContent>
+                        <Button variant="ghost" size="sm" onClick={() => void onResumeSession(item.id)}>Resume</Button>
+                      </Item>
+                    ))}
+                  </ItemGroup>
+                )}
+              </div>
+            </section>
+
+            <section className="min-w-0 py-2" data-yaade-project-readme="" aria-labelledby="project-readme-heading">
+              <h2 id="project-readme-heading" className="text-base font-semibold">README</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">Project context without leaving the cockpit.</p>
+              <div className="mt-3">
+                {dashboard.readme.error ? (
+                  <ErrorNotice title="README unavailable" message={dashboard.readme.error} />
+                ) : !dashboard.readme.value || !readmeParts ? (
+                  <Empty className="min-h-32 bg-muted/20">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><FileText aria-hidden /></EmptyMedia>
+                      <EmptyTitle>No README</EmptyTitle>
+                      <EmptyDescription>Add README.md to give this project a useful landing page.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  <>
+                    <div
+                      data-yaade-project-readme-head={readmeOpen ? undefined : ""}
+                      data-yaade-project-readme-full={readmeOpen ? "" : undefined}
+                      className="min-w-0 overflow-hidden"
+                    >
+                      <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+                        <ProjectReadme
+                          content={readmeOpen ? dashboard.readme.value : readmeParts.head}
+                          onOpenProjectFile={openFile}
+                        />
+                      </Suspense>
+                    </div>
+                    {readmeParts.hasMore ? (
+                      <Button
+                        className="mt-3"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setReadmeOpen(value => !value)}
+                        data-yaade-project-readme-expand=""
+                      >
+                        <ChevronDown className={readmeOpen ? "rotate-180" : ""} aria-hidden />
+                        {readmeOpen ? "Collapse README" : "Expand README"}
+                      </Button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
       </div>
 
-      {dialogCommit ? (
-        <Suspense fallback={null}>
-          <CommitChangesDialog
-            open
-            onOpenChange={open => {
-              if (!open) setDialogCommit(null)
-            }}
-            rootUri={rootUri}
-            hash={dialogCommit.hash}
-            theme={theme}
-            fontSize={fontSize}
-            commit={dialogCommit}
-          />
-        </Suspense>
-      ) : null}
+      <CreateWorktreeDialog
+        open={createWorktreeOpen}
+        onOpenChange={setCreateWorktreeOpen}
+        projectPath={projectPath}
+        homeDir={homeDir}
+        defaultBranch={defaultBranch}
+        onCreate={async input => {
+          await onCreateWorktree(input)
+          setCreateWorktreeOpen(false)
+        }}
+      />
     </main>
   )
 }

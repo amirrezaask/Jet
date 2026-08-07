@@ -87,7 +87,6 @@ export function SessionModeDock(props: SessionModeDockProps) {
       <nav
         data-yaade-session-mode-dock=""
         data-yaade-session-mode-switch=""
-        data-yaade-liquid-glass="island"
         aria-label="Session tools"
         className={cn(
           "pointer-events-auto flex items-center gap-1.5 rounded-full px-2 py-1.5",

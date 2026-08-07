@@ -49,9 +49,8 @@ export function MuxStatusStrip(props: MuxStatusStripProps) {
   return (
     <footer
       data-yaade-mux-status-strip=""
-      data-yaade-liquid-glass="chrome"
       className={cn(
-        "flex h-6 shrink-0 items-center gap-2 border-t border-border/40 px-2 text-3xs text-muted-foreground",
+        "flex h-6 shrink-0 items-center gap-2 border-t border-border bg-card px-2 text-3xs text-muted-foreground",
         className,
       )}
     >

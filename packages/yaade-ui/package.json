@@ -27,6 +27,18 @@
       "types": "./src/settings-entry.ts",
       "default": "./src/settings-entry.ts"
     },
+    "./agent-picker": {
+      "types": "./src/agent-picker-entry.ts",
+      "default": "./src/agent-picker-entry.ts"
+    },
+    "./markdown": {
+      "types": "./src/markdown-entry.ts",
+      "default": "./src/markdown-entry.ts"
+    },
+    "./toast": {
+      "types": "./src/toast-entry.ts",
+      "default": "./src/toast-entry.ts"
+    },
     "./commit-changes": {
       "types": "./src/commit-changes-entry.ts",
       "default": "./src/commit-changes-entry.ts"

@@ -57,7 +57,7 @@ test.describe("project page", () => {
     }
   })
 
-  test("overview shows recent commits and expands full README", async () => {
+  test("overview keeps worktrees first and expands full README", async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-overview-git-"))
     const project = path.join(home, "repo")
     fs.mkdirSync(project, { recursive: true })
@@ -83,28 +83,14 @@ test.describe("project page", () => {
     try {
       await waitForProjectPage(page)
 
+      await expectListRows(page, {
+        panel: "project-worktrees",
+        minItems: 1,
+        needle: "Main",
+      })
       await expect
-        .poll(
-          async () => page.locator("[data-yaade-project-commits] [data-yaade-list-item]").count(),
-          { timeout: 10_000 },
-        )
-        .toBeGreaterThanOrEqual(1)
-      await expect
-        .poll(
-          async () =>
-            (await page
-              .locator("[data-yaade-project-commits] [data-yaade-list-item]")
-              .first()
-              .textContent()) ?? "",
-          { timeout: 5_000 },
-        )
-        .toMatch(/feat: seed overview fixture/)
-      await expect
-        .poll(
-          async () => page.locator('[data-yaade-list-panel="project-commits"]').count(),
-          { timeout: 3_000 },
-        )
-        .toBe(1)
+        .poll(() => page.getByText("Repository activity").count())
+        .toBe(0)
 
       await expect
         .poll(
@@ -399,96 +385,4 @@ test.describe("project page", () => {
     }
   })
 
-  test("overview commit opens changes dialog with file diff", async () => {
-    test.skip(
-      (() => {
-        try {
-          execSync("which git", { stdio: "ignore" })
-          return false
-        } catch {
-          return true
-        }
-      })(),
-      "git not available",
-    )
-
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-overview-commit-"))
-    const project = path.join(home, "repo")
-    fs.mkdirSync(project, { recursive: true })
-    // Long line so the split diff must scroll horizontally inside [data-code].
-    const longLine = ` cons ${"x".repeat(240)}`
-    fs.writeFileSync(path.join(project, "note.txt"), `one\n${longLine}\n`)
-    execSync(
-      "git init && git config user.email t@t && git config user.name t && git add . && git commit -m 'feat: overview commit dialog'",
-      { cwd: project, stdio: "ignore" },
-    )
-
-    const { app, page } = await launchJet({
-      homeDir: home,
-      startPath: "/repo",
-      launchWithoutWorkspace: true,
-      projectPage: true,
-    })
-    try {
-      await waitForProjectPage(page)
-      await expect
-        .poll(
-          async () => page.locator("[data-yaade-project-commits] [data-yaade-list-item]").count(),
-          { timeout: 10_000 },
-        )
-        .toBeGreaterThanOrEqual(1)
-
-      await page
-        .locator("[data-yaade-project-commits] [data-yaade-list-item]")
-        .filter({ hasText: "feat: overview commit dialog" })
-        .click()
-
-      await page.locator("[data-yaade-commit-changes-dialog]").waitFor({
-        state: "visible",
-        timeout: 10_000,
-      })
-      await expectListRows(page, {
-        panel: "commit-changes-files",
-        minItems: 1,
-        needle: "note.txt",
-        noResultsText: "No files changed",
-      })
-
-      const diffHost = page.locator(
-        "[data-yaade-commit-changes-dialog] [data-yaade-git-diff] [data-yaade-pierre-diff] diffs-container",
-      )
-      await expect
-        .poll(async () => diffHost.count(), { timeout: 15_000 })
-        .toBeGreaterThan(0)
-
-      await expect
-        .poll(
-          async () =>
-            diffHost.evaluate(host => {
-              const code = host.shadowRoot?.querySelector<HTMLElement>("[data-code]")
-              if (!code) return { ok: false as const, reason: "no-code" }
-              const overflow = code.scrollWidth - code.clientWidth
-              if (overflow < 24) {
-                return {
-                  ok: false as const,
-                  reason: "no-overflow",
-                  scrollWidth: code.scrollWidth,
-                  clientWidth: code.clientWidth,
-                }
-              }
-              code.scrollLeft = Math.min(120, overflow)
-              return {
-                ok: code.scrollLeft > 0,
-                scrollLeft: code.scrollLeft,
-                overflow,
-              }
-            }),
-          { timeout: 10_000 },
-        )
-        .toMatchObject({ ok: true })
-    } finally {
-      await app.close()
-      fs.rmSync(home, { recursive: true, force: true })
-    }
-  })
 })

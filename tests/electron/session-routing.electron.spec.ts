@@ -123,6 +123,11 @@ test.describe("session routing", () => {
       })
       expect(sessionId).toBeTruthy()
       await waitForMux(page)
+      await page.evaluate(() => window.__yaadeAgent!.executeCommand("terminal.new"))
+      await page.locator("[data-yaade-terminal-panel]").waitFor({
+        state: "visible",
+        timeout: 15_000,
+      })
 
       await page.reload()
       await waitForMux(page)

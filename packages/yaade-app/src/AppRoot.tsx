@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useState } from "react"
 import type { ProjectSession } from "@yaade/rpc"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Skeleton,
+} from "@yaade/ui/primitives"
+import { AlertCircle } from "lucide-react"
 import { ProjectPage } from "./project/ProjectPage.js"
 import { preloadMuxApp } from "./mux/preload.js"
 import {
@@ -299,17 +311,21 @@ export function AppRoot() {
       >
         <span className="sr-only">Loading workspace…</span>
         <div className="h-8 shrink-0 border-b border-border px-3 py-2">
-          <div className="h-3 w-48 rounded-sm bg-muted" />
+          <Skeleton className="h-3 w-48" />
         </div>
-        <div className="grid w-full max-w-7xl gap-8 p-4 sm:p-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,0.75fr)]">
-          <div className="space-y-3">
-            <div className="h-4 w-28 rounded-sm bg-muted" />
-            <div className="h-40 rounded-md border border-border/60 bg-muted/30" />
-          </div>
-          <div className="space-y-3 xl:border-l xl:border-border/60 xl:pl-8">
-            <div className="h-4 w-20 rounded-sm bg-muted" />
-            <div className="h-28 rounded-md border border-border/60 bg-muted/20" />
-          </div>
+        <div className="mx-auto grid w-full max-w-screen-2xl gap-4 p-4 sm:p-6 lg:grid-cols-2">
+          {[0, 1, 2, 3].map(index => (
+            <Card key={index}>
+              <CardHeader>
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-48" />
+              </CardHeader>
+              <CardContent className="grid gap-2">
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-4/5" />
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
     )
@@ -322,10 +338,19 @@ export function AppRoot() {
         data-yaade-boot="error"
         role="alert"
       >
-        <div className="max-w-md text-center">
-          <p className="text-lg font-semibold">Unable to open workspace</p>
-          <p className="mt-2 text-sm text-muted-foreground">{boot.message}</p>
-        </div>
+        <Card className="w-full max-w-md text-left">
+          <CardHeader>
+            <CardTitle>YAADE could not open this project</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <Alert variant="destructive">
+              <AlertCircle aria-hidden />
+              <AlertTitle>Unable to resolve workspace</AlertTitle>
+              <AlertDescription>{boot.message}</AlertDescription>
+            </Alert>
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }

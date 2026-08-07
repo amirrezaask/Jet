@@ -104,7 +104,6 @@ export function SessionPaneChrome({
       data-yaade-session-pane-chrome=""
       data-yaade-session-window-chrome=""
       data-yaade-terminal-modal-header=""
-      data-yaade-liquid-glass="chrome"
       data-yaade-tab-bar=""
       data-panel-id={panelId.id}
       data-tab-id={tabId}

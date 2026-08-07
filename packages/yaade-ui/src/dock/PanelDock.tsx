@@ -77,11 +77,10 @@ function PanelLeaf<TView>({
     <div
       className={cn(
         "relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden",
-        "rounded-[var(--glass-radius-pane)] border bg-transparent",
-        "shadow-[0_14px_40px_-18px_rgb(0_0_0_/_35%)]",
+        "rounded-lg border bg-background",
         focused
-          ? "border-[color:var(--glass-rim-hot)] ring-1 ring-inset ring-[color:var(--glass-rim-hot)]"
-          : "border-[color:var(--glass-rim)]",
+          ? "border-ring ring-1 ring-inset ring-ring/45"
+          : "border-border",
         dragOver && isDropTarget
           ? "ring-1 ring-primary/40"
           : "",

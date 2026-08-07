@@ -15,12 +15,12 @@ import { pathToFileUri, fileUriToPath, canonicalizeFileUri } from "@yaade/shared
 import {
   AppShell,
   ConfirmDialogHost,
-  LiquidGlassFilter,
   MuxStatusStrip,
   TabDndRoot,
   Toaster,
   TooltipProvider,
   WhichKeyPanel,
+  AGENT_CLI_DRIVERS,
   bundledThemeList,
   formatKeyBinding,
   formatMuxTitle,
@@ -34,6 +34,7 @@ import {
 } from "@yaade/ui"
 import type { ProjectSession, ProjectSessionPayload } from "@yaade/rpc"
 import {
+  Button,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -134,6 +135,7 @@ import type {
   MuxSwitcherEntry,
   MuxWindowPersisted,
 } from "./types.js"
+import { claimMuxLaunchRequest } from "./launch-request.js"
 
 const TerminalPanel = lazy(async () => {
   const mod = await import("@yaade/ui/terminal")
@@ -407,6 +409,22 @@ export type MuxAppProps = {
    * Footer (WhichKey / status) stays at the bottom of this pane.
    */
   embedded?: boolean
+  /** One-shot action requested by the project cockpit after session hydration. */
+  launchRequest?: MuxLaunchRequest | null
+  /** Called after the request succeeds or fails so the caller can clear it. */
+  onLaunchRequestHandled?: (requestId: string) => void
+}
+
+export type MuxLaunchAction =
+  | { kind: "agent"; driverId: AgentCliDriver["id"] }
+  | { kind: "terminal" }
+  | { kind: "neovim" }
+  | { kind: "git" }
+  | { kind: "editor"; filePath?: string; line?: number }
+
+export type MuxLaunchRequest = {
+  id: string
+  action: MuxLaunchAction
 }
 
 export function MuxApp({
@@ -415,6 +433,8 @@ export function MuxApp({
   machineHostname,
   onBackToProject,
   embedded = false,
+  launchRequest = null,
+  onLaunchRequestHandled,
 }: MuxAppProps) {
   const {
     appearanceSettings,
@@ -490,6 +510,7 @@ export function MuxApp({
   /** Foreground process basename per terminal tab (Deck icons / titles). */
   const processByTabRef = useRef<Record<string, string>>({})
   const focusedPtyTabIdRef = useRef<string | null>(null)
+  const handledLaunchIdsRef = useRef(new Set<string>())
 
   const windowsRef = useRef(windows)
   windowsRef.current = windows
@@ -1634,6 +1655,55 @@ export function MuxApp({
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [commandRevision, setCommandRevision] = useState(0)
 
+  useEffect(() => {
+    if (!layoutReady || !serverHydratedRef.current || !launchRequest) return
+    if (!claimMuxLaunchRequest(handledLaunchIdsRef.current, launchRequest.id)) return
+
+    void (async () => {
+      try {
+        const action = launchRequest.action
+        if (action.kind === "agent") {
+          const driver = AGENT_CLI_DRIVERS.find(item => item.id === action.driverId)
+          if (!driver) throw new Error(`Unknown agent provider: ${action.driverId}`)
+          openAgentCliPane(driver)
+        } else if (action.kind === "terminal") {
+          await openTerminalInActiveWindow("right")
+        } else if (action.kind === "git") {
+          const window = ensureProjectWindow()
+          await openGitSplit(window.id, window.focusedPaneId)
+        } else if (action.kind === "neovim") {
+          const window = ensureProjectWindow()
+          await openNeovimSplit(window.id, window.focusedPaneId)
+        } else {
+          openEditorInFocused({
+            uri: action.filePath
+              ? undefined
+              : `untitled:New File-${launchRequest.id}`,
+            filePath: action.filePath,
+            line: action.line,
+            forceNewGroup: true,
+          })
+        }
+      } catch (error) {
+        showYaadeToast(
+          error instanceof Error ? error.message : "Could not launch that tool.",
+        )
+      } finally {
+        onLaunchRequestHandled?.(launchRequest.id)
+      }
+    })()
+  }, [
+    ensureProjectWindow,
+    launchRequest,
+    layoutReady,
+    onLaunchRequestHandled,
+    openAgentCliPane,
+    openEditorInFocused,
+    openGitSplit,
+    openNeovimSplit,
+    openTerminalInActiveWindow,
+  ])
+
   // Stable command registrations for overlays / mux actions.
   useEffect(() => {
     const run =
@@ -2526,14 +2596,15 @@ export function MuxApp({
             data-yaade-session-chrome=""
           >
             {onBackToProject ? (
-              <button
+              <Button
                 type="button"
-                className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                variant="ghost"
+                size="xs"
                 data-yaade-session-back=""
                 onClick={onBackToProject}
               >
                 ← Project
-              </button>
+              </Button>
             ) : null}
             <span className="truncate text-xs font-medium text-foreground">
               {sessionTitle}
@@ -2727,7 +2798,6 @@ export function MuxApp({
       </Suspense>
 
       <ConfirmDialogHost />
-      <LiquidGlassFilter />
       {windows.some(w => listPaneLeaves(w.tree).some(l => l.kind === "editor")) ||
       Object.keys(editorFiles).length > 0 ? (
         <MuxLspHost

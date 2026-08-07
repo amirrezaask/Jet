@@ -182,8 +182,7 @@ export function SessionTerminalWorkspace(
       </SessionHeaderChromePortal>
       {!headerActive ? (
         <div
-          data-yaade-liquid-glass="chrome"
-          className="flex h-9 shrink-0 items-center gap-1 border-b border-transparent bg-transparent px-2"
+          className="flex h-9 shrink-0 items-center gap-1 border-b bg-card px-2"
         >
           {tabBar}
         </div>

@@ -52,10 +52,9 @@ export function PromptDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        data-yaade-liquid-glass="panel"
         size="prompt"
         showCloseButton={false}
-        className="border-transparent bg-transparent shadow-none"
+        className="bg-popover text-popover-foreground"
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>

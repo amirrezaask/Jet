@@ -1,6 +1,5 @@
 import type { YaadeTheme } from "@yaade/shared"
 import {
-  jetColorsFromShadcn,
   shadcnDefaultDark,
   shadcnDefaultLight,
 } from "@yaade/shared"
@@ -86,44 +85,31 @@ const lightAnsi = paletteAnsi({
   brightWhite: "oklch(1 0 0)",
 })
 
-function withShadcn(
-  theme: YaadeTheme,
-  tokens: typeof shadcnDefaultDark,
-): YaadeTheme {
-  return { ...theme, shadcn: tokens }
-}
+export const defaultDark: YaadeTheme = makeTheme({
+  id: "default-dark",
+  name: "Default Dark",
+  family: "Default",
+  scheme: "dark",
+  sourceName: "shadcn/ui, tuned for YAADE",
+  sourceUrl: shadcnSource,
+  license: "MIT",
+  tokens: shadcnDefaultDark,
+  highlights: darkHighlights,
+  terminalAnsi: darkAnsi,
+})
 
-export const defaultDark = withShadcn(
-  makeTheme({
-    id: "default-dark",
-    name: "Default Dark",
-    family: "Default",
-    scheme: "dark",
-    sourceName: "shadcn/ui, tuned for YAADE",
-    sourceUrl: shadcnSource,
-    license: "MIT",
-    colors: jetColorsFromShadcn(shadcnDefaultDark, "dark"),
-    highlights: darkHighlights,
-    terminalAnsi: darkAnsi,
-  }),
-  shadcnDefaultDark,
-)
-
-export const defaultLight = withShadcn(
-  makeTheme({
-    id: "default-light",
-    name: "Default Light",
-    family: "Default",
-    scheme: "light",
-    sourceName: "shadcn/ui, tuned for YAADE",
-    sourceUrl: shadcnSource,
-    license: "MIT",
-    colors: jetColorsFromShadcn(shadcnDefaultLight, "light"),
-    highlights: lightHighlights,
-    terminalAnsi: lightAnsi,
-  }),
-  shadcnDefaultLight,
-)
+export const defaultLight: YaadeTheme = makeTheme({
+  id: "default-light",
+  name: "Default Light",
+  family: "Default",
+  scheme: "light",
+  sourceName: "shadcn/ui, tuned for YAADE",
+  sourceUrl: shadcnSource,
+  license: "MIT",
+  tokens: shadcnDefaultLight,
+  highlights: lightHighlights,
+  terminalAnsi: lightAnsi,
+})
 
 export const shadcnThemes = {
   [defaultDark.id]: defaultDark,
