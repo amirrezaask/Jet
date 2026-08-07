@@ -14,6 +14,7 @@ import {
 import { AlertCircle } from "lucide-react"
 import { ProjectPage } from "./project/ProjectPage.js"
 import { preloadMuxApp } from "./mux/preload.js"
+import { getEditorDiagnostics } from "./editor/editor-diagnostics.js"
 import {
   createProjectSession,
   loadProjectSession,
@@ -257,6 +258,8 @@ export function AppRoot() {
       setEditorSelection: () => undefined,
       getCursorPosition: () => null,
       getSelectionRangeCount: () => null,
+      getEditorDiagnostics: () =>
+        getEditorDiagnostics({ activeDirty: false, openBuffers: [] }),
       acceptConfirm: async () => undefined,
       dismissConfirm: async () => undefined,
       readFixtureFile: async () => "",

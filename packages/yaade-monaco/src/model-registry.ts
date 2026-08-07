@@ -11,10 +11,46 @@ type ModelEntry = {
   refCount: number
 }
 
+export type MonacoModelDiagnostic = {
+  uri: string
+  refCount: number
+  /** Current refcount-derived owner total; explicit owner kinds are not tracked yet. */
+  ownerCount: number
+  /** Explicit LSP ownership is not tracked by the current registry. */
+  lspOwnerCount: null
+  version: number
+  bytes: number
+  lines: number
+  content: string
+}
+
 type ViewStateKey = string
 
 function viewStateKey(editorId: string, uri: string): ViewStateKey {
   return `${editorId}\0${uri}`
+}
+
+function utf8ByteLength(value: string): number {
+  let bytes = 0
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code < 0x80) {
+      bytes++
+    } else if (code < 0x800) {
+      bytes += 2
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4
+        i++
+      } else {
+        bytes += 3
+      }
+    } else {
+      bytes += 3
+    }
+  }
+  return bytes
 }
 
 export class MonacoModelRegistry {
@@ -144,6 +180,25 @@ export class MonacoModelRegistry {
   /** @internal Test helper — current refcount for a URI. */
   refCount(uri: string): number {
     return this.models.get(this.canonicalKey(uri))?.refCount ?? 0
+  }
+
+  /** Read-only, JSON-serializable model snapshot for the agent benchmark bridge. */
+  diagnostics(): MonacoModelDiagnostic[] {
+    return [...this.models.entries()]
+      .map(([uri, entry]) => {
+        const content = entry.model.getValue()
+        return {
+          uri,
+          refCount: entry.refCount,
+          ownerCount: entry.refCount,
+          lspOwnerCount: null,
+          version: entry.model.getVersionId(),
+          bytes: utf8ByteLength(content),
+          lines: entry.model.getLineCount(),
+          content,
+        }
+      })
+      .sort((a, b) => a.uri.localeCompare(b.uri))
   }
 }
 

@@ -31,7 +31,12 @@ export async function loadWorkspaceInit(
     const path = `${jetDir}/${file}`
     if (fs) {
       try {
-        await fs.stat(pathToFileUri(path))
+        const uri = pathToFileUri(path)
+        if (fs.exists) {
+          if (!(await fs.exists(uri))) continue
+        } else {
+          await fs.stat(uri)
+        }
       } catch {
         continue
       }

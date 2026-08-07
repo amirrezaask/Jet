@@ -5,6 +5,7 @@ export const HOST_CHANNELS = new Set([
   "fs:writeTempDrop",
   "fs:readDir",
   "fs:stat",
+  "fs:exists",
   "fs:showOpenFolderDialog",
   "fs:showSaveFileDialog",
   "git:isRepo",

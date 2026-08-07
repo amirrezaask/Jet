@@ -2,8 +2,23 @@ import { expect, test } from "@playwright/test"
 import { launchJet, waitForHome, waitForMux } from "./_launch.js"
 
 test.describe("single-binary web server", () => {
+  test("tears down, then rejects unexpected browser console errors", async () => {
+    const { app, page } = await launchJet({ projectPage: true })
+    await page.evaluate(() => {
+      console.error("YAADE_E2E_UNEXPECTED_CONSOLE_SENTINEL")
+    })
+    await expect(app.close()).rejects.toThrow(
+      /Unexpected browser failures:[\s\S]*YAADE_E2E_UNEXPECTED_CONSOLE_SENTINEL/,
+    )
+  })
+
   test("serves the SPA, health, system, WS, and workspace-session API", async ({}, testInfo) => {
-    const { app, page } = await launchJet()
+    const { app, page } = await launchJet({
+      expectedHttpErrors: [
+        { method: "GET", path: "/api/v1/workspace-session", status: 403 },
+        { method: "GET", path: "/api/v1/workspace-session", status: 404 },
+      ],
+    })
     try {
       await waitForHome(page)
       await waitForMux(page)
@@ -59,7 +74,9 @@ test.describe("single-binary web server", () => {
   })
 
   test("rejects removed agents:* host RPC without aborting the server", async () => {
-    const { app, page } = await launchJet()
+    const { app, page } = await launchJet({
+      expectedHttpErrors: [{ method: "POST", path: "/api/v1/rpc", status: 400 }],
+    })
     try {
       await waitForHome(page)
       const result = await page.evaluate(async () => {

@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { describe, it } from "node:test"
 import { pathToFileURL } from "node:url"
 import {
+  exists,
   MAX_READ_BYTES,
   MAX_WRITE_BYTES,
   readFile,
@@ -30,6 +31,15 @@ describe("fs size gates", () => {
     writeFileSync(path, "hello", "utf8")
     const text = await readFile(pathToFileURL(path).href)
     assert.equal(text, "hello")
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it("probes missing files without rejecting", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ghar-fs-"))
+    const present = join(dir, "present.txt")
+    writeFileSync(present, "hello", "utf8")
+    assert.equal(await exists(pathToFileURL(present).href), true)
+    assert.equal(await exists(pathToFileURL(join(dir, "missing.txt")).href), false)
     rmSync(dir, { recursive: true, force: true })
   })
 

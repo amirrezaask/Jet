@@ -1088,7 +1088,7 @@ function validateRpcPathsOrThrow(config: HostConfig, channel: string, args: unkn
   // Read-only FS: allow absolute paths outside allowedRoots so goto-def can
   // open language stdlib / module cache files (e.g. GOROOT, node_modules
   // outside $HOME). Writes and directory listing stay sandboxed.
-  if (channel === "fs:readFile" || channel === "fs:stat") return
+  if (channel === "fs:readFile" || channel === "fs:stat" || channel === "fs:exists") return
   if (channel === "fs:writeTempDrop") return
   if (channel.startsWith("terminal:") && typeof args[0] === "string" && !args[0].startsWith("file:")) {
     return

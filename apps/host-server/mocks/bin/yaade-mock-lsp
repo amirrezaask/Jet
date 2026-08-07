@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Thin launcher for the deterministic TypeScript LSP stdio peer.
+set -euo pipefail
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./_tsx.sh
+source "$BIN_DIR/_tsx.sh"
+exec_tsx "$BIN_DIR/../mock-lsp.ts" "$@"

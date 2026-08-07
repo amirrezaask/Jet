@@ -41,6 +41,8 @@ export interface FileSystemProvider {
   writeFile(uri: string, content: string): Promise<void>
   readDir(uri: string): Promise<WorkspaceEntry[]>
   stat(uri: string): Promise<WorkspaceStat>
+  /** Expected-miss probe. Unlike `stat`, a missing path resolves to false. */
+  exists?(uri: string): Promise<boolean>
 }
 
 export type JetElectronFS = FileSystemProvider & {

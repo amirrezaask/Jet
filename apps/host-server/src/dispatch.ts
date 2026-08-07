@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import {
   fileSearch,
+  exists,
   gitIsRepo,
   isSearchScanReady,
   listProjectFiles,
@@ -319,6 +320,8 @@ async function handleFs(channel: string, args: unknown[]): Promise<unknown> {
       return readDir(str(args[0], "uri"))
     case "fs:stat":
       return stat(str(args[0], "uri"))
+    case "fs:exists":
+      return exists(str(args[0], "uri"))
     default:
       throw new Error(`unknown fs channel: ${channel}`)
   }

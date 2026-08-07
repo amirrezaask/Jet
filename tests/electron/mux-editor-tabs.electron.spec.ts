@@ -9,6 +9,64 @@ import { execCommand, hasPtySpawn, launchJet, waitForMux } from "./_launch.js"
 test.describe("mux editor tabs", () => {
   test.skip(!hasPtySpawn(), "node-pty spawn unavailable")
 
+  test("exposes cumulative editor diagnostics without changing editor state", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      const baseline = await page.evaluate(() =>
+        window.__yaadeAgent!.getEditorDiagnostics(),
+      )
+      expect(baseline.models.totalCount).toBe(0)
+      expect(baseline.fsReads.totalCount).toBe(0)
+
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.openFile("src/index.ts")
+      })
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      await page.locator("[data-yaade-monaco-editor]").click()
+
+      await expect
+        .poll(
+          () => page.evaluate(() => window.__yaadeAgent!.getEditorDiagnostics()),
+          { timeout: 10_000 },
+        )
+        .toMatchObject({
+          models: { totalCount: 1 },
+          editors: { mountedCount: 1, activeDirty: false },
+          fsReads: { totalCount: 1, errorCount: 0 },
+        })
+      const snapshot = await page.evaluate(() => {
+        const value = window.__yaadeAgent!.getEditorDiagnostics()
+        return { value, serialized: JSON.stringify(value) }
+      })
+      const model = snapshot.value.models.entries.find(entry =>
+        entry.uri.endsWith("/src/index.ts"),
+      )
+      expect(model).toMatchObject({
+        refCount: 1,
+        ownerCount: 1,
+        lspOwnerCount: null,
+      })
+      expect(model?.version).toBeGreaterThan(0)
+      expect(model?.bytes).toBeGreaterThan(0)
+      expect(model?.lines).toBeGreaterThan(0)
+      expect(model?.content).toContain("main()")
+      expect(snapshot.value.editors.activeUri).toMatch(/\/src\/index\.ts$/)
+      expect(snapshot.value.editors.openBuffers).toContain(model?.uri)
+      expect(snapshot.value.lifecycle.mounts).toBeGreaterThan(0)
+      expect(snapshot.value.lifecycle.modelAttaches).toBeGreaterThan(0)
+      expect(snapshot.value.chunks.length).toBeGreaterThan(0)
+      expect(snapshot.value.resources.totalCount).toBeGreaterThan(0)
+      expect(snapshot.value.fsReads.byUri).toContainEqual(
+        expect.objectContaining({ uri: model?.uri, count: 1 }),
+      )
+      expect(snapshot.serialized.length).toBeGreaterThan(0)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("openFile opens tabs in one editor pane, not new splits", async () => {
     const { app, page } = await launchJet()
     try {

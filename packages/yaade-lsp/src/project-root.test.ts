@@ -3,12 +3,18 @@ import assert from "node:assert/strict"
 import { fileUriToPath, pathToFileUri } from "@yaade/shared"
 import { findProjectRoot, parentDir } from "./project-root.js"
 
-function mockFs(existing: string[]): { stat(uri: string): Promise<{ isFile: boolean }> } {
+function mockFs(existing: string[]): {
+  stat(uri: string): Promise<{ isFile: boolean }>
+  exists(uri: string): Promise<boolean>
+} {
   const set = new Set<string>(existing.map(p => pathToFileUri(p)))
   return {
     async stat(uri: string) {
       if (set.has(uri)) return { isFile: true }
       throw new Error("ENOENT")
+    },
+    async exists(uri: string) {
+      return set.has(uri)
     },
   }
 }
@@ -46,6 +52,29 @@ describe("project-root", () => {
     const fs = mockFs(["/Users/dev/loki/Cargo.toml"])
     const root = await findProjectRoot("/Users/dev/other/src", ["Cargo.toml"], fs)
     assert.equal(root, null)
+  })
+
+  it("uses the non-throwing existence probe for missing markers", async () => {
+    let statCalls = 0
+    let existsCalls = 0
+    const root = await findProjectRoot(
+      "/Users/dev/workspace/src",
+      ["package.json", "tsconfig.json"],
+      {
+        async stat() {
+          statCalls++
+          throw new Error("stat should not be used")
+        },
+        async exists(uri) {
+          existsCalls++
+          return uri === pathToFileUri("/Users/dev/workspace/package.json")
+        },
+      },
+      "/Users/dev/workspace",
+    )
+    assert.equal(root, "/Users/dev/workspace")
+    assert.equal(statCalls, 0)
+    assert.equal(existsCalls, 3)
   })
 
   it("findProjectRoot without fs returns startPath (browser stub path)", async () => {

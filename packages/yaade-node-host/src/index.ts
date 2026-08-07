@@ -6,6 +6,7 @@ export {
   writeTempDrop,
   readDir,
   stat,
+  exists,
   MAX_READ_BYTES,
   MAX_WRITE_BYTES,
 } from "./fs.js"

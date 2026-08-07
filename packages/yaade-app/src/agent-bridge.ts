@@ -7,6 +7,10 @@ import { handleTerminalFileDropAt } from "@yaade/ui/terminal-file-drop"
 import { normalizeAbsPath } from "@yaade/workspace"
 import { handleDroppedPaths } from "./drop-files.js"
 import {
+  getEditorDiagnostics,
+  type EditorDiagnostics,
+} from "./editor/editor-diagnostics.js"
+import {
   findTerminalBufferMatch,
   readTerminalBufferText,
   readTerminalCellHeight,
@@ -55,6 +59,8 @@ export type YaadeAgentAPI = {
   setEditorSelection(line: number, column: number): void
   getCursorPosition(): JetAgentCursor | null
   getSelectionRangeCount(): number | null
+  /** Cumulative, read-only editor/runtime diagnostics for E2E and benchmarks. */
+  getEditorDiagnostics(): EditorDiagnostics
   acceptConfirm(): Promise<void>
   dismissConfirm(): Promise<void>
   readFixtureFile(relativePath: string): Promise<string>
@@ -125,6 +131,7 @@ export type AgentBridgeContext = {
   getCursorPosition?: () => JetAgentCursor | null
   getSelectionRangeCount?: () => number | null
   activeEditorDirty?: boolean
+  openEditorBuffers?: string[]
   searchReady?: boolean
   sessionMode?: "agent" | "terminal" | "editor" | "git" | "todos" | null
   sessionLayout?: "sidebar"
@@ -181,7 +188,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
         message: current.message,
         paletteOpen: current.paletteOpen,
         focusedPanel: current.focusedPanel?.id ?? null,
-        openBuffers: current.workspace.openBuffers,
+        openBuffers: current.openEditorBuffers ?? current.workspace.openBuffers,
         panels: collectPanels(current),
         fontSize: current.fontSize,
         activeEditorDirty: current.activeEditorDirty ?? false,
@@ -254,6 +261,13 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
     },
     getSelectionRangeCount() {
       return ctx().getSelectionRangeCount?.() ?? null
+    },
+    getEditorDiagnostics() {
+      const current = ctx()
+      return getEditorDiagnostics({
+        activeDirty: current.activeEditorDirty ?? false,
+        openBuffers: current.openEditorBuffers ?? current.workspace.openBuffers,
+      })
     },
     async acceptConfirm() {
       const btn = document.querySelector<HTMLElement>('[data-yaade-confirm="accept"]')
@@ -330,6 +344,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
       if (paths.length === 0) return false
       const jet = window.yaade
       if (!jet?.fs) return false
+      const exists = jet.fs.exists
       const current = ctx()
       const known = (current.listWorkspaces?.() ?? []).map(w =>
         normalizeAbsPath(w.path),
@@ -347,6 +362,7 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
             writeFile: (uri, content) => jet.fs.writeFile(uri, content),
             readDir: uri => jet.fs.readDir(uri),
             stat: uri => jet.fs.stat(uri),
+            ...(exists ? { exists: uri => exists(uri) } : {}),
           },
           normalizePath: normalizeAbsPath,
           knownWorkspacePaths: known,

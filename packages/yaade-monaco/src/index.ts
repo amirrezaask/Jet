@@ -12,7 +12,14 @@ export {
   monacoModels,
   DIFF_ORIGINAL_SCHEME,
   DIFF_MODIFIED_SCHEME,
+  type MonacoModelDiagnostic,
 } from "./model-registry.js"
+export {
+  getMonacoEditorDiagnostics,
+  type MonacoEditorDiagnostics,
+  type MonacoMountedEditorDiagnostic,
+  type MonacoLifecycleDiagnostics,
+} from "./editor-diagnostics.js"
 export {
   setPendingEditorNavigation,
   consumePendingEditorNavigation,

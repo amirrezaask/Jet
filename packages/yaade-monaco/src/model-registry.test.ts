@@ -7,6 +7,8 @@ type MockModel = {
   value: string
   disposed: boolean
   getValue: () => string
+  getVersionId: () => number
+  getLineCount: () => number
   setValue: (v: string) => void
   getLanguageId: () => string
   getPositionAt: (offset: number) => { lineNumber: number; column: number }
@@ -34,6 +36,12 @@ function createMockModel(uri: string, content: string, languageId: string): Mock
     disposed: false,
     getValue() {
       return this.value
+    },
+    getVersionId() {
+      return 1
+    },
+    getLineCount() {
+      return this.value.split("\n").length
     },
     setValue(v: string) {
       this.value = v
@@ -190,6 +198,22 @@ describe("MonacoModelRegistry", () => {
     assert.equal(registry.get(testUri), model)
     registry.release(testUri)
     registry.disposeIfUnreferenced(testUri)
+  })
+
+  it("reports a read-only JSON model snapshot", () => {
+    registry.getOrCreate(uri, "hello\n🌙", "typescript")
+    assert.deepEqual(registry.diagnostics(), [
+      {
+        uri,
+        refCount: 1,
+        ownerCount: 1,
+        lspOwnerCount: null,
+        version: 1,
+        bytes: 10,
+        lines: 2,
+        content: "hello\n🌙",
+      },
+    ])
   })
 
   it("rejects an atomic multi-document edit before mutating any model", () => {

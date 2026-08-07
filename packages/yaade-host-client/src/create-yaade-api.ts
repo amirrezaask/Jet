@@ -1,5 +1,6 @@
 import type { YaadeHostAPI } from "@yaade/workspace"
 import type { YaadeHostTransport } from "./transport.js"
+import { readFileWithDiagnostics } from "./fs-read-diagnostics.js"
 
 // Host owns the authoritative terminal replay. This buffer only bridges the
 // attach handshake, so keeping a second multi-megabyte copy is wasteful.
@@ -104,12 +105,14 @@ export function createYaadeApi(
 
   return {
     fs: {
-      readFile: uri => transport.invoke("fs:readFile", uri),
+      readFile: uri =>
+        readFileWithDiagnostics(uri, () => transport.invoke("fs:readFile", uri)),
       writeFile: (uri, content) => transport.invoke("fs:writeFile", uri, content),
       writeTempDrop: (name, contentBase64) =>
         transport.invoke("fs:writeTempDrop", name, contentBase64),
       readDir: uri => transport.invoke("fs:readDir", uri),
       stat: uri => transport.invoke("fs:stat", uri),
+      exists: uri => transport.invoke("fs:exists", uri),
       showOpenFolderDialog: () => transport.invoke("fs:showOpenFolderDialog"),
       showSaveFileDialog: (defaultPath?: string) =>
         transport.invoke("fs:showSaveFileDialog", defaultPath),

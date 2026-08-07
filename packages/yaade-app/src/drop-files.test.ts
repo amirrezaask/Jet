@@ -1,11 +1,31 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { fileUriToPath } from "@yaade/shared"
+import type { FileSystemProvider } from "@yaade/workspace"
 import {
+  findWorkspaceRoot,
   pathsFromDataTransfer,
   resolveDroppedFilesAgainstWorkspaces,
   resolveDropZoneFromElement,
 } from "./drop-files.js"
+
+describe("drop-files findWorkspaceRoot", () => {
+  it("uses non-throwing existence probes for absent markers", async () => {
+    let statCalls = 0
+    const fs: FileSystemProvider = {
+      readFile: async () => "",
+      writeFile: async () => undefined,
+      readDir: async () => [],
+      stat: async uri => {
+        statCalls++
+        return { uri, isDirectory: false, size: 0 }
+      },
+      exists: async uri => uri.endsWith("/repo/.git"),
+    }
+    assert.equal(await findWorkspaceRoot("/repo/src", fs), "/repo")
+    assert.equal(statCalls, 0)
+  })
+})
 
 function fakeDataTransfer(opts: {
   files?: Array<{ name: string; path?: string }>

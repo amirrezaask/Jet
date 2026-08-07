@@ -17,6 +17,7 @@ function normalizeAbsPath(p: string): string {
 async function isGitRepo(fs: FileSystemProvider, folderPath: string): Promise<boolean> {
   const gitUri = pathToFileUri(joinPath(folderPath, ".git"))
   try {
+    if (fs.exists) return await fs.exists(gitUri)
     await fs.stat(gitUri)
     return true
   } catch {

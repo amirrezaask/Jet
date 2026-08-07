@@ -573,8 +573,8 @@ export class LspClientPool {
         }
         this.openDocs.delete(conn.id)
         try {
-          void connection.sendRequest("shutdown", null)
-          void connection.sendNotification("exit")
+          void connection.sendRequest("shutdown", null).catch(() => {})
+          void connection.sendNotification("exit").catch(() => {})
         } catch {
           /* ignore */
         }

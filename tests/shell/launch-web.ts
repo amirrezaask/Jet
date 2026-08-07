@@ -41,6 +41,75 @@ type LaunchWebOptions = {
    * Defaults to a temp dir under the e2e root when `startPath` is non-root.
    */
   homeDir?: string
+  /** Narrow allowlist for tests that intentionally request an HTTP error. */
+  expectedHttpErrors?: Array<{
+    method: string
+    path: string
+    status: number
+  }>
+}
+
+type BrowserFailure = {
+  kind: "console" | "pageerror" | "requestfailed" | "http"
+  message: string
+  url?: string
+  method?: string
+  status?: number
+  navigationRelated?: boolean
+}
+
+const EXPECTED_BROWSER_MESSAGES = [
+  /^ResizeObserver loop (?:limit exceeded|completed with undelivered notifications)\.?$/,
+]
+
+function urlPathname(value: string | undefined): string | null {
+  if (!value) return null
+  try {
+    return new URL(value).pathname
+  } catch {
+    return null
+  }
+}
+
+function isExpectedBrowserFailure(
+  failure: BrowserFailure,
+  expectedHttpErrors: LaunchWebOptions["expectedHttpErrors"],
+): boolean {
+  const firstLine = failure.message.split("\n", 1)[0]?.replace(/^Error: /, "") ?? ""
+  if (EXPECTED_BROWSER_MESSAGES.some(pattern => pattern.test(firstLine))) return true
+  if (
+    failure.kind === "pageerror" &&
+    firstLine === "Canceled: Canceled" &&
+    failure.message.includes("/assets/monaco-")
+  ) {
+    return true
+  }
+  if (
+    failure.kind === "requestfailed" &&
+    failure.navigationRelated === true &&
+    failure.message === "net::ERR_ABORTED"
+  ) {
+    return true
+  }
+  const path = urlPathname(failure.url)
+  if (!path) return false
+  return (expectedHttpErrors ?? []).some(expected => {
+    if (expected.path !== path) return false
+    if (failure.kind === "http") {
+      return expected.method === failure.method && expected.status === failure.status
+    }
+    if (failure.kind !== "console" || !failure.message.startsWith("Failed to load resource:")) {
+      return false
+    }
+    return failure.message.includes(String(expected.status))
+  })
+}
+
+function formatBrowserFailure(failure: BrowserFailure): string {
+  const request = failure.method ? ` ${failure.method}` : ""
+  const status = failure.status == null ? "" : ` ${failure.status}`
+  const url = failure.url ? ` ${failure.url}` : ""
+  return `[${failure.kind}]${request}${status}${url}: ${failure.message}`
 }
 
 async function freePort(): Promise<number> {
@@ -170,16 +239,47 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     colorScheme: "dark",
   })
   const browserPage = context.pages()[0] ?? (await context.newPage())
-  const errors: string[] = []
-  browserPage.on("pageerror", error => errors.push(error.stack ?? error.message))
+  const browserFailures: BrowserFailure[] = []
+  let lastMainFrameNavigationAt = 0
+  browserPage.on("pageerror", error => {
+    browserFailures.push({
+      kind: "pageerror",
+      message: error.stack ?? error.message,
+    })
+  })
   browserPage.on("console", message => {
     if (message.type() === "error") {
       const location = message.location()
-      const source = location.url
-        ? ` (${location.url}:${location.lineNumber + 1}:${location.columnNumber + 1})`
-        : ""
-      errors.push(`${message.text()}${source}`)
+      browserFailures.push({
+        kind: "console",
+        message: message.text(),
+        url: location.url || undefined,
+      })
     }
+  })
+  browserPage.on("request", request => {
+    if (request.isNavigationRequest() && request.frame() === browserPage.mainFrame()) {
+      lastMainFrameNavigationAt = Date.now()
+    }
+  })
+  browserPage.on("requestfailed", request => {
+    browserFailures.push({
+      kind: "requestfailed",
+      message: request.failure()?.errorText ?? "request failed",
+      url: request.url(),
+      method: request.method(),
+      navigationRelated: Date.now() - lastMainFrameNavigationAt < 1_000,
+    })
+  })
+  browserPage.on("response", response => {
+    if (response.status() < 400) return
+    browserFailures.push({
+      kind: "http",
+      message: response.statusText(),
+      url: response.url(),
+      method: response.request().method(),
+      status: response.status(),
+    })
   })
 
   const startPath = options.startPath ?? "/"
@@ -199,9 +299,19 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     page: wrapPlaywrightPage(browserPage),
     app: {
       async close() {
+        // Ignore request aborts caused by teardown itself, but only after
+        // preserving every failure observed while the application was live.
+        const failuresBeforeTeardown = [...browserFailures]
         await context.close().catch(() => {})
         await killProc(server)
-        if (errors.length) process.stderr.write(`Browser console errors:\n${errors.join("\n")}\n`)
+        const unexpected = failuresBeforeTeardown.filter(
+          failure => !isExpectedBrowserFailure(failure, options.expectedHttpErrors),
+        )
+        if (unexpected.length > 0) {
+          throw new Error(
+            `Unexpected browser failures:\n${unexpected.map(formatBrowserFailure).join("\n")}`,
+          )
+        }
       },
     },
     homeDir: homeDir ?? process.env.HOME ?? os.homedir(),

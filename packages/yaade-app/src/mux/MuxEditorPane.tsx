@@ -6,10 +6,14 @@ import {
   monacoModels,
   revealPosition,
   consumePendingInitialContent,
+  getMonacoEditorDiagnostics,
   type MonacoEditorHandle,
 } from "@yaade/monaco"
 import { setPendingEditorNavigation } from "@yaade/monaco/pending"
 import { ensureMonacoWorkersConfigured } from "../editor/monaco-workers.js"
+import { setMonacoDiagnosticsProvider } from "../editor/editor-diagnostics.js"
+
+setMonacoDiagnosticsProvider(getMonacoEditorDiagnostics)
 
 /** Broadcast to save the focused editor pane (dispatched by `editor.save`). */
 export const MUX_EDITOR_SAVE_EVENT = "yaade:mux-editor-save"

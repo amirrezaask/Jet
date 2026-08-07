@@ -22,6 +22,12 @@ export type LaunchJetOptions = {
    * assert the empty picker).
    */
   withTerminal?: boolean
+  /** Narrow allowlist for a test that intentionally requests an HTTP error. */
+  expectedHttpErrors?: Array<{
+    method: string
+    path: string
+    status: number
+  }>
 }
 
 export const REPO_ROOT = resolve(__dirname, "..", "..")

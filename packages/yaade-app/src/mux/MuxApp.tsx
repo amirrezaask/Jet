@@ -262,11 +262,13 @@ function jetPlatformFS(): import("@yaade/workspace").FileSystemProvider {
   const jet = window.yaade
   if (!jet?.fs) throw new Error("window.yaade.fs not available")
   const fs = jet.fs
+  const exists = fs.exists
   return {
     readFile: uri => fs.readFile(uri),
     writeFile: (uri, content) => fs.writeFile(uri, content),
     readDir: uri => fs.readDir(uri),
     stat: uri => fs.stat(uri),
+    ...(exists ? { exists: uri => exists(uri) } : {}),
   }
 }
 
@@ -2173,6 +2175,14 @@ export function MuxApp({
       sessionId,
       sessionCwd: sessionCwdPath,
       backToProject: onBackToProject,
+      openEditorBuffers: Object.keys(editorFiles),
+      activeEditorDirty: (() => {
+        const focused = activeWindow?.focusedPaneId
+        if (!focused) return false
+        const view = activeWindow.tree.getView(focused)
+        const tabId = view?.kind === "tabs" ? view.activeTabId : null
+        return tabId ? (editorDirty[tabId] ?? false) : false
+      })(),
     }))
     return () => {
       delete window.__yaadeAgent
@@ -2181,6 +2191,8 @@ export function MuxApp({
     activeWindow,
     commands,
     executeCommand,
+    editorDirty,
+    editorFiles,
     fontSize,
     layoutReady,
     onBackToProject,

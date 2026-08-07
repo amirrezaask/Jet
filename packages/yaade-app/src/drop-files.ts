@@ -26,6 +26,7 @@ async function markerExists(
 ): Promise<boolean> {
   const uri = pathToFileUri(`${dir.replace(/\\/g, "/")}/${marker}`)
   try {
+    if (fs.exists) return await fs.exists(uri)
     const info = await fs.stat(uri)
     if (marker === ".git") return info.isDirectory
     return !info.isDirectory

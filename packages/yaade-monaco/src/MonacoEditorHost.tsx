@@ -19,6 +19,13 @@ import {
   interceptPrimaryCommandPaletteShortcut,
   interceptPrimaryQuickOpenShortcut,
 } from "./editor-shortcuts.js"
+import {
+  recordMonacoEditorBlurred,
+  recordMonacoEditorDisposed,
+  recordMonacoEditorFocused,
+  recordMonacoEditorModelChanged,
+  recordMonacoEditorMounted,
+} from "./editor-diagnostics.js"
 
 export type MonacoEditorHostProps = {
   uri: string
@@ -127,6 +134,7 @@ export function MonacoEditorHost({
     })
 
     editorRef.current = editor
+    recordMonacoEditorMounted(editorId, uri)
     applyYaadeMonacoTheme(theme)
 
     const savedState = monacoModels.restoreViewState(editorId, uri)
@@ -134,7 +142,10 @@ export function MonacoEditorHost({
 
     applyPendingNavigation(editor, uri)
 
-    if (autoFocus) editor.focus()
+    if (autoFocus) {
+      editor.focus()
+      recordMonacoEditorFocused(editorId)
+    }
 
     const disposables: monaco.IDisposable[] = []
 
@@ -148,12 +159,14 @@ export function MonacoEditorHost({
     disposables.push(
       editor.onDidFocusEditorText(() => {
         setActiveMonacoEditor(editor)
+        recordMonacoEditorFocused(editorId)
         onFocusChangeRef.current?.(true)
       }),
     )
 
     disposables.push(
       editor.onDidBlurEditorText(() => {
+        recordMonacoEditorBlurred(editorId)
         onFocusChangeRef.current?.(false)
       }),
     )
@@ -199,6 +212,7 @@ export function MonacoEditorHost({
       resizeObserver.disconnect()
       for (const d of disposables) d.dispose()
       editor.dispose()
+      recordMonacoEditorDisposed(editorId)
       if (getActiveMonacoEditor() === editor) setActiveMonacoEditor(null)
       editorRef.current = null
       monacoModels.release(currentUri)
@@ -229,6 +243,7 @@ export function MonacoEditorHost({
     }
 
     editor.setModel(model)
+    recordMonacoEditorModelChanged(editorId, uri)
     monacoModels.setLanguage(uri, languageId)
 
     const restored = monacoModels.restoreViewState(editorId, uri)

@@ -90,3 +90,21 @@ export async function stat(uri: string): Promise<NodeHostStat> {
     size: fileStat.size,
   }
 }
+
+/** Non-throwing existence probe for expected misses (for example LSP root markers). */
+export async function exists(uri: string): Promise<boolean> {
+  try {
+    await fs.stat(uriToPath(uri))
+    return true
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return false
+    }
+    throw error
+  }
+}

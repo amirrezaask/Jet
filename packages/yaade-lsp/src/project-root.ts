@@ -2,6 +2,8 @@ import { pathToFileUri } from "@yaade/shared"
 
 export type ProjectRootFs = {
   stat(uri: string): Promise<unknown>
+  /** Missing paths resolve to false without an error response. */
+  exists?(uri: string): Promise<boolean>
 }
 
 function comparablePath(path: string): string {
@@ -27,12 +29,16 @@ export async function findProjectRoot(
   const boundary = stopAtPath ? comparablePath(stopAtPath) : null
   for (let i = 0; i < 20; i++) {
     for (const marker of markers) {
-      try {
-        const uri = pathToFileUri(`${current}/${marker}`)
-        await fs.stat(uri)
-        return current
-      } catch {
-        /* continue */
+      const uri = pathToFileUri(`${current}/${marker}`)
+      if (fs.exists) {
+        if (await fs.exists(uri)) return current
+      } else {
+        try {
+          await fs.stat(uri)
+          return current
+        } catch {
+          /* legacy providers use stat failures for expected misses */
+        }
       }
     }
     if (boundary && comparablePath(current) === boundary) break
