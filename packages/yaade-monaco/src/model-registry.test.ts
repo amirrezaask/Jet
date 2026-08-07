@@ -99,6 +99,8 @@ mock.module("monaco-editor/esm/vs/editor/editor.api.js", {
 
 describe("MonacoModelRegistry", () => {
   let MonacoModelRegistry: typeof import("./model-registry.js").MonacoModelRegistry
+  let MAX_CLOSED_CLEAN_MODELS: number
+  let MAX_CLOSED_CLEAN_BYTES: number
   let applyWorkspaceEdit: typeof import("./apply-edit.js").applyWorkspaceEdit
   let registry: InstanceType<typeof MonacoModelRegistry>
   const uri = "file:///tmp/test-registry.ts"
@@ -107,12 +109,19 @@ describe("MonacoModelRegistry", () => {
     const registryModule = await import("./model-registry.js")
     const editModule = await import("./apply-edit.js")
     MonacoModelRegistry = registryModule.MonacoModelRegistry
+    MAX_CLOSED_CLEAN_MODELS = registryModule.MAX_CLOSED_CLEAN_MODELS
+    MAX_CLOSED_CLEAN_BYTES = registryModule.MAX_CLOSED_CLEAN_BYTES
     applyWorkspaceEdit = editModule.applyWorkspaceEdit
   })
 
   beforeEach(() => {
     liveModels.clear()
     registry = new MonacoModelRegistry()
+  })
+
+  it("uses the 20-model and 32 MiB closed-clean cache limits", () => {
+    assert.equal(MAX_CLOSED_CLEAN_MODELS, 20)
+    assert.equal(MAX_CLOSED_CLEAN_BYTES, 32 * 1024 * 1024)
   })
 
   afterEach(() => {
@@ -123,23 +132,51 @@ describe("MonacoModelRegistry", () => {
     if (registry.has(modifiedUri)) registry.dispose(modifiedUri)
   })
 
-  it("creates and reuses models with refcounting", () => {
+  it("creates and reuses models without implicit ownership", () => {
     const model1 = registry.getOrCreate(uri, "hello", "typescript")
-    assert.equal(registry.refCount(uri), 1)
+    assert.equal(registry.ownerCount(uri), 0)
     assert.equal(model1.getValue(), "hello")
 
-    const model2 = registry.acquire(uri)
+    const model2 = registry.getOrCreate(uri, "ignored", "typescript")
     assert.equal(model2, model1)
-    assert.equal(registry.refCount(uri), 2)
+    assert.equal(registry.ownerCount(uri), 0)
+  })
 
-    registry.release(uri)
-    assert.equal(registry.refCount(uri), 1)
+  it("reconciles independent buffer and view owners idempotently", () => {
+    registry.getOrCreate(uri, "hello", "typescript")
+    const bufferOwner = `buffer:${uri}`
+    const viewOwner = "view:editor-1"
+
+    registry.retain(uri, bufferOwner)
+    registry.retain(uri, viewOwner)
+    registry.retain(uri, viewOwner)
+
+    assert.equal(registry.ownerCount(uri), 2)
+    assert.deepEqual(registry.owners(uri), [bufferOwner, viewOwner])
+
+    registry.release(uri, viewOwner)
+    registry.release(uri, viewOwner)
+    assert.equal(registry.ownerCount(uri), 1)
+    assert.deepEqual(registry.owners(uri), [bufferOwner])
+
+    registry.release(uri, bufferOwner)
+    assert.equal(registry.ownerCount(uri), 0)
+    assert.deepEqual(registry.owners(uri), [])
     assert.ok(registry.has(uri))
+  })
+
+  it("keeps compatibility acquire idempotent with an explicit owner", () => {
+    registry.getOrCreate(uri, "hello", "typescript")
+    registry.acquire(uri, "legacy:caller")
+    registry.acquire(uri, "legacy:caller")
+    assert.equal(registry.ownerCount(uri), 1)
+    assert.deepEqual(registry.owners(uri), ["legacy:caller"])
+    registry.release(uri, "legacy:caller")
+    assert.equal(registry.ownerCount(uri), 0)
   })
 
   it("disposes when unreferenced", () => {
     const model = registry.getOrCreate(uri, "content", "typescript")
-    registry.release(uri)
     assert.equal(registry.disposeIfUnreferenced(uri), true)
     assert.equal(registry.has(uri), false)
     assert.equal(model.disposed, true)
@@ -147,7 +184,6 @@ describe("MonacoModelRegistry", () => {
 
   it("respects canDispose callback", () => {
     registry.getOrCreate(uri, "dirty", "typescript")
-    registry.release(uri)
     const disposed = registry.disposeIfUnreferenced(uri, () => false)
     assert.equal(disposed, false)
     assert.ok(registry.has(uri))
@@ -182,32 +218,122 @@ describe("MonacoModelRegistry", () => {
     assert.deepEqual(restored, state)
   })
 
+  it("preserves view state after closed-clean model eviction", () => {
+    registry = new MonacoModelRegistry({ maxClosedCleanModels: 0 })
+    const state = {
+      contributionsState: {},
+      viewState: {
+        scrollLeft: 25,
+        firstPosition: { lineNumber: 8, column: 3 },
+        firstPositionDeltaTop: 4,
+      },
+    }
+    registry.getOrCreate(uri, "content", "typescript")
+    registry.saveViewState("editor-1", uri, state)
+    assert.deepEqual(registry.evictClosedClean(), [uri])
+    assert.equal(registry.has(uri), false)
+    assert.deepEqual(registry.restoreViewState("editor-1", uri), state)
+  })
+
+  it("evicts closed-clean models by count in least-recently-used order", () => {
+    registry = new MonacoModelRegistry({ maxClosedCleanModels: 2 })
+    const first = "file:///tmp/lru-first.ts"
+    const second = "file:///tmp/lru-second.ts"
+    const third = "file:///tmp/lru-third.ts"
+    registry.getOrCreate(first, "first", "typescript")
+    registry.getOrCreate(second, "second", "typescript")
+    registry.getOrCreate(third, "third", "typescript")
+    registry.get(first)
+
+    assert.deepEqual(registry.evictClosedClean(), [second])
+    assert.equal(registry.has(first), true)
+    assert.equal(registry.has(second), false)
+    assert.equal(registry.has(third), true)
+  })
+
+  it("evicts closed-clean models by UTF-8 byte budget", () => {
+    registry = new MonacoModelRegistry({
+      maxClosedCleanModels: 20,
+      maxClosedCleanBytes: 10,
+    })
+    const first = "file:///tmp/bytes-first.ts"
+    const second = "file:///tmp/bytes-second.ts"
+    registry.getOrCreate(first, "123456", "typescript")
+    registry.getOrCreate(second, "abcdef", "typescript")
+
+    assert.deepEqual(registry.evictClosedClean(), [first])
+    assert.equal(registry.has(first), false)
+    assert.equal(registry.has(second), true)
+  })
+
+  it("never evicts dirty, open, or owned models", () => {
+    registry = new MonacoModelRegistry({ maxClosedCleanModels: 1 })
+    const open = "file:///tmp/pinned-open.ts"
+    const dirty = "file:///tmp/pinned-dirty.ts"
+    const owned = "file:///tmp/pinned-owned.ts"
+    const oldClean = "file:///tmp/old-clean.ts"
+    const newClean = "file:///tmp/new-clean.ts"
+    registry.getOrCreate(open, "open", "typescript")
+    registry.setPinned(open, { open: true, dirty: false })
+    registry.getOrCreate(dirty, "dirty", "typescript")
+    registry.setPinned(dirty, { open: false, dirty: true })
+    registry.getOrCreate(owned, "owned", "typescript")
+    registry.retain(owned, "view:owned")
+    registry.getOrCreate(oldClean, "old", "typescript")
+    registry.getOrCreate(newClean, "new", "typescript")
+
+    assert.deepEqual(registry.evictClosedClean(), [oldClean])
+    assert.equal(registry.has(open), true)
+    assert.equal(registry.has(dirty), true)
+    assert.equal(registry.has(owned), true)
+    assert.equal(registry.has(oldClean), false)
+    assert.equal(registry.has(newClean), true)
+    assert.deepEqual(registry.pinState(open), { open: true, dirty: false })
+    assert.deepEqual(registry.pinState(dirty), { open: false, dirty: true })
+  })
+
+  it("returns view ownership to zero on detach without immediate eviction", () => {
+    registry.getOrCreate(uri, "content", "typescript")
+    registry.retain(uri, "view:editor-1")
+    assert.equal(registry.ownerCount(uri), 1)
+    registry.release(uri, "view:editor-1")
+    assert.equal(registry.ownerCount(uri), 0)
+    assert.equal(registry.has(uri), true)
+  })
+
   it("creates diff model pair with custom schemes", () => {
     const pair = registry.getOrCreateDiffPair(uri, "old line", "new line", "typescript")
     assert.equal(pair.original.getValue(), "old line")
     assert.equal(pair.modified.getValue(), "new line")
     assert.ok(pair.original.uri.toString().startsWith("yaade-diff-original:"))
     assert.ok(pair.modified.uri.toString().startsWith("yaade-diff-modified:"))
-    registry.release(registry.diffOriginalUri(uri))
-    registry.release(registry.diffModifiedUri(uri))
+    assert.equal(registry.ownerCount(registry.diffOriginalUri(uri)), 0)
+    assert.equal(registry.ownerCount(registry.diffModifiedUri(uri)), 0)
   })
 
   it("canonicalizes file URIs", () => {
     const testUri = "file:///tmp/registry-canonical.ts"
     const model = registry.getOrCreate(testUri, "a", "typescript")
     assert.equal(registry.get(testUri), model)
-    registry.release(testUri)
     registry.disposeIfUnreferenced(testUri)
   })
 
   it("reports a read-only JSON model snapshot", () => {
     registry.getOrCreate(uri, "hello\n🌙", "typescript")
+    registry.retain(uri, `buffer:${uri}`)
+    registry.retain(uri, "lsp:typescript")
+    registry.setPinned(uri, { open: true, dirty: true })
     assert.deepEqual(registry.diagnostics(), [
       {
         uri,
-        refCount: 1,
-        ownerCount: 1,
-        lspOwnerCount: null,
+        refCount: 2,
+        ownerCount: 2,
+        owners: [`buffer:${uri}`, "lsp:typescript"],
+        lspOwnerCount: 1,
+        open: true,
+        dirty: true,
+        pinned: true,
+        lastUsed: 4,
         version: 1,
         bytes: 10,
         lines: 2,

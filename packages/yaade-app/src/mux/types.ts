@@ -20,6 +20,8 @@ export type MuxSessionLeafPersisted = {
   launchCommand?: string
   launchArgs?: string[]
   label?: string
+  agentProvider?: string
+  agentTitle?: string
 }
 
 export type MuxWindowPersisted = {

@@ -154,7 +154,7 @@ export class NotificationService {
            session_id, project_id, project_name, session_title, provider, pty_id, updated_at
          ) VALUES(?,?,?,?,?,?,?)
          ON CONFLICT(session_id) DO UPDATE SET
-           project_id=excluded.project_id,
+           project_id=COALESCE(excluded.project_id, notification_session_bindings.project_id),
            project_name=COALESCE(excluded.project_name, notification_session_bindings.project_name),
            session_title=COALESCE(excluded.session_title, notification_session_bindings.session_title),
            provider=COALESCE(excluded.provider, notification_session_bindings.provider),
@@ -169,6 +169,27 @@ export class NotificationService {
         binding.provider,
         binding.ptyId,
         nowIso(),
+      )
+
+    this.db
+      .prepare(
+        `UPDATE app_notifications
+            SET project_id=COALESCE(project_id, ?),
+                project_name=COALESCE(project_name, ?),
+                session_title=COALESCE(session_title, ?),
+                provider=COALESCE(provider, ?),
+                updated_at=?
+          WHERE session_id=?
+            AND (project_id IS NULL OR project_name IS NULL
+              OR session_title IS NULL OR provider IS NULL)`,
+      )
+      .run(
+        binding.projectId,
+        binding.projectName,
+        binding.sessionTitle,
+        binding.provider,
+        nowIso(),
+        binding.sessionId,
       )
   }
 
@@ -265,6 +286,61 @@ export class NotificationService {
     for (const row of rows) {
       if (!row.sessionId) continue
       out[row.sessionId] = Number(row.n) || 0
+    }
+    return out
+  }
+
+  unreadByProject(): Record<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT project_id AS projectId, COUNT(*) AS n
+         FROM app_notifications
+         WHERE status='unread' AND project_id IS NOT NULL
+         GROUP BY project_id`,
+      )
+      .all() as Array<{ projectId: string; n: number }>
+    const out: Record<string, number> = {}
+    for (const row of rows) {
+      if (!row.projectId) continue
+      out[row.projectId] = Number(row.n) || 0
+    }
+    return out
+  }
+
+  attentionBySession(): Record<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id AS sessionId, COUNT(*) AS n
+         FROM app_notifications
+         WHERE session_id IS NOT NULL AND status != 'dismissed'
+           AND ((requires_action=1 AND action_resolved_at IS NULL)
+             OR (status='unread' AND (severity='error' OR type='failed')))
+         GROUP BY session_id`,
+      )
+      .all() as Array<{ sessionId: string; n: number }>
+    const out: Record<string, number> = {}
+    for (const row of rows) {
+      if (!row.sessionId) continue
+      out[row.sessionId] = Number(row.n) || 0
+    }
+    return out
+  }
+
+  attentionByProject(): Record<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT project_id AS projectId, COUNT(*) AS n
+         FROM app_notifications
+         WHERE project_id IS NOT NULL AND status != 'dismissed'
+           AND ((requires_action=1 AND action_resolved_at IS NULL)
+             OR (status='unread' AND (severity='error' OR type='failed')))
+         GROUP BY project_id`,
+      )
+      .all() as Array<{ projectId: string; n: number }>
+    const out: Record<string, number> = {}
+    for (const row of rows) {
+      if (!row.projectId) continue
+      out[row.projectId] = Number(row.n) || 0
     }
     return out
   }

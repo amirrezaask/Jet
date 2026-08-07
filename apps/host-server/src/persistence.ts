@@ -106,6 +106,7 @@ export class ProjectDatabase {
     this.ensureSessionRosterSchema()
     this.ensureWorkspaceSessionSchema()
     this.ensureProjectSessionSchema()
+    this.backfillProjectsFromProjectSessions()
   }
 
   private ensureWorkspaceSessionSchema(): void {
@@ -139,6 +140,32 @@ export class ProjectDatabase {
         ON project_sessions (machine, project_path, updated_at DESC);
     `)
     this.migrateWorkspaceSessionsToProjectSessions()
+  }
+
+  /** One-time catalog backfill from persisted sessions. Never scans the filesystem. */
+  private backfillProjectsFromProjectSessions(): void {
+    const migrated = this.db
+      .prepare("SELECT version FROM schema_migrations WHERE version=9")
+      .get() as { version: number } | undefined
+    if (migrated) return
+
+    const rows = this.db
+      .prepare(
+        `SELECT project_path, MAX(updated_at) AS updated_at
+           FROM project_sessions
+          GROUP BY project_path`,
+      )
+      .all() as unknown as Array<{ project_path: string; updated_at: string }>
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO projects(id, name, root_path, created_at, updated_at)
+       VALUES(?,?,?,?,?)`,
+    )
+    for (const row of rows) {
+      const root = this.canonicalizeRootPath(row.project_path)
+      const name = path.basename(root) || root
+      insert.run(randomUUID(), name, root, row.updated_at, row.updated_at)
+    }
+    this.db.prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES(9)").run()
   }
 
   /** One-time: copy legacy workspace_sessions rows into project_sessions. */
@@ -334,12 +361,17 @@ export class ProjectDatabase {
       .prepare("SELECT id,name,root_path,created_at,updated_at FROM projects WHERE root_path=?")
       .get(root) as ProjectRow | undefined
     if (existing) {
+      const now = new Date().toISOString()
+      const projectName = name?.trim() || existing.name
+      this.db
+        .prepare("UPDATE projects SET name=?, updated_at=? WHERE id=?")
+        .run(projectName, now, existing.id)
       return {
         id: existing.id,
-        name: existing.name,
+        name: projectName,
         rootPath: existing.root_path,
         createdAt: existing.created_at,
-        updatedAt: existing.updated_at,
+        updatedAt: now,
       }
     }
     const now = new Date().toISOString()
@@ -601,6 +633,32 @@ export class ProjectDatabase {
     return rows.map(row => this.mapProjectSessionSummary(row))
   }
 
+  listAllProjectSessions(machine: string): ProjectSession[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, machine, project_path, cwd_path, title,
+                worktree_branch, worktree_path, payload_json,
+                created_at, updated_at, archived_at
+           FROM project_sessions
+          WHERE machine=?
+          ORDER BY updated_at DESC`,
+      )
+      .all(machine) as unknown as Array<{
+      id: string
+      machine: string
+      project_path: string
+      cwd_path: string
+      title: string
+      worktree_branch: string | null
+      worktree_path: string | null
+      payload_json: string
+      created_at: string
+      updated_at: string
+      archived_at: string | null
+    }>
+    return rows.map(row => this.mapProjectSession(row))
+  }
+
   getProjectSession(id: string): ProjectSession | null {
     const row = this.db
       .prepare(
@@ -648,6 +706,7 @@ export class ProjectDatabase {
     if (!payload) throw new Error("invalid project session payload")
     const id = `ses-${randomUUID()}`
     const now = new Date().toISOString()
+    this.addProject(projectPath)
     this.db
       .prepare(
         `INSERT INTO project_sessions(

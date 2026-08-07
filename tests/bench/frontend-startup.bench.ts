@@ -32,7 +32,10 @@ test("bench frontend cold startup and first overlay", async () => {
   const snapshots: StartupSnapshot[] = []
 
   for (let round = 0; round < 5; round++) {
-    const { app, page } = await launchJet({ launchWithoutWorkspace: true })
+    const { app, page } = await launchJet({
+      launchWithoutWorkspace: true,
+      hq: true,
+    })
     try {
       const snapshot = await page.evaluate(() => {
         const memory = Reflect.get(performance, "memory")
@@ -90,7 +93,15 @@ test("bench frontend cold startup and first overlay", async () => {
   assertBudget(overlay)
 
   for (const snapshot of snapshots) {
-    expect(snapshot.nodeCount, "cold home DOM should stay compact").toBeLessThan(2_000)
+    expect(snapshot.nodeCount, "cold HQ DOM should stay compact").toBeLessThan(2_000)
+    expect(
+      snapshot.scripts.some(name =>
+        /(?:MuxApp|monaco|xterm|git-entry|HqAgentDialog|agent-picker-entry)/i.test(
+          name,
+        ),
+      ),
+      "workspace or agent-dialog implementation loaded on the cold HQ path",
+    ).toBe(false)
     expect(
       snapshot.scripts.some(name => name.includes("OverlayHostContent-")),
       "overlay implementation loaded before first overlay",

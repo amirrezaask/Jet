@@ -129,7 +129,9 @@ export function useLspLifecycle(
       const file = workspace.fileForUri(fileUri) ?? workspace.createWorkspaceFile(fileUri, path)
       const conn = await manager.ensureServerForFile(file, rootUri)
       if (!conn) return null
-      return pool.getOrCreateClient(conn)
+      const client = await pool.getOrCreateClient(conn)
+      await pool.openDocument(conn.id, fileUri)
+      return client
     },
     [ensureRuntime, workspace],
   )
@@ -161,6 +163,7 @@ export function useLspLifecycle(
         if (!conn) return false
         try {
           await pool.getOrCreateClient(conn)
+          await pool.openDocument(conn.id, fileUri)
         } catch (error) {
           pool.releaseConnection(conn.id)
           await manager.stopConnection(conn.id)
@@ -204,6 +207,10 @@ export function useLspLifecycle(
     },
     [ensureLspForFile],
   )
+
+  const closeLspForFile = useCallback((fileUri: string) => {
+    runtimeRef.current?.pool.closeDocument(fileUri)
+  }, [])
 
   const stopLspServersForRoot = useCallback(
     async (rootUri: string) => {
@@ -284,6 +291,7 @@ export function useLspLifecycle(
     bumpLspRevision,
     resolveLspClient,
     ensureLspForFile,
+    closeLspForFile,
     handleLspAttachFailed,
     stopLspServersForRoot,
     lspStatus,

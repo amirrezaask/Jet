@@ -3,7 +3,7 @@ import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js"
 import type { YaadeTheme } from "@yaade/shared"
 import "./monaco-features.js"
 import { ensureMonacoEnvironment } from "./monaco-env.js"
-import { isLargeFile } from "./language.js"
+import { isLargeModel } from "./language.js"
 import { monacoModels } from "./model-registry.js"
 import { applyYaadeMonacoTheme } from "./theme.js"
 import {
@@ -36,6 +36,11 @@ export type MonacoEditorHostProps = {
   autoFocus?: boolean
   /** Stable surface identity used to restore cursor, selections, folds, and scroll. */
   viewStateId?: string
+  initialViewState?: monaco.editor.ICodeEditorViewState | null
+  onViewStateChange?: (
+    uri: string,
+    state: monaco.editor.ICodeEditorViewState | null,
+  ) => void
   onReady?: (editor: MonacoEditorHandle) => void
   onContentChange?: (model: monaco.editor.ITextModel) => void
   onFocusChange?: (focused: boolean) => void
@@ -72,6 +77,8 @@ export function MonacoEditorHost({
   readOnly = false,
   autoFocus = false,
   viewStateId,
+  initialViewState,
+  onViewStateChange,
   onReady,
   onContentChange,
   onFocusChange,
@@ -84,6 +91,7 @@ export function MonacoEditorHost({
   const editorRef = useRef<MonacoEditorHandle | null>(null)
   const generatedEditorId = useId()
   const editorId = viewStateId ?? generatedEditorId
+  const viewOwnerId = `view:${editorId}`
   const uriRef = useRef(uri)
   const onReadyRef = useRef(onReady)
   const onContentChangeRef = useRef(onContentChange)
@@ -91,6 +99,7 @@ export function MonacoEditorHost({
   const onCursorChangeRef = useRef(onCursorChange)
   const onQuickOpenRef = useRef(onQuickOpen)
   const onCommandPaletteRef = useRef(onCommandPalette)
+  const onViewStateChangeRef = useRef(onViewStateChange)
 
   onReadyRef.current = onReady
   onContentChangeRef.current = onContentChange
@@ -98,6 +107,7 @@ export function MonacoEditorHost({
   onCursorChangeRef.current = onCursorChange
   onQuickOpenRef.current = onQuickOpen
   onCommandPaletteRef.current = onCommandPalette
+  onViewStateChangeRef.current = onViewStateChange
 
   useEffect(() => {
     ensureMonacoEnvironment()
@@ -106,14 +116,13 @@ export function MonacoEditorHost({
 
     const pending = consumePendingInitialContent(uri)
     const initialContent = pending ?? content
-    const large = isLargeFile(initialContent)
-
-    let model = monacoModels.get(uri)
-    if (!model) {
-      model = monacoModels.getOrCreate(uri, initialContent, languageId)
-    } else {
-      monacoModels.acquire(uri)
-    }
+    const model = monacoModels.getOrCreate(
+      uri,
+      initialContent,
+      languageId,
+    )
+    monacoModels.retain(uri, viewOwnerId)
+    const large = isLargeModel(model)
 
     const editor = monaco.editor.create(container, {
       model,
@@ -134,10 +143,11 @@ export function MonacoEditorHost({
     })
 
     editorRef.current = editor
-    recordMonacoEditorMounted(editorId, uri)
+    recordMonacoEditorMounted(editorId, uri, editor)
     applyYaadeMonacoTheme(theme)
 
-    const savedState = monacoModels.restoreViewState(editorId, uri)
+    const savedState =
+      monacoModels.restoreViewState(editorId, uri) ?? initialViewState
     if (savedState) editor.restoreViewState(savedState)
 
     applyPendingNavigation(editor, uri)
@@ -203,20 +213,32 @@ export function MonacoEditorHost({
     })
     resizeObserver.observe(container)
 
+    const saveCurrentViewState = () => {
+      const currentUri = uriRef.current
+      const state = editor.saveViewState()
+      monacoModels.saveViewState(editorId, currentUri, state)
+      onViewStateChangeRef.current?.(currentUri, state)
+    }
+    window.addEventListener("pagehide", saveCurrentViewState)
+    window.addEventListener("yaade:save-editor-view-state", saveCurrentViewState)
+
     onReadyRef.current?.(editor)
 
     return () => {
       const currentUri = uriRef.current
-      const state = editor.saveViewState()
-      monacoModels.saveViewState(editorId, currentUri, state)
+      saveCurrentViewState()
+      window.removeEventListener("pagehide", saveCurrentViewState)
+      window.removeEventListener(
+        "yaade:save-editor-view-state",
+        saveCurrentViewState,
+      )
       resizeObserver.disconnect()
       for (const d of disposables) d.dispose()
       editor.dispose()
       recordMonacoEditorDisposed(editorId)
       if (getActiveMonacoEditor() === editor) setActiveMonacoEditor(null)
       editorRef.current = null
-      monacoModels.release(currentUri)
-      monacoModels.disposeIfUnreferenced(currentUri)
+      monacoModels.release(currentUri, viewOwnerId)
     }
   }, [editorId])
 
@@ -232,31 +254,34 @@ export function MonacoEditorHost({
     }
 
     const state = editor.saveViewState()
-    if (previousUri) monacoModels.saveViewState(editorId, previousUri, state)
+    if (previousUri) {
+      monacoModels.saveViewState(editorId, previousUri, state)
+      onViewStateChangeRef.current?.(previousUri, state)
+    }
 
     const pending = consumePendingInitialContent(uri)
-    let model = monacoModels.get(uri)
-    if (!model) {
-      model = monacoModels.getOrCreate(uri, pending ?? content, languageId)
-    } else {
-      monacoModels.acquire(uri)
-    }
+    const model = monacoModels.getOrCreate(
+      uri,
+      pending ?? content,
+      languageId,
+    )
+    monacoModels.retain(uri, viewOwnerId)
 
     editor.setModel(model)
     recordMonacoEditorModelChanged(editorId, uri)
     monacoModels.setLanguage(uri, languageId)
 
-    const restored = monacoModels.restoreViewState(editorId, uri)
+    const restored =
+      monacoModels.restoreViewState(editorId, uri) ?? initialViewState
     if (restored) editor.restoreViewState(restored)
     else editor.setPosition({ lineNumber: 1, column: 1 })
 
     applyPendingNavigation(editor, uri)
 
     if (previousUri && previousUri !== monacoModels.canonicalKey(uri)) {
-      monacoModels.release(previousUri)
-      monacoModels.disposeIfUnreferenced(previousUri)
+      monacoModels.release(previousUri, viewOwnerId)
     }
-  }, [uri, content, languageId, editorId])
+  }, [uri, content, languageId, editorId, initialViewState, viewOwnerId])
 
   useEffect(() => {
     applyYaadeMonacoTheme(theme)

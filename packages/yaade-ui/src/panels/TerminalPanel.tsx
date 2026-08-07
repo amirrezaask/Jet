@@ -37,6 +37,8 @@ export type TerminalPanelProps = {
   exitCode?: number
   sessionGeneration?: number
   readOnly?: boolean
+  /** Attach to an existing PTY without ever creating, restarting, or disposing it. */
+  attachOnly?: boolean
   /**
    * Hold off creating/attaching a PTY (e.g. Cursor chat-id mint). Panel stays
    * in the starting overlay until this clears and the effect remounts.
@@ -350,6 +352,7 @@ export function TerminalPanel({
   exitCode,
   sessionGeneration = 0,
   readOnly = false,
+  attachOnly = false,
   deferPty = false,
   visible = true,
   startingMessage,
@@ -645,11 +648,13 @@ export function TerminalPanel({
         })
       }
       if (existingPtyId) {
-        void terminalApi.attach(existingPtyId).then(attached => {
-          if (cancelled) return
+        void terminalApi
+          .attach(existingPtyId)
+          .then(attached => {
+            if (cancelled) return
           if (!attached) {
             // Stale id after host restart (or reclaim) — spawn fresh.
-            if (!readOnly) {
+            if (!readOnly && !attachOnly) {
               createFreshPty()
               return
             }
@@ -661,7 +666,7 @@ export function TerminalPanel({
           if (attached.status === "exited") {
             // Stale PTY from a previous host life — respawn (resume argv already
             // on launchArgs when agentCliSessionId was synced).
-            if (!readOnly && launchCommandAtStart) {
+            if (!readOnly && !attachOnly && launchCommandAtStart) {
               void terminalApi.dispose(existingPtyId).catch(() => {})
               createFreshPty()
               return
@@ -688,10 +693,18 @@ export function TerminalPanel({
             setDisplayStatus("exited")
             setDisplayExitCode(attached.exitCode)
           }
-        })
+          })
+          .catch(error => {
+            if (cancelled) return
+            const message = error instanceof Error ? error.message : String(error)
+            term.writeln(`\r\n\x1b[31mTerminal attach failed:\x1b[0m ${message}`)
+            setDisplayStatus("failed")
+            onFailedRef.current?.()
+          })
         return
       }
       if (
+        attachOnly ||
         readOnly ||
         ((status === "failed" || status === "exited") && !launchCommandAtStart)
       ) {
@@ -796,6 +809,7 @@ export function TerminalPanel({
     // passed a fresh inline callback (mux slot-box updates used to thrash).
     sessionGeneration,
     readOnly,
+    attachOnly,
     deferPty,
     initialOutput,
   ])
@@ -903,7 +917,7 @@ export function TerminalPanel({
               ? "Terminal failed to start"
               : `Process exited${displayExitCode == null ? "" : ` with code ${displayExitCode}`}`}
           </span>
-          {!readOnly ? (
+          {!readOnly && !attachOnly ? (
             <Button type="button" size="xs" variant="ghost" onClick={onRestart}>
               <RotateCcw className="size-3" />
               Restart

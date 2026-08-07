@@ -29,6 +29,7 @@ import { isAllowedWebSocketOrigin } from "./security.js"
 import { normalizeProviderHookRequest } from "./notifications/index.js"
 import { resolveWorktreePath } from "./worktree-path.js"
 import { pathToFileUri } from "@yaade/shared"
+import { buildHqSnapshot } from "./hq.js"
 
 const VERSION = "0.0.1"
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
@@ -244,6 +245,11 @@ async function handleHttp(
       homeDir: runtime.homeDir,
       machineHostname: runtime.machineHostname,
     })
+    return
+  }
+
+  if (req.method === "GET" && pathname === "/api/v1/hq") {
+    sendJson(res, 200, buildHqSnapshot(runtime))
     return
   }
 
@@ -808,6 +814,29 @@ async function handleHttp(
         })
         return
       }
+      let projectStat: fs.Stats
+      try {
+        projectStat = fs.statSync(body.rootPath)
+      } catch {
+        sendJson(res, 404, {
+          error: {
+            code: "PROJECT_PATH_NOT_FOUND",
+            message: "project path does not exist",
+            details: {},
+          },
+        })
+        return
+      }
+      if (!projectStat.isDirectory()) {
+        sendJson(res, 400, {
+          error: {
+            code: "PROJECT_PATH_NOT_DIRECTORY",
+            message: "project path is not a directory",
+            details: {},
+          },
+        })
+        return
+      }
       try {
         const project = runtime.db.addProject(body.rootPath, body.name)
         sendJson(res, 201, project)
@@ -836,6 +865,11 @@ async function handleHttp(
       runtime.db.removeProject(projectId)
       res.writeHead(204)
       res.end()
+      return
+    }
+
+    if (!sub && req.method === "GET") {
+      sendJson(res, 200, project)
       return
     }
 

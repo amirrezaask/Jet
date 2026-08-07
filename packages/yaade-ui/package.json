@@ -23,6 +23,10 @@
       "types": "./src/appearance-entry.ts",
       "default": "./src/appearance-entry.ts"
     },
+    "./notifications": {
+      "types": "./src/notifications/index.ts",
+      "default": "./src/notifications/index.ts"
+    },
     "./settings": {
       "types": "./src/settings-entry.ts",
       "default": "./src/settings-entry.ts"

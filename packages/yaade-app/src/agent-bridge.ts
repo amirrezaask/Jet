@@ -37,10 +37,11 @@ export type JetAgentState = {
   sessionMode: "agent" | "terminal" | "editor" | "git" | "todos" | null
   /** Always false — in-app native agent chat removed; CLI PTY only. */
   agentChatEnabled: boolean
-  /** Current SPA route: project landing vs session workspace. */
-  route: "project" | "session"
+  /** Current SPA route: HQ, project landing, or session workspace. */
+  route: "hq" | "project" | "session"
   sessionId: string | null
   sessionCwd: string | null
+  hqCounts?: { projects: number; agents: number; attention: number; unread: number }
 }
 
 export type JetAgentCursor = { line: number; column: number }
@@ -136,7 +137,7 @@ export type AgentBridgeContext = {
   sessionMode?: "agent" | "terminal" | "editor" | "git" | "todos" | null
   sessionLayout?: "sidebar"
   agentChatEnabled?: boolean
-  route?: "project" | "session"
+  route?: "hq" | "project" | "session"
   sessionId?: string | null
   sessionCwd?: string | null
   backToProject?: () => void | Promise<void>

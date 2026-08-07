@@ -24,6 +24,27 @@ class EditorSessionRegistry {
     return `${panelId.id}\u0000${fileUri}`
   }
 
+  modelOwnerId(panelId: PanelId, fileUri: string): string {
+    return `buffer:${panelId.id}:${monacoModels.canonicalKey(fileUri)}`
+  }
+
+  retainModel(panelId: PanelId, fileUri: string): void {
+    monacoModels.retain(fileUri, this.modelOwnerId(panelId, fileUri))
+    this.syncModelPin(fileUri)
+  }
+
+  syncModelPin(fileUri: string): void {
+    const canonicalUri = monacoModels.canonicalKey(fileUri)
+    let open = false
+    let dirty = false
+    this.forEachSession(session => {
+      if (monacoModels.canonicalKey(session.fileUri) !== canonicalUri) return
+      open = true
+      dirty ||= session.isDirty
+    })
+    monacoModels.setPinned(fileUri, { open, dirty })
+  }
+
   touchSessionAccess(panelId: PanelId, fileUri: string): void {
     const key = this.sessionKey(panelId, fileUri)
     const idx = this.sessionAccessOrder.indexOf(key)
@@ -126,8 +147,8 @@ class EditorSessionRegistry {
     this.forgetSessionAccess(panelId, fileUri)
     sessions!.delete(fileUri)
     if (sessions!.size === 0) this.sessionsByPanel.delete(panelId.id)
-    monacoModels.release(fileUri)
-    monacoModels.disposeIfUnreferenced(fileUri, () => !session.isDirty)
+    monacoModels.release(fileUri, this.modelOwnerId(panelId, fileUri))
+    this.syncModelPin(fileUri)
     return session
   }
 
@@ -135,12 +156,15 @@ class EditorSessionRegistry {
     const sessions = this.sessionsByPanel.get(panelId.id)
     if (!sessions) return []
     const destroyed = [...sessions.values()]
+    this.sessionsByPanel.delete(panelId.id)
     for (const session of destroyed) {
       this.forgetSessionAccess(panelId, session.fileUri)
-      monacoModels.release(session.fileUri)
-      monacoModels.disposeIfUnreferenced(session.fileUri, () => !session.isDirty)
+      monacoModels.release(
+        session.fileUri,
+        this.modelOwnerId(panelId, session.fileUri),
+      )
+      this.syncModelPin(session.fileUri)
     }
-    this.sessionsByPanel.delete(panelId.id)
     this.editorByPanel.delete(panelId.id)
     if (this.focusedPanelId === panelId.id) this.focusedPanelId = null
     return destroyed

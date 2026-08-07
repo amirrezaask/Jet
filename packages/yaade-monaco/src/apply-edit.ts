@@ -256,7 +256,6 @@ export function applyWorkspaceEdit(
     if (!model) {
       const initial = getContent?.(uri) ?? ""
       model = registry.getOrCreate(uri, initial, defaultLanguageId)
-      registry.release(uri)
     }
 
     const versionFromChanges = edit.documentChanges
@@ -273,6 +272,7 @@ export function applyWorkspaceEdit(
     applied.push(uri)
   }
 
+  registry.evictClosedClean()
   return { applied, skipped, fileOperations }
 }
 

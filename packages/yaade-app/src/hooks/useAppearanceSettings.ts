@@ -205,12 +205,21 @@ export function useAppearanceSettings() {
   const [appearanceSettings, setAppearanceSettings] = useState<JetAppearanceSettings>(() =>
     loadAppearanceSettings(),
   )
+  const appearanceSettingsRef = useRef(appearanceSettings)
+  appearanceSettingsRef.current = appearanceSettings
   const activeTheme = getThemeById(appearanceSettings.themeId)
   const colorScheme: ColorScheme = activeTheme.scheme ?? "dark"
 
   useEffect(() => {
     applyColorScheme(colorScheme, activeTheme)
   }, [colorScheme, activeTheme])
+
+  // Theme selection is navigational UI state: persist it with the same commit
+  // that applies the tokens so reloads and other tabs cannot observe the old
+  // palette during the general appearance debounce below.
+  useEffect(() => {
+    persistAppearanceSettings(appearanceSettingsRef.current)
+  }, [appearanceSettings.themeId])
 
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
@@ -247,7 +256,13 @@ export function useAppearanceSettings() {
   }, [])
 
   const setThemeId = useCallback((themeId: string) => {
-    setAppearanceSettings(prev => ({ ...prev, themeId: normalizeThemeId(themeId) }))
+    const next = {
+      ...appearanceSettingsRef.current,
+      themeId: normalizeThemeId(themeId),
+    }
+    appearanceSettingsRef.current = next
+    persistAppearanceSettings(next)
+    setAppearanceSettings(next)
   }, [])
 
   return {

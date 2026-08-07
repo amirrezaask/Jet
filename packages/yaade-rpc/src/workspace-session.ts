@@ -9,6 +9,8 @@ export const WorkspaceSessionLeaf = Schema.Struct({
   launchCommand: Schema.optional(Schema.String),
   launchArgs: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
   label: Schema.optional(Schema.String),
+  agentProvider: Schema.optional(Schema.String),
+  agentTitle: Schema.optional(Schema.String),
 })
 export type WorkspaceSessionLeaf = Schema.Schema.Type<typeof WorkspaceSessionLeaf>
 
@@ -78,6 +80,12 @@ function parseLeaf(raw: unknown): WorkspaceSessionLeaf | null {
       : {}),
     ...(launchArgs ? { launchArgs } : {}),
     ...(asNonEmptyString(item.label) ? { label: asNonEmptyString(item.label)! } : {}),
+    ...(asNonEmptyString(item.agentProvider)
+      ? { agentProvider: asNonEmptyString(item.agentProvider)! }
+      : {}),
+    ...(asNonEmptyString(item.agentTitle)
+      ? { agentTitle: asNonEmptyString(item.agentTitle)! }
+      : {}),
   }
 }
 

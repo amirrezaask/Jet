@@ -52,3 +52,11 @@ export function isLargeFile(content: string): boolean {
   }
   return false
 }
+
+/** Large-file classification without serializing an existing Monaco model. */
+export function isLargeModel(model: {
+  getValueLength(): number
+  getLineCount(): number
+}): boolean {
+  return model.getValueLength() > 1 * 1024 * 1024 || model.getLineCount() > 20_000
+}

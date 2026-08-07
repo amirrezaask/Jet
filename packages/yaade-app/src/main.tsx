@@ -5,6 +5,7 @@ import { AppRoot } from "./AppRoot.js"
 import { AppErrorBoundary } from "./AppErrorBoundary.js"
 import { createYaadeApi, createWebTransport } from "@yaade/host-client"
 import { applyInitialAppearance } from "./hooks/useAppearanceSettings.js"
+import { SystemSignalsProvider } from "./system-signals/SystemSignalsProvider.js"
 
 const startupWindow = window as Window & { __yaadeStartupBootstrapAt?: number }
 startupWindow.__yaadeStartupBootstrapAt ??= performance.now()
@@ -17,7 +18,9 @@ window.yaade = createYaadeApi(transport)
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AppErrorBoundary>
-      <AppRoot />
+      <SystemSignalsProvider>
+        <AppRoot />
+      </SystemSignalsProvider>
     </AppErrorBoundary>
   </StrictMode>,
 )

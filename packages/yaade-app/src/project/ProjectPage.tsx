@@ -22,8 +22,10 @@ import {
   TabsTrigger,
 } from "@yaade/ui/primitives"
 import { showYaadeToast, Toaster } from "@yaade/ui/toast"
-import { SettingsIcon } from "lucide-react"
+import { NotificationBell } from "@yaade/ui/notifications"
+import { House, SettingsIcon } from "lucide-react"
 import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
+import { useSystemSignals } from "../system-signals/SystemSignalsProvider.js"
 import { preloadMuxApp } from "../mux/preload.js"
 import type {
   MuxLaunchAction,
@@ -59,15 +61,24 @@ const AgentCliPickerOverlay = lazy(() =>
 )
 
 export type ProjectPageProps = {
+  projectId: string
+  projectName: string
   projectPath: string
   homeDir: string
   machineHostname: string
   /** Active session — tiling workspace renders in-page when set. */
   session: ProjectSession | null
+  /** One-shot launch requested from HQ before navigating into this project. */
+  agentLaunchIntent?: {
+    id: string
+    driverId: Extract<MuxLaunchAction, { kind: "agent" }>["driverId"]
+  } | null
+  onAgentLaunchIntentHandled?: (intentId: string) => void
   onOpenSession: (sessionId: string) => Promise<void>
   /** Clear the active session (leave worktree view, keep project chrome). */
   onClearSession?: () => void
   onNavigateProject: (absolutePath: string) => void
+  onOpenHq: () => void
   listSessions: () => Promise<ProjectSessionSummary[]>
 }
 
@@ -75,15 +86,21 @@ export type ProjectPageProps = {
 type ProjectView = "overview" | "history" | "worktree"
 
 export function ProjectPage({
+  projectId,
+  projectName,
   projectPath,
   homeDir,
   machineHostname,
   session,
+  agentLaunchIntent = null,
+  onAgentLaunchIntentHandled,
   onOpenSession,
   onClearSession,
   onNavigateProject,
+  onOpenHq,
   listSessions,
 }: ProjectPageProps) {
+  const notifications = useSystemSignals()
   const {
     appearanceSettings,
     setAppearanceSettings,
@@ -99,6 +116,7 @@ export function ProjectPage({
   const [launchRequest, setLaunchRequest] = useState<MuxLaunchRequest | null>(null)
   const [agentPickerOpen, setAgentPickerOpen] = useState(false)
   const launchSequenceRef = useRef(0)
+  const handledAgentLaunchIntentsRef = useRef(new Set<string>())
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
   const title = workspaceDocumentTitle(projectPath, homeDir)
 
@@ -189,6 +207,16 @@ export function ProjectPage({
     setLaunchRequest(current => (current?.id === requestId ? null : current))
   }, [])
 
+  useEffect(() => {
+    if (!agentLaunchIntent) return
+    if (handledAgentLaunchIntentsRef.current.has(agentLaunchIntent.id)) return
+    handledAgentLaunchIntentsRef.current.add(agentLaunchIntent.id)
+    void handleLaunchAction({
+      kind: "agent",
+      driverId: agentLaunchIntent.driverId,
+    }).finally(() => onAgentLaunchIntentHandled?.(agentLaunchIntent.id))
+  }, [agentLaunchIntent, handleLaunchAction, onAgentLaunchIntentHandled])
+
   const handleResumeSession = useCallback(
     async (sessionId: string) => {
       const muxReady = preloadMuxApp()
@@ -220,6 +248,14 @@ export function ProjectPage({
           className="flex min-h-0 flex-1 flex-col"
         >
           <header className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-2.5">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Open HQ"
+              onClick={onOpenHq}
+            >
+              <House className="size-3.5" />
+            </Button>
             <ProjectPathSwitcher
               projectPath={projectPath}
               homeDir={homeDir}
@@ -264,6 +300,11 @@ export function ProjectPage({
               </TabsList>
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
+              <NotificationBell
+                counts={notifications.counts}
+                onClick={() => notifications.setOpen(true)}
+                className="size-6"
+              />
               <Button
                 variant="ghost"
                 size="icon-xs"
@@ -354,6 +395,8 @@ export function ProjectPage({
                   <MuxApp
                     key={session.id}
                     session={session}
+                    projectId={projectId}
+                    projectName={projectName}
                     homeDir={homeDir}
                     machineHostname={machineHostname}
                     embedded

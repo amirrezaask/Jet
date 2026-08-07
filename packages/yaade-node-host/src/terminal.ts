@@ -75,6 +75,15 @@ export type TerminalAttachSnapshot = {
   signal: number | null
 }
 
+/** Metadata-only terminal probe. It never changes ownership or flow control. */
+export type TerminalInspectSnapshot = {
+  id: string
+  title: string | null
+  status: "running" | "exited"
+  exitCode: number | null
+  signal: number | null
+}
+
 type EmitFn = (channel: string, args: unknown[]) => void
 
 type TerminalEntry = {
@@ -458,6 +467,19 @@ export class TerminalHost {
     if (typeof pid !== "number") return null
     const fg = await foregroundProcessOf(pid)
     return fg?.name ?? null
+  }
+
+  inspect(id: string): TerminalInspectSnapshot | null {
+    if (id.length > 256) return null
+    const entry = this.entries.get(id)
+    if (!entry || entry.disposed) return null
+    return {
+      id: entry.id,
+      title: entry.title,
+      status: entry.status,
+      exitCode: entry.exitCode,
+      signal: entry.signal,
+    }
   }
 
   write(id: string, data: string): null {

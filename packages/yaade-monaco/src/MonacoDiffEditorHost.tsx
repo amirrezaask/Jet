@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useId, useRef } from "react"
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js"
 import type { YaadeTheme } from "@yaade/shared"
 import "./monaco-features.js"
@@ -49,6 +49,8 @@ export function MonacoDiffEditorHost({
 }: MonacoDiffEditorHostProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
+  const editorId = useId()
+  const viewOwnerId = `view:${editorId}`
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
 
@@ -61,6 +63,8 @@ export function MonacoDiffEditorHost({
 
     const originalModel = monacoModels.getOrCreate(originalUri, originalContent, languageId)
     const modifiedModel = monacoModels.getOrCreate(modifiedUri, modifiedContent, languageId)
+    monacoModels.retain(originalUri, viewOwnerId)
+    monacoModels.retain(modifiedUri, viewOwnerId)
 
     const editor = monaco.editor.createDiffEditor(container, {
       automaticLayout: false,
@@ -93,14 +97,12 @@ export function MonacoDiffEditorHost({
       resizeObserver.disconnect()
       editor.dispose()
       editorRef.current = null
-      monacoModels.release(originalUri)
-      monacoModels.release(modifiedUri)
-      monacoModels.disposeIfUnreferenced(originalUri)
-      monacoModels.disposeIfUnreferenced(modifiedUri)
+      monacoModels.release(originalUri, viewOwnerId)
+      monacoModels.release(modifiedUri, viewOwnerId)
     }
   // Content and presentation changes are updated in place below. Recreating the
   // diff editor for every Git refresh discards scroll state and repeats layout.
-  }, [originalUri, modifiedUri, languageId])
+  }, [originalUri, modifiedUri, languageId, viewOwnerId])
 
   useEffect(() => {
     applyYaadeMonacoTheme(theme)

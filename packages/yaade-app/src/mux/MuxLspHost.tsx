@@ -14,13 +14,19 @@ export function MuxLspHost(props: {
     line?: number,
     column?: number,
   ) => void
-  onReady: (ensureLspForFile: (uri: string) => Promise<void>) => void
+  onReady: (lifecycle: {
+    open: (uri: string) => Promise<void>
+    close: (uri: string) => void
+  }) => void
 }) {
-  const { ensureLspForFile } = useLspLifecycle(props.workspace, props.onOpenFile)
+  const { ensureLspForFile, closeLspForFile } = useLspLifecycle(
+    props.workspace,
+    props.onOpenFile,
+  )
 
   useEffect(() => {
-    props.onReady(ensureLspForFile)
-  }, [ensureLspForFile, props])
+    props.onReady({ open: ensureLspForFile, close: closeLspForFile })
+  }, [closeLspForFile, ensureLspForFile, props.onReady])
 
   return null
 }

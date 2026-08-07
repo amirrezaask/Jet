@@ -1,4 +1,4 @@
-export { monacoLanguageId, isLargeFile } from "./language.js"
+export { monacoLanguageId, isLargeFile, isLargeModel } from "./language.js"
 export { setModelLanguage } from "./model-language.js"
 export { ensureMonacoEnvironment, configureMonacoWorkers, type MonacoWorkerFactories } from "./monaco-env.js"
 export {
@@ -12,7 +12,11 @@ export {
   monacoModels,
   DIFF_ORIGINAL_SCHEME,
   DIFF_MODIFIED_SCHEME,
+  MAX_CLOSED_CLEAN_MODELS,
+  MAX_CLOSED_CLEAN_BYTES,
   type MonacoModelDiagnostic,
+  type MonacoModelPinState,
+  type MonacoModelRegistryOptions,
 } from "./model-registry.js"
 export {
   getMonacoEditorDiagnostics,

@@ -36,6 +36,9 @@ export const ProjectSessionPayload = Schema.Struct({
   editorFiles: Schema.optional(
     Schema.Record({ key: Schema.String, value: ProjectSessionEditorFile }),
   ),
+  editorViewStates: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  ),
 })
 export type ProjectSessionPayload = Schema.Schema.Type<typeof ProjectSessionPayload>
 
@@ -99,6 +102,12 @@ function parseLeaf(raw: unknown): ProjectSessionLeaf | null {
       : {}),
     ...(launchArgs ? { launchArgs } : {}),
     ...(asNonEmptyString(item.label) ? { label: asNonEmptyString(item.label)! } : {}),
+    ...(asNonEmptyString(item.agentProvider)
+      ? { agentProvider: asNonEmptyString(item.agentProvider)! }
+      : {}),
+    ...(asNonEmptyString(item.agentTitle)
+      ? { agentTitle: asNonEmptyString(item.agentTitle)! }
+      : {}),
   }
 }
 
@@ -164,6 +173,16 @@ export function tryDecodeProjectSessionPayload(
       editorFiles[k] = { uri, ...(line != null ? { line } : {}) }
     }
   }
+  let editorViewStates: Record<string, unknown> | undefined
+  if (body.editorViewStates && typeof body.editorViewStates === "object") {
+    editorViewStates = {}
+    for (const [key, value] of Object.entries(
+      body.editorViewStates as Record<string, unknown>,
+    )) {
+      if (!key || value == null || typeof value !== "object") continue
+      editorViewStates[key] = value
+    }
+  }
   return {
     version: 1,
     layout,
@@ -171,6 +190,9 @@ export function tryDecodeProjectSessionPayload(
     ...(gitRoots && Object.keys(gitRoots).length > 0 ? { gitRoots } : {}),
     ...(editorFiles && Object.keys(editorFiles).length > 0
       ? { editorFiles }
+      : {}),
+    ...(editorViewStates && Object.keys(editorViewStates).length > 0
+      ? { editorViewStates }
       : {}),
   }
 }

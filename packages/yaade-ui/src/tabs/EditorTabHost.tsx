@@ -195,7 +195,7 @@ function EditorTabHostInner({
 
       if (cancelled) return
 
-      // The session owns one model reference independently of the mounted editor.
+      // The session owns the model independently of the mounted editor view.
       // This preserves undo history and avoids re-reading the file on every tab switch.
       const model = monacoModels.getOrCreate(fileUri, initialText, file.languageId)
       const session: EditorSession = {
@@ -210,6 +210,7 @@ function EditorTabHostInner({
             : model.getAlternativeVersionId(),
       }
       editorSessions.panelSessions(panelId).set(fileUri, session)
+      editorSessions.retainModel(panelId, fileUri)
       editorSessions.touchSessionAccess(panelId, fileUri)
       editorSessions.evictStaleSessions(destroyEditorBufferPublic)
 
@@ -268,6 +269,7 @@ function EditorTabHostInner({
       session.savedAlternativeVersionId =
         model?.getAlternativeVersionId() ?? session.savedAlternativeVersionId
       session.isDirty = false
+      editorSessions.syncModelPin(fileUri)
       workspace.markDirty(uri, session.isDirty)
     })
     return () => sub.dispose()
@@ -283,6 +285,7 @@ function EditorTabHostInner({
         session.savedBaseline = next
         session.savedAlternativeVersionId = model.getAlternativeVersionId()
         session.isDirty = false
+        editorSessions.syncModelPin(fileUri)
         workspace.markDirty(uri, false)
       }
       onProblemsChangeRef.current?.()
@@ -324,6 +327,7 @@ function EditorTabHostInner({
       session.isDirty =
         session.savedAlternativeVersionId == null ||
         model.getAlternativeVersionId() !== session.savedAlternativeVersionId
+      editorSessions.syncModelPin(fileUri)
       workspace.markDirty(fileUri, session.isDirty)
       onProblemsChangeRef.current?.()
     },

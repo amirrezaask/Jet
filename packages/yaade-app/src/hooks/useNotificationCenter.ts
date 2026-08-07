@@ -31,6 +31,7 @@ export type NotificationCenterState = {
     filter?: NotificationFilter
   }) => void
   items: AppNotification[]
+  recentItems: AppNotification[]
   counts: NotificationCounts
   unreadBySession: Record<string, number>
   filter: NotificationFilter
@@ -65,6 +66,7 @@ export type NotificationCenterState = {
 export function useNotificationCenter(): NotificationCenterState {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<AppNotification[]>([])
+  const [recentItems, setRecentItems] = useState<AppNotification[]>([])
   const [counts, setCounts] = useState<NotificationCounts>(EMPTY_COUNTS)
   const [unreadBySession, setUnreadBySession] = useState<Record<string, number>>(
     {},
@@ -100,13 +102,15 @@ export function useNotificationCenter(): NotificationCenterState {
         sessionId: sessionId ?? undefined,
         limit: 100,
       }
-      const [list, preferences, bySession] = await Promise.all([
+      const [list, recent, preferences, bySession] = await Promise.all([
         api.list(req),
+        api.list({ filter: "all", limit: 12 }),
         prefs ? Promise.resolve(prefs) : api.getPreferences(),
         api.unreadBySession?.() ?? Promise.resolve({}),
       ])
       if (requestSequence !== refreshSequence.current) return
       setItems(list.items)
+      setRecentItems(recent.items)
       setCounts(list.counts)
       setUnreadBySession(bySession ?? {})
       if (!prefs) setPrefs(preferences)
@@ -128,12 +132,14 @@ export function useNotificationCenter(): NotificationCenterState {
     const api = notificationsApi()
     if (!api?.onEvent) return
     return api.onEvent((event: NotificationStreamEvent) => {
+      window.dispatchEvent(new CustomEvent("yaade:notification-signal"))
       if (event.type === "notification.counts-updated") {
         setCounts(event.counts)
         return
       }
       if (event.type === "notification.created") {
         const n = event.notification
+        setRecentItems(prev => [n, ...prev.filter(item => item.id !== n.id)].slice(0, 12))
         setItems(prev => {
           if (prev.some(x => x.id === n.id)) {
             return prev.map(x => (x.id === n.id ? n : x))
@@ -253,6 +259,7 @@ export function useNotificationCenter(): NotificationCenterState {
     },
     openFiltered,
     items,
+    recentItems,
     counts,
     unreadBySession,
     filter,

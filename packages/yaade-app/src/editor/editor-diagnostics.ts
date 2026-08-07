@@ -7,7 +7,12 @@ export type EditorModelDiagnostic = {
   uri: string
   refCount: number
   ownerCount: number
-  lspOwnerCount: number | null
+  owners: string[]
+  lspOwnerCount: number
+  open: boolean
+  dirty: boolean
+  pinned: boolean
+  lastUsed: number
   version: number
   bytes: number
   lines: number
@@ -18,6 +23,15 @@ export type MountedEditorDiagnostic = {
   id: string
   uri: string
   focused: boolean
+  position: { line: number; column: number } | null
+  selections: Array<{
+    startLine: number
+    startColumn: number
+    endLine: number
+    endColumn: number
+  }>
+  scrollTop: number
+  scrollLeft: number
 }
 
 export type EditorLifecycleDiagnostics = {

@@ -100,6 +100,11 @@ export function createRuntime(
     notifications,
     agents,
   }
+  try {
+    db.addProject(config.launchConfig.workspacePath)
+  } catch {
+    /* Launch target validation remains authoritative; HQ can still load. */
+  }
   setLspCrashHandler(id => events.emit("lsp:crashed", [id]))
 
   // Drain offline hook queue from previous host downtime.

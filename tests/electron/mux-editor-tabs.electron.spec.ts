@@ -4,7 +4,13 @@ import {
   expectLocatorCount,
   expectSelectorVisible,
 } from "../shell/assert.js"
-import { execCommand, hasPtySpawn, launchJet, waitForMux } from "./_launch.js"
+import {
+  execCommand,
+  hasPtySpawn,
+  launchJet,
+  modChord,
+  waitForMux,
+} from "./_launch.js"
 
 test.describe("mux editor tabs", () => {
   test.skip(!hasPtySpawn(), "node-pty spawn unavailable")
@@ -44,10 +50,15 @@ test.describe("mux editor tabs", () => {
         entry.uri.endsWith("/src/index.ts"),
       )
       expect(model).toMatchObject({
-        refCount: 1,
-        ownerCount: 1,
-        lspOwnerCount: null,
+        refCount: 2,
+        ownerCount: 2,
+        lspOwnerCount: 0,
+        open: true,
+        dirty: false,
+        pinned: true,
       })
+      expect(model?.owners).toContain(`buffer:${model.uri}`)
+      expect(model?.owners.some(owner => owner.startsWith("view:"))).toBe(true)
       expect(model?.version).toBeGreaterThan(0)
       expect(model?.bytes).toBeGreaterThan(0)
       expect(model?.lines).toBeGreaterThan(0)
@@ -131,6 +142,195 @@ test.describe("mux editor tabs", () => {
           return /index\.ts/.test(uri)
         }, { timeout: 10_000 })
         .toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("retains unsaved text across tab switches without rereading files", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await page.evaluate(() => window.__yaadeAgent!.getEditorDiagnostics())
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.press(`${modChord()}+ArrowDown`)
+      await page.keyboard.type("\n// unsaved-buffer-sentinel")
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+              return {
+                dirty: diagnostics.editors.activeDirty,
+                content:
+                  diagnostics.models.entries.find(entry =>
+                    entry.uri.endsWith("/src/index.ts"),
+                  )?.content ?? "",
+              }
+            }),
+          { timeout: 10_000 },
+        )
+        .toEqual({
+          dirty: true,
+          content: expect.stringContaining("// unsaved-buffer-sentinel"),
+        })
+
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/utils.ts"))
+      await expect
+        .poll(
+          () =>
+            page.locator("[data-yaade-mux-editor-pane]").getAttribute(
+              "data-yaade-mux-editor-uri",
+            ),
+          { timeout: 10_000 },
+        )
+        .toMatch(/\/src\/utils\.ts$/)
+
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+              const index = diagnostics.models.entries.find(entry =>
+                entry.uri.endsWith("/src/index.ts"),
+              )
+              const utils = diagnostics.models.entries.find(entry =>
+                entry.uri.endsWith("/src/utils.ts"),
+              )
+              return {
+                activeUri: diagnostics.editors.activeUri,
+                activeDirty: diagnostics.editors.activeDirty,
+                indexContent: index?.content ?? "",
+                indexOwners: index?.owners ?? [],
+                utilsOwners: utils?.owners ?? [],
+                indexReads:
+                  diagnostics.fsReads.byUri.find(entry =>
+                    entry.uri.endsWith("/src/index.ts"),
+                  )?.count ?? 0,
+                utilsReads:
+                  diagnostics.fsReads.byUri.find(entry =>
+                    entry.uri.endsWith("/src/utils.ts"),
+                  )?.count ?? 0,
+              }
+            }),
+          { timeout: 10_000 },
+        )
+        .toMatchObject({
+          activeUri: expect.stringMatching(/\/src\/index\.ts$/),
+          activeDirty: true,
+          indexContent: expect.stringContaining("// unsaved-buffer-sentinel"),
+          indexOwners: expect.arrayContaining([
+            expect.stringMatching(/^buffer:/),
+            expect.stringMatching(/^view:/),
+          ]),
+          utilsOwners: [expect.stringMatching(/^buffer:/)],
+          indexReads: 1,
+          utilsReads: 1,
+        })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("restores exact editor view state after tab switches and session reload", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await page.evaluate(() => window.__yaadeAgent!.getEditorDiagnostics())
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.press(`${modChord()}+ArrowDown`)
+      await page.keyboard.press("ArrowLeft")
+
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const editor = window.__yaadeAgent!
+                .getEditorDiagnostics()
+                .editors.entries.find(entry =>
+                  entry.uri.endsWith("/src/index.ts"),
+                )
+              return editor
+                ? {
+                    position: editor.position,
+                    selections: editor.selections,
+                    scrollTop: editor.scrollTop,
+                    scrollLeft: editor.scrollLeft,
+                  }
+                : null
+            }),
+          { timeout: 10_000 },
+        )
+        .not.toBeNull()
+      const beforeReload = await page.evaluate(() => {
+        const editor = window.__yaadeAgent!
+          .getEditorDiagnostics()
+          .editors.entries.find(entry => entry.uri.endsWith("/src/index.ts"))
+        if (!editor) throw new Error("index editor diagnostics unavailable")
+        return {
+          position: editor.position,
+          selections: editor.selections,
+          scrollTop: editor.scrollTop,
+          scrollLeft: editor.scrollLeft,
+        }
+      })
+      expect(beforeReload.position?.line).toBeGreaterThan(1)
+
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/utils.ts"))
+      await expect
+        .poll(
+          () =>
+            page.locator("[data-yaade-mux-editor-pane]").getAttribute(
+              "data-yaade-mux-editor-uri",
+            ),
+          { timeout: 10_000 },
+        )
+        .toMatch(/\/src\/utils\.ts$/)
+      await page.waitForTimeout(900)
+
+      await page.reload()
+      await waitForMux(page)
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const editor = window.__yaadeAgent!
+                .getEditorDiagnostics()
+                .editors.entries.find(entry =>
+                  entry.uri.endsWith("/src/index.ts"),
+                )
+              return editor
+                ? {
+                    position: editor.position,
+                    selections: editor.selections,
+                    scrollTop: editor.scrollTop,
+                    scrollLeft: editor.scrollLeft,
+                  }
+                : null
+            }),
+          { timeout: 15_000 },
+        )
+        .toEqual(beforeReload)
     } finally {
       await app.close()
     }

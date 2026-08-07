@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { expectListRows } from "../helpers/list.js"
-import { launchJet, waitForMux, waitForProjectPage } from "./_launch.js"
+import { launchJet, waitForProjectPage } from "./_launch.js"
 
 function createRepository(prefix: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -151,7 +151,10 @@ test.describe("project cockpit", () => {
     try {
       await waitForProjectPage(page)
       await page.locator('[data-yaade-launch-tool="terminal"]').click()
-      await waitForMux(page)
+      // This navigation is initiated by the launch request. The generic mux
+      // helper may create its own fixture session while ProjectPage is still
+      // switching views, which replaces the request-bearing session.
+      await page.locator("[data-yaade-mux]").waitFor({ state: "visible" })
       await expect.poll(() => page.locator('[data-yaade-mux-pane-kind="terminal"]').count()).toBe(1)
       await expect.poll(() => page.locator("[data-yaade-mux-pane]").count()).toBe(1)
 

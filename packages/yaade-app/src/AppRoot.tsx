@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
-import type { ProjectSession } from "@yaade/rpc"
+import type { HqAgentSummary, HqProjectSummary, ProjectSession } from "@yaade/rpc"
+import type { AgentCliDriver } from "@yaade/ui/agent-picker"
 import {
   Alert,
   AlertDescription,
@@ -12,6 +13,8 @@ import {
   Skeleton,
 } from "@yaade/ui/primitives"
 import { AlertCircle } from "lucide-react"
+import type { YaadeAgentAPI } from "./agent-bridge.js"
+import { HqPage, type KnownProject } from "./hq/HqPage.js"
 import { ProjectPage } from "./project/ProjectPage.js"
 import { preloadMuxApp } from "./mux/preload.js"
 import { getEditorDiagnostics } from "./editor/editor-diagnostics.js"
@@ -21,23 +24,39 @@ import {
   listProjectSessions,
 } from "./project-session-client.js"
 import {
+  isHqPathname,
+  knownProjectIdFromPathname,
   popToProjectUrl,
   projectRootFromLocation,
   pushProjectUrl,
   pushSessionUrl,
+  replaceSessionUrl,
   sessionIdFromSearch,
+  urlPathForKnownProject,
   urlPathForProjectRoot,
   workspaceDocumentTitle,
 } from "./url-workspace.js"
+
+type HqCounts = { projects: number; agents: number; attention: number; unread: number }
+type PendingAgentLaunch = {
+  id: string
+  projectId: string
+  driverId: AgentCliDriver["id"]
+}
 
 type BootState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | {
-      status: "ready"
+      status: "hq"
       homeDir: string
       machineHostname: string
-      projectPath: string
+    }
+  | {
+      status: "project"
+      homeDir: string
+      machineHostname: string
+      project: KnownProject
       sessionId: string | null
       session: ProjectSession | null
     }
@@ -45,16 +64,148 @@ type BootState =
 type SystemInfo = {
   homeDir?: string
   machineHostname?: string
-  launchConfig?: { workspacePath?: string }
+}
+
+function canonicalProjectPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "") || "/"
+  return normalized.replace(/^\/private(?=\/(?:var|tmp)(?:\/|$))/, "")
+}
+
+function projectPathForHome(rootPath: string, homeDir: string): string {
+  const root = canonicalProjectPath(rootPath)
+  const home = canonicalProjectPath(homeDir)
+  if (root === home) return homeDir.replace(/\/+$/, "") || "/"
+  if (root.startsWith(`${home}/`)) {
+    return `${homeDir.replace(/\/+$/, "")}${root.slice(home.length)}`
+  }
+  return rootPath
+}
+
+async function registerProject(rootPath: string): Promise<KnownProject> {
+  const response = await fetch("/api/v1/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ rootPath }),
+  })
+  const body = (await response.json()) as KnownProject & {
+    error?: { message?: string }
+  }
+  if (!response.ok) {
+    throw new Error(body.error?.message ?? `Could not open project (${response.status})`)
+  }
+  return body
+}
+
+async function loadKnownProject(projectId: string): Promise<KnownProject> {
+  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
+    headers: { Accept: "application/json" },
+  })
+  const body = (await response.json()) as KnownProject & {
+    error?: { message?: string }
+  }
+  if (!response.ok) {
+    throw new Error(body.error?.message ?? "Known project was not found")
+  }
+  return body
+}
+
+function projectUrl(project: Pick<KnownProject, "id" | "rootPath">, homeDir: string): string {
+  const home = canonicalProjectPath(homeDir)
+  const root = canonicalProjectPath(project.rootPath)
+  if (root === home || root.startsWith(`${home}/`)) {
+    return urlPathForProjectRoot(root, homeDir)
+  }
+  return urlPathForKnownProject(project.id)
+}
+
+function basicAgentBridge(input: {
+  route: "hq" | "project"
+  workspace: string | null
+  hqCounts?: HqCounts
+  executeCommand?: (id: string) => void | Promise<void>
+  createProjectSession?: YaadeAgentAPI["createProjectSession"]
+  listProjectSessions?: YaadeAgentAPI["listProjectSessions"]
+  openProjectSession?: YaadeAgentAPI["openProjectSession"]
+  backToProject?: YaadeAgentAPI["backToProject"]
+}): YaadeAgentAPI {
+  const workspace = input.workspace
+  return {
+    openWorkspace: async () => undefined,
+    addWorkspace: async () => undefined,
+    listWorkspaces: () =>
+      workspace ? [{ id: "project", path: workspace, name: workspace }] : [],
+    openFile: async () => undefined,
+    executeCommand: async id => {
+      await input.executeCommand?.(id)
+    },
+    getState: () => ({
+      workspace,
+      activeWorkspace: workspace,
+      workspaces: workspace
+        ? [{ id: "project", path: workspace, name: workspace }]
+        : [],
+      message: null,
+      paletteOpen: false,
+      focusedPanel: null,
+      openBuffers: [],
+      panels: [],
+      fontSize: 13,
+      activeEditorDirty: false,
+      searchReady: false,
+      shellView: "home",
+      sessionLayout: "sidebar",
+      sessionMode: null,
+      agentChatEnabled: false,
+      route: input.route,
+      sessionId: null,
+      sessionCwd: null,
+      ...(input.hqCounts ? { hqCounts: input.hqCounts } : {}),
+    }),
+    waitForReady: async () => undefined,
+    waitForEditor: async () => undefined,
+    setFontSize: () => undefined,
+    getEditorText: () => null,
+    setEditorSelection: () => undefined,
+    getCursorPosition: () => null,
+    getSelectionRangeCount: () => null,
+    getEditorDiagnostics: () =>
+      getEditorDiagnostics({ activeDirty: false, openBuffers: [] }),
+    acceptConfirm: async () => undefined,
+    dismissConfirm: async () => undefined,
+    readFixtureFile: async () => "",
+    waitForListRows: async () => undefined,
+    getPerfMeasures: () => [],
+    clearPerf: () => undefined,
+    markPerf: () => undefined,
+    measurePerf: () => undefined,
+    dropFilesOnTerminal: async () => false,
+    dropFilesOnEditor: async () => false,
+    getTerminalText: () => "",
+    getTerminalCellHeight: () => 0,
+    getTerminalCellSize: () => null,
+    getTerminalDims: () => null,
+    getTerminalCursor: () => null,
+    findTerminalText: () => null,
+    createProjectSession: input.createProjectSession,
+    listProjectSessions: input.listProjectSessions,
+    openProjectSession: input.openProjectSession,
+    backToProject: input.backToProject,
+  }
 }
 
 export function AppRoot() {
   const [boot, setBoot] = useState<BootState>({ status: "loading" })
   const [routeEpoch, setRouteEpoch] = useState(0)
+  const [hqCounts, setHqCounts] = useState<HqCounts>({
+    projects: 0,
+    agents: 0,
+    attention: 0,
+    unread: 0,
+  })
+  const [pendingAgentLaunch, setPendingAgentLaunch] =
+    useState<PendingAgentLaunch | null>(null)
 
-  const readRoute = useCallback(() => {
-    setRouteEpoch(n => n + 1)
-  }, [])
+  const readRoute = useCallback(() => setRouteEpoch(value => value + 1), [])
 
   useEffect(() => {
     const onPop = () => readRoute()
@@ -65,113 +216,120 @@ export function AppRoot() {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      let systemInfo: SystemInfo | null = null
       try {
-        const response = await fetch("/api/v1/system")
-        if (response.ok) systemInfo = (await response.json()) as SystemInfo
-      } catch {
-        /* fall through to the compatibility calls below */
-      }
-
-      // The system endpoint carries all boot metadata in one request. Keep the
-      // RPC calls as a fallback for older hosts without that endpoint shape.
-      let homeDir = systemInfo?.homeDir ?? ""
-      if (!homeDir) {
+        let systemInfo: SystemInfo | null = null
         try {
-          homeDir = (await window.yaade?.getHomeDir?.()) ?? ""
+          const response = await fetch("/api/v1/system")
+          if (response.ok) systemInfo = (await response.json()) as SystemInfo
         } catch {
-          homeDir = ""
+          /* Compatibility fallback below. */
         }
-      }
-      const machineHostname = systemInfo?.machineHostname ?? "local"
+        let homeDir = systemInfo?.homeDir ?? ""
+        if (!homeDir) homeDir = (await window.yaade?.getHomeDir?.()) ?? ""
+        const machineHostname = systemInfo?.machineHostname ?? "local"
+        let pathname = location.pathname
+        const requestedSessionId = sessionIdFromSearch()
 
-      const pathname =
-        typeof location !== "undefined" ? location.pathname : "/"
-      let projectPath = projectRootFromLocation(homeDir, pathname)
-      if (
-        projectPath &&
-        homeDir &&
-        (pathname === "/" || pathname === "")
-      ) {
-        const workspacePath = systemInfo?.launchConfig?.workspacePath
-        if (workspacePath) {
-          projectPath = workspacePath
-        } else if (!systemInfo) {
-          try {
-            const cfg = await window.yaade?.getLaunchConfig?.()
-            if (cfg?.workspacePath) projectPath = cfg.workspacePath
-          } catch {
-            /* keep home */
+        // Old home-session links used `/`; HQ owns `/` now.
+        if (isHqPathname(pathname) && requestedSessionId) {
+          pathname = "/~"
+          history.replaceState(
+            { sessionId: requestedSessionId },
+            "",
+            `/~?s=${encodeURIComponent(requestedSessionId)}`,
+          )
+        }
+
+        if (isHqPathname(pathname)) {
+          if (location.search) replaceSessionUrl("/", null)
+          if (!cancelled) {
+            setBoot({ status: "hq", homeDir, machineHostname })
           }
+          return
         }
-      }
 
-      if (!projectPath) {
+        const externalProjectId = knownProjectIdFromPathname(pathname)
+        const loadedProject = externalProjectId
+          ? await loadKnownProject(externalProjectId)
+          : await registerProject(
+              projectRootFromLocation(homeDir, pathname) ??
+                (() => {
+                  throw new Error("Could not resolve a project path from the URL.")
+                })(),
+            )
+        const project = {
+          ...loadedProject,
+          rootPath: projectPathForHome(loadedProject.rootPath, homeDir),
+        }
+        document.title = workspaceDocumentTitle(project.rootPath, homeDir)
+
+        const sessionId = sessionIdFromSearch()
+        if (!sessionId) {
+          if (!cancelled) {
+            setBoot({
+              status: "project",
+              homeDir,
+              machineHostname,
+              project,
+              sessionId: null,
+              session: null,
+            })
+          }
+          return
+        }
+
+        try {
+          const [session] = await Promise.all([
+            loadProjectSession(sessionId),
+            preloadMuxApp(),
+          ])
+          if (cancelled) return
+          if (
+            canonicalProjectPath(session.projectPath) !==
+            canonicalProjectPath(project.rootPath)
+          ) {
+            replaceSessionUrl(pathname, null)
+            setBoot({
+              status: "project",
+              homeDir,
+              machineHostname,
+              project,
+              sessionId: null,
+              session: null,
+            })
+            return
+          }
+          setBoot({
+            status: "project",
+            homeDir,
+            machineHostname,
+            project,
+            sessionId,
+            session,
+          })
+        } catch (error) {
+          if (cancelled) return
+          replaceSessionUrl(pathname, null)
+          setBoot({
+            status: "project",
+            homeDir,
+            machineHostname,
+            project,
+            sessionId: null,
+            session: null,
+          })
+          console.warn(
+            "Failed to load session; showing project page:",
+            error instanceof Error ? error.message : error,
+          )
+        }
+      } catch (error) {
         if (!cancelled) {
           setBoot({
             status: "error",
-            message: "Could not resolve a project path from the URL.",
+            message: error instanceof Error ? error.message : String(error),
           })
         }
-        return
-      }
-
-      document.title = workspaceDocumentTitle(projectPath, homeDir)
-
-      const sessionId = sessionIdFromSearch()
-      if (!sessionId) {
-        if (!cancelled) {
-          setBoot({
-            status: "ready",
-            homeDir,
-            machineHostname,
-            projectPath,
-            sessionId: null,
-            session: null,
-          })
-        }
-        return
-      }
-
-      try {
-        const [session] = await Promise.all([
-          loadProjectSession(sessionId),
-          preloadMuxApp(),
-        ])
-        if (cancelled) return
-        if (session.projectPath !== projectPath) {
-          setBoot({
-            status: "ready",
-            homeDir,
-            machineHostname,
-            projectPath,
-            sessionId: null,
-            session: null,
-          })
-          return
-        }
-        setBoot({
-          status: "ready",
-          homeDir,
-          machineHostname,
-          projectPath,
-          sessionId,
-          session,
-        })
-      } catch (error) {
-        if (cancelled) return
-        setBoot({
-          status: "ready",
-          homeDir,
-          machineHostname,
-          projectPath,
-          sessionId: null,
-          session: null,
-        })
-        console.warn(
-          "Failed to load session; showing project page:",
-          error instanceof Error ? error.message : error,
-        )
       }
     })()
     return () => {
@@ -181,193 +339,207 @@ export function AppRoot() {
 
   const openSession = useCallback(
     async (sessionId: string) => {
-      if (boot.status !== "ready") return
+      if (boot.status !== "project") return
       const [session] = await Promise.all([
         loadProjectSession(sessionId),
         preloadMuxApp(),
       ])
       pushSessionUrl(location.pathname, sessionId)
-      setBoot({
-        ...boot,
-        sessionId,
-        session,
-      })
+      setBoot({ ...boot, sessionId, session })
     },
     [boot],
   )
 
   const backToProject = useCallback(() => {
-    if (boot.status !== "ready") return
+    if (boot.status !== "project") return
     popToProjectUrl(location.pathname)
-    setBoot({
-      ...boot,
-      sessionId: null,
-      session: null,
-    })
+    setBoot({ ...boot, sessionId: null, session: null })
   }, [boot])
 
-  const navigateProject = useCallback(
-    (absolutePath: string) => {
-      if (boot.status !== "ready") return
-      const nextAbs = absolutePath.replace(/\/+$/, "") || "/"
-      const currentAbs = boot.projectPath.replace(/\/+$/, "") || "/"
-      if (nextAbs === currentAbs) return
-      pushProjectUrl(urlPathForProjectRoot(absolutePath, boot.homeDir))
+  const openKnownProject = useCallback(
+    (project: Pick<KnownProject, "id" | "rootPath">) => {
+      if (boot.status !== "hq" && boot.status !== "project") return
+      pushProjectUrl(projectUrl(project, boot.homeDir))
       readRoute()
     },
     [boot, readRoute],
   )
 
-  // Project-page agent bridge. MuxApp owns the bridge while a session is
-  // embedded in ProjectPage.
+  const navigateProject = useCallback(
+    (absolutePath: string) => {
+      if (boot.status !== "project") return
+      const nextPath = canonicalProjectPath(absolutePath)
+      if (nextPath === canonicalProjectPath(boot.project.rootPath)) return
+      if (
+        nextPath === canonicalProjectPath(boot.homeDir) ||
+        nextPath.startsWith(`${canonicalProjectPath(boot.homeDir)}/`)
+      ) {
+        pushProjectUrl(urlPathForProjectRoot(nextPath, boot.homeDir))
+        readRoute()
+        return
+      }
+      void registerProject(nextPath).then(project => {
+        pushProjectUrl(urlPathForKnownProject(project.id))
+        readRoute()
+      })
+    },
+    [boot, readRoute],
+  )
+
+  const openAgentWorkspace = useCallback(
+    (agent: HqAgentSummary) => {
+      if (boot.status !== "hq" && boot.status !== "project") return
+      const pathname = projectUrl(
+        { id: agent.projectId, rootPath: agent.projectPath },
+        boot.homeDir,
+      )
+      pushSessionUrl(pathname, agent.projectSessionId)
+      readRoute()
+    },
+    [boot, readRoute],
+  )
+
+  const launchAgentFromHq = useCallback(
+    (
+      project: Pick<HqProjectSummary, "id" | "rootPath">,
+      driverId: AgentCliDriver["id"],
+    ) => {
+      setPendingAgentLaunch({
+        id: `hq-launch-${Date.now()}-${driverId}`,
+        projectId: project.id,
+        driverId,
+      })
+      openKnownProject(project)
+    },
+    [openKnownProject],
+  )
+
   useEffect(() => {
-    if (boot.status !== "ready" || boot.session) return
-    const projectPath = boot.projectPath
-    window.__yaadeAgent = {
-      openWorkspace: async () => undefined,
-      addWorkspace: async () => undefined,
-      listWorkspaces: () => [
-        { id: "project", path: projectPath, name: projectPath },
-      ],
-      openFile: async () => undefined,
-      executeCommand: async () => undefined,
-      getState: () => ({
-        workspace: projectPath,
-        activeWorkspace: projectPath,
-        workspaces: [{ id: "project", path: projectPath, name: projectPath }],
-        message: null,
-        paletteOpen: false,
-        focusedPanel: null,
-        openBuffers: [],
-        panels: [],
-        fontSize: 13,
-        activeEditorDirty: false,
-        searchReady: false,
-        shellView: "home",
-        sessionLayout: "sidebar",
-        sessionMode: null,
-        agentChatEnabled: false,
+    if (boot.status === "loading" || boot.status === "error" || boot.status === "project" && boot.session) {
+      return
+    }
+    if (boot.status === "hq") {
+      window.__yaadeAgent = basicAgentBridge({
+        route: "hq",
+        workspace: null,
+        hqCounts,
+        executeCommand: id => {
+          if (id === "settings.show") window.dispatchEvent(new Event("yaade:open-settings"))
+        },
+      })
+    } else {
+      const projectPath = boot.project.rootPath
+      window.__yaadeAgent = basicAgentBridge({
         route: "project",
-        sessionId: null,
-        sessionCwd: null,
-      }),
-      waitForReady: async () => undefined,
-      waitForEditor: async () => undefined,
-      setFontSize: () => undefined,
-      getEditorText: () => null,
-      setEditorSelection: () => undefined,
-      getCursorPosition: () => null,
-      getSelectionRangeCount: () => null,
-      getEditorDiagnostics: () =>
-        getEditorDiagnostics({ activeDirty: false, openBuffers: [] }),
-      acceptConfirm: async () => undefined,
-      dismissConfirm: async () => undefined,
-      readFixtureFile: async () => "",
-      waitForListRows: async () => undefined,
-      getPerfMeasures: () => [],
-      clearPerf: () => undefined,
-      markPerf: () => undefined,
-      measurePerf: () => undefined,
-      dropFilesOnTerminal: async () => false,
-      dropFilesOnEditor: async () => false,
-      getTerminalText: () => "",
-      getTerminalCellHeight: () => 0,
-      getTerminalCellSize: () => null,
-      getTerminalDims: () => null,
-      getTerminalCursor: () => null,
-      findTerminalText: () => null,
-      createProjectSession: async input => {
-        const muxReady = preloadMuxApp()
-        const created = await createProjectSession({
-          rootPath: projectPath,
-          title: input?.title,
-          worktree: input?.worktree,
-        })
-        await muxReady
-        await openSession(created.id)
-        return { id: created.id }
-      },
-      listProjectSessions: async () => {
-        const rows = await listProjectSessions(projectPath)
-        return rows.map(r => ({ id: r.id, title: r.title }))
-      },
-      openProjectSession: async sessionId => {
-        await openSession(sessionId)
-      },
-      backToProject: async () => {
-        backToProject()
-      },
+        workspace: projectPath,
+        createProjectSession: async input => {
+          const muxReady = preloadMuxApp()
+          const created = await createProjectSession({
+            rootPath: projectPath,
+            title: input?.title,
+            worktree: input?.worktree,
+          })
+          await muxReady
+          await openSession(created.id)
+          return { id: created.id }
+        },
+        listProjectSessions: async () => {
+          const rows = await listProjectSessions(projectPath)
+          return rows.map(row => ({ id: row.id, title: row.title }))
+        },
+        openProjectSession: openSession,
+        backToProject: async () => backToProject(),
+      })
     }
     return () => {
-      if (window.__yaadeAgent?.getState?.().route === "project") {
-        delete window.__yaadeAgent
-      }
+      const route = window.__yaadeAgent?.getState?.().route
+      if (route === "hq" || route === "project") delete window.__yaadeAgent
     }
-  }, [backToProject, boot, openSession])
+  }, [backToProject, boot, hqCounts, openSession])
 
-  if (boot.status === "loading") {
-    return (
-      <div
-        className="flex h-full flex-col bg-background"
-        data-yaade-boot="loading"
-        role="status"
-      >
-        <span className="sr-only">Loading workspace…</span>
-        <div className="h-8 shrink-0 border-b border-border px-3 py-2">
-          <Skeleton className="h-3 w-48" />
-        </div>
-        <div className="mx-auto grid w-full max-w-screen-2xl gap-4 p-4 sm:p-6 lg:grid-cols-2">
-          {[0, 1, 2, 3].map(index => (
-            <Card key={index}>
-              <CardHeader>
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-3 w-48" />
-              </CardHeader>
-              <CardContent className="grid gap-2">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-4/5" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    )
-  }
+  if (boot.status === "loading") return <AppBootSkeleton />
 
   if (boot.status === "error") {
     return (
-      <div
-        className="grid h-full place-items-center bg-background p-8 text-foreground"
-        data-yaade-boot="error"
-        role="alert"
-      >
+      <div className="grid h-full place-items-center bg-background p-8 text-foreground" data-yaade-boot="error" role="alert">
         <Card className="w-full max-w-md text-left">
-          <CardHeader>
-            <CardTitle>YAADE could not open this project</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>YAADE could not open this route</CardTitle></CardHeader>
           <CardContent className="grid gap-4">
             <Alert variant="destructive">
               <AlertCircle aria-hidden />
-              <AlertTitle>Unable to resolve workspace</AlertTitle>
+              <AlertTitle>Unable to resolve project</AlertTitle>
               <AlertDescription>{boot.message}</AlertDescription>
             </Alert>
-            <Button onClick={() => window.location.reload()}>Retry</Button>
+            <div className="flex gap-2">
+              <Button onClick={() => window.location.reload()}>Retry</Button>
+              <Button variant="outline" onClick={() => {
+                pushProjectUrl("/")
+                readRoute()
+              }}>Go to HQ</Button>
+            </div>
           </CardContent>
         </Card>
       </div>
     )
   }
 
+  if (boot.status === "hq") {
+    return (
+      <HqPage
+        homeDir={boot.homeDir}
+        machineHostname={boot.machineHostname}
+        onOpenProject={openKnownProject}
+        onOpenWorkspace={openAgentWorkspace}
+        onOpenRegisteredProject={openKnownProject}
+        onLaunchAgent={launchAgentFromHq}
+        onCountsChange={setHqCounts}
+      />
+    )
+  }
+
   return (
     <ProjectPage
-      projectPath={boot.projectPath}
+      projectId={boot.project.id}
+      projectName={boot.project.name}
+      projectPath={boot.project.rootPath}
       homeDir={boot.homeDir}
       machineHostname={boot.machineHostname}
       session={boot.session}
+      agentLaunchIntent={
+        pendingAgentLaunch?.projectId === boot.project.id
+          ? pendingAgentLaunch
+          : null
+      }
+      onAgentLaunchIntentHandled={intentId => {
+        setPendingAgentLaunch(current =>
+          current?.id === intentId ? null : current,
+        )
+      }}
       onOpenSession={openSession}
       onClearSession={backToProject}
       onNavigateProject={navigateProject}
-      listSessions={() => listProjectSessions(boot.projectPath)}
+      onOpenHq={() => {
+        pushProjectUrl("/")
+        readRoute()
+      }}
+      listSessions={() => listProjectSessions(boot.project.rootPath)}
     />
+  )
+}
+
+function AppBootSkeleton() {
+  return (
+    <div className="flex h-full flex-col bg-background" data-yaade-boot="loading" role="status">
+      <span className="sr-only">Loading YAADE…</span>
+      <div className="h-11 shrink-0 border-b border-border px-3 py-3"><Skeleton className="h-4 w-48" /></div>
+      <div className="mx-auto grid w-full max-w-screen-2xl gap-4 p-4 sm:p-6 lg:grid-cols-2">
+        {[0, 1, 2, 3].map(index => (
+          <Card key={index}>
+            <CardHeader><Skeleton className="h-4 w-32" /><Skeleton className="h-3 w-48" /></CardHeader>
+            <CardContent className="grid gap-2"><Skeleton className="h-9 w-full" /><Skeleton className="h-9 w-4/5" /></CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
   )
 }

@@ -34,7 +34,7 @@ type LaunchWebOptions = {
   env?: Record<string, string>
   userDataDir?: string
   launchWithoutWorkspace?: boolean
-  /** Browser pathname to open (e.g. `/dev/consultation`). Defaults to `/`. */
+  /** Browser pathname to open (e.g. `/dev/consultation`). Defaults to the launch project's canonical route. */
   startPath?: string
   /**
    * When set, host `HOME` is this directory so URL paths resolve under it.
@@ -227,6 +227,20 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
   const url = `http://127.0.0.1:${port}`
   await waitForHttpOk(`${url}/health`, server, jetLogs)
 
+  let defaultStartPath = "/"
+  if (options.startPath == null && !options.launchWithoutWorkspace) {
+    const response = await fetch(`${url}/api/v1/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ rootPath: workspace }),
+    })
+    if (!response.ok) {
+      throw new Error(`could not register E2E launch project (${response.status})`)
+    }
+    const project = (await response.json()) as { id: string }
+    defaultStartPath = `/_project/${encodeURIComponent(project.id)}`
+  }
+
   const context = await chromium.launchPersistentContext(browserData, {
     headless: process.env.YAADE_HEADED !== "1",
     ...(process.env.YAADE_PLAYWRIGHT_CHANNEL
@@ -282,7 +296,7 @@ export async function launchWeb(options: LaunchWebOptions = {}): Promise<LaunchS
     })
   })
 
-  const startPath = options.startPath ?? "/"
+  const startPath = options.startPath ?? defaultStartPath
   const startUrl = `${url}${startPath.startsWith("/") ? startPath : `/${startPath}`}`
   await browserPage.goto(startUrl, { waitUntil: "domcontentloaded" })
   await browserPage.waitForFunction(() => window.__yaadeAgent != null, null, { timeout: 30_000 })

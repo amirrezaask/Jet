@@ -271,6 +271,32 @@ describe("NotificationService", () => {
     assert.equal(after.s2, 1)
   })
 
+  it("binding enriches older notifications and project health indexes", () => {
+    const created = service.ingest({
+      source: "provider-hook",
+      type: "permission-required",
+      title: "Needs permission",
+      sessionId: "late-session",
+      provider: "codex",
+    })
+    assert.equal(created.notification?.projectId, null)
+    service.bindSession({
+      sessionId: "late-session",
+      projectId: "late-project",
+      projectName: "yaade",
+      sessionTitle: "Build HQ",
+      provider: "codex",
+      ptyId: "pty-late",
+    })
+    const enriched = service.get(created.notification!.id)
+    assert.equal(enriched?.projectId, "late-project")
+    assert.equal(enriched?.projectName, "yaade")
+    assert.equal(enriched?.sessionTitle, "Build HQ")
+    assert.equal(service.unreadByProject()["late-project"], 1)
+    assert.equal(service.attentionByProject()["late-project"], 1)
+    assert.equal(service.attentionBySession()["late-session"], 1)
+  })
+
   it("markSessionUnread flips latest notification", () => {
     service.ingest({
       source: "provider-hook",

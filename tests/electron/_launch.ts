@@ -16,6 +16,8 @@ export type LaunchJetOptions = {
    * session workspace. Default false — most mux/terminal E2E specs need a session.
    */
   projectPage?: boolean
+  /** Stay on the host-wide HQ route (`/`). */
+  hq?: boolean
   /**
    * After mux mounts, open a terminal pane. Default true so historical specs
    * keep working; product default for new sessions is empty (pass false to
@@ -80,7 +82,9 @@ export async function launchJet(
   const opts: LaunchJetOptions =
     typeof workspaceRelOrOpts === "string" ? { workspaceRel: workspaceRelOrOpts } : workspaceRelOrOpts
   const result = await launchWeb(opts)
-  if (!opts.projectPage) {
+  if (opts.hq) {
+    await waitForHq(result.page)
+  } else if (!opts.projectPage) {
     await waitForMux(result.page)
     if (opts.withTerminal !== false) {
       await openMuxTerminal(result.page)
@@ -89,6 +93,19 @@ export async function launchJet(
     await waitForProjectPage(result.page)
   }
   return result
+}
+
+export async function waitForHq(
+  page: ShellDriver,
+  timeoutMs = 30_000,
+): Promise<void> {
+  await page.waitForSelector('[data-yaade-shell="hq"]', {
+    timeout: timeoutMs,
+  })
+  await page.waitForSelector('[data-yaade-list-panel="hq-projects"]', {
+    timeout: Math.min(timeoutMs, 10_000),
+  })
+  await page.evaluate(() => window.__yaadeAgent?.waitForReady())
 }
 
 export async function waitForHome(page: ShellDriver, timeoutMs = 30_000): Promise<void> {

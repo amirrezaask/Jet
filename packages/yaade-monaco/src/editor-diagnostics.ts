@@ -1,9 +1,19 @@
+import type * as monaco from "monaco-editor/esm/vs/editor/editor.api.js"
 import { monacoModels, type MonacoModelDiagnostic } from "./model-registry.js"
 
 export type MonacoMountedEditorDiagnostic = {
   id: string
   uri: string
   focused: boolean
+  position: { line: number; column: number } | null
+  selections: Array<{
+    startLine: number
+    startColumn: number
+    endLine: number
+    endColumn: number
+  }>
+  scrollTop: number
+  scrollLeft: number
 }
 
 export type MonacoLifecycleDiagnostics = {
@@ -23,6 +33,7 @@ export type MonacoEditorDiagnostics = {
 type MutableMountedEditor = {
   uri: string
   focused: boolean
+  editor: monaco.editor.IStandaloneCodeEditor
 }
 
 const mountedEditors = new Map<string, MutableMountedEditor>()
@@ -33,12 +44,17 @@ const lifecycle: MonacoLifecycleDiagnostics = {
   modelDetaches: 0,
 }
 
-export function recordMonacoEditorMounted(editorId: string, uri: string): void {
+export function recordMonacoEditorMounted(
+  editorId: string,
+  uri: string,
+  editor: monaco.editor.IStandaloneCodeEditor,
+): void {
   lifecycle.mounts++
   lifecycle.modelAttaches++
   mountedEditors.set(editorId, {
     uri: monacoModels.canonicalKey(uri),
     focused: false,
+    editor,
   })
 }
 
@@ -69,7 +85,25 @@ export function recordMonacoEditorDisposed(editorId: string): void {
 
 export function getMonacoEditorDiagnostics(): MonacoEditorDiagnostics {
   const editors = [...mountedEditors.entries()]
-    .map(([id, editor]) => ({ id, ...editor }))
+    .map(([id, item]) => {
+      const position = item.editor.getPosition()
+      return {
+        id,
+        uri: item.uri,
+        focused: item.focused,
+        position: position
+          ? { line: position.lineNumber, column: position.column }
+          : null,
+        selections: item.editor.getSelections()?.map(selection => ({
+          startLine: selection.startLineNumber,
+          startColumn: selection.startColumn,
+          endLine: selection.endLineNumber,
+          endColumn: selection.endColumn,
+        })) ?? [],
+        scrollTop: item.editor.getScrollTop(),
+        scrollLeft: item.editor.getScrollLeft(),
+      }
+    })
     .sort((a, b) => a.id.localeCompare(b.id))
   return {
     models: monacoModels.diagnostics(),

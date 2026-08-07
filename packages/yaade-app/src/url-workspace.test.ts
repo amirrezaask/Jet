@@ -1,11 +1,14 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import {
+  isHqPathname,
   isReservedWorkspacePathname,
   joinProjectPath,
   projectBreadcrumbs,
   projectRootFromLocation,
   resolveHomeRelativePath,
+  knownProjectIdFromPathname,
+  urlPathForKnownProject,
   urlPathForProjectRoot,
   workspaceDocumentTitle,
 } from "./url-workspace.js"
@@ -39,6 +42,9 @@ describe("url-workspace", () => {
       "/Users/me/dev/foo",
     )
     assert.equal(projectRootFromLocation("/Users/me", "/api/v1/x"), null)
+    assert.equal(projectRootFromLocation("/Users/me", "/"), null)
+    assert.equal(projectRootFromLocation("/Users/me", "/~"), "/Users/me")
+    assert.equal(isHqPathname("/"), true)
   })
 
   it("builds titles and reverse URL paths", () => {
@@ -48,7 +54,9 @@ describe("url-workspace", () => {
     )
     assert.equal(workspaceDocumentTitle("/Users/me", "/Users/me"), "me")
     assert.equal(urlPathForProjectRoot("/Users/me/dev/foo", "/Users/me"), "/dev/foo")
-    assert.equal(urlPathForProjectRoot("/Users/me", "/Users/me"), "/")
+    assert.equal(urlPathForProjectRoot("/Users/me", "/Users/me"), "/~")
+    assert.equal(urlPathForKnownProject("external id"), "/_project/external%20id")
+    assert.equal(knownProjectIdFromPathname("/_project/external%20id"), "external id")
   })
 
   it("builds home-relative breadcrumbs with sibling parents", () => {

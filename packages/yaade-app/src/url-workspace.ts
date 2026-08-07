@@ -2,7 +2,7 @@
  * Browser URL → project root under $HOME.
  *
  * `http://localhost:5174/dev/consultation` → `{home}/dev/consultation`
- * `/` → home itself (caller may fall back to launchConfig).
+ * `/` → HQ, `/~` → home itself.
  * `?s=<sessionId>` → open that project session.
  */
 
@@ -144,7 +144,30 @@ export function projectRootFromLocation(
   pathname: string = typeof location !== "undefined" ? location.pathname : "/",
 ): string | null {
   if (isReservedWorkspacePathname(pathname)) return null
+  if (pathname === "/" || pathname === "") return null
+  if (pathname === "/~" || pathname === "/~/") {
+    return homeDir.replace(/\/+$/, "") || "/"
+  }
+  if (knownProjectIdFromPathname(pathname)) return null
   return resolveHomeRelativePath(homeDir, pathname)
+}
+
+export function isHqPathname(pathname: string): boolean {
+  return pathname === "/" || pathname === ""
+}
+
+export function knownProjectIdFromPathname(pathname: string): string | null {
+  const match = /^\/_project\/([^/]+)\/?$/.exec(pathname)
+  if (!match?.[1]) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return null
+  }
+}
+
+export function urlPathForKnownProject(projectId: string): string {
+  return `/_project/${encodeURIComponent(projectId)}`
 }
 
 /** Home-relative URL path for an absolute filesystem path (for `window.open`). */
@@ -155,7 +178,7 @@ export function urlPathForProjectRoot(
   const home = homeDir.replace(/\/+$/, "")
   const abs = absolutePath.replace(/\/+$/, "") || "/"
   if (!home) return "/"
-  if (abs === home) return "/"
+  if (abs === home) return "/~"
   if (abs.startsWith(`${home}/`)) {
     return `/${abs.slice(home.length + 1)}`
   }

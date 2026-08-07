@@ -428,4 +428,45 @@ describe("ProjectDatabase session roster", () => {
     migratedDb.close()
     fs.rmSync(migrateDir, { recursive: true, force: true })
   })
+
+  it("backfills the project catalog from session roots without scanning", () => {
+    db.close()
+    fs.rmSync(dbPath, { force: true })
+    const missingRoot = path.join(dir, "formerly-present-project")
+    const raw = new DatabaseSync(dbPath)
+    raw.exec(`
+      CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY);
+      CREATE TABLE project_sessions(
+        id TEXT PRIMARY KEY, machine TEXT NOT NULL, project_path TEXT NOT NULL,
+        cwd_path TEXT NOT NULL, title TEXT NOT NULL, worktree_branch TEXT,
+        worktree_path TEXT, payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL, archived_at TEXT
+      );
+    `)
+    raw.prepare(
+      `INSERT INTO project_sessions(
+        id, machine, project_path, cwd_path, title, payload_json, created_at, updated_at
+      ) VALUES(?,?,?,?,?,?,?,?)`,
+    ).run(
+      "ses-backfill",
+      "host",
+      missingRoot,
+      missingRoot,
+      "Old session",
+      JSON.stringify({
+        version: 1,
+        layout: { tree: { root: null }, focusedPaneId: null, zoomedPaneId: null },
+        sessions: [],
+      }),
+      "2026-08-01T00:00:00.000Z",
+      "2026-08-02T00:00:00.000Z",
+    )
+    raw.close()
+
+    db = new ProjectDatabase(dbPath)
+    const projects = db.projects()
+    assert.equal(projects.length, 1)
+    assert.equal(projects[0]?.rootPath, missingRoot)
+    assert.equal(projects[0]?.name, "formerly-present-project")
+  })
 })

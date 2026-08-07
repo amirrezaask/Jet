@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { monacoLanguageId, isLargeFile } from "./language.js"
+import { monacoLanguageId, isLargeFile, isLargeModel } from "./language.js"
 
 describe("monacoLanguageId", () => {
   it("maps tsx to typescript", () => {
@@ -50,5 +50,12 @@ describe("isLargeFile", () => {
   it("returns true when line count exceeds 20k", () => {
     const lines = Array.from({ length: 20_002 }, () => "a").join("\n")
     assert.equal(isLargeFile(lines), true)
+  })
+
+  it("classifies an existing model without reading its content", () => {
+    assert.equal(
+      isLargeModel({ getValueLength: () => 1, getLineCount: () => 20_001 }),
+      true,
+    )
   })
 })
