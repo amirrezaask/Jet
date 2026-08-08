@@ -1,102 +1,115 @@
 import assert from "node:assert/strict"
-import { afterEach, describe, it } from "node:test"
+import { describe, it } from "node:test"
 import { pathToFileUri } from "@yaade/shared"
-import type { WorkspaceFile } from "@yaade/workspace"
-
+import type {
+  LanguageServerDefinition,
+  LspLifecycleEvent,
+  LspStartResult,
+  ResolvedLanguageServerTarget,
+  WorkspaceFile,
+} from "@yaade/workspace"
 import { LanguageServerManager } from "./manager.js"
 
-const originalWindow = globalThis.window
+const workspaceRootUri = pathToFileUri("/work/project")
 
-afterEach(() => {
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: originalWindow,
-  })
-})
+function target(
+  serverId: string,
+  projectRootUri = workspaceRootUri,
+  languageIds: readonly string[] = ["typescript"],
+): ResolvedLanguageServerTarget {
+  return {
+    serverId,
+    projectRootUri,
+    workspaceRootUri,
+    languageIds,
+    catalogVersion: 1,
+  }
+}
+
+function definition(serverId: string, languages: readonly string[]): LanguageServerDefinition {
+  return {
+    id: serverId,
+    languages,
+    commandCandidates: [serverId],
+    args: [],
+    environment: {},
+    candidateArgs: {},
+    rootMarkers: [],
+    priority: 0,
+    enabled: true,
+  }
+}
+
+function file(uri: string, languageId: string): WorkspaceFile {
+  return {
+    uri,
+    path: uri,
+    languageId,
+    name: uri.split("/").at(-1) ?? uri,
+    isDirty: false,
+  }
+}
 
 describe("LanguageServerManager", () => {
-  it("starts one gopls process for concurrent attaches and falls back to the workspace root", async () => {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: {
-        yaade: {
-          fs: {
-            async stat() {
-              throw new Error("ENOENT")
-            },
-          },
-        },
-      },
-    })
-
-    const workspaceRootUri = pathToFileUri("/work/go-project")
-    const file = {
-      uri: pathToFileUri("/work/go-project/src/main.go"),
-      path: "/work/go-project/src/main.go",
-      languageId: "go",
-      name: "main.go",
-      isDirty: false,
-    } as WorkspaceFile
+  it("deduplicates host resolution by directory and concurrent process starts", async () => {
+    let resolves = 0
     let starts = 0
+    const resolved = target("gopls", workspaceRootUri, ["go"])
     const manager = new LanguageServerManager({
-      async start(rootUri, serverId) {
-        starts++
+      async resolve() {
+        resolves += 1
         await Promise.resolve()
-        assert.equal(rootUri, workspaceRootUri)
-        assert.equal(serverId, "gopls")
-        return { id: "gopls-1", transportUrl: "/ws/lsp/gopls-1" }
+        return resolved
+      },
+      async start(value) {
+        starts += 1
+        return { id: "gopls-1", transportUrl: "/ws/lsp/gopls-1", target: value }
       },
       async stop() {},
+      async listDefinitions() { return [definition("gopls", ["go"])] },
     })
+    const main = file(pathToFileUri("/work/project/src/main.go"), "go")
+    const sibling = file(pathToFileUri("/work/project/src/other.go"), "go")
 
-    const [first, second] = await Promise.all([
-      manager.ensureServerForFile(file, workspaceRootUri),
-      manager.ensureServerForFile(file, workspaceRootUri),
+    const [first, second, third] = await Promise.all([
+      manager.ensureServerForFile(main, workspaceRootUri),
+      manager.ensureServerForFile(main, workspaceRootUri),
+      manager.ensureServerForFile(sibling, workspaceRootUri),
     ])
 
+    assert.equal(resolves, 1)
     assert.equal(starts, 1)
     assert.equal(first, second)
+    assert.equal(second, third)
     assert.equal(first?.projectRootUri, workspaceRootUri)
   })
 
-  it("stops every live server and releases the crash subscription", async () => {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: { yaade: { fs: { async stat() { throw new Error("ENOENT") } } } },
-    })
-
+  it("stops every live server and releases host subscriptions", async () => {
     const stopped: string[] = []
     let crashListenerDisposed = false
+    let lifecycleListenerDisposed = false
     const manager = new LanguageServerManager({
-      async start(_rootUri, serverId) {
-        return { id: `${serverId}-1`, transportUrl: `/ws/lsp/${serverId}-1` }
+      async resolve(request) {
+        return request.languageId === "go"
+          ? target("gopls", workspaceRootUri, ["go"])
+          : target("typescript-language-server")
       },
-      async stop(id) {
-        stopped.push(id)
+      async start(value) {
+        return { id: `${value.serverId}-1`, transportUrl: `/ws/lsp/${value.serverId}-1`, target: value }
       },
-      onCrashed() {
-        return () => {
-          crashListenerDisposed = true
-        }
+      async stop(id) { stopped.push(id) },
+      async listDefinitions() {
+        return [
+          definition("gopls", ["go"]),
+          definition("typescript-language-server", ["typescript"]),
+        ]
       },
+      onCrashed() { return () => { crashListenerDisposed = true } },
+      onLifecycle() { return () => { lifecycleListenerDisposed = true } },
     })
 
-    const rootUri = pathToFileUri("/work/project")
-    await manager.ensureServerForFile({
-      uri: pathToFileUri("/work/project/src/index.ts"),
-      path: "/work/project/src/index.ts",
-      languageId: "typescript",
-      name: "index.ts",
-      isDirty: false,
-    }, rootUri)
-    await manager.ensureServerForFile({
-      uri: pathToFileUri("/work/project/main.go"),
-      path: "/work/project/main.go",
-      languageId: "go",
-      name: "main.go",
-      isDirty: false,
-    }, rootUri)
-
+    await manager.ensureServerForFile(file(pathToFileUri("/work/project/index.ts"), "typescript"), workspaceRootUri)
+    await manager.ensureServerForFile(file(pathToFileUri("/work/project/main.go"), "go"), workspaceRootUri)
     const ids = await manager.stopAll()
     manager.dispose()
 
@@ -104,41 +117,78 @@ describe("LanguageServerManager", () => {
     assert.deepEqual([...stopped].sort(), [...ids].sort())
     assert.equal(manager.hasAnyConnection(), false)
     assert.equal(crashListenerDisposed, true)
+    assert.equal(lifecycleListenerDisposed, true)
   })
 
-  it("stops a deferred start that resolves after teardown without re-registering it", async () => {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: { yaade: { fs: { async stat() { throw new Error("ENOENT") } } } },
-    })
-
-    let resolveStart!: (value: { id: string; transportUrl: string }) => void
-    let announceStart!: () => void
+  it("stops a deferred host start that resolves after teardown", async () => {
+    const resolved = target("typescript-language-server")
+    const deferred: { resolve(value: LspStartResult): void } = {
+      resolve() { throw new Error("start was not requested") },
+    }
+    let announceStart: (() => void) | null = null
     const startCalled = new Promise<void>(resolve => { announceStart = resolve })
     const stopped: string[] = []
     const manager = new LanguageServerManager({
+      async resolve() { return resolved },
       start: () => new Promise(resolve => {
-        resolveStart = resolve
-        announceStart()
+        deferred.resolve = resolve
+        announceStart?.()
       }),
       async stop(id) { stopped.push(id) },
+      async listDefinitions() { return [definition("typescript-language-server", ["typescript"])] },
     })
-    const rootUri = pathToFileUri("/work/project")
-    const pending = manager.ensureServerForFile({
-      uri: pathToFileUri("/work/project/src/index.ts"),
-      path: "/work/project/src/index.ts",
-      languageId: "typescript",
-      name: "index.ts",
-      isDirty: false,
-    } as WorkspaceFile, rootUri)
+    const pending = manager.ensureServerForFile(
+      file(pathToFileUri("/work/project/src/index.ts"), "typescript"),
+      workspaceRootUri,
+    )
 
     await startCalled
     await manager.stopAll()
     manager.dispose()
-    resolveStart({ id: "late-tsls", transportUrl: "/ws/lsp/late-tsls" })
+    deferred.resolve({ id: "late-tsls", transportUrl: "/ws/lsp/late-tsls", target: resolved })
 
     assert.equal(await pending, null)
     assert.deepEqual(stopped, ["late-tsls"])
     assert.equal(manager.hasAnyConnection(), false)
+  })
+
+  it("replaces the exact failed connection when the host retry becomes ready", async () => {
+    const listeners = new Set<(event: LspLifecycleEvent) => void>()
+    const resolved = target("typescript-language-server", pathToFileUri("/work/project/packages/a"))
+    const manager = new LanguageServerManager({
+      async resolve() { return resolved },
+      async start(value) { return { id: "first", transportUrl: "/ws/lsp/first", target: value } },
+      async stop() {},
+      async listDefinitions() { return [definition("typescript-language-server", ["typescript"])] },
+      onLifecycle(listener) {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    })
+    await manager.ensureServerForFile(
+      file(pathToFileUri("/work/project/packages/a/index.ts"), "typescript"),
+      workspaceRootUri,
+    )
+    for (const listener of listeners) listener({
+      kind: "crashed",
+      timestamp: 1,
+      serverId: resolved.serverId,
+      projectRootUri: resolved.projectRootUri,
+      sessionId: "first",
+    })
+    for (const listener of listeners) listener({
+      kind: "ready",
+      timestamp: 2,
+      serverId: resolved.serverId,
+      projectRootUri: resolved.projectRootUri,
+      sessionId: "second",
+      transportUrl: "/ws/lsp/second",
+      target: { ...resolved, settings: { lint: false }, catalogVersion: 2 },
+    })
+
+    const replacement = manager.getConnection("typescript", resolved.projectRootUri)
+    assert.equal(replacement?.id, "second")
+    assert.equal(replacement?.catalogVersion, 2)
+    assert.deepEqual(replacement?.settings, { lint: false })
   })
 })

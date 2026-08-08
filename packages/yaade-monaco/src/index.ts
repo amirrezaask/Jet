@@ -1,4 +1,5 @@
 export { monacoLanguageId, isLargeFile, isLargeModel } from "./language.js"
+export { ensureLanguageContribution } from "./language-contributions.js"
 export { setModelLanguage } from "./model-language.js"
 export { ensureMonacoEnvironment, configureMonacoWorkers, type MonacoWorkerFactories } from "./monaco-env.js"
 export {

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto"
 import { homedir } from "node:os"
 import path from "node:path"
-import type { FileFinderApi, GrepMode } from "@ff-labs/fff-node"
 import type {
   FileSearchOptions,
   ProjectSearchOptions,
@@ -9,6 +8,8 @@ import type {
   SearchPage,
 } from "@yaade/shared"
 import { gitIsRepo } from "./git.js"
+import { FffWorkerClient, type FffWorkerGrepMatch } from "./fff-worker-client.js"
+import { LatestRootTaskQueue } from "./latest-root-task-queue.js"
 import { uriToPath } from "./paths.js"
 
 type FileFinderModule = typeof import("@ff-labs/fff-node")
@@ -44,13 +45,14 @@ export async function probeFffAvailable(): Promise<boolean> {
 }
 
 type FinderEntry = {
-  finder: FileFinderApi
+  worker: FffWorkerClient
   rootPath: string
   ready: Promise<void>
   scanReady: boolean
 }
 
 const finders = new Map<string, FinderEntry>()
+const fffTasks = new LatestRootTaskQueue()
 const gitRepoCache = new Map<string, boolean>()
 /** Roots where FFF init failed; quick-open falls back to ripgrep immediately. */
 const fffUnavailableRoots = new Set<string>()
@@ -78,7 +80,7 @@ function frecencyDbDir(rootPath: string): string {
   return path.join(homedir(), ".yaade", "fff", hash)
 }
 
-export async function ensureFffIndex(rootUri: string, timeoutMs = 30_000): Promise<FileFinderApi | null> {
+export async function ensureFffIndex(rootUri: string, timeoutMs = 30_000): Promise<FffWorkerClient | null> {
   if (!(await resolveGitRepo(rootUri))) return null
 
   const mod = await loadFffModule()
@@ -89,30 +91,28 @@ export async function ensureFffIndex(rootUri: string, timeoutMs = 30_000): Promi
 
   if (!entry) {
     const dbDir = frecencyDbDir(rootPath)
-    const created = mod.FileFinder.create({
-      basePath: rootPath,
+    const worker = new FffWorkerClient({
+      moduleUrl: import.meta.resolve("@ff-labs/fff-node"),
+      rootPath,
       frecencyDbPath: path.join(dbDir, "frecency"),
       historyDbPath: path.join(dbDir, "history"),
+      timeoutMs,
     })
-    if (!created.ok) {
-      fffUnavailableRoots.add(rootPath)
-      return null
-    }
-
-    const finder = created.value
-    const ready = finder.waitForIndexReady(timeoutMs).then(result => {
-      if (!result.ok) throw new Error(result.error)
+    const ready = worker.request<boolean>("ready", null).then(() => {
       const e = finders.get(rootPath)
       if (e) e.scanReady = true
     })
-    entry = { finder, rootPath, ready, scanReady: false }
+    entry = { worker, rootPath, ready, scanReady: false }
     finders.set(rootPath, entry)
   }
 
   try {
     await entry.ready
-    return entry.finder
+    return entry.worker
   } catch {
+    if (finders.get(rootPath) === entry) finders.delete(rootPath)
+    void entry.worker.terminate()
+    fffUnavailableRoots.add(rootPath)
     return null
   }
 }
@@ -134,7 +134,8 @@ export function disposeFffIndex(rootUri: string): void {
   const rootPath = rootKey(rootUri)
   const entry = finders.get(rootPath)
   if (!entry) return
-  entry.finder.destroy()
+  fffTasks.abortRoot(rootPath)
+  void entry.worker.destroy()
   finders.delete(rootPath)
   fffUnavailableRoots.delete(rootPath)
 }
@@ -143,87 +144,124 @@ export async function fffFileSearch(
   rootUri: string,
   query: string,
   opts?: FileSearchOptions,
+  signal?: AbortSignal,
 ): Promise<SearchPage<string> | null> {
-  const finder = await ensureFffIndex(rootUri)
-  if (!finder) return null
-
-  const result = finder.fileSearch(query, {
-    pageSize: opts?.pageSize ?? 100,
-    currentFile: opts?.currentFile,
-  })
-  if (!result.ok) return null
-  return {
-    items: result.value.items.map(item => item.relativePath),
-    truncated: result.value.totalMatched > result.value.items.length,
-  }
+  const key = rootKey(rootUri)
+  return fffTasks.run(key, async taskSignal => {
+    const worker = await ensureFffIndex(rootUri)
+    if (!worker) return null
+    try {
+      const result = await worker.request<{ items: string[]; totalMatched: number }>(
+        "fileSearch",
+        {
+          query,
+          options: {
+            pageSize: opts?.pageSize ?? 100,
+            currentFile: opts?.currentFile,
+          },
+        },
+        taskSignal,
+      )
+      return {
+        items: result.items,
+        truncated: result.totalMatched > result.items.length,
+      }
+    } catch (error) {
+      if (taskSignal.aborted) disposeFffIndex(rootUri)
+      throw error
+    }
+  }, signal)
 }
 
 export async function fffListFiles(
   rootUri: string,
   maxFiles = 20_000,
+  signal?: AbortSignal,
 ): Promise<SearchPage<string> | null> {
-  const finder = await ensureFffIndex(rootUri)
-  if (!finder) return null
-
-  const paths: string[] = []
-  let pageIndex = 0
-  const pageSize = 5000
-  let truncated = false
-  while (paths.length <= maxFiles) {
-    const result = finder.glob("**/*", { pageIndex, pageSize })
-    if (!result.ok) {
-      return paths.length > 0
-        ? { items: paths.slice(0, maxFiles).sort(), truncated: true }
-        : null
+  const key = rootKey(rootUri)
+  return fffTasks.run(key, async taskSignal => {
+    const worker = await ensureFffIndex(rootUri)
+    if (!worker) return null
+    const paths: string[] = []
+    let pageIndex = 0
+    const pageSize = 5000
+    let truncated = false
+    try {
+      while (paths.length <= maxFiles) {
+        const result = await worker.request<{ items: string[]; totalMatched: number }>(
+          "glob",
+          { options: { pageIndex, pageSize } },
+          taskSignal,
+        )
+        truncated = result.totalMatched > maxFiles
+        for (const relativePath of result.items) {
+          paths.push(relativePath)
+          if (paths.length > maxFiles) break
+        }
+        if (paths.length > maxFiles || result.items.length < pageSize) break
+        pageIndex += 1
+      }
+      return { items: paths.slice(0, maxFiles).sort(), truncated }
+    } catch (error) {
+      if (taskSignal.aborted) {
+        disposeFffIndex(rootUri)
+        throw error
+      }
+      if (paths.length > 0) {
+        return { items: paths.slice(0, maxFiles).sort(), truncated: true }
+      }
+      throw error
     }
-    truncated = result.value.totalMatched > maxFiles
-    for (const item of result.value.items) {
-      paths.push(item.relativePath)
-      if (paths.length > maxFiles) break
-    }
-    if (paths.length > maxFiles || result.value.items.length < pageSize) break
-    pageIndex += 1
-  }
-  return { items: paths.slice(0, maxFiles).sort(), truncated }
+  }, signal)
 }
 
 export async function fffGrep(
   rootUri: string,
   query: string,
   opts?: ProjectSearchOptions,
+  signal?: AbortSignal,
 ): Promise<SearchPage<ProjectSearchResult> | null> {
-  const finder = await ensureFffIndex(rootUri)
-  if (!finder) return null
-
-  let mode: GrepMode = "plain"
-  if (opts?.fuzzy) mode = "fuzzy"
-  else if (opts?.regex) mode = "regex"
-
-  const result = finder.grep(query, {
-    mode,
-    smartCase: !opts?.caseSensitive && !opts?.fuzzy,
-    pageSize: 200,
-    maxMatchesPerFile: 200,
-  })
-  if (!result.ok) return null
-
-  const items = result.value.items.map(match => {
-    const preview = match.lineContent.replace(/\r?\n$/, "")
-    const ranges = match.matchRanges.map(([start, end]) => ({
-      startLine: match.lineNumber,
-      startColumn: byteColumn(preview, start),
-      endLine: match.lineNumber,
-      endColumn: byteColumn(preview, end),
-    }))
-    return {
-      path: match.relativePath,
-      line: match.lineNumber,
-      column: ranges[0]?.startColumn ?? byteColumn(preview, match.col),
-      preview,
-      ranges,
+  const key = rootKey(rootUri)
+  return fffTasks.run(key, async taskSignal => {
+    const worker = await ensureFffIndex(rootUri)
+    if (!worker) return null
+    const mode = opts?.fuzzy ? "fuzzy" : opts?.regex ? "regex" : "plain"
+    try {
+      const result = await worker.request<{ items: FffWorkerGrepMatch[]; hasMore: boolean }>(
+        "grep",
+        {
+          query,
+          options: {
+            mode,
+            smartCase: !opts?.caseSensitive && !opts?.fuzzy,
+            pageSize: 200,
+            maxMatchesPerFile: 200,
+          },
+        },
+        taskSignal,
+      )
+      const items = result.items.map(match => {
+        const preview = match.lineContent.replace(/\r?\n$/, "")
+        const ranges = match.matchRanges.map(([start, end]) => ({
+          startLine: match.lineNumber,
+          startColumn: byteColumn(preview, start),
+          endLine: match.lineNumber,
+          endColumn: byteColumn(preview, end),
+        }))
+        return {
+          path: match.relativePath,
+          line: match.lineNumber,
+          column: ranges[0]?.startColumn ?? byteColumn(preview, match.col),
+          preview,
+          ranges,
+        }
+      })
+      return { items, truncated: result.hasMore }
+    } catch (error) {
+      if (taskSignal.aborted) disposeFffIndex(rootUri)
+      throw error
     }
-  })
-  return { items, truncated: result.value.nextCursor !== null }
+  }, signal)
 }
 
 export async function fffTrackAccess(
@@ -233,7 +271,7 @@ export async function fffTrackAccess(
 ): Promise<void> {
   const finder = await ensureFffIndex(rootUri)
   if (!finder) return
-  finder.trackQuery(query, selectedPath)
+  await finder.request("track", { query, selectedPath })
 }
 
 function byteColumn(text: string, byteOffset: number): number {

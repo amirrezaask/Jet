@@ -152,6 +152,123 @@ describe("session-layout", () => {
     clearTerminalSession("yaade:terminal:right")
   })
 
+  it("applySessionPaneDrop merges an editor tab without dropping background tabs", () => {
+    const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+    const right = tree.splitAtEdge(editorPanel, "right")
+    tree.setView(
+      editorPanel,
+      buildTabsView("file:///source-active.ts", [
+        "file:///source-background.ts",
+        "file:///source-active.ts",
+      ]),
+    )
+    tree.setView(
+      right,
+      buildTabsView("file:///target-active.ts", [
+        "file:///target-background.ts",
+        "file:///target-active.ts",
+      ]),
+    )
+
+    const result = applySessionPaneDrop(
+      tree,
+      editorPanel,
+      "file:///source-active.ts",
+      right,
+      { kind: "moveToPane" },
+    )
+
+    assert.equal(result.moved, true)
+    assert.equal(result.focusPanel.id, right.id)
+    const source = tree.getView(editorPanel)
+    const target = tree.getView(right)
+    assert.equal(source?.kind, "tabs")
+    assert.equal(target?.kind, "tabs")
+    if (source?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(source), ["file:///source-background.ts"])
+    }
+    if (target?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(target), [
+        "file:///target-background.ts",
+        "file:///target-active.ts",
+        "file:///source-active.ts",
+      ])
+      assert.equal(target.activeTabId, "file:///source-active.ts")
+    }
+  })
+
+  it("applySessionPaneDrop splits one editor tab and preserves its source group", () => {
+    const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+    tree.setView(
+      editorPanel,
+      buildTabsView("file:///active.ts", [
+        "file:///background.ts",
+        "file:///active.ts",
+      ]),
+    )
+
+    const result = applySessionPaneDrop(
+      tree,
+      editorPanel,
+      "file:///active.ts",
+      editorPanel,
+      { kind: "split", edge: "right" },
+    )
+
+    assert.equal(result.moved, true)
+    assert.ok(result.createdPanel)
+    assert.equal(result.focusPanel.id, result.createdPanel.id)
+    const source = tree.getView(editorPanel)
+    const created = tree.getView(result.createdPanel)
+    assert.equal(source?.kind, "tabs")
+    assert.equal(created?.kind, "tabs")
+    if (source?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(source), ["file:///background.ts"])
+    }
+    if (created?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(created), ["file:///active.ts"])
+    }
+  })
+
+  it("does not merge an editor group into a terminal leaf", () => {
+    const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+    const terminalPanel = tree.splitAtEdge(editorPanel, "right")
+    tree.setView(
+      editorPanel,
+      buildTabsView("file:///active.ts", [
+        "file:///background.ts",
+        "file:///active.ts",
+      ]),
+    )
+    tree.setView(
+      terminalPanel,
+      buildTabsView("yaade:terminal:term", ["yaade:terminal:term"]),
+    )
+
+    const result = applySessionPaneDrop(
+      tree,
+      editorPanel,
+      "file:///active.ts",
+      terminalPanel,
+      { kind: "moveToPane" },
+    )
+
+    assert.equal(result.moved, false)
+    const editor = tree.getView(editorPanel)
+    const terminal = tree.getView(terminalPanel)
+    assert.equal(editor?.kind, "tabs")
+    assert.equal(terminal?.kind, "tabs")
+    if (editor?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(editor), [
+        "file:///background.ts",
+        "file:///active.ts",
+      ])
+    }
+    if (terminal?.kind === "tabs") {
+      assert.deepEqual(panelTabIds(terminal), ["yaade:terminal:term"])
+    }
+  })
+
   it("placeSessionFromOutside replaces target on center drop", () => {
     const workspace = makeWorkspace()
     const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
@@ -235,5 +352,29 @@ describe("session-layout", () => {
     assert.equal(rightView?.kind, "tabs")
     if (leftView?.kind === "tabs") assert.equal(leftView.activeTabId, gitId)
     if (rightView?.kind === "tabs") assert.equal(rightView.activeTabId, termId)
+  })
+
+  it("applySessionPaneDrop retiles a persistent tool leaf", () => {
+    const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+    const termId = "yaade:terminal:term"
+    const explorerId = "yaade:explorer"
+    tree.setView(editorPanel, buildTabsView(termId, [termId]))
+    const right = tree.splitAtEdge(editorPanel, "right")
+    tree.setView(right, buildTabsView(explorerId, [explorerId]))
+
+    const result = applySessionPaneDrop(
+      tree,
+      right,
+      explorerId,
+      editorPanel,
+      { kind: "split", edge: "bottom" },
+    )
+    assert.equal(result.moved, true)
+    assert.ok(result.createdPanel)
+    assert.equal(
+      findPanelWithTab(tree, explorerId)?.id,
+      result.createdPanel!.id,
+    )
+    assert.equal(findPanelWithTab(tree, termId)?.id, editorPanel.id)
   })
 })

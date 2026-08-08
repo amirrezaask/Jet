@@ -4,6 +4,7 @@ import type { YaadeTheme } from "@yaade/shared"
 import "./monaco-features.js"
 import { ensureMonacoEnvironment } from "./monaco-env.js"
 import { isLargeFile } from "./language.js"
+import { ensureLanguageContribution } from "./language-contributions.js"
 import { monacoModels } from "./model-registry.js"
 import { applyYaadeMonacoTheme } from "./theme.js"
 export type MonacoDiffEditorHostProps = {
@@ -53,6 +54,10 @@ export function MonacoDiffEditorHost({
   const viewOwnerId = `view:${editorId}`
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
+
+  useEffect(() => {
+    void ensureLanguageContribution(languageId)
+  }, [languageId])
 
   useEffect(() => {
     ensureMonacoEnvironment()

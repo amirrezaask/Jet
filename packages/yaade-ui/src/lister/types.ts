@@ -53,6 +53,8 @@ export type ListerProps<T> = {
   onSelectionChange?: (node: ListerNode<T> | null) => void
   emptyState?: ReactNode
   initiallyExpanded?: ListerNodeId[]
+  /** Publishes branch expansion so a parent can restore it after pane remounts. */
+  onExpandedChange?: (ids: ListerNodeId[]) => void
   syncExpanded?: boolean
   activeId?: ListerNodeId | null
   indentPx?: number

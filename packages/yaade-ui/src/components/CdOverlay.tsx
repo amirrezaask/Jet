@@ -301,13 +301,20 @@ export function CdOverlay({
       return
     }
     onOpenChange(false)
-    const stat = window.yaade?.fs?.stat
+    const fs = window.yaade?.fs
     void (async () => {
       let isFile = false
-      if (showFiles && onSelectFile && stat) {
+      if (showFiles && onSelectFile && fs?.stat) {
         try {
-          const info = await stat(pathToFileUri(path))
-          isFile = !info.isDirectory
+          const uri = pathToFileUri(path)
+          // A typed Save As target normally does not exist. Probe through the
+          // non-throwing channel before stat so an expected miss does not emit
+          // an HTTP 400/browser console error.
+          const pathExists = fs.exists ? await fs.exists(uri) : true
+          if (pathExists) {
+            const info = await fs.stat(uri)
+            isFile = !info.isDirectory
+          }
         } catch {
           isFile = false
         }

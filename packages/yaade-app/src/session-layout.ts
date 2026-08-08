@@ -3,6 +3,7 @@ import {
   YaadePanelTree,
   buildTabsView,
   findPanelWithTab,
+  isEditorTabId,
   isGitTabId,
   isTerminalTabId,
   panelTabIds,
@@ -12,10 +13,11 @@ import {
 import { TERMINAL_TAB_TYPE_ID } from "./tabs/terminal.tab.js"
 import { resolveTargetPanel, closePanelIfEmpty, getAllLeafPanels } from "./panel-routing.js"
 import { terminalSessionForTab } from "./tabs/terminal-session.js"
+import { isMuxToolTabId } from "./mux/tool-pane.js"
 
-/** Terminal or git leaf — both are mux panes that participate in tile DnD. */
+/** Terminal, Git, or persistent tool leaf participating in tile DnD. */
 function isMuxPaneTabId(tabId: string): boolean {
-  return isTerminalTabId(tabId) || isGitTabId(tabId)
+  return isTerminalTabId(tabId) || isGitTabId(tabId) || isMuxToolTabId(tabId)
 }
 
 /** Panel view filtered to terminal session tabs only (for session window chrome). */
@@ -39,7 +41,7 @@ export function activeTerminalTabInPanel(
   return view.activeTabId
 }
 
-/** Active terminal or git tab in a leaf (mux one-pane-per-leaf). */
+/** Active terminal, Git, or persistent tool tab in a leaf. */
 export function activeMuxPaneTabInPanel(
   tree: YaadePanelTree,
   panelId: PanelId | null,
@@ -125,6 +127,30 @@ export function applySessionPaneDrop(
   target: PanelId,
   action: DropAction,
 ): { moved: boolean; createdPanel: PanelId | null; focusPanel: PanelId } {
+  // Editor leaves are multi-tab groups. Moving their active tab must preserve
+  // every background tab in both groups, unlike the one-session swap below.
+  if (isEditorTabId(sourceTabId)) {
+    const targetView = tree.getView(target)
+    if (
+      action.kind === "moveToPane" &&
+      targetView?.kind === "tabs" &&
+      !isEditorTabId(targetView.activeTabId)
+    ) {
+      // Editor and terminal/git/tool tabs cannot share one mux leaf. Edge
+      // drops remain available to place the editor beside a non-editor pane.
+      return { moved: false, createdPanel: null, focusPanel: source }
+    }
+    const result = tree.applyTabDrop(
+      source,
+      sourceTabId,
+      target,
+      action,
+    )
+    return {
+      ...result,
+      focusPanel: result.moved ? (result.createdPanel ?? target) : source,
+    }
+  }
   if (!isMuxPaneTabId(sourceTabId)) {
     return { moved: false, createdPanel: null, focusPanel: source }
   }

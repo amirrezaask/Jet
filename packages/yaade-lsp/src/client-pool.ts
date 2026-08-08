@@ -12,27 +12,47 @@ import {
   SymbolKind as LspSymbolKind,
   TextDocumentSyncKind,
 } from "vscode-languageserver-protocol"
-import { lspContentChanges } from "./document-sync.js"
+import {
+  createFullDocumentSyncScheduler,
+  lspContentChanges,
+  type FullDocumentSyncScheduler,
+} from "./document-sync.js"
 import type {
   CodeAction,
   CodeActionContext,
+  CodeActionOptions,
   CodeLens,
+  ColorInformation,
+  ColorPresentation,
   Command,
   CompletionItem,
+  CompletionOptions,
   ConfigurationParams,
   Diagnostic,
+  DidChangeWatchedFilesRegistrationOptions,
   DocumentHighlight,
+  DocumentLink,
+  DocumentLinkOptions,
+  DocumentOnTypeFormattingOptions,
   DocumentSymbol,
+  FoldingRange,
   Hover,
   InlayHint,
   Location,
   LocationLink,
   MarkupContent,
+  MessageActionItem,
   Position,
   PrepareRenameResult,
   PublishDiagnosticsParams,
   Range,
+  RegistrationParams,
   SemanticTokens,
+  SemanticTokensDelta,
+  SemanticTokensOptions,
+  SelectionRange,
+  ShowDocumentParams,
+  ShowMessageRequestParams,
   SignatureHelp,
   SymbolInformation,
   TextDocumentIdentifier,
@@ -41,6 +61,8 @@ import type {
   InsertReplaceEdit,
   ServerCapabilities,
   TextEdit,
+  TextDocumentSaveReason,
+  UnregistrationParams,
 } from "vscode-languageserver-protocol"
 import {
   applyWorkspaceEdit,
@@ -53,15 +75,40 @@ import {
 import { canonicalizeFileUri, fileUriToPath } from "@yaade/shared"
 import type { LspConnection } from "./manager.js"
 import type { JetLspWorkspaceDeps } from "./yaade-workspace.js"
+import type { LspOutputEntry, LspProgressEvent } from "./yaade-workspace.js"
 import { createWebSocketTransports } from "./transport.js"
 import { yaadeLspClientCapabilities } from "./client-capabilities.js"
 import { lspConnectionMatchesDocument } from "./connection-scope.js"
-import { defaultWorkspaceConfiguration } from "./client-configuration.js"
+import { workspaceConfiguration } from "./client-configuration.js"
+import {
+  connectionDocumentSelector,
+  documentSelectorMatches,
+  DynamicCapabilityStore,
+  registrationDocumentSelector,
+  type DynamicRegistration,
+  type MonacoDocumentSelector,
+} from "./dynamic-capabilities.js"
+import { shouldAcceptDiagnostics } from "./diagnostic-version.js"
+import { isDocumentOpenForConnection } from "./provider-readiness.js"
+import {
+  runLspSaveSequence,
+  staticSaveSyncOptions,
+  type LspSaveSyncOptions,
+} from "./save-sequence.js"
 import {
   capabilityEnabled,
   hasFullSemanticTokens,
+  hasRangeSemanticTokens,
   serverSupports,
 } from "./server-capabilities.js"
+import { watchedFileChanges } from "./watched-files.js"
+import {
+  resourceOperationUris,
+  atomicResourceEditCommand,
+  validateResourceWorkspaceEdit,
+  workspaceEditIsEmpty,
+} from "./workspace-edit-policy.js"
+import { structuredOutputData } from "./structured-output.js"
 
 export type LspServerMessageKind = "info" | "warning" | "error"
 export type LspServerMessageHandler = (message: string, kind: LspServerMessageKind) => void
@@ -73,6 +120,12 @@ export type MonacoLspClient = {
   stop(): void
   disconnect(): void
   sendRequest<R>(method: string, params?: unknown): Promise<R>
+  saveDocument(
+    uri: string,
+    persist?: (content: string) => Promise<void>,
+    reason?: TextDocumentSaveReason,
+  ): Promise<string>
+  cancelWorkDoneProgress(token: string | number): Promise<boolean>
 }
 
 export type LspClientHandle = MonacoLspClient
@@ -125,18 +178,55 @@ async function applyLspWorkspaceEdit(
   deps: JetLspWorkspaceDeps,
   options?: { allowDirty?: boolean; atomic?: boolean },
 ): Promise<{ applied: boolean; reason?: string }> {
+  if (workspaceEditIsEmpty(edit)) return { applied: true }
   const uris = new Set<string>()
+  const resourceOperations = [] as Array<
+    Extract<NonNullable<WorkspaceEdit["documentChanges"]>[number], { kind: string }>
+  >
   for (const uri of Object.keys(edit.changes ?? {})) {
     uris.add(canonicalizeFileUri(uri))
   }
   for (const change of edit.documentChanges ?? []) {
     if (!("textDocument" in change)) {
-      return {
-        applied: false,
-        reason: "This language server requested unsupported file create/rename/delete operations",
-      }
+      resourceOperations.push(change)
+      continue
     }
     uris.add(canonicalizeFileUri(change.textDocument.uri))
+  }
+
+  if (resourceOperations.length > 0) {
+    if (!deps.isUriAllowed) {
+      return {
+        applied: false,
+        reason: "Atomic language-server resource edits are not configured for this workspace",
+      }
+    }
+    const validation = validateResourceWorkspaceEdit(edit, {
+      isUriAllowed: deps.isUriAllowed,
+      isDirty: deps.isDirty,
+    })
+    if (!validation.valid) return { applied: false, reason: validation.reason }
+  }
+
+  if (deps.applyWorkspaceEditTransaction) {
+    try {
+      return await deps.applyWorkspaceEditTransaction(edit, {
+        allowDirty: options?.allowDirty,
+        atomic: true,
+      })
+    } catch (error) {
+      return {
+        applied: false,
+        reason: error instanceof Error ? error.message : "Atomic workspace edit failed",
+      }
+    }
+  }
+
+  if (resourceOperations.length > 0) {
+    return {
+      applied: false,
+      reason: "Atomic language-server resource edits are not configured for this workspace",
+    }
   }
 
   for (const uri of uris) {
@@ -189,7 +279,7 @@ async function applyLspWorkspaceEdit(
     }
   }
 
-  return { applied: result.applied.length > 0 }
+  return { applied: true }
 }
 
 function completionLabel(item: CompletionItem): string {
@@ -280,6 +370,7 @@ function completionSuggestion(
     preselect: item.preselect,
     detail: item.detail,
     documentation: markupToString(item.documentation as string | MarkupContent | undefined),
+    command: command(item.command),
     commitCharacters: item.commitCharacters,
     additionalTextEdits: item.additionalTextEdits?.map(edit => ({
       range: monacoRange(edit.range),
@@ -287,6 +378,18 @@ function completionSuggestion(
     })),
   }
 }
+
+type CompletionResolutionState = {
+  item: CompletionItem
+  model: monaco.editor.ITextModel
+  position: monaco.Position
+  index: number
+}
+
+const completionResolutionState = new WeakMap<
+  monaco.languages.CompletionItem,
+  CompletionResolutionState
+>()
 
 function symbolKind(kind: LspSymbolKind): monaco.languages.SymbolKind {
   const kinds = monaco.languages.SymbolKind
@@ -380,6 +483,108 @@ function isLspCommand(action: CodeAction | Command): action is Command {
   return "command" in action && typeof action.command === "string"
 }
 
+type CodeActionResolutionState = {
+  action: CodeAction
+  markers: monaco.editor.IMarkerData[]
+}
+
+const codeActionResolutionState = new WeakMap<
+  monaco.languages.CodeAction,
+  CodeActionResolutionState
+>()
+
+const documentLinkResolutionState = new WeakMap<monaco.languages.ILink, DocumentLink>()
+
+function monacoTextEdit(edit: TextEdit): monaco.languages.TextEdit {
+  return { range: monacoRange(edit.range), text: edit.newText }
+}
+
+function monacoCodeAction(
+  action: CodeAction | Command,
+  markers: monaco.editor.IMarkerData[],
+  resourceCommandId?: string,
+): monaco.languages.CodeAction {
+  if (isLspCommand(action)) {
+    return { title: action.title, command: command(action) }
+  }
+  const resourceCommand = atomicResourceEditCommand(
+    action.edit,
+    action.command,
+    resourceCommandId,
+    action.title,
+  )
+  const hasResourceOperations = resourceCommand != null ||
+    resourceOperationUris(action.edit ?? {}).length > 0
+  const mappedEdit = hasResourceOperations ? undefined : workspaceEdit(action.edit)
+  const mapped: monaco.languages.CodeAction = {
+    title: action.title,
+    kind: action.kind,
+    diagnostics: markers,
+    edit: mappedEdit,
+    command:
+      resourceCommand
+        ? resourceCommand
+        : command(action.command),
+    isPreferred: action.isPreferred,
+    disabled:
+      action.edit && !mappedEdit && !hasResourceOperations
+        ? "Unsupported language-server workspace edit"
+        : action.disabled?.reason,
+  }
+  codeActionResolutionState.set(mapped, { action, markers })
+  return mapped
+}
+
+function monacoDocumentLink(link: DocumentLink): monaco.languages.ILink {
+  const mapped: monaco.languages.ILink = {
+    range: monacoRange(link.range),
+    url: link.target,
+    tooltip: link.tooltip,
+  }
+  documentLinkResolutionState.set(mapped, link)
+  return mapped
+}
+
+function monacoSemanticTokens(
+  result: SemanticTokens | SemanticTokensDelta,
+): monaco.languages.SemanticTokens | monaco.languages.SemanticTokensEdits {
+  if ("edits" in result) {
+    return {
+      resultId: result.resultId,
+      edits: result.edits.map(edit => ({
+        start: edit.start,
+        deleteCount: edit.deleteCount,
+        data: edit.data ? Uint32Array.from(edit.data) : undefined,
+      })),
+    }
+  }
+  return { resultId: result.resultId, data: Uint32Array.from(result.data) }
+}
+
+function monacoSelectionRanges(range: SelectionRange): monaco.languages.SelectionRange[] {
+  const result: monaco.languages.SelectionRange[] = []
+  let current: SelectionRange | undefined = range
+  while (current) {
+    result.push({ range: monacoRange(current.range) })
+    current = current.parent
+  }
+  return result
+}
+
+function combineDisposables(disposables: monaco.IDisposable[]): monaco.IDisposable {
+  return {
+    dispose: () => {
+      for (const disposable of disposables.splice(0)) disposable.dispose()
+    },
+  }
+}
+
+function asMonacoSelector(
+  selector: MonacoDocumentSelector,
+): monaco.languages.LanguageSelector {
+  return selector as monaco.languages.LanguageSelector
+}
+
 function requestWithCancellation<R>(
   connection: MessageConnection,
   method: string,
@@ -388,10 +593,28 @@ function requestWithCancellation<R>(
 ): Promise<R> {
   const source = new CancellationTokenSource()
   const subscription = token.onCancellationRequested(() => source.cancel())
-  return (connection.sendRequest(method, params, source.token) as Promise<R>).finally(() => {
-    subscription.dispose()
-    source.dispose()
-  })
+  const request = (connection.sendRequest(method, params, source.token) as Promise<R>)
+    .catch(error => {
+      const message = error instanceof Error ? error.message : String(error)
+      if (
+        token.isCancellationRequested ||
+        /connection (?:got disposed|is closed)|pending response rejected/i.test(
+          message,
+        )
+      ) {
+        // Monaco can discard a provider result while its model/provider is
+        // being disposed. Treat transport teardown as provider cancellation so
+        // it never becomes an unhandled rejection in the browser.
+        return null as R
+      }
+      throw error
+    })
+    .finally(() => {
+      subscription.dispose()
+      source.dispose()
+    })
+  void request.catch(() => {})
+  return request
 }
 
 export class LspClientPool {
@@ -401,14 +624,27 @@ export class LspClientPool {
   private pendingDisconnectors = new Map<string, () => void>()
   private connections = new Map<string, MessageConnection>()
   private connectionDescriptors = new Map<string, LspConnection>()
+  private serverCapabilities = new Map<string, ServerCapabilities>()
   private disposables = new Map<string, monaco.IDisposable[]>()
+  private dynamicRegistrations = new Map<string, DynamicCapabilityStore>()
+  private dynamicSaveRegistrations = new Map<string, Map<string, {
+    selector: MonacoDocumentSelector
+    sync: Partial<LspSaveSyncOptions>
+  }>>()
+  private synchronizedDocumentVersions = new Map<string, Map<string, number>>()
+  private workDoneProgress = new Map<string, Map<string | number, LspProgressEvent>>()
   private modelChangeDisposables = new Map<string, Map<string, monaco.IDisposable>>()
+  private fullSyncSchedulers = new Map<
+    string,
+    Map<string, FullDocumentSyncScheduler>
+  >()
   private modelRegistrars = new Map<
     string,
     (model: monaco.editor.ITextModel) => void
   >()
   private workspaceDeps: JetLspWorkspaceDeps | null = null
   private onServerMessage: LspServerMessageHandler | null = null
+  private commandSequence = 0
   private openDocs = new Map<string, Set<string>>()
   private editorOpener: monaco.IDisposable | null = null
 
@@ -505,7 +741,7 @@ export class LspClientPool {
     const connection = this.connections.get(connectionId)
     const descriptor = this.connectionDescriptors.get(connectionId)
     const model = monacoModels.get(uri)
-    if (!connection || !descriptor || !model || !this.matchesConnection(model, descriptor)) {
+    if (!connection || !descriptor || !model || !this.scopeMatchesConnection(model, descriptor)) {
       return false
     }
     await this.didOpen(connectionId, connection, model)
@@ -520,6 +756,8 @@ export class LspClientPool {
       if (!owned || !open.delete(owned)) continue
       this.modelChangeDisposables.get(connectionId)?.get(owned)?.dispose()
       this.modelChangeDisposables.get(connectionId)?.delete(owned)
+      this.fullSyncSchedulers.get(connectionId)?.get(owned)?.dispose()
+      this.fullSyncSchedulers.get(connectionId)?.delete(owned)
       monacoModels.release(owned, this.lspOwnerId(connectionId))
       clearLspMarkers(owned, connectionId)
       const connection = this.connections.get(connectionId)
@@ -527,7 +765,99 @@ export class LspClientPool {
       void connection.sendNotification("textDocument/didClose", {
         textDocument: { uri: owned },
       }).catch(() => {})
+      this.synchronizedDocumentVersions.get(connectionId)?.delete(canonical)
     }
+  }
+
+  closeDocumentForConnection(connectionId: string, uri: string): void {
+    const canonical = canonicalizeFileUri(uri)
+    const open = this.openDocs.get(connectionId)
+    const owned = [...(open ?? [])].find(candidate => canonicalizeFileUri(candidate) === canonical)
+    if (!owned || !open?.delete(owned)) return
+    this.modelChangeDisposables.get(connectionId)?.get(owned)?.dispose()
+    this.modelChangeDisposables.get(connectionId)?.delete(owned)
+    this.fullSyncSchedulers.get(connectionId)?.get(owned)?.dispose()
+    this.fullSyncSchedulers.get(connectionId)?.delete(owned)
+    monacoModels.release(owned, this.lspOwnerId(connectionId))
+    clearLspMarkers(owned, connectionId)
+    const connection = this.connections.get(connectionId)
+    if (!connection) return
+    void connection.sendNotification("textDocument/didClose", {
+      textDocument: { uri: owned },
+    }).catch(() => {})
+    this.synchronizedDocumentVersions.get(connectionId)?.delete(canonical)
+  }
+
+  /** Runs the complete LSP save handshake around the caller's durable write. */
+  async saveDocument(
+    uri: string,
+    persist?: (content: string) => Promise<void>,
+    reason: TextDocumentSaveReason = 1 as TextDocumentSaveReason,
+  ): Promise<string> {
+    const deps = this.workspaceDeps
+    if (!deps) throw new Error("LSP workspace deps not configured")
+    const canonical = canonicalizeFileUri(uri)
+    const model = monacoModels.get(canonical) ?? monacoModels.get(uri)
+    if (!model) throw new Error(`Cannot save an unloaded document: ${canonical}`)
+
+    for (const [connectionId, open] of this.openDocs) {
+      const owned = [...open].find(candidate => canonicalizeFileUri(candidate) === canonical)
+      if (!owned) continue
+      await this.fullSyncSchedulers.get(connectionId)?.get(owned)?.flush()
+    }
+
+    const participants = [...this.openDocs].flatMap(([connectionId, open]) => {
+      const owned = [...open].find(candidate => canonicalizeFileUri(candidate) === canonical)
+      const connection = this.connections.get(connectionId)
+      if (!owned || !connection) return []
+      const sync = this.saveSyncForDocument(connectionId, canonical, model.getLanguageId())
+      return [{
+        sync,
+        notify: async (method: string, params: unknown) => {
+          this.emitOutput(connectionId, "client", method, "notification", params)
+          await connection.sendNotification(method, params)
+        },
+        request: async <R>(method: string, params: unknown, timeoutMs?: number) => {
+          this.emitOutput(connectionId, "client", method, "request", params)
+          if (timeoutMs == null) return connection.sendRequest(method, params) as Promise<R>
+          const source = new CancellationTokenSource()
+          const timer = setTimeout(() => source.cancel(), timeoutMs)
+          try {
+            return await connection.sendRequest(method, params, source.token) as R
+          } finally {
+            clearTimeout(timer)
+            source.dispose()
+          }
+        },
+      }]
+    })
+
+    return runLspSaveSequence({
+      uri: model.uri.toString(),
+      reason,
+      participants,
+      applyEdits: edits => {
+        model.pushEditOperations(
+          [],
+          edits.map(edit => ({ ...monacoTextEdit(edit), forceMoveMarkers: true })),
+          () => null,
+        )
+      },
+      getContent: () => model.getValue(),
+      persist: content => (persist ?? ((text: string) => deps.writeFile(canonical, text)))(content),
+    })
+  }
+
+  async cancelWorkDoneProgress(
+    connectionId: string,
+    token: string | number,
+  ): Promise<boolean> {
+    const progress = this.workDoneProgress.get(connectionId)?.get(token)
+    const connection = this.connections.get(connectionId)
+    if (!progress?.cancellable || !connection) return false
+    this.emitOutput(connectionId, "client", "window/workDoneProgress/cancel", "notification", { token })
+    await connection.sendNotification("window/workDoneProgress/cancel", { token })
+    return true
   }
 
   releaseConnection(connectionId: string): void {
@@ -538,6 +868,12 @@ export class LspClientPool {
     this.pending.delete(connectionId)
     this.pendingDisconnectors.get(connectionId)?.()
     this.pendingDisconnectors.delete(connectionId)
+    this.dynamicRegistrations.get(connectionId)?.dispose()
+    this.dynamicRegistrations.delete(connectionId)
+    this.dynamicSaveRegistrations.delete(connectionId)
+    this.synchronizedDocumentVersions.delete(connectionId)
+    this.workDoneProgress.delete(connectionId)
+    this.serverCapabilities.delete(connectionId)
     const client = this.clients.get(connectionId)
     if (client) {
       client.disconnect()
@@ -549,6 +885,10 @@ export class LspClientPool {
       disposable.dispose()
     }
     this.modelChangeDisposables.delete(connectionId)
+    for (const scheduler of this.fullSyncSchedulers.get(connectionId)?.values() ?? []) {
+      scheduler.dispose()
+    }
+    this.fullSyncSchedulers.delete(connectionId)
   }
 
   clear(): void {
@@ -556,6 +896,18 @@ export class LspClientPool {
     for (const id of ids) this.releaseConnection(id)
     this.editorOpener?.dispose()
     this.editorOpener = null
+  }
+
+  async updateServerSettings(serverId: string, settings: unknown): Promise<void> {
+    const updates: Promise<void>[] = []
+    for (const [connectionId, descriptor] of this.connectionDescriptors) {
+      if (descriptor.descriptorId !== serverId) continue
+      descriptor.settings = settings
+      const connection = this.connections.get(connectionId)
+      if (!connection) continue
+      updates.push(connection.sendNotification("workspace/didChangeConfiguration", { settings }))
+    }
+    await Promise.all(updates)
   }
 
   private async connect(
@@ -587,37 +939,159 @@ export class LspClientPool {
     }
     this.connections.set(conn.id, connection)
     this.connectionDescriptors.set(conn.id, conn)
+    const dynamicRegistrations = new DynamicCapabilityStore(registration =>
+      this.registerDynamicProvider(conn, connection, deps, registration),
+    )
+    this.dynamicRegistrations.set(conn.id, dynamicRegistrations)
 
     connection.onNotification("window/showMessage", (params: { type?: number; message?: string }) => {
       if (typeof params?.message !== "string") return
+      this.emitOutput(conn.id, "server", "window/showMessage", "notification", params, params.message)
       if (params.type != null && params.type > 3) return
       this.onServerMessage?.(params.message, messageKindFromLspType(params.type))
     })
 
-    connection.onNotification("$/progress", (params: { value?: { kind?: string; message?: string; title?: string } }) => {
+    connection.onNotification("window/logMessage", (params: { type?: number; message?: string }) => {
+      this.emitOutput(conn.id, "server", "window/logMessage", "notification", params, params.message)
+    })
+    connection.onNotification("$/logTrace", (params: { message?: string; verbose?: string }) => {
+      this.emitOutput(
+        conn.id,
+        "server",
+        "$/logTrace",
+        "notification",
+        params,
+        [params.message, params.verbose].filter(Boolean).join("\n"),
+      )
+    })
+
+    connection.onNotification("$/progress", (params: {
+      token: string | number
+      value?: {
+        kind?: "begin" | "report" | "end"
+        message?: string
+        title?: string
+        percentage?: number
+        cancellable?: boolean
+      }
+    }) => {
       const value = params?.value
-      if (!value || value.kind !== "end") return
-      const message = value.message?.trim() || value.title?.trim()
-      if (message) this.onServerMessage?.(message, "info")
+      this.emitOutput(conn.id, "server", "$/progress", "notification", params, value?.message)
+      if (!value?.kind || !["begin", "report", "end"].includes(value.kind)) return
+      let connectionProgress = this.workDoneProgress.get(conn.id)
+      if (!connectionProgress) {
+        connectionProgress = new Map()
+        this.workDoneProgress.set(conn.id, connectionProgress)
+      }
+      const previous = connectionProgress.get(params.token)
+      const event: LspProgressEvent = {
+        connectionId: conn.id,
+        token: params.token,
+        kind: value.kind,
+        title: value.title ?? previous?.title,
+        message: value.message,
+        percentage: value.percentage,
+        cancellable: value.cancellable ?? previous?.cancellable,
+      }
+      if (value.kind === "end") connectionProgress.delete(params.token)
+      else connectionProgress.set(params.token, event)
+      deps.onProgress?.(event)
+      if (value.kind === "end") {
+        const message = value.message?.trim() || previous?.title?.trim()
+        if (message) this.onServerMessage?.(message, "info")
+      }
     })
 
     connection.onNotification(
       "textDocument/publishDiagnostics",
       (params: PublishDiagnosticsParams) => {
+        this.emitOutput(
+          conn.id,
+          "server",
+          "textDocument/publishDiagnostics",
+          "notification",
+          params,
+        )
+        if (!isDocumentOpenForConnection(params.uri, this.openDocs.get(conn.id))) return
+        const synchronizedVersion = this.synchronizedDocumentVersions
+          .get(conn.id)
+          ?.get(canonicalizeFileUri(params.uri))
+        if (!shouldAcceptDiagnostics(params.version, synchronizedVersion)) return
         setLspMarkers(params.uri, conn.id, asDiagnostics(params))
       },
     )
 
+    connection.onRequest("window/showMessageRequest", async (params: ShowMessageRequestParams) => {
+      this.emitOutput(
+        conn.id,
+        "server",
+        "window/showMessageRequest",
+        "request",
+        params,
+        params.message,
+      )
+      if (deps.showMessageRequest) return deps.showMessageRequest(params)
+      this.onServerMessage?.(params.message, messageKindFromLspType(params.type))
+      return null satisfies MessageActionItem | null
+    })
+
+    connection.onRequest("window/showDocument", async (params: ShowDocumentParams) => {
+      this.emitOutput(conn.id, "server", "window/showDocument", "request", params)
+      if (deps.showDocument) return { success: await deps.showDocument(params) }
+      if (!params.uri.startsWith("file:")) return { success: false }
+      try {
+        const uri = canonicalizeFileUri(params.uri)
+        if (deps.isUriAllowed && !deps.isUriAllowed(uri)) return { success: false }
+        const selection = params.selection?.start
+        deps.openFile(
+          uri,
+          fileUriToPath(uri),
+          selection ? selection.line + 1 : undefined,
+          selection ? selection.character + 1 : undefined,
+        )
+        return { success: true }
+      } catch {
+        return { success: false }
+      }
+    })
+
     connection.onRequest("workspace/applyEdit", async (params: { edit: WorkspaceEdit }) => {
+      this.emitOutput(conn.id, "server", "workspace/applyEdit", "request", params)
       const result = await applyLspWorkspaceEdit(params.edit, deps, { atomic: true })
       return { applied: result.applied, failureReason: result.reason }
     })
-    connection.onRequest("workspace/configuration", (params: ConfigurationParams) =>
-      defaultWorkspaceConfiguration(params),
-    )
-    connection.onRequest("window/workDoneProgress/create", () => null)
-    connection.onRequest("client/registerCapability", () => null)
-    connection.onRequest("client/unregisterCapability", () => null)
+    connection.onRequest("workspace/configuration", (params: ConfigurationParams) => {
+      this.emitOutput(conn.id, "server", "workspace/configuration", "request", params)
+      return workspaceConfiguration(params, conn.settings)
+    })
+    connection.onRequest("window/workDoneProgress/create", (params: { token: string | number }) => {
+      let connectionProgress = this.workDoneProgress.get(conn.id)
+      if (!connectionProgress) {
+        connectionProgress = new Map()
+        this.workDoneProgress.set(conn.id, connectionProgress)
+      }
+      const event: LspProgressEvent = {
+        connectionId: conn.id,
+        token: params.token,
+        kind: "created",
+      }
+      connectionProgress.set(params.token, event)
+      deps.onProgress?.(event)
+      this.emitOutput(conn.id, "server", "window/workDoneProgress/create", "request", params)
+      return null
+    })
+    connection.onRequest("client/registerCapability", (params: RegistrationParams) => {
+      this.emitOutput(conn.id, "server", "client/registerCapability", "request", params)
+      dynamicRegistrations.register(params.registrations)
+      return null
+    })
+    connection.onRequest("client/unregisterCapability", (
+      params: UnregistrationParams & { unregistrations?: UnregistrationParams["unregisterations"] },
+    ) => {
+      this.emitOutput(conn.id, "server", "client/unregisterCapability", "request", params)
+      dynamicRegistrations.unregister(params.unregisterations ?? params.unregistrations ?? [])
+      return null
+    })
 
     connection.listen()
 
@@ -628,15 +1102,19 @@ export class LspClientPool {
         clientInfo: { name: "yaade", version: "0.0.1" },
         rootUri: conn.projectRootUri,
         workspaceFolders: [{ uri: conn.projectRootUri, name: "workspace" }],
+        initializationOptions: conn.initializationOptions,
         capabilities: yaadeLspClientCapabilities,
       })
     } catch (error) {
+      dynamicRegistrations.dispose()
+      this.dynamicRegistrations.delete(conn.id)
       cancelPending()
       this.pendingDisconnectors.delete(conn.id)
       throw error
     }
 
     this.pendingDisconnectors.delete(conn.id)
+    this.serverCapabilities.set(conn.id, initialized.capabilities)
 
     await connection.sendNotification("initialized", {})
 
@@ -658,6 +1136,12 @@ export class LspClientPool {
         disconnected = true
         for (const d of this.disposables.get(conn.id) ?? []) d.dispose()
         this.disposables.delete(conn.id)
+        this.dynamicRegistrations.get(conn.id)?.dispose()
+        this.dynamicRegistrations.delete(conn.id)
+        this.dynamicSaveRegistrations.delete(conn.id)
+        this.synchronizedDocumentVersions.delete(conn.id)
+        this.workDoneProgress.delete(conn.id)
+        this.serverCapabilities.delete(conn.id)
         for (const uri of this.openDocs.get(conn.id) ?? []) {
           monacoModels.release(uri, this.lspOwnerId(conn.id))
           clearLspMarkers(uri, conn.id)
@@ -668,6 +1152,10 @@ export class LspClientPool {
           disposable.dispose()
         }
         this.modelChangeDisposables.delete(conn.id)
+        for (const scheduler of this.fullSyncSchedulers.get(conn.id)?.values() ?? []) {
+          scheduler.dispose()
+        }
+        this.fullSyncSchedulers.delete(conn.id)
         try {
           void connection.sendRequest("shutdown", null).catch(() => {})
           void connection.sendNotification("exit").catch(() => {})
@@ -682,18 +1170,26 @@ export class LspClientPool {
       },
       sendRequest: <R>(method: string, params?: unknown) =>
         connection.sendRequest(method, params) as Promise<R>,
+      saveDocument: (uri, persist, reason) => this.saveDocument(uri, persist, reason),
+      cancelWorkDoneProgress: token => this.cancelWorkDoneProgress(conn.id, token),
     }
 
     return client
   }
 
-  private matchesConnection(model: monaco.editor.ITextModel, conn: LspConnection): boolean {
+  private scopeMatchesConnection(model: monaco.editor.ITextModel, conn: LspConnection): boolean {
     return lspConnectionMatchesDocument(
       model.uri.toString(),
       model.getLanguageId(),
       conn.projectRootUri,
       conn.languageIds,
     )
+  }
+
+  /** Provider requests are valid only after this exact connection owns didOpen. */
+  private matchesConnection(model: monaco.editor.ITextModel, conn: LspConnection): boolean {
+    if (!this.scopeMatchesConnection(model, conn)) return false
+    return isDocumentOpenForConnection(model.uri.toString(), this.openDocs.get(conn.id))
   }
 
   private async didOpen(
@@ -720,10 +1216,18 @@ export class LspClientPool {
           text: model.getValue(),
         },
       })
+      let versions = this.synchronizedDocumentVersions.get(connectionId)
+      if (!versions) {
+        versions = new Map()
+        this.synchronizedDocumentVersions.set(connectionId, versions)
+      }
+      versions.set(canonicalizeFileUri(uri), model.getVersionId())
     } catch (error) {
       set.delete(uri)
       this.modelChangeDisposables.get(connectionId)?.get(uri)?.dispose()
       this.modelChangeDisposables.get(connectionId)?.delete(uri)
+      this.fullSyncSchedulers.get(connectionId)?.get(uri)?.dispose()
+      this.fullSyncSchedulers.get(connectionId)?.delete(uri)
       monacoModels.release(uri, this.lspOwnerId(connectionId))
       throw error
     }
@@ -737,15 +1241,7 @@ export class LspClientPool {
     capabilities: ServerCapabilities,
   ): void {
     // Monaco model language ids (tsx/jsx/mts/cts are aliased to ts/js at model create).
-    const selector = [
-      ...new Set(
-        conn.languageIds.map(id => {
-          if (id === "tsx" || id === "mts" || id === "cts") return "typescript"
-          if (id === "jsx") return "javascript"
-          return id
-        }),
-      ),
-    ]
+    const selector = asMonacoSelector(connectionDocumentSelector(conn.languageIds))
     const disposables: monaco.IDisposable[] = []
 
     const docId = (model: monaco.editor.ITextModel): TextDocumentIdentifier => ({
@@ -753,7 +1249,7 @@ export class LspClientPool {
     })
 
     const registerModelChanges = (model: monaco.editor.ITextModel) => {
-      if (!this.matchesConnection(model, conn)) return
+      if (!this.scopeMatchesConnection(model, conn)) return
       const uri = model.uri.toString()
       let subscriptions = this.modelChangeDisposables.get(conn.id)
       if (!subscriptions) {
@@ -761,21 +1257,48 @@ export class LspClientPool {
         this.modelChangeDisposables.set(conn.id, subscriptions)
       }
       if (subscriptions.has(uri)) return
-      subscriptions.set(
-        uri,
-        model.onDidChangeContent(event => {
-          if (syncKind === TextDocumentSyncKind.None) return
-          const contentChanges = lspContentChanges(
-            syncKind,
-            event.changes,
-            () => model.getValue(),
-          )
-          void connection.sendNotification("textDocument/didChange", {
-            textDocument: { uri: model.uri.toString(), version: model.getVersionId() },
-            contentChanges,
-          })
-        }),
-      )
+      const recordVersion = (version: number) => {
+        let versions = this.synchronizedDocumentVersions.get(conn.id)
+        if (!versions) {
+          versions = new Map()
+          this.synchronizedDocumentVersions.set(conn.id, versions)
+        }
+        versions.set(canonicalizeFileUri(uri), version)
+      }
+      if (syncKind === TextDocumentSyncKind.Full) {
+        let schedulers = this.fullSyncSchedulers.get(conn.id)
+        if (!schedulers) {
+          schedulers = new Map()
+          this.fullSyncSchedulers.set(conn.id, schedulers)
+        }
+        const scheduler = createFullDocumentSyncScheduler({
+          getVersion: () => model.getVersionId(),
+          getText: () => model.getValue(),
+          send: (version, text) =>
+            connection.sendNotification("textDocument/didChange", {
+              textDocument: { uri: model.uri.toString(), version },
+              contentChanges: [{ text }],
+            }),
+          onSent: recordVersion,
+        })
+        schedulers.set(uri, scheduler)
+        subscriptions.set(uri, model.onDidChangeContent(() => scheduler.schedule()))
+        return
+      }
+      subscriptions.set(uri, model.onDidChangeContent(event => {
+        if (syncKind === TextDocumentSyncKind.None) return
+        const version = model.getVersionId()
+        const contentChanges = lspContentChanges(
+          syncKind,
+          event.changes,
+          () => model.getValue(),
+        )
+        void connection.sendNotification("textDocument/didChange", {
+          textDocument: { uri: model.uri.toString(), version },
+          contentChanges,
+        })
+        recordVersion(version)
+      }))
     }
     this.modelRegistrars.set(conn.id, registerModelChanges)
 
@@ -788,27 +1311,14 @@ export class LspClientPool {
       ))
     }
 
-    if (capabilities.completionProvider) disposables.push(
-      monaco.languages.registerCompletionItemProvider(selector, {
-        triggerCharacters: capabilities.completionProvider.triggerCharacters ?? [],
-        provideCompletionItems: async (model, position, _context, token) => {
-          if (!this.matchesConnection(model, conn)) return { suggestions: [] }
-          const result = await requestWithCancellation<
-            { items?: CompletionItem[]; isIncomplete?: boolean } | CompletionItem[]
-          >(connection, "textDocument/completion", {
-            textDocument: docId(model),
-            position: lspPos(position),
-          }, token)
-          const items = Array.isArray(result) ? result : (result?.items ?? [])
-          return {
-            incomplete: !Array.isArray(result) && Boolean(result?.isIncomplete),
-            suggestions: items.map((item, index) =>
-              completionSuggestion(model, position, item, index),
-            ),
-          }
-        },
-      }),
-    )
+    if (capabilities.completionProvider) {
+      disposables.push(this.registerCompletionProvider(
+        selector,
+        conn,
+        connection,
+        capabilities.completionProvider,
+      ))
+    }
 
     if (capabilityEnabled(capabilities.hoverProvider)) disposables.push(
       monaco.languages.registerHoverProvider(selector, {
@@ -1001,6 +1511,15 @@ export class LspClientPool {
       }),
     )
 
+    if (capabilities.documentOnTypeFormattingProvider) {
+      disposables.push(this.registerOnTypeFormattingProvider(
+        selector,
+        conn,
+        connection,
+        capabilities.documentOnTypeFormattingProvider,
+      ))
+    }
+
     if (capabilityEnabled(capabilities.documentSymbolProvider)) disposables.push(
       monaco.languages.registerDocumentSymbolProvider(selector, {
         provideDocumentSymbols: async (model, token) => {
@@ -1025,73 +1544,51 @@ export class LspClientPool {
       }),
     )
 
-    if (capabilityEnabled(capabilities.codeActionProvider)) disposables.push(
-      monaco.languages.registerCodeActionProvider(selector, {
-        provideCodeActions: async (model, range, context, token) => {
-          if (!this.matchesConnection(model, conn)) return { actions: [], dispose: () => {} }
-          const lspContext: CodeActionContext = {
-            diagnostics: context.markers.map(codeActionDiagnostic),
-            only: context.only ? [context.only] : undefined,
-            triggerKind: context.trigger === monaco.languages.CodeActionTriggerType.Auto ? 2 : 1,
-          }
-          const actions = await requestWithCancellation<(CodeAction | Command)[] | null>(
-            connection,
-            "textDocument/codeAction",
-            {
-              textDocument: docId(model),
-              range: {
-                start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
-                end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
-              },
-              context: lspContext,
-            },
-            token,
-          )
-          return {
-            actions: (actions ?? []).map(action => {
-              if (isLspCommand(action)) {
-                return { title: action.title, command: command(action) }
-              }
-              const mappedEdit = workspaceEdit(action.edit)
-              return {
-                title: action.title,
-                kind: action.kind,
-                diagnostics: context.markers,
-                edit: mappedEdit,
-                command: command(action.command),
-                isPreferred: action.isPreferred,
-                disabled: action.edit && !mappedEdit
-                  ? "File create, rename, and delete code actions are not supported"
-                  : action.disabled?.reason,
-              }
-            }),
-            dispose: () => {},
-          }
-        },
-      }),
-    )
+    if (capabilityEnabled(capabilities.codeActionProvider)) {
+      disposables.push(this.registerCodeActionProvider(
+        selector,
+        conn,
+        connection,
+        deps,
+        typeof capabilities.codeActionProvider === "object"
+          ? capabilities.codeActionProvider
+          : {},
+      ))
+    }
 
     const semanticTokensProvider = capabilities.semanticTokensProvider
-    if (hasFullSemanticTokens(capabilities) && typeof semanticTokensProvider === "object" && semanticTokensProvider != null) {
-      disposables.push(monaco.languages.registerDocumentSemanticTokensProvider(selector, {
-        getLegend: () => ({
-          tokenTypes: semanticTokensProvider.legend.tokenTypes,
-          tokenModifiers: semanticTokensProvider.legend.tokenModifiers,
-        }),
-        provideDocumentSemanticTokens: async (model, _lastResultId, token) => {
-          if (!this.matchesConnection(model, conn)) return null
-          const result = await requestWithCancellation<SemanticTokens | null>(
-            connection,
-            "textDocument/semanticTokens/full",
-            { textDocument: docId(model) },
-            token,
-          )
-          return result
-            ? { resultId: result.resultId, data: Uint32Array.from(result.data) }
-            : null
-        },
-        releaseDocumentSemanticTokens: () => {},
-      }))
+    if (
+      typeof semanticTokensProvider === "object"
+      && semanticTokensProvider != null
+      && (hasFullSemanticTokens(capabilities) || hasRangeSemanticTokens(capabilities))
+    ) {
+      disposables.push(this.registerSemanticTokensProviders(
+        selector,
+        conn,
+        connection,
+        semanticTokensProvider,
+      ))
+    }
+
+    if (capabilityEnabled(capabilities.foldingRangeProvider)) {
+      disposables.push(this.registerFoldingRangeProvider(selector, conn, connection))
+    }
+
+    if (capabilityEnabled(capabilities.selectionRangeProvider)) {
+      disposables.push(this.registerSelectionRangeProvider(selector, conn, connection))
+    }
+
+    if (capabilities.documentLinkProvider) {
+      disposables.push(this.registerDocumentLinkProvider(
+        selector,
+        conn,
+        connection,
+        capabilities.documentLinkProvider,
+      ))
+    }
+
+    if (capabilityEnabled(capabilities.colorProvider)) {
+      disposables.push(this.registerDocumentColorProvider(selector, conn, connection))
     }
 
     if (capabilityEnabled(capabilities.inlayHintProvider)) disposables.push(
@@ -1243,6 +1740,515 @@ export class LspClientPool {
     )
 
     this.disposables.set(conn.id, disposables)
+  }
+
+  private registerDynamicProvider(
+    conn: LspConnection,
+    connection: MessageConnection,
+    deps: JetLspWorkspaceDeps,
+    registration: DynamicRegistration,
+  ): monaco.IDisposable | undefined {
+    const documentSelector = registrationDocumentSelector(
+      registration.registerOptions,
+      connectionDocumentSelector(conn.languageIds),
+    )
+    if (documentSelector.length === 0) return undefined
+    const selector = asMonacoSelector(documentSelector)
+
+    switch (registration.method) {
+      case "textDocument/completion":
+        return this.registerCompletionProvider(
+          selector,
+          conn,
+          connection,
+          (registration.registerOptions ?? {}) as CompletionOptions,
+        )
+      case "textDocument/codeAction":
+        return this.registerCodeActionProvider(
+          selector,
+          conn,
+          connection,
+          deps,
+          (registration.registerOptions ?? {}) as CodeActionOptions,
+        )
+      case "textDocument/onTypeFormatting": {
+        const options = registration.registerOptions as DocumentOnTypeFormattingOptions | undefined
+        if (!options || typeof options.firstTriggerCharacter !== "string") return undefined
+        return this.registerOnTypeFormattingProvider(selector, conn, connection, options)
+      }
+      case "textDocument/semanticTokens": {
+        const options = registration.registerOptions as SemanticTokensOptions | undefined
+        if (!options?.legend) return undefined
+        return this.registerSemanticTokensProviders(selector, conn, connection, options)
+      }
+      case "textDocument/foldingRange":
+        return this.registerFoldingRangeProvider(selector, conn, connection)
+      case "textDocument/selectionRange":
+        return this.registerSelectionRangeProvider(selector, conn, connection)
+      case "textDocument/documentLink":
+        return this.registerDocumentLinkProvider(
+          selector,
+          conn,
+          connection,
+          (registration.registerOptions ?? {}) as DocumentLinkOptions,
+        )
+      case "textDocument/documentColor":
+        return this.registerDocumentColorProvider(selector, conn, connection)
+      case "textDocument/willSave":
+        return this.registerDynamicSaveSynchronization(conn.id, registration, documentSelector, {
+          willSave: true,
+        })
+      case "textDocument/willSaveWaitUntil":
+        return this.registerDynamicSaveSynchronization(conn.id, registration, documentSelector, {
+          willSaveWaitUntil: true,
+        })
+      case "textDocument/didSave":
+        return this.registerDynamicSaveSynchronization(conn.id, registration, documentSelector, {
+          didSave: true,
+          includeText: Boolean(
+            registration.registerOptions
+            && typeof registration.registerOptions === "object"
+            && Reflect.get(registration.registerOptions, "includeText") === true,
+          ),
+        })
+      case "workspace/didChangeWatchedFiles": {
+        const options = registration.registerOptions as
+          | DidChangeWatchedFilesRegistrationOptions
+          | undefined
+        if (!options || !Array.isArray(options.watchers)) return undefined
+        const unsubscribe = deps.onFileChanged?.(event => {
+          const changes = watchedFileChanges(options, conn.projectRootUri, event)
+          if (changes.length === 0) return
+          this.emitOutput(
+            conn.id,
+            "client",
+            "workspace/didChangeWatchedFiles",
+            "notification",
+            { changes },
+          )
+          void connection.sendNotification("workspace/didChangeWatchedFiles", { changes })
+        })
+        return { dispose: () => unsubscribe?.() }
+      }
+      default:
+        return undefined
+    }
+  }
+
+  private registerDynamicSaveSynchronization(
+    connectionId: string,
+    registration: DynamicRegistration,
+    selector: MonacoDocumentSelector,
+    sync: Partial<LspSaveSyncOptions>,
+  ): monaco.IDisposable {
+    let registrations = this.dynamicSaveRegistrations.get(connectionId)
+    if (!registrations) {
+      registrations = new Map()
+      this.dynamicSaveRegistrations.set(connectionId, registrations)
+    }
+    registrations.set(registration.id, { selector, sync })
+    return {
+      dispose: () => {
+        const current = this.dynamicSaveRegistrations.get(connectionId)
+        current?.delete(registration.id)
+        if (current?.size === 0) this.dynamicSaveRegistrations.delete(connectionId)
+      },
+    }
+  }
+
+  private saveSyncForDocument(
+    connectionId: string,
+    uri: string,
+    languageId: string,
+  ): LspSaveSyncOptions {
+    const sync = staticSaveSyncOptions(this.serverCapabilities.get(connectionId) ?? {})
+    for (const registration of this.dynamicSaveRegistrations.get(connectionId)?.values() ?? []) {
+      if (!documentSelectorMatches(registration.selector, uri, languageId)) continue
+      sync.willSave ||= registration.sync.willSave === true
+      sync.willSaveWaitUntil ||= registration.sync.willSaveWaitUntil === true
+      sync.didSave ||= registration.sync.didSave === true
+      sync.includeText ||= registration.sync.includeText === true
+    }
+    return sync
+  }
+
+  private emitOutput(
+    connectionId: string,
+    direction: LspOutputEntry["direction"],
+    method: string,
+    kind: LspOutputEntry["kind"],
+    data?: unknown,
+    message?: string,
+  ): void {
+    this.workspaceDeps?.onOutput?.({
+      connectionId,
+      timestamp: Date.now(),
+      direction,
+      method,
+      kind,
+      message,
+      data: structuredOutputData(method, data),
+    })
+  }
+
+  private registerCompletionProvider(
+    selector: monaco.languages.LanguageSelector,
+    conn: LspConnection,
+    connection: MessageConnection,
+    options: CompletionOptions,
+  ): monaco.IDisposable {
+    return monaco.languages.registerCompletionItemProvider(selector, {
+      triggerCharacters: options.triggerCharacters ?? [],
+      provideCompletionItems: async (model, position, _context, token) => {
+        if (!this.matchesConnection(model, conn)) return { suggestions: [] }
+        const result = await requestWithCancellation<
+          { items?: CompletionItem[]; isIncomplete?: boolean } | CompletionItem[] | null
+        >(connection, "textDocument/completion", {
+          textDocument: { uri: model.uri.toString() },
+          position: lspPos(position),
+        }, token)
+        const items = Array.isArray(result) ? result : (result?.items ?? [])
+        const suggestions = items.map((item, index) => {
+          const suggestion = completionSuggestion(model, position, item, index)
+          completionResolutionState.set(suggestion, { item, model, position, index })
+          return suggestion
+        })
+        return {
+          incomplete: !Array.isArray(result) && Boolean(result?.isIncomplete),
+          suggestions,
+        }
+      },
+      resolveCompletionItem: options.resolveProvider
+        ? async (item, token) => {
+            const state = completionResolutionState.get(item)
+            if (!state) return item
+            const resolved = await requestWithCancellation<CompletionItem>(
+              connection,
+              "completionItem/resolve",
+              state.item,
+              token,
+            )
+            const merged = { ...state.item, ...resolved }
+            const suggestion = completionSuggestion(
+              state.model,
+              state.position,
+              merged,
+              state.index,
+            )
+            completionResolutionState.set(suggestion, { ...state, item: merged })
+            return suggestion
+          }
+        : undefined,
+    })
+  }
+
+  private registerCodeActionProvider(
+    selector: monaco.languages.LanguageSelector,
+    conn: LspConnection,
+    connection: MessageConnection,
+    deps: JetLspWorkspaceDeps,
+    options: CodeActionOptions,
+  ): monaco.IDisposable {
+    const resourceCommandId = `yaade.lsp.applyCodeActionEdit.${conn.id}.${++this.commandSequence}`
+    const commandDisposable = monaco.editor.registerCommand(
+      resourceCommandId,
+      async (_accessor, edit: WorkspaceEdit, serverCommand?: Command) => {
+        const result = await applyLspWorkspaceEdit(edit, deps, { atomic: true })
+        if (!result.applied) {
+          this.onServerMessage?.(
+            result.reason ?? "Language-server code action could not be applied",
+            "error",
+          )
+          return
+        }
+        if (serverCommand) {
+          await connection.sendRequest("workspace/executeCommand", {
+            command: serverCommand.command,
+            arguments: serverCommand.arguments,
+          })
+        }
+      },
+    )
+    const providerDisposable = monaco.languages.registerCodeActionProvider(selector, {
+      provideCodeActions: async (model, range, context, token) => {
+        if (!this.matchesConnection(model, conn)) return { actions: [], dispose: () => {} }
+        const lspContext: CodeActionContext = {
+          diagnostics: context.markers.map(codeActionDiagnostic),
+          only: context.only ? [context.only] : undefined,
+          triggerKind: context.trigger === monaco.languages.CodeActionTriggerType.Auto ? 2 : 1,
+        }
+        const actions = await requestWithCancellation<(CodeAction | Command)[] | null>(
+          connection,
+          "textDocument/codeAction",
+          {
+            textDocument: { uri: model.uri.toString() },
+            range: {
+              start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+              end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+            },
+            context: lspContext,
+          },
+          token,
+        )
+        return {
+          actions: (actions ?? []).map(action =>
+            monacoCodeAction(action, context.markers, resourceCommandId),
+          ),
+          dispose: () => {},
+        }
+      },
+      resolveCodeAction: options.resolveProvider
+        ? async (action, token) => {
+            const state = codeActionResolutionState.get(action)
+            if (!state) return action
+            const resolved = await requestWithCancellation<CodeAction>(
+              connection,
+              "codeAction/resolve",
+              state.action,
+              token,
+            )
+            return monacoCodeAction(
+              { ...state.action, ...resolved },
+              state.markers,
+              resourceCommandId,
+            )
+          }
+        : undefined,
+    }, {
+      providedCodeActionKinds: options.codeActionKinds,
+    })
+    return combineDisposables([providerDisposable, commandDisposable])
+  }
+
+  private registerOnTypeFormattingProvider(
+    selector: monaco.languages.LanguageSelector,
+    conn: LspConnection,
+    connection: MessageConnection,
+    options: DocumentOnTypeFormattingOptions,
+  ): monaco.IDisposable {
+    return monaco.languages.registerOnTypeFormattingEditProvider(selector, {
+      autoFormatTriggerCharacters: [
+        options.firstTriggerCharacter,
+        ...(options.moreTriggerCharacter ?? []),
+      ],
+      provideOnTypeFormattingEdits: async (model, position, ch, _formattingOptions, token) => {
+        if (!this.matchesConnection(model, conn)) return []
+        const modelOptions = model.getOptions()
+        const edits = await requestWithCancellation<TextEdit[] | null>(
+          connection,
+          "textDocument/onTypeFormatting",
+          {
+            textDocument: { uri: model.uri.toString() },
+            position: lspPos(position),
+            ch,
+            options: {
+              tabSize: modelOptions.tabSize,
+              insertSpaces: modelOptions.insertSpaces,
+            },
+          },
+          token,
+        )
+        return (edits ?? []).map(monacoTextEdit)
+      },
+    })
+  }
+
+  private registerSemanticTokensProviders(
+    selector: monaco.languages.LanguageSelector,
+    conn: LspConnection,
+    connection: MessageConnection,
+    options: SemanticTokensOptions,
+  ): monaco.IDisposable {
+    const disposables: monaco.IDisposable[] = []
+    const legend = {
+      tokenTypes: options.legend.tokenTypes,
+      tokenModifiers: options.legend.tokenModifiers,
+    }
+    if (options.full) {
+      const supportsDelta = typeof options.full === "object" && options.full.delta === true
+      disposables.push(monaco.languages.registerDocumentSemanticTokensProvider(selector, {
+        getLegend: () => legend,
+        provideDocumentSemanticTokens: async (model, lastResultId, token) => {
+          if (!this.matchesConnection(model, conn)) return null
+          const useDelta = supportsDelta && lastResultId != null
+          const result = await requestWithCancellation<
+            SemanticTokens | SemanticTokensDelta | null
+          >(
+            connection,
+            useDelta
+              ? "textDocument/semanticTokens/full/delta"
+              : "textDocument/semanticTokens/full",
+            useDelta
+              ? { textDocument: { uri: model.uri.toString() }, previousResultId: lastResultId }
+              : { textDocument: { uri: model.uri.toString() } },
+            token,
+          )
+          return result ? monacoSemanticTokens(result) : null
+        },
+        releaseDocumentSemanticTokens: () => {},
+      }))
+    }
+    if (options.range) {
+      disposables.push(monaco.languages.registerDocumentRangeSemanticTokensProvider(selector, {
+        getLegend: () => legend,
+        provideDocumentRangeSemanticTokens: async (model, range, token) => {
+          if (!this.matchesConnection(model, conn)) return null
+          const result = await requestWithCancellation<SemanticTokens | null>(
+            connection,
+            "textDocument/semanticTokens/range",
+            {
+              textDocument: { uri: model.uri.toString() },
+              range: {
+                start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+                end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
+              },
+            },
+            token,
+          )
+          return result ? { resultId: result.resultId, data: Uint32Array.from(result.data) } : null
+        },
+      }))
+    }
+    return combineDisposables(disposables)
+  }
+
+  private registerFoldingRangeProvider(
+    selector: monaco.languages.LanguageSelector,
+    conn: LspConnection,
+    connection: MessageConnection,
+  ): monaco.IDisposable {
+    return monaco.languages.registerFoldingRangeProvider(selector, {
+      provideFoldingRanges: async (model, _context, token) => {
+        if (!this.matchesConnection(model, conn)) return []
+        try {
+          const ranges = await requestWithCancellation<FoldingRange[] | null>(
+            connection,
+            "textDocument/foldingRange",
+            { textDocument: { uri: model.uri.toString() } },
+            token,
+          )
+          return (ranges ?? []).map(range => ({
+            start: range.startLine + 1,
+            end: range.endLine + 1,
+            kind: range.kind ? monaco.languages.FoldingRangeKind.fromValue(range.kind) : undefined,
+          }))
+        } catch (error) {
+          this.emitOutput(
+            conn.id,
+            "server",
+            "textDocument/foldingRange",
+            "error",
+            undefined,
+            error instanceof Error ? error.message : String(error),
+          )
+          return []
+        }
+      },
+    })
+  }
+
+  private registerSelectionRangeProvider(
+    selector: monaco.languages.LanguageSelector,
+    conn: LspConnection,
+    connection: MessageConnection,
+  ): monaco.IDisposable {
+    return monaco.languages.registerSelectionRangeProvider(selector, {
+      provideSelectionRanges: async (model, positions, token) => {
+        if (!this.matchesConnection(model, conn)) return []
+        const ranges = await requestWithCancellation<SelectionRange[] | null>(
+          connection,
+          "textDocument/selectionRange",
+          {
+            textDocument: { uri: model.uri.toString() },
+            positions: positions.map(lspPos),
+          },
+          token,
+        )
+        return (ranges ?? []).map(monacoSelectionRanges)
+      },
+    })
+  }
+
+  private registerDocumentLinkProvider(
+    selector: monaco.languages.LanguageSelector,
+    conn: LspConnection,
+    connection: MessageConnection,
+    options: DocumentLinkOptions,
+  ): monaco.IDisposable {
+    return monaco.languages.registerLinkProvider(selector, {
+      provideLinks: async (model, token) => {
+        if (!this.matchesConnection(model, conn)) return { links: [] }
+        const links = await requestWithCancellation<DocumentLink[] | null>(
+          connection,
+          "textDocument/documentLink",
+          { textDocument: { uri: model.uri.toString() } },
+          token,
+        )
+        return { links: (links ?? []).map(monacoDocumentLink) }
+      },
+      resolveLink: options.resolveProvider
+        ? async (link, token) => {
+            const original = documentLinkResolutionState.get(link)
+            if (!original) return link
+            const resolved = await requestWithCancellation<DocumentLink>(
+              connection,
+              "documentLink/resolve",
+              original,
+              token,
+            )
+            return monacoDocumentLink({ ...original, ...resolved })
+          }
+        : undefined,
+    })
+  }
+
+  private registerDocumentColorProvider(
+    selector: monaco.languages.LanguageSelector,
+    conn: LspConnection,
+    connection: MessageConnection,
+  ): monaco.IDisposable {
+    return monaco.languages.registerColorProvider(selector, {
+      provideDocumentColors: async (model, token) => {
+        if (!this.matchesConnection(model, conn)) return []
+        const colors = await requestWithCancellation<ColorInformation[] | null>(
+          connection,
+          "textDocument/documentColor",
+          { textDocument: { uri: model.uri.toString() } },
+          token,
+        )
+        return (colors ?? []).map(color => ({
+          range: monacoRange(color.range),
+          color: color.color,
+        }))
+      },
+      provideColorPresentations: async (model, colorInfo, token) => {
+        if (!this.matchesConnection(model, conn)) return []
+        const presentations = await requestWithCancellation<ColorPresentation[] | null>(
+          connection,
+          "textDocument/colorPresentation",
+          {
+            textDocument: { uri: model.uri.toString() },
+            color: colorInfo.color,
+            range: {
+              start: {
+                line: colorInfo.range.startLineNumber - 1,
+                character: colorInfo.range.startColumn - 1,
+              },
+              end: {
+                line: colorInfo.range.endLineNumber - 1,
+                character: colorInfo.range.endColumn - 1,
+              },
+            },
+          },
+          token,
+        )
+        return (presentations ?? []).map(presentation => ({
+          label: presentation.label,
+          textEdit: presentation.textEdit ? monacoTextEdit(presentation.textEdit) : undefined,
+          additionalTextEdits: presentation.additionalTextEdits?.map(monacoTextEdit),
+        }))
+      },
+    })
   }
 
   private async provideLocations(

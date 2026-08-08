@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node scripts/dev-web.mjs",
     "dev:frontend": "node scripts/dev-frontend.mjs",
-    "build": "vite build && node scripts/verify-startup-graph.mjs",
+    "build": "vite build && node scripts/verify-startup-graph.mjs && node scripts/compress-assets.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

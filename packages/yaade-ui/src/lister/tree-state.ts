@@ -75,11 +75,21 @@ export class ListerTreeState<T> {
     this.notify()
   }
 
+  expandedIds(): ListerNodeId[] {
+    return [...this.expanded]
+  }
+
   invalidate(): void {
     this.generation++
     this.childCache.clear()
     this.loading.clear()
     this.notify()
+  }
+
+  /** Clear cached rows and repopulate every branch the user left expanded. */
+  reloadExpanded(): void {
+    this.invalidate()
+    for (const id of this.expanded) void this.ensureChildren(id)
   }
 
   flatten(): FlatEntry<T>[] {

@@ -203,6 +203,9 @@ export function wrapPlaywrightPage(page: Page): ShellDriver {
     setViewportSize(size) {
       return page.setViewportSize(size)
     },
+    emulateMedia(options) {
+      return page.emulateMedia(options)
+    },
     viewportSize() {
       return page.viewportSize()
     },

@@ -407,7 +407,7 @@ export async function listProjectFiles(
   throwIfAborted(signal)
   if (await isGitWorkspace(rootUri)) {
     try {
-      const fffFiles = await fffListFiles(rootUri, maxFiles)
+      const fffFiles = await fffListFiles(rootUri, maxFiles, signal)
       throwIfAborted(signal)
       if (fffFiles) return fffFiles
     } catch (error) {
@@ -429,7 +429,12 @@ export async function fileSearch(
   const hasPathFilters = Boolean(opts?.include?.length || opts?.exclude?.length)
   if (!hasPathFilters && await isGitWorkspace(rootUri)) {
     try {
-      const fffResults = await fffFileSearch(rootUri, query, { ...opts, pageSize })
+      const fffResults = await fffFileSearch(
+        rootUri,
+        query,
+        { ...opts, pageSize },
+        signal,
+      )
       throwIfAborted(signal)
       if (fffResults) return fffResults
     } catch (error) {
@@ -458,7 +463,7 @@ export async function projectSearch(
   )
   if (!requiresRg && await isGitWorkspace(rootUri)) {
     try {
-      const fffResults = await fffGrep(rootUri, query, opts)
+      const fffResults = await fffGrep(rootUri, query, opts, signal)
       throwIfAborted(signal)
       if (fffResults) return fffResults
     } catch (error) {

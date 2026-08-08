@@ -83,6 +83,7 @@ export class LspLifecycleEvent extends Schema.Class<LspLifecycleEvent>("LspLifec
   attempt: Schema.optional(Schema.Number),
   message: Schema.optional(Schema.String),
   transportUrl: Schema.optional(Schema.String),
+  target: Schema.optional(ResolvedLanguageServerTarget),
   settingsOnly: Schema.optional(Schema.Boolean),
   settings: Schema.optional(Schema.Unknown),
 }) {}

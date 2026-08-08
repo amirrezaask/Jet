@@ -21,6 +21,10 @@ export type ListDocument = {
   searchCaseSensitive?: boolean
   searchRegex?: boolean
   searchFuzzy?: boolean
+  searchWholeWord?: boolean
+  searchInclude?: string
+  searchExclude?: string
+  searchTruncated?: boolean
   searchLoading?: boolean
   searchError?: string | null
   taskLabel?: string

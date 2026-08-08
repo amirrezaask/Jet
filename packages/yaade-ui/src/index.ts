@@ -136,6 +136,7 @@ export { ProjectSwitcherOverlay } from "./components/ProjectSwitcherOverlay.js"
 export { PaletteOverlay } from "./components/PaletteOverlay.js"
 export {
   SettingsOverlay,
+  type ColorSchemeMode,
   type JetAppearanceSettings,
   type SessionLayout,
 } from "./components/SettingsOverlay.js"

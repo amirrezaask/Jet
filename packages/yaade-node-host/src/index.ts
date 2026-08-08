@@ -94,19 +94,11 @@ export {
 } from "./resolve-launch.js"
 export {
   LspBridge,
-  startLspSession,
-  stopLspSession,
-  stopAllLspSessions,
-  setLspCrashHandler,
-  getLspSession,
-  createLspRestartHelper,
   LspFramingDecoder,
   encodeLspMessage,
   type LspSession,
   type StartLspSessionOptions,
   type StartLspSessionResult,
-  type LspRestartPolicy,
-  type LspRestartHelper,
   type LspBridgeOptions,
 } from "./lsp-bridge.js"
 export {

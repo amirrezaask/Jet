@@ -1,15 +1,22 @@
 import type { ListDocument, ListItem, WorkspaceService } from "@yaade/workspace"
-import { useEffect, useState } from "react"
+import { useCallback, useSyncExternalStore } from "react"
 import { LocationList } from "./LocationList.js"
 
 function useListDocument(listId: string, workspace: WorkspaceService): ListDocument | undefined {
-  const [, setRev] = useState(0)
-  useEffect(() => {
-    return workspace.listStore.onDidChange.event(e => {
-      if (e.id === listId) setRev(r => r + 1)
-    }).dispose
-  }, [workspace, listId])
-  return workspace.listStore.get(listId)
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      const disposable = workspace.listStore.onDidChange.event(event => {
+        if (event.id === listId) onStoreChange()
+      })
+      return () => disposable.dispose()
+    },
+    [listId, workspace],
+  )
+  const getSnapshot = useCallback(
+    () => workspace.listStore.get(listId),
+    [listId, workspace],
+  )
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 export function ReferencesLocationList({

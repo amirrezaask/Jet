@@ -78,6 +78,31 @@ describe("mux keymap", () => {
     assert.equal(new Set(keys).size, keys.length)
   })
 
+  it("keeps the planned editor-navigation prefix surface stable", () => {
+    const planned = new Map(
+      MUX_PREFIX_BINDINGS.map(binding => [binding.key, binding.command]),
+    )
+    assert.deepEqual(
+      Object.fromEntries(
+        ["f", "/", "b", "e", "o", "r", "[", "]", "s"].map(key => [
+          key,
+          planned.get(key),
+        ]),
+      ),
+      {
+        f: "editor.quickOpen",
+        "/": "search.focus",
+        b: "buffers.focus",
+        e: "explorer.focus",
+        o: "outline.focus",
+        r: "references.focus",
+        "[": "editor.navigateBack",
+        "]": "editor.navigateForward",
+        s: "editor.save",
+      },
+    )
+  })
+
   it("does not claim Escape — terminals need it", () => {
     for (const binding of muxBindings()) {
       assert.notEqual(binding.key, "Escape")

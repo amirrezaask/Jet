@@ -12,6 +12,20 @@ import {
   waitForMux,
 } from "./_launch.js"
 
+async function pointerDrag(
+  page: import("@playwright/test").Page,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): Promise<void> {
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 12, from.y + 4, { steps: 4 })
+  await page.waitForTimeout(50)
+  await page.mouse.move(to.x, to.y, { steps: 20 })
+  await page.waitForTimeout(30)
+  await page.mouse.up()
+}
+
 test.describe("mux editor tabs", () => {
   test.skip(!hasPtySpawn(), "node-pty spawn unavailable")
 
@@ -60,8 +74,11 @@ test.describe("mux editor tabs", () => {
 
       await expect
         .poll(
-          () => page.evaluate(() => window.__yaadeAgent!.getEditorDiagnostics()),
-          { timeout: 10_000 },
+          () =>
+            page.evaluate(() => window.__yaadeAgent!.getEditorDiagnostics()),
+          {
+            timeout: 10_000,
+          },
         )
         .toMatchObject({
           models: { totalCount: 1 },
@@ -76,9 +93,9 @@ test.describe("mux editor tabs", () => {
         entry.uri.endsWith("/src/index.ts"),
       )
       expect(model).toMatchObject({
-        refCount: 2,
-        ownerCount: 2,
-        lspOwnerCount: 0,
+        refCount: 3,
+        ownerCount: 3,
+        lspOwnerCount: 1,
         open: true,
         dirty: false,
         pinned: true,
@@ -136,19 +153,26 @@ test.describe("mux editor tabs", () => {
       await expectLocatorCount(
         page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
         2,
-        { timeout: 10_000 },
+        {
+          timeout: 10_000,
+        },
       )
       await expectLocatorCount(
         page.locator('[data-yaade-mux-pane-kind="editor"]'),
         1,
       )
       await expect
-        .poll(async () => {
-          const uri = await page
-            .locator("[data-yaade-mux-editor-uri]")
-            .evaluate(el => el.getAttribute("data-yaade-mux-editor-uri") ?? "")
-          return /utils\.ts/.test(uri)
-        }, { timeout: 10_000 })
+        .poll(
+          async () => {
+            const uri = await page
+              .locator("[data-yaade-mux-editor-uri]")
+              .evaluate(
+                el => el.getAttribute("data-yaade-mux-editor-uri") ?? "",
+              )
+            return /utils\.ts/.test(uri)
+          },
+          { timeout: 10_000 },
+        )
         .toBe(true)
 
       await page.evaluate(async () => {
@@ -163,12 +187,17 @@ test.describe("mux editor tabs", () => {
         1,
       )
       await expect
-        .poll(async () => {
-          const uri = await page
-            .locator("[data-yaade-mux-editor-uri]")
-            .evaluate(el => el.getAttribute("data-yaade-mux-editor-uri") ?? "")
-          return /index\.ts/.test(uri)
-        }, { timeout: 10_000 })
+        .poll(
+          async () => {
+            const uri = await page
+              .locator("[data-yaade-mux-editor-uri]")
+              .evaluate(
+                el => el.getAttribute("data-yaade-mux-editor-uri") ?? "",
+              )
+            return /index\.ts/.test(uri)
+          },
+          { timeout: 10_000 },
+        )
         .toBe(true)
     } finally {
       await app.close()
@@ -214,9 +243,9 @@ test.describe("mux editor tabs", () => {
       await expect
         .poll(
           () =>
-            page.locator("[data-yaade-mux-editor-pane]").getAttribute(
-              "data-yaade-mux-editor-uri",
-            ),
+            page
+              .locator("[data-yaade-mux-editor-pane]")
+              .getAttribute("data-yaade-mux-editor-uri"),
           { timeout: 10_000 },
         )
         .toMatch(/\/src\/utils\.ts$/)
@@ -259,7 +288,10 @@ test.describe("mux editor tabs", () => {
             expect.stringMatching(/^buffer:/),
             expect.stringMatching(/^view:/),
           ]),
-          utilsOwners: [expect.stringMatching(/^buffer:/)],
+          utilsOwners: expect.arrayContaining([
+            expect.stringMatching(/^buffer:/),
+            expect.stringMatching(/^lsp:/),
+          ]),
           indexReads: 1,
           utilsReads: 1,
         })
@@ -292,8 +324,8 @@ test.describe("mux editor tabs", () => {
         .poll(
           () =>
             page.evaluate(() => {
-              const editor = window.__yaadeAgent!
-                .getEditorDiagnostics()
+              const editor = window
+                .__yaadeAgent!.getEditorDiagnostics()
                 .editors.entries.find(entry =>
                   entry.uri.endsWith("/src/index.ts"),
                 )
@@ -310,8 +342,8 @@ test.describe("mux editor tabs", () => {
         )
         .not.toBeNull()
       const beforeReload = await page.evaluate(() => {
-        const editor = window.__yaadeAgent!
-          .getEditorDiagnostics()
+        const editor = window
+          .__yaadeAgent!.getEditorDiagnostics()
           .editors.entries.find(entry => entry.uri.endsWith("/src/index.ts"))
         if (!editor) throw new Error("index editor diagnostics unavailable")
         return {
@@ -330,9 +362,9 @@ test.describe("mux editor tabs", () => {
       await expect
         .poll(
           () =>
-            page.locator("[data-yaade-mux-editor-pane]").getAttribute(
-              "data-yaade-mux-editor-uri",
-            ),
+            page
+              .locator("[data-yaade-mux-editor-pane]")
+              .getAttribute("data-yaade-mux-editor-uri"),
           { timeout: 10_000 },
         )
         .toMatch(/\/src\/utils\.ts$/)
@@ -349,8 +381,8 @@ test.describe("mux editor tabs", () => {
         .poll(
           () =>
             page.evaluate(() => {
-              const editor = window.__yaadeAgent!
-                .getEditorDiagnostics()
+              const editor = window
+                .__yaadeAgent!.getEditorDiagnostics()
                 .editors.entries.find(entry =>
                   entry.uri.endsWith("/src/index.ts"),
                 )
@@ -385,23 +417,22 @@ test.describe("mux editor tabs", () => {
         .poll(
           () =>
             page.evaluate(() => {
-              const model = window.__yaadeAgent!
-                .getEditorDiagnostics()
+              const model = window
+                .__yaadeAgent!.getEditorDiagnostics()
                 .models.entries.find(entry =>
                   entry.uri.endsWith("/src/index.ts"),
                 )
-              return model?.owners.filter(owner => owner.startsWith("buffer:"))
-                .length ?? 0
+              return (
+                model?.owners.filter(owner => owner.startsWith("buffer:"))
+                  .length ?? 0
+              )
             }),
           { timeout: 10_000 },
         )
         .toBe(2)
 
       await panes.first().click()
-      await panes
-        .first()
-        .locator("[data-yaade-mux-close-pane]")
-        .click()
+      await panes.first().locator("[data-yaade-mux-close-pane]").click()
       await expectLocatorCount(panes, 1, { timeout: 10_000 })
       await expect
         .poll(
@@ -426,6 +457,266 @@ test.describe("mux editor tabs", () => {
           bufferOwners: 1,
           openBuffers: [expect.stringMatching(/\/src\/index\.ts$/)],
         })
+
+      await panes.first().locator("[data-yaade-mux-close-pane]").click()
+      await expectLocatorCount(panes, 0, { timeout: 10_000 })
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+              const model = diagnostics.models.entries.find(entry =>
+                entry.uri.endsWith("/src/index.ts"),
+              )
+              return {
+                open: model?.open ?? false,
+                owners: model?.owners.length ?? 0,
+                openBuffers: diagnostics.editors.openBuffers,
+                modelBytes: diagnostics.models.totalBytes,
+              }
+            }),
+          { timeout: 10_000 },
+        )
+        .toMatchObject({ open: false, owners: 0, openBuffers: [] })
+
+      const closedSnapshot = await page.evaluate(() => {
+        const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+        return { modelBytes: diagnostics.models.totalBytes }
+      })
+      const plateauBytes = closedSnapshot.modelBytes
+      for (let cycle = 0; cycle < 3; cycle += 1) {
+        await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+        await expectLocatorCount(panes, 1, { timeout: 10_000 })
+        await panes.first().locator("[data-yaade-mux-close-pane]").click()
+        await expectLocatorCount(panes, 0, { timeout: 10_000 })
+      }
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+            const model = diagnostics.models.entries.find(entry =>
+              entry.uri.endsWith("/src/index.ts"),
+            )
+            return {
+              owners: model?.owners.length ?? 0,
+              openBuffers: diagnostics.editors.openBuffers,
+              modelBytes: diagnostics.models.totalBytes,
+            }
+          }),
+        )
+        .toEqual({
+          owners: 0,
+          openBuffers: [],
+          modelBytes: plateauBytes,
+        })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("moves dirty editor tabs across edge and center drops without losing groups or owners", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      const dirtyMarker = "// editor-dnd-dirty"
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.type(`\n${dirtyMarker}`)
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            window.__yaadeAgent!.getEditorDiagnostics().editors.activeDirty,
+          ),
+        )
+        .toBe(true)
+
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.openFile("src/utils.ts")
+        await window.__yaadeAgent!.openFileInNewGroup!("package.json")
+      })
+      const panes = page.locator('[data-yaade-mux-pane-kind="editor"]')
+      await expectLocatorCount(panes, 2, { timeout: 15_000 })
+      const sourcePane = panes.filter({
+        has: page.locator(
+          '[data-yaade-modal-editor-tab$="/src/index.ts"]',
+        ),
+      })
+      const targetPane = panes.filter({
+        has: page.locator(
+          '[data-yaade-modal-editor-tab$="/package.json"]',
+        ),
+      })
+      await expectLocatorCount(sourcePane, 1)
+      await expectLocatorCount(targetPane, 1)
+      const sourcePanelId = await sourcePane.getAttribute("data-panel-id")
+      const targetPanelId = await targetPane.getAttribute("data-panel-id")
+      expect(sourcePanelId).toBeTruthy()
+      expect(targetPanelId).toBeTruthy()
+
+      const sourceHandle = sourcePane.locator(
+        "[data-yaade-mux-pane-drag]",
+      )
+      const sourceBox = await sourceHandle.boundingBox()
+      const targetBox = await targetPane.boundingBox()
+      expect(sourceBox).toBeTruthy()
+      expect(targetBox).toBeTruthy()
+      await pointerDrag(
+        page,
+        {
+          x: sourceBox!.x + sourceBox!.width / 2,
+          y: sourceBox!.y + sourceBox!.height / 2,
+        },
+        {
+          x: targetBox!.x + targetBox!.width / 2,
+          y: targetBox!.y + targetBox!.height * 0.9,
+        },
+      )
+
+      await expectLocatorCount(panes, 3, { timeout: 10_000 })
+      const movedPane = panes.filter({
+        has: page.locator(
+          '[data-yaade-modal-editor-tab$="/src/utils.ts"]',
+        ),
+      })
+      await expectLocatorCount(movedPane, 1)
+      await expectLocatorCount(
+        page.locator(
+          `[data-panel-id="${sourcePanelId}"] [data-yaade-modal-editor-tab]`,
+        ),
+        1,
+      )
+      await expectLocatorCount(
+        page.locator(
+          `[data-panel-id="${targetPanelId}"] [data-yaade-modal-editor-tab]`,
+        ),
+        1,
+      )
+      const movedPanelId = await movedPane.getAttribute("data-panel-id")
+      expect(movedPanelId).toBeTruthy()
+
+      await expect
+        .poll(() =>
+          page.evaluate(marker => {
+            const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+            const index = diagnostics.models.entries.find(entry =>
+              entry.uri.endsWith("/src/index.ts"),
+            )
+            const moved = diagnostics.models.entries.find(entry =>
+              entry.uri.endsWith("/src/utils.ts"),
+            )
+            return {
+              indexDirty: index?.dirty,
+              indexContent: index?.content.includes(marker),
+              movedBufferOwners:
+                moved?.owners.filter(owner => owner.startsWith("buffer:")) ?? [],
+              movedViewOwners:
+                moved?.owners.filter(owner => owner.startsWith("view:")) ?? [],
+              singleMovedLspOwner: (moved?.lspOwnerCount ?? 0) <= 1,
+            }
+          }, dirtyMarker),
+        )
+        .toEqual({
+          indexDirty: true,
+          indexContent: true,
+          movedBufferOwners: [
+            expect.stringContaining(`mux-editor-${movedPanelId}`),
+          ],
+          movedViewOwners: [
+            expect.stringContaining(`mux-editor-${movedPanelId}`),
+          ],
+          singleMovedLspOwner: true,
+        })
+
+      const movedHandle = movedPane.locator("[data-yaade-mux-pane-drag]")
+      const movedBox = await movedHandle.boundingBox()
+      const centerTarget = page.locator(
+        `[data-panel-id="${targetPanelId}"]`,
+      )
+      const centerTargetBox = await centerTarget.boundingBox()
+      expect(movedBox).toBeTruthy()
+      expect(centerTargetBox).toBeTruthy()
+      await pointerDrag(
+        page,
+        {
+          x: movedBox!.x + movedBox!.width / 2,
+          y: movedBox!.y + movedBox!.height / 2,
+        },
+        {
+          x: centerTargetBox!.x + centerTargetBox!.width / 2,
+          y: centerTargetBox!.y + centerTargetBox!.height / 2,
+        },
+      )
+
+      await expectLocatorCount(panes, 2, { timeout: 10_000 })
+      await expectLocatorCount(
+        page.locator(
+          `[data-panel-id="${sourcePanelId}"] [data-yaade-modal-editor-tab]`,
+        ),
+        1,
+      )
+      await expectLocatorCount(
+        page.locator(
+          `[data-panel-id="${targetPanelId}"] [data-yaade-modal-editor-tab]`,
+        ),
+        2,
+      )
+      await expect
+        .poll(() =>
+          page.evaluate(
+            ({ marker, oldPanelId, targetId }) => {
+              const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+              const index = diagnostics.models.entries.find(entry =>
+                entry.uri.endsWith("/src/index.ts"),
+              )
+              const moved = diagnostics.models.entries.find(entry =>
+                entry.uri.endsWith("/src/utils.ts"),
+              )
+              const owners = moved?.owners ?? []
+              return {
+                indexDirty: index?.dirty,
+                indexContent: index?.content.includes(marker),
+                bufferOwners: owners.filter(owner => owner.startsWith("buffer:")),
+                viewOwners: owners.filter(owner => owner.startsWith("view:")),
+                hasOldOwner: owners.some(
+                  owner =>
+                    owner === `view:mux-editor-${oldPanelId}` ||
+                    owner.startsWith(`buffer:mux-editor-${oldPanelId}:`),
+                ),
+                hasTargetOwner: owners.some(
+                  owner =>
+                    owner === `view:mux-editor-${targetId}` ||
+                    owner.startsWith(`buffer:mux-editor-${targetId}:`),
+                ),
+                singleLspOwner: (moved?.lspOwnerCount ?? 0) <= 1,
+                openBuffers: diagnostics.editors.openBuffers.length,
+              }
+            },
+            {
+              marker: dirtyMarker,
+              oldPanelId: movedPanelId!,
+              targetId: targetPanelId!,
+            },
+          ),
+        )
+        .toEqual({
+          indexDirty: true,
+          indexContent: true,
+          bufferOwners: [
+            expect.stringContaining(`mux-editor-${targetPanelId}`),
+          ],
+          viewOwners: [
+            expect.stringContaining(`mux-editor-${targetPanelId}`),
+          ],
+          hasOldOwner: false,
+          hasTargetOwner: true,
+          singleLspOwner: true,
+          openBuffers: 3,
+        })
     } finally {
       await app.close()
     }
@@ -446,8 +737,8 @@ test.describe("mux editor tabs", () => {
       await input.focus()
       await page.keyboard.type("export const savedAs = true")
       const before = await page.evaluate(() => {
-        const editor = window.__yaadeAgent!
-          .getEditorDiagnostics()
+        const editor = window
+          .__yaadeAgent!.getEditorDiagnostics()
           .editors.entries.find(entry => entry.uri.startsWith("untitled:"))
         return editor
           ? { position: editor.position, selections: editor.selections }
@@ -456,7 +747,7 @@ test.describe("mux editor tabs", () => {
 
       await execCommand(page, "editor.saveAs")
       const dialog = page.getByRole("dialog").filter({ hasText: "Save As" })
-      await expect(dialog).toBeVisible()
+      await dialog.waitFor({ state: "visible" })
       const root = await page.evaluate(
         () => window.__yaadeAgent!.getState().workspace,
       )
@@ -546,6 +837,73 @@ test.describe("mux editor tabs", () => {
     }
   })
 
+  test("hydrates dirty recovery for a restored background tab before activation", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      const uri = await page.evaluate(async () => {
+        const root = window.__yaadeAgent!.getState().workspace
+        if (!root) throw new Error("workspace unavailable")
+        const target = `file://${root}/background-recovery-e2e.ts`
+        await window.yaade!.fs.writeTextFile(target, "export const base = 1\n", {
+          create: true,
+        })
+        await window.__yaadeAgent!.openFile(target)
+        return target
+      })
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.press(`${modChord()}+ArrowDown`)
+      await page.keyboard.type("// recovered in background")
+      await page.waitForTimeout(1_000)
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/utils.ts"))
+      await expect
+        .poll(
+          () =>
+            page
+              .locator("[data-yaade-mux-editor-pane]")
+              .getAttribute("data-yaade-mux-editor-uri"),
+          { timeout: 10_000 },
+        )
+        .toMatch(/\/src\/utils\.ts$/)
+
+      await page.reload()
+      await waitForMux(page)
+      await expect
+        .poll(
+          () =>
+            page.evaluate(target => {
+              const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+              const model = diagnostics.models.entries.find(
+                entry => entry.uri === target,
+              )
+              return {
+                active: diagnostics.editors.activeUri,
+                content: model?.content ?? "",
+                dirty: model?.dirty ?? false,
+                open: model?.open ?? false,
+                bufferOwners:
+                  model?.owners.filter(owner => owner.startsWith("buffer:")) ?? [],
+              }
+            }, uri),
+          { timeout: 15_000 },
+        )
+        .toMatchObject({
+          active: expect.stringMatching(/\/src\/utils\.ts$/),
+          content: expect.stringContaining("recovered in background"),
+          dirty: true,
+          open: true,
+          bufferOwners: [expect.stringContaining("mux-editor-")],
+        })
+    } finally {
+      await app.close()
+    }
+  })
+
   test("restored disk conflicts offer Compare, Keep Mine, and Reload", async () => {
     const { app, page } = await launchJet({ withTerminal: false })
     try {
@@ -580,23 +938,29 @@ test.describe("mux editor tabs", () => {
       await page.reload()
       await waitForMux(page)
       const conflict = page.locator('[data-yaade-editor-conflict="true"]')
-      await expect(conflict).toBeVisible({ timeout: 15_000 })
-      await expect(conflict.getByRole("button", { name: "Compare" })).toBeVisible()
-      await expect(conflict.getByRole("button", { name: "Keep Mine" })).toBeVisible()
-      await expect(conflict.getByRole("button", { name: "Reload" })).toBeVisible()
+      await conflict.waitFor({ state: "visible", timeout: 15_000 })
+      await conflict
+        .getByRole("button", { name: "Compare" })
+        .waitFor({ state: "visible" })
+      await conflict
+        .getByRole("button", { name: "Keep Mine" })
+        .waitFor({ state: "visible" })
+      await conflict
+        .getByRole("button", { name: "Reload" })
+        .waitFor({ state: "visible" })
 
       await conflict.getByRole("button", { name: "Compare" }).click()
       const compareDialog = page
         .getByRole("dialog")
         .filter({ hasText: "Recovered changes" })
-      await expect(compareDialog).toBeVisible()
+      await compareDialog.waitFor({ state: "visible" })
       await expectSelectorVisible(page, "[data-yaade-monaco-diff-editor]", {
         timeout: 15_000,
       })
       await page.keyboard.press("Escape")
 
       await conflict.getByRole("button", { name: "Reload" }).click()
-      await expect(conflict).toHaveCount(0)
+      await expectLocatorCount(conflict, 0)
       await expect
         .poll(
           () =>
@@ -632,7 +996,7 @@ test.describe("mux editor tabs", () => {
       await page.keyboard.type("\n// discard-close-sentinel")
 
       const activeTab = page.locator(
-        '[data-yaade-modal-editor-tab][data-active]',
+        "[data-yaade-modal-editor-tab][data-active]",
       )
       await activeTab.locator('button[aria-label^="Close"]').click()
       await expectSelectorVisible(page, '[data-yaade-confirm="accept"]')
@@ -653,7 +1017,9 @@ test.describe("mux editor tabs", () => {
       await expectLocatorCount(
         page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
         0,
-        { timeout: 10_000 },
+        {
+          timeout: 10_000,
+        },
       )
 
       await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
@@ -664,8 +1030,8 @@ test.describe("mux editor tabs", () => {
         .poll(
           () =>
             page.evaluate(() => {
-              const model = window.__yaadeAgent!
-                .getEditorDiagnostics()
+              const model = window
+                .__yaadeAgent!.getEditorDiagnostics()
                 .models.entries.find(entry =>
                   entry.uri.endsWith("/src/index.ts"),
                 )
@@ -702,7 +1068,9 @@ test.describe("mux editor tabs", () => {
       await expectLocatorCount(
         page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
         0,
-        { timeout: 10_000 },
+        {
+          timeout: 10_000,
+        },
       )
       const content = await page.evaluate(async () => {
         const root = window.__yaadeAgent!.getState().workspace
@@ -711,6 +1079,182 @@ test.describe("mux editor tabs", () => {
       })
       expect(content).toContain("save-close-sentinel")
     } finally {
+      await app.close()
+    }
+  })
+
+  test("dirty close Save All opens Save As for an untitled buffer and aborts closure", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await page.evaluate(() =>
+        window.__yaadeAgent!.openFile("untitled:Close-Save-As-E2E.ts"),
+      )
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.type("export const needsSaveAs = true")
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => window.__yaadeAgent!.getEditorDiagnostics().editors.activeDirty,
+          ),
+        )
+        .toBe(true)
+      await execCommand(page, "editor.close")
+      await expectSelectorVisible(page, '[data-yaade-confirm="accept"]')
+      await page.locator('[data-yaade-confirm="accept"]').click()
+
+      const dialog = page.getByRole("dialog").filter({ hasText: "Save As" })
+      await dialog.waitFor({ state: "visible", timeout: 10_000 })
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        1,
+      )
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("typing during an in-flight save stays dirty and recoverable", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    let uri: string | null = null
+    try {
+      uri = await page.evaluate(async () => {
+        const root = window.__yaadeAgent!.getState().workspace
+        const target = encodeURI(`file://${root}/src/save-in-flight-e2e.ts`)
+        await window.yaade!.fs.writeTextFile(
+          target,
+          "export const saved = true\n",
+          {
+            create: true,
+          },
+        )
+        return target
+      })
+      await page.evaluate(target => window.__yaadeAgent!.openFile(target), uri)
+      await page.evaluate(() => window.__yaadeAgent!.waitForEditor())
+
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.type("/* first */")
+      await expect
+        .poll(() =>
+          page.evaluate(target =>
+            window
+              .__yaadeAgent!.getEditorDiagnostics()
+              .models.entries.find(entry => entry.uri === target)?.content ?? "",
+          uri),
+        )
+        .toContain("/* first */")
+
+      await page.evaluate(target => {
+        const fs = window.yaade!.fs
+        const original = fs.writeTextFile.bind(fs)
+        let release!: () => void
+        const gate = new Promise<void>(resolve => {
+          release = resolve
+        })
+        const scope = window as unknown as {
+          __yaadeReleaseSave?: () => void
+          __yaadeSaveStarted?: boolean
+          __yaadeSavePromise?: Promise<void>
+          __yaadeRestoreWrite?: () => void
+        }
+        scope.__yaadeReleaseSave = release
+        scope.__yaadeRestoreWrite = () => {
+          fs.writeTextFile = original
+        }
+        fs.writeTextFile = async (writeUri, content, options) => {
+          if (writeUri === target) {
+            scope.__yaadeSaveStarted = true
+            await gate
+          }
+          return original(writeUri, content, options)
+        }
+        scope.__yaadeSavePromise =
+          window.__yaadeAgent!.executeCommand("editor.save")
+      }, uri)
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __yaadeSaveStarted?: boolean })
+                .__yaadeSaveStarted,
+          ),
+        )
+        .toBe(true)
+
+      await page.keyboard.type("/* newer */")
+      await page.evaluate(async () => {
+        const scope = window as unknown as {
+          __yaadeReleaseSave?: () => void
+          __yaadeSavePromise?: Promise<void>
+          __yaadeRestoreWrite?: () => void
+        }
+        scope.__yaadeReleaseSave?.()
+        await scope.__yaadeSavePromise
+        scope.__yaadeRestoreWrite?.()
+      })
+
+      await expect
+        .poll(() =>
+          page.evaluate(target => {
+            const diagnostics =
+              window.__yaadeAgent!.getEditorDiagnostics()
+            return {
+              dirty: window.__yaadeAgent!.getState().activeEditorDirty,
+              content: diagnostics.models.entries.find(
+                entry => entry.uri === target,
+              )?.content,
+            }
+          }, uri),
+        )
+        .toMatchObject({
+          dirty: true,
+          content: expect.stringContaining("/* newer */"),
+        })
+      const firstDisk = await page.evaluate(
+        target => window.yaade!.fs.readTextFile(target),
+        uri,
+      )
+      expect(firstDisk.content).toContain("/* first */")
+      expect(firstDisk.content).not.toContain("/* newer */")
+
+      await page.evaluate(() =>
+        window.__yaadeAgent!.executeCommand("editor.save"),
+      )
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => window.__yaadeAgent!.getState().activeEditorDirty,
+          ),
+        )
+        .toBe(false)
+      const finalDisk = await page.evaluate(
+        target => window.yaade!.fs.readTextFile(target),
+        uri,
+      )
+      expect(finalDisk.content).toContain("/* newer */")
+    } finally {
+      if (uri) {
+        await page
+          .evaluate(async target => {
+            const scope = window as unknown as {
+              __yaadeReleaseSave?: () => void
+              __yaadeRestoreWrite?: () => void
+            }
+            scope.__yaadeReleaseSave?.()
+            scope.__yaadeRestoreWrite?.()
+            await window.yaade?.fs.trash(target).catch(() => undefined)
+          }, uri)
+          .catch(() => undefined)
+      }
       await app.close()
     }
   })
@@ -727,7 +1271,9 @@ test.describe("mux editor tabs", () => {
       await expectLocatorCount(
         page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
         2,
-        { timeout: 15_000 },
+        {
+          timeout: 15_000,
+        },
       )
 
       await expectLocatorContainsText(
@@ -743,7 +1289,9 @@ test.describe("mux editor tabs", () => {
       await expectLocatorCount(
         page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
         1,
-        { timeout: 10_000 },
+        {
+          timeout: 10_000,
+        },
       )
       await expectLocatorCount(
         page.locator('[data-yaade-mux-pane-kind="editor"]'),
@@ -753,12 +1301,16 @@ test.describe("mux editor tabs", () => {
       // Focus the editor group, then close the whole pane (not a single buffer).
       await page.locator('[data-yaade-mux-pane-kind="editor"]').click()
       await page
-        .locator('[data-yaade-mux-pane-kind="editor"] [data-yaade-mux-close-pane]')
+        .locator(
+          '[data-yaade-mux-pane-kind="editor"] [data-yaade-mux-close-pane]',
+        )
         .click()
       await expectLocatorCount(
         page.locator('[data-yaade-mux-pane-kind="editor"]'),
         0,
-        { timeout: 10_000 },
+        {
+          timeout: 10_000,
+        },
       )
       await expectLocatorCount(page.locator("[data-yaade-mux-editor-pane]"), 0)
     } finally {
@@ -774,9 +1326,13 @@ test.describe("mux editor tabs", () => {
       const input = page.locator(
         '[role="dialog"] input, [data-yaade-palette] input',
       )
-      await expectSelectorVisible(page, "[data-yaade-palette], [role='dialog']", {
-        timeout: 10_000,
-      })
+      await expectSelectorVisible(
+        page,
+        "[data-yaade-palette], [role='dialog']",
+        {
+          timeout: 10_000,
+        },
+      )
       await input.first().fill("index.ts")
       await page.waitForTimeout(400)
       await page.keyboard.press("Enter")
@@ -806,7 +1362,9 @@ test.describe("mux editor tabs", () => {
         .poll(
           async () =>
             page.evaluate(() => Boolean(window.__yaadeOsFileDropInstalled)),
-          { timeout: 10_000 },
+          {
+            timeout: 10_000,
+          },
         )
         .toBe(true)
 
@@ -823,12 +1381,17 @@ test.describe("mux editor tabs", () => {
         timeout: 15_000,
       })
       await expect
-        .poll(async () => {
-          const uri = await page
-            .locator("[data-yaade-mux-editor-uri]")
-            .evaluate(el => el.getAttribute("data-yaade-mux-editor-uri") ?? "")
-          return /utils\.ts/.test(uri)
-        }, { timeout: 10_000 })
+        .poll(
+          async () => {
+            const uri = await page
+              .locator("[data-yaade-mux-editor-uri]")
+              .evaluate(
+                el => el.getAttribute("data-yaade-mux-editor-uri") ?? "",
+              )
+            return /utils\.ts/.test(uri)
+          },
+          { timeout: 10_000 },
+        )
         .toBe(true)
     } finally {
       await app.close()

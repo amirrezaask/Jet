@@ -21,7 +21,11 @@ export function QuickOpenOverlay({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSearch: (query: string, workspaceId: string | null) => Promise<string[]>
+  onSearch: (
+    query: string,
+    workspaceId: string | null,
+    signal: AbortSignal,
+  ) => Promise<string[]>
   scanReady?: boolean
   workspaces?: QuickOpenWorkspace[]
   defaultWorkspaceId?: string | null
@@ -32,7 +36,7 @@ export function QuickOpenOverlay({
   const [searching, setSearching] = useState(false)
   const [workspaceId, setWorkspaceId] = useState<string | null>(defaultWorkspaceId)
   const searchGen = useRef(0)
-  const searchQueue = useRef(Promise.resolve())
+  const searchController = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -46,32 +50,36 @@ export function QuickOpenOverlay({
   useEffect(() => {
     if (!open || !scanReady) {
       searchGen.current += 1
+      searchController.current?.abort()
+      searchController.current = null
       setResults([])
       setSearching(false)
       return
     }
 
     const gen = ++searchGen.current
-    searchQueue.current = searchQueue.current
-      .catch(() => undefined)
-      .then(async () => {
-        // Collapse queued keystrokes to the newest request and never overlap host searches.
-        if (gen !== searchGen.current) return
-        const spinnerId = window.setTimeout(() => {
-          if (gen === searchGen.current) setSearching(true)
-        }, 60)
-        try {
-          const paths = await onSearch(query, workspaceId)
-          if (gen !== searchGen.current) return
-          setResults(paths)
-        } catch {
-          if (gen !== searchGen.current) return
-          setResults([])
-        } finally {
-          window.clearTimeout(spinnerId)
-          if (gen === searchGen.current) setSearching(false)
-        }
-      })
+    searchController.current?.abort()
+    const controller = new AbortController()
+    searchController.current = controller
+    const spinnerId = window.setTimeout(() => {
+      if (gen === searchGen.current) setSearching(true)
+    }, 60)
+    void onSearch(query, workspaceId, controller.signal).then(
+      paths => {
+        if (!controller.signal.aborted && gen === searchGen.current) setResults(paths)
+      },
+      () => {
+        if (!controller.signal.aborted && gen === searchGen.current) setResults([])
+      },
+    ).finally(() => {
+      window.clearTimeout(spinnerId)
+      if (searchController.current === controller) searchController.current = null
+      if (!controller.signal.aborted && gen === searchGen.current) setSearching(false)
+    })
+    return () => {
+      window.clearTimeout(spinnerId)
+      controller.abort()
+    }
   }, [open, scanReady, query, onSearch, workspaceId])
 
   const items = useMemo<PaletteShellItem<string>[]>(

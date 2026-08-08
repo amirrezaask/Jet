@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type * as monaco from "monaco-editor/esm/vs/editor/editor.api.js"
-import type { YaadeTheme } from "@yaade/shared"
+import { languageIdFromPath, type YaadeTheme } from "@yaade/shared"
 import type { WorkspaceService } from "@yaade/workspace"
 import { showYaadeToast } from "@yaade/ui/toast"
 import {
   MonacoDiffEditorHost,
   MonacoEditorHost,
-  monacoLanguageId,
   revealPosition,
   consumePendingInitialContent,
   getMonacoEditorDiagnostics,
@@ -57,11 +56,7 @@ export type MuxEditorPaneProps = {
 
 /** Best-effort language id from a file uri extension. */
 function languageIdForUri(uri: string): string {
-  const withoutQuery = uri.split(/[?#]/)[0] ?? uri
-  const base = withoutQuery.split("/").pop() ?? withoutQuery
-  const dot = base.lastIndexOf(".")
-  const ext = dot > 0 ? base.slice(dot + 1) : ""
-  return monacoLanguageId(ext || "plaintext")
+  return languageIdFromPath(uri.split(/[?#]/)[0] ?? uri)
 }
 
 /**

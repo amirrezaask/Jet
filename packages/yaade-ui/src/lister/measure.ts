@@ -17,7 +17,31 @@ export function readCssLengthPx(name: string, fallbackRem: number): number {
   if (typeof document === "undefined") return fallbackRem * 13
   const root = document.documentElement
   const fontSize = parseFloat(getComputedStyle(root).fontSize) || 13
-  const raw = getComputedStyle(root).getPropertyValue(name).trim()
+  const styles = getComputedStyle(root)
+  const raw = styles.getPropertyValue(name).trim()
+  const calc = /^calc\(var\((--[\w-]+)\)\s*\*\s*(\d+(?:\.\d+)?)\)$/.exec(raw)
+  if (calc) {
+    const multiplier = Number(calc[2])
+    const base = styles.getPropertyValue(calc[1]!).trim()
+    if (Number.isFinite(multiplier) && multiplier > 0 && base) {
+      return resolveCssLengthPx(base, fontSize, fallbackRem / multiplier) * multiplier
+    }
+  }
+  const resolvedCalc = /^calc\((\d+(?:\.\d+)?(?:rem|px))\s*\*\s*(\d+(?:\.\d+)?)\)$/.exec(raw)
+  if (resolvedCalc) {
+    return resolveCssLengthPx(resolvedCalc[1]!, fontSize, fallbackRem) * Number(resolvedCalc[2])
+  }
+  if (raw.startsWith("calc(")) {
+    // Computed custom properties may retain arbitrarily nested calc()/var()
+    // expressions. Let the browser resolve the same token the rendered row uses.
+    const probe = document.createElement("div")
+    probe.style.cssText =
+      `position:fixed;visibility:hidden;pointer-events:none;width:0;height:var(${name})`
+    root.append(probe)
+    const measured = probe.getBoundingClientRect().height
+    probe.remove()
+    if (Number.isFinite(measured) && measured > 0) return measured
+  }
   return resolveCssLengthPx(raw, fontSize, fallbackRem)
 }
 

@@ -21,6 +21,7 @@ export {
 } from "./theme/bundled.js"
 export { applyColorScheme } from "@yaade/shared"
 export type {
+  ColorSchemeMode,
   JetAppearanceSettings,
   SessionLayout,
 } from "./components/SettingsOverlay.js"

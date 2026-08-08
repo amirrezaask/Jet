@@ -114,17 +114,6 @@ export type StartLspSessionResult = {
   error?: string
 }
 
-export type LspRestartPolicy = {
-  maxAttempts: number
-  delayMs: number
-}
-
-export type LspRestartHelper = {
-  shouldRestart: (sessionId: string) => boolean
-  reset: (sessionId: string) => void
-  delayMs: number
-}
-
 function closeSessionBridge(session: LspSession): void {
   for (const client of session.wss.clients) client.terminate()
   try {
@@ -321,46 +310,5 @@ export class LspBridge {
 
   getSession(id: string): LspSession | undefined {
     return this.sessions.get(id)
-  }
-}
-
-/* Compatibility edge for callers not yet migrated to the scoped host owner. */
-let compatibilityCrashHandler: (id: string, stderrSnippet?: string) => void = () => {}
-const compatibilityBridge = new LspBridge({
-  onCrash: (id, stderr) => compatibilityCrashHandler(id, stderr),
-})
-
-export function startLspSession(opts: StartLspSessionOptions): Promise<StartLspSessionResult> {
-  return compatibilityBridge.start(opts)
-}
-
-export function stopLspSession(id: string): Promise<void> {
-  return compatibilityBridge.stop(id)
-}
-
-export function stopAllLspSessions(): void {
-  compatibilityBridge.stopAll()
-}
-
-export function setLspCrashHandler(cb: (id: string, stderrSnippet?: string) => void): void {
-  compatibilityCrashHandler = cb
-}
-
-export function getLspSession(id: string): LspSession | undefined {
-  return compatibilityBridge.getSession(id)
-}
-
-export function createLspRestartHelper(policy: LspRestartPolicy): LspRestartHelper {
-  const attempts = new Map<string, number>()
-  return {
-    shouldRestart(sessionId: string): boolean {
-      const next = (attempts.get(sessionId) ?? 0) + 1
-      attempts.set(sessionId, next)
-      return next <= policy.maxAttempts
-    },
-    reset(sessionId: string): void {
-      attempts.delete(sessionId)
-    },
-    delayMs: policy.delayMs,
   }
 }

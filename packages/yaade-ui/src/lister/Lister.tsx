@@ -178,6 +178,7 @@ export function Lister<T>({
   onSelectionChange,
   emptyState,
   initiallyExpanded,
+  onExpandedChange,
   syncExpanded = false,
   activeId,
   indentPx = DEFAULT_INDENT_PX,
@@ -224,7 +225,7 @@ export function Lister<T>({
   const lastSourceRef = useRef(source)
   if (mode === "tree" && treeState && source && lastSourceRef.current !== source) {
     treeState.setSource(source)
-    treeState.invalidate()
+    treeState.reloadExpanded()
     lastSourceRef.current = source
   }
 
@@ -238,8 +239,7 @@ export function Lister<T>({
   useEffect(() => {
     if (!source?.subscribe || !treeState) return
     return source.subscribe(() => {
-      treeState.invalidate()
-      for (const id of initiallyExpanded ?? []) void treeState.ensureChildren(id)
+      treeState.reloadExpanded()
     })
   }, [source, treeState, initiallyExpanded])
 
@@ -441,11 +441,13 @@ export function Lister<T>({
       const row = visibleRows[index]
       if (!row) return
       if (mode === "tree" && row.node.isBranch && treeState) {
-        void treeState.toggle(row.node.id)
+        void treeState.toggle(row.node.id).then(() => {
+          onExpandedChange?.(treeState.expandedIds())
+        })
       }
       onActivate(row.node)
     },
-    [visibleRows, mode, treeState, onActivate],
+    [visibleRows, mode, treeState, onActivate, onExpandedChange],
   )
   activateIndexRef.current = activateIndex
 
@@ -655,7 +657,7 @@ export function Lister<T>({
               <div
                 key={`${v.index}:${entry.node.id}`}
                 data-yaade-tree-row-slot
-                className="absolute left-0 top-0 w-full"
+                className="absolute left-0 top-0 w-full shrink-0"
                 style={{
                   transform: `translateY(${v.start}px)`,
                   height: rowHeight,

@@ -95,7 +95,7 @@ async function seedAgent(
 }
 
 test.describe("YAADE HQ", () => {
-  test("aggregates projects and live agents, filters attention, and preserves PTYs through the dialog", async () => {
+  test("aggregates projects and live agents, filters attention, and preserves PTYs through the dialog", async ({}, testInfo) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-hq-e2e-"))
     const home = path.join(root, "home")
     const alpha = path.join(home, "alpha")
@@ -169,11 +169,13 @@ test.describe("YAADE HQ", () => {
         needle: "alpha",
       })
       expect(await page.getByText("Recent activity").count()).toBe(0)
-      await page
+      const launchAlpha = page
         .locator('[data-yaade-hq-project]')
         .filter({ hasText: "alpha" })
         .getByRole("button", { name: "Launch agent in alpha" })
-        .click()
+      await launchAlpha.focus()
+      await launchAlpha.press("Enter")
+      expect(await page.evaluate(() => location.pathname)).toBe("/")
       await expectListRows(page, {
         panel: "yaade:palette",
         minItems: 5,
@@ -193,6 +195,7 @@ test.describe("YAADE HQ", () => {
       })
       expect(summaryTopGap).not.toBeNull()
       expect(summaryTopGap!).toBeLessThanOrEqual(20)
+      await page.setViewportSize({ width: 1100, height: 900 })
       const desktopColumns = await page.evaluate(() => {
         const agents = document
           .querySelector('[data-yaade-hq-column="agents"]')
@@ -213,6 +216,10 @@ test.describe("YAADE HQ", () => {
       )
       expect(Math.abs(desktopColumns!.agents.y - desktopColumns!.projects.y)).toBeLessThan(2)
       expect(desktopColumns!.agents.width).toBeGreaterThan(desktopColumns!.projects.width)
+      await testInfo.attach("hq-laptop.png", {
+        body: Buffer.from(await page.screenshot(), "base64"),
+        contentType: "image/png",
+      })
       await page.setViewportSize({ width: 390, height: 844 })
       const mobileLayout = await page.evaluate(() => {
         const agents = document
@@ -233,6 +240,10 @@ test.describe("YAADE HQ", () => {
       expect(mobileLayout).not.toBeNull()
       expect(mobileLayout!.projectsTop).toBeGreaterThan(mobileLayout!.agentsBottom)
       expect(mobileLayout!.documentWidth).toBeLessThanOrEqual(mobileLayout!.viewportWidth)
+      await testInfo.attach("hq-mobile.png", {
+        body: Buffer.from(await page.screenshot(), "base64"),
+        contentType: "image/png",
+      })
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.getByRole("tab", { name: /^Attention$/ }).click()
       await expect.poll(() => page.locator('[data-yaade-list-panel="hq-agents"] [data-yaade-list-item]').count()).toBe(1)
@@ -280,7 +291,7 @@ test.describe("YAADE HQ", () => {
       await expect.poll(() => page.getByText("Codex Alpha needs permission").isVisible()).toBe(true)
       await page.getByRole("button", { name: "Dismiss notification center" }).click()
 
-      await page.locator('[data-yaade-list-panel="hq-projects"] [data-yaade-list-item]').filter({ hasText: "alpha" }).getByRole("button", { name: "Open alpha" }).click()
+      await page.getByRole("link", { name: "Open alpha" }).click()
       await waitForProjectPage(page)
       expect(await page.evaluate(() => location.pathname)).toBe("/alpha")
       await page.getByRole("button", { name: "Open HQ" }).click()
@@ -291,7 +302,9 @@ test.describe("YAADE HQ", () => {
       await page.evaluate(() => history.forward())
       await waitForHq(page)
 
-      await page.locator(`[data-yaade-hq-project="${externalProject.id}"]`).getByRole("button", { name: "Open external-project" }).click()
+      await page
+        .locator(`[data-yaade-hq-project="${externalProject.id}"]`)
+        .click({ position: { x: 40, y: 20 } })
       await waitForProjectPage(page)
       expect(await page.evaluate(() => location.pathname)).toBe(`/_project/${externalProject.id}`)
       await page.getByRole("button", { name: "Open HQ" }).click()

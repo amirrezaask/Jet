@@ -435,7 +435,7 @@ export function HqPage({
               />
             </section>
 
-            <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.65fr)] xl:items-start">
+            <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.65fr)] lg:items-start">
               <section
                 className="min-w-0 p-3 sm:p-4"
                 aria-labelledby="hq-live-agents-heading"
@@ -458,7 +458,7 @@ export function HqPage({
                   </div>
                 </div>
                 <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
                     <div className="flex flex-1 flex-col gap-3 sm:flex-row">
                       <div className="relative min-w-0 flex-1">
                         <Search
@@ -859,91 +859,107 @@ function ProjectShortcuts({
           className="gap-0.5"
           data-yaade-list-panel="hq-projects"
         >
-          {projects.map(project => (
-            <Item
-              key={project.id}
-              size="sm"
-              className="min-w-0 flex-nowrap hover:bg-accent"
-              data-yaade-list-item
-              data-yaade-hq-project={project.id}
-            >
-              <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <ItemContent>
-                <ItemTitle className="flex items-center gap-2">
-                  <span className="truncate">{project.name}</span>
-                  {project.availability !== "available" ? (
-                    <Badge variant="destructive" className="shrink-0 capitalize">
-                      {project.availability}
-                    </Badge>
-                  ) : null}
-                </ItemTitle>
-                <ItemDescription className="truncate font-mono text-xs">
-                  {project.rootPath}
-                </ItemDescription>
-                <ItemDescription className="flex flex-wrap items-center gap-x-2 text-xs">
-                  <span>{project.sessionCount} sessions</span>
-                  <span>{project.liveAgentCount} live</span>
-                  <span>{relativeTime(project.lastActivityAt)}</span>
-                </ItemDescription>
-                {project.attentionCount > 0 || project.unreadCount > 0 ? (
-                  <div className="flex flex-wrap gap-1 pt-0.5">
-                    {project.attentionCount > 0 ? (
-                      <Badge variant="destructive">
-                        {project.attentionCount} attention
+          {projects.map(project => {
+            const available = project.availability === "available"
+            return (
+              <Item
+                key={project.id}
+                size="sm"
+                className="min-w-0 flex-nowrap data-[available=true]:cursor-pointer data-[available=true]:hover:bg-accent"
+                role={available ? "link" : undefined}
+                aria-label={available ? `Open ${project.name}` : undefined}
+                tabIndex={available ? 0 : undefined}
+                data-available={available}
+                data-yaade-list-item
+                data-yaade-hq-project={project.id}
+                onClick={available ? () => onOpen(project) : undefined}
+                onKeyDown={
+                  available
+                    ? event => {
+                        if (
+                          event.target !== event.currentTarget ||
+                          event.key !== "Enter"
+                        ) {
+                          return
+                        }
+                        event.preventDefault()
+                        onOpen(project)
+                      }
+                    : undefined
+                }
+              >
+                <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <ItemContent>
+                  <ItemTitle className="flex items-center gap-2">
+                    <span className="truncate">{project.name}</span>
+                    {!available ? (
+                      <Badge variant="destructive" className="shrink-0 capitalize">
+                        {project.availability}
                       </Badge>
                     ) : null}
-                    {project.unreadCount > 0 ? (
-                      <Badge>{project.unreadCount} unread</Badge>
-                    ) : null}
+                  </ItemTitle>
+                  <ItemDescription className="truncate font-mono text-xs">
+                    {project.rootPath}
+                  </ItemDescription>
+                  <ItemDescription className="flex flex-wrap items-center gap-x-2 text-xs">
+                    <span>{project.sessionCount} sessions</span>
+                    <span>{project.liveAgentCount} live</span>
+                    <span>{relativeTime(project.lastActivityAt)}</span>
+                  </ItemDescription>
+                  {project.attentionCount > 0 || project.unreadCount > 0 ? (
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {project.attentionCount > 0 ? (
+                        <Badge variant="destructive">
+                          {project.attentionCount} attention
+                        </Badge>
+                      ) : null}
+                      {project.unreadCount > 0 ? (
+                        <Badge>{project.unreadCount} unread</Badge>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </ItemContent>
+                {available ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={`Launch agent in ${project.name}`}
+                          onClick={event => {
+                            event.stopPropagation()
+                            onLaunch(project)
+                          }}
+                        >
+                          <Bot />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Launch agent</TooltipContent>
+                    </Tooltip>
+                    <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   </div>
-                ) : null}
-              </ItemContent>
-              {project.availability === "available" ? (
-                <div className="flex shrink-0 items-center gap-1">
+                ) : (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        aria-label={`Launch agent in ${project.name}`}
-                        onClick={() => onLaunch(project)}
+                        aria-label={`Forget ${project.name}`}
+                        onClick={event => {
+                          event.stopPropagation()
+                          onForget(project)
+                        }}
                       >
-                        <Bot />
+                        <Trash2 />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Launch agent</TooltipContent>
+                    <TooltipContent>Forget project</TooltipContent>
                   </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label={`Open ${project.name}`}
-                        onClick={() => onOpen(project)}
-                      >
-                        <ArrowRight />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Open project</TooltipContent>
-                  </Tooltip>
-                </div>
-              ) : (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={`Forget ${project.name}`}
-                      onClick={() => onForget(project)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Forget project</TooltipContent>
-                </Tooltip>
-              )}
-            </Item>
-          ))}
+                )}
+              </Item>
+            )
+          })}
         </ItemGroup>
       )}
     </section>

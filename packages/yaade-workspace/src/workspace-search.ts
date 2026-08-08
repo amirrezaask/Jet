@@ -1,5 +1,9 @@
 import { pathToFileUri } from "@yaade/shared"
-import type { ProjectSearchResult, SearchPage } from "@yaade/shared"
+import type {
+  ProjectSearchOptions,
+  ProjectSearchResult,
+  SearchPage,
+} from "@yaade/shared"
 import type { WorkspaceFolder } from "./workspace-manager.js"
 import { joinPath } from "./path-input.js"
 
@@ -102,7 +106,8 @@ type ProjectSearchApi = {
   project(
     rootUri: string,
     query: string,
-    opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
+    opts?: ProjectSearchOptions,
+    signal?: AbortSignal,
   ): Promise<ProjectSearchResult[] | SearchPage<ProjectSearchResult>>
 }
 
@@ -153,21 +158,47 @@ export async function fileSearchAcrossFolders(
   return unique.slice(0, pageSize).map(hit => hit.displayPath)
 }
 
+export type ProjectSearchAcrossFoldersPage = SearchPage<ProjectSearchHit>
+
+const PROJECT_SEARCH_RESULT_CAP = 200
+
+export async function projectSearchPageAcrossFolders(
+  folders: WorkspaceFolder[],
+  search: ProjectSearchApi,
+  query: string,
+  opts?: ProjectSearchOptions,
+  signal?: AbortSignal,
+): Promise<ProjectSearchAcrossFoldersPage> {
+  if (!query.trim() || folders.length === 0) return { items: [], truncated: false }
+
+  const batches = await Promise.all(
+    folders.map(async folder => {
+      const results = await search.project(folder.root.uri, query, opts, signal)
+      const page = Array.isArray(results)
+        ? { items: results, truncated: false }
+        : results
+      return {
+        items: page.items.map(result => ({ folder, result })),
+        truncated: page.truncated,
+      }
+    }),
+  )
+
+  const merged = batches.flatMap(batch => batch.items)
+  return {
+    items: merged.slice(0, PROJECT_SEARCH_RESULT_CAP),
+    truncated:
+      merged.length > PROJECT_SEARCH_RESULT_CAP ||
+      batches.some(batch => batch.truncated),
+  }
+}
+
 export async function projectSearchAcrossFolders(
   folders: WorkspaceFolder[],
   search: ProjectSearchApi,
   query: string,
-  opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
+  opts?: ProjectSearchOptions,
+  signal?: AbortSignal,
 ): Promise<ProjectSearchHit[]> {
-  if (!query.trim() || folders.length === 0) return []
-
-  const batches = await Promise.all(
-    folders.map(async folder => {
-      const results = await search.project(folder.root.uri, query, opts)
-      const items = Array.isArray(results) ? results : results.items
-      return items.map(result => ({ folder, result }))
-    }),
-  )
-
-  return batches.flat()
+  return (await projectSearchPageAcrossFolders(folders, search, query, opts, signal)).items
 }

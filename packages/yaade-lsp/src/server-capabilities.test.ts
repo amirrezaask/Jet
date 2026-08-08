@@ -10,8 +10,17 @@ test("gates Monaco providers on the server's declared capabilities", () => {
     codeActionProvider: { codeActionKinds: ["quickfix"] },
     semanticTokensProvider: {
       legend: { tokenTypes: ["variable"], tokenModifiers: [] },
-      full: true,
+      full: { delta: true },
+      range: true,
     },
+    documentOnTypeFormattingProvider: {
+      firstTriggerCharacter: "}",
+      moreTriggerCharacter: [";"],
+    },
+    foldingRangeProvider: true,
+    selectionRangeProvider: true,
+    documentLinkProvider: { resolveProvider: true },
+    colorProvider: true,
     inlayHintProvider: true,
     documentRangeFormattingProvider: true,
     documentHighlightProvider: true,
@@ -22,6 +31,13 @@ test("gates Monaco providers on the server's declared capabilities", () => {
     "textDocument/documentSymbol",
     "textDocument/codeAction",
     "textDocument/semanticTokens/full",
+    "textDocument/semanticTokens/full/delta",
+    "textDocument/semanticTokens/range",
+    "textDocument/onTypeFormatting",
+    "textDocument/foldingRange",
+    "textDocument/selectionRange",
+    "textDocument/documentLink",
+    "textDocument/documentColor",
     "textDocument/inlayHint",
     "textDocument/rangeFormatting",
     "textDocument/documentHighlight",
@@ -32,5 +48,9 @@ test("gates Monaco providers on the server's declared capabilities", () => {
     legend: { tokenTypes: [], tokenModifiers: [] },
     range: true,
   } }, "textDocument/semanticTokens/full"), false)
+  assert.equal(serverSupports({ semanticTokensProvider: {
+    legend: { tokenTypes: [], tokenModifiers: [] },
+    full: true,
+  } }, "textDocument/semanticTokens/full/delta"), false)
   assert.equal(serverSupports(capabilities, "textDocument/callHierarchy"), false)
 })

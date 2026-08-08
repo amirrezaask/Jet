@@ -22,6 +22,74 @@ export type LspContentChange =
       text: string
     }
 
+export type FullDocumentSyncScheduler = {
+  schedule(): void
+  flush(): Promise<void>
+  dispose(): void
+}
+
+/**
+ * Coalesces full-sync servers off the keystroke path. The model is serialized
+ * only after idle (or explicitly before save), never once per content event.
+ */
+export function createFullDocumentSyncScheduler(options: {
+  getVersion(): number
+  getText(): string
+  send(version: number, text: string): Promise<void>
+  onSent?(version: number): void
+  onError?(error: unknown): void
+  delayMs?: number
+  setTimer?: (callback: () => void, delayMs: number) => unknown
+  clearTimer?: (timer: unknown) => void
+}): FullDocumentSyncScheduler {
+  const setTimer =
+    options.setTimer ??
+    ((callback, delayMs) => setTimeout(callback, delayMs))
+  const clearTimer =
+    options.clearTimer ??
+    (timer => clearTimeout(timer as ReturnType<typeof setTimeout>))
+  let timer: unknown = null
+  let requested = false
+  let disposed = false
+  let tail = Promise.resolve()
+
+  const flush = async (): Promise<void> => {
+    if (disposed) return
+    if (timer != null) {
+      clearTimer(timer)
+      timer = null
+    }
+    await tail.catch(() => undefined)
+    if (disposed || !requested) return
+    requested = false
+    const version = options.getVersion()
+    const text = options.getText()
+    const sending = options.send(version, text)
+    tail = sending.catch(() => undefined)
+    await sending
+    options.onSent?.(version)
+  }
+
+  return {
+    schedule() {
+      if (disposed) return
+      requested = true
+      if (timer != null) clearTimer(timer)
+      timer = setTimer(() => {
+        timer = null
+        void flush().catch(error => options.onError?.(error))
+      }, options.delayMs ?? 75)
+    },
+    flush,
+    dispose() {
+      disposed = true
+      requested = false
+      if (timer != null) clearTimer(timer)
+      timer = null
+    },
+  }
+}
+
 /** Convert Monaco changes without serializing the document for incremental sync. */
 export function lspContentChanges(
   syncKind: TextDocumentSyncKind,

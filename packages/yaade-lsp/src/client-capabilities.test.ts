@@ -23,9 +23,34 @@ test("advertises only semantic features implemented by the Monaco client", () =>
   assert.ok(textDocument.inlayHint)
   assert.ok(textDocument.documentHighlight)
   assert.ok(textDocument.codeLens)
+  assert.ok(textDocument.onTypeFormatting)
+  assert.ok(textDocument.foldingRange)
+  assert.ok(textDocument.selectionRange)
+  assert.ok(textDocument.documentLink)
+  assert.ok(textDocument.colorProvider)
   assert.ok(textDocument.publishDiagnostics)
+  assert.equal(textDocument.synchronization.dynamicRegistration, false)
+  assert.equal(textDocument.synchronization.willSave, true)
+  assert.equal(textDocument.synchronization.willSaveWaitUntil, true)
+  assert.equal(textDocument.synchronization.didSave, true)
 
-  assert.equal("rangeSemanticTokens" in textDocument, false)
-  assert.equal("onTypeFormatting" in textDocument, false)
+  assert.equal(textDocument.completion.dynamicRegistration, true)
+  assert.ok(textDocument.completion.completionItem.resolveSupport)
+  assert.equal(textDocument.codeAction.dynamicRegistration, true)
+  assert.ok(textDocument.codeAction.resolveSupport)
+  assert.deepEqual(textDocument.semanticTokens.requests, {
+    range: true,
+    full: { delta: true },
+  })
+  assert.deepEqual(yaadeLspClientCapabilities.workspace.workspaceEdit.resourceOperations, [
+    "create",
+    "rename",
+    "delete",
+  ])
+  assert.equal(
+    yaadeLspClientCapabilities.workspace.didChangeWatchedFiles.relativePatternSupport,
+    true,
+  )
+  assert.equal(yaadeLspClientCapabilities.window.showDocument.support, true)
   assert.equal("callHierarchy" in textDocument, false)
 })

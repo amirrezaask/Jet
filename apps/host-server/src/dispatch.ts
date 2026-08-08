@@ -146,7 +146,9 @@ async function dispatchImpl(
   }
   if (channel.startsWith("fs:")) return handleFs(runtime, channel, args)
   if (channel.startsWith("search:")) return handleSearch(runtime, channel, args, signal)
-  if (channel.startsWith("workspace:")) return handleWorkspace(runtime, channel, args)
+  if (channel.startsWith("workspace:")) {
+    return handleWorkspace(runtime, channel, args, clientId)
+  }
   if (channel.startsWith("terminal:")) return handleTerminal(runtime, channel, args, clientId)
   if (channel.startsWith("shell:")) return handleShell(channel, args)
   if (channel.startsWith("tasks:")) return handleTasks(channel, args)
@@ -546,10 +548,21 @@ async function handleSearch(
   }
 }
 
-function handleWorkspace(runtime: HostRuntime, channel: string, args: unknown[]): unknown {
+function handleWorkspace(
+  runtime: HostRuntime,
+  channel: string,
+  args: unknown[],
+  clientId: string,
+): unknown {
   const rootUri = str(args[0], "rootUri")
-  if (channel === "workspace:activate") return runtime.workspace.activate(runtime.events, rootUri)
-  if (channel === "workspace:deactivate") return runtime.workspace.deactivate(rootUri)
+  const sessionId = str(args[1], "sessionId")
+  const owner = { clientId, sessionId }
+  if (channel === "workspace:activate") {
+    return runtime.workspace.activate(runtime.events, rootUri, owner)
+  }
+  if (channel === "workspace:deactivate") {
+    return runtime.workspace.deactivate(rootUri, owner)
+  }
   throw new Error(`unknown workspace channel: ${channel}`)
 }
 

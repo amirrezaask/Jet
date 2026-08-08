@@ -1311,7 +1311,7 @@ async function handleHttp(
   }
 
   if (req.method === "GET" && runtime.config.staticDir) {
-    if (serveStatic(runtime.config.staticDir, pathname, res)) return
+    if (serveStatic(runtime.config.staticDir, pathname, req, res)) return
   }
 
   sendJson(res, 404, {
@@ -1540,13 +1540,35 @@ function fileVersion(abs: string): string {
   }
 }
 
-function serveStatic(root: string, pathname: string, res: ServerResponse): boolean {
+function acceptsEncoding(header: string | undefined, encoding: "br" | "gzip"): boolean {
+  if (!header) return false
+  const qualities = new Map<string, number>()
+  for (const entry of header.toLowerCase().split(",")) {
+    const [name, ...parameters] = entry.trim().split(";")
+    if (!name) continue
+    let quality = 1
+    for (const parameter of parameters) {
+      const match = /^q\s*=\s*(0(?:\.\d+)?|1(?:\.0+)?)$/.exec(parameter.trim())
+      if (match) quality = Number(match[1])
+    }
+    qualities.set(name, quality)
+  }
+  return (qualities.get(encoding) ?? qualities.get("*") ?? 0) > 0
+}
+
+function serveStatic(
+  root: string,
+  pathname: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): boolean {
   const rel = pathname === "/" ? "/index.html" : pathname
-  const abs = path.join(root, rel)
-  if (!abs.startsWith(root)) return false
+  const resolvedRoot = path.resolve(root)
+  const abs = path.resolve(resolvedRoot, `.${rel}`)
+  if (abs !== resolvedRoot && !abs.startsWith(`${resolvedRoot}${path.sep}`)) return false
   let filePath = abs
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-    filePath = path.join(root, "index.html")
+    filePath = path.join(resolvedRoot, "index.html")
     if (!fs.existsSync(filePath)) return false
   }
   const ext = path.extname(filePath)
@@ -1562,8 +1584,35 @@ function serveStatic(root: string, pathname: string, res: ServerResponse): boole
             : ext === ".json"
               ? "application/json"
               : "application/octet-stream"
-  res.writeHead(200, { "content-type": type })
-  fs.createReadStream(filePath).pipe(res)
+  const acceptEncoding = typeof req.headers["accept-encoding"] === "string"
+    ? req.headers["accept-encoding"]
+    : undefined
+  let servedPath = filePath
+  let contentEncoding: "br" | "gzip" | null = null
+  if (acceptsEncoding(acceptEncoding, "br") && fs.existsSync(`${filePath}.br`)) {
+    servedPath = `${filePath}.br`
+    contentEncoding = "br"
+  } else if (
+    acceptsEncoding(acceptEncoding, "gzip") &&
+    fs.existsSync(`${filePath}.gz`)
+  ) {
+    servedPath = `${filePath}.gz`
+    contentEncoding = "gzip"
+  }
+  const immutable =
+    filePath.startsWith(path.join(resolvedRoot, "assets") + path.sep) &&
+    /-[A-Za-z0-9_-]{8,}\.[^.]+$/.test(filePath)
+  const headers: Record<string, string | number> = {
+    "content-type": type,
+    "content-length": fs.statSync(servedPath).size,
+    "cache-control": immutable
+      ? "public, max-age=31536000, immutable"
+      : "no-cache",
+    vary: "Accept-Encoding",
+  }
+  if (contentEncoding) headers["content-encoding"] = contentEncoding
+  res.writeHead(200, headers)
+  fs.createReadStream(servedPath).pipe(res)
   return true
 }
 

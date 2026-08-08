@@ -1,6 +1,6 @@
 import type { ListDocument, ListItem, WorkspaceFolder, WorkspaceService } from "@yaade/workspace"
-import { projectSearchAcrossFolders } from "@yaade/workspace"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { projectSearchPageAcrossFolders } from "@yaade/workspace"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { Input } from "@/components/ui/input.js"
 import { Spinner } from "@/components/ui/spinner.js"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group.js"
@@ -11,14 +11,26 @@ import { useAutoFocus } from "@/lib/use-auto-focus.js"
 import { searchHitToListItem } from "./mappers.js"
 import { focusListPanel } from "@/lib/list-registry.js"
 
+function parseGlobs(value: string | undefined): string[] | undefined {
+  const globs = (value ?? "").split(",").map(item => item.trim()).filter(Boolean)
+  return globs.length > 0 ? globs : undefined
+}
+
 function useListDocument(doc: ListDocument, workspace: WorkspaceService): ListDocument {
-  const [, setRev] = useState(0)
-  useEffect(() => {
-    return workspace.listStore.onDidChange.event(e => {
-      if (e.id === doc.id) setRev(r => r + 1)
-    }).dispose
-  }, [workspace, doc.id])
-  return workspace.listStore.get(doc.id) ?? doc
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      const disposable = workspace.listStore.onDidChange.event(event => {
+        if (event.id === doc.id) onStoreChange()
+      })
+      return () => disposable.dispose()
+    },
+    [doc.id, workspace],
+  )
+  const getSnapshot = useCallback(
+    () => workspace.listStore.get(doc.id) ?? doc,
+    [doc, workspace],
+  )
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 export function SearchLocationList({
@@ -62,27 +74,35 @@ export function SearchLocationList({
     [workspace, listId],
   )
 
-  const runSearch = useCallback(async () => {
+  const runSearch = useCallback(async (signal: AbortSignal) => {
     const current = workspace.listStore.get(listId)
     if (!current) return
     const query = (current.searchQuery ?? "").trim()
     const folders = getSearchFolders?.() ?? workspace.folders
     if (folders.length === 0 || !window.yaade?.search || !query) {
       searchGen.current += 1
-      patchDoc({ items: [], searchLoading: false, searchError: null })
+      patchDoc({
+        items: [],
+        searchLoading: false,
+        searchError: null,
+        searchTruncated: false,
+      })
       return
     }
     const gen = ++searchGen.current
     patchDoc({ searchLoading: true, searchError: null })
     try {
-      const hits = await projectSearchAcrossFolders(folders, window.yaade.search, query, {
+      const page = await projectSearchPageAcrossFolders(folders, window.yaade.search, query, {
         caseSensitive: current.searchCaseSensitive ?? false,
         regex: current.searchRegex ?? false,
         fuzzy: current.searchFuzzy ?? false,
-      })
+        wholeWord: current.searchWholeWord ?? false,
+        include: parseGlobs(current.searchInclude),
+        exclude: parseGlobs(current.searchExclude),
+      }, signal)
       if (gen !== searchGen.current) return
       const multiRoot = folders.length > 1
-      const items = hits.map((h, i) =>
+      const items = page.items.map((h, i) =>
         searchHitToListItem(
           h.result,
           i,
@@ -90,9 +110,10 @@ export function SearchLocationList({
           multiRoot ? h.folder.root.name : undefined,
         ),
       )
-      patchDoc({ items, searchLoading: false })
+      patchDoc({ items, searchLoading: false, searchTruncated: page.truncated })
     } catch (err) {
       if (gen !== searchGen.current) return
+      if (signal.aborted) return
       patchDoc({
         searchLoading: false,
         searchError: err instanceof Error ? err.message : String(err),
@@ -103,15 +124,22 @@ export function SearchLocationList({
   runSearchRef.current = runSearch
 
   useEffect(() => {
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      void runSearchRef.current()
+      void runSearchRef.current(controller.signal)
     }, 120)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [
     doc.searchQuery,
     doc.searchCaseSensitive,
     doc.searchRegex,
     doc.searchFuzzy,
+    doc.searchWholeWord,
+    doc.searchInclude,
+    doc.searchExclude,
   ])
 
   const header = (
@@ -157,6 +185,7 @@ export function SearchLocationList({
             ...(doc.searchCaseSensitive ? ["case"] : []),
             ...(doc.searchRegex && !doc.searchFuzzy ? ["regex"] : []),
             ...(doc.searchFuzzy ? ["fuzzy"] : []),
+            ...(doc.searchWholeWord ? ["word"] : []),
           ]}
           onValueChange={values => {
             const fuzzy = values.includes("fuzzy")
@@ -164,6 +193,7 @@ export function SearchLocationList({
               searchCaseSensitive: values.includes("case"),
               searchRegex: fuzzy ? false : values.includes("regex"),
               searchFuzzy: fuzzy,
+              searchWholeWord: values.includes("word"),
             })
           }}
         >
@@ -180,6 +210,9 @@ export function SearchLocationList({
           <ToggleGroupItem value="fuzzy" className="h-7 px-2 text-xs">
             Fuzzy
           </ToggleGroupItem>
+          <ToggleGroupItem value="word" className="h-7 px-2 text-xs">
+            Whole
+          </ToggleGroupItem>
         </ToggleGroup>
         {doc.searchLoading && (
           <span
@@ -191,6 +224,29 @@ export function SearchLocationList({
           </span>
         )}
       </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          aria-label="Files to include"
+          placeholder="Include: src/**, packages/**"
+          value={doc.searchInclude ?? ""}
+          onChange={event => patchDoc({ searchInclude: event.target.value })}
+          className="h-7 font-mono text-xs"
+          spellCheck={false}
+        />
+        <Input
+          aria-label="Files to exclude"
+          placeholder="Exclude: **/*.test.ts"
+          value={doc.searchExclude ?? ""}
+          onChange={event => patchDoc({ searchExclude: event.target.value })}
+          className="h-7 font-mono text-xs"
+          spellCheck={false}
+        />
+      </div>
+      {doc.searchTruncated ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          Showing the first 200 matches. Refine the query to see more.
+        </p>
+      ) : null}
       {doc.searchError && (
         <Alert variant="destructive" className="py-2">
           <CircleAlertIcon />

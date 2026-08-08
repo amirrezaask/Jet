@@ -7,6 +7,8 @@ import {
   isChordBinding,
   isEditorKeyBinding,
   keyEventMatchesBinding,
+  keyEventMatchesBindingPart,
+  parseBindingKey,
   resolveKeydownBinding,
   type JetKeyBinding,
   type KeymapContext,
@@ -116,6 +118,15 @@ export function useGlobalKeymap(refs: GlobalKeymapRefs): void {
         (target instanceof HTMLInputElement ||
           (target instanceof HTMLTextAreaElement && !inXterm))
       ) {
+        const bindings = getBindingsRef.current?.() ?? bindingsRef.current
+        const startsShellChord = bindings.some(binding => {
+          if (!isChordBinding(binding.key)) return false
+          const prefix = parseBindingKey(binding.key)[0]
+          return prefix ? keyEventMatchesBindingPart(e, prefix) : false
+        })
+        if (chordState.prefix != null || startsShellChord) {
+          dispatchKeyBinding(e)
+        }
         return
       }
 

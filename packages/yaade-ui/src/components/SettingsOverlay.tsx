@@ -2,8 +2,11 @@ import type { YaadeTheme } from "@yaade/shared"
 import {
   Bell,
   Brush,
+  Monitor,
+  Moon,
   RotateCcw,
   SlidersHorizontal,
+  Sun,
   X,
 } from "lucide-react"
 import { useEffect, useState } from "react"
@@ -34,16 +37,25 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs.js"
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group.js"
 import { SettingsField } from "@/components/SettingsField.js"
-import { themePreviewSwatches } from "@/theme/bundled.js"
+import {
+  siblingThemeForScheme,
+  themePreviewSwatches,
+} from "@/theme/bundled.js"
 import { DEFAULT_MONO_FONT_NAME } from "../theme/appearance-defaults.js"
 import { listSystemMonoFonts } from "../theme/system-mono-fonts.js"
 
 /** Mission Control is sidebar-only; legacy `"cards"` / `"tabs"` normalize here. */
 export type SessionLayout = "sidebar"
+export type ColorSchemeMode = "system" | "light" | "dark"
 
 export type JetAppearanceSettings = {
   themeId: string
+  colorSchemeMode: ColorSchemeMode
   fontSize: number
   /** Primary monospace face name (CSS stack built via `buildMonoFontStack`). */
   monoFontFamily: string
@@ -89,6 +101,13 @@ function settingPatch(
   patch: Partial<JetAppearanceSettings>,
 ): JetAppearanceSettings {
   return { ...settings, ...patch }
+}
+
+function colorSchemeForMode(mode: ColorSchemeMode): "light" | "dark" {
+  if (mode !== "system") return mode
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light"
 }
 
 function MonoFontPicker({
@@ -398,6 +417,66 @@ export function SettingsOverlay({
                         Choose a color palette.
                       </p>
                     </div>
+                    <SettingsField
+                      label="Color mode"
+                      detail="Auto follows your system's light or dark appearance."
+                    >
+                      <ToggleGroup
+                        type="single"
+                        variant="outline"
+                        size="sm"
+                        value={settings.colorSchemeMode}
+                        aria-label="Color mode"
+                        className="w-full"
+                        onValueChange={value => {
+                          if (
+                            value !== "system" &&
+                            value !== "light" &&
+                            value !== "dark"
+                          ) {
+                            return
+                          }
+                          const scheme = colorSchemeForMode(value)
+                          onSettingsChange(
+                            settingPatch(settings, {
+                              colorSchemeMode: value,
+                              themeId: siblingThemeForScheme(
+                                settings.themeId,
+                                scheme,
+                              ).id,
+                            }),
+                          )
+                        }}
+                      >
+                        <ToggleGroupItem
+                          value="system"
+                          aria-label="Auto color mode"
+                          className="flex-1"
+                          data-yaade-color-mode-option="system"
+                        >
+                          <Monitor aria-hidden />
+                          Auto
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          value="light"
+                          aria-label="Light color mode"
+                          className="flex-1"
+                          data-yaade-color-mode-option="light"
+                        >
+                          <Sun aria-hidden />
+                          Light
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          value="dark"
+                          aria-label="Dark color mode"
+                          className="flex-1"
+                          data-yaade-color-mode-option="dark"
+                        >
+                          <Moon aria-hidden />
+                          Dark
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </SettingsField>
                     <div className="grid gap-4">
                       {Array.from(
                         themes.reduce((map, theme) => {
@@ -422,6 +501,8 @@ export function SettingsOverlay({
                                   onSettingsChange(
                                     settingPatch(settings, {
                                       themeId: theme.id,
+                                      colorSchemeMode:
+                                        theme.scheme ?? "dark",
                                     }),
                                   )
                                 }

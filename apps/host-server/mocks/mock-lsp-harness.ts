@@ -17,45 +17,59 @@
  * exercise the mock without production registry changes. Capture files are
  * private temporary test artifacts and must not be published in test reports.
  */
-import fs from "node:fs"
-import os from "node:os"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-export type MockLspDirection = "client" | "server" | "event"
+export type MockLspDirection = "client" | "server" | "event";
 
 export type MockLspMessageCapture = {
-  generation: number
-  direction: "client" | "server"
-  message: unknown
-}
+  generation: number;
+  direction: "client" | "server";
+  message: unknown;
+};
 
 export type MockLspEventCapture = {
-  generation: number
-  direction: "event"
-  event: string
-  details?: unknown
-}
+  generation: number;
+  direction: "event";
+  event: string;
+  details?: unknown;
+};
 
-export type MockLspCapture = MockLspMessageCapture | MockLspEventCapture
+export type MockLspCapture = MockLspMessageCapture | MockLspEventCapture;
 
 export type MockLspControl = {
-  command: "crash" | "restart" | "publishDiagnostics" | "registerCapability" | "showMessage"
-  generation?: number
-  code?: number
-  stderr?: string
-  uri?: string
-  message?: string
-  type?: number
-}
+  command:
+    | "crash"
+    | "restart"
+    | "publishDiagnostics"
+    | "registerCapability"
+    | "showMessage"
+    | "showMessageRequest"
+    | "showDocument"
+    | "applyWorkspaceEdit"
+    | "workDoneProgress"
+    | "finishWorkDoneProgress";
+  generation?: number;
+  code?: number;
+  stderr?: string;
+  uri?: string;
+  message?: string;
+  type?: number;
+  edit?: unknown;
+};
 
 export type WaitForMockLspOptions = {
-  timeoutMs?: number
-  afterCaptureCount?: number
-}
+  timeoutMs?: number;
+  afterCaptureCount?: number;
+};
 
-const moduleDir = path.dirname(fileURLToPath(import.meta.url))
-export const MOCK_LSP_BIN = path.join(moduleDir, "bin", "yaade-mock-lsp")
+const repoModuleDir = path.join(process.cwd(), "apps", "host-server", "mocks");
+const packageModuleDir = path.join(process.cwd(), "mocks");
+const moduleDir = fs.existsSync(repoModuleDir)
+  ? repoModuleDir
+  : packageModuleDir;
+export const MOCK_LSP_BIN = path.join(moduleDir, "bin", "yaade-mock-lsp");
 
 const SERVER_IDS = [
   "typescript-language-server",
@@ -66,85 +80,94 @@ const SERVER_IDS = [
   "vscode-json-language-server",
   "vscode-html-language-server",
   "vscode-css-language-server",
-] as const
+] as const;
 
 function field(value: unknown, key: string): unknown {
-  if (value === null || typeof value !== "object") return undefined
-  return Reflect.get(value, key)
+  if (value === null || typeof value !== "object") return undefined;
+  return Reflect.get(value, key);
 }
 
 function stringField(value: unknown, key: string): string | undefined {
-  const result = field(value, key)
-  return typeof result === "string" ? result : undefined
+  const result = field(value, key);
+  return typeof result === "string" ? result : undefined;
 }
 
 function numberField(value: unknown, key: string): number | undefined {
-  const result = field(value, key)
-  return typeof result === "number" && Number.isFinite(result) ? result : undefined
+  const result = field(value, key);
+  return typeof result === "number" && Number.isFinite(result)
+    ? result
+    : undefined;
 }
 
 function parseCapture(line: string): MockLspCapture | null {
-  let value: unknown
+  let value: unknown;
   try {
-    value = JSON.parse(line)
+    value = JSON.parse(line);
   } catch {
-    return null
+    return null;
   }
-  const generation = numberField(value, "generation")
-  const direction = stringField(value, "direction")
-  if (generation === undefined) return null
+  const generation = numberField(value, "generation");
+  const direction = stringField(value, "direction");
+  if (generation === undefined) return null;
   if (direction === "client" || direction === "server") {
-    return { generation, direction, message: field(value, "message") }
+    return { generation, direction, message: field(value, "message") };
   }
   if (direction === "event") {
-    const event = stringField(value, "event")
-    if (!event) return null
-    const details = field(value, "details")
+    const event = stringField(value, "event");
+    if (!event) return null;
+    const details = field(value, "details");
     return {
       generation,
       direction,
       event,
       ...(details === undefined ? {} : { details }),
-    }
+    };
   }
-  return null
+  return null;
 }
 
 function methodOf(capture: MockLspCapture): string | undefined {
-  return capture.direction === "event" ? undefined : stringField(capture.message, "method")
+  return capture.direction === "event"
+    ? undefined
+    : stringField(capture.message, "method");
 }
 
-function responseIdOf(capture: MockLspCapture): string | number | null | undefined {
-  if (capture.direction === "event") return undefined
-  const id = field(capture.message, "id")
-  return typeof id === "string" || typeof id === "number" || id === null ? id : undefined
+function responseIdOf(
+  capture: MockLspCapture,
+): string | number | null | undefined {
+  if (capture.direction === "event") return undefined;
+  const id = field(capture.message, "id");
+  return typeof id === "string" || typeof id === "number" || id === null
+    ? id
+    : undefined;
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function lspOverrideKey(serverId: string): string {
-  return `YAADE_LSP_${serverId.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}_BIN`
+  return `YAADE_LSP_${serverId.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}_BIN`;
 }
 
 export class MockLspHarness {
-  readonly rootDir: string
-  readonly capturePath: string
-  readonly controlPath: string
-  readonly stateDir: string
-  readonly env: Record<string, string>
-  readonly binaryPath = MOCK_LSP_BIN
-  private readonly ownsRoot: boolean
+  readonly rootDir: string;
+  readonly capturePath: string;
+  readonly controlPath: string;
+  readonly stateDir: string;
+  readonly env: Record<string, string>;
+  readonly binaryPath = MOCK_LSP_BIN;
+  private readonly ownsRoot: boolean;
 
   constructor(rootDir?: string) {
-    this.ownsRoot = rootDir === undefined
-    this.rootDir = rootDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "yaade-mock-lsp-"))
-    this.capturePath = path.join(this.rootDir, "capture.jsonl")
-    this.controlPath = path.join(this.rootDir, "control.jsonl")
-    this.stateDir = path.join(this.rootDir, "state")
-    fs.mkdirSync(this.stateDir, { recursive: true })
-    fs.writeFileSync(this.controlPath, "", "utf8")
+    this.ownsRoot = rootDir === undefined;
+    this.rootDir =
+      rootDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "yaade-mock-lsp-"));
+    this.capturePath = path.join(this.rootDir, "capture.jsonl");
+    this.controlPath = path.join(this.rootDir, "control.jsonl");
+    this.stateDir = path.join(this.rootDir, "state");
+    fs.mkdirSync(this.stateDir, { recursive: true });
+    fs.writeFileSync(this.controlPath, "", "utf8");
 
     const env: Record<string, string> = {
       YAADE_LSP_MOCK: "1",
@@ -152,100 +175,148 @@ export class MockLspHarness {
       YAADE_MOCK_LSP_CAPTURE_PATH: this.capturePath,
       YAADE_MOCK_LSP_CONTROL_PATH: this.controlPath,
       YAADE_MOCK_LSP_STATE_DIR: this.stateDir,
-    }
-    for (const serverId of SERVER_IDS) env[lspOverrideKey(serverId)] = MOCK_LSP_BIN
-    this.env = env
+    };
+    for (const serverId of SERVER_IDS)
+      env[lspOverrideKey(serverId)] = MOCK_LSP_BIN;
+    this.env = env;
   }
 
   captures(): MockLspCapture[] {
-    let text: string
+    let text: string;
     try {
-      text = fs.readFileSync(this.capturePath, "utf8")
+      text = fs.readFileSync(this.capturePath, "utf8");
     } catch (error) {
-      const code = error !== null && typeof error === "object" ? field(error, "code") : undefined
-      if (code === "ENOENT") return []
-      throw error
+      const code =
+        error !== null && typeof error === "object"
+          ? field(error, "code")
+          : undefined;
+      if (code === "ENOENT") return [];
+      throw error;
     }
-    const result: MockLspCapture[] = []
+    const result: MockLspCapture[] = [];
     for (const line of text.split("\n")) {
-      if (!line.trim()) continue
-      const capture = parseCapture(line)
-      if (capture) result.push(capture)
+      if (!line.trim()) continue;
+      const capture = parseCapture(line);
+      if (capture) result.push(capture);
     }
-    return result
+    return result;
   }
 
   clientMessages(method?: string): MockLspMessageCapture[] {
     return this.captures().filter(
       (capture): capture is MockLspMessageCapture =>
-        capture.direction === "client" && (method === undefined || methodOf(capture) === method),
-    )
+        capture.direction === "client" &&
+        (method === undefined || methodOf(capture) === method),
+    );
   }
 
   serverMessages(method?: string): MockLspMessageCapture[] {
     return this.captures().filter(
       (capture): capture is MockLspMessageCapture =>
-        capture.direction === "server" && (method === undefined || methodOf(capture) === method),
-    )
+        capture.direction === "server" &&
+        (method === undefined || methodOf(capture) === method),
+    );
   }
 
   events(event?: string): MockLspEventCapture[] {
     return this.captures().filter(
       (capture): capture is MockLspEventCapture =>
-        capture.direction === "event" && (event === undefined || capture.event === event),
-    )
+        capture.direction === "event" &&
+        (event === undefined || capture.event === event),
+    );
   }
 
   startCount(): number {
     try {
-      return fs.readdirSync(this.stateDir).filter(name => name.endsWith(".started")).length
+      return fs
+        .readdirSync(this.stateDir)
+        .filter((name) => name.endsWith(".started")).length;
     } catch (error) {
-      const code = error !== null && typeof error === "object" ? field(error, "code") : undefined
-      if (code === "ENOENT") return 0
-      throw error
+      const code =
+        error !== null && typeof error === "object"
+          ? field(error, "code")
+          : undefined;
+      if (code === "ENOENT") return 0;
+      throw error;
     }
   }
 
   appendControl(control: MockLspControl): void {
-    fs.appendFileSync(this.controlPath, `${JSON.stringify(control)}\n`, "utf8")
+    fs.appendFileSync(this.controlPath, `${JSON.stringify(control)}\n`, "utf8");
   }
 
   crash(generation?: number, code = 1): void {
-    this.appendControl({ command: "crash", generation, code })
+    this.appendControl({ command: "crash", generation, code });
   }
 
   restart(generation?: number): void {
-    this.appendControl({ command: "restart", generation, code: 86 })
+    this.appendControl({ command: "restart", generation, code: 86 });
   }
 
-  publishDiagnostics(options: { generation?: number; uri?: string; message?: string } = {}): void {
-    this.appendControl({ command: "publishDiagnostics", ...options })
+  publishDiagnostics(
+    options: { generation?: number; uri?: string; message?: string } = {},
+  ): void {
+    this.appendControl({ command: "publishDiagnostics", ...options });
   }
 
   registerCapability(generation?: number): void {
-    this.appendControl({ command: "registerCapability", generation })
+    this.appendControl({ command: "registerCapability", generation });
   }
 
-  showMessage(message: string, options: { generation?: number; type?: number } = {}): void {
-    this.appendControl({ command: "showMessage", message, ...options })
+  showMessage(
+    message: string,
+    options: { generation?: number; type?: number } = {},
+  ): void {
+    this.appendControl({ command: "showMessage", message, ...options });
+  }
+
+  showMessageRequest(
+    message: string,
+    options: { generation?: number; type?: number } = {},
+  ): void {
+    this.appendControl({ command: "showMessageRequest", message, ...options });
+  }
+
+  showDocument(uri: string, options: { generation?: number } = {}): void {
+    this.appendControl({ command: "showDocument", uri, ...options });
+  }
+
+  applyWorkspaceEdit(
+    edit: unknown,
+    options: { generation?: number } = {},
+  ): void {
+    this.appendControl({ command: "applyWorkspaceEdit", edit, ...options });
+  }
+
+  workDoneProgress(
+    message: string,
+    options: { generation?: number } = {},
+  ): void {
+    this.appendControl({ command: "workDoneProgress", message, ...options });
+  }
+
+  finishWorkDoneProgress(generation?: number): void {
+    this.appendControl({ command: "finishWorkDoneProgress", generation });
   }
 
   async waitForCapture(
     predicate: (capture: MockLspCapture) => boolean,
     options: WaitForMockLspOptions = {},
   ): Promise<MockLspCapture> {
-    const timeoutMs = options.timeoutMs ?? 5_000
-    const after = options.afterCaptureCount ?? 0
-    const deadline = Date.now() + timeoutMs
+    const timeoutMs = options.timeoutMs ?? 5_000;
+    const after = options.afterCaptureCount ?? 0;
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const captures = this.captures()
+      const captures = this.captures();
       for (let index = after; index < captures.length; index += 1) {
-        const capture = captures[index]
-        if (capture && predicate(capture)) return capture
+        const capture = captures[index];
+        if (capture && predicate(capture)) return capture;
       }
-      await delay(20)
+      await delay(20);
     }
-    throw new Error(`Timed out after ${timeoutMs}ms waiting for mock LSP capture`)
+    throw new Error(
+      `Timed out after ${timeoutMs}ms waiting for mock LSP capture`,
+    );
   }
 
   async waitForClientMethod(
@@ -253,11 +324,12 @@ export class MockLspHarness {
     options?: WaitForMockLspOptions,
   ): Promise<MockLspMessageCapture> {
     const capture = await this.waitForCapture(
-      item => item.direction === "client" && methodOf(item) === method,
+      (item) => item.direction === "client" && methodOf(item) === method,
       options,
-    )
-    if (capture.direction !== "client") throw new Error("mock LSP capture direction changed")
-    return capture
+    );
+    if (capture.direction !== "client")
+      throw new Error("mock LSP capture direction changed");
+    return capture;
   }
 
   async waitForServerMethod(
@@ -265,11 +337,12 @@ export class MockLspHarness {
     options?: WaitForMockLspOptions,
   ): Promise<MockLspMessageCapture> {
     const capture = await this.waitForCapture(
-      item => item.direction === "server" && methodOf(item) === method,
+      (item) => item.direction === "server" && methodOf(item) === method,
       options,
-    )
-    if (capture.direction !== "server") throw new Error("mock LSP capture direction changed")
-    return capture
+    );
+    if (capture.direction !== "server")
+      throw new Error("mock LSP capture direction changed");
+    return capture;
   }
 
   async waitForResponse(
@@ -277,36 +350,42 @@ export class MockLspHarness {
     options?: WaitForMockLspOptions,
   ): Promise<MockLspMessageCapture> {
     const capture = await this.waitForCapture(
-      item => item.direction === "server" && responseIdOf(item) === id && methodOf(item) === undefined,
+      (item) =>
+        item.direction === "server" &&
+        responseIdOf(item) === id &&
+        methodOf(item) === undefined,
       options,
-    )
-    if (capture.direction !== "server") throw new Error("mock LSP capture direction changed")
-    return capture
+    );
+    if (capture.direction !== "server")
+      throw new Error("mock LSP capture direction changed");
+    return capture;
   }
 
   async waitForStartCount(count: number, timeoutMs = 5_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (this.startCount() >= count) return
-      await delay(20)
+      if (this.startCount() >= count) return;
+      await delay(20);
     }
-    throw new Error(`Timed out after ${timeoutMs}ms waiting for ${count} mock LSP starts`)
+    throw new Error(
+      `Timed out after ${timeoutMs}ms waiting for ${count} mock LSP starts`,
+    );
   }
 
   dispose(): void {
-    if (!this.ownsRoot) return
-    fs.rmSync(this.rootDir, { recursive: true, force: true })
+    if (!this.ownsRoot) return;
+    fs.rmSync(this.rootDir, { recursive: true, force: true });
   }
 }
 
 export function createMockLspHarness(rootDir?: string): MockLspHarness {
-  return new MockLspHarness(rootDir)
+  return new MockLspHarness(rootDir);
 }
 
 export function mockLspMessageMethod(message: unknown): string | undefined {
-  return stringField(message, "method")
+  return stringField(message, "method");
 }
 
 export function mockLspMessageField(message: unknown, key: string): unknown {
-  return field(message, key)
+  return field(message, key);
 }

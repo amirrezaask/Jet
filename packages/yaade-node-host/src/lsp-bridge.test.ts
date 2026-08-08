@@ -4,19 +4,22 @@ import os from "node:os"
 import path from "node:path"
 import { pathToFileUri } from "@yaade/shared"
 import {
+  LspBridge,
   LspFramingDecoder,
   encodeLspMessage,
-  getLspSession,
-  setLspCrashHandler,
-  startLspSession,
-  stopAllLspSessions,
-  createLspRestartHelper,
 } from "./lsp-bridge.js"
 import { resetLanguageServerRegistryForTests } from "./lsp-registry.js"
 
+const bridges: LspBridge[] = []
+
+function bridge(options: ConstructorParameters<typeof LspBridge>[0] = {}): LspBridge {
+  const instance = new LspBridge(options)
+  bridges.push(instance)
+  return instance
+}
+
 afterEach(() => {
-  stopAllLspSessions()
-  setLspCrashHandler(() => {})
+  for (const instance of bridges.splice(0)) instance.stopAll()
   resetLanguageServerRegistryForTests()
 })
 
@@ -66,10 +69,10 @@ describe("LspFramingDecoder", () => {
   })
 })
 
-describe("startLspSession", () => {
+describe("LspBridge", () => {
   it("rejects unknown server ids without spawning", async () => {
     const rootUri = pathToFileUri(os.tmpdir())
-    const result = await startLspSession({
+    const result = await bridge().start({
       rootUri,
       serverId: "not-a-real-server",
     })
@@ -80,7 +83,7 @@ describe("startLspSession", () => {
 
   it("rejects paths outside allowed roots", async () => {
     const rootUri = pathToFileUri("/definitely-not-allowed-root")
-    const result = await startLspSession({
+    const result = await bridge().start({
       rootUri,
       serverId: "typescript-language-server",
       allowedRoots: [path.join(os.tmpdir(), "yaade-lsp-allowed")],
@@ -105,7 +108,7 @@ describe("startLspSession", () => {
 
     try {
       const rootUri = pathToFileUri(os.tmpdir())
-      const result = await startLspSession({
+      const result = await bridge().start({
         rootUri,
         serverId: "mock-language-server",
         allowedRoots: [os.tmpdir()],
@@ -134,24 +137,27 @@ describe("startLspSession", () => {
     resetLanguageServerRegistryForTests()
 
     try {
+      let resolveCrash: (id: string) => void = () => {}
       const crashed = new Promise<string>((resolve, reject) => {
+        resolveCrash = resolve
         const timeout = setTimeout(
           () => reject(new Error("timed out waiting for LSP exit")),
-          2_000,
+          5_000,
         )
-        setLspCrashHandler(id => {
+        resolveCrash = id => {
           clearTimeout(timeout)
           resolve(id)
-        })
+        }
       })
-      const result = await startLspSession({
+      const instance = bridge({ onCrash: id => resolveCrash(id) })
+      const result = await instance.start({
         rootUri: pathToFileUri(os.tmpdir()),
         serverId: "mock-language-server",
         allowedRoots: [os.tmpdir()],
       })
 
       assert.equal(await crashed, result.id)
-      assert.equal(getLspSession(result.id), undefined)
+      assert.equal(instance.getSession(result.id), undefined)
     } finally {
       if (prevMock === undefined) delete process.env.YAADE_LSP_MOCK
       else process.env.YAADE_LSP_MOCK = prevMock
@@ -159,16 +165,5 @@ describe("startLspSession", () => {
       else process.env.YAADE_LSP_MOCK_BIN = prevBin
       resetLanguageServerRegistryForTests()
     }
-  })
-})
-
-describe("createLspRestartHelper", () => {
-  it("caps restart attempts", () => {
-    const helper = createLspRestartHelper({ maxAttempts: 2, delayMs: 100 })
-    assert.equal(helper.shouldRestart("s1"), true)
-    assert.equal(helper.shouldRestart("s1"), true)
-    assert.equal(helper.shouldRestart("s1"), false)
-    helper.reset("s1")
-    assert.equal(helper.shouldRestart("s1"), true)
   })
 })

@@ -1,4 +1,4 @@
-import type { YaadeHostAPI } from "@yaade/workspace"
+import type { WorkspaceFileChangeKind, YaadeHostAPI } from "@yaade/workspace"
 import type { LspLifecycleEvent } from "@yaade/rpc"
 import type { YaadeHostTransport } from "./transport.js"
 import {
@@ -68,7 +68,11 @@ export function createYaadeApi(
   })
   transport.on("fs:changed", (...args: unknown[]) => {
     const uri = args[0] as string
-    for (const cb of fileChangeListeners) cb(uri)
+    const rawKind = args[1]
+    const kind: WorkspaceFileChangeKind = rawKind === "created" || rawKind === "deleted"
+      ? rawKind
+      : "changed"
+    for (const cb of fileChangeListeners) cb(uri, kind)
   })
   transport.on("yaade:close-tab", () => {
     window.dispatchEvent(new CustomEvent("jet-close-tab"))
@@ -124,7 +128,9 @@ export function createYaadeApi(
 
   const lspCrashListeners = new Set<(id: string) => void>()
   const lspLifecycleListeners = new Set<(event: LspLifecycleEvent) => void>()
-  const fileChangeListeners = new Set<(uri: string) => void>()
+  const fileChangeListeners = new Set<
+    (uri: string, kind: WorkspaceFileChangeKind) => void
+  >()
   const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
   const searchReadyListeners = new Set<(rootUri: string) => void>()
   const terminalExitListeners = new Set<(id: string, exitCode: number, signal?: number) => void>()
@@ -181,8 +187,10 @@ export function createYaadeApi(
       },
     },
     workspace: {
-      activate: rootUri => transport.invoke("workspace:activate", rootUri),
-      deactivate: rootUri => transport.invoke("workspace:deactivate", rootUri),
+      activate: (rootUri, owner) =>
+        transport.invoke("workspace:activate", rootUri, owner.sessionId),
+      deactivate: (rootUri, owner) =>
+        transport.invoke("workspace:deactivate", rootUri, owner.sessionId),
       onFileIndex: callback => {
         fileIndexListeners.add(callback)
         return () => fileIndexListeners.delete(callback)

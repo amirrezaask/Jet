@@ -6,8 +6,13 @@ import {
   isUntitledUri,
 } from "@yaade/shared"
 import type { WorkspaceService } from "@yaade/workspace"
-import { isLargeFile, monacoModels } from "@yaade/monaco"
+import {
+  ensureLanguageContribution,
+  isLargeFile,
+  monacoModels,
+} from "@yaade/monaco"
 import { EditorBufferVersionToken } from "./editor-buffer-version.js"
+import { EditorRecoveryQueue } from "./editor-recovery-queue.js"
 
 export type EditorBufferSnapshot = {
   uri: string
@@ -42,6 +47,13 @@ export type EditorBufferOpenOptions = {
 export type EditorBufferLspHooks = {
   open(uri: string): void | Promise<void>
   close(uri: string): void | Promise<void>
+  save?(
+    uri: string,
+    persist: (content: string) => Promise<void>,
+    reason?: Parameters<
+      import("@yaade/lsp").LspClientHandle["saveDocument"]
+    >[2],
+  ): void | Promise<void>
 }
 
 export type EditorBufferServiceDependencies = {
@@ -120,6 +132,8 @@ type BufferEntry = {
   lspOpened: boolean
   lspGeneration: number
   externalConflict: boolean
+  writeInFlight: number
+  externalEventDuringWrite: boolean
   changeSubscription: monaco.IDisposable
   recoveryTimer: ReturnType<typeof setTimeout> | null
 }
@@ -149,6 +163,7 @@ export class EditorBufferService {
     }
   >()
   private readonly onDidChangeEmitter = new Emitter<EditorBufferSnapshot>()
+  private readonly recoveryQueue = new EditorRecoveryQueue()
   private lspHooks: EditorBufferLspHooks | null = null
   private readonly disposeFileWatch: (() => void) | null
   private sessionId: string | null
@@ -174,7 +189,11 @@ export class EditorBufferService {
   }
 
   setSessionId(sessionId: string): void {
-    if (this.sessionId && this.sessionId !== sessionId && this.entries.size > 0) {
+    if (
+      this.sessionId &&
+      this.sessionId !== sessionId &&
+      this.entries.size > 0
+    ) {
       throw new Error("EditorBufferService cannot move between live sessions")
     }
     this.sessionId = sessionId
@@ -196,7 +215,9 @@ export class EditorBufferService {
     for (const entry of this.entries.values()) this.openLspIfEligible(entry)
   }
 
-  async open(options: EditorBufferOpenOptions): Promise<monaco.editor.ITextModel> {
+  async open(
+    options: EditorBufferOpenOptions,
+  ): Promise<monaco.editor.ITextModel> {
     const uri = canonicalUri(options.uri)
     const ownerId = options.ownerId ?? "default"
     const existing = this.entries.get(uri)
@@ -239,9 +260,13 @@ export class EditorBufferService {
     }
   }
 
-  private async openNew(options: EditorBufferOpenOptions): Promise<monaco.editor.ITextModel> {
+  private async openNew(
+    options: EditorBufferOpenOptions,
+  ): Promise<monaco.editor.ITextModel> {
     const recovery =
-      options.initialContent == null && this.sessionId && this.dependencies.getRecovery
+      options.initialContent == null &&
+      this.sessionId &&
+      this.dependencies.getRecovery
         ? await this.dependencies.getRecovery(this.sessionId, options.uri)
         : null
     let restoredDirty = false
@@ -268,7 +293,7 @@ export class EditorBufferService {
         if (disk.content === recovery.content) {
           loaded = disk
           if (this.sessionId) {
-            void this.dependencies.deleteRecovery?.(this.sessionId, options.uri)
+            void this.deleteRecovery(options.uri)
           }
         } else {
           loaded = {
@@ -294,7 +319,12 @@ export class EditorBufferService {
         : await this.dependencies.readTextFile(options.uri)
     }
     const content = loaded.content
-    const model = monacoModels.getOrCreate(options.uri, content, options.languageId)
+    await ensureLanguageContribution(options.languageId)
+    const model = monacoModels.getOrCreate(
+      options.uri,
+      content,
+      options.languageId,
+    )
     const cachedState = monacoModels.pinState(options.uri)
     if (
       monacoModels.ownerCount(options.uri) === 0 &&
@@ -349,6 +379,8 @@ export class EditorBufferService {
       lspOpened: false,
       lspGeneration: 0,
       externalConflict: restoredConflict,
+      writeInFlight: 0,
+      externalEventDuringWrite: false,
       changeSubscription,
       recoveryTimer: null,
     } satisfies BufferEntry)
@@ -395,25 +427,36 @@ export class EditorBufferService {
     if (entry.diskVersion == null) {
       throw new Error(`Cannot overwrite ${key} without a disk version`)
     }
-    let result: { version: string; size: number }
-    try {
-      result = await this.dependencies.writeTextFile(
-        key,
-        entry.model.getValue(),
-        { expectedVersion: entry.diskVersion },
-      )
-    } catch (error) {
-      if (isFileChangedError(error)) {
-        entry.externalConflict = true
-        this.emit(entry)
+    const persist = async (content: string) => {
+      const persistedAlternativeVersion = entry.model.getAlternativeVersionId()
+      entry.writeInFlight++
+      try {
+        const result = await this.dependencies.writeTextFile(key, content, {
+          expectedVersion: entry.diskVersion!,
+        })
+        entry.diskVersion = result.version
+        entry.diskSize = result.size
+        entry.externalConflict = false
+        await this.markPersistedVersion(entry, persistedAlternativeVersion)
+      } catch (error) {
+        if (isFileChangedError(error)) {
+          entry.externalConflict = true
+          this.emit(entry)
+        }
+        throw error
+      } finally {
+        entry.writeInFlight--
+        if (entry.writeInFlight === 0 && entry.externalEventDuringWrite) {
+          entry.externalEventDuringWrite = false
+          queueMicrotask(() => void this.handleExternalFileChange(key))
+        }
       }
-      throw error
     }
-    entry.diskVersion = result.version
-    entry.diskSize = result.size
-    entry.externalConflict = false
-    this.markSaved(key)
-    await this.deleteRecovery(key)
+    if (entry.lspOpened && this.lspHooks?.save) {
+      await this.lspHooks.save(key, persist, 1)
+    } else {
+      await persist(entry.model.getValue())
+    }
   }
 
   /**
@@ -438,16 +481,21 @@ export class EditorBufferService {
     if (!source) throw new Error(`Editor buffer is not open: ${sourceKey}`)
 
     const content = source.model.getValue()
+    const persistedAlternativeVersion = source.model.getAlternativeVersionId()
     const created = await this.dependencies.writeTextFile(targetKey, content, {
       create: true,
     })
+    const currentContent = source.model.getValue()
+    const initiallyChangedDuringSave =
+      source.model.getAlternativeVersionId() !== persistedAlternativeVersion
     const owners = [...source.ownerIds]
     const firstOwner = owners[0] ?? "default"
     await this.open({
       uri: targetKey,
       languageId: source.languageId,
       ownerId: firstOwner,
-      initialContent: content,
+      initialContent: currentContent,
+      initialDirty: initiallyChangedDuringSave,
       baseDiskVersion: created.version,
       initialDiskSize: created.size,
     })
@@ -460,13 +508,26 @@ export class EditorBufferService {
     }
     const target = this.entries.get(targetKey)
     if (!target) throw new Error(`Could not open saved file: ${targetKey}`)
-    target.versionToken.markSaved(target.model.getAlternativeVersionId())
-    target.dirty = false
+    // Opening every retained owner may load a lazy contribution. Reconcile one
+    // final snapshot before synchronously releasing the source so edits made
+    // during that work are promoted instead of discarded.
+    const finalContent = source.model.getValue()
+    const changedDuringSave = finalContent !== content
+    if (target.model.getValue() !== finalContent) {
+      target.model.setValue(finalContent)
+    }
+    if (!changedDuringSave) {
+      target.versionToken.markSaved(target.model.getAlternativeVersionId())
+    }
+    target.dirty = changedDuringSave
     target.diskVersion = created.version
     target.diskSize = created.size
     target.externalConflict = false
-    this.workspace.markDirty(targetKey, false)
-    monacoModels.setPinned(targetKey, { open: target.open, dirty: false })
+    this.workspace.markDirty(targetKey, changedDuringSave)
+    monacoModels.setPinned(targetKey, {
+      open: target.open,
+      dirty: changedDuringSave,
+    })
     this.emit(target)
 
     if (isUntitledUri(sourceKey)) {
@@ -483,10 +544,9 @@ export class EditorBufferService {
     source.dirty = false
     this.workspace.markDirty(sourceKey, false)
     this.close(sourceKey, { discard: true })
-    await Promise.all([
-      this.deleteRecovery(sourceKey),
-      this.deleteRecovery(targetKey),
-    ])
+    await this.deleteRecovery(sourceKey)
+    if (changedDuringSave) this.scheduleRecovery(target)
+    else await this.deleteRecovery(targetKey)
     return targetKey
   }
 
@@ -552,23 +612,44 @@ export class EditorBufferService {
     if (isUntitledUri(key)) throw new SaveAsRequiredError(key)
     const disk = await this.dependencies.readTextFile(key)
     entry.diskVersion = disk.version
-    const result = await this.dependencies.writeTextFile(
-      key,
-      entry.model.getValue(),
-      { expectedVersion: disk.version },
-    )
-    entry.diskVersion = result.version
-    entry.diskSize = result.size
-    entry.externalConflict = false
-    this.markSaved(key)
-    await this.deleteRecovery(key)
+    const content = entry.model.getValue()
+    const persistedAlternativeVersion = entry.model.getAlternativeVersionId()
+    entry.writeInFlight++
+    try {
+      const result = await this.dependencies.writeTextFile(key, content, {
+        expectedVersion: disk.version,
+      })
+      entry.diskVersion = result.version
+      entry.diskSize = result.size
+      entry.externalConflict = false
+      await this.markPersistedVersion(entry, persistedAlternativeVersion)
+    } finally {
+      entry.writeInFlight--
+      if (entry.writeInFlight === 0 && entry.externalEventDuringWrite) {
+        entry.externalEventDuringWrite = false
+        queueMicrotask(() => void this.handleExternalFileChange(key))
+      }
+    }
   }
 
   async handleExternalFileChange(uri: string): Promise<void> {
     const key = canonicalUri(uri)
     const entry = this.entries.get(key)
     if (!entry || isUntitledUri(key)) return
+    if (entry.writeInFlight > 0) {
+      entry.externalEventDuringWrite = true
+      return
+    }
     if (entry.dirty) {
+      try {
+        const loaded = await this.dependencies.readTextFile(key)
+        // Watchers are debounced, so the create/open or our own completed save
+        // event can arrive after the user has already typed. Only a new disk
+        // version is a real dirty-buffer conflict.
+        if (loaded.version === entry.diskVersion) return
+      } catch {
+        // Deletion/unreadable changes are conflicts for a dirty buffer.
+      }
       entry.externalConflict = true
       this.emit(entry)
       return
@@ -603,6 +684,33 @@ export class EditorBufferService {
     monacoModels.setPinned(entry.uri, { open: entry.open, dirty: false })
     this.emit(entry)
     void this.deleteRecovery(entry.uri)
+  }
+
+  private async markPersistedVersion(
+    entry: BufferEntry,
+    persistedAlternativeVersion: number,
+  ): Promise<void> {
+    entry.versionToken.markSaved(persistedAlternativeVersion)
+    entry.dirty = entry.versionToken.isDirty(
+      entry.model.getAlternativeVersionId(),
+    )
+    this.workspace.markDirty(entry.uri, entry.dirty)
+    monacoModels.setPinned(entry.uri, {
+      open: entry.open,
+      dirty: entry.dirty,
+    })
+    this.emit(entry)
+    if (entry.dirty) {
+      // Text typed after serialization belongs to the next save and must
+      // remain recoverable even though this disk write succeeded.
+      this.scheduleRecovery(entry)
+      return
+    }
+    if (entry.recoveryTimer) {
+      clearTimeout(entry.recoveryTimer)
+      entry.recoveryTimer = null
+    }
+    await this.deleteRecovery(entry.uri)
   }
 
   /** Large files attach to LSP only after an explicit user command. */
@@ -662,6 +770,31 @@ export class EditorBufferService {
     this.workspace.closeBuffer(key)
     this.emit(entry)
     monacoModels.evictClosedClean()
+    return true
+  }
+
+  /** Atomically transfers one editor-group owner without closing dirty/LSP state. */
+  moveOwner(uri: string, fromOwnerId: string, toOwnerId: string): boolean {
+    const key = canonicalUri(uri)
+    const entry = this.entries.get(key)
+    if (!entry) {
+      const opening = this.pending.get(key)
+      if (!opening?.owners.has(fromOwnerId)) return false
+      opening.owners.delete(fromOwnerId)
+      opening.owners.add(toOwnerId)
+      return true
+    }
+    if (!entry.ownerIds.has(fromOwnerId)) return false
+    if (fromOwnerId === toOwnerId) return true
+    if (!entry.ownerIds.has(toOwnerId)) {
+      entry.ownerIds.add(toOwnerId)
+      monacoModels.retain(key, bufferOwner(key, toOwnerId))
+    }
+    entry.ownerIds.delete(fromOwnerId)
+    monacoModels.release(key, bufferOwner(key, fromOwnerId))
+    entry.open = entry.ownerIds.size > 0
+    monacoModels.setPinned(key, { open: entry.open, dirty: entry.dirty })
+    this.emit(entry)
     return true
   }
 
@@ -741,6 +874,7 @@ export class EditorBufferService {
         .filter(entry => entry.dirty)
         .map(entry => this.persistRecovery(entry)),
     )
+    await this.recoveryQueue.waitForIdle()
   }
 
   private scheduleRecovery(entry: BufferEntry): void {
@@ -762,13 +896,16 @@ export class EditorBufferService {
   private async persistRecovery(entry: BufferEntry): Promise<void> {
     const sessionId = this.sessionId
     if (!sessionId || !entry.dirty || !this.dependencies.upsertRecovery) return
-    await this.dependencies.upsertRecovery({
+    const input = {
       sessionId,
       uri: entry.uri,
       content: entry.model.getValue(),
       baseVersion: entry.diskVersion,
       languageId: entry.languageId,
-    })
+    }
+    await this.recoveryQueue.enqueue(entry.uri, () =>
+      this.dependencies.upsertRecovery!(input),
+    )
   }
 
   private clearRecovery(entry: BufferEntry): void {
@@ -783,7 +920,10 @@ export class EditorBufferService {
 
   private async deleteRecovery(uri: string): Promise<void> {
     if (!this.sessionId || !this.dependencies.deleteRecovery) return
-    await this.dependencies.deleteRecovery(this.sessionId, uri)
+    const sessionId = this.sessionId
+    await this.recoveryQueue.enqueue(uri, () =>
+      this.dependencies.deleteRecovery!(sessionId, uri),
+    )
   }
 
   private toSnapshot(entry: BufferEntry): EditorBufferSnapshot {
@@ -824,64 +964,111 @@ export class EditorBufferService {
   }
 }
 
-const services = new WeakMap<WorkspaceService, EditorBufferService>()
+type EditorBufferServiceRecord = {
+  service: EditorBufferService
+  retainCount: number
+  disposeTimer: ReturnType<typeof setTimeout> | null
+}
+
+const services = new WeakMap<WorkspaceService, EditorBufferServiceRecord>()
 
 /** Session-scoped lazy service. Monaco enters the graph only when this module loads. */
 export function editorBufferServiceFor(
   workspace: WorkspaceService,
   sessionId?: string,
 ): EditorBufferService {
-  const existing = services.get(workspace)
+  const existing = services.get(workspace)?.service
   if (existing) {
     if (sessionId) existing.setSessionId(sessionId)
     return existing
   }
-  const service = new EditorBufferService(workspace, {
-    readTextFile: async uri => {
-      const hostFs = typeof window !== "undefined" ? window.yaade?.fs : undefined
-      if (hostFs?.readTextFile) return hostFs.readTextFile(uri)
-      const content = await workspace.readFile(uri)
-      return {
-        content,
-        version: `legacy:${new TextEncoder().encode(content).byteLength}`,
-        size: new TextEncoder().encode(content).byteLength,
-      }
+  const service = new EditorBufferService(
+    workspace,
+    {
+      readTextFile: async uri => {
+        const hostFs =
+          typeof window !== "undefined" ? window.yaade?.fs : undefined
+        if (hostFs?.readTextFile) return hostFs.readTextFile(uri)
+        const content = await workspace.readFile(uri)
+        return {
+          content,
+          version: `legacy:${new TextEncoder().encode(content).byteLength}`,
+          size: new TextEncoder().encode(content).byteLength,
+        }
+      },
+      writeTextFile: async (uri, content, options) => {
+        const hostFs =
+          typeof window !== "undefined" ? window.yaade?.fs : undefined
+        if (hostFs?.writeTextFile) {
+          return hostFs.writeTextFile(uri, content, options)
+        }
+        await workspace.writeFile(uri, content)
+        return {
+          version: `legacy:${new TextEncoder().encode(content).byteLength}`,
+          size: new TextEncoder().encode(content).byteLength,
+        }
+      },
+      onFileChanged: callback =>
+        typeof window !== "undefined" && window.yaade?.fs.onFileChanged
+          ? window.yaade.fs.onFileChanged(callback)
+          : () => {},
+      getRecovery: (recoverySessionId, uri) =>
+        import("@yaade/host-client").then(({ getEditorRecoveryBuffer }) =>
+          getEditorRecoveryBuffer(recoverySessionId, uri),
+        ),
+      upsertRecovery: input =>
+        import("@yaade/host-client").then(({ upsertEditorRecoveryBuffer }) =>
+          upsertEditorRecoveryBuffer(input),
+        ),
+      deleteRecovery: (recoverySessionId, uri) =>
+        import("@yaade/host-client").then(({ deleteEditorRecoveryBuffer }) =>
+          deleteEditorRecoveryBuffer(recoverySessionId, uri),
+        ),
     },
-    writeTextFile: async (uri, content, options) => {
-      const hostFs = typeof window !== "undefined" ? window.yaade?.fs : undefined
-      if (hostFs?.writeTextFile) {
-        return hostFs.writeTextFile(uri, content, options)
-      }
-      await workspace.writeFile(uri, content)
-      return {
-        version: `legacy:${new TextEncoder().encode(content).byteLength}`,
-        size: new TextEncoder().encode(content).byteLength,
-      }
-    },
-    onFileChanged: callback =>
-      typeof window !== "undefined" && window.yaade?.fs.onFileChanged
-        ? window.yaade.fs.onFileChanged(callback)
-        : () => {},
-    getRecovery: (recoverySessionId, uri) =>
-      import("@yaade/host-client").then(({ getEditorRecoveryBuffer }) =>
-        getEditorRecoveryBuffer(recoverySessionId, uri),
-      ),
-    upsertRecovery: input =>
-      import("@yaade/host-client").then(({ upsertEditorRecoveryBuffer }) =>
-        upsertEditorRecoveryBuffer(input),
-      ),
-    deleteRecovery: (recoverySessionId, uri) =>
-      import("@yaade/host-client").then(({ deleteEditorRecoveryBuffer }) =>
-        deleteEditorRecoveryBuffer(recoverySessionId, uri),
-      ),
-  }, sessionId)
-  services.set(workspace, service)
+    sessionId,
+  )
+  services.set(workspace, { service, retainCount: 0, disposeTimer: null })
   return service
 }
 
+/**
+ * Retains the session-scoped service across React StrictMode's test unmount.
+ * The final release disposes on the next task, giving an immediate remount a
+ * chance to cancel teardown without leaking models after a real session exit.
+ */
+export function retainEditorBufferService(
+  workspace: WorkspaceService,
+  sessionId?: string,
+): () => void {
+  const service = editorBufferServiceFor(workspace, sessionId)
+  const record = services.get(workspace)!
+  if (record.disposeTimer) {
+    clearTimeout(record.disposeTimer)
+    record.disposeTimer = null
+  }
+  record.retainCount++
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const live = services.get(workspace)
+    if (!live || live.service !== service) return
+    live.retainCount = Math.max(0, live.retainCount - 1)
+    if (live.retainCount > 0 || live.disposeTimer) return
+    live.disposeTimer = setTimeout(() => {
+      const current = services.get(workspace)
+      if (!current || current !== live || current.retainCount > 0) return
+      current.disposeTimer = null
+      current.service.dispose()
+      services.delete(workspace)
+    }, 0)
+  }
+}
+
 export function disposeEditorBufferService(workspace: WorkspaceService): void {
-  const service = services.get(workspace)
-  if (!service) return
-  service.dispose()
+  const record = services.get(workspace)
+  if (!record) return
+  if (record.disposeTimer) clearTimeout(record.disposeTimer)
+  record.service.dispose()
   services.delete(workspace)
 }

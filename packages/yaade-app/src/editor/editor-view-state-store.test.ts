@@ -3,6 +3,7 @@ import { afterEach, describe, it } from "node:test"
 import {
   clearEditorViewStates,
   getEditorViewState,
+  moveEditorViewState,
   remapEditorViewStateUri,
   replaceEditorViewStates,
   setEditorViewState,
@@ -51,5 +52,24 @@ describe("editor view state store", () => {
     assert.deepEqual(getEditorViewState(sessionId, "panel-2", newUri), {
       position: { lineNumber: 8, column: 3 },
     })
+  })
+
+  it("moves one URI's view state when drag/drop changes editor groups", () => {
+    const uri = "file:///project/a.ts"
+    const state = { position: { lineNumber: 8, column: 3 }, scrollTop: 120 }
+    setEditorViewState(sessionId, "mux-editor-1", uri, state)
+
+    moveEditorViewState(
+      sessionId,
+      "mux-editor-1",
+      "mux-editor-2",
+      uri,
+    )
+
+    assert.equal(getEditorViewState(sessionId, "mux-editor-1", uri), null)
+    assert.deepEqual(
+      getEditorViewState(sessionId, "mux-editor-2", uri),
+      state,
+    )
   })
 })

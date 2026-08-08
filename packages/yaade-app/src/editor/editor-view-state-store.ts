@@ -64,6 +64,23 @@ export function remapEditorViewStateUri(
   }
 }
 
+/** Move one buffer's view state when drag/drop transfers it to another group. */
+export function moveEditorViewState(
+  sessionId: string,
+  fromViewStateId: string,
+  toViewStateId: string,
+  uri: string,
+): void {
+  if (fromViewStateId === toViewStateId) return
+  const session = statesBySession.get(sessionId)
+  if (!session) return
+  const sourceKey = editorViewStateKey(fromViewStateId, uri)
+  const state = session.get(sourceKey)
+  if (!state) return
+  session.set(editorViewStateKey(toViewStateId, uri), state)
+  session.delete(sourceKey)
+}
+
 export function clearEditorViewStates(sessionId: string): void {
   statesBySession.delete(sessionId)
 }

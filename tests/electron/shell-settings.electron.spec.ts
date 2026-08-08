@@ -126,7 +126,7 @@ test.describe("shell settings", () => {
     }
   })
 
-  test("settings overlay lists themes and reset restores appearance", async () => {
+  test("settings overlay lists themes and reset restores appearance", async ({}, testInfo) => {
     const { app, page } = await launchJet()
     try {
       await page.evaluate(() => localStorage.clear())
@@ -136,6 +136,7 @@ test.describe("shell settings", () => {
         .locator("[data-yaade-settings-category='appearance']")
         .click()
       await expectLocatorCount(page.locator("[data-yaade-theme-option]"), 2)
+      await expectLocatorCount(page.locator("[data-yaade-color-mode-option]"), 3)
 
       await page.locator("[data-yaade-theme-option='default-dark']").click()
       await expect
@@ -146,6 +147,60 @@ test.describe("shell settings", () => {
       await expect
         .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
         .toBe("default-light")
+
+      await page.getByRole("radio", { name: "Auto color mode" }).click()
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const value = localStorage.getItem("jet-appearance-settings")
+            return value ? JSON.parse(value).colorSchemeMode : null
+          }),
+        )
+        .toBe("system")
+      await page.emulateMedia({ colorScheme: "light" })
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            document.documentElement.classList.contains("dark"),
+          ),
+        )
+        .toBe(false)
+      await expect
+        .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
+        .toBe("default-light")
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-yaade-theme-option='default-light']")
+            .getAttribute("aria-pressed"),
+        )
+        .toBe("true")
+      await testInfo.attach("auto-light.png", {
+        body: Buffer.from(await page.screenshot(), "base64"),
+        contentType: "image/png",
+      })
+      await page.emulateMedia({ colorScheme: "dark" })
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            document.documentElement.classList.contains("dark"),
+          ),
+        )
+        .toBe(true)
+      await expect
+        .poll(() => page.evaluate(() => localStorage.getItem("jet-theme-id")))
+        .toBe("default-dark")
+      await expect
+        .poll(() =>
+          page
+            .locator("[data-yaade-theme-option='default-dark']")
+            .getAttribute("aria-pressed"),
+        )
+        .toBe("true")
+      await testInfo.attach("auto-dark.png", {
+        body: Buffer.from(await page.screenshot(), "base64"),
+        contentType: "image/png",
+      })
 
       await page.getByRole("button", { name: "Reset appearance" }).click()
       await expect

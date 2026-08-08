@@ -7,6 +7,8 @@ import {
   DEFAULT_MONO_FONT_NAME,
   DEFAULT_UI_FONT_FAMILY,
   buildMonoFontStack,
+  siblingThemeForScheme,
+  type ColorSchemeMode,
   type JetAppearanceSettings,
   type SessionLayout,
   applyColorScheme,
@@ -36,6 +38,7 @@ const LEGACY_DARK_THEME_IDS = new Set([
 
 export const DEFAULT_APPEARANCE_SETTINGS: JetAppearanceSettings = {
   themeId: defaultThemeId,
+  colorSchemeMode: "system",
   fontSize: DEFAULT_FONT_SIZE,
   monoFontFamily: DEFAULT_MONO_FONT_NAME,
   sessionLayout: "sidebar",
@@ -61,6 +64,24 @@ export function normalizeThemeId(
     if (resolved.id === value) return resolved.id
   }
   return defaultThemeIdForScheme(fallbackScheme)
+}
+
+export function normalizeColorSchemeMode(
+  value: unknown,
+  fallback: ColorSchemeMode = "system",
+): ColorSchemeMode {
+  return value === "system" || value === "light" || value === "dark"
+    ? value
+    : fallback
+}
+
+export function themeIdForColorSchemeMode(
+  themeId: string,
+  mode: ColorSchemeMode,
+  systemScheme: ColorScheme,
+): string {
+  const scheme = mode === "system" ? systemScheme : mode
+  return siblingThemeForScheme(themeId, scheme).id
 }
 
 export function normalizeSessionLayout(_value: unknown): SessionLayout {
@@ -97,19 +118,40 @@ function loadStoredFontSize(): number {
   }
 }
 
-function loadStoredThemeId(): string {
+function preferredColorScheme(): ColorScheme {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light"
+}
+
+function loadStoredTheme(): {
+  themeId: string
+  colorSchemeMode: ColorSchemeMode
+} {
   try {
     const rawTheme = localStorage.getItem(THEME_ID_STORAGE_KEY)
     const rawScheme = localStorage.getItem(COLOR_SCHEME_KEY)
     const scheme = rawScheme === "light" ? "light" : "dark"
-    if (rawTheme) return normalizeThemeId(rawTheme, scheme)
+    if (rawTheme) {
+      const themeId = normalizeThemeId(rawTheme, scheme)
+      return {
+        themeId,
+        colorSchemeMode: getThemeById(themeId).scheme ?? scheme,
+      }
+    }
     if (rawScheme === "light" || rawScheme === "dark") {
-      return defaultThemeIdForScheme(rawScheme)
+      return {
+        themeId: defaultThemeIdForScheme(rawScheme),
+        colorSchemeMode: rawScheme,
+      }
     }
   } catch {
     /* ignore */
   }
-  return defaultThemeId
+  return {
+    themeId: defaultThemeId,
+    colorSchemeMode: "system",
+  }
 }
 
 function normalizeMonoFontFamily(value: unknown): string {
@@ -125,20 +167,44 @@ function normalizeMonoFontFamily(value: unknown): string {
 }
 
 export function loadAppearanceSettings(): JetAppearanceSettings {
+  const storedTheme = loadStoredTheme()
   const base: JetAppearanceSettings = {
     ...DEFAULT_APPEARANCE_SETTINGS,
-    themeId: loadStoredThemeId(),
+    ...storedTheme,
     fontSize: loadStoredFontSize(),
   }
   try {
     const raw = localStorage.getItem(APPEARANCE_STORAGE_KEY)
-    if (!raw) return base
+    if (!raw) {
+      return {
+        ...base,
+        themeId: themeIdForColorSchemeMode(
+          base.themeId,
+          base.colorSchemeMode,
+          preferredColorScheme(),
+        ),
+      }
+    }
     const parsed = JSON.parse(raw) as Partial<JetAppearanceSettings>
+    const themeId = normalizeThemeId(
+      parsed.themeId ?? base.themeId,
+      getThemeById(base.themeId).scheme ?? "dark",
+    )
+    const legacyMode =
+      parsed.themeId == null
+        ? base.colorSchemeMode
+        : (getThemeById(themeId).scheme ?? base.colorSchemeMode)
+    const colorSchemeMode = normalizeColorSchemeMode(
+      parsed.colorSchemeMode,
+      legacyMode,
+    )
     return {
-      themeId: normalizeThemeId(
-        parsed.themeId ?? base.themeId,
-        getThemeById(base.themeId).scheme ?? "dark",
+      themeId: themeIdForColorSchemeMode(
+        themeId,
+        colorSchemeMode,
+        preferredColorScheme(),
       ),
+      colorSchemeMode,
       fontSize: clampNumber(parsed.fontSize, base.fontSize, 10, 24),
       monoFontFamily: normalizeMonoFontFamily(
         (parsed as { monoFontFamily?: unknown }).monoFontFamily ??
@@ -211,6 +277,29 @@ export function useAppearanceSettings() {
   const colorScheme: ColorScheme = activeTheme.scheme ?? "dark"
 
   useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)")
+    const syncSystemTheme = (matches: boolean) => {
+      setAppearanceSettings(previous => {
+        if (previous.colorSchemeMode !== "system") return previous
+        const themeId = themeIdForColorSchemeMode(
+          previous.themeId,
+          "system",
+          matches ? "dark" : "light",
+        )
+        return themeId === previous.themeId
+          ? previous
+          : { ...previous, themeId }
+      })
+    }
+    syncSystemTheme(media.matches)
+    const onChange = (event: MediaQueryListEvent) => {
+      syncSystemTheme(event.matches)
+    }
+    media.addEventListener("change", onChange)
+    return () => media.removeEventListener("change", onChange)
+  }, [])
+
+  useEffect(() => {
     applyColorScheme(colorScheme, activeTheme)
   }, [colorScheme, activeTheme])
 
@@ -219,7 +308,7 @@ export function useAppearanceSettings() {
   // palette during the general appearance debounce below.
   useEffect(() => {
     persistAppearanceSettings(appearanceSettingsRef.current)
-  }, [appearanceSettings.themeId])
+  }, [appearanceSettings.colorSchemeMode, appearanceSettings.themeId])
 
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
@@ -252,13 +341,22 @@ export function useAppearanceSettings() {
   }, [])
 
   const resetAppearanceSettings = useCallback(() => {
-    setAppearanceSettings(DEFAULT_APPEARANCE_SETTINGS)
+    setAppearanceSettings({
+      ...DEFAULT_APPEARANCE_SETTINGS,
+      themeId: themeIdForColorSchemeMode(
+        DEFAULT_APPEARANCE_SETTINGS.themeId,
+        DEFAULT_APPEARANCE_SETTINGS.colorSchemeMode,
+        preferredColorScheme(),
+      ),
+    })
   }, [])
 
   const setThemeId = useCallback((themeId: string) => {
+    const normalizedThemeId = normalizeThemeId(themeId)
     const next = {
       ...appearanceSettingsRef.current,
-      themeId: normalizeThemeId(themeId),
+      themeId: normalizedThemeId,
+      colorSchemeMode: getThemeById(normalizedThemeId).scheme ?? "dark",
     }
     appearanceSettingsRef.current = next
     persistAppearanceSettings(next)

@@ -1,128 +1,93 @@
-import type { WorkspaceFile } from "@yaade/workspace"
-import { Emitter, pathToFileUri, fileUriToPath } from "@yaade/shared"
-import { findProjectRoot, parentDir } from "./project-root.js"
-
-export type LanguageServerDescriptor = {
-  id: string
-  languageIds: string[]
-  rootMarkers: string[]
-}
+import type {
+  LanguageServerDefinition,
+  LspLifecycleEvent,
+  LspResolveRequest,
+  LspStartResult,
+  ResolvedLanguageServerTarget,
+  WorkspaceFile,
+} from "@yaade/workspace"
+import { Emitter, fileUriToPath } from "@yaade/shared"
+import { parentDir } from "./project-root.js"
 
 export type LspConnection = {
   id: string
   rootUri: string
   projectRootUri: string
-  languageIds: string[]
+  languageIds: readonly string[]
   transportUrl: string
   descriptorId: string
+  initializationOptions?: unknown
+  settings?: unknown
+  catalogVersion: number
 }
 
-const DESCRIPTORS: LanguageServerDescriptor[] = [
-  {
-    id: "typescript-language-server",
-    languageIds: ["typescript", "javascript", "tsx", "jsx", "mts", "cts"],
-    rootMarkers: ["package.json", "tsconfig.json"],
-  },
-  {
-    id: "rust-analyzer",
-    languageIds: ["rust"],
-    rootMarkers: ["Cargo.toml"],
-  },
-  {
-    id: "gopls",
-    languageIds: ["go"],
-    rootMarkers: ["go.work", "go.mod"],
-  },
-  {
-    id: "pyright",
-    languageIds: ["python"],
-    rootMarkers: ["pyproject.toml", "requirements.txt", "setup.py", "Pipfile", "setup.cfg"],
-  },
-  {
-    id: "ruby-lsp",
-    languageIds: ["ruby"],
-    rootMarkers: ["Gemfile", ".ruby-version"],
-  },
-  {
-    id: "vscode-json-language-server",
-    languageIds: ["json", "jsonc"],
-    rootMarkers: ["package.json", "tsconfig.json"],
-  },
-  {
-    id: "vscode-html-language-server",
-    languageIds: ["html"],
-    rootMarkers: ["package.json", "index.html"],
-  },
-  {
-    id: "vscode-css-language-server",
-    languageIds: ["css"],
-    rootMarkers: ["package.json"],
-  },
-]
+type LspApi = {
+  resolve(request: LspResolveRequest): Promise<ResolvedLanguageServerTarget | null>
+  start(target: ResolvedLanguageServerTarget): Promise<LspStartResult>
+  stop(id: string): Promise<void>
+  listDefinitions(): Promise<LanguageServerDefinition[]>
+  onLifecycle?(cb: (event: LspLifecycleEvent) => void): () => void
+  onCrashed?(cb: (id: string) => void): () => void
+}
+
+function targetKey(target: ResolvedLanguageServerTarget): string {
+  return `${target.serverId}\0${target.projectRootUri}`
+}
+
+function connectionFromResult(result: LspStartResult): LspConnection {
+  return {
+    id: result.id,
+    rootUri: result.target.workspaceRootUri,
+    projectRootUri: result.target.projectRootUri,
+    languageIds: result.target.languageIds,
+    transportUrl: result.transportUrl,
+    descriptorId: result.target.serverId,
+    initializationOptions: result.target.initializationOptions,
+    settings: result.target.settings,
+    catalogVersion: result.target.catalogVersion,
+  }
+}
 
 export class LanguageServerManager {
-  private connections = new Map<string, LspConnection>()
-  private pendingConnections = new Map<string, Promise<LspConnection | null>>()
+  private readonly connections = new Map<string, LspConnection>()
+  private readonly targets = new Map<string, ResolvedLanguageServerTarget>()
+  private readonly pendingConnections = new Map<string, Promise<LspConnection | null>>()
+  private readonly resolutionCache = new Map<string, ResolvedLanguageServerTarget | null>()
+  private readonly pendingResolutions = new Map<string, Promise<ResolvedLanguageServerTarget | null>>()
+  private readonly supportedLanguages = new Set<string>()
   private lastSpawnError: string | null = null
+  private lastSpawnServerId: string | null = null
   private readonly disposeCrashListener: (() => void) | null
+  private readonly disposeLifecycleListener: (() => void) | null
   private lifecycleGeneration = 0
   private disposed = false
   readonly onDiagnostics = new Emitter<unknown>()
+  readonly onLifecycle = new Emitter<LspLifecycleEvent>()
 
-  constructor(
-    private lspApi: {
-      start(
-        rootUri: string,
-        serverId: string,
-      ): Promise<{ transportUrl: string; id: string; error?: string }>
-      stop(id: string): Promise<void>
-      onCrashed?(cb: (id: string) => void): () => void
-    },
-  ) {
-    this.disposeCrashListener = lspApi.onCrashed?.(id => {
-      for (const [key, conn] of this.connections) {
-        if (conn.id === id) {
-          this.connections.delete(key)
-          break
-        }
+  constructor(private readonly lspApi: LspApi) {
+    void lspApi.listDefinitions().then(definitions => {
+      if (this.disposed) return
+      this.supportedLanguages.clear()
+      for (const definition of definitions) {
+        if (!definition.enabled) continue
+        for (const languageId of definition.languages) this.supportedLanguages.add(languageId)
       }
+    }).catch(() => {})
+    this.disposeLifecycleListener = lspApi.onLifecycle?.(event => {
+      this.handleLifecycle(event)
+    }) ?? null
+    this.disposeCrashListener = lspApi.onCrashed?.(id => {
+      // Older hosts only expose this narrow signal.
+      this.clearConnection(id)
     }) ?? null
   }
 
-  async ensureServerForFile(file: WorkspaceFile, workspaceRoot: string): Promise<LspConnection | null> {
+  async ensureServerForFile(file: WorkspaceFile, workspaceRootUri: string): Promise<LspConnection | null> {
     if (this.disposed) return null
-    const descriptor = this.descriptorForLanguage(file.languageId)
-    if (!descriptor) return null
-
-    const workspaceRootUri = workspaceRoot
-    const workspaceRootPath = fileUriToPath(workspaceRootUri)
-    const filePath = fileUriToPath(file.uri)
-    const startDir = parentDir(filePath)
-    const projectRoot =
-      descriptor.id === "gopls"
-        ? ((await findProjectRoot(
-            startDir,
-            ["go.work"],
-            window.yaade?.fs,
-            workspaceRootPath,
-          )) ??
-          (await findProjectRoot(
-            startDir,
-            ["go.mod"],
-            window.yaade?.fs,
-            workspaceRootPath,
-          )))
-        : await findProjectRoot(
-            startDir,
-            descriptor.rootMarkers,
-            window.yaade?.fs,
-            workspaceRootPath,
-          )
-
-    // Language servers can still provide useful inferred/ad-hoc projects when
-    // no marker exists. The active workspace is the safe fallback boundary.
-    const projectRootUri = pathToFileUri(projectRoot ?? workspaceRootPath)
-    const key = `${descriptor.id}:${projectRootUri}`
+    const target = await this.resolveTarget(file, workspaceRootUri)
+    if (!target || this.disposed) return null
+    const key = targetKey(target)
+    this.targets.set(key, target)
     const existing = this.connections.get(key)
     if (existing) return existing
     const pending = this.pendingConnections.get(key)
@@ -131,29 +96,25 @@ export class LanguageServerManager {
     const generation = this.lifecycleGeneration
     const starting = (async (): Promise<LspConnection | null> => {
       try {
-        const conn = await this.lspApi.start(projectRootUri, descriptor.id)
-        if (conn.error) {
-          this.lastSpawnError = conn.error
+        const result = await this.lspApi.start(target)
+        if (result.error || !result.id) {
+          this.lastSpawnError = result.error ?? "Language server failed to start"
+          this.lastSpawnServerId = target.serverId
           return null
         }
         if (this.disposed || generation !== this.lifecycleGeneration) {
-          await this.lspApi.stop(conn.id).catch(() => {})
+          await this.lspApi.stop(result.id).catch(() => {})
           return null
         }
-        const connection: LspConnection = {
-          id: conn.id,
-          rootUri: workspaceRootUri,
-          projectRootUri,
-          languageIds: descriptor.languageIds,
-          transportUrl: conn.transportUrl,
-          descriptorId: descriptor.id,
-        }
+        const connection = connectionFromResult(result)
         this.connections.set(key, connection)
+        this.targets.set(key, result.target)
         this.lastSpawnError = null
+        this.lastSpawnServerId = null
         return connection
-      } catch (err) {
-        this.lastSpawnError =
-          err instanceof Error ? err.message : "Language server failed to start"
+      } catch (error) {
+        this.lastSpawnError = error instanceof Error ? error.message : "Language server failed to start"
+        this.lastSpawnServerId = target.serverId
         return null
       }
     })()
@@ -161,35 +122,46 @@ export class LanguageServerManager {
     try {
       return await starting
     } finally {
-      if (this.pendingConnections.get(key) === starting) {
-        this.pendingConnections.delete(key)
-      }
+      if (this.pendingConnections.get(key) === starting) this.pendingConnections.delete(key)
     }
   }
 
   isLanguageSupported(languageId: string): boolean {
-    return this.descriptorForLanguage(languageId) != null
+    return this.supportedLanguages.has(languageId)
   }
 
-  consumeLastSpawnError(): string | null {
-    const err = this.lastSpawnError
+  consumeLastSpawnError(): { readonly message: string; readonly serverId: string | null } | null {
+    const message = this.lastSpawnError
+    if (!message) return null
+    const result = { message, serverId: this.lastSpawnServerId }
     this.lastSpawnError = null
-    return err
+    this.lastSpawnServerId = null
+    return result
   }
 
   getConnection(languageId: string, projectRootUri: string): LspConnection | null {
-    const descriptor = this.descriptorForLanguage(languageId)
-    if (!descriptor) return null
-    return this.connections.get(`${descriptor.id}:${projectRootUri}`) ?? null
+    for (const connection of this.connections.values()) {
+      if (
+        connection.projectRootUri === projectRootUri &&
+        connection.languageIds.includes(languageId)
+      ) {
+        return connection
+      }
+    }
+    return null
   }
 
   hasAnyConnection(): boolean {
     return this.connections.size > 0
   }
 
+  listConnections(): LspConnection[] {
+    return [...this.connections.values()]
+  }
+
   clearConnection(id: string): void {
-    for (const [key, conn] of this.connections) {
-      if (conn.id === id) {
+    for (const [key, connection] of this.connections) {
+      if (connection.id === id) {
         this.connections.delete(key)
         return
       }
@@ -203,42 +175,94 @@ export class LanguageServerManager {
 
   async stopServersForRoot(rootUri: string): Promise<string[]> {
     const toStop: LspConnection[] = []
-    for (const [key, conn] of this.connections) {
-      if (conn.rootUri === rootUri) {
-        toStop.push(conn)
+    for (const [key, connection] of this.connections) {
+      if (connection.rootUri === rootUri) {
+        toStop.push(connection)
         this.connections.delete(key)
       }
     }
-    await Promise.all(toStop.map(conn => this.lspApi.stop(conn.id).catch(() => {})))
-    return toStop.map(conn => conn.id)
+    await Promise.all(toStop.map(connection => this.lspApi.stop(connection.id).catch(() => {})))
+    return toStop.map(connection => connection.id)
   }
 
   async stopAll(): Promise<string[]> {
-    this.lifecycleGeneration++
+    this.lifecycleGeneration += 1
     const connections = [...this.connections.values()]
     this.connections.clear()
     this.pendingConnections.clear()
-    await Promise.all(
-      connections.map(connection => this.lspApi.stop(connection.id).catch(() => {})),
-    )
+    this.pendingResolutions.clear()
+    await Promise.all(connections.map(connection => this.lspApi.stop(connection.id).catch(() => {})))
     return connections.map(connection => connection.id)
   }
 
   dispose(): void {
     this.disposed = true
-    this.lifecycleGeneration++
+    this.lifecycleGeneration += 1
     this.disposeCrashListener?.()
+    this.disposeLifecycleListener?.()
+    this.resolutionCache.clear()
+    this.pendingResolutions.clear()
   }
 
-  private descriptorForLanguage(languageId: string): LanguageServerDescriptor | null {
-    return DESCRIPTORS.find(d => d.languageIds.includes(languageId)) ?? null
+  private async resolveTarget(
+    file: WorkspaceFile,
+    workspaceRootUri: string,
+  ): Promise<ResolvedLanguageServerTarget | null> {
+    const directory = parentDir(fileUriToPath(file.uri))
+    const cacheKey = `${file.languageId}\0${workspaceRootUri}\0${directory}`
+    if (this.resolutionCache.has(cacheKey)) return this.resolutionCache.get(cacheKey) ?? null
+    const pending = this.pendingResolutions.get(cacheKey)
+    if (pending) return pending
+    const resolving = this.lspApi.resolve({
+      languageId: file.languageId,
+      fileUri: file.uri,
+      workspaceRootUri,
+    }).then(target => {
+      if (!this.disposed) this.resolutionCache.set(cacheKey, target)
+      return target
+    })
+    this.pendingResolutions.set(cacheKey, resolving)
+    try {
+      return await resolving
+    } finally {
+      if (this.pendingResolutions.get(cacheKey) === resolving) {
+        this.pendingResolutions.delete(cacheKey)
+      }
+    }
   }
-}
 
-export function getLanguageServerDescriptors(): LanguageServerDescriptor[] {
-  return DESCRIPTORS
-}
-
-export function languageServerCommandFor(languageId: string): string | null {
-  return DESCRIPTORS.find(d => d.languageIds.includes(languageId))?.id ?? null
+  private handleLifecycle(event: LspLifecycleEvent): void {
+    if (this.disposed) return
+    if (event.kind === "configuration-changed") {
+      this.resolutionCache.clear()
+      if (event.settingsOnly && event.serverId) {
+        for (const [key, target] of this.targets) {
+          if (target.serverId !== event.serverId) continue
+          this.targets.set(key, { ...target, settings: event.settings })
+          const connection = this.connections.get(key)
+          if (connection) connection.settings = event.settings
+        }
+      }
+    } else if ((event.kind === "crashed" || event.kind === "stopped") && event.sessionId) {
+      this.clearConnection(event.sessionId)
+    } else if (
+      event.kind === "ready" &&
+      event.serverId &&
+      event.projectRootUri &&
+      event.sessionId &&
+      event.transportUrl
+    ) {
+      const key = `${event.serverId}\0${event.projectRootUri}`
+      const target = event.target ?? this.targets.get(key)
+      if (target) {
+        this.targets.set(key, target)
+        this.connections.set(key, connectionFromResult({
+          id: event.sessionId,
+          transportUrl: event.transportUrl,
+          target,
+        }))
+      }
+    }
+    this.onLifecycle.fire(event)
+  }
 }

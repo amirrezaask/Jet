@@ -120,9 +120,18 @@ export function MuxExplorerPane(props: {
   manager: WorkspaceManager
   workspace: WorkspaceService
   onOpenFile: (uri: string) => void
+  expandedIds?: string[]
+  onExpandedChange?: (ids: string[]) => void
   onControllerReady?: (controller: MuxExplorerController | null) => void
 }) {
-  const { manager, workspace, onOpenFile, onControllerReady } = props
+  const {
+    manager,
+    workspace,
+    onOpenFile,
+    expandedIds,
+    onExpandedChange,
+    onControllerReady,
+  } = props
   const selectionRef = useRef<ExplorerSelection | null>(null)
   const [contentRevision, setContentRevision] = useState(0)
   const [prompt, setPrompt] = useState<PromptState | null>(null)
@@ -275,7 +284,6 @@ export function MuxExplorerPane(props: {
           const uri = pathToFileUri(path)
           if (current.kind === "createFile") {
             await requireFs().createFile(uri)
-            onOpenFile(uri)
             showYaadeToast(`Created ${name}`, { variant: "success" })
           } else {
             await requireFs().mkdir(uri)
@@ -321,7 +329,7 @@ export function MuxExplorerPane(props: {
         })
       }
     },
-    [onOpenFile, prompt, refreshExplorer, requireFs, workspace],
+    [prompt, refreshExplorer, requireFs, workspace],
   )
 
   const run = useCallback(
@@ -418,6 +426,8 @@ export function MuxExplorerPane(props: {
       <div className="min-h-0 flex-1">
         <ExplorerTab
           manager={manager}
+          expandedIds={expandedIds}
+          onExpandedChange={onExpandedChange}
           contentRevision={contentRevision}
           onOpenFile={uri => onOpenFile(uri)}
           onSelectionChange={selection => {
@@ -487,12 +497,14 @@ export function MuxExplorerPane(props: {
             ) : (
               <File className="size-4 shrink-0 text-muted-foreground" />
             )}
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-foreground">{entry.name}</div>
-              <div className="truncate text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-foreground">
+                {entry.name}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
                 {fileUriToPath(entry.originalUri)} · {formatTrashTime(entry.trashedAt)}
-              </div>
-            </div>
+              </span>
+            </span>
             <ArchiveRestore className="size-4 shrink-0 text-muted-foreground" />
           </div>
         )}

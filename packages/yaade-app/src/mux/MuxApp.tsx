@@ -10,8 +10,20 @@ import {
   type ReactNode,
 } from "react"
 import type { PanelEvent } from "@yaade/panels"
-import type { AgentProvider, PanelId, ProjectSearchResult, YaadeTheme } from "@yaade/shared"
-import { pathToFileUri, fileUriToPath, canonicalizeFileUri } from "@yaade/shared"
+import type {
+  AgentProvider,
+  PanelId,
+  ProjectSearchOptions,
+  ProjectSearchResult,
+  SearchPage,
+  YaadeTheme,
+} from "@yaade/shared"
+import {
+  pathToFileUri,
+  fileUriToPath,
+  canonicalizeFileUri,
+  languageIdFromPath,
+} from "@yaade/shared"
 import {
   AppShell,
   ConfirmDialogHost,
@@ -34,6 +46,7 @@ import {
   type WhichKeyEntry,
 } from "@yaade/ui"
 import type { ProjectSession, ProjectSessionPayload } from "@yaade/rpc"
+import type { JetLspWorkspaceDeps } from "@yaade/lsp"
 import {
   Button,
   ContextMenu,
@@ -68,6 +81,7 @@ import {
 import { createAgentBridge } from "../agent-bridge.js"
 import { resolveDirtyBufferClose } from "../editor/dirty-buffer-close.js"
 import {
+  moveEditorViewState,
   remapEditorViewStateUri,
   replaceEditorViewStates,
   snapshotEditorViewStates,
@@ -80,7 +94,7 @@ import { agentDriverIdForMode } from "@yaade/agents"
 import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
 import { useGlobalKeymap } from "../hooks/useGlobalKeymap.js"
 import { useFileDrop } from "../use-file-drop.js"
-import { MuxLspHost } from "./MuxLspHost.js"
+import type { MuxLspController } from "./MuxLspHost.js"
 import {
   clearTerminalSession,
   hydrateTerminalSession,
@@ -169,10 +183,19 @@ const MuxExplorerPane = lazy(() =>
   })),
 )
 
-const MuxOverlays = lazy(() => import("./MuxOverlays.js"))
+const MuxToolPanes = lazy(() =>
+  import("./MuxToolPanes.js").then(module => ({
+    default: module.MuxToolPanes,
+  })),
+)
 
-/** Window event that asks the focused editor pane to save (see MuxEditorPane). */
-const MUX_EDITOR_SAVE_EVENT = "yaade:mux-editor-save"
+const MuxLspHost = lazy(() =>
+  import("./MuxLspHost.js").then(module => ({
+    default: module.MuxLspHost,
+  })),
+)
+
+const MuxOverlays = lazy(() => import("./MuxOverlays.js"))
 
 /** Basename display label for an editor pane from its file uri. */
 function editorLabelFromUri(uri: string): string {
@@ -279,6 +302,43 @@ function remapEditorTabUri(
     })
   }
   return next
+}
+
+function applyEditorResourceMapping(
+  tree: YaadePanelTree,
+  mapping: ReadonlyMap<string, string | null>,
+): YaadePanelTree {
+  let next = tree.clone()
+  for (const [oldUri, newUri] of mapping) {
+    if (newUri != null) continue
+    for (const panelId of getAllLeafPanels(next)) {
+      const view = next.getView(panelId)
+      if (view?.kind === "tabs" && panelTabIds(view).includes(oldUri)) {
+        removePtyFromTree(next, panelId, oldUri)
+      }
+    }
+  }
+  for (const [oldUri, newUri] of mapping) {
+    if (!newUri || oldUri === newUri) continue
+    next = remapEditorTabUri(next, oldUri, newUri)
+  }
+  return next
+}
+
+function uriAtOrBelow(candidate: string, resource: string): boolean {
+  return candidate === resource || candidate.startsWith(`${resource.replace(/\/$/, "")}/`)
+}
+
+function remapResourceDescendant(
+  candidate: string,
+  oldUri: string,
+  newUri: string,
+): string {
+  if (candidate === oldUri) return newUri
+  const prefix = `${oldUri.replace(/\/$/, "")}/`
+  return candidate.startsWith(prefix)
+    ? `${newUri.replace(/\/$/, "")}/${candidate.slice(prefix.length)}`
+    : candidate
 }
 
 /** True when a pane was launched as Neovim/Vim (quit should close the pane). */
@@ -600,6 +660,25 @@ export function MuxApp({
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
   const [projectSearchOpen, setProjectSearchOpen] = useState(false)
   const [saveAsUri, setSaveAsUri] = useState<string | null>(null)
+  const [toolRevisions, bumpToolRevision] = useReducer(
+    (revisions: Record<MuxToolKind, number>, kind: MuxToolKind) => ({
+      ...revisions,
+      [kind]: (revisions[kind] ?? 0) + 1,
+    }),
+    {
+      explorer: 0,
+      search: 0,
+      problems: 0,
+      references: 0,
+      definitions: 0,
+      outline: 0,
+      buffers: 0,
+      workspaceSymbols: 0,
+      callHierarchy: 0,
+      typeHierarchy: 0,
+      lspOutput: 0,
+    },
+  )
   const sessionRootPathRef = useRef<string>(sessionCwdPath)
   const projectPathRef = useRef<string>(sessionProjectPath)
   const sessionIdRef = useRef<string>(sessionId)
@@ -613,7 +692,27 @@ export function MuxApp({
   const focusedPtyTabIdRef = useRef<string | null>(null)
   const handledLaunchIdsRef = useRef(new Set<string>())
   const explorerControllerRef = useRef<MuxExplorerController | null>(null)
+  const lspControllerRef = useRef<MuxLspController | null>(null)
   const pendingExplorerActionRef = useRef<MuxExplorerAction | null>(null)
+  const workspaceEditTransactionsRef = useRef<
+    import("../editor/workspace-edit-transaction.js").WorkspaceEditTransactionService | null
+  >(null)
+  const searchReplacePreviewRef = useRef<
+    import("../editor/workspace-edit-transaction.js").WorkspaceEditPreview | null
+  >(null)
+  const explorerExpandedIdsRef = useRef<string[]>([])
+  const closedEditorUrisRef = useRef<string[]>([])
+  const hydratedEditorOwnersRef = useRef(
+    new Map<string, { uri: string; ownerId: string }>(),
+  )
+  const editorOwnerReconciliationRef = useRef<Promise<void>>(Promise.resolve())
+  const lastEditorPaneRef = useRef<{
+    windowId: string
+    panelId: PanelId
+  } | null>(null)
+  const searchPreviewCommandRef = useRef<() => void>(() => {})
+  const searchApplyCommandRef = useRef<() => Promise<void>>(async () => {})
+  const searchUndoCommandRef = useRef<() => Promise<void>>(async () => {})
 
   const windowsRef = useRef(windows)
   windowsRef.current = windows
@@ -639,6 +738,11 @@ export function MuxApp({
 
   const activeWindow =
     windows.find(w => w.id === activeWindowId) ?? windows[0] ?? null
+  const editorRuntimeNeeded =
+    Object.keys(editorFiles).length > 0 ||
+    windows.some(window =>
+      listPaneLeaves(window.tree).some(leaf => leaf.kind === "editor"),
+    )
 
   useEffect(() => {
     const subscription = workspace.onDidChangeDirty.event(() => {
@@ -678,10 +782,19 @@ export function MuxApp({
           try {
             await buffers.save(uri)
           } catch (error) {
-            showYaadeToast(
-              error instanceof Error ? error.message : `Could not save ${editorLabelFromUri(uri)}`,
-              { variant: "destructive" },
-            )
+            const saveAsRequired =
+              error &&
+              typeof error === "object" &&
+              "code" in error &&
+              error.code === "SAVE_AS_REQUIRED"
+            if (saveAsRequired) {
+              setSaveAsUri(uri)
+            } else {
+              showYaadeToast(
+                error instanceof Error ? error.message : `Could not save ${editorLabelFromUri(uri)}`,
+                { variant: "destructive" },
+              )
+            }
             throw error
           }
         },
@@ -707,11 +820,82 @@ export function MuxApp({
 
   useEffect(() => {
     const rootUri = pathToFileUri(sessionCwdPath)
-    void window.yaade?.workspace?.activate(rootUri)
+    const owner = { sessionId }
+    void window.yaade?.workspace?.activate(rootUri, owner)
     return () => {
-      void window.yaade?.workspace?.deactivate?.(rootUri)
+      void window.yaade?.workspace?.deactivate?.(rootUri, owner)
     }
-  }, [sessionCwdPath])
+  }, [sessionCwdPath, sessionId])
+
+  useEffect(() => {
+    if (!editorRuntimeNeeded) return
+    let cleanedUp = false
+    let release: (() => void) | null = null
+    void import("../editor/editor-buffer-service.js").then(
+      ({ retainEditorBufferService }) => {
+        const retained = retainEditorBufferService(workspace, sessionId)
+        if (cleanedUp) retained()
+        else release = retained
+      },
+    )
+    return () => {
+      cleanedUp = true
+      release?.()
+    }
+  }, [editorRuntimeNeeded, sessionId, workspace])
+
+  useEffect(() => {
+    if (!editorRuntimeNeeded) return
+    const desired = new Map<string, { uri: string; ownerId: string }>()
+    for (const live of windows) {
+      for (const panelId of getAllLeafPanels(live.tree)) {
+        const view = live.tree.getView(panelId)
+        if (view?.kind !== "tabs") continue
+        const ownerId = `mux-editor-${panelId.id}`
+        for (const uri of panelTabIds(view).filter(isEditorTabId)) {
+          desired.set(`${ownerId}\0${uri}`, { uri, ownerId })
+        }
+      }
+    }
+
+    editorOwnerReconciliationRef.current =
+      editorOwnerReconciliationRef.current
+        .catch(() => {})
+        .then(async () => {
+          const [bufferModule, pendingModule] = await Promise.all([
+            import("../editor/editor-buffer-service.js"),
+            import("@yaade/monaco/pending"),
+          ])
+          const buffers = bufferModule.editorBufferServiceFor(workspace, sessionId)
+          const previous = hydratedEditorOwnersRef.current
+          for (const [key, owner] of previous) {
+            if (!desired.has(key)) {
+              buffers.close(owner.uri, { ownerId: owner.ownerId })
+            }
+          }
+          const retained = new Map<string, { uri: string; ownerId: string }>()
+          for (const [key, owner] of desired) {
+            try {
+              if (!previous.has(key)) {
+                const pending = pendingModule.consumePendingInitialContent(owner.uri)
+                await buffers.open({
+                  uri: owner.uri,
+                  languageId: languageIdFromPath(
+                    owner.uri.split(/[?#]/)[0] ?? owner.uri,
+                  ),
+                  ownerId: owner.ownerId,
+                  ...(pending == null ? {} : { initialContent: pending }),
+                  initialDirty: owner.uri.startsWith("untitled:") && pending != null,
+                })
+              }
+              retained.set(key, owner)
+            } catch (error) {
+              console.warn(`Could not hydrate editor buffer ${owner.uri}`, error)
+            }
+          }
+          hydratedEditorOwnersRef.current = retained
+        })
+  }, [editorRuntimeNeeded, sessionId, windows, workspace])
 
   useEffect(() => {
     const writer = persistWriterRef.current
@@ -1038,6 +1222,21 @@ export function MuxApp({
     (kind: MuxToolKind): void => {
       const window = ensureProjectWindow()
       const pane = allocToolPane(kind)
+      const existing = listPaneLeaves(window.tree).find(
+        leaf => leaf.ptyTabId === pane.tabId,
+      )
+      if (existing) {
+        setActiveWindowId(window.id)
+        updateWindow(window.id, live => ({
+          ...live,
+          focusedPaneId: existing.panelId,
+          zoomedPaneId:
+            live.zoomedPaneId && live.zoomedPaneId !== pane.tabId
+              ? null
+              : live.zoomedPaneId,
+        }))
+        return
+      }
       updateWindow(window.id, live => placeToolPane(live, pane))
     },
     [allocToolPane, ensureProjectWindow, updateWindow],
@@ -1057,6 +1256,34 @@ export function MuxApp({
     },
     [openToolPane],
   )
+
+  const runToolPane = useCallback(
+    (kind: Exclude<MuxToolKind, "explorer">): void => {
+      bumpToolRevision(kind)
+      openToolPane(kind)
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const pane = document.querySelector<HTMLElement>(
+            `[data-yaade-tool-pane="${kind}"]`,
+          )
+          const focusTarget = pane?.querySelector<HTMLElement>(
+            "input:not([disabled]), [data-yaade-list-item], button:not([disabled])",
+          )
+          ;(focusTarget ?? pane)?.focus({ preventScroll: true })
+        })
+      })
+    },
+    [openToolPane],
+  )
+
+  const rememberClosedEditors = useCallback((uris: readonly string[]) => {
+    for (const uri of uris) {
+      closedEditorUrisRef.current = [
+        uri,
+        ...closedEditorUrisRef.current.filter(item => !sameFileTab(item, uri)),
+      ].slice(0, 20)
+    }
+  }, [])
 
   const closeWindow = useCallback(
     async (windowId: string, options?: { skipConfirm?: boolean }) => {
@@ -1103,6 +1330,7 @@ export function MuxApp({
           }
         }
       }
+      rememberClosedEditors(editorBufferIds)
       for (const pane of panes) {
         if (pane.kind === "terminal") {
           const ptyId = terminalPtyIdForTab(pane.ptyTabId)
@@ -1160,7 +1388,7 @@ export function MuxApp({
       setWindows([next])
       setActiveWindowId(id)
     },
-    [paneTitle, resolveEditorDirtyClose, workspace],
+    [paneTitle, rememberClosedEditors, resolveEditorDirtyClose, workspace],
   )
 
   const closePane = useCallback(
@@ -1209,6 +1437,7 @@ export function MuxApp({
         )
         const buffers = editorBufferServiceFor(workspace, sessionIdRef.current)
         if (!(await resolveEditorDirtyClose(editorTabs, buffers))) return
+        rememberClosedEditors(editorTabs)
         const ownerId = `mux-editor-${panelId.id}`
         for (const id of editorTabs) {
           buffers.close(id, { ownerId })
@@ -1260,7 +1489,13 @@ export function MuxApp({
         }
       })
     },
-    [paneTitle, resolveEditorDirtyClose, updateWindow, workspace],
+    [
+      paneTitle,
+      rememberClosedEditors,
+      resolveEditorDirtyClose,
+      updateWindow,
+      workspace,
+    ],
   )
 
   /** Close a single editor buffer tab (keeps the pane until the last tab). */
@@ -1282,6 +1517,7 @@ export function MuxApp({
         })
         return
       }
+      rememberClosedEditors([tabId])
       if ((buffers.snapshot(tabId)?.ownerCount ?? 0) === 0) {
         setEditorFiles(prev => {
           if (!(tabId in prev)) return prev
@@ -1308,7 +1544,7 @@ export function MuxApp({
         }
       })
     },
-    [resolveEditorDirtyClose, updateWindow, workspace],
+    [rememberClosedEditors, resolveEditorDirtyClose, updateWindow, workspace],
   )
 
   /** Activate an editor buffer tab inside a panel. */
@@ -1529,8 +1765,36 @@ export function MuxApp({
       forceNewGroup?: boolean
     }) => {
       const w = ensureProjectWindow()
+      const leaves = listPaneLeaves(w.tree)
+      const focusedEditor = leaves.find(
+        leaf =>
+          leaf.kind === "editor" &&
+          leaf.panelId.id === w.focusedPaneId?.id,
+      )
+      const remembered = lastEditorPaneRef.current
+      const rememberedEditor =
+        remembered?.windowId === w.id
+          ? leaves.find(
+              leaf =>
+                leaf.kind === "editor" &&
+                leaf.panelId.id === remembered.panelId.id,
+            )
+          : undefined
+      const editorAnchor =
+        focusedEditor ??
+        rememberedEditor ??
+        leaves.find(leaf => leaf.kind === "editor")
+      if (editorAnchor) {
+        lastEditorPaneRef.current = {
+          windowId: w.id,
+          panelId: editorAnchor.panelId,
+        }
+      }
       const panelId =
-        w.focusedPaneId ?? listPaneLeaves(w.tree)[0]?.panelId ?? null
+        editorAnchor?.panelId ??
+        w.focusedPaneId ??
+        leaves[0]?.panelId ??
+        null
       void openEditorSplit(w.id, panelId, {
         ...options,
         forceNewGroup: options?.forceNewGroup === true,
@@ -1604,6 +1868,15 @@ export function MuxApp({
 
   const focusPane = useCallback(
     (windowId: string, panelId: PanelId, ptyTabId?: string) => {
+      const live = windowsRef.current.find(window => window.id === windowId)
+      const leaf = live
+        ? listPaneLeaves(live.tree).find(
+            candidate => candidate.panelId.id === panelId.id,
+          )
+        : undefined
+      if (leaf?.kind === "editor") {
+        lastEditorPaneRef.current = { windowId, panelId }
+      }
       setActiveWindowId(windowId)
       updateWindow(windowId, w => ({
         ...w,
@@ -1780,12 +2053,67 @@ export function MuxApp({
           x => x.id === activeWindowIdRef.current,
         )
         if (!w) return []
+        const view = w.tree.getView(panelId)
+        if (
+          view?.kind === "tabs" &&
+          isEditorTabId(view.activeTabId)
+        ) {
+          return panelTabIds(view).filter(isEditorTabId)
+        }
         const tab = activeMuxTabInPanel(w.tree, panelId)
         return tab ? [tab] : []
       },
       onTabDrop: (source, sourceTabId, target, action) => {
         const windowId = activeWindowIdRef.current
         if (!windowId) return
+        if (isEditorTabId(sourceTabId)) {
+          void (async () => {
+            try {
+              const { editorBufferServiceFor } = await import(
+                "../editor/editor-buffer-service.js"
+              )
+              const live = windowsRef.current.find(w => w.id === windowId)
+              if (!live) return
+              const tree = live.tree.clone()
+              const result = applySessionPaneDrop(
+                tree,
+                source,
+                sourceTabId,
+                target,
+                action,
+              )
+              if (!result.moved) return
+              const destination = result.createdPanel ?? target
+              const sourceOwner = `mux-editor-${source.id}`
+              const destinationOwner = `mux-editor-${destination.id}`
+              const buffers = editorBufferServiceFor(
+                workspace,
+                sessionIdRef.current,
+              )
+              buffers.moveOwner(sourceTabId, sourceOwner, destinationOwner)
+              moveEditorViewState(
+                sessionIdRef.current,
+                sourceOwner,
+                destinationOwner,
+                sourceTabId,
+              )
+              updateWindow(windowId, current => ({
+                ...current,
+                tree,
+                zoomedPaneId: null,
+                focusedPaneId: result.focusPanel,
+              }))
+            } catch (error) {
+              showYaadeToast(
+                error instanceof Error
+                  ? error.message
+                  : "Could not move the editor tab",
+                { variant: "destructive" },
+              )
+            }
+          })()
+          return
+        }
         updateWindow(windowId, w => {
           const tree = w.tree.clone()
           const result = applySessionPaneDrop(
@@ -1837,7 +2165,7 @@ export function MuxApp({
         })
       },
     }
-  }, [updateWindow])
+  }, [updateWindow, workspace])
 
   const switcherEntries = useMemo((): MuxSwitcherEntry[] => {
     const entries: MuxSwitcherEntry[] = []
@@ -1897,6 +2225,163 @@ export function MuxApp({
   ensureProjectWindowRef.current = ensureProjectWindow
   const runExplorerActionRef = useRef(runExplorerAction)
   runExplorerActionRef.current = runExplorerAction
+  const runToolPaneRef = useRef(runToolPane)
+  runToolPaneRef.current = runToolPane
+  const closeEditorTabRef = useRef(closeEditorTab)
+  closeEditorTabRef.current = closeEditorTab
+
+  const hasEditorDocument = useCallback(
+    () => workspace.openBuffers.length > 0,
+    [workspace],
+  )
+
+  const getActiveDocument = useCallback(async () => {
+    const { getActiveMonacoEditor } = await import("@yaade/monaco")
+    const editor = getActiveMonacoEditor()
+    const model = editor?.getModel()
+    const position = editor?.getPosition()
+    if (model) {
+      return {
+        uri: model.uri.toString(),
+        line: position?.lineNumber ?? 1,
+        column: position?.column ?? 1,
+      }
+    }
+    const uri = workspace.openBuffers[0]
+    return uri ? { uri, line: 1, column: 1 } : null
+  }, [workspace])
+
+  const runActiveEditorAction = useCallback(async (actionId: string) => {
+    const { getActiveMonacoEditor } = await import("@yaade/monaco")
+    const editor = getActiveMonacoEditor()
+    const action = editor?.getAction(actionId)
+    if (!editor || !action) {
+      showYaadeToast("Focus an editor before running this command", {
+        variant: "warning",
+      })
+      return
+    }
+    editor.focus()
+    await action.run()
+  }, [])
+
+  const saveActiveEditor = useCallback(async () => {
+    const document = await getActiveDocument()
+    if (!document) return
+    const { editorBufferServiceFor } = await import(
+      "../editor/editor-buffer-service.js"
+    )
+    const buffers = editorBufferServiceFor(workspace, sessionIdRef.current)
+    try {
+      await buffers.save(document.uri)
+      showYaadeToast("File saved", { variant: "success" })
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "SAVE_AS_REQUIRED"
+      ) {
+        setSaveAsUri(document.uri)
+        return
+      }
+      showYaadeToast(
+        error instanceof Error ? error.message : "Could not save file",
+        { variant: "destructive" },
+      )
+    }
+  }, [getActiveDocument, workspace])
+
+  const cycleEditorBuffer = useCallback(
+    (delta: -1 | 1): void => {
+      void getActiveDocument().then(current => {
+        const buffers = workspace.openBuffers
+        if (buffers.length < 2) return
+        const index = current
+          ? buffers.findIndex(uri => sameFileTab(uri, current.uri))
+          : -1
+        const target = buffers[(Math.max(index, 0) + delta + buffers.length) % buffers.length]
+        if (target) openEditorInFocusedRef.current({ uri: target })
+      })
+    },
+    [getActiveDocument, workspace],
+  )
+
+  const closeActiveEditor = useCallback((): void => {
+    void getActiveDocument().then(document => {
+      if (!document) return
+      for (const live of windowsRef.current) {
+        const panelId = live.tree.findEditorPanelForFile(document.uri)
+        if (!panelId) continue
+        void closeEditorTabRef.current(live.id, panelId, document.uri)
+        return
+      }
+    })
+  }, [getActiveDocument])
+
+  const reopenClosedEditor = useCallback((): void => {
+    const uri = closedEditorUrisRef.current.shift()
+    if (!uri) {
+      showYaadeToast("There is no recently closed buffer")
+      return
+    }
+    openEditorInFocusedRef.current({ uri })
+  }, [])
+
+  const openToolLocation = useCallback(
+    (uri: string, line = 1, column = 1): void => {
+      void getActiveDocument().then(current => {
+        if (
+          current &&
+          (current.uri !== uri ||
+            current.line !== line ||
+            current.column !== column)
+        ) {
+          workspace.jumpStack.push({
+            fileUri: current.uri,
+            line: current.line,
+            column: current.column,
+          })
+        }
+        openEditorInFocusedRef.current({ uri, line, column })
+      })
+    },
+    [getActiveDocument, workspace],
+  )
+
+  const navigateJumpHistory = useCallback(
+    (direction: "back" | "forward"): void => {
+      void getActiveDocument().then(current => {
+        if (!current) return
+        const entry =
+          direction === "back"
+            ? workspace.jumpStack.popBack({
+                fileUri: current.uri,
+                line: current.line,
+                column: current.column,
+              })
+            : workspace.jumpStack.popForward({
+                fileUri: current.uri,
+                line: current.line,
+                column: current.column,
+              })
+        if (!entry) {
+          showYaadeToast(
+            direction === "back"
+              ? "No previous editor location"
+              : "No next editor location",
+          )
+          return
+        }
+        openEditorInFocusedRef.current({
+          uri: entry.fileUri,
+          line: entry.line,
+          column: entry.column,
+        })
+      })
+    },
+    [getActiveDocument, workspace],
+  )
 
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [commandRevision, setCommandRevision] = useState(0)
@@ -2065,6 +2550,170 @@ export function MuxApp({
         },
       ),
       commands.register(
+        "editor.new",
+        run(() => {
+          const id =
+            typeof crypto !== "undefined" &&
+            typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : Date.now().toString(36)
+          openEditorInFocusedRef.current({ uri: `untitled:Untitled-${id}` })
+        }),
+        {
+          id: "editor.new",
+          title: "New File",
+          category: "File",
+          aliases: ["new untitled buffer"],
+        },
+      ),
+      commands.register(
+        "editor.close",
+        run(closeActiveEditor),
+        {
+          id: "editor.close",
+          title: "Close Editor",
+          category: "File",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.reopenClosed",
+        run(reopenClosedEditor),
+        {
+          id: "editor.reopenClosed",
+          title: "Reopen Closed Editor",
+          category: "File",
+          aliases: ["restore closed tab"],
+          when: () => closedEditorUrisRef.current.length > 0,
+        },
+      ),
+      commands.register(
+        "editor.bufferNext",
+        run(() => cycleEditorBuffer(1)),
+        {
+          id: "editor.bufferNext",
+          title: "Next Buffer",
+          category: "Navigation",
+          when: () => workspace.openBuffers.length > 1,
+        },
+      ),
+      commands.register(
+        "editor.bufferPrevious",
+        run(() => cycleEditorBuffer(-1)),
+        {
+          id: "editor.bufferPrevious",
+          title: "Previous Buffer",
+          category: "Navigation",
+          when: () => workspace.openBuffers.length > 1,
+        },
+      ),
+      commands.register(
+        "editor.bufferSwitch",
+        run(() => runToolPaneRef.current("buffers")),
+        {
+          id: "editor.bufferSwitch",
+          title: "Switch Buffer",
+          category: "Navigation",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.goToLine",
+        run(() => {
+          void runActiveEditorAction("editor.action.gotoLine")
+        }),
+        {
+          id: "editor.goToLine",
+          title: "Go to Line",
+          category: "Navigation",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.action.revealDeclaration",
+        run(() => {
+          void runActiveEditorAction("editor.action.revealDeclaration")
+        }),
+        {
+          id: "editor.action.revealDeclaration",
+          title: "Go to Declaration",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.action.goToTypeDefinition",
+        run(() => {
+          void runActiveEditorAction("editor.action.goToTypeDefinition")
+        }),
+        {
+          id: "editor.action.goToTypeDefinition",
+          title: "Go to Type Definition",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.action.goToImplementation",
+        run(() => {
+          void runActiveEditorAction("editor.action.goToImplementation")
+        }),
+        {
+          id: "editor.action.goToImplementation",
+          title: "Go to Implementation",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.action.rename",
+        run(() => {
+          void runActiveEditorAction("editor.action.rename")
+        }),
+        {
+          id: "editor.action.rename",
+          title: "Rename Symbol",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.action.formatDocument",
+        run(() => {
+          void runActiveEditorAction("editor.action.formatDocument")
+        }),
+        {
+          id: "editor.action.formatDocument",
+          title: "Format Document",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.action.showHover",
+        run(() => {
+          void runActiveEditorAction("editor.action.showHover")
+        }),
+        {
+          id: "editor.action.showHover",
+          title: "Show Hover",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.action.triggerSuggest",
+        run(() => {
+          void runActiveEditorAction("editor.action.triggerSuggest")
+        }),
+        {
+          id: "editor.action.triggerSuggest",
+          title: "Trigger Suggestions",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
         "explorer.focus",
         run(() => runExplorerActionRef.current("focus")),
         {
@@ -2138,6 +2787,215 @@ export function MuxApp({
         },
       ),
       commands.register(
+        "search.focus",
+        run(() => runToolPaneRef.current("search")),
+        {
+          id: "search.focus",
+          title: "Focus Search",
+          category: "View",
+          aliases: ["find in files", "project search", "grep"],
+          when: () => workspace.manager.hasFolders(),
+        },
+      ),
+      commands.register(
+        "search.previewReplace",
+        run(() => searchPreviewCommandRef.current()),
+        {
+          id: "search.previewReplace",
+          title: "Search: Preview Replace",
+          category: "Search",
+          when: () => workspace.manager.hasFolders(),
+        },
+      ),
+      commands.register(
+        "search.applyReplace",
+        async () => searchApplyCommandRef.current(),
+        {
+          id: "search.applyReplace",
+          title: "Search: Apply Replace Preview",
+          category: "Search",
+          when: () => searchReplacePreviewRef.current != null,
+        },
+      ),
+      commands.register(
+        "search.undoLastReplace",
+        async () => searchUndoCommandRef.current(),
+        {
+          id: "search.undoLastReplace",
+          title: "Search: Undo Last Replace",
+          category: "Search",
+          when: () => workspace.manager.hasFolders(),
+        },
+      ),
+      commands.register(
+        "problems.focus",
+        run(() => runToolPaneRef.current("problems")),
+        {
+          id: "problems.focus",
+          title: "Focus Problems",
+          category: "View",
+          aliases: ["diagnostics", "errors", "warnings"],
+          when: () => workspace.manager.hasFolders(),
+        },
+      ),
+      commands.register(
+        "references.focus",
+        run(() => runToolPaneRef.current("references")),
+        {
+          id: "references.focus",
+          title: "Find References",
+          category: "Language",
+          aliases: ["usages", "references view"],
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "definitions.focus",
+        run(() => runToolPaneRef.current("definitions")),
+        {
+          id: "definitions.focus",
+          title: "Show Definitions",
+          category: "Language",
+          aliases: ["go to definition", "definitions view"],
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "outline.focus",
+        run(() => runToolPaneRef.current("outline")),
+        {
+          id: "outline.focus",
+          title: "Focus Document Outline",
+          category: "View",
+          aliases: ["document symbols"],
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "buffers.focus",
+        run(() => runToolPaneRef.current("buffers")),
+        {
+          id: "buffers.focus",
+          title: "Focus Open Buffers",
+          category: "View",
+          aliases: ["switch buffer", "open editors", "mru"],
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "workspaceSymbols.focus",
+        run(() => runToolPaneRef.current("workspaceSymbols")),
+        {
+          id: "workspaceSymbols.focus",
+          title: "Search Workspace Symbols",
+          category: "Language",
+          aliases: ["symbols", "workspace symbol"],
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "callHierarchy.focus",
+        run(() => runToolPaneRef.current("callHierarchy")),
+        {
+          id: "callHierarchy.focus",
+          title: "Show Call Hierarchy",
+          category: "Language",
+          aliases: ["incoming calls", "outgoing calls"],
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "typeHierarchy.focus",
+        run(() => runToolPaneRef.current("typeHierarchy")),
+        {
+          id: "typeHierarchy.focus",
+          title: "Show Type Hierarchy",
+          category: "Language",
+          aliases: ["supertypes", "subtypes"],
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "lsp.output.focus",
+        run(() => runToolPaneRef.current("lspOutput")),
+        {
+          id: "lsp.output.focus",
+          title: "Focus Language Server Output",
+          category: "Language",
+          aliases: ["lsp logs", "language server logs"],
+          when: () => window.yaade?.lsp != null,
+        },
+      ),
+      commands.register(
+        "editor.action.goToReferences",
+        run(() => runToolPaneRef.current("references")),
+        {
+          id: "editor.action.goToReferences",
+          title: "Go to References",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.action.revealDefinition",
+        run(() => runToolPaneRef.current("definitions")),
+        {
+          id: "editor.action.revealDefinition",
+          title: "Go to Definition",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.navigateBack",
+        run(() => navigateJumpHistory("back")),
+        {
+          id: "editor.navigateBack",
+          title: "Go Back",
+          category: "Navigation",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "editor.navigateForward",
+        run(() => navigateJumpHistory("forward")),
+        {
+          id: "editor.navigateForward",
+          title: "Go Forward",
+          category: "Navigation",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "lsp.restart",
+        async () => {
+          const document = await getActiveDocument()
+          const controller = lspControllerRef.current
+          if (!document || !controller) return
+          await controller.restart(document.uri)
+          showYaadeToast("Language server restarted")
+        },
+        {
+          id: "lsp.restart",
+          title: "Restart Language Server",
+          category: "Language",
+          when: hasEditorDocument,
+        },
+      ),
+      commands.register(
+        "lsp.status",
+        run(() => {
+          const status = lspControllerRef.current?.status() ?? "idle"
+          showYaadeToast(`Language server: ${status}`)
+        }),
+        {
+          id: "lsp.status",
+          title: "Show Language Server Status",
+          category: "Language",
+          when: () => window.yaade?.lsp != null,
+        },
+      ),
+      commands.register(
         "editor.quickOpen",
         run(() => setQuickOpenOpen(true)),
         {
@@ -2159,9 +3017,7 @@ export function MuxApp({
       ),
       commands.register(
         "editor.save",
-        run(() => {
-          window.dispatchEvent(new CustomEvent(MUX_EDITOR_SAVE_EVENT))
-        }),
+        saveActiveEditor,
         { id: "editor.save", title: "Save File", category: "File" },
       ),
       commands.register(
@@ -2357,7 +3213,21 @@ export function MuxApp({
     return () => {
       for (const d of disposers) d.dispose()
     }
-  }, [commands, handleZoom, resetAppearanceSettings, setThemeId, workspace])
+  }, [
+    closeActiveEditor,
+    commands,
+    cycleEditorBuffer,
+    getActiveDocument,
+    handleZoom,
+    hasEditorDocument,
+    navigateJumpHistory,
+    reopenClosedEditor,
+    resetAppearanceSettings,
+    runActiveEditorAction,
+    saveActiveEditor,
+    setThemeId,
+    workspace,
+  ])
 
   // Subscribe before registerUser — otherwise the initial onDidChange is missed and
   // keymapBindings stays stuck on the empty first-render snapshot.
@@ -2454,11 +3324,11 @@ export function MuxApp({
         onClick: () => void executeCommand("ui.showCommandPalette"),
       },
       {
-        id: "editor.projectSearch",
+        id: "search.focus",
         label: "Search",
         icon: "search",
-        shortcut: shortcutFor("editor.projectSearch"),
-        onClick: () => void executeCommand("editor.projectSearch"),
+        shortcut: shortcutFor("search.focus"),
+        onClick: () => void executeCommand("search.focus"),
       },
       {
         id: "workspace.cd",
@@ -2894,16 +3764,22 @@ export function MuxApp({
   )
 
   const handleLspReady = useCallback(
-    (lifecycle: {
-      open: (uri: string) => Promise<void>
-      close: (uri: string) => void
-    }) => {
+    (lifecycle: MuxLspController | null) => {
+      lspControllerRef.current = lifecycle
       void import("../editor/editor-buffer-service.js").then(
         ({ editorBufferServiceFor }) => {
           editorBufferServiceFor(
             workspace,
             sessionIdRef.current,
-          ).setLspHooks(lifecycle)
+          ).setLspHooks(
+            lifecycle
+              ? {
+                  open: lifecycle.open,
+                  close: lifecycle.close,
+                  save: lifecycle.save,
+                }
+              : null,
+          )
         },
       )
     },
@@ -2921,6 +3797,10 @@ export function MuxApp({
         )
         const buffers = editorBufferServiceFor(workspace, sessionId)
         await buffers.saveAs(sourceUri, targetUri)
+        // The editor is still mounted on the source URI here. Capture its
+        // latest cursor/folds/scroll synchronously before the React tree swaps
+        // to the promoted URI, then move that snapshot with the buffer.
+        window.dispatchEvent(new Event("yaade:save-editor-view-state"))
         remapEditorViewStateUri(sessionId, sourceUri, targetUri)
 
         setEditorFiles(previous => {
@@ -3009,7 +3889,28 @@ export function MuxApp({
   const renderTool = useCallback(
     (tabId: string): ReactNode => {
       const tool = muxToolPaneForTab(tabId)
-      if (tool?.kind !== "explorer") return null
+      if (!tool) return null
+      if (tool.kind !== "explorer") {
+        return (
+          <Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted-foreground">
+                Loading {tool.label}…
+              </div>
+            }
+          >
+            <MuxToolPanes
+              kind={tool.kind}
+              revision={toolRevisions[tool.kind]}
+              workspace={workspace}
+              getActiveDocument={getActiveDocument}
+              getLspController={() => lspControllerRef.current}
+              onOpenLocation={openToolLocation}
+              onOpenBuffer={uri => openEditorInFocused({ uri })}
+            />
+          </Suspense>
+        )
+      }
       return (
         <Suspense
           fallback={
@@ -3021,24 +3922,314 @@ export function MuxApp({
           <MuxExplorerPane
             manager={workspace.manager}
             workspace={workspace}
+            expandedIds={explorerExpandedIdsRef.current}
+            onExpandedChange={ids => {
+              explorerExpandedIdsRef.current = ids
+            }}
             onOpenFile={uri => openEditorInFocused({ uri })}
             onControllerReady={handleExplorerControllerReady}
           />
         </Suspense>
       )
     },
-    [handleExplorerControllerReady, openEditorInFocused, workspace],
+    [
+      getActiveDocument,
+      handleExplorerControllerReady,
+      openEditorInFocused,
+      openToolLocation,
+      toolRevisions,
+      workspace,
+    ],
   )
 
+  const getWorkspaceEditTransactions = useCallback(async () => {
+    const existing = workspaceEditTransactionsRef.current
+    if (existing) return existing
+    const [{ WorkspaceEditTransactionService }, { editorBufferServiceFor }] =
+      await Promise.all([
+        import("../editor/workspace-edit-transaction.js"),
+        import("../editor/editor-buffer-service.js"),
+      ])
+    const buffers = editorBufferServiceFor(workspace, sessionIdRef.current)
+    const fs = window.yaade?.fs
+    if (!fs?.readTextFile || !fs.writeTextFile) {
+      throw new Error("Versioned text-file operations are unavailable")
+    }
+    const transactions = new WorkspaceEditTransactionService({
+      getOpenDocument: uri => {
+        const snapshot = buffers.snapshot(uri)
+        const model = snapshot?.open ? buffers.get(uri) : undefined
+        if (!model) return null
+        return {
+          readText: () => model.getValue(),
+          applyEdits: edits => {
+            model.pushStackElement()
+            model.pushEditOperations(
+              [],
+              edits.map(edit => ({
+                range: {
+                  startLineNumber: edit.range.startLine,
+                  startColumn: edit.range.startColumn,
+                  endLineNumber: edit.range.endLine,
+                  endColumn: edit.range.endColumn,
+                },
+                text: edit.text,
+              })),
+              () => null,
+            )
+            model.pushStackElement()
+          },
+          undoLastEdit: () =>
+            (model as unknown as { undo(): void | Promise<void> }).undo(),
+        }
+      },
+      readTextFile: uri => fs.readTextFile(uri),
+      writeTextFile: (uri, content, options) =>
+        fs.writeTextFile(uri, content, options),
+    })
+    workspaceEditTransactionsRef.current = transactions
+    return transactions
+  }, [workspace])
+
+  const applyLspWorkspaceEditTransaction = useCallback<
+    NonNullable<JetLspWorkspaceDeps["applyWorkspaceEditTransaction"]>
+  >(async (edit, options) => {
+    const fs = window.yaade?.fs
+    if (
+      !fs?.readTextFile ||
+      !fs.createFile ||
+      !fs.rename ||
+      !fs.trash ||
+      !fs.restoreTrash
+    ) {
+      return {
+        applied: false,
+        reason: "Atomic workspace file operations are unavailable",
+      }
+    }
+    const [transactions, { editorBufferServiceFor }, lsp, transactionModule] =
+      await Promise.all([
+        getWorkspaceEditTransactions(),
+        import("../editor/editor-buffer-service.js"),
+        import("@yaade/lsp"),
+        import("../editor/lsp-workspace-edit-transaction.js"),
+      ])
+    const buffers = editorBufferServiceFor(workspace, sessionIdRef.current)
+    return transactionModule.applyLspWorkspaceEditTransaction(edit, options, {
+      fs,
+      transactions,
+      getOpenDocument: uri => {
+        const snapshot = buffers.snapshot(uri)
+        const model = snapshot?.open ? buffers.get(uri) : undefined
+        if (!model) return null
+        return {
+          readText: () => model.getValue(),
+          applyEdits: edits => {
+            model.pushStackElement()
+            model.pushEditOperations(
+              [],
+              edits.map(item => ({
+                range: {
+                  startLineNumber: item.range.startLine,
+                  startColumn: item.range.startColumn,
+                  endLineNumber: item.range.endLine,
+                  endColumn: item.range.endColumn,
+                },
+                text: item.text,
+              })),
+              () => null,
+            )
+            model.pushStackElement()
+          },
+          undoLastEdit: () =>
+            (model as unknown as { undo(): void | Promise<void> }).undo(),
+        }
+      },
+      isOpen: uri =>
+        buffers.snapshots().some(
+          snapshot => snapshot.open && uriAtOrBelow(snapshot.uri, uri),
+        ),
+      isDirty: uri =>
+        buffers.snapshots().some(
+          snapshot => snapshot.dirty && uriAtOrBelow(snapshot.uri, uri),
+        ) || workspace.fileForUri(uri)?.isDirty === true,
+      isUriAllowed: uri => workspace.resolveRootUriForFile(uri) != null,
+      getDocumentVersion: lsp.getDocumentVersion,
+      prepareOpenResourceReconciliation: async operations => {
+        const originalWindows = windowsRef.current
+        const originalEditorFiles = editorFilesRef.current
+        const originalViewStates = snapshotEditorViewStates(
+          sessionIdRef.current,
+        )
+        const originalBuffers = buffers
+          .snapshots()
+          .filter(snapshot => snapshot.open)
+          .map(snapshot => ({
+            snapshot,
+            content: buffers.get(snapshot.uri)?.getValue() ?? "",
+          }))
+        const mapping = new Map<string, string | null>(
+          originalBuffers.map(({ snapshot }) => [snapshot.uri, snapshot.uri]),
+        )
+        const forceReload = new Set<string>()
+
+        for (const operation of operations) {
+          if (operation.kind === "rename") {
+            for (const [originalUri, currentUri] of mapping) {
+              if (!currentUri) continue
+              if (uriAtOrBelow(currentUri, operation.oldUri)) {
+                mapping.set(
+                  originalUri,
+                  remapResourceDescendant(
+                    currentUri,
+                    operation.oldUri,
+                    operation.newUri,
+                  ),
+                )
+              } else if (uriAtOrBelow(currentUri, operation.newUri)) {
+                // An overwrite removes the previous target document.
+                mapping.set(originalUri, null)
+              }
+            }
+          } else if (operation.kind === "delete") {
+            for (const [originalUri, currentUri] of mapping) {
+              if (currentUri && uriAtOrBelow(currentUri, operation.uri)) {
+                mapping.set(originalUri, null)
+              }
+            }
+          } else {
+            for (const currentUri of mapping.values()) {
+              if (currentUri && uriAtOrBelow(currentUri, operation.uri)) {
+                forceReload.add(currentUri)
+              }
+            }
+          }
+        }
+
+        const affected = originalBuffers.filter(({ snapshot }) => {
+          const finalUri = mapping.get(snapshot.uri)
+          return finalUri !== snapshot.uri || forceReload.has(snapshot.uri)
+        })
+        if (affected.length === 0) {
+          return { apply: () => {}, rollback: () => {} }
+        }
+
+        const reopen = async (
+          states: typeof affected,
+          targetFor: (sourceUri: string) => string | null,
+        ) => {
+          const byTarget = new Map<string, typeof affected>()
+          for (const state of states) {
+            const targetUri = targetFor(state.snapshot.uri)
+            if (!targetUri) continue
+            const group = byTarget.get(targetUri) ?? []
+            group.push(state)
+            byTarget.set(targetUri, group)
+          }
+          for (const [targetUri, sources] of byTarget) {
+            const disk = await fs.readTextFile(targetUri)
+            if (buffers.snapshot(targetUri)) {
+              await buffers.handleExternalFileChange(targetUri)
+            }
+            for (const source of sources) {
+              for (const ownerId of source.snapshot.owners) {
+                await buffers.open({
+                  uri: targetUri,
+                  languageId: source.snapshot.languageId,
+                  ownerId,
+                  initialContent: disk.content,
+                  baseDiskVersion: disk.version,
+                  initialDiskSize: disk.size,
+                })
+              }
+            }
+          }
+        }
+
+        return {
+          apply: async () => {
+            for (const { snapshot } of affected) {
+              buffers.close(snapshot.uri, { discard: true })
+            }
+            await reopen(affected, sourceUri => mapping.get(sourceUri) ?? null)
+
+            const changedMapping = new Map(
+              affected.map(({ snapshot }) => [
+                snapshot.uri,
+                mapping.get(snapshot.uri) ?? null,
+              ]),
+            )
+            for (const [oldUri, newUri] of changedMapping) {
+              if (newUri && newUri !== oldUri) {
+                remapEditorViewStateUri(sessionIdRef.current, oldUri, newUri)
+              }
+              if (newUri !== oldUri) workspace.disposeTab(oldUri)
+              if (newUri) {
+                workspace.registerTab({
+                  id: newUri,
+                  kind: "editor",
+                  label: editorLabelFromUri(newUri),
+                })
+              }
+            }
+
+            const nextFiles = { ...originalEditorFiles }
+            for (const [oldUri] of changedMapping) delete nextFiles[oldUri]
+            for (const { snapshot } of affected) {
+              const newUri = mapping.get(snapshot.uri)
+              if (!newUri) continue
+              nextFiles[newUri] = {
+                ...(originalEditorFiles[snapshot.uri] ?? { uri: snapshot.uri }),
+                uri: newUri,
+              }
+            }
+            editorFilesRef.current = nextFiles
+            setEditorFiles(nextFiles)
+            const nextWindows = originalWindows.map(live => ({
+              ...live,
+              tree: applyEditorResourceMapping(live.tree, changedMapping),
+            }))
+            windowsRef.current = nextWindows
+            setWindows(nextWindows)
+          },
+          rollback: async () => {
+            const finalUris = new Set(
+              affected
+                .map(({ snapshot }) => mapping.get(snapshot.uri))
+                .filter((uri): uri is string => Boolean(uri)),
+            )
+            for (const uri of finalUris) {
+              buffers.close(uri, { discard: true })
+            }
+            await reopen(affected, sourceUri => sourceUri)
+            replaceEditorViewStates(sessionIdRef.current, originalViewStates)
+            editorFilesRef.current = originalEditorFiles
+            setEditorFiles(originalEditorFiles)
+            windowsRef.current = originalWindows
+            setWindows(originalWindows)
+            for (const { snapshot } of affected) {
+              workspace.registerTab({
+                id: snapshot.uri,
+                kind: "editor",
+                label: editorLabelFromUri(snapshot.uri),
+              })
+            }
+          },
+        }
+      },
+    })
+  }, [getWorkspaceEditTransactions, workspace])
+
   const onQuickOpenSearch = useCallback(
-    async (query: string): Promise<string[]> => {
+    async (query: string, signal: AbortSignal): Promise<string[]> => {
       const root = cwdUri()
       const search =
         typeof window !== "undefined" ? window.yaade?.search : undefined
       if (!root || !search) return []
       try {
-        return (await search.fileSearch(root, query, { pageSize: 50 })).items
-      } catch {
+        return (await search.fileSearch(root, query, { pageSize: 50 }, signal)).items
+      } catch (error) {
+        if (signal.aborted) throw error
         return []
       }
     },
@@ -3047,37 +4238,96 @@ export function MuxApp({
 
   const onQuickOpenSelect = useCallback(
     (path: string) => {
-      openEditorInFocused({ uri: resolveEditorUri(cwdUri(), path) })
+      openToolLocation(resolveEditorUri(cwdUri(), path))
     },
-    [cwdUri, openEditorInFocused],
+    [cwdUri, openToolLocation],
   )
 
   const onProjectSearch = useCallback(
-    async (query: string): Promise<ProjectSearchResult[]> => {
+    async (
+      query: string,
+      options: ProjectSearchOptions,
+      signal: AbortSignal,
+    ): Promise<SearchPage<ProjectSearchResult>> => {
       const root = cwdUri()
       const search =
         typeof window !== "undefined" ? window.yaade?.search : undefined
-      if (!root || !search) return []
+      if (!root || !search) return { items: [], truncated: false }
       try {
-        return (await search.project(root, query)).items
-      } catch {
-        return []
+        return await search.project(root, query, options, signal)
+      } catch (error) {
+        if (signal.aborted) throw error
+        return { items: [], truncated: false }
       }
     },
     [cwdUri],
   )
 
-  const onProjectSearchSelect = useCallback(
-    (result: ProjectSearchResult) => {
-      openEditorInFocused({
-        uri: resolveEditorUri(cwdUri(), result.path),
-        line: result.line,
-      })
+  const onProjectSearchPreviewReplace = useCallback(
+    async (results: ProjectSearchResult[], replacement: string) => {
+      const root = cwdUri()
+      if (!root) throw new Error("Workspace root is unavailable")
+      const [{ searchReplaceRequests }, transactions] = await Promise.all([
+        import("../editor/workspace-edit-transaction.js"),
+        getWorkspaceEditTransactions(),
+      ])
+      const preview = await transactions.preview(
+        searchReplaceRequests(root, results, replacement),
+      )
+      searchReplacePreviewRef.current = preview
+      return { fileCount: preview.files.length, editCount: preview.editCount }
     },
-    [cwdUri, openEditorInFocused],
+    [cwdUri, getWorkspaceEditTransactions],
   )
 
-  const paletteCommands = commands.list().map(c => ({
+  const onProjectSearchApplyReplace = useCallback(async () => {
+    const preview = searchReplacePreviewRef.current
+    if (!preview) throw new Error("Preview the selected changes before applying them")
+    const transactions = await getWorkspaceEditTransactions()
+    await transactions.apply(preview)
+    searchReplacePreviewRef.current = null
+    showYaadeToast(
+      `Replaced ${preview.editCount} match${preview.editCount === 1 ? "" : "es"} in ${preview.files.length} file${preview.files.length === 1 ? "" : "s"}.`,
+    )
+  }, [getWorkspaceEditTransactions])
+
+  const onProjectSearchUndoReplace = useCallback(async () => {
+    const transactions = await getWorkspaceEditTransactions()
+    if (!(await transactions.undoLast())) {
+      showYaadeToast("There is no search replace transaction to undo.", {
+        variant: "warning",
+      })
+      return
+    }
+    showYaadeToast("Undid the last search replace transaction.")
+  }, [getWorkspaceEditTransactions])
+
+  searchPreviewCommandRef.current = () => {
+    const preview = searchReplacePreviewRef.current
+    if (!preview) {
+      setProjectSearchOpen(true)
+      showYaadeToast("Select search matches and a replacement to preview.")
+      return
+    }
+    showYaadeToast(
+      `Preview: ${preview.editCount} edit${preview.editCount === 1 ? "" : "s"} in ${preview.files.length} file${preview.files.length === 1 ? "" : "s"}.`,
+    )
+  }
+  searchApplyCommandRef.current = onProjectSearchApplyReplace
+  searchUndoCommandRef.current = onProjectSearchUndoReplace
+
+  const onProjectSearchSelect = useCallback(
+    (result: ProjectSearchResult) => {
+      openToolLocation(
+        resolveEditorUri(cwdUri(), result.path),
+        result.line,
+        result.column,
+      )
+    },
+    [cwdUri, openToolLocation],
+  )
+
+  const paletteCommands = commands.list(getCommandContext()).map(c => ({
     id: c.id,
     title: c.title,
     category: c.category,
@@ -3332,6 +4582,9 @@ export function MuxApp({
           onProjectSearchOpenChange={setProjectSearchOpen}
           onProjectSearch={onProjectSearch}
           onProjectSearchSelect={onProjectSearchSelect}
+          onProjectSearchPreviewReplace={onProjectSearchPreviewReplace}
+          onProjectSearchApplyReplace={onProjectSearchApplyReplace}
+          onProjectSearchUndoReplace={onProjectSearchUndoReplace}
           saveAsOpen={saveAsUri != null}
           onSaveAsOpenChange={open => {
             if (!open) setSaveAsUri(null)
@@ -3343,15 +4596,17 @@ export function MuxApp({
       ) : null}
 
       <ConfirmDialogHost />
-      {windows.some(w => listPaneLeaves(w.tree).some(l => l.kind === "editor")) ||
-      Object.keys(editorFiles).length > 0 ? (
-        <MuxLspHost
-          workspace={workspace}
-          onOpenFile={(uri, _path, line, column) => {
-            openEditorInFocusedRef.current({ uri, line, column })
-          }}
-          onReady={handleLspReady}
-        />
+      {editorRuntimeNeeded ? (
+        <Suspense fallback={null}>
+          <MuxLspHost
+            workspace={workspace}
+            applyWorkspaceEditTransaction={applyLspWorkspaceEditTransaction}
+            onOpenFile={(uri, _path, line, column) => {
+              openEditorInFocusedRef.current({ uri, line, column })
+            }}
+            onReady={handleLspReady}
+          />
+        </Suspense>
       ) : null}
       <Toaster position="bottom-right" />
     </>

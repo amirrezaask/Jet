@@ -12,6 +12,7 @@ import {
 } from "@yaade/rpc"
 import { LspBridge, type LspSession } from "./lsp-bridge.js"
 import {
+  builtinLanguageServerDefinitions,
   loadLanguageServerConfig,
   watchLanguageServerConfig,
   type LanguageServerCatalog,
@@ -23,6 +24,7 @@ import { pathToUri, uriToPath } from "./paths.js"
 const MAX_LOG_ENTRIES = 1_000
 const MAX_RESTART_ATTEMPTS = 3
 const RESTART_BASE_DELAY_MS = 500
+const RESTART_STABLE_RESET_MS = 30_000
 
 type ActiveConnection = {
   readonly key: string
@@ -85,6 +87,26 @@ function commandPolicyChanged(
   )
 }
 
+function routingPolicyChanged(
+  previous: LanguageServerDefinition,
+  next: LanguageServerDefinition,
+): boolean {
+  return !sameUnknown(
+    {
+      languages: previous.languages,
+      rootMarkers: previous.rootMarkers,
+      priority: previous.priority,
+      enabled: previous.enabled,
+    },
+    {
+      languages: next.languages,
+      rootMarkers: next.rootMarkers,
+      priority: next.priority,
+      enabled: next.enabled,
+    },
+  )
+}
+
 /**
  * Host authority for catalog resolution and LSP process lifetime.
  * One instance belongs to one Effect Scope; no process/session state is global.
@@ -96,9 +118,11 @@ export class LspHost {
   private readonly rootCache = new Map<string, string | null>()
   private readonly activeByKey = new Map<string, ActiveConnection>()
   private readonly activeBySession = new Map<string, ActiveConnection>()
+  private readonly failedKeysBySession = new Map<string, string>()
   private readonly pendingStarts = new Map<string, Promise<LspStartResult>>()
   private readonly retryAttempts = new Map<string, number>()
   private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly retryResetTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly logEntries: LspLogEntry[] = []
   private readonly lifecycleListeners = new Set<(event: LspLifecycleEvent) => void>()
   private readonly watcher: LanguageServerConfigWatcher | null
@@ -128,7 +152,7 @@ export class LspHost {
     const loaded = await loadLanguageServerConfig(options.homeDir)
     const catalog = loaded.ok
       ? loaded.catalog
-      : { definitions: [], scanRoots: [] }
+      : { definitions: builtinLanguageServerDefinitions(), scanRoots: [] }
     const host = new LspHost(options, catalog)
     if (!loaded.ok) {
       host.emitLifecycle(LspLifecycleEvent.make({
@@ -196,7 +220,11 @@ export class LspHost {
         error: "LSP host is disposed",
       })
     }
-    const key = connectionKey(target.serverId, target.projectRootUri)
+    const definition = this.definition(target.serverId)
+    const effectiveTarget = definition?.enabled
+      ? this.target(definition, target.projectRootUri, target.workspaceRootUri)
+      : target
+    const key = connectionKey(effectiveTarget.serverId, effectiveTarget.projectRootUri)
     const active = this.activeByKey.get(key)
     if (active) {
       return LspStartResult.make({
@@ -207,7 +235,7 @@ export class LspHost {
     }
     const pending = this.pendingStarts.get(key)
     if (pending) return pending
-    const starting = this.startConnection(key, target)
+    const starting = this.startConnection(key, effectiveTarget)
     this.pendingStarts.set(key, starting)
     try {
       return await starting
@@ -217,16 +245,28 @@ export class LspHost {
   }
 
   async stop(id: string): Promise<void> {
-    const active = this.activeBySession.get(id)
+    const failedKey = this.failedKeysBySession.get(id)
+    const active = this.activeBySession.get(id) ?? (failedKey ? this.activeByKey.get(failedKey) : undefined)
+    const key = active?.key ?? failedKey
+    if (key) {
+      const timer = this.retryTimers.get(key)
+      if (timer) clearTimeout(timer)
+      this.retryTimers.delete(key)
+      const resetTimer = this.retryResetTimers.get(key)
+      if (resetTimer) clearTimeout(resetTimer)
+      this.retryResetTimers.delete(key)
+      this.retryAttempts.delete(key)
+    }
+    this.failedKeysBySession.delete(id)
     if (active) this.removeActive(active)
-    await this.bridge.stop(id)
+    await this.bridge.stop(active?.sessionId ?? id)
     if (active) {
       this.emitLifecycle(LspLifecycleEvent.make({
         kind: "stopped",
         timestamp: Date.now(),
         serverId: active.target.serverId,
         projectRootUri: active.target.projectRootUri,
-        sessionId: id,
+        sessionId: active.sessionId,
       }))
     }
   }
@@ -274,12 +314,19 @@ export class LspHost {
     const previousById = new Map(this.catalog.definitions.map(definition => [definition.id, definition]))
     const nextById = new Map(loaded.catalog.definitions.map(definition => [definition.id, definition]))
     const restartIds = new Set<string>()
+    const rerouteIds = new Set<string>()
+    const rerouteLanguages = new Set<string>()
     const settingsIds = new Set<string>()
     for (const id of new Set([...previousById.keys(), ...nextById.keys()])) {
       const previous = previousById.get(id)
       const next = nextById.get(id)
       if (!previous || !next || commandPolicyChanged(previous, next)) {
         restartIds.add(id)
+        if (!previous || !next || routingPolicyChanged(previous, next)) {
+          rerouteIds.add(id)
+          for (const language of previous?.languages ?? []) rerouteLanguages.add(language)
+          for (const language of next?.languages ?? []) rerouteLanguages.add(language)
+        }
       } else if (!sameUnknown(previous.settings, next.settings)) {
         settingsIds.add(id)
       }
@@ -290,6 +337,22 @@ export class LspHost {
     this.rootCache.clear()
 
     for (const serverId of settingsIds) {
+      const definition = nextById.get(serverId)
+      if (definition) {
+        for (const active of [...this.activeByKey.values()]) {
+          if (active.target.serverId !== serverId) continue
+          const updated: ActiveConnection = {
+            ...active,
+            target: this.target(
+              definition,
+              active.target.projectRootUri,
+              active.target.workspaceRootUri,
+            ),
+          }
+          this.activeByKey.set(active.key, updated)
+          this.activeBySession.set(active.sessionId, updated)
+        }
+      }
       this.emitLifecycle(LspLifecycleEvent.make({
         kind: "configuration-changed",
         timestamp: Date.now(),
@@ -299,18 +362,22 @@ export class LspHost {
       }))
     }
     const activeToRestart = [...this.activeByKey.values()].filter(active =>
-      restartIds.has(active.target.serverId),
+      restartIds.has(active.target.serverId) ||
+      active.target.languageIds.some(language => rerouteLanguages.has(language)),
     )
     for (const active of activeToRestart) {
-      await this.bridge.stop(active.sessionId)
-      this.removeActive(active)
+      await this.stop(active.sessionId)
       const definition = this.definition(active.target.serverId)
-      if (!definition?.enabled) continue
+      const needsReroute =
+        rerouteIds.has(active.target.serverId) ||
+        active.target.languageIds.some(language => rerouteLanguages.has(language))
+      if (!definition?.enabled || needsReroute) continue
       const target = this.target(
         definition,
         active.target.projectRootUri,
         active.target.workspaceRootUri,
       )
+      this.retryAttempts.delete(active.key)
       this.scheduleRestart(target, 0)
     }
     if (restartIds.size > 0) {
@@ -329,10 +396,13 @@ export class LspHost {
     this.watcher?.close()
     for (const timer of this.retryTimers.values()) clearTimeout(timer)
     this.retryTimers.clear()
+    for (const timer of this.retryResetTimers.values()) clearTimeout(timer)
+    this.retryResetTimers.clear()
     this.pendingStarts.clear()
     this.bridge.stopAll()
     this.activeByKey.clear()
     this.activeBySession.clear()
+    this.failedKeysBySession.clear()
     this.lifecycleListeners.clear()
     this.rootCache.clear()
   }
@@ -404,6 +474,7 @@ export class LspHost {
       timestamp: Date.now(),
       serverId: target.serverId,
       projectRootUri: target.projectRootUri,
+      target,
     }))
     const started = await this.bridge.start({
       rootUri: target.projectRootUri,
@@ -421,7 +492,17 @@ export class LspHost {
     const active: ActiveConnection = { key, target, sessionId: started.id }
     this.activeByKey.set(key, active)
     this.activeBySession.set(started.id, active)
-    this.retryAttempts.delete(key)
+    for (const [failedId, failedKey] of this.failedKeysBySession) {
+      if (failedKey === key) this.failedKeysBySession.delete(failedId)
+    }
+    if (this.retryAttempts.has(key)) {
+      const previousReset = this.retryResetTimers.get(key)
+      if (previousReset) clearTimeout(previousReset)
+      this.retryResetTimers.set(key, setTimeout(() => {
+        this.retryResetTimers.delete(key)
+        if (this.activeByKey.has(key)) this.retryAttempts.delete(key)
+      }, RESTART_STABLE_RESET_MS))
+    }
     const result = LspStartResult.make({
       id: started.id,
       transportUrl: `/ws/lsp/${started.id}`,
@@ -434,6 +515,7 @@ export class LspHost {
       projectRootUri: target.projectRootUri,
       sessionId: started.id,
       transportUrl: result.transportUrl,
+      target,
     }))
     return result
   }
@@ -464,7 +546,11 @@ export class LspHost {
   ): void {
     const active = this.activeBySession.get(id)
     if (!active || this.disposed) return
+    const resetTimer = this.retryResetTimers.get(active.key)
+    if (resetTimer) clearTimeout(resetTimer)
+    this.retryResetTimers.delete(active.key)
     this.removeActive(active)
+    this.failedKeysBySession.set(id, active.key)
     if (reason === "disconnected") void this.bridge.stop(id)
     this.emitLifecycle(LspLifecycleEvent.make({
       kind: "crashed",
@@ -473,6 +559,7 @@ export class LspHost {
       projectRootUri: active.target.projectRootUri,
       sessionId: id,
       message: message || "LSP WebSocket disconnected",
+      target: active.target,
     }))
     this.scheduleRestart(active.target)
   }
@@ -490,6 +577,7 @@ export class LspHost {
       serverId: target.serverId,
       projectRootUri: target.projectRootUri,
       attempt,
+      target,
     }))
     const timer = setTimeout(() => {
       this.retryTimers.delete(key)

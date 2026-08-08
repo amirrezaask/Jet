@@ -131,4 +131,34 @@ describe("ListerTreeState expand under filter", () => {
 
     assert.deepEqual(state.flatten().map(entry => entry.node.id), ["root", "new"])
   })
+
+  it("reloads all expanded branches after a filesystem source refresh", async () => {
+    let rootChildren = [node("src", "src", true)]
+    let srcChildren = [node("a", "a.ts")]
+    const source: ListerDataSource<N> = {
+      getRoots: () => [node("root", "root", true)],
+      getChildren: id => (id === "root" ? rootChildren : srcChildren),
+    }
+    const state = new ListerTreeState(source, ["root"])
+    await state.ensureChildren("root")
+    await state.toggle("src")
+    assert.deepEqual(state.flatten().map(entry => entry.node.id), [
+      "root",
+      "src",
+      "a",
+    ])
+
+    rootChildren = [node("src", "src", true), node("docs", "docs", true)]
+    srcChildren = [node("a", "a.ts"), node("b", "b.ts")]
+    state.reloadExpanded()
+    await Promise.resolve()
+
+    assert.deepEqual(state.flatten().map(entry => entry.node.id), [
+      "root",
+      "src",
+      "a",
+      "b",
+      "docs",
+    ])
+  })
 })

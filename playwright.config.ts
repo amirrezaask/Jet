@@ -27,6 +27,10 @@ export default defineConfig({
       testDir: "./tests/bench",
       testMatch: "*.bench.ts",
       timeout: 180_000,
+      // Latency budgets are meaningless when independent host/browser pairs
+      // contend for the same CPU. Keep functional E2E parallel, benchmarks serial.
+      fullyParallel: false,
+      workers: 1,
     },
   ],
 })

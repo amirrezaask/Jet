@@ -45,6 +45,7 @@ export type ShellDriver = {
   clickSelector(selector: string): Promise<void>
   fillSelector(selector: string, value: string): Promise<void>
   setViewportSize(size: { width: number; height: number }): Promise<void>
+  emulateMedia(options: { colorScheme: "light" | "dark" | "no-preference" }): Promise<void>
   viewportSize(): { width: number; height: number } | null
   screenshot(): Promise<string>
   reload(options?: { waitUntil?: "load" | "domcontentloaded" | "networkidle" }): Promise<void>

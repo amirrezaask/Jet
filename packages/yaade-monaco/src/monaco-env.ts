@@ -1,13 +1,13 @@
 let configured = false
 
 type WorkerFactory = new () => Worker
+type WorkerFactoryLoader = () => Promise<WorkerFactory>
 
 export type MonacoWorkerFactories = {
-  editor: WorkerFactory
-  json: WorkerFactory
-  css: WorkerFactory
-  html: WorkerFactory
-  ts: WorkerFactory
+  editor: WorkerFactoryLoader
+  json: WorkerFactoryLoader
+  css: WorkerFactoryLoader
+  html: WorkerFactoryLoader
 }
 
 /**
@@ -19,28 +19,33 @@ export function configureMonacoWorkers(factories: MonacoWorkerFactories): void {
   configured = true
   const globalSelf = self as typeof self & {
     MonacoEnvironment?: {
-      getWorker: (_moduleId: string, label: string) => Worker
+      getWorker: (_moduleId: string, label: string) => Promise<Worker>
     }
   }
   globalSelf.MonacoEnvironment = {
-    getWorker(_moduleId, label) {
+    async getWorker(_moduleId, label) {
+      let loadFactory: WorkerFactoryLoader
       switch (label) {
         case "json":
-          return new factories.json()
+          loadFactory = factories.json
+          break
         case "css":
         case "scss":
         case "less":
-          return new factories.css()
+          loadFactory = factories.css
+          break
         case "html":
         case "handlebars":
         case "razor":
-          return new factories.html()
-        case "typescript":
-        case "javascript":
-          return new factories.ts()
+          loadFactory = factories.html
+          break
         default:
-          return new factories.editor()
+          // TypeScript/JavaScript semantics are provided by external LSPs. The
+          // generic worker is sufficient for Monaco's editor services.
+          loadFactory = factories.editor
       }
+      const Factory = await loadFactory()
+      return new Factory()
     },
   }
 }

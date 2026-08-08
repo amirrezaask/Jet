@@ -1,5 +1,5 @@
 import type { ListItem, WorkspaceService } from "@yaade/workspace"
-import { useEffect, useState } from "react"
+import { useCallback, useSyncExternalStore } from "react"
 import { LocationList } from "./LocationList.js"
 
 export function DiagnosticsLocationList({
@@ -11,14 +11,20 @@ export function DiagnosticsLocationList({
   workspace: WorkspaceService
   onOpenItem: (item: ListItem) => void
 }) {
-  const [, setRev] = useState(0)
-  useEffect(() => {
-    return workspace.listStore.onDidChange.event(e => {
-      if (e.id === listId) setRev(r => r + 1)
-    }).dispose
-  }, [workspace, listId])
-
-  const doc = workspace.listStore.get(listId)
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      const disposable = workspace.listStore.onDidChange.event(event => {
+        if (event.id === listId) onStoreChange()
+      })
+      return () => disposable.dispose()
+    },
+    [listId, workspace],
+  )
+  const getSnapshot = useCallback(
+    () => workspace.listStore.get(listId),
+    [listId, workspace],
+  )
+  const doc = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   if (!doc) return null
 
   const errors = doc.items.filter(i => i.detail === "error").length

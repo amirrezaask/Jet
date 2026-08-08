@@ -4,6 +4,7 @@ import { pathToFileUri } from "@yaade/shared"
 import {
   aggregateFolderSearchState,
   formatQuickOpenDisplayPath,
+  projectSearchPageAcrossFolders,
   relativePathInFolder,
   resolveQuickOpenDisplayPath,
 } from "./workspace-search.js"
@@ -66,5 +67,41 @@ describe("relativePathInFolder", () => {
   it("returns relative path for files under folder", () => {
     assert.equal(relativePathInFolder("/proj/a", "/proj/a/src/x.ts"), "src/x.ts")
     assert.equal(relativePathInFolder("/proj/a", "/proj/b/x.ts"), undefined)
+  })
+})
+
+describe("projectSearchPageAcrossFolders", () => {
+  it("propagates cancellation/options and reports host truncation", async () => {
+    const controller = new AbortController()
+    let receivedSignal: AbortSignal | undefined
+    const page = await projectSearchPageAcrossFolders(
+      [folderA],
+      {
+        project: async (_rootUri, _query, options, signal) => {
+          assert.deepEqual(options, {
+            wholeWord: true,
+            include: ["src/**"],
+            exclude: ["**/*.test.ts"],
+          })
+          receivedSignal = signal
+          return {
+            items: [{
+              path: "src/index.ts",
+              line: 1,
+              column: 1,
+              preview: "export const value = 1",
+              ranges: [{ startLine: 1, startColumn: 1, endLine: 1, endColumn: 7 }],
+            }],
+            truncated: true,
+          }
+        },
+      },
+      "export",
+      { wholeWord: true, include: ["src/**"], exclude: ["**/*.test.ts"] },
+      controller.signal,
+    )
+    assert.equal(receivedSignal, controller.signal)
+    assert.equal(page.items.length, 1)
+    assert.equal(page.truncated, true)
   })
 })

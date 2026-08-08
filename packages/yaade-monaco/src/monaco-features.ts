@@ -9,7 +9,3 @@
  */
 import "./monaco-css.js"
 import "monaco-editor/esm/vs/editor/editor.all.js"
-import "monaco-editor/esm/vs/basic-languages/monaco.contribution.js"
-import "monaco-editor/esm/vs/language/css/monaco.contribution.js"
-import "monaco-editor/esm/vs/language/html/monaco.contribution.js"
-import "monaco-editor/esm/vs/language/json/monaco.contribution.js"

@@ -28,6 +28,12 @@ export default defineConfig({
         manualChunks(id) {
           const isPending =
             id.includes("pending-editor") || id.includes("/monaco/pending")
+          const basicLanguage =
+            /monaco-editor\/esm\/vs\/basic-languages\/([^/]+)\//.exec(id)?.[1]
+          if (basicLanguage) return `monaco-lang-${basicLanguage}`
+          const serviceLanguage =
+            /monaco-editor\/esm\/vs\/language\/(css|html|json)\//.exec(id)?.[1]
+          if (serviceLanguage) return `monaco-lang-${serviceLanguage}`
           if (
             !isPending &&
             (id.includes("monaco-editor") ||

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { TextDocumentSyncKind } from "vscode-languageserver-protocol"
-import { lspContentChanges } from "./document-sync.js"
+import {
+  createFullDocumentSyncScheduler,
+  lspContentChanges,
+} from "./document-sync.js"
 
 const change = {
   range: {
@@ -49,5 +52,42 @@ describe("LSP document sync", () => {
       [{ text: "whole document" }],
     )
     assert.equal(fullReads, 1)
+  })
+
+  it("coalesces full sync without serializing on each keystroke", async () => {
+    let scheduled: (() => void) | null = null
+    let reads = 0
+    let version = 1
+    const sent: Array<{ version: number; text: string }> = []
+    const scheduler = createFullDocumentSyncScheduler({
+      getVersion: () => version,
+      getText: () => {
+        reads++
+        return `version ${version}`
+      },
+      send: async (sentVersion, text) => {
+        sent.push({ version: sentVersion, text })
+      },
+      setTimer: callback => {
+        scheduled = callback
+        return callback
+      },
+      clearTimer: () => {
+        scheduled = null
+      },
+    })
+
+    scheduler.schedule()
+    version = 2
+    scheduler.schedule()
+    version = 3
+    scheduler.schedule()
+    assert.equal(reads, 0)
+    const run = scheduled as (() => void) | null
+    assert.ok(run)
+    run()
+    await scheduler.flush()
+    assert.equal(reads, 1)
+    assert.deepEqual(sent, [{ version: 3, text: "version 3" }])
   })
 })

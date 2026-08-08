@@ -62,6 +62,34 @@ test.describe("single-binary web server", () => {
       expect(result.deepContentType).toContain("text/html")
       expect(result.websocket).toBe("pong")
       expect([200, 403, 404]).toContain(result.sessionGet)
+
+      const assetUrl = await page.evaluate(() => {
+        const script = document.querySelector<HTMLScriptElement>("script[src*='/assets/']")
+        if (!script) throw new Error("hashed entry asset not found")
+        return new URL(script.src, location.href).href
+      })
+      const brotli = await fetch(assetUrl, {
+        headers: { "accept-encoding": "br, gzip" },
+      })
+      expect(brotli.status).toBe(200)
+      expect(brotli.headers.get("content-encoding")).toBe("br")
+      expect(brotli.headers.get("vary")).toContain("Accept-Encoding")
+      expect(brotli.headers.get("cache-control")).toContain("immutable")
+      await brotli.arrayBuffer()
+
+      const gzip = await fetch(assetUrl, {
+        headers: { "accept-encoding": "gzip" },
+      })
+      expect(gzip.status).toBe(200)
+      expect(gzip.headers.get("content-encoding")).toBe("gzip")
+      await gzip.arrayBuffer()
+
+      const raw = await fetch(assetUrl, {
+        headers: { "accept-encoding": "identity" },
+      })
+      expect(raw.status).toBe(200)
+      expect(raw.headers.get("content-encoding")).toBeNull()
+      await raw.arrayBuffer()
       await page.reload()
       await waitForMux(page)
       await testInfo.attach("mux-after-reload", {

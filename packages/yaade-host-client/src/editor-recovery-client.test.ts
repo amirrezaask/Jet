@@ -125,16 +125,15 @@ test("editor recovery client lists and clears buffers", async () => {
   assert.equal(await deleteEditorRecoverySession("ses-1"), 2)
 })
 
-test("editor recovery client returns null for a missing buffer", async () => {
-  installFetch(
-    async () =>
-      new Response(null, {
-        status: 200,
-        headers: { "x-yaade-recovery-missing": "1" },
-      }),
-  )
+test("editor recovery client drains a missing buffer response before returning null", async () => {
+  const response = new Response("", {
+    status: 200,
+    headers: { "x-yaade-recovery-missing": "1" },
+  })
+  installFetch(async () => response)
   assert.equal(
     await getEditorRecoveryBuffer("ses-1", "untitled:missing"),
     null,
   )
+  assert.equal(response.bodyUsed, true)
 })

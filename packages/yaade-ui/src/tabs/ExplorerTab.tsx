@@ -109,6 +109,8 @@ export function ExplorerTab({
   onRename,
   onTrash,
   onShowTrash,
+  expandedIds,
+  onExpandedChange,
   contentRevision = 0,
 }: {
   manager: WorkspaceManager
@@ -123,6 +125,8 @@ export function ExplorerTab({
   onRename?: (selection: ExplorerSelection) => void
   onTrash?: (selection: ExplorerSelection) => void
   onShowTrash?: () => void
+  expandedIds?: string[]
+  onExpandedChange?: (ids: string[]) => void
   /** Invalidate the cached tree after host-side filesystem mutations. */
   contentRevision?: number
 }) {
@@ -153,7 +157,14 @@ export function ExplorerTab({
       rowAriaLabel={node =>
         node.data.kind === "root" ? node.data.name : node.data.entry.name
       }
-      initiallyExpanded={activeRootId ? [activeRootId] : rootIds.slice(0, 1)}
+      initiallyExpanded={
+        expandedIds && expandedIds.length > 0
+          ? expandedIds
+          : activeRootId
+            ? [activeRootId]
+            : rootIds.slice(0, 1)
+      }
+      onExpandedChange={onExpandedChange}
       syncExpanded
       activeId={activeRootId}
       onSelectionChange={node => {
@@ -210,6 +221,10 @@ export function ExplorerTab({
         ) : undefined
       }
       onActivate={node => {
+        // Activation can be followed immediately by a palette command. Publish
+        // selection in the same event instead of waiting for Lister's effect.
+        setSelection(node.data)
+        onSelectionChange?.(node.data)
         if (node.data.kind === "root") {
           onActivateProject?.(node.data.uri)
         } else if (!node.data.entry.isDirectory) {

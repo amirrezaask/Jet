@@ -9,6 +9,20 @@ export function hasFullSemanticTokens(capabilities: ServerCapabilities): boolean
   return typeof provider === "object" && provider != null && Boolean(provider.full)
 }
 
+export function hasSemanticTokenDelta(capabilities: ServerCapabilities): boolean {
+  const provider = capabilities.semanticTokensProvider
+  return typeof provider === "object"
+    && provider != null
+    && typeof provider.full === "object"
+    && provider.full != null
+    && provider.full.delta === true
+}
+
+export function hasRangeSemanticTokens(capabilities: ServerCapabilities): boolean {
+  const provider = capabilities.semanticTokensProvider
+  return typeof provider === "object" && provider != null && Boolean(provider.range)
+}
+
 export function serverSupports(capabilities: ServerCapabilities, method: string): boolean {
   switch (method) {
     case "textDocument/completion": return capabilities.completionProvider != null
@@ -25,6 +39,13 @@ export function serverSupports(capabilities: ServerCapabilities, method: string)
     case "textDocument/documentSymbol": return capabilityEnabled(capabilities.documentSymbolProvider)
     case "textDocument/codeAction": return capabilityEnabled(capabilities.codeActionProvider)
     case "textDocument/semanticTokens/full": return hasFullSemanticTokens(capabilities)
+    case "textDocument/semanticTokens/full/delta": return hasSemanticTokenDelta(capabilities)
+    case "textDocument/semanticTokens/range": return hasRangeSemanticTokens(capabilities)
+    case "textDocument/onTypeFormatting": return capabilities.documentOnTypeFormattingProvider != null
+    case "textDocument/foldingRange": return capabilityEnabled(capabilities.foldingRangeProvider)
+    case "textDocument/selectionRange": return capabilityEnabled(capabilities.selectionRangeProvider)
+    case "textDocument/documentLink": return capabilities.documentLinkProvider != null
+    case "textDocument/documentColor": return capabilityEnabled(capabilities.colorProvider)
     case "textDocument/inlayHint": return capabilityEnabled(capabilities.inlayHintProvider)
     case "textDocument/documentHighlight": return capabilityEnabled(capabilities.documentHighlightProvider)
     case "textDocument/codeLens": return capabilities.codeLensProvider != null

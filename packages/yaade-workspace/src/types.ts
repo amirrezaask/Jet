@@ -64,6 +64,8 @@ export type WorkspaceStat = {
   size: number
 }
 
+export type WorkspaceFileChangeKind = "created" | "changed" | "deleted"
+
 export type WorkspaceRoot = {
   uri: string
   name: string
@@ -104,7 +106,9 @@ export type JetElectronFS = FileSystemProvider & {
   listTrash(): Promise<TrashEntry[]>
   emptyTrash(): Promise<EmptyTrashResult>
   watchWorkspace?(rootUri: string): Promise<void>
-  onFileChanged?(callback: (uri: string) => void): () => void
+  onFileChanged?(
+    callback: (uri: string, kind: WorkspaceFileChangeKind) => void,
+  ): () => void
 }
 
 export type JetElectronSearch = {
@@ -197,9 +201,21 @@ export type LaunchConfig = {
   source?: "default" | "explicit" | "external"
 }
 
+/**
+ * Identifies one mux session's workspace lease within the current host client.
+ * The host combines this with the transport client id so separate browser tabs
+ * can retain the same root independently.
+ */
+export type WorkspaceLeaseIdentity = {
+  sessionId: string
+}
+
 export type JetElectronWorkspace = {
-  activate(rootUri: string): Promise<{ ok: boolean }>
-  deactivate?(rootUri: string): Promise<{ ok: boolean }>
+  activate(rootUri: string, owner: WorkspaceLeaseIdentity): Promise<{ ok: boolean }>
+  deactivate?(
+    rootUri: string,
+    owner: WorkspaceLeaseIdentity,
+  ): Promise<{ ok: boolean }>
   onFileIndex(callback: (rootUri: string, files: string[]) => void): () => void
   onSearchReady?(callback: (rootUri: string) => void): () => void
 }

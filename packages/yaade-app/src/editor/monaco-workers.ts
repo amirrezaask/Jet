@@ -4,21 +4,24 @@ let workersPromise: Promise<void> | null = null
 export async function ensureMonacoWorkersConfigured(): Promise<void> {
   if (workersPromise) return workersPromise
   workersPromise = (async () => {
-    const [{ configureMonacoWorkers }, EditorWorker, JsonWorker, CssWorker, HtmlWorker, TsWorker] =
-      await Promise.all([
-        import("@yaade/monaco/environment"),
-        import("monaco-editor/esm/vs/editor/editor.worker?worker"),
-        import("monaco-editor/esm/vs/language/json/json.worker?worker"),
-        import("monaco-editor/esm/vs/language/css/css.worker?worker"),
-        import("monaco-editor/esm/vs/language/html/html.worker?worker"),
-        import("monaco-editor/esm/vs/language/typescript/ts.worker?worker"),
-      ])
+    const { configureMonacoWorkers } = await import("@yaade/monaco/environment")
     configureMonacoWorkers({
-      editor: EditorWorker.default,
-      json: JsonWorker.default,
-      css: CssWorker.default,
-      html: HtmlWorker.default,
-      ts: TsWorker.default,
+      editor: () =>
+        import("monaco-editor/esm/vs/editor/editor.worker?worker").then(
+          module => module.default,
+        ),
+      json: () =>
+        import("monaco-editor/esm/vs/language/json/json.worker?worker").then(
+          module => module.default,
+        ),
+      css: () =>
+        import("monaco-editor/esm/vs/language/css/css.worker?worker").then(
+          module => module.default,
+        ),
+      html: () =>
+        import("monaco-editor/esm/vs/language/html/html.worker?worker").then(
+          module => module.default,
+        ),
     })
   })()
   return workersPromise

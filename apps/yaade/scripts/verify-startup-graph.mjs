@@ -56,11 +56,39 @@ if (mandatoryGzipBytes > mandatoryGzipBudget) {
   )
 }
 
+const monacoChunkNames = fs
+  .readdirSync(assets)
+  .filter(
+    fileName =>
+      /^monaco-.*\.js$/.test(fileName) &&
+      !fileName.startsWith("monaco-lang-") &&
+      !fileName.startsWith("monaco-workers-"),
+  )
+if (monacoChunkNames.length !== 1) {
+  throw new Error(
+    `expected one Monaco base chunk, found: ${monacoChunkNames.join(", ") || "none"}`,
+  )
+}
+const monacoGzipBytes = gzipSync(
+  fs.readFileSync(path.join(assets, monacoChunkNames[0])),
+).byteLength
+// Recorded before language contributions/workers were made demand-loaded.
+// Raising this cap is an explicit editor bundle-budget decision.
+const monacoGzipBudget = 974 * 1024
+if (monacoGzipBytes > monacoGzipBudget) {
+  throw new Error(
+    `Monaco base chunk is ${monacoGzipBytes} gzip bytes; budget is ${monacoGzipBudget}`,
+  )
+}
+
 const preloads = [...html.matchAll(/rel="modulepreload"[^>]+href="([^"]+)"/g)].map(match => match[1])
 console.log(JSON.stringify({
   entry: entryMatch[1],
   mandatoryChunks: [...mandatoryChunks.keys()],
   mandatoryGzipBytes,
   mandatoryGzipBudget,
+  monacoChunk: monacoChunkNames[0],
+  monacoGzipBytes,
+  monacoGzipBudget,
   preloads,
 }, null, 2))

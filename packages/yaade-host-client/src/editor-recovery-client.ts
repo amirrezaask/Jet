@@ -80,11 +80,15 @@ export async function getEditorRecoveryBuffer(
   const response = await fetch(bufferPath(sessionId, uri), {
     signal: options.signal,
   })
+  if (response.status === 204) return null
   if (
-    response.status === 204 ||
     response.status === 404 ||
     response.headers.get("x-yaade-recovery-missing") === "1"
   ) {
+    // Drain the stream before returning. Chromium reports an otherwise-valid
+    // HTTP 200 as net::ERR_ABORTED when the caller abandons even an empty GET
+    // response body after inspecting only its headers.
+    await response.arrayBuffer()
     return null
   }
   if (!response.ok) throw await apiError(response)

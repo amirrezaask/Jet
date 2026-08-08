@@ -110,5 +110,10 @@ export async function writeTextFileHttp(
     signal: options.signal,
   })
   if (!response.ok) throw await responseError(response)
-  return resultHeaders(response)
+  const result = resultHeaders(response)
+  // A successful atomic write has an empty body, but fetch resolves once the
+  // headers arrive. Drain it so navigation/close does not report the completed
+  // PUT as net::ERR_ABORTED and so the connection is reusable.
+  await response.arrayBuffer()
+  return result
 }
