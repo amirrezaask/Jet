@@ -23,11 +23,17 @@ import {
 } from "lucide-react"
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog.js"
 
+export type WorktreeSwitcherTab = "editors" | "terminals" | "changes"
+
 export type WorktreeSwitcherProps = {
   projectPath: string
   homeDir: string
   defaultBranch: string
-  /** True when the worktree tiling view is showing. */
+  /** Project-page tab this picker owns. */
+  tab: WorktreeSwitcherTab
+  /** Button label (Editors / Terminals). */
+  label: string
+  /** True when this surface is showing. */
   active?: boolean
   /** Currently open checkout label (shown on the trigger). */
   activeLabel?: string | null
@@ -66,6 +72,8 @@ export function WorktreeSwitcher({
   projectPath,
   homeDir,
   defaultBranch,
+  tab,
+  label,
   active = false,
   activeLabel,
   activeCwdPath,
@@ -172,8 +180,9 @@ export function WorktreeSwitcher({
             variant="ghost"
             size="xs"
             data-yaade-worktree-switcher=""
-            data-yaade-project-tab="worktrees"
-            aria-label="Worktrees"
+            data-yaade-worktree-switcher-for={tab}
+            data-yaade-project-tab={tab}
+            aria-label={label}
             aria-expanded={open}
             disabled={busy}
             onPointerEnter={onIntent}
@@ -186,8 +195,8 @@ export function WorktreeSwitcher({
               active && "after:opacity-100",
             )}
           >
-            Worktrees
-            {activeLabel ? (
+            {label}
+            {active && activeLabel ? (
               <span className="hidden max-w-[7rem] truncate font-normal text-foreground/80 sm:inline">
                 · {activeLabel}
               </span>
@@ -199,6 +208,7 @@ export function WorktreeSwitcher({
           align="start"
           className="w-72 p-0"
           data-yaade-worktree-switcher-menu=""
+          data-yaade-worktree-switcher-menu-for={tab}
           onOpenAutoFocus={e => {
             e.preventDefault()
             const root = e.currentTarget as HTMLElement
@@ -262,15 +272,15 @@ export function WorktreeSwitcher({
                       </div>
                     </CommandItem>
                     {linked.map(wt => {
-                      const label = branchLabel(wt)
+                      const itemLabel = branchLabel(wt)
                       const selected = Boolean(
                         activeCwdPath && sameCheckoutPath(activeCwdPath, wt.path),
                       )
                       return (
                         <CommandItem
                           key={wt.path}
-                          value={`${label} ${wt.path}`}
-                          data-yaade-worktree-item={label}
+                          value={`${itemLabel} ${wt.path}`}
+                          data-yaade-worktree-item={itemLabel}
                           disabled={busy}
                           onSelect={() => void selectWorktree(wt)}
                           className="gap-2"
@@ -284,7 +294,7 @@ export function WorktreeSwitcher({
                           <GitBranchIcon className="size-3.5 shrink-0 text-muted-foreground" />
                           <div className="min-w-0 flex-1">
                             <span className="block truncate text-sm">
-                              {label}
+                              {itemLabel}
                             </span>
                             <span className="block truncate font-mono text-3xs text-muted-foreground">
                               {wt.path}

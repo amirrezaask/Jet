@@ -51,7 +51,7 @@ test.describe("session routing", () => {
       await expect
         .poll(
           async () =>
-            page.locator("[data-yaade-project-panel='worktree']").evaluate(el => {
+            page.locator("[data-yaade-project-panel='terminals']").evaluate(el => {
               return !el.classList.contains("invisible")
             }),
           { timeout: 5_000 },
@@ -87,7 +87,7 @@ test.describe("session routing", () => {
       await expect
         .poll(
           async () =>
-            page.locator("[data-yaade-project-panel='worktree']").evaluate(el => {
+            page.locator("[data-yaade-project-panel='terminals']").evaluate(el => {
               return !el.classList.contains("invisible")
             }),
           { timeout: 5_000 },

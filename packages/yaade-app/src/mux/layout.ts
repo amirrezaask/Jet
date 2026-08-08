@@ -203,6 +203,42 @@ export function emptyMuxTree(): YaadePanelTree {
 }
 
 /**
+ * Display-only tree of terminal leaves for the Terminals project surface.
+ * Panel ids differ from the source tree — map events back via tab id.
+ */
+export function buildTerminalOnlyDisplayTree(
+  source: YaadePanelTree,
+): YaadePanelTree {
+  const terminals = listTerminalLeaves(source)
+  const { tree, editorPanel } = YaadePanelTree.editorOnlyLayout()
+  if (terminals.length === 0) return tree
+
+  tree.setView(editorPanel, paneView(terminals[0]!.ptyTabId))
+  let focus = editorPanel
+  for (let i = 1; i < terminals.length; i++) {
+    focus = placeMuxLeafInTree(tree, terminals[i]!.ptyTabId, focus, "right")
+  }
+  return tree
+}
+
+/** Collect unique editor buffer tab ids across all editor groups. */
+export function listEditorBufferTabIds(tree: YaadePanelTree): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const leaf of listPaneLeaves(tree)) {
+    if (leaf.kind !== "editor") continue
+    const view = tree.getView(leaf.panelId)
+    if (!view || view.kind !== "tabs") continue
+    for (const tabId of panelTabIds(view)) {
+      if (!isEditorTabId(tabId) || seen.has(tabId)) continue
+      seen.add(tabId)
+      out.push(tabId)
+    }
+  }
+  return out
+}
+
+/**
  * Place a PTY that is not in this window's tree (e.g. docking another window).
  * Edge → split; center → swap with target (displaced pane stays as a sibling split).
  */

@@ -27,6 +27,7 @@ import {
 import {
   AppShell,
   ConfirmDialogHost,
+  ModalEditorTabBar,
   MuxStatusStrip,
   TabDndRoot,
   Toaster,
@@ -40,6 +41,7 @@ import {
   requestSaveDiscard,
   showYaadeToast,
   type AgentCliDriver,
+  type ModalEditorBuffer,
   type MuxStatusStripAction,
   type PaletteShellItem,
   type TabDndHandlers,
@@ -64,6 +66,7 @@ import {
   activatePanelTab,
   anyOverlayOpen,
   bind,
+  findPanelWithTab,
   gitTabId,
   isEditorTabId,
   isFileEditorTabId,
@@ -119,6 +122,7 @@ import {
   clearEditorTabsFromPanel,
   dockSourceLeavesIntoTree,
   emptyMuxTree,
+  listEditorBufferTabIds,
   listPaneLeaves,
   listTerminalLeaves,
   removePtyFromTree,
@@ -521,6 +525,9 @@ const EMPTY_KEYMAP_OVERLAYS = {
   agentChatFocus: false,
 } as const
 
+/** Project-page surface modes (embedded mux only). */
+export type MuxSurface = "agents" | "editors" | "terminals"
+
 export type MuxAppProps = {
   session: ProjectSession
   projectId: string
@@ -533,10 +540,17 @@ export type MuxAppProps = {
    * Footer (WhichKey / status) stays at the bottom of this pane.
    */
   embedded?: boolean
+  /** Project-page tab surface — filters what mux shows. */
+  surface?: MuxSurface | null
+  /** Agent leaf tab id (`yaade:terminal:…`) for the Agents surface. */
+  focusAgentTabId?: string | null
   /** One-shot action requested by the project cockpit after session hydration. */
   launchRequest?: MuxLaunchRequest | null
   /** Called after the request succeeds or fails so the caller can clear it. */
-  onLaunchRequestHandled?: (requestId: string) => void
+  onLaunchRequestHandled?: (
+    requestId: string,
+    result?: { agentTabId?: string | null },
+  ) => void
 }
 
 export type MuxLaunchAction =
@@ -559,6 +573,8 @@ export function MuxApp({
   machineHostname,
   onBackToProject,
   embedded = false,
+  surface = null,
+  focusAgentTabId = null,
   launchRequest = null,
   onLaunchRequestHandled,
 }: MuxAppProps) {
@@ -1636,9 +1652,9 @@ export function MuxApp({
 
   /** Launch a known agent CLI into the active (or empty) window. */
   const openAgentCliPane = useCallback(
-    (driver: AgentCliDriver): boolean => {
+    (driver: AgentCliDriver): string | null => {
       const w = ensureProjectWindow()
-      if (!canAddTerminalPane(w.id)) return false
+      if (!canAddTerminalPane(w.id)) return null
       const rootUri = cwdUri()
       const projectRoot = rootUri ? fileUriToPath(rootUri) : ""
       const launchContext = {
@@ -1688,7 +1704,7 @@ export function MuxApp({
           })
           .catch(() => undefined)
       }
-      return true
+      return ptyTabId
     },
     [canAddTerminalPane, cwdUri, ensureProjectWindow, updateWindow, workspace],
   )
@@ -2404,12 +2420,14 @@ export function MuxApp({
     }
 
     void (async () => {
+      let agentTabId: string | null = null
       try {
         const action = launchRequest.action
         if (action.kind === "agent") {
           const driver = AGENT_CLI_DRIVERS.find(item => item.id === action.driverId)
           if (!driver) throw new Error(`Unknown agent provider: ${action.driverId}`)
-          if (!openAgentCliPane(driver)) {
+          agentTabId = openAgentCliPane(driver)
+          if (!agentTabId) {
             showYaadeToast("Could not open another terminal pane for that agent.")
           }
         } else if (action.kind === "terminal") {
@@ -2435,7 +2453,7 @@ export function MuxApp({
           error instanceof Error ? error.message : "Could not launch that tool.",
         )
       } finally {
-        onLaunchRequestHandled?.(launchRequest.id)
+        onLaunchRequestHandled?.(launchRequest.id, { agentTabId })
       }
     })()
   }, [
@@ -3515,31 +3533,76 @@ export function MuxApp({
       null
     )
   }, [activeWindow, activeLeaves])
-  const focusedPtyTabId = useMemo(
-    () => (focusedLeaf?.kind === "terminal" ? focusedLeaf.ptyTabId : null),
-    [focusedLeaf],
-  )
+  const focusedPtyTabId = useMemo(() => {
+    if (surface === "agents" && focusAgentTabId) return focusAgentTabId
+    return focusedLeaf?.kind === "terminal" ? focusedLeaf.ptyTabId : null
+  }, [focusAgentTabId, focusedLeaf, surface])
   focusedPtyTabIdRef.current = focusedPtyTabId
+
+  // Terminals surface with an empty layout → spawn one shell immediately.
+  useEffect(() => {
+    if (surface !== "terminals") return
+    if (!layoutReady || !serverHydratedRef.current) return
+    const w = windowsRef.current.find(x => x.id === activeWindowIdRef.current)
+    if (!w) return
+    if (listTerminalLeaves(w.tree).length > 0) return
+    void openTerminalInActiveWindowRef.current("right")
+  }, [surface, layoutReady, layoutEpoch, activeWindowId])
+
+  const surfaceEditorBuffers = useMemo((): ModalEditorBuffer[] => {
+    if (!activeWindow) return []
+    const tabIds = listEditorBufferTabIds(activeWindow.tree)
+    return tabIds.map(tabId => ({
+      tabId,
+      label:
+        workspace.tabRegistry.get(tabId)?.label ?? editorLabelFromUri(tabId),
+      dirty: editorIsDirty(tabId),
+    }))
+  }, [activeWindow, editorIsDirty, layoutEpoch, workspace.tabRegistry])
+
+  const [editorsActiveTabId, setEditorsActiveTabId] = useState<string | null>(
+    null,
+  )
+  useEffect(() => {
+    if (surface !== "editors") return
+    if (
+      editorsActiveTabId &&
+      surfaceEditorBuffers.some(b => b.tabId === editorsActiveTabId)
+    ) {
+      return
+    }
+    setEditorsActiveTabId(surfaceEditorBuffers[0]?.tabId ?? null)
+  }, [editorsActiveTabId, surface, surfaceEditorBuffers])
 
   const paneBoxes = useMuxPaneBoxes(
     workspaceSurfaceRef,
     dockSurfaceRef,
-    activeWindow?.zoomedPaneId
-      ? [activeWindow.zoomedPaneId]
-      : activeLeaves.map(leaf => leaf.ptyTabId),
+    surface === "agents" || surface === "editors"
+      ? []
+      : activeWindow?.zoomedPaneId
+        ? [activeWindow.zoomedPaneId]
+        : activeLeaves.map(leaf => leaf.ptyTabId),
     layoutEpoch,
   )
   paneBoxesRef.current = paneBoxes
 
-  const slotBoxes = useMuxTerminalSlotBoxes(
-    workspaceSurfaceRef,
-    dockSurfaceRef,
-    activeWindow?.zoomedPaneId
+  const slotMeasureIds = useMemo(() => {
+    if (surface === "agents") {
+      return focusAgentTabId ? [focusAgentTabId] : []
+    }
+    if (surface === "editors") return []
+    return activeWindow?.zoomedPaneId
       ? isTerminalTabId(activeWindow.zoomedPaneId)
         ? [activeWindow.zoomedPaneId]
         : []
-      : activePtyIds,
-    layoutEpoch,
+      : activePtyIds
+  }, [activePtyIds, activeWindow?.zoomedPaneId, focusAgentTabId, surface])
+
+  const slotBoxes = useMuxTerminalSlotBoxes(
+    workspaceSurfaceRef,
+    dockSurfaceRef,
+    slotMeasureIds,
+    `${layoutEpoch}:${surface ?? "full"}:${focusAgentTabId ?? ""}`,
   )
 
   // Touch LRU when focus changes so background windows stay warm briefly.
@@ -4420,9 +4483,149 @@ export function MuxApp({
         <div
           ref={workspaceSurfaceRef}
           className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+          data-yaade-mux-surface={surface ?? "full"}
         >
-              {activeWindow ? (
-                <div ref={dockSurfaceRef} className="h-full min-h-0 w-full">
+              {surface === "agents" ? (
+                <div
+                  ref={dockSurfaceRef}
+                  className="absolute inset-0"
+                  data-yaade-project-surface="agents"
+                >
+                  {focusAgentTabId &&
+                  allPtyIds.includes(focusAgentTabId) ? (
+                    <div
+                      className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border bg-card"
+                      data-yaade-mux-pane={focusAgentTabId}
+                      data-yaade-mux-pane-kind="terminal"
+                      data-focused=""
+                    >
+                      <div
+                        className="flex h-7 shrink-0 items-center border-b border-border bg-secondary/30 px-2"
+                        data-yaade-mux-pane-chrome=""
+                      >
+                        <span
+                          className="truncate text-xs font-medium"
+                          data-yaade-mux-pane-title=""
+                          aria-label={paneTitle(focusAgentTabId)}
+                        >
+                          {paneTitle(focusAgentTabId)}
+                        </span>
+                      </div>
+                      <div
+                        className="min-h-0 flex-1 overflow-hidden"
+                        data-yaade-mux-terminal-slot={focusAgentTabId}
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid h-full place-items-center px-4 text-center text-sm text-muted-foreground">
+                      {focusAgentTabId
+                        ? "That agent is no longer running."
+                        : "Select a running agent from the Agents menu."}
+                    </div>
+                  )}
+                  {/* Keep other PTYs mounted off-screen so they survive tab flips. */}
+                  <div
+                    className="pointer-events-none absolute size-0 overflow-hidden"
+                    aria-hidden
+                  >
+                    {allPtyIds
+                      .filter(id => id !== focusAgentTabId)
+                      .map(id => (
+                        <div key={id} data-yaade-mux-terminal-slot={id} />
+                      ))}
+                  </div>
+                </div>
+              ) : surface === "editors" ? (
+                <div
+                  ref={dockSurfaceRef}
+                  className="absolute inset-0 flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card"
+                  data-yaade-project-surface="editors"
+                >
+                  {surfaceEditorBuffers.length > 0 && editorsActiveTabId ? (
+                    <>
+                      <div className="flex h-7 shrink-0 items-center border-b border-border bg-secondary/30 px-1">
+                        <ModalEditorTabBar
+                          buffers={surfaceEditorBuffers}
+                          activeTabId={editorsActiveTabId}
+                          onActivateBuffer={tabId => {
+                            setEditorsActiveTabId(tabId)
+                            if (!activeWindow) return
+                            const panelId = findPanelWithTab(
+                              activeWindow.tree,
+                              tabId,
+                            )
+                            if (panelId) {
+                              activateEditorTab(activeWindow.id, panelId, tabId)
+                            }
+                          }}
+                          onCloseBuffer={tabId => {
+                            if (!activeWindow) return
+                            const panelId = findPanelWithTab(
+                              activeWindow.tree,
+                              tabId,
+                            )
+                            if (panelId) {
+                              void closeEditorTab(
+                                activeWindow.id,
+                                panelId,
+                                tabId,
+                              )
+                            }
+                          }}
+                          className="min-h-0 w-full"
+                        />
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-hidden">
+                        {(() => {
+                          const panelId =
+                            findPanelWithTab(
+                              activeWindow!.tree,
+                              editorsActiveTabId,
+                            ) ??
+                            listPaneLeaves(activeWindow!.tree).find(
+                              l => l.kind === "editor",
+                            )?.panelId
+                          if (!panelId) return null
+                          return renderEditor(
+                            editorsActiveTabId,
+                            panelId,
+                            true,
+                          )
+                        })()}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="grid h-full place-items-center gap-3 px-4 text-center">
+                      <p className="text-sm text-muted-foreground">
+                        No open editors in this worktree.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setQuickOpenOpen(true)}
+                      >
+                        Open file…
+                      </Button>
+                    </div>
+                  )}
+                  <div
+                    className="pointer-events-none absolute size-0 overflow-hidden"
+                    aria-hidden
+                  >
+                    {allPtyIds.map(id => (
+                      <div key={id} data-yaade-mux-terminal-slot={id} />
+                    ))}
+                  </div>
+                </div>
+              ) : activeWindow ? (
+                <div
+                  ref={dockSurfaceRef}
+                  className="h-full min-h-0 w-full"
+                  data-yaade-project-surface={
+                    surface === "terminals" ? "terminals" : undefined
+                  }
+                >
                 <MuxWindowView
                   key={activeWindow.id}
                   tree={activeWindow.tree}

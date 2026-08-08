@@ -9,6 +9,7 @@ import {
 import type { HqAgentSummary, HqProjectSummary } from "@yaade/rpc"
 import { pathToFileUri } from "@yaade/shared"
 import type { AgentCliDriver } from "@yaade/ui/agent-picker"
+import { ConfirmDialogHost, requestConfirm } from "@yaade/ui"
 import { bundledThemeList } from "@yaade/ui/appearance"
 import { NotificationBell } from "@yaade/ui/notifications"
 import {
@@ -22,6 +23,11 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -83,6 +89,10 @@ import {
 } from "lucide-react"
 import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
 import { useHqOverview } from "../hooks/useHqOverview.js"
+import {
+  loadProjectSession,
+  saveProjectSessionPayload,
+} from "../project-session-client.js"
 import { useSystemSignals } from "../system-signals/SystemSignalsProvider.js"
 import { filterHqAgents, type HqAgentFilter } from "./hq-model.js"
 
@@ -320,6 +330,55 @@ export function HqPage({
     await overview.refresh()
   }
 
+  const killAgent = useCallback(
+    async (agent: HqAgentSummary) => {
+      const ok = await requestConfirm({
+        title: `Kill ${agent.title}?`,
+        description:
+          "The agent process will be stopped. Opening the workspace later will not respawn it.",
+        confirmLabel: "Kill agent",
+        cancelLabel: "Keep running",
+        destructive: true,
+      })
+      if (!ok) return
+
+      await window.yaade?.terminal?.dispose(agent.ptyId)
+
+      // Strip launch metadata so a later mux attach does not recreate the CLI.
+      if (!agent.sessionId.startsWith("pty:")) {
+        try {
+          const session = await loadProjectSession(agent.projectSessionId)
+          const sessions = session.payload.sessions.map(leaf => {
+            if (
+              leaf.ptyTabId !== agent.sessionId &&
+              leaf.ptyId !== agent.ptyId
+            ) {
+              return leaf
+            }
+            return {
+              ptyTabId: leaf.ptyTabId,
+              cwdRootUri: leaf.cwdRootUri,
+              ...(leaf.liveCwdUri ? { liveCwdUri: leaf.liveCwdUri } : {}),
+              ...(leaf.label ? { label: leaf.label } : {}),
+            }
+          })
+          await saveProjectSessionPayload(agent.projectSessionId, {
+            ...session.payload,
+            sessions,
+          })
+        } catch {
+          /* dispose already ran; HQ refresh still drops the live row */
+        }
+      }
+
+      setSelectedAgent(current =>
+        current?.sessionId === agent.sessionId ? null : current,
+      )
+      await overview.refresh()
+    },
+    [overview.refresh],
+  )
+
   if (overview.loading && !snapshot) {
     return <HqSkeleton />
   }
@@ -555,6 +614,7 @@ export function HqPage({
                         rootPath: agent.projectPath,
                       })
                     }
+                    onKill={agent => void killAgent(agent)}
                   />
                 </div>
               </section>
@@ -685,6 +745,8 @@ export function HqPage({
             />
           </Suspense>
         ) : null}
+
+        <ConfirmDialogHost />
       </div>
     </TooltipProvider>
   )
@@ -736,6 +798,7 @@ function AgentTable({
   onLaunch,
   onOpen,
   onOpenProject,
+  onKill,
 }: {
   agents: readonly HqAgentSummary[]
   totalAgents: number
@@ -743,6 +806,7 @@ function AgentTable({
   onLaunch: () => void
   onOpen: (agent: HqAgentSummary) => void
   onOpenProject: (agent: HqAgentSummary) => void
+  onKill: (agent: HqAgentSummary) => void
 }) {
   if (agents.length === 0) {
     return (
@@ -796,77 +860,96 @@ function AgentTable({
         </TableHeader>
         <TableBody>
           {agents.map(agent => (
-            <TableRow
-              key={`${agent.sessionId}:${agent.ptyId}`}
-              data-yaade-list-item
-              data-yaade-hq-agent={agent.sessionId}
-              className="shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              tabIndex={0}
-              onClick={() => onOpen(agent)}
-              onKeyDown={event => {
-                if (event.key !== "Enter" && event.key !== " ") return
-                event.preventDefault()
-                onOpen(agent)
-              }}
-            >
-              <TableCell>
-                <div className="min-w-44">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="max-w-full justify-start"
-                    onClick={event => {
-                      event.stopPropagation()
-                      onOpen(agent)
-                    }}
-                  >
-                    <Bot data-icon="inline-start" />
-                    <span className="truncate">{agent.title}</span>
-                  </Button>
-                  <div className="flex max-w-64 items-center gap-2 px-2">
-                    <Badge variant="outline">{agent.provider}</Badge>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {agent.projectSessionTitle}
-                    </span>
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell>
-                <Button
-                  size="sm"
-                  variant="link"
-                  onClick={event => {
-                    event.stopPropagation()
-                    onOpenProject(agent)
+            <ContextMenu key={`${agent.sessionId}:${agent.ptyId}`}>
+              <ContextMenuTrigger asChild>
+                <TableRow
+                  data-yaade-list-item
+                  data-yaade-hq-agent={agent.sessionId}
+                  className="shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  tabIndex={0}
+                  onClick={() => onOpen(agent)}
+                  onKeyDown={event => {
+                    if (event.key !== "Enter" && event.key !== " ") return
+                    event.preventDefault()
+                    onOpen(agent)
                   }}
                 >
-                  <span className="max-w-40 truncate">{agent.projectName}</span>
-                </Button>
-              </TableCell>
-              <TableCell className="hidden max-w-80 lg:table-cell">
-                <p className="truncate">{agent.activity}</p>
-                {agent.currentTool ? (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {agent.currentTool.name}
-                  </p>
-                ) : null}
-              </TableCell>
-              <TableCell>
-                <Badge variant={statusVariant(agent)} className="capitalize">
-                  {statusLabel(agent)}
-                </Badge>
-              </TableCell>
-              <TableCell className="hidden font-mono md:table-cell">
-                {formatRuntime(agent.runtimeMs)}
-              </TableCell>
-              <TableCell className="text-right">
-                {agent.unreadCount > 0 ? (
-                  <Badge>{agent.unreadCount}</Badge>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
-            </TableRow>
+                  <TableCell>
+                    <div className="min-w-44">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="max-w-full justify-start"
+                        onClick={event => {
+                          event.stopPropagation()
+                          onOpen(agent)
+                        }}
+                      >
+                        <Bot data-icon="inline-start" />
+                        <span className="truncate">{agent.title}</span>
+                      </Button>
+                      <div className="flex max-w-64 items-center gap-2 px-2">
+                        <Badge variant="outline">{agent.provider}</Badge>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {agent.projectSessionTitle}
+                        </span>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="link"
+                      onClick={event => {
+                        event.stopPropagation()
+                        onOpenProject(agent)
+                      }}
+                    >
+                      <span className="max-w-40 truncate">{agent.projectName}</span>
+                    </Button>
+                  </TableCell>
+                  <TableCell className="hidden max-w-80 lg:table-cell">
+                    <p className="truncate">{agent.activity}</p>
+                    {agent.currentTool ? (
+                      <p className="truncate text-xs text-muted-foreground">
+                        {agent.currentTool.name}
+                      </p>
+                    ) : null}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant(agent)} className="capitalize">
+                      {statusLabel(agent)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="hidden font-mono md:table-cell">
+                    {formatRuntime(agent.runtimeMs)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {agent.unreadCount > 0 ? (
+                      <Badge>{agent.unreadCount}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              </ContextMenuTrigger>
+              <ContextMenuContent data-yaade-hq-agent-context-menu="">
+                <ContextMenuItem onSelect={() => onOpen(agent)}>
+                  Open
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => onOpenProject(agent)}>
+                  Open project
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  variant="destructive"
+                  data-yaade-hq-agent-kill=""
+                  onSelect={() => onKill(agent)}
+                >
+                  Kill agent
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           ))}
         </TableBody>
       </Table>

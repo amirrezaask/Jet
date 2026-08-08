@@ -7,7 +7,11 @@ import {
   useRef,
   useState,
 } from "react"
-import type { ProjectSession, ProjectSessionSummary } from "@yaade/rpc"
+import type {
+  HqAgentSummary,
+  ProjectSession,
+  ProjectSessionSummary,
+} from "@yaade/rpc"
 import { pathToFileUri, type GitCommit } from "@yaade/shared"
 import {
   AppShell,
@@ -24,11 +28,13 @@ import { showYaadeToast, Toaster } from "@yaade/ui/toast"
 import { NotificationBell } from "@yaade/ui/notifications"
 import { House, SettingsIcon } from "lucide-react"
 import { useAppearanceSettings } from "../hooks/useAppearanceSettings.js"
+import { useHqOverview } from "../hooks/useHqOverview.js"
 import { useSystemSignals } from "../system-signals/SystemSignalsProvider.js"
 import { preloadMuxApp } from "../mux/preload.js"
 import type {
   MuxLaunchAction,
   MuxLaunchRequest,
+  MuxSurface,
 } from "../mux/MuxApp.js"
 import { workspaceDocumentTitle } from "../url-workspace.js"
 import {
@@ -39,9 +45,11 @@ import {
   clearHqAgentLaunch,
   peekHqAgentLaunch,
 } from "./hq-agent-launch.js"
+import { AgentSwitcher } from "./AgentSwitcher.js"
 import { ProjectOverview } from "./ProjectOverview.js"
 import { ProjectPathSwitcher } from "./ProjectPathSwitcher.js"
 import { WorktreeSwitcher } from "./WorktreeSwitcher.js"
+import { isAccessibleHqAgent } from "../hq/hq-model.js"
 
 const GitWorkspace = lazy(() =>
   import("@yaade/ui/git").then(m => ({ default: m.GitWorkspace })),
@@ -49,6 +57,11 @@ const GitWorkspace = lazy(() =>
 const CommitChangesDialog = lazy(() =>
   import("@yaade/ui/commit-changes").then(m => ({
     default: m.CommitChangesDialog,
+  })),
+)
+const AgentCliPickerOverlay = lazy(() =>
+  import("@yaade/ui/agent-picker").then(m => ({
+    default: m.AgentCliPickerOverlay,
   })),
 )
 
@@ -69,7 +82,7 @@ export type ProjectPageProps = {
   projectPath: string
   homeDir: string
   machineHostname: string
-  /** Active session — tiling workspace renders in-page when set. */
+  /** Active session — surface workspace renders in-page when set. */
   session: ProjectSession | null
   /** One-shot launch requested from HQ before navigating into this project. */
   agentLaunchIntent?: {
@@ -77,16 +90,57 @@ export type ProjectPageProps = {
     driverId: Extract<MuxLaunchAction, { kind: "agent" }>["driverId"]
   } | null
   onAgentLaunchIntentHandled?: (intentId: string) => void
+  /** Focus a specific agent leaf when opening from HQ agent list. */
+  initialAgentFocusTabId?: string | null
+  onInitialAgentFocusHandled?: () => void
   onOpenSession: (sessionId: string) => Promise<void>
-  /** Clear the active session (leave worktree view, keep project chrome). */
+  /** Clear the active session (leave surface view, keep project chrome). */
   onClearSession?: () => void
   onNavigateProject: (absolutePath: string) => void
   onOpenHq: () => void
   listSessions: () => Promise<ProjectSessionSummary[]>
 }
 
-/** Visible tabs are Overview / History; an active session renders the workspace view. */
-type ProjectView = "overview" | "history" | "worktree"
+type ProjectView =
+  | "overview"
+  | "history"
+  | "agents"
+  | "editors"
+  | "terminals"
+  | "changes"
+
+type ChangesCheckout = {
+  cwdPath: string
+  label: string
+}
+
+function isSurfaceView(view: ProjectView): view is MuxSurface {
+  return view === "agents" || view === "editors" || view === "terminals"
+}
+
+function surfaceForView(view: ProjectView): MuxSurface | null {
+  return isSurfaceView(view) ? view : null
+}
+
+function checkoutLabel(
+  session: ProjectSession | null,
+  projectPath: string,
+): string | null {
+  if (!session) return null
+  return (
+    session.worktreeBranch ??
+    (session.cwdPath === projectPath ? "Main" : session.title)
+  )
+}
+
+function changesCheckoutLabel(
+  checkout: ChangesCheckout | null,
+  projectPath: string,
+): string | null {
+  if (!checkout) return null
+  if (checkout.cwdPath === projectPath) return "Main"
+  return checkout.label
+}
 
 export function ProjectPage({
   projectId,
@@ -97,6 +151,8 @@ export function ProjectPage({
   session,
   agentLaunchIntent = null,
   onAgentLaunchIntentHandled,
+  initialAgentFocusTabId = null,
+  onInitialAgentFocusHandled,
   onOpenSession,
   onClearSession,
   onNavigateProject,
@@ -104,6 +160,7 @@ export function ProjectPage({
   listSessions,
 }: ProjectPageProps) {
   const notifications = useSystemSignals()
+  const hq = useHqOverview()
   const {
     appearanceSettings,
     setAppearanceSettings,
@@ -111,12 +168,20 @@ export function ProjectPage({
     resetAppearanceSettings,
   } = useAppearanceSettings()
   const [view, setView] = useState<ProjectView>(
-    session ? "worktree" : "overview",
+    session ? "terminals" : "overview",
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyMounted, setHistoryMounted] = useState(false)
+  const [changesMounted, setChangesMounted] = useState(false)
+  const [changesCheckout, setChangesCheckout] = useState<ChangesCheckout | null>(
+    null,
+  )
   const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null)
   const [defaultBranch, setDefaultBranch] = useState("main")
+  const [focusAgentTabId, setFocusAgentTabId] = useState<string | null>(
+    initialAgentFocusTabId,
+  )
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false)
   // Seed from the module queue so StrictMode remounts still see the HQ intent.
   const [launchRequest, setLaunchRequest] = useState<MuxLaunchRequest | null>(
     () => {
@@ -130,8 +195,35 @@ export function ProjectPage({
     },
   )
   const launchSequenceRef = useRef(0)
+  const preferredSurfaceRef = useRef<MuxSurface | null>(
+    session ? "terminals" : null,
+  )
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
   const title = workspaceDocumentTitle(projectPath, homeDir)
+
+  const projectAgents = useMemo(
+    () =>
+      (hq.snapshot?.agents ?? []).filter(
+        agent =>
+          (agent.projectId === projectId || agent.projectPath === projectPath) &&
+          isAccessibleHqAgent(agent),
+      ),
+    [hq.snapshot?.agents, projectId, projectPath],
+  )
+
+  const activeAgent = useMemo(
+    () =>
+      focusAgentTabId
+        ? (projectAgents.find(a => a.sessionId === focusAgentTabId) ?? null)
+        : null,
+    [focusAgentTabId, projectAgents],
+  )
+
+  useEffect(() => {
+    if (!focusAgentTabId) return
+    if (projectAgents.some(agent => agent.sessionId === focusAgentTabId)) return
+    setFocusAgentTabId(null)
+  }, [focusAgentTabId, projectAgents])
 
   useEffect(() => {
     document.title = title
@@ -140,6 +232,8 @@ export function ProjectPage({
   useEffect(() => {
     setSelectedCommit(null)
     setDefaultBranch("main")
+    setChangesCheckout(null)
+    setChangesMounted(false)
   }, [projectPath])
 
   useEffect(() => {
@@ -157,19 +251,39 @@ export function ProjectPage({
     }
   }, [rootUri])
 
-  // Opening / restoring a session shows the in-page tiling workspace.
+  // Opening / restoring a session shows the preferred surface (default Terminals).
   useEffect(() => {
-    if (session) setView("worktree")
-    else setView(current => (current === "worktree" ? "overview" : current))
+    if (session) {
+      const preferred = preferredSurfaceRef.current ?? "terminals"
+      setView(current =>
+        current === "overview" || current === "history" ? preferred : current,
+      )
+    } else {
+      preferredSurfaceRef.current = null
+      setFocusAgentTabId(null)
+      setView(current => (isSurfaceView(current) ? "overview" : current))
+    }
   }, [session?.id]) // eslint-disable-line react-hooks/exhaustive-deps -- session identity only
 
-  const handleSelectCheckout = useCallback(
-    async (input: {
-      cwdPath: string
-      title?: string
-      worktreeBranch?: string | null
-      worktreePath?: string | null
-    }) => {
+  useEffect(() => {
+    if (!initialAgentFocusTabId) return
+    preferredSurfaceRef.current = "agents"
+    setFocusAgentTabId(initialAgentFocusTabId)
+    setView("agents")
+    onInitialAgentFocusHandled?.()
+  }, [initialAgentFocusTabId, onInitialAgentFocusHandled])
+
+  const openCheckoutForSurface = useCallback(
+    async (
+      surface: MuxSurface,
+      input: {
+        cwdPath: string
+        title?: string
+        worktreeBranch?: string | null
+        worktreePath?: string | null
+      },
+    ) => {
+      preferredSurfaceRef.current = surface
       const muxReady = preloadMuxApp()
       const next = await openCheckoutSession({
         rootPath: projectPath,
@@ -179,28 +293,75 @@ export function ProjectPage({
         worktreePath: input.worktreePath,
       })
       await muxReady
-      setView("worktree")
+      setView(surface)
       await onOpenSession(next.id)
     },
     [onOpenSession, projectPath],
   )
 
+  const handleSelectCheckout = useCallback(
+    async (
+      surface: "editors" | "terminals",
+      input: {
+        cwdPath: string
+        title?: string
+        worktreeBranch?: string | null
+        worktreePath?: string | null
+      },
+    ) => {
+      try {
+        await openCheckoutForSurface(surface, input)
+      } catch (error) {
+        showYaadeToast(
+          error instanceof Error ? error.message : "Could not open the workspace.",
+          { variant: "destructive" },
+        )
+      }
+    },
+    [openCheckoutForSurface],
+  )
+
   const handleCreateWorktree = useCallback(
-    async (input: { branch: string; baseRef?: string }) => {
-      const muxReady = preloadMuxApp()
-      const created = await createProjectSession({
-        rootPath: projectPath,
-        title: input.branch,
-        worktree: {
-          branch: input.branch,
-          baseRef: input.baseRef,
-        },
-      })
-      await muxReady
-      setView("worktree")
-      await onOpenSession(created.id)
+    async (
+      surface: "editors" | "terminals",
+      input: { branch: string; baseRef?: string },
+    ) => {
+      preferredSurfaceRef.current = surface
+      try {
+        const muxReady = preloadMuxApp()
+        const created = await createProjectSession({
+          rootPath: projectPath,
+          title: input.branch,
+          worktree: {
+            branch: input.branch,
+            baseRef: input.baseRef,
+          },
+        })
+        await muxReady
+        setView(surface)
+        await onOpenSession(created.id)
+      } catch (error) {
+        showYaadeToast(
+          error instanceof Error
+            ? error.message
+            : "Could not create the worktree.",
+          { variant: "destructive" },
+        )
+      }
     },
     [onOpenSession, projectPath],
+  )
+
+  const handleSelectAgent = useCallback(
+    async (agent: HqAgentSummary) => {
+      preferredSurfaceRef.current = "agents"
+      setFocusAgentTabId(agent.sessionId)
+      const muxReady = preloadMuxApp()
+      await muxReady
+      setView("agents")
+      await onOpenSession(agent.projectSessionId)
+    },
+    [onOpenSession],
   )
 
   const handleLaunchAction = useCallback(
@@ -211,12 +372,22 @@ export function ProjectPage({
         action,
       }
       setLaunchRequest(request)
+      const surface: MuxSurface =
+        action.kind === "agent"
+          ? "agents"
+          : action.kind === "editor"
+            ? "editors"
+            : "terminals"
+      preferredSurfaceRef.current = surface
       try {
         if (session) {
-          setView("worktree")
+          setView(surface)
           return
         }
-        await handleSelectCheckout({ cwdPath: projectPath, title: "Main" })
+        await openCheckoutForSurface(surface, {
+          cwdPath: projectPath,
+          title: "Main",
+        })
       } catch (error) {
         setLaunchRequest(current => (current?.id === request.id ? null : current))
         showYaadeToast(
@@ -225,22 +396,25 @@ export function ProjectPage({
         )
       }
     },
-    [handleSelectCheckout, projectPath, session],
+    [openCheckoutForSurface, projectPath, session],
   )
 
   const handleLaunchRequestHandled = useCallback(
-    (requestId: string) => {
+    (requestId: string, result?: { agentTabId?: string | null }) => {
       clearHqAgentLaunch(requestId)
       setLaunchRequest(current => (current?.id === requestId ? null : current))
       onAgentLaunchIntentHandled?.(requestId)
+      if (result?.agentTabId) {
+        setFocusAgentTabId(result.agentTabId)
+        setView("agents")
+        preferredSurfaceRef.current = "agents"
+      }
     },
     [onAgentLaunchIntentHandled],
   )
 
   // HQ launch intents must survive StrictMode remounts. Keep the stable intent
-  // id on `launchRequest` and only clear after Mux confirms the pane opened —
-  // clearing in a `.finally()` here used to drop the intent while the session
-  // open was in flight, leaving the user on an empty worktree.
+  // id on `launchRequest` and only clear after Mux confirms the pane opened.
   useEffect(() => {
     const queued = peekHqAgentLaunch(projectId)
     const intent =
@@ -250,40 +424,42 @@ export function ProjectPage({
         : null)
     if (!intent) return
 
+    preferredSurfaceRef.current = "agents"
     setLaunchRequest({
       id: intent.id,
       action: { kind: "agent", driverId: intent.driverId },
     })
 
     if (session) {
-      setView("worktree")
+      setView("agents")
       return
     }
 
     let cancelled = false
-    void handleSelectCheckout({ cwdPath: projectPath, title: "Main" }).catch(
-      error => {
-        if (cancelled) return
-        clearHqAgentLaunch(intent.id)
-        setLaunchRequest(current =>
-          current?.id === intent.id ? null : current,
-        )
-        onAgentLaunchIntentHandled?.(intent.id)
-        showYaadeToast(
-          error instanceof Error
-            ? error.message
-            : "Could not open the workspace for agent launch.",
-          { variant: "destructive" },
-        )
-      },
-    )
+    void openCheckoutForSurface("agents", {
+      cwdPath: projectPath,
+      title: "Main",
+    }).catch(error => {
+      if (cancelled) return
+      clearHqAgentLaunch(intent.id)
+      setLaunchRequest(current =>
+        current?.id === intent.id ? null : current,
+      )
+      onAgentLaunchIntentHandled?.(intent.id)
+      showYaadeToast(
+        error instanceof Error
+          ? error.message
+          : "Could not open the workspace for agent launch.",
+        { variant: "destructive" },
+      )
+    })
     return () => {
       cancelled = true
     }
   }, [
     agentLaunchIntent,
-    handleSelectCheckout,
     onAgentLaunchIntentHandled,
+    openCheckoutForSurface,
     projectId,
     projectPath,
     session,
@@ -291,12 +467,62 @@ export function ProjectPage({
 
   const handleResumeSession = useCallback(
     async (sessionId: string) => {
+      preferredSurfaceRef.current = "terminals"
       const muxReady = preloadMuxApp()
       await muxReady
-      setView("worktree")
+      setView("terminals")
       await onOpenSession(sessionId)
     },
     [onOpenSession],
+  )
+
+  const handleSelectChangesCheckout = useCallback(
+    async (input: {
+      cwdPath: string
+      title?: string
+      worktreeBranch?: string | null
+      worktreePath?: string | null
+    }) => {
+      setChangesCheckout({
+        cwdPath: input.cwdPath,
+        label:
+          input.worktreeBranch ??
+          input.title ??
+          (input.cwdPath === projectPath ? "Main" : input.cwdPath),
+      })
+      setChangesMounted(true)
+      setView("changes")
+    },
+    [projectPath],
+  )
+
+  const handleCreateChangesWorktree = useCallback(
+    async (input: { branch: string; baseRef?: string }) => {
+      try {
+        const created = await createProjectSession({
+          rootPath: projectPath,
+          title: input.branch,
+          worktree: {
+            branch: input.branch,
+            baseRef: input.baseRef,
+          },
+        })
+        setChangesCheckout({
+          cwdPath: created.cwdPath,
+          label: created.worktreeBranch ?? created.title,
+        })
+        setChangesMounted(true)
+        setView("changes")
+      } catch (error) {
+        showYaadeToast(
+          error instanceof Error
+            ? error.message
+            : "Could not create the worktree.",
+          { variant: "destructive" },
+        )
+      }
+    },
+    [projectPath],
   )
 
   const showHistory = useCallback(() => {
@@ -304,8 +530,26 @@ export function ProjectPage({
     setView("history")
   }, [])
 
-  // Radix Tabs only knows Overview / History; worktree view leaves both inactive.
-  const tabsValue = view === "worktree" ? "none" : view
+  const showChanges = useCallback(() => {
+    setChangesMounted(true)
+    if (!changesCheckout) {
+      setChangesCheckout({ cwdPath: projectPath, label: "Main" })
+    }
+    setView("changes")
+  }, [changesCheckout, projectPath])
+
+  const surface = surfaceForView(view)
+  const muxSurface: MuxSurface =
+    surface ?? preferredSurfaceRef.current ?? "terminals"
+  const tabsValue =
+    view === "overview" || view === "history" ? view : "none"
+  const sessionCheckoutLabel = checkoutLabel(session, projectPath)
+  const changesLabel = changesCheckoutLabel(changesCheckout, projectPath)
+  const changesRootUri = useMemo(
+    () =>
+      pathToFileUri(changesCheckout?.cwdPath ?? projectPath),
+    [changesCheckout?.cwdPath, projectPath],
+  )
 
   return (
     <AppShell>
@@ -350,26 +594,6 @@ export function ProjectPage({
                 >
                   Overview
                 </TabsTrigger>
-              </TabsList>
-              <WorktreeSwitcher
-                projectPath={projectPath}
-                homeDir={homeDir}
-                defaultBranch={defaultBranch}
-                active={view === "worktree" && session != null}
-                activeLabel={
-                  session
-                    ? (session.worktreeBranch ??
-                      (session.cwdPath === projectPath
-                        ? "Main"
-                        : session.title))
-                    : null
-                }
-                activeCwdPath={session?.cwdPath ?? null}
-                onIntent={() => void preloadMuxApp()}
-                onSelectCheckout={handleSelectCheckout}
-                onCreateWorktree={handleCreateWorktree}
-              />
-              <TabsList variant="line" className="h-6 gap-0 p-0">
                 <TabsTrigger
                   value="history"
                   data-yaade-project-tab="history"
@@ -378,6 +602,77 @@ export function ProjectPage({
                   History
                 </TabsTrigger>
               </TabsList>
+              <AgentSwitcher
+                agents={projectAgents}
+                loading={hq.loading && !hq.snapshot}
+                error={hq.error}
+                active={view === "agents"}
+                activeAgentTabId={focusAgentTabId}
+                activeLabel={activeAgent?.title ?? null}
+                onIntent={() => {
+                  void preloadMuxApp()
+                  void hq.refresh()
+                }}
+                onOpenChange={open => {
+                  if (open) void hq.refresh()
+                }}
+                onSelectAgent={handleSelectAgent}
+                onLaunchAgent={() => setAgentPickerOpen(true)}
+              />
+              <WorktreeSwitcher
+                tab="editors"
+                label="Editors"
+                projectPath={projectPath}
+                homeDir={homeDir}
+                defaultBranch={defaultBranch}
+                active={view === "editors" && session != null}
+                activeLabel={
+                  view === "editors" ? sessionCheckoutLabel : null
+                }
+                activeCwdPath={
+                  view === "editors" ? (session?.cwdPath ?? null) : null
+                }
+                onIntent={() => void preloadMuxApp()}
+                onSelectCheckout={input =>
+                  handleSelectCheckout("editors", input)
+                }
+                onCreateWorktree={input =>
+                  handleCreateWorktree("editors", input)
+                }
+              />
+              <WorktreeSwitcher
+                tab="terminals"
+                label="Terminals"
+                projectPath={projectPath}
+                homeDir={homeDir}
+                defaultBranch={defaultBranch}
+                active={view === "terminals" && session != null}
+                activeLabel={
+                  view === "terminals" ? sessionCheckoutLabel : null
+                }
+                activeCwdPath={
+                  view === "terminals" ? (session?.cwdPath ?? null) : null
+                }
+                onIntent={() => void preloadMuxApp()}
+                onSelectCheckout={input =>
+                  handleSelectCheckout("terminals", input)
+                }
+                onCreateWorktree={input =>
+                  handleCreateWorktree("terminals", input)
+                }
+              />
+              <WorktreeSwitcher
+                tab="changes"
+                label="Changes"
+                projectPath={projectPath}
+                homeDir={homeDir}
+                defaultBranch={defaultBranch}
+                active={view === "changes"}
+                activeLabel={view === "changes" ? changesLabel : null}
+                activeCwdPath={changesCheckout?.cwdPath ?? null}
+                onSelectCheckout={handleSelectChangesCheckout}
+                onCreateWorktree={handleCreateChangesWorktree}
+              />
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               <NotificationBell
@@ -449,14 +744,63 @@ export function ProjectPage({
               </div>
             ) : null}
 
+            {changesMounted ? (
+              <div
+                className={cn(
+                  "absolute inset-0 overflow-hidden",
+                  view !== "changes" && "pointer-events-none invisible",
+                )}
+                aria-hidden={view !== "changes"}
+                data-yaade-project-panel="changes"
+              >
+                <Suspense
+                  fallback={
+                    <div
+                      className="grid h-full place-items-center text-xs text-muted-foreground"
+                      role="status"
+                    >
+                      Loading changes…
+                    </div>
+                  }
+                >
+                  <GitWorkspace
+                    key={changesCheckout?.cwdPath ?? projectPath}
+                    rootUri={changesRootUri}
+                    theme={activeTheme}
+                    initialView="changes"
+                    onOpenFile={() => undefined}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+
+            {view === "changes" && !changesMounted ? (
+              <div
+                className="absolute inset-0 grid place-items-center overflow-hidden"
+                data-yaade-project-panel="changes"
+              >
+                <div className="max-w-sm px-4 text-center text-sm text-muted-foreground">
+                  <p>Pick a worktree from Changes to review its diff.</p>
+                  <Button
+                    className="mt-3"
+                    variant="secondary"
+                    size="sm"
+                    onClick={showChanges}
+                  >
+                    Open Main changes
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             {session ? (
               <div
                 className={cn(
                   "absolute inset-0 overflow-hidden",
-                  view !== "worktree" && "pointer-events-none invisible",
+                  !isSurfaceView(view) && "pointer-events-none invisible",
                 )}
-                aria-hidden={view !== "worktree"}
-                data-yaade-project-panel="worktree"
+                aria-hidden={!isSurfaceView(view)}
+                data-yaade-project-panel={muxSurface}
               >
                 <Suspense
                   fallback={
@@ -476,11 +820,47 @@ export function ProjectPage({
                     homeDir={homeDir}
                     machineHostname={machineHostname}
                     embedded
+                    surface={muxSurface}
+                    focusAgentTabId={
+                      muxSurface === "agents" ? focusAgentTabId : null
+                    }
                     onBackToProject={onClearSession}
                     launchRequest={launchRequest}
                     onLaunchRequestHandled={handleLaunchRequestHandled}
                   />
                 </Suspense>
+              </div>
+            ) : null}
+
+            {view === "agents" && !session ? (
+              <div
+                className="absolute inset-0 grid place-items-center overflow-hidden"
+                data-yaade-project-panel="agents"
+              >
+                <div className="max-w-sm px-4 text-center text-sm text-muted-foreground">
+                  <p>Select a running agent from the Agents menu, or launch one.</p>
+                  <Button
+                    className="mt-3"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setAgentPickerOpen(true)}
+                  >
+                    Launch agent…
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {(view === "editors" || view === "terminals") && !session ? (
+              <div
+                className="absolute inset-0 grid place-items-center overflow-hidden"
+                data-yaade-project-panel={view}
+              >
+                <p className="max-w-sm px-4 text-center text-sm text-muted-foreground">
+                  {view === "editors"
+                    ? "Pick a worktree from Editors to open files."
+                    : "Pick a worktree from Terminals to open a shell."}
+                </p>
               </div>
             ) : null}
           </div>
@@ -496,6 +876,19 @@ export function ProjectPage({
             onSettingsChange={setAppearanceSettings}
             themes={bundledThemeList}
             onReset={resetAppearanceSettings}
+          />
+        </Suspense>
+      ) : null}
+
+      {agentPickerOpen ? (
+        <Suspense fallback={null}>
+          <AgentCliPickerOverlay
+            open={agentPickerOpen}
+            onOpenChange={setAgentPickerOpen}
+            onSelect={driver => {
+              setAgentPickerOpen(false)
+              void handleLaunchAction({ kind: "agent", driverId: driver.id })
+            }}
           />
         </Suspense>
       ) : null}

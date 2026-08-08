@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { HqAgentSummary } from "@yaade/rpc"
-import { filterHqAgents, sortHqAgents } from "./hq-model.js"
+import { filterHqAgents, isAccessibleHqAgent, sortHqAgents } from "./hq-model.js"
 
 function agent(
   sessionId: string,
@@ -70,6 +70,27 @@ describe("HQ agent workload model", () => {
         item => item.sessionId,
       ),
       ["b"],
+    )
+  })
+
+  it("hides agents whose process is no longer accessible", () => {
+    assert.equal(isAccessibleHqAgent(agent("live")), true)
+    assert.equal(isAccessibleHqAgent(agent("done", { status: "completed" })), false)
+    assert.equal(isAccessibleHqAgent(agent("dead", { status: "terminated" })), false)
+    assert.equal(isAccessibleHqAgent(agent("fail", { status: "failed" })), false)
+    assert.equal(
+      isAccessibleHqAgent(agent("gone", { status: "disconnected" })),
+      false,
+    )
+    assert.deepEqual(
+      filterHqAgents(
+        [
+          agent("live", { status: "idle" }),
+          agent("done", { status: "completed" }),
+        ],
+        { query: "", projectId: "", filter: "all" },
+      ).map(item => item.sessionId),
+      ["live"],
     )
   })
 })

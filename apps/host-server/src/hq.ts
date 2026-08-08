@@ -79,6 +79,22 @@ function snapshotAttention(
   return null
 }
 
+/** Agent CLI finished — hide even if a shell PTY is still running. */
+function agentProcessAccessible(
+  snapshot: Omit<AgentSessionSnapshot, "_internal"> | null | undefined,
+): boolean {
+  if (!snapshot) return true
+  switch (snapshot.status) {
+    case "completed":
+    case "failed":
+    case "terminated":
+    case "disconnected":
+      return false
+    default:
+      return true
+  }
+}
+
 function availability(
   rootPath: string,
   allowedRoots: string[],
@@ -147,6 +163,7 @@ export function buildHqSnapshot(runtime: HostRuntime): HqSnapshot {
       if (!project) continue
       const sessionId = leaf.ptyTabId
       const snapshot = runtime.agents.getSnapshot(sessionId)
+      if (!agentProcessAccessible(snapshot)) continue
       const binding = runtime.notifications.bindingForSession(sessionId)
       const unreadCount = unreadBySession[sessionId] ?? 0
       const attention = snapshotAttention(
@@ -220,6 +237,7 @@ export function buildHqSnapshot(runtime: HostRuntime): HqSnapshot {
       const binding = runtime.notifications.bindingForPty(inspected.id)
       const sessionId = binding?.sessionId ?? `pty:${inspected.id}`
       const snapshot = runtime.agents.getSnapshot(sessionId)
+      if (!agentProcessAccessible(snapshot)) continue
       const unreadCount = unreadBySession[sessionId] ?? 0
       const attention = snapshotAttention(
         snapshot,

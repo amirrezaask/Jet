@@ -85,7 +85,9 @@ test.describe("git worktree sessions", () => {
     try {
       await waitForProjectPage(page)
 
-      const switcher = page.locator("[data-yaade-worktree-switcher]")
+      const switcher = page.locator(
+        '[data-yaade-worktree-switcher-for="terminals"]',
+      )
       await switcher.waitFor({ state: "visible" })
       await expect
         .poll(() =>
@@ -96,10 +98,12 @@ test.describe("git worktree sessions", () => {
             return tabs
           }),
         )
-        .toEqual(["overview", "worktrees", "history"])
+        .toEqual(["overview", "history", "agents", "editors", "terminals", "changes"])
 
       await switcher.click()
-      const menu = page.locator("[data-yaade-worktree-switcher-menu]")
+      const menu = page.locator(
+        '[data-yaade-worktree-switcher-menu-for="terminals"]',
+      )
       await menu.waitFor({ state: "visible" })
       await page.locator("[data-yaade-worktree-main]").waitFor({
         state: "visible",

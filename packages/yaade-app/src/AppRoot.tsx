@@ -205,6 +205,9 @@ export function AppRoot() {
   })
   const [pendingAgentLaunch, setPendingAgentLaunch] =
     useState<PendingAgentLaunch | null>(null)
+  const [pendingAgentFocusTabId, setPendingAgentFocusTabId] = useState<
+    string | null
+  >(null)
 
   const readRoute = useCallback(() => setRouteEpoch(value => value + 1), [])
 
@@ -390,6 +393,7 @@ export function AppRoot() {
   const openAgentWorkspace = useCallback(
     (agent: HqAgentSummary) => {
       if (boot.status !== "hq" && boot.status !== "project") return
+      setPendingAgentFocusTabId(agent.sessionId)
       const pathname = projectUrl(
         { id: agent.projectId, rootPath: agent.projectPath },
         boot.homeDir,
@@ -520,6 +524,8 @@ export function AppRoot() {
           current?.id === intentId ? null : current,
         )
       }}
+      initialAgentFocusTabId={pendingAgentFocusTabId}
+      onInitialAgentFocusHandled={() => setPendingAgentFocusTabId(null)}
       onOpenSession={openSession}
       onClearSession={backToProject}
       onNavigateProject={navigateProject}

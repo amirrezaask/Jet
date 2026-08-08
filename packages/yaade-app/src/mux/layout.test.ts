@@ -2,8 +2,11 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { buildTabsView, panelTabIds, YaadePanelTree } from "@yaade/workspace"
 import {
+  buildTerminalOnlyDisplayTree,
   emptyMuxTree,
+  listEditorBufferTabIds,
   listPaneLeaves,
+  listTerminalLeaves,
   muxLeafKind,
   paneView,
   placeOrPushEditorTab,
@@ -143,5 +146,38 @@ describe("YaadePanelTree smoke", () => {
     const tree = emptyMuxTree()
     const panel = placeOrPushEditorTab(tree, "file:///z.ts", null)
     assert.equal(tree.findEditorPanelForFile("file:///z.ts")?.id, panel.id)
+  })
+})
+
+describe("project surface helpers", () => {
+  it("buildTerminalOnlyDisplayTree keeps only terminal leaves", () => {
+    const tree = emptyMuxTree()
+    const term = placePtyInTree(tree, "yaade:terminal:s1", null)
+    placeOrPushEditorTab(tree, "file:///a.ts", term, "right")
+    placePtyInTree(tree, "yaade:terminal:s2", term, "bottom")
+    const display = buildTerminalOnlyDisplayTree(tree)
+    const leaves = listPaneLeaves(display)
+    assert.equal(leaves.length, 2)
+    assert.ok(leaves.every(l => l.kind === "terminal"))
+    assert.deepEqual(
+      listTerminalLeaves(display)
+        .map(l => l.ptyTabId)
+        .sort(),
+      ["yaade:terminal:s1", "yaade:terminal:s2"],
+    )
+  })
+
+  it("listEditorBufferTabIds unions buffers across editor groups", () => {
+    const tree = emptyMuxTree()
+    const first = placeOrPushEditorTab(tree, "file:///a.ts", null)
+    placeOrPushEditorTab(tree, "file:///b.ts", first)
+    placeOrPushEditorTab(tree, "file:///c.ts", first, "right", {
+      forceNewGroup: true,
+    })
+    assert.deepEqual(listEditorBufferTabIds(tree).sort(), [
+      "file:///a.ts",
+      "file:///b.ts",
+      "file:///c.ts",
+    ])
   })
 })

@@ -2,6 +2,18 @@ import type { HqAgentSummary } from "@yaade/rpc"
 
 export type HqAgentFilter = "all" | "attention" | "working" | "idle"
 
+/** Agent process is gone — hide from live pickers even if a shell PTY lingers. */
+const INACCESSIBLE_AGENT_STATUSES = new Set<HqAgentSummary["status"]>([
+  "completed",
+  "failed",
+  "terminated",
+  "disconnected",
+])
+
+export function isAccessibleHqAgent(agent: HqAgentSummary): boolean {
+  return !INACCESSIBLE_AGENT_STATUSES.has(agent.status)
+}
+
 function activityBucket(agent: HqAgentSummary): number {
   if (agent.attention) return 0
   if (agent.unreadCount > 0) return 1
@@ -35,6 +47,7 @@ export function filterHqAgents(
 ): HqAgentSummary[] {
   const query = input.query.trim().toLowerCase()
   return sortHqAgents(agents).filter(agent => {
+    if (!isAccessibleHqAgent(agent)) return false
     if (input.projectId && agent.projectId !== input.projectId) return false
     if (input.filter === "attention" && !agent.attention) return false
     if (

@@ -483,4 +483,80 @@ test.describe("YAADE HQ", () => {
       fs.rmSync(root, { recursive: true, force: true })
     }
   })
+
+  test("kills a live agent from the agents context menu", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-hq-kill-"))
+    const home = path.join(root, "home")
+    const project = path.join(home, "kill-me")
+    fs.mkdirSync(project, { recursive: true })
+
+    const { app, page } = await launchJet({
+      homeDir: home,
+      startPath: "/",
+      launchWithoutWorkspace: true,
+      hq: true,
+      env: { JET_ALLOWED_ROOTS: root },
+    })
+    try {
+      const agent = await seedAgent(page, {
+        rootPath: project,
+        title: "Codex Killable",
+        provider: "codex",
+        notification: "completed",
+      })
+      await page.getByRole("button", { name: "Refresh HQ" }).click()
+      await expect
+        .poll(() => page.locator(`[data-yaade-hq-agent="${agent.sessionId}"]`).count())
+        .toBe(1)
+
+      await page.locator(`[data-yaade-hq-agent="${agent.sessionId}"]`).click({
+        button: "right",
+      })
+      await expect
+        .poll(() => page.locator("[data-yaade-hq-agent-context-menu]").count())
+        .toBe(1)
+      await page.getByRole("menuitem", { name: "Kill agent", exact: true }).click()
+      await expect
+        .poll(async () =>
+          page.getByRole("button", { name: "Kill agent", exact: true }).count(),
+        )
+        .toBeGreaterThan(0)
+      await page.getByRole("button", { name: "Kill agent", exact: true }).click()
+
+      await expect
+        .poll(() => page.locator(`[data-yaade-hq-agent="${agent.sessionId}"]`).count())
+        .toBe(0)
+      await expect
+        .poll(async () =>
+          page.evaluate(async ptyId => {
+            const attached = await window.yaade!.terminal!.attach(ptyId)
+            return attached
+          }, agent.ptyId),
+        )
+        .toBeNull()
+
+      const leaf = await page.evaluate(async projectSessionId => {
+        const response = await fetch(`/api/v1/project-sessions/${projectSessionId}`)
+        if (!response.ok) throw new Error(await response.text())
+        const detail = (await response.json()) as {
+          payload: {
+            sessions: Array<{
+              ptyTabId: string
+              ptyId?: string
+              launchCommand?: string
+              agentProvider?: string
+            }>
+          }
+        }
+        return detail.payload.sessions[0] ?? null
+      }, agent.projectSessionId)
+      expect(leaf).not.toBeNull()
+      expect(leaf!.ptyId).toBeUndefined()
+      expect(leaf!.launchCommand).toBeUndefined()
+      expect(leaf!.agentProvider).toBeUndefined()
+    } finally {
+      await app.close()
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
