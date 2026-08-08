@@ -53,6 +53,15 @@ function branchLabel(wt: GitWorktree): string {
   return wt.path.split("/").filter(Boolean).pop() ?? wt.path
 }
 
+/** Collapse macOS `/private/var` ↔ `/var` so Main is not listed twice. */
+function checkoutPathKey(p: string): string {
+  return p.replace(/\/+$/, "").replace(/^\/private(\/var\/)/, "$1")
+}
+
+function sameCheckoutPath(a: string, b: string): boolean {
+  return checkoutPathKey(a) === checkoutPathKey(b)
+}
+
 export function WorktreeSwitcher({
   projectPath,
   homeDir,
@@ -76,7 +85,10 @@ export function WorktreeSwitcher({
   const linked = useMemo(() => {
     if (!worktrees) return []
     return worktrees.filter(
-      wt => !wt.bare && wt.path !== projectPath && !wt.prunable,
+      wt =>
+        !wt.bare &&
+        !wt.prunable &&
+        !sameCheckoutPath(wt.path, projectPath),
     )
   }, [projectPath, worktrees])
 
@@ -233,7 +245,8 @@ export function WorktreeSwitcher({
                       <CheckIcon
                         className={cn(
                           "size-3.5 shrink-0",
-                          activeCwdPath === projectPath
+                          activeCwdPath &&
+                            sameCheckoutPath(activeCwdPath, projectPath)
                             ? "opacity-100"
                             : "opacity-0",
                         )}
@@ -250,7 +263,9 @@ export function WorktreeSwitcher({
                     </CommandItem>
                     {linked.map(wt => {
                       const label = branchLabel(wt)
-                      const selected = activeCwdPath === wt.path
+                      const selected = Boolean(
+                        activeCwdPath && sameCheckoutPath(activeCwdPath, wt.path),
+                      )
                       return (
                         <CommandItem
                           key={wt.path}

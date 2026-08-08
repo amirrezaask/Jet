@@ -29,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -74,6 +75,7 @@ import {
   CircleDot,
   FolderKanban,
   FolderOpen,
+  Plus,
   RefreshCw,
   Search,
   Settings,
@@ -184,6 +186,7 @@ export function HqPage({
   const [projectId, setProjectId] = useState("")
   const [filter, setFilter] = useState<HqAgentFilter>("all")
   const [selectedAgent, setSelectedAgent] = useState<HqAgentSummary | null>(null)
+  const [launchPickerOpen, setLaunchPickerOpen] = useState(false)
   const [selectedLaunchRootUri, setSelectedLaunchRootUri] = useState<string | null>(null)
   const [openProjectOpen, setOpenProjectOpen] = useState(false)
   const [projectInput, setProjectInput] = useState("")
@@ -243,6 +246,21 @@ export function HqPage({
         })),
     [snapshot?.projects],
   )
+
+  const openLaunchPicker = useCallback(
+    (rootUri?: string | null) => {
+      setSelectedLaunchRootUri(
+        rootUri ?? launchProjects[0]?.rootUri ?? null,
+      )
+      setLaunchPickerOpen(true)
+    },
+    [launchProjects],
+  )
+
+  const closeLaunchPicker = useCallback(() => {
+    setLaunchPickerOpen(false)
+    setSelectedLaunchRootUri(null)
+  }, [])
 
   useEffect(() => {
     onCountsChange?.({
@@ -414,24 +432,28 @@ export function HqPage({
                 )}
                 description="Waiting, permission, or failed"
                 icon={AlertTriangle}
+                statId="attention"
               />
               <SummaryCard
                 title="Live agents"
                 value={snapshot?.agents.length ?? 0}
                 description={`${workingCount} actively working`}
                 icon={Bot}
+                statId="live-agents"
               />
               <SummaryCard
                 title="Known projects"
                 value={snapshot?.projects.length ?? 0}
                 description={`${availableProjectCount} available`}
                 icon={FolderKanban}
+                statId="projects"
               />
               <SummaryCard
                 title="Unread"
                 value={notifications.counts.totalUnread}
                 description={`${notifications.counts.errors} errors`}
                 icon={Activity}
+                statId="unread"
               />
             </section>
 
@@ -451,7 +473,18 @@ export function HqPage({
                       Running agent workloads on this machine.
                     </p>
                   </div>
-                  <div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label="Launch agent"
+                      data-yaade-hq-launch-agent=""
+                      disabled={launchProjects.length === 0}
+                      onClick={() => openLaunchPicker()}
+                    >
+                      <Plus data-icon="inline-start" />
+                      Launch
+                    </Button>
                     <Badge variant="secondary">
                       {agents.length} of {snapshot?.agents.length ?? 0}
                     </Badge>
@@ -513,6 +546,8 @@ export function HqPage({
                   <AgentTable
                     agents={agents}
                     totalAgents={snapshot?.agents.length ?? 0}
+                    canLaunch={launchProjects.length > 0}
+                    onLaunch={() => openLaunchPicker()}
                     onOpen={setSelectedAgent}
                     onOpenProject={agent =>
                       onOpenProject({
@@ -528,7 +563,7 @@ export function HqPage({
                 projects={snapshot?.projects ?? []}
                 onOpen={onOpenProject}
                 onLaunch={project =>
-                  setSelectedLaunchRootUri(pathToFileUri(project.rootPath))
+                  openLaunchPicker(pathToFileUri(project.rootPath))
                 }
                 onForget={project => void forgetProject(project)}
               />
@@ -612,24 +647,26 @@ export function HqPage({
           </Suspense>
         ) : null}
 
-        {selectedLaunchRootUri ? (
+        {launchPickerOpen ? (
           <Suspense fallback={null}>
             <AgentCliPickerOverlay
               open
               onOpenChange={open => {
-                if (!open) setSelectedLaunchRootUri(null)
+                if (!open) closeLaunchPicker()
               }}
               projects={launchProjects}
               selectedRootUri={selectedLaunchRootUri}
               onSelectedRootUriChange={setSelectedLaunchRootUri}
               onSelect={driver => {
+                const rootUri =
+                  selectedLaunchRootUri ?? launchProjects[0]?.rootUri ?? null
                 const project = snapshot?.projects.find(
                   candidate =>
                     candidate.availability === "available" &&
-                    pathToFileUri(candidate.rootPath) === selectedLaunchRootUri,
+                    pathToFileUri(candidate.rootPath) === rootUri,
                 )
                 if (!project) return
-                setSelectedLaunchRootUri(null)
+                closeLaunchPicker()
                 onLaunchAgent(project, driver.id)
               }}
             />
@@ -658,14 +695,19 @@ function SummaryCard({
   value,
   description,
   icon: Icon,
+  statId,
 }: {
   title: string
   value: number
   description: string
   icon: typeof Activity
+  statId: string
 }) {
   return (
-    <Card className="gap-2 border-border bg-card py-3">
+    <Card
+      className="gap-2 border-border bg-card py-3"
+      data-yaade-hq-stat={statId}
+    >
       <CardHeader className="gap-1 px-3">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -676,7 +718,12 @@ function SummaryCard({
         </CardAction>
       </CardHeader>
       <CardContent className="px-3">
-        <p className="text-xl font-semibold tabular-nums">{value}</p>
+        <p
+          className="text-xl font-semibold tabular-nums"
+          data-yaade-hq-stat-value=""
+        >
+          {value}
+        </p>
       </CardContent>
     </Card>
   )
@@ -685,11 +732,15 @@ function SummaryCard({
 function AgentTable({
   agents,
   totalAgents,
+  canLaunch,
+  onLaunch,
   onOpen,
   onOpenProject,
 }: {
   agents: readonly HqAgentSummary[]
   totalAgents: number
+  canLaunch: boolean
+  onLaunch: () => void
   onOpen: (agent: HqAgentSummary) => void
   onOpenProject: (agent: HqAgentSummary) => void
 }) {
@@ -705,9 +756,23 @@ function AgentTable({
             <EmptyDescription>
               {totalAgents > 0
                 ? "No live agents match the current filters."
-                : "Launch an agent from a project workspace and it will appear here."}
+                : "Launch an agent to start a provider in a project workspace."}
             </EmptyDescription>
           </EmptyHeader>
+          {totalAgents === 0 && canLaunch ? (
+            <EmptyContent>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="Launch agent from empty state"
+                data-yaade-hq-launch-agent-empty=""
+                onClick={onLaunch}
+              >
+                <Plus data-icon="inline-start" />
+                Launch agent
+              </Button>
+            </EmptyContent>
+          ) : null}
         </Empty>
       </div>
     )

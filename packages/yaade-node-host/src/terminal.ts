@@ -82,6 +82,10 @@ export type TerminalInspectSnapshot = {
   status: "running" | "exited"
   exitCode: number | null
   signal: number | null
+  /** Spawn command basename path when a custom launch was used; null for shell. */
+  spawnCommand: string | null
+  /** Absolute spawn-time cwd. */
+  spawnCwd: string
 }
 
 type EmitFn = (channel: string, args: unknown[]) => void
@@ -93,6 +97,8 @@ type TerminalEntry = {
   clientId: string
   /** Absolute spawn-time cwd (fallback when live process cwd is unavailable). */
   spawnCwd: string
+  /** Custom launch command when not the default shell; null for interactive shells. */
+  spawnCommand: string | null
   /** Last cwd reported via OSC 7 (preferred when present). */
   liveCwd: string | null
   status: "running" | "exited"
@@ -359,6 +365,7 @@ export class TerminalHost {
       titleKey,
       clientId,
       spawnCwd: cwd,
+      spawnCommand: custom?.command ?? null,
       liveCwd: null,
       status: "running",
       exitCode: null,
@@ -479,7 +486,27 @@ export class TerminalHost {
       status: entry.status,
       exitCode: entry.exitCode,
       signal: entry.signal,
+      spawnCommand: entry.spawnCommand,
+      spawnCwd: entry.spawnCwd,
     }
+  }
+
+  /** Running (non-disposed) PTYs — used by HQ when session payload lags behind. */
+  listRunning(): TerminalInspectSnapshot[] {
+    const out: TerminalInspectSnapshot[] = []
+    for (const entry of this.entries.values()) {
+      if (entry.disposed || entry.status !== "running") continue
+      out.push({
+        id: entry.id,
+        title: entry.title,
+        status: entry.status,
+        exitCode: entry.exitCode,
+        signal: entry.signal,
+        spawnCommand: entry.spawnCommand,
+        spawnCwd: entry.spawnCwd,
+      })
+    }
+    return out
   }
 
   write(id: string, data: string): null {

@@ -66,4 +66,103 @@ test.describe("git worktree sessions", () => {
       fs.rmSync(home, { recursive: true, force: true })
     }
   })
+
+  test("worktrees picker opens main and can create a worktree", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-wt-picker-"))
+    const project = path.join(home, "repo")
+    fs.mkdirSync(project, { recursive: true })
+    execSync(
+      "git init && git config user.email t@t && git config user.name t && echo hi > README && git add . && git commit -m init",
+      { cwd: project, stdio: "ignore" },
+    )
+
+    const { app, page } = await launchJet({
+      homeDir: home,
+      startPath: "/repo",
+      launchWithoutWorkspace: true,
+      projectPage: true,
+    })
+    try {
+      await waitForProjectPage(page)
+
+      const switcher = page.locator("[data-yaade-worktree-switcher]")
+      await switcher.waitFor({ state: "visible" })
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const tabs = [
+              ...document.querySelectorAll("[data-yaade-project-tab]"),
+            ].map(el => el.getAttribute("data-yaade-project-tab"))
+            return tabs
+          }),
+        )
+        .toEqual(["overview", "worktrees", "history"])
+
+      await switcher.click()
+      const menu = page.locator("[data-yaade-worktree-switcher-menu]")
+      await menu.waitFor({ state: "visible" })
+      await page.locator("[data-yaade-worktree-main]").waitFor({
+        state: "visible",
+      })
+      await page.locator("[data-yaade-worktree-create]").waitFor({
+        state: "visible",
+      })
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const input = document.querySelector(
+              "[data-yaade-worktree-switcher-search]",
+            )
+            return input === document.activeElement
+          }),
+        )
+        .toBe(true)
+
+      await page.locator("[data-yaade-worktree-main]").click()
+      await waitForMux(page)
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const cwd = window.__yaadeAgent!.getState().sessionCwd ?? ""
+            return {
+              isRepo: /\/repo$/.test(cwd),
+              isWorktree: cwd.includes(".yaade/worktrees"),
+            }
+          }),
+        )
+        .toEqual({ isRepo: true, isWorktree: false })
+
+      await page.locator('[data-yaade-project-tab="overview"]').click()
+      await page.locator("[data-yaade-project-overview]").waitFor({
+        state: "visible",
+      })
+
+      await switcher.click()
+      await menu.waitFor({ state: "visible" })
+      await page.locator("[data-yaade-worktree-create]").waitFor({
+        state: "visible",
+      })
+      await page.locator("[data-yaade-worktree-create]").click()
+      const dialog = page.locator("[data-yaade-create-worktree-dialog]")
+      await dialog.waitFor({ state: "visible" })
+      const branch = `picker-wt-${Date.now().toString(36)}`
+      await dialog.locator("[data-yaade-worktree-branch]").fill(branch)
+      await dialog.locator("[data-yaade-create-worktree]").click()
+      await waitForMux(page)
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__yaadeAgent!.getState().sessionCwd),
+        )
+        .toContain(".yaade/worktrees")
+      await expect
+        .poll(
+          async () => (await switcher.textContent()) ?? "",
+          { timeout: 5_000 },
+        )
+        .toContain(branch)
+    } finally {
+      await app.close()
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  })
 })

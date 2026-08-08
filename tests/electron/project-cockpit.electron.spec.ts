@@ -64,7 +64,7 @@ test.describe("project cockpit", () => {
             worktreeSwitcher: document.querySelectorAll("[data-yaade-worktree-switcher]").length,
           })),
         )
-        .toEqual({ commandDeck: 0, launchAgent: 0, worktreeCards: 0, worktreeSwitcher: 0 })
+        .toEqual({ commandDeck: 0, launchAgent: 0, worktreeCards: 0, worktreeSwitcher: 1 })
 
       await branchMenu.focus()
       await page.keyboard.press("Enter")

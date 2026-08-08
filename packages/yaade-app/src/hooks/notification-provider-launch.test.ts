@@ -33,6 +33,10 @@ describe("notificationLaunchForProviderSync", () => {
       const launch = notificationLaunchForProviderSync(provider, provider, context)
       assert.ok(launch.driver === "osc" || launch.driver === "plugin")
       assert.equal(launch.env.YAADE_PROVIDER, provider)
+      assert.equal(
+        launch.env.YAADE_INGEST_URL,
+        `http://127.0.0.1:4747/api/v1/notifications/ingest?provider=${provider}&sessionId=sess-1`,
+      )
     }
   })
 
@@ -43,5 +47,23 @@ describe("notificationLaunchForProviderSync", () => {
       context,
     )
     assert.deepEqual(launch.args, ["--trust"])
+    assert.equal(launch.env.YAADE_PROVIDER, "cursor")
+    assert.ok(launch.env.YAADE_INGEST_URL?.includes("provider=cursor"))
+  })
+
+  it("wires ingest env for every agent provider", () => {
+    for (const provider of [
+      "claude",
+      "codex",
+      "cursor",
+      "opencode",
+      "grok",
+    ] as const) {
+      const command = provider === "cursor" ? "cursor-agent" : provider
+      const launch = notificationLaunchForProviderSync(provider, command, context)
+      assert.equal(launch.env.YAADE_SESSION_ID, "sess-1")
+      assert.equal(launch.env.YAADE_PROVIDER, provider)
+      assert.ok(launch.env.YAADE_INGEST_URL?.includes(`provider=${provider}`))
+    }
   })
 })

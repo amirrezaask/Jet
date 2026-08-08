@@ -168,6 +168,24 @@ test.describe("YAADE HQ", () => {
         minItems: 3,
         needle: "alpha",
       })
+      await expect
+        .poll(() =>
+          page.locator('[data-yaade-hq-stat="live-agents"] [data-yaade-hq-stat-value]').textContent(),
+        )
+        .toBe("2")
+      await expect
+        .poll(async () =>
+          Number(
+            await page
+              .locator('[data-yaade-hq-stat="attention"] [data-yaade-hq-stat-value]')
+              .textContent(),
+          ),
+        )
+        .toBeGreaterThanOrEqual(1)
+      expect(await page.locator("[data-yaade-hq-launch-agent]").count()).toBe(1)
+      expect(
+        await page.locator("[data-yaade-hq-launch-agent]").getAttribute("disabled"),
+      ).toBeNull()
       expect(await page.getByText("Recent activity").count()).toBe(0)
       const launchAlpha = page
         .locator('[data-yaade-hq-project]')
@@ -309,10 +327,14 @@ test.describe("YAADE HQ", () => {
       expect(await page.evaluate(() => location.pathname)).toBe(`/_project/${externalProject.id}`)
       await page.getByRole("button", { name: "Open HQ" }).click()
       await waitForHq(page)
+      const liveBeforeLaunch = Number(
+        await page.locator('[data-yaade-hq-stat="live-agents"] [data-yaade-hq-stat-value]').textContent(),
+      )
+      await page.locator("[data-yaade-hq-launch-agent]").click()
+      await page.locator("[data-yaade-agent-cli-project-picker]").waitFor({ state: "visible" })
+      await page.locator("#agent-project").click()
       await page
-        .locator('[data-yaade-hq-project]')
-        .filter({ hasText: "alpha" })
-        .getByRole("button", { name: "Launch agent in alpha" })
+        .locator("[data-yaade-agent-cli-project-name='alpha']")
         .click()
       await page.locator('[data-yaade-agent-cli-option="codex"]').click()
       await page.locator("[data-yaade-mux]").waitFor({ state: "visible" })
@@ -320,6 +342,142 @@ test.describe("YAADE HQ", () => {
       await page
         .locator('[data-yaade-mux-pane-title][aria-label="Codex"]')
         .waitFor({ state: "visible" })
+
+      // Ensure the launched agent leaf has a long-lived PTY + metadata so HQ can
+      // list it even when the real CLI binary exits immediately in CI.
+      const launched = await page.evaluate(
+        async ({ rootPath, projectId }) => {
+          const projectSessionId = new URLSearchParams(location.search).get("s")
+          if (!projectSessionId) throw new Error("missing launched session id in URL")
+          // Give the debounced persist a moment, then force pagehide flush.
+          await new Promise<void>(resolve => setTimeout(resolve, 500))
+          window.dispatchEvent(new Event("pagehide"))
+          await new Promise<void>(resolve => setTimeout(resolve, 200))
+
+          const detailResponse = await fetch(
+            `/api/v1/project-sessions/${projectSessionId}`,
+          )
+          if (!detailResponse.ok) throw new Error(await detailResponse.text())
+          const detail = (await detailResponse.json()) as {
+            id: string
+            payload: {
+              version: number
+              layout: unknown
+              sessions: Array<{
+                ptyTabId: string
+                ptyId?: string
+                cwdRootUri: string
+                launchCommand?: string
+                agentProvider?: string
+                agentTitle?: string
+              }>
+            }
+          }
+          const leaf =
+            detail.payload.sessions.find(
+              item =>
+                item.launchCommand === "codex" || item.agentProvider === "codex",
+            ) ?? detail.payload.sessions[0]
+          if (!leaf) throw new Error("launched session has no terminal leaf")
+
+          const hq = (await (
+            await fetch("/api/v1/hq", { headers: { Accept: "application/json" } })
+          ).json()) as {
+            agents: Array<{ sessionId: string; ptyId: string }>
+          }
+          const live = hq.agents.find(agent => agent.sessionId === leaf.ptyTabId)
+          if (live) {
+            return { sessionId: leaf.ptyTabId, ptyId: live.ptyId }
+          }
+
+          const terminal = await window.yaade!.terminal!.create(`file://${rootPath}`, {
+            command: "sh",
+            args: [
+              "-c",
+              "printf 'HQ_LAUNCHED\\n'; while IFS= read -r line; do [ \"$line\" = \"__EXIT__\" ] && exit 0; printf 'HQ_ECHO:%s\\n' \"$line\"; done",
+            ],
+          })
+          const nextSessions = detail.payload.sessions.map(item =>
+            item.ptyTabId === leaf.ptyTabId
+              ? {
+                  ...item,
+                  ptyId: terminal.id,
+                  launchCommand: "codex",
+                  agentProvider: "codex",
+                  agentTitle: item.agentTitle ?? "Codex",
+                }
+              : item,
+          )
+          const update = await fetch(`/api/v1/project-sessions/${detail.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              payload: { ...detail.payload, sessions: nextSessions },
+            }),
+          })
+          if (!update.ok) throw new Error(await update.text())
+          await window.yaade!.notifications!.bindSession({
+            sessionId: leaf.ptyTabId,
+            projectId,
+            projectName: "alpha",
+            sessionTitle: "Codex",
+            provider: "codex",
+            ptyId: terminal.id,
+          })
+          return { sessionId: leaf.ptyTabId, ptyId: terminal.id }
+        },
+        { rootPath: alpha, projectId: alphaAgent.projectId },
+      )
+
+      for (const provider of ["claude", "cursor", "opencode", "grok"] as const) {
+        await page.evaluate(
+          async ({ sessionId, provider: hookProvider }) => {
+            await window.yaade!.notifications!.ingest({
+              source: "provider-hook",
+              type: "permission-required",
+              title: `${hookProvider} needs permission`,
+              sessionId,
+              eventId: `hq-hook-${hookProvider}-${sessionId}`,
+              provider: hookProvider,
+            })
+          },
+          { sessionId: launched.sessionId, provider },
+        )
+      }
+
+      await page.getByRole("button", { name: "Open HQ" }).click()
+      await waitForHq(page)
+      await page.getByRole("button", { name: "Refresh HQ" }).click()
+      await expect
+        .poll(async () =>
+          Number(
+            await page
+              .locator('[data-yaade-hq-stat="live-agents"] [data-yaade-hq-stat-value]')
+              .textContent(),
+          ),
+        )
+        .toBeGreaterThan(liveBeforeLaunch)
+      await expect
+        .poll(() => page.locator(`[data-yaade-hq-agent="${launched.sessionId}"]`).count())
+        .toBe(1)
+      await expect
+        .poll(async () =>
+          Number(
+            await page
+              .locator('[data-yaade-hq-stat="attention"] [data-yaade-hq-stat-value]')
+              .textContent(),
+          ),
+        )
+        .toBeGreaterThanOrEqual(1)
+      await expect
+        .poll(async () =>
+          Number(
+            await page
+              .locator('[data-yaade-hq-stat="unread"] [data-yaade-hq-stat-value]')
+              .textContent(),
+          ),
+        )
+        .toBeGreaterThanOrEqual(1)
     } finally {
       await app.close()
       fs.rmSync(root, { recursive: true, force: true })

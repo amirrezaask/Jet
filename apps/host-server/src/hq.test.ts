@@ -127,4 +127,69 @@ describe("HQ aggregation", () => {
     assert.equal(alphaHealth?.attentionCount, 1)
     assert.equal(alphaHealth?.unreadCount, 1)
   })
+
+  it("lists running agent PTYs even when session payload has not persisted yet", () => {
+    const alpha = path.join(dir, "alpha-live")
+    fs.mkdirSync(alpha)
+    const emptyLayout = {
+      tree: { root: null },
+      focusedPaneId: null,
+      zoomedPaneId: null,
+    }
+    const main = db.createProjectSession({
+      machine: "test-machine",
+      projectPath: alpha,
+      cwdPath: alpha,
+      title: "Main",
+    })
+    db.updateProjectSessionPayload(main.id, {
+      version: 1,
+      layout: emptyLayout,
+      sessions: [],
+    })
+    const alphaProject = db.projects().find(project => project.name === "alpha-live")!
+    assert.ok(alphaProject)
+    const notifications = new NotificationService(db.raw())
+    notifications.bindSession({
+      sessionId: "term-cursor-1",
+      projectId: alphaProject.id,
+      projectName: alphaProject.name,
+      sessionTitle: "Cursor",
+      provider: "cursor",
+      ptyId: "pty-orphan-cursor",
+    })
+
+    const runtime = {
+      db,
+      machineHostname: "test-machine",
+      notifications,
+      config: { allowedRoots: [dir] },
+      terminal: {
+        inspect() {
+          return null
+        },
+        listRunning() {
+          return [
+            {
+              id: "pty-orphan-cursor",
+              title: "Cursor",
+              status: "running",
+              exitCode: null,
+              signal: null,
+              spawnCommand: "cursor-agent",
+              spawnCwd: alpha,
+            },
+          ]
+        },
+      },
+      agents: { getSnapshot() { return null } },
+    } as unknown as HostRuntime
+
+    const snapshot = buildHqSnapshot(runtime)
+    assert.equal(snapshot.agents.length, 1)
+    assert.equal(snapshot.agents[0]?.provider, "cursor")
+    assert.equal(snapshot.agents[0]?.sessionId, "term-cursor-1")
+    assert.equal(snapshot.agents[0]?.ptyId, "pty-orphan-cursor")
+    assert.equal(snapshot.agents[0]?.projectSessionId, main.id)
+  })
 })

@@ -174,6 +174,11 @@ type PendingPayload = {
 /**
  * Debounced single-writer for project session layouts.
  * Coalesces rapid pane/layout mutations into one PUT.
+ *
+ * Unmount must call `flushAndStop()` (not `flush()` + `stop()`): a plain
+ * `stop()` used to flip `stopped` before the async drain ran, which dropped
+ * the pending snapshot — closed panes and newly launched agents never hit
+ * SQLite, so HQ live-agents stayed empty and layouts resurrected on revisit.
  */
 export class ProjectSessionPersistWriter {
   private pending: PendingPayload | null = null
@@ -181,8 +186,10 @@ export class ProjectSessionPersistWriter {
   private retryAttempt = 0
   private cancelRetry: (() => void) | null = null
   private stopped = false
+  private flushing = false
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private readonly debounceMs: number
+  private writeWaiters: Array<() => void> = []
 
   constructor(
     private readonly save: (
@@ -198,6 +205,7 @@ export class ProjectSessionPersistWriter {
     if (this.stopped) return
     this.pending = { sessionId, payload }
     this.cancelScheduledRetry()
+    if (this.flushing) return
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null
@@ -205,23 +213,37 @@ export class ProjectSessionPersistWriter {
     }, this.debounceMs)
   }
 
-  flush(): void {
-    if (this.stopped) return
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer)
-      this.debounceTimer = null
-    }
-    this.cancelScheduledRetry()
-    void this.drain()
+  flush(): Promise<void> {
+    return this.flushPending()
   }
 
+  /**
+   * Persist any pending snapshot (including one still in the debounce window),
+   * wait for in-flight writes, then refuse further enqueues.
+   */
+  async flushAndStop(): Promise<void> {
+    try {
+      await this.flushPending()
+    } finally {
+      this.stopped = true
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer)
+        this.debounceTimer = null
+      }
+      this.cancelScheduledRetry()
+    }
+  }
+
+  /** @deprecated Prefer `flushAndStop()` on unmount so pending writes are not dropped. */
   stop(): void {
-    this.stopped = true
+    void this.flushAndStop()
+  }
+
+  private clearDebounce(): void {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer)
       this.debounceTimer = null
     }
-    this.cancelScheduledRetry()
   }
 
   private cancelScheduledRetry(): void {
@@ -230,7 +252,9 @@ export class ProjectSessionPersistWriter {
   }
 
   private scheduleNextRetry(): void {
-    if (this.stopped || this.cancelRetry || !this.pending) return
+    if (this.stopped || this.flushing || this.cancelRetry || !this.pending) {
+      return
+    }
     const delayMs = Math.min(5_000, 250 * 2 ** this.retryAttempt)
     this.retryAttempt += 1
     const timer = globalThis.setTimeout(() => {
@@ -240,11 +264,57 @@ export class ProjectSessionPersistWriter {
     this.cancelRetry = () => globalThis.clearTimeout(timer)
   }
 
+  private notifyWriteWaiters(): void {
+    const waiters = this.writeWaiters
+    this.writeWaiters = []
+    for (const resolve of waiters) resolve()
+  }
+
+  private waitForWriteSlot(): Promise<void> {
+    if (!this.writing) return Promise.resolve()
+    return new Promise<void>(resolve => {
+      this.writeWaiters.push(resolve)
+    })
+  }
+
+  /** Run pending saves to completion (best-effort; one retry on hard flush). */
+  private async flushPending(): Promise<void> {
+    this.clearDebounce()
+    this.cancelScheduledRetry()
+    this.flushing = true
+    try {
+      await this.waitForWriteSlot()
+      while (this.pending) {
+        const snapshot = this.pending
+        this.pending = null
+        this.writing = true
+        try {
+          try {
+            await this.save(snapshot.sessionId, snapshot.payload)
+            this.retryAttempt = 0
+          } catch {
+            try {
+              await this.save(snapshot.sessionId, snapshot.payload)
+              this.retryAttempt = 0
+            } catch {
+              // Best-effort flush — abandon after one immediate retry.
+            }
+          }
+        } finally {
+          this.writing = false
+          this.notifyWriteWaiters()
+        }
+      }
+    } finally {
+      this.flushing = false
+    }
+  }
+
   private async drain(): Promise<void> {
-    if (this.stopped || this.writing || !this.pending) return
+    if (this.flushing || this.writing || !this.pending) return
     this.writing = true
     try {
-      while (!this.stopped && this.pending) {
+      while (this.pending && !this.flushing) {
         const snapshot = this.pending
         this.pending = null
         try {
@@ -258,7 +328,8 @@ export class ProjectSessionPersistWriter {
       }
     } finally {
       this.writing = false
-      if (this.pending && !this.cancelRetry) void this.drain()
+      this.notifyWriteWaiters()
+      if (this.pending && !this.flushing && !this.cancelRetry) void this.drain()
     }
   }
 }

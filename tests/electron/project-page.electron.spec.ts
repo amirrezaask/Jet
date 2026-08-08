@@ -50,7 +50,7 @@ test.describe("project page", () => {
           async () => page.locator("[data-yaade-worktree-switcher]").count(),
           { timeout: 5_000 },
         )
-        .toBe(0)
+        .toBe(1)
       await expect
         .poll(() =>
           page.evaluate(() => ({
@@ -115,7 +115,7 @@ test.describe("project page", () => {
             worktreeSwitcher: document.querySelectorAll("[data-yaade-worktree-switcher]").length,
           })),
         )
-        .toEqual({ commandDeck: 0, worktreeCards: 0, worktreeSwitcher: 0 })
+        .toEqual({ commandDeck: 0, worktreeCards: 0, worktreeSwitcher: 1 })
       await expectListRows(page, {
         panel: "project-commits",
         minItems: 2,

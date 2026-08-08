@@ -99,6 +99,25 @@ function newestTimestamp(values: Array<string | null | undefined>): string | nul
   return newest
 }
 
+function findProjectForCwd<T extends { rootPath: string }>(
+  cwd: string,
+  projects: T[],
+): T | null {
+  const target = canonicalPath(cwd)
+  let best: T | null = null
+  let bestLen = -1
+  for (const project of projects) {
+    const root = canonicalPath(project.rootPath)
+    if (target === root || target.startsWith(`${root}${path.sep}`)) {
+      if (root.length > bestLen) {
+        best = project
+        bestLen = root.length
+      }
+    }
+  }
+  return best
+}
+
 export function buildHqSnapshot(runtime: HostRuntime): HqSnapshot {
   const projects = runtime.db.projects()
   const sessions = runtime.db.listAllProjectSessions(runtime.machineHostname)
@@ -158,6 +177,76 @@ export function buildHqSnapshot(runtime: HostRuntime): HqSnapshot {
           startedAt,
           lastActivityAt: snapshot?.lastActivityAt ?? projectSession.updatedAt,
           runtimeMs,
+          unreadCount,
+          attention,
+          currentTool: snapshot?.currentTool
+            ? {
+                name: snapshot.currentTool.name,
+                category: snapshot.currentTool.category,
+              }
+            : null,
+        }),
+      )
+    }
+  }
+
+  // Fallback: running agent PTYs that are not yet (or no longer) in SQLite leaves.
+  // Debounced persist / StrictMode races can leave a live cursor-agent invisible.
+  const listRunning = runtime.terminal.listRunning?.bind(runtime.terminal)
+  if (listRunning) {
+    for (const inspected of listRunning()) {
+      if (claimedPtyIds.has(inspected.id)) continue
+      const provider = inferAgentProvider(
+        undefined,
+        inspected.spawnCommand ?? undefined,
+      )
+      if (!provider) continue
+      const project = findProjectForCwd(inspected.spawnCwd, projects)
+      if (!project) continue
+
+      const projectSessions = sessions.filter(
+        session =>
+          !session.archivedAt &&
+          canonicalPath(session.projectPath) === canonicalPath(project.rootPath),
+      )
+      const cwdMatch = projectSessions.find(
+        session =>
+          canonicalPath(session.cwdPath) === canonicalPath(inspected.spawnCwd),
+      )
+      const projectSession = cwdMatch ?? projectSessions[0]
+      if (!projectSession) continue
+
+      claimedPtyIds.add(inspected.id)
+      const binding = runtime.notifications.bindingForPty(inspected.id)
+      const sessionId = binding?.sessionId ?? `pty:${inspected.id}`
+      const snapshot = runtime.agents.getSnapshot(sessionId)
+      const unreadCount = unreadBySession[sessionId] ?? 0
+      const attention = snapshotAttention(
+        snapshot,
+        attentionBySession[sessionId] ?? 0,
+      )
+      const providerTitle = provider.charAt(0).toUpperCase() + provider.slice(1)
+
+      agents.push(
+        HqAgentSummary.make({
+          sessionId,
+          ptyId: inspected.id,
+          projectId: project.id,
+          projectName: project.name,
+          projectPath: project.rootPath,
+          projectSessionId: projectSession.id,
+          projectSessionTitle: projectSession.title,
+          cwdPath: inspected.spawnCwd,
+          worktreeBranch: projectSession.worktreeBranch,
+          provider,
+          title:
+            binding?.sessionTitle ?? inspected.title ?? providerTitle,
+          status: snapshot?.status ?? "starting",
+          activity: snapshot ? describeAgentActivity(snapshot) : "Telemetry connecting",
+          telemetry: snapshot ? "connected" : "pending",
+          startedAt: snapshot?.startedAt ?? null,
+          lastActivityAt: snapshot?.lastActivityAt ?? projectSession.updatedAt,
+          runtimeMs: snapshot?.runtime.processRuntimeMs ?? 0,
           unreadCount,
           attention,
           currentTool: snapshot?.currentTool

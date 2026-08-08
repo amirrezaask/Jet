@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from "react"
 import type { HqAgentSummary, HqProjectSummary, ProjectSession } from "@yaade/rpc"
 import type { AgentCliDriver } from "@yaade/ui/agent-picker"
 import {
+  clearHqAgentLaunch,
+  queueHqAgentLaunch,
+  type HqAgentLaunchIntent,
+} from "./project/hq-agent-launch.js"
+import {
   Alert,
   AlertDescription,
   AlertTitle,
@@ -38,11 +43,7 @@ import {
 } from "./url-workspace.js"
 
 type HqCounts = { projects: number; agents: number; attention: number; unread: number }
-type PendingAgentLaunch = {
-  id: string
-  projectId: string
-  driverId: AgentCliDriver["id"]
-}
+type PendingAgentLaunch = HqAgentLaunchIntent
 
 type BootState =
   | { status: "loading" }
@@ -404,11 +405,14 @@ export function AppRoot() {
       project: Pick<HqProjectSummary, "id" | "rootPath">,
       driverId: AgentCliDriver["id"],
     ) => {
-      setPendingAgentLaunch({
+      const intent: PendingAgentLaunch = {
         id: `hq-launch-${Date.now()}-${driverId}`,
         projectId: project.id,
         driverId,
-      })
+      }
+      // Module queue survives StrictMode remounts that wipe ProjectPage state.
+      queueHqAgentLaunch(intent)
+      setPendingAgentLaunch(intent)
       openKnownProject(project)
     },
     [openKnownProject],
@@ -511,6 +515,7 @@ export function AppRoot() {
           : null
       }
       onAgentLaunchIntentHandled={intentId => {
+        clearHqAgentLaunch(intentId)
         setPendingAgentLaunch(current =>
           current?.id === intentId ? null : current,
         )

@@ -31,9 +31,17 @@ import type {
   MuxLaunchRequest,
 } from "../mux/MuxApp.js"
 import { workspaceDocumentTitle } from "../url-workspace.js"
-import { openCheckoutSession } from "../project-session-client.js"
+import {
+  createProjectSession,
+  openCheckoutSession,
+} from "../project-session-client.js"
+import {
+  clearHqAgentLaunch,
+  peekHqAgentLaunch,
+} from "./hq-agent-launch.js"
 import { ProjectOverview } from "./ProjectOverview.js"
 import { ProjectPathSwitcher } from "./ProjectPathSwitcher.js"
+import { WorktreeSwitcher } from "./WorktreeSwitcher.js"
 
 const GitWorkspace = lazy(() =>
   import("@yaade/ui/git").then(m => ({ default: m.GitWorkspace })),
@@ -108,9 +116,20 @@ export function ProjectPage({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyMounted, setHistoryMounted] = useState(false)
   const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null)
-  const [launchRequest, setLaunchRequest] = useState<MuxLaunchRequest | null>(null)
+  const [defaultBranch, setDefaultBranch] = useState("main")
+  // Seed from the module queue so StrictMode remounts still see the HQ intent.
+  const [launchRequest, setLaunchRequest] = useState<MuxLaunchRequest | null>(
+    () => {
+      const queued = peekHqAgentLaunch(projectId)
+      return queued
+        ? {
+            id: queued.id,
+            action: { kind: "agent", driverId: queued.driverId },
+          }
+        : null
+    },
+  )
   const launchSequenceRef = useRef(0)
-  const handledAgentLaunchIntentsRef = useRef(new Set<string>())
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
   const title = workspaceDocumentTitle(projectPath, homeDir)
 
@@ -120,7 +139,23 @@ export function ProjectPage({
 
   useEffect(() => {
     setSelectedCommit(null)
+    setDefaultBranch("main")
   }, [projectPath])
+
+  useEffect(() => {
+    let cancelled = false
+    void window.yaade?.git
+      ?.defaultBranch(rootUri)
+      .then(branch => {
+        if (!cancelled && branch?.trim()) setDefaultBranch(branch.trim())
+      })
+      .catch(() => {
+        /* keep "main" fallback */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rootUri])
 
   // Opening / restoring a session shows the in-page tiling workspace.
   useEffect(() => {
@@ -150,6 +185,24 @@ export function ProjectPage({
     [onOpenSession, projectPath],
   )
 
+  const handleCreateWorktree = useCallback(
+    async (input: { branch: string; baseRef?: string }) => {
+      const muxReady = preloadMuxApp()
+      const created = await createProjectSession({
+        rootPath: projectPath,
+        title: input.branch,
+        worktree: {
+          branch: input.branch,
+          baseRef: input.baseRef,
+        },
+      })
+      await muxReady
+      setView("worktree")
+      await onOpenSession(created.id)
+    },
+    [onOpenSession, projectPath],
+  )
+
   const handleLaunchAction = useCallback(
     async (action: MuxLaunchAction) => {
       launchSequenceRef.current += 1
@@ -175,19 +228,66 @@ export function ProjectPage({
     [handleSelectCheckout, projectPath, session],
   )
 
-  const handleLaunchRequestHandled = useCallback((requestId: string) => {
-    setLaunchRequest(current => (current?.id === requestId ? null : current))
-  }, [])
+  const handleLaunchRequestHandled = useCallback(
+    (requestId: string) => {
+      clearHqAgentLaunch(requestId)
+      setLaunchRequest(current => (current?.id === requestId ? null : current))
+      onAgentLaunchIntentHandled?.(requestId)
+    },
+    [onAgentLaunchIntentHandled],
+  )
 
+  // HQ launch intents must survive StrictMode remounts. Keep the stable intent
+  // id on `launchRequest` and only clear after Mux confirms the pane opened —
+  // clearing in a `.finally()` here used to drop the intent while the session
+  // open was in flight, leaving the user on an empty worktree.
   useEffect(() => {
-    if (!agentLaunchIntent) return
-    if (handledAgentLaunchIntentsRef.current.has(agentLaunchIntent.id)) return
-    handledAgentLaunchIntentsRef.current.add(agentLaunchIntent.id)
-    void handleLaunchAction({
-      kind: "agent",
-      driverId: agentLaunchIntent.driverId,
-    }).finally(() => onAgentLaunchIntentHandled?.(agentLaunchIntent.id))
-  }, [agentLaunchIntent, handleLaunchAction, onAgentLaunchIntentHandled])
+    const queued = peekHqAgentLaunch(projectId)
+    const intent =
+      agentLaunchIntent ??
+      (queued
+        ? { id: queued.id, driverId: queued.driverId }
+        : null)
+    if (!intent) return
+
+    setLaunchRequest({
+      id: intent.id,
+      action: { kind: "agent", driverId: intent.driverId },
+    })
+
+    if (session) {
+      setView("worktree")
+      return
+    }
+
+    let cancelled = false
+    void handleSelectCheckout({ cwdPath: projectPath, title: "Main" }).catch(
+      error => {
+        if (cancelled) return
+        clearHqAgentLaunch(intent.id)
+        setLaunchRequest(current =>
+          current?.id === intent.id ? null : current,
+        )
+        onAgentLaunchIntentHandled?.(intent.id)
+        showYaadeToast(
+          error instanceof Error
+            ? error.message
+            : "Could not open the workspace for agent launch.",
+          { variant: "destructive" },
+        )
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [
+    agentLaunchIntent,
+    handleSelectCheckout,
+    onAgentLaunchIntentHandled,
+    projectId,
+    projectPath,
+    session,
+  ])
 
   const handleResumeSession = useCallback(
     async (sessionId: string) => {
@@ -250,6 +350,26 @@ export function ProjectPage({
                 >
                   Overview
                 </TabsTrigger>
+              </TabsList>
+              <WorktreeSwitcher
+                projectPath={projectPath}
+                homeDir={homeDir}
+                defaultBranch={defaultBranch}
+                active={view === "worktree" && session != null}
+                activeLabel={
+                  session
+                    ? (session.worktreeBranch ??
+                      (session.cwdPath === projectPath
+                        ? "Main"
+                        : session.title))
+                    : null
+                }
+                activeCwdPath={session?.cwdPath ?? null}
+                onIntent={() => void preloadMuxApp()}
+                onSelectCheckout={handleSelectCheckout}
+                onCreateWorktree={handleCreateWorktree}
+              />
+              <TabsList variant="line" className="h-6 gap-0 p-0">
                 <TabsTrigger
                   value="history"
                   data-yaade-project-tab="history"

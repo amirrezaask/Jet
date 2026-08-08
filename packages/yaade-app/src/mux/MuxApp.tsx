@@ -897,20 +897,6 @@ export function MuxApp({
         })
   }, [editorRuntimeNeeded, sessionId, windows, workspace])
 
-  useEffect(() => {
-    const writer = persistWriterRef.current
-    const onHide = () => {
-      window.dispatchEvent(new Event("yaade:save-editor-view-state"))
-      writer.flush()
-    }
-    window.addEventListener("pagehide", onHide)
-    return () => {
-      window.removeEventListener("pagehide", onHide)
-      writer.flush()
-      writer.stop()
-    }
-  }, [])
-
   const buildServerPayload = useCallback((): ProjectSessionPayload | null => {
     if (!sessionIdRef.current) return null
     const editorViewStates = snapshotEditorViewStates(sessionIdRef.current)
@@ -974,10 +960,31 @@ export function MuxApp({
     lastPersistStructureRef.current = structureKey
     persistWriterRef.current.enqueue(id, snapshot)
   }, [buildServerPayload])
+  const persistRef = useRef(persist)
+  persistRef.current = persist
 
   useEffect(() => {
     persist()
   }, [windows, activeWindowId, lastCwdUri, gitRoots, editorFiles, persist])
+
+  useEffect(() => {
+    const writer = persistWriterRef.current
+    const persistLatest = () => {
+      persistRef.current()
+    }
+    const onHide = () => {
+      window.dispatchEvent(new Event("yaade:save-editor-view-state"))
+      persistLatest()
+      void writer.flush()
+    }
+    window.addEventListener("pagehide", onHide)
+    return () => {
+      window.removeEventListener("pagehide", onHide)
+      // Capture the live tree even if the windows→persist effect has not run yet.
+      persistLatest()
+      void writer.flushAndStop()
+    }
+  }, [])
 
   const cwdUri = useCallback((): string => {
     if (sessionRootPathRef.current) {
@@ -1629,9 +1636,9 @@ export function MuxApp({
 
   /** Launch a known agent CLI into the active (or empty) window. */
   const openAgentCliPane = useCallback(
-    (driver: AgentCliDriver) => {
+    (driver: AgentCliDriver): boolean => {
       const w = ensureProjectWindow()
-      if (!canAddTerminalPane(w.id)) return
+      if (!canAddTerminalPane(w.id)) return false
       const rootUri = cwdUri()
       const projectRoot = rootUri ? fileUriToPath(rootUri) : ""
       const launchContext = {
@@ -1681,6 +1688,7 @@ export function MuxApp({
           })
           .catch(() => undefined)
       }
+      return true
     },
     [canAddTerminalPane, cwdUri, ensureProjectWindow, updateWindow, workspace],
   )
@@ -2388,7 +2396,12 @@ export function MuxApp({
 
   useEffect(() => {
     if (!layoutReady || !serverHydratedRef.current || !launchRequest) return
-    if (!claimMuxLaunchRequest(handledLaunchIdsRef.current, launchRequest.id)) return
+    if (!claimMuxLaunchRequest(handledLaunchIdsRef.current, launchRequest.id)) {
+      // Module-level claim already taken (StrictMode remount). Clear the
+      // request without relaunching so HQ intent cannot strand forever.
+      onLaunchRequestHandled?.(launchRequest.id)
+      return
+    }
 
     void (async () => {
       try {
@@ -2396,7 +2409,9 @@ export function MuxApp({
         if (action.kind === "agent") {
           const driver = AGENT_CLI_DRIVERS.find(item => item.id === action.driverId)
           if (!driver) throw new Error(`Unknown agent provider: ${action.driverId}`)
-          openAgentCliPane(driver)
+          if (!openAgentCliPane(driver)) {
+            showYaadeToast("Could not open another terminal pane for that agent.")
+          }
         } else if (action.kind === "terminal") {
           await openTerminalInActiveWindow("right")
         } else if (action.kind === "git") {
@@ -3621,9 +3636,15 @@ export function MuxApp({
                   provider,
                   ptyId,
                 })
+                // HQ live-agents indexes SQLite leaves by ptyId. Flush past the
+                // debounce so navigating back to HQ immediately after launch
+                // still sees the running agent.
+                persist()
+                void persistWriterRef.current.flush()
+              } else {
+                // Persist promptly so reload can reattach this PTY id.
+                persist()
               }
-              // Persist promptly so reload can reattach this PTY id.
-              persist()
             }}
             onInput={recordTerminalUserInput}
             onOutput={recordTerminalOutput}
