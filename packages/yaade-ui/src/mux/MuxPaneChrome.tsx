@@ -133,7 +133,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           className={secondaryControlClass}
           onClick={onOpenGit}
         >
-          <GitBranch className="size-3" />
+          <GitBranch />
         </Button>
       ) : null}
       {onOpenEditor ? (
@@ -182,9 +182,9 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           onClick={onZoom}
         >
           {zoomed ? (
-            <Minimize2 className="size-3" />
+            <Minimize2 />
           ) : (
-            <Maximize2 className="size-3" />
+            <Maximize2 />
           )}
         </Button>
       ) : null}
@@ -198,7 +198,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
         className={secondaryControlClass}
         onClick={onClose}
       >
-        <X className="size-3" />
+        <X />
       </Button>
     </>
   )
@@ -214,9 +214,9 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
           data-zoomed={zoomed ? "" : undefined}
           data-dragging={isDragging ? "" : undefined}
           className={cn(
-            "group/mux-chrome flex h-5 shrink-0 items-center gap-0.5 border-b px-1",
+            "group/mux-chrome relative flex h-7 shrink-0 items-center gap-0.5 border-b px-1.5",
             "border-border bg-card",
-            focused && "border-primary/40 bg-card",
+            focused && "bg-secondary/30 after:absolute after:top-0 after:left-2 after:h-px after:w-16 after:bg-primary",
             isDragging && "opacity-45",
             className,
           )}
@@ -237,8 +237,8 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
             data-yaade-mux-pane-title=""
             data-yaade-mux-pane-drag=""
             className={cn(
-              "h-4 shrink justify-start gap-1 rounded-sm px-0.5",
-              title ? "max-w-[28%]" : "max-w-8",
+              "h-6 shrink justify-start gap-1.5 px-1",
+              title ? "max-w-[32%]" : "max-w-8",
               draggable && !zoomed
                 ? "cursor-grab touch-none active:cursor-grabbing"
                 : "",
@@ -249,7 +249,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
               aria-hidden
               data-yaade-mux-pane-process={processName ?? ""}
               style={tileStyle}
-              className="flex size-3 shrink-0 items-center justify-center rounded-[0.2rem] text-4xs font-semibold leading-none shadow-sm ring-1 ring-black/25"
+              className="flex size-3.5 shrink-0 items-center justify-center rounded-sm text-4xs font-semibold leading-none ring-1 ring-border"
             >
               {identity.glyph}
             </span>
@@ -291,7 +291,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
               className="text-muted-foreground hover:text-foreground"
               onClick={onSplitRight}
             >
-              <Columns2 className="size-3" />
+              <Columns2 />
             </Button>
             <Button
               type="button"
@@ -302,7 +302,7 @@ export function MuxPaneChrome(props: MuxPaneChromeProps) {
               className="text-muted-foreground hover:text-foreground"
               onClick={onSplitDown}
             >
-              <Rows2 className="size-3" />
+              <Rows2 />
             </Button>
             {secondaryControls}
           </div>

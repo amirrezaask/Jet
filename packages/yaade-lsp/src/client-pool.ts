@@ -397,6 +397,8 @@ function requestWithCancellation<R>(
 export class LspClientPool {
   private clients = new Map<string, MonacoLspClient>()
   private pending = new Map<string, Promise<MonacoLspClient>>()
+  private connectionGenerations = new Map<string, number>()
+  private pendingDisconnectors = new Map<string, () => void>()
   private connections = new Map<string, MessageConnection>()
   private connectionDescriptors = new Map<string, LspConnection>()
   private disposables = new Map<string, monaco.IDisposable[]>()
@@ -478,10 +480,15 @@ export class LspClientPool {
     const pending = this.pending.get(conn.id)
     if (pending) return pending
 
-    const connecting = this.connect(conn)
+    const generation = this.connectionGenerations.get(conn.id) ?? 0
+    const connecting = this.connect(conn, generation)
     this.pending.set(conn.id, connecting)
     try {
       const client = await connecting
+      if ((this.connectionGenerations.get(conn.id) ?? 0) !== generation) {
+        client.disconnect()
+        throw new Error(`LSP connection ${conn.id} was released during startup`)
+      }
       this.clients.set(conn.id, client)
       return client
     } finally {
@@ -524,7 +531,13 @@ export class LspClientPool {
   }
 
   releaseConnection(connectionId: string): void {
+    this.connectionGenerations.set(
+      connectionId,
+      (this.connectionGenerations.get(connectionId) ?? 0) + 1,
+    )
     this.pending.delete(connectionId)
+    this.pendingDisconnectors.get(connectionId)?.()
+    this.pendingDisconnectors.delete(connectionId)
     const client = this.clients.get(connectionId)
     if (client) {
       client.disconnect()
@@ -539,18 +552,39 @@ export class LspClientPool {
   }
 
   clear(): void {
-    this.pending.clear()
-    for (const id of [...this.clients.keys()]) this.releaseConnection(id)
+    const ids = new Set([...this.pending.keys(), ...this.clients.keys()])
+    for (const id of ids) this.releaseConnection(id)
     this.editorOpener?.dispose()
     this.editorOpener = null
   }
 
-  private async connect(conn: LspConnection): Promise<MonacoLspClient> {
+  private async connect(
+    conn: LspConnection,
+    generation: number,
+  ): Promise<MonacoLspClient> {
     const deps = this.workspaceDeps
     if (!deps) throw new Error("LSP workspace deps not configured")
 
     const { webSocket, reader, writer } = await createWebSocketTransports(conn.transportUrl)
     const connection = createMessageConnection(reader, writer)
+    const cancelPending = () => {
+      if (this.connections.get(conn.id) === connection) {
+        this.connections.delete(conn.id)
+        this.connectionDescriptors.delete(conn.id)
+      }
+      try {
+        connection.dispose()
+      } catch {
+        /* already disposed */
+      }
+      webSocket.close()
+    }
+    this.pendingDisconnectors.set(conn.id, cancelPending)
+    if ((this.connectionGenerations.get(conn.id) ?? 0) !== generation) {
+      cancelPending()
+      this.pendingDisconnectors.delete(conn.id)
+      throw new Error(`LSP connection ${conn.id} was released during startup`)
+    }
     this.connections.set(conn.id, connection)
     this.connectionDescriptors.set(conn.id, conn)
 
@@ -587,13 +621,22 @@ export class LspClientPool {
 
     connection.listen()
 
-    const initialized = await connection.sendRequest<InitializeResult>("initialize", {
-      processId: null,
-      clientInfo: { name: "yaade", version: "0.0.1" },
-      rootUri: conn.projectRootUri,
-      workspaceFolders: [{ uri: conn.projectRootUri, name: "workspace" }],
-      capabilities: yaadeLspClientCapabilities,
-    })
+    let initialized: InitializeResult
+    try {
+      initialized = await connection.sendRequest<InitializeResult>("initialize", {
+        processId: null,
+        clientInfo: { name: "yaade", version: "0.0.1" },
+        rootUri: conn.projectRootUri,
+        workspaceFolders: [{ uri: conn.projectRootUri, name: "workspace" }],
+        capabilities: yaadeLspClientCapabilities,
+      })
+    } catch (error) {
+      cancelPending()
+      this.pendingDisconnectors.delete(conn.id)
+      throw error
+    }
+
+    this.pendingDisconnectors.delete(conn.id)
 
     await connection.sendNotification("initialized", {})
 
@@ -632,6 +675,7 @@ export class LspClientPool {
           /* ignore */
         }
         connection.dispose()
+        this.pendingDisconnectors.delete(conn.id)
         this.connections.delete(conn.id)
         this.connectionDescriptors.delete(conn.id)
         webSocket.close()

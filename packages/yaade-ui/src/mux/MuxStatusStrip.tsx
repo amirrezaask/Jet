@@ -50,7 +50,7 @@ export function MuxStatusStrip(props: MuxStatusStripProps) {
     <footer
       data-yaade-mux-status-strip=""
       className={cn(
-        "flex h-6 shrink-0 items-center gap-2 border-t border-border bg-card px-2 text-3xs text-muted-foreground",
+        "flex h-7 shrink-0 items-center gap-2 border-t border-border bg-background px-2.5 text-3xs text-muted-foreground",
         className,
       )}
     >
@@ -75,7 +75,7 @@ export function MuxStatusStrip(props: MuxStatusStripProps) {
             title={
               action.shortcut ? `${action.label} (${action.shortcut})` : action.label
             }
-            className="h-5 gap-1 px-1.5 text-3xs text-muted-foreground hover:text-foreground"
+            className="h-6 gap-1 px-1.5 text-3xs text-muted-foreground hover:text-foreground"
             onClick={action.onClick}
           >
             <ActionIcon name={action.icon} />

@@ -96,12 +96,16 @@ export function useLspLifecycle(
       getContent: (uri: string) => monacoModels.getContent(uri),
       updateContent: (uri: string, content: string) => {
         monacoModels.updateContent(uri, content, { preserveCursor: true })
-        workspace.markDirty(uri, content !== (workspace.savedBaselineFor(uri) ?? ""))
       },
       writeFile: async (uri: string, content: string) => {
         await workspace.writeFile(uri, content)
         workspace.setSavedBaseline(uri, content)
-        workspace.markDirty(uri, false)
+        const { editorBufferServiceFor } = await import(
+          "../editor/editor-buffer-service.js"
+        )
+        const buffers = editorBufferServiceFor(workspace)
+        if (buffers.snapshot(uri)) buffers.markSaved(uri)
+        else workspace.markDirty(uri, false)
       },
     })
     runtime.pool.setServerMessageHandler((message, kind) => {

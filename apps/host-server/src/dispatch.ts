@@ -1,9 +1,13 @@
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import {
+  createDirectory,
+  createFile,
+  emptyTrash,
   fileSearch,
   exists,
-  gitIsRepo,
+  isSearchSupported,
   isSearchScanReady,
+  listTrash,
   listProjectFiles,
   loadGlobalYaadercScanRoots,
   openInApp,
@@ -11,33 +15,46 @@ import {
   projectSearch,
   readDir,
   readFile,
+  readTextFile,
+  renamePath,
+  restoreTrash,
   spawnTask,
-  startLspSession,
   stat,
-  stopLspSession,
   trackFileAccess,
+  trashPath,
   writeFile,
+  writeTextFile,
   writeTempDrop,
   assertAllowedUri,
   type TerminalLaunch,
 } from "@yaade/node-host"
 import {
+  ConflictError,
   OperationFailedError,
+  FileChangedError,
+  LspLogRequest,
+  LspResolveRequest,
+  NotFoundError,
   PathOutsideRootsError,
+  PayloadTooLargeError,
+  ResolvedLanguageServerTarget,
+  TextFileWriteOptions,
   UnknownChannelError,
   unknownChannel,
   type HostRpcError,
 } from "@yaade/rpc"
 import type {
   BindNotificationSessionRequest,
+  FileSearchOptions,
   IngestNotificationRequest,
   ListNotificationsRequest,
   MarkAllNotificationsReadRequest,
   NotificationPreferences,
+  ProjectSearchOptions,
 } from "@yaade/shared"
 import { fileUriToPath } from "@yaade/shared"
 import { GitServiceLive, GitServiceTag } from "./effect/git.js"
-import { HostRuntimeTag } from "./effect/tags.js"
+import { HostRuntimeTag, LspHostTag } from "./effect/tags.js"
 import type { HostRuntime } from "./host-runtime.js"
 import { normalizeHookEventName } from "./notifications/index.js"
 import { installProjectHooksForProvider } from "./agents/index.js"
@@ -46,6 +63,15 @@ export type { HostRuntime } from "./host-runtime.js"
 export { createRuntime, shutdownRuntime } from "./host-runtime.js"
 
 export function mapDispatchError(channel: string, error: unknown): HostRpcError {
+  if (
+    error instanceof ConflictError ||
+    error instanceof FileChangedError ||
+    error instanceof NotFoundError ||
+    error instanceof PathOutsideRootsError ||
+    error instanceof PayloadTooLargeError
+  ) {
+    return error
+  }
   const message = error instanceof Error ? error.message : String(error)
   if (message.includes("not allowed") || message.includes("PATH_OUTSIDE")) {
     return new PathOutsideRootsError({ message })
@@ -59,20 +85,24 @@ export function mapDispatchError(channel: string, error: unknown): HostRpcError 
   return new OperationFailedError({ message, cause: error })
 }
 
-export type DispatchEnv = HostRuntimeTag | GitServiceTag
+export type DispatchEnv = HostRuntimeTag | LspHostTag | GitServiceTag
 
 export function dispatch(
   channel: string,
   args: unknown[],
   clientId: string,
+  signal?: AbortSignal,
 ): Effect.Effect<unknown, HostRpcError, DispatchEnv> {
   return Effect.gen(function* () {
     if (channel.startsWith("git:")) {
       return yield* handleGitEffect(channel, args)
     }
+    if (channel.startsWith("lsp:")) {
+      return yield* handleLspEffect(channel, args)
+    }
     const runtime = yield* HostRuntimeTag
     return yield* Effect.tryPromise({
-      try: () => dispatchImpl(runtime, channel, args, clientId),
+      try: () => dispatchImpl(runtime, channel, args, clientId, signal),
       catch: err => mapDispatchError(channel, err),
     })
   })
@@ -83,10 +113,12 @@ export function dispatchPromise(
   channel: string,
   args: unknown[],
   clientId: string,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   return Effect.runPromise(
-    dispatch(channel, args, clientId).pipe(
+    dispatch(channel, args, clientId, signal).pipe(
       Effect.provideService(HostRuntimeTag, runtime),
+      Effect.provideService(LspHostTag, runtime.lsp),
       Effect.provide(GitServiceLive),
     ),
   )
@@ -97,6 +129,7 @@ async function dispatchImpl(
   channel: string,
   args: unknown[],
   clientId: string,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   if (channel === "fs:showOpenFolderDialog" || channel === "fs:showSaveFileDialog") return null
   if (channel === "yaade:getLaunchConfig") return runtime.config.launchConfig
@@ -111,10 +144,9 @@ async function dispatchImpl(
   if (channel.startsWith("notifications:")) {
     return handleNotifications(runtime, channel, args)
   }
-  if (channel.startsWith("fs:")) return handleFs(channel, args)
-  if (channel.startsWith("search:")) return handleSearch(runtime, channel, args)
+  if (channel.startsWith("fs:")) return handleFs(runtime, channel, args)
+  if (channel.startsWith("search:")) return handleSearch(runtime, channel, args, signal)
   if (channel.startsWith("workspace:")) return handleWorkspace(runtime, channel, args)
-  if (channel.startsWith("lsp:")) return handleLsp(runtime, channel, args)
   if (channel.startsWith("terminal:")) return handleTerminal(runtime, channel, args, clientId)
   if (channel.startsWith("shell:")) return handleShell(channel, args)
   if (channel.startsWith("tasks:")) return handleTasks(channel, args)
@@ -307,13 +339,31 @@ function parseAgentProvider(
   return null
 }
 
-async function handleFs(channel: string, args: unknown[]): Promise<unknown> {
+async function handleFs(
+  runtime: HostRuntime,
+  channel: string,
+  args: unknown[],
+): Promise<unknown> {
+  const mutationOptions = {
+    dataDir: runtime.config.dataDir,
+    allowedRoots: runtime.config.allowedRoots,
+  }
   switch (channel) {
     case "fs:readFile":
       return readFile(str(args[0], "uri"))
     case "fs:writeFile":
       await writeFile(str(args[0], "uri"), String(args[1] ?? ""))
       return null
+    case "fs:readTextFile":
+      return readTextFile(str(args[0], "uri"))
+    case "fs:writeTextFile": {
+      const options = await Schema.decodeUnknownPromise(TextFileWriteOptions)(args[2])
+      return writeTextFile(
+        str(args[0], "uri"),
+        String(args[1] ?? ""),
+        options,
+      )
+    }
     case "fs:writeTempDrop":
       return writeTempDrop(String(args[0] ?? "drop.bin"), str(args[1], "content"))
     case "fs:readDir":
@@ -322,6 +372,28 @@ async function handleFs(channel: string, args: unknown[]): Promise<unknown> {
       return stat(str(args[0], "uri"))
     case "fs:exists":
       return exists(str(args[0], "uri"))
+    case "fs:createFile":
+      return createFile(str(args[0], "uri"), mutationOptions)
+    case "fs:mkdir":
+      return createDirectory(str(args[0], "uri"), mutationOptions)
+    case "fs:rename":
+      return renamePath(
+        str(args[0], "sourceUri"),
+        str(args[1], "targetUri"),
+        mutationOptions,
+      )
+    case "fs:trash":
+      return trashPath(str(args[0], "uri"), mutationOptions)
+    case "fs:restoreTrash":
+      return restoreTrash(
+        str(args[0], "trashId"),
+        typeof args[1] === "string" ? args[1] : undefined,
+        mutationOptions,
+      )
+    case "fs:listTrash":
+      return listTrash(mutationOptions)
+    case "fs:emptyTrash":
+      return emptyTrash(mutationOptions)
     default:
       throw new Error(`unknown fs channel: ${channel}`)
   }
@@ -440,24 +512,27 @@ async function handleSearch(
   runtime: HostRuntime,
   channel: string,
   args: unknown[],
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const rootUri = str(args[0], "rootUri")
   switch (channel) {
     case "search:listFiles": {
-  // Return via RPC only — do not push tens of thousands of paths into EventHub/WS replay.
-      return listProjectFiles(rootUri)
+      // Return via RPC only — do not push tens of thousands of paths into EventHub/WS replay.
+      return listProjectFiles(rootUri, undefined, signal)
     }
     case "search:project":
       return projectSearch(
         rootUri,
         String(args[1] ?? ""),
-        args[2] as { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean } | undefined,
+        args[2] as ProjectSearchOptions | undefined,
+        signal,
       )
     case "search:fileSearch":
       return fileSearch(
         rootUri,
         String(args[1] ?? ""),
-        args[2] as { pageSize?: number; currentFile?: string } | undefined,
+        args[2] as FileSearchOptions | undefined,
+        signal,
       )
     case "search:trackFileAccess":
       await trackFileAccess(rootUri, String(args[1] ?? ""), String(args[2] ?? ""))
@@ -465,7 +540,7 @@ async function handleSearch(
     case "search:isScanReady":
       return isSearchScanReady(rootUri)
     case "search:isSupported":
-      return gitIsRepo(rootUri)
+      return isSearchSupported(rootUri)
     default:
       throw new Error(`unknown search channel: ${channel}`)
   }
@@ -478,26 +553,46 @@ function handleWorkspace(runtime: HostRuntime, channel: string, args: unknown[])
   throw new Error(`unknown workspace channel: ${channel}`)
 }
 
-async function handleLsp(runtime: HostRuntime, channel: string, args: unknown[]): Promise<unknown> {
-  if (channel === "lsp:start") {
-    const rootUri = str(args[0], "rootUri")
-    const serverId =
-      typeof args[2] === "string" ? str(args[2], "serverId") : str(args[1], "serverId")
-    const started = await startLspSession({
-      rootUri,
-      serverId,
-      allowedRoots: runtime.config.allowedRoots,
-    })
-    if (started.error) {
-      return { id: started.id, transportUrl: "", error: started.error }
+function decodeLspInput<A, I, R>(
+  schema: Schema.Schema<A, I, R>,
+  input: unknown,
+): Effect.Effect<A, HostRpcError, R> {
+  return Schema.decodeUnknown(schema)(input).pipe(
+    Effect.mapError(error => new OperationFailedError({
+      message: `Invalid LSP request: ${error.message}`,
+      cause: error,
+    })),
+  )
+}
+
+function handleLspEffect(
+  channel: string,
+  args: unknown[],
+): Effect.Effect<unknown, HostRpcError, LspHostTag> {
+  return Effect.gen(function* () {
+    const lsp = yield* LspHostTag
+    switch (channel) {
+      case "lsp:resolve": {
+        const request = yield* decodeLspInput(LspResolveRequest, args[0])
+        return yield* Effect.promise(() => lsp.resolve(request))
+      }
+      case "lsp:start": {
+        const target = yield* decodeLspInput(ResolvedLanguageServerTarget, args[0])
+        return yield* Effect.promise(() => lsp.start(target))
+      }
+      case "lsp:stop":
+        yield* Effect.promise(() => lsp.stop(str(args[0], "id")))
+        return null
+      case "lsp:listDefinitions":
+        return lsp.listDefinitions()
+      case "lsp:logs": {
+        const request = yield* decodeLspInput(LspLogRequest, args[0] ?? {})
+        return lsp.logs(request)
+      }
+      default:
+        return yield* Effect.fail(unknownChannel(channel))
     }
-    return { id: started.id, transportUrl: `/ws/lsp/${started.id}` }
-  }
-  if (channel === "lsp:stop") {
-    await stopLspSession(str(args[0], "id"))
-    return null
-  }
-  throw new Error(`unknown lsp channel: ${channel}`)
+  })
 }
 
 async function handleTerminal(

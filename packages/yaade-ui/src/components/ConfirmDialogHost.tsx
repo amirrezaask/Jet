@@ -19,6 +19,16 @@ export type ConfirmOptions = {
   variant?: YaadeVariant
 }
 
+export type SaveDiscardOptions = {
+  title: string
+  description: string
+  saveLabel?: string
+  discardLabel?: string
+  cancelLabel?: string
+}
+
+export type SaveDiscardDecision = "save" | "discard" | "cancel"
+
 function actionVariant(
   variant: YaadeVariant | undefined,
   destructive: boolean | undefined,
@@ -35,8 +45,8 @@ function actionVariant(
 }
 
 type PendingConfirm = {
-  options: ConfirmOptions
-  resolve: (value: boolean) => void
+  options: ConfirmOptions & { alternateLabel?: string }
+  resolve: (value: "confirm" | "alternate" | "cancel") => void
 }
 
 let pending: PendingConfirm | null = null
@@ -53,8 +63,37 @@ function subscribe(listener: () => void): () => void {
 
 export function requestConfirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise(resolve => {
-    pending?.resolve(false)
-    pending = { options, resolve }
+    pending?.resolve("cancel")
+    pending = {
+      options,
+      resolve: value => resolve(value === "confirm"),
+    }
+    emitChange()
+  })
+}
+
+export function requestSaveDiscard(
+  options: SaveDiscardOptions,
+): Promise<SaveDiscardDecision> {
+  return new Promise(resolve => {
+    pending?.resolve("cancel")
+    pending = {
+      options: {
+        title: options.title,
+        description: options.description,
+        confirmLabel: options.saveLabel ?? "Save All",
+        alternateLabel: options.discardLabel ?? "Discard All",
+        cancelLabel: options.cancelLabel ?? "Cancel",
+      },
+      resolve: value =>
+        resolve(
+          value === "confirm"
+            ? "save"
+            : value === "alternate"
+              ? "discard"
+              : "cancel",
+        ),
+    }
     emitChange()
   })
 }
@@ -64,14 +103,17 @@ export function ConfirmDialogHost() {
   const options = request?.options ?? null
   const open = request != null
 
-  const finish = (target: PendingConfirm, value: boolean) => {
+  const finish = (
+    target: PendingConfirm,
+    value: "confirm" | "alternate" | "cancel",
+  ) => {
     if (pending !== target) return
     pending = null
     target.resolve(value)
     emitChange()
   }
 
-  const finishCurrent = (value: boolean) => {
+  const finishCurrent = (value: "confirm" | "alternate" | "cancel") => {
     const current = pending
     if (current) finish(current, value)
   }
@@ -80,7 +122,7 @@ export function ConfirmDialogHost() {
     <AlertDialog
       open={open}
       onOpenChange={next => {
-        if (!next && request) finish(request, false)
+        if (!next && request) finish(request, "cancel")
       }}
     >
       <AlertDialogContent>
@@ -93,15 +135,25 @@ export function ConfirmDialogHost() {
             type="button"
             data-yaade-confirm="cancel"
             variant="outline"
-            onClick={() => finishCurrent(false)}
+            onClick={() => finishCurrent("cancel")}
           >
             {options?.cancelLabel ?? "Cancel"}
           </Button>
+          {options?.alternateLabel ? (
+            <Button
+              type="button"
+              data-yaade-confirm="alternate"
+              variant="destructive"
+              onClick={() => finishCurrent("alternate")}
+            >
+              {options.alternateLabel}
+            </Button>
+          ) : null}
           <Button
             type="button"
             data-yaade-confirm="accept"
             variant={actionVariant(options?.variant, options?.destructive)}
-            onClick={() => finishCurrent(true)}
+            onClick={() => finishCurrent("confirm")}
           >
             {options?.confirmLabel ?? "Continue"}
           </Button>

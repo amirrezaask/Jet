@@ -68,6 +68,8 @@ export type MuxWindowViewProps = {
   empty: ReactNode
   /** Optional editor pane body renderer (lazy monaco). */
   renderEditor?: (tabId: string, panelId: PanelId, focused: boolean) => ReactNode
+  /** Optional persistent tiled-tool renderer (Explorer, Search, Problems, …). */
+  renderTool?: (tabId: string, panelId: PanelId, focused: boolean) => ReactNode
 }
 
 function muxLeafView(view: PanelView | null): PanelView {
@@ -140,11 +142,7 @@ function PaneChromeShell(props: {
 
   return (
     <div
-      className={
-        focused
-          ? "group/mux-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background/30 ring-1 ring-inset ring-ring/60"
-          : "group/mux-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background/20"
-      }
+      className="group/mux-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card outline-none"
       role="group"
       aria-label={title}
       aria-current={focused ? "true" : undefined}
@@ -280,6 +278,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
     fontSize,
     empty,
     renderEditor,
+    renderTool,
   } = props
 
   const paneCount = listPaneLeaves(tree).length
@@ -292,10 +291,10 @@ export function MuxWindowView(props: MuxWindowViewProps) {
   if (paneCount === 0) {
     return (
       <div
-        className="flex h-full min-h-0 w-full flex-col overflow-hidden p-1"
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden p-1.5"
         data-yaade-mux-window=""
       >
-        <div className="h-full min-h-0 w-full overflow-hidden rounded-md border border-border/40 bg-background/20">
+        <div className="h-full min-h-0 w-full overflow-hidden rounded-lg border border-border bg-card">
           <MuxEmptyState
             onOpenTerminal={() => onEmptyOpenTerminal?.()}
             onOpenNeovim={() => onEmptyOpenNeovim?.()}
@@ -338,6 +337,8 @@ export function MuxWindowView(props: MuxWindowViewProps) {
           <TerminalSlot tabId={tabId} />
         ) : kind === "editor" ? (
           (renderEditor?.(tabId, panelId, focused) ?? empty)
+        ) : kind === "tool" ? (
+          (renderTool?.(tabId, panelId, focused) ?? empty)
         ) : (
           empty
         )
@@ -388,6 +389,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
       paneProcessName,
       paneTitle,
       renderEditor,
+      renderTool,
       shortcutFor,
       theme,
       fontSize,
@@ -408,7 +410,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
   if (zoomedLeaf) {
     return (
       <div
-        className="flex h-full min-h-0 w-full flex-col overflow-hidden p-1"
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden p-1.5"
         data-yaade-mux-window=""
         data-zoomed=""
       >
@@ -419,7 +421,7 @@ export function MuxWindowView(props: MuxWindowViewProps) {
 
   return (
     <div
-      className="h-full min-h-0 w-full gap-1 p-1 [&_[data-slot=resizable-panel-group]]:gap-1"
+      className="h-full min-h-0 w-full gap-1.5 p-1.5 [&_[data-slot=resizable-panel-group]]:gap-1.5"
       data-yaade-mux-window=""
     >
       <PanelDock

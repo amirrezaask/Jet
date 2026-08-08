@@ -46,6 +46,7 @@ export const HostEventChannels = [
   "workspace:fileIndex",
   "fs:changed",
   "lsp:crashed",
+  "lsp:lifecycle",
   "server:shuttingDown",
   "connection:status",
   "protocol:error",
@@ -55,8 +56,73 @@ export type HostEventChannel = (typeof HostEventChannels)[number]
 /** Common channel arg codecs (loose where host historically accepted unknown). */
 export const FsReadFileArgs = Schema.Tuple(Schema.String)
 export const FsWriteFileArgs = Schema.Tuple(Schema.String, Schema.String)
+export const TextFileReadResult = Schema.Struct({
+  content: Schema.String,
+  version: Schema.String,
+  size: Schema.Number,
+})
+export type TextFileReadResult = Schema.Schema.Type<typeof TextFileReadResult>
+
+export const TextFileWriteOptions = Schema.Union(
+  Schema.Struct({ expectedVersion: Schema.String }),
+  Schema.Struct({ create: Schema.Literal(true) }),
+)
+export type TextFileWriteOptions = Schema.Schema.Type<typeof TextFileWriteOptions>
+
+export const TextFileWriteResult = Schema.Struct({
+  version: Schema.String,
+  size: Schema.Number,
+})
+export type TextFileWriteResult = Schema.Schema.Type<typeof TextFileWriteResult>
+
+export const FsReadTextFileArgs = Schema.Tuple(Schema.String)
+export const FsWriteTextFileArgs = Schema.Tuple(
+  Schema.String,
+  Schema.String,
+  TextFileWriteOptions,
+)
 export const FsReadDirArgs = Schema.Tuple(Schema.String)
 export const FsStatArgs = Schema.Tuple(Schema.String)
+
+export const TrashEntry = Schema.Struct({
+  id: Schema.String,
+  originalUri: Schema.String,
+  name: Schema.String,
+  isDirectory: Schema.Boolean,
+  size: Schema.Number,
+  trashedAt: Schema.Number,
+})
+export type TrashEntry = Schema.Schema.Type<typeof TrashEntry>
+
+export const FsMutationStat = Schema.Struct({
+  uri: Schema.String,
+  isDirectory: Schema.Boolean,
+  size: Schema.Number,
+})
+export type FsMutationStat = Schema.Schema.Type<typeof FsMutationStat>
+
+export const RestoreTrashResult = Schema.Struct({
+  entry: TrashEntry,
+  uri: Schema.String,
+})
+export type RestoreTrashResult = Schema.Schema.Type<typeof RestoreTrashResult>
+
+export const EmptyTrashResult = Schema.Struct({
+  removed: Schema.Number,
+  bytes: Schema.Number,
+})
+export type EmptyTrashResult = Schema.Schema.Type<typeof EmptyTrashResult>
+
+export const FsCreateFileArgs = Schema.Tuple(Schema.String)
+export const FsMkdirArgs = Schema.Tuple(Schema.String)
+export const FsRenameArgs = Schema.Tuple(Schema.String, Schema.String)
+export const FsTrashArgs = Schema.Tuple(Schema.String)
+export const FsRestoreTrashArgs = Schema.Union(
+  Schema.Tuple(Schema.String),
+  Schema.Tuple(Schema.String, Schema.String),
+)
+export const FsListTrashArgs = Schema.Tuple()
+export const FsEmptyTrashArgs = Schema.Tuple()
 
 export const GitPathArgs = Schema.Tuple(Schema.String)
 export const TerminalCreateArgs = Schema.Array(Schema.Unknown)

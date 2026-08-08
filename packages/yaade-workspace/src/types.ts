@@ -7,8 +7,42 @@ import type {
   GitWorktree,
   PanelId,
   PanelView,
+  FileSearchOptions,
+  ProjectSearchOptions,
   ProjectSearchResult,
+  SearchPage,
 } from "@yaade/shared"
+import type {
+  EmptyTrashResult,
+  LanguageServerDefinition,
+  LspLifecycleEvent,
+  LspLogEntry,
+  LspLogRequest,
+  LspResolveRequest,
+  LspStartResult,
+  ResolvedLanguageServerTarget,
+  RestoreTrashResult,
+  TextFileReadResult,
+  TextFileWriteOptions,
+  TextFileWriteResult,
+  TrashEntry,
+} from "@yaade/rpc"
+
+export type {
+  EmptyTrashResult,
+  LanguageServerDefinition,
+  LspLifecycleEvent,
+  LspLogEntry,
+  LspLogRequest,
+  LspResolveRequest,
+  LspStartResult,
+  ResolvedLanguageServerTarget,
+  RestoreTrashResult,
+  TextFileReadResult,
+  TextFileWriteOptions,
+  TextFileWriteResult,
+  TrashEntry,
+} from "@yaade/rpc"
 
 export type WorkspaceFile = {
   uri: string
@@ -39,6 +73,12 @@ export type WorkspaceRoot = {
 export interface FileSystemProvider {
   readFile(uri: string): Promise<string>
   writeFile(uri: string, content: string): Promise<void>
+  readTextFile?(uri: string): Promise<TextFileReadResult>
+  writeTextFile?(
+    uri: string,
+    content: string,
+    options: TextFileWriteOptions,
+  ): Promise<TextFileWriteResult>
   readDir(uri: string): Promise<WorkspaceEntry[]>
   stat(uri: string): Promise<WorkspaceStat>
   /** Expected-miss probe. Unlike `stat`, a missing path resolves to false. */
@@ -46,10 +86,23 @@ export interface FileSystemProvider {
 }
 
 export type JetElectronFS = FileSystemProvider & {
+  readTextFile(uri: string): Promise<TextFileReadResult>
+  writeTextFile(
+    uri: string,
+    content: string,
+    options: TextFileWriteOptions,
+  ): Promise<TextFileWriteResult>
   showOpenFolderDialog(): Promise<string | null>
   showSaveFileDialog(defaultPath?: string): Promise<string | null>
   /** Persist a browser File blob under OS temp; returns absolute path for PTY paste. */
   writeTempDrop?(name: string, contentBase64: string): Promise<string>
+  createFile(uri: string): Promise<WorkspaceStat>
+  mkdir(uri: string): Promise<WorkspaceStat>
+  rename(sourceUri: string, targetUri: string): Promise<WorkspaceStat>
+  trash(uri: string): Promise<TrashEntry>
+  restoreTrash(id: string, targetUri?: string): Promise<RestoreTrashResult>
+  listTrash(): Promise<TrashEntry[]>
+  emptyTrash(): Promise<EmptyTrashResult>
   watchWorkspace?(rootUri: string): Promise<void>
   onFileChanged?(callback: (uri: string) => void): () => void
 }
@@ -58,14 +111,16 @@ export type JetElectronSearch = {
   project(
     rootUri: string,
     query: string,
-    opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
-  ): Promise<ProjectSearchResult[]>
-  listFiles(rootUri: string): Promise<string[]>
+    opts?: ProjectSearchOptions,
+    signal?: AbortSignal,
+  ): Promise<SearchPage<ProjectSearchResult>>
+  listFiles(rootUri: string, signal?: AbortSignal): Promise<SearchPage<string>>
   fileSearch(
     rootUri: string,
     query: string,
-    opts?: { pageSize?: number; currentFile?: string },
-  ): Promise<string[]>
+    opts?: FileSearchOptions,
+    signal?: AbortSignal,
+  ): Promise<SearchPage<string>>
   trackFileAccess?(rootUri: string, query: string, path: string): Promise<void>
   isScanReady?(rootUri: string): Promise<boolean>
   isSupported?(rootUri: string): Promise<boolean>
@@ -83,11 +138,13 @@ export type JetElectronTasks = {
 }
 
 export type JetElectronLSP = {
-  start(
-    rootUri: string,
-    serverId: string,
-  ): Promise<{ transportUrl: string; id: string; error?: string }>
+  resolve(request: LspResolveRequest): Promise<ResolvedLanguageServerTarget | null>
+  start(target: ResolvedLanguageServerTarget): Promise<LspStartResult>
   stop(id: string): Promise<void>
+  listDefinitions(): Promise<LanguageServerDefinition[]>
+  logs(request?: LspLogRequest): Promise<LspLogEntry[]>
+  onLifecycle(cb: (event: LspLifecycleEvent) => void): () => void
+  /** Compatibility signal for consumers that only need the failed session id. */
   onCrashed(cb: (id: string) => void): () => void
 }
 

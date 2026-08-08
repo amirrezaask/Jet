@@ -12,16 +12,17 @@ async function locationHref(page: {
 }
 
 test.describe("session routing", () => {
-  test("worktrees Main opens embedded mux; switch via menu only", async () => {
+  test("a session opens embedded mux and resumes from Overview", async () => {
     const { app, page } = await launchJet({ projectPage: true })
     try {
       await waitForProjectPage(page)
-      await page.locator("[data-yaade-worktree-switcher]").click()
-      await page.locator("[data-yaade-worktree-switcher-menu]").waitFor({
-        state: "visible",
-        timeout: 5_000,
+      const createdSessionId = await page.evaluate(async () => {
+        const created = await window.__yaadeAgent!.createProjectSession?.({
+          title: "Main session",
+        })
+        return created?.id ?? null
       })
-      await page.locator("[data-yaade-worktree-main]").click()
+      expect(createdSessionId).toMatch(/^ses-/)
       await page.locator("[data-yaade-mux]").waitFor({
         state: "visible",
         timeout: 30_000,
@@ -79,9 +80,10 @@ test.describe("session routing", () => {
         )
         .toBe(true)
 
-      // Worktrees menu returns to the tiling view for Main.
-      await page.locator("[data-yaade-worktree-switcher]").click()
-      await page.locator("[data-yaade-worktree-main]").click()
+      await page
+        .locator(`[data-yaade-project-session="${createdSessionId}"]`)
+        .getByRole("button", { name: "Resume" })
+        .click()
       await expect
         .poll(
           async () =>

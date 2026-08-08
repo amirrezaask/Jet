@@ -82,6 +82,35 @@ export async function readFileWithDiagnostics(
   }
 }
 
+export async function readTextFileWithDiagnostics<T extends { content: string }>(
+  uri: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  if (!enabled) return read()
+
+  const startedAt = nowMs()
+  const entry = readsByUri.get(uri) ?? {
+    count: 0,
+    bytes: 0,
+    totalDurationMs: 0,
+    errorCount: 0,
+  }
+  readsByUri.set(uri, entry)
+  entry.count++
+  inFlightCount++
+  try {
+    const value = await read()
+    entry.bytes += utf8ByteLength(value.content)
+    return value
+  } catch (error) {
+    entry.errorCount++
+    throw error
+  } finally {
+    entry.totalDurationMs += nowMs() - startedAt
+    inFlightCount = Math.max(0, inFlightCount - 1)
+  }
+}
+
 /**
  * Enable collection and return a cumulative, JSON-serializable snapshot.
  * Collection is off until the first diagnostics read so normal users do not

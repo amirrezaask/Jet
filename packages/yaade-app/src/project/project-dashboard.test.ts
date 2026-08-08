@@ -5,7 +5,6 @@ import {
   loadProjectDashboard,
   recentProjectSessions,
   resolveProjectFilePath,
-  visibleLinkedWorktrees,
 } from "./project-dashboard.js"
 
 function session(
@@ -52,22 +51,6 @@ describe("project dashboard", () => {
     assert.equal(resolveProjectFilePath("/home/dev/repo", "%ZZ"), null)
   })
 
-  it("limits linked worktrees and excludes Main", () => {
-    const rows = Array.from({ length: 7 }, (_, index) => ({
-      path: index === 0 ? "/home/dev/repo" : `/home/.yaade/wt-${index}`,
-      head: null,
-      branch: `refs/heads/wt-${index}`,
-      bare: false,
-      detached: false,
-      locked: false,
-      prunable: false,
-    }))
-    assert.deepEqual(
-      visibleLinkedWorktrees(rows, "/home/dev/repo").map(row => row.path),
-      ["/home/.yaade/wt-1", "/home/.yaade/wt-2", "/home/.yaade/wt-3", "/home/.yaade/wt-4"],
-    )
-  })
-
   it("preserves partial results when one Git source fails", async () => {
     const dashboard = await loadProjectDashboard("/home/dev/repo", {
       listSessions: async () => [session("main", "2026-03-01T00:00:00.000Z")],
@@ -77,19 +60,25 @@ describe("project dashboard", () => {
       },
       git: {
         isRepo: async () => true,
-        summary: async () => ({ branch: "main", upstream: "origin/main", ahead: 0, behind: 0 }),
-        status: async () => {
-          throw new Error("status failed")
+        branch: async () => "main",
+        branches: async () => {
+          throw new Error("branches failed")
         },
-        worktreeList: async () => [],
-        defaultBranch: async () => "main",
+        history: async () => [{
+          hash: "abc1234",
+          shortHash: "abc1234",
+          author: "Tester",
+          authoredAt: Date.parse("2026-03-01T00:00:00.000Z"),
+          subject: "feat: add project overview",
+        }],
       },
     })
     assert.equal(dashboard.readme.value, "# Repo")
     assert.equal(dashboard.sessions.value.length, 1)
-    assert.equal(dashboard.summary.value?.branch, "main")
-    assert.equal(dashboard.status.value, null)
-    assert.match(dashboard.status.error ?? "", /status failed/)
+    assert.equal(dashboard.branch.value, "main")
+    assert.equal(dashboard.history.value?.[0]?.subject, "feat: add project overview")
+    assert.equal(dashboard.branches.value, null)
+    assert.match(dashboard.branches.error ?? "", /branches failed/)
   })
 
   it("models non-Git projects without section errors", async () => {
@@ -97,14 +86,14 @@ describe("project dashboard", () => {
       listSessions: async () => [],
       git: {
         isRepo: async () => false,
-        summary: async () => { throw new Error("must not run") },
-        status: async () => { throw new Error("must not run") },
-        worktreeList: async () => { throw new Error("must not run") },
-        defaultBranch: async () => { throw new Error("must not run") },
+        branch: async () => { throw new Error("must not run") },
+        branches: async () => { throw new Error("must not run") },
+        history: async () => { throw new Error("must not run") },
       },
     })
     assert.equal(dashboard.isGitRepo.value, false)
     assert.equal(dashboard.isGitRepo.error, null)
-    assert.equal(dashboard.status.error, null)
+    assert.equal(dashboard.history.error, null)
+    assert.equal(dashboard.branches.error, null)
   })
 })

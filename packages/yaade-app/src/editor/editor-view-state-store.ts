@@ -47,6 +47,23 @@ export function snapshotEditorViewStates(
   return Object.fromEntries(statesBySession.get(sessionId) ?? [])
 }
 
+/** Move every per-pane view state when Save As promotes a buffer URI. */
+export function remapEditorViewStateUri(
+  sessionId: string,
+  oldUri: string,
+  newUri: string,
+): void {
+  const session = statesBySession.get(sessionId)
+  if (!session || oldUri === newUri) return
+  const suffix = `\0${oldUri}`
+  for (const [key, state] of [...session.entries()]) {
+    if (!key.endsWith(suffix)) continue
+    const viewStateId = key.slice(0, -suffix.length)
+    session.set(editorViewStateKey(viewStateId, newUri), state)
+    session.delete(key)
+  }
+}
+
 export function clearEditorViewStates(sessionId: string): void {
   statesBySession.delete(sessionId)
 }

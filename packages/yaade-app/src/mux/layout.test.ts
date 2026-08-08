@@ -1,19 +1,76 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { buildTabsView, panelTabIds } from "@yaade/workspace"
+import { buildTabsView, panelTabIds, YaadePanelTree } from "@yaade/workspace"
 import {
   emptyMuxTree,
+  listPaneLeaves,
   muxLeafKind,
   paneView,
   placeOrPushEditorTab,
   placePtyInTree,
 } from "./layout.js"
+import { placeToolPane } from "./place-pane.js"
+import { MUX_TOOL_PANES, muxToolPane } from "./tool-pane.js"
 
 describe("muxLeafKind — file editor tabs", () => {
   it("recognizes file uris as editor", () => {
     assert.equal(muxLeafKind("file:///tmp/a.ts"), "editor")
     assert.equal(muxLeafKind("untitled:1"), "editor")
     assert.equal(muxLeafKind("yaade:editor:pane-1"), "editor")
+  })
+})
+
+describe("persistent mux tool panes", () => {
+  it("recognizes every stable tool id without treating it as an editor", () => {
+    for (const tool of MUX_TOOL_PANES) {
+      assert.equal(muxLeafKind(tool.tabId), "tool", tool.kind)
+    }
+  })
+
+  it("places Explorer as a singleton and focuses the existing leaf", () => {
+    const tree = emptyMuxTree()
+    const terminal = placePtyInTree(tree, "yaade:terminal:s1", null)
+    const live = {
+      id: "window-1",
+      title: "Workspace",
+      tree,
+      focusedPaneId: terminal,
+      zoomedPaneId: null,
+    }
+    const explorer = muxToolPane("explorer")
+    const opened = placeToolPane(live, explorer)
+    assert.notEqual(opened.focusedPaneId?.id, terminal.id)
+    assert.equal(listPaneLeaves(opened.tree).length, 2)
+    assert.deepEqual(
+      listPaneLeaves(opened.tree).find(leaf => leaf.kind === "tool"),
+      {
+        panelId: opened.focusedPaneId,
+        ptyTabId: explorer.tabId,
+        kind: "tool",
+        toolKind: "explorer",
+      },
+    )
+
+    const reopened = placeToolPane(
+      { ...opened, focusedPaneId: terminal },
+      explorer,
+    )
+    assert.equal(reopened.focusedPaneId?.id, opened.focusedPaneId?.id)
+    assert.equal(listPaneLeaves(reopened.tree).length, 2)
+  })
+
+  it("survives panel-tree serialization with its split", () => {
+    const tree = emptyMuxTree()
+    const terminal = placePtyInTree(tree, "yaade:terminal:s1", null)
+    placePtyInTree(tree, muxToolPane("explorer").tabId, terminal, "bottom")
+    const restored = YaadePanelTree.jetFromJSON(tree.toJSON())
+    const leaves = listPaneLeaves(restored)
+    assert.equal(leaves.length, 2)
+    assert.equal(
+      leaves.find(leaf => leaf.kind === "tool")?.toolKind,
+      "explorer",
+    )
+    assert.equal(restored.root.kind, "column")
   })
 })
 

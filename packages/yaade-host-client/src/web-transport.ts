@@ -6,10 +6,29 @@ import {
   isTerminalWsHotOp,
   tryDecodeRealtimeHostEvent,
   type HostEvent,
+  type TextFileReadResult,
+  type TextFileWriteOptions,
+  type TextFileWriteResult,
   type TerminalWsHotOp,
 } from "@yaade/rpc"
 import { Duration, Effect, Fiber } from "effect"
 import { invokeHostRpc } from "./effect-host-client.js"
+import { readTextFileHttp, writeTextFileHttp } from "./text-file-http.js"
+
+async function runInvokePromise<T>(
+  effect: ReturnType<typeof invokeHostRpc>,
+): Promise<T> {
+  const outcome = await Effect.runPromise(
+    effect.pipe(
+      Effect.match({
+        onFailure: error => ({ ok: false as const, error }),
+        onSuccess: value => ({ ok: true as const, value }),
+      }),
+    ),
+  )
+  if (!outcome.ok) throw outcome.error
+  return outcome.value as T
+}
 
 export function acceptHostEvent(lastSequence: number, message: HostEvent): boolean {
   return (
@@ -66,16 +85,8 @@ export class WebHostTransport implements YaadeHostTransport {
     const ac = new AbortController()
     this.pendingAborts.add(ac)
     try {
-      return await Effect.runPromise(
-        invokeHostRpc(this.clientId, channel, args, { signal: ac.signal }).pipe(
-          Effect.map(v => v as T),
-          Effect.mapError(err => {
-            if (err._tag === "HostDisconnected") {
-              return new Error(err.message)
-            }
-            return new Error(err.message)
-          }),
-        ),
+      return await runInvokePromise<T>(
+        invokeHostRpc(this.clientId, channel, args, { signal: ac.signal }),
       )
     } finally {
       this.pendingAborts.delete(ac)
@@ -88,22 +99,38 @@ export class WebHostTransport implements YaadeHostTransport {
     signal: AbortSignal,
   ): Promise<T> {
     if (this.closed) throw new Error("host transport closed")
-    if (signal.aborted) throw new Error("host invoke aborted")
+    if (signal.aborted) throw requestAbortError(signal)
     const ac = new AbortController()
     const abort = () => ac.abort(signal.reason)
     signal.addEventListener("abort", abort, { once: true })
     this.pendingAborts.add(ac)
     try {
-      return await Effect.runPromise(
-        invokeHostRpc(this.clientId, channel, args, { signal: ac.signal }).pipe(
-          Effect.map(value => value as T),
-          Effect.mapError(error => new Error(error.message)),
-        ),
-      )
+      try {
+        return await runInvokePromise<T>(
+          invokeHostRpc(this.clientId, channel, args, { signal: ac.signal }),
+        )
+      } catch (error) {
+        if (signal.aborted) throw requestAbortError(signal)
+        throw error
+      }
     } finally {
       signal.removeEventListener("abort", abort)
       this.pendingAborts.delete(ac)
     }
+  }
+
+  readTextFile(uri: string): Promise<TextFileReadResult> {
+    return this.runTextFileRequest(signal => readTextFileHttp(uri, { signal }))
+  }
+
+  writeTextFile(
+    uri: string,
+    content: string,
+    options: TextFileWriteOptions,
+  ): Promise<TextFileWriteResult> {
+    return this.runTextFileRequest(signal =>
+      writeTextFileHttp(uri, content, options, { signal }),
+    )
   }
 
   sendRealtime(channel: string, ...args: unknown[]): boolean {
@@ -279,9 +306,33 @@ export class WebHostTransport implements YaadeHostTransport {
     }
   }
 
+  private async runTextFileRequest<T>(
+    request: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    if (this.closed) throw new Error("host transport closed")
+    const controller = new AbortController()
+    this.pendingAborts.add(controller)
+    try {
+      return await request(controller.signal)
+    } finally {
+      this.pendingAborts.delete(controller)
+    }
+  }
+
   private dispatch(channel: string, ...args: unknown[]): void {
     this.listeners.get(channel)?.forEach(listener => listener(...args))
   }
+}
+
+function requestAbortError(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error && signal.reason.name === "AbortError") {
+    return signal.reason
+  }
+  const error = new Error(
+    signal.reason instanceof Error ? signal.reason.message : "host invoke aborted",
+  )
+  error.name = "AbortError"
+  return error
 }
 
 export function createWebTransport(): YaadeHostTransport {

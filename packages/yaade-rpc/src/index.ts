@@ -1,5 +1,7 @@
 export * from "./errors.js"
+export * from "./editor-recovery.js"
 export * from "./host.js"
+export * from "./lsp.js"
 export * from "./hq.js"
 export * from "./project-session.js"
 export * from "./session-roster.js"

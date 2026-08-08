@@ -1,9 +1,8 @@
 import os from "node:os"
 import {
+  type LspHost,
   PerfHost,
-  setLspCrashHandler,
-  stopAllLspSessions,
-  TerminalHost,
+  type TerminalHost,
 } from "@yaade/node-host"
 import type { NotificationStreamEvent } from "@yaade/shared"
 import type { AgentProvider } from "@yaade/agents"
@@ -29,6 +28,7 @@ export type HostRuntime = {
   terminal: TerminalHost
   workspace: WorkspaceHost
   perf: PerfHost
+  lsp: LspHost
   homeDir: string
   /** `os.hostname()` — workspace session identity with root path. */
   machineHostname: string
@@ -53,7 +53,8 @@ export function createRuntime(
   config: HostConfig,
   events: EventHub,
   db: ProjectDatabase,
-  terminal: TerminalHost = new TerminalHost(),
+  terminal: TerminalHost,
+  lsp: LspHost,
   options?: {
     /** When set, notification stream events go here (e.g. PubSub → EventHub bridge). */
     emitNotification?: (event: NotificationStreamEvent) => void
@@ -95,6 +96,7 @@ export function createRuntime(
     terminal,
     workspace,
     perf: new PerfHost(homeDir, Date.now()),
+    lsp,
     homeDir,
     machineHostname: os.hostname(),
     notifications,
@@ -105,8 +107,6 @@ export function createRuntime(
   } catch {
     /* Launch target validation remains authoritative; HQ can still load. */
   }
-  setLspCrashHandler(id => events.emit("lsp:crashed", [id]))
-
   // Drain offline hook queue from previous host downtime.
   drainHookQueue(agents, config.dataDir)
 
@@ -227,5 +227,4 @@ export function shutdownRuntime(runtime: HostRuntime): void {
   runtime.events.emit("server:shuttingDown", [])
   runtime.workspace.stopAll()
   runtime.terminal.stopAll()
-  stopAllLspSessions()
 }

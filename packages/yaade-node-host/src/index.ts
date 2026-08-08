@@ -3,13 +3,31 @@ export {
   pathToUri,
   readFile,
   writeFile,
+  readTextFile,
+  writeTextFile,
   writeTempDrop,
   readDir,
   stat,
   exists,
   MAX_READ_BYTES,
   MAX_WRITE_BYTES,
+  MAX_TEXT_FILE_BYTES,
 } from "./fs.js"
+export {
+  createFile,
+  createDirectory,
+  renamePath,
+  trashPath,
+  restoreTrash,
+  listTrash,
+  emptyTrash,
+  TRASH_RETENTION_MS,
+  TRASH_MAX_BYTES,
+  type FsMutationOptions,
+  type FsMutationStat,
+  type RestoreTrashResult,
+  type EmptyTrashResult,
+} from "./fs-mutations.js"
 export {
   gitIsRepo,
   gitStatus,
@@ -54,6 +72,10 @@ export {
   isFffScanReady,
   isGitWorkspace,
   isSearchScanReady,
+  isSearchSupported,
+  invalidateProjectFileCache,
+  refreshProjectFileCache,
+  disposeSearchRoot,
   DEFAULT_LIST_PROJECT_FILES,
 } from "./search.js"
 export { probeFffAvailable, isFffAvailable, disposeFffIndex } from "./fff-service.js"
@@ -71,6 +93,7 @@ export {
   type LaunchConfig,
 } from "./resolve-launch.js"
 export {
+  LspBridge,
   startLspSession,
   stopLspSession,
   stopAllLspSessions,
@@ -84,6 +107,7 @@ export {
   type StartLspSessionResult,
   type LspRestartPolicy,
   type LspRestartHelper,
+  type LspBridgeOptions,
 } from "./lsp-bridge.js"
 export {
   getLanguageServerDefinition,
@@ -94,3 +118,18 @@ export {
   resetLanguageServerRegistryForTests,
   type LanguageServerDefinition,
 } from "./lsp-registry.js"
+export {
+  LspHost,
+  makeLspHostScoped,
+  type LspHostOptions,
+} from "./lsp-host.js"
+export {
+  builtinLanguageServerDefinitions,
+  loadLanguageServerConfig,
+  parseLanguageServerConfig,
+  redactConfiguredEnvironment,
+  watchLanguageServerConfig,
+  type LanguageServerCatalog,
+  type LanguageServerConfigResult,
+  type LanguageServerConfigWatcher,
+} from "./lsp-config.js"

@@ -169,7 +169,10 @@ export async function resolveDroppedFilesAgainstWorkspaces(
     const rootUri = pathToFileUri(root)
     let rels: string[] = []
     try {
-      if (listFiles) rels = await listFiles(rootUri)
+      if (listFiles) {
+        const listed = await listFiles(rootUri)
+        rels = Array.isArray(listed) ? listed : listed.items
+      }
     } catch {
       rels = []
     }
@@ -196,7 +199,8 @@ export async function resolveDroppedFilesAgainstWorkspaces(
       for (const root of workspaceRoots) {
         const rootNorm = root.replace(/\/+$/, "")
         try {
-          const hits = await fileSearch(pathToFileUri(root), name)
+          const searched = await fileSearch(pathToFileUri(root), name)
+          const hits = Array.isArray(searched) ? searched : searched.items
           for (const hit of hits) {
             const base = hit.split(/[/\\]/).pop()
             if (base !== name) continue

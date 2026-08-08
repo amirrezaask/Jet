@@ -3,6 +3,7 @@ import { afterEach, describe, it } from "node:test"
 import {
   clearEditorViewStates,
   getEditorViewState,
+  remapEditorViewStateUri,
   replaceEditorViewStates,
   setEditorViewState,
   snapshotEditorViewStates,
@@ -30,6 +31,25 @@ describe("editor view state store", () => {
     })
     assert.deepEqual(snapshotEditorViewStates(sessionId), {
       "panel-1\0file:///a.ts": { scrollTop: 44 },
+    })
+  })
+
+  it("remaps every pane state when Save As changes the buffer URI", () => {
+    const oldUri = "untitled:New File-1"
+    const newUri = "file:///project/new-file.ts"
+    setEditorViewState(sessionId, "panel-1", oldUri, { scrollTop: 44 })
+    setEditorViewState(sessionId, "panel-2", oldUri, {
+      position: { lineNumber: 8, column: 3 },
+    })
+
+    remapEditorViewStateUri(sessionId, oldUri, newUri)
+
+    assert.equal(getEditorViewState(sessionId, "panel-1", oldUri), null)
+    assert.deepEqual(getEditorViewState(sessionId, "panel-1", newUri), {
+      scrollTop: 44,
+    })
+    assert.deepEqual(getEditorViewState(sessionId, "panel-2", newUri), {
+      position: { lineNumber: 8, column: 3 },
     })
   })
 })

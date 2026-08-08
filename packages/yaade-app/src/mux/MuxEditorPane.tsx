@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type * as monaco from "monaco-editor/esm/vs/editor/editor.api.js"
 import type { YaadeTheme } from "@yaade/shared"
 import type { WorkspaceService } from "@yaade/workspace"
+import { showYaadeToast } from "@yaade/ui/toast"
 import {
+  MonacoDiffEditorHost,
   MonacoEditorHost,
   monacoLanguageId,
   revealPosition,
@@ -11,9 +13,21 @@ import {
   type MonacoEditorHandle,
 } from "@yaade/monaco"
 import { setPendingEditorNavigation } from "@yaade/monaco/pending"
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@yaade/ui/primitives"
 import { ensureMonacoWorkersConfigured } from "../editor/monaco-workers.js"
 import { setMonacoDiagnosticsProvider } from "../editor/editor-diagnostics.js"
 import { editorBufferServiceFor } from "../editor/editor-buffer-service.js"
+import type {
+  EditorBufferComparison,
+  EditorBufferSnapshot,
+} from "../editor/editor-buffer-service.js"
 import {
   getEditorViewState,
   setEditorViewState,
@@ -38,6 +52,7 @@ export type MuxEditorPaneProps = {
   onQuickOpen?: () => void
   onCommandPalette?: () => void
   onViewStatePersist?: () => void
+  onSaveAsRequired?: (uri: string) => void
 }
 
 /** Best-effort language id from a file uri extension. */
@@ -68,11 +83,19 @@ export default function MuxEditorPane(props: MuxEditorPaneProps) {
     onQuickOpen,
     onCommandPalette,
     onViewStatePersist,
+    onSaveAsRequired,
   } = props
 
   const [displayUri, setDisplayUri] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const buffers = useMemo(() => editorBufferServiceFor(workspace), [workspace])
+  const [bufferSnapshot, setBufferSnapshot] =
+    useState<EditorBufferSnapshot | null>(null)
+  const [comparison, setComparison] =
+    useState<EditorBufferComparison | null>(null)
+  const buffers = useMemo(
+    () => editorBufferServiceFor(workspace, sessionId),
+    [sessionId, workspace],
+  )
 
   const languageId = useMemo(() => languageIdForUri(displayUri ?? uri), [displayUri, uri])
 
@@ -116,6 +139,7 @@ export default function MuxEditorPane(props: MuxEditorPaneProps) {
         await buffers.open({
           uri,
           languageId: languageIdForUri(uri),
+          ownerId: resolvedViewStateId,
           ...(pending == null ? {} : { initialContent: pending }),
           initialDirty: uri.startsWith("untitled:") && Boolean(pending),
         })
@@ -131,22 +155,38 @@ export default function MuxEditorPane(props: MuxEditorPaneProps) {
     return () => {
       cancelled = true
     }
+  }, [buffers, resolvedViewStateId, uri])
+
+  useEffect(() => {
+    setBufferSnapshot(buffers.snapshot(uri))
+    const subscription = buffers.onDidChange(snapshot => {
+      if (snapshot.uri === uri) setBufferSnapshot(snapshot)
+    })
+    return () => subscription.dispose()
   }, [buffers, uri])
 
   const doSave = useCallback(async () => {
-    const editor = editorRef.current
-    const fs = typeof window !== "undefined" ? window.yaade?.fs : undefined
-    const model = editor?.getModel()
     const saveUri = displayUriRef.current
-    if (!editor || !fs || !model) return
-    const value = model.getValue()
+    if (!editorRef.current) return
     try {
-      await fs.writeFile(saveUri, value)
-      buffers.markSaved(saveUri)
-    } catch {
-      /* keep dirty flag on write failure */
+      await buffers.save(saveUri)
+      showYaadeToast("File saved", { variant: "success" })
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "SAVE_AS_REQUIRED"
+      ) {
+        onSaveAsRequired?.(saveUri)
+        return
+      }
+      showYaadeToast(
+        error instanceof Error ? error.message : "Could not save file",
+        { variant: "destructive" },
+      )
     }
-  }, [buffers])
+  }, [buffers, onSaveAsRequired])
 
   useEffect(() => {
     const onSaveRequest = () => {
@@ -181,28 +221,108 @@ export default function MuxEditorPane(props: MuxEditorPaneProps) {
     )
   }
 
+  const runConflictAction = async (
+    action: "compare" | "keep" | "reload",
+  ) => {
+    try {
+      if (action === "compare") {
+        setComparison(await buffers.compareWithDisk(displayUri))
+        return
+      }
+      if (action === "keep") {
+        await buffers.keepMine(displayUri)
+        showYaadeToast("Saved your recovered changes", { variant: "success" })
+        return
+      }
+      const viewState = editorRef.current?.saveViewState() ?? null
+      await buffers.reloadFromDisk(displayUri)
+      if (viewState) editorRef.current?.restoreViewState(viewState)
+      showYaadeToast("Reloaded the file from disk")
+    } catch (actionError) {
+      showYaadeToast(
+        actionError instanceof Error
+          ? actionError.message
+          : "Could not resolve the file conflict",
+        { variant: "destructive" },
+      )
+    }
+  }
+
   return (
     <div
       data-yaade-mux-editor-pane=""
       data-yaade-mux-editor-uri={displayUri}
-      className="h-full min-h-0 w-full min-w-0 overflow-hidden"
+      data-yaade-editor-conflict={bufferSnapshot?.externalConflict ? "true" : undefined}
+      className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden"
     >
-      <MonacoEditorHost
-        uri={displayUri}
-        content=""
-        languageId={languageId}
-        theme={theme}
-        viewStateId={viewStateId ?? displayUri}
-        initialViewState={initialViewState}
-        onViewStateChange={handleViewStateChange}
-        autoFocus={focused}
-        onReady={handle => {
-          editorRef.current = handle
-          onReady?.()
+      {bufferSnapshot?.externalConflict ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-warning/35 bg-warning/10 px-2 py-1 text-xs"
+          role="alert"
+        >
+          <span className="min-w-0 flex-1 truncate">
+            This file changed on disk while your edits were unsaved.
+          </span>
+          <Button size="xs" variant="ghost" onClick={() => void runConflictAction("compare")}>
+            Compare
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => void runConflictAction("keep")}>
+            Keep Mine
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => void runConflictAction("reload")}>
+            Reload
+          </Button>
+        </div>
+      ) : null}
+      <div className="min-h-0 flex-1">
+        <MonacoEditorHost
+          uri={displayUri}
+          content=""
+          languageId={languageId}
+          theme={theme}
+          viewStateId={viewStateId ?? displayUri}
+          initialViewState={initialViewState}
+          onViewStateChange={handleViewStateChange}
+          autoFocus={focused}
+          onReady={handle => {
+            editorRef.current = handle
+            onReady?.()
+          }}
+          onQuickOpen={onQuickOpen}
+          onCommandPalette={onCommandPalette}
+        />
+      </div>
+      <Dialog
+        open={comparison != null}
+        onOpenChange={open => {
+          if (!open) setComparison(null)
         }}
-        onQuickOpen={onQuickOpen}
-        onCommandPalette={onCommandPalette}
-      />
+      >
+        <DialogContent
+          size="wide"
+          className="flex h-[min(46rem,85vh)] max-w-[min(92rem,94vw)] flex-col gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="shrink-0 border-b border-border px-4 py-3">
+            <DialogTitle>Recovered changes</DialogTitle>
+            <DialogDescription>
+              Disk version on the left; your buffer on the right.
+            </DialogDescription>
+          </DialogHeader>
+          {comparison ? (
+            <div className="min-h-0 flex-1">
+              <MonacoDiffEditorHost
+                originalUri={`yaade-diff-original:${comparison.uri}`}
+                modifiedUri={`yaade-diff-modified:${comparison.uri}`}
+                originalContent={comparison.diskContent}
+                modifiedContent={comparison.bufferContent}
+                languageId={comparison.languageId}
+                theme={theme}
+                readOnly
+              />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

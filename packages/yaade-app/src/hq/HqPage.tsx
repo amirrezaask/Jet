@@ -312,12 +312,17 @@ export function HqPage({
         className="flex h-full min-h-0 flex-col bg-background text-foreground"
         data-yaade-shell="hq"
       >
-        <header className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-2.5">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Bot className="size-3.5" aria-hidden />
-            <div className="flex min-w-0 items-baseline gap-1.5 text-xs">
+        <header
+          className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-3 sm:px-4"
+          data-yaade-app-header=""
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
+              <Bot aria-hidden />
+            </span>
+            <div className="flex min-w-0 items-baseline gap-1.5 text-sm">
               <span className="font-semibold">YAADE</span>
-              <span className="text-muted-foreground">HQ</span>
+              <span className="text-xs text-muted-foreground">HQ</span>
             </div>
             <Badge
               variant={overview.error ? "destructive" : "outline"}
@@ -376,14 +381,7 @@ export function HqPage({
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-8 px-3 py-5 sm:px-6 lg:px-8">
-            <div className="flex flex-col gap-1">
-              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">HQ</h1>
-              <p className="text-xs text-muted-foreground">
-                Monitor projects, live agents, and activity across this machine.
-              </p>
-            </div>
-
+          <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-4 px-3 py-4 sm:px-5 lg:px-6">
             {overview.error ? (
               <Alert variant="destructive">
                 <AlertTriangle />
@@ -405,7 +403,8 @@ export function HqPage({
 
             <section
               aria-label="System overview"
-              className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+              className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+              data-yaade-hq-summary=""
             >
               <SummaryCard
                 title="Needs attention"
@@ -436,13 +435,14 @@ export function HqPage({
               />
             </section>
 
-            <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.65fr)] xl:items-start xl:gap-12">
+            <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.65fr)] xl:items-start">
               <section
-                className="min-w-0"
+                className="min-w-0 p-3 sm:p-4"
                 aria-labelledby="hq-live-agents-heading"
                 data-yaade-hq-column="agents"
+                data-yaade-island=""
               >
-                <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="mb-4 flex items-start justify-between gap-3">
                   <div>
                     <h2 id="hq-live-agents-heading" className="text-base font-semibold">
                       Live agents
@@ -457,8 +457,8 @@ export function HqPage({
                     </Badge>
                   </div>
                 </div>
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex flex-1 flex-col gap-3 sm:flex-row">
                       <div className="relative min-w-0 flex-1">
                         <Search
@@ -665,15 +665,17 @@ function SummaryCard({
   icon: typeof Activity
 }) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="gap-2 border-border bg-card py-3">
+      <CardHeader className="gap-1 px-3">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
         <CardAction>
-          <Icon className="size-4 text-muted-foreground" aria-hidden />
+          <span className="flex size-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+            <Icon className="size-3.5" aria-hidden />
+          </span>
         </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-3">
         <p className="text-xl font-semibold tabular-nums">{value}</p>
       </CardContent>
     </Card>
@@ -694,7 +696,7 @@ function AgentTable({
   if (agents.length === 0) {
     return (
       <div data-yaade-list-panel="hq-agents">
-        <Empty className="min-h-64 border">
+        <Empty className="min-h-64 border-0 bg-secondary/50">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <Bot />
@@ -713,7 +715,7 @@ function AgentTable({
 
   return (
     <div
-      className="rounded-md border"
+      className="overflow-hidden rounded-md border border-border bg-secondary/20"
       data-yaade-list-panel="hq-agents"
     >
       <Table aria-label="Live agents">
@@ -820,9 +822,10 @@ function ProjectShortcuts({
 }) {
   return (
     <section
-      className="min-w-0"
+      className="min-w-0 p-3 sm:p-4"
       aria-labelledby="hq-projects-heading"
       data-yaade-hq-column="projects"
+      data-yaade-island=""
     >
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
@@ -839,7 +842,7 @@ function ProjectShortcuts({
       </div>
       {projects.length === 0 ? (
         <div data-yaade-list-panel="hq-projects">
-          <Empty className="min-h-56 border">
+          <Empty className="min-h-56 border-0 bg-secondary/50">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <FolderKanban />
@@ -853,14 +856,14 @@ function ProjectShortcuts({
         </div>
       ) : (
         <ItemGroup
-          className="gap-1"
+          className="gap-0.5"
           data-yaade-list-panel="hq-projects"
         >
           {projects.map(project => (
             <Item
               key={project.id}
               size="sm"
-              className="min-w-0 flex-nowrap hover:bg-muted/40"
+              className="min-w-0 flex-nowrap hover:bg-accent"
               data-yaade-list-item
               data-yaade-hq-project={project.id}
             >
@@ -955,21 +958,17 @@ function HqSkeleton() {
       role="status"
     >
       <span className="sr-only">Loading HQ…</span>
-      <div className="flex min-h-14 items-center gap-3 border-b px-6">
+      <div className="flex h-11 items-center gap-3 border-b px-4" data-yaade-app-header="">
         <Skeleton className="size-5" />
         <Skeleton className="h-4 w-28" />
       </div>
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-6">
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-7 w-24" />
-          <Skeleton className="h-4 w-80 max-w-full" />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-4 p-4 sm:p-5 lg:p-6">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {[0, 1, 2, 3].map(index => (
             <Skeleton key={index} className="h-32" />
           ))}
         </div>
-        <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.65fr)] xl:gap-12">
+        <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(20rem,0.65fr)]">
           <Skeleton className="h-96" />
           <Skeleton className="h-80" />
         </div>

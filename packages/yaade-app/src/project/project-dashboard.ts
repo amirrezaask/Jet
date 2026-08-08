@@ -1,9 +1,5 @@
 import type { ProjectSessionSummary } from "@yaade/rpc"
-import type {
-  GitRepositorySummary,
-  GitStatusEntry,
-  GitWorktree,
-} from "@yaade/shared"
+import type { GitCommit } from "@yaade/shared"
 import { pathToFileUri } from "@yaade/shared"
 
 const README_NAMES = new Set(["readme.md", "readme"])
@@ -17,10 +13,9 @@ export type ProjectDashboard = {
   readme: DashboardField<string | null>
   sessions: DashboardField<ProjectSessionSummary[]>
   isGitRepo: DashboardField<boolean>
-  summary: DashboardField<GitRepositorySummary | null>
-  status: DashboardField<GitStatusEntry[] | null>
-  worktrees: DashboardField<GitWorktree[] | null>
-  defaultBranch: DashboardField<string | null>
+  branch: DashboardField<string | null>
+  branches: DashboardField<string[] | null>
+  history: DashboardField<GitCommit[] | null>
 }
 
 type DashboardFs = {
@@ -30,10 +25,9 @@ type DashboardFs = {
 
 type DashboardGit = {
   isRepo(rootUri: string): Promise<boolean>
-  summary(rootUri: string): Promise<GitRepositorySummary>
-  status(rootUri: string): Promise<GitStatusEntry[]>
-  worktreeList(rootUri: string): Promise<GitWorktree[]>
-  defaultBranch(rootUri: string): Promise<string | null>
+  branch(rootUri: string): Promise<string | null>
+  branches(rootUri: string): Promise<string[]>
+  history(rootUri: string, limit?: number): Promise<GitCommit[]>
 }
 
 export type ProjectDashboardDependencies = {
@@ -79,13 +73,12 @@ function unavailableGitFields(
   error: string | null,
 ): Pick<
   ProjectDashboard,
-  "summary" | "status" | "worktrees" | "defaultBranch"
+  "branch" | "branches" | "history"
 > {
   return {
-    summary: { value: null, error },
-    status: { value: null, error },
-    worktrees: { value: null, error },
-    defaultBranch: { value: null, error },
+    branch: { value: null, error },
+    branches: { value: null, error },
+    history: { value: null, error },
   }
 }
 
@@ -123,30 +116,30 @@ export async function loadProjectDashboard(
         ...unavailableGitFields(repository.error),
       }
     }
-    const [summary, status, worktrees, defaultBranch] =
+    const [branch, branches, history] =
       await Promise.all([
         settle(
-          () => dependencies.git!.summary(rootUri),
+          () => dependencies.git!.branch(rootUri),
           null,
-          "Could not load branch status.",
+          "Could not load the current branch.",
         ),
         settle(
-          () => dependencies.git!.status(rootUri),
+          () => dependencies.git!.branches(rootUri),
           null,
-          "Could not load changed files.",
+          "Could not load branches.",
         ),
         settle(
-          () => dependencies.git!.worktreeList(rootUri),
+          () => dependencies.git!.history(rootUri, 5),
           null,
-          "Could not load worktrees.",
-        ),
-        settle(
-          () => dependencies.git!.defaultBranch(rootUri),
-          null,
-          "Could not resolve the default branch.",
+          "Could not load recent commits.",
         ),
       ])
-    return { isGitRepo: repository, summary, status, worktrees, defaultBranch }
+    return {
+      isGitRepo: repository,
+      branch,
+      branches,
+      history,
+    }
   })()
 
   const [readme, sessions, git] = await Promise.all([
@@ -165,15 +158,6 @@ export function recentProjectSessions(
     .filter(session => !session.archivedAt)
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
     .slice(0, limit)
-}
-
-export function visibleLinkedWorktrees(
-  worktrees: readonly GitWorktree[],
-  projectPath: string,
-  limit = 4,
-): GitWorktree[] {
-  const root = projectPath.replace(/\/+$/, "")
-  return worktrees.filter(item => item.path.replace(/\/+$/, "") !== root).slice(0, limit)
 }
 
 export function resolveProjectFilePath(

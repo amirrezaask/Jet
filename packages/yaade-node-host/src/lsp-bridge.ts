@@ -1,8 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { createServer, type Server as HttpServer } from "node:http"
 import { WebSocketServer, type WebSocket } from "ws"
+import type { LanguageServerDefinition } from "@yaade/rpc"
 import { assertAllowedPath } from "./sandbox.js"
 import { getLanguageServerDefinition, resolveLanguageServerCommand } from "./lsp-registry.js"
+import { redactConfiguredEnvironment } from "./lsp-config.js"
 import { uriToPath } from "./paths.js"
 
 const MAX_WS_MESSAGE_BYTES = 10 * 1024 * 1024
@@ -84,6 +86,8 @@ export type LspSession = {
   wss: WebSocketServer
   port: number
   command: string
+  rootUri: string
+  definition: LanguageServerDefinition
   getStderrSnippet: () => string
   stopping: boolean
 }
@@ -91,8 +95,17 @@ export type LspSession = {
 export type StartLspSessionOptions = {
   rootUri: string
   serverId: string
+  definition?: LanguageServerDefinition
   allowedRoots?: string[]
   onSpawnError?: (id: string) => void
+}
+
+export type LspBridgeOptions = {
+  allowedRoots?: readonly string[]
+  resolveDefinition?: (serverId: string) => LanguageServerDefinition | undefined
+  onCrash?: (id: string, stderrSnippet?: string) => void
+  onClientDisconnected?: (id: string) => void
+  onLog?: (id: string, stream: "host" | "stderr", message: string) => void
 }
 
 export type StartLspSessionResult = {
@@ -112,9 +125,6 @@ export type LspRestartHelper = {
   delayMs: number
 }
 
-const sessions = new Map<string, LspSession>()
-let crashCallback: ((id: string, stderrSnippet?: string) => void) | null = null
-
 function closeSessionBridge(session: LspSession): void {
   for (const client of session.wss.clients) client.terminate()
   try {
@@ -133,6 +143,9 @@ function attachSessionBridge(
   session: LspSession,
   proc: ChildProcess,
   stderrBuffer: StderrRingBuffer,
+  onFinished: (crashed: boolean) => void,
+  onClientDisconnected: () => void,
+  onStderr: (message: string) => void,
   onSpawnError?: (id: string) => void,
 ): void {
   const decoder = new LspFramingDecoder()
@@ -143,14 +156,10 @@ function attachSessionBridge(
   const finish = (crashed: boolean) => {
     if (finished) return
     finished = true
-    sessions.delete(session.id)
+    onFinished(crashed)
     pendingServerMessages.length = 0
     if (activeWs && activeWs.readyState === activeWs.OPEN) activeWs.close()
     closeSessionBridge(session)
-    if (crashed) {
-      const stderr = stderrBuffer.snippet()
-      crashCallback?.(session.id, stderr)
-    }
   }
 
   proc.stdout?.on("data", (chunk: Buffer) => {
@@ -168,6 +177,7 @@ function attachSessionBridge(
 
   proc.stderr?.on("data", (chunk: Buffer) => {
     stderrBuffer.append(chunk)
+    onStderr(chunk.toString("utf8"))
   })
 
   session.wss.on("connection", (ws: WebSocket) => {
@@ -193,7 +203,10 @@ function attachSessionBridge(
     })
 
     ws.on("close", () => {
-      if (activeWs === ws) activeWs = null
+      if (activeWs === ws) {
+        activeWs = null
+        if (!session.stopping) onClientDisconnected()
+      }
     })
   })
 
@@ -202,95 +215,139 @@ function attachSessionBridge(
   })
 
   proc.on("error", err => {
-    console.error("LSP spawn error:", err)
+    onStderr(`LSP spawn error: ${err.message}`)
     finish(!session.stopping)
     onSpawnError?.(session.id)
   })
 }
 
-export async function startLspSession(opts: StartLspSessionOptions): Promise<StartLspSessionResult> {
-  const def = getLanguageServerDefinition(opts.serverId)
-  if (!def) {
-    return { id: "", transportUrl: "", error: `Unknown language server: ${opts.serverId}` }
-  }
+export class LspBridge {
+  private readonly sessions = new Map<string, LspSession>()
 
-  const resolved = resolveLanguageServerCommand(def)
-  if ("error" in resolved) {
-    return { id: "", transportUrl: "", error: resolved.error }
-  }
+  constructor(private readonly options: LspBridgeOptions = {}) {}
 
-  let cwd: string
-  try {
-    cwd = uriToPath(opts.rootUri)
-    if (opts.allowedRoots?.length) {
-      cwd = await assertAllowedPath(cwd, opts.allowedRoots)
+  async start(opts: StartLspSessionOptions): Promise<StartLspSessionResult> {
+    const def = opts.definition ?? this.options.resolveDefinition?.(opts.serverId) ?? getLanguageServerDefinition(opts.serverId)
+    if (!def || !def.enabled) {
+      return { id: "", transportUrl: "", error: `Unknown language server: ${opts.serverId}` }
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return { id: "", transportUrl: "", error: message }
+
+    const resolved = resolveLanguageServerCommand(def)
+    if ("error" in resolved) {
+      return { id: "", transportUrl: "", error: resolved.error }
+    }
+
+    let cwd: string
+    try {
+      cwd = uriToPath(opts.rootUri)
+      const allowedRoots = opts.allowedRoots ?? this.options.allowedRoots
+      if (allowedRoots?.length) {
+        cwd = await assertAllowedPath(cwd, [...allowedRoots])
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { id: "", transportUrl: "", error: message }
+    }
+
+    const server = createServer()
+    const wss = new WebSocketServer({ server })
+
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve())
+      server.on("error", reject)
+    })
+
+    const addr = server.address()
+    const port = typeof addr === "object" && addr ? addr.port : 0
+    const id = `lsp-${opts.serverId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const stderrBuffer = new StderrRingBuffer()
+    const proc = spawn(resolved.command, resolved.args, {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: false,
+      env: { ...process.env, ...def.environment },
+    })
+
+    const session: LspSession = {
+      id,
+      serverId: opts.serverId,
+      process: proc,
+      server,
+      wss,
+      port,
+      command: resolved.command,
+      rootUri: opts.rootUri,
+      definition: def,
+      getStderrSnippet: () => stderrBuffer.snippet(),
+      stopping: false,
+    }
+
+    this.sessions.set(id, session)
+    const redact = (message: string) => redactConfiguredEnvironment(message, def.environment)
+    attachSessionBridge(
+      session,
+      proc,
+      stderrBuffer,
+      crashed => {
+        this.sessions.delete(session.id)
+        if (crashed) this.options.onCrash?.(session.id, redact(stderrBuffer.snippet()))
+      },
+      () => this.options.onClientDisconnected?.(session.id),
+      message => this.options.onLog?.(session.id, "stderr", redact(message)),
+      opts.onSpawnError,
+    )
+    this.options.onLog?.(session.id, "host", `Started ${def.id}`)
+
+    return { id, transportUrl: `ws://127.0.0.1:${port}` }
   }
 
-  const server = createServer()
-  const wss = new WebSocketServer({ server })
-
-  await new Promise<void>((resolve, reject) => {
-    server.listen(0, "127.0.0.1", () => resolve())
-    server.on("error", reject)
-  })
-
-  const addr = server.address()
-  const port = typeof addr === "object" && addr ? addr.port : 0
-  const id = `lsp-${opts.serverId}-${Date.now()}`
-  const stderrBuffer = new StderrRingBuffer()
-  const proc = spawn(resolved.command, resolved.args, {
-    cwd,
-    stdio: ["pipe", "pipe", "pipe"],
-    shell: false,
-    env: process.env,
-  })
-
-  const session: LspSession = {
-    id,
-    serverId: opts.serverId,
-    process: proc,
-    server,
-    wss,
-    port,
-    command: resolved.command,
-    getStderrSnippet: () => stderrBuffer.snippet(),
-    stopping: false,
-  }
-
-  sessions.set(id, session)
-  attachSessionBridge(session, proc, stderrBuffer, opts.onSpawnError)
-
-  return { id, transportUrl: `ws://127.0.0.1:${port}` }
-}
-
-export async function stopLspSession(id: string): Promise<void> {
-  const session = sessions.get(id)
-  if (!session) return
-  session.stopping = true
-  sessions.delete(id)
-  session.process.kill()
-  closeSessionBridge(session)
-}
-
-export function stopAllLspSessions(): void {
-  for (const session of sessions.values()) {
+  async stop(id: string): Promise<void> {
+    const session = this.sessions.get(id)
+    if (!session) return
     session.stopping = true
+    this.sessions.delete(id)
     session.process.kill()
     closeSessionBridge(session)
   }
-  sessions.clear()
+
+  stopAll(): void {
+    for (const session of this.sessions.values()) {
+      session.stopping = true
+      session.process.kill()
+      closeSessionBridge(session)
+    }
+    this.sessions.clear()
+  }
+
+  getSession(id: string): LspSession | undefined {
+    return this.sessions.get(id)
+  }
+}
+
+/* Compatibility edge for callers not yet migrated to the scoped host owner. */
+let compatibilityCrashHandler: (id: string, stderrSnippet?: string) => void = () => {}
+const compatibilityBridge = new LspBridge({
+  onCrash: (id, stderr) => compatibilityCrashHandler(id, stderr),
+})
+
+export function startLspSession(opts: StartLspSessionOptions): Promise<StartLspSessionResult> {
+  return compatibilityBridge.start(opts)
+}
+
+export function stopLspSession(id: string): Promise<void> {
+  return compatibilityBridge.stop(id)
+}
+
+export function stopAllLspSessions(): void {
+  compatibilityBridge.stopAll()
 }
 
 export function setLspCrashHandler(cb: (id: string, stderrSnippet?: string) => void): void {
-  crashCallback = cb
+  compatibilityCrashHandler = cb
 }
 
 export function getLspSession(id: string): LspSession | undefined {
-  return sessions.get(id)
+  return compatibilityBridge.getSession(id)
 }
 
 export function createLspRestartHelper(policy: LspRestartPolicy): LspRestartHelper {

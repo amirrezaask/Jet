@@ -41,6 +41,10 @@ export type MuxOverlaysProps = {
   onProjectSearchOpenChange?: (open: boolean) => void
   onProjectSearch?: (query: string) => Promise<ProjectSearchResult[]>
   onProjectSearchSelect?: (result: ProjectSearchResult) => void
+  saveAsOpen?: boolean
+  onSaveAsOpenChange?: (open: boolean) => void
+  saveAsRootPath?: string
+  onSaveAsTarget?: (path: string) => void | Promise<void>
 }
 
 export default function MuxOverlays(props: MuxOverlaysProps) {
@@ -101,6 +105,22 @@ export default function MuxOverlays(props: MuxOverlaysProps) {
         resolveHomeDir={props.resolveHomeDir}
         title="Change directory"
       />
+
+      {props.saveAsOpen && props.saveAsRootPath && props.onSaveAsTarget ? (
+        <CdOverlay
+          open
+          onOpenChange={props.onSaveAsOpenChange ?? (() => {})}
+          initialPath={props.saveAsRootPath}
+          showFiles
+          onSelectFolder={props.onSaveAsTarget}
+          onSelectFile={(_uri, path) => props.onSaveAsTarget!(path)}
+          resolveHomeDir={async () => props.saveAsRootPath!}
+          restrictToRootPath={props.saveAsRootPath}
+          title="Save As"
+          description="Create a file inside the current session"
+          primaryHint="Save"
+        />
+      ) : null}
 
       {props.onQuickOpenSearch && props.onQuickOpenSelect ? (
         <QuickOpenOverlay

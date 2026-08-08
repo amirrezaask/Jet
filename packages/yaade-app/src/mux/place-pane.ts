@@ -2,9 +2,10 @@ import type { Edge, PanelId } from "@yaade/shared"
 import type { YaadePanelTree } from "@yaade/workspace"
 import {
   listPaneLeaves,
+  placeMuxLeafInTree,
   placeOrPushEditorTab,
-  placePtyInTree,
 } from "./layout.js"
+import type { MuxToolKind } from "./tool-pane.js"
 
 export type AllocatedTerminalPane = {
   ptyTabId: string
@@ -26,6 +27,12 @@ export type AllocatedEditorPane = {
   label: string
 }
 
+export type AllocatedToolPane = {
+  tabId: string
+  kind: MuxToolKind
+  label: string
+}
+
 /** Pure: place an already-registered terminal tab into the window tree. */
 export function placeTerminalPane(
   live: {
@@ -40,7 +47,7 @@ export function placeTerminalPane(
   focusPanel: PanelId | null = live.focusedPaneId,
 ): typeof live {
   const tree = live.tree.clone()
-  const panelId = placePtyInTree(tree, pane.ptyTabId, focusPanel, edge)
+  const panelId = placeMuxLeafInTree(tree, pane.ptyTabId, focusPanel, edge)
   const sole = listPaneLeaves(tree).length === 1
   return {
     ...live,
@@ -65,7 +72,30 @@ export function placeGitPane(
   focusPanel: PanelId | null = live.focusedPaneId,
 ): typeof live {
   const tree = live.tree.clone()
-  const panelId = placePtyInTree(tree, pane.tabId, focusPanel, edge)
+  const panelId = placeMuxLeafInTree(tree, pane.tabId, focusPanel, edge)
+  return {
+    ...live,
+    tree,
+    focusedPaneId: panelId,
+    zoomedPaneId: null,
+  }
+}
+
+/** Pure: place or focus a singleton persistent tool in the tiled mux tree. */
+export function placeToolPane(
+  live: {
+    id: string
+    title: string
+    tree: YaadePanelTree
+    focusedPaneId: PanelId | null
+    zoomedPaneId: string | null
+  },
+  pane: AllocatedToolPane,
+  edge: Edge = "right",
+  focusPanel: PanelId | null = live.focusedPaneId,
+): typeof live {
+  const tree = live.tree.clone()
+  const panelId = placeMuxLeafInTree(tree, pane.tabId, focusPanel, edge)
   return {
     ...live,
     tree,

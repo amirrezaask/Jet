@@ -79,7 +79,7 @@ function DialogContent({
         <DialogPrimitive.Content
           data-slot="dialog-content"
           className={cn(
-            "pointer-events-auto grid w-full max-w-[calc(100%-2rem)] gap-4 rounded-lg border bg-background p-6 shadow-lg outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "pointer-events-auto grid w-full max-w-[calc(100%-2rem)] gap-4 rounded-lg border border-border bg-popover p-6 shadow-lg outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
             dialogSizeClass[size],
             yaadeOverlayContentClass,
             className

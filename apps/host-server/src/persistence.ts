@@ -4,6 +4,8 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import {
   EMPTY_SESSION_ROSTER,
+  MAX_EDITOR_RECOVERY_BUFFER_BYTES,
+  MAX_EDITOR_RECOVERY_SESSION_BYTES,
   emptyProjectSessionPayload,
   emptyWorkspaceSession,
   tryDecodeProjectSessionPayload,
@@ -12,13 +14,19 @@ import {
   type ProjectSession,
   type ProjectSessionPayload,
   type ProjectSessionSummary,
+  type EditorRecoveryBuffer,
+  type EditorRecoveryBufferSummary,
   type SessionRoster,
   type SessionRosterEntry,
   type SessionRosterMode,
   type TerminalSessionStatus,
   type WorkspaceSession,
 } from "@yaade/rpc"
-import { fileUriToPath, pathToFileUri } from "@yaade/shared"
+import {
+  canonicalizeFileUri,
+  fileUriToPath,
+  pathToFileUri,
+} from "@yaade/shared"
 
 export type Project = {
   id: string
@@ -30,6 +38,22 @@ export type Project = {
 
 export type SessionRosterStatus = TerminalSessionStatus
 export type { SessionRosterMode, SessionRosterEntry, SessionRoster }
+
+export class EditorRecoveryQuotaError extends Error {
+  constructor(
+    readonly quota: "buffer" | "session",
+    readonly size: number,
+    readonly max: number,
+  ) {
+    super(`editor recovery ${quota} quota exceeded: ${size} bytes (max ${max})`)
+    this.name = "EditorRecoveryQuotaError"
+  }
+}
+
+type ProjectDatabaseOptions = {
+  maxEditorRecoveryBufferBytes?: number
+  maxEditorRecoverySessionBytes?: number
+}
 
 type ProjectRow = {
   id: string
@@ -66,6 +90,16 @@ type RosterModalRow = {
   session_mode: string | null
 }
 
+type EditorRecoveryRow = {
+  session_id: string
+  uri: string
+  content: string
+  base_disk_version: string | null
+  language_id: string
+  content_bytes: number
+  updated_at: string
+}
+
 function parseLaunchArgsJson(value: string | null): unknown {
   if (!value) return undefined
   try {
@@ -83,12 +117,27 @@ export function parseSessionRosterBody(raw: unknown): SessionRoster | null {
 export class ProjectDatabase {
   readonly db: DatabaseSync
   private closed = false
+  private readonly maxEditorRecoveryBufferBytes: number
+  private readonly maxEditorRecoverySessionBytes: number
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, options: ProjectDatabaseOptions = {}) {
+    this.maxEditorRecoveryBufferBytes =
+      options.maxEditorRecoveryBufferBytes ?? MAX_EDITOR_RECOVERY_BUFFER_BYTES
+    this.maxEditorRecoverySessionBytes =
+      options.maxEditorRecoverySessionBytes ?? MAX_EDITOR_RECOVERY_SESSION_BYTES
+    if (
+      !Number.isSafeInteger(this.maxEditorRecoveryBufferBytes) ||
+      this.maxEditorRecoveryBufferBytes < 0 ||
+      !Number.isSafeInteger(this.maxEditorRecoverySessionBytes) ||
+      this.maxEditorRecoverySessionBytes < this.maxEditorRecoveryBufferBytes
+    ) {
+      throw new Error("invalid editor recovery limits")
+    }
     fs.mkdirSync(path.dirname(dbPath), { recursive: true })
     this.db = new DatabaseSync(dbPath)
     this.db.exec(`
       PRAGMA journal_mode=WAL;
+      PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY);
       INSERT OR IGNORE INTO schema_migrations(version) VALUES(1);
       CREATE TABLE IF NOT EXISTS projects(
@@ -106,6 +155,7 @@ export class ProjectDatabase {
     this.ensureSessionRosterSchema()
     this.ensureWorkspaceSessionSchema()
     this.ensureProjectSessionSchema()
+    this.ensureEditorRecoverySchema()
     this.backfillProjectsFromProjectSessions()
   }
 
@@ -140,6 +190,24 @@ export class ProjectDatabase {
         ON project_sessions (machine, project_path, updated_at DESC);
     `)
     this.migrateWorkspaceSessionsToProjectSessions()
+  }
+
+  private ensureEditorRecoverySchema(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS editor_recovery_buffers(
+        session_id TEXT NOT NULL,
+        uri TEXT NOT NULL,
+        content TEXT NOT NULL,
+        base_disk_version TEXT,
+        language_id TEXT NOT NULL,
+        content_bytes INTEGER NOT NULL CHECK(content_bytes >= 0),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (session_id, uri),
+        FOREIGN KEY (session_id) REFERENCES project_sessions(id) ON DELETE CASCADE
+      ) WITHOUT ROWID;
+      CREATE INDEX IF NOT EXISTS editor_recovery_buffers_by_session_time
+        ON editor_recovery_buffers(session_id, updated_at DESC);
+    `)
   }
 
   /** One-time catalog backfill from persisted sessions. Never scans the filesystem. */
@@ -797,11 +865,221 @@ export class ProjectDatabase {
     return updated
   }
 
-  deleteProjectSession(id: string): boolean {
+  listEditorRecoveryBuffers(sessionId: string): EditorRecoveryBufferSummary[] {
+    const id = this.requireRecoverySessionId(sessionId)
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, uri, base_disk_version, language_id,
+                content_bytes, updated_at
+           FROM editor_recovery_buffers
+          WHERE session_id=?
+          ORDER BY updated_at DESC, uri ASC`,
+      )
+      .all(id) as unknown as Array<Omit<EditorRecoveryRow, "content">>
+    return rows.map(row => this.mapEditorRecoverySummary(row))
+  }
+
+  getEditorRecoveryBuffer(
+    sessionId: string,
+    uri: string,
+  ): EditorRecoveryBuffer | null {
+    const id = this.requireRecoverySessionId(sessionId)
+    const canonicalUri = this.canonicalizeRecoveryUri(uri)
+    const row = this.db
+      .prepare(
+        `SELECT session_id, uri, content, base_disk_version, language_id,
+                content_bytes, updated_at
+           FROM editor_recovery_buffers
+          WHERE session_id=? AND uri=?`,
+      )
+      .get(id, canonicalUri) as EditorRecoveryRow | undefined
+    if (!row) return null
+    return {
+      ...this.mapEditorRecoverySummary(row),
+      content: row.content,
+    }
+  }
+
+  upsertEditorRecoveryBuffer(input: {
+    sessionId: string
+    uri: string
+    content: string
+    baseVersion: string | null
+    languageId: string
+  }): EditorRecoveryBufferSummary {
+    const sessionId = this.requireRecoverySessionId(input.sessionId)
+    const uri = this.canonicalizeRecoveryUri(input.uri)
+    const baseVersion = this.validateRecoveryBaseVersion(input.baseVersion)
+    const languageId = this.validateRecoveryLanguageId(input.languageId)
+    const contentBytes = Buffer.byteLength(input.content, "utf8")
+    if (contentBytes > this.maxEditorRecoveryBufferBytes) {
+      throw new EditorRecoveryQuotaError(
+        "buffer",
+        contentBytes,
+        this.maxEditorRecoveryBufferBytes,
+      )
+    }
+    if (!this.projectSessionExists(sessionId)) {
+      throw new Error("project session not found")
+    }
+
+    const now = new Date().toISOString()
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT COALESCE(SUM(content_bytes), 0) AS content_bytes
+             FROM editor_recovery_buffers
+            WHERE session_id=? AND uri<>?`,
+        )
+        .get(sessionId, uri) as { content_bytes: number }
+      const sessionBytes = row.content_bytes + contentBytes
+      if (sessionBytes > this.maxEditorRecoverySessionBytes) {
+        throw new EditorRecoveryQuotaError(
+          "session",
+          sessionBytes,
+          this.maxEditorRecoverySessionBytes,
+        )
+      }
+      this.db
+        .prepare(
+          `INSERT INTO editor_recovery_buffers(
+             session_id, uri, content, base_disk_version, language_id,
+             content_bytes, updated_at
+           ) VALUES(?,?,?,?,?,?,?)
+           ON CONFLICT(session_id, uri) DO UPDATE SET
+             content=excluded.content,
+             base_disk_version=excluded.base_disk_version,
+             language_id=excluded.language_id,
+             content_bytes=excluded.content_bytes,
+             updated_at=excluded.updated_at`,
+        )
+        .run(
+          sessionId,
+          uri,
+          input.content,
+          baseVersion,
+          languageId,
+          contentBytes,
+          now,
+        )
+      this.db.exec("COMMIT")
+    } catch (error) {
+      try {
+        this.db.exec("ROLLBACK")
+      } catch {
+        /* transaction already closed */
+      }
+      throw error
+    }
+
+    return {
+      sessionId,
+      uri,
+      baseVersion,
+      languageId,
+      contentBytes,
+      updatedAt: now,
+    }
+  }
+
+  deleteEditorRecoveryBuffer(sessionId: string, uri: string): boolean {
+    const id = this.requireRecoverySessionId(sessionId)
+    const canonicalUri = this.canonicalizeRecoveryUri(uri)
     const result = this.db
-      .prepare("DELETE FROM project_sessions WHERE id=?")
-      .run(id)
+      .prepare(
+        "DELETE FROM editor_recovery_buffers WHERE session_id=? AND uri=?",
+      )
+      .run(id, canonicalUri)
     return Number(result.changes ?? 0) > 0
+  }
+
+  deleteEditorRecoverySession(sessionId: string): number {
+    const id = this.requireRecoverySessionId(sessionId)
+    const result = this.db
+      .prepare("DELETE FROM editor_recovery_buffers WHERE session_id=?")
+      .run(id)
+    return Number(result.changes ?? 0)
+  }
+
+  deleteProjectSession(id: string): boolean {
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      this.db
+        .prepare("DELETE FROM editor_recovery_buffers WHERE session_id=?")
+        .run(id)
+      const result = this.db
+        .prepare("DELETE FROM project_sessions WHERE id=?")
+        .run(id)
+      this.db.exec("COMMIT")
+      return Number(result.changes ?? 0) > 0
+    } catch (error) {
+      try {
+        this.db.exec("ROLLBACK")
+      } catch {
+        /* transaction already closed */
+      }
+      throw error
+    }
+  }
+
+  private projectSessionExists(id: string): boolean {
+    return Boolean(
+      this.db.prepare("SELECT 1 FROM project_sessions WHERE id=?").get(id),
+    )
+  }
+
+  private requireRecoverySessionId(sessionId: string): string {
+    const id = sessionId.trim()
+    if (!id || id.length > 256 || /[\0\r\n]/.test(id)) {
+      throw new Error("invalid editor recovery session id")
+    }
+    return id
+  }
+
+  private canonicalizeRecoveryUri(uri: string): string {
+    const trimmed = uri.trim()
+    if (
+      !trimmed ||
+      trimmed.length > 16 * 1024 ||
+      /[\0\r\n]/.test(trimmed) ||
+      !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmed) ||
+      (trimmed.startsWith("file:") && !trimmed.startsWith("file://"))
+    ) {
+      throw new Error("invalid editor recovery URI")
+    }
+    return trimmed.startsWith("file://")
+      ? canonicalizeFileUri(trimmed)
+      : trimmed
+  }
+
+  private validateRecoveryBaseVersion(value: string | null): string | null {
+    if (value === null) return null
+    if (value.length > 1024 || /[\0\r\n]/.test(value)) {
+      throw new Error("invalid editor recovery base version")
+    }
+    return value
+  }
+
+  private validateRecoveryLanguageId(value: string): string {
+    const languageId = value.trim()
+    if (!languageId || languageId.length > 128 || /[\0\r\n]/.test(languageId)) {
+      throw new Error("invalid editor recovery language id")
+    }
+    return languageId
+  }
+
+  private mapEditorRecoverySummary(
+    row: Omit<EditorRecoveryRow, "content">,
+  ): EditorRecoveryBufferSummary {
+    return {
+      sessionId: row.session_id,
+      uri: row.uri,
+      baseVersion: row.base_disk_version,
+      languageId: row.language_id,
+      contentBytes: row.content_bytes,
+      updatedAt: row.updated_at,
+    }
   }
 
   private normalizePayload(payload: ProjectSessionPayload): ProjectSessionPayload {
@@ -818,6 +1096,9 @@ export class ProjectDatabase {
       sessions,
       ...(payload.gitRoots ? { gitRoots: payload.gitRoots } : {}),
       ...(payload.editorFiles ? { editorFiles: payload.editorFiles } : {}),
+      ...(payload.editorViewStates
+        ? { editorViewStates: payload.editorViewStates }
+        : {}),
     }
   }
 

@@ -44,7 +44,7 @@ export const MUX_PREFIX_BINDINGS: readonly MuxPrefixBinding[] = [
   { key: "t", command: "mux.newWindow", desc: "New browser tab" },
   { key: "n", command: "mux.openNeovim", desc: "Open Neovim" },
   { key: "g", command: "mux.openGit", desc: "Open Git" },
-  { key: "e", command: "mux.openEditor", desc: "Open Editor" },
+  { key: "e", command: "explorer.focus", desc: "Explorer" },
   { key: "f", command: "editor.quickOpen", desc: "Quick open" },
   { key: "/", command: "editor.projectSearch", desc: "Project search" },
   { key: "s", command: "editor.save", desc: "Save" },

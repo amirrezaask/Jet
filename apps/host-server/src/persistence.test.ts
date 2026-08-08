@@ -4,7 +4,15 @@ import os from "node:os"
 import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { describe, it, beforeEach, afterEach } from "node:test"
-import { ProjectDatabase, type SessionRoster } from "./persistence.js"
+import {
+  MAX_EDITOR_RECOVERY_BUFFER_BYTES,
+  MAX_EDITOR_RECOVERY_SESSION_BYTES,
+} from "@yaade/rpc"
+import {
+  EditorRecoveryQuotaError,
+  ProjectDatabase,
+  type SessionRoster,
+} from "./persistence.js"
 
 function tempDbPath(): { dir: string; dbPath: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-persist-"))
@@ -371,14 +379,156 @@ describe("ProjectDatabase session roster", () => {
           launchCommand: "nvim",
         },
       ],
+      editorViewStates: {
+        "mux-editor-2\0file:///workspace/index.ts": {
+          cursorState: [{ position: { lineNumber: 7, column: 3 } }],
+        },
+      },
     })
     assert.equal(updated.payload.sessions.length, 1)
     assert.equal(updated.payload.sessions[0]?.launchCommand, "nvim")
+    assert.deepEqual(updated.payload.editorViewStates, {
+      "mux-editor-2\0file:///workspace/index.ts": {
+        cursorState: [{ position: { lineNumber: 7, column: 3 } }],
+      },
+    })
 
     const renamed = db.renameProjectSession(created.id, "Renamed")
     assert.equal(renamed.title, "Renamed")
     assert.equal(db.deleteProjectSession(created.id), true)
     assert.equal(db.getProjectSession(created.id), null)
+  })
+
+  it("stores bounded recovery buffers and accounts for UTF-8 bytes", () => {
+    assert.equal(MAX_EDITOR_RECOVERY_BUFFER_BYTES, 16 * 1024 * 1024)
+    assert.equal(MAX_EDITOR_RECOVERY_SESSION_BYTES, 64 * 1024 * 1024)
+
+    db.close()
+    db = new ProjectDatabase(dbPath, {
+      maxEditorRecoveryBufferBytes: 12,
+      maxEditorRecoverySessionBytes: 16,
+    })
+    const root = path.join(dir, "recovery-project")
+    fs.mkdirSync(root, { recursive: true })
+    const session = db.createProjectSession({
+      machine: "test-host",
+      projectPath: root,
+      cwdPath: root,
+      title: "Recovery",
+    })
+    const firstUri = `file://${root}/src/../index.ts`
+    const saved = db.upsertEditorRecoveryBuffer({
+      sessionId: session.id,
+      uri: firstUri,
+      content: "åååå",
+      baseVersion: "100:8",
+      languageId: "typescript",
+    })
+    assert.equal(saved.contentBytes, 8)
+    assert.equal(saved.uri, `file://${root}/index.ts`)
+    assert.match(saved.updatedAt, /^\d{4}-\d{2}-\d{2}T/)
+    assert.deepEqual(db.getEditorRecoveryBuffer(session.id, firstUri), {
+      ...saved,
+      content: "åååå",
+    })
+
+    db.upsertEditorRecoveryBuffer({
+      sessionId: session.id,
+      uri: "untitled:buffer-1",
+      content: "12345678",
+      baseVersion: null,
+      languageId: "plaintext",
+    })
+    assert.equal(db.listEditorRecoveryBuffers(session.id).length, 2)
+
+    assert.throws(
+      () =>
+        db.upsertEditorRecoveryBuffer({
+          sessionId: session.id,
+          uri: "untitled:session-overflow",
+          content: "x",
+          baseVersion: null,
+          languageId: "plaintext",
+        }),
+      error =>
+        error instanceof EditorRecoveryQuotaError && error.quota === "session",
+    )
+    assert.throws(
+      () =>
+        db.upsertEditorRecoveryBuffer({
+          sessionId: session.id,
+          uri: "untitled:buffer-overflow",
+          content: "1234567890123",
+          baseVersion: null,
+          languageId: "plaintext",
+        }),
+      error =>
+        error instanceof EditorRecoveryQuotaError && error.quota === "buffer",
+    )
+
+    // Replacing an existing buffer subtracts its previous bytes from the quota.
+    db.upsertEditorRecoveryBuffer({
+      sessionId: session.id,
+      uri: firstUri,
+      content: "x",
+      baseVersion: "101:1",
+      languageId: "typescript",
+    })
+    db.upsertEditorRecoveryBuffer({
+      sessionId: session.id,
+      uri: "untitled:session-overflow",
+      content: "1234567",
+      baseVersion: null,
+      languageId: "plaintext",
+    })
+    assert.equal(db.listEditorRecoveryBuffers(session.id).length, 3)
+  })
+
+  it("clears recovery after buffer discard and project-session deletion", () => {
+    const root = path.join(dir, "recovery-cleanup")
+    fs.mkdirSync(root, { recursive: true })
+    const session = db.createProjectSession({
+      machine: "test-host",
+      projectPath: root,
+      cwdPath: root,
+      title: "Recovery cleanup",
+    })
+    db.upsertEditorRecoveryBuffer({
+      sessionId: session.id,
+      uri: "untitled:first",
+      content: "first",
+      baseVersion: null,
+      languageId: "plaintext",
+    })
+    db.upsertEditorRecoveryBuffer({
+      sessionId: session.id,
+      uri: "untitled:second",
+      content: "second",
+      baseVersion: null,
+      languageId: "plaintext",
+    })
+
+    assert.equal(
+      db.deleteEditorRecoveryBuffer(session.id, "untitled:first"),
+      true,
+    )
+    assert.equal(db.getEditorRecoveryBuffer(session.id, "untitled:first"), null)
+    assert.equal(db.listEditorRecoveryBuffers(session.id).length, 1)
+    assert.equal(db.deleteEditorRecoverySession(session.id), 1)
+    assert.deepEqual(db.listEditorRecoveryBuffers(session.id), [])
+    db.upsertEditorRecoveryBuffer({
+      sessionId: session.id,
+      uri: "untitled:before-session-delete",
+      content: "still dirty",
+      baseVersion: null,
+      languageId: "plaintext",
+    })
+    assert.equal(db.deleteProjectSession(session.id), true)
+    const rows = db
+      .raw()
+      .prepare("SELECT COUNT(*) AS count FROM editor_recovery_buffers")
+      .get() as { count: number }
+    assert.equal(rows.count, 0)
   })
 
   it("migrates workspace_sessions into project_sessions once", () => {

@@ -566,6 +566,9 @@ importers:
       '@yaade/panels':
         specifier: workspace:*
         version: link:../yaade-panels
+      '@yaade/rpc':
+        specifier: workspace:*
+        version: link:../yaade-rpc
       '@yaade/shared':
         specifier: workspace:*
         version: link:../yaade-shared

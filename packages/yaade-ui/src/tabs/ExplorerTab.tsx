@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from "react"
 import { EXPLORER_LIST_ID } from "@/explorer/focus.js"
-import { Copy, Folder, Focus, Plus, Trash2 } from "lucide-react"
+import {
+  ArchiveRestore,
+  Copy,
+  FilePlus2,
+  Folder,
+  FolderPlus,
+  Focus,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react"
 import type { WorkspaceEntry, WorkspaceManager } from "@yaade/workspace"
 import { Lister, type ListerDataSource, type ListerNode } from "@/lister/index.js"
 import { Button } from "@/components/ui/button.js"
@@ -16,7 +26,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu.js"
 
-type ExplorerData =
+export type ExplorerSelection =
   | { kind: "root"; uri: string; name: string; path: string }
   | { kind: "entry"; entry: WorkspaceEntry }
 
@@ -33,8 +43,8 @@ function toPath(uri: string): string {
   return uri.replace(/^file:\/\//, "")
 }
 
-function useExplorerSource(manager: WorkspaceManager): {
-  source: ListerDataSource<ExplorerData>
+function useExplorerSource(manager: WorkspaceManager, contentRevision: number): {
+  source: ListerDataSource<ExplorerSelection>
   rootIds: string[]
   activeRootId: string | null
 } {
@@ -54,9 +64,9 @@ function useExplorerSource(manager: WorkspaceManager): {
     return manager.folders.map(f => f.root.uri)
   }, [rev, manager])
 
-  const source = useMemo<ListerDataSource<ExplorerData>>(() => {
+  const source = useMemo<ListerDataSource<ExplorerSelection>>(() => {
     return {
-      getRoots(): ListerNode<ExplorerData>[] {
+      getRoots(): ListerNode<ExplorerSelection>[] {
         return manager.folders.map(f => ({
           id: f.root.uri,
           isBranch: true,
@@ -69,7 +79,7 @@ function useExplorerSource(manager: WorkspaceManager): {
           },
         }))
       },
-      async getChildren(id): Promise<ListerNode<ExplorerData>[]> {
+      async getChildren(id): Promise<ListerNode<ExplorerSelection>[]> {
         const entries = sortEntries(await manager.readDir(id))
         return entries.map(entry => ({
           id: entry.uri,
@@ -81,7 +91,7 @@ function useExplorerSource(manager: WorkspaceManager): {
     }
     // rev in deps → new source instance when folders change → invalidates cache
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manager, rev])
+  }, [contentRevision, manager, rev])
 
   return { source, rootIds, activeRootId: manager.activeFolder?.root.uri ?? null }
 }
@@ -93,6 +103,13 @@ export function ExplorerTab({
   onActivateProject,
   onNewTerminal,
   onRemoveProject,
+  onSelectionChange,
+  onCreateFile,
+  onCreateFolder,
+  onRename,
+  onTrash,
+  onShowTrash,
+  contentRevision = 0,
 }: {
   manager: WorkspaceManager
   onOpenFile: (uri: string, path: string) => void
@@ -100,8 +117,20 @@ export function ExplorerTab({
   onActivateProject?: (rootUri: string) => void
   onNewTerminal?: (rootUri: string) => void
   onRemoveProject?: (rootUri: string) => void
+  onSelectionChange?: (selection: ExplorerSelection | null) => void
+  onCreateFile?: (selection: ExplorerSelection | null) => void
+  onCreateFolder?: (selection: ExplorerSelection | null) => void
+  onRename?: (selection: ExplorerSelection) => void
+  onTrash?: (selection: ExplorerSelection) => void
+  onShowTrash?: () => void
+  /** Invalidate the cached tree after host-side filesystem mutations. */
+  contentRevision?: number
 }) {
-  const { source, rootIds, activeRootId } = useExplorerSource(manager)
+  const { source, rootIds, activeRootId } = useExplorerSource(
+    manager,
+    contentRevision,
+  )
+  const [selection, setSelection] = useState<ExplorerSelection | null>(null)
 
   if (!manager.hasFolders()) {
     return (
@@ -114,7 +143,7 @@ export function ExplorerTab({
   }
 
   return (
-    <Lister<ExplorerData>
+    <Lister<ExplorerSelection>
       listId={EXPLORER_LIST_ID}
       mode="tree"
       source={source}
@@ -127,6 +156,59 @@ export function ExplorerTab({
       initiallyExpanded={activeRootId ? [activeRootId] : rootIds.slice(0, 1)}
       syncExpanded
       activeId={activeRootId}
+      onSelectionChange={node => {
+        const next = node?.data ?? null
+        setSelection(next)
+        onSelectionChange?.(next)
+      }}
+      betweenInputAndList={
+        onCreateFile || onCreateFolder || onShowTrash ? (
+          <div
+            className="flex h-8 shrink-0 items-center justify-end gap-0.5 border-b border-border/70 px-1.5"
+            data-yaade-explorer-toolbar=""
+          >
+            {onCreateFile ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="New file"
+                title="New file"
+                data-yaade-explorer-action="create-file"
+                onClick={() => onCreateFile(selection)}
+              >
+                <FilePlus2 />
+              </Button>
+            ) : null}
+            {onCreateFolder ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="New folder"
+                title="New folder"
+                data-yaade-explorer-action="create-folder"
+                onClick={() => onCreateFolder(selection)}
+              >
+                <FolderPlus />
+              </Button>
+            ) : null}
+            {onShowTrash ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Show YAADE Trash"
+                title="Show YAADE Trash"
+                data-yaade-explorer-action="show-trash"
+                onClick={onShowTrash}
+              >
+                <ArchiveRestore />
+              </Button>
+            ) : null}
+          </div>
+        ) : undefined
+      }
       onActivate={node => {
         if (node.data.kind === "root") {
           onActivateProject?.(node.data.uri)
@@ -136,13 +218,84 @@ export function ExplorerTab({
       }}
       emptyState={<PanelEmpty title="Loading files…" compact />}
       wrapRow={(node, row) => {
-        if (node.data.kind !== "root") return row
+        if (node.data.kind === "entry") {
+          const entrySelection = node.data
+          const entry = entrySelection.entry
+          return (
+            <ContextMenu>
+              <ContextMenuTrigger asChild>
+                <div className="h-full w-full">{row}</div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                {entry.isDirectory && (onCreateFile || onCreateFolder) ? (
+                  <>
+                    <ContextMenuGroup>
+                      {onCreateFile ? (
+                        <ContextMenuItem onSelect={() => onCreateFile(entrySelection)}>
+                          <FilePlus2 className="size-4" />
+                          New File
+                        </ContextMenuItem>
+                      ) : null}
+                      {onCreateFolder ? (
+                        <ContextMenuItem onSelect={() => onCreateFolder(entrySelection)}>
+                          <FolderPlus className="size-4" />
+                          New Folder
+                        </ContextMenuItem>
+                      ) : null}
+                    </ContextMenuGroup>
+                    <ContextMenuSeparator />
+                  </>
+                ) : null}
+                <ContextMenuGroup>
+                  {onRename ? (
+                    <ContextMenuItem onSelect={() => onRename(entrySelection)}>
+                      <Pencil className="size-4" />
+                      Rename
+                    </ContextMenuItem>
+                  ) : null}
+                  <ContextMenuItem
+                    onSelect={() =>
+                      void navigator.clipboard.writeText(toPath(entry.uri))
+                    }
+                  >
+                    <Copy className="size-4" />
+                    Copy Path
+                  </ContextMenuItem>
+                </ContextMenuGroup>
+                {onTrash ? (
+                  <>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      variant="destructive"
+                      onSelect={() => onTrash(entrySelection)}
+                    >
+                      <Trash2 className="size-4" />
+                      Move to YAADE Trash
+                    </ContextMenuItem>
+                  </>
+                ) : null}
+              </ContextMenuContent>
+            </ContextMenu>
+          )
+        }
         const project = node.data
         return (
           <ContextMenu>
             <ContextMenuTrigger asChild><div className="h-full w-full">{row}</div></ContextMenuTrigger>
             <ContextMenuContent>
               <ContextMenuGroup>
+                {onCreateFile ? (
+                  <ContextMenuItem onSelect={() => onCreateFile(project)}>
+                    <FilePlus2 className="size-4" />
+                    New File
+                  </ContextMenuItem>
+                ) : null}
+                {onCreateFolder ? (
+                  <ContextMenuItem onSelect={() => onCreateFolder(project)}>
+                    <FolderPlus className="size-4" />
+                    New Folder
+                  </ContextMenuItem>
+                ) : null}
                 <ContextMenuItem onSelect={() => onActivateProject?.(project.uri)}>
                   <Focus className="size-4" />
                   Activate Project

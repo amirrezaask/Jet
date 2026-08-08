@@ -62,7 +62,11 @@ describe("lsp-registry", () => {
       languages: [],
       commandCandidates: ["__yaade_definitely_not_on_path__"],
       args: ["--stdio"],
+      environment: {},
+      candidateArgs: {},
       rootMarkers: [],
+      priority: 0,
+      enabled: true,
     })
     assert.ok("error" in resolved)
   })

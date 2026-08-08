@@ -27,6 +27,5 @@ export function MuxLspHost(props: {
   useEffect(() => {
     props.onReady({ open: ensureLspForFile, close: closeLspForFile })
   }, [closeLspForFile, ensureLspForFile, props.onReady])
-
   return null
 }

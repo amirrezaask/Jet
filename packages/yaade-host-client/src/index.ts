@@ -14,4 +14,16 @@ export {
   type FsReadDiagnostics,
   type FsReadUriDiagnostic,
 } from "./fs-read-diagnostics.js"
+export {
+  TextFileHttpError,
+  readTextFileHttp,
+  writeTextFileHttp,
+} from "./text-file-http.js"
+export {
+  deleteEditorRecoveryBuffer,
+  deleteEditorRecoverySession,
+  getEditorRecoveryBuffer,
+  listEditorRecoveryBuffers,
+  upsertEditorRecoveryBuffer,
+} from "./editor-recovery-client.js"
 export type { YaadeHostTransport } from "./transport.js"

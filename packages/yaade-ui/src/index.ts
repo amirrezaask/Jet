@@ -158,7 +158,10 @@ export {
   destroyEditorPanel,
   type EditorViewHandle,
 } from "./tabs/editor-view-registry.js"
-export { ExplorerTab } from "./tabs/ExplorerTab.js"
+export {
+  ExplorerTab,
+  type ExplorerSelection,
+} from "./tabs/ExplorerTab.js"
 export {
   TerminalExplorerTab,
   type TerminalAgentShortcut,
@@ -197,7 +200,13 @@ export { cn } from "./lib/utils.js"
 export { formatKeyBinding } from "./lib/format-key.js"
 export { TooltipProvider } from "./components/ui/tooltip.js"
 export { Toaster } from "./components/ui/sonner.js"
-export { ConfirmDialogHost, requestConfirm } from "./components/ConfirmDialogHost.js"
+export {
+  ConfirmDialogHost,
+  requestConfirm,
+  requestSaveDiscard,
+  type SaveDiscardDecision,
+  type SaveDiscardOptions,
+} from "./components/ConfirmDialogHost.js"
 export { showYaadeToast } from "./toast.js"
 export { registerListPanel, getListPanel, getListItems, focusListPanel, focusFirstListItem, getListPanelController, type ListFocusAction, type ListPanelController } from "./lib/list-registry.js"
 export { ListRow, type ListRowProps } from "./components/ListRow.js"

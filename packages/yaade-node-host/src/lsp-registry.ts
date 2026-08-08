@@ -1,75 +1,7 @@
 import { accessSync, constants as fsConstants } from "node:fs"
 import { delimiter, join } from "node:path"
-
-export type LanguageServerDefinition = {
-  id: string
-  languages: string[]
-  commandCandidates: string[]
-  args: string[]
-  /** Per-candidate args override `args` when that binary is chosen. */
-  candidateArgs?: Record<string, string[]>
-  rootMarkers: string[]
-}
-
-const PRODUCTION_SERVERS: LanguageServerDefinition[] = [
-  {
-    id: "typescript-language-server",
-    languages: ["typescript", "javascript", "tsx", "jsx", "mts", "cts"],
-    commandCandidates: ["typescript-language-server"],
-    args: ["--stdio"],
-    rootMarkers: ["package.json", "tsconfig.json"],
-  },
-  {
-    id: "gopls",
-    languages: ["go"],
-    commandCandidates: ["gopls"],
-    args: ["serve"],
-    rootMarkers: ["go.work", "go.mod"],
-  },
-  {
-    id: "rust-analyzer",
-    languages: ["rust"],
-    commandCandidates: ["rust-analyzer"],
-    args: [],
-    rootMarkers: ["Cargo.toml"],
-  },
-  {
-    id: "pyright",
-    languages: ["python"],
-    commandCandidates: ["pyright-langserver", "pyright", "basedpyright-langserver", "basedpyright"],
-    args: ["--stdio"],
-    rootMarkers: ["pyproject.toml", "requirements.txt", "setup.py", "Pipfile", "setup.cfg"],
-  },
-  {
-    id: "ruby-lsp",
-    languages: ["ruby"],
-    commandCandidates: ["ruby-lsp", "solargraph"],
-    args: [],
-    candidateArgs: { solargraph: ["stdio"] },
-    rootMarkers: ["Gemfile", ".ruby-version"],
-  },
-  {
-    id: "vscode-json-language-server",
-    languages: ["json", "jsonc"],
-    commandCandidates: ["vscode-json-language-server", "vscode-json-languageserver"],
-    args: ["--stdio"],
-    rootMarkers: ["package.json", "tsconfig.json"],
-  },
-  {
-    id: "vscode-html-language-server",
-    languages: ["html"],
-    commandCandidates: ["vscode-html-language-server"],
-    args: ["--stdio"],
-    rootMarkers: ["package.json", "index.html"],
-  },
-  {
-    id: "vscode-css-language-server",
-    languages: ["css"],
-    commandCandidates: ["vscode-css-language-server"],
-    args: ["--stdio"],
-    rootMarkers: ["package.json"],
-  },
-]
+import type { LanguageServerDefinition } from "@yaade/rpc"
+import { builtinLanguageServerDefinitions } from "./lsp-config.js"
 
 function mockServerDefinition(): LanguageServerDefinition | null {
   if (process.env.YAADE_LSP_MOCK !== "1") return null
@@ -79,28 +11,37 @@ function mockServerDefinition(): LanguageServerDefinition | null {
     languages: ["mock", "plaintext"],
     commandCandidates: [mockBin],
     args: [],
+    environment: {},
+    candidateArgs: {},
     rootMarkers: [],
+    priority: 10_000,
+    enabled: true,
   }
 }
 
 function allDefinitions(): LanguageServerDefinition[] {
-  const servers = [...PRODUCTION_SERVERS]
+  const servers = [...builtinLanguageServerDefinitions()]
   const mock = mockServerDefinition()
   if (mock) servers.push(mock)
   return servers
 }
 
-const byId = new Map<string, LanguageServerDefinition>()
-const byLanguage = new Map<string, string>()
+let byId: ReadonlyMap<string, LanguageServerDefinition> | null = null
+let byLanguage: ReadonlyMap<string, string> | null = null
 
 function ensureIndexes(): void {
-  if (byId.size > 0) return
+  if (byId && byLanguage) return
+  const nextById = new Map<string, LanguageServerDefinition>()
+  const nextByLanguage = new Map<string, string>()
   for (const def of allDefinitions()) {
-    byId.set(def.id, def)
+    nextById.set(def.id, def)
+    if (!def.enabled) continue
     for (const lang of def.languages) {
-      if (!byLanguage.has(lang)) byLanguage.set(lang, def.id)
+      if (!nextByLanguage.has(lang)) nextByLanguage.set(lang, def.id)
     }
   }
+  byId = nextById
+  byLanguage = nextByLanguage
 }
 
 export function listLanguageServerDefinitions(): LanguageServerDefinition[] {
@@ -109,12 +50,12 @@ export function listLanguageServerDefinitions(): LanguageServerDefinition[] {
 
 export function getLanguageServerDefinition(serverId: string): LanguageServerDefinition | undefined {
   ensureIndexes()
-  return byId.get(serverId)
+  return byId?.get(serverId)
 }
 
 export function serverIdForLanguage(languageId: string): string | null {
   ensureIndexes()
-  return byLanguage.get(languageId) ?? null
+  return byLanguage?.get(languageId) ?? null
 }
 
 export function findExecutableOnPath(name: string): string | null {
@@ -149,7 +90,7 @@ export function resolveLanguageServerCommand(
   for (const candidate of candidates) {
     const found = findExecutableOnPath(candidate)
     if (found) {
-      const args = def.candidateArgs?.[candidate] ?? def.args
+      const args = def.candidateArgs[candidate] ?? def.args
       return { command: found, args: [...args] }
     }
   }
@@ -160,6 +101,8 @@ export function resolveLanguageServerCommand(
 
 /** Reset cached indexes (tests only). */
 export function resetLanguageServerRegistryForTests(): void {
-  byId.clear()
-  byLanguage.clear()
+  byId = null
+  byLanguage = null
 }
+
+export type { LanguageServerDefinition } from "@yaade/rpc"

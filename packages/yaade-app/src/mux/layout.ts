@@ -14,15 +14,19 @@ import {
   pushPanelTab,
 } from "@yaade/workspace"
 import { closePanelIfEmpty, getAllLeafPanels } from "../panel-routing.js"
+import { muxToolKind, type MuxToolKind } from "./tool-pane.js"
 
-export type MuxLeafKind = "terminal" | "git" | "editor"
+export type MuxLeafKind = "terminal" | "git" | "editor" | "tool"
 
-export type MuxLeaf = {
+type MuxLeafBase = {
   panelId: PanelId
-  /** Terminal, git, or editor tab id (legacy field name kept for call-site churn). */
+  /** Persistent mux leaf tab id (legacy field name kept for call-site churn). */
   ptyTabId: string
-  kind: MuxLeafKind
 }
+
+export type MuxLeaf =
+  | (MuxLeafBase & { kind: Exclude<MuxLeafKind, "tool"> })
+  | (MuxLeafBase & { kind: "tool"; toolKind: MuxToolKind })
 
 /** One content tab per leaf panel. */
 export function paneView(tabId: string): PanelView {
@@ -33,6 +37,7 @@ export function muxLeafKind(tabId: string): MuxLeafKind | null {
   if (isTerminalTabId(tabId)) return "terminal"
   if (isGitTabId(tabId)) return "git"
   if (isEditorTabId(tabId)) return "editor"
+  if (muxToolKind(tabId)) return "tool"
   return null
 }
 
@@ -62,6 +67,12 @@ export function listPaneLeaves(tree: YaadePanelTree): MuxLeaf[] {
     if (!tabId) continue
     const kind = muxLeafKind(tabId)
     if (!kind) continue
+    const toolKind = muxToolKind(tabId)
+    if (kind === "tool") {
+      if (!toolKind) continue
+      out.push({ panelId, ptyTabId: tabId, kind, toolKind })
+      continue
+    }
     out.push({ panelId, ptyTabId: tabId, kind })
   }
   return out
@@ -71,7 +82,7 @@ export function listTerminalLeaves(tree: YaadePanelTree): MuxLeaf[] {
   return listPaneLeaves(tree).filter(l => l.kind === "terminal")
 }
 
-export function placePtyInTree(
+export function placeMuxLeafInTree(
   tree: YaadePanelTree,
   tabId: string,
   focused: PanelId | null,
@@ -94,6 +105,9 @@ export function placePtyInTree(
   tree.setView(target, paneView(tabId))
   return target
 }
+
+/** @deprecated Name retained for terminal/git/editor call sites during migration. */
+export const placePtyInTree = placeMuxLeafInTree
 
 /**
  * Open a file buffer in an editor group: activate existing tab, push into the

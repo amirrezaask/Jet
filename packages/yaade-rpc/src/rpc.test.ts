@@ -4,6 +4,9 @@ import { Effect, Schema } from "effect"
 import {
   HostRpcRequest,
   HostEvent,
+  FileChangedError,
+  TextFileReadResult,
+  TextFileWriteOptions,
   decodeHostRpcRequest,
   hostErrorWire,
   PathOutsideRootsError,
@@ -70,6 +73,40 @@ describe("yaade-rpc schemas", () => {
 
   it("HostRpcRequest schema type is struct", () => {
     assert.ok(HostRpcRequest)
+  })
+
+  it("validates versioned text-file contracts", () => {
+    const read = Schema.decodeUnknownSync(TextFileReadResult)({
+      content: "hello",
+      version: "123:5",
+      size: 5,
+    })
+    assert.equal(read.version, "123:5")
+    assert.deepEqual(
+      Schema.decodeUnknownSync(TextFileWriteOptions)({ expectedVersion: "123:5" }),
+      { expectedVersion: "123:5" },
+    )
+    assert.deepEqual(
+      Schema.decodeUnknownSync(TextFileWriteOptions)({ create: true }),
+      { create: true },
+    )
+  })
+
+  it("preserves FILE_CHANGED conflict details on the wire", () => {
+    const wire = hostErrorWire(
+      new FileChangedError({
+        message: "file changed on disk",
+        uri: "file:///tmp/file.ts",
+        expectedVersion: "1:3",
+        actualVersion: "2:3",
+      }),
+    )
+    assert.equal(wire.code, "FILE_CHANGED")
+    assert.deepEqual(wire.details, {
+      uri: "file:///tmp/file.ts",
+      expectedVersion: "1:3",
+      actualVersion: "2:3",
+    })
   })
 })
 

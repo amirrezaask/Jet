@@ -8,8 +8,7 @@ import {
   useState,
 } from "react"
 import type { ProjectSession, ProjectSessionSummary } from "@yaade/rpc"
-import type { GitRepositorySummary } from "@yaade/shared"
-import { pathToFileUri } from "@yaade/shared"
+import { pathToFileUri, type GitCommit } from "@yaade/shared"
 import {
   AppShell,
   cn,
@@ -32,16 +31,17 @@ import type {
   MuxLaunchRequest,
 } from "../mux/MuxApp.js"
 import { workspaceDocumentTitle } from "../url-workspace.js"
-import {
-  createProjectSession,
-  openCheckoutSession,
-} from "../project-session-client.js"
+import { openCheckoutSession } from "../project-session-client.js"
 import { ProjectOverview } from "./ProjectOverview.js"
 import { ProjectPathSwitcher } from "./ProjectPathSwitcher.js"
-import { WorktreeSwitcher } from "./WorktreeSwitcher.js"
 
 const GitWorkspace = lazy(() =>
   import("@yaade/ui/git").then(m => ({ default: m.GitWorkspace })),
+)
+const CommitChangesDialog = lazy(() =>
+  import("@yaade/ui/commit-changes").then(m => ({
+    default: m.CommitChangesDialog,
+  })),
 )
 
 function preloadSettingsOverlay() {
@@ -53,11 +53,6 @@ const MuxApp = lazy(() =>
 )
 const SettingsOverlay = lazy(() =>
   preloadSettingsOverlay().then(m => ({ default: m.SettingsOverlay })),
-)
-const AgentCliPickerOverlay = lazy(() =>
-  import("@yaade/ui/agent-picker").then(m => ({
-    default: m.AgentCliPickerOverlay,
-  })),
 )
 
 export type ProjectPageProps = {
@@ -82,7 +77,7 @@ export type ProjectPageProps = {
   listSessions: () => Promise<ProjectSessionSummary[]>
 }
 
-/** Visible tabs are Overview / History; `worktree` is selected only via the Worktrees menu. */
+/** Visible tabs are Overview / History; an active session renders the workspace view. */
 type ProjectView = "overview" | "history" | "worktree"
 
 export function ProjectPage({
@@ -112,9 +107,8 @@ export function ProjectPage({
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyMounted, setHistoryMounted] = useState(false)
-  const [summary, setSummary] = useState<GitRepositorySummary | null>(null)
+  const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null)
   const [launchRequest, setLaunchRequest] = useState<MuxLaunchRequest | null>(null)
-  const [agentPickerOpen, setAgentPickerOpen] = useState(false)
   const launchSequenceRef = useRef(0)
   const handledAgentLaunchIntentsRef = useRef(new Set<string>())
   const rootUri = useMemo(() => pathToFileUri(projectPath), [projectPath])
@@ -123,6 +117,10 @@ export function ProjectPage({
   useEffect(() => {
     document.title = title
   }, [title])
+
+  useEffect(() => {
+    setSelectedCommit(null)
+  }, [projectPath])
 
   // Opening / restoring a session shows the in-page tiling workspace.
   useEffect(() => {
@@ -151,32 +149,6 @@ export function ProjectPage({
     },
     [onOpenSession, projectPath],
   )
-
-  const handleCreateWorktree = useCallback(
-    async (input: { branch: string; baseRef?: string }) => {
-      const muxReady = preloadMuxApp()
-      const created = await createProjectSession({
-        rootPath: projectPath,
-        title: input.branch,
-        worktree: {
-          branch: input.branch,
-          baseRef: input.baseRef,
-        },
-      })
-      await muxReady
-      setView("worktree")
-      await onOpenSession(created.id)
-    },
-    [onOpenSession, projectPath],
-  )
-
-  const resumeWorkspace = useCallback(async () => {
-    if (session) {
-      setView("worktree")
-      return
-    }
-    await handleSelectCheckout({ cwdPath: projectPath, title: "Main" })
-  }, [handleSelectCheckout, projectPath, session])
 
   const handleLaunchAction = useCallback(
     async (action: MuxLaunchAction) => {
@@ -227,6 +199,11 @@ export function ProjectPage({
     [onOpenSession],
   )
 
+  const showHistory = useCallback(() => {
+    setHistoryMounted(true)
+    setView("history")
+  }, [])
+
   // Radix Tabs only knows Overview / History; worktree view leaves both inactive.
   const tabsValue = view === "worktree" ? "none" : view
 
@@ -247,53 +224,36 @@ export function ProjectPage({
           }}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <header className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-2.5">
+          <header
+            className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-3 sm:px-4"
+            data-yaade-app-header=""
+          >
             <Button
               variant="ghost"
               size="icon-xs"
               aria-label="Open HQ"
               onClick={onOpenHq}
             >
-              <House className="size-3.5" />
+              <House />
             </Button>
             <ProjectPathSwitcher
               projectPath={projectPath}
               homeDir={homeDir}
               onNavigate={onNavigateProject}
             />
-            <div className="flex h-6 shrink-0 items-center gap-0">
+            <div className="flex h-7 shrink-0 items-center rounded-md border border-border bg-secondary/60 p-0.5">
               <TabsList variant="line" className="h-6 gap-0 p-0">
                 <TabsTrigger
                   value="overview"
                   data-yaade-project-tab="overview"
-                  className="px-1.5 text-xs"
+                  className="px-2 text-xs"
                 >
                   Overview
                 </TabsTrigger>
-              </TabsList>
-              <WorktreeSwitcher
-                projectPath={projectPath}
-                homeDir={homeDir}
-                defaultBranch={summary?.branch ?? "main"}
-                active={view === "worktree" && session != null}
-                activeLabel={
-                  session
-                    ? (session.worktreeBranch ??
-                      (session.cwdPath === projectPath
-                        ? "Main"
-                        : session.title))
-                    : null
-                }
-                activeCwdPath={session?.cwdPath ?? null}
-                onIntent={() => void preloadMuxApp()}
-                onSelectCheckout={handleSelectCheckout}
-                onCreateWorktree={handleCreateWorktree}
-              />
-              <TabsList variant="line" className="h-6 gap-0 p-0">
                 <TabsTrigger
                   value="history"
                   data-yaade-project-tab="history"
-                  className="px-1.5 text-xs"
+                  className="px-2 text-xs"
                 >
                   History
                 </TabsTrigger>
@@ -313,7 +273,7 @@ export function ProjectPage({
                 onFocus={() => void preloadSettingsOverlay()}
                 onClick={() => setSettingsOpen(true)}
               >
-                <SettingsIcon className="size-3.5" />
+                <SettingsIcon />
               </Button>
             </div>
           </header>
@@ -330,16 +290,12 @@ export function ProjectPage({
             >
               <ProjectOverview
                 projectPath={projectPath}
-                homeDir={homeDir}
                 active={view === "overview"}
                 listSessions={listSessions}
-                onLaunchAgent={() => setAgentPickerOpen(true)}
                 onLaunchAction={handleLaunchAction}
-                onResumeWorkspace={resumeWorkspace}
                 onResumeSession={handleResumeSession}
-                onOpenCheckout={handleSelectCheckout}
-                onCreateWorktree={handleCreateWorktree}
-                onRepositorySummary={setSummary}
+                onOpenCommit={setSelectedCommit}
+                onShowHistory={showHistory}
               />
             </div>
 
@@ -424,18 +380,21 @@ export function ProjectPage({
         </Suspense>
       ) : null}
 
-      {agentPickerOpen ? (
+      {selectedCommit ? (
         <Suspense fallback={null}>
-          <AgentCliPickerOverlay
-            open={agentPickerOpen}
-            onOpenChange={setAgentPickerOpen}
-            onSelect={driver => {
-              setAgentPickerOpen(false)
-              void handleLaunchAction({ kind: "agent", driverId: driver.id })
+          <CommitChangesDialog
+            open
+            onOpenChange={open => {
+              if (!open) setSelectedCommit(null)
             }}
+            rootUri={rootUri}
+            hash={selectedCommit.hash}
+            theme={activeTheme}
+            commit={selectedCommit}
           />
         </Suspense>
       ) : null}
+
       {!session ? <Toaster position="bottom-right" /> : null}
     </AppShell>
   )

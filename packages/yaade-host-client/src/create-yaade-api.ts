@@ -1,6 +1,10 @@
 import type { YaadeHostAPI } from "@yaade/workspace"
+import type { LspLifecycleEvent } from "@yaade/rpc"
 import type { YaadeHostTransport } from "./transport.js"
-import { readFileWithDiagnostics } from "./fs-read-diagnostics.js"
+import {
+  readFileWithDiagnostics,
+  readTextFileWithDiagnostics,
+} from "./fs-read-diagnostics.js"
 
 // Host owns the authoritative terminal replay. This buffer only bridges the
 // attach handshake, so keeping a second multi-megabyte copy is wasteful.
@@ -16,6 +20,35 @@ function invokeTerminalHot(
   return transport.invoke(channel, ...args).then(() => undefined)
 }
 
+function invokeCancellable<T>(
+  transport: YaadeHostTransport,
+  channel: string,
+  args: unknown[],
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!signal) return transport.invoke(channel, ...args)
+  if (transport.invokeWithSignal) return transport.invokeWithSignal(channel, args, signal)
+  if (signal.aborted) return Promise.reject(clientAbortError(signal))
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(clientAbortError(signal))
+    signal.addEventListener("abort", abort, { once: true })
+    void transport.invoke<T>(channel, ...args).then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", abort)
+    })
+  })
+}
+
+function clientAbortError(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error && signal.reason.name === "AbortError") {
+    return signal.reason
+  }
+  const error = new Error(
+    signal.reason instanceof Error ? signal.reason.message : "host invoke aborted",
+  )
+  error.name = "AbortError"
+  return error
+}
+
 export function createYaadeApi(
   transport: YaadeHostTransport,
 ): YaadeHostAPI {
@@ -28,6 +61,10 @@ export function createYaadeApi(
   transport.on("lsp:crashed", (...args: unknown[]) => {
     const id = args[0] as string
     for (const cb of lspCrashListeners) cb(id)
+  })
+  transport.on("lsp:lifecycle", (...args: unknown[]) => {
+    const event = args[0] as LspLifecycleEvent
+    for (const cb of lspLifecycleListeners) cb(event)
   })
   transport.on("fs:changed", (...args: unknown[]) => {
     const uri = args[0] as string
@@ -86,6 +123,7 @@ export function createYaadeApi(
   })
 
   const lspCrashListeners = new Set<(id: string) => void>()
+  const lspLifecycleListeners = new Set<(event: LspLifecycleEvent) => void>()
   const fileChangeListeners = new Set<(uri: string) => void>()
   const fileIndexListeners = new Set<(rootUri: string, files: string[]) => void>()
   const searchReadyListeners = new Set<(rootUri: string) => void>()
@@ -108,11 +146,32 @@ export function createYaadeApi(
       readFile: uri =>
         readFileWithDiagnostics(uri, () => transport.invoke("fs:readFile", uri)),
       writeFile: (uri, content) => transport.invoke("fs:writeFile", uri, content),
+      readTextFile: uri =>
+        readTextFileWithDiagnostics(uri, () =>
+          transport.readTextFile
+            ? transport.readTextFile(uri)
+            : transport.invoke("fs:readTextFile", uri),
+        ),
+      writeTextFile: (uri, content, options) =>
+        transport.writeTextFile
+          ? transport.writeTextFile(uri, content, options)
+          : transport.invoke("fs:writeTextFile", uri, content, options),
       writeTempDrop: (name, contentBase64) =>
         transport.invoke("fs:writeTempDrop", name, contentBase64),
       readDir: uri => transport.invoke("fs:readDir", uri),
       stat: uri => transport.invoke("fs:stat", uri),
       exists: uri => transport.invoke("fs:exists", uri),
+      createFile: uri => transport.invoke("fs:createFile", uri),
+      mkdir: uri => transport.invoke("fs:mkdir", uri),
+      rename: (sourceUri, targetUri) =>
+        transport.invoke("fs:rename", sourceUri, targetUri),
+      trash: uri => transport.invoke("fs:trash", uri),
+      restoreTrash: (id, targetUri) =>
+        targetUri
+          ? transport.invoke("fs:restoreTrash", id, targetUri)
+          : transport.invoke("fs:restoreTrash", id),
+      listTrash: () => transport.invoke("fs:listTrash"),
+      emptyTrash: () => transport.invoke("fs:emptyTrash"),
       showOpenFolderDialog: () => transport.invoke("fs:showOpenFolderDialog"),
       showSaveFileDialog: (defaultPath?: string) =>
         transport.invoke("fs:showSaveFileDialog", defaultPath),
@@ -134,18 +193,27 @@ export function createYaadeApi(
       },
     },
     search: {
-      project: (rootUri, query, opts) => transport.invoke("search:project", rootUri, query, opts),
-      listFiles: rootUri => transport.invoke("search:listFiles", rootUri),
-      fileSearch: (rootUri, query, opts) =>
-        transport.invoke("search:fileSearch", rootUri, query, opts),
+      project: (rootUri, query, opts, signal) =>
+        invokeCancellable(transport, "search:project", [rootUri, query, opts], signal),
+      listFiles: (rootUri, signal) =>
+        invokeCancellable(transport, "search:listFiles", [rootUri], signal),
+      fileSearch: (rootUri, query, opts, signal) =>
+        invokeCancellable(transport, "search:fileSearch", [rootUri, query, opts], signal),
       trackFileAccess: (rootUri, query, path) =>
         transport.invoke("search:trackFileAccess", rootUri, query, path),
       isScanReady: rootUri => transport.invoke("search:isScanReady", rootUri),
       isSupported: rootUri => transport.invoke("search:isSupported", rootUri),
     },
     lsp: {
-      start: (rootUri, serverId) => transport.invoke("lsp:start", rootUri, serverId),
+      resolve: request => transport.invoke("lsp:resolve", request),
+      start: target => transport.invoke("lsp:start", target),
       stop: id => transport.invoke("lsp:stop", id),
+      listDefinitions: () => transport.invoke("lsp:listDefinitions"),
+      logs: request => transport.invoke("lsp:logs", request ?? {}),
+      onLifecycle: cb => {
+        lspLifecycleListeners.add(cb)
+        return () => lspLifecycleListeners.delete(cb)
+      },
       onCrashed: cb => {
         lspCrashListeners.add(cb)
         return () => lspCrashListeners.delete(cb)

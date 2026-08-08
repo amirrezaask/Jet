@@ -9,7 +9,7 @@ import {
   paletteHighlights,
 } from "./theme-palette.js"
 
-const shadcnSource = "https://ui.shadcn.com/themes"
+const designSource = "https://github.com/pingdotgg/t3code"
 
 const darkHighlights = paletteHighlights({
   keyword: "oklch(0.704 0.191 22.216)",
@@ -90,8 +90,8 @@ export const defaultDark: YaadeTheme = makeTheme({
   name: "Default Dark",
   family: "Default",
   scheme: "dark",
-  sourceName: "shadcn/ui, tuned for YAADE",
-  sourceUrl: shadcnSource,
+  sourceName: "T3 Code, adapted for YAADE",
+  sourceUrl: designSource,
   license: "MIT",
   tokens: shadcnDefaultDark,
   highlights: darkHighlights,
@@ -103,8 +103,8 @@ export const defaultLight: YaadeTheme = makeTheme({
   name: "Default Light",
   family: "Default",
   scheme: "light",
-  sourceName: "shadcn/ui, tuned for YAADE",
-  sourceUrl: shadcnSource,
+  sourceName: "T3 Code, adapted for YAADE",
+  sourceUrl: designSource,
   license: "MIT",
   tokens: shadcnDefaultLight,
   highlights: lightHighlights,

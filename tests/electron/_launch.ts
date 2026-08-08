@@ -194,15 +194,9 @@ export async function waitForMux(page: ShellDriver, timeoutMs = 30_000): Promise
         await window.__yaadeAgent!.createProjectSession!({ title: "E2E session" })
       })
     } catch {
-      // Fall back to Worktrees → Main.
       attemptedOpen = false
-      await page.locator("[data-yaade-worktree-switcher]").click()
-      await page.locator("[data-yaade-worktree-switcher-menu]").waitFor({
-        state: "visible",
-        timeout: 5_000,
-      })
-      await page.locator("[data-yaade-worktree-main]").click()
-      attemptedOpen = true
+      await page.waitForTimeout(150)
+      continue
     }
     await page.locator("[data-yaade-mux]").waitFor({
       state: "visible",

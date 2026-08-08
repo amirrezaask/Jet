@@ -66,46 +66,4 @@ test.describe("git worktree sessions", () => {
       fs.rmSync(home, { recursive: true, force: true })
     }
   })
-
-  test("Worktrees picker create opens mux on new worktree", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-wt-picker-"))
-    const project = path.join(home, "repo")
-    fs.mkdirSync(project, { recursive: true })
-    execSync(
-      "git init && git config user.email t@t && git config user.name t && echo hi > README.md && git add . && git commit -m init",
-      { cwd: project, stdio: "ignore" },
-    )
-
-    const { app, page } = await launchJet({
-      homeDir: home,
-      startPath: "/repo",
-      launchWithoutWorkspace: true,
-      projectPage: true,
-    })
-    try {
-      await waitForProjectPage(page)
-      const branch = `picker-wt-${Date.now().toString(36)}`
-      await page.locator("[data-yaade-worktree-switcher]").click()
-      await page.locator("[data-yaade-worktree-switcher-menu]").waitFor({
-        state: "visible",
-        timeout: 5_000,
-      })
-      await page.locator("[data-yaade-worktree-create]").first().click()
-      await page.locator("[data-yaade-create-worktree-dialog]").waitFor({
-        state: "visible",
-        timeout: 5_000,
-      })
-      await page.locator("[data-yaade-worktree-branch]").fill(branch)
-      await page.locator("[data-yaade-create-worktree]").click()
-      await waitForMux(page)
-
-      const state = await page.evaluate(() => window.__yaadeAgent!.getState())
-      expect(state.sessionCwd).toContain(".yaade/worktrees")
-      expect(state.sessionCwd).toContain(branch)
-      expect(fs.existsSync(state.sessionCwd!)).toBe(true)
-    } finally {
-      await app.close()
-      fs.rmSync(home, { recursive: true, force: true })
-    }
-  })
 })

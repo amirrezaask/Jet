@@ -1,11 +1,15 @@
 import { Context, Effect, Layer } from "effect"
 import {
+  ConflictError,
   decodeHostRpcRequest,
+  FileChangedError,
   HostDisconnectedError,
   HostRpcRequest,
   InvalidRpcPayloadError,
+  NotFoundError,
   OperationFailedError,
   PathOutsideRootsError,
+  PayloadTooLargeError,
   type HostRpcError,
 } from "@yaade/rpc"
 import type { YaadeHostTransport } from "./transport.js"
@@ -24,9 +28,30 @@ export class HostClient extends Context.Tag("yaade/HostClient")<
   }
 >() {}
 
-function mapFetchError(message: string, code?: string): HostRpcError {
+function mapFetchError(
+  message: string,
+  code?: string,
+  details?: Record<string, unknown>,
+): HostRpcError {
   if (code === "PATH_OUTSIDE_ALLOWED_ROOTS" || message.includes("PATH_OUTSIDE")) {
     return new PathOutsideRootsError({ message })
+  }
+  if (code === "CONFLICT") return new ConflictError({ message })
+  if (code === "NOT_FOUND") return new NotFoundError({ message })
+  if (code === "PAYLOAD_TOO_LARGE") return new PayloadTooLargeError({ message })
+  if (
+    code === "FILE_CHANGED" &&
+    typeof details?.uri === "string" &&
+    typeof details.actualVersion === "string"
+  ) {
+    return new FileChangedError({
+      message,
+      uri: details.uri,
+      actualVersion: details.actualVersion,
+      ...(typeof details.expectedVersion === "string"
+        ? { expectedVersion: details.expectedVersion }
+        : {}),
+    })
   }
   return new OperationFailedError({ message })
 }
@@ -77,16 +102,34 @@ export function invokeHostRpc(
       },
     })
     const payload = (yield* Effect.tryPromise({
-      try: () => response.json() as Promise<{ value?: unknown; error?: { message?: string; code?: string } }>,
+      try: () => response.json() as Promise<{
+        value?: unknown
+        error?: {
+          message?: string
+          code?: string
+          details?: Record<string, unknown>
+        }
+      }>,
       catch: err =>
         new OperationFailedError({
           message: err instanceof Error ? err.message : String(err),
           cause: err,
         }),
-    })) as { value?: unknown; error?: { message?: string; code?: string } }
+    })) as {
+      value?: unknown
+      error?: {
+        message?: string
+        code?: string
+        details?: Record<string, unknown>
+      }
+    }
     if (!response.ok) {
       return yield* Effect.fail(
-        mapFetchError(payload.error?.message ?? `Jet API request failed (${response.status})`, payload.error?.code),
+        mapFetchError(
+          payload.error?.message ?? `Jet API request failed (${response.status})`,
+          payload.error?.code,
+          payload.error?.details,
+        ),
       )
     }
     return payload.value

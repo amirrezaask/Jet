@@ -25,6 +25,7 @@ import {
   formatKeyBinding,
   formatMuxTitle,
   requestConfirm,
+  requestSaveDiscard,
   showYaadeToast,
   type AgentCliDriver,
   type MuxStatusStripAction,
@@ -65,7 +66,9 @@ import {
   type LaunchConfig,
 } from "@yaade/workspace"
 import { createAgentBridge } from "../agent-bridge.js"
+import { resolveDirtyBufferClose } from "../editor/dirty-buffer-close.js"
 import {
+  remapEditorViewStateUri,
   replaceEditorViewStates,
   snapshotEditorViewStates,
 } from "../editor/editor-view-state-store.js"
@@ -119,13 +122,16 @@ import {
   placeGitPane,
   placeTerminalPane,
   placeEditorPane,
+  placeToolPane,
   type AllocatedGitPane,
   type AllocatedTerminalPane,
   type AllocatedEditorPane,
+  type AllocatedToolPane,
 } from "./place-pane.js"
 import { MuxWindowView } from "./MuxWindowView.js"
 import {
   MuxTerminalLayer,
+  useMuxPaneBoxes,
   useMuxTerminalSlotBoxes,
 } from "./MuxTerminalLayer.js"
 import { cwdUriFromTerminalTitle } from "./cwd-from-title.js"
@@ -140,6 +146,15 @@ import type {
   MuxWindowPersisted,
 } from "./types.js"
 import { claimMuxLaunchRequest } from "./launch-request.js"
+import {
+  muxToolPane,
+  muxToolPaneForTab,
+  type MuxToolKind,
+} from "./tool-pane.js"
+import type {
+  MuxExplorerAction,
+  MuxExplorerController,
+} from "./MuxExplorerPane.js"
 
 const TerminalPanel = lazy(async () => {
   const mod = await import("@yaade/ui/terminal")
@@ -148,9 +163,13 @@ const TerminalPanel = lazy(async () => {
 
 const MuxEditorPane = lazy(() => import("./MuxEditorPane.js"))
 
+const MuxExplorerPane = lazy(() =>
+  import("./MuxExplorerPane.js").then(module => ({
+    default: module.MuxExplorerPane,
+  })),
+)
+
 const MuxOverlays = lazy(() => import("./MuxOverlays.js"))
-// Prefetch immediately so Mod-k / Mod-Shift-p never race an unloaded chunk.
-void import("./MuxOverlays.js")
 
 /** Window event that asks the focused editor pane to save (see MuxEditorPane). */
 const MUX_EDITOR_SAVE_EVENT = "yaade:mux-editor-save"
@@ -239,6 +258,27 @@ function migrateLegacyEditorTabs(
   }
 
   return nextFiles
+}
+
+function remapEditorTabUri(
+  tree: YaadePanelTree,
+  oldUri: string,
+  newUri: string,
+): YaadePanelTree {
+  const next = tree.clone()
+  for (const panelId of getAllLeafPanels(next)) {
+    const view = next.getView(panelId)
+    if (!view || view.kind !== "tabs" || !panelTabIds(view).includes(oldUri)) {
+      continue
+    }
+    const tabIds = panelTabIds(view).map(id => (id === oldUri ? newUri : id))
+    next.setView(panelId, {
+      kind: "tabs",
+      activeTabId: view.activeTabId === oldUri ? newUri : view.activeTabId,
+      tabIds: [...new Set(tabIds)],
+    })
+  }
+  return next
 }
 
 /** True when a pane was launched as Neovim/Vim (quit should close the pane). */
@@ -389,6 +429,15 @@ function hydratePersistedSessions(
             kind: "git",
             label: "Git",
           })
+        } else if (leaf.kind === "tool") {
+          const tool = muxToolPaneForTab(leaf.ptyTabId)
+          if (tool?.kind === "explorer") {
+            workspace.registerTab({
+              id: tool.tabId,
+              kind: "explorer",
+              label: tool.label,
+            })
+          }
         }
       }
     } catch {
@@ -550,6 +599,7 @@ export function MuxApp({
   )
   const [quickOpenOpen, setQuickOpenOpen] = useState(false)
   const [projectSearchOpen, setProjectSearchOpen] = useState(false)
+  const [saveAsUri, setSaveAsUri] = useState<string | null>(null)
   const sessionRootPathRef = useRef<string>(sessionCwdPath)
   const projectPathRef = useRef<string>(sessionProjectPath)
   const sessionIdRef = useRef<string>(sessionId)
@@ -562,6 +612,8 @@ export function MuxApp({
   const processByTabRef = useRef<Record<string, string>>({})
   const focusedPtyTabIdRef = useRef<string | null>(null)
   const handledLaunchIdsRef = useRef(new Set<string>())
+  const explorerControllerRef = useRef<MuxExplorerController | null>(null)
+  const pendingExplorerActionRef = useRef<MuxExplorerAction | null>(null)
 
   const windowsRef = useRef(windows)
   windowsRef.current = windows
@@ -580,7 +632,7 @@ export function MuxApp({
   sessionIdRef.current = sessionId
   machineHostnameRef.current = machineHostname
   homeDirRef.current = homeDir
-  const slotBoxesRef = useRef(new Map<string, import("./MuxTerminalLayer.js").MuxTerminalSlotBox>())
+  const paneBoxesRef = useRef(new Map<string, import("./MuxTerminalLayer.js").MuxTerminalSlotBox>())
   /** LRU of recently focused terminal tab ids (beyond the active window). */
   const terminalLruRef = useRef<string[]>([])
   const MAX_TERMINAL_PANES_PER_WORKSPACE = 6
@@ -600,7 +652,66 @@ export function MuxApp({
     [editorDirtyRevision, workspace],
   )
 
+  const resolveEditorDirtyClose = useCallback(
+    async (
+      uris: readonly string[],
+      buffers: import("../editor/editor-buffer-service.js").EditorBufferService,
+    ): Promise<boolean> => {
+      const dirty = [...new Set(uris)].filter(uri => buffers.isDirty(uri))
+      if (dirty.length === 0) return true
+      const names = dirty.map(editorLabelFromUri)
+      return resolveDirtyBufferClose(dirty, {
+        choose: () =>
+          requestSaveDiscard({
+            title:
+              dirty.length === 1
+                ? `Save changes to ${names[0]}?`
+                : `Save changes to ${dirty.length} files?`,
+            description:
+              dirty.length === 1
+                ? "Your changes will be lost if you discard them."
+                : `Unsaved: ${names.slice(0, 4).join(", ")}${
+                    names.length > 4 ? `, and ${names.length - 4} more` : ""
+                  }`,
+          }),
+        save: async uri => {
+          try {
+            await buffers.save(uri)
+          } catch (error) {
+            showYaadeToast(
+              error instanceof Error ? error.message : `Could not save ${editorLabelFromUri(uri)}`,
+              { variant: "destructive" },
+            )
+            throw error
+          }
+        },
+        discard: async uri => {
+          try {
+            await buffers.discard(uri)
+          } catch (error) {
+            showYaadeToast(
+              error instanceof Error
+                ? error.message
+                : `Could not discard ${editorLabelFromUri(uri)}`,
+              { variant: "destructive" },
+            )
+            throw error
+          }
+        },
+      })
+    },
+    [],
+  )
+
   useEffect(() => subscribeTerminalSessions(() => bumpSessions()), [])
+
+  useEffect(() => {
+    const rootUri = pathToFileUri(sessionCwdPath)
+    void window.yaade?.workspace?.activate(rootUri)
+    return () => {
+      void window.yaade?.workspace?.deactivate?.(rootUri)
+    }
+  }, [sessionCwdPath])
 
   useEffect(() => {
     const writer = persistWriterRef.current
@@ -698,6 +809,8 @@ export function MuxApp({
 
   const paneTitle = useCallback(
     (tabId: string): string => {
+      const tool = muxToolPaneForTab(tabId)
+      if (tool) return tool.label
       if (isGitTabId(tabId)) {
         return workspace.tabRegistry.get(tabId)?.label ?? "Git"
       }
@@ -732,6 +845,7 @@ export function MuxApp({
   )
 
   const paneProcessName = useCallback((tabId: string): string | null => {
+    if (muxToolPaneForTab(tabId)) return null
     if (isGitTabId(tabId)) return "git"
     const session = terminalSessionForTab(tabId)
     return (
@@ -866,6 +980,21 @@ export function MuxApp({
     [workspace],
   )
 
+  const allocToolPane = useCallback(
+    (kind: MuxToolKind): AllocatedToolPane => {
+      const tool = muxToolPane(kind)
+      if (!workspace.tabRegistry.get(tool.tabId) && kind === "explorer") {
+        workspace.registerTab({
+          id: tool.tabId,
+          kind: "explorer",
+          label: tool.label,
+        })
+      }
+      return tool
+    },
+    [workspace],
+  )
+
   /** Open another project in a browser tab (replaces in-app mux windows). */
   const openBrowserProjectTab = useCallback((absolutePath?: string) => {
     const home = homeDirRef.current
@@ -905,18 +1034,48 @@ export function MuxApp({
     return base
   }, [])
 
+  const openToolPane = useCallback(
+    (kind: MuxToolKind): void => {
+      const window = ensureProjectWindow()
+      const pane = allocToolPane(kind)
+      updateWindow(window.id, live => placeToolPane(live, pane))
+    },
+    [allocToolPane, ensureProjectWindow, updateWindow],
+  )
+
+  const runExplorerAction = useCallback(
+    (action: MuxExplorerAction): void => {
+      pendingExplorerActionRef.current = action
+      openToolPane("explorer")
+      const controller = explorerControllerRef.current
+      if (!controller) return
+      window.requestAnimationFrame(() => {
+        if (pendingExplorerActionRef.current !== action) return
+        pendingExplorerActionRef.current = null
+        controller.run(action)
+      })
+    },
+    [openToolPane],
+  )
+
   const closeWindow = useCallback(
     async (windowId: string, options?: { skipConfirm?: boolean }) => {
       const live = windowsRef.current.find(w => w.id === windowId)
       if (!live) return
       const panes = listPaneLeaves(live.tree)
-      const editorBufferIds = panes.flatMap(pane => {
+      const editorBufferOwners = panes.flatMap(pane => {
         if (pane.kind !== "editor") return []
         const view = live.tree.getView(pane.panelId)
-        return view?.kind === "tabs"
-          ? panelTabIds(view).filter(id => isEditorTabId(id))
-          : [pane.ptyTabId]
+        const uris =
+          view?.kind === "tabs"
+            ? panelTabIds(view).filter(id => isEditorTabId(id))
+            : [pane.ptyTabId]
+        return uris.map(uri => ({
+          uri,
+          ownerId: `mux-editor-${pane.panelId.id}`,
+        }))
       })
+      const editorBufferIds = editorBufferOwners.map(owner => owner.uri)
       let editorBuffers:
         | import("../editor/editor-buffer-service.js").EditorBufferService
         | null = null
@@ -924,13 +1083,8 @@ export function MuxApp({
         const { editorBufferServiceFor } = await import(
           "../editor/editor-buffer-service.js"
         )
-        editorBuffers = editorBufferServiceFor(workspace)
-        if (editorBufferIds.some(id => editorBuffers?.isDirty(id))) {
-          showYaadeToast("Save or discard unsaved buffers before resetting this window.", {
-            variant: "warning",
-          })
-          return
-        }
+        editorBuffers = editorBufferServiceFor(workspace, sessionIdRef.current)
+        if (!(await resolveEditorDirtyClose(editorBufferIds, editorBuffers))) return
       }
       if (!options?.skipConfirm) {
         for (const pane of panes) {
@@ -957,9 +1111,11 @@ export function MuxApp({
         }
         if (pane.kind !== "editor") workspace.disposeTab(pane.ptyTabId)
       }
-      for (const uri of editorBufferIds) {
-        editorBuffers?.close(uri)
-        workspace.disposeTab(uri)
+      for (const owner of editorBufferOwners) {
+        editorBuffers?.close(owner.uri, { ownerId: owner.ownerId })
+        if ((editorBuffers?.snapshot(owner.uri)?.ownerCount ?? 0) === 0) {
+          workspace.disposeTab(owner.uri)
+        }
       }
       const closedGitIds = panes
         .filter(p => p.kind === "git")
@@ -1004,7 +1160,7 @@ export function MuxApp({
       setWindows([next])
       setActiveWindowId(id)
     },
-    [paneTitle, workspace],
+    [paneTitle, resolveEditorDirtyClose, workspace],
   )
 
   const closePane = useCallback(
@@ -1051,18 +1207,19 @@ export function MuxApp({
         const { editorBufferServiceFor } = await import(
           "../editor/editor-buffer-service.js"
         )
-        const buffers = editorBufferServiceFor(workspace)
-        if (editorTabs.some(id => buffers.isDirty(id))) {
-          showYaadeToast("Save or discard unsaved buffers before closing this pane.", {
-            variant: "warning",
-          })
-          return
+        const buffers = editorBufferServiceFor(workspace, sessionIdRef.current)
+        if (!(await resolveEditorDirtyClose(editorTabs, buffers))) return
+        const ownerId = `mux-editor-${panelId.id}`
+        for (const id of editorTabs) {
+          buffers.close(id, { ownerId })
         }
-        for (const id of editorTabs) buffers.close(id)
+        const closedCompletely = editorTabs.filter(
+          id => (buffers.snapshot(id)?.ownerCount ?? 0) === 0,
+        )
         setEditorFiles(prev => {
           let changed = false
           const next = { ...prev }
-          for (const id of editorTabs) {
+          for (const id of closedCompletely) {
             if (id in next) {
               delete next[id]
               changed = true
@@ -1070,7 +1227,7 @@ export function MuxApp({
           }
           return changed ? next : prev
         })
-        for (const id of editorTabs) workspace.disposeTab(id)
+        for (const id of closedCompletely) workspace.disposeTab(id)
         updateWindow(windowId, w => {
           const tree = w.tree.clone()
           clearEditorTabsFromPanel(tree, panelId)
@@ -1103,7 +1260,7 @@ export function MuxApp({
         }
       })
     },
-    [paneTitle, updateWindow, workspace],
+    [paneTitle, resolveEditorDirtyClose, updateWindow, workspace],
   )
 
   /** Close a single editor buffer tab (keeps the pane until the last tab). */
@@ -1113,20 +1270,27 @@ export function MuxApp({
       const { editorBufferServiceFor } = await import(
         "../editor/editor-buffer-service.js"
       )
-      const buffers = editorBufferServiceFor(workspace)
-      if (!buffers.close(tabId)) {
+      const buffers = editorBufferServiceFor(workspace, sessionIdRef.current)
+      if (!(await resolveEditorDirtyClose([tabId], buffers))) return
+      if (
+        !buffers.close(tabId, {
+          ownerId: `mux-editor-${panelId.id}`,
+        })
+      ) {
         showYaadeToast("Save or discard the unsaved buffer before closing it.", {
           variant: "warning",
         })
         return
       }
-      setEditorFiles(prev => {
-        if (!(tabId in prev)) return prev
-        const next = { ...prev }
-        delete next[tabId]
-        return next
-      })
-      workspace.disposeTab(tabId)
+      if ((buffers.snapshot(tabId)?.ownerCount ?? 0) === 0) {
+        setEditorFiles(prev => {
+          if (!(tabId in prev)) return prev
+          const next = { ...prev }
+          delete next[tabId]
+          return next
+        })
+        workspace.disposeTab(tabId)
+      }
       updateWindow(windowId, w => {
         const tree = w.tree.clone()
         removePtyFromTree(tree, panelId, tabId)
@@ -1144,7 +1308,7 @@ export function MuxApp({
         }
       })
     },
-    [updateWindow, workspace],
+    [resolveEditorDirtyClose, updateWindow, workspace],
   )
 
   /** Activate an editor buffer tab inside a panel. */
@@ -1460,7 +1624,7 @@ export function MuxApp({
       const leaves = listPaneLeaves(w.tree)
       const panes = leaves
         .map(leaf => {
-          const box = slotBoxesRef.current.get(leaf.ptyTabId)
+          const box = paneBoxesRef.current.get(leaf.ptyTabId)
           if (!box) return null
           return { panelId: leaf.panelId, ptyTabId: leaf.ptyTabId, box }
         })
@@ -1494,28 +1658,6 @@ export function MuxApp({
       if (payload.gitRoots) {
         setGitRoots(payload.gitRoots)
         gitRootsRef.current = payload.gitRoots
-      }
-      const hasLeaves = payload.sessions.length > 0
-      if (!hasLeaves) {
-        if (payload.editorFiles) {
-          const migrated = migrateLegacyEditorTabs(
-            emptyMuxTree(),
-            payload.editorFiles,
-          )
-          setEditorFiles(migrated)
-          editorFilesRef.current = migrated
-          for (const [k, v] of Object.entries(migrated)) {
-            if (!workspace.tabRegistry.get(k)) {
-              workspace.registerTab({
-                id: k,
-                kind: "editor",
-                label: editorLabelFromUri(v.uri),
-              })
-            }
-          }
-        }
-        ensureProjectWindow()
-        return
       }
       const windowPersisted: MuxWindowPersisted = {
         id: allocWindowId(),
@@ -1753,6 +1895,8 @@ export function MuxApp({
   focusNeighborRef.current = focusNeighbor
   const ensureProjectWindowRef = useRef(ensureProjectWindow)
   ensureProjectWindowRef.current = ensureProjectWindow
+  const runExplorerActionRef = useRef(runExplorerAction)
+  runExplorerActionRef.current = runExplorerAction
 
   const [keymapRevision, setKeymapRevision] = useState(0)
   const [commandRevision, setCommandRevision] = useState(0)
@@ -1921,6 +2065,79 @@ export function MuxApp({
         },
       ),
       commands.register(
+        "explorer.focus",
+        run(() => runExplorerActionRef.current("focus")),
+        {
+          id: "explorer.focus",
+          title: "Focus Explorer",
+          category: "Explorer",
+          aliases: ["files", "file tree", "open explorer"],
+        },
+      ),
+      commands.register(
+        "explorer.createFile",
+        run(() => runExplorerActionRef.current("createFile")),
+        {
+          id: "explorer.createFile",
+          title: "Explorer: New File",
+          category: "Explorer",
+        },
+      ),
+      commands.register(
+        "explorer.createFolder",
+        run(() => runExplorerActionRef.current("createFolder")),
+        {
+          id: "explorer.createFolder",
+          title: "Explorer: New Folder",
+          category: "Explorer",
+        },
+      ),
+      commands.register(
+        "explorer.rename",
+        run(() => runExplorerActionRef.current("rename")),
+        {
+          id: "explorer.rename",
+          title: "Explorer: Rename",
+          category: "Explorer",
+        },
+      ),
+      commands.register(
+        "explorer.trash",
+        run(() => runExplorerActionRef.current("trash")),
+        {
+          id: "explorer.trash",
+          title: "Explorer: Move to YAADE Trash",
+          category: "Explorer",
+        },
+      ),
+      commands.register(
+        "explorer.restore",
+        run(() => runExplorerActionRef.current("showTrash")),
+        {
+          id: "explorer.restore",
+          title: "Explorer: Restore from YAADE Trash",
+          category: "Explorer",
+        },
+      ),
+      commands.register(
+        "explorer.restoreAs",
+        run(() => runExplorerActionRef.current("restoreAs")),
+        {
+          id: "explorer.restoreAs",
+          title: "Explorer: Restore from Trash As…",
+          category: "Explorer",
+        },
+      ),
+      commands.register(
+        "explorer.emptyTrash",
+        run(() => runExplorerActionRef.current("emptyTrash")),
+        {
+          id: "explorer.emptyTrash",
+          title: "Explorer: Empty YAADE Trash",
+          category: "Explorer",
+        },
+      ),
+      commands.register(
         "editor.quickOpen",
         run(() => setQuickOpenOpen(true)),
         {
@@ -1945,7 +2162,43 @@ export function MuxApp({
         run(() => {
           window.dispatchEvent(new CustomEvent(MUX_EDITOR_SAVE_EVENT))
         }),
-        { id: "editor.save", title: "Save File", category: "View" },
+        { id: "editor.save", title: "Save File", category: "File" },
+      ),
+      commands.register(
+        "editor.saveAs",
+        run(() => {
+          const live = windowsRef.current.find(
+            item => item.id === activeWindowIdRef.current,
+          )
+          const focused = live?.focusedPaneId
+          if (!live || !focused) return
+          const view = live.tree.getView(focused)
+          const uri = view?.kind === "tabs" ? view.activeTabId : null
+          if (uri && isEditorTabId(uri)) setSaveAsUri(uri)
+        }),
+        { id: "editor.saveAs", title: "Save As…", category: "File" },
+      ),
+      commands.register(
+        "editor.saveAll",
+        async () => {
+          const { editorBufferServiceFor } = await import(
+            "../editor/editor-buffer-service.js"
+          )
+          const buffers = editorBufferServiceFor(
+            workspace,
+            sessionIdRef.current,
+          )
+          try {
+            await buffers.saveAll()
+            showYaadeToast("All files saved", { variant: "success" })
+          } catch (error) {
+            showYaadeToast(
+              error instanceof Error ? error.message : "Could not save all files",
+              { variant: "destructive" },
+            )
+          }
+        },
+        { id: "editor.saveAll", title: "Save All Files", category: "File" },
       ),
       commands.register(
         "lsp.enableForCurrentFile",
@@ -1961,7 +2214,12 @@ export function MuxApp({
           const { editorBufferServiceFor } = await import(
             "../editor/editor-buffer-service.js"
           )
-          if (editorBufferServiceFor(workspace).enableLsp(uri)) {
+          if (
+            editorBufferServiceFor(
+              workspace,
+              sessionIdRef.current,
+            ).enableLsp(uri)
+          ) {
             showYaadeToast("Language features enabled for this large file.")
           }
         },
@@ -2290,8 +2548,11 @@ export function MuxApp({
           name: folder.root.name,
         })),
       setFontSize,
-      openFile: (uri, _path) => {
-        openEditorInFocusedRef.current({ uri })
+      openFile: (uri, _path, options) => {
+        openEditorInFocusedRef.current({
+          uri,
+          forceNewGroup: options?.forceNewGroup,
+        })
       },
       sessionMode: "terminal",
       sessionLayout: "sidebar",
@@ -2375,6 +2636,16 @@ export function MuxApp({
   )
   focusedPtyTabIdRef.current = focusedPtyTabId
 
+  const paneBoxes = useMuxPaneBoxes(
+    workspaceSurfaceRef,
+    dockSurfaceRef,
+    activeWindow?.zoomedPaneId
+      ? [activeWindow.zoomedPaneId]
+      : activeLeaves.map(leaf => leaf.ptyTabId),
+    layoutEpoch,
+  )
+  paneBoxesRef.current = paneBoxes
+
   const slotBoxes = useMuxTerminalSlotBoxes(
     workspaceSurfaceRef,
     dockSurfaceRef,
@@ -2385,7 +2656,6 @@ export function MuxApp({
       : activePtyIds,
     layoutEpoch,
   )
-  slotBoxesRef.current = slotBoxes
 
   // Touch LRU when focus changes so background windows stay warm briefly.
   useEffect(() => {
@@ -2630,11 +2900,67 @@ export function MuxApp({
     }) => {
       void import("../editor/editor-buffer-service.js").then(
         ({ editorBufferServiceFor }) => {
-          editorBufferServiceFor(workspace).setLspHooks(lifecycle)
+          editorBufferServiceFor(
+            workspace,
+            sessionIdRef.current,
+          ).setLspHooks(lifecycle)
         },
       )
     },
     [workspace],
+  )
+
+  const completeSaveAs = useCallback(
+    async (targetPath: string) => {
+      const sourceUri = saveAsUri
+      if (!sourceUri) return
+      const targetUri = canonicalizeFileUri(pathToFileUri(targetPath))
+      try {
+        const { editorBufferServiceFor } = await import(
+          "../editor/editor-buffer-service.js"
+        )
+        const buffers = editorBufferServiceFor(workspace, sessionId)
+        await buffers.saveAs(sourceUri, targetUri)
+        remapEditorViewStateUri(sessionId, sourceUri, targetUri)
+
+        setEditorFiles(previous => {
+          const source = previous[sourceUri] ?? { uri: sourceUri }
+          const next = { ...previous }
+          delete next[sourceUri]
+          next[targetUri] = { ...source, uri: targetUri }
+          editorFilesRef.current = next
+          return next
+        })
+        setWindows(previous => {
+          const next = previous.map(item => ({
+            ...item,
+            tree: remapEditorTabUri(item.tree, sourceUri, targetUri),
+            zoomedPaneId:
+              item.zoomedPaneId === sourceUri
+                ? targetUri
+                : item.zoomedPaneId,
+          }))
+          windowsRef.current = next
+          return next
+        })
+        workspace.disposeTab(sourceUri)
+        workspace.registerTab({
+          id: targetUri,
+          kind: "editor",
+          label: editorLabelFromUri(targetUri),
+        })
+        setSaveAsUri(null)
+        showYaadeToast(`Saved ${editorLabelFromUri(targetUri)}`, {
+          variant: "success",
+        })
+      } catch (error) {
+        showYaadeToast(
+          error instanceof Error ? error.message : "Could not save the file",
+          { variant: "destructive" },
+        )
+      }
+    },
+    [saveAsUri, sessionId, workspace],
   )
 
   const renderEditor = useCallback(
@@ -2661,11 +2987,47 @@ export function MuxApp({
             onQuickOpen={() => setQuickOpenOpen(true)}
             onCommandPalette={() => setPaletteOpen(true)}
             onViewStatePersist={persist}
+            onSaveAsRequired={setSaveAsUri}
           />
         </Suspense>
       )
     },
     [activeTheme, editorFiles, persist, sessionId, workspace],
+  )
+
+  const handleExplorerControllerReady = useCallback(
+    (controller: MuxExplorerController | null) => {
+      explorerControllerRef.current = controller
+      const pending = pendingExplorerActionRef.current
+      if (!controller || !pending) return
+      pendingExplorerActionRef.current = null
+      window.requestAnimationFrame(() => controller.run(pending))
+    },
+    [],
+  )
+
+  const renderTool = useCallback(
+    (tabId: string): ReactNode => {
+      const tool = muxToolPaneForTab(tabId)
+      if (tool?.kind !== "explorer") return null
+      return (
+        <Suspense
+          fallback={
+            <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted-foreground">
+              Loading Explorer…
+            </div>
+          }
+        >
+          <MuxExplorerPane
+            manager={workspace.manager}
+            workspace={workspace}
+            onOpenFile={uri => openEditorInFocused({ uri })}
+            onControllerReady={handleExplorerControllerReady}
+          />
+        </Suspense>
+      )
+    },
+    [handleExplorerControllerReady, openEditorInFocused, workspace],
   )
 
   const onQuickOpenSearch = useCallback(
@@ -2675,7 +3037,7 @@ export function MuxApp({
         typeof window !== "undefined" ? window.yaade?.search : undefined
       if (!root || !search) return []
       try {
-        return await search.fileSearch(root, query, { pageSize: 50 })
+        return (await search.fileSearch(root, query, { pageSize: 50 })).items
       } catch {
         return []
       }
@@ -2697,7 +3059,7 @@ export function MuxApp({
         typeof window !== "undefined" ? window.yaade?.search : undefined
       if (!root || !search) return []
       try {
-        return await search.project(root, query)
+        return (await search.project(root, query)).items
       } catch {
         return []
       }
@@ -2759,8 +3121,9 @@ export function MuxApp({
       >
         {!embedded && (onBackToProject || sessionTitle) ? (
           <div
-            className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-3"
+            className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-background px-3"
             data-yaade-session-chrome=""
+            data-yaade-app-header=""
           >
             {onBackToProject ? (
               <Button
@@ -2879,6 +3242,7 @@ export function MuxApp({
                   }}
                   shortcutFor={shortcutFor}
                   renderEditor={renderEditor}
+                  renderTool={renderTool}
                   theme={activeTheme as YaadeTheme}
                   fontSize={fontSize}
                   empty={
@@ -2890,13 +3254,13 @@ export function MuxApp({
                 </div>
               ) : (
                 <div
-                  className="flex h-full min-h-0 w-full flex-col p-1"
+                  className="flex h-full min-h-0 w-full flex-col p-1.5"
                   data-yaade-mux-empty=""
                   aria-busy="true"
                   aria-label="Loading workspace"
                 >
-                  <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-border/40 bg-background/20">
-                    <div className="flex h-5 shrink-0 items-center gap-1.5 border-b border-border/35 bg-background/40 px-1">
+                  <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border bg-card">
+                    <div className="flex h-7 shrink-0 items-center gap-1.5 border-b border-border bg-secondary/30 px-1.5">
                       <div className="size-3 shrink-0 animate-pulse rounded-[0.2rem] bg-muted/50" />
                       <div className="h-2.5 w-24 animate-pulse rounded bg-muted/40" />
                     </div>
@@ -2918,7 +3282,14 @@ export function MuxApp({
   const chrome = (
     <>
       {muxBody}
-      <Suspense fallback={null}>
+      {paletteOpen ||
+      terminalListOpen ||
+      settingsOpen ||
+      cdOpen ||
+      quickOpenOpen ||
+      projectSearchOpen ||
+      saveAsUri != null ? (
+        <Suspense fallback={null}>
         <MuxOverlays
           paletteOpen={paletteOpen}
           onPaletteOpenChange={setPaletteOpen}
@@ -2961,8 +3332,15 @@ export function MuxApp({
           onProjectSearchOpenChange={setProjectSearchOpen}
           onProjectSearch={onProjectSearch}
           onProjectSearchSelect={onProjectSearchSelect}
-        />
-      </Suspense>
+          saveAsOpen={saveAsUri != null}
+          onSaveAsOpenChange={open => {
+            if (!open) setSaveAsUri(null)
+          }}
+          saveAsRootPath={sessionCwdPath}
+          onSaveAsTarget={completeSaveAs}
+          />
+        </Suspense>
+      ) : null}
 
       <ConfirmDialogHost />
       {windows.some(w => listPaneLeaves(w.tree).some(l => l.kind === "editor")) ||

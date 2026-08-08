@@ -31,6 +31,12 @@ function createRepository(prefix: string) {
     "git init && git config user.email test@example.com && git config user.name Cockpit && git add . && git commit -m 'feat: seed cockpit'",
     { cwd: project, stdio: "ignore" },
   )
+  fs.appendFileSync(path.join(project, "src", "app.ts"), "export const followUp = true\n")
+  execSync("git add . && git commit -m 'fix: add cockpit follow-up'", {
+    cwd: project,
+    stdio: "ignore",
+  })
+  execSync("git branch feature/cockpit-menu", { cwd: project, stdio: "ignore" })
   fs.appendFileSync(path.join(project, "src", "app.ts"), "export const dirty = true\n")
   return { home, project }
 }
@@ -47,34 +53,70 @@ test.describe("project cockpit", () => {
     try {
       await waitForProjectPage(page)
       await page.getByRole("heading", { name: "repo" }).waitFor({ state: "visible" })
-      await page.locator("[data-yaade-command-deck]").waitFor({ state: "visible" })
-      await page.locator("[data-yaade-launch-agent]").waitFor({ state: "visible" })
-
-      await expectListRows(page, {
-        panel: "project-worktrees",
-        minItems: 1,
-        needle: "Main",
-      })
+      const branchMenu = page.locator("[data-yaade-project-branch-menu]")
+      await branchMenu.waitFor({ state: "visible" })
       await expect
-        .poll(() => page.getByText("Repository activity").count())
+        .poll(() =>
+          page.evaluate(() => ({
+            commandDeck: document.querySelectorAll("[data-yaade-command-deck]").length,
+            launchAgent: document.querySelectorAll("[data-yaade-launch-agent]").length,
+            worktreeCards: document.querySelectorAll("[data-yaade-project-worktrees]").length,
+            worktreeSwitcher: document.querySelectorAll("[data-yaade-worktree-switcher]").length,
+          })),
+        )
+        .toEqual({ commandDeck: 0, launchAgent: 0, worktreeCards: 0, worktreeSwitcher: 0 })
+
+      await branchMenu.focus()
+      await page.keyboard.press("Enter")
+      await expectListRows(page, {
+        panel: "project-branches",
+        minItems: 2,
+        needle: "feature/cockpit-menu",
+        noResultsText: "No branches",
+      })
+      await page.keyboard.press("Escape")
+      await expect
+        .poll(() => page.locator('[data-yaade-list-panel="project-branches"]').count())
         .toBe(0)
-      expect(
-        await page.evaluate(() => {
-          const worktrees = document.querySelector(
-            '[data-yaade-list-panel="project-worktrees"]',
-          )
-          const sessions = document.querySelector(
-            '[data-yaade-list-panel="project-sessions"]',
-          )
-          return Boolean(
-            worktrees &&
-              (!sessions ||
-                (worktrees.compareDocumentPosition(sessions) &
-                  Node.DOCUMENT_POSITION_FOLLOWING) !==
-                  0),
-          )
-        }),
-      ).toBe(true)
+      await expectListRows(page, {
+        panel: "project-commits",
+        minItems: 2,
+        needle: "fix: add cockpit follow-up",
+        noResultsText: "No commits yet",
+      })
+      await page
+        .locator('[data-yaade-project-commit]')
+        .filter({ hasText: "fix: add cockpit follow-up" })
+        .click()
+      await page.locator("[data-yaade-commit-changes-dialog]").waitFor({
+        state: "visible",
+        timeout: 10_000,
+      })
+      await expectListRows(page, {
+        panel: "commit-changes-files",
+        minItems: 1,
+        needle: "app.ts",
+        noResultsText: "No files changed",
+      })
+      await page.getByRole("button", { name: "Close" }).click()
+
+      await page.locator("[data-yaade-project-history-more]").click()
+      await page
+        .locator('[data-yaade-project-panel="history"]')
+        .waitFor({ state: "visible" })
+      await expect
+        .poll(() =>
+          page
+            .locator('[data-yaade-project-tab="history"]')
+            .getAttribute("data-state"),
+        )
+        .toBe("active")
+      await expectListRows(page, {
+        panel: "git-history",
+        minItems: 3,
+        needle: "fix: add cockpit follow-up",
+      })
+      await page.locator('[data-yaade-project-tab="overview"]').click()
 
       const readme = page.locator("[data-yaade-project-readme]")
       await readme.getByRole("heading", { name: "Cockpit Fixture" }).waitFor({ state: "visible" })
@@ -84,25 +126,21 @@ test.describe("project cockpit", () => {
 
       await page.setViewportSize({ width: 390, height: 844 })
       const mobile = await page.evaluate(() => {
-        const primary = document.querySelector<HTMLElement>("[data-yaade-launch-agent]")
+        const branch = document.querySelector<HTMLElement>("[data-yaade-project-branch-menu]")
         return {
           viewport: innerWidth,
           documentWidth: document.documentElement.scrollWidth,
-          primaryWidth: primary?.getBoundingClientRect().width ?? 0,
+          branchWidth: branch?.getBoundingClientRect().width ?? 0,
         }
       })
       expect(mobile.documentWidth).toBeLessThanOrEqual(mobile.viewport)
-      expect(mobile.primaryWidth).toBeGreaterThan(320)
+      expect(mobile.branchWidth).toBeGreaterThan(60)
 
-      await page.locator("[data-yaade-launch-agent]").focus()
+      await branchMenu.focus()
       await page.keyboard.press("Tab")
+      await page.keyboard.press("Shift+Tab")
       expect(
-        await page.evaluate(
-          () => (document.activeElement as HTMLElement | null)?.dataset.yaadeLaunchTool,
-        ),
-      ).toBe("terminal")
-      expect(
-        await page.locator('[data-yaade-launch-tool="terminal"]').evaluate(
+        await branchMenu.evaluate(
           element => getComputedStyle(element).boxShadow,
         ),
       ).not.toBe("none")
@@ -134,86 +172,6 @@ test.describe("project cockpit", () => {
           () => document.documentElement.scrollWidth <= window.innerWidth,
         ),
       ).toBe(true)
-    } finally {
-      await app.close()
-      fs.rmSync(home, { recursive: true, force: true })
-    }
-  })
-
-  test("tool shortcuts augment the same hydrated workspace", async () => {
-    const { home } = createRepository("yaade-cockpit-launch-")
-    const { app, page } = await launchJet({
-      homeDir: home,
-      startPath: "/repo",
-      launchWithoutWorkspace: true,
-      projectPage: true,
-    })
-    try {
-      await waitForProjectPage(page)
-      await page.locator('[data-yaade-launch-tool="terminal"]').click()
-      // This navigation is initiated by the launch request. The generic mux
-      // helper may create its own fixture session while ProjectPage is still
-      // switching views, which replaces the request-bearing session.
-      await page.locator("[data-yaade-mux]").waitFor({ state: "visible" })
-      await expect.poll(() => page.locator('[data-yaade-mux-pane-kind="terminal"]').count()).toBe(1)
-      await expect.poll(() => page.locator("[data-yaade-mux-pane]").count()).toBe(1)
-
-      await page.locator('[data-yaade-project-tab="overview"]').click()
-      await page.locator('[data-yaade-launch-tool="editor"]').click()
-      await expect.poll(() => page.locator('[data-yaade-mux-pane-kind="editor"]').count()).toBe(1)
-      await expect.poll(() => page.locator("[data-yaade-mux-pane]").count()).toBe(2)
-
-      await page.locator('[data-yaade-project-tab="overview"]').click()
-      await page.locator('[data-yaade-launch-tool="git"]').click()
-      await expect.poll(() => page.locator('[data-yaade-mux-pane-kind="git"]').count()).toBe(1)
-      await expect.poll(() => page.locator("[data-yaade-mux-pane]").count()).toBe(3)
-
-      await page.locator('[data-yaade-project-tab="overview"]').click()
-      await page.locator('[data-yaade-launch-tool="neovim"]').click()
-      await expect
-        .poll(() => page.locator('[data-yaade-mux-pane-title][aria-label="Neovim"]').count())
-        .toBe(1)
-      await expect.poll(() => page.locator("[data-yaade-mux-pane]").count()).toBe(4)
-      await expect.poll(() => page.locator('[data-yaade-mux-pane-kind="terminal"]').count()).toBe(2)
-    } finally {
-      await app.close()
-      fs.rmSync(home, { recursive: true, force: true })
-    }
-  })
-
-  test("agent picker launches each request exactly once", async () => {
-    const { home } = createRepository("yaade-cockpit-agent-")
-    const { app, page } = await launchJet({
-      homeDir: home,
-      startPath: "/repo",
-      launchWithoutWorkspace: true,
-      projectPage: true,
-    })
-    try {
-      await waitForProjectPage(page)
-      await page.locator("[data-yaade-launch-agent]").click()
-      await expectListRows(page, {
-        panel: "yaade:palette",
-        minItems: 5,
-        needle: "Claude",
-        noResultsText: "No matching agents",
-      })
-      await page.locator('[data-yaade-agent-cli-option="codex"]').click()
-      // This navigation is initiated by the launch request. Do not use
-      // waitForMux() here: its fixture fallback creates a session when the
-      // project-page agent stub is briefly replaced during the route change.
-      await page.locator("[data-yaade-mux]").waitFor({ state: "visible" })
-      await expect.poll(() => page.locator('[data-yaade-mux-pane-kind="terminal"]').count()).toBe(1)
-      await page.locator('[data-yaade-mux-pane-title][aria-label="Codex"]').waitFor({ state: "visible" })
-      await page.waitForTimeout(750)
-      expect(await page.locator('[data-yaade-mux-pane-kind="terminal"]').count()).toBe(1)
-
-      await page.locator('[data-yaade-project-tab="overview"]').click()
-      await page.locator("[data-yaade-launch-agent]").click()
-      await page.locator('[data-yaade-agent-cli-option="claude"]').click()
-      await expect.poll(() => page.locator('[data-yaade-mux-pane-kind="terminal"]').count()).toBe(2)
-      await page.waitForTimeout(750)
-      expect(await page.locator('[data-yaade-mux-pane-kind="terminal"]').count()).toBe(2)
     } finally {
       await app.close()
       fs.rmSync(home, { recursive: true, force: true })

@@ -105,4 +105,105 @@ test.describe("single-binary web server", () => {
       await app.close()
     }
   })
+
+  test("supports atomic 16 MiB text-file writes while JSON RPC stays capped", async () => {
+    const { app, page } = await launchJet({
+      projectPage: true,
+      expectedHttpErrors: [
+        { method: "PUT", path: "/api/v1/fs/text-file", status: 409 },
+        { method: "PUT", path: "/api/v1/fs/text-file", status: 413 },
+        { method: "POST", path: "/api/v1/rpc", status: 413 },
+      ],
+    })
+    try {
+      const result = await page.evaluate(async () => {
+        const workspacePath = window.__yaadeAgent!.listWorkspaces()[0]!.path
+        const fsApi = window.yaade!.fs
+        const uriFor = (name: string) =>
+          encodeURI(`file://${workspacePath}/${name}`)
+
+        const uri = uriFor("versioned-text-file.txt")
+        const created = await fsApi.writeTextFile(uri, "first", { create: true })
+        const firstRead = await fsApi.readTextFile(uri)
+        const saved = await fsApi.writeTextFile(uri, "second", {
+          expectedVersion: firstRead.version,
+        })
+
+        let conflict: { code?: string; status?: number } = {}
+        try {
+          await fsApi.writeTextFile(uri, "stale", {
+            expectedVersion: firstRead.version,
+          })
+        } catch (error) {
+          if (typeof error === "object" && error !== null) {
+            conflict = {
+              code: "code" in error && typeof error.code === "string" ? error.code : undefined,
+              status:
+                "status" in error && typeof error.status === "number"
+                  ? error.status
+                  : undefined,
+            }
+          }
+        }
+        const afterConflict = await fsApi.readTextFile(uri)
+
+        const maxBytes = 16 * 1024 * 1024
+        const boundary = await fsApi.writeTextFile(
+          uriFor("boundary.txt"),
+          "a".repeat(maxBytes),
+          { create: true },
+        )
+        let overflow: { code?: string; status?: number } = {}
+        try {
+          await fsApi.writeTextFile(
+            uriFor("overflow.txt"),
+            "b".repeat(maxBytes + 1),
+            { create: true },
+          )
+        } catch (error) {
+          if (typeof error === "object" && error !== null) {
+            overflow = {
+              code: "code" in error && typeof error.code === "string" ? error.code : undefined,
+              status:
+                "status" in error && typeof error.status === "number"
+                  ? error.status
+                  : undefined,
+            }
+          }
+        }
+
+        const rpc = await fetch("/api/v1/rpc", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            channel: "fs:writeFile",
+            args: [uriFor("rpc-too-large.txt"), "c".repeat(2 * 1024 * 1024)],
+          }),
+        })
+
+        return {
+          created,
+          firstRead,
+          saved,
+          conflict,
+          afterConflict,
+          boundary,
+          overflow,
+          rpcStatus: rpc.status,
+        }
+      })
+
+      expect(result.created.size).toBe(5)
+      expect(result.firstRead.content).toBe("first")
+      expect(result.saved.size).toBe(6)
+      expect(result.saved.version).not.toBe(result.firstRead.version)
+      expect(result.conflict).toEqual({ code: "FILE_CHANGED", status: 409 })
+      expect(result.afterConflict.content).toBe("second")
+      expect(result.boundary.size).toBe(16 * 1024 * 1024)
+      expect(result.overflow).toEqual({ code: "PAYLOAD_TOO_LARGE", status: 413 })
+      expect(result.rpcStatus).toBe(413)
+    } finally {
+      await app.close()
+    }
+  })
 })

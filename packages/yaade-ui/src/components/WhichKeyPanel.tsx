@@ -13,7 +13,7 @@ export function WhichKeyPanel({
   entries: WhichKeyEntry[]
 }) {
   return (
-    <div className="border-t border-border bg-muted px-4 py-2.5">
+    <div className="border-t border-primary/35 bg-popover px-4 py-2.5">
       <div className="mb-2 flex items-baseline gap-2 text-xs text-foreground">
         <KeyBindingKbd binding={prefix} />
         <span className="text-muted-foreground">— waiting for key</span>

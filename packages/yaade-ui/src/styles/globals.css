@@ -86,7 +86,9 @@
 /* Scheme-invariant metrics. Theme colors are applied synchronously from YaadeTheme.tokens. */
 :root {
   color-scheme: light;
-  --radius: 0.375rem;
+  --radius: 0.625rem;
+  --yaade-island-radius: var(--radius);
+  --yaade-app-header-height: 2.75rem;
 
   /* Compact editor scale: dense, but never sub-10px for ordinary metadata. */
   --yaade-fs-4xs: 0.769rem;
@@ -320,6 +322,31 @@ body,
   color: var(--foreground);
   font-family: var(--font-sans);
   font-size: inherit;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Shared app rails: one calm chrome treatment across HQ, project, and mux. */
+[data-yaade-app-header] {
+  min-height: var(--yaade-app-header-height);
+  border-color: color-mix(in oklch, var(--border) 88%, transparent);
+  background: color-mix(in oklch, var(--background) 94%, var(--card));
+}
+
+/* Primary work surfaces sit on the canvas as compact, border-led islands. */
+[data-yaade-island] {
+  border: 1px solid var(--border);
+  border-radius: var(--yaade-island-radius);
+  background: var(--card);
+}
+
+[data-yaade-raised-surface] {
+  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--secondary);
 }
 
 /* CodeMirror autocomplete — native tooltip hidden; Jet renders Radix ContextMenu in EditorTabHost. */
@@ -650,15 +677,16 @@ body,
   background: var(--yaade-bg, var(--background));
 }
 
-/* Mux shell — flat workbench surface; pane borders carry hierarchy. */
+/* Mux shell — terminal/editor panes are islands on a persistent canvas. */
 [data-yaade-shell="mux"],
+[data-yaade-shell="mux-embedded"],
 [data-yaade-mux] {
   background: var(--background);
 }
 
 [data-yaade-mux] [data-yaade-terminal-panel] .yaade-terminal-surface,
 [data-yaade-mux] [data-yaade-terminal-panel] .jet-terminal-surface {
-  background: var(--yaade-bg, var(--background));
+  background: var(--yaade-bg, var(--card));
 }
 
 /* Compact inset so glyphs clear the pane rim without shrinking the fit target. */

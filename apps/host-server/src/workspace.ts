@@ -1,19 +1,20 @@
 import fs from "node:fs"
 import path from "node:path"
 import {
-  disposeFffIndex,
+  disposeSearchRoot,
   ensureFffIndex,
   gitBranch,
+  invalidateProjectFileCache,
   isGitWorkspace,
   isSearchScanReady,
   listProjectFiles,
   pathToUri,
+  refreshProjectFileCache,
   uriToPath,
 } from "@yaade/node-host"
 import type { EventHub } from "./events.js"
 
 const WATCH_DEBOUNCE_MS = 300
-const WATCH_START_DELAY_MS = 10_000
 const WATCH_IGNORE = new Set([
   "node_modules",
   ".git",
@@ -55,6 +56,7 @@ export class WorkspaceHost {
       this.roots.set(rootUri, state)
     }
     const gen = state.gen
+    this.startWatch(events, rootUri, gen)
     void this.scheduleBackground(events, rootUri, gen)
     return { ok: true }
   }
@@ -72,7 +74,7 @@ export class WorkspaceHost {
       }
       this.roots.delete(rootUri)
     }
-    disposeFffIndex(rootUri)
+    disposeSearchRoot(rootUri)
     return { ok: true }
   }
 
@@ -97,9 +99,6 @@ export class WorkspaceHost {
       events.emit("workspace:searchReady", [{ rootUri }])
     }
 
-    await delay(WATCH_START_DELAY_MS)
-    if (!this.isCurrent(rootUri, gen)) return
-    this.startWatch(events, rootUri, gen)
   }
 
   private startWatch(events: EventHub, rootUri: string, gen: number): void {
@@ -115,8 +114,14 @@ export class WorkspaceHost {
       timer = null
       const batch = [...pending]
       pending = new Set()
+      if (stop.stop || !this.isCurrent(rootUri, gen)) return
+      if (batch.length > 0) {
+        invalidateProjectFileCache(rootUri)
+        void refreshProjectFileCache(rootUri).catch(() => {
+          /* the next Quick Open retries an interrupted best-effort refresh */
+        })
+      }
       for (const filePath of batch) {
-        if (stop.stop || !this.isCurrent(rootUri, gen)) return
         events.emit("fs:changed", [pathToUri(filePath)])
       }
     }

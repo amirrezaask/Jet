@@ -1,6 +1,6 @@
 import path from "node:path"
 import { Effect, Layer, PubSub, Stream } from "effect"
-import { makeTerminalHostScoped, PerfHost, TerminalHost } from "@yaade/node-host"
+import { makeLspHostScoped, makeTerminalHostScoped, PerfHost, TerminalHost } from "@yaade/node-host"
 import type { NotificationStreamEvent } from "@yaade/shared"
 import type { HostConfig } from "../config.js"
 import { EventHub } from "../events.js"
@@ -14,6 +14,7 @@ import {
   HomeDirTag,
   HostConfigTag,
   HostRuntimeTag,
+  LspHostTag,
   NotificationEventPubSub,
   NotificationServiceTag,
   PerfHostTag,
@@ -24,7 +25,7 @@ import {
 
 const EVENT_HUB_CAPACITY = 1024
 
-export type HostLayerServices = HostRuntimeTag | GitServiceTag
+export type HostLayerServices = HostRuntimeTag | LspHostTag | GitServiceTag
 
 /** Open SQLite project DB for the lifetime of an Effect Scope. */
 export function makeProjectDatabaseScoped(
@@ -50,6 +51,23 @@ export function makeHostLayers(config: HostConfig): Layer.Layer<HostLayerService
       const events = new EventHub(EVENT_HUB_CAPACITY)
       const db = yield* makeProjectDatabaseScoped(path.join(config.dataDir, "jet.sqlite3"))
       const terminal = yield* makeTerminalHostScoped
+      const homeDir = process.env.HOME ?? config.allowedRoots[0] ?? ""
+      const lsp = yield* makeLspHostScoped({
+        homeDir,
+        allowedRoots: config.allowedRoots,
+        onLifecycle: event => {
+          events.emit("lsp:lifecycle", [event])
+          if (event.kind === "crashed" && event.sessionId) {
+            events.emit("lsp:crashed", [event.sessionId])
+          }
+        },
+      })
+      const unsubscribeLspInvalidation = events.subscribe(event => {
+        if (event.channel === "fs:changed" && typeof event.args[0] === "string") {
+          lsp.invalidateForFile(event.args[0])
+        }
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribeLspInvalidation))
 
       // Sliding: drop oldest under notification burst instead of unbounded growth.
       const pubsub = yield* Effect.acquireRelease(
@@ -66,7 +84,7 @@ export function makeHostLayers(config: HostConfig): Layer.Layer<HostLayerService
         Effect.forkScoped,
       )
 
-      return createRuntime(config, events, db, terminal, {
+      return createRuntime(config, events, db, terminal, lsp, {
         emitNotification: event => {
           Effect.runSync(PubSub.publish(pubsub, event))
         },
@@ -74,7 +92,12 @@ export function makeHostLayers(config: HostConfig): Layer.Layer<HostLayerService
     }),
   )
 
-  return Layer.mergeAll(runtimeLayer, GitServiceLive)
+  const lspFromRuntime = Layer.effect(
+    LspHostTag,
+    Effect.map(HostRuntimeTag, runtime => runtime.lsp),
+  )
+  const runtimeWithLsp = Layer.provideMerge(runtimeLayer)(lspFromRuntime)
+  return Layer.mergeAll(runtimeWithLsp, GitServiceLive)
 }
 
 /** Layer from an existing HostRuntime (e.g. tests — caller owns terminal/db lifetime). */
@@ -87,6 +110,7 @@ export function hostRuntimeLayer(runtime: HostRuntime): Layer.Layer<HostLayerSer
     Layer.succeed(TerminalHostTag, runtime.terminal),
     Layer.succeed(WorkspaceHostTag, runtime.workspace),
     Layer.succeed(PerfHostTag, runtime.perf),
+    Layer.succeed(LspHostTag, runtime.lsp),
     Layer.succeed(HomeDirTag, runtime.homeDir),
     Layer.succeed(HostRuntimeTag, runtime),
     GitServiceLive,

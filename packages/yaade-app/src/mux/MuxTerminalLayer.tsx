@@ -22,6 +22,108 @@ function slotSelector(ptyTabId: string): string {
   return `[data-yaade-mux-terminal-slot="${escaped}"]`
 }
 
+function paneSelector(tabId: string): string {
+  const escaped =
+    typeof CSS !== "undefined" && typeof CSS.escape === "function"
+      ? CSS.escape(tabId)
+      : tabId.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+  return `[data-yaade-mux-pane="${escaped}"]`
+}
+
+/**
+ * Measure every visible mux leaf for geometric keyboard focus. Unlike terminal
+ * slots, pane shells exist for editor, Git, and persistent tool leaves too.
+ */
+export function useMuxPaneBoxes(
+  containerRef: RefObject<HTMLElement | null>,
+  dockRef: RefObject<HTMLElement | null>,
+  tabIds: string[],
+  layoutEpoch: string | number,
+): Map<string, MuxTerminalSlotBox> {
+  const [boxes, setBoxes] = useState(() => new Map<string, MuxTerminalSlotBox>())
+  const idKey = tabIds.join("\0")
+
+  useLayoutEffect(() => {
+    const container = containerRef.current
+    if (!container) {
+      setBoxes(new Map())
+      return
+    }
+
+    let raf = 0
+    const syncNow = () => {
+      const containerBox = container.getBoundingClientRect()
+      const next = new Map<string, MuxTerminalSlotBox>()
+      for (const id of tabIds) {
+        const pane = container.querySelector<HTMLElement>(paneSelector(id))
+        if (!pane) continue
+        const rect = pane.getBoundingClientRect()
+        if (rect.width < 1 || rect.height < 1) continue
+        next.set(id, {
+          top: Math.round(rect.top - containerBox.top),
+          left: Math.round(rect.left - containerBox.left),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        })
+      }
+      setBoxes(previous => {
+        if (previous.size === next.size) {
+          let unchanged = true
+          for (const [id, box] of next) {
+            const old = previous.get(id)
+            if (
+              !old ||
+              old.top !== box.top ||
+              old.left !== box.left ||
+              old.width !== box.width ||
+              old.height !== box.height
+            ) {
+              unchanged = false
+              break
+            }
+          }
+          if (unchanged) return previous
+        }
+        return next
+      })
+    }
+    const sync = () => {
+      if (raf) cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        syncNow()
+      })
+    }
+
+    syncNow()
+    const resizeObserver = new ResizeObserver(sync)
+    resizeObserver.observe(container)
+    const dock = dockRef.current
+    if (dock) resizeObserver.observe(dock)
+    for (const id of tabIds) {
+      const pane = container.querySelector<HTMLElement>(paneSelector(id))
+      if (pane) resizeObserver.observe(pane)
+    }
+
+    let mutationObserver: MutationObserver | null = null
+    if (dock) {
+      mutationObserver = new MutationObserver(mutations => {
+        if (mutations.some(mutation => mutation.type === "childList")) sync()
+      })
+      mutationObserver.observe(dock, { childList: true, subtree: true })
+    }
+    window.addEventListener("resize", sync)
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      resizeObserver.disconnect()
+      mutationObserver?.disconnect()
+      window.removeEventListener("resize", sync)
+    }
+  }, [containerRef, dockRef, idKey, layoutEpoch, tabIds])
+
+  return boxes
+}
+
 /**
  * Keep terminal hosts mounted across PanelDock remounts (split/retile/DnD).
  * Slots are empty placeholders in the dock; this layer paints terminals over them.

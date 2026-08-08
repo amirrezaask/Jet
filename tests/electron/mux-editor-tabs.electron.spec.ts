@@ -15,6 +15,32 @@ import {
 test.describe("mux editor tabs", () => {
   test.skip(!hasPtySpawn(), "node-pty spawn unavailable")
 
+  test("keeps Monaco, LSP, and search overlays out of terminal-only startup", async () => {
+    const { app, page } = await launchJet()
+    try {
+      await waitForMux(page)
+      const resources = await page.evaluate(() =>
+        performance
+          .getEntriesByType("resource")
+          .map(entry => entry.name.toLowerCase()),
+      )
+      expect(
+        resources.filter(url =>
+          /monaco|editor\.api|editor\.worker|muxeditorpane|muxoverlays|quickopen|projectsearch|yaade-lsp/.test(
+            url,
+          ),
+        ),
+      ).toEqual([])
+      expect(
+        await page.evaluate(
+          () => window.__yaadeAgent!.getEditorDiagnostics().models.totalCount,
+        ),
+      ).toBe(0)
+    } finally {
+      await app.close()
+    }
+  })
+
   test("exposes cumulative editor diagnostics without changing editor state", async () => {
     const { app, page } = await launchJet({ withTerminal: false })
     try {
@@ -57,7 +83,9 @@ test.describe("mux editor tabs", () => {
         dirty: false,
         pinned: true,
       })
-      expect(model?.owners).toContain(`buffer:${model.uri}`)
+      expect(
+        model?.owners.some(owner => owner.startsWith("buffer:mux-editor-")),
+      ).toBe(true)
       expect(model?.owners.some(owner => owner.startsWith("view:"))).toBe(true)
       expect(model?.version).toBeGreaterThan(0)
       expect(model?.bytes).toBeGreaterThan(0)
@@ -255,6 +283,10 @@ test.describe("mux editor tabs", () => {
       await input.focus()
       await page.keyboard.press(`${modChord()}+ArrowDown`)
       await page.keyboard.press("ArrowLeft")
+      await page.keyboard.down("Shift")
+      await page.keyboard.press("ArrowLeft")
+      await page.keyboard.press("ArrowLeft")
+      await page.keyboard.up("Shift")
 
       await expect
         .poll(
@@ -290,6 +322,9 @@ test.describe("mux editor tabs", () => {
         }
       })
       expect(beforeReload.position?.line).toBeGreaterThan(1)
+      expect(beforeReload.selections[0]?.startColumn).not.toBe(
+        beforeReload.selections[0]?.endColumn,
+      )
 
       await page.evaluate(() => window.__yaadeAgent!.openFile("src/utils.ts"))
       await expect
@@ -331,6 +366,350 @@ test.describe("mux editor tabs", () => {
           { timeout: 15_000 },
         )
         .toEqual(beforeReload)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("retains one buffer owner per editor group until the final group closes", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await page.evaluate(() => window.__yaadeAgent!.getEditorDiagnostics())
+      await page.evaluate(async () => {
+        await window.__yaadeAgent!.openFile("src/index.ts")
+        await window.__yaadeAgent!.openFileInNewGroup!("src/index.ts")
+      })
+      const panes = page.locator('[data-yaade-mux-pane-kind="editor"]')
+      await expectLocatorCount(panes, 2, { timeout: 15_000 })
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const model = window.__yaadeAgent!
+                .getEditorDiagnostics()
+                .models.entries.find(entry =>
+                  entry.uri.endsWith("/src/index.ts"),
+                )
+              return model?.owners.filter(owner => owner.startsWith("buffer:"))
+                .length ?? 0
+            }),
+          { timeout: 10_000 },
+        )
+        .toBe(2)
+
+      await panes.first().click()
+      await panes
+        .first()
+        .locator("[data-yaade-mux-close-pane]")
+        .click()
+      await expectLocatorCount(panes, 1, { timeout: 10_000 })
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+              const model = diagnostics.models.entries.find(entry =>
+                entry.uri.endsWith("/src/index.ts"),
+              )
+              return {
+                open: model?.open,
+                bufferOwners:
+                  model?.owners.filter(owner => owner.startsWith("buffer:"))
+                    .length ?? 0,
+                openBuffers: diagnostics.editors.openBuffers,
+              }
+            }),
+          { timeout: 10_000 },
+        )
+        .toMatchObject({
+          open: true,
+          bufferOwners: 1,
+          openBuffers: [expect.stringMatching(/\/src\/index\.ts$/)],
+        })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("Save As promotes an untitled buffer only after atomic create", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await page.evaluate(() =>
+        window.__yaadeAgent!.openFile("untitled:Save-As-E2E.ts"),
+      )
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.type("export const savedAs = true")
+      const before = await page.evaluate(() => {
+        const editor = window.__yaadeAgent!
+          .getEditorDiagnostics()
+          .editors.entries.find(entry => entry.uri.startsWith("untitled:"))
+        return editor
+          ? { position: editor.position, selections: editor.selections }
+          : null
+      })
+
+      await execCommand(page, "editor.saveAs")
+      const dialog = page.getByRole("dialog").filter({ hasText: "Save As" })
+      await expect(dialog).toBeVisible()
+      const root = await page.evaluate(
+        () => window.__yaadeAgent!.getState().workspace,
+      )
+      if (!root) throw new Error("workspace unavailable")
+      await dialog.locator("input").fill(`${root}/saved-as-e2e.ts`)
+      await dialog.locator("input").press(`${modChord()}+Enter`)
+
+      await expect
+        .poll(
+          () =>
+            page
+              .locator("[data-yaade-mux-editor-pane]")
+              .getAttribute("data-yaade-mux-editor-uri"),
+          { timeout: 15_000 },
+        )
+        .toMatch(/\/saved-as-e2e\.ts$/)
+      const result = await page.evaluate(async () => {
+        const workspace = window.__yaadeAgent!.getState().workspace
+        if (!workspace) throw new Error("workspace unavailable")
+        const uri = `file://${workspace}/saved-as-e2e.ts`
+        const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+        const editor = diagnostics.editors.entries.find(
+          entry => entry.uri === uri,
+        )
+        return {
+          content: (await window.yaade!.fs.readTextFile(uri)).content,
+          activeDirty: diagnostics.editors.activeDirty,
+          position: editor?.position,
+          selections: editor?.selections,
+          openBuffers: diagnostics.editors.openBuffers,
+        }
+      })
+      expect(result).toMatchObject({
+        content: "export const savedAs = true",
+        activeDirty: false,
+        position: before?.position,
+        selections: before?.selections,
+        openBuffers: [expect.stringMatching(/\/saved-as-e2e\.ts$/)],
+      })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("restores dirty and untitled recovery automatically after reload", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await page.evaluate(() =>
+        window.__yaadeAgent!.openFile("untitled:Recovery-E2E.ts"),
+      )
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.type("const recoveredAfterReload = 42")
+      await page.waitForTimeout(1_200)
+
+      await page.reload()
+      await waitForMux(page)
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+              const recovered = diagnostics.models.entries.find(entry =>
+                entry.uri.startsWith("untitled:Recovery-E2E.ts"),
+              )
+              return {
+                dirty: diagnostics.editors.activeDirty,
+                content: recovered?.content ?? "",
+              }
+            }),
+          { timeout: 15_000 },
+        )
+        .toEqual({
+          dirty: true,
+          content: "const recoveredAfterReload = 42",
+        })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("restored disk conflicts offer Compare, Keep Mine, and Reload", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      const uri = await page.evaluate(async () => {
+        const root = window.__yaadeAgent!.getState().workspace
+        if (!root) throw new Error("workspace unavailable")
+        const target = `file://${root}/recovery-conflict-e2e.ts`
+        await window.yaade!.fs.writeTextFile(target, "disk version one", {
+          create: true,
+        })
+        await window.__yaadeAgent!.openFile(target)
+        return target
+      })
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.press(`${modChord()}+a`)
+      await page.keyboard.type("my recovered version")
+      await page.waitForTimeout(1_000)
+      await page.evaluate(async target => {
+        const current = await window.yaade!.fs.readTextFile(target)
+        await window.yaade!.fs.writeTextFile(target, "disk version two", {
+          expectedVersion: current.version,
+        })
+      }, uri)
+      await page.waitForTimeout(800)
+
+      await page.reload()
+      await waitForMux(page)
+      const conflict = page.locator('[data-yaade-editor-conflict="true"]')
+      await expect(conflict).toBeVisible({ timeout: 15_000 })
+      await expect(conflict.getByRole("button", { name: "Compare" })).toBeVisible()
+      await expect(conflict.getByRole("button", { name: "Keep Mine" })).toBeVisible()
+      await expect(conflict.getByRole("button", { name: "Reload" })).toBeVisible()
+
+      await conflict.getByRole("button", { name: "Compare" }).click()
+      const compareDialog = page
+        .getByRole("dialog")
+        .filter({ hasText: "Recovered changes" })
+      await expect(compareDialog).toBeVisible()
+      await expectSelectorVisible(page, "[data-yaade-monaco-diff-editor]", {
+        timeout: 15_000,
+      })
+      await page.keyboard.press("Escape")
+
+      await conflict.getByRole("button", { name: "Reload" }).click()
+      await expect(conflict).toHaveCount(0)
+      await expect
+        .poll(
+          () =>
+            page.evaluate(target => {
+              const diagnostics = window.__yaadeAgent!.getEditorDiagnostics()
+              return {
+                dirty: diagnostics.editors.activeDirty,
+                content:
+                  diagnostics.models.entries.find(entry => entry.uri === target)
+                    ?.content ?? "",
+              }
+            }, uri),
+          { timeout: 10_000 },
+        )
+        .toEqual({ dirty: false, content: "disk version two" })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("dirty close supports Cancel and Discard All without losing control", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.press(`${modChord()}+ArrowDown`)
+      await page.keyboard.type("\n// discard-close-sentinel")
+
+      const activeTab = page.locator(
+        '[data-yaade-modal-editor-tab][data-active]',
+      )
+      await activeTab.locator('button[aria-label^="Close"]').click()
+      await expectSelectorVisible(page, '[data-yaade-confirm="accept"]')
+      await page.locator('[data-yaade-confirm="cancel"]').click()
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        1,
+      )
+      expect(
+        await page.evaluate(
+          () => window.__yaadeAgent!.getEditorDiagnostics().editors.activeDirty,
+        ),
+      ).toBe(true)
+
+      await activeTab.locator('button[aria-label^="Close"]').click()
+      await expectSelectorVisible(page, '[data-yaade-confirm="alternate"]')
+      await page.locator('[data-yaade-confirm="alternate"]').click()
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        0,
+        { timeout: 10_000 },
+      )
+
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const model = window.__yaadeAgent!
+                .getEditorDiagnostics()
+                .models.entries.find(entry =>
+                  entry.uri.endsWith("/src/index.ts"),
+                )
+              return model?.content ?? ""
+            }),
+          { timeout: 10_000 },
+        )
+        .not.toContain("discard-close-sentinel")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("dirty close Save All persists before closing the tab", async () => {
+    const { app, page } = await launchJet({ withTerminal: false })
+    try {
+      await page.evaluate(() => window.__yaadeAgent!.openFile("src/index.ts"))
+      await expectSelectorVisible(page, "[data-yaade-monaco-editor]", {
+        timeout: 15_000,
+      })
+      const input = page.locator(
+        "[data-yaade-monaco-editor] textarea.inputarea",
+      )
+      await input.focus()
+      await page.keyboard.press(`${modChord()}+ArrowDown`)
+      await page.keyboard.type("\n// save-close-sentinel")
+      await page
+        .locator(
+          '[data-yaade-modal-editor-tab][data-active] button[aria-label^="Close"]',
+        )
+        .click()
+      await expectSelectorVisible(page, '[data-yaade-confirm="accept"]')
+      await page.locator('[data-yaade-confirm="accept"]').click()
+      await expectLocatorCount(
+        page.locator("[data-yaade-modal-editor-tabs] [role='tab']"),
+        0,
+        { timeout: 10_000 },
+      )
+      const content = await page.evaluate(async () => {
+        const root = window.__yaadeAgent!.getState().workspace
+        if (!root) throw new Error("workspace unavailable")
+        return window.yaade!.fs.readFile(`file://${root}/src/index.ts`)
+      })
+      expect(content).toContain("save-close-sentinel")
     } finally {
       await app.close()
     }

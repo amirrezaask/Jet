@@ -1,5 +1,5 @@
 import { pathToFileUri } from "@yaade/shared"
-import type { ProjectSearchResult } from "@yaade/shared"
+import type { ProjectSearchResult, SearchPage } from "@yaade/shared"
 import type { WorkspaceFolder } from "./workspace-manager.js"
 import { joinPath } from "./path-input.js"
 
@@ -95,7 +95,7 @@ type FileSearchApi = {
     rootUri: string,
     query: string,
     opts?: { pageSize?: number; currentFile?: string },
-  ): Promise<string[]>
+  ): Promise<string[] | SearchPage<string>>
 }
 
 type ProjectSearchApi = {
@@ -103,7 +103,7 @@ type ProjectSearchApi = {
     rootUri: string,
     query: string,
     opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
-  ): Promise<ProjectSearchResult[]>
+  ): Promise<ProjectSearchResult[] | SearchPage<ProjectSearchResult>>
 }
 
 export async function fileSearchAcrossFolders(
@@ -131,7 +131,8 @@ export async function fileSearchAcrossFolders(
         pageSize: perFolder,
         currentFile,
       })
-      return hits.map(relativePath => ({
+      const items = Array.isArray(hits) ? hits : hits.items
+      return items.map(relativePath => ({
         folder,
         relativePath,
         displayPath: formatQuickOpenDisplayPath(folder, relativePath, multiRoot),
@@ -163,7 +164,8 @@ export async function projectSearchAcrossFolders(
   const batches = await Promise.all(
     folders.map(async folder => {
       const results = await search.project(folder.root.uri, query, opts)
-      return results.map(result => ({ folder, result }))
+      const items = Array.isArray(results) ? results : results.items
+      return items.map(result => ({ folder, result }))
     }),
   )
 

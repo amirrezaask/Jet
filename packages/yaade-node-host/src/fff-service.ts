@@ -2,7 +2,12 @@ import { createHash } from "node:crypto"
 import { homedir } from "node:os"
 import path from "node:path"
 import type { FileFinderApi, GrepMode } from "@ff-labs/fff-node"
-import type { ProjectSearchResult } from "@yaade/shared"
+import type {
+  FileSearchOptions,
+  ProjectSearchOptions,
+  ProjectSearchResult,
+  SearchPage,
+} from "@yaade/shared"
 import { gitIsRepo } from "./git.js"
 import { uriToPath } from "./paths.js"
 
@@ -137,8 +142,8 @@ export function disposeFffIndex(rootUri: string): void {
 export async function fffFileSearch(
   rootUri: string,
   query: string,
-  opts?: { pageSize?: number; currentFile?: string },
-): Promise<string[] | null> {
+  opts?: FileSearchOptions,
+): Promise<SearchPage<string> | null> {
   const finder = await ensureFffIndex(rootUri)
   if (!finder) return null
 
@@ -147,34 +152,46 @@ export async function fffFileSearch(
     currentFile: opts?.currentFile,
   })
   if (!result.ok) return null
-  return result.value.items.map(item => item.relativePath)
+  return {
+    items: result.value.items.map(item => item.relativePath),
+    truncated: result.value.totalMatched > result.value.items.length,
+  }
 }
 
-export async function fffListFiles(rootUri: string, maxFiles = 20_000): Promise<string[] | null> {
+export async function fffListFiles(
+  rootUri: string,
+  maxFiles = 20_000,
+): Promise<SearchPage<string> | null> {
   const finder = await ensureFffIndex(rootUri)
   if (!finder) return null
 
   const paths: string[] = []
   let pageIndex = 0
   const pageSize = 5000
-  while (paths.length < maxFiles) {
+  let truncated = false
+  while (paths.length <= maxFiles) {
     const result = finder.glob("**/*", { pageIndex, pageSize })
-    if (!result.ok) return paths.length > 0 ? paths : null
+    if (!result.ok) {
+      return paths.length > 0
+        ? { items: paths.slice(0, maxFiles).sort(), truncated: true }
+        : null
+    }
+    truncated = result.value.totalMatched > maxFiles
     for (const item of result.value.items) {
       paths.push(item.relativePath)
-      if (paths.length >= maxFiles) break
+      if (paths.length > maxFiles) break
     }
-    if (result.value.items.length < pageSize) break
+    if (paths.length > maxFiles || result.value.items.length < pageSize) break
     pageIndex += 1
   }
-  return paths.sort()
+  return { items: paths.slice(0, maxFiles).sort(), truncated }
 }
 
 export async function fffGrep(
   rootUri: string,
   query: string,
-  opts?: { caseSensitive?: boolean; regex?: boolean; fuzzy?: boolean },
-): Promise<ProjectSearchResult[] | null> {
+  opts?: ProjectSearchOptions,
+): Promise<SearchPage<ProjectSearchResult> | null> {
   const finder = await ensureFffIndex(rootUri)
   if (!finder) return null
 
@@ -190,12 +207,23 @@ export async function fffGrep(
   })
   if (!result.ok) return null
 
-  return result.value.items.map(match => ({
-    path: match.relativePath,
-    line: match.lineNumber,
-    column: match.col + 1,
-    preview: match.lineContent.trimEnd(),
-  }))
+  const items = result.value.items.map(match => {
+    const preview = match.lineContent.replace(/\r?\n$/, "")
+    const ranges = match.matchRanges.map(([start, end]) => ({
+      startLine: match.lineNumber,
+      startColumn: byteColumn(preview, start),
+      endLine: match.lineNumber,
+      endColumn: byteColumn(preview, end),
+    }))
+    return {
+      path: match.relativePath,
+      line: match.lineNumber,
+      column: ranges[0]?.startColumn ?? byteColumn(preview, match.col),
+      preview,
+      ranges,
+    }
+  })
+  return { items, truncated: result.value.nextCursor !== null }
 }
 
 export async function fffTrackAccess(
@@ -206,4 +234,9 @@ export async function fffTrackAccess(
   const finder = await ensureFffIndex(rootUri)
   if (!finder) return
   finder.trackQuery(query, selectedPath)
+}
+
+function byteColumn(text: string, byteOffset: number): number {
+  const bytes = Buffer.from(text, "utf8")
+  return bytes.subarray(0, Math.max(0, Math.min(byteOffset, bytes.length))).toString("utf8").length + 1
 }

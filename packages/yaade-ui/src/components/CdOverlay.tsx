@@ -13,6 +13,7 @@ import { FileIcon } from "@/lib/file-icon.js"
 import {
   applyPathCompletion,
   deletePathSegmentBackward,
+  isPathUnderRoot,
   parsePathCompletionContext,
   resolvePathForOpen,
 } from "@yaade/workspace"
@@ -60,6 +61,8 @@ export type CdOverlayProps = {
   title?: string
   description?: string
   primaryHint?: string
+  /** Keep typed and completed paths inside this root (for scoped pickers). */
+  restrictToRootPath?: string
 }
 
 export function CdOverlay({
@@ -74,6 +77,7 @@ export function CdOverlay({
   title = "Change directory",
   description = "Path to folder",
   primaryHint = "Open",
+  restrictToRootPath,
 }: CdOverlayProps) {
   const [pathInput, setPathInput] = useState("")
   const [cursor, setCursor] = useState(0)
@@ -292,6 +296,10 @@ export function CdOverlay({
   const submit = useCallback(() => {
     if (!homeDir || !pathInput.trim()) return
     const path = resolvePathForOpen(pathInput, homeDir)
+    if (restrictToRootPath && !isPathUnderRoot(path, restrictToRootPath)) {
+      setError(`Choose a path inside ${restrictToRootPath}.`)
+      return
+    }
     onOpenChange(false)
     const stat = window.yaade?.fs?.stat
     void (async () => {
@@ -311,7 +319,15 @@ export function CdOverlay({
         console.warn("Failed to select path:", err)
       }
     })()
-  }, [homeDir, pathInput, onSelectFolder, onSelectFile, onOpenChange, showFiles])
+  }, [
+    homeDir,
+    pathInput,
+    onSelectFolder,
+    onSelectFile,
+    onOpenChange,
+    restrictToRootPath,
+    showFiles,
+  ])
 
   const moveHighlight = useCallback(
     (delta: 1 | -1) => {

@@ -113,6 +113,19 @@ test.describe("YAADE HQ", () => {
       env: { JET_ALLOWED_ROOTS: root },
     })
     try {
+      expect(
+        await page
+          .getByRole("heading", { name: "Machine overview" })
+          .count(),
+      ).toBe(0)
+      expect(
+        await page
+          .getByText(
+            "Monitor projects, live agents, and activity across this machine.",
+          )
+          .count(),
+      ).toBe(0)
+
       const initialResources = await page.evaluate(() =>
         performance.getEntriesByType("resource").map(entry => entry.name),
       )
@@ -169,6 +182,17 @@ test.describe("YAADE HQ", () => {
       })
       await page.getByRole("button", { name: "Close" }).click()
       await page.setViewportSize({ width: 1440, height: 900 })
+      const summaryTopGap = await page.evaluate(() => {
+        const header = document
+          .querySelector("[data-yaade-app-header]")
+          ?.getBoundingClientRect()
+        const summary = document
+          .querySelector("[data-yaade-hq-summary]")
+          ?.getBoundingClientRect()
+        return header && summary ? summary.top - header.bottom : null
+      })
+      expect(summaryTopGap).not.toBeNull()
+      expect(summaryTopGap!).toBeLessThanOrEqual(20)
       const desktopColumns = await page.evaluate(() => {
         const agents = document
           .querySelector('[data-yaade-hq-column="agents"]')

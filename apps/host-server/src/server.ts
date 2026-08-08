@@ -4,18 +4,31 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { WebSocketServer, WebSocket } from "ws"
-import { getLspSession, MAX_READ_BYTES, uriToPath, gitWorktreeAdd, gitWorktreeRemove } from "@yaade/node-host"
 import {
+  MAX_READ_BYTES,
+  MAX_TEXT_FILE_BYTES,
+  uriToPath,
+  gitWorktreeAdd,
+  gitWorktreeRemove,
+  readTextFile,
+  writeTextFile,
+} from "@yaade/node-host"
+import {
+  FileChangedError,
   HostRpcRequest,
   InvalidRpcPayloadError,
+  MAX_EDITOR_RECOVERY_BUFFER_BYTES,
   PathOutsideRootsError,
+  PayloadTooLargeError,
   encodeTerminalDataFrame,
   hostErrorHttpStatus,
   hostErrorWire,
   tryDecodeTerminalWsCommand,
   tryDecodeProjectSessionPayload,
   tryDecodeWorkspaceSession,
+  type EditorRecoveryBuffer,
   type HostRpcError,
+  type TextFileWriteOptions,
 } from "@yaade/rpc"
 import type { HostEvent } from "./events.js"
 import type { HostConfig } from "./config.js"
@@ -23,7 +36,10 @@ import { dispatch } from "./dispatch.js"
 import { makeHostLayers, type HostLayerServices } from "./effect/layers.js"
 import { HostRuntimeTag } from "./effect/tags.js"
 import { shutdownRuntime, type HostRuntime } from "./host-runtime.js"
-import { parseSessionRosterBody } from "./persistence.js"
+import {
+  EditorRecoveryQuotaError,
+  parseSessionRosterBody,
+} from "./persistence.js"
 import { pathAllowed, pathStaysWithin } from "./sandbox.js"
 import { isAllowedWebSocketOrigin } from "./security.js"
 import { normalizeProviderHookRequest } from "./notifications/index.js"
@@ -52,9 +68,10 @@ function runHostRpc(
   channel: string,
   args: unknown[],
   clientId: string,
+  signal?: AbortSignal,
 ): Promise<{ ok: true; value: unknown } | { ok: false; error: HostRpcError }> {
   return managed.runPromise(
-    dispatch(channel, args, clientId).pipe(
+    dispatch(channel, args, clientId, signal).pipe(
       Effect.map(value => ({ ok: true as const, value })),
       Effect.catchAll(error => Effect.succeed({ ok: false as const, error })),
     ),
@@ -116,7 +133,7 @@ export async function startHostServer(config: HostConfig): Promise<{
     const lspMatch = /^\/ws\/lsp\/([^/]+)$/.exec(url.pathname)
     if (lspMatch) {
       wss.handleUpgrade(req, socket, head, ws => {
-        handleLspProxy(lspMatch[1]!, ws)
+        handleLspProxy(runtime, lspMatch[1]!, ws)
       })
       return
     }
@@ -253,6 +270,91 @@ async function handleHttp(
     return
   }
 
+  if (pathname === "/api/v1/fs/text-file") {
+    const uri = url.searchParams.get("uri")
+    if (!uri || !uri.startsWith("file://")) {
+      sendJson(res, 400, {
+        error: {
+          code: "INVALID_URI",
+          message: "absolute file:// uri is required",
+          details: {},
+        },
+      })
+      return
+    }
+
+    if (req.method === "GET") {
+      try {
+        const result = await readTextFile(uri)
+        res.writeHead(200, {
+          "content-type": "text/plain; charset=utf-8",
+          "content-length": Buffer.byteLength(result.content, "utf8"),
+          "cache-control": "no-store",
+          "x-yaade-file-version": result.version,
+          "x-yaade-file-size": result.size,
+        })
+        res.end(result.content)
+      } catch (error) {
+        sendTextFileError(res, error)
+      }
+      return
+    }
+
+    if (req.method === "PUT") {
+      let filePath: string
+      try {
+        filePath = uriToPath(uri)
+      } catch {
+        sendJson(res, 400, {
+          error: { code: "INVALID_URI", message: "invalid file uri", details: {} },
+        })
+        return
+      }
+      if (!pathAllowed(filePath, runtime.config.allowedRoots)) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "text file path outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+
+      const expectedVersion = url.searchParams.get("expectedVersion")
+      const create = url.searchParams.get("create") === "1"
+      if (create === (expectedVersion !== null)) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_WRITE_OPTIONS",
+            message: "exactly one of expectedVersion or create is required",
+            details: {},
+          },
+        })
+        return
+      }
+
+      try {
+        const content = await readUtf8Body(req, MAX_TEXT_FILE_BYTES)
+        const options: TextFileWriteOptions = create
+          ? { create: true }
+          : { expectedVersion: expectedVersion ?? "" }
+        const result = await writeTextFile(uri, content, options)
+        res.writeHead(200, {
+          "content-length": 0,
+          "cache-control": "no-store",
+          "x-yaade-file-version": result.version,
+          "x-yaade-file-size": result.size,
+        })
+        res.end()
+      } catch (error) {
+        req.resume()
+        sendTextFileError(res, error)
+      }
+      return
+    }
+  }
+
   if (req.method === "POST" && pathname === "/api/v1/rpc") {
     if (!rpcGate.beginRpc()) {
       sendJson(res, 503, {
@@ -264,6 +366,13 @@ async function handleHttp(
       })
       return
     }
+    const requestAbort = new AbortController()
+    const abortRequest = () => requestAbort.abort(new Error("RPC request disconnected"))
+    const abortOnResponseClose = () => {
+      if (!res.writableEnded) abortRequest()
+    }
+    req.once("aborted", abortRequest)
+    res.once("close", abortOnResponseClose)
     try {
       const body = await readJson(req)
       const decoded = Schema.decodeUnknownEither(HostRpcRequest)(body)
@@ -284,7 +393,13 @@ async function handleHttp(
         sendJson(res, hostErrorHttpStatus(pathError), { error: wire })
         return
       }
-      const result = await runHostRpc(managed, channel, rpcArgs, clientId)
+      const result = await runHostRpc(
+        managed,
+        channel,
+        rpcArgs,
+        clientId,
+        requestAbort.signal,
+      )
       if (result.ok) {
         sendJson(res, 200, { value: result.value })
         return
@@ -292,6 +407,8 @@ async function handleHttp(
       const wire = hostErrorWire(result.error)
       sendJson(res, hostErrorHttpStatus(result.error), { error: wire })
     } finally {
+      req.removeListener("aborted", abortRequest)
+      res.removeListener("close", abortOnResponseClose)
       rpcGate.endRpc()
     }
     return
@@ -451,6 +568,236 @@ async function handleHttp(
       }
       return
     }
+  }
+
+  const editorRecoveryMatch = pathname.match(
+    /^\/api\/v1\/project-sessions\/([^/]+)\/editor-recovery(\/buffer)?$/,
+  )
+  if (editorRecoveryMatch) {
+    let sessionId: string
+    try {
+      sessionId = decodeURIComponent(editorRecoveryMatch[1] ?? "")
+    } catch {
+      sendJson(res, 400, {
+        error: {
+          code: "INVALID_EDITOR_RECOVERY",
+          message: "invalid editor recovery session id",
+          details: {},
+        },
+      })
+      return
+    }
+    const isBufferRoute = editorRecoveryMatch[2] === "/buffer"
+    const session = runtime.db.getProjectSession(sessionId)
+    if (!session) {
+      sendJson(res, 404, {
+        error: {
+          code: "PROJECT_SESSION_NOT_FOUND",
+          message: "project session not found",
+          details: {},
+        },
+      })
+      return
+    }
+    if (
+      !pathAllowed(session.projectPath, runtime.config.allowedRoots) ||
+      !pathAllowed(session.cwdPath, runtime.config.allowedRoots)
+    ) {
+      sendJson(res, 403, {
+        error: {
+          code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+          message: "project session path outside allowed roots",
+          details: {},
+        },
+      })
+      return
+    }
+
+    if (!isBufferRoute) {
+      if (req.method === "GET") {
+        sendJson(res, 200, runtime.db.listEditorRecoveryBuffers(sessionId))
+        return
+      }
+      if (req.method === "DELETE") {
+        const deleted = runtime.db.deleteEditorRecoverySession(sessionId)
+        sendJson(res, 200, { ok: true, deleted })
+        return
+      }
+      sendJson(res, 405, {
+        error: {
+          code: "METHOD_NOT_ALLOWED",
+          message: "editor recovery collection supports GET and DELETE",
+          details: {},
+        },
+      })
+      return
+    }
+
+    const uri = url.searchParams.get("uri")?.trim() ?? ""
+    if (!uri) {
+      sendJson(res, 400, {
+        error: {
+          code: "INVALID_EDITOR_RECOVERY",
+          message: "uri query parameter required",
+          details: {},
+        },
+      })
+      return
+    }
+    if (uri.startsWith("file:")) {
+      if (!uri.startsWith("file://")) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_EDITOR_RECOVERY",
+            message: "invalid editor recovery file URI",
+            details: {},
+          },
+        })
+        return
+      }
+      let recoveryPath: string
+      try {
+        recoveryPath = uriToPath(uri)
+      } catch {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_EDITOR_RECOVERY",
+            message: "invalid editor recovery file URI",
+            details: {},
+          },
+        })
+        return
+      }
+      if (!pathAllowed(recoveryPath, runtime.config.allowedRoots)) {
+        sendJson(res, 403, {
+          error: {
+            code: "PATH_OUTSIDE_ALLOWED_ROOTS",
+            message: "editor recovery URI outside allowed roots",
+            details: {},
+          },
+        })
+        return
+      }
+    }
+
+    if (req.method === "GET") {
+      let buffer
+      try {
+        buffer = runtime.db.getEditorRecoveryBuffer(sessionId, uri)
+      } catch (error) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_EDITOR_RECOVERY",
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          },
+        })
+        return
+      }
+      if (!buffer) {
+        // A missing recovery record is the normal file-open path. Keep it out
+        // of browser error telemetry and the unexpected-HTTP E2E gate.
+        res.statusCode = 200
+        res.setHeader("cache-control", "no-store")
+        res.setHeader("content-length", "0")
+        res.setHeader("x-yaade-recovery-missing", "1")
+        res.end()
+        return
+      }
+      sendEditorRecoveryBuffer(res, buffer)
+      return
+    }
+
+    if (req.method === "PUT") {
+      const languageId = url.searchParams.get("languageId")?.trim() ?? ""
+      if (!languageId) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_EDITOR_RECOVERY",
+            message: "languageId query parameter required",
+            details: {},
+          },
+        })
+        return
+      }
+      const baseVersion = url.searchParams.has("baseVersion")
+        ? url.searchParams.get("baseVersion")
+        : null
+      try {
+        const content = await readUtf8Body(req, MAX_EDITOR_RECOVERY_BUFFER_BYTES)
+        const saved = runtime.db.upsertEditorRecoveryBuffer({
+          sessionId,
+          uri,
+          content,
+          baseVersion,
+          languageId,
+        })
+        sendJson(res, 200, saved)
+      } catch (error) {
+        if (error instanceof EditorRecoveryQuotaError) {
+          sendJson(res, 413, {
+            error: {
+              code:
+                error.quota === "buffer"
+                  ? "EDITOR_RECOVERY_BUFFER_TOO_LARGE"
+                  : "EDITOR_RECOVERY_SESSION_QUOTA",
+              message: error.message,
+              details: { size: error.size, max: error.max },
+            },
+          })
+          return
+        }
+        if (error instanceof HttpError) {
+          sendJson(res, error.status, {
+            error: {
+              code:
+                error.status === 413
+                  ? "EDITOR_RECOVERY_BUFFER_TOO_LARGE"
+                  : "INVALID_EDITOR_RECOVERY",
+              message: error.message,
+              details:
+                error.status === 413
+                  ? { max: MAX_EDITOR_RECOVERY_BUFFER_BYTES }
+                  : {},
+            },
+          })
+          return
+        }
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_EDITOR_RECOVERY",
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          },
+        })
+      }
+      return
+    }
+
+    if (req.method === "DELETE") {
+      try {
+        const deleted = runtime.db.deleteEditorRecoveryBuffer(sessionId, uri)
+        sendJson(res, 200, { ok: true, deleted })
+      } catch (error) {
+        sendJson(res, 400, {
+          error: {
+            code: "INVALID_EDITOR_RECOVERY",
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          },
+        })
+      }
+      return
+    }
+
+    sendJson(res, 405, {
+      error: {
+        code: "METHOD_NOT_ALLOWED",
+        message: "editor recovery buffer supports GET, PUT, and DELETE",
+        details: {},
+      },
+    })
+    return
   }
 
   if (pathname === "/api/v1/project-sessions") {
@@ -1049,8 +1396,8 @@ function wsDataToText(data: WebSocket.RawData): string {
   return Buffer.from(data).toString("utf8")
 }
 
-function handleLspProxy(id: string, client: WebSocket): void {
-  const session = getLspSession(id)
+function handleLspProxy(runtime: HostRuntime, id: string, client: WebSocket): void {
+  const session = runtime.lsp.getSession(id)
   if (!session) {
     client.close()
     return
@@ -1119,10 +1466,56 @@ function validateRpcPathsOrThrow(config: HostConfig, channel: string, args: unkn
   }
   if (channel.startsWith("notifications:")) return
   if (!/^(fs|git|search|workspace|lsp|terminal):/.test(channel)) return
+  if (channel === "lsp:stop" || channel === "lsp:listDefinitions" || channel === "lsp:logs") {
+    return
+  }
+  if (channel === "lsp:resolve" || channel === "lsp:start") {
+    const input = args[0]
+    if (!input || typeof input !== "object") return
+    for (const field of ["fileUri", "workspaceRootUri", "projectRootUri"]) {
+      if (!(field in input)) continue
+      const candidate = Reflect.get(input, field)
+      if (
+        typeof candidate !== "string" ||
+        !pathAllowed(uriOrPath(candidate), config.allowedRoots)
+      ) {
+        throw new Error("PATH_OUTSIDE_ALLOWED_ROOTS")
+      }
+    }
+    return
+  }
+  if (channel === "fs:rename") {
+    for (const candidate of [args[0], args[1]]) {
+      if (
+        typeof candidate !== "string" ||
+        !pathAllowed(uriOrPath(candidate), config.allowedRoots)
+      ) {
+        throw new Error("PATH_OUTSIDE_ALLOWED_ROOTS")
+      }
+    }
+    return
+  }
+  if (channel === "fs:restoreTrash") {
+    const target = args[1]
+    if (
+      typeof target === "string" &&
+      !pathAllowed(uriOrPath(target), config.allowedRoots)
+    ) {
+      throw new Error("PATH_OUTSIDE_ALLOWED_ROOTS")
+    }
+    // Without an override, dispatch validates the original path stored in the
+    // host-owned trash metadata before restoring it.
+    return
+  }
   // Read-only FS: allow absolute paths outside allowedRoots so goto-def can
   // open language stdlib / module cache files (e.g. GOROOT, node_modules
   // outside $HOME). Writes and directory listing stay sandboxed.
-  if (channel === "fs:readFile" || channel === "fs:stat" || channel === "fs:exists") return
+  if (
+    channel === "fs:readFile" ||
+    channel === "fs:readTextFile" ||
+    channel === "fs:stat" ||
+    channel === "fs:exists"
+  ) return
   if (channel === "fs:writeTempDrop") return
   if (channel.startsWith("terminal:") && typeof args[0] === "string" && !args[0].startsWith("file:")) {
     return
@@ -1187,6 +1580,97 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   }
   if (chunks.length === 0) return {}
   return JSON.parse(Buffer.concat(chunks).toString("utf8"))
+}
+
+async function readUtf8Body(
+  req: IncomingMessage,
+  maxBytes: number,
+): Promise<string> {
+  const declaredLength = req.headers["content-length"]
+  if (declaredLength !== undefined) {
+    const bytes = Number(declaredLength)
+    if (!Number.isSafeInteger(bytes) || bytes < 0) {
+      throw new HttpError(400, "invalid content-length")
+    }
+    if (bytes > maxBytes) throw new HttpError(413, "request body too large")
+  }
+
+  const chunks: Buffer[] = []
+  let totalBytes = 0
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    totalBytes += buffer.length
+    if (totalBytes > maxBytes) {
+      throw new HttpError(413, "request body too large")
+    }
+    chunks.push(buffer)
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))
+  } catch {
+    throw new HttpError(400, "request body must be valid UTF-8")
+  }
+}
+
+function sendEditorRecoveryBuffer(
+  res: ServerResponse,
+  buffer: EditorRecoveryBuffer,
+): void {
+  const contentBytes = Buffer.byteLength(buffer.content, "utf8")
+  const headers: Record<string, string | number> = {
+    "content-type": "text/plain; charset=utf-8",
+    "content-length": contentBytes,
+    "cache-control": "no-store",
+    "x-yaade-recovery-session-id": encodeURIComponent(buffer.sessionId),
+    "x-yaade-recovery-uri": encodeURIComponent(buffer.uri),
+    "x-yaade-recovery-language-id": encodeURIComponent(buffer.languageId),
+    "x-yaade-recovery-updated-at": encodeURIComponent(buffer.updatedAt),
+  }
+  if (buffer.baseVersion !== null) {
+    headers["x-yaade-recovery-base-version"] = encodeURIComponent(
+      buffer.baseVersion,
+    )
+  }
+  res.writeHead(200, headers)
+  res.end(buffer.content)
+}
+
+function nodeErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return undefined
+  }
+  return typeof error.code === "string" ? error.code : undefined
+}
+
+function sendTextFileError(res: ServerResponse, error: unknown): void {
+  if (error instanceof FileChangedError || error instanceof PayloadTooLargeError) {
+    sendJson(res, hostErrorHttpStatus(error), { error: hostErrorWire(error) })
+    return
+  }
+  if (error instanceof HttpError) {
+    sendJson(res, error.status, {
+      error: {
+        code: error.status === 413 ? "PAYLOAD_TOO_LARGE" : "OPERATION_FAILED",
+        message: error.message,
+        details: {},
+      },
+    })
+    return
+  }
+  const code = nodeErrorCode(error)
+  if (code === "ENOENT" || code === "ENOTDIR") {
+    sendJson(res, 404, {
+      error: { code: "NOT_FOUND", message: "text file not found", details: {} },
+    })
+    return
+  }
+  sendJson(res, 400, {
+    error: {
+      code: "OPERATION_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      details: {},
+    },
+  })
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {

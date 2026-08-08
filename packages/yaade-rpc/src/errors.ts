@@ -7,6 +7,7 @@ export type HostErrorCode =
   | "OPERATION_FAILED"
   | "NOT_FOUND"
   | "CONFLICT"
+  | "FILE_CHANGED"
   | "PAYLOAD_TOO_LARGE"
   | "HOST_DISCONNECTED"
 
@@ -49,6 +50,16 @@ export class ConflictError extends Data.TaggedError("Conflict")<{
   readonly message: string
 }> {
   readonly code = "CONFLICT" as const
+}
+
+/** Optimistic text-file write rejected because the disk version no longer matches. */
+export class FileChangedError extends Data.TaggedError("FileChanged")<{
+  readonly message: string
+  readonly uri: string
+  readonly expectedVersion?: string
+  readonly actualVersion: string
+}> {
+  readonly code = "FILE_CHANGED" as const
 }
 
 export class PayloadTooLargeError extends Data.TaggedError("PayloadTooLarge")<{
@@ -100,6 +111,7 @@ export type HostRpcError =
   | OperationFailedError
   | NotFoundError
   | ConflictError
+  | FileChangedError
   | PayloadTooLargeError
   | LspCrashedError
   | InvalidRpcPayloadError
@@ -113,6 +125,7 @@ export function hostErrorHttpStatus(error: HostRpcError): number {
     case "NotFound":
       return 404
     case "Conflict":
+    case "FileChanged":
       return 409
     case "PayloadTooLarge":
       return 413
@@ -128,9 +141,17 @@ export function hostErrorWire(error: HostRpcError): {
   message: string
   details: Record<string, unknown>
 } {
+  const details =
+    error._tag === "FileChanged"
+      ? {
+          uri: error.uri,
+          expectedVersion: error.expectedVersion,
+          actualVersion: error.actualVersion,
+        }
+      : {}
   return {
     code: error.code,
     message: error.message,
-    details: {},
+    details,
   }
 }

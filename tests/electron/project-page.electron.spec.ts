@@ -50,14 +50,22 @@ test.describe("project page", () => {
           async () => page.locator("[data-yaade-worktree-switcher]").count(),
           { timeout: 5_000 },
         )
-        .toBe(1)
+        .toBe(0)
+      await expect
+        .poll(() =>
+          page.evaluate(() => ({
+            commandDeck: document.querySelectorAll("[data-yaade-command-deck]").length,
+            worktrees: document.querySelectorAll("[data-yaade-project-worktrees]").length,
+          })),
+        )
+        .toEqual({ commandDeck: 0, worktrees: 0 })
     } finally {
       await app.close()
       fs.rmSync(home, { recursive: true, force: true })
     }
   })
 
-  test("overview keeps worktrees first and expands full README", async () => {
+  test("overview shows recent commits before the full-width README", async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "yaade-overview-git-"))
     const project = path.join(home, "repo")
     fs.mkdirSync(project, { recursive: true })
@@ -70,7 +78,7 @@ test.describe("project page", () => {
     ].join("\n")
     fs.writeFileSync(path.join(project, "README.md"), `${longReadme}\n`)
     execSync(
-      "git init && git config user.email t@t && git config user.name tester && git add README.md && git commit -m 'feat: seed overview fixture'",
+      "git init && git config user.email t@t && git config user.name tester && git add README.md && git commit -m 'feat: seed overview fixture' && echo follow-up > note.txt && git add note.txt && git commit -m 'docs: add follow-up note' && git branch feature/switch-target",
       { cwd: project, stdio: "ignore" },
     )
 
@@ -83,14 +91,50 @@ test.describe("project page", () => {
     try {
       await waitForProjectPage(page)
 
+      const branchMenu = page.locator("[data-yaade-project-branch-menu]")
+      await branchMenu.waitFor({ state: "visible" })
+      await branchMenu.click()
       await expectListRows(page, {
-        panel: "project-worktrees",
-        minItems: 1,
-        needle: "Main",
+        panel: "project-branches",
+        minItems: 2,
+        needle: "feature/switch-target",
+        noResultsText: "No branches",
       })
+      await page.locator('[data-yaade-project-branch="feature/switch-target"]').click()
       await expect
-        .poll(() => page.getByText("Repository activity").count())
-        .toBe(0)
+        .poll(async () => (await branchMenu.textContent()) ?? "")
+        .toContain("feature/switch-target")
+      await expect
+        .poll(() => execSync("git branch --show-current", { cwd: project }).toString().trim())
+        .toBe("feature/switch-target")
+      await expect
+        .poll(() =>
+          page.evaluate(() => ({
+            commandDeck: document.querySelectorAll("[data-yaade-command-deck]").length,
+            worktreeCards: document.querySelectorAll("[data-yaade-project-worktrees]").length,
+            worktreeSwitcher: document.querySelectorAll("[data-yaade-worktree-switcher]").length,
+          })),
+        )
+        .toEqual({ commandDeck: 0, worktreeCards: 0, worktreeSwitcher: 0 })
+      await expectListRows(page, {
+        panel: "project-commits",
+        minItems: 2,
+        needle: "docs: add follow-up note",
+        noResultsText: "No commits yet",
+      })
+      expect(
+        await page.evaluate(() => {
+          const commits = document.querySelector("[data-yaade-project-commits]")
+          const readme = document.querySelector("[data-yaade-project-readme]")
+          return Boolean(
+            commits &&
+              readme &&
+              (commits.compareDocumentPosition(readme) &
+                Node.DOCUMENT_POSITION_FOLLOWING) !==
+                0,
+          )
+        }),
+      ).toBe(true)
 
       await expect
         .poll(

@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@yaade/agents": "workspace:*",
+    "@yaade/rpc": "workspace:*",
     "@yaade/shared": "workspace:*",
     "@yaade/panels": "workspace:*"
   },

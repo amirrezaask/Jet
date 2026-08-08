@@ -51,6 +51,7 @@ export type YaadeAgentAPI = {
   addWorkspace(folderPath: string): Promise<void>
   listWorkspaces(): { id: string; path: string; name: string }[]
   openFile(relativeOrUri: string): Promise<void>
+  openFileInNewGroup?(relativeOrUri: string): Promise<void>
   executeCommand(commandId: string): Promise<void>
   getState(): JetAgentState
   waitForReady(): Promise<void>
@@ -126,7 +127,11 @@ export type AgentBridgeContext = {
   addWorkspace?: (folderPath: string) => void | Promise<void>
   listWorkspaces?: () => { id: string; path: string; name: string }[]
   setFontSize: (px: number) => void
-  openFile: (uri: string, path: string) => void
+  openFile: (
+    uri: string,
+    path: string,
+    options?: { forceNewGroup?: boolean },
+  ) => void
   getEditorText?: () => string | null
   setEditorSelection?: (line: number, column: number) => void
   getCursorPosition?: () => JetAgentCursor | null
@@ -144,7 +149,12 @@ export type AgentBridgeContext = {
 }
 
 function toWorkspaceFileUri(workspacePath: string, relativeOrUri: string): string {
-  if (relativeOrUri.startsWith("file://")) return relativeOrUri
+  if (
+    relativeOrUri.startsWith("file://") ||
+    relativeOrUri.startsWith("untitled:")
+  ) {
+    return relativeOrUri
+  }
   const normalized = relativeOrUri.replace(/^\/+/, "")
   return pathToFileUri(`${workspacePath}/${normalized}`)
 }
@@ -174,6 +184,16 @@ export function createAgentBridge(ctx: () => AgentBridgeContext): YaadeAgentAPI 
       const uri = toWorkspaceFileUri(rootPath, relativeOrUri)
       const path = uri.replace(/^file:\/\//, "")
       current.openFile(uri, decodeURIComponent(path))
+    },
+    async openFileInNewGroup(relativeOrUri: string) {
+      const current = ctx()
+      const rootPath = current.workspace.root?.path
+      if (!rootPath) {
+        throw new Error("No workspace open — call openWorkspace first")
+      }
+      const uri = toWorkspaceFileUri(rootPath, relativeOrUri)
+      const path = uri.replace(/^file:\/\//, "")
+      current.openFile(uri, decodeURIComponent(path), { forceNewGroup: true })
     },
     async executeCommand(commandId: string) {
       await ctx().executeCommand(commandId)

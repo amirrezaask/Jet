@@ -111,12 +111,12 @@ export function MuxEmptyState(props: MuxEmptyStateProps) {
 
   return (
     <div
-      className="flex h-full min-h-0 w-full items-center justify-center overflow-auto p-6"
+      className="flex h-full min-h-0 w-full items-center justify-center overflow-auto p-4 sm:p-6"
       data-yaade-mux-empty-panes=""
       role="region"
       aria-label="No panes open"
     >
-      <div className="flex w-full max-w-2xl flex-col items-center gap-8">
+      <div className="flex w-full max-w-3xl flex-col items-center gap-6">
         <div className="flex flex-col items-center gap-1.5 text-center">
           <h2 className="text-base font-medium tracking-tight text-foreground">
             Open a pane
@@ -169,17 +169,17 @@ function TileGrid(props: {
             aria-label={tile.label}
             onClick={tile.onSelect}
             className={cn(
-              "group/empty-tile h-auto flex-col gap-2.5 px-3 py-4",
+              "group/empty-tile h-auto flex-col gap-2.5 border-border bg-secondary/35 px-3 py-4",
               "text-center outline-none transition-[border-color,background-color,color] duration-[var(--yaade-motion-hot)]",
-              "hover:border-border hover:bg-accent/60 hover:text-accent-foreground",
+              "hover:border-input hover:bg-accent hover:text-accent-foreground",
               "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
             )}
           >
             <span
               className={cn(
-                "flex size-10 items-center justify-center rounded-md bg-muted/70 text-foreground",
+                "flex size-10 items-center justify-center rounded-md border border-border bg-card text-foreground",
                 "transition-colors duration-[var(--yaade-motion-hot)]",
-                "group-hover/empty-tile:bg-muted group-focus-visible/empty-tile:bg-muted",
+                "group-hover/empty-tile:border-primary/35 group-hover/empty-tile:text-primary group-focus-visible/empty-tile:border-primary/35",
               )}
               aria-hidden
             >
